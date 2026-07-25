@@ -24,6 +24,21 @@
 //! resolving the *containing* function), and `overlay_0897_801ddc20` reports
 //! zero instructions outright.
 //!
+//! NOT WIRED (whole module, all four addresses). One missing input accounts for
+//! three of them: **engine actors carry no `+0x0C` per-frame handler address**.
+//! [`open_submode`] decides whether to spawn by searching the scene actor list
+//! for one already running handler `0x801D84D0`, and [`scene_actor_initial_state`]
+//! belongs to a template-addressed spawn (`0x801F2810`) - both are identities
+//! the engine's typed actor kinds do not have. [`submode_panel_rows`] is missing
+//! a different thing: it is the layout half of a render-track routine whose
+//! draw leaves are GPU-primitive builders with no `engine-core` counterpart.
+//! [`request_card_mode`] is missing a third: nothing here requests a master-mode
+//! transition by writing the retail mode word.
+//!
+//! The engine's field sub-screens ([`crate::field_menu_dispatch`],
+//! [`crate::pause_screens`]) are typed sessions entered directly, so none of
+//! this module is on a host path today.
+//!
 //! REF: FUN_80020DE0 (actor spawn), FUN_8003CF04 (actor-by-handler search),
 //! FUN_8002B994 / FUN_8002C488 / FUN_80036888 / FUN_8002C69C (the draw leaves)
 
@@ -261,6 +276,12 @@ pub struct CardRequest {
 /// The CARD request leaf's two stores.
 ///
 /// PORT: FUN_801D84B4.
+///
+/// NOT WIRED: nothing in `engine-core` requests a master-mode transition by
+/// writing the retail mode word - [`crate::mode::GameMode`] changes go through
+/// typed scene-host calls, so there is no `_DAT_8007B83C` to store into. The
+/// companion flag `_DAT_8007BB00` has no engine counterpart at all; its
+/// consumer is not in the ported set, which is the narrower blocker of the two.
 pub const fn request_card_mode() -> CardRequest {
     CardRequest {
         game_mode: CARD_REQUEST_MODE,

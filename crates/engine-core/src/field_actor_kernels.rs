@@ -15,6 +15,16 @@
 //! (identical sizes). The `overlay_0897_801ddc20.txt` dump is a corpus gap - it
 //! reports **zero instructions** - so it cannot be used here.
 //!
+//! NOT WIRED (whole module, both addresses). The sweep retires actors by
+//! comparing their `+0x0C` per-frame handler against three addresses, and the
+//! tween is one of those three - but **engine actors carry no handler address**,
+//! so the identity the sweep keys on does not exist here. The engine's scene
+//! transition also drops actors wholesale rather than walking per-list heads and
+//! marking them, so there is no per-list pass to host the sweep even if the
+//! identity existed. The tween needs a second thing on top: an actor-hosted
+//! effect channel owning a packed-RGB output, where the engine's fades
+//! ([`crate::screen_fx`], [`crate::fade`]) are host-driven state instead.
+//!
 //! REF: FUN_801D6704 (calls the sweep once per actor list on a warp entry),
 //! FUN_80017888 (buffer alloc), FUN_80024D78, FUN_80024EE4 (the tween's draw)
 
@@ -48,6 +58,12 @@ pub const CLUT_WALK_ACC_SEED: u16 = 0x64;
 /// Three equality tests against the actor's `+0x0C` handler pointer, each
 /// setting [`ACTOR_FLAG_YIELD`]. The second is the colour tween in this same
 /// module ([`step_colour_tween`]).
+///
+/// NOT WIRED: these are raw retail code addresses, and the engine has no actor
+/// field holding one. Wiring the sweep means giving actors a handler identity
+/// the comparison can be re-expressed against - a typed kind enum, not the
+/// addresses themselves, which are kept here only as the provenance of *which*
+/// three kinds retire.
 pub const RETIRED_HANDLERS: [u32; 3] = [0x8002_5000, 0x801D_DC20, 0x8002_174C];
 
 /// The move-VM actor handler, whose actors take the sweep's long arm instead of
@@ -272,6 +288,11 @@ pub fn step_colour_tween(t: ColourTween, delta: u8) -> ColourTweenStep {
 /// lerp is a signed divide with no clamp. An overshooting green then **carries
 /// into blue** rather than being masked off. Keeping the add reproduces that;
 /// masking would quietly diverge exactly where the tween is most extreme.
+///
+/// NOT WIRED: reached only from [`step_colour_tween`], which has no caller -
+/// same missing actor-hosted effect channel as the module note. The packed word
+/// is what retail hands `FUN_80024EE4`, a GPU-primitive builder with no
+/// `engine-core` counterpart.
 fn pack_colour((r, g, b): (u16, u16, u16)) -> u32 {
     i32::from(r as i16)
         .wrapping_add(i32::from(g as i16) << 8)

@@ -31,6 +31,12 @@
 //! dump `overlay_menu_801cfa48.txt` is only a citation pointer (its own header
 //! says so) - the enclosing function there is a different one.
 //!
+//! NOT WIRED (whole module). Nothing in `engine-core` emits actor
+//! render-mode-4 primitives: there is no `actor[+0x9E]` flag word to select this
+//! arm from and no GPU packet chain to fill. The emitter takes its RNG and its
+//! two LUTs as parameters precisely so the eventual consumer can live in
+//! `engine-render` rather than here.
+//!
 //! REF: FUN_8001ADA4 (the render dispatcher arm that selects this emitter),
 //! FUN_80028158, FUN_8002A5A4 (the other two arms), FUN_801D0290 (the RNG)
 
@@ -181,6 +187,12 @@ pub struct Ribbon {
 /// as a **suppression run**: the first `remainder` steps are emitted with zero
 /// radius. A zero total leaves the cap untouched and the remainder at zero,
 /// which is the "draw the whole ribbon" form.
+///
+/// NOT WIRED: this decodes the third argument of [`build_ribbon`], which has no
+/// caller - `engine-core` emits no actor render-mode-4 primitives. Same missing
+/// input as the emitter itself: an actor render-mode channel carrying the
+/// `+0x9E` flag word that selects this arm. Split out as its own function
+/// because the cap/total packing is the part a caller has to construct.
 pub fn split_packed_count(packed: u32) -> (i32, i32) {
     let cap = (packed & 0xFF) as i32;
     let total = (packed >> 8) as i32;
@@ -424,6 +436,11 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
 /// below. The negative arm's branch that would skip the second fold
 /// (`bgez v0` at `0x801cfef4`) can never be taken - `w >> 2` of a negative `w`
 /// is at most `-1` - so the fall-through really is unconditional.
+///
+/// NOT WIRED: only [`build_ribbon`] calls this, and nothing calls that - same
+/// missing actor render-mode channel. Exposed rather than inlined because the
+/// asymmetric fold is the emitter's least obvious behaviour and is worth being
+/// separately testable.
 pub fn damp_wander(w: i32) -> i32 {
     let mut w = w;
     if w < 0 {

@@ -15,6 +15,15 @@
 //! `overlay_cutscene_mapview_801da390.txt` and the standalone `801da390.txt`
 //! (all 99 instructions, identical).
 //!
+//! NOT WIRED (whole module). The engine's field camera
+//! ([`crate::camera`]) eases in its own float-based controller against a typed
+//! camera-zone record, and has no `_DAT_8007BCAC` channel to step - the retail
+//! global is a fixed-point yaw the renderer reads directly. Adding one is a
+//! **fidelity-mode decision**, not missing plumbing: the two easings would
+//! disagree frame by frame, so the retail channel only makes sense alongside a
+//! toggle that picks which one drives the camera. That is why this is disclosed
+//! rather than wired - wiring it silently would change camera feel.
+//!
 //! REF: FUN_801D6704 (seeds the global to `0x3C`), FUN_801DBA20 (the zone query
 //! that supplies the target angle)
 
@@ -71,13 +80,23 @@ pub struct CameraEaseInput {
 ///    step [`STEP_MAX`] outright.
 /// 2. **Settled** - the player's facing equals its target *and* its Z equals
 ///    its target: step [`STEP_SETTLED`].
-/// 3. **Adaptive** - otherwise `|gap| / 16 + 1`, capped at [`STEP_MAX`].
+/// 3. **Adaptive** - otherwise derived from the gap, capped at [`STEP_MAX`].
 ///
-/// The `+ 1` has a quirk worth keeping: retail computes `v = gap >> 4` then
-/// `v + 1`, and falls back to `v` when `v + 1 < 2`. So a gap small enough to
-/// shift to zero yields a step of `1`, but a *negative* shifted gap yields the
-/// negative value rather than `0` - the step can be negative, and the caller's
-/// clamp is what stops it moving the wrong way.
+/// The adaptive arm is `v = |current - gap| >> 4`, then **`v + 1` when
+/// `v + 1 < 2`, else `v`**. Read the branch carefully: `bne v0,zero,0x801da46c`
+/// jumps *past* `move a0,v1`, so the `v + 1` value is what survives the taken
+/// branch and `v` is the fall-through. The effect is that a gap too small to
+/// survive the shift (`v == 0`) still steps `1` - which is what lets the easing
+/// converge at all - while any `v >= 1` steps by `v` itself.
+///
+/// Getting that inversion backwards yields a step of `0` for every gap under
+/// 16 and the easing silently never arrives; the convergence test in this
+/// module is what pins it.
+///
+/// NOT WIRED: reached only from [`ease_camera_yaw`], which nothing calls - same
+/// missing retail yaw channel as the module note. Exposed separately because
+/// the step rule is the part a fidelity-mode camera would want to reuse even if
+/// it drove its own accumulator.
 pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
     if input.pad & PAD_FAST_ARM != 0 && input.fast_flags & FAST_ARM_MASK != 0 {
         return STEP_MAX;
@@ -94,7 +113,8 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
     };
     let v = (spread as i16) >> STEP_SHIFT;
     let stepped = v.wrapping_add(1);
-    let step = if stepped < 2 { v } else { stepped };
+    // `bne` skips the `move a0,v1`, so `v + 1` survives the taken branch.
+    let step = if stepped < 2 { stepped } else { v };
     if step < STEP_MAX { step } else { STEP_MAX }
 }
 
@@ -198,13 +218,38 @@ mod tests {
 
     #[test]
     fn the_step_never_overshoots_the_target() {
+        // The clamp only bites where the step can exceed the remaining room,
+        // and in the adaptive arm it never can (step is the gap shifted right,
+        // so it is always <= the gap). The fast arm is where it matters: the
+        // step is pinned at 12 whatever the gap.
         let mut i = input();
-        i.facing_target = 5;
+        i.pad = PAD_FAST_ARM;
+        i.fast_flags = 0x1000;
         i.zone_angle = 3;
         i.current = 0;
-        // gap 3 with a step of at least 1: lands exactly on 3, not past it.
-        let out = ease_camera_yaw(i);
-        assert_eq!(out, 3);
+        assert_eq!(ease_step(i, 3), STEP_MAX);
+        assert_eq!(ease_camera_yaw(i), 3, "lands on the target, not past it");
+        // Same from above.
+        i.zone_angle = 0;
+        i.current = 3;
+        assert_eq!(ease_camera_yaw(i), 0);
+    }
+
+    #[test]
+    fn a_small_gap_creeps_one_unit_at_a_time() {
+        // `v = gap >> 4` is 0 for any gap under 16, and the `v + 1` arm turns
+        // that into a step of 1 rather than 0. A step of 0 would stall the
+        // easing forever, which is what an inverted branch here produces.
+        let mut i = input();
+        i.facing_target = 5; // not settled, so this is the adaptive arm
+        i.zone_angle = 3;
+        i.current = 0;
+        assert_eq!(ease_step(i, 3), 1);
+        assert_eq!(ease_camera_yaw(i), 1);
+        for gap in 1..16i16 {
+            i.zone_angle = gap as u16;
+            assert_eq!(ease_step(i, gap), 1, "gap {gap} must still move");
+        }
     }
 
     #[test]

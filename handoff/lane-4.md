@@ -8,7 +8,7 @@ Six `REAL` rows, all ported into `crates/engine-core`. One wired, five disclosed
 | Addr | What it is | Port | Wiring |
 |---|---|---|---|
 | `801d6704` | Field / town scene init ("MAIN_INIT") | `mode_entry_init` | **wired** - `SceneHost::enter_field_scene` seats the player through `field_spawn` |
-| `801d9d3c` | Enemy target-selection-menu builder (battle overlay) | `target_picker::enemy_menu_rows` / `layout_enemy_menu_rows` | **wired** (label half) - `BattleSession::open_target_picker{,_mut}` rebuild the rows |
+| `801d9d3c` | Enemy target-selection-menu builder (battle overlay) | `target_picker::enemy_menu_rows` / `layout_enemy_menu_rows` | **disclosed** - I first reported this wired; it is not. See the correction below. |
 | `801dea50` | Battle action effect-script stepper | `action_effect_script` | disclosed |
 | `801cfa48` | Effect-ribbon geometry emitter (render mode 4, `0x2000` arm) | `effect_ribbon` | disclosed |
 | `801cf00c` | Baka Fighter duel-arena overlay init | `mode_entry_init::duel_overlay_init` | disclosed |
@@ -200,3 +200,101 @@ a paraphrase - the thing this wave is auditing for. A token
 `STATE_COUNT = 38` constant would have moved a number without porting a
 function. The state space is now mapped, so the next lane starts from the
 table rather than from the address.
+
+## A real port bug the tests caught (fixed in a follow-up commit)
+
+`camera_ease::ease_step` had an **inverted branch**, and it is the kind that
+does not look wrong in isolation.
+
+```
+801da450  addiu v0,v1,0x1        # v0 = v + 1
+801da454  move a0,v0             # a0 = v + 1
+801da458  slti v0,v0,0x2         # (v + 1) < 2 ?
+801da45c  bne v0,zero,0x801da46c # TAKEN -> skips the next move
+801da460  _sll v0,a0,0x10
+801da464  move a0,v1             # a0 = v      (fall-through only)
+```
+
+The taken branch jumps **past** `move a0,v1`, so `v + 1` is what survives when
+the condition holds and `v` is the fall-through. I had written it the other way
+round, which yields a step of `0` for every gap under 16 - the easing then
+never converges, it just sits one shift-width short of its target forever.
+
+Two things are worth drawing out:
+
+- **The bug is invisible to a spot check.** Every individual value is
+  plausible, the function returns, nothing overflows, and the large-gap
+  behaviour (the case anyone would eyeball) is completely correct. Only the
+  small-gap tail is wrong.
+- **The test that caught it was written from the disassembly's *intent*, not
+  from the port's behaviour.** `easing_converges_from_either_side_and_then_holds`
+  asserts a property the retail routine must have - a follow camera that never
+  arrives is not a camera - rather than asserting whatever the code happened to
+  compute. A test written from the implementation would have passed.
+
+One of the two failures was my test being wrong rather than the port: the
+overshoot clamp cannot bite in the adaptive arm at all (the step is the gap
+shifted right, so it is always `<=` the gap). It only bites on the fast arm,
+where the step is pinned at 12 regardless of gap. That test now exercises the
+fast arm, and a new `a_small_gap_creeps_one_unit_at_a_time` pins the branch
+direction directly.
+
+---
+
+# Correction: `801d9d3c` was **not** wired
+
+I reported it twice as wired via `BattleSession::open_target_picker{,_mut}`.
+The live audit disagreed, and the audit is right.
+
+`open_target_picker` and `push_command_with_target` have **no production
+caller**. A corpus grep finds them only in `battle_session/tests.rs` and
+`tests/playable_shell_e2e.rs`. The three hosts that actually open a picker -
+`battle_arts`, `battle_input`, `battle_magic` - each construct
+`TargetPickerSession` **directly** and never route through `BattleSession`. So
+`rebuild_enemy_menu_rows` sits on a method of a type nothing reaches on a host
+path.
+
+The error was in what I checked. I grepped for callers of the *function*, found
+several, and stopped - without asking whether anything reaches the **type**.
+Reaching a method on `BattleSession` is not the same as `BattleSession` being
+reached, and a call site inside a `#[cfg(test)]` module or a `tests/` binary
+looks identical to a production one under a plain grep.
+
+The contrast with the one port that *is* wired is the useful part:
+
+| | `field_spawn` (801d6704) | `rebuild_enemy_menu_rows` (801d9d3c) |
+|---|---|---|
+| direct caller | `SceneHost::enter_field_scene` | `BattleSession::open_target_picker` |
+| that caller's callers | `BootSession` (`boot.rs`), `legaia-engine` `commands/run.rs`, the `play-window` redraw path | `battle_session/tests.rs`, `tests/playable_shell_e2e.rs` |
+| reaches a binary? | **yes** | **no** |
+
+Both looked equally "wired" one hop out. Only the second hop separates them.
+The `field_spawn` doc now names its chain explicitly so the claim is
+hand-checkable rather than asserted.
+
+## Disclosure pass
+
+Every `PORT:` doc block across this lane's eight touched files now either
+carries a `NOT WIRED:` naming its specific missing input, or is one of the two
+genuinely-live blocks in `mode_entry_init` (the module tag and `field_spawn`).
+I verified that mechanically rather than by eye - a script that groups
+contiguous comment lines into blocks and flags any block containing `PORT: FUN_`
+without `NOT WIRED`. That found **six** blocks beyond the 21 in the brief
+(module tags on `effect_ribbon` and `action_effect_script`, plus
+`TargetBand::from_scope`, `EffectRecord::at`, the `DuelOverlayInit` struct and
+`enemy_menu_rows`), all of which are equally inert and are now disclosed too.
+
+Recurring missing inputs, so the wiring work reads as a short list rather than
+21 separate problems:
+
+- **Actors carry no `+0x0C` per-frame handler address** - blocks `801d7518`,
+  `801ddc20`, `801d9c3c`, `801de478` (4 addresses, 2 modules).
+- **No GPU packet chain / render-mode-4 channel** - blocks `801cfa48` and the
+  panel-layout half of `801e6984`.
+- **No effect-script block on the battle-action path** - blocks all of
+  `801dea50`.
+- **No projected screen X** (a renderer output) - blocks the layout half of
+  `801d9d3c`.
+- **Retail camera-yaw channel is a fidelity-mode decision, not plumbing** -
+  `801da390`. Wiring it silently would change camera feel, so it should land
+  behind a toggle or not at all.

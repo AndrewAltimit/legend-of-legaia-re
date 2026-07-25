@@ -45,6 +45,18 @@ impl BattleSession {
     /// The projected X the layout pass averages is not available here -
     /// `engine-core` is renderer-free - so the accumulator stays at `0` and the
     /// caller supplies positions.
+    ///
+    /// NOT WIRED: this is called from [`Self::open_target_picker`] and
+    /// [`Self::open_target_picker_mut`], and **neither has a production
+    /// caller** - a corpus grep finds them only in `battle_session/tests.rs`
+    /// and `tests/playable_shell_e2e.rs`. The hosts that do open a picker
+    /// (`battle_arts`, `battle_input`, `battle_magic`) construct
+    /// [`crate::target_picker::TargetPickerSession`] directly and never route
+    /// through `BattleSession`, so nothing on a host path reaches this. The
+    /// missing input is a `BattleSession`-mediated picker open: until one of
+    /// those three routes through the session instead of the picker type, the
+    /// row rebuild has no live entry. Reaching a method on `BattleSession` is
+    /// not the same as `BattleSession` being reached.
     fn rebuild_enemy_menu_rows(&mut self, world: &World) {
         let mut ids = [0u8; crate::target_picker::FORMATION_SLOTS];
         let mut names: Vec<String> = Vec::new();

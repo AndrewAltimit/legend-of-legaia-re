@@ -32,6 +32,14 @@
 //! [`docs/formats/move-power.md`](../../../docs/formats/move-power.md) for the
 //! record the terminator installs.
 //!
+//! NOT WIRED (whole module). The retail caller is the battle-action SM
+//! `FUN_801E295C`, whose engine port drives typed art strikes: there is no
+//! `ctx[+0x1014]` move-power slot, no per-target `+0x1144` homing block, and no
+//! actor `+0x1F5` cursor to advance. The disc side is closer than the runtime
+//! side - `legaia_asset::move_power` already parses the record the terminator
+//! installs - so what is missing is a battle-action path that carries the
+//! active move's effect-script block, not the data itself.
+//!
 //! REF: FUN_80050ED4, FUN_801DFDF0 (effect spawn), FUN_801E295C (the action SM
 //! that drives this), FUN_80019B28 (the bearing helper)
 
@@ -91,6 +99,12 @@ pub const MOVE_POWER_STRIDE: usize = 0x1A;
 ///
 /// Retail's loop is `for (i = 0; first + i <= last; i++)`, so an empty band is
 /// impossible - the single-slot form always runs once.
+///
+/// NOT WIRED: classified only from [`step_effect_script`]'s terminator arm,
+/// which has no caller. Its input is the acting actor's `+0x1DD` scope byte -
+/// engine battle actors carry a typed target selection
+/// ([`crate::target_picker::TargetKind`]) instead, so nothing produces the raw
+/// byte this reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetBand {
     /// First slot index the sweep visits.
@@ -141,6 +155,11 @@ impl EffectRecord {
     /// Decode the record at `cursor` from a script block.
     ///
     /// PORT: FUN_801DEA50 (`0x801dec84..0x801ded48`).
+    ///
+    /// NOT WIRED: reached only from [`step_effect_script`], which has no
+    /// caller. The missing input is the script block itself - no engine path
+    /// loads a move's 8-byte effect-script stream, which is the same gap the
+    /// module note names.
     pub fn at(block: &[u8], cursor: u8) -> Option<Self> {
         let o = RECORD_BASE + usize::from(cursor) * RECORD_STRIDE;
         let r = block.get(o..o + RECORD_STRIDE)?;
@@ -196,6 +215,13 @@ pub trait RotationLut {
 /// The two blocks that use this differ only in the angle: the direct-spawn
 /// branch takes `facing & 0xFFF` ([`FacingBias::None`]) and the table branch
 /// takes `(facing + 0x800) & 0xFFF` ([`FacingBias::Half`]).
+///
+/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// It also needs a [`RotationLut`] the engine does not hold - retail's pair of
+/// `i16` LUTs behind `_DAT_8007B7F8` / `_DAT_8007B81C` are disc-resident tables
+/// the battle overlay dereferences, and `engine-core` has no loader for them
+/// (`engine-vm::battle_formulas` does its trig in floating point instead). A
+/// caller must supply both the script block and the LUT pair.
 pub fn rotate_offset<L: RotationLut>(
     lut: &L,
     facing: u16,
@@ -245,6 +271,11 @@ impl FacingBias {
 /// `scale` is the `u16` at the actor's mesh header `+0x72`. The product is
 /// biased by `0xFFF` when negative before the `>> 12`, i.e. it truncates
 /// toward zero rather than flooring.
+///
+/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// Its own missing input is narrower than the stepper's: the **mesh-header
+/// scale** at `actor[+0x22C][+0x72]`. Engine battle actors carry a typed pose
+/// and no mesh-header pointer, so nothing can supply it.
 pub fn scale_offset(off: i16, scale: u16) -> i32 {
     let p = i32::from(off) * i32::from(scale);
     let p = if p < 0 { p + 0xFFF } else { p };
@@ -262,6 +293,14 @@ pub fn scale_offset(off: i16, scale: u16) -> i32 {
 ///
 /// Returns `None` for action `0` (no queued action - the read would run off the
 /// front of the map).
+///
+/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// The map it indexes *is* reachable - `legaia_asset::move_power` parses the
+/// same table this offset addresses - so the missing input here is only the
+/// caller, not the data. A battle-action path that carried the acting actor's
+/// `+0x1DF` queued-action byte alongside the parsed table could call this
+/// directly; note the off-by-one (`map[action - 1]`, not `map[action]`), which
+/// is the part worth having pinned before anyone wires it.
 pub fn move_power_record_offset(map: &[u8], action: u8) -> Option<usize> {
     let idx = usize::from(action).checked_sub(1)?;
     let id = usize::from(*map.get(idx)?);

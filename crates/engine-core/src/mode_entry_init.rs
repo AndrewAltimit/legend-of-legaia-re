@@ -151,6 +151,13 @@ fn tile_of(v: i32) -> i32 {
 /// [`FIELD_COLD_SPAWN`], and a warp's landing position comes from the
 /// player-actor stores at `0x801d6f5c..0x801d6f7c` fed by the `recentre`
 /// branch above - not from a sub-tile offset.
+///
+/// WIRED, and the chain is: the `legaia-engine` binary
+/// (`commands/run.rs`, and the `play-window` redraw path) and
+/// `engine_shell::BootSession::…` (`boot.rs`) both call
+/// [`crate::scene::SceneHost::enter_field_scene`], which calls this to seat the
+/// player on a cold field entry. Every other kernel in this module is inert and
+/// says so individually - being in a live module is not itself evidence.
 pub fn field_spawn(
     mode: FieldEntryMode,
     anchor: (i16, i16),
@@ -227,6 +234,15 @@ pub struct FieldBgmPlan {
 /// [`crate::music_labels`] resolves - global id `2000 + i` is `music_01`
 /// track `i`, and `0x7D0` is exactly `2000`, so "below 2000" *is* "not a
 /// global track id".
+///
+/// NOT WIRED: the engine's BGM director selects a track from the scene's own
+/// `scene_vab_stream` SEQ entries ([`crate::scene_assets`]) rather than from a
+/// resident id, so it has neither of this kernel's two inputs: the pending-BGM
+/// word `_DAT_8007BAC8` and the per-scene sequence base `_DAT_80084540`. The
+/// slot arithmetic only means anything once a scene entry carries a retail BGM
+/// **id**; today it carries a decoded SEQ. Wiring this is the same change that
+/// would let [`crate::music_labels`] name the track a scene is about to start
+/// rather than the one already playing.
 pub fn field_bgm_plan(
     bgm_id: u32,
     seq_base: u32,
@@ -265,6 +281,15 @@ pub const FIELD_PRIM_BUFFER_FIXED: u32 = 0x2800;
 /// the alternate double-buffer addresses; every other combination scales with
 /// the TMD count. Retail encodes the scale as `(count << 16) >> 6`, i.e. 1 KB
 /// per TMD on the sign-extended `s16` count.
+///
+/// NOT WIRED: the engine allocates no GPU primitive buffer. Retail sizes one
+/// arena up front because the PSX ordering table is a fixed block the frame
+/// builder fills; `engine-render` builds draw lists on wgpu and lets the
+/// backend own the allocation, so there is no consumer for a byte count and no
+/// `FUN_8001E3B8` counterpart to hand it to. The kernel is kept because the
+/// **ratio** is a fidelity datum - it says a retail scene budgets 1 KB of
+/// primitive space per parsed TMD - which a future faithful-mode arena would
+/// need.
 pub fn field_prim_buffer_bytes(tmd_count: i16, fixed: bool) -> u32 {
     if fixed {
         FIELD_PRIM_BUFFER_FIXED
@@ -383,6 +408,9 @@ pub const FIELD_INIT_STEPS: [FieldInitStep; 16] = [
 /// by-name load when the debug flag `_DAT_8007B8C2` is clear, an id load when
 /// it is set) and no loops. Each field below is one of its stores, keyed by
 /// the runtime global it writes.
+///
+/// NOT WIRED: only [`duel_overlay_init`] builds this, and nothing calls that -
+/// see its note. The duel's engine entry is a match state, not an overlay load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DuelOverlayInit {
     /// Display width handed to `FUN_8001DAF8` (`0x140` = 320).

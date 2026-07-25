@@ -498,6 +498,12 @@ pub struct EnemyMenuRow {
 /// `projected_x` is each slot's projected screen position (the battle actor's
 /// `+0x34` word); the builder accumulates it per row so
 /// [`layout_enemy_menu_rows`] can average it.
+///
+/// NOT WIRED: its only caller is `BattleSession::rebuild_enemy_menu_rows`,
+/// which is itself off every host path - `BattleSession::open_target_picker`
+/// exists but nothing in production calls it (the hosts that open a picker
+/// build a [`TargetPickerSession`] directly). See that method's note for the
+/// specific missing link.
 pub fn enemy_menu_rows(
     formation: [u8; FORMATION_SLOTS],
     dedup_glyph: u8,
@@ -572,6 +578,15 @@ pub fn enemy_menu_rows(
 /// keeps its raw centred position and is never clamped.
 ///
 /// `text_width_of` measures a row's label in pixels (retail's `FUN_80035F04`).
+///
+/// NOT WIRED: nothing calls this. Two inputs are missing and both live outside
+/// `engine-core`. The **projected screen X** each row averages is the battle
+/// actor's `+0x34` - a GTE projection result the renderer owns, and this crate
+/// is renderer-free, so [`enemy_menu_rows`] leaves the accumulator at `0`. The
+/// **text measurer** is retail's proportional `FUN_80035F04` over the
+/// `legaia-font` atlas, which `engine-ui` holds. The layout is therefore a pure
+/// kernel awaiting a caller that has both; it takes them as parameters for
+/// exactly that reason.
 pub fn layout_enemy_menu_rows(
     rows: &mut [EnemyMenuRow],
     mut text_width_of: impl FnMut(&str) -> i16,
