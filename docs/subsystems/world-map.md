@@ -1757,7 +1757,7 @@ arm path that sets the gate plus a small param block.
 ### Per-frame dispatch (SCUS-resident)
 
 Two SCUS-resident handlers from the 28-mode dispatch table at
-`0x8007078C` ([game-mode state machine](../reference/functions.md#game-mode-state-machine))
+`0x8007078C` ([game-mode state machine](../reference/functions/game-modes.md#game-mode-state-machine))
 reach the world-map render tick:
 
 | Address | Mode-table role | Tick call |

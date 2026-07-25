@@ -169,7 +169,7 @@ How the runtime engine works.
 
 | Doc | Covers |
 |---|---|
-| [`functions.md`](docs/reference/functions.md) | Notable Ghidra-traced function entry points (the canonical directory). |
+| [`functions.md`](docs/reference/functions.md) | Notable Ghidra-traced function entry points (the canonical directory) - index page over the per-subsystem tables in `docs/reference/functions/`. |
 | [`memory-map.md`](docs/reference/memory-map.md) | RAM map + key globals. |
 | [`builds.md`](docs/reference/builds.md) | TCRF region data; known builds. |
 | [`cheats.md`](docs/reference/cheats.md) | GameShark / Mednafen cheat database parser + classifier; pinned RAM offsets for character record, inventory, battle actor, story flags. |

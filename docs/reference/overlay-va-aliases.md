@@ -57,8 +57,8 @@ follows different case bodies in each dump.
 | `0x801E63E0` | `0x167E8` | inside `801CFA48` | 24 instructions matched. |
 | `0x801E6F30` | `0x167E8` | `801D0748` | The battle main dispatcher. |
 | `0x801EE4B8` | `0x167E8` | inside `801D71B8` | 9 instructions matched. |
-| `0x801F1FC8` | `0x167E8` | inside `801DB7B0` | See [`functions.md`](functions.md#801db7b0). |
-| `0x801F4318` | `0x167E8` | `801DDB30` | See [`functions.md`](functions.md#801ddb30). |
+| `0x801F1FC8` | `0x167E8` | inside `801DB7B0` | See [`functions.md`](functions/script-vms.md#801db7b0). |
+| `0x801F4318` | `0x167E8` | `801DDB30` | See [`functions.md`](functions/battle.md#801ddb30). |
 | `0x801F8D0C` | `0x167E8` | `801E2524` | Battle-action leaf, 75 instructions. |
 | `0x801FDDE8` | `0x25000` | `801D8DE8` | HUD / element renderer. |
 | `0x80202BCC` | `0x167E8` | `801EC3E4` | The arts-power kernel. |
@@ -73,7 +73,7 @@ that body is a per-frame pass over battle-context bytes `+0x28B` (stage) and
 `+0x28C` (level), emitting up to four `FUN_801E2650` layers gated at
 `0xF0`/`0xE0`/`0xD0` and walking the level by `DAT_1F800393 << 3` to a `0xF0`
 ceiling. That is, line for line, the already-documented battle screen-flash ramp
-[`801E2524`](functions.md#audio) - which is exactly where `- 0x167E8` puts it.
+[`801E2524`](functions/audio.md#audio) - which is exactly where `- 0x167E8` puts it.
 The arithmetic and the semantics agree without either having been used to derive
 the other.
 

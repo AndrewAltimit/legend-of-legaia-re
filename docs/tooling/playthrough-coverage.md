@@ -681,7 +681,7 @@ all at `game_mode 0x15`.
 **SCUS (11) - the always-resident on-screen-element family (all documented).**
 These are the HUD/2D-element helpers the battle draw path runs through (SCUS is
 shared, so the field/menu HUD uses them too). They form three coherent groups,
-now in [`functions.md` § Battle on-screen elements](../reference/functions.md#battle-on-screen-elements-hud--2d-spriteeffect-list):
+now in [`functions.md` § Battle on-screen elements](../reference/functions/battle.md#battle-on-screen-elements-hud--2d-spriteeffect-list):
 
 - **Party status HUD** - `FUN_8002CDD0` (panel) → `FUN_8002C2E4` (per-member row:
   HP bar + number, or a status icon selected by a 9-way priority decode of the
@@ -710,7 +710,7 @@ function set. The resolution collapses to ~25 distinct `0898` functions, most
 already documented (their hits are interior label-calls of the battle main
 dispatcher `FUN_801D0748`, the pose driver `FUN_801D5854`, the arts/AP gauge, the
 damage/power kernels, etc.). **Several were new and are now documented** in
-[`functions.md` § Battle per-frame draw](../reference/functions.md#battle-per-frame-draw-overlay-0898-trace-surfaced):
+[`functions.md` § Battle per-frame draw](../reference/functions/battle.md#battle-per-frame-draw-overlay-0898-trace-surfaced):
 `FUN_801E2524`+`FUN_801E2650` (full-screen flash/fade overlay, `ctx+0x28B`
 trigger + `ctx+0x28C` fade ramp), `FUN_801DF6B8` (per-actor draw/position loop -
 the top consumer of the SCUS element helpers), `FUN_801D829C` (camera-state
@@ -758,7 +758,7 @@ they lie in the `0898` program (`overlay_battle_action.bin`, spanning
     is resident *because S5 is the tutorial fight*, and its per-frame message-
     pacing driver `FUN_801F71E0` is the hot hit. Dumped at the correct base
     (`dump_effect_overlay_0967.py`, import at `0x801F69D8`) + documented in
-    [`functions.md` § Battle sparring-tutorial overlay](../reference/functions.md#battle-sparring-tutorial-overlay-prot-0967).
+    [`functions.md` § Battle sparring-tutorial overlay](../reference/functions/battle.md#battle-sparring-tutorial-overlay-prot-0967).
     **The render-tail thread is closed.**
 
 ### S6 first non-tutorial battle: command-menu persistence + the context-multiplexed effect-overlay slot
@@ -786,7 +786,7 @@ find - the command-menu layer the scripted spar never exercised:
   is why S6 surfaced it and S5 (single scripted opponent) did not.
 
 Documented in [`functions.md` § Battle command-block persistence + target
-menu](../reference/functions.md#battle-command-block-persistence--target-menu-overlay-0898-trace-surfaced).
+menu](../reference/functions/battle.md#battle-command-block-persistence--target-menu-overlay-0898-trace-surfaced).
 
 **The `0x801F69D8` co-resident slot is context-multiplexed** (this closes the
 S5 open thread "what is the `0x801F6xxx` render band in *other* battles"). The
@@ -819,7 +819,7 @@ resident here (the anchor is field mode), and the cluster is code in the partial
 sequences the battle-mesh assembly + battle-BGM/scene load across a phase
 counter, runs the camera-spin timer against `DAT_801D2458`, and ends by writing
 the game-mode handoff `_DAT_8007B83C = 0x14` - documented in [`functions.md`
-§ Field->battle transition overlay](../reference/functions.md#field-battle-transition-overlay-intro-camera-spin),
+§ Field->battle transition overlay](../reference/functions/battle.md#field-battle-transition-overlay-intro-camera-spin),
 alongside the intro particle-effect builder `0x801CFBB4`. **Lesson (again): a
 trace hit's overlay is decided by which overlay was *executing* at that VA, and
 live-RAM presence of matching bytes is not that proof - the same VA is a data

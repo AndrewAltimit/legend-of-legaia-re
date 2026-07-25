@@ -245,7 +245,7 @@ Beyond the two 3D TMD renderers and the gradient-tile primitive, the SCUS render
 band carries a set of smaller GTE/GPU emitters. The clean-room engine reproduces
 all of these through its own wgpu path, so they are **documented, not ported** -
 their per-address roles live in
-[`reference/functions.md` § Renderer / GPU primitives](../reference/functions.md#renderer--gpu-primitives):
+[`reference/functions.md` § Renderer / GPU primitives](../reference/functions/renderer.md#renderer--gpu-primitives):
 
 - **`FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48`** - the three multi-target
   primitive emitters the per-actor RENDER dispatcher `FUN_8001ADA4` case 4 picks
@@ -1004,7 +1004,7 @@ per-op wrappers. The libgte per-op wrapper family the link carries anyway
 projector, and the staging loaders) has **no static caller** in `SCUS_942.54`
 and no hit in any runtime hot profile - library link residue, not a render
 seam. The full per-address table lives in
-[`reference/functions.md` § libgte primitives](../reference/functions.md#libgte-primitives);
+[`reference/functions.md` § libgte primitives](../reference/functions/runtime-libs.md#libgte-primitives);
 the family is ignore-listed in the port catalog.
 
 ### GTE register-state emulator
