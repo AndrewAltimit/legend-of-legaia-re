@@ -52,7 +52,6 @@ use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
 use legaia_engine_core::fishing::FishingSession;
-use legaia_engine_core::muscle_dome::MuscleDomeSession;
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
 
@@ -112,11 +111,20 @@ pub struct LegaiaMinigames {
     /// (`FishingSpecies::name`) resolve against it.
     fishing_overlay: Option<Vec<u8>>,
 
-    /// Live Muscle Dome contest (see `minigames_muscle.rs`).
-    muscle: Option<MuscleDomeSession>,
-    /// The four dealt hand command ids (deck table, PROT 0898 rodata; cached so
-    /// each fresh contest rebuilds the hand without re-decoding).
-    muscle_hand: Option<[u8; 4]>,
+    /// Live Muscle Dome contest (see `minigames_muscle.rs`): the rules session
+    /// plus the disc-derived fighter stats, RNG cursor and round play log.
+    muscle: Option<muscle_web::MuscleContest>,
+    /// The Muscle Dome's cached battle tables (deck hand ids, move-power table
+    /// + id map, element-affinity matrix - all PROT 0898 rodata), decoded once
+    /// per disc so each fresh contest rebuilds without re-decoding.
+    muscle_tables: Option<muscle_web::MuscleTables>,
+
+    /// `SCUS_942.54` bytes, kept when the input was a full disc image (absent
+    /// for a raw `PROT.DAT` load). The Muscle Dome reads the new-game
+    /// starting-party template + per-level growth curves out of it to seed the
+    /// player fighter's battle stats, and the spell-name table to name the
+    /// reward; games degrade (and say so) without it.
+    scus: Option<Vec<u8>>,
 }
 
 impl Default for LegaiaMinigames {
@@ -182,7 +190,8 @@ impl LegaiaMinigames {
             fishing_species: None,
             fishing_overlay: None,
             muscle: None,
-            muscle_hand: None,
+            muscle_tables: None,
+            scus: None,
         }
     }
 
@@ -201,13 +210,18 @@ impl LegaiaMinigames {
     /// a reason rather than throwing - a regional / modded disc can still play
     /// the others.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
-        let prot = if disc::is_mode2_2352_disc(&bytes) {
-            disc::extract_prot_dat(&bytes).ok_or_else(|| {
+        let (prot, scus) = if disc::is_mode2_2352_disc(&bytes) {
+            // Keep the executable too: the Muscle Dome reads the new-game
+            // party template / growth curves / spell names out of it.
+            let scus = disc::extract_scus(&bytes);
+            let prot = disc::extract_prot_dat(&bytes).ok_or_else(|| {
                 JsValue::from_str("minigames: PROT.DAT not found in this disc image")
-            })?
+            })?;
+            (prot, scus)
         } else {
-            bytes
+            (bytes, None)
         };
+        self.scus = scus;
         let entries = disc::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("minigames: PROT.DAT TOC parse failed"))?;
         #[cfg(target_arch = "wasm32")]
@@ -225,7 +239,7 @@ impl LegaiaMinigames {
         self.fishing_species = None;
         self.fishing_overlay = None;
         self.muscle = None;
-        self.muscle_hand = None;
+        self.muscle_tables = None;
 
         // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
         //     the overlay's widget table, PROT 1228/1231 SFX) ---
