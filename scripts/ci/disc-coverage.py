@@ -26,9 +26,22 @@ misuse this page:
           inside it, and no parser currently reports consumed-vs-unconsumed
           bytes. Treat the data figure as an upper bound.
 
+Overlay images alias in VA space, so an address alone cannot say which of them a
+dump belongs to. `scripts/ghidra-analysis/dump-extent-attribution.csv` carries
+the per-extent verdict the *bytes* give, and this script applies it: an extent
+the bytes place in another image (or in none) leaves the row rather than
+inflating it. That file is committed and keyed by `(entry, bytes)`, so it does
+not rot when a dump lands. It is optional - without it every overlay extent
+stays ambiguous by address, which is the same honest upper bound, just looser.
+
 Disc-gated, like the rest of the repo: with no `extracted/` tree and no dump
 corpus this exits 0 and reports SKIPPED, so CI passes without disc data. Both
 inputs are gitignored, so this only produces numbers on a developer's machine.
+
+The DATA half reads a *cache* (`extracted/PROT/categorize.json`) that nothing
+here regenerates. A tree whose `categorize` detectors have moved on will report
+the old classification through a passing gate. Re-run `asset categorize
+extracted/PROT` before trusting a data figure or taking a baseline.
 
 No Sony bytes are emitted - the report carries addresses, byte counts and class
 names, the same things the committed docs already carry.
@@ -43,6 +56,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import glob
 import json
 import os
@@ -60,6 +74,8 @@ DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
 DEFAULT_OUT = os.path.join(REPO, "target", "disc-coverage")
 OVERLAY_MAP = os.path.join(REPO, "crates", "asset", "data", "static-overlays.toml")
 BASELINE = os.path.join(REPO, "scripts", "ci", "disc-coverage-baseline.json")
+ATTRIBUTION = os.path.join(
+    REPO, "scripts", "ghidra-analysis", "dump-extent-attribution.csv")
 
 HDR_RE = re.compile(r"^==\s+(\S+)\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)")
 SIZE_RE = re.compile(r"^size=(\d+) bytes,\s*(\d+) instructions")
@@ -113,6 +129,50 @@ def read_dump_extents(funcs_dir):
     return out, unparsed
 
 
+# Extent classes in `dump-extent-attribution.csv` whose verdict is that the
+# bytes belong to no mapped image at all - a mis-based print, a gapped stream,
+# or a region that does not disassemble. Crediting them to the image whose span
+# happens to contain the printed VA is exactly the fiction this filter removes.
+CREDIT_NOBODY = {"misbased", "data", "gapped"}
+# Classes that name the owning image(s) by bytes. `identical` names several
+# because they hold byte-identical code there, and each of them really does
+# contain those bytes, so each is credited.
+CREDIT_NAMED = {"unique", "identical"}
+# Everything else (`short`, `unresolved`, `no_disassembly`) is residue: the
+# bytes could not place the extent, so it stays ambiguous for every image whose
+# span contains it.
+
+
+def read_attribution(path=ATTRIBUTION):
+    """`{(entry, end): owner_labels_or_None}` from the byte-attribution CSV.
+
+    `None` means "credit nobody". A key absent from the map is residue - either
+    the CSV classed it unresolvable or the CSV is not there at all - and callers
+    treat both the same way, which is what makes attribution optional.
+
+    Keyed by `(entry, bytes)`, the same key `read_dump_extents` builds, so the
+    map is about *extents* rather than dump filenames and does not rot when a
+    dump lands, is renamed, or is re-dumped at the same VA.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    with open(path, newline="") as fh:
+        for row in csv.DictReader(fh):
+            try:
+                entry, nbytes = int(row["entry"], 16), int(row["bytes"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            klass = row.get("class")
+            if klass in CREDIT_NOBODY:
+                out[(entry, entry + nbytes)] = None
+            elif klass in CREDIT_NAMED:
+                out[(entry, entry + nbytes)] = {
+                    n.split("(")[0] for n in (row.get("image") or "").split("|")
+                    if n and n != "-"}
+    return out
+
+
 def merge(intervals):
     merged = []
     for a, b in sorted(intervals):
@@ -137,10 +197,24 @@ def classify_gap(image, base_va, a, b):
     return plausible >= CODE_PLAUSIBLE_MIN and ptrs < CODE_PTR_MAX
 
 
-def cover_image(name, image, base_va, span, extents):
-    """Coverage of one loaded image. `span` is its byte length."""
+def cover_image(name, image, base_va, span, extents, attrib=None):
+    """Coverage of one loaded image. `span` is its byte length.
+
+    `attrib` is the byte-attribution map. Where it places an extent in some
+    other image - or in none - the extent is dropped from this image rather
+    than counted for it. Pass `None` for an image with no VA aliasing
+    (`SCUS_942.54`): the filter must not touch a row that is already exact.
+    """
     lo, hi = base_va, base_va + span
-    mine = [(a, min(b, hi)) for a, b in extents if lo <= a < hi]
+    mine, dropped = [], 0
+    for a, b in extents:
+        if not lo <= a < hi:
+            continue
+        owners = (attrib or {}).get((a, b), "residue")
+        if owners != "residue" and (owners is None or name not in owners):
+            dropped += 1
+            continue
+        mine.append((a, min(b, hi)))
     merged = merge(mine)
     covered = sum(b - a for a, b in merged)
 
@@ -167,6 +241,7 @@ def cover_image(name, image, base_va, span, extents):
         "base_va": base_va,
         "span": span,
         "dumps": len(mine),
+        "attributed_out": dropped,
         "covered": covered,
         "code_gap": code_gap,
         "data_gap": data_gap,
@@ -189,9 +264,10 @@ def scus_report(extracted, extents):
     return cover_image("SCUS_942.54", image, t_addr, t_size, extents)
 
 
-def overlay_reports(extracted, extents):
+def overlay_reports(extracted, extents, attrib=None):
     if not os.path.exists(OVERLAY_MAP):
-        return [], 0
+        return [], (0, 0, 0)
+    attrib = attrib or {}
     rows = tomllib.load(open(OVERLAY_MAP, "rb")).get("overlays", [])
     out = []
     spans = []
@@ -211,31 +287,50 @@ def overlay_reports(extracted, extents):
         image = open(candidates[0], "rb").read()[:span]
         if len(image) < span:
             span = len(image)
-        row = cover_image(label, image, base, span, extents)
+        row = cover_image(label, image, base, span, extents, attrib=attrib)
         row["_image_span"] = (base, base + span)
         out.append(row)
         spans.append((base, base + span, label))
 
-    # Overlays alias in VA space (several share 0x801CE818), so a dump can fall
-    # inside more than one image's span and be counted by each. That is a real
-    # ambiguity, not something to paper over: quantify it and let the reader
-    # discount accordingly.
-    ambiguous = 0
-    for a, _b in extents:
-        if sum(1 for lo, hi, _ in spans if lo <= a < hi) > 1:
-            ambiguous += 1
+    # Overlays alias in VA space (several share 0x801CE818, and the two measured
+    # spans are nested), so an extent can fall inside more than one image's span
+    # and be counted by each. That is a real ambiguity, not something to paper
+    # over: quantify it and let the reader discount accordingly.
+    #
+    # This whole block counts DISTINCT extents, not dump files. One extent can
+    # back dozens of dumps - the phantom-print batches are the extreme case -
+    # and weighting the ambiguity by how often we happened to dump the same
+    # bytes measures the corpus rather than the image. Distinct extents are also
+    # the key `dump-extent-attribution.csv` is written on, so the report and the
+    # artifact are the same denominator and can be compared directly.
+    distinct = sorted(set(extents))
+    ambiguous = [k for k in distinct
+                 if sum(1 for lo, hi, _ in spans if lo <= k[0] < hi) > 1]
+    resolved = sum(1 for k in ambiguous if k in attrib)
+    totals = (len(ambiguous), resolved, len(ambiguous) - resolved)
 
-    # Per-image share of attributed dumps that could equally belong to another
-    # mapped overlay. A row whose share is high has no defensible number at all,
-    # and the table says so on the row rather than in prose underneath it.
+    # Per-image share of this image's extents that the bytes could not place.
+    # An extent the bytes assign elsewhere is no longer ambiguous *for this
+    # image* - it is simply not this image's - so it leaves the numerator and
+    # the denominator both. A row whose remaining share is high has no
+    # defensible number at all, and the table says so ON the row rather than in
+    # prose underneath it.
     for row in out:
         lo, hi = row.pop("_image_span")
-        mine = [a for a, _ in extents if lo <= a < hi]
-        amb = sum(1 for a in mine
-                  if sum(1 for l2, h2, _ in spans if l2 <= a < h2) > 1)
-        row["ambiguous"] = amb
-        row["ambiguous_pct"] = (100.0 * amb / len(mine)) if mine else 0.0
-    return out, ambiguous
+        mine = [k for k in distinct if lo <= k[0] < hi]
+        resid = dropped = 0
+        for k in mine:
+            if sum(1 for l2, h2, _ in spans if l2 <= k[0] < h2) <= 1:
+                continue  # unambiguous by address; attribution has nothing to do
+            owners = attrib.get(k, "residue")
+            if owners == "residue":
+                resid += 1
+            elif owners is None or row["name"] not in owners:
+                dropped += 1
+        kept = len(mine) - dropped
+        row["ambiguous"] = resid
+        row["ambiguous_pct"] = (100.0 * resid / kept) if kept else 0.0
+    return out, totals
 
 
 def data_report(extracted):
@@ -269,7 +364,8 @@ def data_report(extracted):
     }
 
 
-def render(scus, overlays, ambiguous, data, unparsed):
+def render(scus, overlays, amb_totals, data, unparsed, attributed):
+    ambiguous, resolved, residue = amb_totals
     L = []
     add = L.append
     add("# Disc coverage")
@@ -305,19 +401,36 @@ def render(scus, overlays, ambiguous, data, unparsed):
         if amb is None:
             cover, ambcell = "**%.1f%%**" % r["pct"], "-"
         elif amb >= 50.0:
-            cover, ambcell = "not meaningful", "%.0f%%" % amb
+            cover, ambcell = "not meaningful", "%.1f%%" % amb
         elif amb > 0.0:
-            cover, ambcell = "<= %.1f%%" % r["pct"], "%.0f%%" % amb
+            cover, ambcell = "<= %.1f%%" % r["pct"], "%.1f%%" % amb
         else:
             cover, ambcell = "**%.1f%%**" % r["pct"], "0%"
         add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %s |" % (
             r["name"], r["base_va"], r["span"], r["dumps"], r["covered"],
             r["code_gap"], r["data_gap"], r["code_denominator"], cover, ambcell))
     add("")
-    add("**VA-ambiguous** is the share of an image's attributed dumps whose entry "
-        "address also lands inside another mapped overlay's span. At 50% or more "
-        "the coverage figure is not reported, because address attribution alone "
-        "cannot support one.")
+    if attributed:
+        add("**VA-ambiguous** is the share of an image's extents that the *bytes* "
+            "could not place: extents whose entry address lands in more than one "
+            "mapped overlay span and which byte attribution left unresolved. An "
+            "extent the bytes assign to another image leaves this row entirely - "
+            "it is not this image's, so it is neither ambiguous for it nor "
+            "counted against it.")
+    else:
+        add("**VA-ambiguous** is the share of an image's extents whose entry "
+            "address also lands inside another mapped overlay's span.")
+    add("At 50% or more the coverage figure is not reported, because what is "
+        "left cannot support one.")
+    add("")
+    add("The share counts **distinct extents**, not dump files: one extent can "
+        "back many dumps, and weighting by how often the same bytes were dumped "
+        "would measure the corpus rather than the image. It is the same "
+        "denominator `dump-extent-attribution.csv` is keyed on, so the two can "
+        "be read against each other directly. The **dumps** column is the other "
+        "denominator and stays per dump file"
+        + (", counting only the dumps the bytes place in this image."
+           if attributed else "."))
     add("")
     if scus:
         add("`SCUS_942.54` is the only image here with an unambiguous answer: it "
@@ -332,18 +445,44 @@ def render(scus, overlays, ambiguous, data, unparsed):
             for a, b in scus["top_code_gaps"]:
                 add("| `0x%08X`..`0x%08X` | %d | %d |" % (a, b, b - a, (b - a) // 4))
             add("")
-    if overlays:
+    if overlays and attributed:
+        add("### Overlay caveat")
+        add("")
+        add("Overlay images alias in VA space - several share base `0x801CE818`, "
+            "and the two measured spans are nested - so an extent in that band "
+            f"cannot be attributed by address. **{resolved}** of the "
+            f"**{ambiguous}** ambiguous extents are resolved by bytes against the "
+            "extracted images "
+            "(`scripts/ghidra-analysis/dump-extent-attribution.csv`); "
+            f"**{residue}** remain unattributable and keep those rows an upper "
+            "bound. The residue is dominated by dump defects - windows too short "
+            "to sign, dumps carrying only decompiled C, gapped streams - so it is "
+            "repaired by re-dumping, not by extracting another overlay. See "
+            "[`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md) "
+            "and [`phantom-print-index.md`](../../docs/tooling/phantom-print-index.md).")
+        add("")
+        add("The inner of two nested spans cannot be repaired this way at all. "
+            "Every extent in it falls in both spans by construction, so most of "
+            "what it loses is loss to the outer image and the same residue is a "
+            "much larger share of what remains. That is structural, not a corpus "
+            "gap, and no amount of dumping moves it.")
+        add("")
+    elif overlays:
         add("### Overlay caveat")
         add("")
         add("Overlay images alias in VA space - several share base `0x801CE818` - "
             "so a dump whose entry lands in that band cannot be attributed to one "
             "image by address alone. Overlay rows are therefore an **upper "
             "bound**: a dump counted for one image may belong to another. "
-            f"**{ambiguous}** dump extents fall inside more than one mapped "
-            "overlay span. Resolving them needs byte-level attribution against "
-            "the extracted images - see "
+            f"**{ambiguous}** distinct dump extents fall inside more than one "
+            "mapped overlay span. Resolving them needs byte-level attribution "
+            "against the extracted images - see "
             "[`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md) "
             "and [`phantom-print-index.md`](../../docs/tooling/phantom-print-index.md).")
+        add("")
+        add("Byte-level attribution is not available "
+            "(`scripts/ghidra-analysis/dump-extent-attribution.csv` absent); "
+            "overlay rows are attributed by address alone.")
         add("")
     add("`%d` dump file(s) carried no parseable `size=` header (typically the "
         "ones that report `0 instructions` and hold only decompiled C). They are "
@@ -401,6 +540,9 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--funcs", default=DEFAULT_FUNCS)
     ap.add_argument("--extracted", default=DEFAULT_EXTRACTED)
+    ap.add_argument("--attribution", default=ATTRIBUTION,
+                    help="byte-level extent attribution CSV; absent = attribute "
+                         "overlay extents by address alone")
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--md", action="store_true",
                     help="write the markdown report to stdout as well")
@@ -423,15 +565,19 @@ def main():
         print("[disc-coverage] SKIPPED - dump corpus present but empty.")
         return 0
 
+    # Optional. Without the CSV every overlay extent stays ambiguous by address,
+    # which is the pre-attribution behaviour and still an honest upper bound.
+    attrib = read_attribution(args.attribution)
+
     scus = scus_report(args.extracted, extents)
-    overlays, ambiguous = overlay_reports(args.extracted, extents)
+    overlays, amb_totals = overlay_reports(args.extracted, extents, attrib)
     data = data_report(args.extracted)
 
     if scus is None and not overlays:
         print("[disc-coverage] SKIPPED - no extractable images found.")
         return 0
 
-    report = render(scus, overlays, ambiguous, data, unparsed)
+    report = render(scus, overlays, amb_totals, data, unparsed, bool(attrib))
     os.makedirs(args.out, exist_ok=True)
     md_path = os.path.join(args.out, "disc-coverage.md")
     with open(md_path, "w") as fh:
@@ -446,11 +592,11 @@ def main():
         amb = r.get("ambiguous_pct", 0.0)
         if amb >= 50.0:
             print("[disc-coverage] overlay %-22s not meaningful "
-                  "(%.0f%% of its dumps are VA-ambiguous)" % (r["name"], amb))
+                  "(%.1f%% of its extents are VA-ambiguous)" % (r["name"], amb))
         else:
             print("[disc-coverage] overlay %-22s %.1f%%%s" % (
                 r["name"], r["pct"],
-                "" if amb == 0 else " (<=, %.0f%% VA-ambiguous)" % amb))
+                "" if amb == 0 else " (<=, %.1f%% VA-ambiguous)" % amb))
     if data:
         print("[disc-coverage] PROT data parsed to a named format: %.1f%% "
               "(unexplained %.1f%%)" % (data["pct_parsed"], data["pct_unexplained"]))

@@ -136,20 +136,78 @@ fixed base, no aliasing.
 Overlays are different. Several are loaded at the same base (`0x801CE818`), so a
 dump whose entry lands in that band **cannot be attributed to one image by
 address alone** - the same address belongs to the battle overlay, the menu
-overlay and the field overlay at different moments. Attributing by address
-therefore counts a dump for every image whose span contains it.
+overlay and the field overlay at different moments. Attributing by address alone
+counts a dump for every image whose span contains it.
 
 Rather than publish a number that quietly double-counts, each overlay row
-carries the share of its attributed dumps that another mapped overlay could
-equally claim. Above 50% the coverage figure is replaced by **not meaningful**,
-and such rows are excluded from the ratchet baseline - a figure that moves with
-attribution rather than with real coverage would produce failures nobody can act
-on.
+carries the share of its extents that could not be placed. Above 50% the
+coverage figure is replaced by **not meaningful**, and such rows are excluded
+from the ratchet baseline - a figure that moves with attribution rather than with
+real coverage would produce failures nobody can act on.
 
-Resolving overlay coverage properly needs byte-level attribution against the
-extracted images, the same machinery described in
+### Byte-level attribution
+
+The address ambiguity is resolved where the bytes can resolve it.
+`scripts/ghidra-analysis/attribute-dump-extents.py` disassembles each extracted
+image at its `static-overlays.toml` base and asks which images actually hold a
+dump's bytes at the VA it prints. Its verdict per extent is committed as
+`scripts/ghidra-analysis/dump-extent-attribution.csv`, which `disc-coverage.py`
+reads and applies:
+
+| Verdict | Meaning | What the gate does |
+|---|---|---|
+| `unique` | one image holds those bytes there | credit only that image |
+| `identical` | several hold byte-identical code there | credit each of them |
+| `misbased` | the bytes live at another VA entirely | credit nobody |
+| `gapped` / `data` | not a coherent function body at that VA | credit nobody |
+| `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
+
+The key is `(entry, bytes)` - the **extent**, not the dump filename - so the file
+does not rot when a dump lands, is renamed, or is re-dumped at the same address.
+
+Two consequences worth stating plainly, because the first one used to be the
+whole story and the second one never goes away:
+
+- Most of what was being counted against the two measured overlays belongs to
+  images the gate does not measure at all - the field overlay, the minigame
+  overlays, the gameover overlay. Those extents now leave the row entirely
+  rather than inflating it, which is what makes the outer of the two measured
+  spans reportable.
+- **The inner of two nested spans cannot be repaired this way.** The menu
+  overlay's span lies wholly inside the battle overlay's, so every extent in it
+  falls in both by construction; most of what it loses is loss to the outer
+  image, and the same residue is a much larger share of what remains. That is
+  structural. No amount of dumping moves it, and forcing a figure would mean
+  asserting the residue belongs to the inner image when nothing in the bytes
+  says so.
+
+The residue itself is a **dump** defect rather than a corpus gap - windows too
+short to sign, dumps carrying only decompiled C, gapped streams - so it is
+repaired by re-dumping, not by extracting another overlay. See
 [`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
 [`phantom-print-index.md`](phantom-print-index.md).
+
+Attribution is **optional**. Without the CSV (`--attribution` pointing nowhere)
+every overlay extent stays ambiguous by address, which is the pre-attribution
+behaviour: an honest upper bound, just a much looser one.
+
+### The two denominators in the code table
+
+The table carries two counts that look like they should agree and do not, so it
+says which is which on the page rather than leaving a reader to reconcile them:
+
+- **dumps** is per dump *file*. With attribution present it counts only the dump
+  files whose bytes the CSV places in this image.
+- **VA-ambiguous** is per **distinct extent**. One extent can back dozens of dump
+  files - the mis-based print batches are the extreme case - and weighting the
+  ambiguity by how often the same bytes happened to be dumped measures the
+  corpus rather than the image.
+
+Per distinct extent is also the key the CSV is written on, so the report and the
+artifact can be read directly against each other. Reading the same ambiguity per
+dump file instead lands far lower on both rows - low enough that even the inner
+nested span reads as reportable - for no reason except that the mis-based
+batches are large. That is the number not to quote.
 
 ## Running it
 
@@ -160,8 +218,17 @@ python3 scripts/ci/disc-coverage.py --check      # ratchet against the baseline
 python3 scripts/ci/disc-coverage.py --update-baseline
 ```
 
-The data half needs `extracted/PROT/categorize.json`, produced by
-`asset categorize extracted/PROT`.
+The data half reads `extracted/PROT/categorize.json`. That file is a **cache**,
+not an input the script derives - it is written by `asset categorize
+extracted/PROT` and is never regenerated automatically, so a tree whose
+`categorize` detectors have moved on keeps reporting the classification they
+produced when the file was last written. The gate passes either way, which is
+exactly what makes it easy to miss. Regenerate it before trusting a data figure,
+and before taking a baseline:
+
+```bash
+./target/release/asset categorize extracted/PROT
+```
 
 ## Gate behaviour
 
