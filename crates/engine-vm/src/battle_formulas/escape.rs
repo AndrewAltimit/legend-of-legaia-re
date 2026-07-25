@@ -143,3 +143,346 @@ pub fn escape_roll(party_score: u32, enemy_score: u32, flags: EscapeFlags, rand:
     }
     !(roll_p < roll_e || flags.no_escape)
 }
+
+// ---------------------------------------------------------------------------
+// Monster escape roll (FUN_801EC0DC)
+// ---------------------------------------------------------------------------
+//
+// The enemy-side mirror of the party roll above: "does the monster in this slot
+// break off and flee this action?" Transcribed from the DISASSEMBLY in
+// `ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt` (194 instructions,
+// battle overlay 0898 at base 0x801CE818) - not from that dump's C.
+//
+// Three facts pin it as the enemy escape roll rather than, say, the capture
+// roll its caller `FUN_801E9FD4` also hosts:
+//
+//   * it opens on the same `ctx[+0x287]` no-escape gate the party roll's
+//     failure arm tests, and returns "no" unconditionally when that is set;
+//   * the `*3/2` weighting and the `missingHP >> 5` term are the party roll's
+//     own shapes, applied to the other side;
+//   * the one ability bit that can force a "no" is `record[+0xF8] & 0x400000`
+//     = bit 54 of the 64-bit accessory-passive field = passive index `0x36`,
+//     **No Escape** (Chicken Guard), whose in-game text is literally "enemies
+//     can't escape". See `docs/formats/accessory-passive-table.md`.
+//
+// Retail arithmetic, in order:
+//
+//   monster_sum = SUM over live monster slots (3..3+monster_count):
+//                     maxHP + curHP>>1 + ATK          (+0x14E, +0x14C, +0x158)
+//   for slot in 0..party_count:                        (slots 0..2)
+//       if curHP == 0 { monster_sum <<= 1 }            // a downed member
+//       else { party_sum += maxHP>>3 + curHP>>4 + ATK>>3
+//              blocked |= record[+0xF8] & 0x400000 }
+//   party_avg   = party_sum   / party_count            // retail traps on 0
+//   monster_avg = monster_sum / monster_count
+//   party_avg  += (target.maxHP - target.curHP) >> 5
+//   monster_avg = max(monster_avg, (party_avg * 3) >> 1)
+//   spread      = monster_avg - target.INT * 2;  if spread <= 0 { spread = 1 }
+//   party_roll   = party_avg   + rand() % (party_avg + target.INT)
+//   monster_roll = monster_avg + rand() % spread
+//   if monster_roll >= party_roll { return false }
+//   if rand() & 7 != 0           { return false }      // flat 1-in-8 gate
+//   !blocked
+//
+// Every sign points the same way, which is the cross-check that the reading is
+// the right way round: a *wounded* monster flees more easily (its own missing HP
+// is added to the **party** side, the side it has to beat), a *winning* monster
+// flees less (each downed party member doubles the monster side), and the
+// weighting plus the 1-in-8 gate together make a flee rare.
+
+/// One combatant folded into a monster-escape side score (`FUN_801EC0DC`).
+///
+/// Distinct from [`EscapeActor`]: the enemy roll weighs HP and **ATK**
+/// (`+0x158`), where the party roll weighs SPD (`+0x164`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FleeActor {
+    /// Current HP (actor `+0x14C`). Zero = downed; a downed *monster*
+    /// contributes nothing, a downed *party member* doubles the monster side.
+    pub hp: u16,
+    /// Max HP (actor `+0x14E`).
+    pub max_hp: u16,
+    /// Live ATK stat (actor `+0x158`).
+    pub atk: u16,
+}
+
+/// Ability bit `0x400000` of the second ability word (`record+0xF8`) = passive
+/// index `0x36` (bit 54 of the 64-bit field) - **No Escape** / Chicken Guard.
+pub const NO_ESCAPE_WORD1: u32 = 0x0040_0000;
+
+/// The two side scores of `FUN_801EC0DC`, before the averaging step.
+///
+/// `party` is indexed by battle slot `0..party_count`, `monsters` by
+/// `0..monster_count` (retail reads them from pool slots `3..`).
+/// `ability_word1` holds each party slot's character-record `+0xF8` word.
+///
+/// Returns `(monster_sum, party_sum, blocked)`.
+pub fn monster_escape_side_scores(
+    party: &[FleeActor],
+    monsters: &[FleeActor],
+    ability_word1: &[u32],
+) -> (u32, u32, bool) {
+    let mut monster_sum: u32 = 0;
+    for m in monsters {
+        if m.hp == 0 {
+            continue;
+        }
+        monster_sum = monster_sum
+            .wrapping_add(m.max_hp as u32)
+            .wrapping_add((m.hp >> 1) as u32)
+            .wrapping_add(m.atk as u32);
+    }
+
+    let mut party_sum: u32 = 0;
+    let mut blocked = false;
+    for (i, p) in party.iter().enumerate() {
+        if p.hp == 0 {
+            // The dead-member arm doubles the *monster* accumulator - retail's
+            // `sll s1,s1,0x1` sits inside the party loop, not the monster one.
+            monster_sum = monster_sum.wrapping_shl(1);
+            continue;
+        }
+        party_sum = party_sum
+            .wrapping_add((p.max_hp >> 3) as u32)
+            .wrapping_add((p.hp >> 4) as u32)
+            .wrapping_add((p.atk >> 3) as u32);
+        if ability_word1.get(i).copied().unwrap_or(0) & NO_ESCAPE_WORD1 != 0 {
+            blocked = true;
+        }
+    }
+
+    (monster_sum, party_sum, blocked)
+}
+
+/// The monster-escape decision of `FUN_801EC0DC`: `true` = the monster in
+/// `target` breaks off and flees.
+///
+/// `no_escape_flag` is `ctx[+0x287]`, the same byte [`escape_roll`] takes as
+/// [`EscapeFlags::no_escape`]. `target` is the fleeing monster's own actor
+/// (retail resolves it as pool slot `param_1`), `target_int` its INT stat
+/// (`+0x168`).
+///
+/// `rand` is called once per retail `func_0x80056798` draw **in call order**,
+/// and the third draw only happens when the score compare passes - which is why
+/// this takes a closure rather than a fixed array: an array would over-consume
+/// the stream on the common failure path.
+///
+/// Retail traps (`break 0x1C00`) when either side count is zero; this saturates
+/// the divisors at 1 instead. A live battle always has both.
+///
+/// PORT: FUN_801EC0DC
+///
+/// NOT WIRED: the only retail caller is the monster action picker
+/// `FUN_801E9FD4`, whose port is `engine-core::monster_ai` - a different crate,
+/// and one whose queue builder has no flee branch to hang this off yet. Wiring
+/// it needs the picker to own a per-monster "flee instead of act" decision that
+/// seeds action category `+0x1DE == 5`, which routes to `ctx[7] == 0x68` (the
+/// monster arm of the Run band). See `handoff/lane-3.md`.
+pub fn monster_escape_roll(
+    no_escape_flag: u8,
+    party: &[FleeActor],
+    monsters: &[FleeActor],
+    ability_word1: &[u32],
+    target: FleeActor,
+    target_int: u16,
+    mut rand: impl FnMut() -> u32,
+) -> bool {
+    if no_escape_flag != 0 {
+        return false;
+    }
+    let (monster_sum, party_sum, blocked) =
+        monster_escape_side_scores(party, monsters, ability_word1);
+
+    let mut party_avg = (party_sum / (party.len() as u32).max(1)) as i32;
+    let mut monster_avg = (monster_sum / (monsters.len() as u32).max(1)) as i32;
+
+    // `subu` then `sra 5`: a negative difference stays negative.
+    party_avg += (target.max_hp as i32 - target.hp as i32) >> 5;
+
+    let floor = party_avg.wrapping_mul(3) >> 1;
+    if monster_avg < floor {
+        monster_avg = floor;
+    }
+
+    let mut spread = monster_avg - (target_int as i32) * 2;
+    if spread <= 0 {
+        spread = 1;
+    }
+
+    let party_div = (party_avg + target_int as i32).max(1);
+    let party_roll = party_avg + (rand() % party_div as u32) as i32;
+    let monster_roll = monster_avg + (rand() % spread as u32) as i32;
+
+    if monster_roll >= party_roll {
+        return false;
+    }
+    if rand() & 7 != 0 {
+        return false;
+    }
+    !blocked
+}
+
+#[cfg(test)]
+mod monster_escape_tests {
+    use super::*;
+
+    fn healthy(hp: u16, max: u16, atk: u16) -> FleeActor {
+        FleeActor {
+            hp,
+            max_hp: max,
+            atk,
+        }
+    }
+
+    #[test]
+    fn no_escape_flag_short_circuits_before_any_draw() {
+        let mut draws = 0;
+        let out = monster_escape_roll(
+            1,
+            &[healthy(100, 100, 30)],
+            &[healthy(80, 100, 40)],
+            &[0],
+            healthy(80, 100, 40),
+            10,
+            || {
+                draws += 1;
+                0
+            },
+        );
+        assert!(!out);
+        assert_eq!(draws, 0, "the gate is the first instruction pair");
+    }
+
+    #[test]
+    fn side_scores_use_the_retail_shifts() {
+        let (m, p, blocked) =
+            monster_escape_side_scores(&[healthy(64, 128, 32)], &[healthy(200, 400, 90)], &[0]);
+        // monster: maxHP + curHP>>1 + ATK
+        assert_eq!(m, 400 + 100 + 90);
+        // party: maxHP>>3 + curHP>>4 + ATK>>3
+        assert_eq!(p, 16 + 4 + 4);
+        assert!(!blocked);
+    }
+
+    #[test]
+    fn dead_monster_contributes_nothing_dead_party_member_doubles() {
+        let live = healthy(200, 400, 90);
+        let (m_all, _, _) = monster_escape_side_scores(&[healthy(1, 1, 0)], &[live, live], &[0]);
+        let (m_one, _, _) =
+            monster_escape_side_scores(&[healthy(1, 1, 0)], &[live, healthy(0, 400, 90)], &[0]);
+        assert_eq!(m_all, 2 * (400 + 100 + 90));
+        assert_eq!(m_one, 400 + 100 + 90);
+
+        // A downed party member doubles whatever the monster loop accumulated.
+        let (m_doubled, p, _) = monster_escape_side_scores(
+            &[healthy(0, 100, 10), healthy(64, 128, 32)],
+            &[live],
+            &[0, 0],
+        );
+        assert_eq!(m_doubled, 2 * (400 + 100 + 90));
+        assert_eq!(p, 16 + 4 + 4, "the downed member adds nothing party-side");
+    }
+
+    /// A party / monster pair whose only way past the compare is the random
+    /// term. The `*3/2` floor puts the monster average at `1.5 * P` where `P` is
+    /// the party average, so `party_roll` has to spend more than half its own
+    /// modulo range to win: `P + r1%P > 1.5P + r2%(1.5P)`. `r1 = P - 1` with
+    /// `r2 = 0` is the widest such gap.
+    const PASSING_PARTY: [FleeActor; 1] = [FleeActor {
+        hp: 9000,
+        max_hp: 9000,
+        atk: 9000,
+    }];
+    const TOKEN_MONSTER: [FleeActor; 1] = [FleeActor {
+        hp: 1,
+        max_hp: 1,
+        atk: 0,
+    }];
+
+    /// The party average the pair above produces: `maxHP>>3 + curHP>>4 + ATK>>3`.
+    const PASSING_PARTY_AVG: u32 = (9000 >> 3) + (9000 >> 4) + (9000 >> 3);
+
+    #[test]
+    fn no_escape_passive_blocks_a_roll_that_otherwise_passes() {
+        let roll = |ability: u32| {
+            let mut draws = [PASSING_PARTY_AVG - 1, 0, 0].into_iter();
+            monster_escape_roll(
+                0,
+                &PASSING_PARTY,
+                &TOKEN_MONSTER,
+                &[ability],
+                TOKEN_MONSTER[0],
+                0,
+                || draws.next().unwrap(),
+            )
+        };
+        assert!(roll(0), "unblocked: the rigged compare passes");
+        assert!(!roll(NO_ESCAPE_WORD1), "Chicken Guard forces a refusal");
+    }
+
+    #[test]
+    fn one_in_eight_gate_rejects_every_nonzero_low_three_bits() {
+        for third in 0u32..8 {
+            let mut draws = [PASSING_PARTY_AVG - 1, 0, third].into_iter();
+            let out = monster_escape_roll(
+                0,
+                &PASSING_PARTY,
+                &TOKEN_MONSTER,
+                &[0],
+                TOKEN_MONSTER[0],
+                0,
+                || draws.next().unwrap(),
+            );
+            assert_eq!(out, third & 7 == 0, "third draw {third}");
+        }
+    }
+
+    #[test]
+    fn the_floor_makes_a_zero_random_term_always_lose() {
+        // Same pair, but with no help from the first draw the monster side's
+        // *3/2 floor wins outright - which is why a monster flee is rare.
+        let mut draws = [0u32, 0, 0].into_iter();
+        let out = monster_escape_roll(
+            0,
+            &PASSING_PARTY,
+            &TOKEN_MONSTER,
+            &[0],
+            TOKEN_MONSTER[0],
+            0,
+            || draws.next().unwrap(),
+        );
+        assert!(!out);
+    }
+
+    #[test]
+    fn third_draw_is_skipped_when_the_compare_fails() {
+        // A monster side that dwarfs the party side: monster_roll >= party_roll,
+        // so retail returns before the `& 7` draw.
+        let party = [healthy(8, 8, 0)];
+        let monsters = [healthy(9000, 9000, 9000)];
+        let mut n = 0;
+        let out = monster_escape_roll(0, &party, &monsters, &[0], healthy(8, 8, 0), 0, || {
+            n += 1;
+            0
+        });
+        assert!(!out);
+        assert_eq!(n, 2, "only the two modulo draws are consumed");
+    }
+
+    #[test]
+    fn monster_floor_is_at_least_three_halves_of_the_party_average() {
+        // party_sum = 8 (maxHP>>3 of 64), monster_sum = 1 -> the floor clamp
+        // lifts the monster average to (8*3)>>1 = 12, so the compare fails even
+        // though the raw monster score is tiny.
+        let party = [healthy(16, 64, 0)];
+        let monsters = [healthy(1, 2, 0)];
+        let mut n = 0;
+        let out = monster_escape_roll(0, &party, &monsters, &[0], healthy(1, 2, 0), 0, || {
+            n += 1;
+            0
+        });
+        assert!(
+            !out,
+            "the *3/2 floor keeps the monster side above the party"
+        );
+    }
+}

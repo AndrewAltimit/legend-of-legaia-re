@@ -6,7 +6,8 @@ Part of the [key function directory](../functions.md) - the conventions for read
 
 | Address | Role |
 |---|---|
-| `801D0290` | **Overlay-local PRNG** (battle-action overlay 0898). Twelve instructions, no frame; the whole state is the word at `0x801F6950`. `v = s*12 + 2` (built as `s<<2` + `s<<3`), then `s = (v << 16) + (v >> 16)` - an `addu` of the halves, so a carry propagates and it is **not** a rotate. Distinct from the SCUS BIOS `rand` thunk `FUN_80056798`, so its draws do not perturb that stream. `overlay_0897` dumps a *different* body at this VA; read the 0898 image. |
+| `801D0290` | **Overlay-local PRNG** (battle-action overlay 0898). Twelve instructions, no frame; the whole state is the word at `0x801F6950`. `v = s*12 + 2` (built as `s<<2` + `s<<3`), then `s = (v << 16) + (v >> 16)`, which **is** exactly `rotate_left(16)` - see [the PRNG section](../../subsystems/battle-action.md#overlay-local-prng-fun_801d0290) for why the `addu` cannot carry. Distinct from the SCUS BIOS `rand` thunk `FUN_80056798`, so its draws do not perturb that stream. `overlay_0897` dumps a *different* body at this VA; read the 0898 image. Ported as `engine-vm::battle_action::OverlayRng`. |
+| `801EC0DC` | **Monster escape roll** (battle overlay 0898): `(slot) -> bool`, "does this monster break off and flee?" The enemy-side mirror of the party roll `FUN_801E791C` - [details ↓](#801ec0dc). Ported as `engine-vm::battle_formulas::monster_escape_roll`. |
 | `801D5778` | **Pose-slot re-mapped copy** (battle-action overlay 0898). `(dst_slot, src_slot)` - both **indices**, scaled `*0x18` into the pose-slot array at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
 | `801D57E8` | **Pose-slot straight copy** (battle-action overlay 0898). `(dst_slot, src_slot)` over the same `0x80076C10` array and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
 | `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation - [details ↓](#80052fa0) |
@@ -163,10 +164,11 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 | `801E2524` / `801E2650` | **Battle full-screen flash / fade overlay.** `FUN_801E2524` reads a trigger byte `ctx[+0x28B]` (`_DAT_8007BD24`) and, while `1..4`, draws up to four stacked full-screen layers via `FUN_801E2650(x, brightness%, tpage_flag, level)` - each a grey GP0 quad whose brightness `= min((brightness<<8)/100, 0xFF)` - then ramps the fade-progress byte `ctx[+0x28C]` by `DAT_1F800393*8` (capped `0xF0`, which gates off the brighter layers as it climbs). The white-flash / screen-dim used on impacts and battle transitions. |
 | `801DF6B8` | **Per-actor battle draw/position loop** (1848 bytes). Iterates the 8 battle actors via the ctx order/select tables (`ctx+0x318` → `DAT_801C9370` slot, `ctx+idx*4+0x83C` liveness gate), reading each live actor's screen transform (`+0x3C`) and applying a `/10` scale (`0x66666667` magic). The builder that positions the on-screen per-actor elements (HP tags / markers) each frame; the top consumer of the SCUS on-screen-element helpers above. |
 | `801D829C` | **Camera-state per-actor transform builder** (548 bytes). Reads the battle camera-state registers `DAT_8007B790/2/4` and composes per-actor transforms over the actor table (`DAT_801C9370`) + `DAT_800840BC` - the billboard/rotation setup that orients battle 2D-in-3D elements toward the orbit camera. |
-| `801D71B8` | **Attack-phase actor sub-handler** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`; a major per-frame Attack-execution routine driving the swing arc (seeds `local = 0x400` angle). One of the hottest attack-chain bodies. |
-| `801E805C` | **Battle effect/summon-band orchestrator** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`; batches `FUN_801D8DE8(id, 0)` effect/anim requests off a count at `_DAT_801F6974`. Touches the `0x801F69xx` summon-overlay link-base window (not exercised by the Tetsu spar beyond its guard checks). |
-| `801E0080` | **Battle-arena procedural scatter/placement** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`; each frame (`DAT_1F800393`-driven) it walks a `0x1C`-stride record table at `_DAT_8007BD30+0x1010`, scans the 128-wide grid at `_DAT_8007BD30+0x10` for empty cells, and places records at RNG-chosen (`func_0x80056798`) free cells. The per-frame arena-clutter / ambient-element scatter over the battle-scene buffer; the in-`0898` half of the S5 render-tail hits. |
-| `801F0450` | **Per-party-slot Arts command-window builder** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). For each party member acting in the Attack category (`actor[+0x1DE] == 3`, gated on char-record `& 0x2000` + actor `+0x16E & 0x404`) it reads the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) + per-command AP cost `+0x74` + command-direction bytes to assemble that slot's Arts command display state. Sibling of the AP-gauge builder `FUN_801D388C`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
+| `801D71B8` | **Per-art attack-camera framing** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`. Builds a rotation / distance / look-at halfword triple on the stack (`0x400` seeds, look-at = the actor's *negated* position and facing) and dispatches per participant id `1`/`2`/`3` and then per art id `0x1A..=0x2A` through a 17-slot `jr` table, each arm folding its own halfword track from the per-phase data at `0x801F4E10`. One of the hottest attack-chain bodies. Gate + pose seed + dispatch + the `(anim_frame - 0x60) << 4` push ported as `engine-vm::battle_attack_camera`; the arms need the `0x801F4E10` table parsed. |
+| `801E805C` | **Multi-cast value readout + UI teardown** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`. Two halves: it batches `FUN_801D8DE8(id, 0)` then `(id - 4, 0)` teardown pairs off the count at `_DAT_801F6974` (row `_DAT_801F6834 + (count-1)*4`), and it renders each populated slot in `_DAT_801F6988` as a label quad plus the slot's value from `_DAT_801F6980` split into decimal digits by reciprocal divides (`0xD1B71759 >> 45` = `/10000`, `0xCCCCCCCD >> 35` = `/10`), positioned off the HP-bar widget at `ctx[+0x1074 + ctx[+0x11B6 + slot*0xC]*4]`. Kernels ported as `engine-vm::battle_value_readout`. |
+| `801E0080` | **Battle-arena emitter-driven sprite scatter** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`. A 32-slot `0x1C`-stride **emitter** pool at `_DAT_8007BD30+0x1010` spawns into a 128-slot `0x20`-stride **particle** pool at `_DAT_8007BD30+0x10`, each record driven by its own byte script (emitter step 14 bytes, particle step 6, delay bytes `<< 3`), then a third pass emits one `0x28`-byte textured quad per live particle with a brightness ramp. Whole update repeats until its cost reaches `DAT_1F800393`. Ported as `engine-vm::battle_scatter` - [details ↓](#801e0080). |
+| `801F0450` | **AI-side Arts command assembler** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). Two arms on the char-record `& 0x2000` / actor `+0x16E & 0x404` pair: a blind weighted draw from the character's learned-arts list, or a weighted candidate pool over the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) drawn against the AP gauge `actor[+0x154]`. It **writes** `actor[+0x1DF..]`, so it is an action producer rather than a display builder - [details ↓](#801f0450). Ported as `engine-vm::battle_arts_auto_combo`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
+| `801D02C0` | **Procedural battle ground grid** - the flat tiled floor the mode-`0x15` render draws under the combatants. Two GTE passes over a `_DAT_1F8003F8 x _DAT_1F8003FA` cell grid at pitch `0x200`; see [`battle.md`](../../subsystems/battle.md#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) for its place in the backdrop and [details ↓](#801d02c0) for the per-cell emit. CPU-side kernels ported as `engine-vm::battle_ground_grid`. |
 
 ## Battle sparring-tutorial overlay (PROT 0967)
 
@@ -327,8 +329,146 @@ The global pseudo-action `case 0xFF` increments the battle-mode counter `_DAT_80
 
 Generic core ported as `engine-core::World::pick_monster_action`; the per-monster-id switch + recent-target ring ported as `engine-core::monster_ai` (`decide` / `apply_recent_target_ring`, over `MonsterAiState`). `overlay_battle_action_801e9fd4.txt`.
 
+### `801EC0DC`
+
+**Monster escape roll.** `(slot) -> bool` - the enemy-side mirror of the party
+escape roll [`FUN_801E791C`](../../subsystems/battle-formulas.md#run--escape-roll---fun_801e791c),
+called from the AI picker `FUN_801E9FD4`. Reads the same `ctx[+0x287]` no-escape
+gate the party roll's failure arm tests and returns "no" outright when it is set.
+
+```text
+monster_sum = SUM over live monster slots:  maxHP + curHP>>1 + ATK
+for each party slot:
+    curHP == 0  ->  monster_sum <<= 1
+    else        ->  party_sum += maxHP>>3 + curHP>>4 + ATK>>3
+                    blocked |= record[+0xF8] & 0x400000
+party_avg   = party_sum / party_count      +  (target.maxHP - target.curHP) >> 5
+monster_avg = max(monster_sum / monster_count, (party_avg * 3) >> 1)
+spread      = max(monster_avg - target.INT * 2, 1)
+flee  iff   monster_avg + rand()%spread  <  party_avg + rand()%(party_avg + target.INT)
+            and rand() & 7 == 0 and !blocked
+```
+
+Three things pin the direction of the compare, and they agree: a wounded monster
+flees more easily (its own missing HP is added to the side it has to beat), a
+winning monster flees less (each downed party member doubles the monster side),
+and the blocking ability bit is `record[+0xF8] & 0x400000` = accessory-passive
+index `0x36`, **No Escape** / Chicken Guard, whose in-game text is "enemies can't
+escape" (see [`accessory-passive-table.md`](../../formats/accessory-passive-table.md)).
+The flat `rand() & 7` gate makes a flee at most a one-in-eight event even when
+the scores allow it. Stats are the actor block's ATK `+0x158` and INT `+0x168`
+(see [`battle-formulas.md`](../../subsystems/battle-formulas.md)).
+
+Ported as `engine-vm::battle_formulas::monster_escape_roll`;
+`see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
+
 ### `80048A08`
 
 **Battle per-actor draw.** `(actor)`. The per-frame draw for every battle actor (monster bodies, party, AND the player Seru-summon parts): loads the actor base matrix (`FUN_80026988`), runs the per-object rigid-TRS keyframe decoder `FUN_8004998C` (see [`monster-animation.md`](../../formats/monster-animation.md)), then for each TMD object composes a per-object Euler via `RotMatrixX/Y/Z` (`0x800461A4`/`629C`/`638C`) and emits through the cluster-A renderer `FUN_80043390`. Walks the actor `+0x44` mesh-table (`[u32 count, u32 group_desc_ptr[count]]`, 0x1C-byte group stride) and reads the monster-anim archive at `*(actor+0x4C)+0x88`. Ported as the battle draw in `crates/engine-vm/src/anim_vm.rs` (`// PORT: FUN_80048A08`).
 
 **Live trace - player Gimard "Burning Attack" cast (scenarios `gimard_summon_start`/`_visible`/`_burning_attack`, Vahn solo): this is the path that draws the summon - `FUN_80048A08`→`FUN_80043390` fires 35-64×/frame, while the summon-rotation candidate `FUN_801F7088` fires 0× and the move VM `FUN_80023070` only 2-3× (not a per-part driver). The player summon is posed exactly like a battle monster (per-object rigid TRS keyframes), NOT the move-VM / `FUN_801F7088` camera+local-Euler path.** `see ghidra/scripts/funcs/80048a08.txt`.
+
+### `801D02C0`
+
+**Procedural battle ground grid.** Two GTE passes over a
+`_DAT_1F8003F8 x _DAT_1F8003FA` cell grid, cell pitch `0x200`, sub-step `0x100`.
+Grid origin is `x_min = -(w>>1) * 0x200` and `z_min = -(h>>1) * 0x200 - 0x200` -
+centred in X, biased a whole cell toward the camera in Z.
+
+Pass 1 `RTPS`-projects one probe per cell at `(x_min + 0x100 + col*0x200,
+z_min + 0x100 + row*0x200)` and stores a class byte in the `0x1000`-byte buffer
+`_DAT_8007B814`: `-1` when `IR3 + 0x200 <= 0` (behind the near plane), `0` when
+that biased depth exceeds `0x6700` (too far), `1` otherwise. Pass 2 draws the `1`
+class only.
+
+Pass 2 `RTPT`-projects a **3x3 lattice** per visible cell (three rows of three at
+the sub-step) and emits **four** `POLY_GT4` sub-quads - the cell subdivided 2x2 -
+after a four-corner screen reject against `0x140 x 0xF0` (keep iff some corner is
+inside each edge). Sub-quad `(row, col)` takes sub-tile `row*2 + col`, and the
+four sub-tiles are the four `0x20 x 0x20` corners of the `(192..255)^2` UV window
+in scan order (u rising with the column, v with the row), CBA `0x77C0`, tpage
+`0x000D`, `0x34` bytes per prim.
+
+Two readings this corrects. **The sub-tiling is deterministic**: a single 64x64
+texture is stretched over one whole `0x200` cell as four quads - no cell picks a
+single sub-tile and nothing about the choice is random. (The random corner mirror
+does exist in the battle overlay, but it belongs to the *particle* scatter
+`FUN_801E0080`, not here.) And **`Y` is the sign bit of `X`**: every vertex is
+loaded as `mtc2 <x_word>, VXY<n>`, so the GTE's `VY` half takes the upper 16 bits
+of the same sign-extended word - `0` for `X >= 0`, `-1` otherwise. That is the
+exact sense in which the plane is "flat at `Y ~ 0`"; there is no per-cell Y.
+
+The dump's C is not usable alone for this routine: it renders the GTE traffic as
+`setCopReg`/`getCopReg` with raw immediates, drops which shifted scratchpad slot
+each store lands in, and carries an
+`Instruction at 0x801d06ec overlaps 0x801d06e8` warning where a branch delay slot
+doubles as a jump target. Ported (CPU side) as `engine-vm::battle_ground_grid`;
+`see ghidra/scripts/funcs/overlay_battle_action_801d02c0.txt`.
+
+### `801E0080`
+
+**Battle-arena emitter-driven sprite scatter.** Gated on `DAT_8007BD58 != 0` and
+`DAT_8007BD71 == 0xFF` (battle live, no end signal). Two pools off the battle
+scene buffer `_DAT_8007BD30`: 32 **emitters** at `+0x1010`, `0x1C` stride, and
+128 **particles** at `+0x10`, `0x20` stride.
+
+An emitter holds a spawn count (`+0x00`, zero = inactive), a spawn counter
+(`+0x02`), a delay countdown (`+0x03`), a 12-bit heading (`+0x04`), a base
+position (`+0x08`/`+0x0C`/`+0x10`) and a script cursor (`+0x18`). When the
+countdown expires it scans the 128 particle slots for one whose `+0x00` is zero
+and seeds it: type and lifetime from the definition the pointer table at
+`_DAT_8007BD30+8` resolves, mirror flags from `rand() % 4`, the base position
+copied through, the script's planar offset rotated by the heading (`>> 4`) and
+its velocity pair rotated the same way (`>> 0xC`) - while the offset's Y is
+*subtracted* scaled by `0x100` and the velocity's Y is copied unrotated.
+
+Countdowns drain `-8` floored at zero. Positions integrate as
+`pos += ((vel * script_speed * scene_scale) << 3) >> 15`. The two script advances
+are **not** the same shape: the emitter reads its next delay byte at
+`cursor + 1` *before* advancing 14 bytes, the particle advances 6 bytes *first*
+and reads at the new `cursor + 1`.
+
+The render pass emits one `0x28`-byte textured quad per live particle with a
+brightness ramp: `total >> 3` is the fade-in length, below it the level is
+`((steps+1) << 7) / ramp` and at or above it `((total - steps) << 7) /
+(total - ramp)`, clamped at `0x80` by an **unsigned** `sltiu 0x81`. The level is
+splatted into all three colour bytes and summed with `0x2E000000`. The mirror
+bits are negative logic: with `mirror == 0` the *high* U lands in corners 0 and 2
+and the *high* V in corners 0 and 1.
+
+The whole emitter+particle update repeats: a pass that touched a live countdown
+costs `1`, an idle pass costs `5`, and passes run while the accumulated cost is
+below `DAT_1F800393`. Ported as `engine-vm::battle_scatter`;
+`see ghidra/scripts/funcs/overlay_battle_action_801e0080.txt`.
+
+### `801F0450`
+
+**AI-side Arts command assembler** - the counterpart to the player queue-builder
+`FUN_801EED1C`. Two arms, chosen by the character record's `+0xF8 & 0x2000` and
+the actor's `+0x16E & 0x404`:
+
+- **Bit set, status clear** - the auto-fill arm. Writes category `+0x1DE = 3`
+  (Attack), rolls a target `rand() % monster_count + 3` and pushes it through the
+  dead-target redirect `FUN_801DB124`, then loops: a stop roll (`rand() % 7 == 0`
+  ends it), an index roll over the character's learned-arts list
+  (`record[+0x185]` count, `record[+0x186 + i]` ids), and a floor test - a list
+  entry below `6` for participant id `2` or below `4` otherwise is discarded and
+  the slot re-rolled, otherwise `id + 0x1B` is appended. Stops at 15 entries.
+- **Otherwise** - the pool arm. Scans arts commands `0x0C..=0x0F`, tracks the
+  cheapest `+0x74` AP cost, gives each command a weight from a `8 -> 1 / 4 -> 2`
+  ladder over two byte bands selected by the target monster's type byte
+  (`+0x1E`: type `3` uses `..=0x10` and `0x16..=0x1A`, type `2` uses `0x11..=0x15`
+  and `0x1B..=0x1F`, anything else leaves every weight at `8`), zeroes the weight
+  when the command's guard mask at `0x801F672C` intersects the actor's `+0x16E`,
+  and repeats the id that many times into a `0x10`-byte scratch. Then it draws
+  uniformly from the scratch, refuses a pick the gauge `actor[+0x154]` cannot
+  cover, consumes taken entries, and loops while the gauge still covers the
+  cheapest cost.
+
+So it is an action **producer** writing `actor[+0x1DF..]`, not a display builder -
+which makes it the natural source of the observed AI-delegated multi-strike
+streams (see
+[`battle-action.md`](../../subsystems/battle-action.md#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)).
+The tail from `0x801F0B4C` is a second budget stage keyed on `actor[+0x170]` and
+is not decoded. Ported as `engine-vm::battle_arts_auto_combo`;
+`see ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.

@@ -899,8 +899,26 @@ covers the cheapest command, halving the budget when the AP-Used-Down passive bi
 0x2000` / `+0x16E & 0x404` rather than the `0x380` delegation bits directly, so
 confirming it is *the* Rage-delegate path (versus a shared auto-fight assembler)
 still wants the runtime `actor[+0x1DF]`-writer capture this section calls for. No
-engine consumer yet; documented, unported. See
+engine consumer yet. See
 `ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.
+
+Two refinements from the disassembly. The gate is a **fork, not a filter**: the
+`+0xF8 & 0x2000` set / `+0x16E & 0x404` clear case takes a *simpler* arm that
+skips the arts-command table entirely - it seeds category `+0x1DE = 3`, rolls a
+target over the live monster slots through `FUN_801DB124`, and then draws blindly
+from the character's own learned-arts list (`record[+0x185]` count,
+`record[+0x186 + i]` ids), appending `id + 0x1B` per keep with a per-character
+floor of `6` for participant id `2` and `4` otherwise, stopping on a `rand() % 7
+== 0` roll or at fifteen entries. The pool arm above is the *other* side of that
+fork. And the weight a command earns is a four-rung ladder (`8` default, `1` low
+band, `4` high band, `2` both) over two byte ranges selected by the **target
+monster's type byte** `+0x1E` - type `3` reads `..=0x10` / `0x16..=0x1A`, type
+`2` reads `0x11..=0x15` / `0x1B..=0x1F`, and any other type leaves every command
+at `8`, which is enough pushes to overrun the `0x10`-byte candidate scratch.
+
+Both arms plus the ladder, the guard reject and the gauge-spend loop are ported
+as `engine-vm::battle_arts_auto_combo`; the arm-by-arm decode lives in
+[`reference/functions/battle.md`](../reference/functions/battle.md#801f0450).
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -1492,8 +1510,14 @@ they are documented here rather than lifted whole into `engine-vm`.
   `>>4` / `>>0xC`) per part, then in a third pass builds textured-sprite GPU
   primitives (`0x09000000` command word, per-particle brightness) into the OT at
   `_DAT_1F8003A0`, projecting each via `FUN_800195A8` and linking with
-  `FUN_8003D2C4`. Pure GTE / GPU-primitive emit; not ported. See
-  `overlay_battle_action_801e0080.txt`.
+  `FUN_8003D2C4`. The two pools are **emitters and their particles**, not two
+  parallel effect pools: the `0x1C`-stride pool spawns into the `0x20`-stride one
+  and each record runs its own byte script. Record layouts, the two *different*
+  script-advance shapes, the countdown drain, the position integration, the
+  brightness ramp and the mirror-bit UV assignment are ported as
+  `engine-vm::battle_scatter`; the GTE projection and the OT link are not. See
+  `overlay_battle_action_801e0080.txt` and
+  [`reference/functions/battle.md`](../reference/functions/battle.md#801e0080).
 - **`FUN_801DF6B8` - damage-number popup renderer.** Draws a scaling decimal
   number sprite for one actor's accumulated damage `ctx[+0x83C]`: extracts each
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
@@ -1854,19 +1878,38 @@ s = *0x801F6950
 v = s * 12 + 2              ; (s << 2) + (s << 3) + 2
 s = (v << 16) + (v >> 16)   ; 32-bit rotate by 16
 *0x801F6950 = s
-return s
+return s                    ; the store is the jr-ra delay slot
 ```
 
-The multiply-add is done with shifts, and the "rotate" is an `addu` of the
-two shifted halves rather than an `or`, so a carry out of the low half
-propagates - the result is not a pure rotate. Five call sites, all in the
-overlay's leading function, none in SCUS.
+The multiply-add is done with shifts. The final step **is** a rotate, and an
+earlier note here saying it is not can be discarded: the `addu` sums `v << 16`,
+whose low sixteen bits are all zero, with `v >> 16`, whose high sixteen bits are
+all zero because the shift is `srl` and not `sra`. The two operands occupy
+disjoint bit ranges, so no carry can arise and the `addu` is bit-for-bit an
+`or`. Five call sites, all in the overlay's leading function `FUN_801CFB94`
+(`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` / `0x801CFF1C` / `0x801CFF5C`), none
+in SCUS.
 
 Because its state lives in overlay memory rather than the SCUS RNG seed,
 draws from this generator do **not** perturb the `FUN_80056798` stream the
 determinism oracles follow. Which battle quantities it feeds is
 **Unknown**; the arithmetic and the state address are **Confirmed** from
 the disassembly of PROT entry 0898 at base `0x801CE818`.
+
+**Read the 0898 image for this one.** There is no `overlay_battle_action_801d0290`
+dump; the only dump at that VA is an `overlay_0897` slice holding a *different*
+five-instruction body that advances a VM PC in `s8` - a field-VM opcode-handler
+fragment, i.e. the intra-function-label-promoted-to-fake-`FUN_` artifact
+[`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)
+catalogues. Disassemble the routine instead:
+
+```bash
+scripts/ghidra-analysis/disasm-overlay-fn.py \
+    extracted/overlays/overlay_battle_action_0898.bin \
+    --base 0x801CE818 --addr 0x801d0290
+```
+
+Ported as `engine-vm::battle_action::OverlayRng`.
 
 ## Open work
 
