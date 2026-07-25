@@ -346,14 +346,25 @@ decomp.openProgram(prog)
 
 
 def dump(addr_str):
+    """Dump the function containing `addr_str`, named for ITS OWN entry.
+
+    `getFunctionContaining()` resolves an interior address to the ENCLOSING
+    function. Naming the output after the address that was REQUESTED writes a
+    file asserting an entry point that does not exist, and every citation of
+    that filename inherits the assertion - the signature being that the
+    resolved entry always sits BELOW the requested address. So the filename
+    and the header both come from `getEntryPoint()`, and a differing request
+    is recorded inside the file rather than lost.
+    """
     addr = af.getAddress(addr_str)
     if addr is None:
         print("[skip] {} not an address".format(addr_str))
         return
-    func = fm.getFunctionContaining(addr)
+    # Exact entry first: `Containing` would answer for an interior address
+    # with a body whose name is not the one asked for.
+    func = fm.getFunctionAt(addr)
     if func is None:
-        # try the entry directly
-        func = fm.getFunctionAt(addr)
+        func = fm.getFunctionContaining(addr)
     if func is None and prog.getMemory().contains(addr):
         # not yet defined in the project DB: disassemble + create it
         if listing.getInstructionAt(addr) is None:
@@ -368,13 +379,22 @@ def dump(addr_str):
     body = func.getBody()
     instrs = list(listing.getInstructions(body, True))
 
-    out_path = os.path.join(OUT_DIR, addr_str + ".txt")
+    entry_str = "%08x" % func.getEntryPoint().getOffset()
+    interior = entry_str != addr_str.lower()
+    if interior:
+        print("[interior] {} is inside {} at {} - dumping the enclosing body"
+              .format(addr_str, func.getName(), entry_str))
+
+    out_path = os.path.join(OUT_DIR, entry_str + ".txt")
     with open(out_path, "w") as fh:
         fh.write("== {} {} (entry={}) ==\n".format(
-            func.getName(), addr_str, func.getEntryPoint()))
-        fh.write("size={} bytes, {} instructions\n\n".format(
+            func.getName(), entry_str, entry_str))
+        fh.write("size={} bytes, {} instructions\n".format(
             body.getNumAddresses(), len(instrs)))
-        fh.write("--- DISASSEMBLY ---\n")
+        if interior:
+            fh.write("requested={} (INTERIOR of this body - not an entry "
+                     "point)\n".format(addr_str.lower()))
+        fh.write("\n--- DISASSEMBLY ---\n")
         for ins in instrs:
             fh.write("{}  {}\n".format(ins.getAddress(), ins.toString()))
         fh.write("\n--- DECOMPILED ---\n")

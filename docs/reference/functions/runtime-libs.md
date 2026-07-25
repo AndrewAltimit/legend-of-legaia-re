@@ -2,6 +2,17 @@
 
 Part of the [key function directory](../functions.md) - the conventions for reading these tables (bare hex = function entry, `0x`-prefixed = data / instruction, overlay-VA caveats) are on the [index page](../functions.md#how-to-use-this-page).
 
+**A row here can be right about the address while the dump file named for it is
+wrong about the body.** The overlay routines this page cites from the field
+overlay - `FUN_801CFC40` (the actor-collision box probe) and `FUN_801D5780`
+(the arc-hop spawner) - are both genuine entries in PROT 0897 read at its own
+base `0x801CE818`. The bare-named corpus files `801cfc40.txt` and
+`801d5780.txt` were taken from differently-based programs and open at
+`0x801CF88C` and `0x801D56FC`, neither of which begins a function in 0897 at
+all. Read those two from `overlay_0897_<addr>.txt`, and see
+[dump-corpus-integrity.md](../../tooling/dump-corpus-integrity.md) for why a
+filename is not evidence about its contents.
+
 ## PSX runtime / standard libraries
 
 Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
@@ -16,7 +27,7 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
 | `8006D7A4` | BIOS C0 thunk - `li t2,0xC0; jr t2; li t1,0x3`. Dispatches to C0 vector 0x03 (`ChangeThreadSubFunction`). Called from `FUN_8006D2AC` (audio subsystem init). |
 | `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | SPU voice-state init sequence. `FUN_8006EF18` calls all three in order. `_EF68` = B0 0x4C (`InitCd`-adjacent). `_F088` = B0 0x57 then swaps 5 dwords between `DAT_8006F058..F06C` (static table) and `iVar1 + 0x9C8` (SPU voice block) + `FlushCache`. `_F118` = B0 0x56 + symmetric swap at `iVar1 + 0x18 / -0xE80`. |
-| `800567B8` / `80056B18` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. |
+| `800567B8` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. Body spans `0x800567B8..0x8005700F`, so the `0x80056B18` this row used to list beside it is **interior** to it, not a second entry - the dump named `80056b18.txt` holds this same routine from its real start. |
 | `80057024` | `memmove` - overlap-safe direction-aware copy. |
 | `8005ACAC` | `memset`. |
 | `8005E540` | `memcpy` - forward-only byte copy. |
@@ -184,6 +195,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `0x80036DE8` (instruction) | Interior of `FUN_80036D80`: the `blez` that takes the "remaining `<= 0`" arm after the frame delta `DAT_1F800393` is subtracted from the slot's countdown at `+0x14`. Not an entry - it has no prologue and consumes `$t1`/`$t2` from the enclosing loop. |
 | `0x8003F000` (instruction) | Interior of `FUN_8003EFE8`: the `addiu a0,a0,0x1104` in the **delay slot** of that function's `jal 0x800567A8`. Not an entry; `FUN_8003EFE8` is a 15-instruction routine spanning `0x8003EFE8..0x8003F020`. |
 | `0x8003F0F4` (instruction) | Interior of `FUN_8003F08C` (35 instructions, `0x8003F08C..0x8003F114`). Its dump resolves `entry=8003f08c`; the bare address is a citation stub, not a second function. |
+| `0x80056B18` (instruction) | Interior of the `printf`-class formatter `FUN_800567B8`, whose body runs `0x800567B8..0x8005700F`. Long listed as a second entry beside it; Ghidra has no function here. |
 | `8001FA00` | **Identity index-list init.** `(count_out: *i16, list: *u16, n: i16)`. Writes `list[i] = i` for `i` in `0..n` (nothing when `n <= 0`), then stores `n - 1` into `*count_out` - i.e. it seeds a list in the same **1-based top index** convention the stack pop/push pair `8001FA34` / `8001FA68` consumes. `see ghidra/scripts/funcs/8001fa00.txt`; the dump carries decompiled C only, so this row is read from `extracted/SCUS_942.54` at file offset `0x10200`. |
 | `8001A78C` | RGB→HSV decompose: `(r, g, b, hue*, sat*, val*)`. Max/min channel select, `sat = (max-min)<<8 / max`, hue = sextant·`0x100` + minor/major ratio (range `0..0x600`). Overlay colour-cycling / tint effects call it (the menu overlay 0899 and field 0897, whose dialog / cutscene modes reach it through the `FUN_801D362C` sub-ops `0x1F`/`0x20`). `see ghidra/scripts/funcs/8001a78c.txt`. |
 | `8001A8DC` | HSV→RGB compose - the inverse of `FUN_8001A78C`. Clamps sat/val to `0..0x100`, reduces hue mod `0x600`, then a six-arm jump table (`jr` at `0x8001A9FC`, arms `0x8001AA14..0x8001AA54`) writes the `(val, ramp, base)` triple in the sextant's channel order. `see ghidra/scripts/funcs/8001a8dc.txt`. |

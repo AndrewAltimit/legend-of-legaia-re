@@ -73,6 +73,39 @@ the deltas more than a curve fit. Printed `0x801C4520` (`+0xE818`) and printed
 `0x801CD520` (`+0x5818`) both land on field `0x801D2D38`; printed `0x801C46A4`
 and `0x801CD6A4` both land on field `0x801D2EBC`.
 
+## The band is a sample of a corpus-wide shape
+
+The tables below are the worked cases. The general result is measurable without
+enumerating anything, and it is stronger than the tables suggest: when every
+defective cited dump is re-resolved to the VA its bytes occupy and that VA is
+put back to Ghidra in a program imported at the image's own base, **more of
+those addresses turn out to be interiors of other routines than turn out to be
+function entries.**
+
+Two independent instruments say so, and they are built on different evidence:
+
+- The shape sweep's name-mismatch check compares a dump's filename address
+  against the address its content starts at. Every delta it reports is
+  **negative** - the resolved entry always sits below the requested address.
+  Nothing but `getFunctionContaining()` paired with a requested-address filename
+  produces that one-sided distribution, so the signature identifies the defect
+  rather than merely being consistent with it.
+- Asking Ghidra directly, per address, in the correctly-based program, returns
+  `INTERIOR of <function> at <entry>` for a large plurality of them - and the
+  reported enclosing entry is again always below.
+
+The practical consequence for anyone reading this page: **treat "there is a dump
+file at this address" as carrying almost no information about whether a routine
+begins there.** That was already the headline for this band. It holds across the
+whole corpus, and it holds for base-correct dumps too - a mis-based print and a
+genuine interior are different causes with the same symptom, and the second is
+the more common of the two.
+
+The right repair differs by cause, which is why the distinction is worth
+keeping. A mis-based print is re-keyed: the routine exists, at another VA. An
+interior is retired: no routine begins there, and re-dumping the address only
+manufactures a second file asserting the same non-existent entry.
+
 ## Group 1 - re-keys into the field/event VM `FUN_801DE840`
 
 These printed VAs are Ghidra's promotion of the field VM's intra-function jump

@@ -146,16 +146,37 @@ def in_program(addr):
 
 
 def dump(addr_str):
+    """Dump the function that CONTAINS `addr_str`, named for its own entry.
+
+    Three defects this function used to carry, each of which made a complete
+    and correct dump unusable to something downstream:
+
+    * It resolved with `getFunctionContaining()` and then named the file and
+      the `entry=` header after the address it REQUESTED. Ask for an interior
+      address and you get `<interior>.txt` holding the enclosing function -
+      a file asserting an entry point that does not exist, which every
+      citation of that filename then inherits.
+    * It wrote `ins` without `ins.getAddress()`, so the disassembly carried no
+      address column and every address-keyed instrument read the file as
+      empty - a whole 2781-instruction body reading as no evidence at all.
+    * It emitted `--- DECOMPILED C ---`, which readers expecting the standard
+      `--- DECOMPILED ---` marker parse as more disassembly.
+    """
     addr = af.getAddress(addr_str)
     if addr is None:
         print("[skip] {} not an address".format(addr_str))
         return
     if not in_program(addr):
         return
-    func = fm.getFunctionContaining(addr) or fm.getFunctionAt(addr)
+    func = fm.getFunctionAt(addr) or fm.getFunctionContaining(addr)
     if func is None:
         print("[skip] no function at {} in {}".format(addr_str, prog_name))
         return
+
+    entry_str = "%08x" % func.getEntryPoint().getOffset()
+    if entry_str != addr_str.lower():
+        print("[interior] requested {} is inside {} at {}".format(
+            addr_str, func.getName(), entry_str))
 
     body = func.getBody()
     instrs = list(listing.getInstructions(body, True))
@@ -166,19 +187,22 @@ def dump(addr_str):
     if result and result.decompiledFunction:
         c_code = result.decompiledFunction.getC()
 
-    out = out_path_for(addr_str)
+    out = out_path_for(entry_str)
     with open(out, "w") as f:
-        f.write("== {} {} (entry={}) ==\n".format(
-            func.getName(), addr_str, addr_str))
-        f.write("size={} bytes, {} instructions\n\n".format(
-            func.getBody().getNumAddresses(), instr_count))
-        f.write("--- DISASSEMBLY ---\n")
+        f.write("== {} {} (entry={}) [{}] ==\n".format(
+            func.getName(), entry_str, entry_str, prog_name))
+        f.write("size={} bytes, {} instructions\n".format(
+            body.getNumAddresses(), instr_count))
+        if entry_str != addr_str.lower():
+            f.write("requested=%s (INTERIOR of this body - not an entry "
+                    "point)\n" % addr_str.lower())
+        f.write("\n--- DISASSEMBLY ---\n")
         for ins in instrs:
-            f.write("{}\n".format(ins))
+            f.write("{}  {}\n".format(ins.getAddress(), ins.toString()))
         if c_code:
-            f.write("\n--- DECOMPILED C ---\n")
+            f.write("\n--- DECOMPILED ---\n")
             f.write(c_code)
-    print("[done] {} -> {}".format(addr_str, out))
+    print("[done] {} -> {}".format(entry_str, out))
 
 
 seen = set()

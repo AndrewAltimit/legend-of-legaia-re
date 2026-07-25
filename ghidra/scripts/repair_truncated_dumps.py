@@ -93,7 +93,9 @@ TARGETS_FILE = "/scripts/redump_targets.txt"
 # Machine-readable verdict per (program, address), appended so a sweep across
 # every program aggregates into one table. Verdicts are addresses and class
 # names only - no instruction text - so the file is safe to summarise.
-VERDICTS_FILE = "/scripts/redump_verdicts.tsv"
+# `.txt` rather than `.tsv` on purpose: `/ghidra/scripts/*.txt` is already
+# gitignored, so an operational artifact cannot be committed by accident.
+VERDICTS_FILE = "/scripts/redump_verdicts.txt"
 
 MAX_INSNS = 8192
 
@@ -370,9 +372,26 @@ def repair(addr_str, force_rebuild, audit_only):
             path, got, n = dump(at, "ghidra function body", requested)
             print("  wrote {} ({} instrs)".format(path, n))
             return
+        # A rebuild that crossed returns AND multiplies the body several times
+        # over is the merge shape, not the truncation shape. Refuse it: a
+        # merged body is worse than a short one, because every entry it
+        # swallows then reports as an interior of a routine that does not
+        # exist.
+        crossed = 0
+        if "return(s) crossed" in status:
+            crossed = int(status.split("return(s) crossed")[0].split(",")[-1]
+                          .replace("at the next routine's prologue", "").strip()
+                          or 0)
+        if crossed > 0 and want_bytes > 4 * max(before_bytes, 256):
+            verdict(addr_str, "REBUILD_REFUSED",
+                    "ghidra body %d B, walk %d B crossing %d return(s) - "
+                    "merge shape, needs eyes (no dump written)"
+                    % (before_bytes, want_bytes, crossed))
+            return
         verdict(addr_str, "TRUNCATED",
-                "ghidra body %d B, walked %d B (%d instrs) - rebuilding"
-                % (before_bytes, want_bytes, n))
+                "ghidra body %d B, walked %d B (%d instrs; %s) - rebuilding"
+                % (before_bytes, want_bytes, n, status))
+        extent_note = "walk with frontier + frame-boundary rule: %s" % status
         if audit_only:
             return
 

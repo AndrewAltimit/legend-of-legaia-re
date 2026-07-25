@@ -94,6 +94,30 @@ have declined. Treat a multi-hit resolution as weaker than a single-hit one.
 The clusters below are quoted at both thresholds for exactly this reason: the
 counts move, the conclusion does not.
 
+### A capture with no static image is not automatically unattributable
+
+`overlay_magic_capture.bin` is a save-state RAM slice, so nothing on the disc
+reproduces it and the obvious reading is that its dumps can never be attributed
+by bytes. That reading is wrong, and the way it is wrong generalises.
+
+Its dumps are `ADDRLESS_DISASM`, so the attribution sweep - which reads printed
+addresses - resolves none of them. But every one of them shares its
+`(entry, size)` extent with an `overlay_magic_level_up_*` dump taken from the
+sibling capture, and those *are* addressed and *do* resolve, single-hit, to
+`battle_action(898)`. Comparing the two streams instruction by instruction, all
+of the pairs carry identical code, and in all but one the addressed sibling's
+printed addresses run `entry + 4*i` with no gap.
+
+So the capture's slot A is PROT 0898 - established by extent identity across
+the whole set, not inferred from the sibling's label. **A dump that cannot be
+resolved directly can still be resolved through a dump that can**, whenever the
+two share an extent. The extent is the join key the attribution artifact is
+already keyed on, which is what makes the cross-check cheap.
+
+The residual caution is the one worth keeping: a capture's slot B is whatever
+the emulator held at that instant, so this settles slot A and says nothing
+about the rest of the image.
+
 ### `NOT_FOUND` is unverifiable, not wrong
 
 This is the class most likely to be over-discarded, so state it plainly: **a
@@ -490,6 +514,63 @@ that is a legitimate result rather than a half-finished one. The inner of two
 nested spans starts at total ambiguity and keeps a larger share of the residue,
 because most of what it loses is loss to *other* images rather than to itself.
 
+## A complete dump can still read as no evidence at all
+
+Three of the shape classes are not about what a dump omitted. They are about
+what the *reader* could not see, and each traces to one line in the script that
+wrote the file. The dumps themselves are whole and correct.
+
+**The address column.** One dumper writes `ins` where the others write
+`ins.getAddress(), ins`, so its disassembly section carries the instructions and
+nothing to key them by. Every instrument over this corpus is keyed on the
+printed address, so such a file resolves to zero rows, is graded as carrying no
+disassembly, and is counted as a dump that needs re-taking. A 2781-instruction
+body reads as an empty one. The class is `ADDRLESS_DISASM`, and the addresses
+are recoverable without Ghidra - a body is contiguous, so row `i` is
+`entry + 4*i`.
+
+**The section marker.** The same dumper emits `--- DECOMPILED C ---` rather
+than `--- DECOMPILED ---`. A reader looking for the standard marker never
+leaves the disassembly section, so the whole C rendering is parsed as more
+instruction rows. That is why the defect compounds: the file looks like it has
+*more* stream than it does, in a format that matches nothing.
+
+**The filename.** Covered under the dumper defect below, and the largest of the
+three.
+
+The generalisable point is that a dump has two audiences - a human reading the
+instructions, and a tool joining on the addresses - and only the first of them
+notices when a field is missing rather than wrong. A defect that a human reader
+would never spot is exactly the one that propagates furthest, because nothing
+about the file looks incomplete.
+
+`check-dump-base-integrity.py --audit-dumpers` reports which
+`ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
+repairing the script that wrote them regenerates the defect on the next run.
+
+## Not every file in `funcs/` is a dump
+
+The corpus stores answers as well as dumps, and three kinds of answer are not
+defective dumps however a shape sweep grades them:
+
+| Shape | What it is |
+|---|---|
+| `POINTER_STUB` | `== citation pointer 0x<addr> ==` / `== <addr> (cite of FUN_<addr>) ==`. A mid-function citation recorded as a file naming the enclosing dump. |
+| `NOFUNC_RECORD` | `== NOFUNC <addr> ==`, or a `--- PSEUDO-DISASSEMBLY WINDOW` section. A recorded negative, and a window explicitly not a function body. |
+| `NOT_A_DUMP` | An analysis script's output whose filename happens to end `_<addr>.txt`. |
+
+A pointer stub is the corpus doing the *right* thing with an interior address:
+the alternative is a dump file whose name asserts an entry point that does not
+exist. Counting it as a defect therefore penalises the one handling that avoids
+the defect it is being counted as. Nearly a fifth of what a cited-only shape
+sweep once called defective was this - the instrument scoring the corpus's own
+good work against it.
+
+The same lesson applies to the header regex that finds those files: it accepted
+one spelling of `(entry=…)` while three exist in the corpus, so real dumps fell
+into the headerless classes. **A parser's strictness is a claim about the
+corpus, and an over-strict one manufactures a gap.**
+
 ## Every instrument in this chain has had a defect that made a number look better
 
 Worth stating as a standing caution rather than a grievance, because the pattern
@@ -502,11 +583,38 @@ address *requested* while Ghidra resolves the one *containing* it, so a file
 asserts an entry point that does not exist - the signature is that the resolved
 entry is always **below** the requested address, which nothing else produces.
 A function walker stops at the first unconditional `j` and reports a 259-
-instruction body as 85. A canonicaliser leaves one operand spelling unfolded and
-the mismatch lands in the class that reads as missing data. An audit applies a
-test that can only refute one kind of claim to a list containing two kinds, and
-re-raises every row of the other kind forever. An entry test reads a prologue as
-a boundary when a routine can begin a few instructions before its frame.
+instruction body as 85. Its replacement, unbounded, merges a run of routines
+into one body and mints a phantom interior for every entry it swallows. A
+canonicaliser leaves one operand spelling unfolded and the mismatch lands in the
+class that reads as missing data. A shape sweep counts pointer stubs and
+recorded negatives as defective dumps, so the corpus's own correct handling of
+an interior address scores against it. A status string grows a parenthetical
+while its caller still compares it with `!=`. An audit applies a test that can
+only refute one kind of claim to a list containing two kinds, and re-raises
+every row of the other kind forever. An entry test reads a prologue as a
+boundary when a routine can begin a few instructions before its frame.
+
+Two of those were introduced *by* a repair pass, which is the part worth
+sitting with: fixing a measurement defect is itself a measurement change, and it
+lands in the same blind spot as the defect it fixes. A repair pass therefore
+needs its own undo - `repair_truncated_dumps.py` grew a `+addr` restore mode for
+exactly this, because the rebuild that over-reached had already deleted the
+function entries that proved it wrong.
+
+### A repair pass cannot be its own control
+
+The entry/interior verdict a repair pass reports is read out of the same Ghidra
+database the pass has been rewriting, so the two are not independent and no
+amount of care makes them so. What *is* available is the sign of the bias: a
+rebuild merges bodies and therefore manufactures interiors, a restore splits
+them and therefore manufactures entries. Count both, and the direction of the
+error follows - a pass dominated by restores under-reports interiors, and its
+interior count is a floor rather than an estimate.
+
+State the direction alongside the number. "126 of 314, and the bias runs
+downward" is a usable claim; "126 of 314" from a mutated database is not, and
+re-deriving it on a fresh import is the only way to remove the qualifier
+rather than merely to restate it.
 
 The common factor is not carelessness, it is that **a measurement instrument has
 no oracle**. Code that is wrong eventually crashes or renders the wrong pixel;
@@ -544,13 +652,62 @@ prints an `INCOMPLETE BODY` marker, because an instruction count that is really
 a lower bound is indistinguishable from a whole body once it is quoted
 somewhere else.
 
+### The frontier rule needs an upper bound, or it fails the other way
+
+The rule above is stated as a fix for two truncating rules, and read that way it
+invites an unbounded frontier. Unbounded, it is worse than what it replaces. One
+forward branch whose target lies beyond the routine drags the frontier past
+every `jr ra` in between, and the walk swallows a run of functions into a single
+body. Measured against
+[`repair_truncated_dumps.py`](../../ghidra/scripts/repair_truncated_dumps.py):
+a 68-byte routine became a 20060-byte one, and a 4-byte jump-table slot became a
+32256-byte one.
+
+That failure is loud in *size* and silent in *correctness*, and it does more
+damage than the truncation it fixes, for two reasons. A rebuild deletes the
+function entries inside its span, so real entries disappear from the project.
+And every address inside the merged body then reports as an interior of it -
+including addresses that are documented function entries - so the fiction
+manufactures phantom-interior verdicts at exactly the rate it swallows
+functions.
+
+Two bounds close it, and both are needed:
+
+- **A prologue after a return is a boundary.** A `jr ra` whose delay slot is
+  followed by `addiu sp,sp,-N` ends the body whatever the frontier says: a
+  function cannot push a frame twice without popping, so that frame belongs to
+  the next routine. Used as an *end* test right after a return, this does not
+  hit the trap that a routine may begin a few instructions before its frame -
+  that trap is about the *entry*.
+- **A budget on crossed returns.** A return not followed by a prologue is either
+  a frameless leaf's end or a genuine early exit, and locally the two are
+  indistinguishable. So the walk counts them and refuses past a small budget,
+  because a body whose every return but the last is an "early exit" is far more
+  likely to be several routines. A refusal is cheaper than a merged body.
+
+The status string carries the crossed-return count into the verdict, so a body
+that used its budget is visible rather than merely plausible. And the callers
+test it with a prefix match, not equality - an earlier version compared
+`status != "complete"` against a status that had grown a parenthetical, and
+reported five *successful* walks as incomplete. **A status string that both
+carries detail and is compared exactly is a bug waiting for the first detail.**
+
 ## Re-running the sweep
 
 ```bash
 scripts/ghidra-analysis/check-dump-base-integrity.py
 scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
 scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 4
+scripts/ghidra-analysis/check-dump-base-integrity.py --emit-base-csv /tmp/b.csv
+scripts/ghidra-analysis/check-dump-base-integrity.py --audit-dumpers
 ```
+
+`--emit-base-csv` is the form a re-dump pass needs: per dump, the printed VA,
+the VA the bytes resolve to, the delta, and the image. **A re-dump has to be
+told which program to run against, and the filename is not evidence of that -
+this is.** Feeding a phantom printed VA back into Ghidra dumps whatever
+unrelated routine sits there, which is how a mis-based citation acquires a
+second, freshly-generated dump backing it up.
 
 Exit status is non-zero when any dump is `SHIFTED`. It needs `extracted/`
 populated ([extraction.md](extraction.md)) and `capstone`; it reads only
