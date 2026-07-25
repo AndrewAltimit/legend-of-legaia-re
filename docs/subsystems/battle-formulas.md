@@ -482,6 +482,31 @@ synthesized as a shift/add chain, not an immediate, which is why the
 patcher's [`--damage-ap`](../tooling/randomizer.md#enemy-damage-ap) restates
 it as an explicit multiply to retune it.
 
+### The spirit-gauge fill is duplicated
+
+That gauge fill exists **twice** in overlay 0898, as two independent inlined
+copies of one kernel, and which one runs depends on how the hit was resolved:
+
+| Copy | Host | Registers (damage / defender / pct) | Reached by |
+|---|---|---|---|
+| A | `FUN_801DDB30`, the closed-form finisher | `v1` / `s1` / `a1` | magic, summon and special-attack hits |
+| B | `FUN_801EC3E4`, the arms execution resolver | `a0` / `a1` / `a2` | ordinary physical hits |
+
+Both compute the same `pct = max(1, damage*100/maxHP)`, apply the same two
+ability-gated bonus arms, and clamp at 100; copy B's shift/add chain merely
+starts in a branch delay slot (the `beq` at `0x801EDB74` joins at
+`0x801EDB80`) and interleaves its own max-HP load. A structural sweep of the
+entry pins the count at exactly two: the kernel's `andi v0,v0,0x200` /
+`andi v0,v0,0x100` tests and its `sltiu rX,v0,0x1` min-one floor co-occur at
+`0x801DE1F8` and `0x801EDBB0` and nowhere else.
+
+The duplication matters to anything that edits the fill rather than reads it:
+touching only copy A leaves the *common* case - a regular enemy swing -
+running stock, which is easy to misread as an edit that did nothing. The
+port's single `spirit_gauge_fill` kernel is the correct shape for the engine
+(one function, two call sites); it is only the retail image that inlines it
+twice.
+
 Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
 clamped to `maxHP - curHP`.
 

@@ -1363,12 +1363,21 @@ stops damage feeding the gauge entirely (the min-1 floor goes with it), `200`
 fills twice as fast, and a **negative** value makes being hit *drain* the
 gauge instead, floored at zero.
 
-The retail scale lives in the battle damage finisher `FUN_801DDB30` (PROT
-0898, base `0x801CE818`), the same closed-form stage that applies elemental
-resistance - its tail computes `pct = max(1, damage * 100 / max_hp)` and adds
-it into `actor[+0x170]`, clamped at 100 (kernel mirror:
-`legaia_engine_vm::battle_formulas::spirit_gauge_fill`). The `100` is
-synthesized as a shift/add chain rather than an immediate:
+The retail scale lives in the spirit-gauge fill: `pct = max(1, damage * 100 /
+max_hp)` added into `actor[+0x170]` and clamped at 100 (kernel mirror:
+`legaia_engine_vm::battle_formulas::spirit_gauge_fill`). Overlay 0898 carries
+**two inlined copies** of that kernel and a hit reaches one or the other -
+`FUN_801DDB30`, the closed-form finisher, for magic / summon / special-attack
+hits, and `FUN_801EC3E4`, the arms execution resolver, for ordinary physical
+hits. The patch always writes **both**; editing only the finisher leaves the
+common case (a regular enemy swing) running stock, which reads as a slider
+that does nothing, and an image whose two copies disagree is refused as
+partially patched. See
+[battle-formulas.md](../subsystems/battle-formulas.md#the-spirit-gauge-fill-is-duplicated)
+for the structural sweep that pins the count at two.
+
+In each copy the `100` is synthesized as a shift/add chain rather than an
+immediate:
 
 ```text
 801de1c8  sll  v0,v1,0x1     ; d*2
@@ -1381,11 +1390,12 @@ synthesized as a shift/add chain rather than an immediate:
 ```
 
 so a general factor needs the chain restated as an explicit multiply
-(`ori v0,zero,N` / `multu v1,v0` / `mflo v0`, the two spare words nopped).
-The retail factor keeps retail's own chain, which is what makes
-`--damage-ap 100` a genuine no-op. `--damage-ap 0` additionally rewrites the
-min-1 floor (`sltiu a1,v0,0x1`) to `move a1,zero`, without which "no AP from
-damage" would still grant 1 per hit.
+(`ori v0,zero,N` / `multu` / `mflo v0`, the two spare words nopped; copy B's
+chain begins in a branch delay slot, so its scale factor loads there and the
+multiply lands on the join). The retail factor keeps retail's own chain,
+which is what makes `--damage-ap 100` a genuine no-op. `--damage-ap 0`
+additionally rewrites each copy's min-1 floor (`sltiu rX,v0,0x1`) to a
+`move`, without which "no AP from damage" would still grant 1 per hit.
 
 A negative value reuses that scale for the magnitude and turns the accrual
 into a subtract with a floor at zero, in place:
@@ -1408,11 +1418,11 @@ fingerprint-verified (the damage subtract, the max-HP load, the `divu`, the
 party-only gate and both ability-bit tests) before writing; an unrecognized
 image is refused. Module
 [`legaia_patcher::damage_ap`](../../crates/patcher/src/damage_ap.rs); disc
-oracle `crates/patcher/tests/damage_ap_real.rs` (stock-word baseline over
-every site, surgical diff, the `0` floor removal, the negative tail,
-determinism, idempotence, retarget across the sign + restore round trip). In
-the browser patcher the same edit is the **AP from taking damage** slider in
-the Gameplay group.
+oracle `crates/patcher/tests/damage_ap_real.rs` (stock-word baseline over all
+31 sites across both copies, surgical diff, the `0` floor removal, the
+negative tail, determinism, idempotence, retarget across the sign + restore
+round trip). In the browser patcher the same edit is the **AP from taking
+damage** slider in the Gameplay group.
 
 ### The signed accrual tail
 

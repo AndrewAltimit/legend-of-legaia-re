@@ -716,15 +716,23 @@ arena. Build fingerprint-verified before writing; re-applying re-targets
 
 `--damage-ap AP` (-200..=200) sets how much AP a battle actor's gauge gains
 when it is **damaged**, as AP per 100% of max HP lost. Retail is 100 (a hit
-that would empty the HP bar fills the gauge; every hit grants at least 1). The
-scale lives in the damage finisher `FUN_801DDB30` as a shift/add chain, so the
-patch restates it as an explicit multiply (`ori`/`multu`/`mflo`) - the retail
-factor keeps retail's own chain, which is what makes `--damage-ap 100` a real
-no-op. `0` also drops the `max(pct, 1)` floor; a negative value turns the
-accrual into a subtract floored at zero and neutralizes both "spirit gain up"
-bonus arms (they read the staged accrual unsigned), so an AP-Boost accessory
-is inert while the setting is negative. Pure same-size word edits in PROT
-0898, fingerprint-verified. Disc oracle `tests/damage_ap_real.rs`.
+that would empty the HP bar fills the gauge; every hit grants at least 1).
+
+Overlay 0898 inlines that gauge fill **twice** - `FUN_801DDB30` (the
+closed-form finisher: magic / summon / special hits) and `FUN_801EC3E4` (the
+arms execution resolver: ordinary physical hits) - so the patch writes both,
+and refuses an image whose copies disagree. Editing only the finisher leaves
+regular enemy swings stock, which is indistinguishable from the slider doing
+nothing.
+
+In each copy the scale is a shift/add chain, so the patch restates it as an
+explicit multiply (`ori`/`multu`/`mflo`) - the retail factor keeps retail's
+own chain, which is what makes `--damage-ap 100` a real no-op. `0` also drops
+the `max(pct, 1)` floor; a negative value turns the accrual into a subtract
+floored at zero and neutralizes both "spirit gain up" bonus arms (they read
+the staged accrual unsigned), so an AP-Boost accessory is inert while the
+setting is negative. Pure same-size word edits in PROT 0898,
+fingerprint-verified. Disc oracle `tests/damage_ap_real.rs`.
 
 Both AP knobs are **statically verified only** at negative settings - the
 oracles prove placement and that the hand-assembled branches resolve, not
