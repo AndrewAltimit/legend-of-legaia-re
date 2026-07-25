@@ -1,33 +1,59 @@
 # @category Legaia
 # @runtime Jython
 #
-# Repair dumps whose function body ends before the real routine does.
+# Repair defective dumps: bodies that stop before the routine does, dumps
+# whose address column was never printed, and requested addresses that turn
+# out not to be function entries at all.
 #
-# This is a distinct defect from a mis-based dump. A truncated dump is
-# INTERNALLY CONSISTENT - its `size=` header agrees with its own
-# instruction count, its printed addresses are correct, and every
-# instruction it does carry is real. What is wrong is the extent: Ghidra
-# computed a function body that stops short, usually because a second
-# `FUN_` entry was minted inside the routine (a jump-table arm or a
-# `jal` target Ghidra could not tie back), and the body was cut there.
+# The first defect is distinct from a mis-based dump. A truncated dump is
+# INTERNALLY CONSISTENT - its `size=` header agrees with its own instruction
+# count, its printed addresses are correct, and every instruction it does
+# carry is real. What is wrong is the extent: Ghidra computed a function body
+# that stops short, usually because a second `FUN_` entry was minted inside
+# the routine (a jump-table arm, or a `jal` target it could not tie back), and
+# the body was cut there. No header check and no base check can see that, so
+# the dump reads as authoritative while silently withholding the rest.
 #
-# No header check and no base check can see this, so the dump reads as
-# authoritative while silently withholding the rest of the body.
-#
-# Method: ignore Ghidra's boundary. Walk instructions from the entry to
-# the first `jr ra` (force-disassembling where needed), then rebuild the
-# function over that whole span - deleting any function entry strictly
-# inside it first, since those are what cut the body - and dump the
-# result. The dumped extent is therefore a `jr ra` walk, which is what a
-# MIPS routine's extent actually is.
-#
-# Guards: the walk stops at MAX_INSNS, and a span that does not reach a
-# `jr ra` is reported and skipped rather than dumped, so a bad target
-# cannot mint a plausible-looking oversized body.
+# Method: ignore Ghidra's boundary. Walk instructions from the entry to the
+# real end of the routine (force-disassembling where needed), then rebuild the
+# function over that whole span - deleting any function entry strictly inside
+# it first, since those are what cut the body - and dump the result.
 #
 #   docker compose exec ghidra /ghidra/support/analyzeHeadless \
 #       /projects legaia -process overlay_fishing -noanalysis \
 #       -postScript /scripts/repair_truncated_dumps.py
+#
+# --- Two walking rules, opposite blind spots, neither safe alone ---
+#
+# Stopping at the first `jr ra` truncates any routine with an early-exit arm.
+# Stopping at the first unconditional `j` truncates any routine that jumps
+# forward into a shared epilogue - that one reported a 563-instruction body as
+# 18. Both fail SILENTLY, and in opposite directions, so a body walked by
+# either rule alone can be short with nothing to show for it.
+#
+# So a terminator ends the body only when nothing already walked branches PAST
+# it. The walk tracks `frontier`, the highest forward branch or jump target
+# seen so far; a `jr ra` or an outbound `j` below the frontier is an early exit
+# or an inter-block hop, and the walk continues. Same reasoning either rule
+# applies locally, applied over the whole body instead.
+#
+# A walk that ends any other way is reported and the target is SKIPPED rather
+# than dumped, because an instruction count that is really a lower bound is
+# indistinguishable from a whole body once it is quoted somewhere else.
+#
+# --- The interior guard ---
+#
+# Ghidra resolves an address with `getFunctionContaining()`, so asking for an
+# address inside a routine yields the ENCLOSING function. A dumper that then
+# names its output after the address it REQUESTED writes a file asserting an
+# entry point that does not exist - and every citation built on that filename
+# inherits the assertion. The signature is that the resolved entry is always
+# BELOW the requested address; nothing else produces it.
+#
+# This script never does that. Output is named from `getEntryPoint()`, an
+# interior request is reported as INTERIOR and never rebuilt into a function,
+# and the requested address is preserved in the header as `requested=` so the
+# citation that pointed there is traceable rather than lost.
 
 import os
 
@@ -44,23 +70,29 @@ from ghidra.util.task import ConsoleTaskMonitor
 #
 # A bare address is a plain re-dump: whatever function Ghidra already has is
 # written out, and a body is rebuilt only when no function exists at all.
-# That is deliberately conservative - the `jr ra` walk stops at the FIRST
-# return in address order, which for a routine with an early-exit arm is
-# SHORTER than the real body, so rebuilding on every target would truncate
-# the very dumps this script exists to repair.
+# That is deliberately conservative - a rebuild deletes interior function
+# entries, which is a mutation of the project database.
 #
-# Suffix an address with `!` to force the rebuild. Use it only where the
-# sweep says the body is genuinely cut - i.e. NO_RETURN, where the stream
-# provably does not reach a return at all.
+# Suffix an address with `!` to force the rebuild. Use it where the sweep says
+# the body is genuinely cut - i.e. NO_RETURN, where the stream provably does
+# not reach a return at all.
+#
+# Suffix with `?` to AUDIT only: classify the address and write a verdict, but
+# never write a dump and never touch the database.
 TARGETS = [
     "801d56e4!",
 ]
 
-# Optional override, one entry per line, same `addr[!]` syntax. Gitignored
+# Optional override, one entry per line, same `addr[!?]` syntax. Gitignored
 # alongside the dumps, so each sweep populates it on demand.
 TARGETS_FILE = "/scripts/redump_targets.txt"
 
-MAX_INSNS = 4000
+# Machine-readable verdict per (program, address), appended so a sweep across
+# every program aggregates into one table. Verdicts are addresses and class
+# names only - no instruction text - so the file is safe to summarise.
+VERDICTS_FILE = "/scripts/redump_verdicts.tsv"
+
+MAX_INSNS = 8192
 
 OUT_DIR = "/scripts/funcs"
 try:
@@ -80,6 +112,24 @@ decomp = DecompInterface()
 decomp.setOptions(DecompileOptions())
 decomp.openProgram(prog)
 
+_verdicts = []
+
+
+def verdict(addr_str, cls, detail):
+    print("[{}] {} {}: {}".format(cls, prog_name, addr_str, detail))
+    _verdicts.append("{}\t{}\t{}\t{}".format(prog_name, addr_str, cls, detail))
+
+
+def flush_verdicts():
+    if not _verdicts:
+        return
+    fh = open(VERDICTS_FILE, "a")
+    try:
+        for line in _verdicts:
+            fh.write(line + "\n")
+    finally:
+        fh.close()
+
 
 def out_path_for(addr_str):
     if prog_name.startswith("SCUS"):
@@ -92,35 +142,68 @@ def in_program(addr):
     return mem.getBlock(addr) is not None
 
 
-def is_jr_ra(ins):
-    return ins.getMnemonicString().lower() == "jr" and "ra" in ins.toString()
+def word_at(addr):
+    try:
+        return mem.getInt(addr) & 0xFFFFFFFF
+    except Exception:
+        return None
 
 
-def walk_to_return(entry):
-    """Instruction walk from `entry` to the first `jr ra`, ignoring bounds.
+def forward_target(raw, cur_pc):
+    """The forward branch/jump target of this word, or None.
 
-    Returns (stop_addr_exclusive, n_instructions) or (None, n) when no
-    `jr ra` is reached inside MAX_INSNS.
+    Only forward edges matter: a backward branch is a loop inside the body and
+    says nothing about where the body ends. `jal` is deliberately excluded - a
+    call returns, so it does not extend the body.
     """
-    cur = entry
-    seen = 0
-    while seen < MAX_INSNS:
-        ins = listing.getInstructionAt(cur)
-        if ins is None:
-            DisassembleCommand(cur, None, True).applyTo(prog, monitor)
-            ins = listing.getInstructionAt(cur)
-        if ins is None:
-            return None, seen
-        seen += 1
-        if is_jr_ra(ins):
-            # The delay slot belongs to the routine.
-            return cur.add(8), seen + 1
-        cur = cur.add(ins.getLength())
-    return None, seen
+    op = (raw >> 26) & 0x3F
+    if op == 0x02:  # j
+        return ((cur_pc + 4) & 0xF0000000) | ((raw & 0x03FFFFFF) << 2)
+    if op == 0x01 or 0x04 <= op <= 0x07:  # regimm, beq/bne/blez/bgtz
+        imm = raw & 0xFFFF
+        if imm & 0x8000:
+            imm -= 0x10000
+        tgt = cur_pc + 4 + (imm << 2)
+        return tgt if tgt > cur_pc else None
+    return None
 
 
-def dump(func, extent_note):
-    addr_str = "%08x" % func.getEntryPoint().getOffset()
+JR_RA = 0x03E00008
+
+
+def walk_body(entry):
+    """Walk from `entry` to the real end of the routine.
+
+    Returns `(stop_addr_exclusive, n_instructions, status)`. `status` is
+    `"complete"` or a string naming why the walk is a LOWER BOUND. A caller
+    must never dump a non-complete walk silently.
+    """
+    start = entry.getOffset()
+    frontier = start
+    for i in range(MAX_INSNS):
+        cur = entry.add(4 * i)
+        raw = word_at(cur)
+        if raw is None:
+            return None, i, "memory ended before a function exit"
+
+        tgt = forward_target(raw, cur.getOffset())
+        if tgt is not None and start <= tgt < start + MAX_INSNS * 4:
+            if tgt > frontier:
+                frontier = tgt
+
+        past_frontier = cur.getOffset() >= frontier
+        if raw == JR_RA and past_frontier:
+            return cur.add(8), i + 2, "complete"
+        if ((raw >> 26) & 0x3F) == 0x02 and past_frontier:
+            target = ((cur.getOffset() + 4) & 0xF0000000) | ((raw & 0x03FFFFFF) << 2)
+            if target < start or target > cur.getOffset():
+                return cur.add(8), i + 2, "complete"
+    return None, MAX_INSNS, "no exit within {} instructions".format(MAX_INSNS)
+
+
+def dump(func, extent_note, requested=None):
+    entry_off = func.getEntryPoint().getOffset()
+    addr_str = "%08x" % entry_off
     body = func.getBody()
     instrs = list(listing.getInstructions(body, True))
 
@@ -128,11 +211,17 @@ def dump(func, extent_note):
     fh = open(path, "w")
     try:
         fh.write("== {} {} (entry={}) [{}] ==\n".format(
-            func.getName(), addr_str, func.getEntryPoint(), prog_name))
+            func.getName(), addr_str, addr_str, prog_name))
         fh.write("size={} bytes, {} instructions\n".format(
             body.getNumAddresses(), len(instrs)))
-        fh.write("extent={}\n\n".format(extent_note))
-        fh.write("--- DISASSEMBLY ---\n")
+        fh.write("extent={}\n".format(extent_note))
+        if requested is not None and requested != entry_off:
+            # Preserve the citation that pointed at the interior address. The
+            # file is named for the entry that exists; this line is where the
+            # request that did not went.
+            fh.write("requested=%08x (INTERIOR of this body - not an entry "
+                     "point)\n" % requested)
+        fh.write("\n--- DISASSEMBLY ---\n")
         for ins in instrs:
             fh.write("{}  {}\n".format(ins.getAddress(), ins.toString()))
         fh.write("\n--- DECOMPILED ---\n")
@@ -146,42 +235,79 @@ def dump(func, extent_note):
             fh.write("(decompile exception: {})\n".format(e))
     finally:
         fh.close()
-    return path
+    return path, addr_str, len(instrs)
 
 
-def repair(addr_str, force_rebuild):
+def repair(addr_str, force_rebuild, audit_only):
     entry = af.getAddress(addr_str)
     if entry is None or not in_program(entry):
         return
 
-    before = fm.getFunctionAt(entry)
-    before_bytes = before.getBody().getNumAddresses() if before else 0
+    requested = entry.getOffset()
+    at = fm.getFunctionAt(entry)
+    containing = fm.getFunctionContaining(entry)
 
-    if before is not None and not force_rebuild:
-        # Plain re-dump: Ghidra already has a body and the sweep did not say
-        # it was cut, so its extent is the one to trust.
-        print("{} {}: re-dumping ghidra body ({} B)".format(
-            prog_name, addr_str, before_bytes))
-        print("  wrote {}".format(dump(before, "ghidra function body")))
+    # --- interior request -------------------------------------------------
+    # The requested address is inside a body but is not its entry. Re-dumping
+    # "it" would produce the ENCLOSING function under the requested address's
+    # name - the exact defect that puts phantom entry points into citations.
+    if at is None and containing is not None:
+        owner = containing.getEntryPoint().getOffset()
+        verdict(addr_str, "INTERIOR",
+                "inside %s at %08x (delta %+d); not an entry point"
+                % (containing.getName(), owner, owner - requested))
+        if audit_only:
+            return
+        # Re-dump the enclosing body under ITS OWN name, and record the
+        # interior request inside it so the citation is traceable.
+        path, got, n = dump(containing, "ghidra function body", requested)
+        print("  enclosing body written as {} ({} instrs)".format(path, n))
         return
 
-    stop, n = walk_to_return(entry)
-    if stop is None:
-        print("[skip] {} {}: no `jr ra` within {} instrs".format(
-            prog_name, addr_str, n))
-        return
-    want_bytes = stop.subtract(entry)
+    if at is None and containing is None:
+        stop, n, status = walk_body(entry)
+        if status != "complete":
+            verdict(addr_str, "NOFUNC_UNWALKABLE",
+                    "no function, and the walk did not reach an exit: %s" % status)
+            return
+        verdict(addr_str, "NOFUNC_WALKABLE",
+                "no function; walk reaches an exit after %d instrs" % n)
+        if audit_only:
+            return
+    else:
+        before_bytes = at.getBody().getNumAddresses()
+        if not force_rebuild:
+            verdict(addr_str, "ENTRY",
+                    "ghidra body %d B; re-dumped unchanged" % before_bytes)
+            if audit_only:
+                return
+            path, got, n = dump(at, "ghidra function body", requested)
+            print("  wrote {} ({} instrs)".format(path, n))
+            return
+        stop, n, status = walk_body(entry)
+        if status != "complete":
+            # Loud, and no dump. A body walked to a lower bound reads exactly
+            # like a whole one once it is written to a file.
+            verdict(addr_str, "WALK_INCOMPLETE",
+                    "ghidra body %d B; walk did NOT reach an exit: %s "
+                    "(no dump written)" % (before_bytes, status))
+            return
+        want_bytes = stop.subtract(entry)
+        if before_bytes >= want_bytes:
+            verdict(addr_str, "ALREADY_WHOLE",
+                    "ghidra body %d B >= walked %d B" % (before_bytes, want_bytes))
+            if audit_only:
+                return
+            path, got, n = dump(at, "ghidra function body", requested)
+            print("  wrote {} ({} instrs)".format(path, n))
+            return
+        verdict(addr_str, "TRUNCATED",
+                "ghidra body %d B, walked %d B (%d instrs) - rebuilding"
+                % (before_bytes, want_bytes, n))
+        if audit_only:
+            return
 
-    print("{} {}: ghidra body {} B, `jr ra` walk {} B ({} instrs)".format(
-        prog_name, addr_str, before_bytes, want_bytes, n))
-
-    if before is not None and before_bytes >= want_bytes:
-        print("  already whole - re-dumping unchanged extent")
-        print("  wrote {}".format(dump(before, "ghidra function body")))
-        return
-
-    # The interior `FUN_` entries are what cut the body; drop them, and
-    # the entry itself, then rebuild over the walked span.
+    # --- rebuild over the walked span ------------------------------------
     victims = []
     probe = entry.add(4)
     while probe.compareTo(stop) < 0:
@@ -192,19 +318,21 @@ def repair(addr_str, force_rebuild):
     for v in victims:
         print("  dropping interior function entry {}".format(v))
         fm.removeFunction(v)
-    if before is not None:
+    if fm.getFunctionAt(entry) is not None:
         fm.removeFunction(entry)
 
-    span = AddressSet(entry, stop.subtract(1))
-    CreateFunctionCmd(None, entry, span, SourceType.USER_DEFINED).applyTo(
+    DisassembleCommand(AddressSet(entry, stop.subtract(1)), None, True).applyTo(
         prog, monitor)
+    CreateFunctionCmd(None, entry, AddressSet(entry, stop.subtract(1)),
+                      SourceType.USER_DEFINED).applyTo(prog, monitor)
     func = fm.getFunctionAt(entry)
     if func is None:
-        print("  [skip] rebuild produced no function")
+        verdict(addr_str, "REBUILD_FAILED", "CreateFunctionCmd produced no function")
         return
-    got = func.getBody().getNumAddresses()
-    print("  rebuilt body {} B (wanted {})".format(got, want_bytes))
-    print("  wrote {}".format(dump(func, "jr-ra walk, body rebuilt")))
+    got_bytes = func.getBody().getNumAddresses()
+    path, got, n = dump(func, "jr-ra/j walk with frontier rule, body rebuilt",
+                        requested)
+    print("  rebuilt {} B, wrote {} ({} instrs)".format(got_bytes, path, n))
 
 
 targets = TARGETS
@@ -221,7 +349,10 @@ if os.path.exists(TARGETS_FILE):
     print("[targets] {} from {}".format(len(targets), TARGETS_FILE))
 
 for t in targets:
+    t = t.strip()
     force = t.endswith("!")
-    repair(t.rstrip("!").strip(), force)
+    audit = t.endswith("?")
+    repair(t.rstrip("!?").strip(), force, audit)
 
+flush_verdicts()
 print("done [{}]".format(prog_name))
