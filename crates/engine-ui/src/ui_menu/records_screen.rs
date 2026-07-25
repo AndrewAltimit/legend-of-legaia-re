@@ -22,7 +22,11 @@
 //!
 //! PORT: FUN_801ED710 - battle-records screen renderer (layout + emit order)
 //! PORT: FUN_80034e4c - zero-padded fixed-width decimal field
-//! PORT: FUN_8003c1f8 - single separator-glyph draw
+//! REF: FUN_8003c1f8 - the separator-glyph primitive this screen's `Symbol`
+//! fields draw through. Its port is
+//! `crate::ui_menu_window_painters::separator_glyph_draws`, shared with
+//! window 37's quantity row, which pins the same glyph id space from the
+//! other end.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_world_map_801ed710.txt`.
 //!
@@ -487,8 +491,9 @@ pub fn records_screen_draws_for(
                 }
             }
             RecordsField::Symbol { x, y, ch, ink } => {
-                out.extend(text_draws_for(
-                    &font.layout_ascii(&ch.to_string()),
+                out.extend(crate::ui_menu_window_painters::separator_glyph_char_draws(
+                    font,
+                    ch,
                     (x, y),
                     records_ink(ink),
                 ));

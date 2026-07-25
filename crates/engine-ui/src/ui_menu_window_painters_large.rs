@@ -16,8 +16,10 @@
 //! ## The stat block both read
 //!
 //! `FUN_801CF5D0(char_idx)` seeds an eight-word block at `0x801EF080` from
-//! the character record, and `FUN_801CF650` sums the equipment bonuses into
-//! it. The trial-equip mirror lives one block later at `0x801EF0A0`:
+//! the character record ([`EquipStatBlock::from_character_record`] - a
+//! frameless 32-instruction leaf, the menu overlay's first routine), and
+//! `FUN_801CF650` sums the equipment bonuses into it. The trial-equip mirror
+//! lives one block later at `0x801EF0A0`:
 //!
 //! ```text
 //! +0x00 <- record +0x6CC (char +0x104)  HP max
@@ -49,7 +51,7 @@
 //!
 //! PORT: FUN_801d1290 - window 25, active-character stat compare
 //! PORT: FUN_801d4c28 - window 41, per-party-member stat compare
-//! REF: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`]
+//! PORT: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`]
 //! REF: FUN_801cf650 - the equipment-bonus summer over the same block
 //!
 //! Source: `ghidra/scripts/funcs/overlay_menu_801d1290.txt`,
@@ -94,7 +96,47 @@ pub struct EquipStatBlock {
     pub int: i32,
 }
 
+/// Character-record byte offsets `FUN_801CF5D0` seeds the block from, in
+/// block-word order.
+///
+/// Retail addresses them off `0x80084140 + slot*0x414`; the record base is
+/// `0x80084708`, so the same fields are `record + 0x104 / 0x108 / 0x110 ..`,
+/// the `char +0x1NN` column of the table above. Each is read with `lhu`
+/// (zero-extended) and stored as a full word.
+pub const EQUIP_STAT_RECORD_OFFSETS: [usize; 8] =
+    [0x104, 0x108, 0x110, 0x112, 0x114, 0x116, 0x118, 0x11A];
+
 impl EquipStatBlock {
+    /// Seed the block from one `0x414`-byte character record.
+    ///
+    /// The port of the seeder: the eight offsets, their order, and the
+    /// zero-extending `u16 -> u32` widening. The record *selection* -
+    /// retail's `slot * 0x414` off `0x80084140` - is the caller's slice, so
+    /// this takes the record itself rather than a slot index.
+    ///
+    /// `None` when the slice is too short to hold the last field.
+    ///
+    /// PORT: FUN_801cf5d0
+    /// NOT WIRED: the block's only consumers are the two stat-compare
+    /// NOT WIRED: painters below, and no host opens windows 25 / 41
+    pub fn from_character_record(record: &[u8]) -> Option<Self> {
+        let field = |off: usize| -> Option<i32> {
+            let b = record.get(off..off + 2)?;
+            Some(i32::from(u16::from_le_bytes([b[0], b[1]])))
+        };
+        let w = EQUIP_STAT_RECORD_OFFSETS;
+        Some(Self {
+            hp: field(w[0])?,
+            mp: field(w[1])?,
+            agl: field(w[2])?,
+            atk: field(w[3])?,
+            udf: field(w[4])?,
+            ldf: field(w[5])?,
+            spd: field(w[6])?,
+            int: field(w[7])?,
+        })
+    }
+
     /// Word `i` of the block (`0..=7`), matching the retail `0x801EF080 +
     /// i*4` addressing the painters index with. Out-of-range reads `0`.
     ///
@@ -616,6 +658,37 @@ mod tests {
         for c in 10..=12u8 {
             assert_eq!(CompareRows::from_category(c), CompareRows::SpdIntAgl);
         }
+    }
+
+    /// The seeder reads eight `u16`s at fixed record offsets and widens them
+    /// zero-extended - a value with the high bit set must not come back
+    /// negative, which is the one way an `lh`-vs-`lhu` slip would show.
+    #[test]
+    fn the_seeder_zero_extends_every_field() {
+        let mut rec = vec![0u8; 0x414];
+        for (i, off) in EQUIP_STAT_RECORD_OFFSETS.iter().enumerate() {
+            let v = 0x8000u16 + i as u16;
+            rec[*off..*off + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        let b = EquipStatBlock::from_character_record(&rec).expect("full record");
+        for i in 0..8 {
+            assert_eq!(b.stat_word(i), 0x8000 + i as i32, "word {i}");
+        }
+    }
+
+    #[test]
+    fn the_seeder_reads_the_fields_in_block_order() {
+        let mut rec = vec![0u8; 0x414];
+        // HP 120 at +0x104, ATK 33 at +0x112, INT 9 at +0x11A.
+        rec[0x104..0x106].copy_from_slice(&120u16.to_le_bytes());
+        rec[0x112..0x114].copy_from_slice(&33u16.to_le_bytes());
+        rec[0x11A..0x11C].copy_from_slice(&9u16.to_le_bytes());
+        let b = EquipStatBlock::from_character_record(&rec).expect("full record");
+        assert_eq!((b.hp, b.atk, b.int), (120, 33, 9));
+        assert_eq!(b.mp, 0);
+        // A record that stops before the last field resolves to nothing
+        // rather than to a partly-seeded block.
+        assert!(EquipStatBlock::from_character_record(&rec[..0x11B]).is_none());
     }
 
     #[test]

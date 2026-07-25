@@ -32,13 +32,27 @@
 //! ([`BANNER_X_FIELD_OFFSETS`]) this module places, and the battle HUD the
 //! engine does draw carries no Art-name row.
 //!
-//! The wire also crosses a crate boundary that does not exist yet: the state
-//! that would drive it - which actor committed which Art - lives in
-//! `engine-core`, and `engine-core` does not depend on this crate (the
-//! dependency runs the other way, through the renderer). So a caller has to be
-//! a battle-HUD draw builder here that a renderer host feeds the committed Art
-//! id, plus the two measured widths, and neither the builder nor the
-//! measurement plumbing is present.
+//! The **trigger is not the gap**. `World::drain_battle_shout_cues` already
+//! surfaces "actor `cslot` committed art `action`" once per executed party
+//! art, and the native battle host drains it every frame to fire the CD-XA
+//! shout (`window/battle.rs`), so a banner would raise on exactly the retail
+//! event. Two other things are missing:
+//!
+//! * **An id-space bridge.** The cue carries the art's *ActionConstant*;
+//!   [`find_arts_record`] matches the name table's `(row, col)` - a character
+//!   row and a per-character **display index**. Nothing in the corpus maps
+//!   one to the other (`legaia_art::tables::learned_art_action` inverts to
+//!   the *Learned Art Constant* slot, a third index whose own docs warn it is
+//!   not 1:1 with the action range). Without that bridge a caller cannot name
+//!   the record whose `+0xC` string the placement measures - and the marked
+//!   disc string is the whole input: the two lead-byte markers this module
+//!   branches on do not exist in the curated ASCII names.
+//! * **A Y.** `FUN_8004C650` writes only X, into four sub-primitive fields
+//!   the engine does not emit; the banner's row comes from whatever staged
+//!   those primitives, which is not this routine and is not ported.
+//!
+//! So the honest worklist entry is "bridge ActionConstant -> arts-name-table
+//! index, then port the banner's owning primitive", not "find a trigger".
 
 /// Stride of one arts-name table record (`DAT_80075EC4`).
 pub const ARTS_RECORD_STRIDE: usize = 0x14;

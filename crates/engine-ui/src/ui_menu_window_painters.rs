@@ -121,6 +121,64 @@ pub const COUNTER_DIGIT_INSET: i32 = 0x28;
 /// Advance of one fixed-width digit cell in the number writer.
 const NUM_CELL_W: i32 = 8;
 
+// --- Separator glyph (`FUN_8003C1F8`) ---------------------------------
+//
+// `FUN_8003C1F8(glyph, x, y)` draws one symbol from the fixed-cell glyph
+// page. Two independent uses pin the same id space: the records screen
+// (`crate::ui_menu::records_screen`, whose fields are `:` / `/` / `.`) and
+// window 37, which calls it with glyph `6` between its quantity and held
+// counts (`li a0,0x6; addiu a1,s5,0x20` at `0x801D59D4`) - a `/` between
+// "how many" and "how many you have", which is what that row reads as.
+
+/// Separator glyph `6`: `/`.
+pub const SEPARATOR_GLYPH_SLASH: u8 = 6;
+/// Separator glyph `9`: `:`.
+pub const SEPARATOR_GLYPH_COLON: u8 = 9;
+/// Separator glyph `0xD`: `.`.
+pub const SEPARATOR_GLYPH_DOT: u8 = 0x0D;
+
+/// The character a separator-glyph id draws, or `None` for an id outside
+/// the three the corpus pins.
+pub fn separator_glyph_char(glyph: u8) -> Option<char> {
+    match glyph {
+        SEPARATOR_GLYPH_SLASH => Some('/'),
+        SEPARATOR_GLYPH_COLON => Some(':'),
+        SEPARATOR_GLYPH_DOT => Some('.'),
+        _ => None,
+    }
+}
+
+/// Draw one separator glyph at `pen`.
+///
+/// `pub(crate)` on purpose: this is a retail *primitive*, not a screen, and
+/// the UI host-drift gate classifies every `pub fn` returning draws as a
+/// screen builder. Keeping it crate-internal states what it is - the thing
+/// screens call - and keeps the gate's surface a list of screens.
+///
+/// PORT: FUN_8003c1f8
+pub(crate) fn separator_glyph_draws(
+    font: &legaia_font::Font,
+    glyph: u8,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    match separator_glyph_char(glyph) {
+        Some(ch) => separator_glyph_char_draws(font, ch, pen, color),
+        None => Vec::new(),
+    }
+}
+
+/// [`separator_glyph_draws`] for a caller that already resolved the glyph to
+/// a character.
+pub(crate) fn separator_glyph_char_draws(
+    font: &legaia_font::Font,
+    ch: char,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    text_draws_for(&font.layout_ascii(&ch.to_string()), pen, color)
+}
+
 /// Right-align `value` into a `digits`-wide fixed cell field.
 ///
 /// The retail number writer (`FUN_80034B78`) takes the field width as its
@@ -836,6 +894,12 @@ pub fn sell_quantity_draws_for(
         2,
         MENU_TEXT_WHITE,
     ));
+    out.extend(separator_glyph_draws(
+        font,
+        SEPARATOR_GLYPH_SLASH,
+        (rect.x + 0x20, row),
+        MENU_TEXT_WHITE,
+    ));
     out.extend(digits_draws(
         font,
         held as u64,
@@ -1103,6 +1167,33 @@ mod tests {
         assert_eq!(sell_total(1, 100), 50);
         assert_eq!(sell_total(3, 25), 37);
         assert_eq!(sell_total(0, 9_999), 0);
+    }
+
+    #[test]
+    fn the_sell_row_carries_its_separator_glyph() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(14, 46, 144, 33);
+        let (draws, _, _) = sell_quantity_draws_for(&font, rect, true, "h", 1, 9, 10);
+        // Glyph 6 at (WX + 0x20, WY + 0x14) - one draw between the quantity
+        // and the held count, which is what separates "how many" from "how
+        // many you have".
+        let sep = separator_glyph_draws(&font, SEPARATOR_GLYPH_SLASH, (0, 0), MENU_TEXT_WHITE);
+        assert_eq!(sep.len(), 1);
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.0 == rect.x + 0x20 && d.dst.1 == rect.y + 0x14)
+        );
+    }
+
+    #[test]
+    fn only_the_three_pinned_separator_ids_resolve() {
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_SLASH), Some('/'));
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_COLON), Some(':'));
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_DOT), Some('.'));
+        assert_eq!(separator_glyph_char(0), None);
+        let font = legaia_font::Font::placeholder();
+        assert!(separator_glyph_draws(&font, 0, (0, 0), MENU_TEXT_WHITE).is_empty());
     }
 
     #[test]
