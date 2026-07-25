@@ -18,7 +18,7 @@
     </label>
 
     <!-- ---- Language patch (opt-in; default None) ---- -->
-    <details class="rom-group" id="rom-lang-group">
+    <details class="rom-group" id="rom-lang-group" open>
       <summary>Language <span class="rom-summary-note">translation patch (optional)</span></summary>
       <div class="rom-group-body">
         <p class="rom-legend-item" style="margin:0 0 .6rem">
@@ -283,7 +283,7 @@
     </details>
 
     <!-- ---- Exploration ---- -->
-    <details class="rom-group">
+    <details class="rom-group" open>
       <summary>Exploration <span class="rom-summary-note">doors &amp; warps</span></summary>
 
       <div class="rom-opt">
@@ -309,7 +309,7 @@
     </details>
 
     <!-- ---- New game ---- -->
-    <details class="rom-group">
+    <details class="rom-group" open>
       <summary>New game start <span class="rom-summary-note">starting bag &amp; warps</span></summary>
 
       <div class="rom-opt">
@@ -369,7 +369,7 @@
     </details>
 
     <!-- ---- Unused content ---- -->
-    <details class="rom-group">
+    <details class="rom-group" open>
       <summary>Unused content <span class="rom-summary-note">cut enemies &amp; items</span></summary>
 
       <label class="rom-check-row">
@@ -383,7 +383,7 @@
     </details>
 
     <!-- ---- Tactical-Art overrides (per-art picker; rows built by JS) ---- -->
-    <details class="rom-group" id="rom-art-overrides">
+    <details class="rom-group" id="rom-art-overrides" open>
       <summary>Tactical-Art overrides <span class="rom-summary-note">make an art give AP back, or change its damage</span></summary>
       <div class="rom-group-body">
         <p class="rom-art-intro">Pick any Tactical Art and change what it does. <strong>AP</strong>: an art normally <em>costs</em> AP (Spirit) - flip it to <em>give AP back</em> and it becomes usable at any AP level and adds the amount you choose (up to the 100 cap) every time it lands in a combo. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off. The note under each row says exactly which arts are affected - arts that share a menu slot or a button combo change together. AP-giving arts are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</p>
@@ -407,7 +407,7 @@
     </details>
 
     <!-- ---- Manual value edits (advanced) ---- -->
-    <details class="rom-group">
+    <details class="rom-group" open>
       <summary>Manual value edits <span class="rom-summary-note">advanced - type exact numbers</span></summary>
 
       <div class="rom-opt">
