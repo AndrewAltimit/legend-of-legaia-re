@@ -141,6 +141,271 @@ function cueFor(binName) {
   return `FILE "${binName}" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
 }
 
+// --- Tactical-Art override builder ------------------------------------------
+// A friendly per-art picker over the same two WASM params the raw text inputs
+// feed (`arts_powers` = combo=powerbyte, `arts_ap_grants` = combo=amount).
+// The table mirrors the disc's SCUS arts table (what `legaia-patcher arts`
+// lists): per character, the arts-table display index `i` (the AP-grant config
+// row, shared across characters), the button combo `k` (the matcher key), the
+// menu AP cost, and the current per-hit damage multipliers `h` for context.
+// Names / combos / AP costs are the same curated walkthrough data the site's
+// arts page ships. Miracle Arts are left out: their table rows are not
+// combo-addressable, so neither feature can target them.
+const ART_TABLE = [
+  { c: 'Vahn', i: 1, n: 'Burning Flare', k: 'RDLDL', ap: 50, h: '20/22/28/28' },
+  { c: 'Vahn', i: 2, n: 'Fire Blow', k: 'RRDL', ap: 40, h: '22/28/28' },
+  { c: 'Vahn', i: 3, n: 'Tornado Flame', k: 'RRL', ap: 30, h: '22/28' },
+  { c: 'Vahn', i: 4, n: 'Cyclone', k: 'DUUU', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 5, n: 'Hurricane', k: 'UUDD', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 6, n: 'PK Combo', k: 'DUUL', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 7, n: 'Spin Combo', k: 'UDRL', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 8, n: 'Pyro Pummel', k: 'LRUL', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 9, n: 'Cross-Kick', k: 'DDDU', ap: 24, h: '18/18' },
+  { c: 'Vahn', i: 10, n: 'Power Punch', k: 'LLD', ap: 18, h: '22' },
+  { c: 'Vahn', i: 11, n: 'Slash Kick', k: 'UDL', ap: 18, h: '22' },
+  { c: 'Vahn', i: 12, n: 'Somersault', k: 'UDU', ap: 18, h: '20' },
+  { c: 'Vahn', i: 13, n: 'Charging Scorch', k: 'DRU', ap: 18, h: '22' },
+  { c: 'Vahn', i: 14, n: 'Hyper Elbow', k: 'LRL', ap: 18, h: '20' },
+  { c: 'Noa', i: 1, n: 'Hurricane Kick', k: 'LUUUUDR', ap: 70, h: '20' },
+  { c: 'Noa', i: 4, n: 'Vulture Blade', k: 'LLRLR', ap: 50, h: '18/28/18/28' },
+  { c: 'Noa', i: 5, n: 'Frost Breath', k: 'LLRR', ap: 40, h: '12/12/12/28' },
+  { c: 'Noa', i: 6, n: 'Tempest Break', k: 'RRLUUU', ap: 36, h: '18/18/18/18' },
+  { c: 'Noa', i: 7, n: 'Rushing Gale', k: 'UULDR', ap: 30, h: '18/18/18' },
+  { c: 'Noa', i: 8, n: 'Tough Love', k: 'DUDLR', ap: 30, h: '12' },
+  { c: 'Noa', i: 9, n: 'Swan Driver', k: 'DUUU', ap: 24, h: '18/18' },
+  { c: 'Noa', i: 10, n: 'Bird Step', k: 'DDDU', ap: 24, h: '18/18' },
+  { c: 'Noa', i: 11, n: 'Dolphin Attack', k: 'RRLR', ap: 24, h: '18/18' },
+  { c: 'Noa', i: 12, n: 'Mirage Lancer', k: 'RRUU', ap: 24, h: '18/18' },
+  { c: 'Noa', i: 13, n: 'Blizzard Bash', k: 'RLD', ap: 18, h: '22' },
+  { c: 'Noa', i: 14, n: 'Sonic Javelin', k: 'RDR', ap: 18, h: '20' },
+  { c: 'Noa', i: 15, n: 'Acrobatic Blitz', k: 'UDD', ap: 18, h: '22' },
+  { c: 'Noa', i: 16, n: 'Lizard Tail', k: 'UDU', ap: 18, h: '20' },
+  { c: 'Gala', i: 1, n: 'Explosive Fist', k: 'RRLLL', ap: 50, h: '20/22/28/28' },
+  { c: 'Gala', i: 2, n: 'Lightning Storm', k: 'RRUL', ap: 40, h: '28/22/28' },
+  { c: 'Gala', i: 3, n: 'Thunder Punch', k: 'RRL', ap: 30, h: '22/28' },
+  { c: 'Gala', i: 4, n: 'Bull Horns', k: 'LURDL', ap: 30, h: '18/18/18' },
+  { c: 'Gala', i: 5, n: 'Electro Thrash', k: 'ULDRL', ap: 30, h: '18/18/18' },
+  { c: 'Gala', i: 6, n: 'Neo Raising', k: 'LLRUL', ap: 30, h: '18/18/18' },
+  { c: 'Gala', i: 7, n: 'Black Rain', k: 'ULDD', ap: 24, h: '18/18' },
+  { c: 'Gala', i: 8, n: 'Side Kick', k: 'DDUU', ap: 24, h: '18/18' },
+  { c: 'Gala', i: 9, n: 'Head-Splitter', k: 'LUU', ap: 18, h: '22' },
+  { c: 'Gala', i: 10, n: 'Guillotine', k: 'LUL', ap: 18, h: '20' },
+  { c: 'Gala', i: 11, n: 'Back Punch', k: 'LRL', ap: 18, h: '20' },
+  { c: 'Gala', i: 12, n: 'Ironhead', k: 'UDD', ap: 18, h: '22' },
+  { c: 'Gala', i: 13, n: 'Battering Ram', k: 'LRD', ap: 18, h: '22' },
+  { c: 'Gala', i: 14, n: 'Flying Knee Attack', k: 'DUL', ap: 18, h: '22' },
+];
+
+const ARROW = { L: '←', R: '→', D: '↓', U: '↑' };
+
+function comboArrows(k) {
+  return k.split('').map((ch) => ARROW[ch] || ch).join('');
+}
+
+// Damage-tier choices: the power byte's five per-hit multipliers (upper-facet
+// encodings 0x0C..0x10) plus "no damage". Finer facet control stays available
+// through the raw CLI-syntax input.
+const DMG_TIERS = [
+  { v: '', label: 'Keep original' },
+  { v: '0', label: 'No damage at all' },
+  { v: '0x0C', label: '×12 per hit - weakest' },
+  { v: '0x0D', label: '×18 per hit - weak' },
+  { v: '0x0E', label: '×20 per hit - medium' },
+  { v: '0x0F', label: '×22 per hit - strong' },
+  { v: '0x10', label: '×28 per hit - strongest' },
+];
+
+function artByCombo(combo) {
+  return ART_TABLE.filter((a) => a.k === combo);
+}
+
+// Every art an AP-grant on `combo` really touches: the grant config row is the
+// arts-table index shared across the three characters, so it is the union of
+// all arts sitting at any index this combo occupies.
+function grantAffected(combo) {
+  const rows = new Set(artByCombo(combo).map((a) => a.i));
+  return ART_TABLE.filter((a) => rows.has(a.i));
+}
+
+// Build one override row's DOM. `onChange` re-renders the row's effect note.
+function makeArtRow(onRemove) {
+  const row = document.createElement('div');
+  row.className = 'art-row';
+
+  const main = document.createElement('div');
+  main.className = 'art-row-main';
+
+  const mkField = (labelText, control) => {
+    const f = document.createElement('label');
+    f.className = 'art-field';
+    const s = document.createElement('span');
+    s.textContent = labelText;
+    f.appendChild(s);
+    f.appendChild(control);
+    return f;
+  };
+
+  const pick = document.createElement('select');
+  pick.className = 'art-pick';
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = 'Choose an art ...';
+  pick.appendChild(ph);
+  for (const ch of ['Vahn', 'Noa', 'Gala']) {
+    const g = document.createElement('optgroup');
+    g.label = ch;
+    for (const a of ART_TABLE.filter((x) => x.c === ch)) {
+      const o = document.createElement('option');
+      o.value = `${a.c}:${a.k}`;
+      o.textContent = `${a.n}  ${comboArrows(a.k)}  (${a.ap} AP)`;
+      g.appendChild(o);
+    }
+    pick.appendChild(g);
+  }
+
+  const apMode = document.createElement('select');
+  apMode.className = 'art-ap';
+  for (const [v, t] of [['cost', 'Costs AP (normal)'], ['grant', 'Gives AP back']]) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = t;
+    apMode.appendChild(o);
+  }
+
+  const amt = document.createElement('input');
+  amt.type = 'number';
+  amt.className = 'art-amt';
+  amt.min = '1';
+  amt.max = '100';
+  amt.value = '10';
+  amt.inputMode = 'numeric';
+  const amtWrap = document.createElement('span');
+  amtWrap.className = 'art-amt-wrap';
+  amtWrap.append('+');
+  amtWrap.appendChild(amt);
+  amtWrap.append('AP each use');
+
+  const dmg = document.createElement('select');
+  dmg.className = 'art-dmg';
+  for (const t of DMG_TIERS) {
+    const o = document.createElement('option');
+    o.value = t.v;
+    o.textContent = t.label;
+    dmg.appendChild(o);
+  }
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'art-remove';
+  remove.textContent = '✕ Remove';
+  remove.addEventListener('click', onRemove);
+
+  main.appendChild(mkField('Art', pick));
+  main.appendChild(mkField('AP', apMode));
+  main.appendChild(mkField('Amount', amtWrap));
+  main.appendChild(mkField('Damage', dmg));
+  main.appendChild(remove);
+
+  const note = document.createElement('div');
+  note.className = 'art-row-note';
+
+  row.appendChild(main);
+  row.appendChild(note);
+
+  const refresh = () => {
+    const sel = pick.value ? pick.value.split(':') : null;
+    const art = sel ? ART_TABLE.find((a) => a.c === sel[0] && a.k === sel[1]) : null;
+    amtWrap.parentElement.hidden = apMode.value !== 'grant';
+    if (!art) {
+      note.textContent = 'Pick an art to change what it does.';
+      return;
+    }
+    const parts = [];
+    if (apMode.value === 'grant') {
+      const n = Math.min(100, Math.max(1, parseInt(amt.value, 10) || 10));
+      parts.push(`${art.c}'s ${art.n} gives +${n} AP every use instead of costing ${art.ap} AP (usable at 0 AP, capped at 100).`);
+      const others = grantAffected(art.k).filter((a) => !(a.c === art.c && a.k === art.k));
+      if (others.length) {
+        parts.push('Shared menu slot, so it also applies to: ' +
+          others.map((a) => `${a.c}'s ${a.n}`).join(', ') + '.');
+      }
+    }
+    if (dmg.value !== '') {
+      const tier = DMG_TIERS.find((t) => t.v === dmg.value);
+      parts.push(`Damage: ${tier.label.toLowerCase()} (was ×${art.h}).`);
+      const twins = artByCombo(art.k).filter((a) => a.c !== art.c);
+      if (twins.length) {
+        parts.push('Same combo, so it also changes: ' +
+          twins.map((a) => `${a.c}'s ${a.n}`).join(', ') + '.');
+      }
+    }
+    if (!parts.length) {
+      parts.push('No change yet - flip AP to "Gives AP back" or pick a damage tier.');
+    }
+    note.textContent = parts.join(' ');
+  };
+  row.addEventListener('change', refresh);
+  row.addEventListener('input', refresh);
+  refresh();
+
+  row.artControls = { pick, apMode, amt, dmg };
+  return row;
+}
+
+// Wire the "Tactical-Art overrides" builder. Returns { clear, collect }:
+// collect() serializes the rows into the same comma-separated `combo=value`
+// strings the raw inputs use ({ power, grant, error }).
+function setupArtBuilder(container, addBtn, onEdit) {
+  if (!container || !addBtn) return { clear() {}, collect() { return { power: '', grant: '', error: '' }; } };
+
+  const addRow = () => {
+    const row = makeArtRow(() => {
+      row.remove();
+      onEdit();
+    });
+    container.appendChild(row);
+    return row;
+  };
+  addBtn.addEventListener('click', () => {
+    addRow();
+    onEdit();
+  });
+
+  return {
+    clear() {
+      container.textContent = '';
+    },
+    collect() {
+      const power = [];
+      const grant = [];
+      const seenPower = new Set();
+      const seenGrant = new Set();
+      for (const row of container.querySelectorAll('.art-row')) {
+        const { pick, apMode, amt, dmg } = row.artControls;
+        if (!pick.value) continue;
+        const [chName, combo] = pick.value.split(':');
+        const art = ART_TABLE.find((a) => a.c === chName && a.k === combo);
+        if (apMode.value === 'grant') {
+          if (seenGrant.has(combo)) {
+            return { power: '', grant: '', error: `${art.n} is set to give AP twice - remove the duplicate row.` };
+          }
+          seenGrant.add(combo);
+          const n = Math.min(100, Math.max(1, parseInt(amt.value, 10) || 10));
+          grant.push(`${combo}=${n}`);
+        }
+        if (dmg.value !== '') {
+          if (seenPower.has(combo)) {
+            return { power: '', grant: '', error: `${art.n} has two damage rows - remove the duplicate.` };
+          }
+          seenPower.add(combo);
+          power.push(`${combo}=${dmg.value}`);
+        }
+      }
+      return { power: power.join(', '), grant: grant.join(', '), error: '' };
+    },
+  };
+}
+
 // --- Segmented (radio-group) helpers ---------------------------------------
 
 // The checked value of a radio group, or `dflt` if none is set.
@@ -240,6 +505,7 @@ function init() {
   const earthEggPriceInput = $('rom-earth-egg-price');
   const artsPowerInput = $('rom-arts-power');
   const artsApGrantInput = $('rom-arts-ap-grant');
+  const artBuilder = setupArtBuilder($('rom-art-rows'), $('rom-art-add'), () => markCustom());
   const weaponSpecialtyChk = $('rom-weapon-specialty');
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
@@ -404,6 +670,7 @@ function init() {
     earthEggPriceInput.value = cfg.earthEggPrice || '';
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
+    artBuilder.clear();
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -485,8 +752,17 @@ function init() {
     const fishingPrice = (fishingPriceInput.value || '').trim();
     const renameLocation = (renameLocationInput.value || '').trim();
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
-    const artsPower = (artsPowerInput.value || '').trim();
-    const artsApGrant = (artsApGrantInput.value || '').trim();
+    // Art overrides = the per-art rows serialized to `combo=value` pairs,
+    // merged with anything typed into the raw (advanced) inputs.
+    const artOv = artBuilder.collect();
+    if (artOv.error) {
+      setStatus(artOv.error, 'err');
+      return;
+    }
+    const artsPower = [artOv.power, (artsPowerInput.value || '').trim()]
+      .filter(Boolean).join(', ');
+    const artsApGrant = [artOv.grant, (artsApGrantInput.value || '').trim()]
+      .filter(Boolean).join(', ');
     const chests = segVal('chests', 'none');
     const shops = segVal('shops', 'none');
     const casino = segVal('casino', 'none');
@@ -538,7 +814,7 @@ function init() {
       return;
     }
     if (shinySeru && artsApGrant) {
-      setStatus('Shiny Seru and Tactical-Art AP-grant reuse the same SCUS arena and are mutually exclusive - enable only one.', 'err');
+      setStatus('Shiny Seru and AP-giving arts cannot be combined (they use the same injected-code arena) - turn one of them off.', 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());

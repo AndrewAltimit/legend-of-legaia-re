@@ -373,6 +373,30 @@
       </label>
     </details>
 
+    <!-- ---- Tactical-Art overrides (per-art picker; rows built by JS) ---- -->
+    <details class="rom-group" id="rom-art-overrides">
+      <summary>Tactical-Art overrides <span class="rom-summary-note">make an art give AP back, or change its damage</span></summary>
+      <div class="rom-group-body">
+        <p class="rom-art-intro">Pick any Tactical Art and change what it does. <strong>AP</strong>: an art normally <em>costs</em> AP (Spirit) - flip it to <em>give AP back</em> and it becomes usable at any AP level and adds the amount you choose (up to the 100 cap) every time it lands in a combo. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off. The note under each row says exactly which arts are affected - arts that share a menu slot or a button combo change together. AP-giving arts are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</p>
+        <div id="rom-art-rows"></div>
+        <button type="button" id="rom-art-add" class="rom-button rom-button-ghost rom-art-add">+ Add an art</button>
+
+        <details class="rom-art-advanced">
+          <summary>Advanced: raw <code>combo=value</code> lists (CLI syntax)</summary>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
+            <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers. Merged with the rows above; listing the same art both ways is an error.</span>
+            <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
+            <span class="rom-opt-note">Make a party Tactical Art <em>grant</em> AP (Spirit) instead of costing it. One or more <code>combo=amount</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code>) and <code>amount</code> (1..100) is the AP added per use; the art becomes castable at any AP level and adds that much, clamped at the 100 cap, without polluting the end-of-turn refund. The config is a <strong>shared row</strong> (the arts-table index), so a combo grants that index for <em>all three characters</em>; <code>legaia-patcher arts</code> lists each art's index. <strong>Mutually exclusive with Shiny Seru</strong> - both reuse the same verified-dead SCUS arena, so enable only one.</span>
+            <input type="text" id="rom-arts-ap-grant" placeholder="e.g. RDLDL=10, UDU=25" spellcheck="false" autocomplete="off">
+          </div>
+        </details>
+      </div>
+    </details>
+
     <!-- ---- Manual value edits (advanced) ---- -->
     <details class="rom-group">
       <summary>Manual value edits <span class="rom-summary-note">advanced - type exact numbers</span></summary>
@@ -395,17 +419,6 @@
         <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
       </div>
 
-      <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-arts-power">Tactical-Art power</label>
-        <span class="rom-opt-note">Rebalance a party Tactical Art's damage ("arts power-down"). One or more <code>combo=value</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code> = Vahn's Burning Flare) and <code>value</code> is a power byte: <code>0x0C..0x1F</code> is a damage tier (a defence facet plus one of the multipliers 12/18/20/22/28, so a <em>lower</em> value powers the art down), or <code>0</code> disables its hits. Every per-strike power byte of the matched art is set to <code>value</code>. The CLI <code>legaia-patcher arts</code> lists every art's combo and current power tiers.</span>
-        <input type="text" id="rom-arts-power" placeholder="e.g. RDLDL=0x16, UDU=0x0C" spellcheck="false" autocomplete="off">
-      </div>
-
-      <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-arts-ap-grant">Tactical-Art AP-grant</label>
-        <span class="rom-opt-note">Make a party Tactical Art <em>grant</em> AP (Spirit) instead of costing it. One or more <code>combo=amount</code> pairs, comma-separated - the combo is the art's input (<code>L/R/D/U</code>, e.g. <code>RDLDL</code>) and <code>amount</code> (1..100) is the AP added per use; the art becomes castable at any AP level and adds that much, clamped at the 100 cap, without polluting the end-of-turn refund. The config is a <strong>shared row</strong> (the arts-table index), so a combo grants that index for <em>all three characters</em>; <code>legaia-patcher arts</code> lists each art's index. <strong>Mutually exclusive with Shiny Seru</strong> - both reuse the same verified-dead SCUS arena, so enable only one.</span>
-        <input type="text" id="rom-arts-ap-grant" placeholder="e.g. RDLDL=10, UDU=25" spellcheck="false" autocomplete="off">
-      </div>
     </details>
 
     <div class="rom-row rom-actions">
@@ -444,6 +457,7 @@
     <li><strong>House doors (experimental)</strong> - shuffles intra-town interior/exit door targets; the op is shared with NPC movement, so some actor positions scramble too.</li>
     <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables, sharing the seed's slot capacity with the convenience toggles.</li>
     <li><strong>Starting level</strong> - starts the party at the chosen level (up to 14) with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel.</li>
+    <li><strong>Tactical-Art overrides</strong> - pick any art by name and change what it does: make it <em>give</em> AP back instead of costing AP (your amount, up to the native 100 cap), set its per-hit damage tier, or turn its damage off. Arts sharing a menu slot or a button combo change together; each row's note lists exactly which.</li>
     <li><strong>Unused enemies</strong> - brings back two monsters the shipped game never places, &ldquo;Comm&rdquo; and the Evil Bat; needs <em>Randomize</em> encounters.</li>
     <li><strong>Unused items</strong> - adds &ldquo;Something Good&rdquo; and the no-name accessory the randomizer calls &ldquo;Seru Bell&rdquo; to <em>Randomize</em> fills.</li>
   </ul>
@@ -530,10 +544,29 @@
   .rom-status-err { color: var(--open); }
   .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.88em; }
 
+  /* Tactical-Art override rows */
+  .rom-art-intro { margin: 0 0 0.7rem; color: var(--text-muted); font-size: 0.9em; }
+  .art-row { border: 1px solid var(--border); border-radius: 6px; padding: 0.55rem 0.7rem; margin: 0 0 0.6rem; background: var(--bg-raised); }
+  .art-row-main { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: flex-end; }
+  .art-field { display: flex; flex-direction: column; gap: 0.15rem; margin: 0; }
+  .art-field[hidden] { display: none; }
+  .art-field > span { font-size: 0.78em; font-weight: 600; color: var(--text-dim); }
+  .rom-form .art-row select { width: auto; max-width: 18rem; }
+  .rom-form .art-row input.art-amt { width: 4.5em; padding: 0.3rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+  .art-amt-wrap { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.9em; }
+  .art-remove { margin-left: auto; align-self: center; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 5px; cursor: pointer; padding: 0.25rem 0.55rem; font: inherit; font-size: 0.85em; }
+  .art-remove:hover { color: var(--open); border-color: var(--open); }
+  .art-row-note { margin-top: 0.45rem; font-size: 0.85em; color: var(--text-dim); }
+  .rom-art-add { margin: 0.2rem 0 0.4rem; }
+  .rom-art-advanced { margin-top: 0.6rem; border-top: 1px dashed var(--border); }
+  .rom-art-advanced > summary { cursor: pointer; color: var(--text-dim); font-size: 0.88em; padding: 0.5rem 0; user-select: none; }
+  .rom-art-advanced .rom-opt { border-top: none; padding-left: 0; padding-right: 0; }
+
   @media (max-width: 33rem) {
     .rom-opt { justify-content: flex-start; }
     .seg { width: 100%; }
     .seg label { flex: 1; text-align: center; }
+    .rom-form .art-row select { max-width: 100%; }
   }
 </style>
 
