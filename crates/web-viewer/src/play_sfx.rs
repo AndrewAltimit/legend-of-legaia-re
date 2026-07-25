@@ -35,12 +35,14 @@
 //! reports it per event, so the page can say which sounds are the game's and
 //! which are the port's pick. Nothing here silently invents a retail cue.
 //!
-//! The **footstep cadence** is the interesting case: the *timing* is the ported
-//! retail kernel (`FUN_80018db0`, [`FootstepCadence`] - the interval derived
-//! from movement magnitude, the `0xB` gate, the `0x4B0` ambient period), but
-//! retail's footstep *cue id* is not pinned, so the id this fires is a `site`
-//! pick and is labelled as one. Wiring the cadence from here also gives that
-//! port its first host caller.
+//! The **footstep cadence** is the interesting case, and its answer is a
+//! negative: the *timing* is the ported retail kernel (`FUN_80018db0`,
+//! [`FootstepCadence`] - the interval derived from movement magnitude, the
+//! `0xB` gate, the `0x4B0` ambient period), but a runtime capture of every cue
+//! path while walking a field scene shows retail firing **no cue at all** - and
+//! shows that kernel's own step gate never opening while walking either. So
+//! this host keeps the cadence wired (it is that port's first host caller, and
+//! its counters stay observable) and fires nothing. See [`CUE_FOOTSTEP`].
 //!
 //! REF: FUN_80016b6c (the cue-ring drainer whose descriptor shape SfxBank mirrors)
 //! REF: FUN_80018db0 (the footstep / ambient cadence this feeds movement into)
@@ -63,20 +65,33 @@ const CUE_CURSOR: u8 = crate::sfx_view::CUE_CURSOR;
 const CUE_CONFIRM: u8 = crate::sfx_view::CUE_CONFIRM;
 /// Cue id fired for a pause-menu cancel.
 const CUE_CANCEL: u8 = crate::sfx_view::CUE_CANCEL;
-/// Cue id fired for a footstep, once one is pinned. `None` means the cadence
-/// runs but keys no voice.
+/// Cue id fired for a footstep: `None`, and pinned there by capture -
+/// **retail plays no footstep sound at all**, so the cadence runs and keys no
+/// voice because there is nothing to key.
 ///
-/// **A guessed cue id here is not a near-miss, it is an arbitrary sample.** An
-/// id resolves through the descriptor table (`DAT_8006F198 + id*8`) to a
-/// *program index* - `0x21` names program `1` - and that program selects a
-/// different sample in every resident bank. The four ids this host knows were
-/// traced from the Baka Fighter menu SM, so firing `0x21` in a field scene
-/// played the *field* bank's program 1, an impact sample: walking punched.
+/// The contrast that settles it is
+/// `scripts/pcsx-redux/autorun_footstep_cue.lua`, which watches every cue path
+/// at once - both ring producers (`FUN_80035B50` / `FUN_80035BD0`), the
+/// dispatcher `FUN_8004FCC8`, the per-actor trigger `FUN_800250D4`, the voice
+/// programmer `FUN_80065034`, and the four ring slots themselves - and runs one
+/// field save state twice for the same number of vsyncs, once standing still
+/// and once with the D-pad held. Standing still, a house-interior walk and a
+/// kingdom-overworld walk each fire **nothing**. The one walk that fires
+/// anything fires exactly two scene-script cues (`0x2E`, `0x2F`) hundreds of
+/// vsyncs apart, out of the field VM's script SFX op - triggers the player
+/// crossed, not a step cadence. Write-up: `docs/formats/sfx-table.md`.
 ///
-/// Pinning it needs a runtime capture of the SFX ring while walking in a field
-/// scene, not a closer-sounding guess. The cadence stays wired meanwhile, so
-/// [`FUN_80018db0`]'s timing keeps running and stays observable in the HUD
-/// counters; only the voice key is withheld.
+/// So there is no retail id to copy, and a guessed one would not be a
+/// near-miss but an arbitrary sample: an id resolves through the descriptor
+/// table (`DAT_8006F198 + id*8`) to a *program index* - `0x21` names program
+/// `1` - and that program selects a different sample in every resident bank.
+/// Firing `0x21` in a field scene played the *field* bank's program 1, an
+/// impact sample: walking punched.
+///
+/// The cadence stays wired so [`FUN_80018db0`]'s timing keeps running and stays
+/// observable in the HUD counters. Giving the port a footstep is therefore an
+/// *enhancement* choice - author a cue and label it `site` - not a fidelity
+/// gap waiting on more RE.
 const CUE_FOOTSTEP: Option<u8> = None;
 
 /// One event this host can fire, with how its cue id was chosen. `"disc"`
@@ -106,8 +121,9 @@ const PLAY_EVENTS: &[(&str, u8, &str, &str)] = &[
 ];
 
 /// The footstep is deliberately absent from [`PLAY_EVENTS`]: its cadence runs
-/// every field frame but keys no voice, because retail's cue id is unpinned
-/// and a guessed one plays an unrelated sample. See [`CUE_FOOTSTEP`].
+/// every field frame but keys no voice, because the capture behind
+/// [`CUE_FOOTSTEP`] shows retail playing nothing there. An entry here would
+/// have to be a `site` cue the port invents, not a retail one it reproduces.
 const _: Option<u8> = CUE_FOOTSTEP;
 
 /// World-unit displacement per tick below which the player counts as still.
@@ -130,7 +146,15 @@ const WALK_EPSILON: i32 = 1;
 /// moving band, and `0x30` is the deliberately conservative end of it: the
 /// slowest speed retail treats as moving, so the cadence this produces is the
 /// slowest retail would ever produce for a walking player and cannot overstate
-/// the step rate. Pinning the real speed word is what would replace this.
+/// the step rate.
+///
+/// Capture adds one thing worth stating plainly: retail's own speed word does
+/// **not** reach `0x30` while the player walks a field scene or the kingdom
+/// overworld - `_DAT_8007B8A4` stays pinned at `2`, the gate's else-branch, for
+/// every observed frame. Feeding `0x30` in here therefore makes the port's
+/// cadence fire where retail's stays shut, which is fine precisely because
+/// [`CUE_FOOTSTEP`] keys no voice: what runs is a timing counter, not a sound
+/// retail does not make.
 const WALK_SPEED_UNITS: i32 = 0x30;
 
 /// Live state of the page's SFX channel.

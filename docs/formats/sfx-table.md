@@ -125,6 +125,49 @@ have a descriptor note outside their tone's window (the generic strike cue
 [`VabBank::play_tone`](../../crates/engine-audio/src/vab_bind.rs) (explicit
 region index) alongside `play_note` (key-range, for the sequencer).
 
+### Walking fires no cue - retail has no footstep sound
+
+A player walking a field scene plays nothing through any of the paths above.
+That is a measured negative, taken as a contrast rather than as a single
+observation:
+[`autorun_footstep_cue.lua`](../../scripts/pcsx-redux/autorun_footstep_cue.lua)
+watches both ring producers, the dispatcher, the per-actor trigger, the voice
+programmer and the four ring slots themselves at once, and runs one save state
+twice for the same number of vsyncs - once standing still, once with the D-pad
+held.
+
+Standing still, nothing fires. Walking a house interior, nothing fires. Walking
+the kingdom overworld, nothing fires: no ring store, no `FUN_800250D4` call,
+and - the decisive one, because it does not depend on having guessed the right
+producer - not one `FUN_80065034` voice program.
+
+The one walk that does produce cues produces exactly two, `0x2E` then `0x2F`,
+hundreds of vsyncs apart, both pushed from the `FUN_80035B50` call site inside
+the field VM `FUN_801DE840` (at `0x801E0348`). That is the script SFX arm - op
+`0x36`, bit-15-set sub `0` ([`script-vm.md`](../subsystems/script-vm.md)) -
+firing scene-script literals as the player crosses triggers. Cadence is what
+separates those from a footstep: a step sound recurs every few frames for as
+long as the player moves, and these do not recur at all. The same run also
+catches a per-actor `FUN_800250D4` trigger and several voice programs, so a
+silent run is a silent game and not a blind probe.
+
+`FUN_80018DB0`, the per-frame field cadence, ticks every vsync throughout and
+never fires its step gate: `_DAT_8007B8A4` stays pinned at `2` - the
+`0xF - (speed >> 4) >= 0xB` else-branch - so the speed words it reads
+(`gp+0x614` / `gp+0x618`) never reach the `0x30` a step needs. Its two output
+bytes `DAT_800915DA` / `DAT_800915DB` are not cue traffic either: no descriptor
+is read for them and no voice is keyed, and they sit two-bytes-per-port inside
+the `0x80`-byte block the pad init `FUN_8001D230` zeroes and registers
+alongside the libpad report buffers `0x800840F8` / `0x8008411A`. Under capture
+their values never change while the player walks.
+
+This is the runtime confirmation of the static reading already recorded for the
+field controller in [`functions/audio.md`](../reference/functions/audio.md)
+("the step loop is silent"), and it widens it from one producer to all of them.
+A port that wants a footstep has to author one - there is no retail id to copy.
+`see ghidra/scripts/funcs/80018db0.txt`, `80035b50.txt`, `800250d4.txt`,
+`8001d230.txt`.
+
 ## Program bank - the active scene's music VAB
 
 The descriptors' `program` / `tone` fields index a VAB, and that VAB is **not a
