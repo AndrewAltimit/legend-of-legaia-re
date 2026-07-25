@@ -15,6 +15,8 @@ mod dispatch;
 mod overlay;
 #[path = "asset/packs.rs"]
 mod packs;
+#[path = "asset/shops.rs"]
+mod shops;
 #[path = "asset/stage.rs"]
 mod stage;
 #[path = "asset/summon.rs"]
@@ -31,6 +33,7 @@ use catalogs::*;
 use dispatch::*;
 use overlay::*;
 use packs::*;
+use shops::*;
 use stage::*;
 use summon::*;
 use tables::*;
@@ -45,9 +48,9 @@ SUBCOMMAND GROUPS:
     describe, decode, stream, extract, categorize, validate
   Game-data dumps (readable tables and exports):
     monster-archive (3D monsters, --glb), character-pack, battle-char-pack,
-    item-tables, spell-names, steal-table, accessory-passive, sfx-table,
-    new-game, level-up, worldmap-menu, summon-creatures, mode-table,
-    move-power, element-affinity
+    item-tables, shop-stock, spell-names, steal-table, accessory-passive,
+    sfx-table, new-game, level-up, worldmap-menu, summon-creatures,
+    mode-table, move-power, element-affinity
   RE scanners and bulk sweeps (reverse-engineering aids):
     scan, scan-stream, tim-scan, tim-catalog, tim-deep-catalog,
     tim-render-distinct, tmd-scan, clut-finder, stage, stage-scan,
@@ -683,6 +686,52 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         consumables_only: bool,
     },
+    /// Dump every town gold shop's inventory, joining the on-disc stock to
+    /// item names and prices.
+    ///
+    /// The stock is NOT a shop table: it is inline in each scene's MAN
+    /// field-VM script (op `0x49` sub-op `0`), alongside that scene's chests
+    /// and doors. Names and prices come from the separate static item record
+    /// table in `SCUS_942.54` (`DAT_80074368`, `0xC` stride; the price is the
+    /// `u16` at `+2`). This command joins the two.
+    ///
+    /// Two things worth knowing before you try to reproduce it by hand:
+    ///
+    /// 1. Sites are found by SCANNING the decompressed MAN for the op-`0x49`
+    ///    signature, not by walking the script. A shop's `0x49` is often gated
+    ///    behind a dialogue confirm-picker whose option-jump table desyncs a
+    ///    linear disassembler before it reaches the op (Biron Monastery's
+    ///    Corey vendor), so a walk silently misses shops.
+    /// 2. A record's `count` over-counts. It includes a trailing run of
+    ///    unsellable price-`0` template ids ("Ra-Seru Meta $N" placeholders),
+    ///    which the shop UI never shows. Output prints both numbers -
+    ///    "decodes 10 ids, sells 7" - and flags the tail rather than hiding it.
+    ///
+    /// Format docs:
+    /// https://andrewaltimit.github.io/legend-of-legaia-re/subsystems/shop.html
+    ShopStock {
+        /// Path to `PROT.DAT` (e.g. `extracted/PROT.DAT`, as written by
+        /// `disc-extract extract <bin> extracted/` or `legaia-extract`).
+        /// NOT a raw `.bin` disc image. (`--disc` is a compatible alias.)
+        #[arg(long, alias = "disc")]
+        prot: PathBuf,
+        /// Path to `SCUS_942.54` - the source of item names and prices.
+        #[arg(long)]
+        scus: PathBuf,
+        /// Path to `CDNAME.TXT`, so each shop reports the scene it came from.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// Only scenes whose CDNAME block name matches (exact, else substring).
+        #[arg(long)]
+        scene: Option<String>,
+        /// Only this PROT **extraction** entry index (the `NNNN` in
+        /// `extracted/PROT/NNNN_*.BIN`).
+        #[arg(long)]
+        entry: Option<u32>,
+        /// Emit JSON instead of a formatted listing.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// List every spell/art with its name, MP cost and target, read from the
     /// game executable. Format docs:
     /// https://andrewaltimit.github.io/legend-of-legaia-re/formats/spell-table.html
@@ -1131,6 +1180,21 @@ fn main() -> Result<()> {
             equipment_only,
             consumables_only,
         } => item_tables_cmd(&scus, equipment_only, consumables_only),
+        Cmd::ShopStock {
+            prot,
+            scus,
+            cdname,
+            scene,
+            entry,
+            json,
+        } => shop_stock_cmd(
+            &prot,
+            &scus,
+            cdname.as_deref(),
+            scene.as_deref(),
+            entry,
+            json,
+        ),
         Cmd::SpellNames { scus, json } => spell_names_cmd(&scus, json),
         Cmd::StealTable { scus, all, json } => steal_table_cmd(&scus, all, json),
         Cmd::AccessoryPassive { scus, json } => accessory_passive_cmd(&scus, json),

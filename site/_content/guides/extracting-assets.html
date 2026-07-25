@@ -84,6 +84,26 @@
   <p>Siblings: <code>accessory-passive</code>, <code>sfx-table</code>, <code>level-up</code>, <code>worldmap-menu</code>. Formats: <a href="../formats/item-table.html">item table</a>, <a href="../formats/spell-table.html">spell table</a>, <a href="../formats/steal-table.html">steal table</a>, <a href="../formats/new-game-table.html">new-game template</a>.</p>
 </section>
 
+<section class="doc-section" id="shop-stock">
+  <h2>Shop inventories - a table joined from two files</h2>
+  <p>A town's stock is <strong>not</strong> in a shop table. It is inline in that scene's MAN field-VM script (op <code>0x49</code>, sub-op <code>0</code>), in the same place the scene's chests and doors live. The item <em>names and prices</em> come from somewhere else entirely - the static item record table in <code>SCUS_942.54</code> (<code>DAT_80074368</code>, <code>0xC</code> stride, file offset <code>0x64B68</code>; the price is the <code>u16</code> at <code>+2</code>). <code>shop-stock</code> opens both and joins them:</p>
+<pre><code>./asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                   --cdname extracted/CDNAME.TXT             # every shop on the disc
+./asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                   --cdname extracted/CDNAME.TXT --scene bylon      # one scene</code></pre>
+  <p><code>--scene</code> matches the CDNAME block name; <code>--entry N</code> takes a single extraction index instead; <code>--json</code> emits the same data for scripting. Output:</p>
+<pre><code>== bylon (entry 0053, MAN +0x406a) - "Morlang"  decodes 10 ids, sells 7
+    0. 0x22  Survival Knife            180
+    ...
+    6. 0x60  Electric Shoes            560
+    7. 0x01  Ra-Seru Meta $1             0   &lt;- unsellable tail (record padding, not stock)</code></pre>
+  <p>Three things to read carefully, because each has caught people out.</p>
+  <p><strong>"decodes 10 ids, sells 7" is two different numbers on purpose.</strong> The record's <code>count</code> byte over-counts: it includes a trailing run of price-<code>0</code> <em>template</em> ids - usually the "Ra-Seru Meta $N" placeholders <code>0x01/0x02/0x03</code>. The shop UI stops at the priced run, so that tail is structural padding, not stock. The listing flags it instead of truncating, because a reader shown only one of the two numbers will assume the other.</p>
+  <p><strong>Sites are found by scanning, not by walking the script.</strong> A shop's <code>0x49</code> is often gated behind a dialogue confirm-picker whose option-jump table desyncs a linear disassembler before it ever reaches the op. Biron Monastery's Corey vendor is the case that exposed this - a walk silently misses it and reports one shop too few, with no error.</p>
+  <p><strong>The entry column is in extraction-index space; the scene column is not.</strong> CDNAME <code>#define &lt;name&gt; N</code> names the content at extraction entry <code>N - 2</code>, so the scene label is resolved through that shift and can disagree with the extraction <em>filename</em> near a block boundary. See <a href="../formats/cdname.html">CDNAME numbering</a>.</p>
+  <p>Subsystem page: <a href="../subsystems/shop.html">Shop subsystem</a>. The <a href="../shops.html">curated shop tables</a> are the other half of this - when the decoded record and the human-readable table agree, both are confirmed.</p>
+</section>
+
 <section class="doc-section" id="dialog-font">
   <h2>The dialog font</h2>
   <p>The pipeline's final step writes <code>extracted/font/</code> (atlas PNG, tile-page sheet, widths CSV, metadata) - the engine and asset-viewer load text from it. To rebuild it alone, no emulator needed:</p>
