@@ -816,10 +816,120 @@ export class LegaiaMinigames {
      */
     fishing_advance_cast(step: number): void;
     /**
+     * Buy `qty` of `row` at the venue's exchange, spending the pond
+     * session's point pool and latching one-time rows in the purchased mask
+     * (`FUN_801d06c8`'s Yes arm through the ported kernels). Returns the
+     * purchase (`{"item_id":..,"qty":..,"cost":..,"name":..}`) or `null`.
+     */
+    fishing_exchange_buy(venue: number, row: number, qty: number): string;
+    /**
+     * The venue's point-exchange page, evaluated against the live session's
+     * points + purchased mask through the ported prize kernels:
+     *
+     * ```json
+     * { "venue": 0, "points": 1200, "first_visible": 1, "rows": [
+     *   { "row": 0, "limit": 1, "price": 50000, "item_id": 12,
+     *     "name": "War God Icon"|null, "owned": 0, "available": false,
+     *     "max_qty": 0, "one_time": true, "latched": false }, ... ] }
+     * ```
+     */
+    fishing_exchange_json(venue: number): string;
+    /**
      * Lock the cast and hook a fish, entering the fight (no-op outside
      * casting). The locked power selects the species.
      */
     fishing_lock_cast(): void;
+    /**
+     * Per-vertex `[cba, tsb]` for the angler body.
+     */
+    fishing_player_cba_tsb(): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the angler's hybrid render.
+     */
+    fishing_player_flat_rgba(): Uint8Array;
+    /**
+     * `[bone_count, frame_count]` of the angler's standing-idle clip.
+     */
+    fishing_player_idle_dims(): Uint32Array;
+    /**
+     * The angler's standing-idle clip as absolute per-(frame, bone)
+     * `[tx, ty, tz, rx, ry, rz]` - the shared pose-stream shape
+     * (`dance_body_pose_frames` / `baka_anim_pose_frames`).
+     */
+    fishing_player_idle_frames(): Int32Array;
+    /**
+     * Triangle indices for the angler body.
+     */
+    fishing_player_indices(): Uint32Array;
+    /**
+     * Per-vertex TMD object index (pose bone), parallel to the positions.
+     */
+    fishing_player_object_ids(): Uint32Array;
+    /**
+     * TMD object count (pose rig width) of the angler body.
+     */
+    fishing_player_part_count(): number;
+    /**
+     * Angler body vertex positions (object-local; the idle pose assembles
+     * them). Empty when the character pack didn't decode.
+     */
+    fishing_player_positions(): Float32Array;
+    /**
+     * Per-vertex `[u, v]` for the angler body.
+     */
+    fishing_player_uvs(): Int32Array;
+    /**
+     * The retail HUD draw list for this frame: the persistent rows
+     * (`FUN_801d13f0`), the catch HUD (`FUN_801d1580`, gauges once hooked)
+     * and the live banner animations, each resolved through the ported
+     * engine-ui builders. Coordinates are retail 320x240 screen space.
+     * Also services the banner timers, so call it exactly once per frame.
+     */
+    fishing_pond_hud_json(): string;
+    /**
+     * Whether the venue-faithful pond can start (species + spawn + cadence
+     * tables all decoded).
+     */
+    fishing_pond_ready(): boolean;
+    /**
+     * Start a pond session at `venue` (0 = Buma, 1 = Vidna) with the
+     * persistent save-block state: equipped `lure` (0..=2), `rod` stat
+     * (0..=2), lifetime `casts`, the point record triple, and the one-time
+     * prize `purchased_mask`. `seed` feeds the deterministic BIOS-rand
+     * stream. Returns `false` when the tables didn't decode.
+     */
+    fishing_pond_start(venue: number, lure: number, rod: number, casts: number, points: number, best_points: number, best_fish: number, purchased_mask: number, seed: number): boolean;
+    /**
+     * Live pond state:
+     *
+     * ```json
+     * { "live": true, "phase": "idle"|"windup"|"power"|"flight"|"waiting"|
+     *   "hooked"|"landed"|"snapped",
+     *   "cast_power": 64, "cast_max": 4096, "tension": 0, "tension_max": 4096,
+     *   "record": 0, "readout": 0, "depth": 0, "lateral": 0,
+     *   "fish": {"index":3,"name":...,"score":8000}|null, "move": "run"|...,
+     *   "points": 0, "best": 0, "best_fish": 0, "casts": 51,
+     *   "last_award": 0, "venue": 0, "lure": 1, "rod": 2 }
+     * ```
+     */
+    fishing_pond_state_json(): string;
+    /**
+     * Advance the pond one frame. `reel_mask` carries the held pad bits
+     * (`0x40` Cross / reel A, `0x80` Square / reel B), `cast_edge` the cast /
+     * confirm press, `edge_bonus` the count of fresh input edges this frame
+     * (each feeds the strike credit). Returns the events raised this frame:
+     *
+     * ```json
+     * [ {"e":"splash"}, {"e":"hooked","id":3,"name":"..."},
+     *   {"e":"landed","points":1234}, {"e":"snapped"} ]
+     * ```
+     */
+    fishing_pond_tick(reel_mask: number, cast_edge: boolean, edge_bonus: number): string;
+    /**
+     * Prizes collected through the exchange this session:
+     * `[{"item_id":..,"qty":..,"name":..}, ...]`.
+     */
+    fishing_prizes_json(): string;
     /**
      * Recast after a resolved fight: reset the meter and clear the fight
      * (no-op unless the fight is done).
@@ -831,6 +941,64 @@ export class LegaiaMinigames {
      * `2` = reel B (Square, `rod*6 + 0x19`). No-op outside the fighting phase.
      */
     fishing_reel(input: number, frames: number): void;
+    /**
+     * Per-vertex `[cba, tsb]` for the baked map.
+     */
+    fishing_scene_cba_tsb(): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the baked map's hybrid
+     * textured / vertex-colour render.
+     */
+    fishing_scene_flat_rgba(): Uint8Array;
+    /**
+     * Walk-ground geometry summary for the page's shore-anchor fit:
+     * `{"aabb":[[lo],[hi]],"centroid":[x,y,z],"verts":N}` over the
+     * heightfield's own vertices (the walkable shore band - a much tighter
+     * frame than the whole map's AABB). `null` when the scene has no
+     * resolvable floor grid.
+     */
+    fishing_scene_ground_json(): string;
+    /**
+     * Walk-ground height (world Y, retail Y-down) under world `(x, z)`:
+     * the nearest heightfield vertex's Y. `NaN`-free: returns `0` with no
+     * ground. Used by the page to anchor the angler on the shore.
+     */
+    fishing_scene_height_at(x: number, z: number): number;
+    /**
+     * Triangle indices for the baked map.
+     */
+    fishing_scene_indices(): Uint32Array;
+    /**
+     * Scene status for the page + the fitted framing:
+     * `{"aabb":[[lo],[hi]],"player":true,"idle_frames":N,"ground":true}`.
+     */
+    fishing_scene_info_json(): string;
+    /**
+     * Baked venue-map vertex positions (`[x, y, z, ...]`, retail world
+     * space, Y down). Empty when the scene didn't decode.
+     */
+    fishing_scene_positions(): Float32Array;
+    /**
+     * Whether the fishing venue scene decoded off this disc.
+     */
+    fishing_scene_ready(): boolean;
+    /**
+     * Per-vertex `[u, v]` texel coords for the baked map.
+     */
+    fishing_scene_uvs(): Int32Array;
+    /**
+     * The 1 MB PSX VRAM the venue + angler sample.
+     */
+    fishing_scene_vram(): Uint8Array;
+    /**
+     * The venue's species-spawn table, named:
+     *
+     * ```json
+     * { "venue": 0, "rows": [ { "lure": 0, "bands": [
+     *     {"id": 3, "name": "..."}, ... 5 ] }, ... 3 ] }
+     * ```
+     */
+    fishing_spawn_json(venue: number): string;
     /**
      * The whole decoded species table, for the "what's biting" panel:
      *
@@ -3222,6 +3390,13 @@ export class Music01Render {
 }
 
 /**
+ * Read the persistent fishing block out of save block `block` of an
+ * emulator card container: point total, equipped lure + rod, best catch,
+ * the lifetime cast counter and the one-time prize bitmask.
+ */
+export function card_fishing_json(bytes: Uint8Array, block: number): string;
+
+/**
  * The 16x16 memory-card icon baked into save block `block` of a card
  * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
  * character's portrait - the retail save writer copies the load-screen
@@ -3237,6 +3412,13 @@ export function card_icon_rgba(bytes: Uint8Array, block: number): Uint8Array;
  * carries no checksum; the card's directory-frame checksums are untouched).
  */
 export function card_patch_coins(bytes: Uint8Array, block: number, coins: number): Uint8Array;
+
+/**
+ * Write the fishing block back into save block `block`, returning the whole
+ * container with only those seven dwords changed - the same in-place edit
+ * shape as `card_patch_coins`, so the card still loads in an emulator.
+ */
+export function card_patch_fishing(bytes: Uint8Array, block: number, points: number, lure: number, rod: number, best: number, best_fish: number, casts: number, purchased: number): Uint8Array;
 
 /**
  * Read the casino coin bank from save block `block` of a card container.
@@ -3444,8 +3626,10 @@ export interface InitOutput {
     readonly __wbg_legaiasfx_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
     readonly __wbg_music01render_free: (a: number, b: number) => void;
+    readonly card_fishing_json: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_icon_rgba: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly card_patch_fishing: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
     readonly disc_portrait_rgba: (a: number, b: number, c: number) => [number, number];
@@ -3563,9 +3747,37 @@ export interface InitOutput {
     readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
     readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_advance_cast: (a: number, b: number) => void;
+    readonly legaiaminigames_fishing_exchange_buy: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_fishing_exchange_json: (a: number, b: number) => [number, number];
     readonly legaiaminigames_fishing_lock_cast: (a: number) => void;
+    readonly legaiaminigames_fishing_player_cba_tsb: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_flat_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_idle_dims: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_idle_frames: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_indices: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_object_ids: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_part_count: (a: number) => number;
+    readonly legaiaminigames_fishing_player_positions: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_player_uvs: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_hud_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_ready: (a: number) => number;
+    readonly legaiaminigames_fishing_pond_start: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+    readonly legaiaminigames_fishing_pond_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_pond_tick: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_fishing_prizes_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_recast: (a: number) => void;
     readonly legaiaminigames_fishing_reel: (a: number, b: number, c: number) => void;
+    readonly legaiaminigames_fishing_scene_cba_tsb: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_flat_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_ground_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_height_at: (a: number, b: number, c: number) => number;
+    readonly legaiaminigames_fishing_scene_indices: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_info_json: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_positions: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_ready: (a: number) => number;
+    readonly legaiaminigames_fishing_scene_uvs: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_scene_vram: (a: number) => [number, number];
+    readonly legaiaminigames_fishing_spawn_json: (a: number, b: number) => [number, number];
     readonly legaiaminigames_fishing_species_json: (a: number) => [number, number];
     readonly legaiaminigames_fishing_start: (a: number) => number;
     readonly legaiaminigames_fishing_state_json: (a: number) => [number, number];
