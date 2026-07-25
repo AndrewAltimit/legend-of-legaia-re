@@ -295,6 +295,8 @@
           <button id="play-pause" type="button">Pause</button>
           <button id="play-step" type="button">Step 1 frame</button>
           <button id="play-recenter" type="button">Reset camera</button>
+          <button id="play-fishing" type="button"
+                  title="Start the fishing minigame here (Z casts and reels, V reels harder)">Fish here</button>
           <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
         </div>
       </div>
@@ -306,6 +308,7 @@
             <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
             <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
             <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
+            <kbd data-key="KeyV">V</kbd><span>Square (reel harder while fishing)</span>
             <kbd data-key="Enter">Enter</kbd><span>Start</span>
             <kbd>Drag</kbd><span>Swing the camera</span>
             <kbd>Wheel</kbd><span>Zoom</span>
@@ -433,7 +436,7 @@
 <script src="js/webgl-math.js?v=play-1"></script>
 <script src="js/webgl-tmd.js?v=play-1"></script>
 <script src="js/field-scene-view.js?v=play-1"></script>
-<script src="js/play-app.js?v=play-3"></script>
+<script src="js/play-app.js?v=play-4"></script>
 <script>
 (function () {
   'use strict';
@@ -1268,6 +1271,28 @@
     view.cam.yaw = 0;
     view.cam.pitch = 0.62;
     view.cam.halfWidth = view.cam.halfHeight = 520;
+  });
+
+  /* Fishing minigame. The engine suspends whatever mode the scene is in and
+     restores it on exit, so this works from any staged scene - the disc's own
+     species table (the fishing overlay) decides what bites. The HUD is the
+     retail draw list; Z / V are the reel buttons the ported driver reads. */
+  const fishBtn = document.getElementById('play-fishing');
+  const syncFishBtn = () => {
+    const on = !!(view && view.fishingActive());
+    fishBtn.textContent = on ? 'Stop fishing' : 'Fish here';
+    fishBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  fishBtn.addEventListener('click', () => {
+    if (!view) return;
+    if (!view.toggleFishing()) {
+      fishBtn.textContent = 'Fishing unavailable';
+      fishBtn.disabled = true;
+      fishBtn.title = 'The fishing overlay (PROT 0972) did not decode from this disc.';
+      return;
+    }
+    syncFishBtn();
+    canvas.focus();
   });
 
   /* Fullscreen the canvas wrap (not the canvas itself) so the menu overlay,

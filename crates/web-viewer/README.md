@@ -217,6 +217,32 @@ Two deliberate divergences from the native window: input is **edge**-triggered
 held pad), and the buy/sell rows carry **real item names** off the SCUS table
 the page already parses, where the native rows are placeholder labels.
 
+## Fishing minigame (`play_fishing`)
+
+`LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
+through the static-overlay map, decodes its per-species table plus the two
+point-exchange venue pages off the visitor's own disc, and installs a
+`legaia_engine_core::fishing::FishingSession` with `World::enter_fishing` - the
+same mode-suspend contract the native window uses, so the field scene stays
+intact underneath and comes back on exit. `play_fishing_hud_json` serves the
+retail HUD through the shared `fishing_hud_draws_for` consumer, and
+`play_fishing_prizes_json` / `play_fishing_prize_buy` expose the prize rows with
+retail availability gating.
+
+Nothing here is an input path, and that is the design: the driver is
+`World::tick_fishing`, which reads the pad word the page already routes each
+frame. Cross casts and reels, Square reels harder, Cross recasts - and because
+the ported reel decoder classifies the two held bits, holding both resolves the
+way retail does rather than the way a host `if` chain would.
+
+The one place the page draws more than the native window: with the fishing
+sprite page undecoded, `fishing_hud_draws_for`'s atlas is blind on both hosts
+and it drops every glyph and gauge fill, so native's fishing HUD is digits and
+captions only. The gauges are the functional half of the tension tug-of-war, so
+this host also emits their resolved frames (the ported cap/body/cap geometry) as
+a `bars` channel the page fills as rects. Disc-gated oracle:
+`tests/play_fishing_host.rs`.
+
 ## Keeping the two hosts in step
 
 The browser play page and `legaia-engine play-window` are two framebuffers over

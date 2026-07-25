@@ -738,6 +738,44 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
+    /* ---------- fishing minigame ---------- */
+
+    /* Is a fishing session live on the engine's world this frame? */
+    fishingActive() {
+      if (typeof this.rt.play_fishing_active !== 'function') return false;
+      try { return !!this.rt.play_fishing_active(); } catch (e) { return false; }
+    }
+
+    /* Start / leave the fishing minigame. The engine suspends the current
+     * scene mode and restores it on exit, banking the session's points into the
+     * world's persistent pool - so the field is exactly where it was left and
+     * the point total survives. Returns `true` on a state change. */
+    toggleFishing() {
+      const rt = this.rt;
+      if (typeof rt.play_fishing_start !== 'function') return false;
+      try {
+        if (this.fishingActive()) {
+          rt.play_fishing_stop();
+          /* Drop the HUD immediately rather than waiting for the next layer to
+           * claim the overlay. */
+          if (this._menuCtx && this.menuOverlay) {
+            this._menuCtx.clearRect(0, 0, this.menuOverlay.width, this.menuOverlay.height);
+            this._overlayActive = false;
+          }
+          return true;
+        }
+        return !!rt.play_fishing_start();
+      } catch (e) { return false; }
+    }
+
+    /* The live session's readout (`{live, phase, cast_power, tension, ...}`), or
+     * `{live:false}`. */
+    fishingState() {
+      if (typeof this.rt.play_fishing_state_json !== 'function') return { live: false };
+      try { return JSON.parse(this.rt.play_fishing_state_json()); }
+      catch (e) { return { live: false }; }
+    }
+
     /* ---------- retail pause menu (engine-driven) ---------- */
 
     /* Drive the retail pause menu from this frame's just-pressed edges (the
@@ -924,6 +962,42 @@
       } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
     }
 
+    /* Fishing HUD layer. Returns `true` when it drew (a session is live), so
+     * `_drawOverlay` can stop there.
+     *
+     * The text quads come from the engine's shared draw-list consumer
+     * (`fishing_hud_draws_for`, the same call the native window makes) and are
+     * blitted from the font atlas like every other overlay layer. The `bars`
+     * channel is separate for one reason: the fishing sprite page is the one
+     * asset in the chain nobody has decoded, so the consumer's atlas is blind
+     * and it drops the gauge fills. Their geometry still comes from the engine
+     * (the ported cap/body/cap frame), so this only fills the rect it is told
+     * to. */
+    _drawFishingHud(ctx, ov) {
+      if (typeof this.rt.play_fishing_hud_json !== 'function') return false;
+      let hud = null;
+      try { hud = JSON.parse(this.rt.play_fishing_hud_json(ov.width, ov.height)); }
+      catch (e) { return false; }
+      if (!hud || !hud.open) return false;
+      this._ensureMenuBlitters();
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      /* Gauge fills first, so the digit rows read on top of them. Coordinates
+       * are retail 320x240 stage pixels; `stage` is the engine's own
+       * origin/scale for this surface, the same transform its text quads were
+       * already scaled by. */
+      const st = hud.stage || [0, 0, 1];
+      for (const b of (hud.bars || [])) {
+        if (b.w <= 0 || b.h <= 0) continue;
+        ctx.fillStyle = 'rgb(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ')';
+        ctx.fillRect(st[0] + b.x * st[2], st[1] + b.y * st[2],
+          Math.max(1, b.w * st[2]), Math.max(1, b.h * st[2]));
+      }
+      if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
+      this._overlayActive = true;
+      this.dialogOnCanvas = false;
+      return true;
+    }
+
     /* Blit the current pause-menu OR retail-dialog draw lists onto the 2D
      * overlay canvas: the gold 9-slice / filigree chrome from the menu sheet,
      * then the font glyphs. A no-op (and a one-shot clear) when neither is up.
@@ -983,6 +1057,14 @@
         this.dialogOnCanvas = false;
         return;
       }
+
+      /* Fishing minigame HUD (the retail persistent + catch rows through the
+       * shared `fishing_hud_draws_for` consumer, plus the gauge frames the
+       * undecoded sprite page cannot fill). Checked before the shop / dialog
+       * layers because fishing is a mode *suspend*: while it runs, the field
+       * underneath is frozen and nothing else can be up. Composites over the
+       * live scene rather than blacking it. */
+      if (this._drawFishingHud(ctx, ov)) return;
 
       /* Field merchant panel + post-action banners (level-up, Seru capture).
        * Same builders as the native window (`shop_draws_for`,

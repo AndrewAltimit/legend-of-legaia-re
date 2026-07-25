@@ -1945,6 +1945,69 @@ export class LegaiaRuntime {
      */
     play_dialog_draws_json(surface_w: number, surface_h: number): string;
     /**
+     * Is a fishing session live on the world this frame?
+     */
+    play_fishing_active(): boolean;
+    /**
+     * This frame's fishing HUD as page quads, in the same
+     * `{ open, sprites, texts, bars }` shape the other overlay payloads use.
+     *
+     * `texts` and `sprites` come from
+     * [`legaia_engine_ui::fishing_hud_draws_for`] - the shared consumer the
+     * native window calls, with the same blind [`FishingHudAtlas`] (the
+     * fishing sprite page is undecoded, so glyph ids resolve to nothing and
+     * only the digit / caption rows survive). `bars` carries the resolved
+     * gauge frames the blind atlas cannot fill; see the module note.
+     */
+    play_fishing_hud_json(surface_w: number, surface_h: number): string;
+    /**
+     * Buy prize row `row` at `venue` with the live point pool. Returns the
+     * remaining points, or `-1` when the row is unavailable (too few points,
+     * a latched one-time prize, or a full stack).
+     */
+    play_fishing_prize_buy(venue: number, row: number): number;
+    /**
+     * The fishing point-exchange rows for `venue` (`0` Buma, `1` Vidna), with
+     * the retail availability gating applied against the live point pool and
+     * bag:
+     *
+     * ```json
+     * { "venue": 0, "points": 0, "rows": [
+     *     { "name": "...", "price": 0, "one_time": false, "available": true,
+     *       "owned": 0 } ] }
+     * ```
+     *
+     * `null` when the venue pages did not decode.
+     */
+    play_fishing_prizes_json(venue: number): string;
+    /**
+     * Start a fishing session on the live world, suspending the current scene
+     * mode. Returns `false` (and leaves the world untouched) when no disc is
+     * loaded or the fishing overlay's species table does not decode.
+     *
+     * The session's point pool resumes [`World::fishing_points`], so leaving
+     * and re-entering keeps the running total.
+     *
+     * [`World::fishing_points`]: legaia_engine_core::world::World::fishing_points
+     */
+    play_fishing_start(): boolean;
+    /**
+     * The live session's state for the page's readout:
+     *
+     * ```json
+     * { "live": true, "phase": "casting", "cast_power": 0, "cast_max": 0,
+     *   "tension": 0, "tension_max": 0, "progress": 0, "points": 0,
+     *   "best": 0, "lure": 0 }
+     * ```
+     */
+    play_fishing_state_json(): string;
+    /**
+     * Leave the fishing session and restore the suspended scene mode, banking
+     * the session's points into the world's persistent pool. Returns the
+     * banked total (`-1` when no session was live).
+     */
+    play_fishing_stop(): number;
+    /**
      * `[width, height]` of the chrome atlas; `[0, 0]` when none.
      */
     play_menu_chrome_dims(): Uint32Array;
@@ -3913,6 +3976,13 @@ export interface InitOutput {
     readonly legaiaruntime_play_cutscene_state_json: (a: number) => [number, number];
     readonly legaiaruntime_play_cutscene_text_draws_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaruntime_play_dialog_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_fishing_active: (a: number) => number;
+    readonly legaiaruntime_play_fishing_hud_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_fishing_prize_buy: (a: number, b: number, c: number) => number;
+    readonly legaiaruntime_play_fishing_prizes_json: (a: number, b: number) => [number, number];
+    readonly legaiaruntime_play_fishing_start: (a: number) => number;
+    readonly legaiaruntime_play_fishing_state_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_fishing_stop: (a: number) => number;
     readonly legaiaruntime_play_menu_chrome_dims: (a: number) => [number, number];
     readonly legaiaruntime_play_menu_chrome_rgba: (a: number) => [number, number];
     readonly legaiaruntime_play_menu_close: (a: number) => void;

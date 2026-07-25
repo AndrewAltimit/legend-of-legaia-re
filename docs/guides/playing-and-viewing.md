@@ -50,7 +50,32 @@ the audio cursor). Without `--disc` it plays a raw extracted `.STR` file
 ([extracting-assets.md](extracting-assets.md)). Background:
 [cutscene.md](../subsystems/cutscene.md).
 
-## 4. Saves and config live next to you
+## 4. Start a minigame from a live scene
+
+Every ported minigame is a **mode suspend** on the running world, not a
+separate program: the field scene stays loaded underneath and comes back when
+you leave, so you start one from wherever you happen to be standing.
+
+In `play-window` each is one key, and the same key leaves again: `L` fishing,
+`K` dance, `O` the casino slot machine, `B` Baka Fighter, `M` Muscle Dome. Each
+loads that minigame's overlay off the disc and installs a session, so the rules,
+tables and scoring all come from the disc rather than from hardcoded numbers.
+
+The browser play page carries the fishing entry as a **Fish here** button under
+the canvas. Cross casts and reels, Square reels harder, Cross recasts once a
+catch resolves - the same pad the field controller reads, because the driver is
+the shared per-frame fishing tick rather than a per-host input handler. Points
+bank into the world's persistent pool, so they survive leaving and re-entering,
+and the prize-exchange rows come off the same overlay with retail availability
+gating. Background: [minigame-fishing.md](../subsystems/minigame-fishing.md).
+
+One HUD caveat that looks like a bug and is not: the fishing sprite page is the
+one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
+and caption rows from the dialog font and skip its glyphs. The captions are
+engine-side English placeholders at the retail pen positions, so a long
+placeholder can overlap the count beside it.
+
+## 5. Saves and config live next to you
 
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode) in
@@ -69,7 +94,7 @@ Rebind keys with `config`:
 `KEY=BUTTON` uses friendly key names (`Z`, `Up`, `Enter`, `RShift`) and PSX
 pad button names (`Cross`, `Circle`, `Start`, `L1`).
 
-## 5. Record and replay a session
+## 6. Record and replay a session
 
 ```bash
 ./legaia-engine record --disc "/path/to/disc.bin" --out session.toml
@@ -87,7 +112,7 @@ at all. Details: [determinism-replay.md](../tooling/determinism-replay.md).
 footer separates the player-facing ones above from the development
 diagnostics (parity oracles, synthetic state drivers) you can ignore.
 
-## 6. Browse assets interactively
+## 7. Browse assets interactively
 
 `asset-viewer` reads the `extracted/` tree (there is no `--disc` here - run
 `legaia-extract` first). The `field` and `dialog` demos additionally need the
@@ -109,7 +134,7 @@ same keys. The `tim` subcommand also takes `extracted/PROT.DAT` itself with
 `--offset`/`--clut` for the system-UI textures that live outside any TOC
 entry.
 
-## 7. Read the game's scripts
+## 8. Read the game's scripts
 
 The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:

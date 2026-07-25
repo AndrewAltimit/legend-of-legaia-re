@@ -23,6 +23,7 @@ mod nav_disc;
 pub mod play;
 pub mod play_cutscene;
 pub mod play_dialog;
+pub mod play_fishing;
 pub mod play_menu;
 pub mod play_name_entry;
 pub mod play_shop;

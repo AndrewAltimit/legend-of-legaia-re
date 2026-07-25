@@ -92,6 +92,19 @@ pub struct LegaiaRuntime {
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
     pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
+    /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
+    /// strike splash), serviced once per sim tick by
+    /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
+    /// same-named field ([`crate::play_fishing`]).
+    pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
+    /// This tick's live banner draws, folded into the fishing HUD list.
+    pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
+    /// Last observed fishing phase, so the banner timers seed on phase *edges*.
+    pub(crate) fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
+    /// The two point-exchange venue pages decoded alongside the species table
+    /// when a fishing session starts. `None` until then (or if they don't
+    /// decode).
+    pub(crate) fishing_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
@@ -137,6 +150,10 @@ impl LegaiaRuntime {
             title_atlas: None,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
+            fishing_banners: Default::default(),
+            fishing_banner_draws: Vec::new(),
+            fishing_prev_phase: None,
+            fishing_venues: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             #[cfg(target_arch = "wasm32")]
@@ -411,6 +428,10 @@ impl LegaiaRuntime {
         if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
             host.world.finish_cutscene();
         }
+        // Fishing HUD one-shot banners ride the sim clock, not the page's
+        // animation frame, so a heavy scene does not slow them down. The `host`
+        // borrow is dead from here, so this can re-borrow.
+        self.tick_fishing_banners();
         // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
         // the scene's music, started/queued/paused/stopped by the same events
         // the native `AudioBgmDirector` consumes. The `host` borrow above is

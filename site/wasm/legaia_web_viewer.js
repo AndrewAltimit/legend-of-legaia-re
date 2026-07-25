@@ -4114,6 +4114,126 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * Is a fishing session live on the world this frame?
+     * @returns {boolean}
+     */
+    play_fishing_active() {
+        const ret = wasm.legaiaruntime_play_fishing_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * This frame's fishing HUD as page quads, in the same
+     * `{ open, sprites, texts, bars }` shape the other overlay payloads use.
+     *
+     * `texts` and `sprites` come from
+     * [`legaia_engine_ui::fishing_hud_draws_for`] - the shared consumer the
+     * native window calls, with the same blind [`FishingHudAtlas`] (the
+     * fishing sprite page is undecoded, so glyph ids resolve to nothing and
+     * only the digit / caption rows survive). `bars` carries the resolved
+     * gauge frames the blind atlas cannot fill; see the module note.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_fishing_hud_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_fishing_hud_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Buy prize row `row` at `venue` with the live point pool. Returns the
+     * remaining points, or `-1` when the row is unavailable (too few points,
+     * a latched one-time prize, or a full stack).
+     * @param {number} venue
+     * @param {number} row
+     * @returns {number}
+     */
+    play_fishing_prize_buy(venue, row) {
+        const ret = wasm.legaiaruntime_play_fishing_prize_buy(this.__wbg_ptr, venue, row);
+        return ret;
+    }
+    /**
+     * The fishing point-exchange rows for `venue` (`0` Buma, `1` Vidna), with
+     * the retail availability gating applied against the live point pool and
+     * bag:
+     *
+     * ```json
+     * { "venue": 0, "points": 0, "rows": [
+     *     { "name": "...", "price": 0, "one_time": false, "available": true,
+     *       "owned": 0 } ] }
+     * ```
+     *
+     * `null` when the venue pages did not decode.
+     * @param {number} venue
+     * @returns {string}
+     */
+    play_fishing_prizes_json(venue) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_fishing_prizes_json(this.__wbg_ptr, venue);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Start a fishing session on the live world, suspending the current scene
+     * mode. Returns `false` (and leaves the world untouched) when no disc is
+     * loaded or the fishing overlay's species table does not decode.
+     *
+     * The session's point pool resumes [`World::fishing_points`], so leaving
+     * and re-entering keeps the running total.
+     *
+     * [`World::fishing_points`]: legaia_engine_core::world::World::fishing_points
+     * @returns {boolean}
+     */
+    play_fishing_start() {
+        const ret = wasm.legaiaruntime_play_fishing_start(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * The live session's state for the page's readout:
+     *
+     * ```json
+     * { "live": true, "phase": "casting", "cast_power": 0, "cast_max": 0,
+     *   "tension": 0, "tension_max": 0, "progress": 0, "points": 0,
+     *   "best": 0, "lure": 0 }
+     * ```
+     * @returns {string}
+     */
+    play_fishing_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_fishing_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Leave the fishing session and restore the suspended scene mode, banking
+     * the session's points into the world's persistent pool. Returns the
+     * banked total (`-1` when no session was live).
+     * @returns {number}
+     */
+    play_fishing_stop() {
+        const ret = wasm.legaiaruntime_play_fishing_stop(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * `[width, height]` of the chrome atlas; `[0, 0]` when none.
      * @returns {Uint32Array}
      */
@@ -7962,7 +8082,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 133, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 135, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hc20c1a455dcd1273);
             return ret;
         },
