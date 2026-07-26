@@ -929,6 +929,25 @@ pub(crate) enum Cmd {
     /// interleaved XA audio track plays, with the video clock driven off the
     /// audio cursor for A/V sync.
     #[command(display_order = 2)]
+    /// Resolve XA voice-cue ids to the `(clip slot, filter channel, duration)`
+    /// triple the retail dispatcher builds - the cutscene-audio census view.
+    ///
+    /// The engine has no streaming CD device, so nothing plays these; this
+    /// reports which `XA*.XA` bank each cue addresses and on which channel.
+    #[command(display_order = 5)]
+    XaCue {
+        /// Cue ids (decimal or 0x-hex). Defaults to one full bank's worth from
+        /// the base id.
+        #[arg()]
+        ids: Vec<String>,
+        /// The per-clip length-table value to convert into `duration_sectors`.
+        #[arg(long, default_value_t = 100)]
+        len: u16,
+        /// Directory of extracted `XA*.XA` files, to confirm each resolved slot
+        /// names a file that is on the disc.
+        #[arg(long)]
+        xa_dir: Option<PathBuf>,
+    },
     PlayStr {
         /// STR file to play. Without `--disc` this is a raw filesystem path
         /// (2048-byte Form-1 sectors, video only - the extracted shape).
