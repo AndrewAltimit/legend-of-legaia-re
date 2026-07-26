@@ -523,6 +523,8 @@ asset character-pack / battle-char-pack / field-char-tex
 asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan
 asset man / man-scan                      # MAN multi-section walker (--with-encounter)
+asset boot-overlay     [--prot-dir extracted/PROT]  # which entry each boot loader param names
+asset slot-scene       <PROT 0975 .BIN> [--art <PROT 1200 .BIN>]  # reel cylinder + dot marquee
 asset kingdom-slot / slot4-png            # world-map kingdom bundles
 asset summon-overlay   <PROT 0905 .BIN>
 asset move-power / element-affinity       # PROT 0898 battle-overlay tables (--json)

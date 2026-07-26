@@ -146,11 +146,13 @@ pub struct SlotBChoice {
 /// loader then declines.
 ///
 // PORT: FUN_80025ba0
-// NOT WIRED (by design): the choice this models is *which MIPS overlay to DMA
-// into slot B*, and the clean-room engine installs no retail overlays - it
-// reimplements 900 / 901's contents in Rust. There is no engine state for this
-// to drive. Its consumer is the preservation track: `boot_overlay_disc` asserts
-// each param resolves to an entry whose bytes match the documented content.
+// NOT WIRED (no engine consumer, by design): the choice this models is *which
+// MIPS overlay to DMA into slot B*, and the clean-room engine installs no
+// retail overlays - it reimplements 900 / 901's contents in Rust, so there is
+// no engine state for it to drive. Its consumers are both on the preservation
+// track: `boot_overlay_disc` asserts each param resolves to an entry whose
+// bytes match the documented content, and `asset boot-overlay` prints the
+// choice for every (flag, suppression) pair against a real `extracted/PROT`.
 pub fn slot_b_default_overlay(
     summon_render_flag: bool,
     suppressed: bool,
@@ -222,12 +224,13 @@ pub enum EffectDataSource {
 /// branch touches ISO9660 - and is not evidence for anything.
 ///
 // PORT: FUN_8003e360
-// NOT WIRED (by design): both branches end in a load the engine does not
-// perform - the flag-set branch DMAs PROT 979 into a retail streaming buffer at
-// a fixed offset, and the flag-clear branch is the debug-station host trap,
-// dead on hardware. The engine's effect subsystem parses `efect.dat`
-// (extraction 0870..0873) through `crate::effect` instead, so there is no path
-// here for this to select between.
+// NOT WIRED (no engine consumer, by design): both branches end in a load the
+// engine does not perform - the flag-set branch DMAs PROT 979 into a retail
+// streaming buffer at a fixed offset, and the flag-clear branch is the
+// debug-station host trap, dead on hardware. The engine's effect subsystem
+// parses `efect.dat` (extraction 0870..0873) through `crate::effect` instead,
+// so there is no path here for it to select between. `asset boot-overlay`
+// reports both branches.
 pub fn effect_data_source(dev_flag_set: bool) -> EffectDataSource {
     if dev_flag_set {
         EffectDataSource::ProtEntry(EFFECT_DATA_EXTRACTION_INDEX)
@@ -316,12 +319,12 @@ pub const SECTOR_BYTES: i32 = 0x800;
 /// them.
 ///
 // PORT: FUN_8001eef0 (arithmetic tail only)
-// NOT WIRED (by design): retail needs this conversion because its loader talks
-// to the CD in sectors; the engine's asset path reads whole PROT entries
-// through `legaia_prot` and never converts a byte length to a sector count on
-// the retail path, so there is no site for it. Cited from
-// `docs/subsystems/asset-loader.md` as the documented shape of the return
-// value.
+// NOT WIRED (no engine consumer, by design): retail needs this conversion
+// because its loader talks to the CD in sectors; the engine's asset path reads
+// whole PROT entries through `legaia_prot` and never converts a byte length to
+// a sector count, so there is no site for it. `asset boot-overlay` prints the
+// rounding table, including the negative arm - the one that keeps an error
+// return an error instead of turning it into `-1` sectors.
 pub fn bytes_to_sectors(bytes: i32) -> i32 {
     let biased = bytes.wrapping_add(SECTOR_BYTES - 1);
     let biased = if biased < 0 {

@@ -11,6 +11,8 @@ mod catalogs;
 mod common;
 #[path = "asset/dispatch.rs"]
 mod dispatch;
+#[path = "asset/minigame.rs"]
+mod minigame;
 #[path = "asset/overlay.rs"]
 mod overlay;
 #[path = "asset/packs.rs"]
@@ -31,6 +33,7 @@ mod worldmap;
 use actors::*;
 use catalogs::*;
 use dispatch::*;
+use minigame::*;
 use overlay::*;
 use packs::*;
 use shops::*;
@@ -905,6 +908,39 @@ enum Cmd {
     /// and walk the multi-section header at FUN_8003AEB0. Prints the
     /// header fields, every section's offset+length, and (when `--with-encounter`)
     /// decodes section 0 as the encounter section (FUN_8003A110).
+    /// Print the boot path's overlay / side-band resolution table: which
+    /// `PROT.DAT` entry each loader parameter names, what the slot-B default
+    /// picker chooses per (summon-render flag, suppression) pair, and the
+    /// sector rounding the scene-bundle loader applies.
+    ///
+    /// The engine installs no retail overlays - it reimplements their contents
+    /// in Rust - so this is the preservation view of a decision the boot path
+    /// makes and the port never has to.
+    BootOverlay {
+        /// Directory of extracted PROT entries (`extracted/PROT`). With it,
+        /// every resolved index is reported with the entry file it names.
+        #[arg(long)]
+        prot_dir: Option<PathBuf>,
+    },
+    /// Print the casino slot machine's 3D scene from the **fixed-point**
+    /// kernels: the reel cylinder's per-face (y, z, shade), and - with
+    /// `--art` - the dot-matrix message bank plus what the per-frame composer
+    /// puts on the marquee.
+    ///
+    /// The browser play page redoes the same maths in floating point off this
+    /// module's constants; this is the reference that difference can be
+    /// measured against instead of assumed away.
+    SlotScene {
+        /// The slot overlay PROT entry (`extracted/PROT/0975_*.BIN`).
+        overlay: PathBuf,
+        /// The slot art pack PROT entry (`extracted/PROT/1200_*.BIN`), which
+        /// carries the dot-matrix page the message bank is cut out of.
+        #[arg(long)]
+        art: Option<PathBuf>,
+        /// How many of the composer's sample frames to walk.
+        #[arg(long, default_value_t = 5)]
+        frames: usize,
+    },
     Man {
         /// PROT entry (`extracted/PROT/0086_map01.BIN`).
         input: PathBuf,
@@ -1241,6 +1277,12 @@ fn main() -> Result<()> {
             &style,
             &axes,
         ),
+        Cmd::BootOverlay { prot_dir } => boot_overlay_cmd(prot_dir.as_deref()),
+        Cmd::SlotScene {
+            overlay,
+            art,
+            frames,
+        } => slot_scene_cmd(&overlay, art.as_deref(), frames),
         Cmd::Man {
             input,
             with_encounter,
