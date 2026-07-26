@@ -300,10 +300,48 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 | Thread | Status | What would close it |
 |---|---|---|
 | `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
+| Is the `FUN_8006EF18` trio an SPU voice-state init at all? | open (two pages disagree; the label is contradicted by its own cited vectors) | [details ↓](#is-the-fun_8006ef18-trio-an-spu-voice-state-init) |
 | Is `FUN_80018DB0` a rumble cadence rather than an audio one? | resolved (moved to re-settled) | Yes - grade `disassembly`. `FUN_8006E2B4` is `PadInitDirect` and `FUN_8006CE30` is a three-argument `PadSetAct`; `DAT_800915DA/DB` are port 0's actuator bytes, so the kernel drives vibration and plays nothing. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | Retail's footstep SFX cue id | resolved-negative (moved to re-settled) | There is no cue to pin: the only "cadence" is the rumble one above, and the capture already showed retail plays nothing on a step. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | SFX cue bank routing - the category byte selects a VAB slot, and the port stages one | open | Sibling of the resolved key-on-pitch question. A descriptor's `+4` category picks a 12-byte mixer record whose `+8` is a **VAB slot id**; `FUN_80068b98` repoints the current-bank globals at it before the tone lookup, so a cue names its own bank. Four slots are open concurrently (categories `0`/`2`/`6`/`11` = 16/53/30/1 descriptors) and the port models one. [details ↓](#sfx-cue-bank-routing---the-category-byte-selects-a-vab-slot-and-the-port-stages-one) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
+
+### Is the `FUN_8006EF18` trio an SPU voice-state init?
+
+*Status:* open - two committed pages disagree, and the older label is
+contradicted by the BIOS vectors it cites itself.
+
+[`functions/runtime-libs.md`](functions/runtime-libs.md) calls `FUN_8006EF18` an
+"SPU voice-state init sequence" over three callees, and
+[`functions/audio.md`](functions/audio.md) describes `FUN_8006EFD0` as a sibling
+of the same "init trio". But the vectors that row cites are not SPU calls:
+
+| Callee | Cited vector | What that vector is |
+|---|---|---|
+| `_EF68` | B0 `0x4C` | `StopCARD` |
+| `_F088` | B0 `0x57` | `GetB0Table` |
+| `_F118` | B0 `0x56` | `GetC0Table` |
+
+`GetB0Table` / `GetC0Table` return the kernel's own vector tables, so "swaps 5
+dwords between a static table and `iVar1 + <offset>`, then `FlushCache`" is
+**BIOS-vector patching** - a library installing its own veneers over kernel
+entries - not voice-block manipulation. `FlushCache` after writing to a returned
+kernel table is the tell. On that reading `iVar1 + 0x9C8` is an offset into a
+vector table, and the "SPU voice block" identification is the part with no
+instruction behind it.
+
+What it is *not* safe to conclude: that this makes the trio libcard. `StopCARD`
+appears because both libcard and libspu patch BIOS vectors, and the caller
+`FUN_8002035C` re-runs `FUN_8006EF18` right after closing eight kernel event
+handles - which fits either library. One proposed relabel (`StopCARD` + siblings)
+rests on the same vector-number-to-name mapping with no veneer body read, so it
+would grade `decompiled-C` too; swapping one unverified label for another is not
+progress.
+
+**What would close it:** read the three veneer bodies and name which table
+entries they overwrite. If the patched entries are B0/C0 slots belonging to the
+card or SPU families, the owning library follows directly. Until then treat both
+labels as unconfirmed rather than picking the newer one.
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
 
