@@ -218,10 +218,8 @@ resolves live, but a second use of the spelling would go unrecognised.
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `(module)` | `crates/engine-vm/src/battle_camera.rs:4` | DISCLOSE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs:85` | DISCLOSE |
-| `801d9d30` | `(module)` | `crates/engine-vm/src/battle_camera.rs:5` | WIRE |
-| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs:156` | WIRE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs:407` | DISCLOSE |
@@ -431,14 +429,19 @@ anchor. Wrap to the file's comment width.
 
 ## The battle-camera rows
 
-These five carried a `VERIFY` verdict while the battle-camera lane held
+These carried a `VERIFY` verdict while the battle-camera lane held
 `crates/engine-vm/src/battle_camera.rs` and
-`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All five
-are still inert against the corrected audit - every caller is `#[cfg(test)]` in
+`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All are
+still inert against the corrected audit - every caller is `#[cfg(test)]` in
 the same file or in `battle_formulas/tests.rs`, and the host-crate sweep returns
 zero, the same sweep that finds `battle_render_mesh`'s two real host call sites.
 What the lane landed touched neither symbol, so each now settles on its own
 reason.
+
+`battle_camera.rs` no longer carries module-level `PORT:` lines: both of its
+addresses were tagged twice, once on the file and once on the function that
+implements it, and the file-wide anchor said nothing the per-function one did
+not.
 
 **`camera_height_from_size_class`** (`801f0348`) is `DELETE`, on the
 `symbol_pad_bit` precedent. Its sibling `camera_height_for_frame` in the same
@@ -454,13 +457,25 @@ seed and has no per-frame angle walker, and the routine that arms retail's
 (`FUN_80021248`) is documented but unported. Nothing exists to consume a step
 table.
 
-**`apply_shake`** (`801d9d30`) is `WIRE`, and the call site is already half
-built. `BattleActionHost::screen_shake` posts `BattleEvent::ScreenShake`, and
-the handler arm in `crates/engine-core/src/battle_session/events.rs` pushes a
-HUD log line and applies no jitter. Route that arm through `apply_shake`,
-keeping the accumulator and offset pairs on the session so the camera can read
-the offset. Small, but it moves the camera, so land it against the battle
-oracles.
+**`apply_shake`** (`801d9d30`) is `DISCLOSE`. It previously read `WIRE` on
+`BattleActionHost::screen_shake` as the half-built call site; that verdict is
+**withdrawn**, and the reason is the worked example of why a verdict on this
+page is a hypothesis. The host method's name is a misnomer. The SM arm it
+mirrors is `overlay_battle_action_801e295c.txt` `0x801E4938..0x801E497C`: it
+tests the camera pitch `DAT_8007B790` against `0x191` and, when it is at or
+above, zeroes the pitch and stores the **absolute** value `0x500` into
+`_DAT_800840BC`. That is a framing snap to the close-up pose - `0x500` is the
+1280 the close-up framings hold - written into one component of the camera
+translation trio.
+
+`apply_shake`'s `amplitude` is a different quantity: a `1..=0x15` shift count
+read from `_DAT_8007B630`, whose only retail writer is a field-VM opcode
+(`overlay_0897_801de840.txt` `0x801E2134`, a 3-byte instruction whose operand
+byte becomes the global). Routing a translation value into it is a category
+error, so that arm cannot be the missing caller. The port's field VM does not
+model `_DAT_8007B630`, which leaves the amplitude a permanent zero - the value
+at which the routine degenerates to backing its own previous offset out of the
+accumulators. Wiring it means modelling that opcode first.
 
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.

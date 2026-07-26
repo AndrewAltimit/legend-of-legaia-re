@@ -1464,6 +1464,16 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   (`ctx[+0x244]` count, `+0x245` wrap slot, `+0x246..` ordered slots) and steps
   to the next (`param 0`) or previous (`param 1`) entry, wrapping at the ends.
   Port: `cycle_attack_target` / `TargetCycle`.
+
+These last two are the **engine's** enemy target cursor, not just a
+transcription: `engine-core`'s `TargetPickerSession` builds the ring from its
+own monster rows (which carry each slot's battle-world seat) and steps it, so a
+Left/Right press moves to the angularly nearest live monster the way retail
+does rather than to the next slot index. The bearing comes from
+`FUN_80019B28`'s ported quadrant algebra over a computed arctan table
+(`approx_arctan_lut`), because the retail table at `0x8006F4C8` is not
+extracted by any boot path. A host that never seated its actors leaves the
+seats at the origin, and the cursor falls back to a plain slot-order scan.
 - **`FUN_801DB8B4` - first live monster slot.** Scans pool slots 3,4,5,6 and
   returns the first with a non-zero `+0x14C` liveness halfword; falls through to
   `7` when none is alive. Port: `first_live_monster_slot`.
@@ -1787,6 +1797,14 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    (`FUN_80056798() & 0x1FF == 0` at `0x801EFCC4`), **or** the debug byte `DAT_8007BD0C == 'O'`
    (`0x801EFCD4`). Returns `1` when already known, `0` when unknown and not learnable.
    Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
+   The engine runs it: `engine-core`'s `TacticalArtsTracker` holds the `+0x74D` count and the
+   `+0x74E..` ascending id list per character, and both art-execution paths - the action SM's
+   `BattleActionHost::apply_art_strike` and the player-driven arts menu's `apply_battle_art` -
+   call `World::notify_art_used` for the art they just performed. So an art is learned on its
+   first successful performance, and the learn banner fires once. Two retail inputs are
+   supplied rather than read: the gate `ctx[+0x266 + slot]` has no engine analogue and reads as
+   clear (gate open), and the innate cap at `0x801F686C` is un-parsed battle-overlay disc data
+   that defaults to `0` until a host sets it.
 3. **Miracle replacement (inline).** When the slot's Miracle marker `ctx[+0x25F + slot]` is set
    (`lbu v0,0x25f(v0)` at `0x801EF4C8`), the builder overwrites the whole 16-byte queue from the
    character's Miracle replacement string - the loop at `0x801EF4E8..0x801EF524` copies from

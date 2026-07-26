@@ -360,6 +360,14 @@ impl World {
                         action: action.as_byte(),
                     });
             }
+            // Learn-on-use. This is the player-driven arts path, which reaches
+            // `art_strike::apply_art_strike` directly rather than through
+            // `BattleActionHost::apply_art_strike`, so retail's per-art check
+            // (`FUN_801EFBFC`, wired in the host impl) has to be run here too.
+            // A synthetic demo row carries no action constant and is skipped -
+            // there is no real art id to insert.
+            let roster = self.party_roster_slot(caster as usize) as u8;
+            self.notify_art_used(roster, action.as_byte());
         }
         // Selector-9 accuracy/evasion terms (retail actor `+0x168`): the
         // attacker's accuracy vs the target's evasion. The roll engages only

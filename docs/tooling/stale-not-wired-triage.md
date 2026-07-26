@@ -23,9 +23,9 @@ is the mechanism list plus the fix recipe each mechanism takes, both below.
 ## What the false edges are
 
 Five mechanisms produce every FALSE-EDGE row this page has recorded, and only
-the first is what `--live-audit` warns about. All five are name resolution
-without type inference; they differ in *which* name space collides, and that is
-what decides the fix.
+the first is what `--live-audit` warns about. Every one of them is name
+resolution without type inference; they differ in *which* name space collides,
+and that is what decides the fix.
 
 **A generic method or constructor name.** `build_rust_graph` resolves `.name(`
 against every in-tree method called `name` and never infers a receiver type, so
@@ -60,7 +60,12 @@ identifier to any free function of that name, which is how a function value
 reaches `map` / `sort_by_key`. It does not distinguish a function value from a
 **struct field** of the same name: the field `stat_deltas` in
 `crates/engine-core/src/seru_stats.rs` links to the free `stat_deltas` in
-`crates/engine-vm/src/world_map_overlay.rs`.
+`crates/engine-vm/src/world_map_overlay.rs`. Nor from a **local binding**: a
+free function called `gate` collects an in-edge from every reachable function
+that merely names a local `gate`, which is why the whole of
+`battle_attack_camera.rs` read live from six unrelated callers. A short,
+English-word free-function name is the worst case for this pass, because the
+name is short precisely where it is also common.
 
 **An anchor covering more than the tag.** A `//! PORT:` tag makes the anchor the
 whole file, and the file is live if any non-test `fn` in it is reachable. A
@@ -81,6 +86,7 @@ reverted twice.
 | Struct field read as a function value | Field-colon exclusion, in the strict graph. Implemented. |
 | Unique in-tree name shadowing a `std` method | Rename the in-tree method so no `std` call site spells it. |
 | Duplicate free-function name | Rename the copy that has no caller. |
+| Free-function name that is also a common local / field name | Rename it to something the rest of the tree does not spell. |
 | Coarse anchor (module tag, or a tag on a data struct) | Move the anchor to the item that ports the address. |
 
 The last three are source edits, and each wants a comment saying why the name or
@@ -173,6 +179,7 @@ so a recurrence is recognisable rather than re-derived.
 | `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/scus_core_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
 | `80046870` | `engine-vm/src/battle_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
+| `801d71b8` | `engine-vm/src/battle_attack_camera.rs` | FALSE-EDGE | `gate` renamed `attack_camera_gate`; a free function named `gate` is reached by the bare-identifier edge from every function that merely *mentions* one. |
 | `801d2ebc` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
 | `801d6d38`, `801d8a58`, `801d98f0`, `801dae24`, `801daef4`, `801dafd4`, `801dbc5c`, `801dc6b4`, `801dd12c`, `801dd1b8`, `801dd26c`, `801e4f40` | `engine-core/src/save_subscreen.rs` | FALSE-EDGE | Cleared by the receiver gate; the chain was `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`. |
 | `801db380`, `801db7f4`, `801dbd94` | `engine-core/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |

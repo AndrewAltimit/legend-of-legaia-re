@@ -1692,6 +1692,8 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-core/src/target_picker.rs).
 
+The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster. Retail seats at most four monsters, so a fifth engine slot has no ring entry; that slot, an un-seated host (all seats at the origin), and a ring entry that is not a live monster each fall the cursor back to the plain scan. See [`battle-action.md`](battle-action.md#actor-pool-leaf-helpers) for the two kernels.
+
 `BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the
 wiring API engines drive when a command needs a target. The session charges AP
 up-front, opens the picker, and stashes the command in `pending_target_command`.
