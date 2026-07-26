@@ -11,7 +11,7 @@ PSX MDEC clean-room decoder (Iki bitstream variant) and PSX STR video-sector par
 - `str_player::StrPlayer` - the retail play loop over the ring: the FMV dispatch slot's frame window, the frame pump, the MDEC output-control word and the slice cursor. It is what makes a *segment* of a multi-cutscene movie playable (`MV3.STR` carries four). See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md#engine-port---legaia_mdecstr_player).
 - `strv2_table` - unpacker for the STRv2/v3 VLC lookup table the play loop expands into `0x801E0A00`.
 - `strv2_decode::decode_frame` - the STRv2/v3 bitstream decoder (`FUN_801D070C`) that consumes that table. The table holds **pre-baked MDEC codes**, so decoding is a bit-prefix lookup emitting one to three ready codes per hit; only DC coefficients (raw 10-bit in v2, size-prefixed predicted differences in v3), escape codes and the 65-code end padding are computed. Dev slots 9/10 only, so it is dead in retail but completes the STRv2/v3 pipeline.
-- `mdec` CLI - `decode-frame` (raw frame → image), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode, with an optional `--start-frame`/`--end-frame` segment window), `strv2-table` (unpack + report the VLC table).
+- `mdec` CLI - `decode-frame` (raw frame → image), `scan-str` (frame inventory + detected fps), `decode-str` (batch decode, with an optional `--start-frame`/`--end-frame` segment window), `strv2-table` (unpack + report the VLC table), `str-plan` (the retail decode plan for a segment - MDEC control word, VRAM decode / display rects, DMA-0 slice walk; decodes nothing).
 
 ## Algorithm
 
@@ -52,6 +52,9 @@ mdec scan-str cutscene.str
 
 # Decode all frames from a STR file
 mdec decode-str cutscene.str --out-dir frames/
+
+# What retail would program the MDEC with, and the slice walk it would issue
+mdec str-plan cutscene.str --start-frame 1 --end-frame 300
 
 # Play STR video in a window
 legaia-engine play-str cutscene.str
