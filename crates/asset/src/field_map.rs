@@ -61,9 +61,22 @@
 //! end of the `0x12` -byte header, each sub-table separated by a 2-byte gap,
 //! and the `u16` at `+0x00` equal to the end of the last sub-table. Across the
 //! whole PROT corpus that chain matches 100 entries with **zero** false
-//! positives, and no entry outside the `0x12000` size class satisfies it. One
-//! `0x12000` entry ships an all-zero trigger header (a scene with no walkable
-//! field); it is accepted with [`FieldMap::trigger_block`] `None`.
+//! positives, and no entry outside the `0x12000` size class satisfies it.
+//!
+//! **The size gate is necessary, not sufficient.** `0x12000` is 36 sectors, an
+//! ordinary footprint: 111 PROT entries land on it and only 101 of them are
+//! field maps. The other ten are ordinary members of their scene blocks that
+//! happen to be that long - five `scene_tmd_stream` entries (`[u32 size]` then
+//! the `0x80000002` TMD magic), four `scene_vab_stream` entries (`VABp` at
+//! `+4`), and one `data_field_streaming` entry. The chain rejects all ten.
+//!
+//! One `0x12000` entry ships an all-zero trigger header (a scene with no
+//! walkable field); it is accepted with [`FieldMap::trigger_block`] `None`,
+//! **but only when the object-descriptor table and the collision grid are also
+//! entirely zero**. Without that guard the escape hatch is not a test at all -
+//! it accepts any `0x12000` entry whose `+0x10000..+0x10012` window happens to
+//! read as zeros, which is how three `scene_tmd_stream` entries used to
+//! classify as field maps.
 
 /// Total on-disc footprint of a field map, in bytes.
 pub const FIELD_MAP_BYTES: usize = 0x1_2000;
@@ -192,6 +205,20 @@ fn parse_trigger_block(block: &[u8]) -> Result<Option<TriggerBlock>, ()> {
     }))
 }
 
+/// True when the map carries no walkable field at all: the object-descriptor
+/// table and the collision grid are both entirely zero.
+///
+/// This is the precondition on the all-zero-trigger-header escape hatch. A
+/// zeroed header says "no triggers"; on its own that is a statement about
+/// `0x12` bytes and matches any unrelated `0x12000`-byte entry whose
+/// `+0x10000` window happens to be zeros. Pairing it with an empty grid is
+/// what makes it a statement about the *file*.
+fn is_empty_field(buf: &[u8]) -> bool {
+    let objects = &buf[OBJECT_RECORDS_OFFSET..OBJECT_RECORDS_OFFSET + OBJECT_RECORDS_BYTES];
+    let collision = &buf[COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + COLLISION_GRID_BYTES];
+    objects.iter().all(|&b| b == 0) && collision.iter().all(|&b| b == 0)
+}
+
 /// Recognise a per-scene field map. See the module docs for the criteria.
 pub fn detect(buf: &[u8]) -> Option<FieldMap<'_>> {
     if buf.len() != FIELD_MAP_BYTES {
@@ -199,6 +226,9 @@ pub fn detect(buf: &[u8]) -> Option<FieldMap<'_>> {
     }
     let block = &buf[TRIGGER_BLOCK_OFFSET..TRIGGER_BLOCK_OFFSET + TRIGGER_BLOCK_BYTES];
     let trigger_block = parse_trigger_block(block).ok()?;
+    if trigger_block.is_none() && !is_empty_field(buf) {
+        return None;
+    }
     Some(FieldMap {
         bytes: buf,
         trigger_block,
@@ -337,12 +367,29 @@ mod tests {
     }
 
     #[test]
-    fn accepts_an_all_zero_trigger_header() {
+    fn accepts_an_all_zero_trigger_header_only_on_an_empty_field() {
+        // The one retail carrier of this shape has an empty object table and
+        // an empty collision grid; only its object-index map carries a single
+        // stray byte, and its trigger *body* (past the zeroed header) is not
+        // empty either.
         let mut buf = vec![0u8; FIELD_MAP_BYTES];
-        buf[COLLISION_GRID_OFFSET] = 0x0F;
+        buf[OBJECT_GRID_OFFSET + 0x4081] = 0x04;
+        buf[TRIGGER_BLOCK_OFFSET + 0x1000] = 0x0C;
         let fm = detect(&buf).expect("zeroed-header field map");
         assert!(fm.trigger_block().is_none());
         assert!(fm.trigger_records(1).is_empty());
+
+        // A populated collision grid under a zeroed header is not a field map
+        // - that combination is what an unrelated 0x12000-byte entry looks
+        // like when its `+0x10000` window happens to be zeros.
+        let mut walkable = buf.clone();
+        walkable[COLLISION_GRID_OFFSET] = 0x0F;
+        assert!(detect(&walkable).is_none());
+
+        // Same for a populated object-descriptor table.
+        let mut objects = buf.clone();
+        objects[OBJECT_RECORDS_OFFSET] = 0x20;
+        assert!(detect(&objects).is_none());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Disc-gated: the kingdom-bundle slot-5 CLUT-walk animation table decodes
-//! identically from all three world-map kingdom bundles (PROT 0085 / 0244 /
-//! 0391) and carries the pinned entry set - the ocean-head walk plus the
+//! identically from all three world-map kingdom bundles (PROT 0086 / 0245 /
+//! 0392) and carries the pinned entry set - the ocean-head walk plus the
 //! seven shoreline/terrain shimmer cells.
 //!
 //! Also pins the slot-0 park-strip complement: the walker's source strips
@@ -23,6 +23,18 @@ fn workspace() -> Option<PathBuf> {
         .parent()?
         .parent()
         .map(PathBuf::from)
+}
+
+/// The extracted `.BIN` for a PROT index, found by index prefix rather than a
+/// hardcoded filename (the label after the index is a CDNAME name, not part of
+/// the coordinate).
+fn kingdom_bin(prot: &std::path::Path, entry: u32) -> Option<PathBuf> {
+    let prefix = format!("{entry:04}_");
+    std::fs::read_dir(prot).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        let name = p.file_name()?.to_str()?;
+        (name.starts_with(&prefix) && name.ends_with(".BIN")).then_some(p)
+    })
 }
 
 /// Expected entry shape: `(dest_x, dest_y, holds, src_y, src_xs)`.
@@ -96,17 +108,29 @@ fn clut_walk_table_identical_across_kingdoms_with_pinned_entries_or_skip() {
         return;
     }
     let Some(ws) = workspace() else { return };
-    let kingdoms = ["0085_map01.BIN", "0244_map02.BIN", "0391_map03.BIN"];
     let prot = ws.join("extracted").join("PROT");
-    if !kingdoms.iter().all(|k| prot.join(k).is_file()) {
+    // Indices from `kingdom_bundle::BUNDLE_ENTRIES`, never literals: this test
+    // used to name `0085` / `0244` / `0391`, the **prescript** entries the
+    // superseded over-reading entry size happened to start in. The bundles are
+    // `0086` / `0245` / `0392`. While the extracted tree over-read,
+    // `0085_map01.BIN` carried entry 85 *and* 86 so slot 5 decoded anyway;
+    // against a correctly sized tree it fails with "no 7-asset table found".
+    let Some(kingdoms) = kingdom_bundle::BUNDLE_ENTRIES
+        .iter()
+        .map(|&e| kingdom_bin(&prot, e).map(|p| (e, p)))
+        .collect::<Option<Vec<_>>>()
+    else {
         eprintln!("[skip] extracted kingdom bundles not present");
         return;
-    }
+    };
 
+    let drake_entry = kingdom_bundle::BUNDLE_ENTRIES[0];
     let mut shared: Option<Vec<u8>> = None;
     let mut drake_strip_rows: Vec<u16> = Vec::new();
-    for k in kingdoms {
-        let buf = std::fs::read(prot.join(k)).expect("read kingdom bundle");
+    for (entry, path) in &kingdoms {
+        let is_drake = *entry == drake_entry;
+        let k = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        let buf = std::fs::read(path).expect("read kingdom bundle");
         let decoded =
             kingdom_bundle::decode_slot(&buf, clut_walk::KINGDOM_SLOT).expect("decode slot 5");
         assert_eq!(decoded.len(), 0x204, "{k}: slot-5 decoded size");
@@ -149,7 +173,7 @@ fn clut_walk_table_identical_across_kingdoms_with_pinned_entries_or_skip() {
         let strips = clut_walk::park_strips(&slot0);
         let mut rows: Vec<u16> = strips.iter().map(|s| s.fb_y).collect();
         rows.sort_unstable();
-        let expected_rows: Vec<u16> = if k == kingdoms[0] {
+        let expected_rows: Vec<u16> = if is_drake {
             vec![498, 499, 502, 503, 504, 505]
         } else {
             vec![501, 503, 505]
@@ -164,7 +188,7 @@ fn clut_walk_table_identical_across_kingdoms_with_pinned_entries_or_skip() {
             );
             assert_eq!(s.data.len(), 512, "{k}: strip bytes at row {}", s.fb_y);
         }
-        if k == kingdoms[0] {
+        if is_drake {
             drake_strip_rows = rows;
         }
         // Every walk source cell must be covered by the scene's own strips,

@@ -62,11 +62,21 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("bse_bank", 2),
     // `efect_pack` - the runtime `efect.dat` 2-pack (extraction 0873). One entry.
     ("efect_pack", 1),
-    // `field_map` 101 → 104: the per-scene `DATA\FIELD\<scene>.MAP`, slot 0
-    // of every scene block at a fixed `0x12000` bytes. Three more resolve now
-    // that each entry is exactly its own `0x12000` - the class is pinned on
-    // the trigger block's sub-table chain (`docs/formats/field-map.md`).
-    ("field_map", 104),
+    // `field_map` **101** - the per-scene `DATA\FIELD\<scene>.MAP`, slot 0 of
+    // every scene block at a fixed `0x12000` bytes, exactly the count
+    // `docs/formats/field-map.md` gives.
+    //
+    // This was briefly pinned at 104 with the reading "three more resolve now
+    // that each entry is exactly its own `0x12000`". That was wrong, and the
+    // number had been ratcheted to match a detector defect: `0x12000` is a
+    // FOOTPRINT, not a signature. 111 entries are that size; the extra three
+    // (63, 71, 701) are `scene_tmd_stream` members of their scene blocks that
+    // happen to be 36 sectors long, and they passed only because
+    // `field_map::detect`'s all-zero-trigger-header escape hatch had no
+    // precondition. The hatch is now gated on the condition its own doc always
+    // stated (object table + collision grid also zero), so the class is again
+    // exactly the block-slot-0 entries.
+    ("field_map", 101),
     // `init_pak` - the boot logo/overlay pack (extraction 0895). One entry.
     // Its detector carried a `>= 0x30000` length floor taken from the entry's
     // old over-read size; PROT 0895 is 75 sectors (`0x25800`), so the floor
@@ -81,14 +91,23 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `vab_multi_bank`. Kept pinned at 0 so a detector-order regression that
     // re-steals summon.dat fails here.
     ("monster_sound_bank", 0),
-    // `all_zeros` 0 → 4 and `mostly_zeros` 0 → 16: entries that really are
-    // (near-)empty. Their previous classes were read off borrowed bytes - the
-    // histogram of a buffer that continued into a populated neighbour. These
-    // are honest verdicts about small entries, not lost content.
+    // `all_zeros` 4: entries that really are empty - honest verdicts about
+    // small entries, not lost content.
     ("all_zeros", 4),
-    ("mostly_zeros", 16),
-    // `overlay_data_blob` 26 → 24.
-    ("overlay_data_blob", 24),
+    // `mostly_zeros` 16 → **0**. A class named after a byte histogram is a
+    // confession that no detector claimed the entry, so a nonzero count here
+    // is a worklist rather than a result. These 16, plus the 8
+    // `unknown_low_entropy` below, were the 24-entry fallthrough set now
+    // claimed by format (23 `scene_event_scripts` + 1 `overlay_data_blob`).
+    // Pinned at 0: a reappearance means a format detector regressed, not that
+    // the disc grew an empty entry.
+    ("mostly_zeros", 0),
+    // `overlay_data_blob` 24 → **25**: `0974_other_game.BIN` is an overlay
+    // data image like its block-mates 0970-0980 (`"OTHER3 \n"` + printf
+    // formats + an `addiu sp,sp,-0x40` prologue at `+0x44`), but
+    // `is_overlay_data_image` implemented only half its own stated argument -
+    // it demanded an overlay-pointer run, which 0974 has none of.
+    ("overlay_data_blob", 25),
     ("overlay_ptr_table", 42),
     // `pochi_filler` - reserved dev filler slots, incl. the final TOC entry
     // (index 1232, the archive's last data sector).
@@ -96,9 +115,12 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `scene_asset_table` 88, unchanged - every one of them sits at offset 0
     // of its own entry with every descriptor payload inside it.
     ("scene_asset_table", 88),
-    // `scene_tmd_stream` 182 → 179: three entries' streaming-with-bare-TMD
-    // shape was completed by a neighbour's bytes.
-    ("scene_tmd_stream", 179),
+    // `scene_tmd_stream` **182**. Three of these (63, 71, 701) were briefly
+    // counted as `field_map` because they are exactly `0x12000` bytes and the
+    // zero-header escape hatch accepted them; they lead `[u32 size]` then the
+    // `0x80000002` TMD magic and are ordinary members of their scene blocks.
+    // See the `field_map` note above.
+    ("scene_tmd_stream", 182),
     ("scene_vab_stream", 218),
     ("scene_v12_table", 97),
     // `scene_scripted_asset_table` 79 → **0**, and `scene_event_scripts`
@@ -113,7 +135,18 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // Pinned at 0 so a reader or detector regression that resurrects the
     // phantom fails here (see `crates/asset/tests/scene_asset_table_walk_real.rs`).
     ("scene_scripted_asset_table", 0),
-    ("scene_event_scripts", 78),
+    // `scene_event_scripts` 78 → **101**: one per scene block, at slot 2.
+    // The missing 23 were falling through to a byte-histogram class because
+    // `categorize`'s prescript detector gated on a frame-opener RATE floor
+    // (>= 45 % of records leading `model_sel = -1`) that had been calibrated
+    // while the over-read made 79 of these look like
+    // `scene_scripted_asset_table`. With that crutch gone the floor dropped a
+    // fifth of the format - `geremi` / `tunnela` / `tunnelb` / `edson` score
+    // zero, carrying no transform-node record at all. Identity is now the
+    // structural shape (`[u16 count][u16 offsets]`, `offsets[0] == 2+2*count`,
+    // monotonic, in-bounds, `count >= 2`); the opener rate is a quality signal,
+    // not an identity test.
+    ("scene_event_scripts", 101),
     // `summon_readef` - `summon.dat` / `readef.DAT` (extraction 893 / 894).
     ("summon_readef", 2),
     ("tim_pack", 7),
@@ -125,11 +158,13 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // followed by *nothing* of their own - the high-entropy body belonged to
     // the next entry. They are `all_zeros` above.
     ("zero_sector_high_entropy", 0),
-    // Statistical residual buckets. `unknown_low_entropy` 0 → 8: eight small
-    // entries whose format is not recognised from their own bytes alone. The
-    // other three stay empty; an entry landing in one of them is a detector
-    // regression, and the point of the census is to notice.
-    ("unknown_low_entropy", 8),
+    // Statistical residual buckets - **all four now empty, and that is the
+    // point**. `unknown_low_entropy` 8 → 0: these eight, plus the 16
+    // `mostly_zeros` above, were the 24-entry fallthrough set, and they are
+    // now claimed by format: 23 are `scene_event_scripts` (block slot 2) and
+    // one is `overlay_data_blob` (0974). An entry landing in any of these
+    // buckets is a detector regression, and the census exists to notice.
+    ("unknown_low_entropy", 0),
     ("unknown_high_entropy", 0),
     ("unknown_other", 0),
     ("constant_byte", 0),

@@ -74,6 +74,24 @@ this is evidence of an unused sibling, not proof of one; see
 [`disc-coverage.md`](../tooling/disc-coverage.md) for what the corpus does and
 does not cover.
 
+### 1195 has a second reading, and the bytes do not separate them
+
+Entry 1195 is `other1 + 2` - the slot every block on the disc seats a
+[`scene_event_scripts`](scene-bundles.md#scene_event_scripts---prescript-only)
+prescript in. Under that reading its header is `[u16 count = 1][u16 offsets[0]
+= 4]` rather than `[u16 tag = 1][u16 body_offset = 4]`: the same four bytes.
+The record table matches too - prescript record 0 is a run of 8-byte rows
+shaped `[0][index][0x3C + index][flags]` plus a small trailing word, which is
+exactly the `a` / `b` / `key` / `flags` walk this page describes, and it appears
+that way at slot 2 of scene blocks across the disc.
+
+Nothing in the bytes decides it. What separates the two carriers is position
+and reachability: 888 is `sound_data2 + 13`, not a prescript slot, and it is
+the one `FUN_8001FA88` loads. So this page's identification stands for 888, and
+1195 is better read as its block's prescript that happens to consist of that
+one table. The detector keeps 1195 because it runs before the prescript tier;
+that ordering is a convention, not evidence.
+
 ## Detection
 
 `u16@+0x02 == 4`, a small `u16@+0x00`, and at least six 8-byte records whose

@@ -50,29 +50,29 @@ Past the leading TMD, each chunk is `[u32 header][payload]` with header packed a
 
 The type-byte semantics differ from the standard `FUN_8001F05C` dispatcher: there `type = 0x01` means `TIM_LIST` (a `[count + offsets + TIMs]` pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling `FUN_8002541C` on a `scene_tmd_stream` entry would mis-dispatch and crash. The runtime knows to use `FUN_8001FE70` for these entries.
 
-### Concatenated sub-streams (the "two-list" shape)
+### One entry, one stream (the falsified "two-list" shape)
 
-Some entries (e.g. `0006_town01.BIN`) carry **two (or more) complete sub-streams** concatenated - each a full `[chunk0 TMD][type-0x01 TIM chunks][terminator]` block on a `0x800` (sector) boundary, zero-padding filling the gap. The second sub-stream has its **own** leading TMD; the "continuation" TIMs belong to it:
+An entry holds **exactly one** `[chunk0 TMD][type-0x01 TIM chunks][terminator]` stream, then zero padding to its sector-aligned end. `0006_town01.BIN` is the canonical example:
 
 ```text
-+0x00000  chunk0 = TMD body 0x383c        ] sub-stream 0
-+0x03840  type=0x01 TIM chunk             ]  (FUN_8001FE70's reach)
-+0x0ba64  type=0x01 TIM chunk             ]
-+0x13c88  terminator (zero-size header)   ]
-+0x13c8c..0x13fff: zero padding to the next sector
-+0x14000  chunk0 = TMD body 0x2c20        ] sub-stream 1
-+0x16c24  type=0x01 TIM chunk             ]  (own TMD; the "continuation")
-+0x1ee48  type=0x01 TIM chunk             ]
-+0x2706c  terminator                      ]
++0x00000  chunk0 = TMD body 0x383c
++0x03840  type=0x01 TIM chunk             (0x8220 bytes)
++0x0ba64  type=0x01 TIM chunk             (0x8220 bytes)
++0x13c88  terminator (zero-size header)
++0x13c8c..0x13fff: zero padding to the entry's 0x14000 end
 ```
 
-`FUN_8001FE70` walks **one** sub-stream and returns `param_1 + 1` - the address just past the terminator, which is where the next sub-stream begins. A sector- or slot-indexed caller uses that return value to walk the rest.
+`FUN_8001FE70` walks that one stream and returns `param_1 + 1` - the address just past the terminator. The single static caller `FUN_800513F0` (battle init) calls it exactly once, which is all an entry contains.
 
-Who calls it decides how much of the entry gets read. The single static caller `FUN_800513F0` (battle init) calls it exactly once, so battle uploads only sub-stream 0. The multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`), which is overlay-resident and capture-blocked.
+Earlier revisions of this page described a "concatenated sub-streams" / "two-list" shape, with `0006_town01` carrying a second sub-stream at `0x14000` (own TMD `0x2c20`, TIMs at `0x16c24` / `0x1ee48`). **That reading is falsified** - it was an artifact of the superseded entry-size expression, which over-read every entry into its successor.
 
-Two parser entry points cover both readings. [`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) enumerates the blocks, each a full sub-stream with its own TMD. [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports sub-stream 0's TIMs as `WalkSource::Tail` and the later ones as `WalkSource::Continuation`.
+Entry size is the sector gap to the next entry ([`prot.md`](prot.md)), so entry 0006 is exactly `0x14000` bytes and the "second sub-stream" is PROT entry **0007**: its TOC start is `0x14000` past entry 0006's, its own leading TMD is `0x2c20`, and its own tail TIMs sit at `0x2c24` / `0xae48` - the stale offsets minus `0x14000`.
 
-The engine's field-mode loader uses both to **skip** these battle-only TIMs - the row-479 NPC palettes are not field-resident, matching retail.
+The town0b / town0c clusters that appeared to confirm the shape are four-entry clusters of the same layout (TMD bodies `0x383c` / `0x2c20` / `0x2998` / `0x3af8`, two `0x8220` TIM chunks each), so every over-read merely reproduced the artifact. Across the corrected corpus no entry enumerates more than one sub-stream and none yields a `Continuation` chunk.
+
+[`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) returns exactly one block per entry, and [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports every chunk as `WalkSource::Tail`. Both retain their post-terminator scan as a **regression detector**: a second sub-stream or a `WalkSource::Continuation` hit means the buffer spans more than one PROT entry. Disc-gated coverage in `crates/asset/tests/scene_tmd_stream_real.rs`.
+
+The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs - the row-479 NPC palettes are not field-resident, matching retail.
 
 Reading:
 
@@ -85,11 +85,11 @@ if let Some(s) = scene_tmd_stream::detect(&buf) {
     }
 }
 
-// Surface every type-0x01 TIM upload chunk - both in-tail and continuation.
+// Surface every type-0x01 TIM upload chunk.
 for c in scene_tmd_stream::battle_tim_chunks(&buf) {
     // c.payload_offset is the inner PSX TIM magic offset.
-    // c.source distinguishes Tail (FUN_8001FE70-reachable) from
-    // Continuation (past the first terminator).
+    // c.source is Tail (FUN_8001FE70-reachable) for every retail entry;
+    // Continuation means the buffer over-read into the next PROT entry.
 }
 ```
 
@@ -319,10 +319,14 @@ The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been lo
 
 The prescript entry a scene block seats between its v12 header and its bundle: a `[u16 count][u16 offsets]` prescript at offset 0. Implementation: `crates/asset/src/scene_event_scripts.rs`.
 
-The detector's frame-opener rate gate is what makes it zero-false-positive on a buffer with no context, and it rejects the small prescripts - `geremi`'s is three records, none opening with the `-1` transform-node sentinel. Inside a scene the position supplies what the bytes cannot: `Scene::find_event_scripts` falls back to the structural prescript read on the entry that sits immediately after a `scene_v12_table` and immediately before the bundle.
+The frame-opener rate is a **quality** signal, not an identity one, so the detector comes in two tiers. `detect` pairs the prescript shape with the rate floor - the high-confidence read every consumer of the parsed records uses - and `detect_structural` gates on the table shape alone.
+
+23 of the 101 carriers sit under the rate floor, `geremi` / `tunnela` / `tunnelb` / `edson` at a rate of **zero**: they carry no transform-node record at all. A gate that drops a fifth of a format's members is not a definition of the format, which is why the categorizer runs the structural tier as a last resort.
+
+`Scene::find_event_scripts` additionally has position to work with, and falls back to the positional prescript read on the entry that sits immediately after a `scene_v12_table` and immediately before the bundle - the route `edteien`'s **two**-record prescript still takes.
 
 ```text
-+0x00              u16  count             ; 3..=4096
++0x00              u16  count             ; 2..=4096 (retail: 2..=71)
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing,
                                           ; all <= file size
@@ -340,11 +344,11 @@ The detector's frame-opener rate gate is what makes it zero-false-positive on a 
                                           ; runtime-buffer offset pairs)
 ```
 
-Strict structural detection:
+Detection, `detect` (high-confidence tier):
 1. Prescript shape valid (count `3..=4096`, `offsets[0] == 2 + count*2`, monotonic, in-bounds).
-2. **Frame-opener rate ≥ 50 %** of records start with the `0xFFFF 0x0000` record header sentinel.
+2. **Frame-opener rate ≥ 45 %** of records start with the `0xFFFF 0x0000` record header sentinel.
 
-The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
+Detection, `detect_structural` (shape only): the same table with `count >= 2`, every offset word-aligned, and the last record non-empty. Across the 1233-entry PROT corpus that matches **101** entries with zero false positives - 100 at slot 2 of a CDNAME block, the exception being `other4 + 1`. The count floor is where the shape stops degenerating: at `count == 1` the anchor `offsets[0] == 2 + count*2` collapses to "the second `u16` is 4", which is byte-identical to a [`bse_bank`](bse-dat.md) header, and both retail `bse_bank` carriers match it.
 
 **These records are NOT field-VM (`FUN_801DE840`) bytecode.** That was the long-standing assumption, and it is falsified - don't re-walk it.
 

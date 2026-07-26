@@ -340,8 +340,14 @@ def data_report(extracted):
     per_file = json.load(open(cat)).get("per_file", [])
     if not per_file:
         return None
+    # `asset categorize` emits `per_file` as a filename -> record MAP. Older
+    # extractions on disk carry a LIST of records that each repeat `path`.
+    # Accept both: while the shapes disagreed this gate ran green only because
+    # nobody had re-run `legaia-extract`, and re-running it crashed the gate
+    # with `'str' object has no attribute 'get'` (iterating a dict yields keys).
+    records = list(per_file.values()) if isinstance(per_file, dict) else per_file
     by = {}
-    for e in per_file:
+    for e in records:
         klass = e.get("class") or "?"
         n = e.get("size") or 0
         c = by.setdefault(klass, [0, 0])

@@ -212,14 +212,14 @@ impl Scene {
     /// immediately after a [`Class::SceneV12Table`] and immediately before the
     /// [`Class::SceneAssetTable`] bundle.
     ///
-    /// Most such entries also classify as [`Class::SceneEventScripts`] and the
-    /// class-driven loop above finds them. The standalone detector's gates -
-    /// the frame-opener rate and the minimum record count, both
-    /// zero-false-positive tests for a buffer with no context - reject the
-    /// small ones: `geremi`'s prescript is three records, none opening with
-    /// the `-1` transform-node sentinel, and `edteien`'s is **two**, below the
-    /// count floor entirely. Here there *is* context, which is what lets this
-    /// take the structural prescript read instead
+    /// Every such entry classifies as [`Class::SceneEventScripts`] - the
+    /// categorizer's shape-only tier claims the ones the frame-opener rate
+    /// rejects, `geremi` / `tunnela` / `tunnelb` / `edson` included - so the
+    /// class-driven loop above finds them. What it cannot parse is the
+    /// two-record case: `record_ranges` keeps the three-record floor that
+    /// makes the standalone read zero-false-positive, and `edteien`'s
+    /// prescript is **two** records. Here there *is* context, which is what
+    /// lets this take the positional prescript read instead
     /// ([`legaia_asset::scene_event_scripts::record_ranges_positional`]). It
     /// is also what the phantom
     /// `SceneScriptedAssetTable` class used to supply: it claimed these same

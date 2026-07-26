@@ -53,7 +53,7 @@ fn scene_v12_detector_matches_97_entry_cluster() {
     let mut params: std::collections::BTreeSet<u16> = std::collections::BTreeSet::new();
     let mut max_scripts = 0usize;
 
-    for path in &entries {
+    for (i, path) in entries.iter().enumerate() {
         let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
@@ -95,11 +95,34 @@ fn scene_v12_detector_matches_97_entry_cluster() {
                 );
             }
 
-            if !t.scripts.is_empty() {
+            // The prescript is the NEXT PROT entry, not a `+0x800` field of
+            // this one: a retail v12 header entry is exactly one 0x800-byte
+            // sector, so 0x800 is one past its end. `entries` is sorted and
+            // every filename is index-prefixed, so `i + 1` is the next TOC
+            // row. (The old in-buffer read only ever worked because the
+            // superseded over-reading entry size appended the neighbour to
+            // this buffer, putting it at exactly +0x800.)
+            assert_eq!(
+                bytes.len(),
+                legaia_asset::scene_v12_table::PRESCRIPT_OFFSET,
+                "{}: a v12 header entry is one sector",
+                path.display(),
+            );
+            let next = entries.get(i + 1).and_then(|p| std::fs::read(p).ok());
+            let (scripts, openers) = match &next {
+                Some(b) => legaia_asset::scene_v12_table::parse_prescript_entry(b),
+                None => (Vec::new(), 0),
+            };
+            if !scripts.is_empty() {
                 with_scripts += 1;
-                max_scripts = max_scripts.max(t.scripts.len());
+                max_scripts = max_scripts.max(scripts.len());
             }
-            if t.frame_opener_rate() >= 0.50 {
+            let rate = if scripts.is_empty() {
+                0.0
+            } else {
+                openers as f32 / scripts.len() as f32
+            };
+            if rate >= 0.50 {
                 frame_opener_50pct += 1;
             }
         }
@@ -124,11 +147,14 @@ fn scene_v12_detector_matches_97_entry_cluster() {
         (95..=100).contains(&hits),
         "scene_v12 detector matched {hits} entries; expected ~97 per docs"
     );
-    // Every match should have a valid prescript at offset 0x800.
-    // Every retail v12 entry carries a parseable prescript at +0x800.
+    // Every v12 header entry's SUCCESSOR parses as its event-script
+    // prescript - 97/97, no exceptions. This is the assertion that pins the
+    // corrected structure; if it ever reads 0/97 again, something has gone
+    // back to reading the prescript as a `+0x800` field of the header entry.
     assert_eq!(
         with_scripts, hits,
-        "{with_scripts}/{hits} entries had a valid prescript at +0x800; expected all of them",
+        "{with_scripts}/{hits} v12 header entries had a valid prescript in the \
+         NEXT PROT entry; expected all of them",
     );
     // Documented frame-opener rate: 75/97 ≥ 50%.
     assert!(

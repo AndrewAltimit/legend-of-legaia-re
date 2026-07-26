@@ -146,6 +146,7 @@ re-derived by accident.
 | The world-map kingdom bundle is PROT `0085` / `0244` / `0391` | falsified (it is `0086` / `0245` / `0392`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+| `scene_tmd_stream` entries can hold two or more concatenated sub-streams (the "two-list" shape) | falsified (one stream per entry; 0 of 182 hold a second) | [details ↓](#concatenated-sub-streams-in-a-scene_tmd_stream-entry) |
 
 ### Assets named by the entry the over-read window started in
 
@@ -216,6 +217,51 @@ bytes. Format-level claims derived from a sweep are only as sound as the sweep's
 bounds - re-derive the bound before believing the claim.
 
 See [`pochi.md`](../formats/pochi.md) for what the slots actually contain.
+
+### Concatenated sub-streams in a `scene_tmd_stream` entry
+
+*Status:* falsified - one entry holds one stream; the "second sub-stream" is the
+next PROT entry
+
+The third shape of the same root cause, and the one that got furthest: here the
+over-read did not misname an asset or misattribute a corruption, it invented a
+**structural feature of the format**. `0006_town01` was read as two concatenated
+`[chunk0 TMD][type-0x01 TIM chunks][terminator]` sub-streams - the second at
+`0x14000` with its own leading TMD `0x2c20` and TIM chunks at `0x16c24` /
+`0x1ee48`. Entry 0006 is exactly `0x14000` bytes, so all of that is PROT entry
+**0007**, whose own leading TMD is `0x2c20` and whose own tail chunks are at
+`0x2c24` / `0xae48` - the recorded offsets minus the length of entry 0006.
+
+The plausible part was unusually good. The second block really did open on a
+`0x800` boundary, really was preceded by zero padding, and really did carry a
+valid Legaia TMD followed by two well-formed type-0x01 chunks - because that is
+what a scene_tmd_stream entry looks like, and the next entry was one. The reading
+even explained a real fact about the walker: `FUN_8001FE70` returns `param_1 + 1`,
+just past the terminator, which was taken as the hook a sector-indexed caller
+would use to walk the next sub-stream. That invited a follow-on hypothesis - an
+unfound "multi-sub-stream caller" in the field/town dispatch - which was filed as
+capture-blocked rather than as absent.
+
+What makes it worth recording is how it was **confirmed**: the shape was checked
+against the town0b and town0c clusters and reproduced exactly. Those clusters are
+four-entry runs of the same layout (TMD bodies `0x383c` / `0x2c20` / `0x2998` /
+`0x3af8`, two `0x8220` TIM chunks each), so every over-read spilled into a sibling
+of the same shape. The replication was the artifact copying itself. Across the
+corrected corpus, 0 of 182 `scene_tmd_stream` entries hold a second sub-stream and
+0 yield a post-terminator chunk.
+
+The transferable lesson: **a structural feature that only ever appears at the end
+of a buffer is a claim about the reader's bounds until it is shown somewhere
+else.** Replicating it across sibling entries does not test it when the siblings
+share the layout that produces the artifact - a real second sub-stream would have
+to appear somewhere that is not immediately before another entry of the same
+class. `sub_streams` and `WalkSource::Continuation` survive in
+[`scene_tmd_stream.rs`](../../crates/asset/src/scene_tmd_stream.rs) as regression
+detectors for exactly this, with disc-gated coverage in
+`crates/asset/tests/scene_tmd_stream_real.rs`.
+
+See [`scene-bundles.md`](../formats/scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape)
+for the corrected layout.
 
 ## Field / locomotion
 

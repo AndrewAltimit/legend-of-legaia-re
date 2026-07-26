@@ -47,12 +47,15 @@ One battle-scene state (in `FUN_800513F0`, around `0x80051a50`) calls `FUN_8001F
 
 This is the path that uploads field NPC palettes to VRAM row 479 - they're plain PSX TIMs wrapped in type-0x01 chunks, dispatched only during battle init. See [`docs/formats/npc-palette.md`](../formats/npc-palette.md) for the cross-save corroboration and [`docs/formats/scene-bundles.md`](../formats/scene-bundles.md#streaming-tail---fun_8001fe70-walker) for the type-byte table.
 
-### Concatenated sub-streams (the "two-list" / continuation case)
+### One entry, one sub-stream (the falsified "two-list" / continuation case)
 
-Some scene_tmd_stream entries hold **more than one** complete `[chunk0 TMD][type-0x01 TIM chunks][terminator]` sub-stream concatenated, each starting on a `0x800` (sector) boundary with zero padding filling the gap (`0006_town01`: sub-stream 0 at `0x0`, sub-stream 1 with its **own** leading TMD at `0x14000`; verified across the town01 / town0b / town0c clusters). The bytes earlier notes called a "continuation TIM list" are really the second sub-stream's TIM chunks - sub-stream 1 is self-contained, not a bare tail of sub-stream 0.
+A scene_tmd_stream entry holds **exactly one** complete `[chunk0 TMD][type-0x01 TIM chunks][terminator]` sub-stream, then zero padding to its sector-aligned end. `FUN_8001FE70` walks that one sub-stream and returns `param_1 + 1` (past the terminator); the single static caller `FUN_800513F0` (battle init) calls it **once** - the `s3 < 4` loop above the call is the 4-party-member setup - which is all an entry contains.
 
-`FUN_8001FE70` walks exactly **one** sub-stream. Its return value (`param_1 + 1`, past the terminator) lands on the next sub-stream's region, so a sector/slot-indexed caller can walk the rest by re-invoking the walker on that boundary. The single static caller `FUN_800513F0` (battle init) calls it **once** (the `s3 < 4` loop above the call is the 4-party-member setup, not a sub-stream loop), so in battle only sub-stream 0 is uploaded. The multi-sub-stream caller is the per-scene field/town dispatch (`FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`, overlay-resident / descriptor-driven), still capture-blocked. `legaia_asset::scene_tmd_stream::sub_streams` enumerates the blocks properly (each a full sub-stream with its own TMD);
-`battle_tim_chunks` reports sub-stream 0's TIMs as `Tail` and the later sub-streams' as `Continuation`. The engine's field-mode loader uses both to **skip** these battle-only TIMs (row-479 palettes aren't field-resident - matching retail).
+Earlier notes described some entries as holding **more than one** sub-stream concatenated (`0006_town01`: sub-stream 0 at `0x0`, sub-stream 1 with its own leading TMD at `0x14000`), "verified across the town01 / town0b / town0c clusters". **That reading is falsified.** It was an artifact of the superseded PROT entry-size expression, which over-read every entry into its successor - see [`formats/prot.md`](../formats/prot.md).
+
+Entry 0006 is exactly `0x14000` bytes, and the "second sub-stream" is PROT entry **0007**, whose TOC start is exactly `0x14000` further on: its own leading TMD is `0x2c20` and its own tail TIMs are at `0x2c24` / `0xae48` - the stale offsets minus `0x14000`. The town0b / town0c "confirmations" are clusters of the same four-entry layout, so each over-read reproduced the artifact rather than testing it.
+
+`legaia_asset::scene_tmd_stream::sub_streams` returns one block per entry and `battle_tim_chunks` reports every chunk as `Tail`; both keep their post-terminator scan as a regression detector for a buffer that spans more than one entry. The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs (row-479 palettes aren't field-resident - matching retail).
 
 ## Field / town scene loader (`FUN_8001F7C0` + `FUN_800255B8`)
 

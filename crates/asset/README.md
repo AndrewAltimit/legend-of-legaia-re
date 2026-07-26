@@ -76,7 +76,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `overlay_ptr_table` | Sister format: pointer tables that index into overlays. |
 | `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. |
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
-| `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain. See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
+| `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain, not on the footprint (111 entries share it, 101 are maps). See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
 | `bse_bank` | The `bse.dat` master sound bank `FUN_8001FA88` loads at sound-init - `[u16 tag][u16 body_offset = 4][8-byte records]`. Two entries: extraction 888 (the loader's raw TOC `0x37A`) and an uncalled sibling at 1195. See [`docs/formats/bse-dat.md`](../../docs/formats/bse-dat.md). |
 | `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
@@ -89,7 +89,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_patcher::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
 | `inn_costs` | Scripted gold charges (inn stays, tours, rides, casino coin buys) inside a scene MAN: op `0x4E` gold-gate (sub-3 u16 / sub-10 u32 literal vs `_DAT_8008459C`) paired with a negative op `0x3A` `ADD_MONEY` debit. `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`GoldCharge`]s. Retail has no inn cost table - the costs are these script literals (`docs/subsystems/inn.md`). |
 | `scene_scripted_asset_table` | Composite shape pairing a `[u16 count][u16 offsets[count]]` prescript with a canonical 7-asset table at the next sector boundary. |
-| `scene_event_scripts` | Sister detector: the prescript exists but no asset table follows. (The records are word-aligned actor/event commands, NOT field-VM bytecode.) |
+| `scene_event_scripts` | The `[u16 count][u16 offsets]` prescript entry a scene block seats at slot 2. Two tiers: `detect` (shape + frame-opener rate) and `detect_structural` (shape only). Records are move-VM stager records, NOT field-VM bytecode. |
 | `data_field_truncated` | Sister of `parse_streaming`: leading chunks decode cleanly but the last chunk's declared size walks past EOF. |
 | `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |

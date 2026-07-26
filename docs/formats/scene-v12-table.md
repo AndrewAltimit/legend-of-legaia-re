@@ -2,13 +2,16 @@
 
 The scene's **walk-on tile-trigger patch file**: dev filename
 `DATA\FIELD\<scene>.PCH` (suffix pool `0x8007B3BC/.MAP`, `0x8007B3C4/.PCH`,
-`0x8007B3CC/.LZS` in `SCUS_942.54`). The first `0x800` bytes are a
-four-kind sub-table directory + the kind-1 trigger records - the same
-header shape as the `.MAP` file's `+0x10000` trigger block
-([`field-locomotion.md` § trigger block](../subsystems/field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables)) -
-followed by a full
+`0x8007B3CC/.LZS` in `SCUS_942.54`). The entry is a four-kind sub-table
+directory + the kind-1 trigger records - the same header shape as the `.MAP`
+file's `+0x10000` trigger block
+([`field-locomotion.md` § trigger block](../subsystems/field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables)).
+
+**The entry is exactly one `0x800`-byte sector, in all 97 cases.** The
 [scene event-scripts](scene-bundles.md#scene_event_scripts---prescript-only)
-prescript at a sector-aligned offset.
+prescript is the **next PROT entry**, not a field at `+0x800` of this one -
+`0x800` *is* this entry's size. See
+[Event-script prescript](#event-script-prescript---the-next-prot-entry).
 
 Implementation: [`crates/asset/src/scene_v12_table.rs`](../../crates/asset/src/scene_v12_table.rs).
 CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
@@ -47,10 +50,12 @@ documented arrival tile).
                                  ; +N (= +end_records+2), +N+2, +N+4.
                                  ; Zero on disc (see Open questions on
                                  ; the old "runtime fixup" reading).
-+end_records .. 0x800            ; zero padding
-+0x800   u16  script_count       ; scene event-scripts prescript
-+0x802   script_count × u16      ;   offset table (relative to +0x800)
-+0x800 + offsets[i]              ;   per-record word-aligned command bytes
++end_records .. 0x800            ; zero padding; the entry ENDS at 0x800
+
+-- NEXT PROT ENTRY (extraction `define`) --------------------------------
++0x000   u16  script_count       ; scene event-scripts prescript
++0x002   script_count × u16      ;   offset table (relative to entry start)
++offsets[i]                      ;   per-record word-aligned command bytes
                                  ;   (records typically open with the
                                  ;   `0xFFFF 0x0000` header sentinel; NOT
                                  ;   field-VM bytecode - see below).
@@ -58,9 +63,9 @@ documented arrival tile).
 
 ## Confidence
 
-**Confirmed** - header algebra, inline-record shape, and prescript-at-0x800
-layout verified across all 97 corpus entries by the disc-gated
-`scene_v12_corpus` test.
+**Confirmed** - header algebra, inline-record shape, one-sector entry size,
+and the prescript-is-the-next-entry structure verified across all 97 corpus
+entries by the disc-gated `scene_v12_corpus` test.
 
 The inline-record semantics is also **confirmed**: the records are kind-1
 walk-on tile triggers `[tile_x][tile_z][p2_record][gate]`, read by the same
@@ -146,7 +151,22 @@ class; on kingdom overworlds the referenced P2 records happen to be the
 town/dungeon-entrance and story-beat records, which produced the
 placement correlation.
 
-## Event-script prescript at `+0x800`
+## Event-script prescript - the next PROT entry
+
+A v12 header entry is **2048 bytes - one sector - in all 97 cases**, so
+`0x800` is one past its end, not an offset inside it. The prescript is the
+next TOC row: extraction `define` (the header is `define - 1`, the `.LZS`
+`scene_asset_table` bundle `define + 1`), which is the position law asserted
+lower down this page.
+
+The earlier "prescript at `+0x800` of the same entry" reading came from the
+superseded over-reading PROT entry size, which appended following entries to
+every buffer and put the neighbour at exactly `+0x800`. Retail's own loader
+had already said otherwise and it was read as a puzzle instead of an answer -
+see [Runtime staging](#runtime-staging---the-pch-sidecar): a missing `.PCH`
+is **zero-filled `0x800` bytes**, and `efect.dat` stages at `+0x12800`,
+`0x800` past the `.PCH`. Both are statements that the `.PCH` is one sector.
+Parser: `legaia_asset::scene_v12_table::parse_prescript_entry`.
 
 Identical shape to the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)
 format: a `[u16 count][u16 offsets[count]]` table indexing **move-VM
@@ -165,7 +185,8 @@ Across the 97 v12 entries:
 
 | Metric | Value |
 |--------|-------|
-| Valid prescript at `+0x800` | **97 / 97** |
+| Valid prescript in the next PROT entry | **97 / 97** |
+| Header entry size | **0x800 (one sector), 97 / 97** |
 | `script_count` range | 2 .. 71 |
 | Frame-opener rate ≥ 50 % | 75 / 97 |
 | Max records per entry | 71 (`0119_keikoku.BIN`, `0154_retock.BIN`) |
@@ -192,10 +213,15 @@ in order:
    (`FUN_800608F0`) misses, the loader **zero-fills `0x800` bytes** there
    instead - the empty-directory fallback for trigger-less scenes.
 3. `h:\PROT\FIELD\<scene>\efect.dat` → `*(0x1F8003EC) + 0x12800`
-   (`= _DAT_8007B8D0`), which **overwrites every `.PCH` byte past the
-   first `0x800`** - so the runtime-live window is exactly the directory +
-   kind-1 records; the on-disc prescript at `+0x800` is not reachable
-   through this path.
+   (`= _DAT_8007B8D0`), i.e. exactly `0x800` past the `.PCH`.
+
+Steps 2 and 3 are each an independent statement that **the `.PCH` is one
+sector**: the miss path zero-fills exactly `0x800`, and the next asset is
+staged exactly `0x800` later. This page previously read the same two facts as
+a puzzle - "the on-disc prescript at `+0x800` is not reachable through this
+path" - because the over-reading entry size made a prescript appear at
+`+0x800`. There is no unreachable region: the entry ends at `0x800` and the
+prescript is the next PROT entry, staged by its own load.
 
 This closes the format's long-open "where does the loader stage the file"
 question and matches the live capture that found the table at heap

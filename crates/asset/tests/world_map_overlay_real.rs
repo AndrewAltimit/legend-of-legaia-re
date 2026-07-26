@@ -3,8 +3,10 @@
 //!
 //! Asserts the invariants we rely on for the world-overview page
 //! visualization:
-//!  - All three kingdom PROT entries (0085, 0244, 0391) carry a valid
-//!    7-asset table.
+//!  - All three kingdom PROT entries (0086, 0245, 0392 -
+//!    `kingdom_bundle::BUNDLE_ENTRIES`, NOT the `0085` / `0244` / `0391`
+//!    prescript entries the superseded over-reading entry size started in)
+//!    carry a valid 7-asset table.
 //!  - Slot 4 LZS-decodes cleanly with declared size.
 //!  - The decoded payload parses with `world_map_overlay::parse` (count
 //!    in expected range, marker 0x080C across every body, body sizes
@@ -52,9 +54,9 @@ fn slot4_parses_for_every_kingdom() {
 
     // (prot_base, label, min expected bodies, min expected line segments)
     let kingdoms: &[(u32, &str, usize, usize)] = &[
-        (85, "Drake", 15, 2000),
-        (244, "Sebucus", 16, 1500),
-        (391, "Karisto", 16, 1500),
+        (kingdom_bundle::BUNDLE_ENTRIES[0], "Drake", 15, 2000),
+        (kingdom_bundle::BUNDLE_ENTRIES[1], "Sebucus", 16, 1500),
+        (kingdom_bundle::BUNDLE_ENTRIES[2], "Karisto", 16, 1500),
     ];
 
     for &(base, label, min_bodies, min_lines) in kingdoms {

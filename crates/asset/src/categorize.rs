@@ -100,13 +100,14 @@ pub enum Class {
     /// boundary holds the standard 7-asset scene bundle. 77 PROT entries match.
     /// See [`crate::scene_scripted_asset_table`].
     SceneScriptedAssetTable,
-    /// `[u16 count][u16 offsets[count]][record bodies]` - same prescript
-    /// shape as [`Class::SceneScriptedAssetTable`] but the post-prescript
-    /// payload is **not** a canonical scene-asset-table. Detected when at
-    /// least 50 % of records open with the `0xFFFF 0x0000` record header
-    /// sentinel. The records are a word-aligned (16-bit) actor/event command
-    /// structure, NOT field-VM bytecode. ~20 PROT entries match. See
-    /// [`crate::scene_event_scripts`].
+    /// `[u16 count][u16 offsets[count]][record bodies]` - the prescript entry
+    /// a scene block seats between its `.PCH` header and its bundle. The
+    /// records are word-aligned move-VM stager records, NOT field-VM bytecode.
+    /// 101 PROT entries match, 100 of them at slot 2 of a CDNAME block.
+    /// Claimed in two tiers: `scene_event_scripts::detect` (prescript shape
+    /// plus a frame-opener-rate floor) runs early, and the shape-only
+    /// `detect_structural` runs last, after every other named detector.
+    /// See [`crate::scene_event_scripts`].
     SceneEventScripts,
     /// MIPS code blob - the static disc copy of a runtime overlay. Leads
     /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
@@ -123,7 +124,11 @@ pub enum Class {
     /// entry at slot 0 of every scene's CDNAME block. Four regions whose sizes
     /// sum to exactly the footprint: object descriptors, the collision + floor
     /// grid, the per-tile object-index map, and the per-tile trigger block.
-    /// Detected on the trigger block's self-consistent sub-table chain.
+    /// Detected on the trigger block's self-consistent sub-table chain - the
+    /// `0x12000` footprint alone is 36 ordinary sectors and 111 entries have
+    /// it, only 101 of which are maps. 100 entries chain; the one carrier with
+    /// a zeroed trigger header is admitted only because its object table and
+    /// collision grid are empty too.
     /// See [`crate::field_map`] and [`docs/formats/field-map.md`].
     FieldMap,
     /// Runtime `efect.dat` 2-pack - `[u32 pack0_off][u32 pack1_off][sprite
@@ -525,13 +530,13 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Scene event-scripts: same `[u16 count][u16 offsets]` prescript shape as
-    // `scene_scripted_asset_table` but with no canonical asset table after.
-    // Runs after both scripted-and-asset-table and plain asset-table so the
-    // more specific layouts claim their entries first. Frame-opener-rate gate
-    // (>= 50% of records start with the `0xFFFF 0x0000` record header sentinel)
-    // keeps this zero-false-positive against random `[count][offsets]`-shaped
-    // data.
+    // Scene event-scripts, high-confidence tier: the `[u16 count][u16 offsets]`
+    // prescript shape plus a frame-opener-rate floor (records leading with the
+    // `model_sel = -1` transform-node sentinel). Runs after both
+    // scripted-and-asset-table and plain asset-table so the more specific
+    // layouts claim their entries first. The shape-only tier for the carriers
+    // whose records are not transform nodes runs near the end of this
+    // function - see `scene_event_scripts::detect_structural`.
     if crate::scene_event_scripts::detect(buf).is_some() {
         return mk(
             Class::SceneEventScripts,
@@ -815,6 +820,23 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
+    // Scene event-scripts, shape-only tier. Deliberately last among the named
+    // detectors: the prescript table is a weaker signature than any magic
+    // word, so it only gets to claim what nothing else recognised. Placed
+    // after `bse_bank` in particular, whose `[u16 tag][u16 body_offset = 4]`
+    // header is the degenerate one-record form of this very table.
+    if crate::scene_event_scripts::detect_structural(buf).is_some() {
+        return mk(
+            Class::SceneEventScripts,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // Overlay *data* image - a NUL-terminated ASCII pool (file paths, scene
     // names) followed by a run of overlay-window pointers. Structural sibling
     // of `mips_overlay` / `overlay_ptr_table`, which both require their
@@ -908,22 +930,29 @@ pub fn classify(buf: &[u8]) -> FileReport {
 /// Minimum overlay-window pointer words a run must have to count as a table.
 const OVERLAY_PTR_RUN_MIN: usize = 8;
 
+/// How far past the string pool the pointer table / code may start.
+const OVERLAY_POOL_SCAN_BYTES: usize = 0x800;
+
 /// Recognises an overlay **data** image: a leading NUL-terminated ASCII pool
-/// (the overlay's file-path / scene-name literals) followed, within the first
-/// sector, by a run of at least [`OVERLAY_PTR_RUN_MIN`] consecutive words in
-/// the `0x801C0000..=0x801FFFFF` overlay load window.
+/// (the overlay's file-path / scene-name / debug-format literals) followed,
+/// within the first sector, by *either* a run of at least
+/// [`OVERLAY_PTR_RUN_MIN`] consecutive words in the `0x801C0000..=0x801FFFFF`
+/// overlay load window, *or* a MIPS function prologue.
 ///
 /// The sibling detectors [`crate::mips_overlay`] and
 /// [`crate::overlay_ptr_table`] both anchor their signature at offset 0, so
-/// neither reaches an image that opens with its string pool. Requiring both
-/// halves - printable first byte *and* a genuine pointer run - keeps this from
-/// firing on ordinary sparse tables.
+/// neither reaches an image that opens with its string pool - and that
+/// argument applies to both of them, which is why there are two arms here.
+/// Requiring a printable first byte *and* one of the two genuine follow-ups
+/// keeps this from firing on ordinary sparse tables: across the PROT corpus
+/// the pair matches only entries in the `xxx_dat` / `other_game` overlay
+/// clusters.
 fn is_overlay_data_image(buf: &[u8]) -> bool {
     if buf.len() < 0x200 || !(0x20..=0x7E).contains(&buf[0]) {
         return false;
     }
     let word = |at: usize| u32::from_le_bytes(buf[at..at + 4].try_into().unwrap());
-    let scan_end = buf.len().min(0x800);
+    let scan_end = buf.len().min(OVERLAY_POOL_SCAN_BYTES);
     let mut at = 0usize;
     while at + 4 * OVERLAY_PTR_RUN_MIN <= scan_end {
         let run = (0..)
@@ -937,7 +966,15 @@ fn is_overlay_data_image(buf: &[u8]) -> bool {
         }
         at += 4;
     }
-    false
+    // Second arm: the pool is followed by code rather than by a pointer table.
+    // `0974_other_game.BIN` is the retail case - `"OTHER3 \n"`, three printf
+    // formats, then `addiu sp, sp, -0x40` at `+0x44`. Offset 0 is excluded
+    // because `mips_overlay` already owns it (and a prologue there would mean
+    // a non-printable first byte anyway).
+    (4..scan_end)
+        .step_by(4)
+        .take_while(|p| p + 8 <= scan_end)
+        .any(|p| crate::mips_overlay::detect(&buf[p..]).is_some())
 }
 
 fn is_pochi_filler(buf: &[u8]) -> bool {

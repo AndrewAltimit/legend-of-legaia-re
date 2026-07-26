@@ -56,24 +56,29 @@ offset +4 from the chunk header; it does not need to interpret the
 the wrapper is
 [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs)
 - it reports every type-0x01 chunk and tags whether the chunk sits
-inside `FUN_8001FE70`'s reach (`WalkSource::Tail`) or past the first
-terminator in a continuation list (`WalkSource::Continuation`).
+inside `FUN_8001FE70`'s reach (`WalkSource::Tail`, which every retail
+chunk is) or past the first terminator (`WalkSource::Continuation`,
+which on a correctly-sized entry means the buffer over-read into the
+next PROT entry).
 
 ## Multi-TIM CLUT merge
 
 Each town typically has **multiple** row-479 TIMs spread across several
-PROT entries (e.g. town01 entries 6..9 carry 7 such TIMs). Some are
-"full" (slots 0..14 populated), others are "partial" (slots 0..7 only,
-remaining slots padded with 0x0000 on disc). All target the same VRAM
-cells, producing a CLUT race.
+PROT entries - town01 entries 6..9 carry four, one per entry. (Each of
+those entries holds two type-0x01 TIM chunks; the other four put their
+CLUT on row 473.) All four payloads are distinct, and they differ in how
+much of the row they fill: entries 7 and 8 are "full" (16-entry slots
+0..14 populated), while entries 6 and 9 are "partial" (slots 0..5 + 7,
+and slots 0..7, with the rest padded to 0x0000 on disc). All target the
+same VRAM cells, producing a CLUT race.
 
 The engine's targeted-upload CLUT pass at
 [`legaia_tmd::vram_targeted::build_vram_targeted_from_buffers`](../../crates/tmd/src/vram_targeted.rs)
 runs the CLUT block second (after image blocks) and uses
 **merge-zeros semantics**: a halfword of `0x0000` in a later upload
 does not overwrite a non-zero halfword from an earlier upload. The
-net effect is the union of every contributing TIM's non-zero slots,
-which yields a fully populated palette row.
+net effect is the union of every contributing TIM's non-zero slots -
+for town01, slots 0..14, a fully populated palette row.
 
 Without merge semantics, the partial TIMs' trailing zeros clobber the
 full TIMs' slots 8..14 and the town01 prim keep-ratio collapses from
@@ -94,16 +99,19 @@ field / town scene loader does NOT touch them. Empirically:
 `FUN_8001FE70` walks the streaming tail until it hits either a
 zero-size chunk header or a type-0x02 chunk; for every type-0x01
 chunk along the way it calls `LoadImage(payload)` to DMA the TIM to
-VRAM. The walker stops at the first terminator. Files with the
-two-list shape (`0006_town01.BIN` has chunks at `0x3840`, `0xba64`,
-then a zero-padded gap, then `0x16c24`, `0x1ee48`) leave the
-continuation list past the terminator unreached by the standard
-battle-init dispatch. Whether a separate code path picks them up
-later is not pinned; the bytes are reachable as
-`WalkSource::Continuation` in the engine helper, and the in-tail
-chunks alone supply the same `(fb_y, fb_x)` regions, so the
-continuation list may be cold-loaded only by an alternate scenario
-(e.g. NPC variants seen in specific scripted events).
+VRAM. The walker stops at the first terminator - and on a
+correctly-sized entry that terminator is followed only by zero
+padding, so the walk reaches **every** TIM chunk the entry owns.
+Nothing is left cold-loaded.
+
+An earlier revision of this page said `0006_town01.BIN` had a
+"two-list" shape - chunks at `0x3840` / `0xba64`, a zero-padded gap,
+then `0x16c24` / `0x1ee48` - whose second list the battle-init
+dispatch never reached. That is falsified: the second pair is PROT
+entry **0007**'s own tail, seen through the superseded over-reading
+entry-size expression, and `FUN_8001FE70` reaches it when it walks
+entry 0007. See
+[`scene-bundles.md`](scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape).
 
 ## Engine port: field-mode vs battle-mode dispatch
 
