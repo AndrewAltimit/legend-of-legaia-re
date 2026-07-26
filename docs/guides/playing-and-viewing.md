@@ -169,9 +169,35 @@ MAN sub-asset), the engine has the direct path:
 ./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"
 ```
 
+## 10. Run the browser version locally
+
+The same engine runs in a browser as the static site's play page, sharing the
+simulation kernels with the native window. That build is **not in the clone** -
+`site/wasm/` is generated output. Build it once:
+
+```bash
+scripts/ci/build-wasm.sh            # ~9 min cold; needs wasm-pack
+python3 -m http.server -d site      # then open /play.html
+```
+
+Nothing is uploaded: the disc image you pick stays in the tab.
+
+Rebuild after changing anything the page compiles - which is most of the
+workspace, not just `crates/web-viewer`. To check whether the bundle you built
+still matches your sources:
+
+```bash
+python3 scripts/ci/check-wasm-freshness.py
+```
+
+Worth running before concluding a change did or didn't work in the browser: a
+stale bundle looks exactly like a fix that had no effect. See
+[shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
+
 ## Related docs
 
 - [engine.md](../subsystems/engine.md) - the engine's architecture and clean-room boundaries.
+- [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md) - why `site/wasm/` is generated, not committed.
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.
 - [determinism-replay.md](../tooling/determinism-replay.md) - the replay format.
 - [modding-and-translation.md](modding-and-translation.md) - randomize or translate the disc you just booted.

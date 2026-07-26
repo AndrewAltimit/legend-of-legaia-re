@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Is the committed `site/wasm/` bundle built from the sources in this tree?
+"""Is your local `site/wasm/` bundle built from the sources in this tree?
 
-The play page is a compiled artifact checked into the repo, and the compiler is
-not run by any gate. So a source fix can be committed, reported as done, and
-still not be in the bundle the browser loads. That has happened: a footstep-SFX
-fix was committed and described as shipped while the page kept playing the old
-sample, because `site/wasm/` predated it by four commits.
+`site/wasm/` is build output and is not committed (see `site/wasm/.gitignore`).
+But a locally built bundle still goes stale the moment you pull, switch branches
+or edit a source, and nothing about a green test run tells you: the browser loads
+the binary you built earlier, not the code you are looking at now. That mistake
+has been made twice on this repo, both times reporting a fix as live to someone
+whose bundle predated it.
 
 What makes it hard to notice by eye is the size of the bundle's source closure.
 `legaia-web-viewer` pulls in most of the workspace transitively - the format
 crates, `engine-core`, `engine-ui`, `engine-audio` - so editing a PROT reader or
-an audio kernel silently changes what the play page does. `git log`-style
-"was this file touched after the bundle?" reasoning also gets it wrong, because
-a branch can *build* the bundle and then be rebased onto a different tree: the
+an audio kernel silently changes what the play page does. `git log`-style "was
+this file touched after the bundle?" reasoning also gets it wrong, because a
+branch can *build* the bundle and then be rebased onto a different tree: the
 last-touched timestamps look in sync while the binary compiled against sources
 that are no longer here.
 
@@ -21,12 +22,16 @@ hash of every source input, and this script recomputes it:
 
     python3 scripts/ci/check-wasm-freshness.py            # warn (exit 0)
     python3 scripts/ci/check-wasm-freshness.py --strict    # fail (exit 1)
-    python3 scripts/ci/check-wasm-freshness.py --write     # stamp the tree
+    python3 scripts/ci/check-wasm-freshness.py --write     # stamp (build-wasm.sh)
 
-Default is warn-only on purpose. The bundle is expensive to rebuild and most
-commits that dirty the stamp are not shipping anything web-visible, so a hard
-pre-commit failure would just train people to bypass the hook. `--strict` is for
-release builds and for any moment someone is about to claim a play-page fix.
+Run it before believing anything you see on a locally served play page, and
+especially before telling someone a play-page fix is live. `--strict` is the form
+for that; the default warns so it can be called from scripts without aborting
+them.
+
+This is not a repository gate and is not wired into any hook - there is no
+committed artifact left to gate, and the stamp it reads is itself untracked
+local state. It answers a question about your working copy.
 
 Hashing only tracked files keeps the answer reproducible across clones: build
 output, editor scratch and `target/` never enter the stamp.
@@ -159,10 +164,11 @@ def main() -> int:
                 {
                     "comment": (
                         "Content hash of the sources site/wasm/ was built from. "
-                        "Written by scripts/ci/build-wasm.sh; verified by "
-                        "scripts/ci/check-wasm-freshness.py. Do not hand-edit - "
-                        "editing it to silence the gate is how a stale bundle "
-                        "ships."
+                        "Written by scripts/ci/build-wasm.sh; read by "
+                        "scripts/ci/check-wasm-freshness.py. Untracked local "
+                        "state - do not commit it and do not hand-edit it; "
+                        "editing it to silence the check is how you end up "
+                        "testing a bundle you did not build."
                     ),
                     "stamp_version": STAMP_VERSION,
                     "source_stamp": current,
@@ -224,9 +230,9 @@ def main() -> int:
     if len(dropped) > 10:
         print(f"    ... and {len(dropped) - 10} more removed", file=sys.stderr)
     print(
-        "\n    The play page loads the committed bundle, not these sources. "
-        "If any change above is web-visible, run scripts/ci/build-wasm.sh "
-        "before claiming it is fixed.",
+        "\n    A locally served play page loads the bundle you built, not these "
+        "sources. If any change above is web-visible, run "
+        "scripts/ci/build-wasm.sh before claiming it is fixed.",
         file=sys.stderr,
     )
     return 1 if args.strict else 0

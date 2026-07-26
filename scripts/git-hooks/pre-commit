@@ -238,18 +238,4 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.p
     fi
 fi
 
-# Shipped-bundle freshness. site/wasm/ is a compiled artifact in the repo and no
-# gate runs the compiler, so a source fix can be committed and described as done
-# while the browser still loads the old binary. That has happened twice. The
-# bundle's source closure is most of the workspace, so this fires on plenty of
-# commits that are not shipping anything web-visible - hence warn-only, so it
-# stays informative instead of training people to bypass the hook. The hard form
-# lives in scripts/ci/check-wasm.sh --full, for releases and for any moment
-# someone is about to call a play-page fix live.
-if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-wasm-freshness.py" ]]; then
-    if ! python3 scripts/ci/check-wasm-freshness.py --quiet; then
-        printf '[pre-commit] NOTE: the above is a warning, not a failure - the commit proceeds.\n' >&2
-    fi
-fi
-
 printf '[pre-commit] OK\n'
