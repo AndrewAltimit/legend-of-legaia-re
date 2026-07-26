@@ -35,14 +35,13 @@
 //! reports it per event, so the page can say which sounds are the game's and
 //! which are the port's pick. Nothing here silently invents a retail cue.
 //!
-//! There is a **third** state this page needs and the split above cannot
-//! express: an id traced to retail that the port declines to render. The pause
-//! menu is that case - its three ids are pinned to instructions in
-//! `FUN_80032A44` ([`RETAIL_MENU_CURSOR_CUE`]) yet the port renders them
-//! 16..23 semitones flat, so each plays as a low thud. Every row therefore
-//! reports `cue` (retail's id) *and* `fires` (what this host enqueues, `null`
-//! when withheld), and the count of requests is kept either way. See
-//! [`CUE_MENU_CURSOR`] for the measurement and the open question.
+//! Every row reports `cue` (retail's id) *and* `fires` (what this host
+//! enqueues, `null` when a row is deliberately silent), and the count of
+//! requests is kept either way. The pause menu used the `null` form while the
+//! key-on pitch was unsettled - the port keyed those cues an octave below
+//! retail, so each blip played as a low thud. That is measured and fixed
+//! (`legaia_engine_audio::vab_bind::compute_pitch`), and the three menu cues
+//! sound again; see [`CUE_MENU_CURSOR`] for what remains inexact about them.
 //!
 //! The **footstep cadence** is the interesting case, and its answer is a
 //! negative: the *timing* is the ported retail kernel (`FUN_80018db0`,
@@ -95,38 +94,44 @@ pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = 0x20;
 /// `FUN_80032A44`, stored at `0x80032d94`, with `mode = 3`.
 pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = 0x37;
 
-/// What this host actually enqueues for a cursor move: **nothing** - and not
-/// because the id is unknown. [`RETAIL_MENU_CURSOR_CUE`] is pinned to
-/// instructions; the link withheld here is one step further down the chain.
+/// What this host enqueues for a cursor move: [`RETAIL_MENU_CURSOR_CUE`], the
+/// same id retail writes into the ring.
 ///
-/// A cue id names a `(program, tone, note)` triple in the static table, and this
-/// port keys it with `note - tone.center` pitch math
-/// (`legaia_engine_audio::vab_bind::compute_pitch`). In the class-2 bank the
-/// page stages, program `0` is a purpose-built **SFX key map** - one distinct
-/// VAG per semitone, single-note windows `min == max == 60 + i` that line up
-/// 1:1 with these descriptors' note bytes - so the bank and the ids agree. But
-/// that program's `center` bytes sit at `79..=88`, so every UI cue keys
-/// **16..23 semitones below** its recorded pitch (`0x20` is note 60 against
-/// center 83). Rendered off a real disc each one comes out ~0.7 s long at near
-/// full scale - a low thud, not a blip. That is what "navigating the pause menu
-/// plays punching sounds" is.
+/// This was `None` for one reason, now settled. A cue id names a
+/// `(program, tone, note)` triple, and the port keyed it against
+/// `tone.center` through a pitch that also folded in a `22050 / 44100`
+/// source-rate factor - so every voice, sound effect and BGM note alike, keyed
+/// **an octave below retail**, and a UI blip whose sample is already authored
+/// to play back slow came out ~0.7 s of low rumble. That is what "navigating
+/// the pause menu plays punching sounds" was.
 ///
-/// Whether retail's own key-on applies that shift is **not settled**: the SPU
-/// programming (`FUN_80065034`) is libsnd and out of clean-room scope, and
-/// nothing in the corpus pins the SFX pitch path. Two readings survive - the
-/// designer tuned each sample through its `center` and the low thud is
-/// authentic, or the SFX path ignores `center` and the sample plays at unity.
-/// Filed in `docs/reference/open-rev-eng-threads.md`.
+/// Retail's own law is now traced and measured: `FUN_80065034` hands the
+/// descriptor's note to `FUN_80066e50`, which indexes a 192-entry table with
+/// `note + 60 - center` and shifts by the octave, and unity - `0x1000`,
+/// 44.1 kHz - is what a tone plays at when `note == center`. There is no
+/// source-rate factor; a 22.05 kHz body is authored with `center` twelve
+/// semitones high instead. Confirmed against retail's own staged pitch values
+/// in save-state RAM, including these very cues. So **retail does pitch these
+/// blips down** - a UI cue keyed 12..26 semitones under its centre is the
+/// authored sound, not a defect - and the port now reproduces the register
+/// value exactly. Withholding them is no longer the honest choice.
 ///
-/// So the ids stay pinned and reported, the firing site stays wired and
-/// counted ([`PlaySfx::menu_cue_requests`]), and the sound is withheld until
-/// the pitch path is traced - the shape [`CUE_FOOTSTEP`] already settled on.
-/// Flipping these three to `Some(...)` is the whole change once it is.
-const CUE_MENU_CURSOR: Option<u8> = None;
-/// Confirm counterpart of [`CUE_MENU_CURSOR`] - withheld for the same reason.
-const CUE_MENU_CONFIRM: Option<u8> = None;
-/// Cancel counterpart of [`CUE_MENU_CURSOR`] - withheld for the same reason.
-const CUE_MENU_CANCEL: Option<u8> = None;
+/// One inexactness remains, and it is a *bank* question rather than a pitch
+/// one. The descriptor's `+4` category byte selects the VAB slot as well as the
+/// mixer channel, and these four cues are category `0` - retail sounds them out
+/// of the slot-0 system bank (PROT 0868), not out of the class-2 bank
+/// (PROT 0869) this page stages, which is the category-`2` bank. Both banks
+/// carry a UI key map at program 0 and the retail minigame overlays key
+/// PROT 0869's tone 0 with this exact triple, so what plays here is a genuine
+/// retail blip - roughly twice as long and a fifth lower than the field menu's,
+/// because that bank's `center` bytes are authored higher. Porting the category
+/// routing is its own change; see the open thread in
+/// `docs/reference/open-rev-eng-threads.md`.
+const CUE_MENU_CURSOR: Option<u8> = Some(RETAIL_MENU_CURSOR_CUE);
+/// Confirm counterpart of [`CUE_MENU_CURSOR`].
+const CUE_MENU_CONFIRM: Option<u8> = Some(RETAIL_MENU_CONFIRM_CUE);
+/// Cancel counterpart of [`CUE_MENU_CURSOR`].
+const CUE_MENU_CANCEL: Option<u8> = Some(RETAIL_MENU_CANCEL_CUE);
 /// Cue id fired for a footstep: `None`, and pinned there by capture -
 /// **retail plays no footstep sound at all**, so the cadence runs and keys no
 /// voice because there is nothing to key.
@@ -185,7 +190,8 @@ const PLAY_EVENTS: &[PlayCue] = &[
         fires: CUE_MENU_CURSOR,
         source: "disc",
         why: "FUN_80032A44 cursor-step ring write (li a2,0x21 at 0x80032b9c); \
-              withheld pending the SFX key-on pitch path - see CUE_MENU_CURSOR",
+              sounds out of the class-2 bank, not retail's category-0 slot - \
+              see CUE_MENU_CURSOR",
     },
     PlayCue {
         event: "menu_confirm",
@@ -193,15 +199,16 @@ const PLAY_EVENTS: &[PlayCue] = &[
         fires: CUE_MENU_CONFIRM,
         source: "disc",
         why: "FUN_80032A44 enabled-row confirm (li a1,0x20 at 0x80032d24); \
-              withheld pending the SFX key-on pitch path - see CUE_MENU_CURSOR",
+              sounds out of the class-2 bank, not retail's category-0 slot - \
+              see CUE_MENU_CURSOR",
     },
     PlayCue {
         event: "menu_cancel",
         retail_cue: RETAIL_MENU_CANCEL_CUE,
         fires: CUE_MENU_CANCEL,
         source: "disc",
-        why: "FUN_80032A44 cancel (li a2,0x37 at 0x80032d74); withheld pending \
-              the SFX key-on pitch path - see CUE_MENU_CURSOR",
+        why: "FUN_80032A44 cancel (li a2,0x37 at 0x80032d74); sounds out of the \
+              class-2 bank, not retail's category-0 slot - see CUE_MENU_CURSOR",
     },
 ];
 
@@ -273,10 +280,12 @@ pub struct PlaySfx {
     pub queued: u32,
     /// Named-event cue requests the page has made since it loaded, counted
     /// **before** the `fires` lookup and so independent of whether the row is
-    /// withheld. While the menu cues are `None` this is the only counter that
-    /// can tell a wired firing site from an unwired one: `queued` cannot,
-    /// because a withheld row never reaches the queue. Same role
-    /// [`Self::cadence_steps`] plays for the footstep.
+    /// withheld. It is what tells a wired firing site from an unwired one while
+    /// a row is silent: `queued` cannot, because a withheld row never reaches
+    /// the queue. Same role [`Self::cadence_steps`] plays for the footstep. The
+    /// menu rows fire again, so this and `queued` now climb together - keeping
+    /// both is what would make a future withholding visible rather than
+    /// indistinguishable from deleting the call.
     pub menu_cue_requests: u32,
     /// Cues that keyed an SPU voice since the page loaded - the page's readout
     /// and the audibility half of the measurement.
@@ -288,6 +297,59 @@ pub struct PlaySfx {
 }
 
 impl LegaiaRuntime {
+    /// Render one cue on a throwaway SPU with its own fresh upload of the
+    /// program bank, and report `(peak, active_samples)`: the loudest absolute
+    /// sample, and how far in the cue was last non-zero.
+    ///
+    /// Deliberately does not touch the live SPU - rendering consumes ticks, and
+    /// stealing them from the audio callback would glitch the music. Backs both
+    /// [`Self::play_sfx_probe_peak`] and
+    /// [`Self::play_sfx_probe_active_samples`].
+    fn probe_render(&mut self, id: u32, max_samples: u32) -> (u32, u32) {
+        use legaia_engine_audio::{
+            Spu, VabBank,
+            spu::ram::{SPU_RAM_BYTES, SpuAllocator},
+        };
+        if id > u8::MAX as u32 {
+            return (0, 0);
+        }
+        self.load_sfx_bank_bytes();
+        let Some(bytes) = self.sfx.bank_bytes.as_ref() else {
+            return (0, 0);
+        };
+        let Some((report, off)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(bytes, o).ok().map(|r| (r, o)))
+        else {
+            return (0, 0);
+        };
+        let mut spu = Spu::new();
+        let mut alloc = SpuAllocator::new(
+            SPU_RESERVED_BYTES,
+            SPU_RAM_BYTES as u32 - SPU_RESERVED_BYTES,
+        );
+        let vab = VabBank::upload(&mut spu, &mut alloc, &report, &bytes[off..]);
+        if self
+            .sfx
+            .bank
+            .play_one_shot(id as u8, &mut spu, &vab)
+            .is_none()
+        {
+            return (0, 0);
+        }
+        let cap = max_samples.clamp(1, legaia_engine_audio::SPU_INTERNAL_RATE * 4);
+        let mut peak: i16 = 0;
+        let mut active = 0u32;
+        for i in 0..cap {
+            let (l, r) = spu.tick();
+            if l != 0 || r != 0 {
+                active = i + 1;
+            }
+            peak = peak.max(l.saturating_abs()).max(r.saturating_abs());
+        }
+        (peak as u32, active)
+    }
+
     /// Decode the SFX descriptor table out of the disc executable. Called from
     /// `load_disc`; a `PROT.DAT`-only load has no executable and leaves the
     /// bank empty, which makes every cue a silent no-op rather than an error.
@@ -573,44 +635,20 @@ impl LegaiaRuntime {
     /// [`Self::play_sfx`] answers "did the live mixer take it?" - the two
     /// together are what makes the channel measurable without a microphone.
     pub fn play_sfx_probe_peak(&mut self, id: u32, max_samples: u32) -> u32 {
-        use legaia_engine_audio::{
-            Spu, VabBank,
-            spu::ram::{SPU_RAM_BYTES, SpuAllocator},
-        };
-        if id > u8::MAX as u32 {
-            return 0;
-        }
-        self.load_sfx_bank_bytes();
-        let Some(bytes) = self.sfx.bank_bytes.as_ref() else {
-            return 0;
-        };
-        let Some((report, off)) = [4usize, 0]
-            .into_iter()
-            .find_map(|o| legaia_vab::parse(bytes, o).ok().map(|r| (r, o)))
-        else {
-            return 0;
-        };
-        let mut spu = Spu::new();
-        let mut alloc = SpuAllocator::new(
-            SPU_RESERVED_BYTES,
-            SPU_RAM_BYTES as u32 - SPU_RESERVED_BYTES,
-        );
-        let vab = VabBank::upload(&mut spu, &mut alloc, &report, &bytes[off..]);
-        if self
-            .sfx
-            .bank
-            .play_one_shot(id as u8, &mut spu, &vab)
-            .is_none()
-        {
-            return 0;
-        }
-        let cap = max_samples.clamp(1, legaia_engine_audio::SPU_INTERNAL_RATE * 4);
-        let mut peak: i16 = 0;
-        for _ in 0..cap {
-            let (l, r) = spu.tick();
-            peak = peak.max(l.saturating_abs()).max(r.saturating_abs());
-        }
-        peak as u32
+        self.probe_render(id, max_samples).0
+    }
+
+    /// **Diagnostic** sibling of [`Self::play_sfx_probe_peak`] over the same
+    /// throwaway render: how many samples in before the cue last produced a
+    /// non-zero sample, i.e. how long it sounds. `0` for a cue that renders
+    /// silence.
+    ///
+    /// This is the observable that catches a **pitch** regression, which a peak
+    /// cannot: mis-keying a cue by an octave leaves it just as loud and takes
+    /// twice as long to play. See
+    /// `legaia_engine_audio::vab_bind::compute_pitch`.
+    pub fn play_sfx_probe_active_samples(&mut self, id: u32, max_samples: u32) -> u32 {
+        self.probe_render(id, max_samples).1
     }
 
     /// Fire the cue mapped to a named event (see
@@ -619,7 +657,11 @@ impl LegaiaRuntime {
     ///
     /// A known-but-withheld row still counts the request
     /// ([`PlaySfx::menu_cue_requests`]), so the page's firing site stays
-    /// measurable while [`CUE_MENU_CURSOR`] is `None`.
+    /// measurable even for a row whose cue is `None`.
+    ///
+    /// Off wasm there is no `WebAudioOut` and so no live SPU, so this returns
+    /// `false` there for a cue that *did* enqueue. The counters, not the return
+    /// value, are what the disc-gated tests read.
     pub fn play_sfx_event(&mut self, event: &str) -> bool {
         let Some(row) = PLAY_EVENTS.iter().find(|c| c.event == event) else {
             return false;
@@ -681,15 +723,17 @@ mod tests {
         assert_eq!(crate::sfx_view::CUE_CANCEL, RETAIL_MENU_CANCEL_CUE);
     }
 
-    /// Every menu row is currently withheld. This is the assertion that has to
-    /// change when the pitch path in [`CUE_MENU_CURSOR`] is traced, so it is
-    /// written to fail rather than to pass silently either way.
+    /// Every menu row fires retail's own id. The withheld form these rows used
+    /// while the key-on pitch was unsettled is gone, and this asserts it stayed
+    /// gone: a row silently reverting to `None` is exactly the regression that
+    /// looks like "the page just has no sound" rather than like a bug.
     #[test]
-    fn menu_cues_are_withheld_while_the_pitch_path_is_open() {
+    fn every_menu_row_fires_retails_id() {
         for c in PLAY_EVENTS {
-            assert!(
-                c.fires.is_none(),
-                "{}: still withheld until the SFX key-on pitch path is pinned",
+            assert_eq!(
+                c.fires,
+                Some(c.retail_cue),
+                "{}: must fire retail's own cue id",
                 c.event
             );
         }

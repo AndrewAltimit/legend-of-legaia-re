@@ -61,14 +61,16 @@ fn descriptor_bank_installs_from_the_executable() {
 /// program and sample resolve in the resident class-2 bank.
 ///
 /// Read what this does and does not claim. It probes `cue` - the id retail
-/// fires - not `fires`, which is what this host enqueues and is currently
-/// `null` for every menu row. So a pass here means "the id resolves to a real
-/// sample in the bank the page stages", which is worth pinning: it is how the
-/// class-2 bank was confirmed to be the right bank for this id range (program 0
-/// there is a one-VAG-per-semitone SFX key map whose single-note windows line
-/// up with these descriptors' notes). It does **not** mean the page plays them,
-/// nor that the rendering is pitched correctly - that is the open question in
-/// `play_sfx::CUE_MENU_CURSOR`, and it is why these cues are withheld.
+/// fires - and every menu row's `fires` now equals it, so this is also what
+/// the page plays. A pass means "the id resolves to a real sample in the bank
+/// the page stages": program 0 there is a one-VAG-per-semitone SFX key map
+/// whose single-note windows line up with these descriptors' notes. It does
+/// **not** claim the bank is the one retail's *field menu* would use - these
+/// cues are descriptor category `0` and retail sounds those out of the slot-0
+/// system bank, which is the remaining inexactness recorded in
+/// `play_sfx::CUE_MENU_CURSOR`. The pitch is retail's own law now
+/// (`legaia_engine_audio::vab_bind::compute_pitch`), pinned by unit test
+/// against values captured out of retail's driver state.
 #[test]
 fn advertised_cues_render_a_non_silent_buffer() {
     let Some(mut rt) = loaded_in_town() else {
@@ -190,50 +192,87 @@ fn every_event_declares_disc_or_site_provenance() {
     );
 }
 
-/// The menu firing site has to stay *wired* while its cues are withheld.
+/// The menu firing site has to be *wired end to end*: a request is counted and
+/// it reaches the scheduler.
 ///
-/// Assert on `menu_cue_requests`, not `queued` or `fired`, for the same reason
-/// the footstep test below asserts on `cadence_steps`: a withheld row never
-/// reaches the scheduler, so `queued` cannot tell "the page asked and the host
-/// declined" from "the page never asked" - and that is precisely the failure
-/// that would make this fix indistinguishable from deleting the calls. When the
-/// pitch path is pinned and the cues flip to `Some`, `queued` starts tracking
-/// this counter and the test still holds.
+/// Both counters are asserted, and deliberately. `menu_cue_requests` is
+/// incremented before the `fires` lookup, so it alone cannot distinguish "the
+/// cue enqueued" from "the row is silent" - that is what it is for, and it is
+/// the counter that kept this site measurable while the cues were withheld
+/// pending the key-on pitch. `queued` is the other half: it only moves for a
+/// row that actually reaches [`SfxScheduler`], so asserting it climbs by the
+/// same three is what proves the cues are no longer withheld. `fired` stays
+/// out - off wasm there is no `WebAudioOut` and so no SPU voice to key, which
+/// makes it unconditionally zero here and any assertion on it vacuous.
 #[test]
-fn a_withheld_menu_cue_is_requested_counted_and_silent() {
+fn a_menu_cue_is_requested_counted_and_queued() {
     let Some(mut rt) = loaded_in_town() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let state = |rt: &LegaiaRuntime| -> (u64, u64, u64) {
+    let state = |rt: &LegaiaRuntime| -> (u64, u64) {
         let v: serde_json::Value =
             serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
         (
             v["menu_cue_requests"].as_u64().unwrap_or(0),
             v["queued"].as_u64().unwrap_or(0),
-            v["fired"].as_u64().unwrap_or(0),
         )
     };
 
-    let (r0, q0, f0) = state(&rt);
+    let (r0, q0) = state(&rt);
     assert_eq!(r0, 0, "no cue requested before the page fires one");
 
     // Exactly what site/js/play-app.js does on a pad edge in the pause menu.
     for name in ["menu_cursor", "menu_confirm", "menu_cancel"] {
-        assert!(
-            !rt.play_sfx_event(name),
-            "{name} is withheld, so firing it must report that nothing sounded"
-        );
+        rt.play_sfx_event(name);
     }
-    let (r1, q1, f1) = state(&rt);
+    let (r1, q1) = state(&rt);
     assert_eq!(r1, r0 + 3, "each menu cue request must be counted");
-    assert_eq!(q1, q0, "a withheld cue must not reach the scheduler");
-    assert_eq!(f1, f0, "a withheld cue must not key a voice");
+    assert_eq!(
+        q1,
+        q0 + 3,
+        "each menu cue must reach the scheduler - a row that stops at the \
+         `fires` lookup is withheld, and none of these are any more"
+    );
 
     // An unknown event is still rejected without counting - the counter tracks
     // real wiring, not every string the page passes in.
     assert!(!rt.play_sfx_event("no_such_event"));
     assert_eq!(state(&rt).0, r1, "an unknown event is not a cue request");
+    assert_eq!(state(&rt).1, q1, "an unknown event must not enqueue");
+}
+
+/// The three menu cues must render at retail's own pitch, not an octave below
+/// it - the defect that turned each blip into a low thud and got them withheld.
+///
+/// This is the disc-side half of the unit test in
+/// `legaia_engine_audio::vab_bind`: it goes through the real descriptor table
+/// and the real program bank, so it also catches a wrong bank or a wrong
+/// descriptor field feeding an otherwise-correct pitch law. The bound is a
+/// *duration*, which is what the rendering exposes: at the octave-low pitch
+/// every one of these cues ran past 0.6 s (the confirm ran to the envelope's
+/// own end at ~0.74 s), and at retail's pitch the short ones finish inside
+/// 0.35 s. A regression that halves the pitch again cannot pass this.
+#[test]
+fn menu_cues_render_at_retail_pitch_not_an_octave_low() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
+    // Long enough that a correct rendering ends well inside the window and an
+    // octave-low one does not.
+    let window = rate;
+    for (name, cue, max_secs) in [("menu_cursor", 0x21u32, 0.45), ("menu_cancel", 0x37, 0.45)] {
+        let samples = rt.play_sfx_probe_active_samples(cue, window);
+        assert!(samples > 0, "{name} (cue {cue:#x}) must render audible PCM");
+        let secs = samples as f64 / rate as f64;
+        assert!(
+            secs < max_secs,
+            "{name} (cue {cue:#x}) rendered {secs:.3} s; at retail's key-on pitch \
+             it is ~0.3 s, and twice that means the pitch is an octave low again"
+        );
+    }
 }
 
 /// The footstep cadence has to be *reachable from the host tick* and has to

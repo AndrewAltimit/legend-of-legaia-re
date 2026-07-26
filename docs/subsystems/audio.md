@@ -34,7 +34,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
 - [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
 - [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
-- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
+- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
 - [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
@@ -325,6 +325,62 @@ Between the sequencer event loop and the raw voice registers sits a band of SsAP
 | `FUN_80066F4C(voice)` | **Per-voice vol/pan/reverb recompute** - re-derives one sounding voice's L/R from the current channel vol (`prog_attr +0x58/+0x5A`), prog/tone vol, three pan attenuations and the `_DAT_801CE330` mono fold, commits reverb depth via `FUN_8006AA90(_DAT_801CE34A - _DAT_801CE358)`, and stages the result into `&DAT_801CE080/082[voice]` with flags `0x3`. |
 
 `FUN_80067A1C` is the retail source for the per-tone pitch-bend range the engine ports as `VabBank::pitch_bend_range`: the wheel scales by the *sounding tone's* own `pbmin`/`pbmax` bytes, so a `(0,0)`-range tone does not bend - exactly the law [`engine-audio`'s sequencer](#engine-audio-model---sequencer-port) applies. `FUN_80066F4C` is the retail twin of `sequencer.rs`'s `remix_channel` (re-derive every sounding voice on a mid-note CC7/CC10 change) - the same vol/pan chain as `FUN_80067550`, run standalone rather than at note-on. Provenance: `see ghidra/scripts/funcs/80064cf0.txt`, `80064df8.txt`, `800655cc.txt`, `8006861c.txt`, `80067a1c.txt`, `80066f4c.txt`.
+
+### The key-on pitch law - `note` against the tone's `center`
+
+Both key-on paths converge on one arithmetic, and it is the value written
+straight into the SPU voice's pitch register - nothing rescales it afterwards.
+
+```text
+  fine, carry = per-path from the tone's shift byte
+  n           = note + 60 - center + carry
+  pitch       = PITCH[(n % 12) * 16 + fine]  shifted by  (n / 12 - 5)
+```
+
+`PITCH` is the 192-entry `u16` table at `DAT_8007A940` (`SCUS_942.54` file
+offset `0x6B140`), which is exactly `floor(0x1000 * 2^(k/192))` for every
+entry - one octave at 1/16-semitone resolution. `n / 12` and `n % 12` truncate
+toward zero (MIPS `div`). So `note == center` selects `PITCH[0] = 0x1000`:
+
+- **Unity is 44.1 kHz, and it is what a tone plays at on its own centre note.**
+  There is no separate source-sample-rate factor. A 22.05 kHz VAG body is
+  authored with `center` twelve semitones above the key it is meant to sound
+  at, so the same law lands on `0x800`. Folding a `22050/44100` ratio in as
+  well - the shape a "libspu key-to-pitch formula" write-up invites - puts
+  every voice, BGM note and sound effect alike, an octave low.
+- **`shift` raises the pitch** by `shift/128` of a semitone, quantised to 1/16.
+  It is the tone's fine-tune, positive, in 1/128-semitone units - not
+  centi-semitones and not a downward correction.
+
+The two paths differ only in how the fine index is formed:
+
+| Path | Entry | Fine index |
+|---|---|---|
+| Sequencer note-on | `FUN_80066308` → `FUN_80066d8c` | `min(shift >> 3, 15)`; saturates, never carries a semitone |
+| SFX / direct key-on | `FUN_80065034` → `FUN_80066e50` | `(0x40 + shift) >> 3`; `>= 16` carries one whole semitone and keeps the remainder |
+
+`FUN_80065034`'s sixth argument is that `fine`, and it is the literal `0x40` at
+every traced call site - the cue-ring drainer `FUN_80016B6C` (both arms), the
+per-actor trigger under `FUN_80021DF4`, and the slot-machine / dance / debug
+overlays' direct key-ons. So a **cue keys half a semitone above** where the
+sequencer would put the same `(tone, note)` pair. Both paths hand the result to
+`FUN_80067550`, which stores it into the shadow register file at
+`0x801CE084 + voice*16` (SPU voice `+4` = pitch) and ORs the flush flags.
+
+Measured, not just read: across catalogued mednafen states, 126 of the 128
+voices whose libsnd note-staging record (`0x801CDB50 + voice*54`) holds a
+non-zero pitch have exactly the value this law computes from that record's
+`(note, program, tone)` against the live bank's `center` / `shift` - sequencer
+voices and SFX voices (record `+0x10 == 0x21`) alike. The two misses are
+records whose bank was swapped after the key-on, so the reconstruction reads a
+`center` that is no longer the one used.
+
+Port: `compute_pitch` + `PitchPath` in
+[`crates/engine-audio/src/vab_bind.rs`](../../crates/engine-audio/src/vab_bind.rs);
+`play_note` takes the sequencer arm and `play_tone` the cue arm. The table is
+computed from its closed form rather than carried as data.
+`see ghidra/scripts/funcs/80065034.txt`, `80066e50.txt`, `80066d8c.txt`,
+`80067550.txt`, `80066308.txt`.
 
 ### Voice allocator + key-on/off flush (the middle tier)
 
@@ -764,7 +820,7 @@ A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in t
 | `0x4C` | Hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot). |
 | `0x80..=0xFE` | Reserved per-character / per-art SFX IDs. Indexed from the per-actor `+0x9C0` table at retail. |
 
-`SfxBank::play_one_shot` delegates to the existing `VabBank::play_note` for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call so engines can dispatch through the same `VabBank` they already wired for the BGM sequencer. A `PendingCue` with `frames_remaining = 0` fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first - matching the retail timing where a `HitCue::timing_frames = 1` cue plays one frame after the strike begins.
+`SfxBank::play_one_shot` delegates to `VabBank::play_tone` - tone by explicit **region index**, the retail cue shape, not the sequencer's key-range `play_note` - for sample, ADSR and the [cue-arm pitch](#the-key-on-pitch-law---note-against-the-tones-center); the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call so engines can dispatch through the same `VabBank` they already wired for the BGM sequencer. A `PendingCue` with `frames_remaining = 0` fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first - matching the retail timing where a `HitCue::timing_frames = 1` cue plays one frame after the strike begins.
 
 Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
 

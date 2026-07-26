@@ -28,7 +28,7 @@ true extent is 100 entries.
 | `+1` | `t` | tone / ADSR-region base; a multi-voice cue uses consecutive regions (`+i` per voice) |
 | `+2` | `l` | note-level voice attribute (MIDI-ish, clusters near `60`) |
 | `+3` | `n` | low 5 bits = **voice count**; bit `0x20` = sustained / continuous mode |
-| `+4` | `id` | category / mixer-channel index (selects a column in the channel-volume tables `DAT_80091510` / `DAT_80091513`) |
+| `+4` | `id` | category: picks the 12-byte mixer record (`DAT_80091510` / `DAT_80091513` are record 0's fields) **and** through its `+8` the VAB slot the cue keys - see [below](#category-is-a-bank-selector-and-four-banks-are-open-at-once) |
 | `+5..7` | - | no observed runtime reader (zero across the whole table) |
 
 The field names are the designer's own, recovered from the runtime debug format
@@ -93,12 +93,43 @@ immediately before reprogramming it. And the sustained held-count write lives
 old run but leaves `gp+0x5D0` unchanged - the next sustained cue re-releases the
 same, already-stopped voices.
 
-The channel gate is a 12-byte mixer record at `0x80091508 + channel * 12`: `+8`
-is the level handed to `FUN_80065034`, `+0xB` is an enable byte and a zero there
-skips the cue entirely, before any voice work. The two VAs this page's `+4` row
-names, `DAT_80091510` and `DAT_80091513`, are the `+8` and `+0xB` fields of
-record 0 - not two byte arrays. While `_DAT_8007BA88` is non-zero every cue is
-forced onto channel `6`.
+The channel gate is a 12-byte mixer record at `0x80091508 + channel * 12`: `+0`
+is a `VabHdr` pointer, `+8` is the **VAB slot id** handed to `FUN_80065034` as
+its second argument, `+0xB` is an enable byte and a zero there skips the cue
+entirely, before any voice work. The two VAs this page's `+4` row names,
+`DAT_80091510` and `DAT_80091513`, are the `+8` and `+0xB` fields of record 0 -
+not two byte arrays. While `_DAT_8007BA88` is non-zero every cue is forced onto
+channel `6`.
+
+`+8` is a bank id and not a level, which the next hop settles: `FUN_80065034`
+passes it to `FUN_80068b98`, which rejects it unless it is `< 0x10` **and** the
+per-bank open-state byte `_DAT_801CE368[id] == 1`, then repoints the current-bank
+globals (`VabHdr` / `ProgAtr` / `VagAtr` bases) at that slot. Across catalogued
+save states record `N` holds `+8 == N` and `+0` == slot `N`'s live `VabHdr`, in
+every record of every state - so **a cue's category byte selects its VAB slot**.
+
+### Category is a bank selector, and four banks are open at once
+
+| Category | Descriptors | Bank it keys |
+|---|---|---|
+| `0` | 16 | Slot-0 system bank = **PROT 0868**. Shared UI cues (`0x1A`, `0x20`, `0x21`, `0x23`, `0x37`). |
+| `2` | 53 | Slot-2 class-2 bank = **PROT 0869** (`0875` when `DAT_8007BD11 == 4`). Battle / duel (`0x09`, `0x4C`). |
+| `6` | 30 | Slot 6. Includes the field script cues `0x2E` / `0x2F`. |
+| `11` | 1 | Slot 11. |
+
+PROT 0868's identity is a byte match, not a label: a live field state's slot-0
+`VagAtr` program-0 page (512 bytes) occurs verbatim in extraction entry
+`0868`, at VAB offset `+4`, with the header's `ps = 5` matching the live bank's.
+Its CDNAME label reads `battle_data` and 0869's reads `monster_data`, which is
+the usual reminder that a label is a hint.
+
+A port that stages **one** resident SFX bank therefore resolves only one
+category correctly. `engine-shell`'s boot and the browser play page both stage
+the class-2 bank, which is right for the 53 category-`2` cues (the battle strike
+and the Baka duel hit among them) and wrong for the 16 category-`0` ones: those
+resolve to a sibling sample in the wrong bank rather than to silence, so nothing
+errors. Open thread:
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#sfx-cue-bank-routing---the-category-byte-selects-a-vab-slot-and-the-port-stages-one).
 
 ### The ring value **is** the descriptor index
 
@@ -130,13 +161,30 @@ bytes 1:1 (`0x20` → tone 0 / note 60, `0x21` → tone 1 / note 61, `0x23` → 
 tone 5, note 64, against a `[65,65]` window - which is the clearest single
 illustration of why the fire path indexes the tone directly.
 
-One caveat for anyone rendering these through a clean-room SPU: that program's
-`center` bytes sit at `79..=88`, so a libsnd-style `note - center` pitch gives
-every UI cue a **16..23 semitone downshift** (`0x20` is note 60 against center
-83), turning each blip into a ~0.7 s low thud. Whether retail's key-on applies
-that shift is unresolved - `FUN_80065034` is libsnd and out of clean-room scope.
-See the open thread in
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#sfx-key-on-pitch---does-retail-apply-note-vs-center-to-cue-tones).
+Two things follow for anyone rendering these through a clean-room SPU, and both
+are settled.
+
+**Retail does pitch them down.** That program's `center` bytes sit at `79..=88`
+against notes `60..=69`, so the key-on puts every UI cue 12..26 semitones under
+its centre (`0x20` is note 60 against center 83, a ×0.28 rate). That is the
+authored sound, not a defect: the pitch a cue keys at is
+`0x1000 * 2^((note - center + fine/128)/12)`, unity at `note == center`, with no
+sample-rate factor of any kind - law and provenance in
+[`audio.md`](../subsystems/audio.md#the-key-on-pitch-law---note-against-the-tones-center),
+confirmed against retail's own staged pitch values in save-state RAM. A port
+that also multiplies by a nominal `22050/44100` keys these an octave lower
+again, which is what turned the browser play page's menu blips into thuds.
+
+**But this is not the bank the pause menu sounds out of.** These four ids are
+descriptor category `0`, and the category selects the VAB slot (below), so
+retail's field menu keys them in the slot-0 system bank - **PROT 0868**, whose
+program 0 is the same one-VAG-per-semitone shape over its own VAGs, authored
+`center` bytes spread `72..=90` (so `0x20` lands at ×0.53 there rather than
+×0.28, a shorter and brighter blip). The
+class-2 copy is the one the minigame overlays key directly
+(`FUN_80065034(voice, 2, 0, 0, 0x3c, 0x40, ...)` = vab 2 / program 0 / tone 0 /
+note 60, the same triple as `0x20`), so both are real; they are simply different
+banks' takes on the same UI blip, the class-2 one roughly twice as long.
 
 ### A cue names its tone by **index**, not by key range
 
@@ -198,14 +246,20 @@ A port that wants a footstep has to author one - there is no retail id to copy.
 `see ghidra/scripts/funcs/80018db0.txt`, `80035b50.txt`, `800250d4.txt`,
 `8001d230.txt`.
 
-## Program bank - the active scene's music VAB
+## Program bank - selected by the cue's category
 
-The descriptors' `program` / `tone` fields index a VAB, and that VAB is **not a
-dedicated SFX master** - it is the per-scene [`scene_vab_stream`](scene-bundles.md)
-bank the BGM sequencer has open. `FUN_80065034` reads the libsnd "current bank"
-globals: `_DAT_801ce33c` (VAB-header base), `_DAT_801ce334` (`ProgAtr` at `+0x20`,
-stride `0x10`), `_DAT_801ce340` (`VagAtr` at `+0x820`, stride `0x20`) - so a
-sound effect plays through the low programs of the same bank the music does.
+The descriptors' `program` / `tone` fields index a VAB, and **which** VAB is the
+cue's own choice: `FUN_80065034` calls `FUN_80068b98(vab_id, program)` first,
+which repoints the libsnd "current bank" globals - `_DAT_801ce33c` (VAB-header
+base), `_DAT_801ce334` (`ProgAtr` at `+0x20`, stride `0x10`), `_DAT_801ce340`
+(`VagAtr` at `+0x820`, stride `0x20`) - at the slot named by the cue's mixer
+record, then reads them. So the cue is *not* keyed against whichever bank the
+BGM sequencer last left open; the [category table above](#category-is-a-bank-selector-and-four-banks-are-open-at-once)
+is the mapping, and several banks are open concurrently.
+
+The globals are shared with the sequencer, which is why the two readings were
+easy to conflate: a save state sampled between cues holds whatever bank keyed
+last, and for a state sampled after a BGM note that is the music bank.
 
 Pinned from the save-state catalogue:
 
@@ -217,11 +271,12 @@ Pinned from the save-state catalogue:
   (`+0..7`) match exactly; only the PsyQ reserved per-program pointer field
   (`ProgAtr +8..15`) is runtime-patched to the RAM `VagAtr` address.
 
-Because scene banks differ in size, a cue resolves only where its `program` /
-`tone` exists - SFX availability is **scene-dependent**, not a guaranteed
-reservation. In the field, the engine plays a cue through the scene's
-already-loaded BGM `VabBank`; in battle / minigame contexts it plays through
-the resident class-2 bank (below), matching retail. `SfxBank::from_descriptors`
+Because banks differ in size, a cue resolves only where its `program` / `tone`
+exists - SFX availability depends on which slots are loaded, not on a guaranteed
+reservation. The engine models one resident bank rather than the slot set: it
+plays a cue through the resident class-2 bank when present and the scene's
+already-loaded BGM `VabBank` otherwise, so category-`2` cues land in retail's
+bank and the others land in a sibling. `SfxBank::from_descriptors`
 carries the full descriptor (program + tone-region index + note + voice count),
 and `SfxBank::play_one_shot(spu, vab)` fires it via `VabBank::play_tone` across
 the cue's `voices` consecutive regions - by explicit tone **index**, not by
@@ -229,7 +284,7 @@ key range.
 
 ### The class-2 sound bank (PROT 0869)
 
-Alongside the per-scene music VAB there is a **dedicated class-2 sound bank**,
+Slot 2 of the [category map](#category-is-a-bank-selector-and-four-banks-are-open-at-once) is a **dedicated class-2 sound bank**,
 extraction PROT **0869** (raw loader index `0x367`), and the battle-side code
 loads it explicitly: the battle scene loader `FUN_800520F0` calls the streaming
 loader with `a1 = 2` on `0x367` (swapping to raw `0x36D` = extraction 0875 when
@@ -239,11 +294,10 @@ the duel fire, so every descriptor those two contexts use resolves in it.
 
 This is what the site's cue player renders against
 (`crates/web-viewer/src/sfx_view.rs`): SCUS → this table, PROT 0869 → the VAB,
-descriptor → a one-shot through the clean-room SPU. Whether a given *field*
-scene's cues sound out of this bank or out of the scene's music VAB depends on
-which bank the libsnd current-bank globals hold at the time; the two readings
-are not in conflict for battle/minigame cues, which is where the traced loads
-are.
+descriptor → a one-shot through the clean-room SPU. That is exactly right for the
+duel and arts cues those pages fire, which are category `2`; the browser *play*
+page fires the category-`0` pause-menu cues through the same bank, which is the
+inexactness the bank-routing thread tracks.
 
 The live engine mirrors this: `BootSession` uploads PROT 0869 into its own
 dedicated top region of SPU RAM once at boot (`stage_sfx_vab`, capping the
