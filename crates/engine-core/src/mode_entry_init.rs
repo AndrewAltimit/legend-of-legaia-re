@@ -373,14 +373,20 @@ pub enum FieldInitStep {
 
 /// The field initialiser's step order.
 ///
-/// PORT: FUN_801D6704 (whole-body ordering).
+/// REF: FUN_801D6704 (whole-body ordering) - a `REF:` and not a `PORT:` on
+/// purpose. `port-catalog.py` can only anchor a tag to a `fn`, a type with an
+/// `impl` block, or the whole module, so a `PORT:` on a `const` silently widens
+/// to the file - and this file is live through [`field_spawn`], which made a
+/// correct `NOT WIRED:` here read as a stale disclosure. The address keeps its
+/// port anchors: the module tag above, plus [`field_spawn`],
+/// [`field_bgm_plan`] and [`field_prim_buffer_bytes`], each of which carries
+/// its own wiring verdict at the granularity it can be judged.
 ///
-/// NOT WIRED: the list is a diffable description, not an executable plan -
-/// nothing in the crate walks it. The two kernels it names
-/// ([`field_spawn`], [`field_bgm_plan`]) are the parts with typed engine
-/// state behind them, and `field_spawn` *is* wired (scene entry seats the
-/// player through it). Wiring the list itself needs a scene-entry driver that
-/// is a step machine rather than a straight-line function.
+/// The list itself remains a diffable description rather than an executable
+/// plan - nothing in the crate walks it. Of the kernels it names,
+/// [`field_spawn`] *is* wired (scene entry seats the player through it);
+/// walking the list would need a scene-entry driver that is a step machine
+/// rather than a straight-line function.
 pub const FIELD_INIT_STEPS: [FieldInitStep; 16] = [
     FieldInitStep::SyncSceneName,
     FieldInitStep::ResetSceneGlobals,
@@ -402,15 +408,17 @@ pub const FIELD_INIT_STEPS: [FieldInitStep; 16] = [
 
 /// Everything the Baka Fighter duel-arena overlay initialiser seeds.
 ///
-/// PORT: FUN_801CF00C.
+/// REF: FUN_801CF00C - the `PORT:` for this address sits on
+/// [`duel_overlay_init`], the free function that builds this record. This is a
+/// plain data struct with no `impl` block, and `port-catalog.py` widens a type
+/// anchor with no `impl` to the whole file, which is live through
+/// [`field_spawn`] - so a `PORT:` here reported a correct `NOT WIRED:` as a
+/// stale disclosure. The wiring verdict lives on the function instead.
 ///
 /// A straight-line routine: no branches except the asset-load form (a dev
 /// by-name load when the debug flag `_DAT_8007B8C2` is clear, an id load when
 /// it is set) and no loops. Each field below is one of its stores, keyed by
 /// the runtime global it writes.
-///
-/// NOT WIRED: only [`duel_overlay_init`] builds this, and nothing calls that -
-/// see its note. The duel's engine entry is a match state, not an overlay load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DuelOverlayInit {
     /// Display width handed to `FUN_8001DAF8` (`0x140` = 320).

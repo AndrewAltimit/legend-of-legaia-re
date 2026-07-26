@@ -18,14 +18,21 @@ is the mechanism list plus the fix recipe each mechanism takes, both below.
   comes off; the evidence column names the caller chain.
 - **FALSE-EDGE** - the port is not reachable. The tag stays. The evidence names
   the colliding symbol the graph resolved through.
+- **Wired, inert at runtime** - the call chain is real and production-only, but
+  a runtime condition means the body is never entered: a gate that is never
+  armed, a table never populated, a handler never installed. The disclosure
+  token comes off, because the audit measures static reachability and would keep
+  reporting it stale; what replaces it states the runtime fact and names the
+  missing *data*. `emit_horizon` is the worked example.
 - **UNCERTAIN** - neither could be established.
 
-## What the false edges are
+A host root is `fn main` in a `[[bin]]` target, a `#[wasm_bindgen]` export, or a
+method of an `impl <ExternalDispatchTrait>` block - so **a CLI subcommand is a
+host root**. A preservation-track port reached only from `asset boot-overlay` or
+`mdec str-plan` is wired, and "no *engine* consumer" is a different claim that
+has to be written as one.
 
-Five mechanisms produce every FALSE-EDGE row this page has recorded, and only
-the first is what `--live-audit` warns about. Every one of them is name
-resolution without type inference; they differ in *which* name space collides,
-and that is what decides the fix.
+## What the false edges are
 
 Six mechanisms produce every FALSE-EDGE row this page has recorded, and only
 the first is what `--live-audit` warns about. All six are name resolution
@@ -88,6 +95,14 @@ whole file, and the file is live if any non-test `fn` in it is reachable. A
 with no `impl` block in its file falls back to module scope. Neither the tag nor
 the edge is wrong - the anchor is too coarse to tell them apart.
 
+A **`PORT:` tag on a `const`** is the same shape and the easiest to miss,
+because the tag looks precise in source. `collect_port_anchors` recognises a
+`fn`, a `struct` / `enum` / `union` / `impl` / `trait`, or an enclosing function
+body; a `const` is none of those, so resolution falls through to module scope
+and the tag silently claims the whole file. The audit prints these as
+`anchor = module` with symbol `(module)` on the *const's* line number, which
+reads like a precise anchor unless the line is opened.
+
 ## The fix each mechanism takes
 
 Two of the five are analysis defects and were fixed in the tool. The other three
@@ -104,6 +119,26 @@ reverted twice.
 | Duplicate free-function name | Rename the copy that has no caller. |
 | Free-function name that is also a common local / field name | Rename it to something the rest of the tree does not spell. |
 | Coarse anchor (module tag, or a tag on a data struct) | Move the anchor to the item that ports the address. |
+| Coarse anchor (tag on a `const`) | Make the `const` a `REF:` and leave the `PORT:` on the function that computes the value. |
+
+### Writing the fix: the disclosure token is matched as text
+
+`NOT_WIRED_RE` is `NOT\s+WIRED` against the **whole comment block**, with no
+anchoring. So a tag that explains *why* an item is not an inert port -
+"deliberately not `NOT WIRED:`", "this is not a `NOT WIRED` case" - re-arms the
+very disclosure it is disclaiming, and the row survives the edit looking
+untouched. Say it without the token: "carries no inert-port disclosure", "not an
+inert port", "wired, but inert at runtime". Re-run `--live-audit` after the edit
+rather than trusting the prose, because this failure is invisible in review.
+
+### Removing a false edge can expose ports it was masking
+
+A spurious in-edge onto a function also makes everything that function calls
+read live. Renaming the colliding symbol therefore *adds* rows to the
+**undisclosed inert ports** section - its callees, which were live only through
+it. That is the fix working, not a regression, but the disclosures those callees
+now need are part of the same edit; leaving them turns one false claim into
+several silent gaps. Check both section counts before and after.
 
 The last four are source edits, and each wants a comment saying why the name or
 the tag placement is the way it is - otherwise the next refactor undoes it and
@@ -201,6 +236,16 @@ so a recurrence is recognisable rather than re-derived.
 | `801db380`, `801db7f4`, `801dbd94` | `engine-core/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
 | `800508dc` | `engine-audio/src/anim_cue.rs` | FALSE-EDGE | `AnimCueState::tick` renamed `tick_cues`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed - the same shape as `footstep.rs` above, in the same file. |
 | `80062f98`, `8006320c`, `8006352c`, `80063aa8`, `800649b0` | `engine-audio/src/seq_calc.rs` | FALSE-EDGE, then wired | `SlideDir::flag` renamed `flag_bit`; the only in-tree `fn flag`, reached from the `flag(..)` closure parameter of `FieldNpcAmbient::select_variant`. The module blanket then came off for a different reason: `note-trace --seq-calc` gives the tier a real host. |
+| `8001eef0`, `80025ba0`, `8003e360` | `asset/src/boot_overlay.rs` | STALE-TAG | The `asset boot-overlay` subcommand made each one a real callee of a `[[bin]]` `main`. Each tag already named the CLI as its consumer while still heading itself as inert. |
+| `8002574c` | `asset/src/boot_overlay.rs` | STALE-TAG | Same subcommand reads `CARD_TIM_EXTRACTION_INDEX`. Also the `const` coarse-anchor shape: the tag reports as `anchor = module`. |
+| `801cfff0`, `801d069c`, `801d0fa8`, `801d3230` | `asset/src/minigame_slot_scene.rs` | STALE-TAG | `asset slot-scene` drives the reel kernels, the composer, the clear path and the placement blit. The remaining gap is a *renderer*, not a caller, and now says so. |
+| `801cf56c`, `801cf740` | `mdec/src/str_player.rs` | STALE-TAG | `mdec str-plan` calls both on `DecodeEnv`. The real gaps (the ring drops per-frame dimensions; the port decodes whole frames) are unchanged and kept as prose. |
+| `801d26cc` | `engine-core/src/fishing_actors.rs` | STALE-TAG | `bite_interval` / `bite_credit_override` / `roll_hit_type` reached from `LegaiaMinigames::fishing_reel` -> `FishingSession::reel` -> `BandCheck::tick`. The file's blanket `# NOT WIRED` heading came off and ten still-inert items each took their own line. |
+| `801cf00c`, `801d6704` | `engine-core/src/mode_entry_init.rs` | FALSE-EDGE | Coarse anchors: `DuelOverlayInit` is a struct with no `impl`, `FIELD_INIT_STEPS` is a `const`. Both became `REF:`; the `PORT:` stays on `duel_overlay_init` and the file's fn anchors. The file is live through `field_spawn`. |
+| `801d84b4` | `engine-core/src/field_submode.rs` | FALSE-EDGE | Same shape: `CardRequest` is a struct and the file declares no `impl` at all, so the type anchor widened to a module live through `open_submode`. Now a `REF:`; `request_card_mode` keeps the `PORT:`. |
+| `801d4a60` | `engine-core/src/field_actor_program.rs` | FALSE-EDGE | `step` renamed `step_scene_program`. A free `fn step` is never receiver-gated and collected edges from the live `motion_vm::step` and from every reachable function naming a local `step` (`fishing_advance_cast(&mut self, step: i32)` fired it). Exposed `entry_successor` / `lift_step`, which then needed their own disclosures. |
+| `801dd0c0` | `engine-core/src/menu_item_category.rs` | Wired, inert at runtime | Statically reached via `EquipSession::best_equipment_now`'s `weapon_category_score` closure. Nothing calls `with_weapon_category`, so the table is always empty and the `is_empty()` arm short-circuits. Rewritten in the `emit_horizon` idiom. |
+| `801ddc20` | `engine-core/src/field_actor_kernels.rs` | Wired, inert at runtime | `World::tick_handler_actors` dispatches it every tick, but no host installs `ActorHandler::ColourTween`, so the `a.colour_tween` guard is always `None`. The tag said as much already; only the token had to go. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the

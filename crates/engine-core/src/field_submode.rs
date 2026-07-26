@@ -260,7 +260,12 @@ pub const CARD_REQUEST_MODE: i16 = 0x16;
 
 /// What the CARD request leaf writes.
 ///
-/// PORT: FUN_801D84B4 (`0x801d84b4..0x801d84cc`).
+/// REF: FUN_801D84B4 (`0x801d84b4..0x801d84cc`) - the `PORT:` for this address
+/// sits on [`request_card_mode`], the free function that builds this record.
+/// This is a plain data struct and the file declares no `impl` block at all, so
+/// `port-catalog.py` widens the type anchor to the whole module - which is live
+/// through [`open_submode`], and that made a correct `NOT WIRED:` here read as
+/// a stale disclosure. The wiring verdict lives on the function instead.
 ///
 /// Seven instructions, no `jal` at all - two stores and `jr ra` with the second
 /// store in the delay slot. It sets the master game mode word `_DAT_8007B83C`
@@ -276,11 +281,6 @@ pub const CARD_REQUEST_MODE: i16 = 0x16;
 /// "PADDING" reason. That reason holds for four minigame images that carry
 /// filler at this VA; it does not hold for field (897), where the address is a
 /// real entry with a real body. A six-store leaf is still a function.
-///
-/// NOT WIRED: nothing in `engine-core` requests a master-mode transition by
-/// writing the retail mode word - [`crate::mode::GameMode`] transitions go
-/// through typed scene-host calls. The `_DAT_8007BB00` companion flag has no
-/// engine counterpart at all; its consumer is not in the ported set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardRequest {
     /// Value written to the master game mode word `_DAT_8007B83C`.

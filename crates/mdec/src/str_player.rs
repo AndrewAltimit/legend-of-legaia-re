@@ -383,15 +383,16 @@ impl DecodeEnv {
     /// printed disassembly consumes it - there is no call between the stores
     /// and the return - so it is not reproduced here.
     // PORT: FUN_801cf740
-    // NOT WIRED (on the frame path): `StrPlayer::next_frame` has nothing to
-    // pass. `crate::st_ring::StFrame` does not carry the per-frame dimensions -
+    // Not on the *frame path*, but not an inert port either - `mdec str-plan`
+    // calls this from `fn main` with the dimensions read straight off the first
+    // sector header, which is how a slot/movie disagreement becomes visible
+    // while the ring still drops them. What the frame path lacks is an
+    // argument: `StrPlayer::next_frame` has nothing to pass, because
+    // `crate::st_ring::StFrame` does not carry the per-frame dimensions -
     // `StRing` parses the header's `+0x10` / `+0x12` and drops them, keeping
     // only the frame number and the bitstream length - so the rects keep
     // `DecodeEnv::init`'s slot-derived size for the whole segment. Closing that
     // is one field pair on `StFrame` plus the `deliver_sector` capture.
-    // `mdec str-plan` calls it with the dimensions read straight off the first
-    // sector header, which is how a slot/movie disagreement becomes visible
-    // while the ring still drops them.
     pub fn apply_frame_dimensions(&mut self, width: u16, height: u16) {
         let w = vram_units(i32::from(width), self.colour) as i16;
         let h = height as i16;
@@ -427,15 +428,16 @@ impl DecodeEnv {
     /// `LoadImage` the callback issues on the way out, or `None` if the
     /// callback is not installed.
     // PORT: FUN_801cf56c
-    // NOT WIRED (on the decode path): retail decodes a frame incrementally,
-    // one macroblock column at a time, and this is the interrupt callback that
-    // walks the cursor and issues each column's `LoadImage`. The port decodes a
-    // frame whole (`MdecDecoder::decode_frame` takes the complete bitstream and
-    // returns RGBA), so there are no real slice completions to service; a
-    // slice-wise decoder driving `PsxVram` would have to exist first.
-    // `mdec str-plan` steps the cursor over a real movie's geometry to print
-    // the walk, which is what makes the column count and the buffer flip
-    // checkable against the disc.
+    // Not on the *decode path*, but not an inert port either - `mdec str-plan`
+    // steps the cursor over a real movie's geometry from `fn main` to print the
+    // walk, which is what makes the column count and the buffer flip checkable
+    // against the disc. What the decode path lacks is a reason to call it:
+    // retail decodes a frame incrementally, one macroblock column at a time,
+    // and this is the interrupt callback that walks the cursor and issues each
+    // column's `LoadImage`, whereas the port decodes a frame whole
+    // (`MdecDecoder::decode_frame` takes the complete bitstream and returns
+    // RGBA). There are no real slice completions to service until a slice-wise
+    // decoder driving `PsxVram` exists.
     pub fn advance_slice(&mut self) -> Option<SliceStep> {
         if !self.slice_callback_armed {
             return None;

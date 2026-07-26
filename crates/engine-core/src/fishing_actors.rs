@@ -14,16 +14,23 @@
 //!
 //! Companion prose: `docs/subsystems/minigame-fishing.md`.
 //!
-//! # NOT WIRED
+//! ## Wiring status is per item, not per module
 //!
-//! `crate::fishing` models the fishing minigame as *rules* - cast power,
-//! reel tug-of-war, catch scoring - with no actors, no camera and no
-//! ordering table. Everything in this module drives the retail overlay's
-//! per-frame actor structs (`+0x14/+0x16/+0x18` position, `+0x22` phase,
-//! `+0x26` facing) and the scene camera globals, none of which the engine's
-//! fishing session owns. Wiring needs a fishing *scene* host - an actor pool
-//! plus the venue geometry - which is the same prerequisite the venue mesh
-//! work carries.
+//! This file carried a blanket `# NOT WIRED` heading, and it stopped being
+//! true: the bite-roll trio ([`bite_interval`], [`bite_credit_override`],
+//! [`roll_hit_type`]) is now on the live fight path through
+//! [`crate::fishing::BandCheck::tick`]. A module blanket is read
+//! unconditionally by every anchor in the file, so one wired item makes it
+//! assert something false about that item and it cannot be narrowed in place.
+//! Each genuinely inert item therefore carries its own `NOT WIRED:` line.
+//!
+//! The recurring blocker those lines name is one thing: `crate::fishing`
+//! models the minigame as *rules* (cast power, reel tug-of-war, catch scoring)
+//! with no actors, no camera and no ordering table, whereas the actor-side
+//! kernels drive the retail overlay's per-frame actor structs
+//! (`+0x14/+0x16/+0x18` position, `+0x22` phase, `+0x26` facing) and the scene
+//! camera globals. What closes them is a fishing *scene* host, an actor pool
+//! plus the venue geometry, the same prerequisite the venue mesh work carries.
 
 use crate::dev_menu::{PACK_LEFT, PACK_RIGHT};
 
@@ -77,6 +84,12 @@ fn lerp12(delta: i32, t: i32) -> i32 {
 /// outcome the reject path produces.
 ///
 /// PORT: FUN_801d5c2c
+// NOT WIRED: the consumer is a **screen-space line primitive**, and the port
+// emits none - this is the 3-D half of the clipper `clip_segment_2d` below
+// names, and it is inert for exactly that reason. Neither `engine-ui`'s draw
+// list (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries
+// a line kind to project *for*. Wiring wants a line draw kind first, not a
+// fishing host.
 pub fn project_segment(a: [i32; 3], b: [i32; 3], near: i32, proj: i32) -> Option<ProjectedSegment> {
     if a[2] < near && b[2] < near {
         return None;
@@ -172,6 +185,11 @@ pub struct WanderTarget {
 /// pick. `rolls` must supply them in that order.
 ///
 /// PORT: FUN_801d2278 (re-target roll)
+// NOT WIRED: this re-targets a *free-swimming fish actor* between dwells, and
+// the engine has no such actor. `crate::fishing::PondSession` picks a species
+// from the locked cast power and never gives it a position, so there is nothing
+// holding the `(x, z)` this rolls a new target around. Needs the fishing scene
+// host's actor pool, per the module docs.
 pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> WanderTarget {
     let _rotation = rolls() & 0xFFF;
     let dwell = (rolls() as i32) % RETARGET_SPAN + RETARGET_MIN;
@@ -194,6 +212,11 @@ pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> Wa
 /// pad moved, so an out-of-range facing is pulled in on the first frame.
 ///
 /// PORT: FUN_801d2278 (facing arm)
+// NOT WIRED: the state it steps is the fish actor's `+0x26` facing word, which
+// no engine struct owns (see `roll_wander_target` above). It also wants the raw
+// packed held mask `_DAT_8007B850`; the engine's fishing input is the
+// abstracted `ReelInput` / `edge_bonus` pair, so even the argument would have
+// to be re-plumbed from the pad layer.
 pub fn step_facing(facing: i16, pad_held: u16) -> i16 {
     let mut f = facing;
     if pad_held & PACK_LEFT != 0 {
@@ -220,6 +243,11 @@ pub struct FishCamera {
 /// Publish the camera for a fish at `(x, y, z)` facing `facing`.
 ///
 /// PORT: FUN_801d2278 (camera publish)
+// NOT WIRED: it publishes into the retail scene-camera globals
+// (`_DAT_80089118`.. and `_DAT_800840BC`), and the engine's fishing session
+// owns no camera at all - the browser venue drives its own view matrix and the
+// native window has no fishing scene. Wiring means the fishing scene host
+// taking a `CameraController` feed, not a call at this site.
 pub fn fish_camera(x: i16, y: i16, z: i16, facing: i16) -> FishCamera {
     let yaw = ((facing as i32).wrapping_add(0x800) & 0xFFF).wrapping_neg() as i16;
     FishCamera {
@@ -255,6 +283,10 @@ pub const PACK_DEBUG_MODIFIER: u16 = 0x0002;
 /// the division truncates toward zero rather than toward negative infinity.
 ///
 /// PORT: FUN_801d2050 (debug readout)
+// NOT WIRED: the consumer is the fishing overlay's on-screen developer
+// readout, and the engine ships no fishing debug overlay to print a tile index
+// on. The prerequisite is that screen (plus the `_DAT_8007B9B0` print flag
+// `debug_readout_visible` below gates it on), not a call site here.
 #[inline]
 pub fn debug_tile(v: i16) -> i32 {
     let v = v as i32;
@@ -269,6 +301,10 @@ pub fn debug_tile(v: i16) -> i32 {
 /// (see [`bite_interval`]).
 ///
 /// PORT: FUN_801d2050 (readout gate)
+// NOT WIRED: same missing developer readout as `debug_tile` above. Note the
+// engine does reach the *other* half of this gate - `bite_interval`'s `debug`
+// arm is on the live path - but it is passed `false` unconditionally, because
+// nothing owns the `_DAT_8007B9B0` print flag this would compute it from.
 #[inline]
 pub fn debug_readout_visible(print_flag: bool, pad_held: u16) -> bool {
     print_flag && pad_held & PACK_DEBUG_MODIFIER != 0
@@ -386,6 +422,12 @@ pub const WATER_TILE_CLASSES: [(u32, i32, i32); 3] =
 /// and the fish weight at their defaults (`0` and `10`).
 ///
 /// PORT: FUN_801d26cc (water-tile class)
+// NOT WIRED: its input is the `_DAT_8007B8F4` class word that retail reads
+// *after* the walk-grid probe reports the `0x4000` water bit, and the engine's
+// session carries no per-scene grid to probe (the same gap
+// [`walk_grid_overhead`] names). Its sibling kernels on the same address are on
+// the live path through [`crate::fishing::BandCheck::tick`]; this one is not,
+// because the tick has no tile under the lure to classify.
 pub fn water_tile_class(flags: u32) -> Option<(i32, i32)> {
     let mut got = None;
     for (bit, bonus, weight) in WATER_TILE_CLASSES {
@@ -407,6 +449,11 @@ pub const BITE_NUDGE_MASKS: [u32; 3] = [0x8000, 0x2000, 0x00C0];
 /// Count this frame's pad nudges into the bite countdown.
 ///
 /// PORT: FUN_801d26cc (pad nudge)
+// NOT WIRED: it counts raw held bits out of `_DAT_8007B874`, and the engine
+// never sees that word - [`crate::fishing::BandCheck::tick`] takes an already
+// abstracted `edge_bonus: i32` from the host instead, which is the same
+// quantity arrived at from the browser / native input layers. Wiring means
+// deciding the pad mask is the engine's representation, not adding a call.
 pub fn bite_pad_nudge(pad: u32) -> i32 {
     BITE_NUDGE_MASKS.iter().filter(|&&m| pad & m != 0).count() as i32
 }
@@ -434,6 +481,11 @@ impl LinePhase {
     /// Decode the raw sub-state word.
     ///
     /// PORT: FUN_801d4948 (sub-state decode)
+    // NOT WIRED: the word it decodes is `DAT_801D91C8`, the *reeling-line
+    // actor's* sub-state. The engine's fight phase lives on
+    // `crate::fishing::PondSession`'s own phase enum and there is no line actor
+    // to carry a second one; the arms also reference `actor[+0x48]`, which
+    // presupposes the actor pool the module docs name.
     pub fn from_raw(v: u32) -> LinePhase {
         match v {
             0 => LinePhase::Arm,
@@ -498,6 +550,11 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
 /// The bursts a catch score unlocks.
 ///
 /// PORT: FUN_801d4948 (celebration gate)
+// NOT WIRED: each burst is a scene-space *effect spawn* - an offset from the
+// catch position plus an SFX cue - and the engine's catch path awards the score
+// without staging anything at a position. Wiring needs the fishing scene host
+// (for the origin) and an effect-spawn sink for the `cue` field; the score
+// threshold arithmetic itself has nothing missing.
 pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static CelebrationBurst> {
     CELEBRATION_BURSTS.iter().filter(move |b| score > b.above)
 }

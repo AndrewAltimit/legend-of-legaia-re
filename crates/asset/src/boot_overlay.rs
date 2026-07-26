@@ -146,13 +146,16 @@ pub struct SlotBChoice {
 /// loader then declines.
 ///
 // PORT: FUN_80025ba0
-// NOT WIRED (no engine consumer, by design): the choice this models is *which
-// MIPS overlay to DMA into slot B*, and the clean-room engine installs no
-// retail overlays - it reimplements 900 / 901's contents in Rust, so there is
-// no engine state for it to drive. Its consumers are both on the preservation
-// track: `boot_overlay_disc` asserts each param resolves to an entry whose
-// bytes match the documented content, and `asset boot-overlay` prints the
-// choice for every (flag, suppression) pair against a real `extracted/PROT`.
+// No *engine* consumer, by design - and deliberately carrying no inert-port
+// disclosure, because a host root does reach it. The choice modelled here is
+// *which MIPS overlay to DMA into slot B*, and the clean-room
+// engine installs no retail overlays; it reimplements 900 / 901's contents in
+// Rust, so there is no engine state for it to drive. Its consumers are on the
+// preservation track, and one of them is a host root: `asset boot-overlay`
+// prints the choice for every (flag, suppression) pair against a real
+// `extracted/PROT`, which is a real non-test caller reached from `fn main`.
+// `boot_overlay_disc` additionally asserts each param resolves to an entry
+// whose bytes match the documented content.
 pub fn slot_b_default_overlay(
     summon_render_flag: bool,
     suppressed: bool,
@@ -224,13 +227,15 @@ pub enum EffectDataSource {
 /// branch touches ISO9660 - and is not evidence for anything.
 ///
 // PORT: FUN_8003e360
-// NOT WIRED (no engine consumer, by design): both branches end in a load the
-// engine does not perform - the flag-set branch DMAs PROT 979 into a retail
-// streaming buffer at a fixed offset, and the flag-clear branch is the
-// debug-station host trap, dead on hardware. The engine's effect subsystem
-// parses `efect.dat` (extraction 0870..0873) through `crate::effect` instead,
-// so there is no path here for it to select between. `asset boot-overlay`
-// reports both branches.
+// No *engine* consumer, by design - and deliberately carrying no inert-port
+// disclosure, because a host root does reach it. Both branches
+// end in a load the engine does not perform: the flag-set branch DMAs PROT 979
+// into a retail streaming buffer at a fixed offset, and the flag-clear branch
+// is the debug-station host trap, dead on hardware. The engine's effect
+// subsystem parses `efect.dat` (extraction 0870..0873) through `crate::effect`
+// instead, so there is no path here for it to select between. The preservation
+// CLI does consume it: `asset boot-overlay` reports both branches, a real
+// non-test caller reached from `fn main`.
 pub fn effect_data_source(dev_flag_set: bool) -> EffectDataSource {
     if dev_flag_set {
         EffectDataSource::ProtEntry(EFFECT_DATA_EXTRACTION_INDEX)
@@ -273,14 +278,19 @@ pub const CARD_TIM_RAW_INDEX: u32 = 0x37E;
 /// system-UI sprite sheet (see [`crate::title_pak`]). Wiring 892 would mean
 /// implementing CARD mode, not retargeting an existing screen.
 ///
-// NOT WIRED: no engine consumer, and the prerequisite is a screen rather than
-// a call. Retail's CARD mode is a standalone memory-card-management screen and
-// this constant is the index of the TIM pack that mode loads; the engine has
-// no CARD mode, and its save / load UI is a different screen whose art is
+// No *engine* consumer, and the prerequisite for one is a screen rather than a
+// call: retail's CARD mode is a standalone memory-card-management screen and
+// this constant is the index of the TIM pack that mode loads. The engine has no
+// CARD mode, and its save / load UI is a different screen whose art is
 // capture-pinned to PROT 899's embedded TIMs plus the system-UI sprite sheet
-// (see `crate::title_pak`). Nothing can consume the index until that mode
-// exists - retargeting an existing screen onto entry 892 would be a
+// (see `crate::title_pak`) - retargeting that screen onto entry 892 would be a
 // substitution, not a wiring fix.
+//
+// It nonetheless carries no inert-port disclosure. The ported fact here is the
+// index itself, and `asset boot-overlay` reads it from `fn main`, printing the entry
+// it resolves to against a real `extracted/PROT` directory. Note the anchor is
+// coarse by construction: a `PORT:` tag on a `const` has no item scope in
+// `port-catalog.py` and falls back to the whole module.
 // PORT: FUN_8002574c (loader constant only)
 pub const CARD_TIM_EXTRACTION_INDEX: u32 = CARD_TIM_RAW_INDEX - RAW_TO_EXTRACTION;
 
@@ -319,12 +329,15 @@ pub const SECTOR_BYTES: i32 = 0x800;
 /// them.
 ///
 // PORT: FUN_8001eef0 (arithmetic tail only)
-// NOT WIRED (no engine consumer, by design): retail needs this conversion
-// because its loader talks to the CD in sectors; the engine's asset path reads
-// whole PROT entries through `legaia_prot` and never converts a byte length to
-// a sector count, so there is no site for it. `asset boot-overlay` prints the
-// rounding table, including the negative arm - the one that keeps an error
-// return an error instead of turning it into `-1` sectors.
+// No *engine* consumer, by design - and deliberately carrying no inert-port
+// disclosure, because a host root does reach it. Retail needs
+// this conversion because its loader talks to the CD in sectors; the engine's
+// asset path reads whole PROT entries through `legaia_prot` and never converts
+// a byte length to a sector count, so there is no site for it there. The
+// preservation CLI does consume it: `asset boot-overlay` prints the rounding
+// table, including the negative arm - the one that keeps an error return an
+// error instead of turning it into `-1` sectors - and is a real non-test
+// caller reached from `fn main`.
 pub fn bytes_to_sectors(bytes: i32) -> i32 {
     let biased = bytes.wrapping_add(SECTOR_BYTES - 1);
     let biased = if biased < 0 {

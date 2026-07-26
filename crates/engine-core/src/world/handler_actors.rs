@@ -328,7 +328,7 @@ impl World {
     /// it spawned.
     ///
     /// Nothing ticks the spawned actor yet; the gap is disclosed on
-    /// [`crate::field_actor_program::step`].
+    /// [`crate::field_actor_program::step_scene_program`].
     ///
     /// Carries the same deliberate divergence as the scene-actor spawn above:
     /// a previous load's program actor is retired first, standing in for the
