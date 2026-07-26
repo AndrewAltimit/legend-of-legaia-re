@@ -34,6 +34,20 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
+The heading is a warning, not a nicety: any census of a field-VM opcode must
+read the MAN, and one aimed at `scene_event_scripts` measures the wrong thing.
+Those entries carry **move-VM prescripts**, so a correct reader of them
+reports zero field-VM opcodes. Such a census can still come back non-zero, and
+the way it does is worth recognising, because the failure is invisible from
+inside the instrument: a scene block's prescript entry is one sector, and read
+under the superseded declared-span PROT entry size (`toc[p+5] - toc[p+3] + 4`,
+which measures entry `p`'s two *successors*) its window ran past itself into
+the block's bundle - so the bundle MAN's field-VM opcodes were reported under
+the prescript's name. With entry sizes corrected to `toc[p+3] - toc[p+2]` the
+over-read is gone and the count is zero. See [`prot.md`](../formats/prot.md);
+the worked case is the `0x4C 0xD8` synchronous-spawn census in
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
+
 ### Record headers are per-partition; the record index space is flat
 
 Every partition prefixes its script with a **different** header, so the offset
@@ -768,6 +782,23 @@ The clean-room engine executes this chain organically - the host re-runs the ent
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
 `system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
+
+**Carriers are byte-unique, and every per-scene count depends on it.**
+No two MAN carriers on the disc share bytes, so walking every carrier of every
+scene visits each MAN exactly once and a per-scene census is a partition of the
+corpus. When that does not hold, one MAN reached through two scenes' windows
+inflates every count over it by an amount no assertion inside the census can
+see.
+
+That is what the superseded declared-span entry size produced. A scene block
+whose CDNAME window is a subset of its neighbour's, with no asset-table bundle
+of its own, would over-read into the neighbour's bundle and present the
+neighbour's MAN as a second "dev copy" under its own name. `gameover_data` is
+that case, and the copy it appeared to hold was `town01`'s MAN. With the entry
+size corrected the block resolves no MAN, and the Rim Elm renditions gating the
+opening one-shot `0x225` are the three real ones (`town01` / `town0b` /
+`town0c`), each a distinct PROT entry at a distinct start LBA. The property
+itself is asserted disc-wide by `no_two_man_carriers_share_bytes_disc_wide`.
 
 **Decode-coherence flag.** The census walker desyncs inside unframed Shift-JIS dialogue and inline data tables, where text bytes alias the `0x50..=0x7F` flag ops
 (the full-width digit run `82 54 82 4F` aliases `SysFlag.Set idx=0x482`; a repeating full-width `ＥＸＩＴ` label table aliases `64 82` clears).

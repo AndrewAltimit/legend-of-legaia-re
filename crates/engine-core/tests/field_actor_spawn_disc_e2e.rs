@@ -5,33 +5,48 @@
 //! What this catches:
 //!  - The opcode encoding `[0x4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo,
 //!    kind_hi, var_lo, var_hi]` is consistent across real PROT scenes
-//!    (smoke: the field-VM packet length walker advances exactly 9 bytes
-//!    per chained opcode and lands on the next valid 0x4C dispatch byte).
+//!    (the field-VM packet length walker advances exactly 9 bytes per
+//!    chained opcode and lands on the next valid `0x4C` dispatch byte).
 //!  - The 0x4C 0xD8 host hook synchronously allocates an actor with the
 //!    bytecode-encoded `kind` / `variant` when fed a real on-disc byte
 //!    slice.
 //!
-//! Why a synthetic-position drive instead of a natural one: scans of the
-//! retail event-script corpus surface 0x4C 0xD8 hits in 14 scenes
-//! (`agumon`, `balden2`, `dolk2`, …) but every hit lives deep inside a
-//! large record (offsets >= 0x4365 bytes into the record). The field VM
-//! steps sequentially from offset 0; reaching those offsets naturally
-//! would require driving thousands of opcodes and resolving every halt /
-//! cross-context branch in between, most of which are still uncaptured.
+//! ## Which carrier this census reads, and why
 //!
-//! The cleanest cluster is `balden2` record 7 at offset 0x52D76: four
-//! 0x4C 0xD8 opcodes chained at a 9-byte stride with sequential
-//! `vdf_idx` (0x01..0x04) and identical `kind = 0x0066, variant = 0x0066`.
-//! That stride alignment is the structural proof that the opcode
-//! encoding pinned in `World::op4c_n_d_sub8_call_d77f4` matches retail.
+//! `0x4C` (`MENU_CTRL`) is a **field-VM** opcode, and the field VM's
+//! bytecode lives in the scene **MAN** - the asset-table bundle MAN plus
+//! each block's streaming variant carrier. This census therefore walks MAN
+//! records (see [`legaia_engine_core::man_field_scripts`]).
+//!
+//! It used to walk `Scene::find_event_scripts` instead. Those entries carry
+//! **move-VM prescripts**, not field-VM bytecode, so a census over them was
+//! aimed at the wrong carrier from the start; the non-zero count it reported
+//! came from a one-sector prescript entry read under the old declared-span
+//! PROT size (`toc[p+5] - toc[p+3] + 4`, which measures entry `p`'s two
+//! *successors*), whose read window ran past itself into the neighbouring
+//! bundle - i.e. it was reporting the bundle MAN's opcodes filed under the
+//! prescript's name. With entry sizes corrected to `toc[p+3] - toc[p+2]` the
+//! event-script scan reports zero, correctly. See `docs/formats/prot.md` and
+//! `docs/subsystems/script-vm-menuctrl.md`.
+//!
+//! Sites are taken at real instruction boundaries via the field-VM
+//! disassembler rather than by scanning for the `4C D8` byte pair, since a
+//! byte scan also matches operand and Shift-JIS bytes.
+//! [`decoded_4c_d8_census_matches_the_walker_independent_byte_scan`] is the
+//! cross-check that the two agree here.
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use legaia_engine_core::field_events::FieldEvent;
+use legaia_engine_core::man_field_scripts::{
+    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
+};
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, SceneMode, World};
+use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");
@@ -53,34 +68,84 @@ fn skip_if_no_disc() -> Option<PathBuf> {
     Some(extracted)
 }
 
-/// Walk every CDNAME scene and collect `(scene_name, record_index,
-/// byte_offset, sliced_bytecode)` for every `0x4C 0xD8` pattern found in
-/// event-script records. Lifts the scan logic the
-/// `examples/scan_4c_d8.rs` example uses into the test so this catches
-/// corpus shifts even when the example isn't run.
-fn collect_0x4c_d8_hits(extracted: &std::path::Path) -> Vec<(String, usize, usize, Vec<u8>)> {
-    let p = ProtIndex::open_extracted(extracted).expect("open ProtIndex");
-    let cdname = legaia_prot::cdname::parse(&extracted.join("CDNAME.TXT")).expect("parse CDNAME");
-    let mut scene_names: Vec<String> = cdname.values().cloned().collect();
-    scene_names.sort();
-    scene_names.dedup();
+/// One decoded `0x4C 0xD8` instruction site in a scene MAN.
+#[derive(Debug, Clone)]
+struct SpawnOpSite {
+    scene: String,
+    /// PROT extraction index of the MAN carrier the site lives in.
+    entry_idx: u32,
+    /// `true` for a streaming variant carrier, `false` for the bundle MAN.
+    variant: bool,
+    partition: usize,
+    record: usize,
+    /// Byte offset of the opcode within the record body.
+    body_pc: usize,
+    /// Decode coherence: the walk had `CLEAN_RESYNC_INSNS` error-free
+    /// instructions behind it, so this is not a resync artifact.
+    clean: bool,
+    /// Bytes the disassembler consumed for this instruction (must be 9).
+    size: usize,
+    /// The 9 encoded bytes.
+    bytes: Vec<u8>,
+}
 
-    let mut out: Vec<(String, usize, usize, Vec<u8>)> = Vec::new();
-    for name in &scene_names {
-        let Ok(scene) = Scene::load(&p, name) else {
+/// Walk every CDNAME scene's MAN carriers and collect every decoded
+/// `0x4C 0xD8` instruction. Mirrors `examples/scan_4c_d8.rs` so the census
+/// holds even when the example isn't run.
+///
+/// Records are bounded and header-decoded per partition by
+/// [`partition_record_span`], then disassembled from the record's first
+/// opcode - the same instrument [`legaia_engine_core::man_field_scripts`]
+/// uses for the flag censuses.
+fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
+    let index = ProtIndex::open_extracted(extracted).expect("open ProtIndex");
+    let mut out = Vec::new();
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
             continue;
         };
-        let Some(scripts) = scene.find_event_scripts() else {
-            continue;
-        };
-        for r in 0..scripts.len() {
-            let Some(rec) = scripts.record(r) else {
+        for carrier in scene_man_carriers(&index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
                 continue;
             };
-            for i in 0..rec.len().saturating_sub(1) {
-                if rec[i] == 0x4C && rec[i + 1] == 0xD8 {
-                    let end = (i + 9).min(rec.len());
-                    out.push((name.clone(), r, i, rec[i..end].to_vec()));
+            for partition in 0..3 {
+                let count = (*man_file
+                    .header
+                    .partition_counts
+                    .get(partition)
+                    .unwrap_or(&0))
+                .max(0) as usize;
+                for record in 0..count {
+                    let Some((start, pc0, len)) =
+                        partition_record_span(&man_file, man, partition, record)
+                    else {
+                        continue;
+                    };
+                    let body = &man[start..start + len];
+                    let mut ok_run = CLEAN_RESYNC_INSNS;
+                    for insn in LinearWalker::new(body, pc0) {
+                        let Ok(insn) = insn else {
+                            ok_run = 0;
+                            continue;
+                        };
+                        let clean = ok_run >= CLEAN_RESYNC_INSNS;
+                        ok_run += 1;
+                        if let InsnInfo::MenuCtrl { op0: 0xD8, .. } = insn.info {
+                            let end = (insn.pc + 9).min(body.len());
+                            out.push(SpawnOpSite {
+                                scene: name.clone(),
+                                entry_idx: carrier.entry_idx,
+                                variant: carrier.is_variant(),
+                                partition,
+                                record,
+                                body_pc: insn.pc,
+                                clean,
+                                size: insn.size,
+                                bytes: body[insn.pc..end].to_vec(),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -88,82 +153,216 @@ fn collect_0x4c_d8_hits(extracted: &std::path::Path) -> Vec<(String, usize, usiz
     out
 }
 
-/// Smoke: the corpus has at least one `0x4C 0xD8` hit. Catches a
-/// regression where the scene-event-scripts walker stops surfacing this
-/// opcode (or, more plausibly, the asset categorizer demotes
-/// `SceneScriptedAssetTable` to a class that doesn't get walked).
+/// The disc-wide `0x4C 0xD8` census, over the MAN.
+///
+/// The pinned number is a count of **opcode sites** (individual decoded
+/// instructions), with the count of **scenes** carrying at least one
+/// reported alongside - the two are different figures and the pre-re-aim
+/// census conflated them (its prose said "14 scenes", its assertion counted
+/// byte-pair occurrences in event-script records).
+///
+/// Every retail site is:
+///  - in **partition 1 record 0** - the scene-entry system script, the one
+///    `Scene::field_man_entry_script` resolves. No per-actor interaction
+///    script and no cutscene-timeline record uses the synchronous spawn;
+///  - decoded 9 bytes wide, matching the encoding
+///    `[0x4C, 0xD8, vdf_idx, tmd:u16, kind:u16, variant:u16]`;
+///  - `clean` - the walker had a clear run-up, so no site is a resync
+///    artifact of a desync inside dialogue.
+///
+/// Within a scene the sites form a contiguous 9-byte-stride chain: that
+/// stride alignment is the structural proof that the encoding pinned in
+/// `World::op4c_n_d_sub8_call_d77f4` matches retail, since a wrong width
+/// would not land the next decode on a `0x4C` dispatch byte five times over.
 #[test]
 fn disc_corpus_contains_4c_d8_opcode_pattern() {
     let Some(extracted) = skip_if_no_disc() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let hits = collect_0x4c_d8_hits(&extracted);
+    let sites = collect_0x4c_d8_sites(&extracted);
+    let mut per_scene: BTreeMap<&str, usize> = BTreeMap::new();
+    for s in &sites {
+        *per_scene.entry(s.scene.as_str()).or_default() += 1;
+    }
     eprintln!(
-        "[disc] {} total 0x4C 0xD8 hits across event scripts",
-        hits.len()
+        "[disc] {} 0x4C 0xD8 opcode sites across {} scenes: {per_scene:?}",
+        sites.len(),
+        per_scene.len()
     );
-    // A handful of scenes (currently 14) hit the opcode; a hard
-    // assertion of N would rot if the categorizer reshuffles scene
-    // classes. Assert non-empty + spot-check the cluster `balden2`
-    // record 7 still has the structured 4-spawn block.
-    assert!(
-        !hits.is_empty(),
-        "expected at least one 0x4C 0xD8 hit in event scripts; corpus may have shifted"
+
+    assert_eq!(
+        per_scene,
+        BTreeMap::from([
+            ("balden", 4),
+            ("balden2", 4),
+            ("garmel", 2),
+            ("jagaroom", 6),
+            ("juui2", 1),
+        ]),
+        "the disc's synchronous-spawn sites, per scene (17 opcode sites in 5 scenes)"
     );
-    let cluster: Vec<&(String, usize, usize, Vec<u8>)> = hits
-        .iter()
-        .filter(|(n, r, _, _)| n == "balden2" && *r == 7)
-        .collect();
-    assert!(
-        cluster.len() >= 4,
-        "expected >= 4 chained 0x4C 0xD8 spawns in balden2 record 7, got {}: {:?}",
-        cluster.len(),
-        cluster
-    );
-    // The chained block is at a 9-byte stride - that's how we know the
-    // opcode encoding matches retail (each opcode body is exactly
-    // `[vdf_idx, tmd:u16, kind:u16, variant:u16]` = 7 bytes after the
-    // 2-byte opcode prefix).
-    let mut offsets: Vec<usize> = cluster.iter().map(|(_, _, off, _)| *off).collect();
-    offsets.sort();
-    for w in offsets.windows(2) {
+
+    // Every site is a clean, 9-byte-wide decode in the scene-entry script.
+    for s in &sites {
+        assert_eq!(s.size, 9, "0x4C 0xD8 decodes 9 bytes wide: {s:?}");
+        assert_eq!(s.bytes.len(), 9, "site should carry its 9 bytes: {s:?}");
+        assert!(s.clean, "no site may be a decode-resync artifact: {s:?}");
         assert_eq!(
-            w[1] - w[0],
-            9,
-            "balden2 rec7 chained 0x4C 0xD8 cluster must stride by 9 bytes (got {:?})",
-            offsets
+            (s.partition, s.record),
+            (1, 0),
+            "every retail synchronous spawn sits in the scene-entry system \
+             script P1[0]: {s:?}"
         );
     }
+
+    // `balden` carries the cluster in its bundle MAN; `balden2` carries an
+    // equivalent one in its streaming *variant* MAN - a different PROT entry
+    // with different bytes, not the same MAN seen twice (the disc-wide
+    // no-two-carriers-share-bytes property is asserted in
+    // `man_variant_carrier_census_disc`).
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.scene == "balden" && !s.variant && s.entry_idx == 183),
+        "balden's cluster lives in its bundle MAN (PROT 183)"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.scene == "balden2" && s.variant && s.entry_idx == 320),
+        "balden2's cluster lives in its streaming variant MAN (PROT 320)"
+    );
+
+    // Per scene the sites chain at a 9-byte stride.
+    for scene in per_scene.keys() {
+        let mut offsets: Vec<usize> = sites
+            .iter()
+            .filter(|s| &s.scene.as_str() == scene)
+            .map(|s| s.body_pc)
+            .collect();
+        offsets.sort_unstable();
+        for w in offsets.windows(2) {
+            assert_eq!(
+                w[1] - w[0],
+                9,
+                "{scene}'s chained 0x4C 0xD8 cluster must stride by 9 bytes (got {offsets:?})"
+            );
+        }
+    }
+
+    // `balden2`'s four spawns carry sequential `vdf_idx` 0x01..=0x04 - the
+    // cluster the synchronous-spawn drive below replays.
+    let vdf: Vec<u8> = sites
+        .iter()
+        .filter(|s| s.scene == "balden2")
+        .map(|s| s.bytes[2])
+        .collect();
+    assert_eq!(
+        vdf,
+        vec![0x01, 0x02, 0x03, 0x04],
+        "balden2's cluster walks VDF bodies 1..=4 in order"
+    );
 }
 
-/// Drive the field VM over the real on-disc `0x4C 0xD8` byte sequence
-/// from `balden2` record 7 and verify it synchronously spawns one actor
-/// with the bytecode-encoded `kind` / `variant`.
+/// Walker-independent cross-check of the census above: for every MAN
+/// carrier on the disc, the raw `4C D8` **byte-pair** count equals the
+/// decoded **instruction** count.
 ///
-/// Slices the record starting at the first opcode hit so the field VM
+/// This is the corroboration that makes the pinned number a measurement
+/// rather than a property of the disassembler. The two instruments fail in
+/// opposite directions - a byte scan over-counts (operand and Shift-JIS
+/// bytes alias the pair) while an opcode walk under-counts (a desync inside
+/// dialogue silently drops real ops) - so their agreeing exactly, carrier by
+/// carrier, rules out both. Compare `flag_test_bytescan`, which exists for
+/// the same reason on the flag census.
+///
+/// A carrier where they diverge is the interesting case: `raw > decoded`
+/// means the walker desynced past a real op, `decoded > raw` is impossible
+/// and would mean the record bounds overlap.
+#[test]
+fn decoded_4c_d8_census_matches_the_walker_independent_byte_scan() {
+    let Some(extracted) = skip_if_no_disc() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let sites = collect_0x4c_d8_sites(&extracted);
+
+    let mut raw_total = 0usize;
+    let mut carriers_with_pairs = 0usize;
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        for carrier in scene_man_carriers(&index, &scene) {
+            let man = &carrier.payload;
+            let raw = (0..man.len().saturating_sub(1))
+                .filter(|&o| man[o] == 0x4C && man[o + 1] == 0xD8)
+                .count();
+            let decoded = sites
+                .iter()
+                .filter(|s| s.scene == name && s.entry_idx == carrier.entry_idx)
+                .count();
+            assert_eq!(
+                raw, decoded,
+                "{name} PROT {}: {raw} raw `4C D8` byte pairs vs {decoded} decoded \
+                 instructions - a divergence means the walk desynced past a real op \
+                 (raw > decoded) or the record bounds overlap (decoded > raw)",
+                carrier.entry_idx
+            );
+            raw_total += raw;
+            if raw > 0 {
+                carriers_with_pairs += 1;
+            }
+        }
+    }
+    eprintln!(
+        "[disc] {raw_total} raw `4C D8` byte pairs across {carriers_with_pairs} carriers, \
+         all decoding as instructions"
+    );
+    assert_eq!(
+        raw_total,
+        sites.len(),
+        "disc-wide byte-pair total must equal the decoded site total"
+    );
+}
+
+/// Drive the field VM over the real on-disc `0x4C 0xD8` byte sequence from
+/// `balden2`'s scene-entry system script (variant MAN P1[0]) and verify it
+/// synchronously spawns one actor with the bytecode-encoded `kind` /
+/// `variant`.
+///
+/// Slices the record starting at the first opcode site so the field VM
 /// dispatches the opcode on tick 1 without having to step through every
 /// preceding opcode in the record. The slice is small (one opcode + a
 /// few trailing bytes) and ends with a 0x00 terminator so the field
 /// VM's halt-acquire prelude treats it as a complete record.
+///
+/// `balden2_natural_drive_reaches_4c_d8_cluster_via_entry_script` below is
+/// the un-sliced companion: the same P1[0] script driven from its own
+/// entry point reaches this cluster organically.
 #[test]
 fn drives_real_balden2_4c_d8_into_synchronous_spawn() {
     let Some(extracted) = skip_if_no_disc() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let hits = collect_0x4c_d8_hits(&extracted);
-    let first = hits
+    let sites = collect_0x4c_d8_sites(&extracted);
+    let first = sites
         .iter()
-        .find(|(n, r, _, _)| n == "balden2" && *r == 7)
-        .expect("balden2 record 7 should have a 0x4C 0xD8 hit");
-    let (_, _, _, op_bytes) = first;
+        .find(|s| s.scene == "balden2")
+        .expect("balden2's variant-MAN entry script should carry a 0x4C 0xD8 site");
+    let op_bytes = &first.bytes;
     assert_eq!(
         op_bytes.len(),
         9,
-        "balden2 0x4C 0xD8 hit should be 9 bytes long; got {op_bytes:?}"
+        "balden2 0x4C 0xD8 site should be 9 bytes long; got {op_bytes:?}"
     );
-    eprintln!("[disc] balden2 rec7 4C D8 bytes: {op_bytes:02X?}");
+    eprintln!(
+        "[disc] balden2 P{}[{}] 4C D8 bytes: {op_bytes:02X?}",
+        first.partition, first.record
+    );
 
     let mut bytecode: Vec<u8> = op_bytes.clone();
     // Trailing 0x00 = halt so the prelude (`FUN_8003CA38` walker) treats
