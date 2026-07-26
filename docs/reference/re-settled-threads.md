@@ -1386,6 +1386,77 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | PROT 0896 (`bat_back_dat`) identity | resolved | `capture` | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | `disassembly` | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom - the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. |
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | `disassembly` | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
+| PROT 0977 / 0978 extraction + the dump re-key | resolved | `disassembly` | [details ↓](#prot-0977--0978-extraction--the-dump-re-key) |
+| Slot-B capture-module band `0935..0966` per-entry identity | resolved (statically derived, capture-corroborated) | `disassembly` | [details ↓](#slot-b-capture-module-band-09350966-per-entry-identity) |
+
+### PROT 0977 / 0978 extraction + the dump re-key
+
+*Status:* resolved - both entries are in the static overlay map, and every
+`overlay_0977_*` / `overlay_0978_*` dump now resolves
+
+The static map ([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml))
+carries **0977** (`arena_init`, the Muscle Dome door/init slot-A overlay at
+`0x801CE818`, anchor `FUN_801D0F60`) and **0978** (`field_back_read`, slot B
+`0x801F69D8`, pinned by the SCUS `FUN_80025358` state-2 call into
+`FUN_801F6B24`); `asset overlay verify` reproduces both fingerprints from the
+disc. Re-running `check-dump-base-integrity.py` with those images in the index
+classifies all 22 dumps in the two families - none is `NOT_FOUND`:
+
+| Dumps | Verdict | Bytes live in |
+|---|---|---|
+| `801d050c` `801d08ec` `801d1288` `801d1308` `801d14b0`, `slotA_801d0f60` | MATCH | 0977 at the printed VA |
+| `other_game_801f6b24` | MATCH | 0978 at the printed VA |
+| `0977 801c085c` `801c0f48` `801c2748` | SHIFTED `+0xE818` | 0977 own code (`801C085C→801CF074`, `801C0F48→801CF760`, `801C2748→801D0F60` - the War God Icon settlement) |
+| `0977 801c614c` `801c6268` `801c6804` `801c6cf8` | SHIFTED `+0xA018` | 0979 (`801C614C→801D0164`, `801C6268→801D0280`, `801C6804→801D081C`) |
+| `0978 801c2b58` `801c3004` `801c39b8` | SHIFTED `+0xD818` | 0979 (`→801D0370` / `801D081C` / `801D11D0`) |
+| `0978 801c5c58` `801c7b40` `801c82dc` `801c8b04` `801c8d0c` | SHIFTED `+0x9818` | dance 0980 (`801C5C58→801CF470` - the documented beat-clock SM) |
+
+The deltas decode as **one wrong base each, seen through the pre-correction
+over-read footprints imported at `0x801C0000`**. 0977's footprint holds its own
+`0x3800` bytes, then 0978 (`0x1000`), then 0979 - so own-content prints re-key
+at `+0xE818` (`0x801CE818 − 0x801C0000`) and 0979-stratum prints at
+`0xE818 − 0x4800 = +0xA018`. 0978's footprint holds 0979 from `+0x1000`
+(`+0xD818`) and the dance overlay from `+0x5000` (`+0x9818`). The two-hit
+`801c614c` signature (a duplicated 10-instruction run inside 0979) is
+disambiguated by the batch-constant delta: its program siblings resolve
+single-hit at `+0xA018`. The old thread's two hints both dissolve: the
+"`dance_0980` at `+0x9818`" batch is exactly the 0978 footprint's dance
+stratum, and the "`baka_fighter_0976` at `+0x5710`" hit is a cross-overlay
+duplicate of a sequence that MATCHes 0977 at its printed VA. The five printed
+VAs the thread had written off as unrecoverable (`801c2b58`, `801c3004`,
+`801c39b8`, `801c614c`, `801c6804`) all now have owners - four distinct
+routines of the field-battle-intro overlay 0979 (two of the dumps are the same
+routine `FUN_801D081C` reached through two different wrong bases, which
+cross-checks the decode).
+
+### Slot-B capture-module band `0935..0966` per-entry identity
+
+*Status:* resolved - the per-entry map is static spell-table data, readable
+out of `SCUS_942.54`
+
+A capture-class spell record (class byte `'c'` at stats `+0`) pages its cast
+module through the slot-B loader as `FUN_8003EC70(record[+1] + 0x28)`, and the
+loader resolves extraction `param + 0x37F` - so **extraction entry
+`935 + record[+1]`**. Enumerating every `'c'`-class record in the SCUS spell
+table therefore yields the complete per-entry identity map of the band, with
+no capture required; the sub-id space covers `0935..=0966` exactly (no orphan
+entries). Full table:
+[`spell-table.md § capture-class module index`](../formats/spell-table.md#capture-class-module-index-prot-09350966).
+Parser `legaia_asset::spell_names::capture_class_records` /
+`capture_module_prot`; the disc-gated `spell_names_real` test asserts the
+band coverage and every independently pinned leg (the six capture-pinned boss
+stagers 938/940/944/961/962/966, the playtest-pinned 952/953/958/959/960).
+A static shape census of the extracted entries corroborates: every band entry
+resolves its `lui 0x801F/0x8020; addiu` self-pointers in-file at the slot-B
+link base, spawns through `FUN_80021B04` / the `FUN_80050ED4` pool wrapper,
+and carries damage-wrapper `jal`s exactly where the
+[battle-formulas wrapper census](../subsystems/battle-formulas.md) put them.
+Two identities this settled: **0957** = the Death Game / Thunder Storm module
+(head strings `Dies/Puera/Both/Damage/Recover` = Death Game's roulette
+outcome labels), **0965** = the Doomsday module (the "shifted sibling of the
+battle-tutorial overlay 0967" reading was an entry-size over-read artifact -
+the claimed shift `0x5FE8` lies wholly past 0965's real `0x2000`-byte extent,
+and the corrected entries share no content).
 
 ### New-game world-state seed store widths
 

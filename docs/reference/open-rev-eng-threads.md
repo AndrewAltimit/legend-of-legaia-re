@@ -398,64 +398,87 @@ rethought rather than widened.
 | Debug flag `0x8007B98F` | resolved | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface. Its sibling `0x8007B8C2` is now **settled** - see [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer). [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) |
 | Full-window item-add OOB primitive: reachability | resolved (moved to re-settled) | Primitive real (grade `disassembly`): id store `sb t0,0x1818(a0)` @ `0x800422BC` is unconditional, before the guard that gates only the count store. But **unreachable through the retail add call sites in normal play** - each caller `jal`s the helper with no room pre-check, and the helper's free-slot scan cannot reach the `i == end` OOB exit (a `[0,256)` window holds ≤255 distinct ids, so a hole always remains). See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability). |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual closed resolved-negative) - the gold grade is a capture-pinned palette-space collapse, superseding the per-node depth-cue reading | [details ↓](#new-game-opening-chain--narration-roller) |
-| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
-| PROT 0977 / 0978 are not in the extracted overlay set | open | [details ↓](#prot-0977--0978-are-not-in-the-extracted-overlay-set) |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved (one entry left: 0968) | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| PROT 0977 / 0978 are not in the extracted overlay set | resolved (moved to re-settled) | Both are in the static overlay map (0977 `arena_init` slot A, 0978 `field_back_read` slot B; fingerprints reproduce from the disc) and the base-integrity re-run resolves **all** their dumps - the five formerly-unresolvable printed VAs re-key into real functions. See [`re-settled-threads.md`](re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
 | Phantom-VA sweep of the PROT 0897 imports | partial | The two deltas are measured and nine addresses are re-keyed against base-tagged dumps - see [`overlay-va-aliases.md`](overlay-va-aliases.md). What remains: the boundary band near `0x801E5000` (where the "0897 own content" and "over-read into 0898" readings both land inside a dumped body, and neither dump carries enough instructions to decide), the doubly-aliased `0x8020D05C`, and whether PROT 0896's imports obey a law of their own (one `0x9000` step is measured, which is not a law). Closing it means a byte-level sweep of both images at every printed VA rather than the per-address spot checks done so far. |
 | Overlay-loader index off-by-2 - remaining ripple | resolved | Slot A reconciled; slot-B per-spell identity fully capture-pinned across every block, incl. the flute summons 0924/0925 (Lippian/Spikefish) and the 0926 unused-`0x98` stub; engine mirrors carry the extraction-space constant. [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 
 ### PROT 0977 / 0978 are not in the extracted overlay set
 
-*Status:* open
+*Status:* resolved - moved to
+[`re-settled-threads.md`](re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key).
 
-Dumps prefixed `overlay_0977_*` / `overlay_0978_*` resolve to no extracted
-image, so their printed addresses cannot be corrected against a known base.
-
-Five rows (`801c2b58`, `801c3004`, `801c39b8`, `801c614c`, `801c6804`) close as
-mis-based prints on the **base argument alone**: every slot-A overlay bases at
-`0x801CE818` and every slot-B overlay at `0x801F69D8`, so a VA below
-`0x801CE818` names no overlay function whatever its dump looks like. That
-disposes of the addresses; it does not recover the functions. The real VA of
-each body stays unknown and the bodies stay undocumented.
-
-Two hints at where they came from: four `overlay_0978_*` siblings resolve into
-`dance_0980` at a constant `+0x9818`, and one `overlay_0977_*` into
-`baka_fighter_0976` at `+0x5710`. That the deltas are constant per program
-suggests the images those imports were taken from are not the overlays their
-filenames claim - the same class of error measured in
-[`overlay-va-aliases.md`](overlay-va-aliases.md) for the PROT 0897 imports.
-
-Closing it needs `asset overlay` runs for 0977 and 0978, then a re-run of
-`scripts/ghidra-analysis/check-dump-base-integrity.py`. Evidence grade:
-`disassembly`.
+Both entries are extraction rows in
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) (0977
+`arena_init`, slot A `0x801CE818`; 0978 `field_back_read`, slot B
+`0x801F69D8`), their fingerprints reproduce from the disc (`asset overlay
+verify`), and re-running `check-dump-base-integrity.py` against the extracted
+images resolves **every** `overlay_0977_*` / `overlay_0978_*` dump - none is
+`NOT_FOUND` any more. The mis-based prints all decode as single
+`0x801C0000`-band imports of the pre-correction over-read footprints, whose
+strata give one delta per byte-owner: the five formerly-unresolvable rows
+re-key into PROT 0977's own code (`+0xE818`) and the field-battle-intro
+overlay 0979 (`+0xA018` / `+0xD818`), and the `+0x9818` batch is the dance
+overlay (one of those dumps is the documented beat-clock SM `FUN_801cf470`
+itself). Per-dump table + delta decode in the settled row.
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
-*Status:* mostly resolved
+*Status:* mostly resolved - every entry in the cluster now has an identity
+except **0968**
 
-The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` summon/dance/minigame
-blobs; static extraction at the link base is the clean path, each base cross-checked by in-file
-self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
+The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` blobs; static
+extraction at the link base is the clean path, each base cross-checked by in-file
+self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). A static shape
+census over the whole cluster (per-entry `lui 0x801F/0x8020; addiu` in-file resolution
+at the link base, `FUN_80021B04` / `FUN_80050ED4` spawn-call counts, damage-wrapper
+`jal` words) corroborates slot-B linkage for every entry except the slot-A 0902; the
+CDNAME label is `xxx_dat` (dev placeholder) across the cluster, so labels contribute
+nothing here. The full accounting:
 
-- **0900/0901** = the slot-B *default* pair - `FUN_80025BA0` loads param 5 or 6 by flag
-  `DAT_8007B6A8`, agreeing with 0900's byte-residency in mid-cast saves (the summon-render
-  overlay).
-- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived stager file is
-  extraction **0905** = the `0x83` slot (22 spawn calls inside its own TOC-gap
-  footprint - the "38 calls" figure counted the two following stagers' code as
-  well). The summon arithmetic range is extraction
-  `0903..=0913` (raw `0x389..=0x393`) - **fully capture-pinned per spell id**, incl. 0907 =
-  Nighto on the `0x85` slot (head title "Hell's Music" = the attack's display name; the
-  dance-song reading is refuted).
-- **0902** = GAME OVER (content pin, corroborated by the loader census: `FUN_8003EBE4(7)`
-  inside the mode-18 init).
-- **0924/0925/0926** = the rare-Seru **flute summon** block, capture-pinned (states
-  `flute_lippian_midcast` / `flute_spikefish_midcast`): 0924 = **Lippian** (spell `0x96`;
-  head title "Ultimate Rave" is the attack's failed-kill banner - the landed 1/128 kill
-  shows "Ultimate Death", the summon.dat slot-65 actor name), 0925 = **Spikefish** (spell
-  `0x97`, attack "Blowfish", untitled pre-linked head), 0926 = the unused `0x98` slot (one
-  sector, a `jr ra` stub). The "Dark Eclipse" text inside 0925/0926 extractions is 0927's
-  head bleeding through the over-read. **0957** summon-effect strings (**NOT** a dance
-  song).
+- **0900/0901** = the slot-B *default* render pair - `FUN_80025BA0` loads param 5 or 6
+  by flag `DAT_8007B6A8` (0900 field scenes, 0901 world-map scenes).
+- **0902** = GAME OVER, a **slot-A** row (loader census `FUN_8003EBE4(7)` in the
+  mode-18 init; its old slot-B row was the `pointer_resolution` false positive).
+- **0903..0913** = the player summon-stager block, spells `0x81..=0x8B`, fully
+  capture-pinned per spell id (0907 = Nighto; "Hell's Music" is the attack's display
+  name, the dance-song reading is refuted).
+- **0914..0923** = the evolved-Seru stager block `0x8C..0x95`, capture-pinned 10/10.
+- **0924/0925/0926** = the rare-Seru flute block, capture-pinned: Lippian `0x96`,
+  Spikefish `0x97`, and the unused-`0x98` one-sector `jr ra` stub.
+- **0927..0934** = Evil Seru Magic Juggernaut + the Sim-Seru quartet + the Ra-Seru
+  trio (`0x99..0xA0`), capture-pinned linear.
+- **0935..0966** = the **capture-class cast-module band**, per-entry identity now a
+  **static disc fact**: each capture-class spell record's `+1` sub-id names its module
+  (`extraction = 935 + sub_id`), and enumerating the `'c'`-class records out of
+  `SCUS_942.54` yields the complete map with zero gaps - every entry in the band is
+  some cast's module. Full table:
+  [`spell-table.md § capture-class module index`](../formats/spell-table.md#capture-class-module-index-prot-09350966)
+  (parser `legaia_asset::spell_names::capture_class_records`; disc-gated test
+  `spell_names_real`). It agrees with all six capture-pinned boss stagers, the
+  playtest-pinned Delilas/Xain modules, and the damage-wrapper census. Two closures
+  that fell out: **0957** = the Death Game / Thunder Storm module (its
+  `Dies/Puera/Both/Damage/Recover` head strings are Death Game's roulette outcome
+  labels - the "summon-effect descriptor vs debug table" question is closed), and
+  **0965** = the Doomsday module (its "shifted sibling of 0967" reading was an
+  entry-size over-read artifact: shift `0x5FE8` lies wholly past 0965's real
+  `0x2000`-byte extent, and the corrected entries share no content).
+- **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep).
+- **0969** = the STR-path table the STR-mode init pages
+  (`FUN_8003EC70(0x4A)`; [`boot.md`](../subsystems/boot.md)). An overlay-resident
+  callsite loads it too: the battle SM pages `0x4A` when a battle global holds
+  `0xB5` - the Lapis Wave spell id - (`jal 0x8003ec70` at `0x801E6D14`,
+  `overlay_battle_action_801e6968`), so the same small blob serves Cort's Lapis
+  Wave cinematic in battle.
+
+**The one open cell: 0968.** A 4 KB slot-B module (pointer-table head, 10/11
+self-pointers resolve at the link base, 2+8 spawn calls - stager-shaped). Its loader
+param would be `0x49`, which appears at no static SCUS callsite and no captured
+overlay callsite; it sits between the tutorial (0967, `0x48`) and the STR-path table
+(0969, `0x4A`). Identity needs either an uncaptured overlay callsite or a residency
+capture. (The old "STR overlay replicated across 0967/0968/0969/0970" reading was the
+over-read: the corrected 4 KB entry cannot contain the STR dispatch code at its
+`+0x225C` offsets.)
 
 
 ### Debug flags `0x8007B8C2` / `0x8007B98F`

@@ -53,14 +53,24 @@ something real.
 | `overlay_0896_*`, printed `- 0x801C0000 < 0x9000` | - | PROT 0896's own content; link base unrecovered |
 | `overlay_0899_xxx_dat_*` | `+0xE818` | menu, PROT 0899 |
 | `overlay_0971_*` | `+0xE818` / `+0xD018` | debug_menu 0971 / fishing 0972 |
-| `overlay_0978_*` | `+0x9818` | dance, PROT 0980 |
+| `overlay_0977_*`, printed `- 0x801C0000 < 0x3800` | `+0xE818` | arena_init, PROT 0977 |
+| `overlay_0977_*`, printed `- 0x801C0000 >= 0x4800` | `+0xA018` | field_battle_intro, PROT 0979 |
+| `overlay_0978_*`, printed `- 0x801C0000` in `0x1000..0x5000` | `+0xD818` | field_battle_intro, PROT 0979 |
+| `overlay_0978_*`, printed `- 0x801C0000 >= 0x5000` | `+0x9818` | dance, PROT 0980 |
 
-The `overlay_0978_*` row is a batch the standing histogram does not name. All
-five of its dumps resolve single-hit into `overlay_dance_0980.bin` at a constant
-`+0x9818`, so the program was imported at `0x801CE818 - 0x9818 = 0x801C5000` and
-its bytes are dance-overlay routines. The filename's `0978` records which PROT
-entry was fed to Ghidra, and this cluster's entries over-read each other, so it
-says nothing about which overlay owns the code.
+The `overlay_0977_*` / `overlay_0978_*` batches are each **one** import of the
+pre-correction over-read footprint at base `0x801C0000`, so the delta varies by
+which entry's stratum the printed offset falls in (0977's footprint: own code to
+`+0x3800`, then 0978, then 0979; 0978's: own code to `+0x1000`, then 0979, then
+dance from `+0x5000`). The filename's `0977`/`0978` records which PROT entry was
+fed to Ghidra, and this cluster's entries over-read each other, so it says
+nothing about which overlay owns the code - the split rows above are the same
+per-stratum re-key as the `0896` split below. The earlier reading of the
+`+0x9818` batch as "imported at `0x801C5000`" described the same bytes through
+an equivalent lens; the strata decode supersedes it because it also accounts
+for the `+0xD818` and `+0xA018` siblings from the same two programs. Full
+per-dump table:
+[`re-settled-threads.md`](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key).
 
 The `0896` split is the re-key table from
 [`dump-corpus-integrity.md`](dump-corpus-integrity.md#the-shift-clusters)
@@ -300,8 +310,11 @@ warns must not be collapsed to one verdict.
 | `0x801C82E0` | `overlay_0896` citation stub for `FUN_801C81A8`; both below `0x9000` |
 | `0x801C8F00` | data-region dump, no disassembly at all |
 | `0x801CE9C4` | Ghidra `caseD_` switch fragment, tagged `base=0x801C0000`, resolves nowhere |
-| `0x801C6268` | second dump `overlay_0977_other_game`, resolves nowhere |
-| `0x801C6CF8` | second dump `overlay_0977_other_game`, resolves nowhere |
+
+Two rows left this group when the 0977/0978 static extractions entered the
+index: `0x801C6268` and `0x801C6CF8` (`overlay_0977_other_game` second dumps)
+now re-key at `+0xA018` into the field-battle-intro overlay 0979
+(`0x801D0280` / `0x801D0D10`) - the strata decode in the re-key table above.
 
 The six `overlay_0896` rows are the only ones in the band that cannot be
 re-keyed even in principle. Their printed offset from `0x801C0000` falls below
