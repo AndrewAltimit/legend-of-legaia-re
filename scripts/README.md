@@ -43,7 +43,8 @@ invoke them by `scripts/ci/<name>` path.
 - `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
-- `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke.
+- `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke. `build-wasm.sh` also stamps `site/wasm/SOURCE_STAMP.json`; `check-wasm.sh --full` verifies it.
+- `check-wasm-freshness.py` - is the committed `site/wasm/` bundle built from the sources in this tree? Content-addressed, because mtime and `git log` reasoning both return false "in sync" answers. Warn-only in pre-commit, strict for releases. See [`docs/tooling/shipped-bundle-freshness.md`](../docs/tooling/shipped-bundle-freshness.md).
 - `setup-cross-toolchain.sh` - provision one release target's cross toolchain (rustup std, zig + `cargo-zigbuild`, the amd64 ALSA sysroot); idempotent, root-free except mingw-w64, which it only checks for. See [`docs/tooling/releases.md`](../docs/tooling/releases.md).
 - `release-build.sh` - build + package one release target into `target/dist` (archive + `.sha256`). Driven per target by `.github/workflows/release.yml`.
 

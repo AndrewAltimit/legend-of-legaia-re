@@ -6,3 +6,7 @@
 !legaia_web_viewer_bg.wasm
 !legaia_web_viewer_bg.wasm.d.ts
 !package.json
+# Written by scripts/ci/build-wasm.sh, verified by check-wasm-freshness.py.
+# Must be tracked: an ignored stamp makes the freshness gate answer "unknown"
+# in every fresh clone.
+!SOURCE_STAMP.json
