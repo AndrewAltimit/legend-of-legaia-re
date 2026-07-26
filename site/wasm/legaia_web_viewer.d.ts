@@ -1207,7 +1207,7 @@ export class LegaiaMinigames {
     muscle_state_json(): string;
     /**
      * The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
-     * 1204, their bundled CLUT strips) plus monster `monster_id`'s texture
+     * 1205, their bundled CLUT strips) plus monster `monster_id`'s texture
      * pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
      * at `(320, 256)`) - the same layout the retail battle loader builds.
      */
@@ -2171,8 +2171,16 @@ export class LegaiaRuntime {
     play_sfx(id: number): boolean;
     /**
      * Fire the cue mapped to a named event (see
-     * [`Self::play_sfx_events_json`]). Returns `false` for an unknown event or
-     * a cue that did not sound.
+     * [`Self::play_sfx_events_json`]). Returns `false` for an unknown event, a
+     * row whose cue is withheld, or a cue that did not sound.
+     *
+     * A known-but-withheld row still counts the request
+     * ([`PlaySfx::menu_cue_requests`]), so the page's firing site stays
+     * measurable even for a row whose cue is `None`.
+     *
+     * Off wasm there is no `WebAudioOut` and so no live SPU, so this returns
+     * `false` there for a cue that *did* enqueue. The counters, not the return
+     * value, are what the disc-gated tests read.
      */
     play_sfx_event(event: string): boolean;
     /**
@@ -2180,11 +2188,28 @@ export class LegaiaRuntime {
      * hard-codes a cue id and can label which sounds are retail's:
      *
      * ```json
-     * [ { "event": "menu_confirm", "cue": 32, "source": "site",
-     *     "why": "..." } ]
+     * [ { "event": "menu_confirm", "cue": 32, "fires": null,
+     *     "source": "disc", "why": "..." } ]
      * ```
+     *
+     * `cue` is the id **retail** fires there; `fires` is what this host
+     * enqueues, and `null` means the id is pinned but deliberately withheld
+     * (see [`CUE_MENU_CURSOR`]). A page that renders only `cue` would claim a
+     * sound the host does not make, so both fields are reported.
      */
     play_sfx_events_json(): string;
+    /**
+     * **Diagnostic** sibling of [`Self::play_sfx_probe_peak`] over the same
+     * throwaway render: how many samples in before the cue last produced a
+     * non-zero sample, i.e. how long it sounds. `0` for a cue that renders
+     * silence.
+     *
+     * This is the observable that catches a **pitch** regression, which a peak
+     * cannot: mis-keying a cue by an octave leaves it just as loud and takes
+     * twice as long to play. See
+     * `legaia_engine_audio::vab_bind::compute_pitch`.
+     */
+    play_sfx_probe_active_samples(id: number, max_samples: number): number;
     /**
      * **Diagnostic**: render one cue through a *throwaway* SPU + a fresh
      * upload of the program bank and return its peak absolute sample. `0`
@@ -2396,7 +2421,7 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+     * Raw TIM bytes for battle-form atlas `atlas` (0..=7). 256x256 4bpp with
      * a 256x1 sub-CLUT row inside the TIM block.
      */
     battle_char_atlas_bytes(atlas: number): Uint8Array;
@@ -2435,8 +2460,8 @@ export class LegaiaViewer {
      */
     battle_char_mesh_uvs(slot: number): Int32Array;
     /**
-     * JSON summary of PROT 1204 (`other5`) - the battle-form mesh pack:
-     * 5 TMD slots + 7 character-atlas TIMs. Shape:
+     * JSON summary of the battle-form mesh pack: PROT 1204's 5 TMD slots +
+     * PROT 1205's 8 character-atlas TIMs. Shape:
      * ```text
      * {
      *   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
@@ -2452,9 +2477,9 @@ export class LegaiaViewer {
      */
     battle_char_tmd_bytes(slot: number): Uint8Array;
     /**
-     * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+     * Build the 1 MB PSX VRAM with each of PROT 1205's eight atlas TIMs
      * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
-     * (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+     * (rows 490..=497). These bundled sub-CLUTs are the pack's **authoring
      * palette** - what the Baka Fighter minigame renders with directly. Both
      * the Battle and Baka Fighter forms on the site render against this VRAM
      * with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
@@ -4076,6 +4101,7 @@ export interface InitOutput {
     readonly legaiaruntime_play_sfx: (a: number, b: number) => number;
     readonly legaiaruntime_play_sfx_event: (a: number, b: number, c: number) => number;
     readonly legaiaruntime_play_sfx_events_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_sfx_probe_active_samples: (a: number, b: number, c: number) => number;
     readonly legaiaruntime_play_sfx_probe_peak: (a: number, b: number, c: number) => number;
     readonly legaiaruntime_play_sfx_ready: (a: number) => number;
     readonly legaiaruntime_play_sfx_state_json: (a: number) => [number, number];

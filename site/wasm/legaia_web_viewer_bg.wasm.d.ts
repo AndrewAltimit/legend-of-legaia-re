@@ -320,6 +320,7 @@ export const legaiaruntime_play_overlay_draws_json: (a: number, b: number, c: nu
 export const legaiaruntime_play_sfx: (a: number, b: number) => number;
 export const legaiaruntime_play_sfx_event: (a: number, b: number, c: number) => number;
 export const legaiaruntime_play_sfx_events_json: (a: number) => [number, number];
+export const legaiaruntime_play_sfx_probe_active_samples: (a: number, b: number, c: number) => number;
 export const legaiaruntime_play_sfx_probe_peak: (a: number, b: number, c: number) => number;
 export const legaiaruntime_play_sfx_ready: (a: number) => number;
 export const legaiaruntime_play_sfx_state_json: (a: number) => [number, number];
