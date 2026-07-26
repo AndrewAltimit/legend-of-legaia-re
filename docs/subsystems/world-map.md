@@ -14,6 +14,7 @@ below to jump within this page.
 **Overlay + key functions**
 - [Overlay structure](#overlay-structure)
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
+- [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**

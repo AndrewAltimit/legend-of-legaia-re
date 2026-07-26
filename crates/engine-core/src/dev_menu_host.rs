@@ -553,6 +553,85 @@ mod tests {
         assert_eq!(record[0x196], 0);
     }
 
+    /// The list body's draw gate is retail's `phase * gate` product, so a
+    /// sub-editor page must suppress the row list and the list page must not.
+    #[test]
+    fn the_retail_draw_gate_hides_the_row_list_behind_a_sub_editor() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, 0, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::Active);
+        assert!(s.list_visible, "phase 1 x gate 1 = 1 -> draws");
+        s.page = DevPage::EventFlag;
+        drive(&mut s, &mut r, 0, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::ConfirmSettle);
+        assert!(!s.list_visible, "phase 2 x gate 1 = 2 -> no draw");
+    }
+
+    /// Cancel takes retail's unwind leg. `FUN_801EA9B0` returns `1` on every
+    /// path, including its out-of-range arm, so the unwind still draws - the
+    /// gate never suppresses that leg.
+    #[test]
+    fn cancel_on_the_list_takes_the_unwind_leg_and_still_draws() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, PACK_CIRCLE, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::CancelUnwind);
+        assert_eq!(s.list_gate, 1);
+        assert!(s.list_visible, "phase 3 x gate 1 = 3 -> draws");
+    }
+
+    /// The panel is sized from the row span and bottom-anchored at `0xD0`.
+    #[test]
+    fn the_list_panel_is_sized_from_the_row_span() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, 0, 0);
+        let rows = DevMenuRow::ALL.len() as i16;
+        assert_eq!(s.list_panel.height, rows * 8);
+        assert_eq!(s.list_panel.y, 0xD0 - rows * 8);
+    }
+
+    /// Retail fires the move cue inside the button branch, before the wrap
+    /// tests - so a press raises it whether or not the cursor moved.
+    #[test]
+    fn every_cursor_press_raises_the_retail_move_cue() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, PACK_DOWN, 0);
+        assert_eq!(s.drain_sfx(), vec![SFX_CURSOR_MOVE as u8]);
+        drive(&mut s, &mut r, 0, 0);
+        assert!(s.drain_sfx().is_empty(), "an idle frame raises nothing");
+    }
+
+    /// The `CLOSED` gate is retail's, taken on retail's own row index - so it
+    /// covers exactly the engine row that sits at one of the two gated
+    /// indices, and no other.
+    #[test]
+    fn the_closed_gate_only_covers_retails_gated_rows() {
+        let mut s = DevMenuSession::new();
+        assert!(!s.row_is_closed(DevMenuRow::MapChange));
+        s.closed_gate = 1;
+        assert!(s.row_is_closed(DevMenuRow::MapChange));
+        for row in [
+            DevMenuRow::EncounterRate,
+            DevMenuRow::EventFlag,
+            DevMenuRow::PlayerParam,
+            DevMenuRow::Equip,
+        ] {
+            assert!(!s.row_is_closed(row), "{row:?} is not a gated retail row");
+        }
+    }
+
+    /// Every engine row maps onto a real retail list index.
+    #[test]
+    fn every_engine_row_resolves_to_a_retail_row() {
+        for row in DevMenuRow::ALL {
+            assert!(row.retail_index() < 0x18);
+            assert!(row.retail_row().is_some(), "{row:?}");
+        }
+    }
+
     #[test]
     fn every_row_carries_a_label_and_a_readout() {
         let s = DevMenuSession::new();
