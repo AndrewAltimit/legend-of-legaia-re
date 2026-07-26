@@ -21,7 +21,7 @@ use legaia_patcher::apply;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::monster_stats::{
-    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, ScalePermille, scale_stats,
+    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, StatScale, scale_stats,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -194,6 +194,10 @@ fn stat_vec(r: &monster_archive::MonsterRecord) -> [u16; FIELD_COUNT] {
 /// populated monster's stats come back off the patched image as its own disc
 /// values times the multiplier, story bosses included, with only the scripted
 /// tutorial fight pinned and EXP / gold / drops / AGL untouched.
+///
+/// Both spellings of the knob run through the identical assertions - a uniform
+/// multiplier and a per-stat list are one code path, so the per-field mode gets
+/// the same disc oracle rather than a weaker one of its own.
 #[test]
 fn enemy_stat_scale_round_trips_on_disc() {
     let Some(original) = load_disc() else {
@@ -212,9 +216,11 @@ fn enemy_stat_scale_round_trips_on_disc() {
     let before_by_id = by_id(&before);
 
     // Both directions of the slider, so the floor / saturation clamps are
-    // exercised against real records rather than only synthetic ones.
-    for text in ["2", "0.5"] {
-        let scale = ScalePermille::parse(text).expect("valid scale");
+    // exercised against real records rather than only synthetic ones - then the
+    // advanced mode's per-stat spellings, including one that scales two stats in
+    // opposite directions at once.
+    for text in ["2", "0.5", "hp=2", "attack=2,defense=0.5"] {
+        let scale = StatScale::parse(text).expect("valid scale");
         let mut patcher = DiscPatcher::open(original.clone()).expect("open");
         let report = apply::scale_monster_stats(&mut patcher, scale).expect("scale");
         assert!(
@@ -238,6 +244,24 @@ fn enemy_stat_scale_round_trips_on_disc() {
                 scale_stats(&stat_vec(b), scale)
             };
             assert_eq!(stat_vec(r), expected, "{scale}: id {} scaled wrong", b.id);
+
+            // Independent of `scale_stats`: any stat left at 1x must come back
+            // byte-identical. `expected` above is built with the very kernel the
+            // patcher ran, so on its own it could not catch a kernel that scaled
+            // a field nobody asked it to - this compares against the disc.
+            if !SCALE_PINNED_MONSTER_IDS.contains(&b.id) {
+                for (f, mult) in scale.fields().iter().enumerate() {
+                    if mult.is_retail() {
+                        assert_eq!(
+                            stat_vec(r)[f],
+                            stat_vec(b)[f],
+                            "{scale}: id {} stat {} was left at 1x but moved",
+                            b.id,
+                            monster_stats::STAT_FIELDS[f].0
+                        );
+                    }
+                }
+            }
 
             // Nothing outside the seven stat halfwords moves - a hard run is
             // harder, not richer, and the AI's action economy is unchanged.
@@ -303,19 +327,23 @@ fn enemy_stat_scale_round_trips_on_disc() {
         );
     }
 
-    // 1x is the identity: nothing is written at all.
-    let mut retail = DiscPatcher::open(original.clone()).expect("open");
-    let report = apply::scale_monster_stats(&mut retail, ScalePermille::parse("1").unwrap())
-        .expect("scale 1x");
-    assert_eq!(report.monsters_changed, 0, "1x must write nothing");
-    assert!(
-        retail.image() == &original[..],
-        "1x must leave the disc alone"
-    );
+    // 1x is the identity: nothing is written at all. A per-stat list that names
+    // only 1x multipliers is the same identity, so the advanced mode cannot
+    // rewrite the disc while asking for nothing.
+    for text in ["1", "hp=1,attack=1"] {
+        let mut retail = DiscPatcher::open(original.clone()).expect("open");
+        let report = apply::scale_monster_stats(&mut retail, StatScale::parse(text).unwrap())
+            .expect("scale 1x");
+        assert_eq!(report.monsters_changed, 0, "{text}: 1x must write nothing");
+        assert!(
+            retail.image() == &original[..],
+            "{text}: 1x must leave the disc alone"
+        );
+    }
 
     // Composition: the scale multiplies whatever the stat randomizer dealt out,
     // because both read the roster back off the disc.
-    let scale = ScalePermille::parse("2").unwrap();
+    let scale = StatScale::parse("2").unwrap();
     let mut combo = DiscPatcher::open(original.clone()).expect("open");
     apply::randomize_monster_stats(&mut combo, 0x5EA1_F00D_57A7_0002, DropMode::Shuffle)
         .expect("shuffle");

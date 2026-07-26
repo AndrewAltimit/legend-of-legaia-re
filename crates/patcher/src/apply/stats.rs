@@ -88,19 +88,24 @@ pub fn randomize_monster_stats(
     Ok(report)
 }
 
-/// Scale every monster's combat stats by one global difficulty multiplier
-/// (`0.1x..=5x`; see [`crate::monster_stats::plan_scale`]). Seedless - the
-/// result depends only on the disc and the multiplier.
+/// Scale every monster's combat stats by a difficulty multiplier
+/// ([`monster_stats::StatScale`], `0.1x..=5x` per stat field; see
+/// [`crate::monster_stats::plan_scale`]). Seedless - the result depends only on
+/// the disc and the scale.
+///
+/// One multiplier for the whole roster and a per-stat scale are the same code
+/// path: a uniform scale is simply every field holding the same value, so both
+/// share this pass, its clamps and its slot handling.
 ///
 /// Story bosses are scaled too; only the scripted tutorial fight
 /// ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`]) is pinned. Composes with
 /// [`randomize_monster_stats`]: run the randomizer first and this multiplies the
-/// values it dealt out, because both read the roster back off the disc. A `1x`
-/// scale writes nothing. Slot handling (same-size re-pack, skip-on-overflow) is
-/// identical to the randomizer above.
+/// values it dealt out, because both read the roster back off the disc. An
+/// all-retail scale writes nothing. Slot handling (same-size re-pack,
+/// skip-on-overflow) is identical to the randomizer above.
 pub fn scale_monster_stats(
     patcher: &mut DiscPatcher,
-    scale: monster_stats::ScalePermille,
+    scale: monster_stats::StatScale,
 ) -> Result<MonsterStatsReport> {
     let mut report = MonsterStatsReport::default();
     if scale.is_retail() {

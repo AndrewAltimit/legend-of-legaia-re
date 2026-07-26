@@ -181,6 +181,8 @@ legaia-patcher randomize --input DISC.bin --seed brutal --monster-stats shuffle 
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
 legaia-patcher randomize --input DISC.bin --enemy-stat-scale 2                            # every enemy hits twice as hard and lasts twice as long
 legaia-patcher randomize --input DISC.bin --enemy-stat-scale 0.5                          # a relaxed run: half-strength enemies
+legaia-patcher randomize --input DISC.bin --enemy-stat-scale hp=3                         # spongy, not lethal: only enemy HP is scaled
+legaia-patcher randomize --input DISC.bin --enemy-stat-scale attack=2,defense=0.5         # glass cannons: hit hard, fold fast
 legaia-patcher randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
 legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
@@ -281,7 +283,7 @@ unless asked for:
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
-| `--enemy-stat-scale MULT` | multiply every enemy's combat stats (HP / MP / ATK / UDF / LDF / INT / SPD) by one difficulty factor, story bosses included; nothing moves between monsters, and EXP / gold / drops are untouched | single value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
+| `--enemy-stat-scale MULT` or `STAT=MULT,...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
 
 **Tuning the encounter and door passes:**
 
@@ -1133,14 +1135,43 @@ exactly preserved (the pinned values are conserved in place).
 
 ### Enemy difficulty scale
 
-`--enemy-stat-scale MULT` is the same seven halfwords as
+`--enemy-stat-scale` is the same seven halfwords as
 [monster combat stats](#monster-combat-stats) above, edited a different way:
-instead of moving values between monsters it multiplies **every** monster's
-stats by one factor, `0.1x`..`5x` (retail `1`). `--enemy-stat-scale 2` doubles
-the roster's HP, MP, ATK, both defenses, INT and SPD; `0.5` halves them. Nothing
-is redistributed, so each monster keeps its own profile and its rank against the
-rest - the whole difficulty curve just moves up or down together. It is
-**seedless**: a given multiplier always produces the same bytes.
+instead of moving values between monsters it multiplies every monster's stats by
+a factor, `0.1x`..`5x` (retail `1`). Nothing is redistributed, so each monster
+keeps its own profile and its rank against the rest - the whole difficulty curve
+moves up or down together. It is **seedless**: a given setting always produces
+the same bytes.
+
+The flag takes two spellings, and they are one feature rather than two:
+
+- **Uniform** - a bare multiplier. `--enemy-stat-scale 2` doubles the roster's
+  HP, MP, ATK, both defenses, INT and SPD; `0.5` halves them. This is the whole
+  difficulty dial in one number.
+- **Per-stat** - a `stat=mult` list, comma- and/or space-separated. Only the
+  named stats move; everything else stays at its disc value.
+  `--enemy-stat-scale hp=3` makes enemies spongy without making them lethal;
+  `--enemy-stat-scale attack=2,defense=0.5` makes them glass cannons.
+
+Accepted stat keys: `hp`, `mp`, `attack`, `defense` (both halves at once),
+`defense_high` / `defense_low` individually, `intelligence`, `speed`. The
+runtime's own `udf` / `ldf` names and a few obvious synonyms (`atk`, `int`,
+`spd`, `magic`) work too - `monster_stats::fields_for_key` holds the table.
+`defense` deliberately resolves to **both** defense halfwords, because a player
+asking to halve defense means the stat, not one of its two internal fields.
+
+A list is validated rather than best-guessed: an unknown stat name, a field set
+twice (including `defense` overlapping `defense_high`), or an out-of-range
+multiplier is an error. Silently applying a *different* difficulty than the one
+asked for is the failure worth being loud about.
+
+Both spellings are one type - `monster_stats::StatScale`, a
+`ScalePermille` per stat field - so a uniform scale is just every field holding
+the same multiplier. There is one parser, one planner and one clamp rule behind
+both, which is why the CLI flag, the browser's simple slider and its advanced
+per-stat sliders cannot drift apart. `StatScale`'s `Display` collapses a uniform
+scale back to `2x` and prints a per-stat one as `hp=3x attack=1.5x`, so a run
+manifest stays readable when one stat out of seven moves.
 
 The two passes compose, and the CLI sequences the scale *after* the randomizer,
 so `--monster-stats shuffle --enemy-stat-scale 2` scales the shuffled values.
@@ -1172,6 +1203,12 @@ stays `0` (a monster with no MP has none at any multiplier) and a non-zero value
 floors at `1` rather than becoming a zero-HP actor the battle code never
 expects. The top saturates at the record's own `u16` ceiling.
 
+A field left at `1x` is the exact identity, not a rounding of it:
+`(v * 1000 + 500) / 1000 == v` for every `u16`. That is what makes a per-stat
+scale surgical - the fields it does not name come back off the disc
+byte-identical, which the disc-gated test asserts against the *original* record
+rather than against the same kernel that wrote it.
+
 The multiplier lands on the **record**, and the battle loader applies its own
 fixed boost on top when it copies a record into a live actor (`FUN_80054cb0`
 scales ATK / DEF / INT - see the *Battle-load stat boost* note in
@@ -1180,8 +1217,15 @@ multiplicatively, so an `Nx` record really is an `Nx` fight, up to the loader's
 own integer rounding.
 
 Slot handling is the randomizer's: decompress → edit → recompress into the same
-`0x14000` footprint, skipping any slot too tight to re-pack. In the browser
-patcher this is the **Enemy difficulty scale** slider in the Gameplay group.
+`0x14000` footprint, skipping any slot too tight to re-pack.
+
+In the browser patcher this is **Enemy difficulty scale** in the Gameplay group,
+with a **Simple / Advanced** switch mirroring the two spellings: Simple is one
+slider and sends a bare multiplier, Advanced is one slider per stat and sends the
+`stat=mult` list, naming only the stats that moved. Simple is the default. The
+page emits exactly the strings the CLI accepts - there is no separate browser
+vocabulary - and Advanced with every slider at `1.0x` collapses to retail rather
+than rewriting every slot with its own values.
 
 ### Special-attack power
 
@@ -2058,7 +2102,7 @@ bit-for-bit.
 | `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/patcher` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic. A second test covers the difficulty scale: each monster's patched stats equal its own disc values times the multiplier (both directions), story bosses among them, the pinned tutorial fight untouched, rewards unmoved, `1x` a true no-op, and the scale multiplying a prior shuffle |
+| `crates/patcher` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic. A second test covers the difficulty scale: patched stats equal each monster's own disc values times the multiplier (both directions), bosses among them, the pinned tutorial fight untouched, rewards unmoved, `1x` a true no-op, and the scale multiplying a prior shuffle. Per-stat scales get the same assertions plus an independent check that a stat left at `1x` stays byte-identical |
 | `crates/patcher` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/patcher` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/patcher` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |

@@ -42,11 +42,24 @@
 //! ## Difficulty scale (the multiplier)
 //!
 //! [`plan_scale`] is the module's second, *seedless* pass: instead of moving
-//! values between monsters it multiplies every monster's stats by one global
-//! factor ([`ScalePermille`], `0.1x..=5x`), so the whole roster gets uniformly
-//! weaker or stronger while every monster keeps its own relative profile. It
-//! composes with the randomizer - run the shuffle first and the scale multiplies
-//! the *shuffled* values.
+//! values between monsters it multiplies every monster's stats by a
+//! [`StatScale`], so the whole roster gets weaker or stronger while every
+//! monster keeps its own relative profile. It composes with the randomizer - run
+//! the shuffle first and the scale multiplies the *shuffled* values.
+//!
+//! A [`StatScale`] carries one [`ScalePermille`] (`0.1x..=5x`) **per stat
+//! field**, which gives the knob two spellings through a single
+//! [`StatScale::parse`]:
+//!
+//! - **Uniform** - a bare multiplier, `"2.5"`, scales every field alike. This is
+//!   the whole difficulty dial in one number.
+//! - **Per-field** - a `key=value` list, `"hp=2,attack=1.5"`, scales only the
+//!   named fields and leaves the rest at retail. Useful for shaping a fight
+//!   rather than just hardening it: `"hp=3"` alone makes enemies spongy without
+//!   making them lethal, and `"attack=2,defense=0.5"` makes them glass cannons.
+//!
+//! One parser serves the CLI flag and the browser's simple/advanced slider modes,
+//! so every front end accepts the same spellings and emits the same bytes.
 //!
 //! Two things about the scale differ from the randomizer above, and both are
 //! deliberate:
@@ -303,7 +316,171 @@ impl std::fmt::Display for ScalePermille {
     }
 }
 
-/// Multiply one monster's stats by `scale`.
+/// A difficulty multiplier **per stat field** - one [`ScalePermille`] for each
+/// [`STAT_FIELDS`] entry, in that order.
+///
+/// This is the whole of the difficulty knob. A uniform scale is not a separate
+/// mode, just the case where every field holds the same multiplier
+/// ([`uniform`](Self::uniform)), which is why one type backs both the CLI's bare
+/// `--enemy-stat-scale 2` and the browser's advanced per-stat sliders. Keeping a
+/// single representation means the two spellings cannot drift apart: there is
+/// exactly one planner, one clamp rule and one set of bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatScale([ScalePermille; FIELD_COUNT]);
+
+/// The per-field keys [`StatScale::parse`] accepts, for error messages. Kept
+/// next to [`fields_for_key`] so the two cannot fall out of step.
+const SCALE_KEYS: &str = "hp, mp, attack, defense, defense_high, defense_low, intelligence, speed";
+
+/// Resolve a per-field key to the [`STAT_FIELDS`] indices it sets.
+///
+/// Generous about spelling because the names have three provenances that all
+/// reach a user: this module's own field labels, the runtime's `UDF`/`LDF`
+/// (upper/lower defence - Legaia splits defence by attack height), and the plain
+/// words a player would type. `defense` deliberately resolves to **both**
+/// defence halves, since a player asking for "half defence" means the stat, not
+/// one of its two internal halfwords.
+fn fields_for_key(key: &str) -> Option<&'static [usize]> {
+    // STAT_FIELDS order: hp, mp, attack, defense_high, defense_low,
+    // intelligence, speed.
+    Some(match key {
+        "hp" | "health" => &[0],
+        "mp" | "magic_points" => &[1],
+        "attack" | "atk" => &[2],
+        "defense_high" | "def_high" | "udf" | "upper_defense" => &[3],
+        "defense_low" | "def_low" | "ldf" | "lower_defense" => &[4],
+        "defense" | "def" | "defence" => &[3, 4],
+        "intelligence" | "int" | "magic" => &[5],
+        "speed" | "spd" => &[6],
+        _ => return None,
+    })
+}
+
+impl StatScale {
+    /// Retail stats - every field at `1x`. Applies no edit.
+    pub fn retail() -> Self {
+        Self([ScalePermille(ScalePermille::RETAIL); FIELD_COUNT])
+    }
+
+    /// One multiplier across every field (the simple difficulty dial).
+    pub fn uniform(scale: ScalePermille) -> Self {
+        Self([scale; FIELD_COUNT])
+    }
+
+    /// Build from an explicit per-field array, in [`STAT_FIELDS`] order.
+    pub fn from_fields(fields: [ScalePermille; FIELD_COUNT]) -> Self {
+        Self(fields)
+    }
+
+    /// This field's multiplier. `field` indexes [`STAT_FIELDS`].
+    pub fn get(self, field: usize) -> ScalePermille {
+        self.0[field]
+    }
+
+    /// The per-field multipliers, in [`STAT_FIELDS`] order.
+    pub fn fields(self) -> [ScalePermille; FIELD_COUNT] {
+        self.0
+    }
+
+    /// Whether every field is retail, i.e. the whole scale is a no-op.
+    pub fn is_retail(self) -> bool {
+        self.0.iter().all(|s| s.is_retail())
+    }
+
+    /// The single multiplier this scale applies, when every field shares one.
+    /// `None` for a genuinely per-field scale.
+    pub fn uniform_value(self) -> Option<ScalePermille> {
+        let first = self.0[0];
+        self.0.iter().all(|s| *s == first).then_some(first)
+    }
+
+    /// Parse either spelling of the knob:
+    ///
+    /// - no `=` in the text -> a **uniform** multiplier (`"2.5"`, `"2.5x"`).
+    /// - otherwise a **per-field** `key=value` list, separated by commas and/or
+    ///   whitespace (`"hp=2,attack=1.5"`, `"hp=2 defense=0.5"`). Fields not named
+    ///   stay at retail.
+    ///
+    /// Every value goes through [`ScalePermille::parse`], so both spellings share
+    /// one range check and one rounding rule. Errors rather than clamps or
+    /// ignores: an unknown stat name or a field set twice is a typo, and silently
+    /// applying a *different* difficulty than the one asked for is the failure
+    /// mode worth being loud about.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let t = text.trim();
+        if t.is_empty() {
+            return Err(
+                "no enemy stat scale given (want a multiplier like 2.5, or a \
+                        per-stat list like hp=2,attack=1.5)"
+                    .to_string(),
+            );
+        }
+        if !t.contains('=') {
+            return Ok(Self::uniform(ScalePermille::parse(t)?));
+        }
+
+        let mut out = Self::retail();
+        let mut seen = [false; FIELD_COUNT];
+        for token in t
+            .split([',', ';', ' ', '\t', '\n', '\r'])
+            .filter(|s| !s.trim().is_empty())
+        {
+            let (key, value) = token.trim().split_once('=').ok_or_else(|| {
+                format!("{token:?} is not a stat=multiplier pair (want e.g. hp=2)")
+            })?;
+            let norm = key.trim().to_ascii_lowercase().replace('-', "_");
+            let fields = fields_for_key(&norm).ok_or_else(|| {
+                format!("unknown stat {:?} (want one of: {SCALE_KEYS})", key.trim())
+            })?;
+            let scale = ScalePermille::parse(value)?;
+            for &f in fields {
+                if seen[f] {
+                    return Err(format!("stat {:?} is set more than once", STAT_FIELDS[f].0));
+                }
+                seen[f] = true;
+                out.0[f] = scale;
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl Default for StatScale {
+    fn default() -> Self {
+        Self::retail()
+    }
+}
+
+impl From<ScalePermille> for StatScale {
+    fn from(scale: ScalePermille) -> Self {
+        Self::uniform(scale)
+    }
+}
+
+impl std::fmt::Display for StatScale {
+    /// A uniform scale prints as the bare multiplier (`2.5x`); a per-field one
+    /// lists only the fields that actually move (`hp=2x attack=1.5x`), so a
+    /// manifest line stays readable when one stat out of seven is touched.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(u) = self.uniform_value() {
+            return write!(f, "{u}");
+        }
+        let mut first = true;
+        for (i, (label, _)) in STAT_FIELDS.iter().enumerate() {
+            if self.0[i].is_retail() {
+                continue;
+            }
+            if !first {
+                write!(f, " ")?;
+            }
+            first = false;
+            write!(f, "{label}={}", self.0[i])?;
+        }
+        Ok(())
+    }
+}
+
+/// Multiply one monster's stats by `scale`, field by field.
 ///
 /// Each [`STAT_FIELDS`] halfword is scaled independently with
 /// round-half-up integer arithmetic, then held inside the record's own `u16`
@@ -316,14 +493,18 @@ impl std::fmt::Display for ScalePermille {
 ///
 /// The top end saturates at [`u16::MAX`], so a `5x` run on a boss already past
 /// `13107` HP simply pins that stat at the record's ceiling.
-pub fn scale_stats(stats: &[u16; FIELD_COUNT], scale: ScalePermille) -> [u16; FIELD_COUNT] {
+///
+/// A field left at `1x` is exactly the identity, not a rounding of it:
+/// `(v * 1000 + 500) / 1000 == v` for every `u16`, so a per-field scale writes
+/// only the fields it names.
+pub fn scale_stats(stats: &[u16; FIELD_COUNT], scale: StatScale) -> [u16; FIELD_COUNT] {
     let mut out = *stats;
-    for v in &mut out {
+    for (i, v) in out.iter_mut().enumerate() {
         if *v == 0 {
             continue;
         }
         // Round half up. `u16::MAX * 5000 + 500` stays well inside u32.
-        let scaled = (*v as u32 * scale.permille() + 500) / 1000;
+        let scaled = (*v as u32 * scale.get(i).permille() + 500) / 1000;
         *v = scaled.clamp(1, u16::MAX as u32) as u16;
     }
     out
@@ -335,9 +516,9 @@ pub fn scale_stats(stats: &[u16; FIELD_COUNT], scale: ScalePermille) -> [u16; FI
 ///
 /// Seedless and total: the result depends only on `(current, scale)`.
 /// Monsters in [`SCALE_PINNED_MONSTER_IDS`] pass through untouched; everything
-/// else - story bosses included - is scaled. A `1x` scale is the identity, so
-/// the caller writes nothing.
-pub fn plan_scale(current: &[StatAssignment], scale: ScalePermille) -> Vec<StatAssignment> {
+/// else - story bosses included - is scaled. An all-retail scale is the identity,
+/// so the caller writes nothing.
+pub fn plan_scale(current: &[StatAssignment], scale: StatScale) -> Vec<StatAssignment> {
     current
         .iter()
         .map(|a| {
@@ -513,6 +694,49 @@ mod tests {
         ScalePermille::parse(text).expect("valid scale")
     }
 
+    /// A whole-roster scale parsed from either spelling.
+    fn uni(text: &str) -> StatScale {
+        StatScale::parse(text).expect("valid scale")
+    }
+
+    /// The exact strings the browser page emits must parse here.
+    ///
+    /// The page fixes every slider to one decimal, because a `0.1` range step can
+    /// land on `2.5000000000000004`. So the wire format is `"2.0"`, not `"2"`,
+    /// and the advanced mode's keys are these seven spellings specifically - this
+    /// pins that contract, since a rename in `fields_for_key` would otherwise
+    /// only surface as a silently skipped slider in a browser.
+    #[test]
+    fn parses_the_strings_the_browser_emits() {
+        // Simple mode at rest, and at both ends of its range.
+        assert!(uni("1.0").is_retail());
+        assert_eq!(uni("2.5").uniform_value(), Some(scale("2.5")));
+        assert_eq!(uni("0.1").uniform_value(), Some(scale("0.1")));
+        assert_eq!(uni("5.0").uniform_value(), Some(scale("5")));
+
+        // Advanced mode joins only the stats that moved, comma-separated.
+        let adv = uni("hp=3.0,defense_high=0.5,defense_low=0.5");
+        assert_eq!(adv.get(0), scale("3"), "hp");
+        assert_eq!(adv.get(3), scale("0.5"), "defense_high");
+        assert_eq!(adv.get(4), scale("0.5"), "defense_low");
+        for untouched in [1, 2, 5, 6] {
+            assert!(
+                adv.get(untouched).is_retail(),
+                "{} must stay retail",
+                STAT_FIELDS[untouched].0
+            );
+        }
+
+        // Every key the advanced panel can emit - the `SCALE_STATS` list in
+        // site/js/rom-patcher-app.js, which mirrors STAT_FIELDS.
+        for (label, _) in STAT_FIELDS {
+            assert!(
+                StatScale::parse(&format!("{label}=2.0")).is_ok(),
+                "the page can emit {label}=, so it must parse"
+            );
+        }
+    }
+
     /// The user-facing multiplier round-trips through permille and back to a
     /// display string, and the accepted spellings agree.
     #[test]
@@ -545,16 +769,109 @@ mod tests {
     #[test]
     fn scale_multiplies_every_field() {
         let stats = [100u16, 40, 25, 30, 35, 45, 55];
-        assert_eq!(scale_stats(&stats, scale("1")), stats, "1x is the identity");
+        assert_eq!(scale_stats(&stats, uni("1")), stats, "1x is the identity");
         assert_eq!(
-            scale_stats(&stats, scale("2")),
+            scale_stats(&stats, uni("2")),
             [200, 80, 50, 60, 70, 90, 110]
         );
         // 25 * 0.5 = 12.5 -> 13 (half up); 35 * 0.5 = 17.5 -> 18.
         assert_eq!(
-            scale_stats(&stats, scale("0.5")),
+            scale_stats(&stats, uni("0.5")),
             [50, 20, 13, 15, 18, 23, 28]
         );
+    }
+
+    /// The per-field spelling: named stats move, every other field is left
+    /// byte-identical rather than round-tripped through the scale arithmetic.
+    #[test]
+    fn per_field_scale_touches_only_named_stats() {
+        let stats = [100u16, 40, 25, 30, 35, 45, 55];
+        // STAT_FIELDS order: hp, mp, attack, defense_high, defense_low, int, speed.
+        assert_eq!(
+            scale_stats(&stats, uni("hp=2")),
+            [200, 40, 25, 30, 35, 45, 55],
+            "only HP moves"
+        );
+        assert_eq!(
+            scale_stats(&stats, uni("hp=3,attack=2")),
+            [300, 40, 50, 30, 35, 45, 55]
+        );
+        // `defense` is the stat, so it covers both internal halfwords.
+        assert_eq!(
+            scale_stats(&stats, uni("defense=0.5")),
+            [100, 40, 25, 15, 18, 45, 55],
+            "defense reaches both halves"
+        );
+        // Whitespace separation and the runtime's UDF/LDF names both work.
+        assert_eq!(
+            scale_stats(&stats, uni("udf=2 ldf=3")),
+            [100, 40, 25, 60, 105, 45, 55]
+        );
+        // A per-field list naming nothing but 1x is still the identity.
+        assert_eq!(scale_stats(&stats, uni("hp=1")), stats);
+    }
+
+    /// Uniform and per-field are one representation: spelling a uniform scale as
+    /// an exhaustive per-field list must produce the identical result.
+    #[test]
+    fn uniform_and_exhaustive_per_field_agree() {
+        let stats = [100u16, 40, 25, 30, 35, 45, 55];
+        let spelled = uni("hp=2,mp=2,attack=2,defense=2,intelligence=2,speed=2");
+        assert_eq!(spelled, uni("2"), "the two spellings are the same value");
+        assert_eq!(scale_stats(&stats, spelled), scale_stats(&stats, uni("2")));
+        assert_eq!(spelled.uniform_value(), Some(scale("2")));
+    }
+
+    /// Display collapses a uniform scale to the bare multiplier and lists only
+    /// the moving fields otherwise - that string lands in the run manifest.
+    #[test]
+    fn stat_scale_displays_both_spellings() {
+        assert_eq!(uni("2").to_string(), "2x");
+        assert_eq!(uni("0.5").to_string(), "0.5x");
+        assert_eq!(uni("hp=2").to_string(), "hp=2x");
+        assert_eq!(
+            uni("hp=3,attack=1.5").to_string(),
+            "hp=3x attack=1.5x",
+            "fields print in STAT_FIELDS order"
+        );
+        assert_eq!(
+            uni("defense=0.5").to_string(),
+            "defense_high=0.5x defense_low=0.5x"
+        );
+        // An all-retail scale is uniform, so it collapses rather than printing empty.
+        assert_eq!(uni("hp=1").to_string(), "1x");
+        assert!(uni("hp=1").is_retail());
+        assert!(!uni("hp=2").is_retail());
+        assert_eq!(StatScale::retail().to_string(), "1x");
+        assert_eq!(StatScale::default(), StatScale::retail());
+        assert_eq!(StatScale::from(scale("2")), uni("2"));
+    }
+
+    /// A per-field list refuses typos instead of ignoring them: an unknown stat
+    /// name or a doubly-set field would otherwise silently apply a different
+    /// difficulty than the one asked for.
+    #[test]
+    fn per_field_scale_rejects_bad_lists() {
+        for bad in [
+            "hp=2,hp=3",       // same field twice
+            "defense=2,udf=3", // defense already covered def_high
+            "agility=2",       // real stat, deliberately not scalable
+            "hitpoints=2",     // not an accepted alias
+            "hp=9",            // value out of range
+            "hp=",             // no value
+            "=2",              // no key
+            "hp",              // no `=`, so read as a multiplier - and isn't one
+            "",                // nothing at all
+        ] {
+            assert!(
+                StatScale::parse(bad).is_err(),
+                "{bad:?} should be refused, got {:?}",
+                StatScale::parse(bad).map(|s| s.to_string())
+            );
+        }
+        // AGL is excluded from STAT_FIELDS, so no alias can reach it.
+        assert!(fields_for_key("agility").is_none());
+        assert!(fields_for_key("agl").is_none());
     }
 
     /// The two clamps: a zero stat stays zero (no invented MP), a non-zero one
@@ -562,7 +879,7 @@ mod tests {
     #[test]
     fn scale_clamps_at_both_ends() {
         let sparse = [5u16, 0, 1, 0, 0, 2, 0];
-        let down = scale_stats(&sparse, scale("0.1"));
+        let down = scale_stats(&sparse, uni("0.1"));
         assert_eq!(
             down,
             [1, 0, 1, 0, 0, 1, 0],
@@ -571,7 +888,7 @@ mod tests {
 
         let huge = [60000u16, 60000, 60000, 60000, 60000, 60000, 60000];
         assert_eq!(
-            scale_stats(&huge, scale("5")),
+            scale_stats(&huge, uni("5")),
             [u16::MAX; FIELD_COUNT],
             "the record's own u16 ceiling holds"
         );
@@ -589,7 +906,7 @@ mod tests {
         current[7].monster_id = SCALE_PINNED_MONSTER_IDS[0];
         let pinned_stats = current[7].stats;
 
-        let plan = plan_scale(&current, scale("2"));
+        let plan = plan_scale(&current, uni("2"));
         assert_eq!(plan.len(), current.len());
         assert!(
             PROTECTED_MONSTER_IDS.contains(&boss),
@@ -599,7 +916,7 @@ mod tests {
         let c = current.iter().find(|a| a.monster_id == boss).unwrap();
         assert_eq!(
             b.stats,
-            scale_stats(&c.stats, scale("2")),
+            scale_stats(&c.stats, uni("2")),
             "story bosses are scaled"
         );
         let p = plan
@@ -609,12 +926,27 @@ mod tests {
         assert_eq!(p.stats, pinned_stats, "the tutorial fight is pinned");
 
         // Identity at 1x, and deterministic without a seed.
-        assert_eq!(plan_scale(&current, scale("1")), current, "1x is a no-op");
+        assert_eq!(plan_scale(&current, uni("1")), current, "1x is a no-op");
         assert_eq!(
-            plan_scale(&current, scale("0.4")),
-            plan_scale(&current, scale("0.4"))
+            plan_scale(&current, uni("0.4")),
+            plan_scale(&current, uni("0.4"))
         );
-        assert!(plan_scale(&[], scale("3")).is_empty());
+        assert!(plan_scale(&[], uni("3")).is_empty());
+
+        // A per-field scale is planned the same way: pinned monster untouched,
+        // bosses scaled, and only the named field moves on anyone.
+        let per = plan_scale(&current, uni("hp=2"));
+        let pinned_now = per
+            .iter()
+            .find(|a| a.monster_id == SCALE_PINNED_MONSTER_IDS[0])
+            .unwrap();
+        assert_eq!(pinned_now.stats, pinned_stats, "pin holds per-field too");
+        for (c, p) in current.iter().zip(&per) {
+            if c.monster_id == SCALE_PINNED_MONSTER_IDS[0] {
+                continue;
+            }
+            assert_eq!(&c.stats[1..], &p.stats[1..], "only HP may move");
+        }
     }
 
     /// Shuffle still preserves each column's full multiset even with a protected

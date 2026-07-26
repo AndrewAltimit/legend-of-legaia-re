@@ -198,11 +198,14 @@ pub fn resolve_seed(seed: &str) -> String {
 /// drains it) - the damage finisher's scale chain in the same overlay. A
 /// negative value on either knob also neutralizes the AP-Boost accessory
 /// arms, which read the accrual unsigned. `enemy_stat_scale` (empty or `1` =
-/// untouched) multiplies every monster's combat stats by one difficulty factor
+/// untouched) multiplies every monster's combat stats by a difficulty factor
 /// (`0.1`..`5`), story bosses included; it moves nothing between monsters, so
 /// each keeps its own profile while the whole roster shifts together, and it is
-/// applied after `monster_stats` so the two compose. These are all manual,
-/// seedless edits.
+/// applied after `monster_stats` so the two compose. It takes either spelling of
+/// the knob - a bare multiplier (`"2.5"`) scales every stat, and a `key=value`
+/// list (`"hp=2,attack=1.5"`) scales only the stats it names, which is what the
+/// page's simple and advanced slider modes send. These are all manual, seedless
+/// edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -817,7 +820,7 @@ pub fn patch_rom(
     if enemy_stat_scale.is_empty() {
         summary.push_str("enemy-stat-scale: 1x (retail)\n");
     } else {
-        match legaia_patcher::monster_stats::ScalePermille::parse(enemy_stat_scale) {
+        match legaia_patcher::monster_stats::StatScale::parse(enemy_stat_scale) {
             Ok(scale) if scale.is_retail() => {
                 summary.push_str("enemy-stat-scale: 1x (retail)\n");
             }

@@ -534,13 +534,23 @@ Monster combat-stat randomizer (`monster_stats` module).
 
 ## Enemy difficulty scale
 
-Global enemy-stat multiplier (`monster_stats::plan_scale`) - the same seven
-halfwords, edited a different way.
+Enemy-stat multiplier (`monster_stats::plan_scale`) - the same seven halfwords,
+edited a different way.
 
-- `--enemy-stat-scale MULT` multiplies every monster's stats by one factor
-  (`ScalePermille`, `0.1x..=5x`, retail `1`) instead of moving values between
-  monsters, so each keeps its own profile while the whole roster shifts together.
-  Seedless, and applied after `--monster-stats`, so the two compose.
+- `--enemy-stat-scale` multiplies every monster's stats by a factor
+  (`StatScale` - a `ScalePermille` per stat field, each `0.1x..=5x`, retail `1`)
+  instead of moving values between monsters, so each keeps its own profile while
+  the whole roster shifts together. Seedless, and applied after
+  `--monster-stats`, so the two compose.
+- **Two spellings, one type.** A bare multiplier (`2`) scales all seven fields; a
+  `stat=mult` list (`hp=3`, `attack=2,defense=0.5`) scales only what it names and
+  leaves the rest byte-identical. A uniform scale is simply every field holding
+  the same value, so both share one parser, one planner and one clamp rule -
+  which is what keeps the CLI flag and the browser page's simple / advanced
+  slider modes from drifting apart. Keys: `hp`, `mp`, `attack`, `defense` (both
+  halves), `defense_high` / `defense_low`, `intelligence`, `speed`, plus the
+  runtime's `udf` / `ldf` and the obvious synonyms. An unknown key, a
+  twice-set field or an out-of-range value is refused, not guessed.
 - **Story bosses are scaled** - a multiplier keeps a scripted fight's shape, so
   the randomizer's `PROTECTED_MONSTER_IDS` guard does not apply here. The one
   carve-out (`SCALE_PINNED_MONSTER_IDS`) is the unwinnable-by-design Rim Elm
@@ -1202,9 +1212,10 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   also take `shuffle` / `random` / `none`. `--equip-bonus` and `--equip-mask` edit
   disjoint bytes of the equipment table (stat tuple vs. equip mask), so they
   compose.
-- `--enemy-stat-scale MULT` scales every enemy's combat stats by one difficulty
-  multiplier (`0.1`..`5`, retail `1`). Seedless, and applied after
-  `--monster-stats`, so a shuffle-then-scale run scales the shuffled values.
+- `--enemy-stat-scale` scales enemy combat stats by a difficulty multiplier
+  (`0.1`..`5`, retail `1`) - one number for all seven stats, or a `stat=mult`
+  list for individual ones. Seedless, and applied after `--monster-stats`, so a
+  shuffle-then-scale run scales the shuffled values.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

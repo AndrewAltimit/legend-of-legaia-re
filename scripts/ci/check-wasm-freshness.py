@@ -47,8 +47,19 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-STAMP = REPO / "site" / "wasm" / "SOURCE_STAMP.json"
+SITE_WASM = REPO / "site" / "wasm"
+STAMP = SITE_WASM / "SOURCE_STAMP.json"
 ROOT_CRATE = "legaia-web-viewer"
+
+# The artifacts a served page actually loads. Checked for existence, because the
+# stamp is not the bundle: with the bundle deleted and the stamp left behind, a
+# stamp-only comparison reports "fresh" about a page that cannot load at all.
+# `site/wasm/` is gitignored, so ordinary `git clean -xdf` removes these while
+# leaving nothing in a diff to say so.
+BUNDLE_ARTIFACTS = [
+    "legaia_web_viewer_bg.wasm",
+    "legaia_web_viewer.js",
+]
 
 # Inputs outside the crate closure that still change the bundle's behaviour.
 EXTRA_INPUTS = ["Cargo.lock", "scripts/ci/build-wasm.sh"]
@@ -182,6 +193,25 @@ def main() -> int:
         )
         print(f"[check-wasm-freshness] stamped {len(inputs)} inputs -> {current[:16]}")
         return 0
+
+    # Existence before freshness: "your bundle is out of date" is the wrong
+    # answer when there is no bundle, and "fresh" would be actively false.
+    missing = [n for n in BUNDLE_ARTIFACTS if not (SITE_WASM / n).exists()]
+    if missing:
+        print(
+            "[check-wasm-freshness] NO BUNDLE: site/wasm/ is missing "
+            + ", ".join(missing)
+            + ".\n    Nothing can serve the play page. Run "
+            "scripts/ci/build-wasm.sh.",
+            file=sys.stderr,
+        )
+        if STAMP.exists():
+            print(
+                "    (A SOURCE_STAMP.json is present without the artifacts it "
+                "describes - stale leftover, not a built bundle.)",
+                file=sys.stderr,
+            )
+        return 1 if args.strict else 0
 
     if not STAMP.exists():
         print(

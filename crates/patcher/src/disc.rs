@@ -415,17 +415,25 @@ mod tests {
     }
 
     /// A minimal PROT.DAT logical payload the real `Archive::from_bytes` parses
-    /// into three entries (0 at LBA 0, 1 at LBA 1, 2 at LBA 2); entry 1 holds
+    /// into three entries (0 at LBA 1, 1 at LBA 2, 2 at LBA 3); entry 1 holds
     /// `entry1_data` at its start.
     ///
     /// Header (at byte 0): `[pad u32][file_num_minus_1 u32][header_sectors u32]`.
     /// The archive's TOC begins at byte 8, so `toc[0]` aliases `header_sectors`;
-    /// `toc[j]` lives at byte `8 + 4*j`. For entry p the walker reads
-    /// `start = toc[p+2]`, `next = toc[p+3]`, `end = toc[p+5]`, with
-    /// `indexed = end - next + 4` sectors. An entry whose
-    /// `start*2048 + size` runs past the file is dropped (which would shift
-    /// indices), so the payload is sized at 8 sectors and the TOC is monotone
-    /// (LBAs 0..5) so all three entries fit.
+    /// `toc[j]` lives at byte `8 + 4*j`. For entry `p` the walker reads
+    /// `start = toc[p+2]` and `size = toc[p+3] - toc[p+2]` - the sector gap to
+    /// the next entry, which is retail's own `FUN_8003E68C` arithmetic. (The
+    /// superseded `toc[p+5] - toc[p+3] + 4` expression measured the two
+    /// *successors*' span and over-read; see `docs/formats/prot.md`.)
+    ///
+    /// Two walker behaviours the LBAs here are chosen to satisfy, because either
+    /// one silently **shifts entry indices** rather than failing:
+    ///
+    /// - a row with `start_lba == 0` is TOC padding, not an entry (LBA 0 holds
+    ///   the archive header), so no entry may start there - hence LBAs 1..4
+    ///   rather than 0..3;
+    /// - an entry whose `start*2048 + size` runs past the file is dropped, so
+    ///   the payload is 8 sectors, comfortably past the highest LBA used.
     fn synth_prot(entry1_data: &[u8]) -> Vec<u8> {
         let sec = USER_DATA_SIZE;
         let mut prot = vec![0u8; 8 * sec];
@@ -434,18 +442,21 @@ mod tests {
         };
         // Header: file_num_minus_1 = 3 -> 3 usable entries (p = 0,1,2).
         put(&mut prot, 4, 3);
-        // toc[j] at byte 8 + 4*j. Monotone LBAs 0,1,2,3,4,5.
+        // toc[j] at byte 8 + 4*j. Monotone, and starting at LBA 1 so that no
+        // entry row lands on the header sector.
         let tw = |p: &mut [u8], j: usize, v: u32| put(p, 8 + 4 * j, v);
         tw(&mut prot, 0, 1); // toc[0] = header_sectors = 1
-        tw(&mut prot, 1, 0); // toc[1]
-        tw(&mut prot, 2, 0); // toc[2] entry0 start
-        tw(&mut prot, 3, 1); // toc[3] entry1 start
-        tw(&mut prot, 4, 2); // toc[4] entry2 start
-        tw(&mut prot, 5, 3); // toc[5] entry0 end -> indexed0 = 3-1+4 = 6 sectors
-        tw(&mut prot, 6, 4); // toc[6] entry1 end -> indexed1 = 4-2+4 = 6 sectors
-        tw(&mut prot, 7, 5); // toc[7] entry2 end -> indexed2 = 5-3+4 = 6 sectors
+        tw(&mut prot, 1, 0); // toc[1] (not read for any entry)
+        tw(&mut prot, 2, 1); // toc[2] entry0 start -> LBA 1
+        tw(&mut prot, 3, 2); // toc[3] entry1 start -> LBA 2; entry0 size = 1 sector
+        tw(&mut prot, 4, 3); // toc[4] entry2 start -> LBA 3; entry1 size = 1 sector
+        tw(&mut prot, 5, 4); // toc[5]              -> entry2 size = 1 sector
+        tw(&mut prot, 6, 5); // toc[6] monotone tail
+        tw(&mut prot, 7, 6); // toc[7] monotone tail
 
-        prot[sec..sec + entry1_data.len()].copy_from_slice(entry1_data);
+        // Entry 1 begins at LBA 2.
+        let entry1_off = 2 * sec;
+        prot[entry1_off..entry1_off + entry1_data.len()].copy_from_slice(entry1_data);
         prot
     }
 
@@ -475,7 +486,7 @@ mod tests {
         );
 
         // The patched PROT.DAT sector is still EDC/ECC-valid.
-        let prot_sector_base = (18 + 1) * SECTOR_SIZE; // PROT_LBA + entry1 lba
+        let prot_sector_base = (18 + 2) * SECTOR_SIZE; // PROT_LBA + entry1 lba (2)
         assert!(legaia_iso::write::mode2_form1_sector_is_valid(
             &patcher.image()[prot_sector_base..prot_sector_base + SECTOR_SIZE]
         ));
