@@ -536,6 +536,58 @@ old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
 descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
 to exist first is a base-confirmed dump of the image that really owns that VA.
 
+## The dance / fishing minigame block
+
+The `dance.rs` / `dance_tutorial.rs` / `fishing_actors.rs` / `fishing_chrome.rs`
+cluster is the largest single-subsystem group in the *disclosed* inert list, and
+its size invites the assumption that it is `FALSE INERT` because both minigames
+are playable. It is not: the playable halves are `dance::DanceGame` and
+`fishing::PondSession`, and those *are* live. What the cluster holds is the
+presentation and actor half of the same two overlays, which the port does not
+have hosts for. Four rows did turn out to be resolvable, and they are the shape
+worth looking for in the rest.
+
+| Row | Verdict | What settled it |
+|---|---|---|
+| `roll_hit_type` (`801d26cc`, `fishing_actors.rs`) | `DELETE` | Duplicate of the live `fishing::band_roll`; the wrapper now delegates, so one kernel has one implementation. |
+| `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
+| `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
+| `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
+| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | Its `clear_pad_latch` field has an engine equivalent; `World::enter_dance` / `exit_dance` apply it. |
+
+**`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
+`li s1, -0x64` as a bias added to the strike credit. The instruction is an
+assignment into the register that already holds the credit base, so the far band
+*replaces* the base rather than offsetting it. The kernel is now
+`bite_credit_override`, returning `Option<i32>`. This is the failure direction
+the page's own preamble warns about: an unwired kernel's arithmetic is never
+exercised, so a misreading survives until something calls it.
+
+The remaining rows are genuine gaps with sharp prerequisites, and they group
+into four:
+
+- **No line primitive.** `clip_segment_2d` and `project_segment` clip
+  two-point draws; neither `engine-ui`'s draw list nor `engine-render`'s VRAM
+  pipeline has a line kind.
+- **No minigame effect-part pool.** `step_mark_effect_spawn`,
+  `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
+  `dance_hit_sting_voices`.
+- **No dancer / fish actor records.** `dancer_emit`, `dancer_fade_weight`,
+  `dance_clip_driver_gate`, `dance_face_rig`, `roll_wander_target`,
+  `step_facing`, `fish_camera`, `float_actor_tick`.
+- **No retail-coordinate HUD surface.** `hud_draws`, `dance_hud_draws`,
+  `dance_score_box_slots`, `dance_hud_widget_quad`, the three digit-glyph
+  selectors, `centred_panel`. Both hosts lay their dance and fishing readouts
+  out at their own pens rather than in 320x240 framebuffer coordinates.
+
+Two of those have a *named* host outside `engine-core`: the browser page
+already loads the dance floor's dancer meshes and the fishing venue's
+walk heightfield, so `dance_face_rig` and `walk_grid_overhead` want a call in
+`crates/web-viewer/`, not a new subsystem. `bite_pad_nudge` is a third: it
+wants `PondInput` to carry the retail pressed-pad word instead of a
+pre-counted `edge_bonus`, which is a signature change its browser caller has
+to move with.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

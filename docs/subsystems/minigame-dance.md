@@ -291,7 +291,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
 | `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: fade weight off the dancer's beat field `+0x78`, then a five-arm draw-mode jump table. See [The dancer emit dispatch](#the-dancer-emit-dispatch). `overlay_dance_801d387c.txt` |
-| `FUN_801d414c` | Dance scene-name stager / teardown: stages the `other1` scene name and three field-subsystem globals. Engine scene plumbing, not rhythm logic; ported as `dance::dance_scene_stage`. `overlay_dance_801d414c.txt` |
+| `FUN_801d414c` | Dance scene-name stager / teardown: stages the `other1` scene name and three field-subsystem globals, one of which is the pad latch. Ported as `dance::dance_scene_stage`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
@@ -317,6 +317,23 @@ forces the short song. `DanceGame::from_overlay` stays the qualifier entry
 point.
 
 Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), judges the three retail pad bits directly (Square/Circle/Triangle = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
+
+### Entering and leaving the hall
+
+`FUN_801D414C` runs on both edges of the minigame, and one of the three
+globals it pokes has a direct engine equivalent: it zeroes the pad latch
+`_DAT_8007B880`. That is what stops the confirm press which opened the hall
+from also being read as the run's first judged note, and stops the press that
+leaves from leaking into the restored field mode. `World::enter_dance` and
+`World::exit_dance` apply it through `InputState::clear_edges`, which drops
+the frame's press *edges* while leaving held buttons held.
+
+The other three fields of the ported record - the `other1` scene name, the
+scene-kind word and the `_DAT_8007BA9C` arm - stay unconsumed: the port
+suspends the current scene mode rather than staging a new scene bundle, so
+there is no scene-name buffer to write. The stager's own ordering (the arm
+happens *after* the scene-setup call, so a re-entrant setup cannot observe it)
+is recorded in the port's doc comment.
 
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /

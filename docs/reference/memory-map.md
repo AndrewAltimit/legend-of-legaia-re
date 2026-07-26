@@ -159,11 +159,12 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007BB34` | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |
 | `0x80076C10` | **Battle pose-slot array**, 24-byte stride, indexed by slot. `+0x14` holds a pointer to the acting actor's `+0x1BC` animation descriptor (stored by `FUN_801D5854` before the `FUN_80035F04` lookup); `+0x02` / `+0x04` / `+0x06` / `+0x0A` / `+0x0C` are the u16 fields the copy helpers `FUN_801D5778` / `FUN_801D57E8` move. Records 41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` copies inline. |
 | `0x801F6950` | u32 - **battle-action overlay PRNG state** (`FUN_801D0290`). Overlay-resident, so it is not the SCUS `rand()` seed and its draws do not perturb that stream. |
-| `0x801D9184` / `0x801D918C` | Two tracked 2-D points in the **fishing** overlay (`i16` at `+0` = x, `+4` = y); `FUN_801D765C` returns their separation in grid tiles. |
+| `0x801D9184` / `0x801D918C` | Two tracked 2-D points in the **fishing** overlay (`i16` at `+0` = x, `+4` = y); `FUN_801D765C` returns their separation in 64-unit sub-cells, `FUN_80019B28` the bearing between them. |
 | `0x801E46B0` | i32 - menu-overlay **selected item id** for the window-34 description box (`FUN_801D4A80`); `<= 0` draws nothing. |
 | `0x801E46D0` | u32 - menu-overlay packed **toggle state word** for window 46 (`FUN_801D603C`); bits `0x4000` / `0x2000` / `0x1000` and the low 12 bits select each row's marker kind. |
 | `0x1F800314 +0x6A` | u16 - scratchpad draw-context **depth clip bound** used by `FUN_801D5C2C`. |
-| `0x1F800314 +0x74` / `+0x78` | u16 - scratchpad draw-context **2-D clip bounds** used by `FUN_801D56E4`. |
+| `0x1F800314 +0x74`..`+0x7A` | u16 x4 - scratchpad draw-context **2-D clip rect** used by `FUN_801D56E4`: `+0x74` x-min, `+0x76` y-min, `+0x78` x-max, `+0x7A` y-max. |
+| `0x801D91DC` / `0x801D91E4` | Fishing overlay **reel-cadence ring**: write index, then 16 `(button, duration)` records of two words. `FUN_801D746C` clears both; `FUN_801D3DB4` walks them. Not a catch log. |
 | `0x1F80037E` | u16 - scratchpad **near cutoff**; `FUN_801D5C2C` rejects a segment whose two transformed Z both fall inside it. |
 | `0x80073280` | 0x24-byte block immediately below the widget class table `DAT_800732A4`: seven 4-byte records followed by two pointers, `0x8007B41C` and `0x8007B418`. Role unidentified; recorded so the block is not mistaken for the head of the class table. |
 | `0x8007C018` | TMD pointer table (`idx * 4` stride). Sole writer is `FUN_80026B4C`. All populated entries (`[0..DAT_8007BB38]`) are post-fixup Legaia TMDs. |

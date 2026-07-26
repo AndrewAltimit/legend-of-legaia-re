@@ -233,6 +233,20 @@ impl InputState {
         }
     }
 
+    /// Drop this frame's pad **edges** without changing what is held.
+    ///
+    /// `pad_prev` is forced to `pad`, so every `just_pressed` / `just_released`
+    /// query reads false until the next [`Self::set_pad`]. This is the retail
+    /// pad-latch clear (`_DAT_8007B880 = 0`) that mode transitions perform so
+    /// the button that opened a mode is not also consumed as that mode's first
+    /// input - see [`crate::dance::dance_scene_stage`].
+    ///
+    /// It deliberately leaves the retail pump and the held-duration timestamps
+    /// alone: a held button stays held, it just stops looking newly pressed.
+    pub fn clear_edges(&mut self) {
+        self.pad_prev = self.pad;
+    }
+
     /// Set the left analog stick position. Axes are signed bytes with the
     /// PSX range `[-127, 127]`.
     pub fn set_lstick(&mut self, axes: (i8, i8)) {

@@ -988,6 +988,11 @@ impl World {
     /// scene mode. The suspended mode is restored by [`World::exit_dance`] (and
     /// automatically once the song ends). Mirrors the pause-menu suspend/restore
     /// contract: the interrupted field/battle state stays intact underneath.
+    ///
+    /// Applies the dance stager's pad-latch clear
+    /// ([`crate::dance::dance_scene_stage`]): retail zeroes `_DAT_8007B880` on
+    /// the frame the hall is staged, so the confirm press that starts the
+    /// minigame is not also read as its first judged note.
     pub fn enter_dance(&mut self, game: crate::dance::DanceGame) {
         // Don't stack a suspend: if the dance is already running, just swap the
         // game so a re-entry keeps the true return mode.
@@ -997,6 +1002,9 @@ impl World {
         self.dance = Some(game);
         self.dance_last_judge = None;
         self.mode = SceneMode::Dance;
+        if crate::dance::dance_scene_stage().clear_pad_latch {
+            self.input.clear_edges();
+        }
     }
 
     /// Clear the dance minigame and return the final [`DanceGame`] so the host
@@ -1009,6 +1017,11 @@ impl World {
             self.mode = self.dance_return_mode;
         }
         self.dance_last_judge = None;
+        // The stager runs on teardown as well as on entry, so the press that
+        // leaves the hall does not carry into the restored field mode.
+        if crate::dance::dance_scene_stage().clear_pad_latch {
+            self.input.clear_edges();
+        }
         self.dance.take()
     }
 

@@ -1079,6 +1079,14 @@ pub const BAND_HOLD_FRAMES: i32 = 0x40;
 pub const STRIKE_CREDIT_BASE: i32 = 2;
 
 /// A length readout (`DAT_801d9280`) under this cannot strike at all.
+///
+/// This is not a test retail runs. It is the *consequence* of the strike
+/// ladder: below it the credit base is replaced with
+/// [`crate::fishing_actors::BITE_FAR_CREDIT`] (`-100`) and the modulus jumps
+/// to `2000`, so `rand % 2000 < credit` can never hold however much the
+/// water-class bonus and the pad nudges add. [`BandCheck::tick`] reproduces
+/// the ladder rather than the shortcut; the constant stays as the documented
+/// bound.
 pub const STRIKE_MIN_READOUT: i32 = 200;
 
 /// The credit is zeroed while the length readout is under this.
@@ -1093,18 +1101,15 @@ pub const BAND_CHECK_MIN_RECORD: i32 = 500;
 pub const LAND_RECORD: i32 = 0x136;
 
 /// Roll a cast band from `r = rand & 0xfff` against the three fixed cutoffs.
+///
+/// One kernel, one implementation: the arm is
+/// [`crate::fishing_actors::roll_hit_type`], which spells the same three
+/// cutoffs as retail's overwrite ladder (seed `3`, then `2` / `1` / `0` as
+/// the draw passes each bound) instead of as an `else` chain. This wrapper
+/// exists only for the `u32` band type the spawn table is indexed by.
 // PORT: FUN_801d26cc (band roll: 0xc00 / 0xe70 / 0xf38 cutoffs)
 pub fn band_roll(r: i32) -> u32 {
-    let r = r & 0xfff;
-    if r <= BAND_ROLL_CUTOFF_3 {
-        3
-    } else if r <= BAND_ROLL_CUTOFF_2 {
-        2
-    } else if r <= BAND_ROLL_CUTOFF_1 {
-        1
-    } else {
-        0
-    }
+    crate::fishing_actors::roll_hit_type(r as u32) as u32
 }
 
 /// The strike-time band-4 gate: whether an active band 0 upgrades to the
@@ -1177,9 +1182,12 @@ impl ReelCadence {
 
     /// Reset the ring (index + every slot zeroed; the last-button latch is
     /// retail's `DAT_801d9064`, which the reset does not touch).
+    ///
+    /// The body is [`crate::fishing_chrome::clear_slot_ring`] - the same
+    /// `FUN_801D746C` this type's `PORT` tag names, kept as one
+    /// implementation rather than two readings of the same 16 x 2-word table.
     pub fn reset(&mut self) {
-        self.ring = [(0, 0); 16];
-        self.idx = 0;
+        crate::fishing_chrome::clear_slot_ring(&mut self.idx, &mut self.ring);
     }
 
     /// Feed this frame's decoded reel button (`0` idle / `1` reel A / `2`
@@ -1252,11 +1260,16 @@ impl BandCheck {
     ///
     /// Pinned: the every-frame re-entry (countdown clamped at 0), the
     /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
-    /// `credit = countdown + 2 (+ edges)` strike credit, its zeroing under a
-    /// `100` readout, the no-strike floor under a `200` readout, and the
-    /// reel-held requirement. Approximated: the exact `denom` ladder the
-    /// readout steps (`~1000` for a deep cast) - this port uses the readout
-    /// itself as the denominator.
+    /// `credit = countdown + 2 (+ edges)` strike credit and its `0x40`
+    /// cadence-match override, the modulus ladder
+    /// ([`crate::fishing_actors::bite_interval`]) and the far band's credit
+    /// replacement ([`crate::fishing_actors::bite_credit_override`]), the
+    /// credit zeroing under a `100` readout, and the reel-held requirement.
+    ///
+    /// The credit base is sampled **before** the countdown decays, which is
+    /// retail's order (`addiu s1, v0, 2` runs off the loaded value, then the
+    /// store writes the decremented one) - a frame's credit is the countdown
+    /// it entered with.
     // PORT: FUN_801d26cc (pre-hook band check + strike roll)
     #[allow(clippy::too_many_arguments)] // the retail check reads exactly these globals
     pub fn tick(
@@ -1270,6 +1283,7 @@ impl BandCheck {
         frame_step: i32,
     ) -> bool {
         self.splash = false;
+        let mut credit_base = self.countdown + STRIKE_CREDIT_BASE;
         if self.countdown > 0 {
             // Matched band holds for the countdown; clamped to 0 on underflow
             // so the steady state re-enters every tick.
@@ -1280,6 +1294,10 @@ impl BandCheck {
                     self.band = t as u32;
                     self.countdown = BAND_HOLD_FRAMES;
                     self.splash = true;
+                    // Retail overwrites the credit register with the hold
+                    // length itself on the match frame, so the base is `0x40`
+                    // and not `0x40 + 2`.
+                    credit_base = BAND_HOLD_FRAMES;
                 }
                 None => {
                     self.band = band_roll(rng.next_u15() as i32);
@@ -1287,15 +1305,20 @@ impl BandCheck {
             }
         }
 
-        if !reel_held || readout < STRIKE_MIN_READOUT {
+        if !reel_held {
             return false;
         }
-        let mut credit = self.countdown + STRIKE_CREDIT_BASE + edge_bonus.max(0);
+        // The readout picks both halves of the roll: the modulus off the
+        // interval ladder, and - in the far band - a credit base that replaces
+        // the countdown term outright.
+        let interval = crate::fishing_actors::bite_interval(readout, false);
+        let mut credit = crate::fishing_actors::bite_credit_override(readout)
+            .unwrap_or(credit_base)
+            + edge_bonus.max(0);
         if readout < STRIKE_CREDIT_ZERO_READOUT {
             credit = 0;
         }
-        let denom = readout.max(1);
-        (rng.next_u15() as i32 % denom) < credit
+        (rng.next_u15() as i32 % interval.max(1)) < credit
     }
 }
 
@@ -2268,6 +2291,50 @@ mod tests {
         assert_eq!(band_roll(0xfff), 0);
     }
 
+    /// What the strike ladder is *for*: a shallow cast cannot bite. Retail
+    /// gets that from the far band replacing the credit base with `-100`
+    /// against a `2000` modulus, not from a length test.
+    #[test]
+    fn a_shallow_cast_can_never_strike() {
+        let mut b = BandCheck::default();
+        let mut rng = BiosRand::new(0xC0FFEE);
+        for readout in [0, 50, 99, 100, 150, 199] {
+            for _ in 0..5000 {
+                assert!(
+                    !b.tick(&mut rng, None, readout + 300, readout, 3, true, 1),
+                    "readout {readout} struck"
+                );
+            }
+        }
+    }
+
+    /// And the other half: a cadence match arms the bite. The credit base
+    /// jumps from `countdown + 2` to the `0x40` hold length against the same
+    /// `1000` modulus, which is the ~30x swing the doc describes.
+    #[test]
+    fn a_cadence_match_arms_the_bite() {
+        let readout = 1000;
+        let count = |cadence: Option<usize>| {
+            let mut b = BandCheck::default();
+            let mut rng = BiosRand::new(7);
+            let mut n = 0;
+            for _ in 0..4000 {
+                // Re-arm every frame so the hold does not decay away.
+                b.countdown = 0;
+                if b.tick(&mut rng, cadence, readout + 300, readout, 0, true, 1) {
+                    n += 1;
+                }
+            }
+            n
+        };
+        let bare = count(None);
+        let matched = count(Some(2));
+        assert!(
+            matched > bare * 10,
+            "cadence {matched} vs bare {bare} - the credit override is inert"
+        );
+    }
+
     #[test]
     fn band4_gate_conditions() {
         // Buma: > 50 casts, even, Normal Lure, third rod, band 0, then 1/16.
@@ -2467,9 +2534,13 @@ mod tests {
         assert_eq!(p.casts, casts_before + 1, "landing increments the counter");
         assert!(p.line_record() > BAND_CHECK_MIN_RECORD);
 
-        // Hold reel A until a strike hooks a fish (bounded).
+        // Hold reel A until a strike hooks a fish (bounded). A bare held reel
+        // is the *slow* hook path: the strike roll is `rand % 1000 < 2` for a
+        // deep cast, so this needs several casts' worth of frames. The fast
+        // path is a reel cadence, which replaces the credit base with the
+        // `0x40` hold length - see `a_cadence_match_arms_the_bite` below.
         let mut hooked = false;
-        for _ in 0..2000 {
+        for _ in 0..8000 {
             p.tick(
                 PondInput {
                     reel_mask: 0x40,
@@ -2508,7 +2579,7 @@ mod tests {
                 }
             }
         }
-        assert!(hooked, "no strike over 2000 held-reel frames");
+        assert!(hooked, "no strike over 8000 held-reel frames");
         let events = p.take_events();
         assert!(
             events.iter().any(|e| matches!(e, PondEvent::Hooked(_))),

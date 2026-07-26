@@ -161,13 +161,33 @@ rows are dead data in retail. The one bypass is a debug shortcut in the same
 branch: with the debug print flag `_DAT_8007b9b0` set, holding R1
 (`_DAT_8007b850 & 8`) at the strike stores band 4 unconditionally.
 
-**Strike-rate context** (where the gate sits): `denom` is stepped by the
-length readout `DAT_801d9280` (~1000 for a deep cast; a readout under `200`
-cannot strike at all), and the per-cell bonus flags feed the credit - a cell
-whose grid word carries bit `0x4000` maps through `func_0x800180ec` to
-`_DAT_8007b8f4` flags `4`/`8`/`0x10` for graded credit boosts. Pond position
-and bait-twitching change how often the gate is rolled, never which species
+**Strike-rate context** (where the gate sits). `denom` is not the readout: it
+is a **fixed ladder** the readout selects, six `slti` / `bne` pairs writing
+one register in ascending threshold order at `0x801D3284`. Because each later
+arm is true whenever an earlier one is, only three values survive - `1000`
+for a readout of `201` or more, `0x200` at exactly `200`, and `2000` below
+that. The four arms in between (`200` at `>= 401`, `350` at `>= 351`, `400`
+at `>= 301`, `500` at `>= 251`) are unreachable.
+
+The bottom arm also does something the readout comparison hides: alongside
+`denom = 2000` it writes `s1 = -0x64`, which **replaces** the credit
+(`countdown + 2`, or the `0x40` a cadence match installs) rather than biasing
+it. Everything added afterwards - the water-cell bonus and the pad nudges -
+tops out around `0x21`, so a readout under `200` can never strike. That is
+where the "a shallow cast cannot bite" rule comes from; retail runs no length
+test of its own.
+
+The per-cell bonus flags feed the credit from the *other* per-scene grid: the
+handler reads a **u16** at `*(_DAT_1F8003EC) + 0x8000 + (z >> 7) * 0x100 +
+(x >> 7) * 2` - the region directly above the `+0x4000` sub-cell wall bytes -
+and a cell whose word carries bit `0x4000` maps through `func_0x800180ec` to
+`_DAT_8007b8f4` flags `4` / `8` / `0x10` for graded credit boosts (`0x1E`,
+`0x14`, `0x14`) and fish weights (`100`, `300`, `500`). Pond position and
+bait-twitching change how often the gate is rolled, never which species
 results.
+
+Port: `engine-core::fishing::BandCheck::tick` runs the ladder through
+`fishing_actors::bite_interval` / `bite_credit_override`.
 
 ## Fishing actors and scene render
 
@@ -295,10 +315,14 @@ or nudge shared state around the sub-screens. All five are ported as
   `0x1F80035C`, and advances the angle at `0x801D9118` by
   `DAT_1F800393 << 4`. The angle carried forward is **unmasked** - only the
   table index is folded into a turn.
-- `FUN_801d746c` - catch-slot reset. Clears the count word `0x801D91DC` and
-  both words of all 16 records of the `8`-byte-stride table at `0x801D91E4`.
-  Retail unrolls the loop two words at a time, which is what makes the table
-  `16 * 8` rather than `32 * 4`.
+- `FUN_801d746c` - the **reel-cadence ring reset**, not a catch log. Clears
+  the write-index word `0x801D91DC` and both words of all 16 records of the
+  `8`-byte-stride table at `0x801D91E4`. Retail unrolls the loop two words at
+  a time, which is what makes the table `16 * 8` rather than `32 * 4`. The
+  same index and the same records are what the recogniser `FUN_801d3db4`
+  walks as `(button, duration)` pairs (see
+  [Reel-button decode and cadence](#reel-button-decode-and-cadence)); the
+  port keeps one implementation for both readings.
 - `FUN_801d78c0` - venue camera reset. Zeroes the rotation trio
   `_DAT_8007B790/92/94` and `TR.x` (`_DAT_800840B8`) and parks `TR.z`
   (`_DAT_800840C0`) at `0x974`. It never touches `TR.y`.
@@ -334,37 +358,49 @@ at each of these addresses (see [VA aliasing](#va-aliasing-in-this-band)).
 | Function | Shape | What it computes |
 |---|---|---|
 | `FUN_801d7030` | `(x, z) -> bool` | Walkability-grid wall probe, **high** nibble |
-| `FUN_801d765c` | `() -> tiles` | Distance between two overlay globals, in tiles |
+| `FUN_801d765c` | `() -> cells` | Separation of two overlay globals, in sub-cells |
 | `FUN_801d56e4` | `(&p, &q)` | 2-D segment clip against the draw-window bounds |
 | `FUN_801d5c2c` | `(&p, &q, &o0, &o1)` | 3-D segment transform + depth clip |
 
 **`FUN_801d7030(x, z)`** is a wall-bit query against the per-scene
 walkability grid at `*(_DAT_1F8003EC) + 0x4000` - the same grid the field
 overlay's per-axis collision uses (see
-[field-locomotion.md](field-locomotion.md)). It converts the two world
-coordinates to grid coordinates through the usual `(v + 0x3F) >> 6`
-rounding ladder, addresses the byte at `((z_cell / 2) & 0x7F) + ((x_cell
-<< 6) & 0x3F80)`, and tests one of four sub-cell bits (`1`, `2`, `4`, `8`)
-selected by the two coordinate parities. It reads the byte's **high**
-nibble (`>> 4`), not the low one, so it queries the second of the two
-4-bit wall masks packed into each grid byte. A leaf function: no frame,
-`jr ra` with the test result in `v0`.
+[field-locomotion.md](field-locomotion.md)). The two coordinate conversions
+are **not** the same ladder, which is the part that is easy to get backwards:
+`z` truncates toward zero (`z < 0` is biased `+0x3F` first) and is then
+biased **`+2` sub-cells**, while `x` rounds up unconditionally
+(`(x + 0x3F) >> 6`) and is then biased **`-1`**. The byte it addresses is
+`((z_cell / 2) & 0x7F) * 0x80 + ((x_cell / 2) & 0x7F)` - **z** picks the row
+and **x** the column - and the sub-cell bit is `1 << ((x_cell & 1) + 2 *
+(z_cell & 1))`, i.e. `1` / `2` / `4` / `8` over the two parities. It reads
+the byte's **high** nibble (`>> 4`), not the low one, so it queries the
+second of the two 4-bit wall masks packed into each grid byte. A leaf
+function: no frame, `jr ra` with the test result in `v0`. Port:
+`engine-core::fishing_actors::walk_grid_overhead`.
 
 **`FUN_801d765c()`** takes no arguments. It reads two `(i16 x, i16 y)`
-pairs from the overlay globals at `0x801E9184` and `0x801E918C`, squares
-and sums the component differences, normalises through the SCUS
-`isqrt`-style helper `FUN_8005AF0C`, arithmetic-shifts the result right by
-6 - the same `>> 6` that maps world units onto 128-unit grid tiles - and
-clamps a negative result to zero. So it answers "how many tiles apart are
-these two tracked points", not general distance.
+pairs from the overlay globals at `0x801D9184` and `0x801D918C` (`+0` = x,
+`+4` = y - the same pair the hooked-fish handler feeds to the bearing helper
+`FUN_80019B28`), squares and sums the **absolute** component differences,
+normalises through the SCUS `isqrt`-style helper `FUN_8005AF0C`,
+arithmetic-shifts the result right by 6, and clamps a negative result to
+zero. The `>> 6` is the **sub-cell** step (64 units), the same one
+`FUN_801d7030` indexes with - not the 128-unit tile. Port:
+`engine-core::fishing_actors::tracked_point_separation`.
 
 **`FUN_801d56e4(&p, &q)`** clips a 2-D segment in place. `p` and `q` are
-`(i16 x, i16 y)` pairs; the bounds come from the scratchpad draw context
-at `0x1F800314` (`+0x74` and `+0x78`). Every arm has the same fixed-point
-form: `t = ((bound - p.x) << 12) / (q.x - p.x)`, then `p.y += ((q.y - p.y)
-* t) >> 12` - with the `+0xFFF` bias before the shift that rounds a
-negative product toward zero - then `p.x = bound`. An endpoint already
-inside its bound is left untouched.
+`(i16 x, i16 y)` pairs; the bounds are all **four** halfwords of the
+scratchpad draw context at `0x1F800314` - `+0x74` x-min, `+0x76` y-min,
+`+0x78` x-max, `+0x7A` y-max. The body is eight arms, each bound applied to
+each endpoint in turn, `p` before `q` within a bound. An arm fires only when
+the endpoint it moves is outside the bound **and the other endpoint is
+strictly inside it**, so a segment wholly outside one bound is left alone
+rather than collapsed onto the edge. Every arm has the same fixed-point form
+- for x-min on `p`: `t = ((q.x - bound) << 12) / (q.x - p.x)`, then
+`p.y = q.y + (((p.y - q.y) * t) >> 12)` with the `+0xFFF` bias that rounds a
+negative product toward zero, then `p.x = bound`. The parameter is measured
+from the *other* endpoint, which is why the blend is written against `q`.
+Port: `engine-core::fishing_actors::clip_segment_2d`.
 
 **`FUN_801d5c2c(&p, &q, &o0, &o1)`** is the 3-D sibling. It pushes both
 endpoints through the GTE wrapper `FUN_8003D344` (one `MVMVA`,
