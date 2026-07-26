@@ -1,8 +1,8 @@
 //! Battle-camera fixed-point kernels: the angle-tween step-table builder and
 //! the LCG screen-shake jitter.
 //!
-//! PORT: FUN_801D829C - battle-camera angle-interpolation builder
-//! PORT: FUN_801D9D30 - LCG camera-shake jitter
+//! Each address is tagged on the function that implements it; a module-level
+//! `PORT:` line would only add a second, coarser anchor for the same two.
 //!
 //! Both live in runtime overlays (`overlay_battle_action_801d829c.txt` /
 //! `overlay_dialog_801d9d30.txt` dumps) and are pure fixed-point math over the
@@ -32,15 +32,35 @@
 //!   field VM does not model that global, so the amplitude would be a
 //!   permanent zero - the value at which the routine degenerates to backing
 //!   its own previous offset out of the accumulators.
-//! * Its output accumulators `0x800840B8`/`0x800840BC` are read by the camera
-//!   pose, which in the port lives in `engine-shell`'s battle camera. Nothing
-//!   in `engine-core` or `engine-vm` reads a shake offset back;
-//!   `BattleActionHost::screen_shake` writes the same `0x800840BC` word
-//!   (retail's kick is `0x500` from the magic-exit arm at
-//!   `overlay_battle_action_801e295c.txt` `0x801E4970`) and the engine's host
-//!   impl turns it straight into a log-only `BattleEvent`.
+//! * Its output accumulators `0x800840B8`/`0x800840BC` are the camera's
+//!   translation pair, read by the camera pose - which in the port lives in
+//!   `engine-shell`'s battle camera. Nothing in `engine-core` or `engine-vm`
+//!   reads a shake offset back.
 //! * [`build_camera_angle_tween`]'s only product is a step table for a
 //!   per-frame walker the port does not have - see its own note.
+//!
+//! ## `BattleActionHost::screen_shake` is not this routine's caller
+//!
+//! Worth stating because the host method's name invites the pairing, and a
+//! triage verdict was once written on it. The action SM's magic-exit arm
+//! (`overlay_battle_action_801e295c.txt` `0x801E4938..0x801E497C`, gated on
+//! `ctx[+0x249] == 0`, the same gate the port's `magic_exit` reads) stamps the
+//! next action state and then does a **camera framing snap**, not a shake:
+//!
+//! ```text
+//!   lh   v0, -0x4870(v1)   ; DAT_8007B790 - camera pitch
+//!   slti v0, v0, 0x191     ; below 0x191? leave the framing alone
+//!   li   v0, 0x500
+//!   sh   zero, -0x4870(v1) ; pitch = 0
+//!   sw   v0, 0x40bc(v1)    ; translation Y = 0x500
+//! ```
+//!
+//! `0x500` is an **absolute** translation-Y value - it is the 1280 the
+//! close-up framings hold - written straight into the word, conditional on the
+//! pitch. [`apply_shake`]'s `amplitude` is a different quantity entirely: a
+//! `1..=0x15` shift count out of `_DAT_8007B630`, whose only retail writer is
+//! a field-VM opcode. Feeding one to the other is a category error, so
+//! routing the `ScreenShake` host event through this kernel would not wire it.
 
 use crate::battle_formulas::psyq_rand_step;
 
@@ -183,6 +203,14 @@ pub fn build_camera_angle_tween(
 ///
 /// REF: this routine is also duplicated verbatim as the tail of
 /// `FUN_801DB510` (the camera follow-ease) - one port covers both sites.
+///
+/// NOT WIRED: the amplitude has no engine source. Its only retail writer is
+/// the field-VM opcode at `overlay_0897_801de840.txt` `0x801E2134` (a 3-byte
+/// instruction whose operand byte becomes `_DAT_8007B630`), which the port's
+/// field VM does not model - so the amplitude would be a permanent zero, the
+/// value at which this routine degenerates to backing its own previous offset
+/// out of the accumulators. The battle-action `screen_shake` host event is
+/// **not** the missing caller; see the module note for why.
 pub fn apply_shake(accum: &mut [i32; 2], offset: &mut [i32; 2], amplitude: u32, seed: &mut u32) {
     accum[0] -= offset[0];
     accum[1] -= offset[1];

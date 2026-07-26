@@ -132,21 +132,43 @@ pub enum PickerEvent {
 }
 
 /// One row of slot info the picker queries.
+///
+/// `x` / `z` are the slot's battle-world planar seat (the actor's
+/// `move_state.world_x` / `world_z`, retail's `+0x34` / `+0x38`). They are
+/// only read by the retail attack-target ring - see
+/// [`TargetPickerSession::retail_enemy_step`] - and a host with no positions
+/// to hand leaves them zero, which falls the cursor back to the plain
+/// slot-order scan.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SlotState {
     pub present: bool,
     pub alive: bool,
+    /// Battle-world X (`actor[+0x34]`).
+    pub x: i16,
+    /// Battle-world Z (`actor[+0x38]`).
+    pub z: i16,
 }
 
 impl SlotState {
     pub const fn alive(present: bool, alive: bool) -> Self {
-        Self { present, alive }
+        Self {
+            present,
+            alive,
+            x: 0,
+            z: 0,
+        }
     }
     pub const fn dead(present: bool) -> Self {
         Self {
             present,
             alive: false,
+            x: 0,
+            z: 0,
         }
+    }
+    /// Same slot with its battle-world seat attached.
+    pub const fn at(self, x: i16, z: i16) -> Self {
+        Self { x, z, ..self }
     }
 }
 
@@ -158,6 +180,8 @@ impl SlotState {
         Self {
             present: info.record.is_some(),
             alive: hp > 0,
+            x: 0,
+            z: 0,
         }
     }
 }
@@ -303,7 +327,91 @@ impl TargetPickerSession {
         (0..len).find(|&s| self.is_valid(row, s))
     }
 
+    /// Pool slots the retail attack-target scans cover: `3..=6`, i.e. the
+    /// first four monster rows. Retail seats at most four monsters
+    /// ([`crate::battle_seats::MONSTER_SEATS`] rows are four wide), so a fifth
+    /// engine slot has no ring entry and falls back to the linear scan.
+    const RING_MONSTERS: usize = 4;
+
+    /// Step the **enemy** cursor the way retail does: to the angularly nearest
+    /// live alternate, not to the next slot index.
+    ///
+    /// This is `FUN_801D8A88` (the ring builder) feeding `FUN_801D8D00` (the
+    /// cursor step), with the 8-slot battle-actor pool assembled from the
+    /// picker's own rows: pool slot `0` stands in for the acting party actor
+    /// (retail reads its `+0x1DD` current target, here the cursor), and pool
+    /// slots `3..=6` are monster rows `0..=3` with their battle-world seats.
+    ///
+    /// Returns `None` - and the caller falls back to
+    /// [`Self::step_within_row`]'s slot-order walk - whenever the ring cannot
+    /// answer: no seats supplied, a cursor outside the four ring slots, or a
+    /// ring entry that is not a live monster (retail leaves those context
+    /// bytes stale rather than zeroing them, so the port refuses instead of
+    /// following a stale slot).
+    ///
+    /// REF: FUN_801D8A88, FUN_801D8D00, FUN_80019B28
+    fn retail_enemy_step(&self, from: u8, dir: i8) -> Option<u8> {
+        use legaia_engine_vm::battle_action::{
+            PoolActor, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
+            cycle_attack_target,
+        };
+        if (from as usize) >= Self::RING_MONSTERS {
+            return None;
+        }
+        let acting = self.party.get(self.actor_slot as usize).copied()?;
+        // Degenerate seats (a host with no positions) cannot order anything.
+        let seated = self.monsters[..Self::RING_MONSTERS]
+            .iter()
+            .any(|m| m.x != 0 || m.z != 0);
+        if !seated {
+            return None;
+        }
+        let mut pool = [PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: acting.x,
+            z: acting.z,
+            target_slot: 3 + from,
+            status: 0,
+        };
+        for i in 0..Self::RING_MONSTERS {
+            let m = self.monsters[i];
+            pool[3 + i] = PoolActor {
+                alive: m.present && m.alive,
+                x: m.x,
+                z: m.z,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+        let ring = [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ];
+        let mode = if dir >= 0 {
+            TargetCycle::Next
+        } else {
+            TargetCycle::Prev
+        };
+        let next = cycle_attack_target(&ring, 3 + from, mode);
+        let slot = next.checked_sub(3)?;
+        if (slot as usize) >= Self::RING_MONSTERS || !self.is_valid(CursorRow::Enemy, slot) {
+            return None;
+        }
+        Some(slot)
+    }
+
     fn step_within_row(&self, row: CursorRow, from: u8, dir: i8) -> Option<u8> {
+        if row == CursorRow::Enemy
+            && self.kind == TargetKind::SingleEnemy
+            && let Some(s) = self.retail_enemy_step(from, dir)
+        {
+            return Some(s);
+        }
         let len = self.row_len(row);
         if len == 0 {
             return None;

@@ -265,7 +265,6 @@ fn ui_element_mode1_does_not_spawn() {
 #[test]
 fn notify_art_used_emits_event_and_sets_banner() {
     let mut world = World::default();
-    world.tactical_arts.set_threshold(1);
     world.notify_art_used(0, 3);
     let evs = world.drain_battle_events();
     assert_eq!(evs.len(), 1);
@@ -285,9 +284,12 @@ fn notify_art_used_emits_event_and_sets_banner() {
 }
 
 #[test]
-fn notify_art_used_no_event_before_threshold() {
+fn notify_art_used_no_event_for_innate_ids() {
+    // Retail's insert gate is `art_id > innate_cap`, so an id inside the
+    // character's innate band never produces a learn event however often it
+    // is performed.
     let mut world = World::default();
-    world.tactical_arts.set_threshold(5);
+    world.tactical_arts.set_innate_cap(0, 5);
     for _ in 0..4 {
         world.notify_art_used(0, 1);
     }
@@ -298,7 +300,7 @@ fn notify_art_used_no_event_before_threshold() {
 #[test]
 fn banner_countdown_clears_after_frames() {
     let mut world = World::default();
-    world.tactical_arts.set_threshold(1);
+    // Art id 0 is retail's zero-id edge: it passes the cap gate and inserts.
     world.notify_art_used(0, 0);
     // Banner starts at DEFAULT_FRAMES.
     assert!(world.current_art_banner.is_some());

@@ -306,13 +306,15 @@ pub enum ArtUseCheck {
 /// insert** (called from the queue-builder at `0x801EF44C` per accepted
 /// art).
 ///
-/// NOT WIRED: the engine models learned arts as the save-ext
-/// `learned_arts_mask` bitmask, not as the retail `+0x74D` count / `+0x74E`
-/// ascending id list, and [`resolve_action_queue`](super::resolve_action_queue)
-/// is handed already-recognized arts rather than the raw per-command stream
-/// this check runs inside. Wiring it means the caller carrying the char
-/// record's arts list plus the per-character innate cap at
-/// `0x801F686C + char_id - 1`.
+/// The engine reaches this from `engine-core`'s `TacticalArtsTracker`, which
+/// holds the `+0x74D` count / `+0x74E` ascending id list per character and is
+/// driven from the live art-strike host (`BattleActionHost::apply_art_strike`
+/// -> `World::notify_art_used`). Two retail inputs the engine cannot read are
+/// supplied instead: the learn gate `ctx[+0x266 + slot]` has no engine
+/// analogue and so reads as permanently clear (gate open, which is retail's
+/// behaviour for a clear marker), and the innate cap at
+/// `0x801F686C + char_id - 1` is un-parsed battle-overlay disc data that
+/// defaults to `0` until a host supplies it.
 ///
 /// The character's learned-arts list lives in the char record: count at
 /// `+0x74D`, ascending-sorted ids at `+0x74E..`. Laws (disassembly

@@ -132,7 +132,14 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
     let mut host = BattleHostImpl { world: &mut world };
     host.apply_art_strike(info);
 
-    assert_eq!(world.pending_battle_events.len(), 1);
+    // Two events: the strike itself, and the learn-on-use insert the host
+    // runs per accepted art (retail `FUN_801EFBFC`) - Art1B is above the
+    // default innate cap and the party has not performed it before.
+    assert_eq!(world.pending_battle_events.len(), 2);
+    assert!(matches!(
+        world.pending_battle_events[1],
+        BattleEvent::TacticalArtLearned { char_id: 0, .. }
+    ));
     match &world.pending_battle_events[0] {
         BattleEvent::ApplyArtStrike {
             actor_slot,
@@ -230,9 +237,13 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
     let mut host = BattleHostImpl { world: &mut world };
     host.apply_art_strike(info);
     let events = world.drain_battle_events();
-    assert_eq!(events.len(), 1);
+    // The strike, then the learn-on-use insert the host runs for it.
+    assert_eq!(events.len(), 2);
     for e in &events {
         let r = world.fold_battle_event(e);
+        if matches!(e, BattleEvent::TacticalArtLearned { .. }) {
+            continue;
+        }
         // 64 * 28 / 16 - 5 = 107 damage. Target slot 3 starts at 200,
         // ends at 93.
         assert_eq!(r, Some((3, 93)));

@@ -200,8 +200,18 @@ pub trait BattleActionHost {
         0
     }
 
-    /// Equivalent of the screen-shake driver - sets the global `_DAT_800840BC`
-    /// to `0x500` (small kick). Default no-op.
+    /// Writes the camera translation-Y global `_DAT_800840BC`. Default no-op.
+    ///
+    /// The name is a **misnomer** kept for source compatibility: the SM arm it
+    /// mirrors is not a shake. `overlay_battle_action_801e295c.txt`
+    /// `0x801E4938..0x801E497C` (the magic-exit arm) tests the camera pitch
+    /// `DAT_8007B790` against `0x191` and, when it is at or above, zeroes the
+    /// pitch and writes the **absolute** value `0x500` into `_DAT_800840BC` -
+    /// a framing snap to the close-up pose, one component of the camera
+    /// translation trio. It is not an amplitude, and it is unrelated to the
+    /// LCG jitter kernel `FUN_801D9D30`
+    /// ([`crate::battle_camera::apply_shake`]), whose amplitude comes from
+    /// `_DAT_8007B630` and whose only writer is a field-VM opcode.
     fn screen_shake(&mut self, _magnitude: u16) {}
 
     /// Equivalent of the brightness ramp at states `SummonSustain` /

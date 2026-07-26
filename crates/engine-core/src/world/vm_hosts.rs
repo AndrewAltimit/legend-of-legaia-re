@@ -1869,6 +1869,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 strike_index: info.strike_index,
                 outcome,
             });
+        // Retail runs its learn-on-use check (`FUN_801EFBFC`) per accepted art
+        // inside the queue-builder; the engine reaches the same decision from
+        // the strike that art produced, which is the first point on the port's
+        // path where both the acting party slot and the art id are resolved.
+        // Only a party slot has a character record with a learned-art list.
+        if info.actor_slot < 3 {
+            let art_id = info.art.as_byte();
+            // Keyed by ROSTER slot, the same index `World::save_full` writes
+            // `learned_arts_mask` under - not the battle ordinal.
+            let roster = self.world.party_roster_slot(info.actor_slot as usize) as u8;
+            self.world.notify_art_used(roster, art_id);
+        }
     }
     fn screen_shake(&mut self, magnitude: u16) {
         self.world

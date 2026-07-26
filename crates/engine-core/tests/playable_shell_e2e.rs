@@ -218,7 +218,7 @@ fn save_full_load_full_round_trips_v2_extension() {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let mut w = build_world_with_party();
     // Force a specific learned-art bit so we can verify the mask survives.
-    w.tactical_arts.set_threshold(1);
+    // Retail learns on the first successful use, so one call is enough.
     let _ = w.tactical_arts.notify_art_used(0, 5);
     // Add a saved chain.
     w.saved_chains.push(legaia_save::SavedChainRecord {

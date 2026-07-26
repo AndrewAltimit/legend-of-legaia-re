@@ -121,7 +121,13 @@ impl World {
         let slot_at = |idx: usize| -> SlotState {
             match self.actors.get(idx) {
                 Some(a) if a.battle.max_hp > 0 => {
+                    // The seat pair is what lets the picker's enemy cursor run
+                    // retail's angular attack-target ring (`FUN_801D8A88` ->
+                    // `FUN_801D8D00`) instead of a slot-order walk; a host that
+                    // never seated its actors leaves it at the origin and the
+                    // ring declines.
                     SlotState::alive(true, idx < 8 && mask & (1u8 << idx) != 0)
+                        .at(a.move_state.world_x, a.move_state.world_z)
                 }
                 _ => SlotState::default(),
             }
