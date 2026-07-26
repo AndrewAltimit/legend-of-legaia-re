@@ -129,6 +129,30 @@ mirrors it in `Scene::field_map_index`. Two blocks outside the named-scene range
 (`other1`, `other7`) also carry a `0x12000` slot 0, so the size class is not
 exactly "one per named scene".
 
+## The map alone does not draw a floor
+
+The `+0x04000` grid holds only a 4-bit **tier** per tile. The elevation it
+stands for lives in the 16-entry `s16` floor-height LUT that `FUN_8003AEB0`
+installs at scene entry from the scene **MAN** header, so the visible ground is
+the product of two separately-resolved assets:
+
+```text
+  scene bundle entry -> MAN payload -> floor-height LUT -> ground surface
+                                                        -> every object's world Y
+```
+
+Both consumers fail *quietly* when the second link breaks.
+`Scene::walk_heightfield` returns `None` with no LUT - no ground surface at all,
+not a flat one - and `field_env::resolve_env_draws` falls back to `world_y = 0`
+for every placed object and terrain tile. The result is a scene that still draws
+its walls and props, flattened onto the origin plane, over nothing.
+
+So a floorless field scene is a symptom of MAN resolution, not of this file: the
+map parses, the object layer resolves, and the placement counts stay right.
+`crates/engine-core/tests/field_floor_layer_disc.rs` is the corpus-wide guard -
+it asserts the MAN and the LUT resolve for every field-map block on the disc bar
+three named ones, because a draw-count assertion cannot see this failure.
+
 ## See also
 
 - [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md) - the
