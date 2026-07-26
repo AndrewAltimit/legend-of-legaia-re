@@ -34,14 +34,21 @@
 //! - `_DAT_8007BB80` is the global input lock: while it is non-zero every
 //!   picker phase returns without reading the pad.
 //!
-//! ## NOT WIRED
+//! ## Wiring status
 //!
-//! Nothing in the engine hosts a panel actor. `SceneMode` has no dev-menu or
-//! panel-window mode, `WorldMapController` owns no window list, no panel
-//! descriptor array and no `ctx[+0x54]` phase, and the render halves in
-//! `legaia_engine_ui` have no caller either. Both halves are unhosted, so
-//! these ports are the simulation side of a screen that does not exist yet;
-//! the prerequisite is a panel-window host on `WorldMapController`.
+//! All seven are hosted by `legaia_engine_core::world_map_panel_host`, which
+//! hangs off `WorldMapController::panels` and is stepped once a frame by
+//! `World::tick_world_map`. That host owns the scene-struct fields the
+//! terminal arms write, the `0x801F2B98` descriptor array the panel scripts
+//! address, the brightness / flash / cursor / slide globals the phases read,
+//! and the story-flag bank the picker commits into.
+//!
+//! Three things it supplies are the **port's** rather than retail's, and the
+//! host names each where it defines it: the panel-script table (retail's live
+//! at overlay VAs the engine never loads), the pad chords that install an
+//! actor, and the fact that an [`ActorExit`] retires the actor instead of
+//! selecting the next handler - the id dispatcher `FUN_801F159C` is not
+//! ported, so the exit is recorded rather than followed.
 
 use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 
@@ -51,8 +58,9 @@ use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 /// PORT: FUN_801ed308 (cases 6/7), FUN_801ed590 (state 2), FUN_801ee5d4
 /// (case 4), FUN_801ee90c (the `0x801EEA50` block), FUN_801ef014 (state 3)
 ///
-/// NOT WIRED: no engine host owns the scene struct these stores target - see
-/// the module disclosure.
+/// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost` applies
+/// the scene-slot clear and records the handler pair - see the module wiring
+/// status for why the handler id is recorded and not dispatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActorExit {
     /// `scene[+0x40]` takes the actor's *old* `ctx[+0x50]`.
@@ -132,8 +140,11 @@ pub struct FadeFlashInput {
 ///
 /// PORT: FUN_801ed308
 ///
-/// NOT WIRED: no engine host owns the brightness global or the panel actor
-/// table - see the module disclosure.
+/// Wired: `PanelActorKind::FadeFlash` in
+/// `legaia_engine_core::world_map_panel_host`. The host owns the brightness
+/// accumulator and the flash counter; the counter is an *external* input -
+/// this machine parks at phase 3 until something raises it, which is why the
+/// host exposes a release call.
 pub fn fade_flash_tick(phase: i16, input: FadeFlashInput) -> (i16, i32, i32, Vec<FadeFlashEffect>) {
     let mut level = input.level;
     let mut counter = input.flash_counter;
@@ -263,7 +274,10 @@ pub struct SubListInput {
 ///
 /// PORT: FUN_801ed590
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::SubList` in
+/// `legaia_engine_core::world_map_panel_host`; it is the entry point the
+/// world-map screen's chord installs, and the one whose state-3 hand-off
+/// reaches the travel art.
 pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListEffect>) {
     let mut phase = phase;
     let mut cursor = input.cursor;
@@ -364,7 +378,10 @@ pub struct SoftResetInput {
 ///
 /// PORT: FUN_801edf00
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::SoftReset` in
+/// `legaia_engine_core::world_map_panel_host`. The host records the
+/// executable reload rather than performing it - there is no boot image to
+/// re-load into.
 pub fn soft_reset_tick(phase: i16, input: SoftResetInput) -> (i16, i32, Vec<SoftResetEffect>) {
     let mut phase = phase;
     let mut slide = input.slide;
@@ -471,7 +488,8 @@ pub struct FillFadeInput {
 ///
 /// PORT: FUN_801ee5d4
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::FillFade` in
+/// `legaia_engine_core::world_map_panel_host`.
 pub fn fill_fade_tick(phase: i16, input: FillFadeInput) -> (i16, i16, Vec<FillFadeEffect>) {
     let mut phase = phase;
     let mut timer = input.timer;
@@ -554,8 +572,13 @@ pub enum TextBoxEffect {
     /// `FUN_80035BD0(0)` then `FUN_80035B50(0x25)`.
     PlaySfx(u32),
     /// For each of the first [`TEXT_BOX_RESTORE_SLOTS`] party records, copy
-    /// `rec[+0x1C4] -> rec[+0x1C6]` and `rec[+0x1C8] -> rec[+0x1CA]` (the
-    /// `0x80084140`-relative offsets `0x6CC/0x6CE` and `0x6D0/0x6D2`).
+    /// `rec[+0x104] -> rec[+0x106]` and `rec[+0x108] -> rec[+0x10A]`.
+    ///
+    /// Retail addresses these off the save block (`0x6CC -> 0x6CE`,
+    /// `0x6D0 -> 0x6D2` from `0x80084140`); rebasing by the `0x5C8`
+    /// block-to-record distance lands on the record offsets above, which
+    /// `legaia_save`'s schema names `hp_max -> hp_cur` and `mp_max -> mp_cur`.
+    /// So this arm is a **full HP/MP restore** of the first three characters.
     RestoreParty,
     /// `FUN_801E9B3C(script)`.
     RunPanelScript(u32),
@@ -595,7 +618,9 @@ pub struct TextBoxInput {
 ///
 /// PORT: FUN_801ee90c
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::TextBox` in
+/// `legaia_engine_core::world_map_panel_host`; its confirm arm's party
+/// restore is applied to the live records by `World::restore_party_hp_mp`.
 pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<TextBoxEffect>) {
     let mut phase = phase;
     let mut cursor = input.cursor;
@@ -699,6 +724,9 @@ pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<Tex
 
 /// Descriptor the flag-window picker reads through `_DAT_8007B450`, laid out
 /// by the MAN's op-`0x49` operands.
+///
+/// The engine supplies it from `PanelActorHost::flag_desc` rather than from a
+/// MAN, because no field script installs a flag window on the overworld.
 ///
 /// PORT: FUN_801ef014 (`lbu 1/2/3(desc)`, `FUN_8003CE9C(desc + 4)`)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -817,7 +845,9 @@ pub fn flag_window_initial_row(flag_set: impl Fn(i32) -> bool, desc: FlagWindowD
 ///
 /// PORT: FUN_801ef014
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::FlagWindow` in
+/// `legaia_engine_core::world_map_panel_host`, over the world's shared system
+/// flag bank.
 pub fn flag_window_tick(
     phase: i16,
     input: FlagWindowInput,
@@ -978,9 +1008,13 @@ pub fn hud_idle_frames(view_mode: i32, short_idle: bool) -> i16 {
 ///
 /// PORT: FUN_801d0d38
 ///
-/// NOT WIRED: the engine's field HUD is drawn by `legaia_engine_ui`'s own
-/// overlay path and has no idle-timer host; nothing produces the cached
-/// player position or `_DAT_800845C4` this consumes.
+/// Wired: `PanelActorHost::tick_party_hud` in
+/// `legaia_engine_core::world_map_panel_host` runs it every overworld frame,
+/// caching the player position itself. Retail installs the handler in the
+/// field band; the engine drives it from the overworld tick, where the party
+/// panel and the player marker both live. `projected_y` stays `None` there -
+/// the host has no screen projection for the player - which is retail's own
+/// staged-load path and forces the low panel.
 pub fn field_hud_tick(input: HudInput) -> (i16, HudDecision) {
     if input.hud_disabled || input.view_mode == 2 {
         return (input.timer, HudDecision::Suppressed);

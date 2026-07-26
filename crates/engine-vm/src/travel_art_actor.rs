@@ -100,9 +100,8 @@ impl TravelArt {
 ///
 /// PORT: FUN_801ee094 (`0x801EE2B4..0x801EE2DC` destination store)
 ///
-/// NOT WIRED: reached only from [`destination_for`] and the tests, both of
-/// which sit under [`TravelArtActor::tick`]'s own disclosure - the engine
-/// has no travel-art trigger, so nothing constructs an actor.
+/// Wired: through [`destination_for`], whose host is
+/// `legaia_engine_core::world_map_panel_host`.
 pub fn tile_centre(tile: i32) -> i32 {
     (tile << 7) + 0x40
 }
@@ -130,11 +129,9 @@ pub struct TravelDestination {
 /// PORT: FUN_801ee094 (`0x801EE1F0..0x801EE264` scan)
 /// REF: FUN_801ee328 (the byte-identical scan in the Rula handler)
 ///
-/// NOT WIRED: this is the kernel the caller passes to
-/// [`TravelArtActor::tick`] as its `resolve` closure, and nothing
-/// constructs a `TravelArtActor` - the engine has no travel-art trigger
-/// (see that method's disclosure). It also has no visited-map table to scan:
-/// `World` keeps no `0x10`-stride record list keyed by map name.
+/// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost` passes
+/// this as the `resolve` closure's scan half, over the visited-map table it
+/// records from the overworld tick.
 pub fn find_visited_map(
     count: usize,
     current_map: u32,
@@ -147,9 +144,8 @@ pub fn find_visited_map(
 ///
 /// PORT: FUN_801ee094 (`0x801EE268..0x801EE2E4`)
 ///
-/// NOT WIRED: the other half of the `resolve` closure
-/// [`TravelArtActor::tick`] takes, and nothing constructs a
-/// `TravelArtActor` - see that method's disclosure.
+/// Wired: the other half of the `resolve` closure
+/// `legaia_engine_core::world_map_panel_host::PanelActorHost` supplies.
 pub fn destination_for(record_index: usize, tile_x: i32, tile_z: i32) -> TravelDestination {
     TravelDestination {
         record_index,
@@ -203,9 +199,15 @@ impl TravelArtActor {
     /// PORT: FUN_801ee094
     /// PORT: FUN_801ee328
     ///
-    /// NOT WIRED: the engine's world map has no travel-art trigger - the
-    /// Arts menu entry that installs this actor is not modelled, so nothing
-    /// constructs a `TravelArtActor`.
+    /// Wired: `PanelActorKind::TravelArt` in
+    /// `legaia_engine_core::world_map_panel_host`. Retail installs the actor
+    /// from the Arts menu, which the engine does not model; the port binds it
+    /// to the world-map sub-list picker's state-3 hand-off instead, and that
+    /// binding is named on `World::tick_world_map_panels`.
+    ///
+    /// The `effect_busy` gate is passed as `false` there - the engine has no
+    /// effect queue for `FUN_8003CE64(0x0B)` to report on, so the dwell starts
+    /// on the frame after the install rather than after the flourish clears.
     pub fn tick(
         &mut self,
         effect_busy: bool,

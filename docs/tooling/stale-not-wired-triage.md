@@ -167,7 +167,9 @@ so a recurrence is recognisable rather than re-derived.
 | `80053cb8` | `engine-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
 | `801d0750` | `engine-core/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
 | `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | STALE-TAG in part | `resolve_equip_slot` is reached through `dev_equip_commit::commit_equip` -> `DevMenuSession::commit_equip_row` -> `PlayWindowApp::tick_dev_menu`. The other items of the same address stay inert with their own notes. |
-| `801ead98`, `801eca08`, `801ed710` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors; the file is live only through the `801e5b4c` item above. |
+| `801ead98` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
+| `801eca08` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-core/src/baka_cabinet.rs`'s same-named free function. |
+| `801ed710` | `engine-vm/src/world_map_overlay.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/bin/legaia-engine/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
 | `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/scus_core_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
 | `80046870` | `engine-vm/src/battle_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
@@ -176,9 +178,19 @@ so a recurrence is recognisable rather than re-derived.
 | `801db380`, `801db7f4`, `801dbd94` | `engine-core/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
-shape: one genuinely wired item made a module blanket false, and through the
-module scope it also lifted four data-struct type anchors to live. Nine audit
-rows, one edge.
+shape: a genuinely wired item made a module blanket false, and through the
+module scope it also lifted four data-struct type anchors to live.
+
+They are also the worked example of the **opposite** failure, and that is the
+more expensive one. Splitting the module tag into per-item anchors and giving
+each inert item its own `NOT WIRED:` line is only correct for the items that
+are actually inert - and the `801ed710` pair was not. `records_screen` and
+`decompose_play_time` had a real, non-test caller in the native window's
+developer-menu Records page the whole time, so writing them a per-item
+disclosure turned one coarse-anchor row into two false statements in source,
+each reading as a declared wiring gap. A FALSE-EDGE verdict says the port is
+unreachable; before acting on one, look for the caller rather than for the
+collision, because a collision can always be found and a caller cannot.
 
 ## Superseded rows
 

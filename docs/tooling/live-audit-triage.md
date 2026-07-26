@@ -486,6 +486,23 @@ a wired port; the receiver gate has since cleared it, and
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)
 records the collision it resolved through.
 
+## Not on this page: the world-map panel cluster
+
+The largest single block of *disclosed* inert `engine-vm` anchors was the
+world-map band's panel screen - `world_map_panel_actors.rs`,
+`world_map_overlay.rs`, `world_map_panel.rs` and `travel_art_actor.rs`. It never
+appeared here, because this page triages the **undisclosed** section and every
+one of those anchors carried an honest `NOT WIRED:` line naming the same
+missing thing: a panel-window host on `WorldMapController`.
+
+That is the shape a disclosure worklist hides. Each tag was individually
+correct, and re-reading them produces no work; what closes the block is
+building the one host they all name, which is now
+`legaia_engine_core::world_map_panel_host` (see
+[`world-map.md`](../subsystems/world-map.md#the-panel-actor-state-machines)).
+When a disclosure reason repeats verbatim across a dozen anchors, read the
+repetition as the worklist item.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

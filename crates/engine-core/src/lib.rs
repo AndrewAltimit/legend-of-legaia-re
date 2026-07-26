@@ -147,6 +147,9 @@ pub mod field_actor_program;
 pub mod field_submode;
 pub mod mode_entry_init;
 
+// --- lane 4 ---
+pub mod world_map_panel_host;
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -184,14 +184,31 @@ was the earlier reading; it is falsified by the epilogue.)
 #### Engine port
 
 The renderer-free half of the dev-menu leaves lives in
-`legaia_engine_vm::world_map_overlay`: `panel_geometry`, `cursor_step`
-(swap-wrap), `list_body_draws` (the phase×gate draw gate), `DevMenuRow` +
-`is_closed` (the 24-row model incl. the `MAP_CHANGE` / `CARD_OPTION` CLOSED
-gating), `format_fixed_decimal` (the zero-padded digit kernel `FUN_801EAD98`
-inlines per numeric readout), and `decode_camera_readout`. The module also
-ports the battle-records data model (`records_screen`, from `FUN_801ED710`)
-and the equipment stat-comparison preview (`aggregate_slot_stats` /
-`resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
+`legaia_engine_vm::world_map_overlay`: `panel_geometry`,
+`dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the phase×gate draw
+gate), `DevMenuRow` + `is_closed` (the 24-row model incl. the `MAP_CHANGE` /
+`CARD_OPTION` CLOSED gating), `format_fixed_decimal` (the zero-padded digit
+kernel `FUN_801EAD98` inlines per numeric readout), and
+`decode_camera_readout`. The module also ports the battle-records data model
+(`records_screen`, from `FUN_801ED710`) and the equipment stat-comparison
+preview (`aggregate_slot_stats` / `resolve_equip_slot` / `stat_deltas`, from
+`FUN_801E5B4C`).
+
+The host is `legaia_engine_core::dev_menu_host::DevMenuSession`, the engine's
+opt-in developer screen. Its row list is the subset whose backing state the
+engine owns, but each of its rows carries retail's own list index
+(`DevMenuRow::retail_index`), so the CLOSED gate, the row formatter, the panel
+geometry, the cursor step and the draw gate all run retail's kernels. Two
+leaves stay without a consumer: `decode_camera_readout`, because nothing
+publishes retail's packed scratchpad camera word, and the 18 rows of retail's
+list the engine keeps no state for.
+
+The **cursor step is named `dev_menu_cursor_step`, not `cursor_step`**, on
+purpose. `legaia_engine_core::baka_cabinet` has a live free function called
+`cursor_step`, and a free function's name is the whole of its identity to the
+reachability pass - so while both existed, every call to the Baka one read as
+a call to this one. See
+[`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md).
 
 The escape-timer scheduler (`FUN_801D2EBC`) is a fifth leaf of the same
 overlay but sits in its own module, `legaia_engine_vm::escape_timer`, because
@@ -312,9 +329,13 @@ epilogue, because the jump-table cases are not reachable by linear flow.
 `party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
 `FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound / park-phase
 / constant-return contract. The arms' global pokes are not modelled - they
-address debug state with no engine counterpart. Like the rest of the dev-menu
-cluster the module is unhosted: the engine has no panel-window list and no
-`ctx[+0x54]` panel actor to open one.
+address debug state with no engine counterpart.
+
+`legaia_engine_core::world_map_panel_host::PanelWindowHost` is the host: it
+owns the `0x801F2B98` descriptor array and one window object per slot, and
+`run_script` decodes a script through `run_panel_script` and applies every
+effect to those objects. `dev_menu_action` is hosted separately, by the
+dev-menu screen's cancel leg, which uses both halves of its result.
 
 ### The panel actor state machines
 
@@ -404,9 +425,42 @@ tint triple, run a panel script, set a story flag) rather than performing
 them, because the globals they address - the tint triple, the DMA queues, the
 scene struct - have no engine counterpart yet.
 
-The module is unhosted for the same reason the shared leaves are: `SceneMode`
-has no panel-window or dev-menu mode, `WorldMapController` owns no window list
-and no `ctx[+0x54]` phase, and the render halves have no caller either.
+The host is `legaia_engine_core::world_map_panel_host::PanelActorHost`, which
+hangs off `WorldMapController::panels` and is stepped once a frame by
+`World::tick_world_map`. It owns the globals the phases read - the brightness
+accumulator and flash counter, the shared cursor, the records slide, the tint
+triple and its saved copy, the scene-struct fields the terminal arms write -
+and routes the picker's flag traffic into the world's shared system flag bank.
+
+Three inputs it supplies are the **port's**, not retail's:
+
+- **The panel scripts.** Retail's live at overlay VAs (`0x801F3274`,
+  `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`, `0x801F3304`) the
+  engine never loads. `PanelScripts::stand_in` ships a minimal table keyed by
+  the same VAs so the interpreter runs on real records.
+- **The handler-id dispatcher.** `FUN_801F159C` turns a retiring actor's new
+  `ctx[+0x50]` back into a function pointer; it is not ported, so an
+  `ActorExit` retires the actor and is recorded rather than followed.
+- **The chords that install an actor.** Retail reaches this band from debug
+  branches in the controller. The engine gates it behind the same
+  `debug_enabled` flag the top-view toggle uses and binds Select (sub-list),
+  L1 (fade/flash, pressed again to release it), L2 (fill fade), R1 (flag
+  window), R2 (text box) and Start (soft reset), walk mode only. The
+  sub-list's own state-3 hand-off installs the Riremito travel art.
+
+Every kernel here reads the **packed** pad words `FUN_8001822C` builds, not
+the raw BIOS layout - the confirm mask is packed `0x40` where the raw Cross
+bit is `0x4000`, and the party HUD's suppress mask is the packed d-pad. The
+host converts once, in `packed_pad`.
+
+Two of the arms write real game state. `FUN_801EE90C`'s confirm arm is a
+**full party HP/MP restore**: its save-block stores `+0x6CC -> +0x6CE` and
+`+0x6D0 -> +0x6D2` rebase (less the `0x5C8` block-to-record distance) onto
+record `+0x104 -> +0x106` and `+0x108 -> +0x10A`, which `legaia_save` names
+`hp_max -> hp_cur` and `mp_max -> mp_cur`. And the travel art's resolve phase
+warps the party to the tile stored for the map it is standing on; the engine
+records that tile every frame no panel actor is up, so opening the screen
+freezes the return point.
 
 ### Dev-menu sub-panel renderers and the value-adjust input SM
 
