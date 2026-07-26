@@ -46,12 +46,20 @@
 //! respecting-spell paths (Neo Star Slash) are untouched, and PROT 952's
 //! unreachable template respect call (`+0x15B0`) is left alone.
 //!
-//! NB the neighbouring `09xx` PROT extents **overlap on disc** (e.g. entry
-//! 953's window starts [`OVERLAP_953_IN_952`] bytes into entry 952's, so the
-//! Terio Punch word also appears in the Bloody Horns entry window at
-//! `0x1800 + 0xA38 = 0x2238`). Every [`SITES`] offset lies inside its
-//! module's **own** extent (bounded by the next entry's head-overlap), so
-//! each physical word is written exactly once.
+//! NB the neighbouring `09xx` PROT extents **tile exactly** - each entry ends
+//! where the next begins, because an entry's size is the sector gap to its
+//! successor (`toc[p+3] - toc[p+2]`, retail's own `FUN_8003E68C`). Entry 952
+//! is `0x1800` bytes and entry 953 starts at exactly `+0x1800`, so no part of
+//! one module is visible inside another's window and every [`SITES`] offset
+//! addresses one physical word, written exactly once.
+//!
+//! An earlier reading had these extents **overlapping**, with entry 953's head
+//! appearing `0x1800` bytes into 952's window. That was an artifact of the
+//! superseded entry-size expression `toc[p+5] - toc[p+3] + 4`, which over-read
+//! each entry into its neighbours - 952 measured `0x6000` under it, four times
+//! its real size. The overlap constant it justified is gone; see
+//! [`docs/formats/prot.md`](../../../docs/formats/prot.md) for why an
+//! over-reading size expression names the right bytes under the wrong owner.
 //!
 //! Each site's stock word is verified before it is replaced - a
 //! differently-laid-out image is refused, not corrupted. No Sony bytes are
@@ -101,10 +109,6 @@ pub const RESPECT_WRAPPER_VA: u32 = 0x801D_D4B0;
 /// `FUN_801DD6B4` - damage wrapper whose finisher call passes `param_5 = 1`
 /// (party-defender resist ladder skipped).
 pub const BYPASS_WRAPPER_VA: u32 = 0x801D_D6B4;
-
-/// Byte offset of PROT entry 953's disc extent inside entry 952's window (the
-/// neighbouring `09xx` extents overlap; measured against the USA disc).
-pub const OVERLAP_953_IN_952: usize = 0x1800;
 
 /// One retargeted damage call: `jal FUN_801DD6B4` -> `jal FUN_801DD4B0` at a
 /// fixed offset inside a cast module's raw PROT entry.
