@@ -304,9 +304,12 @@ field init `FUN_801D6704` calls it seven times, once per actor list, and
 it walks each list through the `+0x00` next pointer allocating the runtime
 side-buffers a freshly loaded actor record does not carry.
 
-- Three handler VAs in `+0x0C` (`0x80025000`, `0x801E1C20`, `0x8002174C`)
+- Three handler VAs in `+0x0C` (`0x80025000`, `0x801DDC20`, `0x8002174C`)
   each get `+0x10 |= 8` - the "killed" bit, so these handler classes are
-  retired on load rather than revived.
+  retired on load rather than revived. The middle one is the field-overlay
+  **colour tween** ([`functions/renderer.md`](../reference/functions/renderer.md#801ddc20)):
+  the materialisation is `lui v0,0x801e; addiu v0,v0,-0x23e0`, which is
+  `0x801DDC20`. An earlier reading of `0x801E1C20` would need `addiu v0,v0,0x1c20`.
 - Every actor gets `+0x10 |= 0x10000`.
 - An actor whose `+0x10` carries `0x800` receives a `0x9C`-byte block from
   the general allocator `FUN_80017888` into `+0x44`, has its OBJECT table

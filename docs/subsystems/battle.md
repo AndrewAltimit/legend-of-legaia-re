@@ -1797,8 +1797,9 @@ overlay level-up function `FUN_801E9504` (see
 [`subsystems/level-up.md`](level-up.md#stat-gains)). The earlier writer-search
 came up empty because it scanned the `magic_level_up` *display* overlay, not the
 victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those
-`+0x74` reads are a `0x80808080` battle-state flag the SCUS handler
-`FUN_800480D8` writes, not a stat grant).
+`+0x74` reads are the actor's **colour word**, which `FUN_800480D8` stamps with
+the 24-bit mid-grey `0x00808080` under the mask `0x00FFFFFF`, not a stat grant -
+see [`functions/renderer.md`](../reference/functions/renderer.md#800480d8)).
 `legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves +
 param block, and the engine applies them: `LevelUpTracker::with_growth_tables`
 installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot,

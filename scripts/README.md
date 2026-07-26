@@ -87,6 +87,15 @@ See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 Disc-asset RE probes. `decode_slot4_subbodies.py`, `slot4_to_obj.py`, and
 `slot4_topdown_png.py` borrow disc helpers from `pcsx-redux/` via `sys.path`.
 
+**Run these from the repo, not from a scratch directory.** `sys.path[0]` is the
+running script's own directory, so any `.py` sitting beside a script shadows a
+module of that name for every import beneath it - including imports a dependency
+makes internally. A stray helper dropped next to a script has already presented
+as `capstone` failing with a circular-import "partially initialized module",
+reproducible only from that directory. Same shape as the self-matching observers
+in [`shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md): the tool
+is inside what it is measuring.
+
 - TIM/TMD: `build_tim_review.py` / `apply_tim_review.py`, `montage_tims.py`, `scan_tims_and_match_prot.py`, `find_large_tmd_packs.py`, `render_battle_char_true.py`, `render-unplaced-tmds.py`, `verify_battle_char_pack.py`.
 - World-map / slot-4: `decode_slot4_subbodies.py`, `slot4_to_obj.py`, `slot4_topdown_png.py`, `classify_dat_8007c018.py`, `extract-world-placements.py`, `analyze_world_map_vm_log.py` (the live-RAM GPU-tile variant `analyze-walk-ground-tiles.py` lives in `ghidra-analysis/`).
 - Scene / font / naming / save: `scene-asset-detect.py`, `find-font-carrier.py`, `cdname_shift_analysis.py`, `match_title_staging_to_prot.py`, `find_save_offsets.py`.

@@ -84,9 +84,11 @@ Field offsets are pinned by a fusion of three sources:
 +0x12E  u8[2]    stat_window_tail
 +0x130  u8       magic_rank               ; "Level 99" cheat target. See note.
 +0x131  u8[11]   post_level_unmapped
-+0x13C  u8       magic_slot_activator     ; "Magic Slot Activator" target,
++0x13C  u8       learned_spell_count      ; "Magic Slot Activator" target,
                                            ; cheat sets to 0x24 to enable
-                                           ; the spell list
+                                           ; the spell list. Runtime role:
+                                           ; the length byte of the id list
+                                           ; below - see note.
 +0x13D  u8[12]   magic_group_0            ; "Magic Modifier 1..12" hits
 +0x149  u8[12]   magic_group_1            ; second copy of the slot
 +0x155  u8[12]   magic_group_2            ; third copy of the slot
@@ -187,6 +189,20 @@ The runtime accessor in [`legaia_save::CharacterRecord`] is
 (the same field as `RecordStats::cap_constant`); `+0x11A` is the
 live INT stat (`int_live`, typed as `LiveStats::int`), which the
 engine clamps at `0x3E7` and the cheat database calls `Max INT`.
+
+### `+0x13C` is the learned-spell **count**, and that is why the cheat works.
+
+The cheat database names it `Magic Slot Activator` and prescribes writing `0x24`,
+which reads as a magic enable byte. Two menu-overlay readers say it is a plain
+length: the per-character list screen `FUN_801DA2A0` reads `+0x13C` as the
+Ra-Seru-gated learned-spell count before walking the ids, and the window-7
+character prompt substitutes `record[+0x13D + sel]` - the `sel`-th entry of the
+list `+0x13C` counts - which is what identifies that prompt as a magic-side one
+([`field-menu.md`](../subsystems/field-menu.md)). So "activating" the spell list
+is just declaring it 36 entries long, and the ids the menu then shows are
+whatever `+0x13D..` already held. Treat `+0x13C` as a count when writing it: a
+value past the real id run displays uninitialised slots rather than granting
+spells.
 
 ### `+0x161..+0x178` is the summon-level array, not spell levels.
 

@@ -337,7 +337,7 @@ pub fn list_body_draws(phase: i16, gate: i32) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Per-character stat block read from the records stats record at
-/// `0x80088140 + n*0x414`.
+/// `0x80084140 + n*0x414`.
 ///
 /// REF: FUN_801ED710 (per-character loops) - the clamping is tagged on
 /// [`records_screen`]; this is its per-character input.

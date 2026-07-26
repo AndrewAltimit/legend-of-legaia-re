@@ -398,6 +398,14 @@ out of two quadrature tables whose pointers live at `_DAT_8007B81C` and
 of the two output pointers. Which table is sine and which cosine is a property
 of the table data, not of this code, so the port keeps them positional.
 
+The tables are not overlay-local and are not an open question: `FUN_80026BE0`
+installs the pointer pair at boot from the SCUS statics `0x80070A2C` and
+`0x8007122C` (4096 entries, amplitude `0x1000`;
+[`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)), which is
+the same pair the slot-machine reel cylinder reads
+([`minigame-slot-machine.md`](minigame-slot-machine.md)). A consumer of this
+helper can decode them off `SCUS_942.54` directly.
+
 The shift matters: both products are formed at full 32-bit width and folded by a
 plain arithmetic `sra`, which rounds toward **minus infinity** - unlike the
 `bgez`-biased shifts the HUD emitters in these overlays use. Feeding a 12.12

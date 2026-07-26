@@ -384,7 +384,17 @@ store:
 ```
 
 All three of its seeds - `0x800408FC`, `0x80040D28`, `0x800410BC` - are that
-same shape. Because none of them reads the old accumulator, **a restore that
+same shape.
+
+**`amount` here is a signed stat change, not a damage magnitude** - which is what
+makes the negation land on the *same* convention `FUN_801EC3E4` uses rather than
+the opposite one. The `v0` being negated is the value folded into the stat
+halfword sixty instructions earlier (`0x800408A8`: `lhu v0,0x0(v1)` / `addu
+v0,v0,s4` / `sh v0,0x0(v1)`), so damage arrives as a **negative** `s4` and a heal
+as a positive one, and `-s4` is positive-means-the-readout-falls either way.
+Reading the seed in isolation is the reliable way to get the sign backwards.
+
+Because none of the three seeds reads the old accumulator, **a restore that
 lands while a damage drain is still in flight discards the remainder.** The rest
 is forced arithmetic: with live HP `L`, bar `D` and remainder `A = D - L`, a
 restore of `H` leaves live HP at `L + H` and ramps the bar from `D` to `D + H`,
@@ -1515,7 +1525,12 @@ they are documented here rather than lifted whole into `engine-vm`.
   still mid-animation: `+1` per live actor with `+0x1D9 != 0`, less party actors
   whose `+0x1D9 == 8`) and `ctx[+0x24D]` (active spell-children over `ctx[+0x252..]`),
   plus the sole-survivor target indices `ctx[+0x24A]` (party) / `ctx[+0x24B]`
-  (monster). These are **live counts, not latched flags**, which is why state
+  (monster). `ctx[+0x24D]`'s count is **gated**: it counts non-zero entries of
+  `ctx[+0x252..=+0x255]` only if at least one entry of `ctx[+0x24E..=+0x251]` (the
+  per-slot kind array) is non-zero, and retail returns from the whole tick before
+  reaching the count otherwise (`0x801E0BA8`) - so an empty kind array reads as
+  "nothing outstanding" whatever the child array holds. These are **live counts,
+  not latched flags**, which is why state
   `0x2E` (magic exit, gated on `ctx[+0x249] == 0`) and state `0x35` (summon
   sustain) wait on them - a stalled effect child that never dies pins the count
   above zero and holds the band. **(2) Flight/impact**: it steps the in-flight

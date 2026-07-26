@@ -99,6 +99,44 @@ kernel-path, single-target and party-wide kills: every assign hit
 | Thread | Verdict | Why |
 |---|---|---|
 | `FUN_80068D94` as "`SsSepOpen` / SEP loader" (with `FUN_80068B98` as "`SsSeqOpen`") | falsified (it is the VAB-open head) | The plausible part: it validates a magic, reads a count at `+0x12`, `SsSpuMalloc`s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is `0x564142` against `word >> 8` plus low byte `0x70` - `pBAV`, the **VAB** magic - and `+0x12` is `ps`. The "per-track pointer table" is the ProgAtr table receiving the program → packed-tone-page rank map ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: [`audio.md`](../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |
+| The entry that matches "`[u32 format == 2][u16 spu_addr[256]]`, every address `>= 0x8000`" is `monster.snd` | falsified (it is `summon.dat`; `monster.snd` is a multi-bank VAB two entries away) | [details ↓](#the-256-slot-spu-address-run-that-was-really-a-clut) |
+
+### The 256-slot SPU-address run that was really a CLUT
+
+**Falsified:** that a `[u32 mode == 2]` header followed by 256 `u16`s all
+`>= 0x8000` identifies a packed monster sound bank, and that the entry matching
+it is `h:\mpack\monster.snd`.
+
+Why it was convincing: `0x8000` is exactly the boundary an SPU sample address
+clears once the reserved low region is skipped, so "256 halfwords, every one
+`>= 0x8000`" reads as a fully-populated 256-slot address table, and a leading
+`2` reads as a format word. One PROT entry matched, and its CDNAME label named
+the sound cluster.
+
+What it actually matched is `summon.dat` (extraction 893,
+[`summon-readef.md`](../formats/summon-readef.md)), whose header word is a mode
+`2` and whose next `0x200` bytes are a **BGR555 CLUT with the STP bit forced on
+every non-zero entry** - which sets bit 15 of all 256 halfwords for a reason that
+has nothing to do with addresses. The tell the predicate cannot see: the values
+**repeat** (`0x8000 0x8000 0x8000 0x8000 0x8001 0x8001 …`), and SPU sample
+addresses are strictly increasing. A monotonicity check would have rejected it;
+a threshold check could not.
+
+`monster.snd` is extraction **891**, and the loader says so outright:
+`FUN_8003E104` does `li v0,0x37d` (raw TOC `0x37D` = extraction 891) beside the
+`h:\mpack\monster.snd` path string. Entry 891 is a 206-bank multi-VAB archive, so
+the monster SE bank is a **multi-bank VAB**, not a bespoke address table - and the
+`vab_multi_bank` class that had been described as "the `level_up` cluster's"
+archive was reading the same CDNAME `+2` shift off an extraction filename
+([`cdname.md`](../formats/cdname.md#numbering-space)). `see
+ghidra/scripts/funcs/8003e104.txt`.
+
+**Generalises to:** a byte-histogram or threshold predicate over a fixed-size run
+identifies a *shape*, never a format. Where the shape encodes an ordering
+(addresses, offsets, LBAs), assert the ordering - it is the cheapest thing that
+separates the format from its look-alikes. The `monster_sound_bank` class is kept
+and pinned at zero matches so the shape stays named rather than being
+re-derived by accident.
 
 ## Containers / placeholder slots
 

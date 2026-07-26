@@ -298,7 +298,7 @@ per `FUN_801e09f8` (the `+0x16` walk entered at the load `0x801e0f54`, the `+0x1
 | `0x00` | terminator (ends the scan) |
 | `0x01..=0x63` | **move-FX space** (bit 7 clear): spawn the 3D effect prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04` + play SFX `0x801f6418[id]` (when non-zero) |
 | `0x64` (`100`) | fixed screen-flash effect (no table lookup) |
-| `0x80`-bit set, `!= 0xFF` | **2D-sprite space** (bit 7 set): route id `& 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1[id & 0x7F]` billboard (see [effect.md](effect.md)); `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8` (effect names unknown) |
+| `0x80`-bit set, `!= 0xFF` | **2D-sprite space** (bit 7 set): route id `& 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1[id & 0x7F]` billboard (see [effect.md](effect.md)); `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8`, whose bytes are the two burst-arm move-VM trigger programs rather than pack1 scripts (see [effect.md](effect.md)) |
 | `0xFF` (and unused `0x65..=0x7F`) | no effect, scan continues |
 
 The engine already models this split at

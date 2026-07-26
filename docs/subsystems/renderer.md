@@ -309,12 +309,17 @@ word is the packet-length code (`0x05000000` / `0x08000000`). See
   then resets the GTE / primitive buffers (`FUN_8005B268`, `FUN_8003D1A4`,
   `FUN_8003D254`). Runs once before the emitters have a buffer to write into. See
   `ghidra/scripts/funcs/800271a8.txt`.
-- **`FUN_8003DAA8`** - the double-buffer swap / frame-present driver. Advances the
-  gp-relative draw-state (`gp+0x8E8` frame counter, `gp+0x964` field), then drives
-  the libgpu present chain - `FUN_8005BEE4` / `FUN_8005BECC` / `FUN_8005C42C` /
-  `FUN_8005C034` (PutDrawEnv / PutDispEnv / DrawSync / draw-list submit shape) -
-  branching on the display-mode byte at `0x8007B876`. See
-  `ghidra/scripts/funcs/8003daa8.txt`.
+- **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
+  advances. It is the CD load-kick / completion driver the asset queue drains
+  through - the four routines it calls are the **libcd** family, not libgpu:
+  `FUN_8005C42C` is the LBA→BCD-MSF conversion, `FUN_8005C034` the `CdControl`
+  retry wrapper over `FUN_8005CF80`, and `FUN_8005BEE4` / `FUN_8005BECC` the
+  ready / sync callback installers. The `gp+0x8E8` / `gp+0x964` pair it maintains
+  are load counters, and `_DAT_8007B876 & 1` is the read-in-progress flag, not a
+  display mode. Full contract in [`boot.md`](boot.md) § the CD-read API; the
+  `FUN_8005C034` identity is settled in
+  [`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+  See `ghidra/scripts/funcs/8003daa8.txt`.
 
 ## Numeric-glyph string emitters
 

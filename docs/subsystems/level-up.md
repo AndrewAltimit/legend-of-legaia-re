@@ -264,7 +264,7 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 | `0x801F4B8C` | 4-byte display row-ID table for magic slots (indices 12–17) |
 | `0x801F4B98` | Magic-type name strings: Spirit / Defense / Meta / Terra / Ozma |
 | `0x801F4C28+` | Battle-result text strings (win / annihilated / escaped / …) |
-| `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
+| `0x801F5CF8`, `0x801F5D90` | 18-byte **move-VM trigger programs** (`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`), one per burst arm. Not tables, and they do not call `FUN_80050ED4` - the `0x17` in them escapes to `FUN_801F30C4`, which does. Each precedes its arm's stager record one alignment word later (`0x801F5DA4` / `0x801F5D0C`); the constant `-0x14` skew between the two address pairs is the tell. See [`functions/battle.md`](../reference/functions/battle.md#801f30c4). |
 | `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
 
 No increment table lives in this *display* overlay - the growth tables

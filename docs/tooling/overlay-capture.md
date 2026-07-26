@@ -31,7 +31,7 @@ The dump count column reflects committed function dumps under `ghidra/scripts/fu
 
 #### Minigame-hub overlay controllers
 
-All five hub minigames are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** - they are distinct files sharing a library core, so a given address hosts a *different* function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)):
+All five hub minigames are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** - they are distinct files sharing a library core, so a given address *may* host a different function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)):
 
 - Fishing `FUN_801CF3BC` (`DAT_801d926c` SM)
 - Slot machine `FUN_801CF0D8`
@@ -39,6 +39,19 @@ All five hub minigames are variants of the same overlay binary (101–154 shared
 - Dance `FUN_801CF470` (`DAT_801d5334` SM)
 
 The previously-listed per-minigame "main entry" addresses (`801D63B0` / `801D2CC0` / `801D5ED0` / `801D2F38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw - their high caller counts reflect that, not control flow. All functions dumped.
+
+**"They VA-alias" is a fact per address, not per image.** A capture window is
+wider than the overlay resident in it, so everything above an image's own
+footprint is the *previous* slot-A occupant still in RAM
+([`static-overlay-pipeline.md`](static-overlay-pipeline.md#a-small-overlay-does-not-clear-the-slot)
+has the per-image strata). PROT 0971 (`debug_menu`) carries only `0x1800` bytes,
+so most of what an `overlay_debug_menu_` filename claims is fishing (0972) bytes.
+`0x801D26CC` / `0x801D2050` / `0x801D2278` / `0x801D4948` / `0x801D5C2C` are all
+that case - byte-identical across the fishing, slot-machine and debug-menu
+captures, framed as an entry by 0972 alone, and already documented as fishing
+routines in [`minigame-fishing.md`](../subsystems/minigame-fishing.md). They are
+one function each, not five per-minigame variants. Resolve the image with
+`locate-entry-image.py` before trusting a filename prefix.
 
 #### Muscle Dome overlay controllers
 
@@ -63,8 +76,9 @@ Per-character growth does not come from a table in this *display* overlay - it
 is in static `SCUS_942.54` (`DAT_800769CC` curves + `DAT_80076918` param block),
 applied by the victory-path level-up function `FUN_801E9504`. The writer-search
 here came up empty because it scanned the `magic_level_up` overlay, not that
-applier. The earlier "HP grant at Seru `+0x74`" reading is **falsified** - those
-`+0x74` reads surface a `0x80808080` battle-state flag, not a stat grant. See
+applier. The earlier "HP grant at Seru `+0x74`" reading is **falsified** - `+0x74` is the
+actor's colour word, stamped with the 24-bit mid-grey `0x00808080` (masked
+`0x00FFFFFF`), not a stat grant and not a `0x80808080` flag. See
 [`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
 ## Capturing with PCSX-Redux

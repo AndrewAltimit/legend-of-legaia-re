@@ -94,11 +94,11 @@ mode-menu-world dispatch; the init sequence maps onto `BootSession`.
 Reads the first three sectors of `PROT.DAT` (= 6 KB) into RAM at `0x801C70F0`. Called from `FUN_8003EFE8` and `FUN_8003F08C` at boot.
 
 The two boot callers differ only in whether they bring the CD stack up first.
-**`FUN_8003EFE8`** (`see ghidra/scripts/funcs/8003f000.txt`) is the bare open: it
+**`FUN_8003EFE8`** (`see ghidra/scripts/funcs/8003efe8.txt`) is the bare open: it
 zeroes the async-load queue globals (`gp+0x984` byte cursor and `gp+0x8BC`
 queued-entry count - the same pair the enqueue below advances), dev-prints
 `open port.dat`, then calls `FUN_8003E4E8("PROT.DAT", 1)` with the do-read flag
-set. **`FUN_8003F08C`** (`see ghidra/scripts/funcs/8003f0f4.txt`) wraps that same
+set. **`FUN_8003F08C`** (`see ghidra/scripts/funcs/8003f08c.txt`) wraps that same
 open behind a `param==0` gate and, when taken, first programs the drive through
 the CD command sender `FUN_8005C160` (`0x0E` set-mode with the mode block at
 `0x8007BBC0`, then `0x03`), bracketed by the `FUN_8005BE0C` / `FUN_8005BE8C` sync

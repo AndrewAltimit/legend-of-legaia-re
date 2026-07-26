@@ -57,7 +57,9 @@ that pokes one address is a free field label for that offset.</p>
                                           ; "Level 99" cheat target. See note.
 +0x131  u8       magic_rank_candidate     ; possible separate magic-rank byte
                                           ; (unconfirmed; new-game seeds it to 1).
-+0x13C  u8       magic_slot_activator     ; cheat sets to 0x24 to enable
++0x13C  u8       learned_spell_count      ; length byte of the id list below;
+                                          ; the "Magic Slot Activator" cheat
+                                          ; just writes 0x24 into it
 +0x13D  u8[12]   magic_group_0            ; "Magic Modifier 1..12" hits
 +0x149  u8[12]   magic_group_1
 +0x155  u8[12]   magic_group_2
