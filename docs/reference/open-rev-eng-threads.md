@@ -302,6 +302,7 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 | `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
 | Is `FUN_80018DB0` a rumble cadence rather than an audio one? | resolved (moved to re-settled) | Yes - grade `disassembly`. `FUN_8006E2B4` is `PadInitDirect` and `FUN_8006CE30` is a three-argument `PadSetAct`; `DAT_800915DA/DB` are port 0's actuator bytes, so the kernel drives vibration and plays nothing. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | Retail's footstep SFX cue id | resolved-negative (moved to re-settled) | There is no cue to pin: the only "cadence" is the rumble one above, and the capture already showed retail plays nothing on a step. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
+| SFX key-on pitch - does retail apply `note - center` to cue tones? | open | [details ↓](#sfx-key-on-pitch---does-retail-apply-note-vs-center-to-cue-tones) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
@@ -311,6 +312,53 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..XA34`, title-capture byte-exact vs the disc files). The filler is **`FUN_801CFA78`** in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs): it sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via the ISO9660 lookup `FUN_8005DBB4`, called once from the init boot tick `0x801CF500`. The earlier "filler is an untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two `lui 0x801c` materialisation sites in SCUS (`FUN_8003D53C`/`FUN_8003EAE4`) are the **readers**, and the writer is overlay-resident, so no absolute-form scan of SCUS could see it.
 
 A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cue. Decoded: menu voice `FUN_8004FCC8`; the normal-move grunt (`XA30` chan 0/4/6, overlay `0x801EEB44`); the **arts shout** (`FUN_8004C140` → `XA2`/`XA4`/`XA6` per character, per-art channel pool, capture-verified; [battle-action.md](../subsystems/battle-action.md)); SM state-`0x6E` (`XA9` via `0x800787AF`); slot machine `XA1`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls).
+
+### SFX key-on pitch - does retail apply note-vs-center to cue tones?
+
+*Status:* open
+
+The cue **ids** and the **bank** for the shared UI cues are both pinned; what is
+not pinned is the pitch the tone is keyed at, and it is the difference between a
+menu blip and a thud.
+
+What is settled. The pause menu's ids come from the SCUS list kernel
+`FUN_80032A44` (`0x20` confirm, `0x21` cursor, `0x23` disabled-row buzz, `0x37`
+cancel - grade `disassembly`, and SCUS so no load-base ambiguity). Their
+descriptors resolve in program `0` of the class-2 bank (PROT 0869), which is a
+one-VAG-per-semitone SFX key map whose single-note windows `min == max == 60 + i`
+match the descriptor notes 1:1 - the ids and that bank were authored together.
+See [`sfx-table.md`](../formats/sfx-table.md#the-ui-cues-live-in-program-0-of-the-class-2-bank).
+
+The question. That program's `center` bytes are `79..=88` while the notes it is
+keyed with are `60..=69`, so a libsnd-style `note - center` pitch puts every UI
+cue **16..23 semitones down** (`0x20`: note 60 vs center 83 → −23, a ×0.26 rate).
+Rendered off a real disc through the clean-room SPU each cue comes out ~0.7 s at
+near full scale - measured `0x20` peak 15317 / 33213 samples, against the duel
+hit `0x09` at 16234 / 33206. Two readings survive, and they predict different
+sounds:
+
+1. **Retail applies the shift.** The designer tuned each sample through its
+   `center` and the low, long cue is authentic. Then the port is already correct
+   and nothing needs changing.
+2. **The SFX path ignores `center`.** The tone is keyed at its recorded rate and
+   each cue is a short blip; the `center` bytes are vestigial for a program whose
+   windows are single notes. Then the port's `compute_pitch` is wrong for this
+   path and every SFX cue in the engine is pitched flat.
+
+Why it is not already answered: the SPU programming `FUN_80065034` is libsnd and
+explicitly out of clean-room scope, so nothing in the corpus states how it
+derives the pitch register from the descriptor's note byte.
+
+What would close it. Either (a) disassemble `FUN_80065034`'s pitch path to the
+`SpuSetVoiceAttr` pitch write and see whether the resolved tone's `center` enters
+the computation, or (b) a runtime capture of `SPU_VOICE_PITCH` for voices
+`23 - cursor` on the frame a pause-menu cursor move drains the ring - the
+register value alone separates the two readings (unity for this bank's VAGs vs a
+~0.26× step).
+
+Consequence while open: the browser play page pins the three ids, reports them,
+and **withholds the sound** (`play_sfx::CUE_MENU_CURSOR`), because navigating the
+menu otherwise plays the downshifted thuds as impact sounds.
 
 ## Title / boot / overlays
 

@@ -57,10 +57,18 @@ fn descriptor_bank_installs_from_the_executable() {
     );
 }
 
-/// The measurement that matters: a cue has to make a *noise*. Rendering through
-/// a throwaway SPU proves the descriptor's program and sample resolve in the
-/// resident class-2 bank, which is exactly what a silent-but-wired channel
-/// would fail.
+/// Rendering through a throwaway SPU proves each **pinned retail** cue id's
+/// program and sample resolve in the resident class-2 bank.
+///
+/// Read what this does and does not claim. It probes `cue` - the id retail
+/// fires - not `fires`, which is what this host enqueues and is currently
+/// `null` for every menu row. So a pass here means "the id resolves to a real
+/// sample in the bank the page stages", which is worth pinning: it is how the
+/// class-2 bank was confirmed to be the right bank for this id range (program 0
+/// there is a one-VAG-per-semitone SFX key map whose single-note windows line
+/// up with these descriptors' notes). It does **not** mean the page plays them,
+/// nor that the rendering is pitched correctly - that is the open question in
+/// `play_sfx::CUE_MENU_CURSOR`, and it is why these cues are withheld.
 #[test]
 fn advertised_cues_render_a_non_silent_buffer() {
     let Some(mut rt) = loaded_in_town() else {
@@ -139,6 +147,35 @@ fn every_event_declares_disc_or_site_provenance() {
             ev["why"].as_str().is_some_and(|s| !s.is_empty()),
             "event {ev} must carry a provenance note"
         );
+        // Retail's id and what the host plays are separate fields, and both
+        // must be present: reporting only `cue` would claim a sound the host
+        // withholds, reporting only `fires` would hide a pinned fact.
+        assert!(
+            ev["cue"].as_u64().is_some(),
+            "event {ev} must report retail's cue id"
+        );
+        assert!(
+            ev.get("fires").is_some(),
+            "event {ev} must report what the host fires (null when withheld)"
+        );
+        // A fired cue must be retail's own id, never a stand-in sample.
+        if let Some(f) = ev["fires"].as_u64() {
+            assert_eq!(
+                f,
+                ev["cue"].as_u64().unwrap(),
+                "event {ev}: a fired cue must be retail's id"
+            );
+        }
+    }
+    // The three pause-menu rows are traced ring writes, not port picks. This
+    // is the corrected claim: they come from the SCUS list kernel FUN_80032A44,
+    // not from the Baka Fighter overlay they were previously attributed to.
+    for name in ["menu_cursor", "menu_confirm", "menu_cancel"] {
+        let ev = events
+            .iter()
+            .find(|e| e["event"] == name)
+            .unwrap_or_else(|| panic!("{name} must be advertised"));
+        assert_eq!(ev["source"], "disc", "{name} is a traced ring write");
     }
     // The footstep must NOT appear here. Its cadence is the retail kernel but
     // its cue id is unpinned, and an id resolves through the descriptor table
@@ -151,6 +188,52 @@ fn every_event_declares_disc_or_site_provenance() {
         "the footstep must stay out of the advertised cue list while its id is \
          unpinned - see CUE_FOOTSTEP"
     );
+}
+
+/// The menu firing site has to stay *wired* while its cues are withheld.
+///
+/// Assert on `menu_cue_requests`, not `queued` or `fired`, for the same reason
+/// the footstep test below asserts on `cadence_steps`: a withheld row never
+/// reaches the scheduler, so `queued` cannot tell "the page asked and the host
+/// declined" from "the page never asked" - and that is precisely the failure
+/// that would make this fix indistinguishable from deleting the calls. When the
+/// pitch path is pinned and the cues flip to `Some`, `queued` starts tracking
+/// this counter and the test still holds.
+#[test]
+fn a_withheld_menu_cue_is_requested_counted_and_silent() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let state = |rt: &LegaiaRuntime| -> (u64, u64, u64) {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+        (
+            v["menu_cue_requests"].as_u64().unwrap_or(0),
+            v["queued"].as_u64().unwrap_or(0),
+            v["fired"].as_u64().unwrap_or(0),
+        )
+    };
+
+    let (r0, q0, f0) = state(&rt);
+    assert_eq!(r0, 0, "no cue requested before the page fires one");
+
+    // Exactly what site/js/play-app.js does on a pad edge in the pause menu.
+    for name in ["menu_cursor", "menu_confirm", "menu_cancel"] {
+        assert!(
+            !rt.play_sfx_event(name),
+            "{name} is withheld, so firing it must report that nothing sounded"
+        );
+    }
+    let (r1, q1, f1) = state(&rt);
+    assert_eq!(r1, r0 + 3, "each menu cue request must be counted");
+    assert_eq!(q1, q0, "a withheld cue must not reach the scheduler");
+    assert_eq!(f1, f0, "a withheld cue must not key a voice");
+
+    // An unknown event is still rejected without counting - the counter tracks
+    // real wiring, not every string the page passes in.
+    assert!(!rt.play_sfx_event("no_such_event"));
+    assert_eq!(state(&rt).0, r1, "an unknown event is not a cue request");
 }
 
 /// The footstep cadence has to be *reachable from the host tick* and has to

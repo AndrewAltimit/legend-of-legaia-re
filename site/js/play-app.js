@@ -835,7 +835,15 @@
         /* Cue the engine's own blips off this frame's edges: a direction is a
          * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
          * provenance come from the engine (`play_sfx_events_json`) - the page
-         * never hard-codes one. */
+         * never hard-codes one.
+         *
+         * These are currently SILENT by the engine's choice, and that is not a
+         * bug here: retail's three ids are pinned (`FUN_80032A44`), but the port
+         * renders them 16..23 semitones flat, which is why menu navigation used
+         * to play thuds. The engine withholds them and counts the requests
+         * (`menu_cue_requests` in `play_sfx_state_json`), so keep firing the
+         * events - the wiring is what stays measurable. See
+         * `play_sfx::CUE_MENU_CURSOR`. */
         if (edge) {
           const DIRS = 0x0010 | 0x0020 | 0x0040 | 0x0080;
           if (edge & 0x4000) this.sfxEvent('menu_confirm');

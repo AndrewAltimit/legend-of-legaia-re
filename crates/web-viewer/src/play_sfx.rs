@@ -35,6 +35,15 @@
 //! reports it per event, so the page can say which sounds are the game's and
 //! which are the port's pick. Nothing here silently invents a retail cue.
 //!
+//! There is a **third** state this page needs and the split above cannot
+//! express: an id traced to retail that the port declines to render. The pause
+//! menu is that case - its three ids are pinned to instructions in
+//! `FUN_80032A44` ([`RETAIL_MENU_CURSOR_CUE`]) yet the port renders them
+//! 16..23 semitones flat, so each plays as a low thud. Every row therefore
+//! reports `cue` (retail's id) *and* `fires` (what this host enqueues, `null`
+//! when withheld), and the count of requests is kept either way. See
+//! [`CUE_MENU_CURSOR`] for the measurement and the open question.
+//!
 //! The **footstep cadence** is the interesting case, and its answer is a
 //! negative: the *timing* is the ported retail kernel (`FUN_80018db0`,
 //! [`FootstepCadence`] - the interval derived from movement magnitude, the
@@ -59,12 +68,65 @@ pub const SFX_BANK_SPU_BYTES: u32 = 0x30000;
 /// Bottom of the BGM region, matching the native boot's `SPU_RESERVED_BYTES`.
 pub const SPU_RESERVED_BYTES: u32 = 0x1000;
 
-/// Cue id fired for a pause-menu cursor move.
-const CUE_CURSOR: u8 = crate::sfx_view::CUE_CURSOR;
-/// Cue id fired for a pause-menu confirm.
-const CUE_CONFIRM: u8 = crate::sfx_view::CUE_CONFIRM;
-/// Cue id fired for a pause-menu cancel.
-const CUE_CANCEL: u8 = crate::sfx_view::CUE_CANCEL;
+/// Cue id **retail's pause menu** fires when the list cursor moves.
+///
+/// Traced to `FUN_80032A44`, the SCUS-resident kind-4 list kernel every
+/// pause-menu list window is paged by. The kernel inlines `FUN_80035B50`'s ring
+/// enqueue instead of calling it, so each literal sits beside its own store:
+/// `li a2,0x21` at `0x80032b9c` / `0x80032c68` / `0x80032c74`, then
+/// `sh a2,0x0(v0)` with `v0 = 0x8007B6D8 + head*2`, and the head bookkeeping
+/// (`gp+0x158` cursor, `gp+0x15a` park, wrap at 4, timing word cleared at
+/// `0x8007C338`) matches that producer exactly. Being SCUS addresses, they
+/// carry none of the overlay load-base ambiguity a `0x801C****` dump would.
+///
+/// [`crate::sfx_view`]'s identically-valued `CUE_CURSOR` is the **Baka Fighter**
+/// overlay's own ring write and stays a separate constant deliberately: the two
+/// pages reach the same id through different code, and retracing one page's
+/// cues must not silently move the other's. Same set in
+/// `docs/subsystems/field-menu.md`.
+pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = 0x21;
+/// Cue id retail's pause menu fires confirming an **enabled** row: `li a1,0x20`
+/// at `0x80032d24` in `FUN_80032A44`, stored through the shared
+/// `sh a1,0x0(v0)` at `0x80032d40` alongside the `mode = 2` write. A
+/// *disabled* row takes the sibling branch and buzzes `0x23` instead
+/// (`li a1,0x23` at `0x80032d0c`) - a distinction this host has no path for.
+pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = 0x20;
+/// Cue id retail's pause menu fires on cancel: `li a2,0x37` at `0x80032d74` in
+/// `FUN_80032A44`, stored at `0x80032d94`, with `mode = 3`.
+pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = 0x37;
+
+/// What this host actually enqueues for a cursor move: **nothing** - and not
+/// because the id is unknown. [`RETAIL_MENU_CURSOR_CUE`] is pinned to
+/// instructions; the link withheld here is one step further down the chain.
+///
+/// A cue id names a `(program, tone, note)` triple in the static table, and this
+/// port keys it with `note - tone.center` pitch math
+/// (`legaia_engine_audio::vab_bind::compute_pitch`). In the class-2 bank the
+/// page stages, program `0` is a purpose-built **SFX key map** - one distinct
+/// VAG per semitone, single-note windows `min == max == 60 + i` that line up
+/// 1:1 with these descriptors' note bytes - so the bank and the ids agree. But
+/// that program's `center` bytes sit at `79..=88`, so every UI cue keys
+/// **16..23 semitones below** its recorded pitch (`0x20` is note 60 against
+/// center 83). Rendered off a real disc each one comes out ~0.7 s long at near
+/// full scale - a low thud, not a blip. That is what "navigating the pause menu
+/// plays punching sounds" is.
+///
+/// Whether retail's own key-on applies that shift is **not settled**: the SPU
+/// programming (`FUN_80065034`) is libsnd and out of clean-room scope, and
+/// nothing in the corpus pins the SFX pitch path. Two readings survive - the
+/// designer tuned each sample through its `center` and the low thud is
+/// authentic, or the SFX path ignores `center` and the sample plays at unity.
+/// Filed in `docs/reference/open-rev-eng-threads.md`.
+///
+/// So the ids stay pinned and reported, the firing site stays wired and
+/// counted ([`PlaySfx::menu_cue_requests`]), and the sound is withheld until
+/// the pitch path is traced - the shape [`CUE_FOOTSTEP`] already settled on.
+/// Flipping these three to `Some(...)` is the whole change once it is.
+const CUE_MENU_CURSOR: Option<u8> = None;
+/// Confirm counterpart of [`CUE_MENU_CURSOR`] - withheld for the same reason.
+const CUE_MENU_CONFIRM: Option<u8> = None;
+/// Cancel counterpart of [`CUE_MENU_CURSOR`] - withheld for the same reason.
+const CUE_MENU_CANCEL: Option<u8> = None;
 /// Cue id fired for a footstep: `None`, and pinned there by capture -
 /// **retail plays no footstep sound at all**, so the cadence runs and keys no
 /// voice because there is nothing to key.
@@ -83,10 +145,10 @@ const CUE_CANCEL: u8 = crate::sfx_view::CUE_CANCEL;
 ///
 /// So there is no retail id to copy, and a guessed one would not be a
 /// near-miss but an arbitrary sample: an id resolves through the descriptor
-/// table (`DAT_8006F198 + id*8`) to a *program index* - `0x21` names program
-/// `1` - and that program selects a different sample in every resident bank.
-/// Firing `0x21` in a field scene played the *field* bank's program 1, an
-/// impact sample: walking punched.
+/// table (`DAT_8006F198 + id*8`) to a `(program, tone)` pair - `0x21` is
+/// program `0`, tone `1`, not program `1` as this note previously said - and
+/// that pair selects a different sample in every resident bank. Firing `0x21`
+/// in a field scene played an impact sample: walking punched.
 ///
 /// The cadence stays wired so [`FUN_80018db0`]'s timing keeps running and stays
 /// observable in the HUD counters. Giving the port a footstep is therefore an
@@ -94,36 +156,60 @@ const CUE_CANCEL: u8 = crate::sfx_view::CUE_CANCEL;
 /// gap waiting on more RE.
 const CUE_FOOTSTEP: Option<u8> = None;
 
-/// One event this host can fire, with how its cue id was chosen. `"disc"`
-/// means the id is traced to a retail ring write; `"site"` means retail plays
-/// nothing there (or its id is unpinned) and the port reuses the closest cue.
-/// Same convention as [`crate::sfx_view`], deliberately.
-const PLAY_EVENTS: &[(&str, u8, &str, &str)] = &[
-    (
-        "menu_cursor",
-        CUE_CURSOR,
-        "site",
-        "cue id is the traced menu-SM cursor blip; retail's *pause* menu SM is \
-         not the SM it was traced from",
-    ),
-    (
-        "menu_confirm",
-        CUE_CONFIRM,
-        "site",
-        "cue id is the traced menu-SM confirm blip, remapped to this menu",
-    ),
-    (
-        "menu_cancel",
-        CUE_CANCEL,
-        "site",
-        "cue id is the traced menu-SM cancel blip, remapped to this menu",
-    ),
+/// One event this host is wired for: the cue id **retail** fires there, what
+/// this host actually enqueues, and where the id came from.
+///
+/// Splitting `retail_cue` from `fires` is the point. The page can then state
+/// what the game plays *and* that the port is currently withholding it, instead
+/// of having to choose between advertising a sound it does not make and hiding
+/// a fact it has pinned.
+struct PlayCue {
+    /// Name the page fires this cue by.
+    event: &'static str,
+    /// The cue id retail writes into the `_DAT_8007B6D8` ring here.
+    retail_cue: u8,
+    /// What this host enqueues. `None` = pinned but deliberately silent.
+    fires: Option<u8>,
+    /// `"disc"` = traced to a retail ring write; `"site"` = a port pick where
+    /// retail plays nothing (or its id is unpinned). Same convention as
+    /// [`crate::sfx_view`], deliberately.
+    source: &'static str,
+    /// Why this row's id is what it is, and why it does or does not sound.
+    why: &'static str,
+}
+
+const PLAY_EVENTS: &[PlayCue] = &[
+    PlayCue {
+        event: "menu_cursor",
+        retail_cue: RETAIL_MENU_CURSOR_CUE,
+        fires: CUE_MENU_CURSOR,
+        source: "disc",
+        why: "FUN_80032A44 cursor-step ring write (li a2,0x21 at 0x80032b9c); \
+              withheld pending the SFX key-on pitch path - see CUE_MENU_CURSOR",
+    },
+    PlayCue {
+        event: "menu_confirm",
+        retail_cue: RETAIL_MENU_CONFIRM_CUE,
+        fires: CUE_MENU_CONFIRM,
+        source: "disc",
+        why: "FUN_80032A44 enabled-row confirm (li a1,0x20 at 0x80032d24); \
+              withheld pending the SFX key-on pitch path - see CUE_MENU_CURSOR",
+    },
+    PlayCue {
+        event: "menu_cancel",
+        retail_cue: RETAIL_MENU_CANCEL_CUE,
+        fires: CUE_MENU_CANCEL,
+        source: "disc",
+        why: "FUN_80032A44 cancel (li a2,0x37 at 0x80032d74); withheld pending \
+              the SFX key-on pitch path - see CUE_MENU_CURSOR",
+    },
 ];
 
-/// The footstep is deliberately absent from [`PLAY_EVENTS`]: its cadence runs
-/// every field frame but keys no voice, because the capture behind
-/// [`CUE_FOOTSTEP`] shows retail playing nothing there. An entry here would
-/// have to be a `site` cue the port invents, not a retail one it reproduces.
+/// The footstep stays out of [`PLAY_EVENTS`] even though that table can now
+/// carry a withheld row, because its case is the opposite one: a menu row has a
+/// pinned `retail_cue` this host declines to *render*, while retail fires no
+/// footstep cue at all, so there is no id to report. Advertising one would
+/// invent the fact rather than withhold it. See [`CUE_FOOTSTEP`].
 const _: Option<u8> = CUE_FOOTSTEP;
 
 /// World-unit displacement per tick below which the player counts as still.
@@ -185,6 +271,13 @@ pub struct PlaySfx {
     /// tells a wired-but-silent source apart from one that never fires - and
     /// unlike [`Self::fired`] it is observable off wasm, where there is no SPU.
     pub queued: u32,
+    /// Named-event cue requests the page has made since it loaded, counted
+    /// **before** the `fires` lookup and so independent of whether the row is
+    /// withheld. While the menu cues are `None` this is the only counter that
+    /// can tell a wired firing site from an unwired one: `queued` cannot,
+    /// because a withheld row never reaches the queue. Same role
+    /// [`Self::cadence_steps`] plays for the footstep.
+    pub menu_cue_requests: u32,
     /// Cues that keyed an SPU voice since the page loaded - the page's readout
     /// and the audibility half of the measurement.
     pub fired: u32,
@@ -433,6 +526,7 @@ impl LegaiaRuntime {
             "bank_prot": self.sfx.bank_index,
             "vab_staged": self.sfx.vab_staged,
             "cadence_steps": self.sfx.cadence_steps,
+            "menu_cue_requests": self.sfx.menu_cue_requests,
             "queued": self.sfx.queued,
             "fired": self.sfx.fired,
             "last_cue": self.sfx.last_fired.map(|(id, _)| id),
@@ -447,15 +541,21 @@ impl LegaiaRuntime {
     /// hard-codes a cue id and can label which sounds are retail's:
     ///
     /// ```json
-    /// [ { "event": "menu_confirm", "cue": 32, "source": "site",
-    ///     "why": "..." } ]
+    /// [ { "event": "menu_confirm", "cue": 32, "fires": null,
+    ///     "source": "disc", "why": "..." } ]
     /// ```
+    ///
+    /// `cue` is the id **retail** fires there; `fires` is what this host
+    /// enqueues, and `null` means the id is pinned but deliberately withheld
+    /// (see [`CUE_MENU_CURSOR`]). A page that renders only `cue` would claim a
+    /// sound the host does not make, so both fields are reported.
     pub fn play_sfx_events_json(&self) -> String {
         let rows: Vec<serde_json::Value> = PLAY_EVENTS
             .iter()
-            .map(|(event, cue, source, why)| {
+            .map(|c| {
                 serde_json::json!({
-                    "event": event, "cue": cue, "source": source, "why": why,
+                    "event": c.event, "cue": c.retail_cue, "fires": c.fires,
+                    "source": c.source, "why": c.why,
                 })
             })
             .collect();
@@ -514,13 +614,21 @@ impl LegaiaRuntime {
     }
 
     /// Fire the cue mapped to a named event (see
-    /// [`Self::play_sfx_events_json`]). Returns `false` for an unknown event or
-    /// a cue that did not sound.
+    /// [`Self::play_sfx_events_json`]). Returns `false` for an unknown event, a
+    /// row whose cue is withheld, or a cue that did not sound.
+    ///
+    /// A known-but-withheld row still counts the request
+    /// ([`PlaySfx::menu_cue_requests`]), so the page's firing site stays
+    /// measurable while [`CUE_MENU_CURSOR`] is `None`.
     pub fn play_sfx_event(&mut self, event: &str) -> bool {
-        let Some((_, cue, _, _)) = PLAY_EVENTS.iter().find(|(name, ..)| *name == event) else {
+        let Some(row) = PLAY_EVENTS.iter().find(|c| c.event == event) else {
             return false;
         };
-        self.play_sfx(*cue as u32)
+        self.sfx.menu_cue_requests += 1;
+        let Some(cue) = row.fires else {
+            return false;
+        };
+        self.play_sfx(cue as u32)
     }
 }
 
@@ -530,20 +638,60 @@ mod tests {
 
     /// Every advertised event resolves to a descriptor id inside the table's
     /// 100-entry space, and every row declares its provenance as one of the two
-    /// values the pages switch on.
+    /// values the pages switch on. A row's `fires` id, when present, must be the
+    /// retail one - this host may withhold a cue but must never substitute a
+    /// different sample for it.
     #[test]
     fn every_event_has_an_in_range_cue_and_a_declared_source() {
         assert!(!PLAY_EVENTS.is_empty());
-        for (event, cue, source, why) in PLAY_EVENTS {
+        for c in PLAY_EVENTS {
+            let (event, cue) = (c.event, c.retail_cue);
             assert!(
-                *cue <= 0x63,
+                cue <= 0x63,
                 "{event}: cue {cue:#x} is outside the static table's 0x00..=0x63 id space"
             );
             assert!(
-                matches!(*source, "disc" | "site"),
-                "{event}: source must be disc or site, got {source}"
+                matches!(c.source, "disc" | "site"),
+                "{event}: source must be disc or site, got {}",
+                c.source
             );
-            assert!(!why.is_empty(), "{event}: needs a provenance note");
+            assert!(!c.why.is_empty(), "{event}: needs a provenance note");
+            if let Some(f) = c.fires {
+                assert_eq!(
+                    f, cue,
+                    "{event}: a fired cue must be retail's id, not a substitute"
+                );
+            }
+        }
+    }
+
+    /// The pause-menu ids this host pins are the ones `FUN_80032A44` writes.
+    /// Hard-coded here rather than aliased from [`crate::sfx_view`] so the two
+    /// pages' cue sets stay independent - and asserted equal to the duel
+    /// overlay's values, which documents that they coincide *and* fails loudly
+    /// if a future retrace moves either set without the other being reviewed.
+    #[test]
+    fn menu_cue_ids_are_the_traced_scus_list_kernel_ids() {
+        assert_eq!(RETAIL_MENU_CONFIRM_CUE, 0x20);
+        assert_eq!(RETAIL_MENU_CURSOR_CUE, 0x21);
+        assert_eq!(RETAIL_MENU_CANCEL_CUE, 0x37);
+        // The Baka Fighter page must keep firing exactly what it fired before.
+        assert_eq!(crate::sfx_view::CUE_CONFIRM, RETAIL_MENU_CONFIRM_CUE);
+        assert_eq!(crate::sfx_view::CUE_CURSOR, RETAIL_MENU_CURSOR_CUE);
+        assert_eq!(crate::sfx_view::CUE_CANCEL, RETAIL_MENU_CANCEL_CUE);
+    }
+
+    /// Every menu row is currently withheld. This is the assertion that has to
+    /// change when the pitch path in [`CUE_MENU_CURSOR`] is traced, so it is
+    /// written to fail rather than to pass silently either way.
+    #[test]
+    fn menu_cues_are_withheld_while_the_pitch_path_is_open() {
+        for c in PLAY_EVENTS {
+            assert!(
+                c.fires.is_none(),
+                "{}: still withheld until the SFX key-on pitch path is pinned",
+                c.event
+            );
         }
     }
 

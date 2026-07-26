@@ -111,6 +111,33 @@ itself: the Baka Fighter overlay's cues, for instance, are plain `_DAT_8007b6d8 
 [`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#sound)), and
 those literals are descriptor ids as-is.
 
+The same four ids are **not** the duel's own: `0x20` confirm / `0x21` cursor /
+`0x23` disabled-row buzz / `0x37` cancel are the *shared UI* cues, written by the
+SCUS-resident kind-4 list kernel `FUN_80032A44` that pages every pause-menu list
+window (`li a2,0x21` at `0x80032b9c`, `li a1,0x20` at `0x80032d24`, `li a1,0x23`
+at `0x80032d0c`, `li a2,0x37` at `0x80032d74`, each with the ring store beside
+it - see [`field-menu.md`](../subsystems/field-menu.md)). The Baka overlay is a
+co-user of the global ids, not their source; attributing them to it is how the
+browser play page came to label its own pause-menu cues a port pick.
+
+### The UI cues live in program 0 of the class-2 bank
+
+Program `0` of the class-2 bank (PROT 0869) is a purpose-built SFX key map, and
+the descriptor table is authored against it: one distinct VAG per semitone with
+single-note windows `min == max == 60 + i`, matching the UI descriptors' note
+bytes 1:1 (`0x20` → tone 0 / note 60, `0x21` → tone 1 / note 61, `0x23` → tone 3
+/ note 63, `0x09` → tone 9 / note 69). `0x37` is the one that does not line up -
+tone 5, note 64, against a `[65,65]` window - which is the clearest single
+illustration of why the fire path indexes the tone directly.
+
+One caveat for anyone rendering these through a clean-room SPU: that program's
+`center` bytes sit at `79..=88`, so a libsnd-style `note - center` pitch gives
+every UI cue a **16..23 semitone downshift** (`0x20` is note 60 against center
+83), turning each blip into a ~0.7 s low thud. Whether retail's key-on applies
+that shift is unresolved - `FUN_80065034` is libsnd and out of clean-room scope.
+See the open thread in
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#sfx-key-on-pitch---does-retail-apply-note-vs-center-to-cue-tones).
+
 ### A cue names its tone by **index**, not by key range
 
 The SFX fire path and the *sequencer's* note-on differ, and conflating them
