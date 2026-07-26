@@ -583,3 +583,86 @@ overlay begins a six-instruction leaf there that stores master game mode
 `0x16` (CARD INIT) and raises the entry-context word - the overlay-local twin of
 the SCUS scripted game-over trigger. The row was deleting that routine with a
 reason true of four other images, and the audit is what surfaced it.
+
+## The sibling worklist: cited but not dumped
+
+`port-catalog.py --missing-dumps` is the mirror image of the worklist this page
+classifies: an address some dump *cites* but that has no dump of its own. Same
+inflation, one step earlier, and worth reading with the same suspicion - a
+citation is not a call.
+
+What counts as a citation is a regex over the dump text, and only four token
+shapes match: `FUN_<addr>`, `func_0x<addr>`, `jal 0x<addr>` and
+`jalr r,0x<addr>`. A bare `j 0x<addr>` in a disassembly does **not** match. So
+a jump label contributes nothing from the instruction stream and everything
+from the decompiled C, where Ghidra renders the same label as `func_0x<addr>()`.
+The rows this produces are therefore the [label-call
+artifact](../subsystems/script-vm.md#intra-function-label-catalogue) seen through
+the citation counter, and each resolves the same way: find the enclosing body,
+confirm the in-body branches that reach the VA, and record it as `INTERIOR`.
+
+Worked examples, each read out of the enclosing body's disassembly rather than
+out of its C:
+
+| Cited VA | Cited from | What it is |
+|---|---|---|
+| `0x801E28C4` | field/event VM `FUN_801DE840` | Its [wait join](../subsystems/script-vm.md#the-wait-join-at-0x801e28c4) - four instructions, one `j` predecessor at `0x801E1B04`, both arms landing in the routine's own epilogue. |
+| `0x801EFEA0` | tile-board walk SM `FUN_801EF2B0` | Its [render tail](../subsystems/tile-board.md#the-render-tail-0x801efea0), reached from nineteen in-body sites and running to that routine's epilogue at `0x801F03E8`. |
+| `0x801ED2D4` | world-map picker `FUN_801ECD0C` | A shared epilogue: one store to `ctx[+0x54]`, then the register restores and `addiu sp,sp,0x40` unwinding a frame it never built. Ghidra minted an entry here and cut the parent's body at the jump, so `getFunctionContaining` answers with the fragment. |
+| `0x801DAB7C` | initiative seeder `FUN_801DA780` | Its exit tail, reached from `0x801DAB00` / `0x801DAB34`. The citing dump prints the same routine at `0x801FF930` - a mis-based window - so the citation names a VA in the **battle-action** image, not in the image the dump was printed under. |
+
+The last row is the one to internalise: the `j` operand is absolute in the
+encoding, so a mis-based dump's jump targets stay correct while its address
+column does not (see
+[`call-target-integrity.md`](call-target-integrity.md)). Resolving such a
+citation against the printing image yields unrelated code that reads like a
+confident answer.
+
+### The two worklists are coupled through `dumped`
+
+A row leaves `--missing-dumps` when a file named for the address appears under
+`ghidra/scripts/funcs/`. But `--missing-ports` selects on `dumped` **and**
+`documented`, so dumping a non-entry that some page already mentions does not
+remove the row - it **moves** it from one worklist to the other. Closing a
+citation artifact honestly therefore takes two steps, not one: the dump that
+resolves the citation, and an [ignore entry](#proposed-ignore-entries) carrying
+the class. Skip the second and the closure reads as a regression.
+
+### Fabricated bodies
+
+One shape produces citations out of nothing at all, and it is worth naming
+because no amount of care reading the *cited* address can catch it - the defect
+is in the citing dump.
+
+A body-repair pass that walks instructions from an address without first asking
+whether the bytes are code will happily walk a data table, and Ghidra will
+decode every word of it into something. The output is a dump of ordinary
+appearance, and every word that decodes as a `jal` becomes a citation of an
+address nothing ever called. Applied to a known data window - a module's link
+base, a jump table, a string blob - a single pass can mint a worklist row per
+fabricated call. PROT 0900's head window is the worked case: already recorded as
+data in [`dump-corpus-integrity.md`](dump-corpus-integrity.md), it was later
+re-walked into a 1692-byte "body" whose lone decoded call target,
+`0x80040000`, entered the dump worklist as if it were undumped code. Nothing
+calls it: at that VA `SCUS_942.54` holds an ordinary `j` in the middle of
+`FUN_8003FB10`, and the roundness of the address is the first hint that no
+linker put a function there.
+
+Three tells, any one of which settles it, all read off the printed disassembly:
+
+- **Printed addresses that are not 4-byte aligned.** MIPS instructions are
+  fixed-width; an address column stepping by 2, 6 or 12 is not a decode of MIPS
+  code at all.
+- **Opcodes the R3000A does not implement.** `movf`, `sdc2`, `tge`, `jalx`,
+  `daddi` - the same test [`dump-corpus-integrity.md`](dump-corpus-integrity.md)
+  applies to short windows, and the strongest available because it needs no
+  context.
+- **Branch and jump targets outside every mapped image**, especially into the
+  KSEG1 hardware window at `0x8C000000`+.
+
+The repair is to replace the fabricated body with a hexdump under a header that
+says the window is data. That removes the citations - hex bytes carry no
+`jal 0x` prefix - while keeping the address resolvable for anyone who follows
+the old citation. `ghidra/scripts/dump_wave_closeout.py` does this as its
+`"data"` kind, alongside the `"label"` kind that writes the citation-pointer
+file for an interior VA.

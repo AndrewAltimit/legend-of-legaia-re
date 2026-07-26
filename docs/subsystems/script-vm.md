@@ -1436,7 +1436,9 @@ Use this table as the lookup when interpreting the dump:
 | `0x801df09c` | `LAB_801df09c`, `switchD_801e00f4::default()` | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue) |
 | `0x801df8d8` | - | `addiu s8, s8, 0x6` then falls into `0x801df8dc` → **PC += 6** |
 | `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue). Callers that jump straight here supply their own `addiu s8, s8, N` in the delay slot - the nibble-7 subs 0/1 supply `+6`. The `+6` belongs to `0x801df8d8`, not to this label |
-| `0x801dee50` | `LAB_801dee50` | "halt-acquire failed" path - **halts at PC** (resets to loop start) |
+| `0x801dee4c` | `LAB_801dee4c` | `move s8, s4` then falls into `0x801dee50` → **halt at the opcode's own start PC**. `s4` is set once, in the prologue's delay slot at `0x801de890`, to the incoming `param_2`, so returning it re-runs the same opcode next tick |
+| `0x801dee50` | `LAB_801dee50` | `j 0x801e3628; move v0, s8` → **halt at whatever `s8` currently is**. Entering here directly does *not* rewind; the rewind is `0x801dee4c` one instruction above |
+| `0x801e28c4` | `func_0x801e28c4()` (line 6081) | Two-way wait join - see [below](#the-wait-join-at-0x801e28c4) |
 | `0x801e00b8` | `LAB_801e00b8` | `addiu s8, s8, 0x3; j 0x801e00bc` → **PC += 3** |
 | `0x801e00bc` | `LAB_801e00bc` | `j epilogue` - **PC unchanged** for callers that already did `addiu s8, s8, N` upstream |
 | `0x801e212c` | `code_r0x801e212c`, `FUN_801e212c()` (lines 4749, 4772, 7285) | `return param_2 + 7;` → **PC += 7** |
@@ -1452,6 +1454,33 @@ Pitfalls when verifying:
 3. The C decomp sometimes collapses sub-op-first dispatch ordering. Round 11's 0x4C nibble-A bug was an inversion that only became visible after reading raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c` dispatching on sub-op BEFORE the ctx[+0x10] check). When tests pass but the C reads suspicious, walk the asm.
 
 A standing audit pass - picking 5 random ported sub-ops and cross-checking against the dump - turned up **no further inversion bugs** as of round 15.
+
+#### The wait join at `0x801e28c4`
+
+Four instructions, and the only label in the catalogue that is a *decision*
+rather than a fixed PC delta:
+
+```asm
+801e28c4  beq  v0, zero, 0x801e3628     ; poll said "done"
+801e28c8  _move v0, s8                  ;   -> return the advanced PC
+801e28cc  j    0x801dee50               ; poll said "still busy"
+801e28d0  _move s8, s4                  ;   -> rewind to the opcode's own PC
+```
+
+Both arms halt - the VM returns to its caller either way - but they return
+**different PCs**, and that is the whole primitive. A zero poll result returns
+the cursor the opcode already advanced, so the script moves on; a non-zero one
+returns `s4`, the PC this `FUN_801DE840` call started at, so the same opcode is
+re-entered on the next tick and polls again. Reading the join as an
+unconditional advance turns every wait built on it into a one-frame no-op.
+
+`0x801e1b04` is its only reachable predecessor: the `0x4C 0x53` dialog-wait arm,
+which does `addiu s8, s8, 0x2` and calls `FUN_801D65D8(1)` before jumping here.
+Its neighbour `0x4C 0x54` (`0x801e1b0c`, `FUN_801D65D8(0)`) reaches the same
+two outcomes without the join, branching to `0x801dee4c` on non-zero and to
+`0x801e3624` otherwise. Same halt policy, different route - the two sub-ops
+differ only in the argument they hand the dialog poll. See
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md) for the sub-op table.
 
 #### The same labels seen through a mis-based print
 
