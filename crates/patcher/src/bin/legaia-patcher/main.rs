@@ -15,6 +15,7 @@ mod cli;
 mod commands;
 mod monster_block;
 mod randomize;
+mod texture;
 mod translate;
 mod util;
 
@@ -64,6 +65,36 @@ fn main() -> Result<()> {
             write.as_deref(),
             output.as_deref(),
             patch.as_deref(),
+        ),
+        Cmd::TimList { input, entry, tier } => texture::cmd_tim_list(&input, entry, tier),
+        Cmd::TimExport {
+            input,
+            entry,
+            offset,
+            lzs_section,
+            clut,
+            output,
+        } => texture::cmd_tim_export(&input, entry, offset, lzs_section, clut, &output),
+        Cmd::TimReplace {
+            input,
+            entry,
+            offset,
+            lzs_section,
+            png,
+            quantize,
+            output,
+            patch,
+            dry_run,
+        } => texture::cmd_tim_replace(
+            &input,
+            entry,
+            offset,
+            lzs_section,
+            &png,
+            quantize,
+            output.as_deref(),
+            patch.as_deref(),
+            dry_run,
         ),
         Cmd::MovePowers { input } => commands::cmd_move_powers(&input),
         Cmd::Affinity { input } => commands::cmd_affinity(&input),

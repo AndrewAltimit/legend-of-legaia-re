@@ -29,6 +29,7 @@
 
 use anyhow::{Context, Result, bail};
 
+pub mod encode;
 pub mod vram;
 pub use vram::{VRAM_HEIGHT, VRAM_PIXELS, VRAM_WIDTH, Vram};
 
