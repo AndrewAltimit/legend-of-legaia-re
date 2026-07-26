@@ -803,6 +803,7 @@ pub(super) fn cmd_play_window_with_record(
         screenshot,
         sweep_next_tick: 0,
         battle_event_log: std::collections::VecDeque::new(),
+        encounter_banner: None,
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
         drained_spawn_slots: std::collections::HashSet::new(),

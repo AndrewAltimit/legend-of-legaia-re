@@ -52,51 +52,23 @@ never enters would be worse than the gap.
 
 [[waiver]]
 builder = "encounter_banner_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Same root cause as the battle HUD, on both sides. The browser page does not
-step encounters, so no formation is ever drawn - an ENCOUNTER! banner with no
-battle behind it would report a transition the page cannot perform. The native
-window reaches battle but announces it through its own event log rather than a
-banner, so it does not call this either.
+Same root cause as the battle HUD: the browser page does not step encounters,
+so no formation is ever drawn - an ENCOUNTER! banner with no battle behind it
+would report a transition the page cannot perform. The native window draws it:
+`sync_battle_render` arms the banner on every `Field -> Battle` mode edge with
+the formation's catalog names, and `build_hud` renders it centred for the
+battle's opening frames. Closing the web side is the same battle-host port the
+`battle_hud_draws_for` waiver describes.
 """
 
-[[waiver]]
-builder = "dialog_box_draws_for"
-kind = "orphan"
-reason = """
-The plain typewriter fallback, reached by neither host, and - correcting what
-this entry used to claim - **not** kept alive by `--simple-dialogue`. That flag
-only clears `World::use_vm_dialogue`, choosing which state machine produces the
-text; both settings then render through the same `DialogSnapshot` path
-(`window/hud.rs`), which never calls this builder. So there is no fallback
-chain in the tree, degraded or otherwise: this and `dialog_panel_draws_for`
-below are a two-builder chain whose head nothing calls and whose only
-references anywhere are unit tests in `engine-render/src/tests/text_dialog.rs`.
-
-Genuinely dead code rather than a host gap, and the honest resolution is
-deletion, not a waiver. It is left standing only because the tests that keep
-it compiling sit outside the crate, so removing it is an `engine-ui` +
-`engine-render` edit rather than a drift fix.
-"""
-
-[[waiver]]
-builder = "dialog_panel_draws_for"
-kind = "orphan"
-reason = """
-The `OwnedDialogPanel` projection, written for the native window but not called
-by it: the native path holds an `OwnedDialogPanel` and then flattens it to a
-`DialogSnapshot` rather than to quads, so the panel type reaches the window and
-this builder does not. The browser page builds its box from the same snapshot
-shape at the byte-pinned retail geometry
-(`crate::play_dialog::dialog_stage_layout`, REF FUN_801D84D0) because it also
-has to place the option picker and the two hand cursors.
-
-Dead for the same reason as `dialog_box_draws_for` above (it delegates to it),
-and with the same resolution: delete both, or give one host a reason to
-project a panel straight to quads. `--simple-dialogue` is not that reason -
-see above.
-"""
+# `dialog_box_draws_for` / `dialog_panel_draws_for` were waived here as
+# orphans whose "honest resolution is deletion". They are deleted: no host
+# rendered dialog through them (both hosts draw the `DialogSnapshot` path at
+# the byte-pinned retail geometry), and their only references were unit tests
+# in `engine-render/src/tests/`. The `DialogBoxLayout` / `DialogGlyphView` /
+# `dialog_clut_color` support types went with them.
 
 [[waiver]]
 builder = "game_over_draws_for"
