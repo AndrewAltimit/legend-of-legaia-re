@@ -17,8 +17,8 @@
 //! record fields the restore arm writes. None of that is re-derived here; this
 //! module only supplies inputs and applies outputs.
 //!
-//! **The port's** - three things retail keeps in overlay data or in a
-//! dispatcher this crate does not own:
+//! **The port's** - four things retail keeps in overlay data, in a dispatcher
+//! this crate does not own, or outside the actor entirely:
 //!
 //! 1. **The panel scripts.** Retail's window scripts live at overlay VAs
 //!    (`0x801F3274`, `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`,
@@ -34,7 +34,13 @@
 //!    dispatched.
 //! 3. **Which pad chord installs which actor.** Retail reaches these from
 //!    debug branches in the world-map controller. The engine's bindings live
-//!    in `World::tick_world_map` and are named there.
+//!    on `World::tick_world_map_panels` and are tabulated there.
+//! 4. **Entry phase and dismissal.** Several of these machines park rather
+//!    than exit, and retail releases them from outside: the scene manager
+//!    watching `scene[+0x3E]`, whoever armed the flash counter, the executable
+//!    reload. [`PanelActorKind::entry_phase`] picks the arm the host wants to
+//!    run and [`PanelActorHost::dismiss`] is the escape hatch, without which
+//!    the first parking arm wedges the screen.
 //!
 //! # The pad layout trap
 //!
@@ -340,6 +346,25 @@ pub enum PanelActorKind {
     TravelArt(TravelArt),
 }
 
+impl PanelActorKind {
+    /// The phase [`PanelActorHost::install`] seeds this actor at.
+    ///
+    /// Everything starts at `0` except the text box. `FUN_801EE90C`'s phase 0
+    /// is not its prompt - it jumps straight to the fill-fade block at phase
+    /// 10, which walks 11..13 and parks at **14**, an arm that only clears
+    /// `scene[+0x3E]` and has no exit. That is retail: phase 0 is the arrival
+    /// path for a caller that installs the actor *mid*-transition, and the
+    /// release comes from the scene manager watching `scene[+0x3E]`, which
+    /// this engine does not model. Seeding the prompt phase directly is what
+    /// makes the yes/no box the thing the actor runs.
+    pub fn entry_phase(self) -> i16 {
+        match self {
+            PanelActorKind::TextBox => 1,
+            _ => 0,
+        }
+    }
+}
+
 /// A world map the party has stood on, and the tile they left it at.
 ///
 /// Retail keeps these as `0x10`-byte records in the buffer `FUN_80019788`
@@ -503,7 +528,7 @@ impl PanelActorHost {
     /// that do not model the retail handler table can pass anything.
     pub fn install(&mut self, kind: PanelActorKind, handler_id: u16) {
         self.kind = Some(kind);
-        self.phase = 0;
+        self.phase = kind.entry_phase();
         self.timer = 0;
         self.handler_id = handler_id;
         self.cursor = 0;
@@ -512,6 +537,27 @@ impl PanelActorHost {
         } else {
             self.travel = None;
         }
+    }
+
+    /// Force the installed actor off the screen.
+    ///
+    /// The **port's** escape hatch, not retail's. Several of these machines
+    /// have arms that park rather than exit - the text box's phase 14, the
+    /// fade/flash's phase 3, the soft reset's phase 3 - because retail's
+    /// release comes from the scene manager or from the handler dispatcher
+    /// `FUN_801F159C`, neither of which the engine models. Without this a
+    /// parked actor would wedge the screen for the rest of the session.
+    ///
+    /// Returns whether anything was dismissed.
+    pub fn dismiss(&mut self) -> bool {
+        if self.kind.is_none() {
+            return false;
+        }
+        self.kind = None;
+        self.travel = None;
+        self.phase = 0;
+        self.timer = 0;
+        true
     }
 
     /// Release a brightness flash parked at phase 3 (see
@@ -1032,11 +1078,33 @@ mod tests {
         assert!(f.flag_test(frame.flags_set[0]));
     }
 
+    /// `FUN_801EE90C` entered at phase 0 never reaches its prompt: it jumps to
+    /// the fill-fade block and parks at phase 14, which has no exit arm. The
+    /// host's entry phase has to be the prompt, or the actor wedges the screen
+    /// - which is exactly what a live session showed before this was fixed.
+    #[test]
+    fn the_text_box_entry_phase_is_the_prompt_not_the_fade_block() {
+        assert_eq!(PanelActorKind::TextBox.entry_phase(), 1);
+        assert_eq!(PanelActorKind::SubList.entry_phase(), 0);
+
+        let mut h = PanelActorHost::new();
+        h.install(PanelActorKind::TextBox, 0x11);
+        h.phase = 0; // retail's arrival path, seeded by hand
+        let mut f = Flags::default();
+        for _ in 0..256 {
+            h.tick(0, 0, 4, &mut f);
+        }
+        assert_eq!(h.phase, 14, "the fade chain parks with no terminal arm");
+        assert!(h.is_active(), "and nothing retires it");
+        assert!(h.dismiss(), "so the host's escape hatch has to");
+        assert!(!h.is_active());
+    }
+
     #[test]
     fn the_text_box_confirm_asks_for_the_party_restore() {
         let mut h = PanelActorHost::new();
         h.install(PanelActorKind::TextBox, 0x11);
-        h.phase = 1; // the prompt
+        assert_eq!(h.phase, 1, "the prompt");
         let mut f = Flags::default();
         let frame = h.tick(0, confirm(), 1, &mut f);
         assert!(frame.restore_party);
@@ -1210,18 +1278,18 @@ mod tests {
     }
 
     /// The screen has to be reachable from the world tick, not just from a
-    /// direct `PanelActorHost::install`. A raw Select edge must install the
+    /// direct `PanelActorHost::install`. A raw Square edge must install the
     /// sub-list actor and open its window.
     #[test]
-    fn the_world_tick_installs_the_sub_list_from_a_select_press() {
+    fn the_world_tick_installs_the_sub_list_from_a_square_press() {
         let mut w = world_on_the_overworld();
         w.set_pad(0);
         let _ = w.tick();
         assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
-        w.set_pad(crate::input::PadButton::Select.mask());
+        w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
         let panels = &w.world_map_ctrl.as_ref().unwrap().panels;
-        assert!(panels.is_active(), "Select installs the sub-list");
+        assert!(panels.is_active(), "Square installs the sub-list");
         assert!(
             panels.windows.is_open(SUBLIST_PANEL_INDEX),
             "and its open script spawned a window"
@@ -1234,7 +1302,7 @@ mod tests {
     fn the_screen_stays_shut_without_the_debug_gate() {
         let mut w = crate::world::World::default();
         w.enter_world_map();
-        w.set_pad(crate::input::PadButton::Select.mask());
+        w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
         assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
     }
@@ -1258,8 +1326,7 @@ mod tests {
         {
             let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
             assert_eq!(p.kind, Some(PanelActorKind::TextBox));
-            p.phase = 1;
-            p.cursor = 0;
+            assert_eq!(p.phase, 1, "installed straight at the prompt");
         }
         w.set_pad(crate::input::PadButton::Cross.mask());
         let _ = w.tick();

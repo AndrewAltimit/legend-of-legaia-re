@@ -443,10 +443,24 @@ Three inputs it supplies are the **port's**, not retail's:
   `ActorExit` retires the actor and is recorded rather than followed.
 - **The chords that install an actor.** Retail reaches this band from debug
   branches in the controller. The engine gates it behind the same
-  `debug_enabled` flag the top-view toggle uses and binds Select (sub-list),
+  `debug_enabled` flag the top-view toggle uses and binds Square (sub-list),
   L1 (fade/flash, pressed again to release it), L2 (fill fade), R1 (flag
   window), R2 (text box) and Start (soft reset), walk mode only. The
-  sub-list's own state-3 hand-off installs the Riremito travel art.
+  sub-list's own state-3 hand-off installs the Riremito travel art, and
+  Square while an actor is up dismisses it.
+
+**Several of these machines park rather than exit**, and that is the fact a
+host has to know before it installs one. `FUN_801EE90C` entered at phase 0
+does not reach its prompt at all: it jumps straight to the fill-fade block at
+phase 10, walks 11..13, and settles on phase **14**, an arm whose whole body
+is `scene[+0x3E] = 0`. `FUN_801ED308` parks at phase 3 until an external
+writer raises the flash counter `_DAT_8007B43C`, and `FUN_801EDF00`'s phase 3
+only redraws. Retail releases all three from outside - the scene manager
+watching `scene[+0x3E]`, the actor that armed the flash, the executable
+reload - so a host that models none of those needs both an entry phase per
+actor (`PanelActorKind::entry_phase`, which seeds the text box at its prompt)
+and a dismiss (`PanelActorHost::dismiss`). Without them the screen wedges on
+the first parking arm, which is what a live `play-window` session showed.
 
 Every kernel here reads the **packed** pad words `FUN_8001822C` builds, not
 the raw BIOS layout - the confirm mask is packed `0x40` where the raw Cross

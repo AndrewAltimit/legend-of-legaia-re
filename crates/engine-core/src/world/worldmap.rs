@@ -455,7 +455,7 @@ impl World {
     ///
     /// | Chord | Actor |
     /// |---|---|
-    /// | Select | sub-list picker (`FUN_801ED590`) |
+    /// | Square | sub-list picker (`FUN_801ED590`) |
     /// | L1 | brightness fade / flash (`FUN_801ED308`); L1 again releases it |
     /// | L2 | screen-fill fade (`FUN_801EE5D4`) |
     /// | R1 | story-flag window (`FUN_801EF014`) |
@@ -515,7 +515,7 @@ impl World {
             use input::PadButton as B;
             let pressed = |b: B| raw_edge & b.mask() != 0;
             if !ctrl.panels.is_active() {
-                let install = if pressed(B::Select) {
+                let install = if pressed(B::Square) {
                     Some(PanelActorKind::SubList)
                 } else if pressed(B::L1) {
                     Some(PanelActorKind::FadeFlash)
@@ -534,6 +534,12 @@ impl World {
                     log::info!("world-map: panel actor {kind:?} installed");
                     ctrl.panels.install(kind, 0x1A);
                 }
+            } else if pressed(B::Square) {
+                // The escape hatch: several arms park instead of exiting, so
+                // the chord that opens the screen also closes it.
+                if ctrl.panels.dismiss() {
+                    log::info!("world-map: panel actor dismissed");
+                }
             } else if pressed(B::L1) {
                 ctrl.panels.release_flash();
             }
@@ -549,6 +555,18 @@ impl World {
 
         for cue in &frame.sfx {
             log::debug!("world-map panel: sfx cue {cue:#04x}");
+        }
+        for id in &frame.flags_set {
+            log::info!("world-map panel: flag window set story flag {id}");
+        }
+        if frame.retired {
+            log::info!(
+                "world-map: panel actor retired ({} window(s) still open)",
+                self.world_map_ctrl
+                    .as_ref()
+                    .map(|c| c.panels.windows.open_count())
+                    .unwrap_or(0)
+            );
         }
         if frame.hand_off {
             // Retail's sub-list state 3 hands the actor on through the handler
