@@ -10,10 +10,10 @@
 //!   * every baseline call site holds the stock `jal FUN_801DD6B4` word
 //!     (non-vacuous: the recognized US build);
 //!   * after patching, exactly those words read `jal FUN_801DD4B0` and every
-//!     other byte of every touched module window is unchanged - the
-//!     overlapping `09xx` disc extents are measured empirically (each other
-//!     module's head is located inside the window) so aliased appearances of
-//!     a patched word are expected, not violations;
+//!     other byte of every touched module window is unchanged - the `09xx`
+//!     extents tile exactly, so each module's window is checked to contain no
+//!     other module's bytes and every changed offset must be one of that
+//!     module's own sites;
 //!   * the patched image still parses (named-file read re-validates sector
 //!     structure) and the edit is byte-deterministic;
 //!   * the planner refuses an already-patched image (idempotence guard) and an
@@ -31,8 +31,8 @@ use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::jewel_fix::{
-    BLOODY_HORNS_PROT_INDEX, JewelFix, MODULE_INDICES, OVERLAP_953_IN_952, SITES,
-    TERIO_PUNCH_PROT_INDEX, bypass_word, respect_word,
+    BLOODY_HORNS_PROT_INDEX, JewelFix, MODULE_INDICES, SITES, TERIO_PUNCH_PROT_INDEX, bypass_word,
+    respect_word,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -98,20 +98,44 @@ fn fix_retargets_exactly_the_site_words() {
         );
     }
 
-    // Surgical: within each touched module window, the changed word offsets
-    // are exactly the module's own sites plus the aliased appearances of
-    // OTHER patched modules' sites. The 09xx extents overlap on disc, so a
-    // neighbouring module's bytes reappear inside this window at the offset
-    // where that module's head is found; aliases are located empirically
-    // from the pre-patch windows rather than assumed.
-    let measured_overlap_953 = before[&BLOODY_HORNS_PROT_INDEX]
-        .windows(48)
-        .position(|w| w == &before[&TERIO_PUNCH_PROT_INDEX][..48]);
+    // The `09xx` extents tile exactly - an entry's size is the sector gap to
+    // its successor - so no module's bytes are visible inside another's
+    // window. Assert that directly: 952 and 953 are the adjacent pair that
+    // would alias first if sizing ever over-read again, and entry 953's head
+    // must NOT appear anywhere inside entry 952's window.
+    //
+    // This replaces an assertion that the two extents overlapped at `+0x1800`.
+    // That overlap was an artifact of the superseded size expression
+    // `toc[p+5] - toc[p+3] + 4`, under which 952 measured `0x6000` instead of
+    // its real `0x1800` and swallowed three neighbours. Guarding disjointness
+    // is the property that actually makes the patch surgical; the old
+    // assertion was pinning the over-read.
     assert_eq!(
-        measured_overlap_953,
-        Some(OVERLAP_953_IN_952),
-        "the documented 952/953 overlap matches the image"
+        before[&BLOODY_HORNS_PROT_INDEX]
+            .windows(48)
+            .position(|w| w == &before[&TERIO_PUNCH_PROT_INDEX][..48]),
+        None,
+        "entry 953's head must not appear inside entry 952's window - the \
+         extents tile, they do not overlap"
     );
+
+    // Every site addresses a word inside its OWN module's extent. With the
+    // windows disjoint this is what guarantees each physical word is written
+    // once; it is also the check that fails loudly if entry sizing regresses.
+    for s in SITES {
+        assert!(
+            s.offset + 4 <= before[&s.prot_index].len(),
+            "PROT {} +{:#x} lies inside its own extent ({} bytes)",
+            s.prot_index,
+            s.offset,
+            before[&s.prot_index].len()
+        );
+    }
+
+    // Surgical: within each touched module window, the changed word offsets
+    // are exactly the module's own sites. The alias sweep below is retained as
+    // a live guard - with disjoint extents it must contribute nothing, so any
+    // aliased offset it finds means sizing has regressed to over-reading.
     for (&idx, window_before) in &before {
         let window_after = &after[&idx];
         let mut expected: Vec<usize> = SITES
@@ -119,18 +143,17 @@ fn fix_retargets_exactly_the_site_words() {
             .filter(|s| s.prot_index == idx)
             .map(|s| s.offset)
             .collect();
-        // Locate every OTHER patched module's head inside this window; its
-        // sites alias in at head_offset + site_offset when in range.
+        // No OTHER patched module's head may appear inside this window. If one
+        // does, entry sizing is over-reading again and a single write would
+        // land in two entries' views of the disc.
         for &other in MODULE_INDICES.iter().filter(|&&o| o != idx) {
             let head = &before[&other][..48];
-            if let Some(pos) = window_before.windows(48).position(|w| w == head) {
-                for s in SITES.iter().filter(|s| s.prot_index == other) {
-                    let o = pos + s.offset;
-                    if o + 4 <= window_before.len() {
-                        expected.push(o);
-                    }
-                }
-            }
+            assert_eq!(
+                window_before.windows(48).position(|w| w == head),
+                None,
+                "PROT {other}'s head appears inside PROT {idx}'s window - \
+                 extents must tile, not overlap"
+            );
         }
         expected.sort_unstable();
         expected.dedup();
