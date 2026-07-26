@@ -7,10 +7,12 @@
 //! 1. **The descriptor table decodes** off the visitor's own executable, into
 //!    the id space `docs/formats/sfx-table.md` documents.
 //! 2. **Cues actually produce sound.** `play_sfx_probe_peak` renders a cue
-//!    through a throwaway SPU and a fresh upload of the class-2 program bank; a
-//!    non-zero peak is the evidence that the descriptor resolves to a real
-//!    sample rather than to silence. This is the assertion that would have
-//!    caught "the channel is wired and every cue is inaudible".
+//!    through a throwaway SPU and a fresh upload of the program bank **its own
+//!    category names**; a non-zero peak is the evidence that the descriptor
+//!    resolves to a real sample rather than to silence. This is the assertion
+//!    that would have caught "the channel is wired and every cue is inaudible".
+//!    The bank routing itself is measured separately - a cue keying the wrong
+//!    bank is audible, so a peak alone cannot catch it.
 //! 3. **Provenance is declared.** Every advertised event says whether its cue id
 //!    is traced to retail (`disc`) or is a port pick (`site`), so the page can
 //!    never quietly claim a sound is the game's.
@@ -58,17 +60,13 @@ fn descriptor_bank_installs_from_the_executable() {
 }
 
 /// Rendering through a throwaway SPU proves each **pinned retail** cue id's
-/// program and sample resolve in the resident class-2 bank.
+/// program and sample resolve in the bank its category selects.
 ///
-/// Read what this does and does not claim. It probes `cue` - the id retail
-/// fires - and every menu row's `fires` now equals it, so this is also what
-/// the page plays. A pass means "the id resolves to a real sample in the bank
-/// the page stages": program 0 there is a one-VAG-per-semitone SFX key map
-/// whose single-note windows line up with these descriptors' notes. It does
-/// **not** claim the bank is the one retail's *field menu* would use - these
-/// cues are descriptor category `0` and retail sounds those out of the slot-0
-/// system bank, which is the remaining inexactness recorded in
-/// `play_sfx::CUE_MENU_CURSOR`. The pitch is retail's own law now
+/// It probes `cue` - the id retail fires - and every menu row's `fires` equals
+/// it, so this is also what the page plays. A pass means "the id resolves to a
+/// real sample in the bank the page routes it to": program 0 of both pinned
+/// banks is a one-VAG-per-semitone SFX key map whose single-note windows line
+/// up with these descriptors' notes. The pitch is retail's own law
 /// (`legaia_engine_audio::vab_bind::compute_pitch`), pinned by unit test
 /// against values captured out of retail's driver state.
 #[test]
@@ -100,16 +98,105 @@ fn advertised_cues_render_a_non_silent_buffer() {
          every cue is silent is not a channel"
     );
 
-    // The program bank has to be the class-2 one; a fallback to nothing would
-    // make every cue silent for a reason worth surfacing.
+    // The class-2 bank has to be one of the staged ones; a fallback to nothing
+    // would make every cue silent for a reason worth surfacing.
     let v: serde_json::Value =
         serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
     let bank = v["bank_prot"].as_u64().unwrap_or(0);
     assert!(
         bank == 869 || bank == 875,
-        "the program bank must be the class-2 SFX bank (869) or its documented \
-         alternate (875); got {bank}"
+        "the class-2 program bank must be PROT 869 or its documented alternate \
+         875; got {bank}"
     );
+    // Both pinned slots must stage - a page with only one of them is the
+    // pre-routing state, and it sounds *plausible* rather than broken, so the
+    // only thing that catches it is asserting the pair.
+    let banks = v["banks"].as_array().expect("staged bank list");
+    let mut pairs: Vec<(u64, u64)> = banks
+        .iter()
+        .map(|b| (b["slot"].as_u64().unwrap(), b["prot"].as_u64().unwrap()))
+        .collect();
+    pairs.sort_unstable();
+    assert_eq!(
+        pairs,
+        vec![(0, 868), (2, 869)],
+        "both pinned VAB slots stage, each from its own PROT entry"
+    );
+}
+
+/// **The bank-routing oracle.** A category-`0` cue and a category-`2` cue must
+/// come out of *different* PROT entries.
+///
+/// This is the assertion the pause-menu thump needed and no other test could
+/// give. Staging one bank and firing every cue through it does not error and
+/// does not go silent: both banks carry a one-VAG-per-semitone UI key map at
+/// program 0, so a category-0 id resolved to a sibling sample - a real retail
+/// blip, about twice as long and a fifth lower, because PROT 0869's `center`
+/// bytes are authored higher than PROT 0868's. Peak, duration and "did a voice
+/// key" all pass in that state. Only the entry the samples came from tells the
+/// two apart.
+#[test]
+fn a_category0_cue_and_a_category2_cue_come_from_different_banks() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The three pause-menu blips + the arts strike are category 0; the Baka
+    // duel hit is category 2. Slots come straight off the disc descriptors.
+    for id in [0x1Au32, 0x20, 0x21, 0x37] {
+        assert_eq!(rt.play_sfx_cue_slot(id), 0, "cue {id:#x} is category 0");
+    }
+    assert_eq!(rt.play_sfx_cue_slot(0x09), 2, "the duel hit is category 2");
+
+    let ui = rt.play_sfx_cue_bank_prot(0x21);
+    let hit = rt.play_sfx_cue_bank_prot(0x09);
+    assert_eq!(
+        ui, 868,
+        "a category-0 cue sounds out of the slot-0 system bank"
+    );
+    assert_eq!(hit, 869, "a category-2 cue sounds out of the class-2 bank");
+    assert_ne!(
+        ui, hit,
+        "the menu blip and the duel hit must not share a bank - that is exactly \
+         the state where the pause menu thumped"
+    );
+
+    // Categories 6 and 11 have no traced PROT entry, so they must keep falling
+    // back to the class-2 bank rather than being invented into slot 6 / 11.
+    // 0x2E / 0x2F are the field script cues (category 6).
+    for id in [0x2Eu32, 0x2F] {
+        assert_eq!(rt.play_sfx_cue_slot(id), 6, "cue {id:#x} is category 6");
+        assert_eq!(
+            rt.play_sfx_cue_bank_prot(id),
+            hit,
+            "an unpinned slot falls back to the class-2 bank, unchanged"
+        );
+    }
+
+    // The routed cue still sounds - a bank swap that resolved to silence would
+    // be a different bug wearing the same fix.
+    let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
+    let window = rate / 4;
+    for id in [0x21u32, 0x09] {
+        assert!(
+            rt.play_sfx_probe_peak(id, window) > 0,
+            "cue {id:#x} must still render audible PCM from its routed bank"
+        );
+    }
+
+    // Report the routed durations. The confirm blip `0x20` is the clearest
+    // case: program 0 tone 0 is `center` 72 in PROT 0868 against 83 in
+    // PROT 0869, so the same descriptor note (60) keys ~x0.53 there against
+    // ~x0.28 - the routed cue is about half as long as the one the page used
+    // to play, which is what the thump was.
+    for id in [0x20u32, 0x21, 0x37] {
+        let s = rt.play_sfx_probe_active_samples(id, rate);
+        eprintln!(
+            "[note] cue {id:#04x} from PROT {} sounds {:.3} s",
+            rt.play_sfx_cue_bank_prot(id),
+            s as f64 / rate as f64
+        );
+    }
 }
 
 /// A nonexistent cue is silent rather than a panic, and an id outside the

@@ -114,8 +114,8 @@ every record of every state - so **a cue's category byte selects its VAB slot**.
 |---|---|---|
 | `0` | 16 | Slot-0 system bank = **PROT 0868**. Shared UI cues (`0x1A`, `0x20`, `0x21`, `0x23`, `0x37`). |
 | `2` | 53 | Slot-2 class-2 bank = **PROT 0869** (`0875` when `DAT_8007BD11 == 4`). Battle / duel (`0x09`, `0x4C`). |
-| `6` | 30 | Slot 6. Includes the field script cues `0x2E` / `0x2F`. |
-| `11` | 1 | Slot 11. |
+| `6` | 30 | Slot 6, PROT entry **unpinned**. Includes the field script cues `0x2E` / `0x2F`. |
+| `11` | 1 | Slot 11, PROT entry **unpinned**. |
 
 PROT 0868's identity is a byte match, not a label: a live field state's slot-0
 `VagAtr` program-0 page (512 bytes) occurs verbatim in extraction entry
@@ -123,13 +123,26 @@ PROT 0868's identity is a byte match, not a label: a live field state's slot-0
 Its CDNAME label reads `battle_data` and 0869's reads `monster_data`, which is
 the usual reminder that a label is a hint.
 
-A port that stages **one** resident SFX bank therefore resolves only one
-category correctly. `engine-shell`'s boot and the browser play page both stage
-the class-2 bank, which is right for the 53 category-`2` cues (the battle strike
-and the Baka duel hit among them) and wrong for the 16 category-`0` ones: those
-resolve to a sibling sample in the wrong bank rather than to silence, so nothing
-errors. Open thread:
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#sfx-cue-bank-routing---the-category-byte-selects-a-vab-slot-and-the-port-stages-one).
+Slots `1`, `3`, `6` and `11` have no traced PROT entry. That is the open half of
+this question, and it is deliberately a hole rather than a guess:
+`legaia_asset::sfx_table::prot_index_for_slot` returns `None` for them. Thread:
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
+
+### What a single-bank port gets wrong, and why it is silent
+
+A port that stages **one** resident SFX bank resolves only one category
+correctly, and it fails *quietly* rather than audibly-broken. Both PROT 0868 and
+PROT 0869 carry a one-VAG-per-semitone UI key map at program 0, so a
+category-`0` id fired through the class-2 bank resolves to a **sibling sample**,
+not to silence: a genuine retail blip, roughly twice as long and a fifth lower
+than the field menu's, because 0869's `center` bytes are authored higher. Peak,
+duration and "did a voice key on" all pass in that state. The only observable
+that separates the two is which PROT entry the samples came from.
+
+Both hosts now stage the two pinned banks and route each cue through
+`slot_for_category(descriptor.category)`; the 31 category-`6`/`11` descriptors
+fall back to the class-2 bank, which is exactly the behaviour they had before,
+so nothing changes for them while their slots stay unpinned.
 
 ### The ring value **is** the descriptor index
 
@@ -176,7 +189,7 @@ that also multiplies by a nominal `22050/44100` keys these an octave lower
 again, which is what turned the browser play page's menu blips into thuds.
 
 **But this is not the bank the pause menu sounds out of.** These four ids are
-descriptor category `0`, and the category selects the VAB slot (below), so
+descriptor category `0`, and the category selects the VAB slot (above), so
 retail's field menu keys them in the slot-0 system bank - **PROT 0868**, whose
 program 0 is the same one-VAG-per-semitone shape over its own VAGs, authored
 `center` bytes spread `72..=90` (so `0x20` lands at ×0.53 there rather than
@@ -184,7 +197,9 @@ program 0 is the same one-VAG-per-semitone shape over its own VAGs, authored
 class-2 copy is the one the minigame overlays key directly
 (`FUN_80065034(voice, 2, 0, 0, 0x3c, 0x40, ...)` = vab 2 / program 0 / tone 0 /
 note 60, the same triple as `0x20`), so both are real; they are simply different
-banks' takes on the same UI blip, the class-2 one roughly twice as long.
+banks' takes on the same UI blip, the class-2 one roughly twice as long. This
+section's heading is about where the *class-2* copy lives; the routing decides
+which copy a given cue keys.
 
 ### A cue names its tone by **index**, not by key range
 
@@ -273,14 +288,34 @@ Pinned from the save-state catalogue:
 
 Because banks differ in size, a cue resolves only where its `program` / `tone`
 exists - SFX availability depends on which slots are loaded, not on a guaranteed
-reservation. The engine models one resident bank rather than the slot set: it
-plays a cue through the resident class-2 bank when present and the scene's
-already-loaded BGM `VabBank` otherwise, so category-`2` cues land in retail's
-bank and the others land in a sibling. `SfxBank::from_descriptors`
-carries the full descriptor (program + tone-region index + note + voice count),
-and `SfxBank::play_one_shot(spu, vab)` fires it via `VabBank::play_tone` across
-the cue's `voices` consecutive regions - by explicit tone **index**, not by
-key range.
+reservation. The engine models the **pinned** part of the slot set: it stages
+slot 0 and slot 2 into one reserved SPU region and plays each cue through the
+bank its own category names, falling back to the class-2 bank for the unpinned
+slots and to the scene's already-loaded BGM `VabBank` when nothing staged at all.
+`SfxBank::from_descriptors` carries the playback fields (program + tone-region
+index + note + voice count) and `SfxTable::cue_slots` the routing;
+`SfxBank::play_one_shot(spu, vab)` fires the cue via `VabBank::play_tone` across
+its `voices` consecutive regions - by explicit tone **index**, not by key range.
+
+### SPU budget - both banks in one region
+
+The two pinned banks are resident together, so the engine's reserved SFX region
+has to hold both and the BGM region is whatever is left of the 512 KiB.
+
+| | Bytes |
+|---|---|
+| PROT 0868 VAG bodies | 59 136 |
+| PROT 0869 VAG bodies | 188 128 |
+| Reserved SFX region (`SFX_BANK_SPU_BYTES`) | 249 856 (`0x3D000`) |
+| BGM region (512 KiB − `0x1000` scratch − the above) | 270 336 |
+| Largest scene BGM VAB on the disc that a BGM path stages | 269 632 |
+
+Every VAG in both banks is already a multiple of the allocator's 16-byte ADPCM
+block, so the packed footprint equals the raw total and 2 592 bytes stay free.
+The figure is squeezed from both sides: one step larger (`0x3E000`) drops the
+BGM region to 266 240 and starts silencing music that plays today, one step
+smaller does not fit both banks. Both hosts use the same constant, and the two
+must stay equal.
 
 ### The class-2 sound bank (PROT 0869)
 
@@ -292,23 +327,25 @@ loader with `a1 = 2` on `0x367` (swapping to raw `0x36D` = extraction 0875 when
 `0x367` the same way. Its low programs (`0`, `3`) carry the cues the battle and
 the duel fire, so every descriptor those two contexts use resolves in it.
 
-This is what the site's cue player renders against
-(`crates/web-viewer/src/sfx_view.rs`): SCUS → this table, PROT 0869 → the VAB,
-descriptor → a one-shot through the clean-room SPU. That is exactly right for the
-duel and arts cues those pages fire, which are category `2`; the browser *play*
-page fires the category-`0` pause-menu cues through the same bank, which is the
-inexactness the bank-routing thread tracks.
+The site's cue player (`crates/web-viewer/src/sfx_view.rs`) walks SCUS → this
+table, then PROT → **the bank each cue's category names**, then descriptor → a
+one-shot through the clean-room SPU. So the duel hit `0x09` renders out of
+PROT 0869 and the shared UI blips `0x20` / `0x21` / `0x37` and the strike `0x1A`
+out of PROT 0868, even though the same duel overlay writes all of them.
 
-The live engine mirrors this: `BootSession` uploads PROT 0869 into its own
-dedicated top region of SPU RAM once at boot (`stage_sfx_vab`, capping the
-scene-BGM allocator below it so a BGM upload can't stomp the SFX samples), and
-`AudioBgmDirector::tick_sfx_frame` fires cues against that resident class-2 bank
-when present, falling back to the scene BGM `VabBank` otherwise. So the battle
-Tactical-Arts strike cue (`0x1A`) and the Baka Fighter exchange-hit cue (`0x09`,
-queued by the duel rules kernel and drained by the play-window) both sound out
-of the bank the retail battle loader loads. The disc-gated
-`sfx_cue_resident_bank` test (engine-shell) proves both cues key a voice through
-this bank via the tone-index path.
+The live engine mirrors this: `BootSession` uploads both pinned banks into one
+dedicated top region of SPU RAM at boot (`stage_sfx_vab`, one `SpuAllocator` so
+they pack, with the scene-BGM allocator capped below the region so a BGM upload
+can't stomp the SFX samples), and `AudioBgmDirector::tick_sfx_frame` fires each
+cue against the bank its slot names - falling back to the class-2 bank for an
+unpinned slot, and to the scene BGM `VabBank` when nothing staged at all. So the
+Tactical-Arts strike cue (`0x1A`) sounds out of the system bank and the Baka
+Fighter exchange-hit cue (`0x09`, queued by the duel rules kernel and drained by
+the play-window) out of the bank the retail battle loader loads. The disc-gated
+`sfx_cue_resident_bank` test (engine-shell) proves the routed cues key a voice
+via the tone-index path and that both banks pack inside the reserved region;
+`play_sfx_channel` (web-viewer) asserts a category-`0` and a category-`2` cue
+resolve to *different* PROT entries.
 
 ## Provenance
 
@@ -325,7 +362,15 @@ to `0x1A` = program 3 / note 67 and `0x4C` = program 3 / tone 8 (voice count 2).
 `SCUS_942.54` image (PSX-EXE `t_addr` → file-offset map, identical to the
 [item-name table](item-table.md) resolver); `from_table_bytes` parses a raw
 table window straight out of save-state RAM. `SfxDescriptor` exposes the decoded
-fields plus `voice_count()` / `sustained()` / `is_active()`. The disc-gated
+fields plus `voice_count()` / `sustained()` / `is_active()` / `vab_slot()`.
+
+The same module carries the **routing law**: `slot_for_category`,
+`prot_index_for_slot` (`None` for the unpinned slots, so a host cannot guess
+one), `prot_index_for_category`, the `PINNED_SLOT_BANKS` pairs, and
+`FALLBACK_VAB_SLOT` for the categories with no traced entry.
+`SfxTable::cue_slots` / `slots_used` are the per-cue and per-table views.
+
+The disc-gated
 `sfx_table_real` test pins the layout + anchors against the real executable,
 `sfx_table_live` (engine-shell) validates the parse against live RAM and feeds
 the descriptors into `legaia_engine_audio::SfxBank::from_descriptors`, and

@@ -115,12 +115,15 @@ pub struct LegaiaRuntime {
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
-    /// The resident class-2 SFX program bank, uploaded into its own region at
-    /// the top of SPU RAM the first time a cue fires. Separate from
+    /// The resident SFX program banks keyed by **VAB slot**, uploaded into a
+    /// shared region at the top of SPU RAM the first time a cue fires. A cue's
+    /// `+4` category names its slot, so this is a map rather than one bank:
+    /// slot 0 = PROT 0868 (shared UI), slot 2 = PROT 0869 (battle / duel). Both
+    /// come out of one allocator so they pack. Separate from
     /// [`Self::bgm_bank`], whose allocator is capped below this region so a
     /// scene change cannot stomp the SFX samples.
     #[cfg(target_arch = "wasm32")]
-    pub(crate) sfx_vab: Option<legaia_engine_audio::VabBank>,
+    pub(crate) sfx_vabs: std::collections::BTreeMap<u8, legaia_engine_audio::VabBank>,
     /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
@@ -175,7 +178,7 @@ impl LegaiaRuntime {
             fishing_venues: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
-            sfx_vab: None,
+            sfx_vabs: Default::default(),
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             #[cfg(target_arch = "wasm32")]

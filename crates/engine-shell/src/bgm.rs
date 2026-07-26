@@ -16,9 +16,11 @@
 //! bytes and the active VAB is staged once per scene. This adapter is the
 //! join point.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use legaia_asset::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_engine_audio::{
     ArtsShoutBank, AudioOut, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank, SfxScheduler,
     VabBank,
@@ -56,16 +58,25 @@ pub struct AudioBgmDirector {
     /// is set once at boot; the per-scene VAB it plays through is the same
     /// [`Self::bank`] the BGM sequencer uses.
     sfx_bank: SfxBank,
-    /// Resident **class-2 sound bank** (extraction PROT 0869, raw loader
-    /// index `0x367`) the battle scene loader and the Baka Fighter init load
-    /// explicitly - its low programs (`0`, `3`) carry the strike / duel-hit
-    /// cues (see `sfx-table.md`). Uploaded once at boot into a dedicated SPU
-    /// RAM region so battle / minigame cues resolve regardless of which BGM
-    /// VAB happens to be open. `None` when the bank couldn't be staged (a
-    /// disc-free boot); [`Self::tick_sfx_frame`] then falls back to the scene
-    /// BGM bank ([`Self::bank`]), matching the retail field-scene path where a
-    /// cue sounds out of whichever bank the libsnd current-bank globals hold.
-    sfx_vab: Option<VabBank>,
+    /// Cue id -> **VAB slot**, the routing half of the same descriptor table
+    /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]): a cue's `+4`
+    /// category selects the mixer record whose `+8` is the slot its voices key.
+    /// Empty until [`Self::set_sfx_cue_slots`]; an absent id routes to
+    /// [`FALLBACK_VAB_SLOT`] exactly like an unpinned slot does.
+    sfx_cue_slots: BTreeMap<u8, u8>,
+    /// Resident SFX program banks keyed by that slot. Slot `0` is the system
+    /// bank (extraction PROT 0868) the 16 shared UI cues key; slot `2` is the
+    /// **class-2 sound bank** (PROT 0869, raw loader index `0x367`) the battle
+    /// scene loader and the Baka Fighter init load explicitly, whose low
+    /// programs (`0`, `3`) carry the strike / duel-hit cues (see
+    /// `sfx-table.md`). Both are uploaded once at boot out of one allocator
+    /// over a dedicated SPU RAM region, so battle / menu cues resolve
+    /// regardless of which BGM VAB happens to be open. Empty when nothing
+    /// could be staged (a disc-free boot); [`Self::tick_sfx_frame`] then falls
+    /// back to the scene BGM bank ([`Self::bank`]), matching the retail
+    /// field-scene path where a cue sounds out of whichever bank the libsnd
+    /// current-bank globals hold.
+    sfx_vabs: BTreeMap<u8, VabBank>,
     /// Frame-timed one-shot cue queue. [`Self::enqueue_sfx`] adds a cue at
     /// its strike-relative delay; [`Self::tick_sfx_frame`] advances one frame
     /// and fires matured cues through the SPU.
@@ -90,7 +101,8 @@ impl AudioBgmDirector {
             last_started: None,
             pending: None,
             sfx_bank: SfxBank::new(),
-            sfx_vab: None,
+            sfx_cue_slots: BTreeMap::new(),
+            sfx_vabs: BTreeMap::new(),
             sfx_sched: SfxScheduler::new(),
             shout_bank: None,
         }
@@ -135,22 +147,47 @@ impl AudioBgmDirector {
         self.sfx_bank = bank;
     }
 
-    /// Install the resident class-2 SFX program bank (PROT 0869), uploaded
-    /// into its own SPU RAM region at boot. Battle / minigame cues fire
-    /// against this bank so their programs are always resident; see
-    /// [`Self::sfx_vab`].
-    pub fn set_sfx_vab(&mut self, bank: VabBank) {
-        self.sfx_vab = Some(bank);
+    /// Install the cue id -> VAB slot routing decoded from the same
+    /// descriptor table as [`Self::set_sfx_bank`]
+    /// (`legaia_asset::sfx_table::SfxTable::cue_slots`). Without it every cue
+    /// falls back to the class-2 bank, which is what a single-bank host did.
+    pub fn set_sfx_cue_slots<I: IntoIterator<Item = (u8, u8)>>(&mut self, slots: I) {
+        self.sfx_cue_slots = slots.into_iter().collect();
     }
 
-    /// Whether the resident class-2 SFX bank was staged.
+    /// Install one resident SFX program bank at its VAB `slot` (0 = the
+    /// PROT 0868 system bank, 2 = the PROT 0869 class-2 bank), uploaded into
+    /// the shared SPU RAM region at boot. Cues fire against the bank their own
+    /// category names so their programs are always resident; see
+    /// [`Self::sfx_vabs`].
+    pub fn set_sfx_vab(&mut self, slot: u8, bank: VabBank) {
+        self.sfx_vabs.insert(slot, bank);
+    }
+
+    /// Whether any resident SFX bank was staged.
     pub fn has_sfx_vab(&self) -> bool {
-        self.sfx_vab.is_some()
+        !self.sfx_vabs.is_empty()
+    }
+
+    /// The VAB slots that have a resident bank, ascending.
+    pub fn staged_sfx_slots(&self) -> Vec<u8> {
+        self.sfx_vabs.keys().copied().collect()
     }
 
     /// Borrow the active SFX bank - useful for tests / inspection.
     pub fn sfx_bank(&self) -> &SfxBank {
         &self.sfx_bank
+    }
+
+    /// The VAB slot cue `id` resolves to on this director, routing and
+    /// fallback included. See [`resolve_sfx_slot`].
+    pub fn sfx_slot_for_cue(&self, id: u8) -> u8 {
+        resolve_sfx_slot(&self.sfx_cue_slots, &self.sfx_vabs, id)
+    }
+
+    /// The resident bank cue `id` keys, or `None` when nothing is staged.
+    fn sfx_vab_for_cue(&self, id: u8) -> Option<&VabBank> {
+        self.sfx_vabs.get(&self.sfx_slot_for_cue(id))
     }
 
     /// Queue a one-shot sound cue to fire `frames` after this call (the
@@ -163,30 +200,36 @@ impl AudioBgmDirector {
     }
 
     /// Advance the SFX scheduler one frame and fire any matured cue through
-    /// the SPU. Cues resolve against the resident class-2 SFX bank
-    /// ([`Self::sfx_vab`]) when it is staged - the retail battle / minigame
-    /// path, whose programs are always resident - and fall back to the active
-    /// scene BGM bank ([`Self::bank`]) otherwise (the retail field-scene
-    /// path). Returns the `(cue_id, voice)` pairs that keyed on. A cue is
-    /// silently dropped when no bank is staged, its id isn't in the descriptor
-    /// bank, its program / tone isn't resident, or no SPU voice is free
-    /// (matching the retail "no voice / no program -> skip" behaviour). Call
-    /// once per simulation tick so delayed cues advance even when none are
-    /// enqueued that frame.
+    /// the SPU. Each cue resolves against the resident SFX bank **its own `+4`
+    /// category names** ([`Self::sfx_vab_for_cue`]) - the retail path, where
+    /// `FUN_80065034` repoints the current-bank globals at the cue's slot
+    /// before the program lookup - and falls back to the active scene BGM bank
+    /// ([`Self::bank`]) when nothing is staged at all (the disc-free boot).
+    /// Returns the `(cue_id, voice)` pairs that keyed on. A cue is silently
+    /// dropped when no bank is staged, its id isn't in the descriptor bank, its
+    /// program / tone isn't resident, or no SPU voice is free (matching the
+    /// retail "no voice / no program -> skip" behaviour). Call once per
+    /// simulation tick so delayed cues advance even when none are enqueued that
+    /// frame.
     pub fn tick_sfx_frame(&mut self) -> Vec<(u16, u8)> {
         let batch = self.sfx_sched.tick_frame();
         if batch.is_empty() {
             return Vec::new();
         }
-        // Prefer the resident class-2 SFX bank; fall back to the scene BGM VAB.
-        let Some(vab) = self.sfx_vab.as_ref().or(self.bank.as_ref()) else {
+        if self.sfx_vabs.is_empty() && self.bank.is_none() {
             return Vec::new();
-        };
+        }
         let bank = &self.sfx_bank;
         let mut fired = Vec::new();
         self.audio.with_spu(|spu| {
             for cue in &batch.fired {
-                if let Some(voice) = bank.play_one_shot(cue.id as u8, spu, vab) {
+                let id = cue.id as u8;
+                // The cue's category picks its bank; with nothing staged the
+                // scene BGM VAB stands in, as it did before any SFX bank did.
+                let Some(vab) = self.sfx_vab_for_cue(id).or(self.bank.as_ref()) else {
+                    continue;
+                };
+                if let Some(voice) = bank.play_one_shot(id, spu, vab) {
                     fired.push((cue.id, voice));
                 }
             }
@@ -352,9 +395,63 @@ impl BgmDirector for AudioBgmDirector {
     }
 }
 
+/// Which VAB slot a cue resolves to, given the installed cue -> slot routing
+/// and the set of slots that actually staged.
+///
+/// **The fallback is the pre-routing behaviour on purpose.** Only slots `0` and
+/// `2` are pinned to PROT entries; categories `6` (30 descriptors) and `11` (1)
+/// name slots whose filler is untraced, so those - and any id the descriptor
+/// table doesn't carry - resolve to [`FALLBACK_VAB_SLOT`], the class-2 bank
+/// this host staged for every cue before the routing existed. Categories 0 and
+/// 2 become correct without changing what 6 / 11 sound like. The remaining
+/// slot-to-PROT hunt is the "Which PROT entries fill SFX VAB slots 1 / 3 / 6 /
+/// 11" row in `docs/reference/open-rev-eng-threads.md`.
+///
+/// Free function rather than a method so it is testable without a cpal device
+/// (an [`AudioBgmDirector`] needs a live [`AudioOut`]).
+pub(crate) fn resolve_sfx_slot<T>(
+    cue_slots: &BTreeMap<u8, u8>,
+    staged: &BTreeMap<u8, T>,
+    id: u8,
+) -> u8 {
+    let slot = cue_slots.get(&id).copied().unwrap_or(FALLBACK_VAB_SLOT);
+    if staged.contains_key(&slot) {
+        slot
+    } else {
+        FALLBACK_VAB_SLOT
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use legaia_engine_audio::VabBank;
+
+    /// A cue keys the bank its `+4` category names when that slot staged, and
+    /// the class-2 bank otherwise - never a third thing, and never silence
+    /// while any bank is resident.
+    #[test]
+    fn cue_routes_to_its_category_slot_and_falls_back_to_class_two() {
+        // Retail categories: 0x21 menu cursor = 0, 0x09 duel hit = 2,
+        // 0x2E field script = 6, 0x4D = 11.
+        let routing = BTreeMap::from([(0x21u8, 0u8), (0x09, 2), (0x2E, 6), (0x4D, 11)]);
+        let staged: BTreeMap<u8, ()> = BTreeMap::from([(0, ()), (2, ())]);
+
+        assert_eq!(resolve_sfx_slot(&routing, &staged, 0x21), 0);
+        assert_eq!(resolve_sfx_slot(&routing, &staged, 0x09), 2);
+        // Unpinned slots and unknown ids both land on the class-2 bank.
+        for id in [0x2Eu8, 0x4D, 0xFE] {
+            assert_eq!(resolve_sfx_slot(&routing, &staged, id), FALLBACK_VAB_SLOT);
+        }
+        // With only the class-2 bank staged this is exactly the old behaviour.
+        let one: BTreeMap<u8, ()> = BTreeMap::from([(2, ())]);
+        for id in [0x21u8, 0x09, 0x2E, 0xFE] {
+            assert_eq!(resolve_sfx_slot(&routing, &one, id), FALLBACK_VAB_SLOT);
+        }
+        // No routing installed at all: everything is class-2, as before.
+        let none = BTreeMap::new();
+        assert_eq!(resolve_sfx_slot(&none, &staged, 0x21), FALLBACK_VAB_SLOT);
+    }
 
     /// Test stub bank - empty programs / samples. Real banks come from
     /// `legaia_vab::parse`.

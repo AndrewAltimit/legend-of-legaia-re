@@ -3,7 +3,9 @@
 //! isn't on disk - same gating pattern as the other disc-dependent tests so CI
 //! doesn't need Sony bytes.
 
-use legaia_asset::sfx_table::{SFX_TABLE_ENTRIES, SfxTable};
+use legaia_asset::sfx_table::{
+    PINNED_SLOT_BANKS, SFX_TABLE_ENTRIES, SfxTable, prot_index_for_slot,
+};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -57,4 +59,55 @@ fn decodes_the_sfx_descriptor_table_or_skips() {
         table.get(0x64).is_none(),
         "table stops at the static extent"
     );
+}
+
+/// The routing half: the real table's category histogram and the slot set it
+/// reaches. Both are invariants of the disc, so a change here means either the
+/// parser moved or the executable did.
+#[test]
+fn category_histogram_and_slot_set_are_the_disc_ones_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = SfxTable::from_scus(&bytes).expect("parse SFX table");
+
+    // Four categories, and the count behind each.
+    for (category, want) in [(0u8, 16usize), (2, 53), (6, 30), (11, 1)] {
+        let n = table
+            .active()
+            .filter(|(_, d)| d.category == category)
+            .count();
+        assert_eq!(n, want, "category {category} descriptor count");
+    }
+    assert_eq!(table.slots_used(), vec![0, 2, 6, 11]);
+
+    // The 16 shared UI cues spread across five programs, so routing them needs
+    // the whole slot-0 bank rather than a subset of it.
+    let mut progs: Vec<u8> = table
+        .active()
+        .filter(|(_, d)| d.category == 0)
+        .map(|(_, d)| d.program)
+        .collect();
+    progs.sort_unstable();
+    progs.dedup();
+    assert_eq!(progs, vec![0, 1, 2, 3, 10], "category-0 programs");
+
+    // The four traced pause-menu / strike cues are category 0, so they route to
+    // the slot-0 system bank (PROT 0868) - not to the class-2 bank a
+    // single-bank host stages.
+    for id in [0x1Au8, 0x20, 0x21, 0x37] {
+        assert_eq!(table.slot_for_cue(id), Some(0), "cue {id:#x} is category 0");
+    }
+    // The Baka duel hit is the contrasting case.
+    assert_eq!(table.slot_for_cue(0x09), Some(2));
+
+    // Exactly two slots are pinned to PROT entries; the other two the table
+    // reaches are the open unknowns.
+    for slot in table.slots_used() {
+        let pinned = PINNED_SLOT_BANKS.iter().any(|(s, _)| *s == slot);
+        assert_eq!(pinned, prot_index_for_slot(slot).is_some());
+    }
+    assert_eq!(PINNED_SLOT_BANKS.len(), 2);
 }

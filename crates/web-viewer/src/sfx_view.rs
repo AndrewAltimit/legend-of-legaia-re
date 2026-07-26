@@ -14,30 +14,41 @@
 //!    SFX-descriptor index ([`legaia_asset::sfx_table`],
 //!    [`docs/formats/sfx-table.md`]). Each descriptor gives program + tone +
 //!    note + voice count.
-//! 3. **The bank.** The descriptor's program/tone index a loaded VAB. The
-//!    **class-2 sound bank at extraction PROT [`SFX_BANK_PROT_INDEX`]** (raw
-//!    loader index `0x367`) is loaded by *both* the battle scene loader
+//! 3. **The bank, which the cue names itself.** The descriptor's program/tone
+//!    index a loaded VAB, and its `+4` **category** picks *which* VAB: the
+//!    category selects a 12-byte mixer record whose `+8` is a VAB slot id
+//!    (`legaia_asset::sfx_table::slot_for_category`). Two of the four slots
+//!    retail's descriptors reach are pinned to PROT entries - slot `0` = the
+//!    system bank PROT [`SFX_SYSTEM_BANK_PROT_INDEX`] behind the shared UI
+//!    cues, slot `2` = the **class-2 sound bank at PROT
+//!    [`SFX_BANK_PROT_INDEX`]** (raw `0x367`) that both the battle scene loader
 //!    (`FUN_800520F0`, `a1 = 2`) and the Baka Fighter init (`FUN_801CF00C`:
-//!    `FUN_8001FC00(0x367, 2, ...)`), so it is the bank behind both the duel's
-//!    cues and the battle-side strike cue the arts page wants.
+//!    `FUN_8001FC00(0x367, 2, ...)`) load. So the duel's hit is class-2 and the
+//!    duel's menu blips are not, even though the same overlay writes both.
 //!
 //! This module walks that chain in the browser off the visitor's own disc:
-//! SCUS -> descriptor table, PROT 869 -> VAB, then renders each cue through
-//! the clean-room SPU ([`legaia_engine_audio`]) to a PCM buffer the page plays
-//! with WebAudio. No Sony bytes ship with the site - everything decodes at
-//! runtime from the loaded image.
+//! SCUS -> descriptor table, PROT -> the bank each cue's category names, then
+//! renders each cue through the clean-room SPU ([`legaia_engine_audio`]) to a
+//! PCM buffer the page plays with WebAudio. No Sony bytes ship with the site -
+//! everything decodes at runtime from the loaded image.
 
 use super::*;
 
-use legaia_asset::sfx_table::SfxTable;
+use legaia_asset::sfx_table::{FALLBACK_VAB_SLOT, SfxTable};
+use std::collections::BTreeMap;
 
 /// Class-2 sound bank (raw loader index `0x367`): the SFX VAB both the battle
 /// scene loader `FUN_800520F0` and the Baka Fighter init `FUN_801CF00C` load.
-pub const SFX_BANK_PROT_INDEX: u32 = 869;
+/// This is VAB slot `2`, the bank a **category-2** cue keys.
+pub const SFX_BANK_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT2_CLASS2_BANK_PROT_INDEX;
 /// The alternate class-2 bank `FUN_800520F0` swaps in on `DAT_8007BD11 == 4`
 /// (raw `0x36D`). Used as a fallback when [`SFX_BANK_PROT_INDEX`] doesn't
 /// parse on a given image.
-pub const SFX_BANK_ALT_PROT_INDEX: u32 = 875;
+pub const SFX_BANK_ALT_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT2_CLASS2_BANK_ALT_PROT_INDEX;
+/// VAB slot `0`, the system bank a **category-0** cue keys - which is every
+/// shared UI blip this page fires (`0x1A`, `0x20`, `0x21`, `0x37`), the duel's
+/// own menu included.
+pub const SFX_SYSTEM_BANK_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
 
 /// Exchange hit - disc-sourced: `FUN_801D3B18` writes `_DAT_8007b6d8 = 9`
 /// when it applies an exchange's damage.
@@ -126,6 +137,9 @@ struct RenderedCue {
     pcm: Vec<i16>,
     /// Peak absolute sample - the page uses it for clip-safe gain staging.
     peak: i16,
+    /// PROT entry this cue was rendered from - the bank its own `+4` category
+    /// names, after the unpinned-slot fallback in [`bank_for_cue`].
+    bank: u32,
 }
 
 /// Longest one-shot the renderer will keep (SPU samples). Retail SFX are far
@@ -194,7 +208,83 @@ fn render_cue(
     // Drop the trailing silence the loop rolled through.
     let keep = pcm.len().saturating_sub(silent_run * 2);
     pcm.truncate(keep.max(2));
-    Some(RenderedCue { id, pcm, peak })
+    Some(RenderedCue {
+        id,
+        pcm,
+        peak,
+        bank: 0,
+    })
+}
+
+/// One decoded program bank, ready to render cues out of.
+struct SlotBank {
+    /// PROT entry it was read from.
+    prot: u32,
+    /// The VAB body (header at offset 0 of this slice).
+    body: Vec<u8>,
+    report: legaia_vab::VabReport,
+}
+
+/// Read the pinned slots' banks out of a `PROT.DAT` image, keyed by slot.
+///
+/// Slot `2` has the documented `DAT_8007BD11 == 4` alternate; slot `0` does
+/// not. A slot whose entry is absent or doesn't parse is simply missing from
+/// the map, which routes its cues to the fallback.
+fn read_slot_banks(prot: &[u8], entries: &[disc::EntryMeta]) -> BTreeMap<u8, SlotBank> {
+    let mut banks = BTreeMap::new();
+    for (slot, index) in legaia_asset::sfx_table::PINNED_SLOT_BANKS.iter().copied() {
+        let alt = if slot == FALLBACK_VAB_SLOT {
+            SFX_BANK_ALT_PROT_INDEX
+        } else {
+            index
+        };
+        for cand in [index, alt] {
+            let Some(meta) = entries.iter().find(|e| e.index == cand) else {
+                continue;
+            };
+            let off = meta.byte_offset as usize;
+            let end = (meta.byte_offset + meta.size_bytes) as usize;
+            let Some(buf) = prot.get(off..end.min(prot.len())) else {
+                continue;
+            };
+            // The bank is a scene-VAB-prefixed stream: 4-byte chunk0 header,
+            // then the VAB body (the same `+4` slice the BGM path takes).
+            let Some((report, vab_off)) = [4usize, 0]
+                .into_iter()
+                .find_map(|o| legaia_vab::parse(buf, o).ok().map(|r| (r, o)))
+            else {
+                continue;
+            };
+            banks.insert(
+                slot,
+                SlotBank {
+                    prot: cand,
+                    body: buf[vab_off..].to_vec(),
+                    report,
+                },
+            );
+            break;
+        }
+    }
+    banks
+}
+
+/// The staged bank a cue must render out of: the slot its `+4` category names,
+/// falling back to the class-2 bank ([`FALLBACK_VAB_SLOT`]) when that slot has
+/// no traced PROT entry (categories `6` and `11`) or its bank didn't decode.
+///
+/// The fallback is deliberately the behaviour this page had before the routing
+/// existed, so an unpinned category keeps sounding exactly as it did rather
+/// than going silent on a guess. The remaining slot-to-PROT hunt is the "Which
+/// PROT entries fill SFX VAB slots 1 / 3 / 6 / 11" row in
+/// `docs/reference/open-rev-eng-threads.md`.
+fn bank_for_cue<'a>(
+    banks: &'a BTreeMap<u8, SlotBank>,
+    table: &SfxTable,
+    id: u8,
+) -> Option<&'a SlotBank> {
+    let slot = table.slot_for_cue(id).unwrap_or(FALLBACK_VAB_SLOT);
+    banks.get(&slot).or_else(|| banks.get(&FALLBACK_VAB_SLOT))
 }
 
 /// The site's shared sound-cue surface: renders every cue the minigame + arts
@@ -202,7 +292,9 @@ fn render_cue(
 #[wasm_bindgen]
 pub struct LegaiaSfx {
     cues: Vec<RenderedCue>,
-    /// PROT entry the cues were rendered from.
+    /// The class-2 PROT entry - the bank a category-`2` cue renders from and
+    /// the fallback for an unpinned category. Each cue carries the entry it
+    /// was really rendered from in [`RenderedCue::bank`].
     bank_index: u32,
 }
 
@@ -255,17 +347,23 @@ impl LegaiaSfx {
     /// Decode + render every site cue from a full Mode2/2352 disc image.
     ///
     /// Walks the retail chain: `SCUS_942.54` -> the static SFX descriptor
-    /// table, `PROT.DAT` -> the class-2 sound bank ([`SFX_BANK_PROT_INDEX`]),
-    /// then each cue's descriptor -> a one-shot through the clean-room SPU.
-    /// Holds only the rendered PCM afterwards (the disc bytes are dropped), so
-    /// a page can call this alongside its own decoder without a second copy of
-    /// the image.
+    /// table, `PROT.DAT` -> **the bank each cue's own `+4` category names**
+    /// (slot 0 = [`SFX_SYSTEM_BANK_PROT_INDEX`], slot 2 =
+    /// [`SFX_BANK_PROT_INDEX`]), then each cue's descriptor -> a one-shot
+    /// through the clean-room SPU. Holds only the rendered PCM afterwards (the
+    /// disc bytes are dropped), so a page can call this alongside its own
+    /// decoder without a second copy of the image.
     ///
     /// Returns JSON:
     /// ```json
     /// { "ok": true, "bank": 869, "rate": 44100,
-    ///   "cues": [ { "id": 9, "samples": 5400, "peak": 8123 }, ... ] }
+    ///   "banks": [ { "slot": 0, "prot": 868 }, { "slot": 2, "prot": 869 } ],
+    ///   "cues": [ { "id": 9, "samples": 5400, "peak": 8123, "bank": 869 } ] }
     /// ```
+    ///
+    /// `bank` at the top level stays the class-2 entry - it is the fallback a
+    /// cue in an unpinned category still renders from - while each cue reports
+    /// the entry it was actually rendered from.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         let scus = disc::extract_scus(&bytes)
             .ok_or_else(|| JsValue::from_str("sfx: SCUS_942.54 not found (needs a full .bin)"))?;
@@ -276,43 +374,27 @@ impl LegaiaSfx {
         let entries = disc::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("sfx: PROT.DAT TOC parse failed"))?;
 
-        let mut rendered = Vec::new();
-        let mut bank_index = 0u32;
-        for cand in [SFX_BANK_PROT_INDEX, SFX_BANK_ALT_PROT_INDEX] {
-            let Some(meta) = entries.iter().find(|e| e.index == cand) else {
-                continue;
-            };
-            let off = meta.byte_offset as usize;
-            let end = (meta.byte_offset + meta.size_bytes) as usize;
-            let Some(buf) = prot.get(off..end.min(prot.len())) else {
-                continue;
-            };
-            // The bank is a scene-VAB-prefixed stream: 4-byte chunk0 header,
-            // then the VAB body (the same `+4` slice the BGM path takes).
-            let Some((report, vab_off)) = [4usize, 0]
-                .into_iter()
-                .find_map(|o| legaia_vab::parse(buf, o).ok().map(|r| (r, o)))
-            else {
-                continue;
-            };
-            let body = &buf[vab_off..];
-            rendered = site_cue_ids()
-                .into_iter()
-                .filter_map(|id| {
-                    let desc = table.get(id)?;
-                    render_cue(body, &report, desc, id)
-                })
-                .collect();
-            if !rendered.is_empty() {
-                bank_index = cand;
-                break;
-            }
-        }
+        let banks = read_slot_banks(&prot, &entries);
+        let rendered: Vec<RenderedCue> = site_cue_ids()
+            .into_iter()
+            .filter_map(|id| {
+                let desc = table.get(id)?;
+                let bank = bank_for_cue(&banks, &table, id)?;
+                let mut cue = render_cue(&bank.body, &bank.report, desc, id)?;
+                cue.bank = bank.prot;
+                Some(cue)
+            })
+            .collect();
+        let bank_index = banks.get(&FALLBACK_VAB_SLOT).map(|b| b.prot).unwrap_or(0);
         if rendered.is_empty() {
             return Err(JsValue::from_str(
-                "sfx: no cue resolved in the class-2 sound bank",
+                "sfx: no cue resolved in the category-selected sound banks",
             ));
         }
+        let staged: Vec<serde_json::Value> = banks
+            .iter()
+            .map(|(slot, b)| serde_json::json!({ "slot": slot, "prot": b.prot }))
+            .collect();
 
         let list: Vec<serde_json::Value> = rendered
             .iter()
@@ -321,12 +403,14 @@ impl LegaiaSfx {
                     "id": c.id,
                     "samples": c.pcm.len() / 2,
                     "peak": c.peak,
+                    "bank": c.bank,
                 })
             })
             .collect();
         let json = serde_json::json!({
             "ok": true,
             "bank": bank_index,
+            "banks": staged,
             "rate": legaia_engine_audio::SPU_INTERNAL_RATE,
             "cues": list,
         })
@@ -341,9 +425,21 @@ impl LegaiaSfx {
         legaia_engine_audio::SPU_INTERNAL_RATE
     }
 
-    /// PROT entry the cues were rendered from (0 until [`Self::load_disc`]).
+    /// The class-2 PROT entry (0 until [`Self::load_disc`]). Use
+    /// [`Self::cue_bank_prot_index`] for the entry a *given* cue came from -
+    /// they differ, and that difference is the category routing.
     pub fn bank_prot_index(&self) -> u32 {
         self.bank_index
+    }
+
+    /// The PROT entry one cue was rendered from - the bank its `+4` category
+    /// names, after the unpinned-slot fallback. `0` when the id didn't render.
+    pub fn cue_bank_prot_index(&self, id: u32) -> u32 {
+        self.cues
+            .iter()
+            .find(|c| c.id as u32 == id)
+            .map(|c| c.bank)
+            .unwrap_or(0)
     }
 
     /// Cue ids that rendered, in ascending order.

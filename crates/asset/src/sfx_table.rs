@@ -21,7 +21,7 @@
 //! | `+1` | `t` | tone / region base - `FUN_80065034` arg 4 (`+ i` per voice), indexes the ADSR region table at `_DAT_801ce340` (stride `0x20`). |
 //! | `+2` | `l` | note-level voice attribute - `FUN_80065034` arg 5 (values cluster around `60`, MIDI-ish). |
 //! | `+3` | `n` | low 5 bits = **voice count**; bit `0x20` = sustained / continuous mode. |
-//! | `+4` | `id` | category / channel index - selects a column in the channel-volume tables `DAT_80091510` / `DAT_80091513`. |
+//! | `+4` | `id` | category - selects the 12-byte mixer record at `0x80091508 + category*12`, and through its `+8` the **VAB slot** the cue keys (`DAT_80091510` / `DAT_80091513` are record 0's `+8` / `+0xB`). See [`slot_for_category`]. |
 //! | `+5..7` | - | no observed runtime reader (zero across the whole table). |
 //!
 //! Only the **first 100 entries (ids `0x00..=0x63`)** are real descriptors -
@@ -49,6 +49,95 @@ pub const SFX_ENTRY_STRIDE: usize = 8;
 /// entry below this is populated and `+5..7` are zero; id `0x64` starts
 /// unrelated rodata. The runtime's `id < 0x200` guard is a bound, not a size.
 pub const SFX_TABLE_ENTRIES: usize = 0x64;
+
+/// Base of the 12-byte mixer records the descriptor's `+4` category indexes
+/// (`0x80091508 + category*12`). Record `+0` is a live `VabHdr` pointer, `+8`
+/// the VAB slot id, `+0xB` an enable byte.
+pub const SFX_MIXER_TABLE_VA: u32 = 0x8009_1508;
+
+/// Bytes per mixer record.
+pub const SFX_MIXER_RECORD_STRIDE: usize = 12;
+
+/// Offset of the VAB slot id inside a mixer record. `FUN_80065034` hands this
+/// byte to `FUN_80068b98`, which repoints the current-bank globals at that
+/// slot before the program / tone lookup - so it is a bank selector, not a
+/// level.
+pub const SFX_MIXER_RECORD_VAB_SLOT_OFF: usize = 8;
+
+/// Upper bound `FUN_80068b98` accepts for a VAB slot id (it rejects `>= 0x10`,
+/// and also anything whose open-state byte `_DAT_801CE368[id]` isn't `1`).
+pub const SFX_VAB_SLOT_COUNT: u8 = 0x10;
+
+/// Slot 0 - the system bank the 16 category-`0` shared UI cues key
+/// (`0x1A`, `0x20`, `0x21`, `0x23`, `0x37`, ...). Extraction PROT **0868**.
+///
+/// Pinned by bytes rather than by label: a live field state's slot-0 `VagAtr`
+/// program-0 page (512 bytes) occurs verbatim in extraction entry 0868 at VAB
+/// offset `+4`, with the header's `ps = 5` agreeing. Its CDNAME label reads
+/// `battle_data`, which is the usual reminder that a label is a hint.
+pub const SLOT0_SYSTEM_BANK_PROT_INDEX: u32 = 868;
+
+/// Slot 2 - the dedicated class-2 sound bank behind the 53 category-`2` cues
+/// (battle strike, Baka duel hit). Extraction PROT **0869** (raw loader index
+/// `0x367`), loaded explicitly by the battle scene loader `FUN_800520F0` with
+/// `a1 = 2` and by the Baka Fighter init `FUN_801CF00C`.
+pub const SLOT2_CLASS2_BANK_PROT_INDEX: u32 = 869;
+
+/// The alternate class-2 bank `FUN_800520F0` swaps in when
+/// `DAT_8007BD11 == 4` (raw `0x36D` = extraction 0875).
+pub const SLOT2_CLASS2_BANK_ALT_PROT_INDEX: u32 = 875;
+
+/// The slot a cue's `+4` category selects.
+///
+/// Across every catalogued save state, mixer record `N` holds `+8 == N` and
+/// `+0` == slot `N`'s live `VabHdr`, in every record of every state - so the
+/// category byte **is** the slot id. Kept as a function rather than inlined at
+/// call sites so the one place that would have to change if a state is ever
+/// found with a non-identity record is this one.
+///
+/// A category at or above [`SFX_VAB_SLOT_COUNT`] would be rejected by
+/// `FUN_80068b98` outright; retail's descriptor table only uses `0`, `2`, `6`
+/// and `11`, so that case cannot arise off a real executable.
+pub fn slot_for_category(category: u8) -> u8 {
+    category
+}
+
+/// The PROT extraction index that fills a VAB slot, or `None` when the slot's
+/// filler is **not pinned**.
+///
+/// Only slots `0` and `2` are traced. Slots `1`, `3`, `6` and `11` are open in
+/// retail (a field state has `0, 1, 3, 6` open at once) but nothing names the
+/// PROT entry behind them: slot 6 carries the field script cues `0x2E` / `0x2F`
+/// so it is field-resident, slot 1 held the scene music VAB in the state
+/// examined, and slots 3 / 11 have no traced loader at all. Returning `None`
+/// rather than guessing is deliberate - a host is expected to fall back to a
+/// bank it *has* rather than to invent a mapping. See
+/// `docs/formats/sfx-table.md`.
+pub fn prot_index_for_slot(slot: u8) -> Option<u32> {
+    match slot {
+        0 => Some(SLOT0_SYSTEM_BANK_PROT_INDEX),
+        2 => Some(SLOT2_CLASS2_BANK_PROT_INDEX),
+        _ => None,
+    }
+}
+
+/// [`prot_index_for_slot`] composed with [`slot_for_category`].
+pub fn prot_index_for_category(category: u8) -> Option<u32> {
+    prot_index_for_slot(slot_for_category(category))
+}
+
+/// Every `(slot, PROT index)` pair that *is* pinned, in slot order. A host
+/// stages exactly these and routes everything else to a fallback.
+pub const PINNED_SLOT_BANKS: &[(u8, u32)] = &[
+    (0, SLOT0_SYSTEM_BANK_PROT_INDEX),
+    (2, SLOT2_CLASS2_BANK_PROT_INDEX),
+];
+
+/// The slot a host falls back to for a category whose own slot is unpinned
+/// (`6` = 30 descriptors, `11` = 1). Slot 2 is that fallback because it is the
+/// bank both hosts already staged before the routing existed, so an unpinned
+/// category keeps sounding exactly as it did rather than going silent.
+pub const FALLBACK_VAB_SLOT: u8 = 2;
 
 /// One decoded 8-byte sound-effect descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
@@ -97,6 +186,13 @@ impl SfxDescriptor {
     /// `true` when the descriptor actually fires (`voice_count() != 0`).
     pub fn is_active(&self) -> bool {
         self.voice_count() != 0
+    }
+
+    /// The VAB slot this cue keys, from its [`category`](Self::category) - see
+    /// [`slot_for_category`]. Pair with [`prot_index_for_slot`] to reach the
+    /// bank on disc.
+    pub fn vab_slot(&self) -> u8 {
+        slot_for_category(self.category)
     }
 }
 
@@ -159,6 +255,29 @@ impl SfxTable {
             .enumerate()
             .filter(|(_, d)| d.is_active())
             .map(|(i, d)| (i as u8, d))
+    }
+
+    /// The VAB slot cue `sound_id` keys, or `None` outside the static table.
+    pub fn slot_for_cue(&self, sound_id: u8) -> Option<u8> {
+        self.get(sound_id).map(|d| d.vab_slot())
+    }
+
+    /// `(cue id, VAB slot)` for every active descriptor - the **routing** half
+    /// of the table, the counterpart of the `(program, tone, note, voices)`
+    /// tuples [`Self::active`] feeds into a playback bank. A host installs this
+    /// alongside the descriptors so a cue can be resolved against the bank its
+    /// own category names.
+    pub fn cue_slots(&self) -> impl Iterator<Item = (u8, u8)> + '_ {
+        self.active().map(|(id, d)| (id, d.vab_slot()))
+    }
+
+    /// Distinct VAB slots the table's active descriptors reach, ascending.
+    /// Retail's is `[0, 2, 6, 11]`.
+    pub fn slots_used(&self) -> Vec<u8> {
+        let mut v: Vec<u8> = self.cue_slots().map(|(_, s)| s).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
     }
 }
 
@@ -254,5 +373,53 @@ mod tests {
     #[test]
     fn from_scus_rejects_non_exe() {
         assert!(SfxTable::from_scus(b"not an exe").is_none());
+    }
+
+    /// The category -> slot -> PROT chain, and the deliberate holes in it.
+    /// A future "helpfully" filling slot 6 in without tracing its loader is
+    /// exactly what this pins against.
+    #[test]
+    fn category_selects_a_slot_and_only_two_slots_are_pinned() {
+        assert_eq!(slot_for_category(0), 0);
+        assert_eq!(slot_for_category(2), 2);
+        assert_eq!(slot_for_category(6), 6);
+        assert_eq!(slot_for_category(11), 11);
+
+        assert_eq!(prot_index_for_category(0), Some(868));
+        assert_eq!(prot_index_for_category(2), Some(869));
+        for unpinned in [1u8, 3, 6, 11] {
+            assert_eq!(
+                prot_index_for_slot(unpinned),
+                None,
+                "slot {unpinned}'s filler is not traced - see sfx-table.md"
+            );
+        }
+        assert_eq!(PINNED_SLOT_BANKS, &[(0, 868), (2, 869)]);
+        // The fallback must itself be a pinned slot, or an unpinned category
+        // would route to nothing.
+        assert!(
+            PINNED_SLOT_BANKS
+                .iter()
+                .any(|(s, _)| *s == FALLBACK_VAB_SLOT)
+        );
+    }
+
+    #[test]
+    fn descriptor_and_table_expose_the_slot() {
+        let d = SfxDescriptor::from_bytes(&[0, 1, 61, 1, 0, 0, 0, 0]);
+        assert_eq!(d.vab_slot(), 0);
+        let table = SfxTable::from_table_bytes(&[
+            0, 1, 61, 1, 0, 0, 0, 0, // id 0: category 0
+            3, 8, 64, 2, 2, 0, 0, 0, // id 1: category 2
+            7, 0, 60, 1, 6, 0, 0, 0, // id 2: category 6
+            0, 0, 0, 0, 2, 0, 0, 0, // id 3: inactive (voice count 0)
+        ]);
+        assert_eq!(table.slot_for_cue(0), Some(0));
+        assert_eq!(table.slot_for_cue(1), Some(2));
+        assert_eq!(table.slot_for_cue(9), None, "outside the parsed table");
+        // `cue_slots` follows `active`, so the zero-voice row is excluded.
+        let pairs: Vec<(u8, u8)> = table.cue_slots().collect();
+        assert_eq!(pairs, vec![(0, 0), (1, 2), (2, 6)]);
+        assert_eq!(table.slots_used(), vec![0, 2, 6]);
     }
 }

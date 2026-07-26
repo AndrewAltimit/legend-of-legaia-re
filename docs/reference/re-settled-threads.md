@@ -994,6 +994,8 @@ The **object-index grid** (`+0x8000`, the `Scene::field_object_placements` / `fi
 
 Consequences: (a) `Scene::field_map_index` now resolves `define − 2` (it previously picked the in-block entry - the **next scene's map** - for every field scene, masked only on town01 where the adjacent Rim Elm variants byte-copy, the one scene it had been validated against; `walk_field_map_index` is now an alias). (b) The town0c "cold `.MAP`" question **dissolves**: town0c's `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010) - the wall-press captures' "town01 buffer in a town0c session" is simply town0c's own map. (c) "PROT 0028 = town0c's different `.MAP`" is a misattribution - 0028 is `izumi`'s (`define 30 − 2`). (d) The kingdom "in-block decoy" framing is superseded: the decoy is the next scene's continent.
 
+The footprint is corroboration, never the resolver, and the corrected PROT extents make that sharper: **111** entries are exactly `0x12000` bytes and only **101** are maps. Five of the ten strangers sit *inside* named scene blocks (`dolk+5`, `dolk2+5`, `taiku+9`, `taiku+10`, `rugi+7`) and are `scene_tmd_stream` entries - `[u32 size]` then the `0x80000002` TMD magic. So a footprint scan within a block does not merely risk the neighbouring scene's map; it can land on a mesh stream. See [`field-map.md`](../formats/field-map.md#the-footprint-is-necessary-not-sufficient).
+
 ### game_mode 0x03 = field/town gameplay
 
 *Status:* resolved
@@ -1246,6 +1248,44 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | XA channel map / STR demux SM | resolved (static decompile of PROT 0970 + SCUS) | `disassembly` | [details ↓](#xa-channel-map--str-demux-sm) |
 | `FUN_80018DB0` is a rumble cadence, not an audio one | resolved (libpad, not SsAPI; no cue to pin) | `disassembly` | [details ↓](#fun_80018db0-is-a-rumble-cadence-not-an-audio-one) |
 | Key-on pitch: what does retail put in the voice pitch register? | resolved (unity on centre; the port was an octave low) | `disassembly` | [details ↓](#key-on-pitch-unity-on-centre) |
+| SFX cue bank routing - the category byte selects the VAB slot | resolved (mechanism + the two pinned banks; ported) | `capture` | [details ↓](#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot) |
+
+### SFX cue bank routing - the category byte selects the VAB slot
+
+*Status:* resolved - a cue names its own bank, and both hosts now stage the two
+pinned banks and route by category. Which PROT entries fill the *other* slots is
+the narrower question that stays open: [`open-rev-eng-threads.md`](open-rev-eng-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
+
+The mechanism. A descriptor's `+4` byte is a category, and it selects the 12-byte
+mixer record at `0x80091508 + category*12`. That record's `+8` is a **VAB slot
+id**, not a level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it
+unless the per-bank open-state byte `_DAT_801CE368[id] == 1` and then repoints
+the current-bank globals at that slot *before* the program / tone lookup. Across
+the catalogued save states record `N` holds `+8 == N` and `+0` == slot `N`'s live
+`VabHdr`, in every record of every state, so category `N` selects slot `N`. Slot
+0 is **PROT 0868** (a live field state's 512-byte slot-0 `VagAtr` program-0 page
+occurs verbatim in that entry at VAB offset `+4`, `ps = 5` agreeing); slot 2 is
+the class-2 bank **PROT 0869** the battle scene loader `FUN_800520F0` loads with
+`a1 = 2`. Histogram over the 100 descriptors: `0`:16, `2`:53, `6`:30, `11`:1.
+
+Why it was worth grading rather than assuming. A port that stages one bank and
+fires everything through it does not error and does not go silent, because both
+banks carry a one-VAG-per-semitone UI key map at program 0 - so a category-`0`
+id resolves to a *sibling* sample. The browser play page sounded its pause menu
+out of PROT 0869 that way: genuine retail data, roughly twice as long and a
+fifth lower than the field menu's, because 0869's `center` bytes are authored
+higher. Peak, duration and "did a voice key on" all pass in that state; the only
+observable that separates them is which entry the samples came from, which is
+what the disc-gated oracles now assert.
+
+The port. `legaia_asset::sfx_table` carries the law (`slot_for_category`,
+`prot_index_for_slot`, `PINNED_SLOT_BANKS`, and `None` for the unpinned slots so
+nothing can guess one); `engine-shell`'s boot and the browser play page each
+stage both pinned banks out of **one** SPU allocator over their shared reserved
+region and resolve every cue through its own slot. Categories `6` and `11` fall
+back to the class-2 bank - the exact pre-routing behaviour - rather than being
+routed on a guess. Byte-level detail:
+[`sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
 
 ### Key-on pitch: unity on centre
 
