@@ -262,6 +262,77 @@ pub(super) fn queued_from_menu(ctx: &mut BattleActionCtx) -> StepOutcome {
     }
 }
 
+/// Raise the per-action target banner at the tail of [`action_seed`].
+///
+/// The plan comes from [`crate::battle_cue_group::plan_target_banner`], the
+/// port of `FUN_801E6D84`; each HUD element id it lists is raised through
+/// [`BattleActionHost::ui_element`], which is the port's channel for retail's
+/// `FUN_801D8DE8` (the same channel the run / spirit / attack arms already
+/// use). Two of the retail routine's inputs are abstracted rather than read,
+/// and neither reaches the id list:
+///
+/// * `ctx[+0x24B]`, the override target slot the `target == 9` arms consult,
+///   has no `BattleActionCtx` field and is passed as `0` - the arm retail
+///   takes when nothing has overridden the target.
+/// * the banner *width* term is `FUN_80035F04` over the target's `+0x1BC`
+///   animation descriptor, which this crate has no pool to walk. It is passed
+///   as `0`, and the resulting `banner_width` is not consumed: the engine's
+///   HUD sizes its own banners.
+///
+/// The engine compacts its battle seating (monsters start at `party_count`,
+/// retail always at slot 3), so slot inputs are re-expressed in retail's
+/// numbering on the way in and the plan's `slots` are left alone - only the
+/// id list is used here.
+///
+/// REF: FUN_801E6D84
+fn raise_target_banner<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    actor_slot: u8,
+    party_count: u8,
+) {
+    use crate::battle_cue_group::{BannerInputs, MONSTER_SLOT_FIRST, plan_target_banner};
+    let Some(actor) = host.actor(actor_slot) else {
+        return;
+    };
+    let (action_category, action_id, target) =
+        (actor.action_category, actor.params[0], actor.active_target);
+    let mut monster_alive = [false; 4];
+    for (i, alive) in monster_alive.iter_mut().enumerate() {
+        *alive = host
+            .actor(party_count + i as u8)
+            .is_some_and(|a| a.liveness != 0);
+    }
+    // The plan's slot tests are written in retail's fixed numbering (monsters
+    // at 3..=6, the sentinels 8 and 9 above them), so re-express both slot
+    // inputs in it. The sentinels pass through untouched.
+    let to_retail = |slot: u8| -> u8 {
+        if slot < party_count {
+            slot
+        } else if slot < 8 {
+            MONSTER_SLOT_FIRST + (slot - party_count)
+        } else {
+            slot
+        }
+    };
+    let plan = plan_target_banner(
+        &BannerInputs {
+            active_slot: to_retail(actor_slot),
+            action_category,
+            action_id,
+            target: to_retail(target),
+            ctx_override_slot: 0,
+            monster_alive,
+        },
+        0,
+    );
+    for id in plan.hud_elements {
+        host.ui_element(id, 0);
+    }
+    // `plan.ctx_18` is dropped: `ctx[+0x18]` has no `BattleActionCtx` field
+    // (the port's `+0x18` is the battle actor's `ui_element_id`, a different
+    // byte), and nothing in the engine reads a context HUD-state byte.
+}
+
 pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -303,6 +374,12 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
 
     // Idle pose.
     host.pose(actor_slot, Pose::Idle);
+
+    // Per-action target banner. Retail's seed body ends every category arm at
+    // the same `jal 0x801e6d84` (`overlay_battle_action_801e295c.txt`
+    // `0x801E3028`) before jumping to the epilogue, so the plan is raised here
+    // rather than per-band.
+    raise_target_banner(host, actor_slot, party_count);
 
     // Dispatch into the appropriate band.
     let next = match category {

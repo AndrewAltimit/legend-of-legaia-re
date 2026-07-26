@@ -2,11 +2,8 @@
 //! work: the cue-group expander that spawns an action's effect/SFX set, and
 //! the target-banner planner that decides which HUD banner the action gets.
 //!
-//! PORT: FUN_801E22C8
-//! PORT: FUN_801E6D84
-//!
-//! NOT WIRED: the engine has no effect-spawn pool or battle HUD banner stack
-//! to hand these plans to; both are the decision half only.
+//! Each address is tagged on the function that implements it; the two have
+//! different wiring status, which a file-wide anchor could not express.
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt`
 //! and `overlay_battle_action_801e6d84.txt`. `FUN_801E6D84` is reached from
@@ -106,6 +103,14 @@ pub struct CueTables<'a> {
 /// A group whose count byte is zero produces no spawns; the two actor writes
 /// still happen.
 ///
+/// NOT WIRED: the expansion names cue ids out of two battle-overlay tables
+/// (`0x801F6470` groups, `0x801F6418` SFX map) that no parser extracts, so a
+/// caller has no `CueTables` to pass. The engine's per-action presentation
+/// comes from the art record's own effect / hit cues instead
+/// (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), which is a different source
+/// for the same frames; routing through this one needs those two tables
+/// parsed first.
+///
 /// PORT: FUN_801E22C8
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
 /// REF: FUN_80058490 (sound packet submit)
@@ -177,11 +182,12 @@ pub const TARGET_PARTY_WIDE: u8 = 8;
 /// block and are reached only with action category `2`.
 pub const MULTI_TARGET_ACTION_IDS: [u8; 3] = [0x82, 0x86, 0x8D];
 
-/// Action category `5` short-circuits the whole routine.
+/// Action category `5` - **Run / Defend** - short-circuits the whole routine,
+/// so a fleeing or defending actor raises no banner at all.
 pub const CATEGORY_SKIP: u8 = 5;
 
-/// Action categories `0` and `4` skip the target arm (the caster banner has
-/// already been raised by then).
+/// Action categories `0` (Tactical Arts) and `4` (Spirit) skip the target arm
+/// (the caster banner has already been raised by then).
 pub const CATEGORY_NO_TARGET_BANNER: [u8; 2] = [0, 4];
 
 /// The HUD element id the caster banner raises.
@@ -280,6 +286,13 @@ pub struct BannerPlan {
 /// `target_anim_width` is what `FUN_80035F04` returns for the selected
 /// target's `+0x1BC` descriptor; the banner width is `0x130 - width`. The
 /// caller supplies it because the lookup walks the animation pool.
+///
+/// The battle-action SM's `ActionSeed` raises this plan's `hud_elements`
+/// through `BattleActionHost::ui_element` - retail's own placement, the
+/// unconditional `jal 0x801e6d84` every category arm of the seed body falls
+/// into (`0x801E3028`). See `battle_action::dispatch::raise_target_banner`
+/// for the two inputs the engine abstracts (`ctx[+0x24B]` and the descriptor
+/// width) and why neither reaches the id list.
 ///
 /// PORT: FUN_801E6D84
 /// REF: FUN_80035F04 (animation-descriptor width), FUN_801D8DE8 (HUD element)

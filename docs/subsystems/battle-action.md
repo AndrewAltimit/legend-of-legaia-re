@@ -1465,7 +1465,18 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   to the next (`param 0`) or previous (`param 1`) entry, wrapping at the ends.
   Port: `cycle_attack_target` / `TargetCycle`.
 
-These last two are the **engine's** enemy target cursor, not just a
+The seed state also raises the per-action **target banner**. Retail's seed body
+ends every category arm at the same `jal 0x801e6d84` (`0x801E3028`), and the
+port mirrors that placement: `battle_action::dispatch::raise_target_banner`
+runs `plan_target_banner` (`FUN_801E6D84`, in `engine-vm::battle_cue_group`)
+and raises each HUD element id it lists through `BattleActionHost::ui_element`.
+Category `5` - Run / Defend - is the one arm that returns before raising
+anything; categories `0` and `4` raise the caster banner and skip the target
+arm. Two retail inputs are abstracted, neither of which reaches the id list:
+`ctx[+0x24B]` (the `target == 9` override slot, passed as `0`) and the
+`FUN_80035F04` descriptor width the banner-width term subtracts.
+
+The two target-cursor leaves are the **engine's** enemy target cursor, not just a
 transcription: `engine-core`'s `TargetPickerSession` builds the ring from its
 own monster rows (which carry each slot's battle-world seat) and steps it, so a
 Left/Right press moves to the angularly nearest live monster the way retail
