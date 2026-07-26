@@ -114,7 +114,10 @@ jobs:
     needs: [ci]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: self-hosted
-    timeout-minutes: 10
+    # The runner is shared, so this job's wasm-pack build competes with any
+    # other build on the box. 10 minutes was tight enough that contention
+    # alone could fail a deploy that had nothing wrong with it.
+    timeout-minutes: 30
     permissions:
       pages: write
       id-token: write
