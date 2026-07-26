@@ -145,10 +145,13 @@ silently drops cues. `FUN_80065034` is handed the descriptor's fields directly -
 program `+0`, **region/tone `+1`** (`+ i` for voice `i` of a multi-voice cue),
 note-level attr `+2` - so a cue's tone is an explicit index into the program's
 tone list. It is *not* resolved by asking which tone's authored `min..=max` key
-window contains the note, the way a sequencer NoteOn is. Several retail cues
-have a descriptor note outside their tone's window (the generic strike cue
-`0x1A` = program 3 / tone 8 / note 67 is one), so a key-range lookup resolves
-**nothing** for them and renders silence. The engine models the SFX shape with
+window contains the note, the way a sequencer NoteOn is. Several retail cues have
+a descriptor note outside their tone's window - the menu cancel `0x37` is
+program 0 / tone 5 / note 64 against a `[65,65]` window, disc-measured - so a
+key-range lookup resolves **nothing** for them and renders silence. (The example
+here used to be `0x1A` = "program 3 / tone 8 / note 67"; `0x1A`'s tone is `0`,
+and the `tone 8` belongs to `0x4C`, as
+[Provenance](#provenance) below already had it.) The engine models the SFX shape with
 [`VabBank::play_tone`](../../crates/engine-audio/src/vab_bind.rs) (explicit
 region index) alongside `play_note` (key-range, for the sequencer).
 
