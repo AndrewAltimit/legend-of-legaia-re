@@ -10,6 +10,16 @@
 //! `0x801D0018`; `FUN_801D3A2C` is the dance overlay's private copy of the
 //! same floor pass, differing only in which overlay-local globals it writes.
 //!
+//! One caveat on that byte-identity, because it is the shape
+//! [`docs/tooling/dump-corpus-integrity.md`] warns about: a dump's file name is
+//! not evidence that the address is inside the named overlay. The statically
+//! extracted dance overlay is PROT 980, `0x8000` bytes at base `0x801CE818`, so
+//! it ends at `0x801D6818` - below `0x801D6BBC`. `overlay_dance_801d6bbc.txt`
+//! is therefore a RAM-derived program in which that address holds resident
+//! library code, not a dance-overlay copy. `0x801D6028` *is* inside the dance
+//! window, so that one can be a genuine second copy. The port reads the
+//! fishing image, whose `0xB000` window covers both addresses.
+//!
 //! ## The scene floor buffer
 //!
 //! All of them read one buffer, the per-scene block whose pointer lives at

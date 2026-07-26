@@ -503,6 +503,39 @@ building the one host they all name, which is now
 When a disclosure reason repeats verbatim across a dozen anchors, read the
 repetition as the worklist item.
 
+## The op-`0x49` submode actor family (`baka_hub_actors`)
+
+These rows sit in the audit's *disclosed* section rather than the undisclosed
+one, and they are recorded here because their shared disclosure was wrong about
+what blocked them - a shape this page exists to catch.
+
+The tag read "the engine has no field system-actor pool, so no code path
+produces an actor with a `+0x50` handler id". The engine **does** have that
+pool. `World::man_load_actor_reset` spawns an `ActorHandler::SubmodeDriver`
+actor on every MAN load (retail's `FUN_801D9C3C` at `0x8003B444`) and
+`HandlerKernel` classed it `Unported`, so the actor sat in the pool with
+nothing to run. The blocker was a missing *dispatch arm*, one file away, not a
+missing subsystem.
+
+| addr | symbol | verdict |
+|---|---|---|
+| `801f159c` | `hub_dispatch` | `WIRE` - `World::tick_handler_actors` -> `World::tick_submode_screen` |
+| `801f0adc` | `coin_exchange` | `WIRE` - handler slot `0x25`, opened by `World::open_coin_counter` |
+| `801f1138` / `801f1e48` / `801f1fdc` / `801f1d90` / `801f20b0` / `801f2134` | the state machines | `WIRE` - slots `0x27` / `0x32` / `0x28` / `0x13` / `0x1a` / `0x00` |
+| `801f16c0` / `801f17d8` / `801f1890` / `801f1950` / `801f1a1c` / `801f1ab0` / `801f1b64` | the panel painters | `WIRE` - panel-window records, not handler slots |
+| `801f90dc` | `acquisition_caption` | `DISCLOSE` - see below |
+
+The painters are the row worth reading twice. They are **not**
+`PTR_FUN_801F33B4` slots; they are the `+0x14` callback of a `0x801F2C0C`
+panel-window record. A disclosure that names the wrong table names the wrong
+blocker.
+
+`acquisition_caption` keeps its disclosure on new evidence rather than on the
+old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
+- neither table holds it - and it sits in the resident slot-B band whose widget
+descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
+to exist first is a base-confirmed dump of the image that really owns that VA.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

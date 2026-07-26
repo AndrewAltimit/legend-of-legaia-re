@@ -147,7 +147,7 @@ pub mod field_actor_program;
 pub mod field_submode;
 pub mod mode_entry_init;
 
-// --- lane 4 ---
+pub mod field_submode_screen;
 pub mod world_map_panel_host;
 
 use anyhow::{Context, Result};
