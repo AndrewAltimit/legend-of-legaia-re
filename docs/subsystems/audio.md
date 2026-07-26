@@ -225,10 +225,14 @@ adds the step and bumps both sides (`addu` at `0x8006331C`, `addiu …,1` at
 
 ### The calc tier's two shared conventions
 
-Everything `SsSeqCalc` fans out to is ported as `legaia_engine_audio::seq_calc`
-(`NOT WIRED` - [`Sequencer`](#engine-audio-model---sequencer-port) is the engine's
-replacement for the tier, and these kernels are the reference it has to agree
-with). Two conventions recur across the whole family and are worth stating once.
+Everything `SsSeqCalc` fans out to is ported across two modules: the envelope
+kernels as `legaia_engine_audio::seq_calc`, and everything that reads a stream
+byte - the start / stop arms, the delta-time pump and the event decoder - as
+`legaia_engine_audio::seq_events`. [`Sequencer`](#engine-audio-model---sequencer-port)
+remains the engine's playback replacement for the tier; these kernels are the
+reference it has to agree with, and `note-trace --seq-calc` is the host that
+runs them over a real `music_01` SEQ body. Two conventions recur across the
+whole family and are worth stating once.
 
 **The flag word is re-read from memory before every test.** `FUN_80062F98` does
 not snapshot `+0x98`; it reloads it ahead of each `andi`. So a handler that
@@ -273,12 +277,47 @@ frames the tempo itself moved.
 
 The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
 of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
-fixed-point ×10 quantity. That reading is an **inference from the arithmetic
-alone** - `0x801CD2BC` has not been read from a live capture - so the port takes
-the divisor as a parameter and bakes no `60` in. This matters because the engine
-`Sequencer` clocks in exact integer SPU samples: a wrong constant here is a
-tempo error, and a tempo error is audible while remaining perfectly
-self-consistent under any test written against the same wrong constant.
+fixed-point ×10 quantity. `0x801CD2BC` itself has still not been read from a
+live capture, so the port takes the divisor as a parameter and bakes no `60` in.
+The **×10 half of that reading is no longer an inference**, though: the varint
+delta-time reader `FUN_80061C68` multiplies every decoded delta by `10` before
+returning it and before accumulating it into `+0x88`, so the pump's
+`+0x90 >= +0x54` comparison is tenths against tenths on both sides. Two
+independent routines agreeing on a scale is a measurement; one formula's shape
+was not. The remaining risk is the divisor alone - and it matters, because the
+engine `Sequencer` clocks in exact integer SPU samples, so a wrong constant here
+is an audible tempo error that stays perfectly self-consistent under any test
+written against the same wrong constant.
+
+### The decoder does not consume a whole event
+
+`FUN_80063CEC` reads a status byte, latches running status at `+0x16` and the
+channel nibble at `+0x17`, and reads only *some* of the operands: two plus the
+delta-time for `0x9n`, one for `0xBn` / `0xCn`, one skipped unread for `0xEn`,
+and the kind byte for a meta. The rest of each event belongs to the **installed
+handler** it tail-calls through the 17-entry vector `FUN_80026234` writes at
+`0x801CD220`:
+
+| class | vector slot | handler | further operands | reads the delta |
+|---|---|---|---|---|
+| `0x9n` note | `+0x00` | `FUN_80061B24` | 0 | no - the decoder did |
+| `0xCn` program | `+0x04` | `FUN_80061BF8` | 0 | yes |
+| `0xEn` bend | `+0x08` | `FUN_8006166C` | 1 | yes |
+| `0xFF` meta | `+0x0C` | `FUN_80061954` | 3 | yes |
+| `0xBn` control | `+0x10` | `FUN_8006171C` | 1 | yes |
+
+So the stream is the conventional `[status][operands][delta]`, and a walker
+needs both halves. Reading the decoder alone as a complete event consumer is
+wrong and fails visibly: every program change comes back paired with a phantom
+running-status program change whose operand is `0`, because the trailing delta
+byte is re-decoded as the next status. `FUN_80062410` (the SEQ open) reads the
+body's **leading** delta before the first frame, so a host seeding a channel by
+hand has to do the same.
+
+`FUN_80061954` reads its three bytes as a big-endian value and computes
+`60000000 / v` into `+0x94`, which independently confirms the tempo meta's
+three-operand, no-length-byte layout recorded in
+[`seq.md`](../formats/seq.md).
 
 **Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
 elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the

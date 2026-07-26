@@ -27,6 +27,11 @@ the first is what `--live-audit` warns about. Every one of them is name
 resolution without type inference; they differ in *which* name space collides,
 and that is what decides the fix.
 
+Six mechanisms produce every FALSE-EDGE row this page has recorded, and only
+the first is what `--live-audit` warns about. All six are name resolution
+without type inference; they differ in *which* name space collides, and that is
+what decides the fix.
+
 **A generic method or constructor name.** `build_rust_graph` resolves `.name(`
 against every in-tree method called `name` and never infers a receiver type, so
 one `session.tick(...)` in the browser title driver links to all in-tree `tick`
@@ -47,6 +52,16 @@ call site in the workspace becomes an in-edge. `Rect12::to_le_bytes` in
 `fn to_le_bytes`, so each `x.to_le_bytes()` on an integer anywhere in a
 reachable function linked to it. Uniqueness reads like precision here and is the
 opposite.
+
+**A method name that is unique in-tree but shadowed by a callable local.** The
+same uniqueness escape, with the shadow coming from *inside* the workspace
+rather than from `std`. `BARE_CALL_RE` matches any `name(` not preceded by a
+dot, and a **closure parameter** invoked as `flag(..)` reads exactly like a free
+call - so `FieldNpcAmbient::select_variant`'s `flag: impl Fn(u16) -> bool`
+parameter resolved onto `SlideDir::flag`, the only in-tree `fn flag`, and
+reported the whole of `crates/engine-audio/src/seq_calc.rs` live. Predicate and
+emitter parameters (`flag`, `pred`, `emit`, `push`) are where this recurs,
+because they are the names a small `impl` block also wants.
 
 **A duplicate free-function name.** The receiver gate is defined over
 `impl_type`, and a free function has none, so free-function edges are never
@@ -85,15 +100,16 @@ reverted twice.
 | Generic method / constructor name | The receiver gate, in the strict graph. Implemented. |
 | Struct field read as a function value | Field-colon exclusion, in the strict graph. Implemented. |
 | Unique in-tree name shadowing a `std` method | Rename the in-tree method so no `std` call site spells it. |
+| Unique in-tree name shadowed by a callable local | Rename the in-tree method so no closure parameter spells it. |
 | Duplicate free-function name | Rename the copy that has no caller. |
 | Free-function name that is also a common local / field name | Rename it to something the rest of the tree does not spell. |
 | Coarse anchor (module tag, or a tag on a data struct) | Move the anchor to the item that ports the address. |
 
-The last three are source edits, and each wants a comment saying why the name or
+The last four are source edits, and each wants a comment saying why the name or
 the tag placement is the way it is - otherwise the next refactor undoes it and
-the false accusation returns. `footstep.rs`, `dance_tutorial.rs`,
-`title_prim.rs`, `vram_rect_copy.rs` and `world_map_overlay.rs` each carry that
-note now.
+the false accusation returns. `footstep.rs`, `anim_cue.rs`, `seq_calc.rs`,
+`dance_tutorial.rs`, `title_prim.rs`, `vram_rect_copy.rs` and
+`world_map_overlay.rs` each carry that note now.
 
 ### The two-graph split (implemented)
 
@@ -183,6 +199,8 @@ so a recurrence is recognisable rather than re-derived.
 | `801d2ebc` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
 | `801d6d38`, `801d8a58`, `801d98f0`, `801dae24`, `801daef4`, `801dafd4`, `801dbc5c`, `801dc6b4`, `801dd12c`, `801dd1b8`, `801dd26c`, `801e4f40` | `engine-core/src/save_subscreen.rs` | FALSE-EDGE | Cleared by the receiver gate; the chain was `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`. |
 | `801db380`, `801db7f4`, `801dbd94` | `engine-core/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
+| `800508dc` | `engine-audio/src/anim_cue.rs` | FALSE-EDGE | `AnimCueState::tick` renamed `tick_cues`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed - the same shape as `footstep.rs` above, in the same file. |
+| `80062f98`, `8006320c`, `8006352c`, `80063aa8`, `800649b0` | `engine-audio/src/seq_calc.rs` | FALSE-EDGE, then wired | `SlideDir::flag` renamed `flag_bit`; the only in-tree `fn flag`, reached from the `flag(..)` closure parameter of `FieldNpcAmbient::select_variant`. The module blanket then came off for a different reason: `note-trace --seq-calc` gives the tier a real host. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the

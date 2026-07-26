@@ -1645,3 +1645,18 @@
 "80060620" = "DMA fan-out installer. Zeroes the eight-word table at 0x8007A8A0 via 8006089c, clears DICR (*0x8007A89C), registers the dispatcher 80060670 on IRQ 3 through 8005fdb8, and returns 800607f4 - the DMACallback core 8005ff20 publishes at record +0x4. see ghidra/scripts/funcs/80060620.txt"
 "80060670" = "DMA fan-out dispatcher, registered on IRQ 3. Takes (DICR >> 24) & 0x7F as the pending set and for each of the seven channels it walks acks the flag (writing DICR back with only that channel's flag preserved) and jalr-s the slot from 0x8007A8A0, re-reading DICR until the set empties. A bus-error tail (DICR & 0xFF000000 == 0x80000000, or DICR & 0x8000) prints the DICR word plus seven channel register triples through the printf hook. see ghidra/scripts/funcs/80060670.txt"
 "800607f4" = "DMACallback core, (channel, handler) -> previous, a frameless leaf. The DMA-side twin of 800601e4 on the 0x8007A8A0 table: installs the slot, then rewrites DICR as (dicr & 0x00FFFFFF) | 0x00800000 with bit channel+0x10 set or cleared. The 0x00FFFFFF mask drops every pending channel-IRQ flag from the written value so the update never acks one, and 0x00800000 re-asserts the master enable each time. see ghidra/scripts/funcs/800607f4.txt"
+
+# --- lane 10 ---
+# The two SsAPI channel-volume entry points of the `SsSeqCalc` band. Their
+# siblings are already ignored one section up - `80064890` (the whole-sequence
+# volume setter) and `800683d8` (the getter) - and these are the per-`(sep,
+# seq)` forms of the same two calls, reached by packing the pair into the one
+# `(sep | seq << 8)` handle the getter's `andi v0,a0,0xff` / `andi a0,a0,0xff00`
+# split unpacks again. Neither reads or writes anything but the libsnd channel
+# record's `+0x58`/`+0x5A` volume pair, which `engine-audio` does not maintain:
+# its Sequencer carries per-voice volume in its own software-SPU voice pool.
+# Both are real function entries, not interior labels - each has its own
+# prologue and is reached by `jal`.
+[libsnd_seq_volume]
+"800648f0" = "SsSepSetVol(sep, seq, l, r): resolves DAT_801cd2c0[sep] + seq*0xB0, then either latches the pair into +0x58/+0x5A or - when the flag word is exactly 1, i.e. PLAY and nothing else - packs (sep | seq << 8) and dispatches _SsSeqNoteOn (80067e9c) to commit it live. Body-identical to the already-ignored 80064890 except for the seq*0xB0 stride, which is what makes it the SEP-indexed form. see ghidra/scripts/funcs/800648f0.txt"
+"8006497c" = "SsSepGetVol(sep, seq, &l, &r): 13 instructions, packs (sep | seq << 8) into an i16 and tail-calls the already-ignored getter 800683d8 (SsSeqGetVol). Pure argument marshalling - it touches no state of its own. see ghidra/scripts/funcs/8006497c.txt"

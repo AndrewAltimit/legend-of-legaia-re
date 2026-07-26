@@ -26,6 +26,7 @@ pub mod anim_cue;
 pub mod footstep;
 pub mod note_trace;
 pub mod seq_calc;
+pub mod seq_events;
 pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;
@@ -43,6 +44,10 @@ pub use footstep::{AMBIENT_PERIOD_FRAMES, CadenceTick, FootstepCadence};
 pub use seq_calc::{
     SeqCalcState, SeqCall, SeqChannel, SlideDir, SlideTick, TempoTick, TrackEnd, dispatch_channel,
     seq_calc, tempo_slide_tick, tick_budget, track_end, volume_slide_tick,
+};
+pub use seq_events::{
+    PumpOutcome, SeqEvent, decode_event, handler_operand_bytes, pump_delta_time, read_delta,
+    restart_channel, run_handler_tail, start_channel, stop_channel,
 };
 pub use seq_slots::{SeqResourceSlot, SeqResourceTable};
 pub use sequencer::Sequencer;

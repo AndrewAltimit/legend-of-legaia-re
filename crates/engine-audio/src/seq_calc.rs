@@ -7,22 +7,29 @@
 //! PORT: FUN_8006352c - the descending volume slide.
 //! PORT: FUN_80063aa8 - the track-end / loop-repeat handler.
 //!
-//! NOT WIRED: [`crate::Sequencer`] is the engine's clean-room replacement for
-//! this tier and drives playback on its own integer-SPU-sample clock; nothing
-//! calls the kernels below. They are here as the **behavioural reference** that
-//! clock has to agree with - each is a pure function over a [`SeqChannel`], so
-//! a divergence between retail and `sequencer.rs` can be localised to one
-//! kernel instead of argued about. Wiring would mean `Sequencer` adopting the
-//! retail channel record wholesale, which is a larger change than this lane.
+//! [`crate::Sequencer`] is the engine's clean-room replacement for this tier
+//! and drives *playback* on its own integer-SPU-sample clock, so nothing on the
+//! audio output path calls these kernels. Their host is the differential:
+//! `note-trace --seq-calc` seeds one channel record off a real `music_01` SEQ
+//! and runs this dispatch over it frame by frame, so a divergence between
+//! retail and `sequencer.rs` localises to one kernel instead of being argued
+//! about. Each is a pure function over a [`SeqChannel`], which is what makes
+//! that possible. Wiring the tier into playback would mean `Sequencer` adopting
+//! the retail channel record wholesale.
 //!
-//! REF: FUN_80063974 / FUN_800639a0 - the delta-time pump (the bit-`0x1` arm);
-//! it is the `SeqCall::Pump` this module dispatches but does not itself port.
-//! REF: FUN_80063cec - the SEQ event decoder the pump drives. Not ported - see
-//! "Where this stops" below.
+//! REF: FUN_80063974 / FUN_800639a0 - the delta-time pump (the bit-`0x1` arm),
+//! the `SeqCall::Pump` this module dispatches. Ported next door as
+//! [`crate::seq_events::pump_delta_time`].
+//! REF: FUN_80063cec - the SEQ event decoder the pump drives; ported as
+//! [`crate::seq_events::decode_event`].
+//! REF: FUN_800638d8 / FUN_8006418c - the `SeqCall::Stop` / `SeqCall::Start`
+//! arms, ported as [`crate::seq_events::stop_channel`] /
+//! [`crate::seq_events::start_channel`].
+//! REF: FUN_80064090 - the chained-channel restart, ported as
+//! [`crate::seq_events::restart_channel`].
 //! REF: FUN_800683d8 - the channel-volume getter the slides read and cache.
 //! REF: FUN_80067e9c - `_SsSeqNoteOn`, which commits a slide's new volume pair.
 //! REF: FUN_800684cc - the note kill a finished track issues.
-//! REF: FUN_80064090 - the chained-channel restart.
 //! REF: FUN_800641ec - `SsSeqRewind`, the bit-`0x4` arm.
 //! REF: FUN_80065bac - the voice flush `SsSeqCalc` runs once per frame.
 //!
@@ -45,11 +52,15 @@
 //!
 //! # Where this stops
 //!
-//! `FUN_80063CEC`, the SEQ event decoder, is **not** ported. It dispatches the
-//! event's high nibble through five *installed* handler pointers, so a faithful
-//! port needs that handler table decoded first - a bigger surface than the
-//! kernels here, and `sequencer.rs` already decodes the SEQ event stream on its
-//! own. It is the next thing to pick up in this cluster.
+//! At the envelope kernels. Everything in `SsSeqCalc`'s fan-out that reads a
+//! *stream byte* - the start / stop arms, the delta-time pump and the event
+//! decoder - lives in [`crate::seq_events`], which completes the tier.
+//!
+//! An earlier reading held that `FUN_80063CEC` could not be ported until the
+//! five installed handler pointers it dispatches through were decoded. That is
+//! **false**, and the disassembly is what settles it: no arm's cursor
+//! arithmetic depends on which routine a pointer holds, so the handler table is
+//! a return value, exactly as `run` is a closure here.
 //!
 //! Sources: `ghidra/scripts/funcs/{80062f98,800649b0,8006320c,8006352c,80063aa8}.txt`
 //! (disassembly).
@@ -76,6 +87,11 @@ pub mod flag {
     pub const TEMPO_A: u32 = 0x40;
     /// Tempo slide, arm B.
     pub const TEMPO_B: u32 = 0x80;
+    /// Tested alongside [`REWIND`] by the slide-arming routine
+    /// (`FUN_8006206C` at `800620b4`), which declines to arm a volume slide
+    /// while either is set, and cleared by
+    /// [`crate::seq_events::restart_channel`]. What *sets* it is not pinned.
+    pub const BUSY: u32 = 0x100;
     /// Set by the track-end handler on the final repeat.
     pub const FINISHED: u32 = 0x200;
     /// Selects the alternate loop point (`+0x0C`) over the track start
@@ -95,8 +111,17 @@ pub struct SeqChannel {
     pub loop_cursor: u32,
     /// `+0x0C` alternate loop point, selected by [`flag::LOOP_ALT`].
     pub alt_start: u32,
+    /// `+0x10` loop-marker cursor. With both [`flag::PLAY`] and
+    /// [`flag::LOOP_ALT`] set, the event decoder ends the track when the cursor
+    /// stands here rather than reading a status byte.
+    pub loop_marker: u32,
     /// `+0x14` playing byte.
     pub playing: u8,
+    /// `+0x16` latched running status - the event class high nibble, except
+    /// that the `0xFn` class latches `0xFF`.
+    pub running_status: u8,
+    /// `+0x17` low nibble of the last status byte: the MIDI channel.
+    pub midi_channel: u8,
     /// `+0x1C` running-status low nibble.
     pub running_lo: u8,
     /// `+0x20` repeat target; `0` means loop forever.
@@ -117,9 +142,19 @@ pub struct SeqChannel {
     pub tempo_step: i16,
     /// `+0x50` sequence resolution (ticks per quarter).
     pub resolution: i16,
+    /// `+0x52` sub-frame divider the delta-time pump consults when a wait
+    /// outlives the frame. Negative is the ordinary "spend the whole budget"
+    /// mode; non-negative stretches one tick over `tick_budget + 1` frames.
+    pub sub_frame: i16,
     /// `+0x54` per-frame tick budget the delta-time pump spends.
     pub tick_budget: i16,
-    /// `+0x5C` / `+0x5E` cached channel volume, refreshed by every slide tick.
+    /// `+0x58` / `+0x5A` the **live** channel volume pair. `SsSepSetVol` /
+    /// `SsSeqSetVol` write it and `FUN_800683D8` reads it back out; the slides
+    /// see it only through that getter.
+    pub vol: (u16, u16),
+    /// `+0x5C` / `+0x5E` cached channel volume, refreshed by every slide tick -
+    /// the destination `FUN_800683D8` is handed in the slide epilogue
+    /// (`800634f8` passes `s0 + 0x5C` / `s0 + 0x5E`).
     pub vol_cache: (u16, u16),
     /// `+0x88` running tick accumulator.
     pub tick_accum: u32,
@@ -373,7 +408,15 @@ pub enum SlideDir {
 
 impl SlideDir {
     /// The flag bit this direction clears when it settles.
-    pub fn flag(self) -> u32 {
+    ///
+    /// Named `flag_bit` rather than `flag` on purpose. It was the only in-tree
+    /// `fn flag`, and the reachability graph's receiver gate fires only where a
+    /// name is *ambiguous* - so a unique name is never gated, and every
+    /// `flag(..)` call on a **closure parameter** of that name elsewhere in the
+    /// workspace (`FieldNpcAmbient::select_variant` takes one) resolved onto
+    /// this method, reporting the whole module live and this file's `NOT WIRED`
+    /// disclosures stale. See `docs/tooling/stale-not-wired-triage.md`.
+    pub fn flag_bit(self) -> u32 {
         match self {
             Self::Up => flag::VOL_UP,
             Self::Down => flag::VOL_DOWN,
@@ -412,7 +455,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
 
     ch.slide_remaining = ch.slide_remaining.wrapping_sub(1);
     if ch.slide_remaining < 0 {
-        ch.flags &= !dir.flag();
+        ch.flags &= !dir.flag_bit();
         out.settled = true;
         cache(ch, vol);
         return out;
@@ -431,7 +474,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
         if (ch.slide_level as i16) < 0 {
             out.commit = Some(dir.endpoint());
             out.saturated = true;
-            ch.flags &= !dir.flag();
+            ch.flags &= !dir.flag_bit();
             committed = dir.endpoint();
         } else if (ch.slide_level as i16) >= 1 {
             // Retail writes this compare as `(v + level) < (v + 1)`; the volume
@@ -442,7 +485,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
                     // The descending side additionally refuses to move a pair
                     // that is already at zero, and settles instead.
                     if vol.0 == 0 || vol.1 == 0 {
-                        ch.flags &= !dir.flag();
+                        ch.flags &= !dir.flag_bit();
                         out.settled = true;
                         cache(ch, vol);
                         return out;
@@ -459,7 +502,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
         if (ch.slide_level as i16) < 0 {
             out.commit = Some(dir.endpoint());
             out.saturated = true;
-            ch.flags &= !dir.flag();
+            ch.flags &= !dir.flag_bit();
             committed = dir.endpoint();
         } else {
             let mag = i32::from(step).unsigned_abs() as u16;
@@ -473,7 +516,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
             if hit_end {
                 out.commit = Some(dir.endpoint());
                 out.saturated = true;
-                ch.flags &= !dir.flag();
+                ch.flags &= !dir.flag_bit();
                 committed = dir.endpoint();
             }
             // Both arms then fall through to the incremental commit, gated on
@@ -505,7 +548,7 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
 
     // Shared tail: settle when the tick budget or the level counter is spent.
     if ch.slide_remaining == 0 || (ch.slide_level as i16) <= 0 {
-        ch.flags &= !dir.flag();
+        ch.flags &= !dir.flag_bit();
         out.settled = true;
     }
     cache(ch, committed);
@@ -833,7 +876,7 @@ mod tests {
             };
             let t = volume_slide_tick(&mut c, dir, (40, 40));
             assert!(t.settled);
-            assert_eq!(c.flags & dir.flag(), 0);
+            assert_eq!(c.flags & dir.flag_bit(), 0);
             assert_ne!(c.flags & flag::PLAY, 0);
         }
     }
@@ -890,7 +933,7 @@ mod tests {
             let t = volume_slide_tick(&mut c, dir, (40, 40));
             assert!(t.saturated);
             assert_eq!(t.commit, Some(end));
-            assert_eq!(c.flags & dir.flag(), 0);
+            assert_eq!(c.flags & dir.flag_bit(), 0);
         }
     }
 
