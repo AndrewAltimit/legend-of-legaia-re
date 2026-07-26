@@ -62,7 +62,9 @@ fn equip_item_picker_previews_the_hovered_candidate() {
     let mut s = session();
     let base_udf = s.preview_stats.udf;
 
-    // Slot picker starts on slot 0; step to slot 1 and open its list.
+    // The slot-browse row space leads with Best Equipment (row 0), so
+    // slot 1 is row 2: two steps down, then open its list.
+    s.input(press(false, true));
     s.input(press(false, true));
     s.input(press(true, false));
 
@@ -89,6 +91,8 @@ fn equip_item_picker_previews_the_hovered_candidate() {
 fn equip_confirm_preview_matches_the_picked_row() {
     let mut s = session();
     let base_udf = s.preview_stats.udf;
+    // Row 0 is Best Equipment; slot 1's row is 2.
+    s.input(press(false, true));
     s.input(press(false, true));
     s.input(press(true, false));
     s.input(press(false, true));

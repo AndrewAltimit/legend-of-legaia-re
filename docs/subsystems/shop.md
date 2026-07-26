@@ -172,7 +172,10 @@ Ported with the geometry constants as
 `engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`; both hosts feed
 the resulting ink into `engine-ui::shop_draws_for` through `ShopRow::ink`.
 
-The quantity-selector sub-screen (`FUN_801d5510`) uses the same 14 px line
+The quantity-selector sub-screen (`FUN_801d5510`) is **window 35** of the
+menu-overlay descriptor table (rect `(138, 100, 168, 50)`; the table is the
+52 records at PROT 0899 file offset `0x15F20`, see
+[field-menu.md](field-menu.md)). It uses the same 14 px line
 height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
 line at y+34 (`0x22`) from the panel top. The running total's digit-field
 width is chosen from the magnitude of the **unit price**, not of the total
@@ -181,6 +184,8 @@ is what keeps the number right-aligned as the quantity climbs. Ported as
 `engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`.
 
 ### Item detail / sell panel (`FUN_801D5AE8`)
+
+**Window 39** of the same table, rect `(14, 95, 144, 53)`.
 
 Rows off the window content origin: item name (record `+4`, ink `6`) at
 `(WX, WY)`, description (record `+8`) at `WY + 0xE`, then the price row at

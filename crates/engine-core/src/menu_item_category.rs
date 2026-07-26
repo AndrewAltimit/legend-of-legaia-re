@@ -119,13 +119,16 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 //
 // NOT WIRED: its retail caller is the Best-Equipment chooser
 // (`FUN_801CF88C`, ported as
-// `crate::equip_session::best_equipment_candidates`), which binds this as
-// the `weapon_category_score` argument - and that scan is itself
-// unreached because the engine's Equip screen has no selectable row 0 for
-// Best Equipment (see the tag on
-// `crate::equip_session::EquipSession::slot_browse_confirm`). The table
-// parse is exercised by the disc-gated `menu_item_category_disc` test,
-// but the score has no live consumer until that row exists.
+// `crate::equip_session::best_equipment_candidates`), and that scan *is*
+// now reached - the Equip screen's row-0 confirm runs it through
+// `EquipSession::best_equipment_now`. What is still missing is the table:
+// no host parses the menu overlay's category rows onto a session
+// (`EquipSession::with_weapon_category`), so the binding short-circuits to
+// a flat `0` rather than calling this. Wiring it needs the menu-overlay
+// image kept where `field_menu_dispatch::build_equip_session` can reach
+// it, the same prerequisite the window-descriptor table already has on the
+// host side. The parse is exercised by the disc-gated
+// `menu_item_category_disc` test.
 pub fn category_check(table: &[CategoryEntry], char_index: u32, item_id: u8, group: u32) -> u32 {
     let shift = char_index.wrapping_add(group.wrapping_mul(4)) & 0x1F;
     for entry in table {

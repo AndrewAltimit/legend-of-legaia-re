@@ -484,8 +484,10 @@ the equip flow outside these window renderers.
 
 **Sub-screen chain**: the Equip screen runs as three sub-screens of the
 `0x801E4F40` table. `0x12` (`FUN_801D98F0`) picks the character; `0x13`
-(`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots) - confirm
-on row 0 recomputes the best-candidate ids ([`FUN_801CF88C`
+(`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots). The row is
+`DAT_801E46C0 & 0xFFF` and the dispatch is a plain `beq row, zero` at
+`0x801D9B4C`, so row 0 is Best Equipment and a slot row is `row - 1`.
+Confirm on row 0 recomputes the best-candidate ids ([`FUN_801CF88C`
 below](#best-equipment-how-the-candidates-are-picked) →
 `DAT_801EF0C0`) and applies them through `FUN_801CF760` (per armament
 slot: skip when candidate == equipped or the bag lacks the candidate,
@@ -504,7 +506,17 @@ confirm commits: Remove returns the equipped item to the bag (buzz
 writes the slot, then the hand advances to the next slot row and the
 screen returns to `0x13`. Engine ports:
 `equip_session::{preview_candidate, unequip, slot_browse_confirm,
-apply_best_equipment}`.
+apply_best_equipment}`, all four on the live `EquipSession::input` path.
+
+`FUN_801CF760` does **not** write equip byte `i` for armament `i`. It
+resolves the record offset first - armament `0` from the per-character
+weapon halfword `DAT_8007B42C + char*2`, armaments `1..3` from
+`DAT_801E43E8[i]` (the `bne s1,zero` / `lbu v1,0x0(v0)` pair at
+`0x801CF7B4..0x801CF7C8`) - and only then reads and writes
+`record + 0x196 + offset`. The port carries the same indirection as an
+explicit slot map (`equip_session::ARMAMENT_ENGINE_SLOTS`), because the
+engine's equip array inserts a Hand Guard slot retail has no row for:
+footwear is engine slot `4`, not `3`.
 
 ### Best Equipment: how the candidates are picked
 
@@ -545,6 +557,16 @@ cursors from the system-UI atlas), pens disc-parsed from the descriptor
 table. The engine's 8th slot row (its equip-array over-model) stays
 navigable but icon-less; the stat-compare block previews the hovered
 candidate rather than the best-equipment pick.
+
+The engine's browse cursor is the **retail row space**, not a slot index:
+row 0 is Best Equipment and runs the candidate scan plus the applier, and
+row `n` opens slot `n - 1`. The candidate list leads with the Remove row on
+an occupied slot, matching the class-`0x4000` payload-`0` entry above; both
+halves gate on the same "slot is occupied" test, so the session and the
+draw builder cannot disagree about whether row 0 is Remove. What the
+engine still does not supply is the weapon-category favour table
+(`FUN_801DD0C0`), so Best Equipment ranks weapons on raw ATK until a host
+parses it onto the session.
 
 ### Manual equip applier (`FUN_801D71F0`)
 

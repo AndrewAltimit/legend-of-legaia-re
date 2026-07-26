@@ -56,6 +56,13 @@
 //! The window ids in that table are where the retail disc's descriptors put
 //! each renderer; the dispatch keys on the **renderer**, so a modded table
 //! that moves a renderer to another id still resolves.
+//!
+//! Two shop renderers are deliberately absent: `FUN_801D5510` (window 35,
+//! buy quantity) and `FUN_801D5AE8` (window 39, item detail / sell). Their
+//! ports are `engine-core::shop::{shop_buy_quantity_panel,
+//! shop_sell_detail_panel}`, which return field *pens* rather than draw
+//! lists, so this crate has no painter to name for them and listing them
+//! would make [`menu_window_painters`] claim windows it cannot paint.
 
 use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
 

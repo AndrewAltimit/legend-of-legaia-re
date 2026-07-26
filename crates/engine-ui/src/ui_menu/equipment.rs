@@ -21,6 +21,11 @@ pub const EQUIP_ROW_PITCH: i32 = 0x0e;
 /// `0x0d` step of the menu-overlay list pages).
 const LIST_PITCH: i32 = 0x0d;
 
+/// Label drawn on the candidate list's Remove row (retail's class-`0x4000`
+/// payload-`0` entry, whose string comes from the row-name resolver's
+/// verb table rather than from an item record).
+pub const EQUIP_REMOVE_ROW_LABEL: &str = "Remove";
+
 /// One slot row in the equip main window.
 pub struct EquipSlotRow<'a> {
     /// Slot label (engine hint only - retail identifies slots purely by
@@ -75,6 +80,12 @@ pub struct EquipScreenView<'a> {
     pub stat_compare: &'a [EquipStatRow<'a>],
     pub phase: EquipDrawPhase,
     /// Cursor row inside the active phase column.
+    ///
+    /// In [`EquipDrawPhase::SlotPicker`] this is the **slot-browse row**,
+    /// not a slot index: row `0` is the "Best Equipment" header line and
+    /// row `n` is `slots[n - 1]`. That is retail's own row space - the
+    /// header is cursor row 0 of `DAT_801E46C0` - and it is what
+    /// `engine-core::equip_session::EquipState::SlotPicker` carries.
     pub cursor: u16,
     /// Active slot index when in `ItemPicker` / `Confirm`.
     pub active_slot: u8,
@@ -94,7 +105,8 @@ pub struct EquipScreenView<'a> {
 ///
 /// - party window: member name at `X+6`, rows every `0xE` px
 ///   (PORT: FUN_801d2094);
-/// - main window: "Best Equipment" header at `(X+0x10, Y)`, slot rows at
+/// - main window: "Best Equipment" at `(X+0x10, Y)` - cursor row 0 of the
+///   window's cursor space, not a static header - slot rows at
 ///   `Y + 0xE*(i+1)` with the item name at `X+0x20` (the pictogram at
 ///   `X+0x10` is a sprite - [`equip_screen_sprites_for`]), and the
 ///   stat-compare block at rows `Y+0x48/+0x55/+0x62`: label `X+0xA0`,
@@ -134,12 +146,24 @@ pub fn equip_screen_draws_for(
         str_at(&mut out, name, px + 6, y, white);
     }
 
-    // Main window (PORT: FUN_801d21c0): header + slot rows.
+    // Main window (PORT: FUN_801d21c0): header + slot rows. "Best
+    // Equipment" is cursor row 0 of the window's own cursor space
+    // (`DAT_801E46C0`), so it takes the hand cursor like any slot row.
     let (mx, my) = main_pen;
-    str_at(&mut out, "Best Equipment", mx + 0x10, my, white);
+    let best_row_active = view.phase == EquipDrawPhase::SlotPicker && view.cursor == 0;
+    if view.text_cursor && best_row_active {
+        str_at(&mut out, ">", mx + 4, my, gold);
+    }
+    str_at(
+        &mut out,
+        "Best Equipment",
+        mx + 0x10,
+        my,
+        if best_row_active { gold } else { white },
+    );
     for (i, slot) in view.slots.iter().enumerate() {
         let y = my + (i as i32 + 1) * EQUIP_ROW_PITCH;
-        let cursor_here = view.phase == EquipDrawPhase::SlotPicker && i as u16 == view.cursor;
+        let cursor_here = view.phase == EquipDrawPhase::SlotPicker && i as u16 + 1 == view.cursor;
         let row_active = view.phase != EquipDrawPhase::SlotPicker && view.active_slot as usize == i;
         // Retail keeps row text CLUT 7 (white); the hand cursor marks the
         // hovered row. The gold tint only backs the text-cursor fallback
@@ -200,12 +224,26 @@ pub fn equip_screen_draws_for(
         if view.candidates.is_empty() {
             str_at(&mut out, "(no items)", lx + 10, ly, dim);
         }
+        // Row 0 is retail's **Remove** row (class `0x4000`, payload `0`)
+        // exactly when the active slot holds something -
+        // `engine-core::equip_session::EquipSession::items_for_slot` gates
+        // it on the same condition. It carries no item, so the host's
+        // per-id name and owned count are both meaningless there and the
+        // label is drawn from here instead.
+        let remove_row = view
+            .slots
+            .get(view.active_slot as usize)
+            .is_some_and(|s| !s.current_name.is_empty() && s.current_name != "(empty)");
         for (i, c) in view.candidates.iter().enumerate() {
             let y = ly + i as i32 * LIST_PITCH;
             let selected = view.phase == EquipDrawPhase::ItemPicker && i as u16 == view.cursor;
             let color = if selected { gold } else { white };
             if selected {
                 str_at(&mut out, ">", lx, y, color);
+            }
+            if remove_row && i == 0 {
+                str_at(&mut out, EQUIP_REMOVE_ROW_LABEL, lx + 10, y, color);
+                continue;
             }
             str_at(&mut out, c.name, lx + 10, y, color);
             let count = format!("x{:>2}", c.count);
@@ -248,8 +286,9 @@ pub fn equip_screen_draws_for(
 ///
 /// The hand cursor (the load-screen pointing-finger record) marks the
 /// active party row at `party_pen + (-0xC, 0xE*row)` (FUN_801d2094's
-/// cursor offset) and, in the slot-picker phase, the main-window slot row
-/// at `main_pen + (0, 0xE*(row+1))`.
+/// cursor offset) and, in the slot-picker phase, the main-window
+/// slot-browse row at `main_pen + (0, 0xE*row)` - row `0` being the "Best
+/// Equipment" line, so `slot_cursor` is the row, not the slot index.
 ///
 /// PORT: FUN_801d21c0 / FUN_801d2094 (icon + cursor placement).
 /// REF: FUN_8002c488 / FUN_8002b994 - the UI-icon + cursor primitives.
@@ -306,9 +345,150 @@ pub fn equip_screen_sprites_for(
         py + EQUIP_ROW_PITCH * party_cursor as i32,
     );
 
-    // Main-window hand cursor on the hovered slot row (slot-picker phase).
+    // Main-window hand cursor on the hovered slot-browse row. Row 0 is the
+    // "Best Equipment" line at the window origin (retail's `hand at (X, Y)`),
+    // row `n` the slot row `n - 1` at `Y + 0xE*n`.
     if let Some(row) = slot_cursor {
-        push(rects.cursor, mx, my + EQUIP_ROW_PITCH * (row as i32 + 1));
+        push(rects.cursor, mx, my + EQUIP_ROW_PITCH * row as i32);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAIN: (i32, i32) = (14, 96);
+    const LIST: (i32, i32) = (174, 22);
+    const PARTY: (i32, i32) = (14, 42);
+
+    fn view<'a>(
+        slots: &'a [EquipSlotRow<'a>],
+        candidates: &'a [EquipCandidateRow<'a>],
+        phase: EquipDrawPhase,
+        cursor: u16,
+        active_slot: u8,
+    ) -> EquipScreenView<'a> {
+        EquipScreenView {
+            party_names: &["Vahn"][..1],
+            party_cursor: 0,
+            slots,
+            candidates,
+            stat_compare: &[],
+            phase,
+            cursor,
+            active_slot,
+            confirm_label: None,
+            text_cursor: true,
+        }
+    }
+
+    fn cursor_rows(draws: &[TextDraw], x: i32) -> Vec<i32> {
+        let mut ys: Vec<i32> = draws
+            .iter()
+            .filter(|d| d.dst.0 == x)
+            .map(|d| d.dst.1)
+            .collect();
+        ys.sort_unstable();
+        ys.dedup();
+        ys
+    }
+
+    /// Browse row 0 is "Best Equipment" - the cursor belongs on the header
+    /// line, and row `n` marks slot `n - 1`. Getting this off by one would
+    /// silently point the hand at the wrong slot on every row.
+    #[test]
+    fn the_browse_cursor_counts_best_equipment_as_row_zero() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = [
+            EquipSlotRow {
+                label: "Weapon",
+                current_name: "Iron Sword",
+            },
+            EquipSlotRow {
+                label: "Helmet",
+                current_name: "Cap",
+            },
+        ];
+        let (mx, my) = MAIN;
+
+        let row0 = equip_screen_draws_for(
+            &font,
+            &view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        assert_eq!(cursor_rows(&row0, mx + 4), vec![my]);
+
+        let row2 = equip_screen_draws_for(
+            &font,
+            &view(&slots, &[], EquipDrawPhase::SlotPicker, 2, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        assert_eq!(
+            cursor_rows(&row2, mx + 4),
+            vec![my + EQUIP_ROW_PITCH * 2],
+            "browse row 2 marks the second slot row"
+        );
+    }
+
+    /// The candidate list's row 0 is retail's Remove entry whenever the
+    /// active slot holds something. It carries no item, so its label comes
+    /// from here rather than from the host's per-id name.
+    #[test]
+    fn candidate_row_zero_is_the_remove_row_only_on_an_occupied_slot() {
+        let font = legaia_font::synthetic_for_tests();
+        let candidates = [
+            EquipCandidateRow {
+                name: "REMOVE-PLACEHOLDER",
+                count: 0,
+            },
+            EquipCandidateRow {
+                name: "Iron Sword",
+                count: 1,
+            },
+        ];
+        let occupied = [EquipSlotRow {
+            label: "Weapon",
+            current_name: "Wood Sword",
+        }];
+        let empty = [EquipSlotRow {
+            label: "Weapon",
+            current_name: "",
+        }];
+
+        let with_remove = equip_screen_draws_for(
+            &font,
+            &view(&occupied, &candidates, EquipDrawPhase::ItemPicker, 0, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        let without = equip_screen_draws_for(
+            &font,
+            &view(&empty, &candidates, EquipDrawPhase::ItemPicker, 0, 0),
+            PARTY,
+            LIST,
+            MAIN,
+        );
+        // The Remove row drops the count field the ordinary rows carry, so
+        // an occupied slot emits strictly fewer glyphs on the same list.
+        assert!(
+            with_remove.len() < without.len(),
+            "the Remove row must replace the host's name + count draws"
+        );
+        let (lx, ly) = LIST;
+        let remove_glyphs = font.layout_ascii(EQUIP_REMOVE_ROW_LABEL).glyphs.len();
+        assert_eq!(
+            with_remove
+                .iter()
+                .filter(|d| d.dst.0 >= lx + 10 && d.dst.1 == ly)
+                .count(),
+            remove_glyphs,
+            "row 0 draws exactly the Remove label"
+        );
+    }
 }

@@ -928,8 +928,8 @@ pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
 ///
 /// PORT: FUN_801d5510 (total digit-field width, `0x801D5654..0x801D56A4`)
 ///
-/// NOT WIRED: consumed only by [`shop_buy_quantity_panel`], which no host
-/// draws - see that builder's tag for the missing draw path.
+/// NOT WIRED: consumed only by [`shop_buy_quantity_panel`], whose window
+/// (35) no host lays out yet - see that builder's tag.
 pub fn shop_total_digit_field(price: u16) -> u8 {
     let mut n: u8 = if price > 9999 { 5 } else { 4 };
     if price > 999 {
@@ -978,13 +978,15 @@ pub struct BuyQuantityPanel {
 ///
 /// PORT: FUN_801d5510 (menu-overlay buy-quantity prompt window content renderer)
 ///
-/// NOT WIRED: the hosts' shop screens have no window-descriptor draw path.
-/// `engine-shell`'s `window/hud.rs` and `web-viewer`'s `play_shop.rs` draw
-/// the shop with their own fixed layout and consume only the two ink
-/// kernels ([`shop_root_command_rows`], [`shop_stock_row_ink`]); nothing
-/// resolves a live window record's `+0xa` / `+0xc` content origin, which
-/// is the `window` argument every pen here is relative to. Wiring needs a
-/// draw path driven by `legaia_asset::menu_windows` rects.
+/// NOT WIRED: this is **window 35** of the menu-overlay descriptor table
+/// (rect `(138, 100, 168, 50)`; the record at PROT 0899 file `0x15F20 +
+/// 35*0x10` carries `renderer_va = 0x801D5510`), and the native host does
+/// have a descriptor draw path - `window/shop_windows.rs` already paints
+/// windows 32 / 33 / 34 / 37 at their disc-parsed rects. What is missing is
+/// the buy-side block in it: the sell flow's window 37 is painted by an
+/// `engine-ui` builder, whereas this panel's port lives here and returns
+/// pens rather than draws, so a host has to lay the fields out itself.
+/// Wiring is that block plus its mirror on the web shop.
 pub fn shop_buy_quantity_panel(
     window: (i16, i16),
     held: Option<u8>,
@@ -1101,10 +1103,13 @@ pub struct SellDetailPanel {
 ///
 /// PORT: FUN_801d5ae8 (menu-overlay item detail / sell panel content renderer)
 ///
-/// NOT WIRED: same missing prerequisite as [`shop_buy_quantity_panel`] -
-/// the hosts draw the shop with a fixed engine layout and never resolve a
-/// menu-overlay window record's content origin, which is what every pen
-/// here is relative to.
+/// NOT WIRED: this is **window 39** (rect `(14, 95, 144, 53)`, descriptor
+/// `renderer_va = 0x801D5AE8`), and the gap is the same shape as
+/// [`shop_buy_quantity_panel`]'s: the host resolves descriptor rects
+/// already, but nothing lays these pens out. The engine's shop draws the
+/// hovered item through window **34** (`item_description_draws_for`)
+/// instead, which is a different window with no price row and no passive
+/// lines, so adopting 39 is an addition rather than a swap.
 pub fn shop_sell_detail_panel(
     window: (i16, i16),
     staged: i32,
