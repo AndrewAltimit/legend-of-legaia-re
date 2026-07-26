@@ -1243,6 +1243,45 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | SPU reverb live routing (C7-REVERB) | resolved (wired; Studio C, global) | `capture` | [details ↓](#spu-reverb-live-routing-c7-reverb) |
 | XA channel map / STR demux SM | resolved (static decompile of PROT 0970 + SCUS) | `disassembly` | [details ↓](#xa-channel-map--str-demux-sm) |
 | `FUN_80018DB0` is a rumble cadence, not an audio one | resolved (libpad, not SsAPI; no cue to pin) | `disassembly` | [details ↓](#fun_80018db0-is-a-rumble-cadence-not-an-audio-one) |
+| Key-on pitch: what does retail put in the voice pitch register? | resolved (unity on centre; the port was an octave low) | `disassembly` | [details ↓](#key-on-pitch-unity-on-centre) |
+
+### Key-on pitch: unity on centre
+
+*Status:* resolved - `note == center` keys **`0x1000`**, unity, 44.1 kHz.
+
+Both the SFX/direct key-on path (`FUN_80065034`) and the sequencer note-on path
+(`FUN_80066308`) reach the same arithmetic (`FUN_80066e50` / `FUN_80066d8c`) and
+hand the result to `FUN_80067550`, which stores it **verbatim** into the shadow
+register file at `0x801CE084 + voice*16` (voice `+4` = pitch). Nothing rescales it
+afterwards:
+
+```
+n     = note + 60 - center + carry        (MIPS div: truncates toward zero)
+pitch = PITCH[(n % 12) * 16 + fine] << (n / 12 - 5)
+```
+
+`PITCH` is the 192-entry table at `DAT_8007A940` (SCUS file `0x6B140`). Every
+entry is exactly `floor(0x1000 * 2^(k/192))` - **192/192 verified against the
+disc**, first entry `0x1000`, last `0x1fe2`. So it is a one-octave table at
+1/16-semitone resolution starting at unity, and the octave is applied by the
+shift. Because the closed form is exact, no disc bytes are needed to reproduce it.
+
+The retail cue arm passes `fine = 0x40` at every traced `FUN_80065034` call site,
+so a cue keys half a semitone above the sequencer for the same tone; the two paths
+also differ in whether the fine index saturates or carries a whole semitone.
+
+**Why this was worth grading rather than assuming.** A 22.05 kHz VAG body is
+authored with `center` twelve semitones high, so the sample rate is *already
+encoded in `center`*. Applying a `22050/44100` factor on top double-counts it and
+keys every voice exactly one octave low - which is what the port did, for BGM and
+SFX alike. Corroborated by capture: 126 of 128 voices holding a non-zero staged
+pitch match this law exactly, with the 2 misses being records whose bank was
+swapped after key-on.
+
+**The recomp PCM oracle could not have caught it**, because it mirrors retail's
+captured pitch into the engine SPU rather than deriving a pitch to compare. An
+oracle that copies the answer cannot check the answer. Full law and the port's
+two defects: [`audio.md` § key-on pitch law](../subsystems/audio.md).
 
 ### `FUN_80018DB0` is a rumble cadence, not an audio one
 
