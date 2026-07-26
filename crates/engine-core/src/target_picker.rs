@@ -167,7 +167,11 @@ impl SlotState {
         }
     }
     /// Same slot with its battle-world seat attached.
-    pub const fn at(self, x: i16, z: i16) -> Self {
+    ///
+    /// Named `with_seat` rather than `at`: `at` already exists in-tree, and a
+    /// second definition of a one-word method name flips the reachability
+    /// analysis's receiver gate on for every call site of the first one.
+    pub const fn with_seat(self, x: i16, z: i16) -> Self {
         Self { x, z, ..self }
     }
 }

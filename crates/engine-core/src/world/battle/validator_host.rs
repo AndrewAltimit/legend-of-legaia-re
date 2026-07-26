@@ -127,7 +127,7 @@ impl World {
                     // never seated its actors leaves it at the origin and the
                     // ring declines.
                     SlotState::alive(true, idx < 8 && mask & (1u8 << idx) != 0)
-                        .at(a.move_state.world_x, a.move_state.world_z)
+                        .with_seat(a.move_state.world_x, a.move_state.world_z)
                 }
                 _ => SlotState::default(),
             }
