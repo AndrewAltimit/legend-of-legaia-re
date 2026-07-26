@@ -182,9 +182,10 @@ Each descriptor is `(type_size, data_offset)`:
   - **A bundle is one entry, not a span of them.** Across the corpus, 90 CDNAME blocks each carry exactly one MAN-bearing table, always at offset 0 of its entry, and no table's descriptor payload reaches past that entry's end. Offsets do run past what the historical `toc[p+5] - toc[p+3] + 4` expression claimed - `0588_juui1`'s `desc[4].data_offset` is 177413 against that expression's 67584 - but they are inside the 186368-byte entry.
   - `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
 
-The **`Tmd` descriptor (type 2)** carries the scene's **environment geometry** - an `asset::pack` of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (`town01` = 121 meshes, ≈8041 verts).
+The **`Tmd` descriptor (type 2)** carries the scene's **environment geometry** - an `asset::pack` of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (`town01` = 114 meshes).
 
-- Because the meshes are LZS-packed, a raw-only TMD scan misses them; the engine's `SceneResources` walks each entry's LZS-decompressed sections (`tmd_scan::scan_entry`) to load them, then renders the field with every TIM uploaded (`upload_all_tims`, matching the retail field loader).
+- **The pack is the scene's mesh pool.** The descriptor walk is what populates `DAT_8007C018`, and the count in the pack header is the count of registrations - see [§ The mesh pool is the descriptor walk](#the-mesh-pool-is-the-descriptor-walk) below for the chain and for why a byte sweep is not a substitute for it.
+- Because the meshes are LZS-packed, a raw-only TMD scan misses them: the fallback sweep for blocks with no descriptor table has to walk each entry's LZS-decompressed sections (`tmd_scan::scan_entry`). Field rendering uploads every TIM (`upload_all_tims`, matching the retail field loader).
 - `Scene::load` fetches every entry as **the entry** (`ProtIndex::entry_bytes`), and detection and
   extraction must share that one buffer. Detecting on the wider `toc[p+5] - toc[p+3] + 4` window made
   one-sector prescript entries resolve a "bundle" that was really the *next* entry's table, and
@@ -249,6 +250,19 @@ if let Some(r) = scene_asset_table::resolve(buf) {
 ```
 
 A disc-gated corpus test (`scene_asset_table_walk_real`) verifies this walk against every classified entry: the table sits at offset 0, the first slot anchors at `header_end`, every slot's type is a legal dispatcher type, and every payload starts inside the entry. The relocation of the loaded file into the asset buffer (`_DAT_8007b85c`) is a runtime value (capture-blocked); the static `resolve` reconstructs the base structurally.
+
+### The mesh pool is the descriptor walk
+
+The runtime TMD pointer table `DAT_8007C018` is populated by exactly two of the dispatcher's cases, and the walk above is the only thing that reaches them:
+
+- **type `0x02` (`TMD`)** - `FUN_8001F05C` LZS-decodes the descriptor's payload to an [`asset::pack`](pack.md), then loops `i in 0..count` calling `FUN_80026B4C(buf + offsets[i] * 4)`. Each call stores the pointer at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments the cursor, so the pool gains one slot per pack member, in pack order.
+- **type `0x09` (`TMD2`)** - one bare mesh handed straight to `FUN_80026B4C`.
+
+`FUN_80026B4C` only *checks* the `0x80000002` magic: a member without it logs `Model Version Err` and is registered anyway, so the pool size is the pack's declared `count`, not a count of well-formed meshes. Parser: `legaia_asset::scene_asset_table::mesh_pool`.
+
+A scene's own pack starts past the resident head - the five party / savepoint meshes at `DAT_8007C018[0..=4]` ([`character-mesh.md`](character-mesh.md)), whose size is pinned independently as the prefix `DAT_8007b6f8` that `FUN_80020f88` adds to every placement's mesh id (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`). Rim Elm is head 5 + pack 114 = a 119-slot pool.
+
+**A byte sweep for TMD magic is not a substitute.** A scene block's bytes carry meshes the walk never registers - `town01`'s `field_pack` sibling, the boot `init_data` stream - so a sweep over-collects, and by an amount that depends on how far each entry is read. That made the sweep agree with the live 119-slot pool while the PROT entry size was over-read ([`prot.md`](prot.md)) and disagree once it was corrected: two errors cancelling, not a measurement. The engine walks the descriptors (`legaia-engine-core::scene_resources`, disc-gated `scene_mesh_pool_walk_disc`) and keeps the sweep only for blocks with no table at all - the v12-family dungeons, whose environment geometry is a standalone `lzs_container`.
 
 ## scene_scripted_asset_table - a shape retail does not have
 

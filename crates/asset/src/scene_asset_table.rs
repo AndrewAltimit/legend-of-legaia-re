@@ -398,6 +398,108 @@ fn is_known_type(b: u8) -> bool {
     !matches!(AssetType::from_byte(b), AssetType::Unknown(_))
 }
 
+/// One mesh a scene load registers into the runtime TMD pointer table
+/// `DAT_8007C018` (`FUN_80026B4C`, `tmd_register`).
+#[derive(Debug, Clone)]
+pub struct PoolMesh {
+    /// Descriptor slot the mesh came from (the `i` of `FUN_80020224`'s loop).
+    pub slot: usize,
+    /// Member index inside that slot's [`crate::pack`] - `0` for a bare
+    /// `Tmd2` (type `0x09`) slot, which registers a single mesh.
+    pub member: usize,
+    /// Byte offset of the mesh inside the slot's decompressed payload. Stable
+    /// per (entry, slot, member) and unique within an entry's pool, so it is
+    /// usable as a lookup key alongside the carrier's PROT index.
+    pub offset: usize,
+    /// The mesh bytes, from the member's offset to the next member's offset
+    /// (the last member runs to the end of the decompressed payload).
+    pub bytes: Vec<u8>,
+}
+
+/// Build the scene mesh pool from the **descriptor walk** - the way retail
+/// populates `DAT_8007C018`, rather than by scanning an entry for TMD magic.
+///
+/// `FUN_80020224` reads `count` from the table base and dispatches each
+/// descriptor through `FUN_8001F05C` (`asset_type_dispatch`) with
+/// `copy_only = 0`, so every payload is its own LZS stream decompressing to
+/// the descriptor's declared `size`. Two of the dispatcher's cases register
+/// meshes, and this function reproduces exactly those:
+///
+/// - **type `0x02` (`TMD`)** - the payload is an [`crate::pack`]
+///   (`u32 count`, then `count` `u32` word offsets). The handler loops
+///   `i in 0..count` calling `FUN_80026B4C(buf + offsets[i] * 4)`, so the
+///   pool gains one slot per pack member, in pack order.
+/// - **type `0x09` (`TMD2`)** - a single bare mesh handed straight to
+///   `FUN_80026B4C`.
+///
+/// Everything else (`TimList`, `Man`, `Mes`, `Move`, `Vdf`, the `Flag`
+/// sentinels) leaves the pool untouched.
+///
+/// The walk runs on **one PROT entry**: a bundle is one entry, its
+/// descriptor offsets are file-relative to the table base inside it, and no
+/// descriptor payload reaches past the entry's end
+/// ([`docs/formats/prot.md`](../../../docs/formats/prot.md)). Slots whose
+/// payload starts past the buffer, or whose LZS stream does not decode to
+/// the declared size, are skipped; an entry that carries no table at all
+/// yields an empty pool.
+///
+/// Note the pool is a count of *registrations*, not of well-formed meshes:
+/// `FUN_80026B4C` logs `Model Version Err` for a member without the
+/// `0x80000002` magic and registers it anyway. This function likewise
+/// returns every member the walk registers, so a caller that drops
+/// unparseable meshes changes the index space and should say so.
+///
+/// PORT: FUN_80020224
+/// REF: FUN_8001F05C, FUN_80026B4C
+pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
+    let Some(resolved) = resolve(entry_bytes) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for slot in resolved.table.slots() {
+        // Only the two mesh-registering dispatcher cases contribute.
+        if !matches!(slot.type_byte, 0x02 | 0x09) {
+            continue;
+        }
+        let start = match resolved.table_base.checked_add(slot.data_offset as usize) {
+            Some(s) if s < entry_bytes.len() => s,
+            _ => continue,
+        };
+        let Ok((payload, _consumed)) =
+            legaia_lzs::decompress_tracked(&entry_bytes[start..], slot.size as usize)
+        else {
+            continue;
+        };
+        if payload.len() != slot.size as usize {
+            continue;
+        }
+        if slot.type_byte == 0x09 {
+            out.push(PoolMesh {
+                slot: slot.slot,
+                member: 0,
+                offset: 0,
+                bytes: payload,
+            });
+            continue;
+        }
+        let Ok(members) = crate::pack::parse_pack(&payload) else {
+            continue;
+        };
+        for m in members {
+            let Some(body) = payload.get(m.byte_offset..m.byte_offset + m.size) else {
+                continue;
+            };
+            out.push(PoolMesh {
+                slot: slot.slot,
+                member: m.index,
+                offset: m.byte_offset,
+                bytes: body.to_vec(),
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

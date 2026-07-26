@@ -213,12 +213,15 @@ impl Scene {
     /// [`Class::SceneAssetTable`] bundle.
     ///
     /// Most such entries also classify as [`Class::SceneEventScripts`] and the
-    /// class-driven loop above finds them. The standalone detector's
-    /// frame-opener rate gate - a zero-false-positive test for a buffer with
-    /// no context - rejects the small ones: `geremi`'s prescript is three
-    /// records, none opening with the `-1` transform-node sentinel. Here
-    /// there *is* context, which is what lets this take the structural
-    /// prescript read instead. It is also what the phantom
+    /// class-driven loop above finds them. The standalone detector's gates -
+    /// the frame-opener rate and the minimum record count, both
+    /// zero-false-positive tests for a buffer with no context - reject the
+    /// small ones: `geremi`'s prescript is three records, none opening with
+    /// the `-1` transform-node sentinel, and `edteien`'s is **two**, below the
+    /// count floor entirely. Here there *is* context, which is what lets this
+    /// take the structural prescript read instead
+    /// ([`legaia_asset::scene_event_scripts::record_ranges_positional`]). It
+    /// is also what the phantom
     /// `SceneScriptedAssetTable` class used to supply: it claimed these same
     /// entries because a table appeared to follow at `+0x800`, which was the
     /// entry *after* them seen through an over-read of the PROT TOC (see
@@ -233,7 +236,8 @@ impl Scene {
             if !(after_v12 || before_bundle) {
                 continue;
             }
-            if let Some(ranges) = legaia_asset::scene_event_scripts::record_ranges(&entry.bytes)
+            if let Some(ranges) =
+                legaia_asset::scene_event_scripts::record_ranges_positional(&entry.bytes)
                 && !ranges.is_empty()
             {
                 return Some(EventScripts {
