@@ -628,7 +628,6 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             }
         } else {
-            // --- lane 5 ---
             // Every other sub-op parks on `_DAT_8007B450` until the
             // `FUN_801F159C`-class actor writes `1` there. That writer is
             // `World::tick_submode_screen`; without it these sub-ops re-armed
@@ -640,7 +639,6 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             } else {
                 Op49State::Idle
             }
-            // --- end lane 5 ---
         }
     }
     fn op49_clear(&mut self) {
@@ -649,11 +647,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.field_shop_armed = false;
         // A finished tile-board segment resumes the same way.
         self.world.tile_board_armed = false;
-        // --- lane 5 ---
         // The submode screen's Done is one-shot: consume it so the next
         // op-0x49 opens a fresh screen rather than resuming instantly.
         self.world.submode_screen.done = false;
-        // --- end lane 5 ---
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
@@ -667,13 +663,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if sub_op == 5 {
             self.world.try_install_tile_board(instr);
         }
-        // --- lane 5 ---
         // Anything else is a submode sub-screen: open one on the driver actor
         // so the dispatcher runs it and, when it hands back, unparks this op.
         if let Some(slot) = crate::field_submode_screen::slot_for_op49_sub_op(sub_op) {
             self.world.open_field_submode_screen(slot, None);
         }
-        // --- end lane 5 ---
     }
     fn op49_invoke_setup(&mut self) {
         if self.world.in_cutscene_timeline

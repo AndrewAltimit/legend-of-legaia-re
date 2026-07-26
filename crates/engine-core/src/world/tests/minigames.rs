@@ -400,8 +400,6 @@ fn minigame_return_warp_without_arm_keeps_scene_but_still_commits() {
     assert_eq!(world.active_scene_label, "town01");
 }
 
-// --- lane 6 ---
-
 /// The dance stager's pad-latch clear, applied on entry and on teardown.
 ///
 /// Retail zeroes `_DAT_8007B880` inside `FUN_801D414C`, so the confirm press

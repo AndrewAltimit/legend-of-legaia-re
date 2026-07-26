@@ -830,6 +830,10 @@
 # epilogue, so `jr ra` in the stream is not evidence of a callable entry.
 # See `docs/tooling/worklist-classification.md`.
 [worklist_interior]
+"801e28c4" = "INTERIOR: the field VM wait join inside FUN_801DE840; sole predecessor is a `j` at 0x801E1B04, no own frame"
+"801efea0" = "INTERIOR: the tile-board walk SM render tail inside FUN_801EF2B0; 19 in-body branches, runs to that function's epilogue at 0x801F03E8"
+"801ed2d4" = "INTERIOR: shared exit tail of FUN_801ECD0C (world-map picker); Ghidra minted an entry here and cut the parent body at the jump"
+"801dab7c" = "INTERIOR: exit tail of FUN_801DA780 (initiative seeder) in the battle-action image; the citing dump overlay_0897_801ff930 is mis-based by +0x25000"
 "801d567c" = "frameless mid-function fragment (first insn slt reads callee-saved s0/s2, no prologue)"
 "801d56d4" = "1-byte/0-insn stub; decompiled body reads unaff_s2/in_v0/in_v1 (interior citation fragment)"
 "801d9804" = "first insn 'break 0x1c00' signed-division overflow trap idiom - mid-function, never an entry"
@@ -1566,7 +1570,6 @@
 # under [va_aliased_overlay_local], and 801d84b4 removed from the list - see
 # that section for the field-overlay body the PADDING reading was deleting.
 
-# --- lane 1 ---
 
 # Statically-linked PsyQ libgpu. The older [libgs] section above is the same
 # tier under a misnomer - it already holds ClearImage, LoadImage, StoreImage,
@@ -1646,7 +1649,6 @@
 "80060670" = "DMA fan-out dispatcher, registered on IRQ 3. Takes (DICR >> 24) & 0x7F as the pending set and for each of the seven channels it walks acks the flag (writing DICR back with only that channel's flag preserved) and jalr-s the slot from 0x8007A8A0, re-reading DICR until the set empties. A bus-error tail (DICR & 0xFF000000 == 0x80000000, or DICR & 0x8000) prints the DICR word plus seven channel register triples through the printf hook. see ghidra/scripts/funcs/80060670.txt"
 "800607f4" = "DMACallback core, (channel, handler) -> previous, a frameless leaf. The DMA-side twin of 800601e4 on the 0x8007A8A0 table: installs the slot, then rewrites DICR as (dicr & 0x00FFFFFF) | 0x00800000 with bit channel+0x10 set or cleared. The 0x00FFFFFF mask drops every pending channel-IRQ flag from the written value so the update never acks one, and 0x00800000 re-asserts the master enable each time. see ghidra/scripts/funcs/800607f4.txt"
 
-# --- lane 10 ---
 # The two SsAPI channel-volume entry points of the `SsSeqCalc` band. Their
 # siblings are already ignored one section up - `80064890` (the whole-sequence
 # volume setter) and `800683d8` (the getter) - and these are the per-`(sep,

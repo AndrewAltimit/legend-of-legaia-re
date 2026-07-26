@@ -523,7 +523,6 @@ mod tests {
     }
 }
 
-// --- lane 2 ---
 pub mod camera_rel_glide;
 pub mod field_save_screen_actor;
 pub mod morph_weight_apply;

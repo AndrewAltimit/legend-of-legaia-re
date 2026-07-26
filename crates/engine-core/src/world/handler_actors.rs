@@ -182,14 +182,12 @@ impl World {
             a.physics.status_flags = step.flags;
             a.tint_push = step.push;
         }
-        // --- lane 5 ---
         // The second `jalr node[+0x0C]` class with a ported body: the op-0x49
         // submode driver (`ActorHandler::SubmodeDriver`, spawned by
         // `man_load_actor_reset`). Its body is the dispatcher `FUN_801F159C`
         // in `crate::field_submode_screen`, which retires the actor itself
         // when a screen hands back - hence before the retire sweep below.
         self.tick_submode_screen(frame_delta);
-        // --- end lane 5 ---
         self.retire_yielded_actors()
     }
 

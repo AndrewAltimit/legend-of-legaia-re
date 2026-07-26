@@ -1088,12 +1088,10 @@ pub struct World {
     /// ([`World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
 
-    // --- lane 5 ---
     /// The op-`0x49` sub-screen the submode driver actor is running, if any.
     /// See [`crate::field_submode_screen`]; ticked by
     /// [`World::tick_handler_actors`].
     pub submode_screen: crate::field_submode_screen::SubmodeScreen,
-    // --- end lane 5 ---
     /// The mode-24 minigame door-warp's backup of the active scene name
     /// (retail `0x8007BAE8`, written by the OTHER-INIT entry `FUN_80025980`
     /// from `0x80084548`). [`World::minigame_return_warp`] restores it into
@@ -2369,9 +2367,7 @@ impl World {
             muscle_dome: None,
             muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
-            // --- lane 5 ---
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
-            // --- end lane 5 ---
             minigame_scene_backup: None,
             minigame_winnings: 0,
             escape_timer: Default::default(),

@@ -257,5 +257,4 @@ mod summon_final_heal;
 mod tile_board;
 mod worldmap;
 
-// --- lane 7 ---
 mod battle_target_ring;
