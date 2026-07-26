@@ -147,6 +147,9 @@ pub mod field_actor_program;
 pub mod field_submode;
 pub mod mode_entry_init;
 
+pub mod field_submode_screen;
+pub mod world_map_panel_host;
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -519,3 +522,8 @@ mod tests {
         );
     }
 }
+
+pub mod camera_rel_glide;
+pub mod field_save_screen_actor;
+pub mod morph_weight_apply;
+pub mod scene_transition_actor;

@@ -316,7 +316,15 @@ impl AnimCueState {
 
     /// Tick one animation frame, storing the walk's cursor back the way retail
     /// does (only when the walk committed one).
-    pub fn tick(
+    ///
+    /// Named `tick_cues` rather than `tick` on purpose, and for the same reason
+    /// `FootstepCadence::tick_cadence` is: this crate's `lib.rs` re-exports
+    /// [`AnimCueState`], which makes `lib.rs` a file that "names the type", so
+    /// the reachability graph's receiver gate passes any `.tick(` written there
+    /// onto this method - and `render_bgm_to_pcm` writes `spu.tick()`. That one
+    /// edge reported this whole module live and its `NOT WIRED` disclosure
+    /// stale. See `docs/tooling/stale-not-wired-triage.md`.
+    pub fn tick_cues(
         &mut self,
         actor: &AnimCueActor,
         track: &[AnimCueSlot],
@@ -538,13 +546,13 @@ mod tests {
         let mut st = AnimCueState::default();
         let mut rng = || 0;
         let a = party(1);
-        assert_eq!(st.tick(&a, &t, 0, &mut rng).emits.len(), 1);
+        assert_eq!(st.tick_cues(&a, &t, 0, &mut rng).emits.len(), 1);
         assert_eq!(st.cursor, 1);
-        assert_eq!(st.tick(&a, &t, 4, &mut rng).emits.len(), 0);
-        assert_eq!(st.tick(&a, &t, 9, &mut rng).emits.len(), 2);
+        assert_eq!(st.tick_cues(&a, &t, 4, &mut rng).emits.len(), 0);
+        assert_eq!(st.tick_cues(&a, &t, 9, &mut rng).emits.len(), 2);
         assert_eq!(st.cursor, 3);
         // Past the end the track terminator holds the cursor put.
-        let w = st.tick(&a, &t, 255, &mut rng);
+        let w = st.tick_cues(&a, &t, 255, &mut rng);
         assert!(!w.cursor_committed);
         assert_eq!(st.cursor, 3);
     }

@@ -105,16 +105,38 @@ fn op49_window_census_pins_the_corpus_shape() {
         );
     }
 
-    // Disc invariant: 241 op-0x49 sites (framed with the corrected 0x4E
-    // sub-2/3/9 compare widths AND the full 0x4C outer-nibble decoders -
-    // nibbles 7/9/A/C/D/F; the nibble-7 width fix re-framed two P1[0]
-    // records whose desynced walks had exposed phantom sub-0x00 alias
-    // sites: chitei2 @0x00E4D base=0x734C "sL" and geremi @0x00A66
-    // base=0xF8CD, both far outside every spine-target near-miss margin) -
-    // the census walks every MAN carrier per scene in the retail-frame
-    // windows, including the streaming variant MANs the bundle-only sweep
-    // missed.
-    assert_eq!(sites.len(), 241, "op-0x49 site count changed");
+    // Disc invariant: 236 op-0x49 sites across 64 scenes (framed with the
+    // corrected 0x4E sub-2/3/9 compare widths AND the full 0x4C
+    // outer-nibble decoders - nibbles 7/9/A/C/D/F; the nibble-7 width fix
+    // re-framed two P1[0] records whose desynced walks had exposed phantom
+    // sub-0x00 alias sites: chitei2 @0x00E4D base=0x734C "sL" and geremi
+    // @0x00A66 base=0xF8CD, both far outside every spine-target near-miss
+    // margin) - the census walks every MAN carrier per scene in the
+    // retail-frame windows, including the streaming variant MANs the
+    // bundle-only sweep missed.
+    //
+    // Was 241 across 65 scenes while an entry's size was the superseded
+    // declared-span expression. The five sites that went away were ALL
+    // `gameover_data`, and none was real: that block's CDNAME window is a
+    // subset of `town01`'s and it holds no asset-table bundle of its own,
+    // so the MAN it appeared to carry was `town01`'s, reached by the
+    // over-read. With the size corrected to the sector gap it resolves no
+    // MAN at all - see `docs/subsystems/script-vm.md`
+    // "A second script-byte carrier: the streaming variant MAN". Consistent
+    // with that: all five read ASCII operand bases (`0x6C75` "ul", `0x2073`
+    // " s", `0x746E` "nt"), the text-decoded-as-op-0x49 noise class. No
+    // site was gained anywhere, and the kor sub-4 family below is untouched
+    // at 24.
+    assert_eq!(sites.len(), 236, "op-0x49 site count changed");
+
+    // The carrier that dissolved with the entry-size correction stays gone.
+    // Its reappearance means a reader is over-reading into a neighbour
+    // again - the failure this count alone cannot localise.
+    assert!(
+        !sites.iter().any(|s| s.scene_name == "gameover_data"),
+        "gameover_data resolves no MAN of its own - sites here are a \
+         neighbour's bytes read under its name",
+    );
 
     // The one genuine flag-window family: every sub-0x04 site (the exact
     // 6-operand-byte descriptor shape) is a kor-family base=0x138 count=8

@@ -678,24 +678,31 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) monster_stats: DropArg,
     /// **Scale every enemy's combat stats** by a difficulty multiplier
-    /// (`0.1x..=5x` per stat, retail `1`). Two spellings: one number scales
-    /// everything - `--enemy-stat-scale 2` doubles every monster's HP / MP /
-    /// ATK / UDF / LDF / INT / SPD, `0.5` halves them - or a per-stat list
-    /// scales only what it names, leaving the rest at retail:
+    /// (`0.1x..=5x` per stat, retail `1`). Three spellings, which nest: one
+    /// number scales everything - `--enemy-stat-scale 2` doubles every
+    /// monster's HP / MP / ATK / UDF / LDF / INT / SPD, `0.5` halves them - or
+    /// a per-stat list scales only what it names, leaving the rest at retail:
     /// `--enemy-stat-scale hp=3` for spongy-but-not-lethal enemies,
     /// `--enemy-stat-scale attack=2,defense=0.5` for glass cannons. Stat keys:
     /// `hp`, `mp`, `attack`, `defense` (both halves) or `defense_high` /
     /// `defense_low` individually, `intelligence`, `speed`.
+    /// Third, a `|`-separated **per-group split** gives random encounters and
+    /// boss fights their own scale, each spelled either of the above ways:
+    /// `--enemy-stat-scale 'regular:0.75|boss:2'` for a breezier road and
+    /// harder set-pieces, `--enemy-stat-scale 'boss:hp=2'` to make only the
+    /// bosses spongy. Groups are `regular` / `boss` / `all`; an unnamed group
+    /// falls back to `all`, or to retail. Which monsters count as bosses is read
+    /// off the disc's own encounter tables (scripted-only fights), not a list.
     /// Unlike `--monster-stats` this moves nothing between monsters - each
-    /// keeps its own profile and the whole roster shifts together, **story
-    /// bosses included** (only the unwinnable-by-design Rim Elm sparring
-    /// partner is pinned, since a weakened one can soft-lock the tutorial).
+    /// keeps its own profile and each group shifts together, **story bosses
+    /// included** (only the unwinnable-by-design Rim Elm sparring partner is
+    /// pinned, since a weakened one can soft-lock the tutorial).
     /// AGL is left alone, as it gates the AI's action economy rather than
     /// difficulty, and EXP / gold / drops never move - a 5x run is harder, not
     /// richer. Seedless, and applied *after* `--monster-stats`, so the two
     /// compose. `legaia-patcher monster-stats` lists the current stats.
-    #[arg(long, value_name = "MULT|STAT=MULT,...", value_parser = parse_stat_scale)]
-    pub(crate) enemy_stat_scale: Option<legaia_patcher::monster_stats::StatScale>,
+    #[arg(long, value_name = "MULT|STAT=MULT,...|GROUP:SCALE|...", value_parser = parse_stat_scale)]
+    pub(crate) enemy_stat_scale: Option<legaia_patcher::monster_stats::ScaleProfile>,
     /// How special-attack power is reassigned (the battle-action move-power
     /// table - enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
     /// permutes the 44 power values (multiset preserved); `random` draws each

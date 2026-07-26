@@ -256,3 +256,5 @@ mod slide;
 mod summon_final_heal;
 mod tile_board;
 mod worldmap;
+
+mod battle_target_ring;

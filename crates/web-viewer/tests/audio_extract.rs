@@ -1,5 +1,5 @@
 //! Disc-gated smoke test for the audio extraction surface exposed to the
-//! site/audio.html WASM page. Verifies that the three enumerators surface
+//! site/media.html WASM page. Verifies that the three enumerators surface
 //! the expected magnitudes against a real disc image and that a single
 //! VAG sample + a single XA stream both round-trip through the in-memory
 //! decoders.

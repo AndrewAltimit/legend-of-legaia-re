@@ -128,6 +128,17 @@ impl PlayMenuAssets {
         self.chrome.as_ref().map(|(_, r)| r)
     }
 
+    /// The disc-parsed menu-overlay window-descriptor table, when it parsed.
+    ///
+    /// [`Self::window_rect`] falls back to pinned rects for the screens whose
+    /// layout is capture-verified, but the retail **painter** family
+    /// ([`crate::play_shop`]) dispatches on each descriptor's `renderer_va`,
+    /// which no fallback can invent - those windows draw only when the real
+    /// table is present, exactly as they do in the native window.
+    pub(crate) fn window_table(&self) -> Option<&legaia_asset::menu_windows::MenuWindowTable> {
+        self.windows.as_ref()
+    }
+
     fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         if let Some(d) = self.windows.as_ref().and_then(|t| t.window(id)) {
             return d.rect();

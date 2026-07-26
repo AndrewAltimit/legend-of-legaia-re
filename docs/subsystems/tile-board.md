@@ -50,7 +50,9 @@ Whether the cell buffer is `malloc`'d at install is **unverified** - the cells a
 
 #### Address note: there is no `FUN_801e0b1c`
 
-The procedural fill was previously cited as `FUN_801e0b1c`. **That address does not exist as a function.** The dump filed under that name was produced against the field overlay loaded at base `0x801C0000` instead of its correct base `0x801CE818`, so every address in it is short by exactly `0xE818`. The real code is at **`0x801EF334`**, which is not a function entry either - it is an **interior label of `FUN_801ef2b0`** (the tile-board walk SM, extent `0x801ef2b0..0x801efe9c`), promoted to a fake `FUN_` entry by the label-call idiom.
+The procedural fill was previously cited as `FUN_801e0b1c`. **That address does not exist as a function.** The dump filed under that name was produced against the field overlay loaded at base `0x801C0000` instead of its correct base `0x801CE818`, so every address in it is short by exactly `0xE818`. The real code is at **`0x801EF334`**, which is not a function entry either - it is an **interior label of `FUN_801ef2b0`** (the tile-board walk SM, extent `0x801ef2b0..0x801f03ec`), promoted to a fake `FUN_` entry by the label-call idiom.
+
+The same page previously gave that extent as `0x801ef2b0..0x801efe9c`. It is short by `0x550` bytes, and it stops at exactly the wrong place: `0x801EFE9C` is the last instruction *before* the render tail at [`0x801EFEA0`](#the-render-tail-0x801efea0), so the truncated extent cut the routine's whole draw half out of view. The real end is the epilogue at `0x801F03E8` (`jr ra` / `addiu sp,sp,0x48`, unwinding the `addiu sp,sp,-0x48` at the entry), 1104 instructions from the top.
 
 The alias is recorded rather than silently renumbered because the old address appears in older notes: `FUN_801e0b1c` + `0xE818` = `0x801EF334`. At VA `0x801e0b1c` the field overlay actually holds `addiu v0,v0,-5`, part of an unrelated operand-nibble table lookup.
 
@@ -58,7 +60,7 @@ Provenance:
 - Install: field-VM op `0x49` in `overlay_0897_801de840.txt` (a multi-subtype map-command opcode; `_DAT_8007b450 = pbVar47` arms the header pointer).
 - Walk SM: `overlay_0897_801ef2b0.txt`.
 - Procedural fill: `0x801EF334`, an interior label of `FUN_801ef2b0` (see the address note above - the old `FUN_801e0b1c` citation was a wrong-base alias).
-- Board renderer: `FUN_801E0F3C` in `overlay_0897_801e0f3c.txt` (draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position).
+- Board renderer: the tail block at **`0x801EFEA0`**, inside the walk SM (`overlay_0897_801efea0.txt`). It draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position. It is **not** a function: `FUN_801E0F3C`, the address this page used to cite for it, is another `+0xE818` print of the same routine - see the [address note](#address-note-there-is-no-fun_801e0b1c) and [the render tail](#the-render-tail-0x801efea0).
 
 **Roster: the tile board is a field-overlay (`0897`) construct only.** Every install / walk-SM / fill / render site lives in `0897` and is reached from the field/event VM (op `0x49`). So the board is used by field/puzzle scenes, not by the hub minigames. **Confirmed** (`overlay_0897_801de840.txt` / `..._801ef2b0.txt`).
 
@@ -92,7 +94,52 @@ world_z = (header[+2] + row) * 0x80 + 0x40
 
 ## Rendering
 
-The board carries **no geometry or texture data** - only ids and dimensions. It draws real field **actors** keyed by cell value: the per-cell-value tile-actor table `DAT_801f35bc[cell]` selects the actor for each cell. Slot `0` is the player, spawned from the header `+0xb` template id; slots `2`..`14` are the tile actors, spawned from the header `+0xc` base id as `header[+0xc] + (slot - 2)`. Each frame the renderer repositions the selected actor to the cell centre (`X = (originX + col) * 0x80 + 0x40`, `Z = (originZ + row) * 0x80 + 0x40`) and draws it. The header `+6` mode flag selects between the two draw passes (full-board vs. windowed around the player). (`overlay_0897_801e0f3c.txt`.)
+The board carries **no geometry or texture data** - only ids and dimensions. It draws real field **actors** keyed by cell value: the per-cell-value tile-actor table `DAT_801f35bc[cell]` selects the actor for each cell. Slot `0` is the player, spawned from the header `+0xb` template id; slots `2`..`14` are the tile actors, spawned from the header `+0xc` base id as `header[+0xc] + (slot - 2)`. Each frame the renderer repositions the selected actor to the cell centre (`X = (originX + col) * 0x80 + 0x40`, `Z = (originZ + row) * 0x80 + 0x40`) and draws it. The header `+6` mode flag selects between the two draw passes (full-board vs. windowed around the player).
+
+### The render tail (`0x801EFEA0`)
+
+The renderer is not a function. It is the tail block of the walk SM
+`FUN_801ef2b0`, entered by nineteen `j` / `beq` sites spread across the SM's
+cases and running to that routine's own epilogue at `0x801F03E8`. Every case
+therefore ends by falling into one shared draw pass, which is why no separate
+render entry exists to cite. Provenance: `overlay_0897_801efea0.txt`.
+
+It opens by re-reading the SM state at `actor[+0x54]` and gating on it. States
+`0` and `0xE` draw nothing and return. State `5` - the confirm menu - first
+draws its panel: a box through `FUN_8002C69C(0x64, 0x5C, 0x78, 0x28)`, three
+strings through `FUN_80036888`, and a selection highlight through
+`FUN_8002B994` keyed on `_DAT_8007BB88`. Every other state, and state `5` after
+its panel, falls into the board pass.
+
+The board pass then forks on the header `+6` mode flag, and the two arms are
+not variants of one loop - they differ in what they skip and in what runs after
+them:
+
+| Header `+6` | Draw set | Cells skipped | Fixed-slot pass after |
+|---|---|---|---|
+| `0` (full board) | every cell of the board | value `< 2` | no - returns straight to the epilogue |
+| non-zero (windowed) | the `+5`-radius square around the player cell, clamped to `[0, width)` / `[0, height)` | value `< 2` **and** values `8`..`0xA` | yes |
+
+Both arms walk rows outer / columns inner, step the world position by `0x80`
+per cell rather than recomputing it, look the cell value up in
+`DAT_801f35bc[value]`, store the position into the actor's `+0x14` / `+0x18`,
+commit it through `func_0x8003d344` and draw through `func_0x8001b964`.
+
+**The full-board arm advances its cell cursor only on a drawn cell.** The
+windowed arm computes `row * width + col` per iteration, but the full-board arm
+keeps a running index that it increments inside the draw branch, so a skipped
+cell leaves it pointing at the same byte for the next `(row, col)`. No retail
+board can show it: the [procedural fill](#always-procedural-no-inline-cell-boards)
+emits `rand()%6 + 2` and then values `8`..`0xE`, so no cell is ever below `2`
+and the skip branch never runs. A port that permits cell values `0` or `1` -
+which the engine's board type does - diverges from retail there, and only there.
+
+**The fixed-slot pass** (windowed mode only) walks tile-actor slots `2`..`14`
+once more. Slots `8`, `9` and `0xA` - the three event tiles - take their
+`(col, row)` from the 2-byte-stride table at `DAT_801f35e0` and are positioned
+and drawn at board coordinates. Every other slot is moved to `(0x3FC0, 0x3FC0)`
+and **not** drawn, which is what stops the per-value shared actor from being
+left standing at the last cell the board pass moved it to.
 
 ## Walk state machine
 

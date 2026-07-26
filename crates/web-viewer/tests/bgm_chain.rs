@@ -1,4 +1,4 @@
-//! Smoke test for the BGM playback chain that powers `site/audio.html`.
+//! Smoke test for the BGM playback chain that powers `site/media.html`.
 //!
 //! Mirrors the construction sequence inside `LegaiaAudio::start_bgm` but
 //! drives the SPU directly (no `WebAudioOut`, since that path is wasm32-only)

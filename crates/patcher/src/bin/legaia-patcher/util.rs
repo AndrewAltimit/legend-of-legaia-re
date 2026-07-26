@@ -59,19 +59,22 @@ pub(crate) fn parse_prize_price(s: &str) -> Result<(u8, u32)> {
     Ok((parse_item_id(id_str)?, price))
 }
 
-/// Parse an `--enemy-stat-scale` value, in either spelling:
+/// Parse an `--enemy-stat-scale` value, in any of its spellings:
 ///
 /// - one multiplier for every stat - `2.5` (a trailing `x` is accepted, so
 ///   `2.5x` works too);
-/// - a per-stat list - `hp=2,attack=1.5` - where unnamed stats stay at retail.
+/// - a per-stat list - `hp=2,attack=1.5` - where unnamed stats stay at retail;
+/// - a per-group split - `regular:1|boss:2.5` - where each half of the roster
+///   (random encounters vs scripted boss fights) takes its own scale, and each
+///   half's body is either of the two spellings above.
 ///
 /// Each multiplier is rounded to the nearest thousandth and range-checked to
 /// `0.1x..=5x`. Delegates to
-/// [`legaia_patcher::monster_stats::StatScale::parse`], the same parser the
-/// browser's simple and advanced slider modes use, so every front-end accepts
+/// [`legaia_patcher::monster_stats::ScaleProfile::parse`], the same parser the
+/// browser's simple and advanced slider panes use, so every front-end accepts
 /// exactly the same values and emits the same bytes.
-pub(crate) fn parse_stat_scale(s: &str) -> Result<legaia_patcher::monster_stats::StatScale> {
-    legaia_patcher::monster_stats::StatScale::parse(s).map_err(|e| anyhow::anyhow!(e))
+pub(crate) fn parse_stat_scale(s: &str) -> Result<legaia_patcher::monster_stats::ScaleProfile> {
+    legaia_patcher::monster_stats::ScaleProfile::parse(s).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Parse an `--arts-power` entry: `COMBO=VALUE` (`RDLDL=0x16`). The combo is a

@@ -82,7 +82,27 @@ Tooling in this repo uses the tolerant `parse_str`, which keeps the full
 in RAM must go through `retail_name_table` / `parse_retail_str` instead - those
 return names as **bytes**, since the index bytes left inside a name are
 routinely not valid UTF-8. The disc-gated `cdname_retail_parse_disc` test pins
-each shipped name against an independent byte-level record model.
+each shipped name against an independent byte-level record model, and
+`prot-extract retail-names` prints the two readings side by side.
+
+Keeping them as bytes matters at the point of *display* too. Rendering a
+mangled record through a lossy UTF-8 conversion folds every non-ASCII index byte
+to `U+FFFD`, and masking that back to 8 bits prints `fd` for all of them - so a
+`0x03CC` index reads as `fd 03`, a single wrong byte that still looks like a
+plausible little-endian pair and disagrees with the table above without looking
+like a bug.
+
+### An index can be declared twice
+
+The retail table is **record**-indexed and the tolerant map is **index**-keyed,
+so the two do not have the same cardinality. `CDNAME.TXT` declares index `990`
+twice - `music_test` then `music_01` - so the retail loader emits two records
+while `parse_str`'s `BTreeMap<u32, String>` keeps only the later name. Two
+things follow. Comparing the readers *by index* mis-pairs the earlier record and
+reports a sixth divergence that does not exist; compare by declaration order
+instead. And a lookup of "the name at index 990" answers `music_01` while
+retail's own record 117 holds `music_test`, which is worth knowing before
+treating a name as an identity.
 
 ### Is this table populated on retail hardware?
 

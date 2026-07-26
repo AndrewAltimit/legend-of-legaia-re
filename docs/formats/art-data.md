@@ -229,12 +229,17 @@ readers; each is in the battle overlay (PROT 0898).
   machinery, but its damage path routes through the summon / move-power kernel
   `FUN_801dd0ac` rather than the arts fold.
 - **`FUN_801e6d84`** (`see ghidra/scripts/funcs/overlay_battle_action_801e6d84.txt`)
-  sets up the target camera and enemy target-markers for a committed action. It
+  raises the caster and enemy target **banners** for a committed action. It
   keys on the active actor's staged fields - target `+0x1DD`, action-constant
-  category `+0x1DE`, move/spell id `+0x1DF` - skips setup for Escape
-  (`+0x1DE == 5`), enumerates live enemies (slots 3..6, alive flag `+0x14C`) for
-  an all-target action, and otherwise frames the single target through the
-  battle camera command `FUN_801d8de8`.
+  category `+0x1DE`, move/spell id `+0x1DF` - returns without raising anything
+  for Run / Defend (`+0x1DE == 5`), enumerates live enemies (slots 3..6, alive
+  flag `+0x14C`) for an all-target action, and otherwise raises the
+  single-target banner. `FUN_801d8de8` is the HUD-element / message raiser
+  (the port surfaces it as `BattleActionHost::ui_element`), **not** a camera
+  command; the routine's only camera-adjacent writes are the two banner-width
+  words `DAT_800773AA` / `DAT_800773B2`. The battle-action SM raises the plan
+  at the tail of its `ActionSeed` state - see
+  [`battle-action.md`](../subsystems/battle-action.md#actor-pool-leaf-helpers).
 
 ### The cue tables
 

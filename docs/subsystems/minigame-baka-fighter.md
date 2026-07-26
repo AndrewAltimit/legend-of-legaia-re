@@ -952,43 +952,117 @@ byte-match the field overlay (PROT 0897) at the same VA (classifier image
 [`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md) and
 [`move-vm.md`](move-vm.md), not to this page.
 
-`FUN_801f159c` is the family's **dispatcher**: it indexes the 52-entry handler
-table `PTR_FUN_801f33b4` by the actor's `+0x50` word, so every routine in the
-table below is one of its slots. `FUN_801f0adc` is slot `0x25`, the **coin
-exchange** - it divides party gold `0x8008459c` by `100` (the `0x51EB851F`
-reciprocal multiply plus the sign fixup, so it truncates toward zero),
-publishes the result to `0x8007bb90` and clamps it so the casino coin bank
-`0x800845a4` cannot pass `9,999,999`; its own `+0x54` then tail-jumps a
-five-slot sub-table at `0x801cf734`, whose handlers share the frame, which is
-why the dumped body is discontiguous.
+`FUN_801f159c` is the family's **dispatcher**, and it is the resume / close
+half of the field VM's op-`0x49` submode - the enter half is `FUN_801f1278`
+([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)).
+It indexes the 52-entry handler table `PTR_FUN_801f33b4` by the actor's
+`+0x50` word.
 
-The whole family is ported clean-room as `engine-vm::baka_hub_actors`.
+The whole family is ported clean-room as `engine-vm::baka_hub_actors`, hosted
+by `engine-core::field_submode_screen`.
 
-### Minigame-hub actor / draw callbacks (shared `0x801f` band)
+### The `0x801f` band belongs to the field overlay
 
-A second shared cluster sits in the `0x801f1138`-`0x801f2200` band plus
-`FUN_801f69ec` and `FUN_801f90dc`. Unlike the field-VM helpers above, these do
-**not** byte-match the field overlay (PROT 0897) - they are byte-identical
-across the **hub-family minigame overlays** (baka-fighter, dance, fishing,
-slot-machine and the debug menu) and are the shared minigame-hub actor /
-sprite-VM step and draw callbacks reached from baka-fighter among the others.
-They drive the hub menu / panel presentation through the text kernel
-(`FUN_80036888` glyph strings, `FUN_8002b994` / `FUN_8002c488` sprite cells),
-the per-actor draw pump `FUN_80031d00`, the grid / tile-board actor
-`DAT_801c6ea4`, and the confirm / entry cue plays (`FUN_80035bd0` /
-`FUN_80035b50`). `FUN_801f69ec` differs in muscle-dome (its own overlay),
-pinning it to the hub family.
+The `0x801f1138`-`0x801f2200` cluster plus `FUN_801f90dc` was previously read
+here as a *second*, hub-only cluster that "does not byte-match the field
+overlay (PROT 0897)". That reading is **falsified**, and both halves of it
+were wrong:
 
-Being shared framework rather than baka rules, they carry no *baka* port site;
-the family as a whole is ported clean-room as `engine-vm::baka_hub_actors`,
-alongside the dispatcher and the coin exchange from the section above.
+- The bytes at `0x801f1138` in `overlay_field_0897.bin` (base `0x801CE818`)
+  are instruction-for-instruction the dumped body. So are the rest of the
+  cluster's.
+- The field overlay's own two tables *name* these routines - see the slot and
+  painter tables below - so PROT 0897 does not merely contain the code, it
+  dispatches it.
 
-Every handler in the table shares one shape. It reads its own sub-state
-`+0x54`, draws its panel, and - where it takes input - hands the actor back to
-the hub on a confirm: write `-1` into the grid actor's `+0x2e`, stash `+0x50`
-into the grid actor's `+0x40`, then re-arm `+0x50` to `0x1a` and `+0x54` to
-`0`. Every confirm test is `_DAT_8007bb80 == 0 && (pad_edge & (_DAT_800846d0 |
-_DAT_800846d4)) != 0`, so the suppression flag blocks all of them at once.
+The byte-identity across the baka-fighter / dance / fishing / slot-machine /
+debug-menu dumps is the [dump-corpus
+artifact](../tooling/dump-corpus-integrity.md), not five copies: those Ghidra
+programs are RAM-derived captures in which this address belongs to resident
+field-overlay code rather than to the minigame overlay that names the file.
+The statically extracted Baka Fighter overlay is PROT 976, `0xE000` bytes at
+base `0x801CE818`, so it stops at `0x801DC818` and cannot hold `0x801f0adc`
+at all. `field_party_cursor.rs` already diagnoses the same artifact at
+`FUN_801f1278`.
+
+The artifact has a cost beyond attribution: the minigame-named dumps of
+`FUN_801f0adc` are **truncated** at 46 instructions, where
+`overlay_0897_801f0adc.txt` carries the whole discontiguous 264-instruction
+body. Everything in the coin-counter section below comes from the long dump.
+
+### The two tables
+
+The state machines and the panel painters come from different tables, and
+conflating them is the error to avoid.
+
+`PTR_FUN_801f33b4` is the 52-slot **handler** table the dispatcher indexes by
+`+0x50`. Slot ids read out of the field overlay's own bytes:
+
+| slot | handler | role |
+|---|---|---|
+| `0x00`, `0x14`-`0x18` | `FUN_801f2134` | close tick - what a fresh driver actor carries |
+| `0x13` | `FUN_801f1d90` | deactivate with a chosen re-arm state |
+| `0x1a` | `FUN_801f20b0` | draw tick - the hand-back re-arm target |
+| `0x25` | `FUN_801f0adc` | casino coin counter |
+| `0x27` | `FUN_801f1138` | start / confirm menu |
+| `0x28` | `FUN_801f1fdc` | prompt |
+| `0x32` | `FUN_801f1e48` | sub-menu |
+
+`0x801f2c0c` is the **panel-window record** table: 13 records of `0x1c` bytes,
+`[u32 kind = 0x00030000][3 geometry words][u32 0x0c][u32 painter][u32 0]`. The
+painters are *not* handler slots - a state machine installs a panel descriptor
+through `FUN_801e9b3c` and the descriptor names the window whose `+0x14`
+callback draws it. Records `1` / `2` / `3` / `7` / `8` / `11` / `12` are
+`FUN_801f1950` / `FUN_801f1a1c` / `FUN_801f16c0` / `FUN_801f1890` /
+`FUN_801f17d8` / `FUN_801f1ab0` / `FUN_801f1b64`. Two records cross-validate
+the read: `9` is the name-entry renderer `FUN_801e6b34` and `10` is
+`FUN_801e6984`, both pinned independently.
+
+Every handler shares one shape. It reads its own sub-state `+0x54`, installs
+its panel, and - where it takes input - hands the actor back on a confirm:
+write `-1` into the cursor context's `+0x2e`, stash `+0x50` into its `+0x40`,
+then re-arm `+0x50` to `0x1a` and `+0x54` to `0`. Most confirm tests are
+`_DAT_8007bb80 == 0 && (pad_edge & (_DAT_800846d0 | _DAT_800846d4)) != 0`, so
+the suppression flag blocks them at once - but the coin counter is the
+exception and tests the two masks separately.
+
+### The casino coin counter (`FUN_801f0adc`)
+
+Handler slot `0x25`. Its head runs every frame whatever the sub-state: divide
+party gold `0x8008459c` by `100` (the `0x51EB851F` reciprocal multiply plus
+the sign fixup, so it truncates toward zero), publish that to `0x8007bb90`,
+and clamp it so the casino coin bank `0x800845a4` cannot pass `9,999,999`.
+`+0x54` then tail-jumps a five-slot sub-table at `0x801cf734` whose arms share
+the frame, which is why the dumped body is discontiguous.
+
+| `+0x54` | Arm |
+|---|---|
+| `0` | zero the eight digit cells + both cursors, install panel `0x801f3340`, advance |
+| `1` | digit entry - see below |
+| `2` | Yes/No confirm through `FUN_801e9dc8(&_DAT_8007bb98, 2, 1)` |
+| `3` | the commit |
+| `4` | count `_DAT_8007b458` down by `DAT_1f800393`, then hand back |
+
+The entry field is eight signed byte cells at `DAT_801f35f0`, **least
+significant first**, so the amount is `sum(cell[i] * 10^i)`. The cursor
+`_DAT_8007bb9c` wraps over six of them, not eight - the top two are only ever
+written by the clamp - and it counts right to left, which is why the
+*right*-edge bit `0x2000` walks the index **down**. Up / down (`0x1000` /
+`0x4000`) edit the selected cell with `0..=9` wrap, and every edit is followed
+by an affordability pass that rewrites the whole field to
+`min(gold / 100, ceiling)` when the typed amount is out of reach.
+
+The commit at `0x801f1080`-`0x801f109c` is the part worth stating exactly,
+because it has two different destinations:
+
+```
+coin_bank(0x800845a4) += n          ; the credit is COINS
+gold(0x8008459c)      -= n * 100    ; the debit is GOLD
+```
+
+Nothing writes the purchased coins into gold. Port
+`engine-vm::baka_hub_actors::coin_exchange`, whose `HubAction::BuyCoins`
+carries the two deltas separately so a host cannot merge them by accident.
 
 The **item-acquisition caption** `FUN_801f90dc` is the one member that is not
 menu chrome. `DAT_801e46b0` is an **item id** and the two strings it draws are

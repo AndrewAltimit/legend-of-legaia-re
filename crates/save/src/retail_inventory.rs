@@ -1,17 +1,19 @@
 //! Faithful, memory-safe model of the retail consumable-item inventory window.
 //!
-//! NOT WIRED: nothing outside this file constructs a [`RetailInventory`], and
-//! that is deliberate - the engine's gameplay inventory is
+//! Nothing on the **engine's frame path** constructs a [`RetailInventory`], and
+//! that is deliberate: the engine's gameplay inventory is
 //! `legaia_engine_core`'s typed item list, which is what the grant / consume /
-//! shop kernels operate on. This module exists to answer questions *about*
-//! retail's array (what the accessor family does to which slot, in what order,
-//! and where the out-of-bounds add primitive lands), and it answers them by
-//! being read and unit-tested, not by being on the frame path. Wiring it would
-//! mean replacing the engine's inventory representation with the fixed
-//! `(id, count)` window, which would trade a safe growable list for a
-//! bug-compatible one; the ACE analysis below is the reason to keep the model,
-//! not a reason to run it. Every `// PORT:` tag in this file is covered by
-//! this note.
+//! shop kernels operate on. Wiring this model there would trade a safe growable
+//! list for a bug-compatible fixed window; the ACE analysis below is the reason
+//! to keep the model, not a reason to run it.
+//!
+//! What it does have is a *preservation* host: `save-tool items` reads the item
+//! window straight out of a real SC block and runs the accessor family over it
+//! without writing anything back - which window the selector installs for that
+//! party, which slot a consume empties, and whether it leaves a hole. That is
+//! the question this module exists to answer, asked against real save data
+//! rather than against a fixture. Two of its accessors stay inert even there
+//! and say so at their own tags.
 //!
 //! This is a *reverse-engineering / preservation* model of the fixed-window
 //! item inventory used by `SCUS_942.54`, not the engine's gameplay inventory.
@@ -558,6 +560,13 @@ impl RetailInventory {
     /// survives rather than being dropped), and duplicate ids are merged rather
     /// than left as two stacks.
     // PORT: FUN_800423E0
+    // NOT WIRED: the two hosts this model has are read-only. `save-tool items`
+    // reports the window and dry-runs the consumes, and the unit tests assert
+    // the merge-then-pull order; neither has a reason to rewrite a real save's
+    // slot order, and doing so from a CLI would be a card edit disguised as an
+    // inspection. It gets a caller when something is *meant* to write a card
+    // back - a save editor, or a randomizer feature that seeds a starting bag
+    // into an existing block rather than into the new-game template.
     pub fn normalize(&mut self) {
         let window = self.slots.len();
         let mut survivors: Vec<(u8, u8)> = Vec::with_capacity(window);
@@ -587,6 +596,12 @@ impl RetailInventory {
     /// slot, else surface the full-bag OOB id-store primitive as
     /// [`AddOutcome::OobIdWrite`] **without** writing anything.
     // PORT: FUN_800421D4
+    // NOT WIRED: same read-only hosts as [`normalize`](Self::normalize), and
+    // one reason more. Its distinguishing return is
+    // [`AddOutcome::OobIdWrite`] - the full-bag out-of-bounds id store - which
+    // is a *finding about retail*, not an operation a tool should perform. The
+    // engine grants items through `legaia_engine_core`'s bounded list, so the
+    // primitive has no engine-side caller either.
     pub fn add(&mut self, id: u8, qty: u8) -> AddOutcome {
         // (1) MERGE pass: existing stack of the same id.
         if let Some(i) = self.find_slot(id) {

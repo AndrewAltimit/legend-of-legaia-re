@@ -217,14 +217,16 @@ pub fn end_of_stream(frame_number: u32, end_frame: u32) -> bool {
 /// exactly the slot's `+0x04` colour flag inverted. Retail then hands the
 /// updated word's low half to the DMA-0 code upload `FUN_801CFFDC`.
 // PORT: FUN_801cfd84
-// NOT WIRED: the GPU-presentation half of the play loop has no consumer. The
-// `mdec` CLI and the engine's `play-str` both drive the demux + frame-pump
-// half of this module (`StrPlayer::open` / `deliver_sector` / `next_frame`)
-// and then decode a whole frame to RGBA through `MdecDecoder::decode_frame`,
-// handing the pixels to a texture upload. Neither ever programs the MDEC
-// depth/sign bits, because neither writes MDEC hardware registers at all.
-// A caller needs a VRAM-resident STR present path - one that decodes into the
-// shared `PsxVram` rather than into an RGBA buffer - to exist first.
+//
+// No **decode path** consumes this. `mdec decode-str` and the engine's
+// `play-str` both drive the demux + frame-pump half of this module
+// (`StrPlayer::open` / `deliver_sector` / `next_frame`) and then decode a whole
+// frame to RGBA through `MdecDecoder::decode_frame`, handing the pixels to a
+// texture upload; neither programs the MDEC depth/sign bits, because neither
+// writes MDEC hardware registers at all. A VRAM-resident STR present path -
+// one that decodes into the shared `PsxVram` - would change that. Until then
+// its consumer is `mdec str-plan`, which prints the word retail *would*
+// program for a real movie rather than programming one.
 pub fn mdec_output_control(word: u32, flags: u32) -> u32 {
     let mut w = word;
     if flags & 1 != 0 {
@@ -243,9 +245,10 @@ pub fn mdec_output_control(word: u32, flags: u32) -> u32 {
 /// The `flags` argument the play loop passes [`mdec_output_control`] for a slot
 /// (`addiu a1,zero,2` / `addiu a1,zero,3` at `801cf2ec`/`801cf304`).
 // PORT: FUN_801cf098
-// NOT WIRED: the argument-side companion to `mdec_output_control`, and inert
-// for the same reason - no caller programs the MDEC output word, so nothing
-// needs the flags to pass it.
+//
+// The argument-side companion to [`mdec_output_control`], with the same
+// standing: no decode path programs the MDEC output word, and `mdec str-plan`
+// prints it.
 pub fn mdec_control_flags(colour: bool) -> u32 {
     if colour { 3 } else { 2 }
 }
@@ -257,9 +260,10 @@ pub fn mdec_control_flags(colour: bool) -> u32 {
 /// bands (the `+14`-before-`sra` is the truncating-division idiom for a
 /// negative numerator), times `slice_w << 4` halfwords, then `>> 1` to words.
 // PORT: FUN_801cf56c
-// NOT WIRED: sizes a DMA-0 transfer of one macroblock column out of the MDEC
-// into VRAM. Its only non-test caller is `DecodeEnv::advance_slice`, which is
-// itself inert - see the tag there.
+//
+// Sizes a DMA-0 transfer of one macroblock column out of the MDEC into VRAM.
+// Nothing transfers one - see [`DecodeEnv::advance_slice`] - so the number is
+// reported by `mdec str-plan` rather than kicked.
 pub fn slice_word_count(slice_w: i16, rows: i16) -> i32 {
     let bands = ((rows as i32 - 1) / 16) + 1;
     (((slice_w as i32) << 4) * bands) >> 1
@@ -379,12 +383,16 @@ impl DecodeEnv {
     /// printed disassembly consumes it - there is no call between the stores
     /// and the return - so it is not reproduced here.
     // PORT: FUN_801cf740
-    // NOT WIRED: needs the per-frame sector-header dimensions, and
-    // `crate::st_ring::StFrame` does not carry them - `StRing` parses the
-    // header's `+0x10` / `+0x12` and drops them, keeping only the frame number
-    // and the bitstream length. `StrPlayer::next_frame` therefore has nothing
-    // to pass. Wiring it is one field pair on `StFrame` plus the `deliver_sector`
-    // capture; until then the rects keep `DecodeEnv::init`'s slot-derived size.
+    // Not on the *frame path*, but not an inert port either - `mdec str-plan`
+    // calls this from `fn main` with the dimensions read straight off the first
+    // sector header, which is how a slot/movie disagreement becomes visible
+    // while the ring still drops them. What the frame path lacks is an
+    // argument: `StrPlayer::next_frame` has nothing to pass, because
+    // `crate::st_ring::StFrame` does not carry the per-frame dimensions -
+    // `StRing` parses the header's `+0x10` / `+0x12` and drops them, keeping
+    // only the frame number and the bitstream length - so the rects keep
+    // `DecodeEnv::init`'s slot-derived size for the whole segment. Closing that
+    // is one field pair on `StFrame` plus the `deliver_sector` capture.
     pub fn apply_frame_dimensions(&mut self, width: u16, height: u16) {
         let w = vram_units(i32::from(width), self.colour) as i16;
         let h = height as i16;
@@ -420,12 +428,16 @@ impl DecodeEnv {
     /// `LoadImage` the callback issues on the way out, or `None` if the
     /// callback is not installed.
     // PORT: FUN_801cf56c
-    // NOT WIRED: retail decodes a frame incrementally, one macroblock column
-    // at a time, and this is the interrupt callback that walks the cursor and
-    // issues each column's `LoadImage`. The port decodes a frame whole
+    // Not on the *decode path*, but not an inert port either - `mdec str-plan`
+    // steps the cursor over a real movie's geometry from `fn main` to print the
+    // walk, which is what makes the column count and the buffer flip checkable
+    // against the disc. What the decode path lacks is a reason to call it:
+    // retail decodes a frame incrementally, one macroblock column at a time,
+    // and this is the interrupt callback that walks the cursor and issues each
+    // column's `LoadImage`, whereas the port decodes a frame whole
     // (`MdecDecoder::decode_frame` takes the complete bitstream and returns
-    // RGBA), so there are no per-slice completions to service. A slice-wise
-    // decoder driving `PsxVram` would have to exist before this has a caller.
+    // RGBA). There are no real slice completions to service until a slice-wise
+    // decoder driving `PsxVram` exists.
     pub fn advance_slice(&mut self) -> Option<SliceStep> {
         if !self.slice_callback_armed {
             return None;
@@ -589,11 +601,12 @@ impl StrPlayer {
     /// retail subtracts one from the other); y is `0` or `height` depending on
     /// which rect is live.
     // PORT: FUN_801cf098
-    // NOT WIRED: describes a `SetDefDispEnv` over the *other* half of a
-    // double-buffered PSX framebuffer. The port presents a decoded frame as a
-    // texture and lets the swapchain handle buffering, so there is no second
-    // VRAM buffer for this rect to name. It becomes callable once the STR path
-    // decodes into `PsxVram` and presents by moving the display rect.
+    //
+    // Describes a `SetDefDispEnv` over the *other* half of a double-buffered
+    // PSX framebuffer. No present path uses it: the port shows a decoded frame
+    // as a texture and lets the swapchain handle buffering, so there is no
+    // second VRAM buffer for this rect to name. It becomes a present once the
+    // STR path decodes into `PsxVram`; today `mdec str-plan` prints it.
     pub fn display_rect(&self) -> Rect {
         let shown = self.env.active_buf ^ 1;
         Rect {

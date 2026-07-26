@@ -40,11 +40,38 @@
 //! (`FUN_801D4868` / `FUN_801D5DE0`), so an empty bag greys the Sell row and a
 //! full stack / unaffordable price greys a stock row on this host too.
 //!
+//! # The retail descriptor windows
+//!
+//! Retail's shop is not one panel. The window-script runner slides in five
+//! separate windows and each one's content comes from the routine its
+//! descriptor names, so the shop the page draws is the engine's interactive
+//! list **plus** the four painters this host feeds off the disc-parsed
+//! descriptor table - the same set, at the same rects, that the native
+//! `play-window` paints (`window/shop_windows.rs`):
+//!
+//! | Id | Renderer | Content |
+//! |---|---|---|
+//! | 33 (`0x21`) | `FUN_801DCF14` | vendor plate - the scene MAN shop record's trailing name |
+//! | 32 (`0x20`) | `FUN_801DCF84` | purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 34 (`0x22`) | `FUN_801D4A80` | hovered item's name / owned count / description |
+//! | 37 (`0x25`) | `FUN_801D5944` | sell quantity, held count, halved gold total |
+//!
+//! Each resolves through [`ui::painter_at`], so an id whose descriptor names a
+//! different renderer is skipped rather than mis-drawn. They draw only when
+//! the real descriptor table parsed: these windows exist at their disc rects
+//! or not at all, and [`crate::play_menu`]'s pinned-rect fallback cannot
+//! invent a `renderer_va`.
+//!
 //! REF: FUN_801d5de0
 //! REF: FUN_801d4868
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::menu_runtime::{MenuInput, MenuState, shop_menu_rows};
+use legaia_engine_core::shop::ShopSession;
+use legaia_engine_ui::ui_menu_window_painters::{
+    counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
+    sell_quantity_draws_for,
+};
 use legaia_engine_ui::{self as ui, ShopRow, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -54,6 +81,18 @@ type ShopRowSpec = (String, Option<u32>, u8);
 
 /// Stage-pixel pen for the shop panel, matching the native window's `(8, 140)`.
 const SHOP_PEN: (i32, i32) = (8, 140);
+/// Vendor-name plate (`0x21`): the record-sourced title tab.
+const WIN_VENDOR_PLATE: usize = 33;
+/// Purse (`0x20`): the party-gold counter.
+const WIN_PURSE: usize = 32;
+/// Item info (`0x22`): name + owned count + description.
+const WIN_ITEM_INFO: usize = 34;
+/// Sell quantity (`0x25`): quantity, held count, halved total.
+const WIN_SELL_QUANTITY: usize = 37;
+/// Heading window 37 draws above its quantity row. Retail's own string is a
+/// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
+/// engine-authored line so the translation layer owns the text.
+const SELL_QUANTITY_HEADING: &str = "How many?";
 /// Stage-pixel pen for the level-up banner (native `(8, 60)`).
 const LEVEL_UP_PEN: (i32, i32) = (8, 60);
 /// Stage-pixel pen for the Seru-capture banner (native `(8, 40)`).
@@ -205,6 +244,201 @@ impl LegaiaRuntime {
         ))
     }
 
+    /// The live shop's vendor name, recovered the way the native host does.
+    ///
+    /// Retail's window 33 reads it out of the armed op-`0x49` record
+    /// (`_DAT_8007B450` -> `record + record[2] + 3`, one past the last item
+    /// id). `ShopSession` keeps the priced stock but not that name, so match
+    /// the session's stock against the scene's decoded shops; a scene with a
+    /// single merchant resolves on the first entry.
+    ///
+    /// REF: FUN_801DCF14
+    fn shop_vendor_name<'a>(&'a self, shop: &ShopSession) -> Option<&'a str> {
+        let shops = &self.scene_host.as_ref()?.world.scene_shops;
+        shops
+            .iter()
+            .find(|s| {
+                s.inventory.items.len() == shop.inventory.items.len()
+                    && s.inventory
+                        .items
+                        .iter()
+                        .zip(shop.inventory.items.iter())
+                        .all(|(a, b)| a.item_id == b.item_id)
+            })
+            .or_else(|| shops.first().filter(|_| shops.len() == 1))
+            .map(|s| s.name.as_str())
+            .filter(|n| !n.is_empty())
+    }
+
+    /// The item retail's staged-id word `DAT_801E46B0` would hold: the hovered
+    /// row while a list has focus, the pending item once quantity / confirm
+    /// owns the flow. `None` is the "not positive" case every painter in this
+    /// family draws nothing for - hence `Option`, not a default of id 0.
+    fn shop_staged_item(
+        &self,
+        shop: &ShopSession,
+        state: Option<MenuState>,
+        cursor: usize,
+        bag: &[(u8, u8)],
+    ) -> Option<u8> {
+        match state {
+            Some(MenuState::ShopBuy) => shop.inventory.items.get(cursor).map(|i| i.item_id),
+            Some(MenuState::ShopSell) => bag.get(cursor).map(|(id, _)| *id),
+            Some(MenuState::ShopQuantity) | Some(MenuState::ShopConfirm) => shop.pending_item_id,
+            _ => None,
+        }
+        .filter(|id| *id != 0)
+    }
+
+    /// The description line window 34 draws.
+    ///
+    /// `FUN_801D4A80` routes an **accessory** through the passive table rather
+    /// than the item's own description word, and draws nothing when that
+    /// passive index is the `>= 0x40` sentinel.
+    /// `MenuTextTables::item_passive_lines` resolves the same chain, so a
+    /// `Some` there is the accessory arm and a `None` the item arm.
+    fn shop_item_description(&self, id: u8) -> String {
+        let Some(text) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.menu_text.as_ref())
+        else {
+            return String::new();
+        };
+        if let Some((_, desc)) = text.item_passive_lines(id) {
+            return desc;
+        }
+        text.item_desc(id).unwrap_or_default().to_string()
+    }
+
+    /// ASCII stand-in for a painter's pictogram / cursor request, until the
+    /// UI-icon atlas page carrying the currency glyphs is uploaded on this
+    /// host. Same substitution the native window makes, so neither host drops
+    /// a request silently.
+    fn painter_glyph_stand_in(
+        &self,
+        font: &legaia_font::Font,
+        glyph: &str,
+        xy: (i32, i32),
+    ) -> Vec<TextDraw> {
+        ui::text_draws_for(&font.layout_ascii(glyph), xy, ui::MENU_TEXT_GOLD)
+    }
+
+    /// The shop's four **retail descriptor windows** for the current phase, in
+    /// stage pixels. Empty when the menu-overlay window table did not parse:
+    /// these windows exist only at their disc-parsed rects.
+    fn shop_window_draws(
+        &self,
+        font: &legaia_font::Font,
+        shop: &ShopSession,
+        state: Option<MenuState>,
+        cursor: usize,
+    ) -> Vec<TextDraw> {
+        let Some(assets) = self.menu_assets.as_ref() else {
+            return Vec::new();
+        };
+        let Some(table) = assets.window_table() else {
+            return Vec::new();
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let bag = legaia_engine_core::menu_runtime::MenuRuntime::inventory_items(world);
+        let held_of = |id: u8| -> u32 {
+            bag.iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, q)| u32::from(*q))
+                .unwrap_or(0)
+        };
+        let mut out = Vec::new();
+
+        // Window 33 - the vendor plate.
+        if let (Some(name), Some((d, _))) = (
+            self.shop_vendor_name(shop),
+            ui::painter_at(
+                table,
+                WIN_VENDOR_PLATE,
+                ui::MenuWindowPainter::RecordTitleTab,
+            ),
+        ) {
+            out.extend(record_title_tab_draws_for(font, ui::painter_rect(d), name));
+        }
+
+        // Window 32 - the purse. Both the pictogram id and which live total
+        // the digits print come out of the dispatch, because retail's two
+        // counter renderers are one routine with two literals changed.
+        let purse = table.window(WIN_PURSE);
+        if let (Some(d), Some(ui::MenuWindowPainter::Counter { pictogram, source })) =
+            (purse, purse.and_then(ui::painter_for))
+        {
+            let value = match source {
+                ui::CounterSource::PartyGold => world.money.max(0) as u64,
+                ui::CounterSource::CasinoCoins => world.casino_coins as u64,
+            };
+            let rect = ui::painter_rect(d);
+            let (digits, pic) = counter_panel_draws_for(font, rect, pictogram, value);
+            out.extend(digits);
+            let glyph = match pic.id {
+                ui::COUNTER_PICTOGRAM_GOLD => "G",
+                ui::COUNTER_PICTOGRAM_COINS => "C",
+                _ => "*",
+            };
+            out.extend(self.painter_glyph_stand_in(font, glyph, (pic.x, pic.y)));
+        }
+
+        // Window 34 - the hovered item's info panel.
+        let staged = self.shop_staged_item(shop, state, cursor, &bag);
+        if let Some((d, _)) =
+            ui::painter_at(table, WIN_ITEM_INFO, ui::MenuWindowPainter::ItemDescription)
+        {
+            let id = staged.unwrap_or(0);
+            out.extend(item_description_draws_for(
+                font,
+                ui::painter_rect(d),
+                staged.is_some(),
+                &self.shop_item_label(id),
+                held_of(id).min(u32::from(u8::MAX)) as u8,
+                &self.shop_item_description(id),
+            ));
+        }
+
+        // Window 37 - the sell quantity panel, while the sell flow is sizing
+        // a stack.
+        let selling = matches!(state, Some(MenuState::ShopQuantity)) && !shop.pending_is_buying;
+        if let Some((d, _)) = ui::painter_at(
+            table,
+            WIN_SELL_QUANTITY,
+            ui::MenuWindowPainter::SellQuantity,
+        ) {
+            let id = staged.unwrap_or(0);
+            // Retail reads the item record's own `+2` buy price and halves the
+            // product; the merchant's stock list is not consulted, so a bag
+            // item the shop does not sell still prices correctly.
+            let unit_price = world
+                .item_shop_data
+                .as_ref()
+                .map(|t| u32::from(t.price(id)))
+                .unwrap_or(0);
+            let (text, pic, cur) = sell_quantity_draws_for(
+                font,
+                ui::painter_rect(d),
+                selling && staged.is_some(),
+                SELL_QUANTITY_HEADING,
+                u32::from(shop.pending_quantity),
+                held_of(id),
+                unit_price,
+            );
+            out.extend(text);
+            if let Some(pic) = pic {
+                out.extend(self.painter_glyph_stand_in(font, "G", (pic.x, pic.y)));
+            }
+            if let Some(cur) = cur {
+                out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
+            }
+        }
+        out
+    }
+
     /// Post-action banner draws in **stage** pixels: the level-up summary and
     /// the Seru-capture line, both ticked down by `World::tick`.
     fn banner_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
@@ -346,8 +580,20 @@ impl LegaiaRuntime {
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
 
         let shop = self.shop_stage_draws(font);
+        // The retail descriptor windows ride alongside the engine's own
+        // interactive list, exactly as they do in the native window: the list
+        // is the control, these are the readouts around it.
+        let windows = match self.menu.shop_session.as_ref() {
+            Some(session) => self.shop_window_draws(
+                font,
+                session,
+                MenuState::from_byte(self.menu.ctx_state()),
+                self.menu.cursor() as usize,
+            ),
+            None => Vec::new(),
+        };
         let banners = self.banner_stage_draws(font);
-        if shop.is_none() && banners.is_empty() {
+        if shop.is_none() && windows.is_empty() && banners.is_empty() {
             return CLOSED.to_string();
         }
 
@@ -373,6 +619,7 @@ impl LegaiaRuntime {
             }
             texts.extend(draws);
         }
+        texts.extend(windows);
         texts.extend(banners);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
 

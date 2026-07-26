@@ -359,10 +359,27 @@ fn step_categorize(dir: &Path, out: &Path) -> Result<CategorizeSummary> {
         .collect();
 
     let n_files = results.len();
-    let mut per_file = serde_json::Map::new();
-    for (name, val) in results {
-        per_file.insert(name, val);
-    }
+    // `per_file` is a LIST of records that each carry their own `path`, matching
+    // what `asset categorize --out` writes. The two emitters used to disagree -
+    // this one wrote a filename -> record MAP - so `categorize.json`'s schema
+    // depended on which tool had written it last, and a consumer written against
+    // one shape crashed on the other (`disc-coverage.py` iterating a map yields
+    // its keys: `'str' object has no attribute 'get'`). That stayed hidden for
+    // as long as nobody re-ran the extractor.
+    let mut per_file: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|(name, mut val)| {
+            if let Some(obj) = val.as_object_mut() {
+                obj.insert("path".to_string(), serde_json::Value::String(name));
+            }
+            val
+        })
+        .collect();
+    per_file.sort_by(|a, b| {
+        a.get("path")
+            .and_then(|v| v.as_str())
+            .cmp(&b.get("path").and_then(|v| v.as_str()))
+    });
     let summary = serde_json::json!({
         "scan_root": dir.display().to_string(),
         "n_files": n_files,

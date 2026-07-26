@@ -187,7 +187,7 @@ pub enum HandlerKernel {
     CameraMover,
     /// One of the four [`crate::screen_fx`] widget handlers.
     ScreenWidget,
-    /// [`crate::field_actor_program::step`] - ported, but not yet run by the
+    /// [`crate::field_actor_program::step_scene_program`] - ported, but not yet run by the
     /// actor loop; see that function's disclosure.
     ScriptedScene,
     /// No ported body. The handler still participates in every identity

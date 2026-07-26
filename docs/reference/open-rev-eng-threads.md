@@ -303,7 +303,7 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 | Is the `FUN_8006EF18` trio an SPU voice-state init at all? | open (two pages disagree; the label is contradicted by its own cited vectors) | [details ↓](#is-the-fun_8006ef18-trio-an-spu-voice-state-init) |
 | Is `FUN_80018DB0` a rumble cadence rather than an audio one? | resolved (moved to re-settled) | Yes - grade `disassembly`. `FUN_8006E2B4` is `PadInitDirect` and `FUN_8006CE30` is a three-argument `PadSetAct`; `DAT_800915DA/DB` are port 0's actuator bytes, so the kernel drives vibration and plays nothing. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | Retail's footstep SFX cue id | resolved-negative (moved to re-settled) | There is no cue to pin: the only "cadence" is the rumble one above, and the capture already showed retail plays nothing on a step. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
-| SFX cue bank routing - the category byte selects a VAB slot, and the port stages one | open | Sibling of the resolved key-on-pitch question. A descriptor's `+4` category picks a 12-byte mixer record whose `+8` is a **VAB slot id**; `FUN_80068b98` repoints the current-bank globals at it before the tone lookup, so a cue names its own bank. Four slots are open concurrently (categories `0`/`2`/`6`/`11` = 16/53/30/1 descriptors) and the port models one. [details ↓](#sfx-cue-bank-routing---the-category-byte-selects-a-vab-slot-and-the-port-stages-one) |
+| Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11 | partial | The routing above it is settled: a descriptor's `+4` category selects a VAB slot and both hosts now stage and route by it (grade `capture`, see [`re-settled-threads.md`](re-settled-threads.md#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot)). What is left is the slot-to-PROT map for the slots with no traced loader; 31 descriptors (categories `6` and `11`) fall back to the class-2 bank until they have one. [details ↓](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 
 ### Is the `FUN_8006EF18` trio an SPU voice-state init?
@@ -351,54 +351,45 @@ The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..
 
 A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cue. Decoded: menu voice `FUN_8004FCC8`; the normal-move grunt (`XA30` chan 0/4/6, overlay `0x801EEB44`); the **arts shout** (`FUN_8004C140` → `XA2`/`XA4`/`XA6` per character, per-art channel pool, capture-verified; [battle-action.md](../subsystems/battle-action.md)); SM state-`0x6E` (`XA9` via `0x800787AF`); slot machine `XA1`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls).
 
-### SFX cue bank routing - the category byte selects a VAB slot, and the port stages one
+### Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11
 
-*Status:* open (mechanism pinned, routing unported)
+*Status:* partial - the routing is settled and ported; the slot-to-PROT map for
+four of the six slots retail opens is not.
 
-The sibling of the key-on-pitch question, which is **resolved**: retail applies
-`note - center` and there is no sample-rate factor, so a UI cue keyed 12..26
-semitones under its centre is the authored sound. Law, evidence and the port are
-in [`audio.md`](../subsystems/audio.md#the-key-on-pitch-law---note-against-the-tones-center);
-grade `disassembly` + `capture` (126 of 128 staged voices across the save-state
-catalogue reproduce exactly). What that closure exposed is a *different* wrong
-answer for the same cues.
-
-The mechanism, pinned. A descriptor's `+4` category selects the 12-byte mixer
-record at `0x80091508 + category*12`, and that record's `+8` is a **VAB slot
-id**, not a level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it
-unless the per-bank open-state byte `_DAT_801CE368[id] == 1` and then repoints
-the current-bank globals at that slot before the program / tone lookup. Across
+What is settled. A descriptor's `+4` category selects the 12-byte mixer record at
+`0x80091508 + category*12`, and that record's `+8` is a **VAB slot id**, not a
+level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it unless the
+per-bank open-state byte `_DAT_801CE368[id] == 1` and then repoints the
+current-bank globals at that slot before the program / tone lookup. Across
 catalogued states record `N` holds `+8 == N` and `+0` == slot `N`'s live
-`VabHdr`, in every record of every state. The category histogram over the 100
-descriptors is `0`:16, `2`:53, `6`:30, `11`:1, and a field state has slots
-`0, 1, 3, 6` open at once. Slot 0 is **PROT 0868** (512-byte `VagAtr` page match
-against a live state, `ps = 5` agreeing); slot 2 is the known class-2 bank
-PROT 0869. See
-[`sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
+`VabHdr`, in every record of every state. Slot 0 is **PROT 0868**, slot 2 the
+class-2 bank **PROT 0869**, and both hosts now stage the pair and resolve each
+cue through its own category - so the shared UI blips sound out of 0868 the way
+retail's field menu does. Law, port and evidence:
+[`sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once)
+and [`re-settled-threads.md`](re-settled-threads.md#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot).
 
-The gap. Both hosts stage exactly one resident SFX bank, the class-2 one:
-`engine-shell`'s boot and the browser play page. That is retail's bank for the 53
-category-`2` cues - the battle strike, the Baka duel hit - and the wrong one for
-the 16 category-`0` shared UI cues, which retail sounds out of PROT 0868. It
-fails *quietly*: both banks carry a one-VAG-per-semitone UI key map at program 0,
-so the id resolves to a sibling sample rather than to silence. The pause-menu
-blips the play page now fires are that case - genuine retail data, roughly twice
-as long and a fifth lower than the field menu's, because the class-2 copy's
-`center` bytes are authored higher.
+What is not pinned. Which PROT entries fill slots `1`, `3`, `6` and `11`, and
+who loads each - only slot 2's loader (`FUN_800520F0` with `a1 = 2`, and the Baka
+init) and slot 0's *identity* are traced. A field state has slots `0, 1, 3, 6`
+open at once. Slot 6 carries the field script cues `0x2E` / `0x2F`, so it is a
+field-resident bank; slot 1 was the scene music VAB in the state examined, which
+is what makes "the SFX bank is the scene's music VAB" a half-truth rather than a
+mistake - category 1 has no descriptors.
 
-What is not pinned. Which PROT entries fill slots `1`, `3`, `6` and `11`, and who
-loads each - only slot 2's loader (`FUN_800520F0` with `a1 = 2`, and the Baka
-init) and slot 0's *identity* are traced. Slot 6 carries the field script cues
-`0x2E` / `0x2F`, so it is a field-resident bank; slot 1 was the scene music VAB
-in the state examined, which is what makes "the SFX bank is the scene's music
-VAB" a half-truth rather than a mistake - category 1 has no descriptors.
+What it costs while it is open. 31 of the 100 descriptors are category `6` (30)
+or `11` (1). Both hosts route those to the class-2 bank, which is the behaviour
+they had before any routing existed - so those cues sound exactly as they did,
+and nothing regressed - but for 30 of them that is the wrong bank, quietly, in
+the same way the 16 category-`0` cues were.
 
-What would close it. Port the routing: keep a per-category bank table, stage the
-banks a mode needs, and resolve a cue through `bank[category(id)]`. The blocking
-unknown is only the slot-to-PROT map for the remaining slots; a sweep of the
-streaming loader's `a1` argument at its call sites should name them the way
-`a1 = 2` named the class-2 bank. The SPU-RAM budget is the other half - the
-engine reserves one 192 KiB region for one bank.
+What would close it. A sweep of the streaming loader's `a1` argument at its call
+sites should name the remaining slots the way `a1 = 2` named the class-2 bank;
+the field overlay is where slot 6's loader has to be. Anything found also has to
+fit the SPU budget: the reserved region holds the two pinned banks with 2592
+bytes spare, and the BGM region below it is already down to the size of the
+largest scene VAB on the disc, so a third resident bank needs the allocation
+rethought rather than widened.
 
 ## Title / boot / overlays
 
@@ -448,8 +439,10 @@ self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
 - **0900/0901** = the slot-B *default* pair - `FUN_80025BA0` loads param 5 or 6 by flag
   `DAT_8007B6A8`, agreeing with 0900's byte-residency in mid-cast saves (the summon-render
   overlay).
-- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived 38-spawn-call stager file is
-  extraction **0905** = the `0x83` slot. The summon arithmetic range is extraction
+- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived stager file is
+  extraction **0905** = the `0x83` slot (22 spawn calls inside its own TOC-gap
+  footprint - the "38 calls" figure counted the two following stagers' code as
+  well). The summon arithmetic range is extraction
   `0903..=0913` (raw `0x389..=0x393`) - **fully capture-pinned per spell id**, incl. 0907 =
   Nighto on the `0x85` slot (head title "Hell's Music" = the attack's display name; the
   dance-song reading is refuted).

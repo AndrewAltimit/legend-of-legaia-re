@@ -97,11 +97,38 @@ false positives, and **no** entry outside the `0x12000` size class satisfies it
 at `+0x10000`. The chain is a five-way agreement over nine header words, so it
 is not a shape random data falls into.
 
-One `0x12000` entry ships the header all zeros: the map for a cutscene-only
-scene whose object table, collision grid and object map are also entirely zero.
-The detector accepts it with an absent trigger block rather than special-casing
-the scene, because "no walkable field" is a legitimate state for a scene that is
-only ever entered to play a script.
+### The footprint is necessary, not sufficient
+
+`0x12000` is 36 sectors - a size, not a signature. **111** PROT entries carry
+it and only **101** are field maps. The other ten are ordinary members of their
+scene blocks that happen to be that long:
+
+| Entry | Block slot | Class |
+|---|---|---|
+| 63, 71, 378, 379, 701 | dolk+5, dolk2+5, taiku+9, taiku+10, rugi+7 | `scene_tmd_stream` (`[u32 size]` then the `0x80000002` TMD magic) |
+| 648 | nilboa2+4 | `data_field_streaming` |
+| 1074, 1087, 1089, 1187 | inside the `vab_01` block | `scene_vab_stream` (`VABp` at `+4`) |
+
+The trigger chain rejects all ten, so the class is right - but a *reader* that
+resolves "the field map" by footprint alone picks up ten strangers, five of
+them inside named scene blocks. Resolve by slot (below), not by size.
+
+### The zeroed trigger header
+
+One `0x12000` entry ships the header all zeros: `rikuroa2`'s map (extraction
+126), a cutscene-only scene. Its object table and collision grid are entirely
+zero; its object-index map carries a single stray byte (`0x04` at `+0xC081`)
+and its trigger *body* past the zeroed header is not empty either. The detector
+accepts it with an absent trigger block rather than special-casing the scene,
+because "no walkable field" is a legitimate state for a scene that is only ever
+entered to play a script.
+
+That acceptance is gated on **the object table and the collision grid both
+being entirely zero**. Ungated it is not a test: an all-zero `0x12` -byte
+window is a statement about 18 bytes, and entries 63 / 71 / 701 - TMD-stream
+entries with a fully populated collision grid - satisfy it by accident. Pairing
+the zeroed header with an empty field is what makes the escape hatch a
+statement about the file.
 
 ### Why this size class hid for so long
 

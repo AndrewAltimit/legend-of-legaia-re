@@ -225,10 +225,14 @@ adds the step and bumps both sides (`addu` at `0x8006331C`, `addiu …,1` at
 
 ### The calc tier's two shared conventions
 
-Everything `SsSeqCalc` fans out to is ported as `legaia_engine_audio::seq_calc`
-(`NOT WIRED` - [`Sequencer`](#engine-audio-model---sequencer-port) is the engine's
-replacement for the tier, and these kernels are the reference it has to agree
-with). Two conventions recur across the whole family and are worth stating once.
+Everything `SsSeqCalc` fans out to is ported across two modules: the envelope
+kernels as `legaia_engine_audio::seq_calc`, and everything that reads a stream
+byte - the start / stop arms, the delta-time pump and the event decoder - as
+`legaia_engine_audio::seq_events`. [`Sequencer`](#engine-audio-model---sequencer-port)
+remains the engine's playback replacement for the tier; these kernels are the
+reference it has to agree with, and `note-trace --seq-calc` is the host that
+runs them over a real `music_01` SEQ body. Two conventions recur across the
+whole family and are worth stating once.
 
 **The flag word is re-read from memory before every test.** `FUN_80062F98` does
 not snapshot `+0x98`; it reloads it ahead of each `andi`. So a handler that
@@ -273,12 +277,47 @@ frames the tempo itself moved.
 
 The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
 of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
-fixed-point ×10 quantity. That reading is an **inference from the arithmetic
-alone** - `0x801CD2BC` has not been read from a live capture - so the port takes
-the divisor as a parameter and bakes no `60` in. This matters because the engine
-`Sequencer` clocks in exact integer SPU samples: a wrong constant here is a
-tempo error, and a tempo error is audible while remaining perfectly
-self-consistent under any test written against the same wrong constant.
+fixed-point ×10 quantity. `0x801CD2BC` itself has still not been read from a
+live capture, so the port takes the divisor as a parameter and bakes no `60` in.
+The **×10 half of that reading is no longer an inference**, though: the varint
+delta-time reader `FUN_80061C68` multiplies every decoded delta by `10` before
+returning it and before accumulating it into `+0x88`, so the pump's
+`+0x90 >= +0x54` comparison is tenths against tenths on both sides. Two
+independent routines agreeing on a scale is a measurement; one formula's shape
+was not. The remaining risk is the divisor alone - and it matters, because the
+engine `Sequencer` clocks in exact integer SPU samples, so a wrong constant here
+is an audible tempo error that stays perfectly self-consistent under any test
+written against the same wrong constant.
+
+### The decoder does not consume a whole event
+
+`FUN_80063CEC` reads a status byte, latches running status at `+0x16` and the
+channel nibble at `+0x17`, and reads only *some* of the operands: two plus the
+delta-time for `0x9n`, one for `0xBn` / `0xCn`, one skipped unread for `0xEn`,
+and the kind byte for a meta. The rest of each event belongs to the **installed
+handler** it tail-calls through the 17-entry vector `FUN_80026234` writes at
+`0x801CD220`:
+
+| class | vector slot | handler | further operands | reads the delta |
+|---|---|---|---|---|
+| `0x9n` note | `+0x00` | `FUN_80061B24` | 0 | no - the decoder did |
+| `0xCn` program | `+0x04` | `FUN_80061BF8` | 0 | yes |
+| `0xEn` bend | `+0x08` | `FUN_8006166C` | 1 | yes |
+| `0xFF` meta | `+0x0C` | `FUN_80061954` | 3 | yes |
+| `0xBn` control | `+0x10` | `FUN_8006171C` | 1 | yes |
+
+So the stream is the conventional `[status][operands][delta]`, and a walker
+needs both halves. Reading the decoder alone as a complete event consumer is
+wrong and fails visibly: every program change comes back paired with a phantom
+running-status program change whose operand is `0`, because the trailing delta
+byte is re-decoded as the next status. `FUN_80062410` (the SEQ open) reads the
+body's **leading** delta before the first frame, so a host seeding a channel by
+hand has to do the same.
+
+`FUN_80061954` reads its three bytes as a big-endian value and computes
+`60000000 / v` into `+0x94`, which independently confirms the tempo meta's
+three-operand, no-length-byte layout recorded in
+[`seq.md`](../formats/seq.md).
 
 **Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
 elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the
@@ -808,11 +847,11 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
-The bank those programs index is selected at key-on time, not by the cue: `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at whichever VAB is open. Across the save-state catalogue that is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So a cue is fired with `SfxBank::play_one_shot(spu, vab)` against a `VabBank` the host already loaded, and because banks differ in size a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
+**The bank those programs index is named by the cue itself.** `FUN_80065034` calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that repoints the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`) at the slot the cue's `+4` category selects. The older reading - "the globals hold whichever VAB is open, so a cue plays out of the scene's music bank" - was a save-state artefact: the globals really are shared with the sequencer, so a state sampled after a BGM note holds the music bank, and across the catalogue that is 13 distinct VABs. Full law, the category -> slot -> PROT map and its two pinned entries: [`formats/sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
 
-**"So the SFX bank is always the scene's music VAB" does not follow, and for the low id range it is false.** The class-2 bank (PROT 0869) that the battle scene loader `FUN_800520F0` (`a1 = 2`) and the Baka init `FUN_801CF00C` stage carries a purpose-built SFX key map at **program 0**: one distinct VAG per semitone, single-note windows `min == max == 60 + i`, lining up 1:1 with the descriptor notes of the UI cue ids (`0x20` note 60, `0x21` note 61, `0x23` note 63, `0x09` note 69).
+Practically, that makes the low id range emphatically **not** the scene's music VAB. The class-2 bank (PROT 0869) that the battle scene loader `FUN_800520F0` (`a1 = 2`) and the Baka init `FUN_801CF00C` stage carries a purpose-built SFX key map at **program 0**: one distinct VAG per semitone, single-note windows `min == max == 60 + i`, lining up 1:1 with the descriptor notes of the UI cue ids (`0x20` note 60, `0x21` note 61, `0x23` note 63, `0x09` note 69). The slot-0 system bank (PROT 0868) carries its own copy of that map, and it is the one the shared UI cues - which are category `0` - actually key.
 
-A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in the `town01` case two tones spanning keys `0..=68` and `69..=101`, with tones 3/5/9 empty - so those same ids resolve there to an arbitrary instrument note or to nothing at all. The UI/common cues belong to the class-2 program-0 map; only a cue whose program is genuinely part of the open music bank resolves against that bank.
+A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in the `town01` case two tones spanning keys `0..=68` and `69..=101`, with tones 3/5/9 empty - so those same ids would resolve there to an arbitrary instrument note or to nothing at all. The host therefore stages the two pinned SFX banks itself and fires each cue with `SfxBank::play_one_shot(spu, vab)` against the one its category names, falling back to the scene `VabBank` only when nothing staged.
 
 | Cue ID | Meaning |
 |---|---|

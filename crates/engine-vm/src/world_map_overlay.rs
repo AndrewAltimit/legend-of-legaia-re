@@ -35,33 +35,33 @@
 //!
 //! ## Wiring status
 //!
-//! One item is on a host path: [`resolve_equip_slot`], through
-//! [`crate::dev_equip_commit::commit_equip`] and the dev-menu screen above it.
-//! Everything else here carries its own `NOT WIRED:` note, because the reason
-//! differs per address and a blanket module disclosure would also cover the one
-//! item that does have a caller. The per-address reasons, once:
+//! Three of the four addresses are on a host path; the reason differs per
+//! address, so each item carries its own note rather than a blanket module
+//! disclosure. The per-address summary:
 //!
 //! - **`FUN_801EAD98` / `FUN_801ECA08`** (row model, formatter, panel sizer,
-//!   list-picker cursor + draw gate). Retail's dev menu is an actor whose
-//!   handler owns a phase byte (`ctx[+0x54]`) and a cursor row (`ctx[+0x9E]`),
-//!   reached from the world-map controller behind a debug gate. The engine's
-//!   dev-menu screen (`legaia_engine_core::dev_menu_host`) is a different
-//!   shape: it carries the row subset whose backing state the engine owns and
-//!   steps them through [`crate::world_map_dev_menu`], so retail's 24-row list
-//!   model and its panel/cursor state machine have no consumer.
-//! - **`FUN_801ED710`** (battle-records data model). The engine keeps none of
-//!   the lifetime counters this screen reads: battles fought, escapes, and the
-//!   per-character max-hits / max-damage / knockouts / monsters-defeated /
-//!   Hyper-Arts / magic tallies. `World` carries a play-time clock and nothing
-//!   else on the list, and the pause menu has no records page to host the
-//!   result. Wiring needs those counters on the persistent record first.
+//!   list-picker cursor + draw gate) are hosted by the engine's dev-menu
+//!   screen `legaia_engine_core::dev_menu_host`. That screen carries the row
+//!   subset whose backing state the engine owns, and it maps each of its rows
+//!   onto retail's own index space ([`DevMenuRow::from_index`]) so the label /
+//!   `CLOSED` decision, the row formatter, the panel geometry, the cursor step
+//!   and the draw gate are all retail's. The two leaves still without a
+//!   consumer are the CAMERA readout (nothing publishes retail's packed
+//!   scratchpad camera word) and the 18 rows of the retail list the engine has
+//!   no backing state for.
+//! - **`FUN_801ED710`** (battle-records data model) is hosted by the native
+//!   window's developer-menu Records page, which feeds it the live character
+//!   records and the world play clock. Two of its inputs are still absent -
+//!   the lifetime battle / escape tallies and the treasure census - so those
+//!   fields read zero and the treasure line stays hidden, which is also what
+//!   retail draws off a save that never incremented them.
 //! - **`FUN_801E5B4C`** (equipment stat-comparison preview) is split. The slot
-//!   resolution is live, as above. The comparison panel is not: the engine's
-//!   equip screen is the menu-overlay flow
-//!   (`legaia_engine_core::EquipSession`, ported from `FUN_801D9C14` /
+//!   resolution is live through [`crate::dev_equip_commit::commit_equip`]. The
+//!   comparison panel is not: the engine's equip screen is the menu-overlay
+//!   flow (`legaia_engine_core::EquipSession`, ported from `FUN_801D9C14` /
 //!   `FUN_801D99F0`), which previews by trial-equipping into its own 8-slot
-//!   array and re-running its stat aggregator, so nothing produces the 5-slot
-//!   `char[+0x75E..]` equip window the shared panel aggregates over.
+//!   array and re-running its stat aggregator, so nothing calls the shared
+//!   5-slot aggregation.
 
 // ---------------------------------------------------------------------------
 // FUN_801EAD98 - fixed-width decimal formatter
@@ -70,7 +70,9 @@
 /// Zero-padded fixed-width decimal, ported from the digit kernel that
 /// `FUN_801EAD98` inlines ~15 times (one copy per numeric menu readout).
 ///
-/// NOT WIRED: no caller - the engine's dev menu formats its own rows.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_value`
+/// formats every numeric row through here, reached from
+/// `PlayWindowApp::tick_dev_menu`.
 /// PORT: FUN_801EAD98 (digit kernel)
 ///
 /// The retail routine seeds a scratch buffer, sets `_DAT_801F2B80 = width`,
@@ -113,8 +115,14 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// `0..=0x17` in `FUN_801EAD98`). Rows the retail code labels only through a
 /// data pointer whose text is not decoded here carry a neutral name.
 ///
-/// NOT WIRED: retail's 24-row list has no consumer; see the module's
-/// wiring status.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row` maps
+/// each engine row onto its retail index, and `DevMenuSession::row_label`
+/// asks the resulting row kind, once per row per frame, whether it draws its
+/// label or `CLOSED`. The chain to a host root is
+/// `PlayWindowApp::handle_redraw` -> `tick_dev_menu` ->
+/// `build_dev_menu_draws` -> `row_label` -> `row_is_closed` -> `retail_row`.
+/// The 18 rows the engine has no backing state for are modelled here and not
+/// listed there.
 /// PORT: FUN_801EAD98 (row dispatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
@@ -148,7 +156,9 @@ impl DevMenuRow {
     /// Map a list index to its row kind. Indices `>= 0x18` are out of the
     /// retail bounds check (`0x17 < local_40` short-circuits the switch).
     ///
-    /// NOT WIRED: same missing consumer as [`DevMenuRow`].
+    /// Wired through `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row`,
+    /// which the row list's label builder calls every frame - see
+    /// [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (`switch(local_40)` + the default 0xC/0xD/0xE arm)
     pub fn from_index(index: u32) -> Option<DevMenuRow> {
         use DevMenuRow::*;
@@ -186,7 +196,15 @@ impl DevMenuRow {
     /// Whether this row renders as "CLOSED" instead of its label. Only the
     /// `MAP_CHANGE` and `CARD_OPTION` rows are gated, by `_DAT_8007B868 != 0`.
     ///
-    /// NOT WIRED: same missing consumer as [`DevMenuRow`].
+    /// The polarity is the disassembly's: case 0 is `lw v0,-0x4798(0x8008)`
+    /// then `beq v0,zero,0x801EAE5C`, so the **zero** leg loads the
+    /// `MAP_CHANGE` string and the fall-through loads `CLOSED`; case 1 repeats
+    /// it at `0x801EB310` for `CARD_OPTION`.
+    ///
+    /// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_is_closed`
+    /// gates the `MAP_CHANGE` row's label through here, and its own caller
+    /// `DevMenuSession::row_label` is what the row list draws from every
+    /// frame - see [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (cases 0 and 1)
     pub fn is_closed(self, gate_b868: u32) -> bool {
         matches!(self, DevMenuRow::MapChange | DevMenuRow::CardOption) && gate_b868 != 0
@@ -201,7 +219,10 @@ impl DevMenuRow {
 /// `pitch = ((w & 0xFF) + ((w >> 16) & 0xFF)) / 2`,
 /// `yaw   = (((w >> 8) & 0xFF) + ((w >> 24) & 0xFF)) / 2`.
 ///
-/// NOT WIRED: nothing in the engine publishes retail's packed camera word.
+/// NOT WIRED: the dev-menu host has no CAMERA row, because nothing in the
+/// engine publishes retail's packed scratchpad camera word `_DAT_1F800384` -
+/// `WorldMapController` keeps azimuth and zoom as separate scalars, not as
+/// the four byte lanes this averages. Wiring needs that word published first.
 /// PORT: FUN_801EAD98 (case 3)
 pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
     if cam_word == 0x7F7F_0000 {
@@ -221,7 +242,7 @@ pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
 ///
 /// REF: FUN_801ECA08 (panel-sizing prologue) - the computation is tagged on
 /// [`panel_geometry`]; this is only its return type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PanelGeometry {
     /// Panel top Y (`desc[+0x0A]`), bottom-anchored to the 208px viewport.
     pub y: i16,
@@ -232,7 +253,8 @@ pub struct PanelGeometry {
 /// Compute panel geometry from the inclusive row range `row_start..=row_end`.
 /// `rows = row_end - row_start + 1`; `height = rows*8`; `y = 0xD0 - rows*8`.
 ///
-/// NOT WIRED: no host opens a dev-menu panel to size.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::tick` sizes the
+/// row list's panel from its own row span every frame.
 /// PORT: FUN_801ECA08
 pub fn panel_geometry(row_start: i32, row_end: i32) -> PanelGeometry {
     let rows = row_end - row_start + 1;
@@ -254,9 +276,25 @@ pub const SFX_CANCEL: u32 = 0x36;
 ///
 /// `up`/`down` are the D-pad edges (`_DAT_8007BB84 & 0x1000` / `& 0x4000`).
 ///
-/// NOT WIRED: the engine's dev-menu list runs its own cursor.
+/// Named `dev_menu_cursor_step` rather than `cursor_step` on purpose: a free
+/// function's name is the whole of its identity to the reachability pass
+/// (`docs/tooling/stale-not-wired-triage.md`), and
+/// `legaia_engine_core::baka_cabinet::cursor_step` is a live free function of
+/// that name, so every call to *that* one used to read as a call to this one.
+/// Keep the names distinct.
+///
+/// Wired: [`legaia_engine_core::dev_menu_host::DevMenuSession::step_row`]
+/// steps the dev-menu row list through here, reached from
+/// `PlayWindowApp::tick_dev_menu`.
+///
 /// PORT: FUN_801ECA08 (phase-1 cursor block)
-pub fn cursor_step(cursor: i32, row_start: i32, row_end: i32, up: bool, down: bool) -> (i32, bool) {
+pub fn dev_menu_cursor_step(
+    cursor: i32,
+    row_start: i32,
+    row_end: i32,
+    up: bool,
+    down: bool,
+) -> (i32, bool) {
     let mut c = cursor;
     let mut moved = false;
     if up {
@@ -279,11 +317,14 @@ pub fn cursor_step(cursor: i32, row_start: i32, row_end: i32, up: bool, down: bo
 
 /// The list-picker phase (`ctx[+0x54]`), 5-way.
 ///
-/// NOT WIRED: no host owns retail's `ctx[+0x54]` list-picker phase byte.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::list_phase`
+/// tracks the engine dev menu's page in this phase space, which is what the
+/// retail draw gate below is asked against.
 /// PORT: FUN_801ECA08 (`switch(ctx[+0x54])`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ListPickerPhase {
     /// Seed cursor = row_start, open panel, then falls through into `Active`.
+    #[default]
     Open = 0,
     /// Cursor movement + confirm/cancel input.
     Active = 1,
@@ -325,7 +366,8 @@ impl ListPickerPhase {
 /// stays because the phase-1 leg's gate is the caller's own input-allowed
 /// flag, which does vary.
 ///
-/// NOT WIRED: gates a draw no host issues - see [`ListPickerPhase`].
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::list_visible`
+/// is this gate's output, recomputed every frame.
 /// PORT: FUN_801ECA08 (`mult s2,s3` draw gate)
 pub fn list_body_draws(phase: i16, gate: i32) -> bool {
     let product = phase as i32 * gate;
@@ -395,7 +437,8 @@ pub struct RecordsScreen {
 /// Decompose a `1/60 s` play-time frame counter (`_DAT_800845DC`) into
 /// H:MM:SS with the retail 99h clamp.
 ///
-/// NOT WIRED: reached only from [`records_screen`], which has no host.
+/// Wired: reached from [`records_screen`], whose host is the native window's
+/// developer-menu Records page.
 /// PORT: FUN_801ED710 (play-time block)
 pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
     let secs = (frames / 60) as i32;
@@ -413,8 +456,9 @@ pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
 
 /// Build the records-screen model from the raw runtime globals.
 ///
-/// NOT WIRED: the engine keeps none of the lifetime counters this reads and
-/// has no records page - see the module's wiring status.
+/// Wired: `legaia-engine play-window`'s developer-menu Records page builds
+/// this model from the live character records and the world play clock -
+/// `PlayWindowApp::build_dev_records_draws` -> `dev_records_model` -> here.
 /// PORT: FUN_801ED710
 pub fn records_screen(
     battles: u32,
@@ -483,8 +527,13 @@ pub enum StatDelta {
 /// nothing but is still looked up in retail; callers pass a resolver that
 /// returns zeroes for id `0`.
 ///
-/// NOT WIRED: nothing produces the 5-slot `char[+0x75E..]` equip window this
-/// aggregates over - see the module's wiring status.
+/// NOT WIRED: the engine's equip screen previews by trial-equipping into its
+/// own 8-slot array and re-running `legaia_engine_core::battle_stats`'s
+/// aggregator, so no caller wants a second aggregation - and this one needs
+/// the two static resolver tables (`DAT_80074368` stat index, `DAT_80074F68`
+/// bonuses) as closures, which no host assembles. The record window itself is
+/// **not** the blocker: `char[+0x75E]` rebases to record `+0x196`, which
+/// `crate::dev_equip_commit::commit_equip` already writes on live records.
 /// PORT: FUN_801E5B4C (aggregation loops)
 pub fn aggregate_slot_stats(
     slots: &[u8; 5],
@@ -618,13 +667,13 @@ mod tests {
     #[test]
     fn cursor_wraps_by_swap() {
         // up from top -> jumps to bottom.
-        assert_eq!(cursor_step(0, 0, 4, true, false), (4, true));
+        assert_eq!(dev_menu_cursor_step(0, 0, 4, true, false), (4, true));
         // down from bottom -> jumps to top.
-        assert_eq!(cursor_step(4, 0, 4, false, true), (0, true));
+        assert_eq!(dev_menu_cursor_step(4, 0, 4, false, true), (0, true));
         // plain move.
-        assert_eq!(cursor_step(2, 0, 4, false, true), (3, true));
+        assert_eq!(dev_menu_cursor_step(2, 0, 4, false, true), (3, true));
         // no input -> no move.
-        assert_eq!(cursor_step(2, 0, 4, false, false), (2, false));
+        assert_eq!(dev_menu_cursor_step(2, 0, 4, false, false), (2, false));
     }
 
     #[test]

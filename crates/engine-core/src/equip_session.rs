@@ -17,6 +17,33 @@ use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
 use legaia_engine_vm::status_effects::StatusKind;
 use std::collections::HashMap;
 
+/// Number of equip slots the engine models (retail draws seven; the eighth
+/// is the engine's over-model row).
+pub const EQUIP_SLOTS: u8 = 8;
+
+/// Rows in the slot-browse cursor space: "Best Equipment" plus one row per
+/// [`EQUIP_SLOTS`]. Retail's own space is `8` (`li a1,0x8` into the cursor
+/// stepper at `0x801D9AFC`); the engine's extra equip slot adds one row.
+pub const SLOT_BROWSE_ROWS: u8 = EQUIP_SLOTS + 1;
+
+/// The slot-browse row that runs the Best Equipment applier.
+pub const SLOT_BROWSE_BEST_ROW: u8 = 0;
+
+/// Item id standing for the candidate list's **Remove** row - retail's
+/// class-`0x4000` payload-`0` entry, which carries no item at all.
+pub const REMOVE_ROW_ID: u8 = 0;
+
+/// Engine equip-slot index each of the four **armament** slots writes, in
+/// the candidate array's weapon-first order.
+///
+/// Retail resolves the same thing through the halfword table
+/// `DAT_801E43E8` (and, for the weapon, the per-character offset at
+/// `DAT_8007B42C + char*2`); `FUN_801CF760` indexes it by the armament
+/// index rather than writing `record.equip[i]` directly, which matters here
+/// because the engine inserts a Hand Guard slot at index `3` that retail
+/// does not have - so footwear is engine slot `4`, not `3`.
+pub const ARMAMENT_ENGINE_SLOTS: [usize; 4] = [0, 1, 2, 4];
+
 /// One equippable item the player can choose from in the browse phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EquipItem {
@@ -33,9 +60,19 @@ pub struct EquipItem {
 pub enum EquipState {
     /// Cursor on the equipment grid. Cross opens the item picker;
     /// Triangle cycles characters; Circle exits.
+    ///
+    /// `cursor` is a **row** in the retail slot-browse row space, not a
+    /// slot index: row `0` is the "Best Equipment" auto-equip and row
+    /// `n` is equip slot `n - 1` ([`SLOT_BROWSE_ROWS`]). Retail's row
+    /// word is `DAT_801E46C0 & 0xFFF` and `FUN_801D99F0` branches on it
+    /// being zero (`beq v0,zero` at `0x801D9B4C`), which is why the
+    /// engine's slot rows start at `1` as well.
     SlotPicker { cursor: u8 },
     /// Cursor on the item list filtered to the active slot. Cross
     /// confirms; Circle goes back to slot picker.
+    ///
+    /// Row `0` of that list is the **Remove** row whenever the slot is
+    /// occupied ([`EquipSession::items_for_slot`]).
     ItemPicker { slot: u8, cursor: u16 },
     /// "Equip `<X>`?" Yes/No prompt. Cross confirms; Circle abandons.
     Confirm { slot: u8, item_id: u8, cursor: u8 },
@@ -80,6 +117,12 @@ pub enum EquipEvent {
     Cancelled,
     /// Player tried to equip an item they don't own / item filter rejected.
     InvalidConfirm,
+    /// Best Equipment (slot-browse row 0) swapped `changed` armament slots.
+    /// Retail cues SFX `0x24` here (`0x801D9B78`).
+    BestEquipmentApplied { changed: u32 },
+    /// Best Equipment found nothing to change - retail's buzz `0x23`
+    /// (`0x801D9B98`).
+    BestEquipmentUnchanged,
 }
 
 /// Phase tag for `EquipEvent::CursorMoved`. Avoids needing a clone of
@@ -122,6 +165,10 @@ pub struct EquipSession {
     /// Active party slot (`0` Vahn, `1` Noa, `2` Gala) the session is editing.
     /// Drives the equip-mask gate when `restrictions` is set.
     active_party_slot: u8,
+    /// Optional weapon-category favour table (`FUN_801DD0C0`'s data, parsed
+    /// by [`crate::menu_item_category::parse_category_table`]). Empty means
+    /// the Best Equipment weapon rank falls back to raw ATK.
+    weapon_category: Vec<crate::menu_item_category::CategoryEntry>,
 }
 
 impl EquipSession {
@@ -145,7 +192,24 @@ impl EquipSession {
             events: Vec::new(),
             restrictions: None,
             active_party_slot: 0,
+            weapon_category: Vec::new(),
         }
+    }
+
+    /// Install the weapon-category favour table the Best Equipment weapon
+    /// rank consults (`FUN_801DD0C0`, ported as
+    /// [`crate::menu_item_category::category_check`]).
+    ///
+    /// Without it the weapon slot ranks on the raw ATK byte alone, which is
+    /// *not* retail: a category-favoured weapon scores a flat
+    /// [`crate::menu_item_category::CATEGORY_MATCH_SCORE`] on top and no ATK
+    /// byte can reach it.
+    pub fn with_weapon_category(
+        mut self,
+        table: Vec<crate::menu_item_category::CategoryEntry>,
+    ) -> Self {
+        self.weapon_category = table;
+        self
     }
 
     /// Construct a session that gates the item list on the disc-pinned equip
@@ -220,6 +284,13 @@ impl EquipSession {
     /// the four unambiguous UI slots (weapon / body / helmet / boots), the
     /// item's disc slot category (`+7`). Otherwise it falls back to the legacy
     /// `id >> 5` placeholder rule.
+    ///
+    /// An **occupied** slot puts the retail **Remove** row first: id
+    /// [`REMOVE_ROW_ID`], the class-`0x4000` payload-`0` entry
+    /// `FUN_801D9C14` tests for at `0x801DA0B4`. An empty slot has nothing
+    /// to remove and the row is absent, which is why retail's buzz-`0x37`
+    /// arm (empty equip byte on the Remove row) is unreachable from this
+    /// list - [`Self::unequip`] keeps the guard anyway.
     pub fn items_for_slot(&self, slot: u8) -> Vec<EquipItem> {
         let mut out: Vec<EquipItem> = self
             .inventory
@@ -239,7 +310,26 @@ impl EquipSession {
             })
             .collect();
         out.sort_by_key(|i| i.id);
+        if self.slot_is_occupied(slot) {
+            out.insert(
+                0,
+                EquipItem {
+                    id: REMOVE_ROW_ID,
+                    slot,
+                    owned: true,
+                },
+            );
+        }
         out
+    }
+
+    /// `true` when equip slot `slot` currently holds an item - the condition
+    /// the Remove row and its draw-side label are both gated on.
+    pub fn slot_is_occupied(&self, slot: u8) -> bool {
+        self.record
+            .equip
+            .get(slot as usize)
+            .is_some_and(|&id| id != 0)
     }
 
     /// Whether `id` is a valid candidate for UI `slot`. Uses the disc-pinned
@@ -276,7 +366,7 @@ impl EquipSession {
                         state: EquipStateKind::SlotPicker,
                         cursor: cursor as u16,
                     });
-                } else if input.down && cursor < 7 {
+                } else if input.down && cursor + 1 < SLOT_BROWSE_ROWS {
                     cursor += 1;
                     self.state = EquipState::SlotPicker { cursor };
                     self.events.push(EquipEvent::CursorMoved {
@@ -284,17 +374,28 @@ impl EquipSession {
                         cursor: cursor as u16,
                     });
                 } else if input.cross {
-                    self.state = EquipState::ItemPicker {
-                        slot: cursor,
-                        cursor: 0,
-                    };
-                    self.events
-                        .push(EquipEvent::EnteredItemPicker { slot: cursor });
-                    // Retail stages the trial equip as the candidate list
-                    // opens, so the stat-compare block is already showing the
-                    // top row's preview on the first frame.
-                    if let Some(item) = self.items_for_slot(cursor).first().copied() {
-                        self.preview_candidate(cursor, item.id);
+                    // Retail's `FUN_801D99F0` recomputes the candidate array
+                    // (`FUN_801CF88C`) *before* dispatching the row, so row 0
+                    // applies a pick made from the state the confirm saw.
+                    let candidates = self.best_equipment_now();
+                    match self.slot_browse_confirm(cursor, candidates) {
+                        SlotBrowseOutcome::BestEquipApplied(changed) => {
+                            self.events
+                                .push(EquipEvent::BestEquipmentApplied { changed });
+                        }
+                        SlotBrowseOutcome::BestEquipNothing => {
+                            self.events.push(EquipEvent::BestEquipmentUnchanged);
+                        }
+                        SlotBrowseOutcome::OpenCandidates { slot } => {
+                            self.state = EquipState::ItemPicker { slot, cursor: 0 };
+                            self.events.push(EquipEvent::EnteredItemPicker { slot });
+                            // Retail stages the trial equip as the candidate
+                            // list opens, so the stat-compare block is already
+                            // showing the top row's preview on the first frame.
+                            if let Some(item) = self.items_for_slot(slot).first().copied() {
+                                self.preview_candidate(slot, item.id);
+                            }
+                        }
                     }
                 } else if input.circle {
                     self.state = EquipState::Done(EquipOutcome::Cancelled);
@@ -329,6 +430,15 @@ impl EquipSession {
                     }
                 } else if input.cross && (cursor as usize) < n {
                     let item = items[cursor as usize];
+                    if item.id == REMOVE_ROW_ID {
+                        // The Remove row commits straight away - retail has
+                        // no Yes/No prompt on it (`0x801DA0B4` writes the
+                        // record byte in the same frame as the confirm).
+                        if self.unequip(slot).is_none() {
+                            self.events.push(EquipEvent::InvalidConfirm);
+                        }
+                        return;
+                    }
                     if !item.owned {
                         self.events.push(EquipEvent::InvalidConfirm);
                         return;
@@ -346,7 +456,10 @@ impl EquipSession {
                     // (`FUN_801d9c14`) rather than re-deriving it here.
                     self.preview_candidate(slot, item.id);
                 } else if input.circle {
-                    self.state = EquipState::SlotPicker { cursor: slot };
+                    // Retail's cancel returns to sub-screen 0x13 with the hand
+                    // back on the slot's own row - row `slot + 1` in the
+                    // Best-Equipment-first row space.
+                    self.state = EquipState::SlotPicker { cursor: slot + 1 };
                 }
             }
             EquipState::Confirm {
@@ -468,12 +581,9 @@ impl EquipSession {
     /// byte zero -> `FUN_80035B50(0x37)`; else SFX `0x24`,
     /// `FUN_800421D4(equipped, 1)`, `sb zero` into the record slot)
     ///
-    /// NOT WIRED: the engine's candidate list has no **Remove** row. Its
-    /// rows come from [`Self::items_for_slot`], which lists owned items
-    /// only, so there is no payload-0 entry for a confirm to land on;
-    /// retail reaches this arm from that row. Wiring it needs the Remove
-    /// row to exist in both the session's row space and the host draw
-    /// builders that index it (`engine-ui::equip_screen_draws_for`).
+    /// Driven from [`Self::input`]'s `ItemPicker` arm: [`Self::items_for_slot`]
+    /// puts the Remove row first on an occupied slot and a confirm on it
+    /// lands here. `engine-ui::equip_screen_draws_for` labels that row.
     pub fn unequip(&mut self, slot: u8) -> Option<u8> {
         let removed = *self.record.equip.get(slot as usize)?;
         if removed == 0 {
@@ -500,30 +610,97 @@ impl EquipSession {
         Some(removed)
     }
 
+    /// The four Best Equipment candidate ids for this session's character,
+    /// in the candidate array's weapon-first order.
+    ///
+    /// The engine's binding of [`best_equipment_candidates`]: the incumbent
+    /// seed is the character's four armament slots
+    /// ([`ARMAMENT_ENGINE_SLOTS`]), the per-id record join comes from the
+    /// session's [`DiscEquipInfo`] + [`EquipmentTable`], and the weapon
+    /// category score comes from the installed favour table
+    /// ([`Self::with_weapon_category`]) or is `0` when none is installed.
+    pub fn best_equipment_now(&self) -> [u8; 4] {
+        let mut equipped = [0u8; 4];
+        for (i, &slot) in ARMAMENT_ENGINE_SLOTS.iter().enumerate() {
+            equipped[i] = self.record.equip.get(slot).copied().unwrap_or(0);
+        }
+        let bag: Vec<(u8, u8)> = {
+            let mut v: Vec<(u8, u8)> = self.inventory.iter().map(|(&id, &n)| (id, n)).collect();
+            v.sort_unstable();
+            v
+        };
+        let char_mask = if self.active_party_slot < 3 {
+            1u8 << self.active_party_slot
+        } else {
+            0
+        };
+        let table = &self.weapon_category;
+        let party_slot = u32::from(self.active_party_slot);
+        best_equipment_candidates(
+            equipped,
+            char_mask,
+            &bag,
+            |id| self.equip_candidate(id),
+            |id| {
+                if table.is_empty() {
+                    0
+                } else {
+                    crate::menu_item_category::category_check(table, party_slot, id, 1)
+                }
+            },
+        )
+    }
+
+    /// Join one bag id into the [`EquipCandidate`] shape the Best Equipment
+    /// scan ranks on. `None` for anything that is not armament-class
+    /// equipment this session can rank.
+    fn equip_candidate(&self, id: u8) -> Option<EquipCandidate> {
+        let m = self.equipment.get(id)?;
+        let clamp = |v: i16| v.clamp(0, 255) as u8;
+        let (char_mask, slot_bits) = match self.restrictions.as_ref().and_then(|r| r.entry(id)) {
+            Some(e) => (e.mask, disc_category_slot_bits(e.category)),
+            // Legacy placeholder table: the id's upper bits name the engine
+            // slot, and only the four armament slots compete.
+            None => {
+                let engine_slot = ((id >> 5) & 0x07) as usize;
+                let armament = ARMAMENT_ENGINE_SLOTS
+                    .iter()
+                    .position(|&s| s == engine_slot)?;
+                (0xFF, ARMAMENT_SLOT_BITS[armament])
+            }
+        };
+        Some(EquipCandidate {
+            kind: 1,
+            attack: clamp(m.atk),
+            defence: (clamp(m.udf), clamp(m.ldf)),
+            char_mask,
+            slot_bits,
+        })
+    }
+
     /// The Equip screen's slot-browse confirm dispatch: row `0` is the
-    /// "Best Equipment" auto-equip, rows `1..=7` open the candidate list
+    /// "Best Equipment" auto-equip, rows `1..` open the candidate list
     /// for slot `row - 1`. (Retail's cancel leaves for the character
     /// picker, sub-screen `0x12`; the engine host owns that transition.)
     ///
     /// `candidates` are the four best-armament ids the retail candidate
-    /// computer `FUN_801CF88C` parks at `DAT_801EF0C0` - the engine host
-    /// supplies its own pick.
+    /// computer `FUN_801CF88C` parks at `DAT_801EF0C0`;
+    /// [`Self::best_equipment_now`] is the engine's producer, and
+    /// [`Self::input`]'s slot-picker confirm arm runs it just before this
+    /// call the way `FUN_801D99F0` does at `0x801D9B60`.
     ///
     /// PORT: FUN_801d99f0 (menu-overlay sub-screen `0x13`; see
     /// `ghidra/scripts/funcs/overlay_menu_801d99f0.txt` - confirm on row 0
     /// runs the applier and cues SFX `0x24` on change / buzz `0x23` on
     /// none, other rows hand off to sub-screen `0x14`)
-    ///
-    /// NOT WIRED: the engine's Equip screen has no selectable row 0. Its
-    /// slot-picker cursor indexes the eight [`EquipSlot`]s directly and
-    /// `engine-ui::equip_screen_draws_for` draws "Best Equipment" as a
-    /// static header above them, so no confirm can carry row `0`. Wiring
-    /// this needs the row-0 entry added to the shared row space - a change
-    /// that shifts every slot index the host draw builders key on.
     pub fn slot_browse_confirm(&mut self, row: u8, candidates: [u8; 4]) -> SlotBrowseOutcome {
-        if row == 0 {
-            let changed =
-                apply_best_equipment(&mut self.record.equip, candidates, &mut self.inventory);
+        if row == SLOT_BROWSE_BEST_ROW {
+            let changed = apply_best_equipment(
+                &mut self.record.equip,
+                candidates,
+                ARMAMENT_ENGINE_SLOTS,
+                &mut self.inventory,
+            );
             if changed > 0 {
                 self.preview_stats = compute_battle_stats(
                     &self.record,
@@ -537,11 +714,25 @@ impl EquipSession {
             }
         } else {
             SlotBrowseOutcome::OpenCandidates {
-                slot: (row - 1).min(7),
+                slot: (row - 1).min(EQUIP_SLOTS - 1),
             }
         }
     }
 }
+
+/// The `+7 & 0x60` slot bits a parsed disc equip category carries.
+fn disc_category_slot_bits(cat: legaia_asset::equip_stats::EquipSlot) -> u8 {
+    use legaia_asset::equip_stats::EquipSlot as Disc;
+    match cat {
+        Disc::Body => 0x00,
+        Disc::Head => 0x20,
+        Disc::Weapon => 0x40,
+        Disc::Footwear => 0x60,
+    }
+}
+
+/// `+7 & 0x60` bits per armament index, the inverse of [`armament_slot_of`].
+const ARMAMENT_SLOT_BITS: [u8; 4] = [0x40, 0x20, 0x00, 0x60];
 
 /// The **armament** slot a piece of equipment competes for, in the order the
 /// Best Equipment candidate array `DAT_801EF0C0` uses.
@@ -552,9 +743,6 @@ impl EquipSession {
 /// permutation is a four-way branch chain in the body, not a table.
 ///
 /// PORT: FUN_801cf88c (`0x801CFA38..0x801CFA64`)
-///
-/// NOT WIRED: only [`best_equipment_candidates`] consumes this permutation,
-/// and that scan is itself unreached - see its tag for the missing row.
 pub fn armament_slot_of(slot_bits: u8) -> usize {
     // raw 0 body -> 2, 1 head -> 1, 2 weapon -> 0, 3 footwear -> 3.
     [2usize, 1, 0, 3][((slot_bits & 0x60) >> 5) as usize]
@@ -614,11 +802,9 @@ pub struct EquipCandidate {
 /// REF: FUN_801dd0c0 (the category check `weapon_category_score` binds;
 /// ported as `crate::menu_item_category::category_check`)
 ///
-/// NOT WIRED: its only caller would be the Equip screen's row-0 confirm
-/// ([`EquipSession::slot_browse_confirm`]), and the engine's slot picker
-/// has no row 0 - see that method's tag. Nothing else in the engine asks
-/// for a best-per-armament-slot pick, so the four-id candidate array
-/// (retail `DAT_801EF0C0`) has no producer *or* consumer.
+/// Bound by [`EquipSession::best_equipment_now`], which the slot-picker's
+/// row-0 confirm runs before dispatching to
+/// [`EquipSession::slot_browse_confirm`].
 pub fn best_equipment_candidates(
     equipped: [u8; 4],
     char_mask: u8,
@@ -681,23 +867,29 @@ pub enum SlotBrowseOutcome {
 /// swap, no count), return the old item when non-zero, and write the
 /// candidate into the slot. Returns the number of slots changed.
 ///
+/// `armament_slots` names the equip-array index each armament index writes.
+/// Retail does the same indirection through `DAT_801E43E8[i]` (and, for the
+/// weapon, the per-character halfword at `DAT_8007B42C + char*2`) rather
+/// than writing byte `i` - see the `bne s1,zero` / `lbu v1,0x0(v0)` pair at
+/// `0x801CF7B4..0x801CF7C8`. The engine needs it for a second reason: its
+/// equip array inserts a Hand Guard slot retail has no row for, so footwear
+/// is index `4` ([`ARMAMENT_ENGINE_SLOTS`]).
+///
 /// PORT: FUN_801cf760 (see `ghidra/scripts/funcs/overlay_menu_801cf760.txt`:
 /// per-slot `beq candidate, equipped` skip, `FUN_80042EE0` bag-slot find
 /// with the `0x100` not-found sentinel, `FUN_80043048(slot, 1)` take,
 /// `FUN_800421D4(old, 1)` give-back, `sb` commit, changed-count return)
 /// REF: FUN_801cf88c (the best-candidate computer filling `DAT_801EF0C0` -
 /// ported as [`best_equipment_candidates`])
-///
-/// NOT WIRED: reached only from [`EquipSession::slot_browse_confirm`]'s
-/// row-0 arm, and the engine's slot picker has no row 0 - see that
-/// method's tag.
 pub fn apply_best_equipment(
     equips: &mut [u8; 8],
     candidates: [u8; 4],
+    armament_slots: [usize; 4],
     inventory: &mut HashMap<u8, u8>,
 ) -> u32 {
     let mut changed = 0;
-    for (slot, &candidate) in candidates.iter().enumerate() {
+    for (armament, &candidate) in candidates.iter().enumerate() {
+        let slot = armament_slots[armament];
         let equipped = equips[slot];
         if candidate == equipped {
             continue;
@@ -804,7 +996,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_picker_clamps_cursor_to_seven_on_down() {
+    fn slot_picker_clamps_cursor_to_the_last_slot_row_on_down() {
         let mut s = fresh_session();
         for _ in 0..20 {
             s.input(EquipInput {
@@ -812,12 +1004,23 @@ mod tests {
                 ..Default::default()
             });
         }
-        assert_eq!(s.state(), EquipState::SlotPicker { cursor: 7 });
+        assert_eq!(
+            s.state(),
+            EquipState::SlotPicker {
+                cursor: SLOT_BROWSE_ROWS - 1
+            }
+        );
     }
 
+    /// Row `n` of the browse space opens slot `n - 1`: the row space leads
+    /// with Best Equipment, so the first slot needs one Down first.
     #[test]
-    fn cross_in_slot_picker_opens_item_picker() {
+    fn cross_on_a_slot_row_opens_that_slots_item_picker() {
         let mut s = fresh_session();
+        s.input(EquipInput {
+            down: true,
+            ..Default::default()
+        });
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -826,6 +1029,26 @@ mod tests {
             s.state(),
             EquipState::ItemPicker { slot: 0, cursor: 0 }
         ));
+    }
+
+    /// Row 0 is Best Equipment and never opens a picker - with nothing
+    /// worth swapping it reports the retail buzz case and stays put.
+    #[test]
+    fn cross_on_row_zero_runs_best_equipment_instead_of_a_picker() {
+        let mut s = fresh_session();
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.state(), EquipState::SlotPicker { cursor: 0 });
+        let evs = s.drain_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                EquipEvent::BestEquipmentApplied { .. } | EquipEvent::BestEquipmentUnchanged
+            )),
+            "row 0 confirm must report a Best Equipment outcome, got {evs:?}"
+        );
     }
 
     #[test]
@@ -961,6 +1184,8 @@ mod tests {
     #[test]
     fn cross_in_item_picker_advances_to_confirm_with_preview() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         // Open slot 0's item picker.
         s.input(EquipInput {
             cross: true,
@@ -1005,6 +1230,7 @@ mod tests {
             Vec::new(),
         );
         // Open slot 0's picker, then confirm item 0x05.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1024,6 +1250,8 @@ mod tests {
     #[test]
     fn cross_yes_in_confirm_commits_swap_and_writes_record() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1056,6 +1284,8 @@ mod tests {
     #[test]
     fn right_in_confirm_moves_cursor_to_no_then_cross_returns_to_item_picker() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1087,6 +1317,8 @@ mod tests {
     #[test]
     fn circle_in_confirm_returns_to_item_picker_without_committing() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1106,6 +1338,8 @@ mod tests {
     #[test]
     fn commit_decrements_new_item_and_restores_old_inventory() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         // Pre-equip slot 0 with 0x05 to test the "restore old" path.
         s.give_item(0x06, 1);
         s.equipment.set(
@@ -1120,12 +1354,14 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        // Item picker shows two items now (0x05 and 0x06). Pick the
-        // second (0x06).
-        s.input(EquipInput {
-            down: true,
-            ..Default::default()
-        });
+        // The slot is occupied, so the list is [Remove, 0x05, 0x06]. Step
+        // down twice to land on 0x06.
+        for _ in 0..2 {
+            s.input(EquipInput {
+                down: true,
+                ..Default::default()
+            });
+        }
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1145,6 +1381,8 @@ mod tests {
     #[test]
     fn commit_recomputes_battle_stats() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1164,6 +1402,8 @@ mod tests {
     #[test]
     fn item_picker_circle_returns_to_slot_picker() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             cross: true,
             ..Default::default()
@@ -1172,12 +1412,15 @@ mod tests {
             circle: true,
             ..Default::default()
         });
-        assert!(matches!(s.state(), EquipState::SlotPicker { cursor: 0 }));
+        // Back on the slot's own browse row, which is `slot + 1`.
+        assert!(matches!(s.state(), EquipState::SlotPicker { cursor: 1 }));
     }
 
     #[test]
     fn drain_events_empties_buffer() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.input(EquipInput {
             down: true,
             ..Default::default()
@@ -1190,6 +1433,8 @@ mod tests {
     #[test]
     fn item_picker_cursor_clamps_to_list_length() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         s.give_item(0x06, 1);
         s.input(EquipInput {
             cross: true,
@@ -1219,7 +1464,12 @@ mod tests {
         let mut inv = HashMap::new();
         inv.insert(0x26, 1);
         // Slot 2's candidate 0x45 is NOT in the bag - skipped, no count.
-        let changed = apply_best_equipment(&mut equips, [0x05, 0x26, 0x45, 0], &mut inv);
+        let changed = apply_best_equipment(
+            &mut equips,
+            [0x05, 0x26, 0x45, 0],
+            ARMAMENT_ENGINE_SLOTS,
+            &mut inv,
+        );
         assert_eq!(changed, 1);
         assert_eq!(equips[0], 0x05);
         assert_eq!(equips[1], 0x26);
@@ -1253,6 +1503,8 @@ mod tests {
     #[test]
     fn unequip_returns_item_to_bag_and_refuses_empty_slot() {
         let mut s = fresh_session();
+        // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
+        s.state = EquipState::SlotPicker { cursor: 1 };
         // Equip 0x05 into slot 0 first (bag holds one).
         s.input(EquipInput {
             cross: true,
@@ -1276,6 +1528,81 @@ mod tests {
         assert_eq!(s2.inventory().get(&0x05), Some(&1));
         // Already-empty slot refuses (retail buzz 0x37, no commit).
         assert_eq!(s2.unequip(1), None);
+    }
+
+    /// The applier writes the armament's *record* slot, not its own loop
+    /// index. Retail reaches it through `DAT_801E43E8`; the engine's
+    /// equivalent has to skip the Hand Guard slot, so footwear lands on
+    /// engine slot 4 and slot 3 is never touched by Best Equipment.
+    #[test]
+    fn best_equipment_writes_footwear_to_the_boot_slot_not_the_hand_guard() {
+        let mut equips = [0u8; 8];
+        let mut inv = HashMap::new();
+        inv.insert(0x60, 1);
+        let changed = apply_best_equipment(
+            &mut equips,
+            [0, 0, 0, 0x60],
+            ARMAMENT_ENGINE_SLOTS,
+            &mut inv,
+        );
+        assert_eq!(changed, 1);
+        assert_eq!(equips[3], 0, "hand guard must stay untouched");
+        assert_eq!(equips[4], 0x60, "footwear belongs to the boot slot");
+    }
+
+    /// The candidate list's Remove row exists exactly while the slot holds
+    /// something, and confirming it runs the retail Remove commit.
+    #[test]
+    fn remove_row_appears_only_on_an_occupied_slot_and_confirming_it_unequips() {
+        let mut s = fresh_session();
+        assert_eq!(
+            s.items_for_slot(0).first().map(|i| i.id),
+            Some(0x05),
+            "an empty slot has no Remove row"
+        );
+        s.record.equip[0] = 0x05;
+        let rows = s.items_for_slot(0);
+        assert_eq!(rows[0].id, REMOVE_ROW_ID);
+        assert!(rows[0].owned, "the Remove row is always confirmable");
+
+        s.state = EquipState::ItemPicker { slot: 0, cursor: 0 };
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.record().equip[0], 0);
+        assert_eq!(
+            s.outcome(),
+            Some(EquipOutcome::Committed {
+                slot: 0,
+                removed: 0x05,
+                added: 0,
+            })
+        );
+    }
+
+    /// Row 0's confirm has to compute the candidates first - the engine's
+    /// producer is `best_equipment_now`, and it must find a strictly better
+    /// bag weapon the same way `FUN_801CF88C` does.
+    #[test]
+    fn best_equipment_now_seeds_from_the_worn_armaments_and_beats_them() {
+        let mut s = fresh_session();
+        s.record.equip[0] = 0x05; // worn weapon, ATK +5
+        s.give_item(0x06, 1);
+        s.equipment.set(
+            0x06,
+            ItemModifier {
+                atk: 40,
+                ..Default::default()
+            },
+        );
+        assert_eq!(s.best_equipment_now()[0], 0x06);
+        s.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.record().equip[0], 0x06);
+        assert_eq!(s.inventory().get(&0x05), Some(&2));
     }
 
     #[test]

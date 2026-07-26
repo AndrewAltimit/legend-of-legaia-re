@@ -175,8 +175,8 @@
 "8005fe18" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+0x14)(4,param)"
 "8005fe7c" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+0x10)()"
 "8005feac" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+0x18)()"
-"8005a78c" = "Pad / SIO init (SIO MMIO + RX/TX buffer clear)"
-"8005abd0" = "Pad-protocol-phase handshake (digital-pad protocol selector)"
+"8005a78c" = "ResetGraph worker, NOT pad/SIO init - the corrected reading; it is the body the public ResetGraph 80057c44 calls for the GPU type it caches at 0x80078D54. Bracketed by two FUN_8005FF04 IRQ-mask swaps; mode&7==0 issues GP1 0x00 (GPU reset) through *0x80078E28 and clears the GP1 command shadow at 0x801C948C (0x100 B) plus the libgpu command ring at 0x801C9590 (0x1800 B); modes 1/3/5 only re-arm DMA channel 2 (CHCR 0x401 via *0x80078E34, DPCR |= 0x800 via *0x80078E44) and issue GP1 0x02 + 0x01. Every register is GP0/GP1/DMA, none is SIO. engine-render resets through wgpu. see ghidra/scripts/funcs/8005a78c.txt"
+"8005abd0" = "libgpu GPU type probe, NOT a pad-protocol handshake - the corrected reading. Issues GP1 0x10000007 (GPU info selector 7) through *0x80078E28; GPUREAD (*0x80078E24) reading 2 yields type 3, or 4 after a GP1 0x09000001 write when the caller bit 0x8 is set. Otherwise it writes GP0 0xE1001000 and re-reads GPUSTAT: bit 0x1000 clear yields 0, set yields 1, or 2 after a GP1 0x20000504 write under the same caller bit. The value 8005a78c returns and 80057c44 caches at 0x80078D54. see ghidra/scripts/funcs/8005abd0.txt"
 "8005bd70" = "getLoc-equivalent state-buffer getter (returns &DAT_800793c8)"
 "8005befc" = "CdControl wrapper (FUN_8005befc(2,...) issues CdlSetloc)"
 "8005c2c4" = "CdDiskReady (wraps 8005d9a0)"
@@ -223,7 +223,7 @@
 "8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
 "80059010" = "SetDrawMode primitive constructor: fills a DR_MODE primitive (GP0 0xE1 texture-page word via 80059510, GP0 0xE2 texture-window word via 80059744). 1:1 PsyQ libgpu shape; engine-render emits its own GP0 draw-mode / tpage state"
 "80057c44" = "ResetGraph (vtable dispatch + dev-string printf wrapper)"
-"80057fec" = "GetGraphDebug (returns DAT_80078d54)"
+"80057fec" = "GetGraphType, NOT GetGraphDebug - four instructions returning the byte at 0x80078D54. That byte is the GPU TYPE: the public ResetGraph 80057c44 stores 8005a78c's return into it and indexes the per-type framebuffer-limit tables 0x80078DD4 / 0x80078DE8 by type*4, and the GetTPage / SetDrawMode packers branch on it being 1 or 2. The debug level is the separate byte 0x80078D56 that 80057edc writes"
 "80057edc" = "SetGraphDebug(level): latches the u8 arg into the libgpu debug-level byte 0x80078D56, returns the previous value, and on a non-zero level calls the diagnostic handler through the function pointer at 0x80078D50 with (dev format string 0x80015620, level, 0x80078D54, 0x80078D57). Sibling of the already-listed GetGraphDebug 80057fec; no game state, and retail runs at level 0 so the jalr never fires. see ghidra/scripts/funcs/80057edc.txt"
 "8005800c" = "DrawSyncCallback"
 "80058068" = "SetDispMask"
@@ -830,6 +830,10 @@
 # epilogue, so `jr ra` in the stream is not evidence of a callable entry.
 # See `docs/tooling/worklist-classification.md`.
 [worklist_interior]
+"801e28c4" = "INTERIOR: the field VM wait join inside FUN_801DE840; sole predecessor is a `j` at 0x801E1B04, no own frame"
+"801efea0" = "INTERIOR: the tile-board walk SM render tail inside FUN_801EF2B0; 19 in-body branches, runs to that function's epilogue at 0x801F03E8"
+"801ed2d4" = "INTERIOR: shared exit tail of FUN_801ECD0C (world-map picker); Ghidra minted an entry here and cut the parent body at the jump"
+"801dab7c" = "INTERIOR: exit tail of FUN_801DA780 (initiative seeder) in the battle-action image; the citing dump overlay_0897_801ff930 is mis-based by +0x25000"
 "801d567c" = "frameless mid-function fragment (first insn slt reads callee-saved s0/s2, no prologue)"
 "801d56d4" = "1-byte/0-insn stub; decompiled body reads unaff_s2/in_v0/in_v1 (interior citation fragment)"
 "801d9804" = "first insn 'break 0x1c00' signed-division overflow trap idiom - mid-function, never an entry"
@@ -1565,3 +1569,96 @@
 # 801cfe98 under [libcd] beside the sibling shape it forwards into, 801d0230
 # under [va_aliased_overlay_local], and 801d84b4 removed from the list - see
 # that section for the field-overlay body the PADDING reading was deleting.
+
+
+# Statically-linked PsyQ libgpu. The older [libgs] section above is the same
+# tier under a misnomer - it already holds ClearImage, LoadImage, StoreImage,
+# MoveImage, DrawOTag, PutDrawEnv, ResetGraph and the OT coordinate packers,
+# none of which is libgs - so read the two sections as one family. Every row
+# below is a SCOPE claim: each dump resolves entry=<the queried VA> in
+# SCUS_942.54 with its own `jr ra`, so these are real routines, and the claim is
+# only that `crates/engine-render` covers them another way. It emits wgpu
+# directly against a software PSX VRAM (1024x512 R16Uint with per-primitive
+# CBA/TSB decode in the fragment shader), so there is no GP0/GP1 port, no
+# ordering table, no packet pool and no DMA channel to program. Nothing in the
+# whole dump corpus carries a `jal` to any address in the 0x80057358..0x80057B98
+# macro band, which is what link residue looks like.
+[libgpu]
+"80057358" = "GetTPage(tp, abr, x, y) tpage-word packer. Two arms selected by the cached GPU version through jal 0x80057fec: version 1/2 returns (tp&3)<<9 | (abr&3)<<7 | (y&0x300)>>3 | (x&0x3ff)>>6, otherwise the tp/abr fields sit two bits lower (<<7 / <<5), y bit 0x100 lands at bit 4 and y bit 0x200 at bit 11. The port reads tpage/CLUT fields out of TMD primitive words instead of packing them. see ghidra/scripts/funcs/80057358.txt"
+"80057428" = "GetClut(x, y) CLUT-word packer, six instructions with no branch: sll v0,a1,0x6 / sra a0,a0,0x4 / andi a0,a0,0x3f / or / andi 0xffff, i.e. (y<<6) | ((x>>4)&0x3f). NB the decompiled C renders a phantom (y & 0x3ff) mask the instruction stream does not contain. engine-render decodes the CBA field, never builds it. see ghidra/scripts/funcs/80057428.txt"
+"80057440" = "libgpu tpage-word diagnostic dumper: re-splits a packed tpage per GPU version and reports the four fields through the installed printf hook *0x80078D50 with format string 0x800154D0. Retail leaves the hook unused; the port logs through tracing. see ghidra/scripts/funcs/80057440.txt"
+"80057510" = "libgpu CLUT-word diagnostic dumper: sixteen instructions reporting ((clut&0x3f)<<4, (clut&0xffff)>>6) through the printf hook *0x80078D50 with format string 0x800154E8. Sibling of 80057440. see ghidra/scripts/funcs/80057510.txt"
+"80057550" = "PsyQ nextPrim(p) macro, out of line: lw the primitive tag, mask to 0x00FFFFFF, or 0x80000000, jr ra. The engine has no ordering table, so no tag to follow. see ghidra/scripts/funcs/80057550.txt"
+"8005756c" = "PsyQ isendprim(p) macro, out of line: (tag & 0xFFFFFF) == 0xFFFFFF via and/xor/sltiu. OT terminator test; no OT in the port. see ghidra/scripts/funcs/8005756c.txt"
+"80057588" = "PsyQ addPrim(ot, p) macro, out of line: writes p[0] = (p[0] & 0xFF000000) | (ot[0] & 0xFFFFFF) then ot[0] = (ot[0] & 0xFF000000) | (p & 0xFFFFFF), preserving each word's length byte. The OT insert every libgpu submit ends with; engine-render appends to a wgpu draw list. see ghidra/scripts/funcs/80057588.txt"
+"80057600" = "PsyQ setaddr(p, addr) macro, out of line: p[0] = (p[0] & 0xFF000000) | (addr & 0xFFFFFF). see ghidra/scripts/funcs/80057600.txt"
+"80057624" = "PsyQ termPrim(p) macro, out of line: p[0] |= 0xFFFFFF, six instructions. Marks the OT tail; no OT in the port. see ghidra/scripts/funcs/80057624.txt"
+"8005763c" = "PsyQ SetSemiTrans(p, abe) macro, out of line: branches on the second argument to set or clear bit 0x02 of the GP0 code byte at prim+0x7. engine-render selects blending as wgpu pipeline state. see ghidra/scripts/funcs/8005763c.txt"
+"80057664" = "PsyQ SetShadeTex(p, tge) macro, out of line: the bit-0x01 twin of 8005763c on the same code byte at prim+0x7 (raw-texture / shading-disable flag). see ghidra/scripts/funcs/80057664.txt"
+"8005768c" = "First of the 21 per-primitive-type initialiser leaves spanning 0x8005768C..0x8005785F (seventeen 20-byte leaves at a 0x14 stride to 0x800577CC, then four 32-byte ones). This one is five instructions: sb 4 at prim+0x3 (packet word length), sb 0x20 at prim+0x7 (GP0 code = flat triangle), jr ra. One leaf per (length, code) pair the library ships; the port builds vertex buffers, not GP0 packets. see ghidra/scripts/funcs/8005768c.txt"
+"800577cc" = "Last of the seventeen 20-byte initialiser leaves in the 8005768c family - five instructions: sb 4 at prim+0x3, sb 0x50 at prim+0x7, jr ra. see ghidra/scripts/funcs/800577cc.txt"
+"800577e0" = "Per-primitive-type initialiser leaf, the 32-byte form: sb 5 at prim+0x3, sb 0x48 at prim+0x7, and sw 0x55555555 into the packet tail at prim+0x14. Same family as 8005768c. see ghidra/scripts/funcs/800577e0.txt"
+"80057800" = "Per-primitive-type initialiser leaf, 32-byte form: sb 7 at prim+0x3, sb 0x58 at prim+0x7, sw 0x55555555 at prim+0x1c. Same 8005768c family. see ghidra/scripts/funcs/80057800.txt"
+"80057820" = "Per-primitive-type initialiser leaf, 32-byte form: sb 6 at prim+0x3, sb 0x4C at prim+0x7, sw 0x55555555 at prim+0x18. Same 8005768c family. see ghidra/scripts/funcs/80057820.txt"
+"80057840" = "Per-primitive-type initialiser leaf, the longest form: sb 9 at prim+0x3, sb 0x5C at prim+0x7, sw 0x55555555 at prim+0x24. Last member of the 8005768c family. see ghidra/scripts/funcs/80057840.txt"
+"80057860" = "SetDrawMode(p, dfe, dtd, tpage) GP0 0xE1 word builder. Stores length 1 at prim+0x3 and the command word at prim+0x4; on the newer GPU 0xE1000000 | (tpage & 0x9FF) with the third argument (dtd) at bit 0x200 and the second (dfe) at bit 0x400, and on version 1/2 the same two fields two bits higher (0x800 / 0x1000) under mask 0x27FF. Bit 0x200 is the hardware dither the port gates behind Renderer::set_psx_mode rather than a GP0 word. see ghidra/scripts/funcs/80057860.txt"
+"80057b98" = "DumpDispEnv-shaped diagnostic: four printf-hook calls reporting a DISPENV - disp rect from +0x0..0x6, screen rect from +0x8..0xE, then the isinter and isrgb24 bytes at +0x10 / +0x11 - through *0x80078D50 with format strings 0x80015550 / 0x8001556C / 0x80015588 / 0x80015594. The port has no DISPENV; the wgpu surface carries the mode. see ghidra/scripts/funcs/80057b98.txt"
+"80059878" = "GPUSTAT read: six instructions, lw through the GP1 pointer at 0x80078E28 and jr ra. The poll every spin in this layer runs; the port has no status register to wait on. see ghidra/scripts/funcs/80059878.txt"
+"80059890" = "ClearOTagR proper - the OTC-DMA half behind the public entry 8005860c already listed under [libgs]. Enables DMA channel 6 in DPCR (*0x80078E44 |= 0x08000000), zeroes its CHCR (*0x80078E40), sets MADR (*0x80078E38) to ot + n*4 - 4 and BCR (*0x80078E3C) to n, then starts 0x11000002 (decrementing address, immediate sync) so the hardware links the ordering table backwards; spins on CHCR bit 0x01000000 under the already-ignored timeout 8005aa64, returning n or -1. Reverse-linking an OT has no analogue in a wgpu draw list. see ghidra/scripts/funcs/80059890.txt"
+"80059978" = "ClearImage - a VRAM rectangle fill, not a CPU-to-VRAM transfer (the LoadImage/StoreImage pairing this address used to carry was wrong; LoadImage is 80059bd4, already listed under [libgs]). Clamps rect+0x4/+0x6 against the framebuffer limits 0x80078D58/0x80078D5A, then assembles a GP0 packet at 0x801C9448 and kicks it through the linked-list DMA 8005a120: a five-word fast form using GP0 0x02 when rect.x and rect.w are both 64-aligned, otherwise an eight-word form using GP0 0x60 wrapped in 0xE1/0xE3/0xE4FFFFFF/0xE5/0xE6. engine-render clears through a wgpu render pass. see ghidra/scripts/funcs/80059978.txt"
+"80059e10" = "StoreImage - VRAM to CPU. Arms the timeout 8005aa30, clamps rect+0x4/+0x6 against 0x80078D58/0x80078D5A, converts w*h pixels into (w*h+1)/2 words split into 16-word blocks plus a remainder, issues GP0 0x01 then GP0 0xC0 with the two rect words, drains the remainder from GPUREAD word by word, and moves the blocks by DMA channel 2 (GP1 0x04000003, BCR = blocks<<16 | 0x10, CHCR 0x01000200). The port reads back from its own software VRAM texture. see ghidra/scripts/funcs/80059e10.txt"
+"8005a094" = "GP1 command issue plus shadow cache: writes the command word to *0x80078E28 and stores its low byte at 0x801C948C + (cmd >> 24) so a later query answers without re-reading the port. Ten instructions. see ghidra/scripts/funcs/8005a094.txt"
+"8005a0d0" = "Direct GP0 FIFO write: GP1 0x04000000 (DMA direction off) through *0x80078E28, then a word loop copying count words from the caller list into *0x80078E24. The CPU-side fallback under the DMA kick 8005a120. see ghidra/scripts/funcs/8005a0d0.txt"
+"8005a120" = "Linked-list DMA kick on channel 2: GP1 0x04000002 (direction CPU to GP0), MADR (*0x80078E2C) from the argument, BCR (*0x80078E30) cleared, CHCR (*0x80078E34) 0x01000401 - sync mode 2, from RAM, start. Nineteen instructions, no spin. see ghidra/scripts/funcs/8005a120.txt"
+"8005a16c" = "GPU-info read: writes GP1 0x10000000 | selector and returns GPUREAD & 0x00FFFFFF. Twelve instructions. Used by the ClearImage packet builder 80059978 to fetch the live draw-area/offset words. see ghidra/scripts/funcs/8005a16c.txt"
+"8005a19c" = "Three-argument shim into the already-ignored libgpu command-queue enqueue 8005a1c0: move a3,a2 then clear a2, i.e. forwards (a0, a1, 0, a2) so the queue entry takes no inline copy. Nine instructions. see ghidra/scripts/funcs/8005a19c.txt"
+
+
+# PSX BIOS interrupt-callback infrastructure (libapi), the tier under every
+# InterruptCallback / DMACallback registration in the binary. State block at
+# 0x800797D8; hardware register pointers 0x8007A864 I_STAT, 0x8007A868 I_MASK,
+# 0x8007A86C DPCR, 0x8007A89C DICR. The clean-room port has no interrupts at
+# all: `engine-render` drives frames from the winit event loop and
+# `engine-audio` from the cpal output callback, so there is no vector to hook,
+# no I_MASK to shadow and no per-IRQ fan-out table to walk. Every row is a
+# SCOPE claim - each dump resolves entry=<the queried VA> in SCUS_942.54 with
+# its own frame and `jr ra`, so the routines are real and only the port
+# coverage is being asserted. The two rows the worklist showed first-cited from
+# a sibling in the same band (800604b8 from 8005fffc, 80060550 from 800604f8)
+# were checked for the label-call idiom and are not interior: 800604b8 appears
+# in 8005fffc only as a `jal` target at 0x80060050 and 0x800601B8, and
+# 80060550 only as a lui/addiu-materialised data pointer passed to the
+# registration trampoline 8005fdb8 - both bodies open their own frame.
+[kernel_callback]
+"8005ff20" = "ResetCallback-shaped init of the whole tier. No-ops when the enabled halfword at 0x800797D8 is already set; otherwise zeroes I_MASK, seeds DPCR 0x33333333, zero-fills the 0x41A-word state block via 8006046c, runs setjmp (A0 0x13 veneer 800604e8) on the buffer at 0x80079810 and enters the root handler 8005fffc on the non-zero return, seeds the buffer stack slot 0x80079814 = 0x8007A7F0, installs the hook via HookEntryInt (B0 0x19 veneer 800604d8), raises the enabled halfword, calls both fan-out installers and publishes their RETURN VALUES through the pointer at 0x8007A860 (+0x14 and +0x4), calls the A0 0x72 veneer, ExitCriticalSection, returns 0x800797D8. see ghidra/scripts/funcs/8005ff20.txt"
+"8005fffc" = "Root IRQ handler, entered by longjmp from the kernel exception hook. Prints a diagnostic (format 0x80015CD0) and calls ReturnFromException when the enabled halfword is clear; otherwise raises the in-handler flag 0x800797DA and loops recomputing pending = I_STAT & shadow(0x80079808) & I_MASK, acking each set bit in I_STAT and jalr-ing the slot at 0x800797DC + irq*4 for eleven slots. A watchdog at 0x8007A870 counts rounds that leave IRQs pending and past 0x800 prints and force-clears I_STAT. see ghidra/scripts/funcs/8005fffc.txt"
+"800601e4" = "InterruptCallback core, (irq, handler) -> previous. Early-returns when the handler is unchanged or the tier is uninitialised; otherwise zeroes I_MASK, writes the slot at 0x800797DC + irq*4, sets or clears bit (1 << irq) in both I_MASK and the shadow 0x80079808, and re-arms the kernel side with (handler == 0) as the flag - IRQ 0 through 8005fd68 then 8005fd78(3, flag), IRQs 4/5/6 through 8005fd78(0..2, flag). see ghidra/scripts/funcs/800601e4.txt"
+"80060338" = "StopCallback-shaped teardown. EnterCriticalSection, saves I_MASK to 0x8007980A and DPCR to 0x8007980C, zeroes I_MASK and writes the zero on to I_STAT, clears every DMA enable in DPCR (& 0x77777777), calls ResetEntryInt (B0 0x18 veneer 800604c8) and clears the enabled halfword. see ghidra/scripts/funcs/80060338.txt"
+"800603e4" = "RestartCallback-shaped resume, the inverse of 80060338. No-ops when the enabled halfword is already set; otherwise re-hooks with HookEntryInt (800604d8) on the same 0x80079810 buffer, raises the halfword, restores I_MASK from 0x8007980A and DPCR from 0x8007980C, ExitCriticalSection. see ghidra/scripts/funcs/800603e4.txt"
+"8006046c" = "Word-fill-with-zero loop, (ptr, n_words), eleven instructions. The copy the callback-system init 8005ff20 uses to clear its 0x41A-word state block. Byte-identical to 800605f4 and 8006089c modulo branch targets - one emitted per calling link unit. see ghidra/scripts/funcs/8006046c.txt"
+"800605f4" = "Second byte-identical copy of the 8006046c word-fill loop, called by the VBlank fan-out installer 800604f8 to clear the eight-slot table at 0x8007A874. see ghidra/scripts/funcs/800605f4.txt"
+"8006089c" = "Third byte-identical copy of the 8006046c word-fill loop, called by the DMA fan-out installer 80060620 to clear the eight-word table at 0x8007A8A0. see ghidra/scripts/funcs/8006089c.txt"
+"800604a0" = "BIOS A-vector veneer: li t2,0xA0 / jr t2 / li t1,0x72 (_96_remove). Three instructions, called once from 8005ff20. see ghidra/scripts/funcs/800604a0.txt"
+"800604b8" = "BIOS B-vector veneer: li t2,0xB0 / jr t2 / li t1,0x17 (ReturnFromException). Three instructions. Reached only as a jal target from the root handler 8005fffc at 0x80060050 and 0x800601B8 - a real entry, not the Ghidra label-call idiom. see ghidra/scripts/funcs/800604b8.txt"
+"800604c8" = "BIOS B-vector veneer: li t2,0xB0 / jr t2 / li t1,0x18 (ResetEntryInt). Three instructions, called from the teardown 80060338. see ghidra/scripts/funcs/800604c8.txt"
+"800604d8" = "BIOS B-vector veneer: li t2,0xB0 / jr t2 / li t1,0x19 (HookEntryInt). Three instructions, called from 8005ff20 and 800603e4. see ghidra/scripts/funcs/800604d8.txt"
+"800604e8" = "BIOS A-vector veneer: li t2,0xA0 / jr t2 / li t1,0x13 (setjmp). Three instructions; 8005ff20 branches on its return to enter the root handler, which is how the exception path longjmps back in. see ghidra/scripts/funcs/800604e8.txt"
+"800604f8" = "VBlank fan-out installer. Zeroes the eight-slot table at 0x8007A874 via 800605f4, seeds 0x107 through the pointer at 0x8007A898, clears the tick counter 0x8007A894, registers the dispatcher 80060550 on IRQ 0 through the trampoline 8005fdb8, and returns the code pointer 0x800605C8 that 8005ff20 publishes at record +0x14. see ghidra/scripts/funcs/800604f8.txt"
+"80060550" = "VBlank fan-out dispatcher, registered on IRQ 0 by 800604f8. Increments the tick counter 0x8007A894 then walks the eight slots at 0x8007A874 jalr-ing each non-null one. Thirty instructions with its own frame. The port ticks from the winit redraw callback. see ghidra/scripts/funcs/80060550.txt"
+"80060620" = "DMA fan-out installer. Zeroes the eight-word table at 0x8007A8A0 via 8006089c, clears DICR (*0x8007A89C), registers the dispatcher 80060670 on IRQ 3 through 8005fdb8, and returns 800607f4 - the DMACallback core 8005ff20 publishes at record +0x4. see ghidra/scripts/funcs/80060620.txt"
+"80060670" = "DMA fan-out dispatcher, registered on IRQ 3. Takes (DICR >> 24) & 0x7F as the pending set and for each of the seven channels it walks acks the flag (writing DICR back with only that channel's flag preserved) and jalr-s the slot from 0x8007A8A0, re-reading DICR until the set empties. A bus-error tail (DICR & 0xFF000000 == 0x80000000, or DICR & 0x8000) prints the DICR word plus seven channel register triples through the printf hook. see ghidra/scripts/funcs/80060670.txt"
+"800607f4" = "DMACallback core, (channel, handler) -> previous, a frameless leaf. The DMA-side twin of 800601e4 on the 0x8007A8A0 table: installs the slot, then rewrites DICR as (dicr & 0x00FFFFFF) | 0x00800000 with bit channel+0x10 set or cleared. The 0x00FFFFFF mask drops every pending channel-IRQ flag from the written value so the update never acks one, and 0x00800000 re-asserts the master enable each time. see ghidra/scripts/funcs/800607f4.txt"
+
+# The two SsAPI channel-volume entry points of the `SsSeqCalc` band. Their
+# siblings are already ignored one section up - `80064890` (the whole-sequence
+# volume setter) and `800683d8` (the getter) - and these are the per-`(sep,
+# seq)` forms of the same two calls, reached by packing the pair into the one
+# `(sep | seq << 8)` handle the getter's `andi v0,a0,0xff` / `andi a0,a0,0xff00`
+# split unpacks again. Neither reads or writes anything but the libsnd channel
+# record's `+0x58`/`+0x5A` volume pair, which `engine-audio` does not maintain:
+# its Sequencer carries per-voice volume in its own software-SPU voice pool.
+# Both are real function entries, not interior labels - each has its own
+# prologue and is reached by `jal`.
+[libsnd_seq_volume]
+"800648f0" = "SsSepSetVol(sep, seq, l, r): resolves DAT_801cd2c0[sep] + seq*0xB0, then either latches the pair into +0x58/+0x5A or - when the flag word is exactly 1, i.e. PLAY and nothing else - packs (sep | seq << 8) and dispatches _SsSeqNoteOn (80067e9c) to commit it live. Body-identical to the already-ignored 80064890 except for the seq*0xB0 stride, which is what makes it the SEP-indexed form. see ghidra/scripts/funcs/800648f0.txt"
+"8006497c" = "SsSepGetVol(sep, seq, &l, &r): 13 instructions, packs (sep | seq << 8) into an i16 and tail-calls the already-ignored getter 800683d8 (SsSeqGetVol). Pure argument marshalling - it touches no state of its own. see ghidra/scripts/funcs/8006497c.txt"

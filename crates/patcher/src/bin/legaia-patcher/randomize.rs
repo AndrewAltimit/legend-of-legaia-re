@@ -609,15 +609,26 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("monster_stats = \"none\"".to_string());
     }
 
-    // Enemy difficulty scale: one global multiplier over every monster's combat
-    // stats. Seedless, and sequenced *after* the stat randomizer so it scales
-    // whatever that pass dealt out (both read the roster back off the disc).
+    // Enemy difficulty scale: a multiplier over every monster's combat stats,
+    // one scale for random encounters and one for bosses (equal, for a
+    // whole-roster dial). Seedless, and sequenced *after* the stat randomizer so
+    // it scales whatever that pass dealt out (both read the roster off the disc).
     if let Some(scale) = args.enemy_stat_scale {
-        let report = apply::scale_monster_stats(&mut patcher, scale)?;
+        let report = apply::scale_monster_stats_profile(&mut patcher, scale)?;
         println!(
             "enemy stat scale: {scale} ({} monsters changed, {} fields)",
             report.monsters_changed, report.fields_changed
         );
+        if !scale.is_uniform() {
+            println!(
+                "  split: {} of those are bosses (scripted-only fights)",
+                report.bosses_changed
+            );
+            manifest.push(format!(
+                "enemy_stat_scale_bosses_changed = {}",
+                report.bosses_changed
+            ));
+        }
         if !report.skipped.is_empty() {
             println!(
                 "  note: {} monster slot(s) too tight to re-pack, left unchanged: {:?}",

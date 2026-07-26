@@ -288,21 +288,27 @@ pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> Col
 /// The draw is skipped whenever the yield bit is already set, so the frame that
 /// retires the tween is also the first frame it does not draw.
 ///
-/// NOT WIRED - **reached, but never entered**, and the distinction is the
-/// point. `World::tick` → [`World::tick_handler_actors`] dispatches this once
-/// per game tick for every pool actor carrying
-/// [`crate::actor_handler::ActorHandler::ColourTween`], with the same
-/// `frame_delta` (retail `DAT_1F800393`) the rest of the pool advances on; the
-/// frame's [`ScreenTintPush`] is stored back on the actor for
+/// Wired, but inert at runtime - **reached, but never entered**, and the
+/// distinction is the point. It deliberately carries no inert-port disclosure,
+/// which would be false here: the call
+/// chain is real and production-only, so that token would be false and the
+/// audit reads it as a stale disclosure. `World::tick` →
+/// [`World::tick_handler_actors`] dispatches this once per game tick for every
+/// pool actor carrying [`crate::actor_handler::ActorHandler::ColourTween`],
+/// with the same `frame_delta` (retail `DAT_1F800393`) the rest of the pool
+/// advances on; the frame's [`ScreenTintPush`] is stored back on the actor for
 /// [`World::screen_tint_pushes`], and an expired hold takes the yield bit and
 /// is dropped by the same retire pass the transition sweep's victims go
-/// through. What is missing is a **producer**: nothing installs that handler
-/// on a live path, because the only retail spawner is the field VM's
-/// screen-effect fade arm (`FUN_801DE840` at `0x801DFD68`/`0x801DFEE8` →
-/// `FUN_801DE2B0`, ported here as [`tween_from_fade_template`]) and the
-/// `FieldHost` trait carries no hook for that sub-op. A kernel dispatched over
-/// zero actors is indistinguishable from an unwired one, so it is disclosed as
-/// one. `World::spawn_colour_tween` is the seam the hook plugs into.
+/// through.
+///
+/// What is missing is a **producer**, i.e. data rather than plumbing: nothing
+/// installs that handler on a live path, because the only retail spawner is the
+/// field VM's screen-effect fade arm (`FUN_801DE840` at
+/// `0x801DFD68`/`0x801DFEE8` → `FUN_801DE2B0`, ported here as
+/// [`tween_from_fade_template`]) and the `FieldHost` trait carries no hook for
+/// that sub-op. So the `a.colour_tween` guard in the dispatch loop is `None` on
+/// every actor and this body is never entered.
+/// `World::spawn_colour_tween` is the seam the hook plugs into.
 ///
 /// [`World::tick_handler_actors`]: crate::world::World::tick_handler_actors
 /// [`World::screen_tint_pushes`]: crate::world::World::screen_tint_pushes

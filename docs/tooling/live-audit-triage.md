@@ -144,6 +144,22 @@ tagged type no `impl` block at all. A type that *does* have one keeps the
 precise rule, so the fallback only reaches the anchors the precise rule could
 never have settled.
 
+The fallback has one residual: an `impl` block that declares **no method**.
+`ActorExit` in `world_map_panel_actors.rs` is the case. It carries an `impl`,
+so the precise rule applies; that `impl` holds one associated `const` and no
+`fn`, and `type_scope` is built from functions, so the precise rule has nothing
+to resolve. The fallback does not rescue it, by design - the file gives the
+type an `impl`. The anchor is inert by construction, whatever the port is
+wired to.
+
+Widening the fallback again would be the wrong fix. A `type` anchor claims the
+*behaviour* at that address lives on the type, so a method-less `impl` under a
+`PORT:` tag is the analysis correctly reporting that the behaviour is
+somewhere else. The resolution is to put it back: `ActorExit::apply` performs
+retail's four terminal-arm stores and `PanelActorHost::retire` calls it, where
+the host had open-coded three of them and dropped the fourth. Read a
+method-less type anchor as a question about the port, not as a false negative.
+
 ### The module-disclosure regex misses the markdown-heading form
 
 `MODULE_NOT_WIRED_RE` was `^\s*//!\s*\**\s*NOT\s+WIRED`. It accepted
@@ -165,6 +181,77 @@ audit's first section - a granularity row, not a wrong tag.
 A related near-miss, left alone: `// PARTLY WIRED:` (used on `select_owned_rod`)
 matches neither regex. It is moot for that anchor, which the corrected audit
 resolves live, but a second use of the spelling would go unrecognised.
+
+### An import alias erases every `Alias::assoc_fn` edge under it
+
+`build_rust_graph` resolves a `Qual::name` call site by the qualifier **as
+written**: `by_qual[(qual, name)]`, then a module named `qual`, then free
+functions of that name - and never methods. So a call written through a
+`use ... as` alias looks for an `impl <alias>` that nothing declares, finds no
+free function either (the target is a method), and contributes **no edge at
+all**.
+
+`crates/engine-core/src/dev_menu_host.rs` is the live case. It imports the
+ported row model as `DevMenuRow as RetailRow`, because the host declares its
+own `DevMenuRow` for the row subset the engine keeps state for, and then calls
+`RetailRow::from_index(..)`. The `.is_closed(..)` sibling three lines away
+resolves fine - a method call is matched on the method name, with no qualifier
+to mis-resolve - which is why one of the two halves of the same row model read
+as wired and the other did not.
+
+The fix is a `use` of the real type name scoped to the function body, which
+shadows the outer one for exactly that call. The general rule: **an aliased
+qualifier is invisible to the reachability pass.** This is the `Qual::name`
+counterpart of the free-function name collision in
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md), and it fails the
+opposite way - a collision manufactures edges, an alias erases them. An alias
+introduced to dodge a name collision silently converts every associated-function
+call under it into a non-edge, so it costs a real edge to buy a fake one.
+
+## The world-map dev-menu row model and the panel exit
+
+Six anchors across two files, all of them cases where the port and its host
+both existed and the *last* call was missing.
+
+| addr | symbol | verdict |
+|---|---|---|
+| `801ead98` | `DevMenuRow`, `from_index`, `is_closed` | `WIRE` |
+| `801ed308` / `801ed590` / `801ee5d4` | `ActorExit` | `WIRE` |
+
+**The row model.** `DevMenuSession::row_is_closed` had no non-test caller: the
+row list built each row's label with `DevMenuRow::label()` and never asked the
+gate, so the ported `CLOSED` decision was hosted and then not consulted. The
+label selection now runs through `DevMenuSession::row_label`, which is what
+retail's own list body does - the two gated arms of `FUN_801EAD98` pick the
+*string pointer* on `_DAT_8007B868` rather than drawing a label and deciding
+afterwards. Chain: `PlayWindowApp::handle_redraw` -> `tick_dev_menu` ->
+`build_dev_menu_draws` -> `row_label` -> `row_is_closed` -> `retail_row` ->
+`from_index` / `is_closed`. The alias defect above is why `from_index` needed
+one further change after that.
+
+**The panel exit.** Three of the five addresses the `ActorExit` tag names are
+anchored to it (`PORT_ADDR_RE` reads the addresses on the tag's own line, and
+the tag wraps). The type is the method-less-`impl` case above; the wire is
+`ActorExit::apply`, called by `PanelActorHost::retire`, reached from
+`PanelActorHost::tick` -> `World::tick_world_map_panels` ->
+`World::tick_world_map` -> `World::tick`.
+
+Two things fell out of writing it. The host wrote the `scene[+0x2E]` sentinel
+into its `scene[+0x3E]` mirror, which the disassembly separates cleanly -
+`FUN_801ED308`'s exit arms store `-1` to `+0x2E` (`0x801ED53C`) and only its
+`case 5` zeroes `+0x3E` (`0x801ED52C`) - and it dropped the `ctx[+0x50] =
+next_handler` store entirely, recording the id in the frame instead. Both are
+now retail's.
+
+And the disclosure those anchors inherited from their module - "the id
+dispatcher `FUN_801F159C` is not ported" - no longer holds:
+[`baka_hub_actors::hub_dispatch`](../subsystems/world-map.md#the-panel-actor-state-machines)
+ports it. What is still missing is the *table*, not the dispatcher:
+`hub_dispatch` takes `PTR_FUN_801F33B4[state]` as a caller-supplied closure and
+only seven of the 52 slots are read out. The sub-list, text-box and flag-window
+exits hand back to `0x1A`, which is one of the seven; the fade/flash exits pick
+`0x29` and `0x2B`, which are not. A disclosure that names a dispatcher when the
+blocker is a table is the same error this page records for the panel painters.
 
 ## `engine-core` anchors
 
@@ -218,10 +305,8 @@ resolves live, but a second use of the spelling would go unrecognised.
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `(module)` | `crates/engine-vm/src/battle_camera.rs:4` | DISCLOSE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs:85` | DISCLOSE |
-| `801d9d30` | `(module)` | `crates/engine-vm/src/battle_camera.rs:5` | WIRE |
-| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs:156` | WIRE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs:407` | DISCLOSE |
@@ -431,14 +516,19 @@ anchor. Wrap to the file's comment width.
 
 ## The battle-camera rows
 
-These five carried a `VERIFY` verdict while the battle-camera lane held
+These carried a `VERIFY` verdict while the battle-camera lane held
 `crates/engine-vm/src/battle_camera.rs` and
-`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All five
-are still inert against the corrected audit - every caller is `#[cfg(test)]` in
+`crates/engine-vm/src/battle_formulas/round.rs`. That lane has landed. All are
+still inert against the corrected audit - every caller is `#[cfg(test)]` in
 the same file or in `battle_formulas/tests.rs`, and the host-crate sweep returns
 zero, the same sweep that finds `battle_render_mesh`'s two real host call sites.
 What the lane landed touched neither symbol, so each now settles on its own
 reason.
+
+`battle_camera.rs` no longer carries module-level `PORT:` lines: both of its
+addresses were tagged twice, once on the file and once on the function that
+implements it, and the file-wide anchor said nothing the per-function one did
+not.
 
 **`camera_height_from_size_class`** (`801f0348`) is `DELETE`, on the
 `symbol_pad_bit` precedent. Its sibling `camera_height_for_frame` in the same
@@ -454,13 +544,25 @@ seed and has no per-frame angle walker, and the routine that arms retail's
 (`FUN_80021248`) is documented but unported. Nothing exists to consume a step
 table.
 
-**`apply_shake`** (`801d9d30`) is `WIRE`, and the call site is already half
-built. `BattleActionHost::screen_shake` posts `BattleEvent::ScreenShake`, and
-the handler arm in `crates/engine-core/src/battle_session/events.rs` pushes a
-HUD log line and applies no jitter. Route that arm through `apply_shake`,
-keeping the accumulator and offset pairs on the session so the camera can read
-the offset. Small, but it moves the camera, so land it against the battle
-oracles.
+**`apply_shake`** (`801d9d30`) is `DISCLOSE`. It previously read `WIRE` on
+`BattleActionHost::screen_shake` as the half-built call site; that verdict is
+**withdrawn**, and the reason is the worked example of why a verdict on this
+page is a hypothesis. The host method's name is a misnomer. The SM arm it
+mirrors is `overlay_battle_action_801e295c.txt` `0x801E4938..0x801E497C`: it
+tests the camera pitch `DAT_8007B790` against `0x191` and, when it is at or
+above, zeroes the pitch and stores the **absolute** value `0x500` into
+`_DAT_800840BC`. That is a framing snap to the close-up pose - `0x500` is the
+1280 the close-up framings hold - written into one component of the camera
+translation trio.
+
+`apply_shake`'s `amplitude` is a different quantity: a `1..=0x15` shift count
+read from `_DAT_8007B630`, whose only retail writer is a field-VM opcode
+(`overlay_0897_801de840.txt` `0x801E2134`, a 3-byte instruction whose operand
+byte becomes the global). Routing a translation value into it is a category
+error, so that arm cannot be the missing caller. The port's field VM does not
+model `_DAT_8007B630`, which leaves the amplitude a permanent zero - the value
+at which the routine degenerates to backing its own previous offset out of the
+accumulators. Wiring it means modelling that opcode first.
 
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.
@@ -485,6 +587,108 @@ in the workspace, so it was always audit cause 4 - anchor granularity - and not
 a wired port; the receiver gate has since cleared it, and
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)
 records the collision it resolved through.
+
+## Not on this page: the world-map panel cluster
+
+The largest single block of *disclosed* inert `engine-vm` anchors was the
+world-map band's panel screen - `world_map_panel_actors.rs`,
+`world_map_overlay.rs`, `world_map_panel.rs` and `travel_art_actor.rs`. It never
+appeared here, because this page triages the **undisclosed** section and every
+one of those anchors carried an honest `NOT WIRED:` line naming the same
+missing thing: a panel-window host on `WorldMapController`.
+
+That is the shape a disclosure worklist hides. Each tag was individually
+correct, and re-reading them produces no work; what closes the block is
+building the one host they all name, which is now
+`legaia_engine_core::world_map_panel_host` (see
+[`world-map.md`](../subsystems/world-map.md#the-panel-actor-state-machines)).
+When a disclosure reason repeats verbatim across a dozen anchors, read the
+repetition as the worklist item.
+
+## The op-`0x49` submode actor family (`baka_hub_actors`)
+
+These rows sit in the audit's *disclosed* section rather than the undisclosed
+one, and they are recorded here because their shared disclosure was wrong about
+what blocked them - a shape this page exists to catch.
+
+The tag read "the engine has no field system-actor pool, so no code path
+produces an actor with a `+0x50` handler id". The engine **does** have that
+pool. `World::man_load_actor_reset` spawns an `ActorHandler::SubmodeDriver`
+actor on every MAN load (retail's `FUN_801D9C3C` at `0x8003B444`) and
+`HandlerKernel` classed it `Unported`, so the actor sat in the pool with
+nothing to run. The blocker was a missing *dispatch arm*, one file away, not a
+missing subsystem.
+
+| addr | symbol | verdict |
+|---|---|---|
+| `801f159c` | `hub_dispatch` | `WIRE` - `World::tick_handler_actors` -> `World::tick_submode_screen` |
+| `801f0adc` | `coin_exchange` | `WIRE` - handler slot `0x25`, opened by `World::open_coin_counter` |
+| `801f1138` / `801f1e48` / `801f1fdc` / `801f1d90` / `801f20b0` / `801f2134` | the state machines | `WIRE` - slots `0x27` / `0x32` / `0x28` / `0x13` / `0x1a` / `0x00` |
+| `801f16c0` / `801f17d8` / `801f1890` / `801f1950` / `801f1a1c` / `801f1ab0` / `801f1b64` | the panel painters | `WIRE` - panel-window records, not handler slots |
+| `801f90dc` | `acquisition_caption` | `DISCLOSE` - see below |
+
+The painters are the row worth reading twice. They are **not**
+`PTR_FUN_801F33B4` slots; they are the `+0x14` callback of a `0x801F2C0C`
+panel-window record. A disclosure that names the wrong table names the wrong
+blocker.
+
+`acquisition_caption` keeps its disclosure on new evidence rather than on the
+old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
+- neither table holds it - and it sits in the resident slot-B band whose widget
+descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
+to exist first is a base-confirmed dump of the image that really owns that VA.
+
+## The dance / fishing minigame block
+
+The `dance.rs` / `dance_tutorial.rs` / `fishing_actors.rs` / `fishing_chrome.rs`
+cluster is the largest single-subsystem group in the *disclosed* inert list, and
+its size invites the assumption that it is `FALSE INERT` because both minigames
+are playable. It is not: the playable halves are `dance::DanceGame` and
+`fishing::PondSession`, and those *are* live. What the cluster holds is the
+presentation and actor half of the same two overlays, which the port does not
+have hosts for. Four rows did turn out to be resolvable, and they are the shape
+worth looking for in the rest.
+
+| Row | Verdict | What settled it |
+|---|---|---|
+| `roll_hit_type` (`801d26cc`, `fishing_actors.rs`) | `DELETE` | Duplicate of the live `fishing::band_roll`; the wrapper now delegates, so one kernel has one implementation. |
+| `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
+| `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
+| `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
+| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | Its `clear_pad_latch` field has an engine equivalent; `World::enter_dance` / `exit_dance` apply it. |
+
+**`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
+`li s1, -0x64` as a bias added to the strike credit. The instruction is an
+assignment into the register that already holds the credit base, so the far band
+*replaces* the base rather than offsetting it. The kernel is now
+`bite_credit_override`, returning `Option<i32>`. This is the failure direction
+the page's own preamble warns about: an unwired kernel's arithmetic is never
+exercised, so a misreading survives until something calls it.
+
+The remaining rows are genuine gaps with sharp prerequisites, and they group
+into four:
+
+- **No line primitive.** `clip_segment_2d` and `project_segment` clip
+  two-point draws; neither `engine-ui`'s draw list nor `engine-render`'s VRAM
+  pipeline has a line kind.
+- **No minigame effect-part pool.** `step_mark_effect_spawn`,
+  `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
+  `dance_hit_sting_voices`.
+- **No dancer / fish actor records.** `dancer_emit`, `dancer_fade_weight`,
+  `dance_clip_driver_gate`, `dance_face_rig`, `roll_wander_target`,
+  `step_facing`, `fish_camera`, `float_actor_tick`.
+- **No retail-coordinate HUD surface.** `hud_draws`, `dance_hud_draws`,
+  `dance_score_box_slots`, `dance_hud_widget_quad`, the three digit-glyph
+  selectors, `centred_panel`. Both hosts lay their dance and fishing readouts
+  out at their own pens rather than in 320x240 framebuffer coordinates.
+
+Two of those have a *named* host outside `engine-core`: the browser page
+already loads the dance floor's dancer meshes and the fishing venue's
+walk heightfield, so `dance_face_rig` and `walk_grid_overhead` want a call in
+`crates/web-viewer/`, not a new subsystem. `bite_pad_nudge` is a third: it
+wants `PondInput` to carry the retail pressed-pad word instead of a
+pre-counted `edge_bonus`, which is a signature change its browser caller has
+to move with.
 
 ## See also
 

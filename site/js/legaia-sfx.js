@@ -3,10 +3,11 @@
  *
  * The cues themselves are decoded from the visitor's disc by the WASM
  * `LegaiaSfx` surface (crates/web-viewer/src/sfx_view.rs), which walks the
- * retail chain: SCUS -> the static SFX descriptor table (DAT_8006F198), the
- * class-2 sound bank at PROT 869 -> a VAB, then each cue's descriptor through
- * the clean-room SPU into PCM. Nothing ships with the site; nothing is
- * uploaded.
+ * retail chain: SCUS -> the static SFX descriptor table (DAT_8006F198), then
+ * PROT -> the VAB each cue's own `+4` category names (slot 0 = the PROT 868
+ * system bank behind the shared UI blips, slot 2 = the PROT 869 class-2 bank
+ * behind the battle / duel hits), then each cue's descriptor through the
+ * clean-room SPU into PCM. Nothing ships with the site; nothing is uploaded.
  *
  * This module is the browser half: it owns one AudioContext, caches an
  * AudioBuffer per cue, and plays a cue by *event name* so pages never
@@ -19,7 +20,7 @@
  *   LegaiaSfx.registerPcm(key, i16, rate, st)     // stash a raw PCM clip
  *   LegaiaSfx.playPcm(key)                        // fire a registered clip
  *   LegaiaSfx.ready()                             // cues rendered?
- *   LegaiaSfx.info()                              // { bank, rate, cues, maps }
+ *   LegaiaSfx.info()                              // { bank, banks, rate, cues, maps }
  *
  * Autoplay policy: the AudioContext is constructed on the first `play`, which
  * pages only reach from a user gesture (a click / keypress). Muting is the
@@ -44,7 +45,7 @@
                           * page's XA voice channels), independent of the
                           * cue renderer. */
   var maps = {};         /* table name -> { event: {cue, source, why} } */
-  var meta = { bank: 0, rate: 0, cues: [] };
+  var meta = { bank: 0, banks: [], rate: 0, cues: [] };
   var live = [];         /* sounding AudioBufferSourceNodes */
   var log = [];          /* [{ cue, event, t }] - the headless-check hook */
 
@@ -157,13 +158,18 @@
         var info = JSON.parse(s.load_disc(discBytes));
         api = s;
         buffers = {};
-        meta = { bank: info.bank, rate: info.rate, cues: info.cues };
+        meta = {
+          bank: info.bank, banks: info.banks || [],
+          rate: info.rate, cues: info.cues,
+        };
         maps = {
           baka: JSON.parse(s.baka_cues_json()),
           arts: JSON.parse(s.art_cues_json()),
         };
-        console.log('[sfx] ' + info.cues.length + ' cues from PROT ' + info.bank +
-                    ' @ ' + info.rate + ' Hz');
+        console.log('[sfx] ' + info.cues.length + ' cues from PROT ' +
+                    (meta.banks.map(function (b) { return b.prot; }).join('+') ||
+                     info.bank) +
+                    ' (routed by descriptor category) @ ' + info.rate + ' Hz');
         return Promise.resolve(Sfx.info());
       } catch (err) {
         console.warn('[sfx] cue decode failed:', err.message || err);
@@ -176,7 +182,8 @@
 
     info: function () {
       return {
-        bank: meta.bank, rate: meta.rate, cues: meta.cues, maps: maps,
+        bank: meta.bank, banks: meta.banks,
+        rate: meta.rate, cues: meta.cues, maps: maps,
         ctx: ctx ? ctx.state : 'none',
       };
     },

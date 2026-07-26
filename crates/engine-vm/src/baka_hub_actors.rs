@@ -1,15 +1,44 @@
-//! The **minigame-hub system-actor handler family** in the `0x801F0000+` band
-//! of every hub-family overlay (Baka Fighter, dance, fishing, slot machine and
-//! the debug menu all carry byte-identical copies; the field overlay PROT 0897
-//! carries the same code at the same VAs).
+//! The field overlay's **op-`0x49` submode system-actor handler family** in
+//! the `0x801F0000+` band: one dispatcher plus the per-state handlers it
+//! indexes.
 //!
-//! The family is one dispatcher plus a set of small per-state handlers. The
-//! dispatcher `FUN_801F159C` indexes the 52-entry table `PTR_FUN_801F33B4` by
-//! the actor's `+0x50` word, so every routine here is one of that table's
-//! slots - which is why they share a shape: read `+0x54` (the handler's own
-//! sub-state), draw a panel through the glyph/sprite kernel, and on a confirm
-//! press hand the actor back to the hub by stashing `+0x50` into the grid
-//! actor and re-arming `+0x50` to the hub's own slot.
+//! ## Which image this code belongs to
+//!
+//! The corpus holds these VAs under six program names (`baka_fighter`,
+//! `dance`, `fishing`, `slot_machine`, `debug_menu`, `overlay_0897`) and the
+//! five minigame-named dumps are **byte-identical**. That is not five copies -
+//! it is the same resident field-overlay code seen through five RAM-derived
+//! captures, the artifact [`docs/tooling/dump-corpus-integrity.md`] catalogues
+//! and that the sibling port [`crate::field_party_cursor`] already diagnoses
+//! at `FUN_801F1278`. The statically extracted Baka Fighter overlay is PROT
+//! 976 at base `0x801CE818` and `0xE000` bytes long, so it does not reach
+//! `0x801F0ADC` at all; PROT 0897 (`0x4F800` bytes at the same base) does.
+//!
+//! This matters beyond attribution, because the minigame-named dumps are also
+//! **truncated**: `overlay_baka_fighter_801f0adc.txt` stops after 46
+//! instructions, while `overlay_0897_801f0adc.txt` carries the whole
+//! discontiguous 264-instruction body. The port of [`coin_exchange`] below is
+//! written from the long one.
+//!
+//! ## What the family is
+//!
+//! The dispatcher `FUN_801F159C` is the **resume / close half of the field
+//! VM's op-`0x49` submode** ([`docs/subsystems/script-vm.md`]); the enter half
+//! is `FUN_801F1278` ([`crate::field_party_cursor`]). It indexes the 52-entry
+//! table `PTR_FUN_801F33B4` by the actor's `+0x50` word.
+//!
+//! The routines here come from **two** tables, and conflating them is the
+//! error to avoid. The state machines ([`slot`]) are `PTR_FUN_801F33B4`
+//! entries: read `+0x54`, install a panel, and on a confirm hand the actor
+//! back by stashing `+0x50` into the submode cursor context and re-arming
+//! `+0x50` to [`HUB_RETURN_STATE`]. The panel painters ([`HubPainter`]) are
+//! **not** in that table at all - they are the `+0x14` callback of a
+//! [`PANEL_WINDOW_TABLE`] record, reached only once a state machine has
+//! installed the descriptor that names the window.
+//!
+//! The op-`0x49` contract is what makes the dispatcher load-bearing: the
+//! script parks on the same PC until this family drops the busy flag
+//! `_DAT_8007B450` to `1`, which is the VM's "Done" signal.
 //!
 //! ## Actor fields
 //!
@@ -25,25 +54,26 @@
 //! ## Globals
 //!
 //! Named here by VA because the family is pure glue over them. `0x801C6EA4`
-//! is the grid / tile-board actor ([`docs/subsystems/tile-board.md`]), whose
-//! `+0x2E` is the "hand-back" sentinel, `+0x3E` the completion gate the
-//! dispatcher polls and `+0x40` the stashed handler id. `0x8007B450` is the
-//! field/tile-board busy flag, `0x8007B454` the text palette index,
-//! `0x8007BB80` a suppression flag that blocks every confirm, `0x8007BB88` /
-//! `0x8007BB98` the two cursor rows, `0x80084594` / `0x80084598` an entry
-//! count and its parallel per-entry code array, `0x8008459C` party gold and
+//! is the submode **cursor context**, whose `+0x2E` is the "hand-back"
+//! sentinel, `+0x3E` the completion gate the dispatcher polls and `+0x40` the
+//! stashed handler id. `0x8007B450` is the op-`0x49` operand pointer doubling
+//! as the busy flag, `0x8007B454` the text palette index, `0x8007B458` a
+//! frame-paced hold timer, `0x8007BB80` a suppression flag that blocks every
+//! confirm, `0x8007BB88` / `0x8007BB98` the two cursor rows, `0x8007BB90` the
+//! published coin ceiling, `0x8007BB9C` the coin counter's digit cursor,
+//! `0x801F35F0..+7` its eight digit cells, `0x8008459C` party gold and
 //! `0x800845A4` the casino coin bank.
 //!
-//! Read from `overlay_baka_fighter_801f{0adc,1138,159c,16c0,17d8,1890,1950,
-//! 1a1c,1ab0,1b64,1d90,1e48,1fdc,20b0,2134}.txt` and
-//! `overlay_baka_fighter_801f90dc.txt`; byte-identical dumps exist under the
-//! sibling hub overlays. Documented in
-//! [`docs/subsystems/minigame-baka-fighter.md`].
+//! `0x80084594` / `0x80084598` are the **party roster** - member count and
+//! member ids - not a generic entry table; [`docs/subsystems/script-vm.md`]
+//! pins them from the enter half's portrait seeding.
 //!
-//! Nothing here is reachable from a host root: the engine has no field
-//! system-actor pool, so no code path produces an actor with a `+0x50`
-//! handler id for [`hub_dispatch`] to index. Every entry point carries the
-//! `NOT WIRED` disclosure naming that one blocker.
+//! Read from `overlay_0897_801f0adc.txt` and `overlay_baka_fighter_801f{1138,
+//! 159c,16c0,17d8,1890,1950,1a1c,1ab0,1b64,1d90,1e48,1fdc,20b0,2134}.txt`
+//! plus `overlay_baka_fighter_801f90dc.txt`.
+//!
+//! Host: `legaia_engine_core::field_submode_screen` runs the dispatcher over
+//! the live `SubmodeDriver` pool actor every field frame.
 
 /// One system actor as this family sees it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -64,7 +94,7 @@ pub struct HubActor {
     pub sub: i16,
 }
 
-/// The grid / tile-board actor at `DAT_801C6EA4`, in the three fields this
+/// The submode cursor context at `DAT_801C6EA4`, in the three fields this
 /// family touches plus the per-column byte row `+0x54..`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubGrid {
@@ -94,6 +124,24 @@ pub struct HubEnv {
     pub confirm_mask: u32,
     /// `_DAT_800846D8` - the cancel mask.
     pub cancel_mask: u32,
+    /// `_DAT_800846D0` on its own. The coin counter tests the two masks
+    /// **separately** rather than OR-ed: `0x800846D0` is its accept edge and
+    /// `0x800846D4` its back-out edge (`0x801F0BF8..0x801F0CEC`).
+    pub accept_mask: u32,
+    /// `_DAT_800846D4` on its own - see [`HubEnv::accept_mask`].
+    pub back_mask: u32,
+    /// `_DAT_8007BB84` - the auto-repeating directional pad word the coin
+    /// counter reads (distinct from the one-shot edge word `pad_edge`).
+    pub pad_repeat: u32,
+    /// `DAT_1F800393` - this frame's cadence scalar, subtracted from the
+    /// hold timer.
+    pub frame_delta: i32,
+    /// What `FUN_801E9DC8(&_DAT_8007BB98, 2, 1)` returned this frame: `1`
+    /// confirm, `2` cancel, anything else "still picking". Supplied by the
+    /// host because the two-option picker itself is not ported here.
+    ///
+    /// REF: FUN_801E9DC8
+    pub picker_result: i32,
     /// `_DAT_8007BB80` - non-zero blocks every confirm test.
     pub input_blocked: i32,
     /// `_DAT_8007BB88` - the primary cursor row.
@@ -107,9 +155,9 @@ pub struct HubEnv {
     /// `_DAT_8007C364 + 0x10` - the busy word whose bit `0x80000` the
     /// dispatcher clears.
     pub busy_word: u32,
-    /// `DAT_80084594` - the entry count.
+    /// `DAT_80084594` - the party roster member count.
     pub entry_count: u8,
-    /// `DAT_80084598..` - one code byte per entry.
+    /// `DAT_80084598..` - one member id per roster entry.
     pub entry_codes: Vec<u8>,
     /// `DAT_8008459C` - party gold.
     pub gold: i32,
@@ -207,6 +255,11 @@ pub enum HubAction {
     ClearBoardFlag,
     /// `DAT_8007BB90 = n` - the clamped coin amount.
     SetCoinAmount(i32),
+    /// The coin counter's commit (`0x801F1080..0x801F109C`): credit `coins`
+    /// to the **casino coin bank** `DAT_800845A4` and debit `gold_cost` from
+    /// **party gold** `DAT_8008459C`. Two different destinations - the credit
+    /// never lands in gold.
+    BuyCoins { coins: i32, gold_cost: i32 },
     /// `DAT_8007BB88 = 0`.
     ClearCursorRow,
     /// `DAT_801F2C86` / `DAT_801F2C82` - the start panel's height and top.
@@ -261,6 +314,109 @@ pub const ACTOR_RETIRE: u32 = 0x8;
 /// The three submode values the dispatcher runs under (`DAT_801F2734`).
 pub const ACTIVE_SUBMODES: [i32; 3] = [1, 4, 7];
 
+// ---------------------------------------------------------------------------
+// the two tables
+// ---------------------------------------------------------------------------
+
+/// Slots of `PTR_FUN_801F33B4`, the 52-entry handler table the dispatcher
+/// indexes by `+0x50`.
+///
+/// Read out of the field overlay's own bytes (PROT 0897 at base `0x801CE818`,
+/// table VA `0x801F33B4`), not inferred: each constant is the index whose word
+/// holds that handler's entry VA. Slot `0` is what a freshly spawned submode
+/// driver carries, and it is [`close_tick`] - so an actor nobody has given a
+/// screen to closes itself on its second frame instead of sitting there.
+pub mod slot {
+    /// `FUN_801F2134` - also slots `0x14..=0x18`.
+    pub const CLOSE_TICK: u16 = 0x00;
+    /// `FUN_801F1D90`.
+    pub const DEACTIVATE: u16 = 0x13;
+    /// `FUN_801F20B0`. Equal to [`super::HUB_RETURN_STATE`]: a hand-back
+    /// re-arms `+0x50` here, and this slot is what then clears the completion
+    /// gate so the dispatcher can retire the actor.
+    pub const DRAW_TICK: u16 = 0x1A;
+    /// `FUN_801F0ADC` - the casino coin counter.
+    pub const COIN_COUNTER: u16 = 0x25;
+    /// `FUN_801F1138`.
+    pub const START_MENU: u16 = 0x27;
+    /// `FUN_801F1FDC`.
+    pub const PROMPT: u16 = 0x28;
+    /// `FUN_801F1E48`.
+    pub const SUBMENU: u16 = 0x32;
+    /// Slots in the table.
+    pub const COUNT: usize = 52;
+}
+
+/// The **panel-window record table** at `0x801F2C0C`: 13 records of
+/// [`PANEL_WINDOW_STRIDE`] bytes, each `[u32 kind = 0x00030000][3 geometry
+/// words][u32 0x0C][u32 painter VA][u32 0]`.
+///
+/// This is a second table, distinct from `PTR_FUN_801F33B4`: the seven panel
+/// painters below are **not** `+0x50` handler slots, they are the `+0x14`
+/// callback of a window record, reached when a state machine installs a panel
+/// descriptor through `FUN_801E9B3C`. Two records cross-validate the read -
+/// index `9` is the name-entry renderer `FUN_801E6B34` and index `10` is
+/// `FUN_801E6984`, both already pinned elsewhere
+/// ([`docs/subsystems/script-vm.md`], `field_submode::submode_panel_rows`).
+pub const PANEL_WINDOW_TABLE: u32 = 0x801F_2C0C;
+/// Bytes per panel-window record.
+pub const PANEL_WINDOW_STRIDE: u32 = 0x1C;
+/// Offset of the painter VA inside a panel-window record.
+pub const PANEL_WINDOW_PAINTER: u32 = 0x14;
+/// Records in the panel-window table.
+pub const PANEL_WINDOW_COUNT: usize = 13;
+
+/// The panel painters of [`PANEL_WINDOW_TABLE`] that have a body here, by
+/// record index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HubPainter {
+    /// Record `1` - `FUN_801F1950`.
+    TwoOption,
+    /// Record `2` - `FUN_801F1A1C`.
+    CountGatedLabel,
+    /// Record `3` - `FUN_801F16C0`.
+    EntryList,
+    /// Record `7` - `FUN_801F1890`.
+    ThreeLine,
+    /// Record `8` - `FUN_801F17D8`.
+    ColumnRow,
+    /// Record `11` - `FUN_801F1AB0`.
+    TwoLine,
+    /// Record `12` - `FUN_801F1B64`.
+    SingleLabel,
+}
+
+impl HubPainter {
+    /// The painter a panel-window record index selects, or `None` for the six
+    /// records whose painter lives outside this module.
+    pub fn for_window(index: usize) -> Option<Self> {
+        Some(match index {
+            1 => HubPainter::TwoOption,
+            2 => HubPainter::CountGatedLabel,
+            3 => HubPainter::EntryList,
+            7 => HubPainter::ThreeLine,
+            8 => HubPainter::ColumnRow,
+            11 => HubPainter::TwoLine,
+            12 => HubPainter::SingleLabel,
+            _ => return None,
+        })
+    }
+
+    /// Run the painter. [`HubPainter::EntryList`] is the only one that walks
+    /// the actor's `+0x0C` and therefore needs it mutable.
+    pub fn paint(self, actor: &mut HubActor, env: &HubEnv, grid: &HubGrid) -> HubFrame {
+        match self {
+            HubPainter::TwoOption => two_option_panel(actor, env),
+            HubPainter::CountGatedLabel => count_gated_label(actor, env),
+            HubPainter::EntryList => entry_list(actor, env),
+            HubPainter::ThreeLine => three_line_panel(actor, env),
+            HubPainter::ColumnRow => column_row(actor, env, grid),
+            HubPainter::TwoLine => two_line_panel(actor, env),
+            HubPainter::SingleLabel => single_label(actor),
+        }
+    }
+}
+
 /// Ceiling the coin exchange clamps the bank to.
 pub const COIN_BANK_MAX: i32 = 0x0098_967F;
 /// Gold per coin.
@@ -273,11 +429,6 @@ pub const CAPTION_MONEY_ID: i32 = 0xFE;
 // dispatcher
 // ---------------------------------------------------------------------------
 
-// NOT WIRED: the engine has no field system-actor pool, so nothing ever holds
-// an actor whose `+0x50` is a `PTR_FUN_801F33B4` slot for this to index. The
-// missing host is the field overlay's actor tick (the caller that walks the
-// pool and invokes each actor's `+0x50` handler); until that exists this
-// family has no entry point.
 /// PORT: FUN_801f159c - the hub system-actor dispatcher.
 ///
 /// Active only while the submode gate `DAT_801F2734` is one of
@@ -288,12 +439,15 @@ pub const CAPTION_MONEY_ID: i32 = 0xFE;
 /// the grid actor's completion gate `+0x3E` reads `0` - retires the actor,
 /// releases the pad latch and drops the board busy state.
 ///
-/// `handler` is the caller's view of `PTR_FUN_801F33B4[actor.state]`.
+/// `handler` is the caller's view of `PTR_FUN_801F33B4[actor.state]`. It takes
+/// the cursor context mutably because retail re-reads `+0x3E` **after** the
+/// `jalr`, so a handler that clears the completion gate this frame is retired
+/// this frame - which is exactly how [`draw_tick`] closes a screen.
 pub fn hub_dispatch(
     actor: &mut HubActor,
     env: &HubEnv,
-    grid: &HubGrid,
-    handler: impl FnOnce(&mut HubActor) -> HubFrame,
+    grid: &mut HubGrid,
+    handler: impl FnOnce(&mut HubActor, &mut HubGrid) -> HubFrame,
 ) -> HubFrame {
     let mut out = HubFrame::default();
     if !ACTIVE_SUBMODES.contains(&env.submode) {
@@ -307,7 +461,7 @@ pub fn hub_dispatch(
         }
         out.act(HubAction::RearmSubmode);
     }
-    let inner = handler(actor);
+    let inner = handler(actor, grid);
     out.draws.extend(inner.draws);
     out.actions.extend(inner.actions);
     if grid.done_gate == 0 {
@@ -326,36 +480,309 @@ pub fn hub_dispatch(
 // coin exchange
 // ---------------------------------------------------------------------------
 
-// NOT WIRED: same blocker as [`hub_dispatch`] - this is handler slot `0x25` of
-// `PTR_FUN_801F33B4` and only that dispatcher reaches it.
-/// PORT: FUN_801f0adc - the coin-exchange head plus its five-slot sub-dispatch.
+/// The coin counter's own globals: the eight decimal cells at `DAT_801F35F0`,
+/// the digit cursor `_DAT_8007BB9C`, the Yes/No row `_DAT_8007BB98` and the
+/// frame-paced hold timer `_DAT_8007B458`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoinCounter {
+    /// `DAT_801F35F0..+7`, **least significant cell first**: the entered
+    /// amount is `sum(digits[i] * 10^i)`. Cells are signed bytes because
+    /// retail sign-extends them into the multiply.
+    pub digits: [i8; COIN_ENTRY_DIGITS],
+    /// `_DAT_8007BB9C` - which cell the up/down edits hit. Wraps over
+    /// [`COIN_CURSOR_CELLS`], not over all eight cells.
+    pub cursor: i32,
+    /// `_DAT_8007BB98` - the confirm panel's Yes/No row, seeded to `1`.
+    pub yes_no: i32,
+    /// `_DAT_8007B458` - the post-commit hold timer.
+    pub hold: i32,
+    /// `_DAT_8007BB90` - the ceiling the head republishes every frame.
+    pub ceiling: i32,
+}
+
+impl Default for CoinCounter {
+    fn default() -> Self {
+        Self {
+            digits: [0; COIN_ENTRY_DIGITS],
+            cursor: 0,
+            yes_no: 0,
+            hold: 0,
+            ceiling: 0,
+        }
+    }
+}
+
+impl CoinCounter {
+    /// The amount the eight cells spell.
+    ///
+    /// PORT: FUN_801f0adc (`0x801F0C20..0x801F0C4C`, and the two identical
+    /// copies at `0x801F0E3C` / `0x801F102C`)
+    pub fn entered(&self) -> i32 {
+        let mut total: i32 = 0;
+        let mut power: i32 = 1;
+        for d in self.digits {
+            total = total.wrapping_add(power.wrapping_mul(d as i32));
+            power = power.wrapping_mul(10);
+        }
+        total
+    }
+
+    /// Rewrite the cells as the decimal expansion of `value`, most
+    /// significant cell last.
+    ///
+    /// PORT: FUN_801f0adc (`0x801F0EDC..0x801F0F5C`)
+    pub fn set_entered(&mut self, value: i32) {
+        let mut rest = value;
+        let mut place: i32 = 10_000_000;
+        for cell in (0..COIN_ENTRY_DIGITS).rev() {
+            let digit = (rest / place) as i8;
+            self.digits[cell] = digit;
+            rest = rest.wrapping_sub((digit as i32).wrapping_mul(place));
+            place /= 10;
+        }
+    }
+
+    /// Zero every cell (`0x801F0BA4` loop, repeated at `0x801F10A0`).
+    pub fn clear_digits(&mut self) {
+        self.digits = [0; COIN_ENTRY_DIGITS];
+    }
+}
+
+/// Cells in the coin counter's decimal entry field.
+pub const COIN_ENTRY_DIGITS: usize = 8;
+/// Cells the left/right cursor actually visits - retail wraps at `5`, so the
+/// top two cells are only ever written by the affordability clamp.
+pub const COIN_CURSOR_CELLS: i32 = 6;
+
+/// Idle panel descriptor the counter installs on entry and on a cancelled
+/// confirm.
+pub const PANEL_COIN_IDLE: u32 = 0x801F_3340;
+/// Confirm ("buy this many?") panel descriptor.
+pub const PANEL_COIN_CONFIRM: u32 = 0x801F_3360;
+
+/// Cursor-move sting (`FUN_80035B50(0x21)`).
+pub const CUE_CURSOR: u8 = 0x21;
+/// Accept sting (`FUN_80035B50(0x36)`).
+pub const CUE_ACCEPT: u8 = 0x36;
+/// Back-out sting (`FUN_80035B50(0x37)`).
+pub const CUE_BACK: u8 = 0x37;
+/// Coin-jingle sting the commit plays (`FUN_80035B50(0x25)`).
+pub const CUE_COINS: u8 = 0x25;
+/// Refusal buzz (`FUN_80035BD0(0x23)`) - unaffordable or over the ceiling.
+pub const CUE_REFUSE: u8 = 0x23;
+/// The picker's own accept sting (`FUN_80035BD0(0)`).
+pub const CUE_PICK: u8 = 0x00;
+
+/// Hold frames the commit state waits before closing (`0x801F0FD0`).
+pub const COIN_COMMIT_HOLD: i32 = 0x14;
+/// Hold frames the post-purchase state waits (`0x801F10BC`).
+pub const COIN_CLOSE_HOLD: i32 = 0x10;
+
+/// `FUN_801E9DC8` return meaning "the player accepted the row".
+pub const PICK_ACCEPT: i32 = 1;
+/// `FUN_801E9DC8` return meaning "the player backed out".
+pub const PICK_CANCEL: i32 = 2;
+
+/// PORT: FUN_801f0adc - the casino coin counter: buy coins with gold.
 ///
-/// The head converts party gold into buyable coins at [`GOLD_PER_COIN`] gold
-/// each (a signed divide truncating toward zero, spelled in retail as the
-/// `0x51EB851F` reciprocal multiply plus the sign fixup), publishes it to
-/// `DAT_8007BB90`, and clamps it so the bank cannot pass [`COIN_BANK_MAX`].
-/// It then tail-jumps the sub-handler `[actor+0x54]` out of the five-entry
-/// table at `0x801CF734` - the handlers share this frame and fall into its
-/// epilogue, which is why the dumped body is discontiguous - and finishes on
-/// the draw pump.
-pub fn coin_exchange(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
+/// Handler slot `0x25` of `PTR_FUN_801F33B4`. The head runs every frame
+/// regardless of sub-state: it converts party gold into buyable coins at
+/// [`GOLD_PER_COIN`] gold each (a signed divide truncating toward zero,
+/// spelled in retail as the `0x51EB851F` reciprocal multiply plus the sign
+/// fixup), publishes it to `DAT_8007BB90`, and clamps it so the bank cannot
+/// pass [`COIN_BANK_MAX`]. It then tail-jumps the sub-handler `[actor+0x54]`
+/// out of the five-entry table at `0x801CF734`; the five arms share this
+/// frame and fall into its epilogue, which is why the dumped body is
+/// discontiguous.
+///
+/// The five arms, from `overlay_0897_801f0adc.txt` (264 instructions - the
+/// minigame-named dumps of this VA stop at 46 and carry only the head, which
+/// is why an earlier reading of this routine had no transaction in it at all):
+///
+/// | `+0x54` | What it does |
+/// |---|---|
+/// | `0` | Zero the cells + both cursors, install [`PANEL_COIN_IDLE`], advance. |
+/// | `1` | Digit entry: cursor moves, digit edits, affordability clamp, accept / back. |
+/// | `2` | Yes/No confirm over `FUN_801E9DC8`; accept arms the commit hold. |
+/// | `3` | **Commit**: coins to `DAT_800845A4`, gold out of `DAT_8008459C`. |
+/// | `4` | Count the hold timer down by the cadence scalar, then hand back. |
+///
+/// `bank` is read-only here: the commit is reported as
+/// [`HubAction::BuyCoins`] so the host applies it to its own money model.
+pub fn coin_exchange(
+    actor: &mut HubActor,
+    env: &HubEnv,
+    counter: &mut CoinCounter,
+    grid: &mut HubGrid,
+) -> HubFrame {
     let mut out = HubFrame::default();
-    out.act(HubAction::SetCoinAmount(coin_exchange_amount(
-        env.gold,
-        env.coin_bank,
-    )));
-    // The five sub-handlers live behind `jr v0` and are separate rows.
-    let _slot = coin_exchange_slot(actor.sub);
+    counter.ceiling = coin_exchange_amount(env.gold, env.coin_bank);
+    out.act(HubAction::SetCoinAmount(counter.ceiling));
+
+    // `sltiu v1, 5` - an out-of-range `+0x54` skips straight to the pump.
+    let Some(slot) = coin_exchange_slot(actor.sub) else {
+        out.act(HubAction::DrawPump);
+        return out;
+    };
+
+    // Every arm that finishes the screen falls into the shared hand-back
+    // tail at `0x801F10F4`; the arms that stay open jump past it.
+    let mut hand_back_now = false;
+    match slot {
+        0 => {
+            counter.clear_digits();
+            counter.cursor = 0;
+            out.act(HubAction::ClearCursorRow);
+            out.act(HubAction::InstallPanel(PANEL_COIN_IDLE));
+            actor.sub = 1;
+        }
+        1 => {
+            if env.input_blocked != 0 {
+                out.act(HubAction::DrawPump);
+                return out;
+            }
+            if env.pad_edge & env.accept_mask != 0 {
+                let want = counter.entered();
+                if !coin_purchase_affordable(want, env.gold, counter.ceiling) {
+                    out.act(HubAction::ConfirmCue(CUE_REFUSE));
+                } else if want != 0 {
+                    out.act(HubAction::EntryCue(CUE_ACCEPT));
+                    out.act(HubAction::InstallPanel(PANEL_COIN_CONFIRM));
+                    counter.yes_no = 1;
+                    actor.sub = 2;
+                } else {
+                    // Zero coins: the accept behaves as a back-out.
+                    out.act(HubAction::EntryCue(CUE_BACK));
+                    hand_back_now = true;
+                }
+            } else if env.pad_edge & env.back_mask != 0 {
+                out.act(HubAction::EntryCue(CUE_BACK));
+                hand_back_now = true;
+            } else if env.pad_repeat & PAD_CURSOR_RIGHT != 0 {
+                out.act(HubAction::EntryCue(CUE_CURSOR));
+                counter.cursor = if counter.cursor == 0 {
+                    COIN_CURSOR_CELLS - 1
+                } else {
+                    counter.cursor - 1
+                };
+            } else if env.pad_repeat & PAD_CURSOR_LEFT != 0 {
+                out.act(HubAction::EntryCue(CUE_CURSOR));
+                counter.cursor = if counter.cursor == COIN_CURSOR_CELLS - 1 {
+                    0
+                } else {
+                    counter.cursor + 1
+                };
+            } else {
+                if env.pad_repeat & PAD_CURSOR_UP != 0 {
+                    out.act(HubAction::EntryCue(CUE_CURSOR));
+                    bump_digit(counter, 1);
+                }
+                if env.pad_repeat & PAD_CURSOR_DOWN != 0 {
+                    out.act(HubAction::EntryCue(CUE_CURSOR));
+                    bump_digit(counter, -1);
+                }
+                // Whatever the cells now spell, an unaffordable total is
+                // rewritten to the best the player can actually buy.
+                let want = counter.entered();
+                if !coin_purchase_affordable(want, env.gold, counter.ceiling) {
+                    let afford = (env.gold / GOLD_PER_COIN).min(counter.ceiling);
+                    counter.set_entered(afford);
+                }
+            }
+        }
+        2 => {
+            if env.input_blocked != 0 {
+                out.act(HubAction::DrawPump);
+                return out;
+            }
+            match env.picker_result {
+                PICK_ACCEPT => {
+                    out.act(HubAction::ConfirmCue(CUE_PICK));
+                    if counter.yes_no != 1 {
+                        out.act(HubAction::EntryCue(CUE_COINS));
+                        counter.hold = COIN_COMMIT_HOLD;
+                        actor.sub = 3;
+                    } else {
+                        out.act(HubAction::EntryCue(CUE_BACK));
+                        out.act(HubAction::InstallPanel(PANEL_COIN_IDLE));
+                        actor.sub = 1;
+                    }
+                }
+                PICK_CANCEL => {
+                    out.act(HubAction::EntryCue(CUE_BACK));
+                    out.act(HubAction::InstallPanel(PANEL_COIN_IDLE));
+                    actor.sub = 1;
+                }
+                _ => {}
+            }
+        }
+        3 => {
+            let coins = counter.entered();
+            out.act(HubAction::BuyCoins {
+                coins,
+                gold_cost: coins.wrapping_mul(GOLD_PER_COIN),
+            });
+            counter.clear_digits();
+            out.act(HubAction::ClearCursorRow);
+            counter.hold = COIN_CLOSE_HOLD;
+            actor.sub = 4;
+        }
+        _ => {
+            counter.hold = counter.hold.wrapping_sub(env.frame_delta);
+            if counter.hold <= 0 {
+                hand_back_now = true;
+            }
+        }
+    }
+
+    if hand_back_now {
+        hand_back(actor, grid);
+    }
     out.act(HubAction::DrawPump);
     out
+}
+
+/// D-pad bits of the auto-repeating word `_DAT_8007BB84`, in the **packed**
+/// Legaia layout (`crate::retail_pad`-shaped, the same bits
+/// `legaia_engine_core::dev_menu::PACK_*` names).
+///
+/// The cell index counts **right to left** - cell `0` is the units digit, the
+/// rightmost on screen - so pressing right walks the index down and wraps it
+/// to [`COIN_CURSOR_CELLS`]` - 1`, which is why the two arms look inverted
+/// against their bit names.
+pub const PAD_CURSOR_RIGHT: u32 = 0x2000;
+/// See [`PAD_CURSOR_RIGHT`].
+pub const PAD_CURSOR_LEFT: u32 = 0x8000;
+/// Digit `+1` on the selected cell.
+pub const PAD_CURSOR_UP: u32 = 0x1000;
+/// Digit `-1` on the selected cell.
+pub const PAD_CURSOR_DOWN: u32 = 0x4000;
+
+/// One up/down edit of the selected cell, wrapping `0..=9` (`0x801F0D80` /
+/// `0x801F0DE8`).
+fn bump_digit(counter: &mut CoinCounter, delta: i8) {
+    let Some(cell) = counter.digits.get_mut(counter.cursor.max(0) as usize) else {
+        return;
+    };
+    let next = cell.wrapping_add(delta);
+    *cell = if next == 10 {
+        0
+    } else if next < 0 {
+        9
+    } else {
+        next
+    };
+}
+
+/// The purchase gate: retail refuses when the gold cost exceeds party gold
+/// **or** the amount exceeds the published ceiling (`0x801F0C64..0x801F0C88`).
+pub fn coin_purchase_affordable(coins: i32, gold: i32, ceiling: i32) -> bool {
+    gold >= coins.wrapping_mul(GOLD_PER_COIN) && ceiling >= coins
 }
 
 /// The clamped coin amount `FUN_801F0ADC` publishes to `DAT_8007BB90`.
 ///
 /// PORT: FUN_801f0adc (`0x801F0AE8..0x801F0B44`)
-///
-/// NOT WIRED: the arithmetic half of [`coin_exchange`], which is itself only
-/// reachable through [`hub_dispatch`] - same blocker.
 pub fn coin_exchange_amount(gold: i32, coin_bank: i32) -> i32 {
     let coins = gold / GOLD_PER_COIN;
     if COIN_BANK_MAX < coin_bank.wrapping_add(coins) {
@@ -399,7 +826,6 @@ fn hand_back(actor: &mut HubActor, grid: &mut HubGrid) {
     actor.sub = 0;
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1138 - the start / confirm menu tick.
 ///
 /// State `0` counts the active entries in the three bytes at
@@ -440,7 +866,6 @@ pub fn start_menu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1e48 - the hub sub-menu state machine.
 ///
 /// Three states: `0` clears the cursor row and installs the idle panel, `1`
@@ -469,7 +894,6 @@ pub fn submenu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFra
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1fdc - the hub prompt state machine.
 ///
 /// State `0` plays the entry sting [`CUE_ENTRY`] and installs the prompt
@@ -493,7 +917,6 @@ pub fn hub_prompt(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f20b0 - the panel-install draw tick.
 ///
 /// State `0` installs [`PANEL_DRAW_TICK`] and advances; any state above `1`
@@ -517,7 +940,6 @@ pub fn draw_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubF
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f2134 - the close-sting draw tick.
 ///
 /// [`draw_tick`]'s twin: identical but for state `0`, which plays the close
@@ -539,7 +961,6 @@ pub fn close_tick(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1d90 - the actor deactivate with a chosen re-arm state.
 ///
 /// Plays the close sting, pumps, then hands the actor back with `+0x50` set
@@ -576,7 +997,6 @@ pub const STR_TWO_LINE: [u32; 2] = [0x801C_F190, 0x801C_F198];
 pub const STR_SINGLE: u32 = 0x801C_F1A4;
 pub const STR_CAPTION: u32 = 0x801C_EA30;
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f16c0 - the stacked per-entry label list.
 ///
 /// Walks the `DAT_80084594` entries, publishing each entry's code byte to
@@ -607,7 +1027,6 @@ pub fn entry_list(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f17d8 - the header string plus one sprite cell per grid column.
 ///
 /// The header prints at the actor origin; the cell row starts `0x10` in on
@@ -631,7 +1050,6 @@ pub fn column_row(actor: &HubActor, env: &HubEnv, grid: &HubGrid) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1890 - the three-line panel with its own cursor row.
 ///
 /// The first line uses [`PALETTE_PANEL`], the lower two [`PALETTE_DIM`]; the
@@ -668,7 +1086,6 @@ pub fn three_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1950 - the two-option panel.
 ///
 /// Each option draws its cursor *before* its label and only when
@@ -714,7 +1131,6 @@ fn edge_cursor(actor: &HubActor) -> HubDraw {
     }
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1a1c - the count-gated single label.
 ///
 /// Picks the alternate string when the entry count `DAT_80084594` is below
@@ -737,7 +1153,6 @@ pub fn count_gated_label(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1b64 - the single label plus the right-edge cursor.
 ///
 /// [`count_gated_label`] without the count test.
@@ -753,7 +1168,6 @@ pub fn single_label(actor: &HubActor) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
 /// PORT: FUN_801f1ab0 - the two-line panel with the screen-effect push.
 ///
 /// Both lines start `0x0C` in and are `0x10` apart; the cursor sits `8` left
@@ -784,7 +1198,14 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: same blocker as [`hub_dispatch`].
+// NOT WIRED: unlike the other seven painters this VA has **no reference
+// anywhere in the field overlay's bytes** - it is in neither
+// `PTR_FUN_801F33B4` nor `PANEL_WINDOW_TABLE` - and it sits in the resident
+// slot-B band whose widget descriptors `engine-core::screen_fx` pins at
+// `0x801F8FE4..0x801F902C`. Its owning image is therefore unsettled, and its
+// only dump ends on `Control flow encountered bad instruction data`. What has
+// to exist first is a base-confirmed dump of the image that really owns
+// `0x801F90DC`, so a host knows which subsystem's caller to attach it to.
 /// PORT: FUN_801f90dc - the item-acquisition caption.
 ///
 /// `DAT_801E46B0` is an **item id**, and the two strings come from the static
@@ -840,8 +1261,209 @@ mod tests {
             submode: 1,
             confirm_mask: 0x0060,
             cancel_mask: 0x0010,
+            accept_mask: 0x0040,
+            back_mask: 0x0020,
+            frame_delta: 1,
             ..HubEnv::default()
         }
+    }
+
+    /// Walk the counter from a fresh open to the commit with `coins` typed in,
+    /// returning every action the run emitted.
+    fn run_purchase(env0: &HubEnv, coins: i32) -> (Vec<HubAction>, CoinCounter, HubActor) {
+        let mut a = HubActor {
+            state: 0x25,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter::default();
+        let mut g = HubGrid::default();
+        let mut acts = Vec::new();
+        let mut e = env0.clone();
+
+        // State 0 -> 1.
+        acts.extend(coin_exchange(&mut a, &e, &mut c, &mut g).actions);
+        // Type the amount straight into the cells the way the clamp does.
+        c.set_entered(coins);
+        // Accept -> confirm panel.
+        e.pad_edge = e.accept_mask;
+        acts.extend(coin_exchange(&mut a, &e, &mut c, &mut g).actions);
+        // Pick "Yes" (row 0) and accept.
+        e.pad_edge = 0;
+        c.yes_no = 0;
+        e.picker_result = PICK_ACCEPT;
+        acts.extend(coin_exchange(&mut a, &e, &mut c, &mut g).actions);
+        // Commit.
+        e.picker_result = 0;
+        acts.extend(coin_exchange(&mut a, &e, &mut c, &mut g).actions);
+        (acts, c, a)
+    }
+
+    #[test]
+    fn coin_counter_credits_coins_and_debits_gold() {
+        // The regression this test exists for: the credit must land in the
+        // casino coin bank, never in gold, and the debit is 100x the coins.
+        let mut e = env();
+        e.gold = 12_345;
+        let (acts, _, a) = run_purchase(&e, 100);
+        assert!(acts.contains(&HubAction::BuyCoins {
+            coins: 100,
+            gold_cost: 10_000,
+        }));
+        // The commit arms the close hold rather than handing back at once.
+        assert_eq!(a.sub, 4);
+    }
+
+    #[test]
+    fn coin_counter_hold_runs_out_before_the_hand_back() {
+        let mut e = env();
+        e.gold = 1_000;
+        let (_, mut c, mut a) = run_purchase(&e, 5);
+        let mut g = HubGrid::default();
+        assert_eq!(c.hold, COIN_CLOSE_HOLD);
+        for _ in 0..COIN_CLOSE_HOLD - 1 {
+            coin_exchange(&mut a, &e, &mut c, &mut g);
+            assert_eq!(a.state, 0x25, "still on its own slot while the hold runs");
+        }
+        coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert_eq!(a.state, HUB_RETURN_STATE);
+        assert_eq!(g.handback, -1);
+        assert_eq!(g.stashed_state, 0x25);
+    }
+
+    #[test]
+    fn coin_counter_digit_cells_are_little_endian() {
+        let mut c = CoinCounter::default();
+        c.set_entered(1_203);
+        assert_eq!(c.digits, [3, 0, 2, 1, 0, 0, 0, 0]);
+        assert_eq!(c.entered(), 1_203);
+        c.set_entered(9_999_999);
+        assert_eq!(c.entered(), 9_999_999);
+    }
+
+    #[test]
+    fn coin_counter_cursor_wraps_over_six_cells_not_eight() {
+        let mut e = env();
+        e.gold = 10_000_000;
+        let mut a = HubActor {
+            sub: 1,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter::default();
+        let mut g = HubGrid::default();
+        e.pad_repeat = PAD_CURSOR_RIGHT;
+        coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert_eq!(
+            c.cursor,
+            COIN_CURSOR_CELLS - 1,
+            "right off the units cell wraps to the top cell"
+        );
+        e.pad_repeat = PAD_CURSOR_LEFT;
+        coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert_eq!(c.cursor, 0);
+    }
+
+    #[test]
+    fn coin_counter_rewrites_an_unaffordable_amount() {
+        // 250 gold buys two coins; typing nine into the tens cell asks for 90.
+        let mut e = env();
+        e.gold = 250;
+        let mut a = HubActor {
+            sub: 1,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter {
+            cursor: 1,
+            ..CoinCounter::default()
+        };
+        let mut g = HubGrid::default();
+        e.pad_repeat = PAD_CURSOR_DOWN; // 0 -> 9 in cell 1
+        coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert_eq!(c.entered(), 2, "clamped to what 250 gold can pay for");
+        assert_eq!(a.sub, 1, "the clamp keeps the screen open");
+    }
+
+    #[test]
+    fn coin_counter_refuses_an_over_ceiling_accept_without_leaving_entry() {
+        let mut e = env();
+        e.gold = 9_999_999;
+        e.coin_bank = COIN_BANK_MAX; // no headroom at all
+        let mut a = HubActor {
+            sub: 1,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter::default();
+        c.set_entered(1);
+        let mut g = HubGrid::default();
+        e.pad_edge = e.accept_mask;
+        let f = coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert!(f.actions.contains(&HubAction::ConfirmCue(CUE_REFUSE)));
+        assert_eq!(a.sub, 1);
+        assert!(
+            !f.actions
+                .iter()
+                .any(|a| matches!(a, HubAction::BuyCoins { .. }))
+        );
+    }
+
+    #[test]
+    fn coin_counter_back_edge_hands_back_without_buying() {
+        let mut e = env();
+        e.gold = 5_000;
+        let mut a = HubActor {
+            state: 0x25,
+            sub: 1,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter::default();
+        c.set_entered(10);
+        let mut g = HubGrid::default();
+        e.pad_edge = e.back_mask;
+        let f = coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert!(
+            !f.actions
+                .iter()
+                .any(|a| matches!(a, HubAction::BuyCoins { .. }))
+        );
+        assert_eq!(a.state, HUB_RETURN_STATE);
+    }
+
+    #[test]
+    fn coin_counter_zero_accept_is_a_back_out() {
+        let mut e = env();
+        e.gold = 5_000;
+        let mut a = HubActor {
+            state: 0x25,
+            sub: 1,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter::default();
+        let mut g = HubGrid::default();
+        e.pad_edge = e.accept_mask;
+        let f = coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert!(f.actions.contains(&HubAction::EntryCue(CUE_BACK)));
+        assert_eq!(a.state, HUB_RETURN_STATE);
+    }
+
+    #[test]
+    fn coin_counter_confirm_panel_no_returns_to_entry() {
+        let mut e = env();
+        e.gold = 5_000;
+        let mut a = HubActor {
+            sub: 2,
+            ..HubActor::default()
+        };
+        let mut c = CoinCounter {
+            yes_no: 1, // the seeded row is "No"
+            ..CoinCounter::default()
+        };
+        let mut g = HubGrid::default();
+        e.picker_result = PICK_ACCEPT;
+        let f = coin_exchange(&mut a, &e, &mut c, &mut g);
+        assert!(
+            f.actions
+                .contains(&HubAction::InstallPanel(PANEL_COIN_IDLE))
+        );
+        assert_eq!(a.sub, 1);
     }
 
     #[test]
@@ -878,10 +1500,10 @@ mod tests {
     #[test]
     fn dispatcher_is_inert_outside_the_three_submodes() {
         let mut a = HubActor::default();
-        let grid = HubGrid::default();
+        let mut grid = HubGrid::default();
         let mut e = env();
         e.submode = 2;
-        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &mut grid, |_, _| HubFrame::default());
         assert!(f.draws.is_empty() && f.actions.is_empty());
         assert_eq!(a.flags, 0);
     }
@@ -889,11 +1511,11 @@ mod tests {
     #[test]
     fn dispatcher_retires_on_the_pad_latch_without_running_the_handler() {
         let mut a = HubActor::default();
-        let grid = HubGrid::default();
+        let mut grid = HubGrid::default();
         let mut e = env();
         e.pad_latch = PAD_LATCH_SUSPEND;
         let mut ran = false;
-        let f = hub_dispatch(&mut a, &e, &grid, |_| {
+        let f = hub_dispatch(&mut a, &e, &mut grid, |_, _| {
             ran = true;
             HubFrame::default()
         });
@@ -905,14 +1527,14 @@ mod tests {
     #[test]
     fn dispatcher_release_arm_picks_by_the_board_flag() {
         let mut a = HubActor::default();
-        let grid = HubGrid::default();
+        let mut grid = HubGrid::default();
         let mut e = env();
         e.board_flag = 0;
-        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &mut grid, |_, _| HubFrame::default());
         assert!(f.actions.contains(&HubAction::ClearBusyBit));
         e.board_flag = 1;
         let mut a = HubActor::default();
-        let f = hub_dispatch(&mut a, &e, &grid, |_| HubFrame::default());
+        let f = hub_dispatch(&mut a, &e, &mut grid, |_, _| HubFrame::default());
         assert!(f.actions.contains(&HubAction::SetBoardFlag));
     }
 

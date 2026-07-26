@@ -568,6 +568,13 @@
         <td><a href="../subsystems/audio.html">audio</a></td>
       </tr>
       <tr>
+        <td>SFX cue bank routing - the category byte selects the VAB slot</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>A cue names its own bank. The descriptor's <code>+4</code> category selects the 12-byte mixer record at <code>0x80091508 + category*12</code>, whose <code>+8</code> is a <strong>VAB slot id</strong>: <code>FUN_80065034</code> hands it to <code>FUN_80068b98</code>, which repoints the current-bank globals at that slot <em>before</em> the program / tone lookup. Across every catalogued save state record <code>N</code> holds <code>+8 == N</code>. Slot 0 = PROT 0868 (byte-matched against a live state's <code>VagAtr</code> page), slot 2 = the class-2 bank PROT 0869. Worth grading rather than assuming, because staging one bank fails <em>quietly</em>: both banks carry a UI key map at program 0, so a category-0 cue resolved to a sibling sample - a real retail blip, twice as long and a fifth lower - and peak, duration and "did a voice key" all passed. Both hosts now stage the pinned pair out of one SPU allocator and route by category; categories 6 and 11 keep falling back to the class-2 bank while their slots are unpinned.</td>
+        <td><a href="../formats/sfx-table.html">sfx-table</a></td>
+      </tr>
+      <tr>
         <td>XA channel map / STR demux SM</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">disassembly</span></td>

@@ -60,7 +60,7 @@
 //! Several arms **fall through** into the next state inside the same call -
 //! `1→2→3→4`, `11→12`, `21→22`, `23→24`, `31→32→33` - because they end by
 //! bumping `+0x54` without a jump and the arms are laid out in state order.
-//! [`step`] models that with a loop rather than one arm per call, which is the
+//! [`step_scene_program`] models that with a loop rather than one arm per call, which is the
 //! difference between a program reaching its voice cue on the frame retail
 //! reaches it and four frames later.
 //!
@@ -272,7 +272,7 @@ pub enum ProgramEffect {
     RequestBgm(i32),
 }
 
-/// What one call to [`step`] did.
+/// What one call to [`step_scene_program`] did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramStep {
     /// The SM actor after the step.
@@ -314,6 +314,12 @@ pub fn snapshot(player: &ProgramPlayer) -> (Vec3, Vec3) {
 /// `(state + 1) + program * 10`. Called with `state == 0` in practice, which
 /// is what maps program `p` onto entry state `1 + 10p`; the `+ 1` is on the
 /// *current* state, not a constant, so the arithmetic is kept general.
+///
+/// NOT WIRED: its only non-test caller is [`step_scene_program`], the entry
+/// arm it belongs to, and nothing ticks that - see its note for the specific
+/// missing input (the BGM request/acknowledge pair and the CD-XA in-flight
+/// counter that three of its states park on). This helper needs no host of its
+/// own; it becomes live the moment the program is stepped.
 pub fn entry_successor(state: u16, program: u16) -> u16 {
     state
         .wrapping_add(1)
@@ -330,6 +336,9 @@ pub fn entry_successor(state: u16, program: u16) -> u16 {
 /// only one of the two is what the bytes say. The shift is arithmetic, so a
 /// negative sum steps the lift *up*; retail relies on that not happening
 /// because the leg only runs after the lift was seeded positive.
+///
+/// NOT WIRED: same blocker as [`entry_successor`] above - its only non-test
+/// caller is [`step_scene_program`]'s lift leg, and nothing ticks that program.
 pub fn lift_step(lift: i16, angle: i16) -> i16 {
     let raw = (i32::from(lift) + i32::from(angle) + i32::from(LIFT_STEP_BIAS)) >> LIFT_STEP_SHIFT;
     let raw = raw as i16;
@@ -375,8 +384,22 @@ enum Flow {
 /// cadence byte and the actor's own `+0x50`/`+0x54`/`+0x9E` all have engine
 /// homes.
 ///
+/// Named `step_scene_program` and not `step` on purpose, and it must stay that
+/// way. `port-catalog.py` never gates a *free* function edge - the receiver
+/// gate is defined over `impl_type`, which a free function has none of - so a
+/// free `fn step` collects an in-edge from both of the other things in this
+/// tree that spell `step`: the live `engine_vm::motion_vm::step`, and every
+/// reachable function that merely names a local or parameter `step` (the
+/// browser's `LegaiaMinigames::fishing_advance_cast(&mut self, step: i32)` was
+/// the one that fired). Under the old name this correct `NOT WIRED:` was
+/// reported as a stale disclosure.
+///
 /// [`ActorHandler::ScriptedScene`]: crate::actor_handler::ActorHandler::ScriptedScene
-pub fn step(actor: ProgramActor, player: ProgramPlayer, env: ProgramEnv) -> ProgramStep {
+pub fn step_scene_program(
+    actor: ProgramActor,
+    player: ProgramPlayer,
+    env: ProgramEnv,
+) -> ProgramStep {
     let mut a = actor;
     let mut p = player;
     let mut story_flags = env.story_flags;
@@ -780,7 +803,7 @@ mod tests {
         // Retail's entry arm ends `j 0x801d5618` - it does NOT fall into the
         // program it just selected. Getting this wrong runs a program's first
         // two states on the frame it is chosen.
-        let s = step(actor(2), player(), env());
+        let s = step_scene_program(actor(2), player(), env());
         assert_eq!(s.actor.state, 21);
         assert!(s.effects.is_empty(), "the entry arm emits nothing");
     }
@@ -790,7 +813,7 @@ mod tests {
         for state in [STATE_COUNT, STATE_COUNT + 1, 0x1000] {
             let mut a = actor(0);
             a.state = state;
-            let s = step(a, player(), env());
+            let s = step_scene_program(a, player(), env());
             assert_eq!(s.actor, a, "state {state:#x} must be inert");
             assert!(s.effects.is_empty());
         }
@@ -806,7 +829,7 @@ mod tests {
             .filter(|s| {
                 let mut a = actor(0);
                 a.state = *s;
-                let out = step(a, player(), env());
+                let out = step_scene_program(a, player(), env());
                 out.actor == a && out.effects.is_empty() && !out.retired
             })
             .collect();
@@ -827,7 +850,7 @@ mod tests {
         // Make the BGM gate pass immediately.
         e.bgm_request = BGM_TRACK;
         e.bgm_current = BGM_TRACK;
-        let s = step(a, player(), e);
+        let s = step_scene_program(a, player(), e);
         assert_eq!(s.actor.state, 4, "1,2,3 all ran; 4 is where it parked");
         assert!(
             s.effects
@@ -858,18 +881,18 @@ mod tests {
         // Nothing requested yet and nothing playing: request the track.
         e.bgm_request = 0;
         e.bgm_current = 0;
-        let s = step(a, player(), e);
+        let s = step_scene_program(a, player(), e);
         assert_eq!(s.effects, vec![ProgramEffect::RequestBgm(BGM_TRACK)]);
         assert_eq!(s.actor.state, 2, "still waiting");
         // Requested but not acknowledged: no re-request, no advance.
         e.bgm_request = BGM_TRACK;
         e.bgm_current = 0;
-        let s = step(a, player(), e);
+        let s = step_scene_program(a, player(), e);
         assert!(s.effects.is_empty());
         assert_eq!(s.actor.state, 2);
         // Acknowledged: fall through into state 3's SFX.
         e.bgm_current = BGM_TRACK;
-        let s = step(a, player(), e);
+        let s = step_scene_program(a, player(), e);
         assert!(s.effects.contains(&ProgramEffect::Sfx(SFX_OPENING)));
     }
 
@@ -884,7 +907,7 @@ mod tests {
             let mut e = env();
             e.bgm_request = track;
             e.bgm_current = 0;
-            let s = step(a, player(), e);
+            let s = step_scene_program(a, player(), e);
             assert!(
                 !s.effects
                     .iter()
@@ -904,7 +927,7 @@ mod tests {
             a.state = 4;
             let mut e = env();
             e.frame_delta = dt;
-            let s = step(a, player(), e);
+            let s = step_scene_program(a, player(), e);
             let staged = s
                 .effects
                 .iter()
@@ -927,7 +950,7 @@ mod tests {
             let mut vsyncs = 0u32;
             let mut guard = 0;
             loop {
-                let s = step(a, player(), e);
+                let s = step_scene_program(a, player(), e);
                 vsyncs += u32::from(dt);
                 a = s.actor;
                 guard += 1;
@@ -957,7 +980,7 @@ mod tests {
         let mut engaged_at_some_point = false;
         let mut guard = 0;
         loop {
-            let s = step(a, p, e);
+            let s = step_scene_program(a, p, e);
             a = s.actor;
             p = s.player;
             e.story_flags = s.story_flags;
@@ -989,11 +1012,11 @@ mod tests {
         p.flags |= PLAYER_ENGAGED;
         let mut e = env();
         e.release_guard_set = true;
-        let s = step(a, p, e);
+        let s = step_scene_program(a, p, e);
         assert!(s.retired);
         assert_ne!(s.player.flags & PLAYER_ENGAGED, 0, "guard held the release");
         e.release_guard_set = false;
-        let s = step(a, p, e);
+        let s = step_scene_program(a, p, e);
         assert!(s.retired);
         assert_eq!(s.player.flags & PLAYER_ENGAGED, 0);
     }
@@ -1029,7 +1052,7 @@ mod tests {
         e.frame_delta = 3;
         let mut guard = 0;
         loop {
-            let s = step(a, p, e);
+            let s = step_scene_program(a, p, e);
             a = s.actor;
             p = s.player;
             guard += 1;
@@ -1051,7 +1074,7 @@ mod tests {
         a.state = 0x16;
         let mut e = env();
         e.dev_flags = 1;
-        let s = step(a, player(), e);
+        let s = step_scene_program(a, player(), e);
         assert!(
             s.effects
                 .contains(&ProgramEffect::XaStream { clip: VOICE_CLIP })
@@ -1060,7 +1083,7 @@ mod tests {
         let mut a = actor(2);
         a.state = 0x17;
         a.accum = 0x28;
-        let s = step(a, player(), env());
+        let s = step_scene_program(a, player(), env());
         assert!(s.effects.contains(&ProgramEffect::XaCue {
             clip: VOICE_CLIP,
             chan: VOICE_CHANNEL,
@@ -1078,9 +1101,9 @@ mod tests {
         a.accum = 0x100;
         let mut e = env();
         e.xa_busy = 1;
-        assert_eq!(step(a, player(), e).actor.state, 0x19);
+        assert_eq!(step_scene_program(a, player(), e).actor.state, 0x19);
         e.xa_busy = 0;
-        assert_eq!(step(a, player(), e).actor.state, 0x1A);
+        assert_eq!(step_scene_program(a, player(), e).actor.state, 0x1A);
     }
 
     #[test]
@@ -1092,7 +1115,7 @@ mod tests {
             let mut a = actor(0);
             a.state = state;
             a.accum = 0x100;
-            step(a, player(), env())
+            step_scene_program(a, player(), env())
                 .effects
                 .into_iter()
                 .filter_map(|f| match f {
@@ -1119,7 +1142,7 @@ mod tests {
         a.accum = 0x64;
         let mut p = player();
         p.flags |= PLAYER_ENGAGED;
-        let s = step(a, p, env());
+        let s = step_scene_program(a, p, env());
         assert!(s.retired);
         assert_ne!(
             s.player.flags & PLAYER_ENGAGED,
@@ -1152,7 +1175,7 @@ mod tests {
         p.pos.1 = 0;
         p.lift = 0x200;
         let before = p.pos.1;
-        let s = step(a, p, env());
+        let s = step_scene_program(a, p, env());
         assert_ne!(s.player.pos.1, before, "the leg moved the player");
         let staged_y = s
             .effects

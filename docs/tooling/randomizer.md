@@ -69,6 +69,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Steal items (Evil God Icon)](#steal-items-evil-god-icon)
   - [Monster combat stats](#monster-combat-stats)
   - [Enemy difficulty scale](#enemy-difficulty-scale)
+    - [Which enemies count as bosses](#which-enemies-count-as-bosses)
   - [Special-attack power](#special-attack-power)
   - [Element-affinity matrix](#element-affinity-matrix)
   - [Spell MP costs](#spell-mp-costs)
@@ -283,7 +284,7 @@ unless asked for:
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
-| `--enemy-stat-scale MULT` or `STAT=MULT,...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
+| `--enemy-stat-scale MULT`, `STAT=MULT,...` or `GROUP:SCALE\|...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names, and a `regular:`/`boss:` split gives random encounters and set-pieces their own scale. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
 
 **Tuning the encounter and door passes:**
 
@@ -1143,7 +1144,8 @@ keeps its own profile and its rank against the rest - the whole difficulty curve
 moves up or down together. It is **seedless**: a given setting always produces
 the same bytes.
 
-The flag takes two spellings, and they are one feature rather than two:
+The flag takes three spellings, and they are one feature rather than three -
+each is the previous one widened:
 
 - **Uniform** - a bare multiplier. `--enemy-stat-scale 2` doubles the roster's
   HP, MP, ATK, both defenses, INT and SPD; `0.5` halves them. This is the whole
@@ -1152,6 +1154,15 @@ The flag takes two spellings, and they are one feature rather than two:
   named stats move; everything else stays at its disc value.
   `--enemy-stat-scale hp=3` makes enemies spongy without making them lethal;
   `--enemy-stat-scale attack=2,defense=0.5` makes them glass cannons.
+- **Per-group** - a `|`-separated `group:scale` split, where each group's body is
+  either of the two spellings above. `--enemy-stat-scale 'regular:0.75|boss:2'`
+  takes the grind down and the set-pieces up in the same run;
+  `--enemy-stat-scale 'boss:hp=2'` makes only the bosses spongy. Groups are
+  `regular` (aliases `normal` / `random` / `common`), `boss` (`bosses`) and `all`
+  (`both` / `every`); an unscoped segment among scoped ones is read as `all`, so
+  `'2|boss:4'` is "everything 2x, bosses 4x". A group left unnamed falls back to
+  the `all` segment, or to retail. See
+  [Which enemies count as bosses](#which-enemies-count-as-bosses).
 
 Accepted stat keys: `hp`, `mp`, `attack`, `defense` (both halves at once),
 `defense_high` / `defense_low` individually, `intelligence`, `speed`. The
@@ -1160,18 +1171,28 @@ runtime's own `udf` / `ldf` names and a few obvious synonyms (`atk`, `int`,
 `defense` deliberately resolves to **both** defense halfwords, because a player
 asking to halve defense means the stat, not one of its two internal fields.
 
-A list is validated rather than best-guessed: an unknown stat name, a field set
-twice (including `defense` overlapping `defense_high`), or an out-of-range
-multiplier is an error. Silently applying a *different* difficulty than the one
-asked for is the failure worth being loud about.
+A list is validated rather than best-guessed: an unknown stat name or group, a
+field or group set twice (including `defense` overlapping `defense_high`), or an
+out-of-range multiplier is an error. Silently applying a *different* difficulty
+than the one asked for is the failure worth being loud about.
 
-Both spellings are one type - `monster_stats::StatScale`, a
-`ScalePermille` per stat field - so a uniform scale is just every field holding
-the same multiplier. There is one parser, one planner and one clamp rule behind
-both, which is why the CLI flag, the browser's simple slider and its advanced
-per-stat sliders cannot drift apart. `StatScale`'s `Display` collapses a uniform
-scale back to `2x` and prints a per-stat one as `hp=3x attack=1.5x`, so a run
-manifest stays readable when one stat out of seven moves.
+All three spellings are one type. `monster_stats::StatScale` holds a
+`ScalePermille` per stat field, so a uniform scale is just every field holding
+the same multiplier; `monster_stats::ScaleProfile` holds a `StatScale` per enemy
+group, so a whole-roster dial is just both groups holding the same scale. There
+is one parser, one planner and one clamp rule behind all of them, which is why
+the CLI flag, the browser's simple sliders and its advanced per-stat sliders
+cannot drift apart. `Display` collapses each level back down - a whole-roster
+uniform scale prints `2x`, a per-stat one `hp=3x attack=1.5x`, a split
+`regular:0.5x|boss:3x` - and every printed form parses back, so a run manifest
+line is a usable setting rather than a lossy summary.
+
+`|` is the group separator precisely because `StatScale::parse` never uses it: a
+group's body keeps the full `key=value` grammar, separators and all, so the two
+parsers compose without escaping. That is also what let the split reach the
+browser with **no new argument** on the wasm boundary - `patch_rom`'s
+`enemy_stat_scale` was already a string, and widening a string beats adding a
+positional parameter (which is a four-file edit plus two builds).
 
 The two passes compose, and the CLI sequences the scale *after* the randomizer,
 so `--monster-stats shuffle --enemy-stat-scale 2` scales the shuffled values.
@@ -1185,11 +1206,12 @@ randomizer's:
   fights would leave the hardest fights in the game untouched. The randomizer's
   `PROTECTED_MONSTER_IDS` guard exists because *reassigning* a boss's stats
   breaks a fight scripted around them; a multiplier keeps every fight's shape and
-  moves only its difficulty. The one carve-out is
+  moves only its difficulty - which is also why the per-group split can hand
+  bosses their own multiplier instead of skipping them. The one carve-out is
   `monster_stats::SCALE_PINNED_MONSTER_IDS`: the Rim Elm sparring partner, whose
   fight is unwinnable by design and has no branch for the player winning, so a
-  weakened one soft-locks the tutorial. It is pinned in **both** directions, so
-  that fight is byte-identical at every setting.
+  weakened one soft-locks the tutorial. It is pinned in **both** directions and
+  in **either** group, so that fight is byte-identical at every setting.
 - **AGL is still left alone.** `+0x0E` is the action gauge, not a difficulty
   stat: scaling it multiplies how many actions an enemy gets per round, which
   makes a `5x` run a slideshow of enemy turns rather than a harder fight.
@@ -1220,12 +1242,75 @@ Slot handling is the randomizer's: decompress → edit → recompress into the s
 `0x14000` footprint, skipping any slot too tight to re-pack.
 
 In the browser patcher this is **Enemy difficulty scale** in the Gameplay group,
-with a **Simple / Advanced** switch mirroring the two spellings: Simple is one
-slider and sends a bare multiplier, Advanced is one slider per stat and sends the
+with a **Simple / Advanced** switch mirroring the spellings, and both panes split
+by enemy group: Simple is two sliders (random encounters, bosses) each sending a
+bare multiplier, Advanced is two grids of seven and sends each group's
 `stat=mult` list, naming only the stats that moved. Simple is the default. The
 page emits exactly the strings the CLI accepts - there is no separate browser
-vocabulary - and Advanced with every slider at `1.0x` collapses to retail rather
-than rewriting every slot with its own values.
+vocabulary - and it collapses on the way out: two equal groups send one unscoped
+scale (byte-identical to what the page sent before the split existed), and every
+slider at `1.0x` collapses to retail rather than rewriting every slot with its
+own values.
+
+#### Which enemies count as bosses
+
+Nothing in a monster's `battle_data` record says whether it is a boss - the
+record is stats, rewards and AI, with no encounter context. So the split reads
+the classification off the thing that does know: each scene's formation table,
+and which of its formations a random-encounter roll can actually produce.
+
+`crate::encounter` already draws that line for the encounter randomizer - a
+formation is a random encounter iff some region with `rate_increment > 0` reaches
+it, and everything else is a scripted fight the field VM engages by explicit
+index (see [Random encounters](#random-encounters)). `monster_class` reuses that
+mask verbatim rather than re-deriving it, so the two features cannot disagree
+about what a boss is. Walking every scene bundle gives, per monster id, whether
+it was ever seen in a random formation, a scripted one, or both:
+
+| seen random | seen scripted | class |
+|---|---|---|
+| yes | no | regular |
+| yes | yes | regular |
+| no | yes | **boss** |
+| no | no | regular |
+
+*Seen in both is regular*, because a monster the player can meet on a step is a
+random encounter whatever else it also does; grouping every story-gated ambush
+with Songi would let the boss slider silently retune half the trash roster.
+*Seen nowhere is regular*, because those are the cut enemies
+[Unused content](#unused-content) can place into ordinary encounters.
+
+Two curated lists then bracket the scan, each covering something it structurally
+cannot reach:
+
+- **A floor.** `monster_stats::STORY_BOSS_MONSTER_IDS` - the hand-curated boss
+  set the stat *shuffle* already guards - is unioned in, because a boss **form**
+  the game swaps in mid-battle is named by no formation record at all. On the
+  retail disc the scan finds most of that list on its own and adds several
+  scripted-only fights it never named; the list contributes Caruban and Cort's
+  later forms, which the scan cannot see.
+- **A ceiling.** `monster_stats::TUTORIAL_MONSTER_IDS` is then forced back to
+  regular. The disc classifies two of the first three Piura as scripted-only -
+  only Blue rolls on a random step - so the rule above would put a fresh save's
+  opening fights in the boss group. That is technically what they are and
+  emphatically not what the knob means.
+
+The two provenances stay checkable against each other rather than collapsing
+into one claim: the disc-gated `monster_class_agrees_with_curated_bosses`
+asserts the **scan alone** never sees a curated boss in a random formation - the
+property the union cannot fake, and the signal that the region-rate heuristic has
+started misreading a boss fight.
+
+The scan costs a walk of every PROT entry, so it is only run when the two halves
+of the profile actually differ. A whole-roster dial classifies nothing and writes
+byte-identical output to the pre-split pass.
+
+The classification is read **after** `--encounters` has already rewritten the
+formations, which is deliberate rather than incidental: it means the split
+describes the disc the player will actually receive. The boss set survives that
+rewrite by construction - the encounter randomizer never touches a scripted
+formation and never donates a scripted-only id into a random one - so a
+randomized run classifies bosses exactly as a vanilla one does.
 
 ### Special-attack power
 

@@ -6,17 +6,14 @@
 //! SM `FUN_801E295C` itself, and none is a state of it, so they port cleanly as
 //! pure functions. The per-routine caller is named in the `NOT WIRED` block.
 //!
-//! PORT: FUN_801DB9C4 (pool `+0x8` flag-word scrub)
-//! PORT: FUN_801DB318 (formation span-normalise + recentre)
-//! PORT: FUN_801D8A88 (attack-target-queue builder)
-//! PORT: FUN_801D8D00 (target-cycle accessor)
-//! PORT: FUN_801DB124 (dead-target redirect roll)
 //! REF: FUN_801DB8B4 (first-live-monster slot - the canonical port is
 //! `engine-core`'s `BattleRound::first_living_monster`, which is live; the
 //! fixed-slot twin below exists for oracle work)
-//! PORT: FUN_801DBA04 (first-selectable target)
-//! PORT: FUN_801DB81C (next-selectable actor)
-//! PORT: FUN_80019B28 (12-bit bearing / atan2, faithful LUT form)
+//!
+//! Every address is tagged on the function that implements it, not here: a
+//! module-level `PORT:` line makes one file-wide anchor per address, and this
+//! file now has both wired and inert routines, which a file-wide anchor cannot
+//! express.
 //!
 //! All arithmetic is transcribed from the DISASSEMBLY in
 //! `ghidra/scripts/funcs/overlay_battle_action_801db9c4.txt`,
@@ -26,57 +23,18 @@
 //! The pool is 8 slots (0..2 party, 3..7 monsters); slots 0..2 are treated as
 //! always-present, slots 3.. are gated on the liveness halfword `actor[+0x14C]`.
 //!
-//! # NOT WIRED
+//! ## What is on the frame path
 //!
-//! No engine caller reaches any of these leaves. The missing prerequisite is
-//! per-routine, and in every case it is the routine's own retail **caller**
-//! being un-ported - each entry below names that caller from the `jal` site in
-//! the battle-overlay dumps, not from a doc:
+//! [`build_attack_target_queue`] and [`cycle_attack_target`] are the retail
+//! attack-target ring, and `engine-core`'s `TargetPickerSession` steps its
+//! enemy cursor through them - so a Left/Right press moves to the angularly
+//! nearest live monster, which is what retail does, instead of to the next
+//! slot index. That path also runs [`bearing_12bit`], over
+//! [`approx_arctan_lut`] rather than the SCUS table.
 //!
-//! - `FUN_801DB9C4` ([`clear_pool_flag_words`]) scrubs the actor **`+0x8`**
-//!   flag word. Its only static caller in the battle overlay is the pose
-//!   setter `FUN_801D5854`'s invalid-slot guard at `0x801D58E8` - **not** the
-//!   action SM's end-of-action state. `FUN_801E295C` never calls it (zero
-//!   `jal 0x801db9c4` in `overlay_battle_action_801e295c.txt`). Wiring it needs
-//!   two things: a `+0x8` flag word on `BattleActor` (the port carries `+0x1DC`
-//!   `flag_bits` and no `+0x8`), and the guard living inside the engine's
-//!   `BattleActionHost::pose` implementation, which is `engine-core`'s.
-//! - `FUN_801DB318` ([`normalize_formation_span`]) is case `0` of the battle
-//!   **flow** SM `FUN_801D388C` (`jal` at `0x801D3908`, jump table
-//!   `0x801CE880`), which is not ported. It also shifts the camera-focus
-//!   accumulators `_DAT_80089118` / `_DAT_80089120` to compensate for the
-//!   squash, and the engine frames the battle camera by a per-action snap
-//!   (`camera_height_for_frame` through `BattleActionHost::camera_bounds`) with
-//!   no focus accumulator for that compensation to land in.
-//! - `FUN_801D8A88` ([`build_attack_target_queue`]), `FUN_801D8D00`
-//!   ([`cycle_attack_target`]), `FUN_801DBA04` ([`first_selectable_target`])
-//!   and `FUN_801DB81C` ([`next_selectable_actor`]) are all leaves of the
-//!   battle **command / menu** SM `FUN_801D0748` (e.g. `jal 0x801d8a88` at
-//!   `0x801D1624` / `0x801D17A4` / `0x801D18F8`, each immediately followed by
-//!   the target-cursor stamp `FUN_801DA6B4`). That SM is not ported: the engine
-//!   drives target selection through `engine-core::target_picker`, a row/slot
-//!   cursor over `SlotState` rows, so nothing holds the `ctx[+0x244..+0x249]`
-//!   ring or the `action_state[i] != 4` array these index. **Porting
-//!   `FUN_801D0748` is the single prerequisite for all four.**
-//! - `FUN_801DB124` ([`redirect_dead_target`]) *is* called by the turn picker
-//!   `FUN_801DABA4` - itself ported, as `World::next_combatant_by_initiative` -
-//!   at `0x801DAF14` (party arm) and `0x801DAF50` (monster arm). The gates the
-//!   port does not carry are the **command-flow byte `ctx[+0x06] == 0xFF`** on
-//!   the party arm and the enemy-AI pick `FUN_801E9FD4` that precedes the
-//!   monster arm. (`ctx[+0x276]`, the outer gate, *is* modelled - it is
-//!   `BattleActionCtx::menu_open`.) Adding the re-roll without `ctx[+0x06]`
-//!   would spend RNG draws retail does not always make, which is a simulation
-//!   change rather than a wiring fix.
-//! - `FUN_801DB8B4` ([`first_live_monster_slot`]) is **already ported and
-//!   live** elsewhere: `engine-core`'s `BattleRound::first_living_monster`,
-//!   reached from `BattleRound::boundary` (retail's `FUN_801D88CC` loop B, the
-//!   `jal` at `0x801D8A44`). The copy here is the fixed-pool twin - retail
-//!   scans slots `3..7` unconditionally, the live port scans from
-//!   `party_count` because the engine compacts its seating. It is kept as the
-//!   byte-exact form for oracle work, not as a second implementation to wire.
-//! - `FUN_80019B28` ([`bearing_12bit`]) needs the `SCUS_942.54` arctan LUT at
-//!   `0x8006F4C8`. No engine boot path extracts that table, so no caller can
-//!   supply the `atan_lut` argument.
+//! The rest stay inert and each carries its own `NOT WIRED:` naming the
+//! prerequisite, read off the `jal` site in the battle-overlay dumps rather
+//! than from a doc.
 
 /// The `+0x8` actor flag-word bits `FUN_801DB9C4` keeps: it clears
 /// `0x83000000` (bit 31 and bits 25/24).
@@ -93,6 +51,12 @@ pub const POOL_FLAG_WORD_KEEP: u32 = 0x7cff_ffff;
 /// runs this scrub across the pool (`0x801D58C8..0x801D58E8`). An earlier
 /// reading here attributed it to action-SM state `0x5A`; `FUN_801E295C`
 /// contains no call to it, so that attribution is withdrawn.
+///
+/// NOT WIRED: the only static caller in the battle overlay is that
+/// `FUN_801D5854` guard, which lives inside the engine's
+/// `BattleActionHost::pose` implementation (`engine-core`'s), and the scrub
+/// needs a `+0x8` actor flag word - `BattleActor` carries `+0x1DC`
+/// `flag_bits` and no `+0x8`. Both have to exist before a caller can.
 ///
 /// PORT: FUN_801DB9C4
 pub fn clear_pool_flag_words(flag_words: &mut [u32]) {
@@ -127,6 +91,14 @@ pub struct FormationPos {
 ///    quirk that shows up only for absurd (`> 0x7FFF`) formations.
 /// 3. recompute min/max, then subtract the centroid `((max + min) >>u 1)` from
 ///    every included slot and add it back onto the focus accumulators.
+///
+/// NOT WIRED: this is case `0` of the battle **flow** SM `FUN_801D388C`
+/// (`jal` at `0x801D3908`, jump table `0x801CE880`), which is not ported. It
+/// also shifts the camera-focus accumulators `_DAT_80089118` /
+/// `_DAT_80089120` to compensate for the squash, and the engine frames the
+/// battle camera by a per-action snap (`camera_height_for_frame` through
+/// `BattleActionHost::camera_bounds`) with no focus accumulator for that
+/// compensation to land in.
 ///
 /// PORT: FUN_801DB318
 pub fn normalize_formation_span(
@@ -294,6 +266,16 @@ pub struct RedirectQuery {
 /// `rng() % monster_count + 3`. It retries until it lands on a living slot, so
 /// `is_alive` must eventually return true for some slot on that side (retail
 /// loops forever otherwise).
+///
+/// NOT WIRED: retail calls this from the turn picker `FUN_801DABA4` - itself
+/// ported, as `World::next_combatant_by_initiative` - at `0x801DAF14` (party
+/// arm) and `0x801DAF50` (monster arm). The gates the port does not carry are
+/// the **command-flow byte `ctx[+0x06] == 0xFF`** on the party arm and the
+/// enemy-AI pick `FUN_801E9FD4` that precedes the monster arm.
+/// (`ctx[+0x276]`, the outer gate, *is* modelled - it is
+/// `BattleActionCtx::menu_open`.) Adding the re-roll without `ctx[+0x06]`
+/// would spend RNG draws retail does not always make, which is a simulation
+/// change rather than a wiring fix.
 ///
 /// PORT: FUN_801DB124
 pub fn redirect_dead_target(
@@ -486,6 +468,12 @@ pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
 /// (`+0x16E & 0xF84 == 0`). Returns `actor_count` when none qualifies, and `0`
 /// when `actor_count == 0` (retail's `uVar1` seed).
 ///
+/// NOT WIRED: a leaf of the battle **command / menu** SM `FUN_801D0748`,
+/// which is not ported. The engine drives target selection through
+/// `engine-core::target_picker`, whose rows carry occupancy + a validator
+/// bit and no `action_state[i] != 4` array or `+0x16E` ailment word for these
+/// three predicates to read.
+///
 /// PORT: FUN_801DBA04
 pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_count: u8) -> u8 {
     if actor_count == 0 {
@@ -511,6 +499,10 @@ pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_co
 /// actor_count` it returns `current_index + 1` without scanning; otherwise it
 /// returns the first qualifying slot, or `actor_count` when none qualifies.
 ///
+/// NOT WIRED: same prerequisite as [`first_selectable_target`] - both are
+/// leaves of the unported command / menu SM `FUN_801D0748` and index state
+/// (`action_state[]`, `+0x16E`) the engine's picker rows do not carry.
+///
 /// PORT: FUN_801DB81C
 pub fn next_selectable_actor(
     pool: &[PoolActor],
@@ -531,8 +523,45 @@ pub fn next_selectable_actor(
     i
 }
 
-/// Convert two world points to a 12-bit clockwise heading (`0x000..0xFFF`, with
-/// `0x000` toward `-Z` and `0x400` toward `+X`). `FUN_80019B28`.
+/// Entries in the retail arctan LUT at `0x8006F4C8` - the index space
+/// `bearing_12bit` divides into is `(min << 11) / max`, so `0..=0x800`.
+pub const ARCTAN_LUT_LEN: usize = 0x801;
+
+/// A clean-room stand-in for the retail arctan LUT at `0x8006F4C8`.
+///
+/// The retail table is Sony data and no engine boot path extracts it, so this
+/// is the same function computed from first principles: entry `i` is
+/// `atan(i / 2048)` expressed in 12-bit turn units (`0x1000` = one turn),
+/// which fixes `lut[0] == 0` and `lut[0x800] == 0x200` (45 degrees) - the two
+/// values [`bearing_12bit`]'s quadrant algebra depends on.
+///
+/// Substituting the table leaves the *arithmetic* of `FUN_80019B28`
+/// untouched: quadrant folding, the `(min << 11) / max` divide and the
+/// per-octant constants are the ported ones. Only the sampled arctan differs,
+/// by at most a unit of the 12-bit angle, which is below the resolution any
+/// consumer of a heading here cares about.
+pub fn approx_arctan_lut() -> &'static [i16; ARCTAN_LUT_LEN] {
+    use std::sync::OnceLock;
+    static LUT: OnceLock<[i16; ARCTAN_LUT_LEN]> = OnceLock::new();
+    LUT.get_or_init(|| {
+        let mut t = [0i16; ARCTAN_LUT_LEN];
+        for (i, slot) in t.iter_mut().enumerate() {
+            let ratio = i as f64 / 2048.0;
+            *slot = (ratio.atan() * 4096.0 / std::f64::consts::TAU).round() as i16;
+        }
+        t
+    })
+}
+
+/// [`bearing_12bit`] over [`approx_arctan_lut`] - the form a caller with no
+/// disc-extracted arctan table uses.
+pub fn bearing_12bit_approx(p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
+    bearing_12bit(approx_arctan_lut(), p1z, p1x, p2z, p2x)
+}
+
+/// Convert two world points to a 12-bit heading (`0x000..0xFFF`), with
+/// `0x000` toward `+Z`, `0x400` toward `+X`, `0x800` toward `-Z` and `0xC00`
+/// toward `-X`. `FUN_80019B28`.
 ///
 /// This is the faithful port of the retail atan2: it takes the displacement
 /// `(dz, dx) = (p2z - p1z, p2x - p1x)`, folds it into one of four quadrants by
@@ -542,10 +571,12 @@ pub fn next_selectable_actor(
 /// constant (`0x000/0x400/0x800/0xC00` base, added or subtracted) reassembles
 /// the full circle. Every result is masked to `0xFFF`.
 ///
-/// The LUT is Sony data supplied by the caller (extracted from `SCUS_942.54` at
-/// `0x8006F4C8`); no table bytes are embedded here. The motion VM keeps a
-/// separate `f32` approximation of this function for its face-target ramp; this
-/// is the byte-faithful form.
+/// The LUT is data supplied by the caller. No Sony table bytes are embedded
+/// here: a host with the disc-extracted `0x8006F4C8` table passes it, and a
+/// host without one passes [`approx_arctan_lut`] (which is what
+/// [`bearing_12bit_approx`], and through it the engine's enemy target cursor,
+/// does). The motion VM keeps a separate `f32` approximation of the whole
+/// function for its face-target ramp; this is the faithful integer form.
 ///
 /// PORT: FUN_80019B28
 pub fn bearing_12bit(atan_lut: &[i16], p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
@@ -919,6 +950,73 @@ mod tests {
         assert_eq!(bearing_12bit(&lut, 0, 0, -100, 0), 0x800);
         // -X (dz=0, dx<0) -> 0xC00.
         assert_eq!(bearing_12bit(&lut, 0, 0, 0, -100), 0xc00);
+    }
+
+    #[test]
+    fn approx_lut_pins_the_two_values_the_quadrant_algebra_needs() {
+        let lut = approx_arctan_lut();
+        assert_eq!(lut.len(), ARCTAN_LUT_LEN);
+        assert_eq!(lut[0], 0, "the zero entry the axis cases return directly");
+        assert_eq!(lut[0x800], 0x200, "45 degrees in 12-bit turn units");
+        // Monotone non-decreasing: an arctan table that dipped would break the
+        // nearest-alternate ordering the target ring is built on.
+        assert!(lut.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn approx_bearing_names_the_four_axes() {
+        // The heading convention, stated as headings rather than as table
+        // entries: +Z is 0, and the circle runs +Z -> +X -> -Z -> -X.
+        assert_eq!(bearing_12bit_approx(0, 0, 100, 0), 0x000);
+        assert_eq!(bearing_12bit_approx(0, 0, 0, 100), 0x400);
+        assert_eq!(bearing_12bit_approx(0, 0, -100, 0), 0x800);
+        assert_eq!(bearing_12bit_approx(0, 0, 0, -100), 0xc00);
+        // And the four diagonals land on the octant midpoints.
+        assert_eq!(bearing_12bit_approx(0, 0, 100, 100), 0x200);
+        assert_eq!(bearing_12bit_approx(0, 0, -100, 100), 0x600);
+        assert_eq!(bearing_12bit_approx(0, 0, -100, -100), 0xa00);
+        assert_eq!(bearing_12bit_approx(0, 0, 100, -100), 0xe00);
+    }
+
+    #[test]
+    fn approx_bearing_orders_the_retail_monster_seats() {
+        // The authored 4-monster row (battle_seats::MONSTER_SEATS[3]) seen
+        // from the lead party seat: the ring must order the alternates by
+        // angular distance, so the two flanks come out either side of the
+        // centre pair rather than in slot order.
+        let seats = [(-900i16, 900i16), (-300, 800), (300, 800), (900, 900)];
+        let mut pool = vec![PoolActor::default(); 8];
+        pool[0] = PoolActor {
+            alive: true,
+            x: 0,
+            z: -825,
+            target_slot: 4, // currently aimed at the left-of-centre monster
+            status: 0,
+        };
+        for (i, (x, z)) in seats.iter().enumerate() {
+            pool[3 + i] = PoolActor {
+                alive: true,
+                x: *x,
+                z: *z,
+                target_slot: 0,
+                status: 0,
+            };
+        }
+        let q = build_attack_target_queue(&pool, 0, bearing_12bit_approx);
+        assert_eq!(q.count, 4);
+        assert_eq!(q.wrap_slot, 4);
+        // From the left-of-centre monster, sweeping one way: right-of-centre,
+        // then the far right flank, then the far left flank.
+        assert_eq!(q.ordered, [5, 6, 3]);
+        let ring = [
+            q.count,
+            q.wrap_slot,
+            q.ordered[0],
+            q.ordered[1],
+            q.ordered[2],
+        ];
+        assert_eq!(cycle_attack_target(&ring, 4, TargetCycle::Next), 5);
+        assert_eq!(cycle_attack_target(&ring, 4, TargetCycle::Prev), 3);
     }
 
     #[test]

@@ -232,9 +232,15 @@ pub(crate) fn categorize_dir(
         format!("raw_{}", idx)
     };
 
+    // Extracted PROT entries only. Without the extension filter the scan
+    // classifies its own output: the default `--out` is `<dir>/categorize.json`,
+    // so a second run over the same directory reports one extra "entry" that is
+    // the previous run's report. `legaia-extract` never saw it because the file
+    // does not exist yet when its pipeline classifies.
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.is_file())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("BIN"))
         .collect();
     paths.sort();
 

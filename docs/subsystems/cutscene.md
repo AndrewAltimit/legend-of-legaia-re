@@ -407,6 +407,9 @@ holds **no** channel selector):
   `(len*60+99)/100`, and the starter's end-LBA offset `(duration*150+149)/60` clamped at `0x2A30` -
   are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
   control / `CdlSetfilter` state machines around them stay hardware-side and unported.
+  `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs that mapping for a set of cue ids and
+  reports the `XA<n>.XA` bank, the filter channel and the duration / end-LBA arithmetic, checking
+  each resolved bank against the extracted files - the census entry point for this path.
 
 So the complete channel map is: **movies** = one track per file at `(1, 0)`, selected by
 `fmv_id -> MVn.STR + frame range`; **XA files** = `(1, chan)` inside `XA<clip_id + 1>.XA`, with

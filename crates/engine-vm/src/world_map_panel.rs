@@ -37,17 +37,23 @@
 //! delay slot, callee-saved registers read before any write). The bodies used
 //! above are the ones that match PROT 0897 at the queried VA.
 //!
-//! ## NOT WIRED
+//! ## Wiring status
 //!
-//! Nothing in the engine hosts a panel window. `WorldMapController` models
-//! the retail controller's view-mode, screen-dim and horizon-gate state, but
-//! it owns no window list, no panel-descriptor array and no `ctx[+0x54]`
-//! phase for a panel actor; `SceneMode` has no dev-menu or panel mode to
-//! enter one from. The renderer-side counterpart is in the same position -
-//! `legaia_engine_ui::dev_menu_list_draws_for` has no caller either. Wiring
-//! is therefore "stand the debug/panel screen up", not "connect two halves",
-//! and a synthetic descriptor array would only re-exercise the unit tests
-//! below. The prerequisite is a panel-window host on `WorldMapController`.
+//! All three leaves are hosted. `legaia_engine_core::world_map_panel_host`
+//! owns the `0x801F2B98` descriptor array and the live window objects, runs
+//! the command scripts through [`run_panel_script`], and drives the panel
+//! actors that call [`list_cursor_input`]; it hangs off
+//! `WorldMapController::panels` and `World::tick_world_map` steps it once a
+//! frame. [`dev_menu_action`] is hosted by the dev-menu screen
+//! `legaia_engine_core::dev_menu_host`, whose cancel leg asks it for the park
+//! phase and the draw-gate factor.
+//!
+//! Two things that host supplies are the **port's**, not retail's, and both
+//! are named where they are defined: the script table (retail's live at
+//! overlay VAs the engine never loads) and the pad chords that install an
+//! actor. The handler-id dispatcher `FUN_801F159C` is not ported either, so an
+//! actor's terminal [`crate::world_map_panel_actors::ActorExit`] retires it
+//! rather than selecting the next handler.
 
 // ---------------------------------------------------------------------------
 // FUN_801E9B3C - panel command-script interpreter
@@ -178,8 +184,7 @@ pub fn party_panel_geometry(members: u8) -> PanelDescriptor {
 ///
 /// PORT: FUN_801e9b3c
 ///
-/// NOT WIRED: no engine host owns a panel-descriptor array - see the module
-/// disclosure. `WorldMapController` is the missing host.
+/// Wired: through [`run_panel_script`] - see the module wiring status.
 pub fn decode_panel_command(
     cmd: PanelCommand,
     descriptor: PanelDescriptor,
@@ -251,7 +256,9 @@ pub fn decode_panel_command(
 ///
 /// PORT: FUN_801e9b3c (the `do { } while (*param_1 != 0)` record loop)
 ///
-/// NOT WIRED: same host gap as [`decode_panel_command`].
+/// Wired: `legaia_engine_core::world_map_panel_host::PanelWindowHost::run_script`
+/// decodes here and applies each effect to its window objects, reached from
+/// `World::tick_world_map`.
 pub fn run_panel_script(
     script: &[PanelCommand],
     party_members: u8,
@@ -328,7 +335,7 @@ impl CursorOutcome {
 /// the destination list (`FUN_801EF014`), the text-box dispatcher
 /// (`FUN_801EE90C`, which calls it as `(cursor, 2, wrap = true)`) and the
 /// dev-menu list picker `FUN_801ECA08`, whose swap-wrap cursor
-/// ([`crate::world_map_overlay::cursor_step`]) is the *dev menu's own* copy of
+/// ([`crate::world_map_overlay::dev_menu_cursor_step`]) is the *dev menu's own* copy of
 /// this behaviour with the range expressed as an inclusive row span.
 ///
 /// Order of business, exactly as retail runs it:
@@ -350,10 +357,10 @@ impl CursorOutcome {
 ///
 /// PORT: FUN_801e9dc8
 ///
-/// NOT WIRED: the engine's only live list cursors are the pause-menu and
-/// shop pickers in `legaia_engine_core`, which are their own retail
-/// routines; the world-map band's pickers this kernel serves have no host
-/// (see the module disclosure).
+/// Wired: the sub-list, text-box and flag-window actors all read the pad
+/// through here, and `legaia_engine_core::world_map_panel_host` hosts all
+/// three. It is fed the **packed** pad words - the confirm/cancel masks are
+/// packed-layout bits, so a raw BIOS word reads Cross as a d-pad press.
 pub fn list_cursor_input(
     cursor: &mut i32,
     count: i32,
@@ -438,9 +445,9 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 ///
 /// PORT: FUN_801ea9b0 (dispatch head + shared epilogue)
 ///
-/// NOT WIRED: the engine has no dev-menu actor, so nothing produces the
-/// `ctx[+0x9E]` cursor row this consumes - the same host gap the rest of
-/// [`crate::world_map_overlay`] declares.
+/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::tick` runs this
+/// on its cancel leg and uses both halves of the result - the park phase and
+/// the factor [`crate::world_map_overlay::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
     if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
         return (Some(DEV_MENU_ACTION_PARK_PHASE), DEV_MENU_ACTION_RESULT);

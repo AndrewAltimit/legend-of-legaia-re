@@ -21,7 +21,7 @@ use legaia_patcher::apply;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::monster_stats::{
-    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, StatScale, scale_stats,
+    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, ScaleProfile, StatScale, scale_stats,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -365,4 +365,226 @@ fn enemy_stat_scale_round_trips_on_disc() {
         "enemy-stat-scale composes with a stat shuffle across {} monsters",
         shuffled.len()
     );
+}
+
+/// The disc-derived boss / random-encounter split, checked against the
+/// hand-curated boss list rather than against itself.
+///
+/// `classify_monsters` unions the two, so asserting "every curated boss
+/// classifies as a boss" would be vacuous. The real property is one only the
+/// **scan** can violate: a curated story boss must never be seen in a *random*
+/// formation, because that is what would demote it to the trash multiplier if
+/// the curated floor were ever removed - and it is the signal that the
+/// region-rate heuristic has started calling a boss fight a random encounter.
+/// The scan is therefore run raw here, with an empty floor.
+#[test]
+fn monster_class_agrees_with_curated_bosses() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(original).expect("open");
+
+    // The raw scan: no curated ids folded in.
+    let mut scan = legaia_patcher::monster_class::ClassScan::new();
+    for idx in 0..patcher.entry_count() {
+        let entry = patcher.read_entry(idx).expect("read entry");
+        if let Some(scene) = legaia_patcher::encounter::SceneEncounters::locate(&entry, idx) {
+            scan.observe(&scene);
+        }
+    }
+    let raw = scan.finish(&[]);
+
+    // No curated boss is a random encounter anywhere on the disc.
+    let leaked: Vec<u16> = monster_stats::STORY_BOSS_MONSTER_IDS
+        .iter()
+        .copied()
+        .filter(|&id| scan.seen_random(id))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "curated story boss(es) {leaked:?} appear in a random-encounter formation - \
+         either the region-rate heuristic misread a boss fight, or these ids are \
+         genuinely random encounters and the curated list is wrong"
+    );
+
+    // The scan is doing real work in both directions: it finds scripted-only
+    // enemies the curated list never names, and it leaves the bulk of the roster
+    // regular. A mask that inverted, or that found nothing, fails here.
+    let roster: Vec<u16> = records(&patcher).iter().map(|r| r.id).collect();
+    assert!(roster.len() > 100, "expected a large monster roster");
+    let scan_bosses = raw.boss_count();
+    assert!(
+        scan_bosses >= 10,
+        "the scan alone should find at least a handful of scripted-only fights, found {scan_bosses}"
+    );
+    assert!(
+        scan_bosses < roster.len() / 2,
+        "most of the roster must stay regular, but {scan_bosses} of {} classified boss",
+        roster.len()
+    );
+
+    // The disc does NOT agree that all three first Piura are random encounters:
+    // only Blue (21) is ever reached by a rate>0 region; Red (19) and Black (20)
+    // appear solely at fixed formation indices. Pinned because it is the exact
+    // reason `classify_monsters` forces the tutorial ids back to regular - if a
+    // future disc read makes 19/20 random, this carve-out becomes dead weight
+    // and should be revisited rather than left in place.
+    assert!(
+        scan.seen_random(21),
+        "Blue Piura should roll on a random step"
+    );
+    for &id in &[19u16, 20] {
+        assert!(
+            raw.is_boss(id),
+            "id {id} was scripted-only on this disc; the force_regular carve-out \
+             in classify_monsters exists for exactly that and may now be stale"
+        );
+    }
+
+    // What the patcher actually uses: scan, plus curated floor, minus tutorial.
+    let classes = apply::classify_monsters(&patcher).expect("classify");
+    for &id in monster_stats::STORY_BOSS_MONSTER_IDS {
+        assert!(classes.is_boss(id), "curated boss {id} must classify boss");
+    }
+    for &id in monster_stats::TUTORIAL_MONSTER_IDS {
+        assert!(
+            !classes.is_boss(id),
+            "tutorial enemy {id} must never take the boss multiplier"
+        );
+    }
+    let found_by_scan = monster_stats::STORY_BOSS_MONSTER_IDS
+        .iter()
+        .filter(|&&id| raw.is_boss(id))
+        .count();
+    let only_scan: Vec<u16> = raw
+        .boss_ids()
+        .into_iter()
+        .filter(|id| !monster_stats::STORY_BOSS_MONSTER_IDS.contains(id))
+        .collect();
+    eprintln!(
+        "monster class: {} bosses total ({scan_bosses} from the scan, {} of {} curated bosses \
+         also found by the scan); scan-only ids {only_scan:?}",
+        classes.boss_count(),
+        found_by_scan,
+        monster_stats::STORY_BOSS_MONSTER_IDS.len(),
+    );
+}
+
+/// The split difficulty scale on a real disc: each class comes back off the
+/// patched image scaled by its own half, the pin still holds, and a uniform
+/// profile is byte-identical to the whole-roster pass it generalises.
+#[test]
+fn split_enemy_stat_scale_round_trips_on_disc() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+
+    let base = DiscPatcher::open(original.clone()).expect("open");
+    let before = records(&base);
+    let classes = apply::classify_monsters(&base).expect("classify");
+
+    // Opposite directions, so a mixed-up half is a visible sign error rather
+    // than a small magnitude difference; then a per-stat body on each half.
+    for text in [
+        "regular:0.5|boss:2",
+        "boss:3",
+        "regular:hp=2|boss:hp=4,attack=2",
+    ] {
+        let profile = ScaleProfile::parse(text).expect("valid profile");
+        assert!(!profile.is_uniform(), "{text} must be a genuine split");
+        let mut patcher = DiscPatcher::open(original.clone()).expect("open");
+        let report = apply::scale_monster_stats_profile(&mut patcher, profile).expect("scale");
+
+        let after = records(&patcher)
+            .iter()
+            .map(|r| (r.id, r.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
+        let (mut regulars_moved, mut bosses_moved) = (0usize, 0usize);
+        for b in &before {
+            if report.skipped.contains(&b.id) {
+                continue;
+            }
+            let r = after.get(&b.id).expect("monster present after patch");
+            let expected = if SCALE_PINNED_MONSTER_IDS.contains(&b.id) {
+                stat_vec(b)
+            } else {
+                scale_stats(&stat_vec(b), profile.get(classes.class_of(b.id)))
+            };
+            assert_eq!(
+                stat_vec(r),
+                expected,
+                "{profile}: id {} ({:?}) scaled by the wrong half",
+                b.id,
+                classes.class_of(b.id)
+            );
+            if stat_vec(r) != stat_vec(b) {
+                if classes.is_boss(b.id) {
+                    bosses_moved += 1;
+                } else {
+                    regulars_moved += 1;
+                }
+            }
+            // Rewards and the action gauge are still out of scope.
+            assert_eq!(r.stats[0], b.stats[0], "id {}: AGL gauge changed", b.id);
+            assert_eq!(r.exp, b.exp, "id {}: exp changed", b.id);
+            assert_eq!(r.gold, b.gold, "id {}: gold changed", b.id);
+        }
+        assert!(
+            bosses_moved > 5,
+            "{profile}: only {bosses_moved} bosses moved"
+        );
+        assert_eq!(
+            report.bosses_changed, bosses_moved,
+            "{profile}: the report's boss tally must match the disc"
+        );
+        if profile.regular().is_retail() {
+            assert_eq!(
+                regulars_moved, 0,
+                "{profile}: a retail regular half must leave every trash mob alone"
+            );
+        } else {
+            assert!(
+                regulars_moved > 50,
+                "{profile}: only {regulars_moved} regular enemies moved"
+            );
+        }
+
+        // Seedless determinism, same as the uniform pass.
+        let mut again = DiscPatcher::open(original.clone()).expect("open");
+        apply::scale_monster_stats_profile(&mut again, profile).expect("scale");
+        assert!(
+            again.image() == patcher.image(),
+            "{profile}: the same profile must reproduce the patched image"
+        );
+        eprintln!(
+            "enemy-stat-scale {profile}: {regulars_moved} regular + {bosses_moved} boss monsters changed",
+        );
+    }
+
+    // A uniform profile is exactly the whole-roster pass - the split cannot
+    // perturb a single-dial run, and it never pays for the classification scan.
+    let scale = StatScale::parse("2").unwrap();
+    let mut split = DiscPatcher::open(original.clone()).expect("open");
+    apply::scale_monster_stats_profile(&mut split, ScaleProfile::uniform(scale)).expect("scale");
+    let mut plain = DiscPatcher::open(original.clone()).expect("open");
+    apply::scale_monster_stats(&mut plain, scale).expect("scale");
+    assert!(
+        split.image() == plain.image(),
+        "a uniform profile must be byte-identical to the whole-roster scale"
+    );
+
+    // An all-retail profile writes nothing, however it is spelled.
+    for text in ["regular:1|boss:1", "boss:1"] {
+        let mut retail = DiscPatcher::open(original.clone()).expect("open");
+        let report =
+            apply::scale_monster_stats_profile(&mut retail, ScaleProfile::parse(text).unwrap())
+                .expect("scale 1x");
+        assert_eq!(report.monsters_changed, 0, "{text}: 1x must write nothing");
+        assert!(
+            retail.image() == &original[..],
+            "{text}: 1x must leave the disc alone"
+        );
+    }
 }

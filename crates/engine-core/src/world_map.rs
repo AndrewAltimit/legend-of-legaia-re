@@ -137,6 +137,14 @@ pub struct WorldMapController {
     /// [`Self::run_screen_dim`], which the world-map tick calls once per
     /// frame; a renderer draws it behind the top-view debug panels.
     pub screen_dim: Option<ScreenDimPass>,
+    /// The world-map band's panel windows and panel actors.
+    ///
+    /// Retail's world-map controller reaches this band through debug branches
+    /// that install a `ctx[+0x54]` phase machine over the shared window
+    /// system; the engine parks the whole screen here, where the rest of the
+    /// world-map render state already lives, and `World::tick_world_map`
+    /// drives it. See [`crate::world_map_panel_host`].
+    pub panels: crate::world_map_panel_host::PanelActorHost,
 }
 
 impl WorldMapController {

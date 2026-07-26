@@ -16,7 +16,7 @@
 //!
 //! The parts whose every instruction is accounted for:
 //!
-//! * [`gate`] - the four-way entry test.
+//! * [`attack_camera_gate`] - the four-way entry test.
 //! * [`CameraPose`] + [`CameraPose::seed`] - the local triple the arms mutate,
 //!   including the negations that make the look-at the *inverse* of the actor's
 //!   position and facing.
@@ -67,6 +67,11 @@ pub const ANIM_PUSH_CAP: i32 = 0x100;
 
 /// The four-way entry test (`0x801D71B8..0x801D722C`).
 ///
+/// Named for its module rather than `gate`: a bare `gate` collides with the
+/// local bindings and struct fields of that name all over the tree, and the
+/// reachability analysis's free-function edge is by name, so the short name
+/// made this whole module read as live from half a dozen unrelated callers.
+///
 /// All four conditions are `bne`/`beq` straight to the epilogue, so any one
 /// failing makes the whole frame a no-op:
 ///
@@ -75,7 +80,7 @@ pub const ANIM_PUSH_CAP: i32 = 0x100;
 /// 3. the battle phase byte `ctx[+6]` is `0xFF`;
 /// 4. the active slot is a party slot (`ctx[+0x13] < 3`) whose participant id
 ///    is `1`, `2` or `3` - any other id, including a monster slot, exits.
-pub const fn gate(target_hp: u16, category: u8, phase: u8, active_slot: u8) -> bool {
+pub const fn attack_camera_gate(target_hp: u16, category: u8, phase: u8, active_slot: u8) -> bool {
     target_hp != 0
         && category == CATEGORY_ATTACK
         && phase == PHASE_ACTIVE
@@ -233,12 +238,24 @@ mod tests {
 
     #[test]
     fn every_gate_condition_is_independently_fatal() {
-        assert!(gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 0));
-        assert!(!gate(0, CATEGORY_ATTACK, PHASE_ACTIVE, 0), "dead target");
-        assert!(!gate(100, 2, PHASE_ACTIVE, 0), "magic, not attack");
-        assert!(!gate(100, CATEGORY_ATTACK, 0x14, 0), "wrong phase");
-        assert!(!gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 3), "monster slot");
-        assert!(!gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 7));
+        assert!(attack_camera_gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 0));
+        assert!(
+            !attack_camera_gate(0, CATEGORY_ATTACK, PHASE_ACTIVE, 0),
+            "dead target"
+        );
+        assert!(
+            !attack_camera_gate(100, 2, PHASE_ACTIVE, 0),
+            "magic, not attack"
+        );
+        assert!(
+            !attack_camera_gate(100, CATEGORY_ATTACK, 0x14, 0),
+            "wrong phase"
+        );
+        assert!(
+            !attack_camera_gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 3),
+            "monster slot"
+        );
+        assert!(!attack_camera_gate(100, CATEGORY_ATTACK, PHASE_ACTIVE, 7));
     }
 
     #[test]

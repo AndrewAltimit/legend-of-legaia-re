@@ -34,9 +34,14 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 use legaia_engine_audio::note_trace::{NoteTrace, SAMPLES_PER_FRAME};
+use legaia_engine_audio::seq_calc::flag;
 use legaia_engine_audio::sequencer::Sequencer;
 use legaia_engine_audio::spu::ram::SpuAllocator;
-use legaia_engine_audio::{Spu, VabBank};
+use legaia_engine_audio::{
+    PumpOutcome, SeqCalcState, SeqCall, SeqChannel, SeqEvent, SlideDir, Spu, VabBank,
+    pump_delta_time, read_delta, seq_calc, start_channel, stop_channel, tempo_slide_tick,
+    tick_budget, volume_slide_tick,
+};
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
 use legaia_seq::Seq;
@@ -63,6 +68,19 @@ struct Args {
     /// Print a summary to stderr.
     #[arg(long)]
     summary: bool,
+    /// Trace the **retail** `SsSeqCalc` tier over the same track's SEQ body
+    /// instead of the engine sequencer: one line per frame of dispatch, then
+    /// the decoded events. This is the differential reference for
+    /// `sequencer.rs` - see `legaia_engine_audio::seq_calc` /
+    /// `legaia_engine_audio::seq_events`.
+    #[arg(long)]
+    seq_calc: bool,
+    /// The runtime word at `0x801CD2BC` that `SsSeqCalc`'s tick-budget divide
+    /// uses. `60` is the frame-rate reading of `(res * tempo * 10) / (d * 60)`
+    /// and reproduces `ticks_per_second / 60`; it is an inference from the
+    /// arithmetic, not a captured value, which is why it is a knob.
+    #[arg(long, default_value_t = 60)]
+    divisor: u32,
 }
 
 /// A `music_01` entry that carries both a VAB and a SEQ.
@@ -110,6 +128,164 @@ fn find_tracks(extracted: &Path) -> Result<Vec<Track>> {
     Ok(out)
 }
 
+/// Drive the retail `SsSeqCalc` tier over one track's SEQ body.
+///
+/// This is the host for [`legaia_engine_audio::seq_calc`] +
+/// [`legaia_engine_audio::seq_events`]: it seeds one `(slot, channel)` record
+/// from the SEQ header, then runs `seq_calc` once per retail frame with the
+/// dispatch table's arms bound to the ported kernels. The engine's own
+/// `Sequencer` is not involved - the point is to see what retail's transport
+/// makes of the same bytes.
+fn seq_calc_trace(track: &Track, frames: u64, divisor: u32) -> Result<()> {
+    let raw = &track.bytes[track.seq_off..];
+    let (header, header_len) =
+        legaia_seq::parse_header_with_len(raw).context("parse SEQ header")?;
+    let body = &raw[header_len..];
+
+    // The meta handler's own divide (`FUN_80061954` at `800619d4`) traps on a
+    // zero divisor; here it just yields a zero tempo.
+    let tempo_bpm = 60_000_000u32
+        .checked_div(header.tempo_us_per_qn)
+        .unwrap_or(0);
+    let resolution = header.ppqn as i16;
+    let mut channel = SeqChannel {
+        resolution,
+        tempo: tempo_bpm,
+        tick_budget: tick_budget(resolution, tempo_bpm, divisor),
+        // Negative is the pump's ordinary "spend the whole budget" mode.
+        sub_frame: -1,
+        flags: flag::PLAY,
+        playing: 1,
+        chain_slot: 0xFF,
+        vol: (0x7F, 0x7F),
+        ..Default::default()
+    };
+    // The SEQ open (`FUN_80062410` at `80062620`) reads the body's leading
+    // delta-time before the first `SsSeqCalc` frame. Without that the pump
+    // decodes it as a status byte.
+    channel.pending_wait = read_delta(&mut channel, body).unwrap_or(0);
+    channel.start = channel.cursor;
+    channel.loop_cursor = channel.cursor;
+    println!(
+        "seq-calc  prot_entry {}  body {} bytes  ppqn {}  tempo {} bpm  \
+tick_budget {} (tenths/frame, divisor {})",
+        track.entry,
+        body.len(),
+        header.ppqn,
+        tempo_bpm,
+        channel.tick_budget,
+        divisor
+    );
+
+    let mut state = SeqCalcState {
+        busy: false,
+        slot_mask: 1,
+        slot_count: 1,
+        channel_count: 1,
+    };
+    let mut channels = vec![vec![channel]];
+    let (mut notes, mut ccs, mut pcs, mut bends, mut metas, mut loops, mut unknown) =
+        (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let mut printed = 0u64;
+
+    for frame in 0..frames {
+        let mut line: Vec<String> = Vec::new();
+        seq_calc(&mut state, &mut channels, |call, ch| match call {
+            SeqCall::Pump => match pump_delta_time(ch, body) {
+                PumpOutcome::Ran(events) | PumpOutcome::Runaway(events) => {
+                    for ev in events {
+                        match ev {
+                            SeqEvent::Note {
+                                note,
+                                velocity,
+                                delta,
+                            } => {
+                                notes += 1;
+                                line.push(format!("note {note:#04x} v{velocity:#04x} d{delta}"));
+                            }
+                            SeqEvent::ControlChange(v) => {
+                                ccs += 1;
+                                line.push(format!("cc {v:#04x}"));
+                            }
+                            SeqEvent::ProgramChange(v) => {
+                                pcs += 1;
+                                line.push(format!("pc {v:#04x}"));
+                            }
+                            SeqEvent::PitchBend => {
+                                bends += 1;
+                                line.push("bend".into());
+                            }
+                            SeqEvent::Meta(k) => {
+                                metas += 1;
+                                line.push(format!("meta {k:#04x}"));
+                            }
+                            SeqEvent::EndOfTrack(end) => {
+                                loops += 1;
+                                line.push(format!("eot {end:?}"));
+                            }
+                            SeqEvent::LoopMarker(end) => {
+                                loops += 1;
+                                line.push(format!("loop-marker {end:?}"));
+                            }
+                            SeqEvent::Unknown(s) => {
+                                unknown += 1;
+                                line.push(format!("unknown {s:#04x}"));
+                            }
+                            SeqEvent::Overrun => line.push("overrun".into()),
+                        }
+                    }
+                }
+                PumpOutcome::Divided | PumpOutcome::Waited | PumpOutcome::Idle => {}
+            },
+            SeqCall::VolUp | SeqCall::VolDown => {
+                let dir = if call == SeqCall::VolUp {
+                    SlideDir::Up
+                } else {
+                    SlideDir::Down
+                };
+                let vol = ch.vol;
+                let tick = volume_slide_tick(ch, dir, vol);
+                if let Some(v) = tick.commit {
+                    ch.vol = v;
+                    line.push(format!("vol {dir:?} -> {v:?}"));
+                }
+            }
+            SeqCall::Tempo => {
+                let t = tempo_slide_tick(ch, divisor);
+                line.push(format!("tempo -> {} ({t:?})", ch.tempo));
+            }
+            SeqCall::Stop => {
+                stop_channel(ch);
+                line.push("stop".into());
+            }
+            SeqCall::Start => {
+                start_channel(ch);
+                line.push("start".into());
+            }
+            SeqCall::Rewind => line.push("rewind".into()),
+        });
+        if !line.is_empty() {
+            println!("f{frame:<6} {}", line.join("  "));
+            printed += 1;
+        }
+    }
+
+    channel = channels[0][0];
+    println!(
+        "-- {printed} active frames of {frames}; notes {notes}  cc {ccs}  pc {pcs}  \
+bend {bends}  meta {metas}  track-end {loops}  unknown {unknown}"
+    );
+    println!(
+        "-- final cursor {} of {}  tick_accum {}  pending_wait {}  flags {:#x}",
+        channel.cursor,
+        body.len(),
+        channel.tick_accum,
+        channel.pending_wait,
+        channel.flags
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let tracks = find_tracks(&args.extracted)?;
@@ -134,6 +310,10 @@ fn main() -> Result<()> {
     let track = tracks
         .get(args.track)
         .with_context(|| format!("track {} out of range (have {})", args.track, tracks.len()))?;
+
+    if args.seq_calc {
+        return seq_calc_trace(track, args.frames, args.divisor);
+    }
 
     let vab = parse_vab(&track.bytes, track.vab_off).context("parse VAB")?;
     let seq = Seq::parse(&track.bytes[track.seq_off..]).context("parse SEQ")?;

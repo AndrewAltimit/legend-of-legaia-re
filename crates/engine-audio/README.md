@@ -38,7 +38,16 @@ The `note-trace` binary emits a track's timeline as canonical JSONL:
 ```bash
 note-trace --extracted extracted --list
 note-trace --extracted extracted --track 0 --frames 1800 --out notes.jsonl
+# the retail SsSeqCalc tier over the same bytes, instead of the engine one
+note-trace --extracted extracted --track 2 --frames 3600 --seq-calc
 ```
+
+`--seq-calc` is the host for [`seq_calc`](src/seq_calc.rs) +
+[`seq_events`](src/seq_events.rs): it seeds one retail channel record off the
+track's SEQ header and runs `SsSeqCalc`'s own dispatch frame by frame, printing
+the decoded events. Nothing plays - the point is to see what retail's transport
+makes of a real body, and a trace reporting an unknown status or an overrun is
+reporting that the port disagrees with the disc.
 
 Anything driving the SPU for a trace must call `Spu::tick` per sample even
 when the rendered audio is discarded: `tick` is what advances the ADSR, and
@@ -64,7 +73,8 @@ Capture, diff and the retail side are documented in
 | [`vab_bind`](src/vab_bind.rs) | `VabBank::upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM and expands the file's packed tone pages into **program-number space** by rank among used `ProgAtr` slots (retail builds the same map at VAB open - see [`formats/vab.md`](../../docs/formats/vab.md#program-slots-vs-packed-tone-pages)); `VabBank::play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on through the retail key-on volume chain incl. program `mvol`/`mpan` (the sequencer's key-range path); `VabBank::play_tone(spu, voice, prog, tone_index, note, velocity)` keys an **explicit** tone-region index (the SFX path). |
 | [`shout`](src/shout.rs) | `ArtsShoutBank` - the battle Tactical-Arts **shout** clips (per-character CD-XA banks `XA2`/`XA4`/`XA6`, demuxed per channel + decoded by the host) plus the per-art candidate-channel pools from the SCUS cue tables. Resolves `(cslot, action_constant)` to a clip with the retail no-immediate-repeat channel pick (`FUN_8004C140`); played through `AudioOut::play_xa_shout` with the modeled CD-response start delay so the shout trails the art animation. `OfflineMixer` (lib.rs) is the device-free twin of the cpal mixing core for asserting what reaches the output. |
 | [`sfx`](src/sfx.rs) | `SfxBank` maps cue IDs (the `HitCue::kind` byte from art records, plus engine-extended slots for menu blips / footsteps) to per-cue `SfxEntry` descriptors carrying the retail descriptor's program + tone-region index + note + voice count (`from_descriptors`). `play_one_shot` fires via `VabBank::play_tone` across the cue's `voices` consecutive regions - the retail SFX shape, which names a tone by index, not by key-range window (a `play_note` resolve renders silence for cues whose note falls outside the tone's window, e.g. the strike cue `0x1A`). `SfxScheduler::tick_frame` drains queued `PendingCue`s with retail-style `timing_frames` offsets so cues fire on the right anim frame. |
-| [`seq_calc`](src/seq_calc.rs) | The retail **SsAPI per-frame calc tier** - `SsSeqCalc`'s dispatch (`FUN_80062F98`) plus the tempo slide (`FUN_800649B0`), the ascending / descending volume slides (`FUN_8006320C` / `FUN_8006352C`) and the track-end / loop-repeat handler (`FUN_80063AA8`). Pure kernels over a `SeqChannel`; `tick_budget` is the one place wall-clock tempo becomes an integer tick step. The behavioural reference `sequencer` has to agree with - `NOT WIRED`, see the module docs. |
+| [`seq_calc`](src/seq_calc.rs) | The retail **SsAPI per-frame calc tier** - `SsSeqCalc`'s dispatch (`FUN_80062F98`) plus the tempo slide (`FUN_800649B0`), the ascending / descending volume slides (`FUN_8006320C` / `FUN_8006352C`) and the track-end / loop-repeat handler (`FUN_80063AA8`). Pure kernels over a `SeqChannel`; `tick_budget` is the one place wall-clock tempo becomes an integer tick step. |
+| [`seq_events`](src/seq_events.rs) | The rest of that tier - everything in `SsSeqCalc`'s fan-out that reads a stream byte: the stop / start arms (`FUN_800638D8` / `FUN_8006418C`), the delta-time pump (`FUN_80063974` / `FUN_800639A0`), the SEQ event decoder (`FUN_80063CEC`) and the chained-channel restart (`FUN_80064090`). `run_handler_tail` completes a walk by advancing past what the installed handler consumes; without it a trailing delta is re-read as the next status byte. |
 | [`anim_cue`](src/anim_cue.rs) | `walk_anim_cues` / `AnimCueState` - the per-frame walker over a playing battle action's 8-slot `(frame, cue)` track (`FUN_800508DC`). Resolves the party `0xC8..=0xFF` band into the `>= 0x100` arts-voice namespace, the three per-character shout ids into a two-take XA channel pick, and the CD-busy fallback into a fixed ring cue. Emits `AnimCueEmit` decisions rather than calling anything - `NOT WIRED`, see the module docs. |
 
 ## Default input rate

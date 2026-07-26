@@ -68,28 +68,30 @@ pub fn sway_vector(sine: &[i16], angle: i32, frame_step: i32) -> (SwayVector, i3
     (v, angle + (frame_step << SWAY_STEP_SHIFT))
 }
 
-/// Records in the catch-slot table the venue reset clears.
-pub const CATCH_SLOTS: usize = 16;
-/// Bytes per catch-slot record (two words).
-pub const CATCH_SLOT_STRIDE: usize = 8;
-/// Runtime VA of the catch-slot table.
-pub const CATCH_SLOT_TABLE_VA: u32 = 0x801D_91E4;
-/// Runtime VA of the slot-count word cleared alongside it.
-pub const CATCH_SLOT_COUNT_VA: u32 = 0x801D_91DC;
+/// Records in the ring the reset clears.
+pub const RING_SLOTS: usize = 16;
+/// Bytes per record (two words).
+pub const RING_SLOT_STRIDE: usize = 8;
+/// Runtime VA of the ring itself.
+pub const RING_TABLE_VA: u32 = 0x801D_91E4;
+/// Runtime VA of the write-index word cleared alongside it.
+pub const RING_INDEX_VA: u32 = 0x801D_91DC;
 
-// NOT WIRED: the engine's `fishing::FishingRun` owns catch bookkeeping as
-// typed state, so there is no flat slot array to clear; the kernel is kept as
-// the shape of the retail table.
-/// PORT: FUN_801D746C - the catch-slot table reset.
+/// PORT: FUN_801D746C - the 16-slot ring reset.
 ///
-/// Clears the count word at [`CATCH_SLOT_COUNT_VA`] and both words of all
-/// [`CATCH_SLOTS`] records at [`CATCH_SLOT_TABLE_VA`]. Retail unrolls the
-/// loop two words at a time (`v1` walking the low word, `a0 + base` the
-/// high), which is why the table is `16 * 8` bytes and not `32 * 4`.
-pub fn clear_catch_slots(count: &mut u32, table: &mut [[u32; 2]]) {
-    *count = 0;
-    for slot in table.iter_mut().take(CATCH_SLOTS) {
-        *slot = [0, 0];
+/// Clears the index word at [`RING_INDEX_VA`] and both words of all
+/// [`RING_SLOTS`] records at [`RING_TABLE_VA`]. Retail unrolls the loop two
+/// words at a time (`v1` walking the low word, `a0 + base` the high), which
+/// is why the table is `16 * 8` bytes and not `32 * 4`.
+///
+/// The table is the **reel-cadence gesture ring**, not a catch log: the
+/// recogniser `FUN_801D3DB4` reads the same `0x801D91DC` index and the same
+/// `0x801D91E4` records as `(button, duration)` pairs and calls this routine
+/// to clear them on a match. `crate::fishing::ReelCadence` is that consumer.
+pub fn clear_slot_ring<I: Default, T: Default + Copy>(index: &mut I, slots: &mut [T]) {
+    *index = I::default();
+    for slot in slots.iter_mut().take(RING_SLOTS) {
+        *slot = T::default();
     }
 }
 
@@ -393,12 +395,18 @@ mod tests {
     }
 
     #[test]
-    fn catch_slot_reset_clears_both_words() {
-        let mut count = 7;
-        let mut table = [[1u32, 2u32]; CATCH_SLOTS];
-        clear_catch_slots(&mut count, &mut table);
-        assert_eq!(count, 0);
+    fn ring_reset_clears_the_index_and_both_words() {
+        let mut index = 7u32;
+        let mut table = [[1u32, 2u32]; RING_SLOTS];
+        clear_slot_ring(&mut index, &mut table);
+        assert_eq!(index, 0);
         assert!(table.iter().all(|s| *s == [0, 0]));
+        // The same routine over the cadence recogniser's own slot shape.
+        let mut idx = 5usize;
+        let mut ring = [(2u8, 40i32); RING_SLOTS];
+        clear_slot_ring(&mut idx, &mut ring);
+        assert_eq!(idx, 0);
+        assert!(ring.iter().all(|s| *s == (0, 0)));
     }
 
     #[test]

@@ -182,6 +182,12 @@ impl World {
             a.physics.status_flags = step.flags;
             a.tint_push = step.push;
         }
+        // The second `jalr node[+0x0C]` class with a ported body: the op-0x49
+        // submode driver (`ActorHandler::SubmodeDriver`, spawned by
+        // `man_load_actor_reset`). Its body is the dispatcher `FUN_801F159C`
+        // in `crate::field_submode_screen`, which retires the actor itself
+        // when a screen hands back - hence before the retire sweep below.
+        self.tick_submode_screen(frame_delta);
         self.retire_yielded_actors()
     }
 
@@ -322,7 +328,7 @@ impl World {
     /// it spawned.
     ///
     /// Nothing ticks the spawned actor yet; the gap is disclosed on
-    /// [`crate::field_actor_program::step`].
+    /// [`crate::field_actor_program::step_scene_program`].
     ///
     /// Carries the same deliberate divergence as the scene-actor spawn above:
     /// a previous load's program actor is retired first, standing in for the

@@ -35,6 +35,11 @@ use crate::dev_menu::{
 };
 use legaia_engine_vm::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
 use legaia_engine_vm::world_map_dev_menu::{clamp1_255_step, wrap12_step};
+use legaia_engine_vm::world_map_overlay::{
+    DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, dev_menu_cursor_step,
+    format_fixed_decimal, list_body_draws, panel_geometry,
+};
+use legaia_engine_vm::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
 
 /// A row of the engine's dev-menu list, named after the retail row it
 /// stands in for.
@@ -72,6 +77,39 @@ impl DevMenuRow {
             DevMenuRow::Equip => "EQUIP",
         }
     }
+
+    /// Index of this row in retail's own 24-row list (`FUN_801EAD98`'s
+    /// `local_40` space).
+    ///
+    /// The engine's list is the subset whose backing state it owns, so the
+    /// rows are not contiguous - but each one *is* one of retail's, and
+    /// carrying the index is what lets the retail row model decide whether the
+    /// row draws its label or the string `CLOSED`.
+    pub fn retail_index(self) -> u32 {
+        match self {
+            DevMenuRow::MapChange => 0x00,
+            DevMenuRow::EncounterRate => 0x04,
+            DevMenuRow::Equip => 0x0C,
+            DevMenuRow::PlayerParam => 0x0F,
+            DevMenuRow::EventFlag => 0x11,
+        }
+    }
+
+    /// This row in retail's row model, or `None` if the index is outside
+    /// retail's `0x00..=0x17` bounds (which no engine row is).
+    ///
+    /// The call is spelled through a scoped import of the real type name
+    /// rather than through this file's `RetailRow` alias, and that is
+    /// deliberate: the reachability pass resolves a `Qual::name` call site by
+    /// the qualifier **as written**, so `RetailRow::from_index` matched no
+    /// `impl` and this call was invisible to it - the one edge that decides
+    /// whether the ported row model reads as wired. See
+    /// [`stale-not-wired-triage.md`](../../../docs/tooling/stale-not-wired-triage.md)
+    /// for the sibling case on free-function names.
+    pub fn retail_row(self) -> Option<RetailRow> {
+        use legaia_engine_vm::world_map_overlay::DevMenuRow;
+        DevMenuRow::from_index(self.retail_index())
+    }
 }
 
 /// Which page has the pad.
@@ -88,6 +126,10 @@ pub enum DevPage {
 
 /// Default encounter rate the `ENCOUNT` row starts on.
 pub const DEFAULT_ENCOUNTER_RATE: i32 = 0x20;
+
+/// What retail's two gated rows draw in place of their label while
+/// `_DAT_8007B868` is non-zero.
+pub const CLOSED_LABEL: &str = "CLOSED";
 
 /// The whole dev-menu screen.
 #[derive(Debug, Clone, Default)]
@@ -117,6 +159,20 @@ pub struct DevMenuSession {
     pub pending_sfx: Vec<u8>,
     /// The last equip commit, for the host to log.
     pub last_equip: Option<EquipCommit>,
+    /// Retail's list-picker phase (`ctx[+0x54]`) for this screen, kept in
+    /// step with [`Self::page`] so the retail draw gate can be asked.
+    pub list_phase: ListPickerPhase,
+    /// The retail draw gate's second factor - the caller's own input-allowed
+    /// flag on the `Active` leg, and the unwind dispatcher's return on the
+    /// `CancelUnwind` leg.
+    pub list_gate: i32,
+    /// Whether the row list body draws this frame, per the retail gate.
+    pub list_visible: bool,
+    /// The row list's panel geometry, sized from the row span.
+    pub list_panel: PanelGeometry,
+    /// `_DAT_8007B868` - the gate that makes retail's `MAP_CHANGE` and
+    /// `CARD_OPTION` rows read `CLOSED` instead of their label.
+    pub closed_gate: u32,
 }
 
 impl DevMenuSession {
@@ -135,24 +191,76 @@ impl DevMenuSession {
 
     /// The formatted readout of a row, or `None` for the rows that only open
     /// a page.
+    ///
+    /// The digits come from retail's own fixed-width decimal kernel
+    /// ([`format_fixed_decimal`]), which reduces the magnitude modulo
+    /// `10^width` exactly as the menu renderer does. The **width** per row is
+    /// the port's, chosen to hold that row's whole range.
     pub fn row_value(&self, row: DevMenuRow) -> Option<String> {
-        match row {
-            DevMenuRow::MapChange => Some(format!("{:03}", self.map_id)),
-            DevMenuRow::EncounterRate => Some(format!("{:03}", self.encounter_rate)),
-            DevMenuRow::EventFlag => Some(format!("{:04}", self.flags.value)),
-            DevMenuRow::PlayerParam => Some(format!("CHR{}", self.chars.character)),
-            DevMenuRow::Equip => Some(format!("{:03}", self.equip_item)),
+        Some(match row {
+            // The 12-bit ring runs to 4095, so three digits would truncate.
+            DevMenuRow::MapChange => format_fixed_decimal(i32::from(self.map_id), 4),
+            DevMenuRow::EncounterRate => format_fixed_decimal(self.encounter_rate, 3),
+            DevMenuRow::EventFlag => format_fixed_decimal(self.flags.value, 4),
+            DevMenuRow::PlayerParam => {
+                format!(
+                    "CHR{}",
+                    format_fixed_decimal(self.chars.character as i32, 1)
+                )
+            }
+            DevMenuRow::Equip => format_fixed_decimal(i32::from(self.equip_item), 3),
+        })
+    }
+
+    /// Whether a row draws `CLOSED` instead of its label.
+    ///
+    /// The decision is retail's ([`RetailRow::is_closed`]), taken against this
+    /// screen's [`Self::closed_gate`] mirror of `_DAT_8007B868`. Only the rows
+    /// that sit at retail's `MAP_CHANGE` / `CARD_OPTION` indices are gated.
+    pub fn row_is_closed(&self, row: DevMenuRow) -> bool {
+        row.retail_row()
+            .is_some_and(|r| r.is_closed(self.closed_gate))
+    }
+
+    /// The string the row list draws for `row` this frame.
+    ///
+    /// Retail's list body does not draw a label and then decide - the two
+    /// gated arms of `FUN_801EAD98` select the *string pointer* on the gate
+    /// (`beq v0,zero` at `0x801EAE40` / `0x801EB31C`, falling through to
+    /// [`CLOSED_LABEL`] when `_DAT_8007B868` is non-zero), and every other arm
+    /// loads its label unconditionally. This is that selection, so the row
+    /// model owns the decision and the renderer only draws what it returns.
+    pub fn row_label(&self, row: DevMenuRow) -> &'static str {
+        if self.row_is_closed(row) {
+            CLOSED_LABEL
+        } else {
+            row.label()
         }
     }
 
+    /// The row list's panel geometry, bottom-anchored the way retail's
+    /// list-picker sizes it.
+    pub fn list_row_span(&self) -> (i32, i32) {
+        (0, DevMenuRow::ALL.len() as i32 - 1)
+    }
+
     /// Move the list cursor for one frame of pad edges.
+    ///
+    /// The step is retail's list-picker cursor block: both edges are applied,
+    /// then the two swap-wrap tests run unconditionally, and the move SFX
+    /// fires on the press rather than on the movement.
     fn step_row(&mut self, pad_edge: u16) {
-        let last = DevMenuRow::ALL.len() - 1;
-        if pad_edge & PACK_UP != 0 {
-            self.row = if self.row == 0 { last } else { self.row - 1 };
-        }
-        if pad_edge & PACK_DOWN != 0 {
-            self.row = if self.row == last { 0 } else { self.row + 1 };
+        let (start, end) = self.list_row_span();
+        let (row, moved) = dev_menu_cursor_step(
+            self.row as i32,
+            start,
+            end,
+            pad_edge & PACK_UP != 0,
+            pad_edge & PACK_DOWN != 0,
+        );
+        self.row = row.clamp(start, end) as usize;
+        if moved {
+            self.pending_sfx.push(SFX_CURSOR_MOVE as u8);
         }
     }
 
@@ -163,11 +271,32 @@ impl DevMenuSession {
     /// record afterwards, exactly as `FUN_801D6E18` does - unconditionally,
     /// whichever page is up.
     pub fn tick(&mut self, pad_edge: u16, pad_held: u16, records: &mut [&mut [u8]]) {
+        // The list-picker phase this frame runs in. Retail's `ctx[+0x54]`
+        // space, driven off which page has the pad: the list is the `Active`
+        // leg, and a sub-editor parks the list in `ConfirmSettle`, whose draw
+        // gate product is 2 - i.e. the list body is not drawn behind it.
+        self.list_phase = match self.page {
+            DevPage::List => ListPickerPhase::Active,
+            _ => ListPickerPhase::ConfirmSettle,
+        };
+        self.list_gate = 1;
         match self.page {
             DevPage::List => self.tick_list(pad_edge, records),
             DevPage::EventFlag => self.tick_event_flag(pad_edge, pad_held),
             DevPage::PlayerParam => self.tick_player_param(pad_edge, pad_held, records),
         }
+        // Cancel on the row list takes retail's unwind leg, whose gate factor
+        // is the row-action dispatcher's return.
+        if self.page == DevPage::List && pad_edge & PACK_CIRCLE != 0 {
+            let (park, gate) = dev_menu_action(self.row as i16);
+            self.list_gate = gate;
+            self.list_phase = park
+                .and_then(ListPickerPhase::from_i16)
+                .unwrap_or(ListPickerPhase::CancelUnwind);
+        }
+        let (start, end) = self.list_row_span();
+        self.list_panel = panel_geometry(start, end);
+        self.list_visible = list_body_draws(self.list_phase as i16, self.list_gate);
         for record in records.iter_mut() {
             clamp_record_stats(record);
         }
@@ -452,6 +581,98 @@ mod tests {
                 .is_none()
         );
         assert_eq!(record[0x196], 0);
+    }
+
+    /// The list body's draw gate is retail's `phase * gate` product, so a
+    /// sub-editor page must suppress the row list and the list page must not.
+    #[test]
+    fn the_retail_draw_gate_hides_the_row_list_behind_a_sub_editor() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, 0, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::Active);
+        assert!(s.list_visible, "phase 1 x gate 1 = 1 -> draws");
+        s.page = DevPage::EventFlag;
+        drive(&mut s, &mut r, 0, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::ConfirmSettle);
+        assert!(!s.list_visible, "phase 2 x gate 1 = 2 -> no draw");
+    }
+
+    /// Cancel takes retail's unwind leg. `FUN_801EA9B0` returns `1` on every
+    /// path, including its out-of-range arm, so the unwind still draws - the
+    /// gate never suppresses that leg.
+    #[test]
+    fn cancel_on_the_list_takes_the_unwind_leg_and_still_draws() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, PACK_CIRCLE, 0);
+        assert_eq!(s.list_phase, ListPickerPhase::CancelUnwind);
+        assert_eq!(s.list_gate, 1);
+        assert!(s.list_visible, "phase 3 x gate 1 = 3 -> draws");
+    }
+
+    /// The panel is sized from the row span and bottom-anchored at `0xD0`.
+    #[test]
+    fn the_list_panel_is_sized_from_the_row_span() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, 0, 0);
+        let rows = DevMenuRow::ALL.len() as i16;
+        assert_eq!(s.list_panel.height, rows * 8);
+        assert_eq!(s.list_panel.y, 0xD0 - rows * 8);
+    }
+
+    /// Retail fires the move cue inside the button branch, before the wrap
+    /// tests - so a press raises it whether or not the cursor moved.
+    #[test]
+    fn every_cursor_press_raises_the_retail_move_cue() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        drive(&mut s, &mut r, PACK_DOWN, 0);
+        assert_eq!(s.drain_sfx(), vec![SFX_CURSOR_MOVE as u8]);
+        drive(&mut s, &mut r, 0, 0);
+        assert!(s.drain_sfx().is_empty(), "an idle frame raises nothing");
+    }
+
+    /// The `CLOSED` gate is retail's, taken on retail's own row index - so it
+    /// covers exactly the engine row that sits at one of the two gated
+    /// indices, and no other.
+    #[test]
+    fn the_closed_gate_only_covers_retails_gated_rows() {
+        let mut s = DevMenuSession::new();
+        assert!(!s.row_is_closed(DevMenuRow::MapChange));
+        s.closed_gate = 1;
+        assert!(s.row_is_closed(DevMenuRow::MapChange));
+        for row in [
+            DevMenuRow::EncounterRate,
+            DevMenuRow::EventFlag,
+            DevMenuRow::PlayerParam,
+            DevMenuRow::Equip,
+        ] {
+            assert!(!s.row_is_closed(row), "{row:?} is not a gated retail row");
+        }
+    }
+
+    /// The label the list draws is the gate's output, not the row's name -
+    /// this is the string the renderer receives, so a host that never asked
+    /// would draw `MAP_CHANGE` on a closed row.
+    #[test]
+    fn the_gate_swaps_the_drawn_label_not_just_the_predicate() {
+        let mut s = DevMenuSession::new();
+        assert_eq!(s.row_label(DevMenuRow::MapChange), "MAP_CHANGE");
+        s.closed_gate = 1;
+        assert_eq!(s.row_label(DevMenuRow::MapChange), CLOSED_LABEL);
+        // An ungated row keeps its label whatever the gate says.
+        assert_eq!(s.row_label(DevMenuRow::EncounterRate), "ENCOUNT");
+    }
+
+    /// Every engine row maps onto a real retail list index.
+    #[test]
+    fn every_engine_row_resolves_to_a_retail_row() {
+        for row in DevMenuRow::ALL {
+            assert!(row.retail_index() < 0x18);
+            assert!(row.retail_row().is_some(), "{row:?}");
+        }
     }
 
     #[test]

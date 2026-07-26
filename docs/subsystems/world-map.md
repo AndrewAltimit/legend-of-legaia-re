@@ -14,6 +14,7 @@ below to jump within this page.
 **Overlay + key functions**
 - [Overlay structure](#overlay-structure)
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
+- [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
@@ -184,14 +185,41 @@ was the earlier reading; it is falsified by the epilogue.)
 #### Engine port
 
 The renderer-free half of the dev-menu leaves lives in
-`legaia_engine_vm::world_map_overlay`: `panel_geometry`, `cursor_step`
-(swap-wrap), `list_body_draws` (the phase×gate draw gate), `DevMenuRow` +
-`is_closed` (the 24-row model incl. the `MAP_CHANGE` / `CARD_OPTION` CLOSED
-gating), `format_fixed_decimal` (the zero-padded digit kernel `FUN_801EAD98`
-inlines per numeric readout), and `decode_camera_readout`. The module also
-ports the battle-records data model (`records_screen`, from `FUN_801ED710`)
-and the equipment stat-comparison preview (`aggregate_slot_stats` /
-`resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
+`legaia_engine_vm::world_map_overlay`: `panel_geometry`,
+`dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the phase×gate draw
+gate), `DevMenuRow` + `is_closed` (the 24-row model incl. the `MAP_CHANGE` /
+`CARD_OPTION` CLOSED gating), `format_fixed_decimal` (the zero-padded digit
+kernel `FUN_801EAD98` inlines per numeric readout), and
+`decode_camera_readout`. The module also ports the battle-records data model
+(`records_screen`, from `FUN_801ED710`) and the equipment stat-comparison
+preview (`aggregate_slot_stats` / `resolve_equip_slot` / `stat_deltas`, from
+`FUN_801E5B4C`).
+
+The host is `legaia_engine_core::dev_menu_host::DevMenuSession`, the engine's
+opt-in developer screen. Its row list is the subset whose backing state the
+engine owns, but each of its rows carries retail's own list index
+(`DevMenuRow::retail_index`), so the CLOSED gate, the row formatter, the panel
+geometry, the cursor step and the draw gate all run retail's kernels. Two
+leaves stay without a consumer: `decode_camera_readout`, because nothing
+publishes retail's packed scratchpad camera word, and the 18 rows of retail's
+list the engine keeps no state for.
+
+The CLOSED gate reaches the screen the way retail's does - as a **string
+selection, not a post-hoc override**. Cases 0 and 1 of `FUN_801EAD98` read
+`_DAT_8007B868` and branch on zero (`0x801EAE40` / `0x801EB31C`), loading the
+row's own label on the zero leg and `CLOSED` on the fall-through; no other arm
+consults it. `DevMenuSession::row_label` is that selection, and the row list
+builds every label through it, so the host never spells a label the gate would
+have replaced. `closed_gate` itself is a host input: nothing in the engine
+publishes `_DAT_8007B868` yet, so it reads `0` and every row draws its name,
+which is what retail draws with the gate clear.
+
+The **cursor step is named `dev_menu_cursor_step`, not `cursor_step`**, on
+purpose. `legaia_engine_core::baka_cabinet` has a live free function called
+`cursor_step`, and a free function's name is the whole of its identity to the
+reachability pass - so while both existed, every call to the Baka one read as
+a call to this one. See
+[`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md).
 
 The escape-timer scheduler (`FUN_801D2EBC`) is a fifth leaf of the same
 overlay but sits in its own module, `legaia_engine_vm::escape_timer`, because
@@ -312,9 +340,13 @@ epilogue, because the jump-table cases are not reachable by linear flow.
 `party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
 `FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound / park-phase
 / constant-return contract. The arms' global pokes are not modelled - they
-address debug state with no engine counterpart. Like the rest of the dev-menu
-cluster the module is unhosted: the engine has no panel-window list and no
-`ctx[+0x54]` panel actor to open one.
+address debug state with no engine counterpart.
+
+`legaia_engine_core::world_map_panel_host::PanelWindowHost` is the host: it
+owns the `0x801F2B98` descriptor array and one window object per slot, and
+`run_script` decodes a script through `run_panel_script` and applies every
+effect to those objects. `dev_menu_action` is hosted separately, by the
+dev-menu screen's cancel leg, which uses both halves of its result.
 
 ### The panel actor state machines
 
@@ -330,6 +362,12 @@ Every terminal arm makes the same four stores through the scene struct at
 `0x801C6EA4`: `scene[+0x2E] = -1`, `scene[+0x40] = ctx[+0x50]`,
 `ctx[+0x50] = <next handler id>`, `ctx[+0x54] = 0`. The handler id is what
 `FUN_801F159C` dispatches on next frame.
+
+`scene[+0x2E]` and `scene[+0x3E]` are different halfwords and the exit touches
+only the first. `FUN_801ED308` has both in view: its `case 5` is
+`sh zero,0x3e(v0)` at `0x801ED52C` and its exit arms are `li v0,-0x1;
+sh v0,0x2e(v1)` at `0x801ED538`. Conflating them writes the hand-back sentinel
+into the completion gate the scene manager polls.
 
 | Actor | Phases | Shape |
 |---|---|---|
@@ -404,9 +442,68 @@ tint triple, run a panel script, set a story flag) rather than performing
 them, because the globals they address - the tint triple, the DMA queues, the
 scene struct - have no engine counterpart yet.
 
-The module is unhosted for the same reason the shared leaves are: `SceneMode`
-has no panel-window or dev-menu mode, `WorldMapController` owns no window list
-and no `ctx[+0x54]` phase, and the render halves have no caller either.
+The host is `legaia_engine_core::world_map_panel_host::PanelActorHost`, which
+hangs off `WorldMapController::panels` and is stepped once a frame by
+`World::tick_world_map`. It owns the globals the phases read - the brightness
+accumulator and flash counter, the shared cursor, the records slide, the tint
+triple and its saved copy, the scene-struct fields the terminal arms write -
+and routes the picker's flag traffic into the world's shared system flag bank.
+The exit itself is not open-coded there: `ActorExit::apply` performs all four
+stores against the host's `scene[+0x2E]`, `scene[+0x40]`, `ctx[+0x50]` and
+`ctx[+0x54]` mirrors, so the arm order and the choice of halfword stay with
+the ported kernel rather than with the host.
+
+Three inputs it supplies are the **port's**, not retail's:
+
+- **The panel scripts.** Retail's live at overlay VAs (`0x801F3274`,
+  `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`, `0x801F3304`) the
+  engine never loads. `PanelScripts::stand_in` ships a minimal table keyed by
+  the same VAs so the interpreter runs on real records.
+- **The handler-id table.** `FUN_801F159C` turns a retiring actor's new
+  `ctx[+0x50]` back into a function pointer through the 52-entry
+  `PTR_FUN_801F33B4`. The dispatcher itself *is* ported, as
+  `legaia_engine_vm::baka_hub_actors::hub_dispatch`, but it takes the resolved
+  handler as a caller-supplied closure, and only seven of the table's slots
+  are read out of the overlay image. The sub-list, text-box and flag-window
+  exits all hand back to slot `0x1A`, which is one of the seven; the
+  fade/flash exits pick `0x29` and `0x2B`, which are not. So `ActorExit::apply`
+  makes all four stores and `PanelActorHost::retire` drops the actor,
+  recording the handler pair in `PanelFrame::exits` rather than following it.
+  Reading the rest of that table is what would close this.
+- **The chords that install an actor.** Retail reaches this band from debug
+  branches in the controller. The engine gates it behind the same
+  `debug_enabled` flag the top-view toggle uses and binds Square (sub-list),
+  L1 (fade/flash, pressed again to release it), L2 (fill fade), R1 (flag
+  window), R2 (text box) and Start (soft reset), walk mode only. The
+  sub-list's own state-3 hand-off installs the Riremito travel art, and
+  Square while an actor is up dismisses it.
+
+**Several of these machines park rather than exit**, and that is the fact a
+host has to know before it installs one. `FUN_801EE90C` entered at phase 0
+does not reach its prompt at all: it jumps straight to the fill-fade block at
+phase 10, walks 11..13, and settles on phase **14**, an arm whose whole body
+is `scene[+0x3E] = 0`. `FUN_801ED308` parks at phase 3 until an external
+writer raises the flash counter `_DAT_8007B43C`, and `FUN_801EDF00`'s phase 3
+only redraws. Retail releases all three from outside - the scene manager
+watching `scene[+0x3E]`, the actor that armed the flash, the executable
+reload - so a host that models none of those needs both an entry phase per
+actor (`PanelActorKind::entry_phase`, which seeds the text box at its prompt)
+and a dismiss (`PanelActorHost::dismiss`). Without them the screen wedges on
+the first parking arm, which is what a live `play-window` session showed.
+
+Every kernel here reads the **packed** pad words `FUN_8001822C` builds, not
+the raw BIOS layout - the confirm mask is packed `0x40` where the raw Cross
+bit is `0x4000`, and the party HUD's suppress mask is the packed d-pad. The
+host converts once, in `packed_pad`.
+
+Two of the arms write real game state. `FUN_801EE90C`'s confirm arm is a
+**full party HP/MP restore**: its save-block stores `+0x6CC -> +0x6CE` and
+`+0x6D0 -> +0x6D2` rebase (less the `0x5C8` block-to-record distance) onto
+record `+0x104 -> +0x106` and `+0x108 -> +0x10A`, which `legaia_save` names
+`hp_max -> hp_cur` and `mp_max -> mp_cur`. And the travel art's resolve phase
+warps the party to the tile stored for the map it is standing on; the engine
+records that tile every frame no panel actor is up, so opening the screen
+freezes the return point.
 
 ### Dev-menu sub-panel renderers and the value-adjust input SM
 

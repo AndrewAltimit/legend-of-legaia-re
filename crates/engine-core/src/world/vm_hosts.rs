@@ -628,7 +628,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             }
         } else {
-            Op49State::Idle
+            // Every other sub-op parks on `_DAT_8007B450` until the
+            // `FUN_801F159C`-class actor writes `1` there. That writer is
+            // `World::tick_submode_screen`; without it these sub-ops re-armed
+            // and halted on the same PC every frame, forever.
+            //
+            // The park is read only by the context that armed it
+            // (`Op49ParkOwner`): retail's `_DAT_8007B450` is one global, but
+            // the port steps the field script, the channels and the spawned
+            // record contexts inside one `World::tick`, so a screen armed by
+            // the field script must not park the cutscene timeline's own
+            // op-`0x49` - which is the town01 name-entry hand-off.
+            let owner = self.world.op49_park_owner();
+            if self.world.submode_screen.is_open_for(owner) {
+                Op49State::Armed
+            } else if self.world.submode_screen.is_done_for(owner) {
+                Op49State::Done
+            } else {
+                Op49State::Idle
+            }
         }
     }
     fn op49_clear(&mut self) {
@@ -637,6 +655,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.field_shop_armed = false;
         // A finished tile-board segment resumes the same way.
         self.world.tile_board_armed = false;
+        // The submode screen's Done is one-shot: consume it so the next
+        // op-0x49 opens a fresh screen rather than resuming instantly. Only
+        // the context that armed the park may consume it - the name-entry
+        // hand-off's own resume runs through this same hook, and clearing
+        // another context's pending Done would strand it back on Idle and
+        // re-open the screen it had just finished.
+        let owner = self.world.op49_park_owner();
+        if self.world.submode_screen.owner == owner {
+            self.world.submode_screen.done = false;
+        }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
@@ -649,6 +677,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // consumer takes over the frame).
         if sub_op == 5 {
             self.world.try_install_tile_board(instr);
+        }
+        // Anything else is a submode sub-screen: open one on the driver actor
+        // so the dispatcher runs it and, when it hands back, unparks this op.
+        if let Some(slot) = crate::field_submode_screen::slot_for_op49_sub_op(sub_op) {
+            self.world.open_field_submode_screen(slot, None);
         }
     }
     fn op49_invoke_setup(&mut self) {
@@ -1845,6 +1878,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 strike_index: info.strike_index,
                 outcome,
             });
+        // Retail runs its learn-on-use check (`FUN_801EFBFC`) per accepted art
+        // inside the queue-builder; the engine reaches the same decision from
+        // the strike that art produced, which is the first point on the port's
+        // path where both the acting party slot and the art id are resolved.
+        // Only a party slot has a character record with a learned-art list.
+        if info.actor_slot < 3 {
+            let art_id = info.art.as_byte();
+            // Keyed by ROSTER slot, the same index `World::save_full` writes
+            // `learned_arts_mask` under - not the battle ordinal.
+            let roster = self.world.party_roster_slot(info.actor_slot as usize) as u8;
+            self.world.notify_art_used(roster, art_id);
+        }
     }
     fn screen_shake(&mut self, magnitude: u16) {
         self.world

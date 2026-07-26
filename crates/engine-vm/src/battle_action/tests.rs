@@ -366,6 +366,82 @@ fn action_seed_monster_with_ai_flag_calls_monster_setup() {
     assert!(!events.iter().any(|e| matches!(e, Event::PartySetup(_))));
 }
 
+// --- target banner raised at the ActionSeed tail (FUN_801E6D84) ------------
+
+/// Every category arm of retail's seed body falls into the same
+/// `jal 0x801e6d84`, and the caster banner `0x44` is what that routine raises
+/// before any of the target arms - so it is unconditional on the seed path,
+/// for every category except the one that returns first.
+#[test]
+fn action_seed_raises_the_caster_banner_for_every_category_but_run() {
+    for category in [
+        ActionCategory::TacticalArts,
+        ActionCategory::Item,
+        ActionCategory::Magic,
+        ActionCategory::Attack,
+        ActionCategory::Spirit,
+    ] {
+        let (mut ctx, mut host) = fresh(category, 0);
+        host.party_count = 3;
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        step(&mut host, &mut ctx);
+        assert!(
+            host.take().contains(&Event::Ui(0x44, 0)),
+            "no caster banner for {category:?}"
+        );
+    }
+}
+
+/// The one category `FUN_801E6D84` returns from before raising anything is
+/// `5` - which is **Run / Defend**, not Spirit (`4`).
+#[test]
+fn action_seed_raises_no_banner_for_the_run_category() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 0);
+    host.party_count = 3;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert!(!host.take().iter().any(|e| matches!(e, Event::Ui(0x44, _))));
+}
+
+/// Categories `0` and `4` raise the caster banner and then skip the target
+/// arm outright - the caster banner has already been raised by then.
+#[test]
+fn spirit_and_arts_raise_only_the_caster_banner() {
+    for category in [ActionCategory::TacticalArts, ActionCategory::Spirit] {
+        let (mut ctx, mut host) = fresh(category, 0);
+        host.party_count = 3;
+        host.actors[0].active_target = 4; // a named monster
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        step(&mut host, &mut ctx);
+        let events = host.take();
+        assert!(events.contains(&Event::Ui(0x44, 0)), "{category:?}");
+        assert!(!events.contains(&Event::Ui(0x51, 0)), "{category:?}");
+    }
+}
+
+/// A named monster target adds the single-target banner `0x51` on top of the
+/// caster banner; a party-slot target does not.
+#[test]
+fn a_named_monster_target_adds_the_target_banner() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.party_count = 3;
+    host.actors[0].active_target = 4;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(events.contains(&Event::Ui(0x44, 0)));
+    assert!(events.contains(&Event::Ui(0x51, 0)));
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.party_count = 3;
+    host.actors[0].active_target = 1; // an ally
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(events.contains(&Event::Ui(0x44, 0)));
+    assert!(!events.contains(&Event::Ui(0x51, 0)));
+}
+
 #[test]
 fn attack_face_in_range_routes_to_chain() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);

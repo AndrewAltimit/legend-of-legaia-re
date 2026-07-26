@@ -28,20 +28,41 @@
 //! - Retiring an actor is always the same four stores: `scene[+0x2E] = -1`,
 //!   `scene[+0x40] = ctx[+0x50]`, `ctx[+0x50] = <next handler id>`,
 //!   `ctx[+0x54] = 0`, through the scene-struct pointer at `0x801C6EA4`. That
-//!   is [`ActorExit`].
+//!   is [`ActorExit`], and [`ActorExit::apply`] performs it. `scene[+0x2E]`
+//!   and `scene[+0x3E]` are **different** halfwords - the exit clears the
+//!   former and never touches the latter, which is what `case 5` of
+//!   `FUN_801ED308` zeroes on its own (`sh zero,0x3e(v0)` at `0x801ED52C`
+//!   against `sh v0,0x2e(v1)` at `0x801ED53C`).
 //! - `_DAT_1F800393` is the scratchpad frame-delta byte every ramp scales by.
 //!   It is `frame_delta` throughout.
 //! - `_DAT_8007BB80` is the global input lock: while it is non-zero every
 //!   picker phase returns without reading the pad.
 //!
-//! ## NOT WIRED
+//! ## Wiring status
 //!
-//! Nothing in the engine hosts a panel actor. `SceneMode` has no dev-menu or
-//! panel-window mode, `WorldMapController` owns no window list, no panel
-//! descriptor array and no `ctx[+0x54]` phase, and the render halves in
-//! `legaia_engine_ui` have no caller either. Both halves are unhosted, so
-//! these ports are the simulation side of a screen that does not exist yet;
-//! the prerequisite is a panel-window host on `WorldMapController`.
+//! All seven are hosted by `legaia_engine_core::world_map_panel_host`, which
+//! hangs off `WorldMapController::panels` and is stepped once a frame by
+//! `World::tick_world_map`. That host owns the scene-struct fields the
+//! terminal arms write, the `0x801F2B98` descriptor array the panel scripts
+//! address, the brightness / flash / cursor / slide globals the phases read,
+//! and the story-flag bank the picker commits into.
+//!
+//! Three things it supplies are the **port's** rather than retail's, and the
+//! host names each where it defines it: the panel-script table (retail's live
+//! at overlay VAs the engine never loads), the pad chords that install an
+//! actor, and the fact that an [`ActorExit`] retires the actor instead of
+//! selecting the next handler.
+//!
+//! That last one is a *table* gap, not a dispatcher gap. The dispatcher
+//! `FUN_801F159C` **is** ported, as [`crate::baka_hub_actors::hub_dispatch`],
+//! but it takes `PTR_FUN_801F33B4[actor.state]` as a caller-supplied closure -
+//! the 52-entry table itself is what resolves a handler id, and
+//! [`crate::baka_hub_actors::slot`] names seven of its entries. The sub-list,
+//! text-box and flag-window exits all hand back to id `0x1A`, which is one of
+//! the seven ([`crate::baka_hub_actors::slot::DRAW_TICK`]); the fade/flash
+//! exits pick `0x29` and `0x2B`, which are not. Following an exit therefore
+//! needs the rest of that table read out of the overlay image first, so the
+//! host applies the stores and records the pair.
 
 use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 
@@ -51,8 +72,10 @@ use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 /// PORT: FUN_801ed308 (cases 6/7), FUN_801ed590 (state 2), FUN_801ee5d4
 /// (case 4), FUN_801ee90c (the `0x801EEA50` block), FUN_801ef014 (state 3)
 ///
-/// NOT WIRED: no engine host owns the scene struct these stores target - see
-/// the module disclosure.
+/// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost::retire`
+/// applies all four stores through [`ActorExit::apply`] and records the pair
+/// in `PanelFrame::exits` - see the module wiring status for why the new
+/// handler id is recorded and not dispatched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActorExit {
     /// `scene[+0x40]` takes the actor's *old* `ctx[+0x50]`.
@@ -64,6 +87,29 @@ pub struct ActorExit {
 impl ActorExit {
     /// `scene[+0x2E]`, written `-1` on every one of these paths.
     pub const SCENE_SLOT_CLEAR: i16 = -1;
+
+    /// Perform the four stores against the caller's mirrors, in retail's
+    /// order. Parameters are named for the offsets they stand in for.
+    ///
+    /// Read off `FUN_801ED308`'s two terminal arms, which are the shape every
+    /// other one repeats (`0x801ED530..0x801ED578`): `li v0,-0x1;
+    /// sh v0,0x2e(v1)` then `lhu v0,0x50(s0); sh v0,0x40(v1)`, then the shared
+    /// tail `sh v0,0x50(s0); sh zero,0x54(s0)` with `v0` holding the arm's own
+    /// next-handler immediate. Note `scene[+0x3E]` is **not** among them - the
+    /// separate `case 5` arm is the only thing that clears it.
+    ///
+    /// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost::retire`
+    /// applies every terminal arm's exit through here, reached from
+    /// `PanelActorHost::tick` -> `World::tick_world_map_panels` ->
+    /// `World::tick_world_map` -> `World::tick`.
+    ///
+    /// PORT: FUN_801ed308 (cases 6/7), FUN_801ed590 (state 2), FUN_801ee5d4 (case 4), FUN_801ee90c (the `0x801EEA50` block), FUN_801ef014 (state 3)
+    pub fn apply(self, scene_2e: &mut i16, scene_40: &mut u16, ctx_50: &mut u16, ctx_54: &mut i16) {
+        *scene_2e = Self::SCENE_SLOT_CLEAR;
+        *scene_40 = self.saved_handler;
+        *ctx_50 = self.next_handler;
+        *ctx_54 = 0;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +178,11 @@ pub struct FadeFlashInput {
 ///
 /// PORT: FUN_801ed308
 ///
-/// NOT WIRED: no engine host owns the brightness global or the panel actor
-/// table - see the module disclosure.
+/// Wired: `PanelActorKind::FadeFlash` in
+/// `legaia_engine_core::world_map_panel_host`. The host owns the brightness
+/// accumulator and the flash counter; the counter is an *external* input -
+/// this machine parks at phase 3 until something raises it, which is why the
+/// host exposes a release call.
 pub fn fade_flash_tick(phase: i16, input: FadeFlashInput) -> (i16, i32, i32, Vec<FadeFlashEffect>) {
     let mut level = input.level;
     let mut counter = input.flash_counter;
@@ -263,7 +312,10 @@ pub struct SubListInput {
 ///
 /// PORT: FUN_801ed590
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::SubList` in
+/// `legaia_engine_core::world_map_panel_host`; it is the entry point the
+/// world-map screen's chord installs, and the one whose state-3 hand-off
+/// reaches the travel art.
 pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListEffect>) {
     let mut phase = phase;
     let mut cursor = input.cursor;
@@ -364,7 +416,10 @@ pub struct SoftResetInput {
 ///
 /// PORT: FUN_801edf00
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::SoftReset` in
+/// `legaia_engine_core::world_map_panel_host`. The host records the
+/// executable reload rather than performing it - there is no boot image to
+/// re-load into.
 pub fn soft_reset_tick(phase: i16, input: SoftResetInput) -> (i16, i32, Vec<SoftResetEffect>) {
     let mut phase = phase;
     let mut slide = input.slide;
@@ -471,7 +526,8 @@ pub struct FillFadeInput {
 ///
 /// PORT: FUN_801ee5d4
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::FillFade` in
+/// `legaia_engine_core::world_map_panel_host`.
 pub fn fill_fade_tick(phase: i16, input: FillFadeInput) -> (i16, i16, Vec<FillFadeEffect>) {
     let mut phase = phase;
     let mut timer = input.timer;
@@ -554,8 +610,13 @@ pub enum TextBoxEffect {
     /// `FUN_80035BD0(0)` then `FUN_80035B50(0x25)`.
     PlaySfx(u32),
     /// For each of the first [`TEXT_BOX_RESTORE_SLOTS`] party records, copy
-    /// `rec[+0x1C4] -> rec[+0x1C6]` and `rec[+0x1C8] -> rec[+0x1CA]` (the
-    /// `0x80084140`-relative offsets `0x6CC/0x6CE` and `0x6D0/0x6D2`).
+    /// `rec[+0x104] -> rec[+0x106]` and `rec[+0x108] -> rec[+0x10A]`.
+    ///
+    /// Retail addresses these off the save block (`0x6CC -> 0x6CE`,
+    /// `0x6D0 -> 0x6D2` from `0x80084140`); rebasing by the `0x5C8`
+    /// block-to-record distance lands on the record offsets above, which
+    /// `legaia_save`'s schema names `hp_max -> hp_cur` and `mp_max -> mp_cur`.
+    /// So this arm is a **full HP/MP restore** of the first three characters.
     RestoreParty,
     /// `FUN_801E9B3C(script)`.
     RunPanelScript(u32),
@@ -595,7 +656,9 @@ pub struct TextBoxInput {
 ///
 /// PORT: FUN_801ee90c
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::TextBox` in
+/// `legaia_engine_core::world_map_panel_host`; its confirm arm's party
+/// restore is applied to the live records by `World::restore_party_hp_mp`.
 pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<TextBoxEffect>) {
     let mut phase = phase;
     let mut cursor = input.cursor;
@@ -699,6 +762,9 @@ pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<Tex
 
 /// Descriptor the flag-window picker reads through `_DAT_8007B450`, laid out
 /// by the MAN's op-`0x49` operands.
+///
+/// The engine supplies it from `PanelActorHost::flag_desc` rather than from a
+/// MAN, because no field script installs a flag window on the overworld.
 ///
 /// PORT: FUN_801ef014 (`lbu 1/2/3(desc)`, `FUN_8003CE9C(desc + 4)`)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -817,7 +883,9 @@ pub fn flag_window_initial_row(flag_set: impl Fn(i32) -> bool, desc: FlagWindowD
 ///
 /// PORT: FUN_801ef014
 ///
-/// NOT WIRED: same host gap as the rest of the module.
+/// Wired: `PanelActorKind::FlagWindow` in
+/// `legaia_engine_core::world_map_panel_host`, over the world's shared system
+/// flag bank.
 pub fn flag_window_tick(
     phase: i16,
     input: FlagWindowInput,
@@ -978,9 +1046,13 @@ pub fn hud_idle_frames(view_mode: i32, short_idle: bool) -> i16 {
 ///
 /// PORT: FUN_801d0d38
 ///
-/// NOT WIRED: the engine's field HUD is drawn by `legaia_engine_ui`'s own
-/// overlay path and has no idle-timer host; nothing produces the cached
-/// player position or `_DAT_800845C4` this consumes.
+/// Wired: `PanelActorHost::tick_party_hud` in
+/// `legaia_engine_core::world_map_panel_host` runs it every overworld frame,
+/// caching the player position itself. Retail installs the handler in the
+/// field band; the engine drives it from the overworld tick, where the party
+/// panel and the player marker both live. `projected_y` stays `None` there -
+/// the host has no screen projection for the player - which is retail's own
+/// staged-load path and forces the low panel.
 pub fn field_hud_tick(input: HudInput) -> (i16, HudDecision) {
     if input.hud_disabled || input.view_mode == 2 {
         return (input.timer, HudDecision::Suppressed);
@@ -1025,6 +1097,42 @@ mod tests {
             action_a_mask: 0x20,
             action_b_mask: 0x40,
         }
+    }
+
+    // --- the shared exit --------------------------------------------------
+
+    /// The four stores, and the fact that `scene[+0x3E]` is not one of them:
+    /// the exit arms write `+0x2E`, and only the separate `case 5` arm clears
+    /// `+0x3E`. Writing the sentinel into the wrong halfword is the mistake
+    /// this pins.
+    #[test]
+    fn exit_writes_2e_and_leaves_3e_alone() {
+        let (mut scene_2e, mut scene_40) = (0i16, 0u16);
+        let scene_3e = 7i16;
+        let (mut ctx_50, mut ctx_54) = (0x11u16, 5i16);
+        ActorExit {
+            saved_handler: 0x11,
+            next_handler: 0x29,
+        }
+        .apply(&mut scene_2e, &mut scene_40, &mut ctx_50, &mut ctx_54);
+        assert_eq!(scene_2e, ActorExit::SCENE_SLOT_CLEAR);
+        assert_eq!(scene_3e, 7, "the exit never touches +0x3E");
+        assert_eq!(ctx_50, 0x29, "+0x50 takes the arm's next handler id");
+        assert_eq!(ctx_54, 0, "+0x54 is zeroed");
+    }
+
+    /// `scene[+0x40]` takes the actor's *old* `+0x50`, not the new one.
+    #[test]
+    fn exit_saves_the_old_handler_into_scene_40() {
+        let (mut scene_2e, mut scene_40) = (0i16, 0u16);
+        let (mut ctx_50, mut ctx_54) = (0x11u16, 0i16);
+        ActorExit {
+            saved_handler: 0x11,
+            next_handler: 0x2B,
+        }
+        .apply(&mut scene_2e, &mut scene_40, &mut ctx_50, &mut ctx_54);
+        assert_eq!(scene_40, 0x11);
+        assert_eq!(ctx_50, 0x2B);
     }
 
     // --- FUN_801ED308 -----------------------------------------------------

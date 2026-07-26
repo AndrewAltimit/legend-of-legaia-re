@@ -31,32 +31,34 @@
 //! for the format index and [`docs/subsystems/asset-loader.md`] for the
 //! caller chain.
 //!
-//! ### Concatenated sub-streams (the "two-list" shape)
+//! ### One entry, one sub-stream (the falsified "two-list" shape)
 //!
-//! Some scene_tmd_stream entries hold **more than one complete sub-stream**
-//! concatenated: each is a full `[chunk0 TMD][type-0x01 TIM chunks][terminator]`
-//! block, and each starts on a **`0x800` (sector) boundary** with zero padding
-//! filling the gap. `0006_town01.BIN` is the canonical example - sub-stream 0
-//! at `0x0` (TMD `0x383C` + TIMs at `0x3840` / `0xBA64`) and sub-stream 1 at
-//! `0x14000` (its **own** leading TMD `0x2C20` + TIMs at `0x16C24` / `0x1EE48`).
-//! So the bytes earlier docs called a "continuation TIM list" are really the
-//! second sub-stream's TIM chunks; sub-stream 1 is a self-contained
-//! scene_tmd_stream with its own TMD, not a bare tail of sub-stream 0. Use
-//! [`sub_streams`] to enumerate them properly.
+//! A scene_tmd_stream PROT entry holds **exactly one** complete
+//! `[chunk0 TMD][type-0x01 TIM chunks][terminator]` stream, followed by zero
+//! padding out to the entry's sector-aligned end. `FUN_8001FE70` walks that
+//! one stream and **returns a pointer just past its terminator**
+//! (`return param_1 + 1`); the one static caller (`FUN_800513F0`, battle init)
+//! calls it once, which is all an entry contains.
 //!
-//! `FUN_8001FE70` walks exactly one sub-stream and **returns a pointer just
-//! past its terminator** (`return param_1 + 1`), i.e. the start of the next
-//! sub-stream's region - so a sector/slot-indexed caller can walk the rest by
-//! re-invoking the walker on that boundary. The one static caller
-//! (`FUN_800513F0`, battle init) calls it **once** and consumes only
-//! sub-stream 0 (its `s3 < 4` loop above the call is the 4-party-member setup,
-//! not a sub-stream loop), so in battle the later sub-streams are not uploaded.
-//! The multi-sub-stream caller is the per-scene field/town dispatch (overlay-
-//! resident, descriptor-driven `FUN_8001F7C0` → `FUN_80020224` → `FUN_8001F05C`),
-//! still capture-blocked. [`battle_tim_chunks`] reports both `WalkSource::Tail`
-//! (sub-stream 0, inside `FUN_8001FE70`'s reach) and `WalkSource::Continuation`
-//! (the later sub-streams' TIM chunks) so engine ports can choose whether to
-//! upload one or all.
+//! Earlier revisions of this module described a "concatenated sub-streams" /
+//! "two-list" shape, with `0006_town01.BIN` carrying a second sub-stream at
+//! `0x14000` (own TMD `0x2C20`, TIMs at `0x16C24` / `0x1EE48`). **That reading
+//! is falsified.** It was an artifact of the superseded PROT entry-size
+//! expression, which over-read every entry into its successor's head bytes.
+//! Entry size is the sector gap to the next entry (`toc[p+3] - toc[p+2]`,
+//! retail's own `FUN_8003E68C`) - see `docs/formats/prot.md`. Entry 0006 is
+//! exactly `0x14000` bytes, and the "second sub-stream" is PROT entry **0007**,
+//! whose TOC start is exactly `0x14000` past entry 0006's: its own leading TMD
+//! is `0x2C20` and its own tail TIMs sit at `0x2C24` / `0xAE48` - the stale
+//! offsets minus `0x14000`. The town0b / town0c clusters that appeared to
+//! "confirm" the shape are four-entry clusters of the same layout, so each
+//! over-read simply reproduced the artifact.
+//!
+//! Across the corrected corpus **no** entry enumerates more than one
+//! sub-stream and **no** entry yields a `WalkSource::Continuation` chunk.
+//! [`sub_streams`] and the `Continuation` arm are retained as regression
+//! detectors: if extraction ever regresses to an over-reading size expression,
+//! they light up again.
 //!
 //! This shape is dominant in scene-asset PROT entries (most `town*`, `dolk*`,
 //! `rugi*`, and similar named blocks). Pre-TOC-fix the bare-TMD prefix made
@@ -239,12 +241,16 @@ pub struct SubStream {
 /// above the observed max (2).
 const MAX_SUB_STREAMS: usize = 16;
 
-/// Enumerate the concatenated `[chunk0 TMD][TIM chunks][terminator]`
-/// sub-streams in a scene_tmd_stream entry. Returns one [`SubStream`] per
-/// block; the first is the battle-init walk's reach (`FUN_8001FE70`), any
-/// further ones are the "continuation" sub-streams (each with its **own**
-/// leading TMD) that sit on the next `0x800` sector boundary after the
-/// previous terminator.
+/// Enumerate the `[chunk0 TMD][TIM chunks][terminator]` sub-streams in a
+/// scene_tmd_stream entry. On a correctly-sized entry this always returns
+/// **exactly one** [`SubStream`], based at 0 - the battle-init walk's reach
+/// (`FUN_8001FE70`).
+///
+/// The function keeps looking past the terminator (skipping the zero padding
+/// that runs to the entry's sector-aligned end) because a *second* hit means
+/// the buffer spans more than one PROT entry - i.e. it was produced by the
+/// superseded over-reading entry-size expression. See the module docs; this
+/// is a regression detector, not a retail shape.
 ///
 /// Returns an empty `Vec` if the buffer isn't a scene_tmd_stream. The walk
 /// stops at the first region that doesn't [`detect`] as a sub-stream (e.g.
@@ -280,17 +286,20 @@ pub enum WalkSource {
     /// Inside `FUN_8001FE70`'s reach - this chunk is uploaded by the
     /// battle-init dispatch when the entry is loaded.
     Tail,
-    /// After the first terminator. `FUN_8001FE70` exits before reaching
-    /// these chunks; their consumer is not yet pinned, but the bytes are
-    /// reachable as a continuation list (matching size + alignment to the
-    /// in-tail chunks).
+    /// After the first terminator, where a correctly-sized entry has only
+    /// zero padding. **No retail PROT entry produces this** - every chunk
+    /// past the terminator that the old corpus reported belonged to the
+    /// *next* entry, reached through the superseded over-reading entry-size
+    /// expression (see the module docs). Retained as a regression detector:
+    /// a `Continuation` hit means the buffer spans more than one entry.
     Continuation,
 }
 
 /// One type-0x01 TIM upload chunk identified inside a scene_tmd_stream
 /// entry. The walker emulates `FUN_8001FE70` (the battle-init scene
 /// dispatch) on the streaming tail, then continues past the first
-/// terminator to surface any continuation lists.
+/// terminator so an over-read buffer's spill-over is visible rather than
+/// silently attributed to this entry.
 #[derive(Debug, Clone, Serialize)]
 pub struct BattleTimChunk {
     /// Byte offset of the 4-byte chunk header (the `(type<<24)|size` word)
@@ -307,9 +316,10 @@ pub struct BattleTimChunk {
 
 /// Walk a scene_tmd_stream buffer in the same shape as `FUN_8001FE70`
 /// (the battle scene loader's per-PROT walker) and report every type-0x01
-/// TIM upload chunk. Continuation chunks past the first terminator are
-/// also reported with `source = WalkSource::Continuation` so engine
-/// callers can opt into / out of uploading them.
+/// TIM upload chunk. On a correctly-sized entry every hit is
+/// `WalkSource::Tail`; anything reported past the first terminator carries
+/// `WalkSource::Continuation` and means the buffer spans more than one PROT
+/// entry (see [`WalkSource::Continuation`]).
 ///
 /// Returns an empty `Vec` if the buffer doesn't match the scene_tmd_stream
 /// shape. Use [`detect`] first if you want a cheaper structural gate.
@@ -566,12 +576,16 @@ mod tests {
         assert!(!r.tail_terminated);
     }
 
-    /// Build a "town01-shaped" two-list scene_tmd_stream: leading TMD,
-    /// then `tail_count` type-0x01 TIM chunks, zero-size terminator,
-    /// `gap` bytes of zero padding, then `cont_count` more type-0x01
-    /// chunks after the terminator. Each TIM payload is a 16-byte stub
-    /// starting with the PSX TIM magic so the continuation-list gate
-    /// (which checks payload magic) recognises it.
+    /// Build a synthetic two-list buffer: leading TMD, then `tail_count`
+    /// type-0x01 TIM chunks, zero-size terminator, `gap` bytes of zero
+    /// padding, then `cont_count` more type-0x01 chunks after the
+    /// terminator. Each TIM payload is a 16-byte stub starting with the PSX
+    /// TIM magic so the post-terminator gate (which checks payload magic)
+    /// recognises it.
+    ///
+    /// No retail PROT entry has this shape - it models what an *over-read*
+    /// buffer looks like (one entry's stream plus the next entry's bytes),
+    /// which is what the `Continuation` arm exists to detect.
     fn synth_two_list(tail_count: usize, gap: usize, cont_count: usize) -> Vec<u8> {
         // TIM payload: `[u32 0x10][12 bytes filler]` = 16 bytes.
         let tim_payload: Vec<u8> = {
@@ -640,9 +654,10 @@ mod tests {
     }
 
     /// Concatenate two full `[TMD][TIM][TIM][terminator]` sub-streams with a
-    /// zero-padded gap - the real "two-list" shape (each sub-stream carries
-    /// its OWN leading TMD), distinct from the bare post-terminator TIM list
-    /// `synth_two_list` models.
+    /// zero-padded gap, each carrying its OWN leading TMD - i.e. what two
+    /// adjacent PROT entries look like when a buffer over-reads across the
+    /// boundary between them. Distinct from the bare post-terminator TIM
+    /// list `synth_two_list` models. Retail entries hold one sub-stream.
     fn synth_two_sub_streams(gap: usize) -> Vec<u8> {
         let tim: &[u8] = &{
             let mut v = vec![0u8; 64];

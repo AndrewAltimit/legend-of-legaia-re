@@ -292,7 +292,7 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-enemy-scale-on">
-        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and the whole roster shifts together - <strong>story bosses included</strong>. EXP, gold and drops are untouched, so a hard run is harder, not richer. <em>Simple</em> scales every stat by one number; <em>Advanced</em> gives each stat its own slider, so you can shape a fight instead of just hardening it <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
+        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and its group shifts together. <strong>Random encounters and bosses get their own sliders</strong>, so you can take the grind down and the set-pieces up in the same run. EXP, gold and drops are untouched, so a hard run is harder, not richer. <em>Simple</em> scales every stat of a group by one number; <em>Advanced</em> gives each stat of each group its own slider, so you can shape a fight instead of just hardening it <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
         <div class="rom-scale-mode">
@@ -303,29 +303,56 @@
           </div>
         </div>
 
+        <p class="rom-opt-note rom-scale-hint">Which enemies count as <strong>bosses</strong> is read off your disc's own encounter tables, not a hard-coded list: a fight the field script starts by name, that no random-encounter roll can produce. Everything the game can throw at you on a step is a <strong>random encounter</strong> - including the opening Rim Elm fights, which stay out of the boss group on purpose.</p>
+
         <div id="rom-enemy-scale-simple-pane">
-          <label class="rom-opt-label" for="rom-enemy-scale">Enemy stat multiplier: <output id="rom-enemy-scale-val">1.0x</output></label>
-          <input type="range" id="rom-enemy-scale" min="0.1" max="5" step="0.1" value="1">
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular">Random encounters <output id="rom-enemy-scale-regular-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss">Bosses <output id="rom-enemy-scale-boss-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss" min="0.1" max="5" step="0.1" value="1">
+          </div>
         </div>
 
         <div id="rom-enemy-scale-advanced-pane" hidden>
-          <p class="rom-opt-note rom-scale-hint">One multiplier per stat. Anything left at <code>1.0x</code> keeps its disc value exactly, so <code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</p>
+          <p class="rom-opt-note rom-scale-hint">One multiplier per stat, per group. Anything left at <code>1.0x</code> keeps its disc value exactly, so <code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</p>
+
+          <p class="rom-scale-group-title">Random encounters</p>
           <div class="rom-scale-grid">
-            <label class="rom-opt-label" for="rom-enemy-scale-hp">HP <output id="rom-enemy-scale-hp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-hp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-mp">MP <output id="rom-enemy-scale-mp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-mp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-attack">Attack <output id="rom-enemy-scale-attack-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-attack" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-defense_high">Defense, upper <output id="rom-enemy-scale-defense_high-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-defense_high" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-defense_low">Defense, lower <output id="rom-enemy-scale-defense_low-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-defense_low" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-intelligence">Intelligence <output id="rom-enemy-scale-intelligence-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-intelligence" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-speed">Speed <output id="rom-enemy-scale-speed-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-speed" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-hp">HP <output id="rom-enemy-scale-regular-hp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-hp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-mp">MP <output id="rom-enemy-scale-regular-mp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-mp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-attack">Attack <output id="rom-enemy-scale-regular-attack-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-attack" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_high">Defense, upper <output id="rom-enemy-scale-regular-defense_high-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-defense_high" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_low">Defense, lower <output id="rom-enemy-scale-regular-defense_low-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-defense_low" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-intelligence">Intelligence <output id="rom-enemy-scale-regular-intelligence-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-intelligence" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-speed">Speed <output id="rom-enemy-scale-regular-speed-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-speed" min="0.1" max="5" step="0.1" value="1">
           </div>
+
+          <p class="rom-scale-group-title">Bosses</p>
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-hp">HP <output id="rom-enemy-scale-boss-hp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-hp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-mp">MP <output id="rom-enemy-scale-boss-mp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-mp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-attack">Attack <output id="rom-enemy-scale-boss-attack-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-attack" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_high">Defense, upper <output id="rom-enemy-scale-boss-defense_high-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-defense_high" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_low">Defense, lower <output id="rom-enemy-scale-boss-defense_low-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-defense_low" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-intelligence">Intelligence <output id="rom-enemy-scale-boss-intelligence-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-intelligence" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-speed">Speed <output id="rom-enemy-scale-boss-speed-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-speed" min="0.1" max="5" step="0.1" value="1">
+          </div>
+
           <button type="button" class="rom-scale-reset" id="rom-enemy-scale-reset">Reset every stat to 1.0x</button>
         </div>
       </div>
@@ -573,16 +600,19 @@
   .rom-opt-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
   .rom-sub { padding-left: 1.6rem; background: var(--bg-raised); }
   .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
-  #rom-spirit-ap-val, #rom-damage-ap-val, #rom-enemy-scale-val { font-weight: 700; color: var(--accent-hi); }
+  #rom-spirit-ap-val, #rom-damage-ap-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
 
   /* Difficulty scale: simple/advanced mode switch + the per-stat slider grid.
      A .rom-opt is a space-between flex row, which is right for a label/slider
-     pair but would sit this row's three blocks (mode switch, simple pane,
+     pair but would sit this row's blocks (mode switch, group hint, simple pane,
      advanced pane) side by side - so this one stacks. */
   #rom-enemy-scale-row { flex-direction: column; align-items: stretch; }
   .rom-scale-mode { display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
   .rom-scale-hint { margin: 0 0 0.6rem; max-width: 46rem; }
+  /* Each enemy group heads its own slider grid in Advanced mode. */
+  .rom-scale-group-title { margin: 0 0 0.35rem; font-weight: 700; font-size: 0.9em; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent-hi); }
+  .rom-scale-group-title + .rom-scale-grid { margin-bottom: 1.1rem; }
   .rom-scale-grid { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: 0.3rem 0.9rem; align-items: center; max-width: 34rem; }
   .rom-scale-grid input[type=range] { max-width: none; }
   .rom-scale-grid output { font-weight: 700; color: var(--accent-hi); }

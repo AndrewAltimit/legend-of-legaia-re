@@ -5,6 +5,29 @@
 
 use super::*;
 
+/// [`crate::world_map_panel_host::PanelFlagStore`] over the world's shared
+/// system flag bank - the engine's `FUN_8003CE64` / `FUN_8003CE08` /
+/// `FUN_8003CE34` triple.
+struct WorldPanelFlags<'a> {
+    world: &'a mut World,
+}
+
+impl crate::world_map_panel_host::PanelFlagStore for WorldPanelFlags<'_> {
+    fn flag_test(&self, id: i32) -> bool {
+        u16::try_from(id).is_ok_and(|i| self.world.system_flag_test(i))
+    }
+    fn flag_set(&mut self, id: i32) {
+        if let Ok(i) = u16::try_from(id) {
+            self.world.system_flag_set(i);
+        }
+    }
+    fn flag_clear(&mut self, id: i32) {
+        if let Ok(i) = u16::try_from(id) {
+            self.world.system_flag_clear(i);
+        }
+    }
+}
+
 impl World {
     /// Drive the world-map controller from this frame's pad.
     ///
@@ -81,6 +104,10 @@ impl World {
         // gate this frame (retail `FUN_801D7EA0`, or its 0897 relocation copy
         // `FUN_801C9688`). Unarmed frames cost a flag test.
         self.tick_world_map_horizon();
+
+        // The world-map band's panel screen: the six `ctx[+0x54]` panel actors
+        // over the shared window system, plus the field party HUD's idle timer.
+        self.tick_world_map_panels();
 
         // The region-keyed random-encounter roll (the `FUN_801D9E1C` path): on
         // each 128-unit tile crossing, roll the active region. No-op without a
@@ -409,6 +436,198 @@ impl World {
         let lut = &self.cos_lut;
         ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
         self.world_map_ctrl = Some(ctrl);
+    }
+
+    /// Drive the world-map band's **panel screen** for one frame.
+    ///
+    /// This is the host side of [`crate::world_map_panel_host`]: it records the
+    /// party's stored tile, binds the pad chords that install a panel actor,
+    /// steps whichever actor is up, and applies what the frame produced. The
+    /// phase machines themselves are the ports in
+    /// [`legaia_engine_vm::world_map_panel_actors`]; the window system under
+    /// them is [`legaia_engine_vm::world_map_panel`].
+    ///
+    /// **The chords are the port's, not retail's.** Retail reaches this band
+    /// from debug branches inside the world-map controller; the engine gates
+    /// the whole screen behind the same `debug_enabled` flag the top-view
+    /// camera toggle uses, and only in walk mode, so the top-view camera's own
+    /// d-pad handling is never shadowed:
+    ///
+    /// | Chord | Actor |
+    /// |---|---|
+    /// | Square | sub-list picker (`FUN_801ED590`) |
+    /// | L1 | brightness fade / flash (`FUN_801ED308`); L1 again releases it |
+    /// | L2 | screen-fill fade (`FUN_801EE5D4`) |
+    /// | R1 | story-flag window (`FUN_801EF014`) |
+    /// | R2 | yes/no text box (`FUN_801EE90C`) |
+    /// | Start | return-to-title soft reset (`FUN_801EDF00`) |
+    ///
+    /// The sub-list's own row-1 confirm takes retail's state-3 hand-off, which
+    /// the port binds to installing the Riremito travel art
+    /// ([`legaia_engine_vm::travel_art_actor`]) - the art then warps the party
+    /// back to the tile recorded before the screen opened.
+    fn tick_world_map_panels(&mut self) {
+        use crate::world_map_panel_host::{PanelActorKind, packed_pad};
+        use legaia_engine_vm::travel_art_actor::TravelArt;
+
+        if self.world_map_ctrl.is_none() {
+            return;
+        }
+        let raw_held = self.input.pad();
+        let raw_edge = raw_held & !self.input.pad_prev();
+        let held = packed_pad(raw_held);
+        let edge = packed_pad(raw_edge);
+        let frame_step = self.frame_step;
+        let player_tile = self.player_actor_slot.and_then(|slot| {
+            self.actors.get(slot as usize).map(|a| {
+                (
+                    (a.move_state.world_x as i32) >> 7,
+                    (a.move_state.world_z as i32) >> 7,
+                )
+            })
+        });
+        let player_pos = self.player_actor_slot.and_then(|slot| {
+            self.actors
+                .get(slot as usize)
+                .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        });
+
+        // Take the controller out so the flag-bank adapter can borrow the
+        // world mutably (the same borrow window `tick_world_map_horizon` uses).
+        let Some(mut ctrl) = self.world_map_ctrl.take() else {
+            return;
+        };
+        let walk_mode = ctrl.view_mode == 0;
+        let debug = ctrl.debug_enabled;
+
+        // The stored tile only advances while no panel actor owns the screen,
+        // so opening the screen freezes the return point the travel art warps
+        // back to - retail's `0x80084624` / `0x8008462C` pair, written on map
+        // entry rather than every frame.
+        if !ctrl.panels.is_active()
+            && let Some((tx, tz)) = player_tile
+        {
+            let map = ctrl.panels.visited.last().map(|v| v.map_id).unwrap_or(0);
+            ctrl.panels.note_visit(map, tx, tz);
+        }
+
+        if debug && walk_mode {
+            use input::PadButton as B;
+            let pressed = |b: B| raw_edge & b.mask() != 0;
+            if !ctrl.panels.is_active() {
+                let install = if pressed(B::Square) {
+                    Some(PanelActorKind::SubList)
+                } else if pressed(B::L1) {
+                    Some(PanelActorKind::FadeFlash)
+                } else if pressed(B::L2) {
+                    Some(PanelActorKind::FillFade)
+                } else if pressed(B::R1) {
+                    Some(PanelActorKind::FlagWindow)
+                } else if pressed(B::R2) {
+                    Some(PanelActorKind::TextBox)
+                } else if pressed(B::Start) {
+                    Some(PanelActorKind::SoftReset)
+                } else {
+                    None
+                };
+                if let Some(kind) = install {
+                    log::info!("world-map: panel actor {kind:?} installed");
+                    ctrl.panels.install(kind, 0x1A);
+                }
+            } else if pressed(B::Square) {
+                // The escape hatch: several arms park instead of exiting, so
+                // the chord that opens the screen also closes it.
+                if ctrl.panels.dismiss() {
+                    log::info!("world-map: panel actor dismissed");
+                }
+            } else if pressed(B::L1) {
+                ctrl.panels.release_flash();
+            }
+        }
+
+        // The party HUD's idle countdown runs every frame, panel actor or not.
+        ctrl.panels
+            .tick_party_hud(false, i32::from(ctrl.view_mode), held, player_pos, 1, None);
+
+        let mut store = WorldPanelFlags { world: self };
+        let frame = ctrl.panels.tick(edge, held, frame_step, &mut store);
+        self.world_map_ctrl = Some(ctrl);
+
+        for cue in &frame.sfx {
+            log::debug!("world-map panel: sfx cue {cue:#04x}");
+        }
+        for id in &frame.flags_set {
+            log::info!("world-map panel: flag window set story flag {id}");
+        }
+        if frame.retired {
+            log::info!(
+                "world-map: panel actor retired ({} window(s) still open)",
+                self.world_map_ctrl
+                    .as_ref()
+                    .map(|c| c.panels.windows.open_count())
+                    .unwrap_or(0)
+            );
+        }
+        if frame.hand_off {
+            // Retail's sub-list state 3 hands the actor on through the handler
+            // table; the port binds that arm to the Riremito travel art.
+            if let Some(ctrl) = self.world_map_ctrl.as_mut() {
+                log::info!("world-map: sub-list hand-off -> Riremito travel art");
+                ctrl.panels
+                    .install(PanelActorKind::TravelArt(TravelArt::Riremito), 0x1A);
+            }
+        }
+        if frame.restore_party {
+            self.restore_party_hp_mp();
+        }
+        if frame.travel_unfound {
+            log::info!("world-map: travel art found no stored map - nothing happens");
+        }
+        if frame.reload_executable {
+            log::info!("world-map: soft reset reached its executable reload (not acted on)");
+        }
+        if let Some(dest) = frame.warp
+            && let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(slot as usize)
+        {
+            actor.move_state.world_x =
+                dest.x.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            actor.move_state.world_z =
+                dest.z.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            self.world_map_last_tile = None;
+            log::info!(
+                "world-map: travel art warped the party to ({}, {})",
+                dest.x,
+                dest.z
+            );
+        }
+    }
+
+    /// The party restore `FUN_801EE90C`'s confirm arm asks for: copy each of
+    /// the first three character records' **maximum** HP and MP over their
+    /// current values.
+    ///
+    /// Retail's stores are save-block relative (`+0x6CC -> +0x6CE`,
+    /// `+0x6D0 -> +0x6D2`); rebased onto a bare `0x414`-byte record by the
+    /// `0x5C8` block-to-record distance those are `+0x104 -> +0x106` and
+    /// `+0x108 -> +0x10A`, which `legaia_save`'s own schema names as
+    /// `hp_max -> hp_cur` and `mp_max -> mp_cur`.
+    fn restore_party_hp_mp(&mut self) {
+        const PAIRS: [(usize, usize); 2] = [(0x104, 0x106), (0x108, 0x10A)];
+        let mut restored = 0usize;
+        for member in self.roster.members.iter_mut().take(3) {
+            let raw = &mut member.raw;
+            if raw.len() < 0x10C {
+                continue;
+            }
+            for (src, dst) in PAIRS {
+                let v = [raw[src], raw[src + 1]];
+                raw[dst] = v[0];
+                raw[dst + 1] = v[1];
+            }
+            restored += 1;
+        }
+        log::info!("world-map panel: restored HP/MP on {restored} party record(s)");
     }
 
     fn tick_world_map_npc_dialog(&mut self) {

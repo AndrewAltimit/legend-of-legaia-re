@@ -1070,10 +1070,12 @@ mod tests {
             &SpellCatalog::vanilla(),
             &equip_table,
         );
-        // Slot picker starts at cursor 0; move down once to reach slot 1
-        // (where item 0x25 lives), confirm into the item picker, confirm
-        // the single item, confirm Yes.
-        s.tick_pad_edge(PadButton::Down.mask());
+        // Slot-browse row 0 is Best Equipment, so slot 1 (where item 0x25
+        // lives) is row 2: two steps down, confirm into the item picker,
+        // confirm the single item, confirm Yes.
+        for _ in 0..2 {
+            s.tick_pad_edge(PadButton::Down.mask());
+        }
         for _ in 0..3 {
             s.tick_pad_edge(PadButton::Cross.mask());
         }
@@ -1119,8 +1121,14 @@ mod tests {
             &SpellCatalog::vanilla(),
             &equip_table,
         );
+        // Row 2 is slot 1. The slot is occupied, so its candidate list
+        // leads with the Remove row - one more step down lands on 0x25.
+        for _ in 0..2 {
+            s.tick_pad_edge(PadButton::Down.mask());
+        }
+        s.tick_pad_edge(PadButton::Cross.mask());
         s.tick_pad_edge(PadButton::Down.mask());
-        for _ in 0..3 {
+        for _ in 0..2 {
             s.tick_pad_edge(PadButton::Cross.mask());
         }
         assert!(s.is_done());

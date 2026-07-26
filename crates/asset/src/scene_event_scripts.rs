@@ -29,11 +29,33 @@
 //!   bulk is some other asset bundle layout (per-scene secondary header,
 //!   format not yet reversed).
 //!
-//! The frame-opener rate is what makes this detector zero-false-positive
-//! on its own. Files matching the prescript shape by coincidence (random
-//! `[u16 count][u16 offsets]`-shaped data) carry no `0xFFFF 0x0000` opener
-//! at the record positions; real scene-event-script bundles carry it on
-//! the majority of records (50–92 %).
+//! ### Two tiers: [`detect`] and [`detect_structural`]
+//!
+//! [`detect`] pairs the prescript shape with a **frame-opener rate** floor:
+//! the share of records that lead with `model_sel = -1`. It is the
+//! high-confidence read, and the one every consumer of the parsed records
+//! uses.
+//!
+//! The rate is a *quality* signal, not an identity one. Across the corrected
+//! corpus it runs from 0 % to 92 %: `geremi`, `tunnela`, `tunnelb` and `edson`
+//! carry no transform-node record at all, and 23 of the 101 prescript carriers
+//! sit below the floor. A gate that drops a fifth of a format's members is not
+//! a definition of the format.
+//!
+//! [`detect_structural`] is the definition instead: the `[u16 count][u16
+//! offsets[count]]` table with `offsets[0]` anchored exactly at the table end,
+//! offsets non-decreasing, word-aligned and in-buffer, the last record
+//! non-empty, and at least two records. Across the 1233-entry PROT corpus that
+//! matches **101** entries and nothing else - 100 of them at slot 2 of a
+//! CDNAME scene block, the one exception being `other4 + 1`. The record-count
+//! floor is where the shape stops degenerating: at `count == 1` the anchor
+//! `offsets[0] == 2 + 2*count` collapses to "the second `u16` is 4", which is
+//! byte-identical to a [`crate::bse_bank`] header (`[u16 tag][u16 body_offset
+//! = 4]`), and both retail `bse_bank` carriers match it.
+//!
+//! The categorizer runs [`detect`] early - strong evidence outranks the
+//! magic-prefixed containers - and [`detect_structural`] as a last resort,
+//! after every other named detector has passed.
 //!
 //! ### Format meaning - a per-scene MOVE-VM stager table (summon-stager format)
 //!
@@ -99,6 +121,13 @@ const MAX_PRESCRIPT_COUNT: u16 = 4096;
 /// arbitrary `[count][offsets]`-style data by chance.
 const MIN_PRESCRIPT_COUNT: u16 = 3;
 
+/// Record-count floor for [`detect_structural`]. One record leaves no table
+/// to anchor on - `offsets[0] == 2 + 2*count` degenerates to "the second `u16`
+/// is 4", the [`crate::bse_bank`] header shape - so two is where the anchor
+/// starts carrying evidence. `edteien`'s two-record prescript is the retail
+/// case that lives on this floor.
+const MIN_STRUCTURAL_COUNT: u16 = 2;
+
 /// Lead of a transform-node stager record - `0xFFFF 0x0000` little-endian, i.e.
 /// `model_sel = -1` (transform/pivot node) + `flags = 0`. (Historically
 /// mislabelled "the field VM's frame divider opcode"; it is the summon-stager
@@ -129,11 +158,42 @@ pub struct SceneEventScripts {
 
 /// Try to detect a scene-event-scripts prescript. Returns `None` if the
 /// prescript shape is wrong or the frame-opener rate is too low.
+///
+/// This is the high-confidence tier. For the format's own boundary - which
+/// includes the carriers whose records simply are not transform nodes - use
+/// [`detect_structural`].
 pub fn detect(buf: &[u8]) -> Option<SceneEventScripts> {
     let offsets = detect_prescript(buf)?;
-    let count = offsets.len() as u16;
+    let report = summarise(buf, &offsets)?;
+    (report.frame_opener_rate >= FRAME_OPENER_RATE_MIN).then_some(report)
+}
 
-    // Count how many records open with the field-VM frame sentinel.
+/// Recognise a prescript from its **table shape alone**, with no frame-opener
+/// requirement.
+///
+/// The gate, in order: the `[u16 count][u16 offsets[count]]` header with
+/// `count >= 2`; the table fitting inside the buffer; `offsets[0]` exactly at
+/// the table end; every offset non-decreasing, word-aligned and inside the
+/// buffer; and the last record non-empty. Across the 1233-entry PROT corpus
+/// that matches 101 entries with zero false positives - see the module docs
+/// for why the frame-opener rate cannot carry this job.
+pub fn detect_structural(buf: &[u8]) -> Option<SceneEventScripts> {
+    let offsets = detect_prescript_min(buf, MIN_STRUCTURAL_COUNT)?;
+    // Records are word-aligned - the whole record body is a `u16` stream.
+    if offsets.iter().any(|&o| o % 2 != 0) {
+        return None;
+    }
+    // The final record must have room for at least one word.
+    if usize::from(*offsets.last()?) >= buf.len() {
+        return None;
+    }
+    summarise(buf, &offsets)
+}
+
+/// Build the report for an already-validated offset table, counting how many
+/// records lead with the transform-node sentinel.
+fn summarise(buf: &[u8], offsets: &[u16]) -> Option<SceneEventScripts> {
+    let count = offsets.len() as u16;
     let mut openers: u16 = 0;
     for (i, &off) in offsets.iter().enumerate() {
         // Guard: each record needs at least 4 bytes to test for the magic.
@@ -155,17 +215,11 @@ pub fn detect(buf: &[u8]) -> Option<SceneEventScripts> {
             openers += 1;
         }
     }
-
-    let rate = openers as f32 / count as f32;
-    if rate < FRAME_OPENER_RATE_MIN {
-        return None;
-    }
-
     Some(SceneEventScripts {
         records: count,
         last_record_offset: *offsets.last()?,
         frame_opener_count: openers,
-        frame_opener_rate: rate,
+        frame_opener_rate: openers as f32 / count as f32,
     })
 }
 
@@ -435,6 +489,53 @@ mod tests {
     fn rejects_random_bytes() {
         let buf: Vec<u8> = (0..0x1000u32).map(|i| (i & 0xFF) as u8).collect();
         assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn structural_tier_accepts_a_zero_opener_prescript() {
+        // `geremi` / `tunnela` / `tunnelb` / `edson` shape: a real prescript
+        // whose records are all non-transform nodes.
+        let buf = synth(10, 0);
+        assert!(detect(&buf).is_none(), "rate tier must still reject it");
+        let r = detect_structural(&buf).expect("structural tier accepts it");
+        assert_eq!(r.records, 10);
+        assert_eq!(r.frame_opener_count, 0);
+    }
+
+    #[test]
+    fn structural_tier_accepts_two_records_and_rejects_one() {
+        // `edteien` sits on the two-record floor...
+        assert!(detect_structural(&synth(2, 2)).is_some());
+        // ...and one record is the `bse_bank` header shape `[u16][u16 4]`,
+        // which carries no table to anchor on.
+        assert!(detect_structural(&synth(1, 1)).is_none());
+        let bse_header = {
+            let mut b = vec![1u8, 0, 4, 0];
+            b.resize(0x400, 0xAA);
+            b
+        };
+        assert!(detect_structural(&bse_header).is_none());
+    }
+
+    #[test]
+    fn structural_tier_rejects_odd_offsets_and_an_empty_last_record() {
+        let mut odd = synth(4, 4);
+        // Nudge the last record's offset off the word grid.
+        let last = 2 + 3 * 2;
+        odd[last] = odd[last].wrapping_add(1);
+        assert!(detect_structural(&odd).is_none());
+
+        // Last offset == buffer end leaves no record body behind it.
+        let mut empty_tail = synth(4, 4);
+        let end = empty_tail.len() as u16;
+        empty_tail[last..last + 2].copy_from_slice(&end.to_le_bytes());
+        assert!(detect_structural(&empty_tail).is_none());
+    }
+
+    #[test]
+    fn structural_tier_rejects_random_bytes() {
+        let buf: Vec<u8> = (0..0x1000u32).map(|i| (i & 0xFF) as u8).collect();
+        assert!(detect_structural(&buf).is_none());
     }
 
     #[test]

@@ -3,8 +3,10 @@
 //! ### What it is
 //!
 //! 97 PROT entries on the disc - **one per game scene** - share a strict 16-byte
-//! header at offset 0 plus a [scene event-scripts] prescript at the next
-//! 0x800-aligned offset. The on-disc header carries:
+//! header at offset 0. Each is exactly ONE `0x800`-byte sector, and the
+//! [scene event-scripts] prescript is the **next PROT entry**, not a field
+//! inside this one (see "The prescript is the next entry" below). The on-disc
+//! header carries:
 //!
 //! * three constant magic words at fixed offsets (`0x0012` and `0x0014` twice);
 //! * three runtime-fixup slots that are zero on disc and filled by the loader;
@@ -12,12 +14,24 @@
 //! * a per-scene `N` field that is algebraically related to the records-table
 //!   size (`N = 4*param + 22`).
 //!
-//! The dense 30 KB - 387 KB payload past the header is **not opaque** - it's a
-//! standard [`scene_event_scripts`](crate::scene_event_scripts) prescript at
-//! file offset 0x800, exactly like the 100 sister entries that carry the same
-//! prescript at offset 0. Each scene has both: the offset-0 form (often called
-//! the "script-only" form) and the offset-0x800 form (this format, with the
-//! v12 header prefix).
+//! ### The prescript is the next entry
+//!
+//! A v12 header entry is **2048 bytes - one sector - in all 97 cases**, so
+//! `0x800` is not an offset inside it; it is one past its end. The event-script
+//! prescript is the next TOC row, and all 97 successors parse as one (first
+//! offset anchored at the table end, offsets monotonic and in-buffer, zero
+//! exceptions). Parse it with [`parse_prescript_entry`].
+//!
+//! The older "dense 30 KB - 387 KB payload ... prescript at file offset 0x800"
+//! reading was an artifact of the superseded over-reading PROT entry size,
+//! which appended following entries to every buffer: the neighbour landed at
+//! `+0x800` and was indistinguishable from a field of this entry. The rest of
+//! the crate already modelled it correctly - see
+//! [`crate::scene_event_scripts::record_ranges_positional`] ("the prescript is
+//! the entry seated between the `scene_v12_table` header and the bundle") and
+//! the position law asserted by the disc-gated `scene_v12_corpus` test: the
+//! header sits at extraction `define - 1`, the prescript at `define`, and the
+//! `.LZS` `scene_asset_table` bundle at `define + 1`.
 //!
 //! ### On-disc layout
 //!
@@ -33,10 +47,12 @@
 //! +0x010   u32  0                ; padding
 //! +0x014   param × 4 bytes       ; inline record table
 //! +end_records (= 0x14 + 4*param)
-//!         (zero pad to 0x800)
-//! +0x800   u16  script_count     ; scene event-scripts prescript
-//! +0x802   script_count × u16    ;   offset table (relative to +0x800)
-//! +0x800 + offsets[i]            ; per-record word-aligned command bytes
+//!         (zero pad to the end of the sector; entry ends at 0x800)
+//!
+//! -- NEXT PROT ENTRY (extraction `define`) --------------------------------
+//! +0x000   u16  script_count     ; scene event-scripts prescript
+//! +0x002   script_count × u16    ;   offset table (relative to entry start)
+//! +offsets[i]                    ; per-record word-aligned command bytes
 //! ```
 //!
 //! Note: the prescript records are the **word-aligned** per-scene actor/event
@@ -281,15 +297,47 @@ pub fn detect(buf: &[u8]) -> Option<SceneV12Table> {
     })
 }
 
-/// Walk the prescript at `+0x800`. Best-effort: returns an empty vec if the
-/// prescript is malformed. The walker tolerates `count` from 1 upwards, since
-/// a few retail v12 entries (e.g. `0779_koin1b.BIN`) have only 2 records -
-/// below the `scene_event_scripts` standalone-detector threshold of 3.
+/// Walk the prescript that follows a v12 header, given the **next PROT
+/// entry's** bytes.
+///
+/// This is the real retail shape. A retail v12 header entry is exactly one
+/// `0x800`-byte sector, so `0x800` is not an offset *inside* it - it is one
+/// past its end, and the prescript is the next TOC row. Verified across the
+/// whole corpus: all 97 v12 header entries are 2048 bytes, and 97/97 of their
+/// successors parse here (first offset anchored at the table end, offsets
+/// monotonic and in-buffer).
+///
+/// The old "prescript at `+0x800` of the same entry" reading came from the
+/// superseded over-reading entry size, which appended the neighbour to every
+/// buffer and made the next entry look like a field of this one. The rest of
+/// the crate already modelled it correctly - see
+/// [`crate::scene_event_scripts::record_ranges_positional`], whose docs place
+/// the prescript as "the entry seated between the `scene_v12_table` header and
+/// the bundle", and the position law in the disc-gated `scene_v12_corpus`.
+///
+/// Returned [`ScriptRecord`] offsets are relative to `next_entry`.
+pub fn parse_prescript_entry(next_entry: &[u8]) -> (Vec<ScriptRecord>, u16) {
+    parse_prescript_at(next_entry, 0)
+}
+
+/// Walk a prescript at `+0x800` of `buf`.
+///
+/// Retail entries never satisfy this (see [`parse_prescript_entry`]); it fires
+/// only on a buffer that genuinely concatenates header and prescript, which is
+/// what this module's synthetic unit-test fixtures build.
 fn parse_prescript(buf: &[u8]) -> (Vec<ScriptRecord>, u16) {
-    if buf.len() < PRESCRIPT_OFFSET + 4 {
+    parse_prescript_at(buf, PRESCRIPT_OFFSET)
+}
+
+/// Shared walker. Best-effort: returns an empty vec if the prescript is
+/// malformed. Tolerates `count` from 1 upwards, since a few retail scenes
+/// (e.g. `koin1b`) have only 2 records - below the `scene_event_scripts`
+/// standalone-detector threshold of 3.
+fn parse_prescript_at(buf: &[u8], base: usize) -> (Vec<ScriptRecord>, u16) {
+    if buf.len() < base + 4 {
         return (Vec::new(), 0);
     }
-    let pre = &buf[PRESCRIPT_OFFSET..];
+    let pre = &buf[base..];
     let count = match pre.get(0..2) {
         Some(b) => u16::from_le_bytes(b.try_into().unwrap()),
         None => return (Vec::new(), 0),
@@ -326,8 +374,8 @@ fn parse_prescript(buf: &[u8]) -> (Vec<ScriptRecord>, u16) {
         } else {
             pre.len()
         };
-        let start = PRESCRIPT_OFFSET + start_rel;
-        let end = PRESCRIPT_OFFSET + end_rel;
+        let start = base + start_rel;
+        let end = base + end_rel;
         let frame_opener = start + 4 <= end
             && start + 4 <= buf.len()
             && buf[start..start + 4] == [0xFF, 0xFF, 0x00, 0x00];

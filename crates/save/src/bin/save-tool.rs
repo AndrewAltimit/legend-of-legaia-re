@@ -93,6 +93,38 @@ enum Cmd {
         #[arg(long, default_value = "BASCUS-94254LEGAIA")]
         product: String,
     },
+    /// Read a real SC block's item window and run the **retail** accessor
+    /// family over it, without writing anything back.
+    ///
+    /// The engine's own inventory is a typed growable list; this is the fixed
+    /// `(id, count)` window `SCUS_942.54` addresses, so what it answers is what
+    /// retail's own accessors do to a real save - which slot a consume empties,
+    /// whether it leaves a hole, and which of the three windows the selector
+    /// installs for this party. See `legaia_save::retail_inventory`.
+    Items {
+        /// Memory-card image (.mcr) or a raw 8192-byte SC-block file.
+        path: PathBuf,
+        /// Active-save index inside the card (1-based). Ignored for a raw
+        /// SC-block file.
+        #[arg(long, default_value_t = 1)]
+        save_index: usize,
+        /// Party-member count the window selector reads (retail: SC+0x454).
+        /// Defaults to the byte at that offset.
+        #[arg(long)]
+        members: Option<u8>,
+        /// Story flag 20, the "full window" gate. Its SC-block bit position is
+        /// not pinned here, so it is a switch rather than a read.
+        #[arg(long)]
+        full_window: bool,
+        /// Dry-run a consume-by-id: `--consume ID:QTY` (ids in decimal or
+        /// 0x-hex). Prints the window before and after.
+        #[arg(long, value_name = "ID:QTY")]
+        consume: Option<String>,
+        /// Dry-run a consume-by-slot: `--consume-slot INDEX:QTY`. The retail
+        /// index-addressed sibling, which never compacts.
+        #[arg(long, value_name = "INDEX:QTY")]
+        consume_slot: Option<String>,
+    },
     /// Diff the SC save block of two memory-card images and surface
     /// every byte that differs. Designed to pin still-unknown SC-block
     /// fields (story flags, inventory) by capturing two saves on either
@@ -192,7 +224,127 @@ fn main() -> Result<()> {
             range,
             coalesce,
         } => sc_diff(&a, &b, save_index, range.as_deref(), coalesce),
+        Cmd::Items {
+            path,
+            save_index,
+            members,
+            full_window,
+            consume,
+            consume_slot,
+        } => items(
+            &path,
+            save_index,
+            members,
+            full_window,
+            consume.as_deref(),
+            consume_slot.as_deref(),
+        ),
     }
+}
+
+/// `ID:QTY` / `INDEX:QTY` operand parser for the retail-inventory dry runs.
+fn parse_pair(s: &str) -> Result<(i64, u8)> {
+    let (a, b) = s
+        .split_once(':')
+        .with_context(|| format!("expected `A:B`, got {s:?}"))?;
+    let num = |t: &str| -> Result<i64> {
+        let t = t.trim();
+        let v = if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+            i64::from_str_radix(h, 16)
+        } else {
+            t.parse::<i64>()
+        };
+        v.with_context(|| format!("invalid number {t:?}"))
+    };
+    let qty = num(b)?;
+    Ok((
+        num(a)?,
+        u8::try_from(qty).with_context(|| format!("quantity {qty} out of range"))?,
+    ))
+}
+
+fn print_window(inv: &legaia_save::retail_inventory::RetailInventory) {
+    let occupied: Vec<(usize, (u8, u8))> = inv
+        .slots()
+        .iter()
+        .enumerate()
+        .filter(|(_, (id, _))| *id != 0)
+        .map(|(i, s)| (i, *s))
+        .collect();
+    println!(
+        "  {} of {} slot(s) occupied",
+        occupied.len(),
+        inv.window_slots()
+    );
+    for (i, (id, count)) in &occupied {
+        println!(
+            "    slot {i:3}  id {id:#04x} ({id:3})  count {count:3}  find_count -> {}",
+            inv.find_count(*id)
+        );
+    }
+}
+
+/// Run the retail item-window accessors over a real SC block.
+fn items(
+    path: &Path,
+    save_index: usize,
+    members: Option<u8>,
+    full_window: bool,
+    consume: Option<&str>,
+    consume_slot: Option<&str>,
+) -> Result<()> {
+    use legaia_save::retail_inventory::{ITEM_WINDOW_BASE, ItemWindow, RetailInventory};
+
+    let sc = read_sc_block(path, save_index)?;
+    let raw = legaia_save::card::read_retail_inventory(&sc)
+        .context("SC block too small to hold the inventory window")?;
+
+    // The selector's inputs. Only the member count has a pinned SC offset.
+    let members = members.unwrap_or_else(|| sc.get(0x454).copied().unwrap_or(0));
+    let high_half = sc.get(0x458).copied().unwrap_or(0) != 0;
+    let window = ItemWindow::select(members, full_window, high_half);
+
+    println!("sc block: {} ({} bytes)", path.display(), sc.len());
+    println!(
+        "item window: base {ITEM_WINDOW_BASE:#010x} (SC+{:#x}), {} raw bytes",
+        legaia_save::card::RETAIL_INVENTORY_OFFSET,
+        raw.len()
+    );
+    println!(
+        "selector inputs: members {members}, full_window {full_window}, high_half {high_half}"
+    );
+    match window {
+        None => println!("selector: members == 0 - retail leaves the previous window installed"),
+        Some(w) => {
+            let (lo, hi) = w.bounds();
+            println!(
+                "selector: {w:?} -> slots [{lo}, {hi}) = {} wide, OOB add target {:#010x} ({:?})",
+                w.len(),
+                legaia_save::retail_inventory::oob_target(ITEM_WINDOW_BASE, w.len()),
+                w.oob_reachability(),
+            );
+        }
+    }
+
+    let slots: Vec<(u8, u8)> = raw.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let mut inv = RetailInventory::from_slots(ITEM_WINDOW_BASE, slots);
+    print_window(&inv);
+
+    if let Some(spec) = consume {
+        let (id, qty) = parse_pair(spec)?;
+        let id = u8::try_from(id).context("item id out of range")?;
+        let hit = inv.consume(id, qty);
+        println!("consume id {id:#04x} x{qty} -> {hit} (no compaction; a spent slot is a hole)");
+        print_window(&inv);
+    }
+    if let Some(spec) = consume_slot {
+        let (slot, qty) = parse_pair(spec)?;
+        let slot = i16::try_from(slot).context("slot index out of range")?;
+        let left = inv.consume_slot(slot, qty, 0xFF);
+        println!("consume slot {slot} x{qty} -> {left} remaining (0xFF echoes a no-op)");
+        print_window(&inv);
+    }
+    Ok(())
 }
 
 fn read_input(path: &PathBuf, block: Option<u8>, offset: usize) -> Result<Vec<u8>> {

@@ -203,9 +203,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// each keeps its own profile while the whole roster shifts together, and it is
 /// applied after `monster_stats` so the two compose. It takes either spelling of
 /// the knob - a bare multiplier (`"2.5"`) scales every stat, and a `key=value`
-/// list (`"hp=2,attack=1.5"`) scales only the stats it names, which is what the
-/// page's simple and advanced slider modes send. These are all manual, seedless
-/// edits.
+/// list (`"hp=2,attack=1.5"`) scales only the stats it names, and a
+/// `|`-separated per-group split (`"regular:0.75|boss:2"`, each half itself
+/// either of the first two spellings) gives random encounters and scripted boss
+/// fights their own scale - which is what the page's simple and advanced slider
+/// panes send. These are all manual, seedless edits.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -813,21 +815,28 @@ pub fn patch_rom(
         None => summary.push_str("monster-stats: untouched\n"),
     }
 
-    // Enemy difficulty scale: one global multiplier over every monster's combat
-    // stats (empty or `1` = retail). Sequenced after the stat randomizer so it
-    // scales whatever that pass dealt out.
+    // Enemy difficulty scale: a multiplier over every monster's combat stats,
+    // with its own value for random encounters and for bosses (empty or `1` =
+    // retail). Sequenced after the stat randomizer so it scales whatever that
+    // pass dealt out. The per-group split rides inside this same string - the
+    // page emits `regular:...|boss:...` when the two halves differ - so widening
+    // the knob needed no new argument on this boundary.
     let enemy_stat_scale = enemy_stat_scale.trim();
     if enemy_stat_scale.is_empty() {
         summary.push_str("enemy-stat-scale: 1x (retail)\n");
     } else {
-        match legaia_patcher::monster_stats::StatScale::parse(enemy_stat_scale) {
+        match legaia_patcher::monster_stats::ScaleProfile::parse(enemy_stat_scale) {
             Ok(scale) if scale.is_retail() => {
                 summary.push_str("enemy-stat-scale: 1x (retail)\n");
             }
-            Ok(scale) => match apply::scale_monster_stats(&mut patcher, scale) {
-                Ok(rep) => summary.push_str(&format!(
+            Ok(scale) => match apply::scale_monster_stats_profile(&mut patcher, scale) {
+                Ok(rep) if scale.is_uniform() => summary.push_str(&format!(
                     "enemy-stat-scale: {scale} ({} monsters changed, {} stats)\n",
                     rep.monsters_changed, rep.fields_changed
+                )),
+                Ok(rep) => summary.push_str(&format!(
+                    "enemy-stat-scale: {scale} ({} monsters changed incl. {} bosses, {} stats)\n",
+                    rep.monsters_changed, rep.bosses_changed, rep.fields_changed
                 )),
                 Err(e) => summary.push_str(&format!("enemy-stat-scale: {e}\n")),
             },

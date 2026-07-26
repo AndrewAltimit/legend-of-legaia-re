@@ -20,9 +20,24 @@ use legaia_engine_core::scene::ProtIndex;
 use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
 
 /// (scenario label, kingdom bundle PROT entry, scene label) per kingdom.
+///
+/// The entries come from [`legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`]
+/// rather than literals on purpose: this test used to name `0244` / `0391`,
+/// which are the **prescript** entries the superseded over-reading entry size
+/// happened to start in. The bundles are `0245` / `0392`, and reading the
+/// prescript entry instead makes `decode_slot(.., 0)` fail outright. See
+/// [`docs/formats/world-map-overlay.md`](../../../docs/formats/world-map-overlay.md).
 const CAPTURES: &[(&str, u32, &str)] = &[
-    ("sebucus_overworld_resident", 244, "map02"),
-    ("karisto_overworld_resident", 391, "map03"),
+    (
+        "sebucus_overworld_resident",
+        legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[1],
+        "map02",
+    ),
+    (
+        "karisto_overworld_resident",
+        legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[2],
+        "map03",
+    ),
 ];
 
 /// Ocean head CLUT row target: VRAM `(0, 506)`, 16 BGR555 entries.

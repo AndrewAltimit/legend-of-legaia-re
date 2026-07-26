@@ -83,11 +83,12 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `800694D0` | SPU DMA-IRQ event setup (one-shot, `gp+0x50C4`-gated) - `FUN_8006A0E0` config, then opens+enables the SPU interrupt event (`0xF0000009`) via the BIOS thunks, latching the handle at `0x8008FAD4`. `see ghidra/scripts/funcs/800694d0.txt`. |
 | `8006A0E0` | SPU DMA-callback register - `DMACallback(4, handler)` via `FUN_8005FDE8`. `see ghidra/scripts/funcs/8006a0e0.txt`. |
 | `8006A104` | SPU DMA channel program - stages the DMA4 transfer descriptor (`madr = 0x40001010`, block control from a shift) when `mode > 0`; part of the SPU transfer engine. `see ghidra/scripts/funcs/8006a104.txt`. |
-| `8006D358` | SPU DMA transfer kick - programs the SPU transfer-control registers (mode `0x1003` / `0x3003`, SPUCNT via `FUN_8006ED34`) and starts the block transfer to SPU RAM. `see ghidra/scripts/funcs/8006d358.txt`. |
-| `8006D470` | SPU transfer state-machine pump - calls the current state handler from the 5-entry table at `0x8008B2E8`, advances/wraps the state index, and fires an error callback on a negative return. `see ghidra/scripts/funcs/8006d470.txt`. |
-| `8006D768` | SPU transfer-ready spin - polls SPU status (`+0x4`) bit `0x2`. `see ghidra/scripts/funcs/8006d768.txt`. |
+| `8006D358` | Serial-port open - resets `JOY_CTRL`, sets `JOY_MODE = 0x0D` / `JOY_BAUD = 0x88`, arms the timeout (`FUN_8006ED34(0x91)`) and raises `TXEN` with the port-select bit (`0x1003` port 1 / `0x3003` port 2). Not SPU - see [below](#serial-port-joy-transfer-driver). `see ghidra/scripts/funcs/8006d358.txt`. |
+| `8006D470` | Serial-transfer state pump - calls the current state handler from the 5-entry table at `0x8007B2E8`, advances/wraps the state index at `0x8007B2B8`, and fires an error callback on a negative return. `see ghidra/scripts/funcs/8006d470.txt`. |
+| `8006D768` | Serial RX-ready spin - polls `JOY_STAT` (`+0x4`) bit `0x2`, "RX FIFO not empty". `see ghidra/scripts/funcs/8006d768.txt`. |
 | `8006D794` | BIOS C0-vector 0x02 thunk (`li t2,0xC0; jr t2; li t1,0x2`); sibling of the C0 0x03 thunk `FUN_8006D7A4`. |
-| `8006ED34` | SPU-transfer timeout latch - stores the pending SPU command `a0` and the current Timer2 value (`0x1F801120`) for the DMA-completion timeout check. `see ghidra/scripts/funcs/8006ed34.txt`. |
+| `8006ED34` | Timer-2 timeout arm - latches the deadline `a0` at `0x801CE80C` and the current Timer 2 count (`0x1F801120`) at `0x801CE808`. `a0` is a **tick limit**, not a command byte: its call sites pass `0x91`, `0x3C` and `0x05`. `see ghidra/scripts/funcs/8006ed34.txt`. |
+| `8006ED50` | Timer-2 timeout poll - the partner of `FUN_8006ED34`; returns 1 once the armed limit has elapsed. Unwraps the counter and normalises to sysclk/8 before comparing. [Details below](#serial-port-joy-transfer-driver). `see ghidra/scripts/funcs/8006ed50.txt`. |
 | `8006E8D4` | SEQ-stream callback install - stores the per-track tick handler `FUN_8006E8F8` and the ready/done probe `FUN_8006ECFC` into the transfer vtable at `0x801D1A5C` / `0x801D1A74`. `see ghidra/scripts/funcs/8006e8d4.txt`. |
 | `8006E8F8` | SEQ streamed-track tick driver - dispatches on the track phase `+0x46` (`FUN_8006E06C` start/stop, the record's `+0x14` handler, or the block-advance `FUN_8006D7D0`). `see ghidra/scripts/funcs/8006e8f8.txt`. |
 | `8006ECFC` | SEQ streamed-track done-probe - returns 1 when the track is idle (`+0xE6 == 0`) or finished (`+0x46 == 0xFF`). `see ghidra/scripts/funcs/8006ecfc.txt`. |
@@ -125,6 +126,64 @@ are checkable against the dumps rather than against a C rendering.
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### Serial-port (JOY) transfer driver
+
+`0x8006D358`, `0x8006D470`, `0x8006D4F4`, `0x8006D684`, `0x8006D6D8`,
+`0x8006D768`, `0x8006ED34` and `0x8006ED50` are **one driver, and it is not
+audio**. It drives the PSX serial port - the controller / memory-card link -
+and it sits in this page only because it is wedged between SPU routines in the
+address map. The rows above previously read it as the SPU DMA transfer engine.
+
+Two pointer globals give it away, and both are read as a base + fixed offsets
+rather than as named registers, which is why the family was mis-read:
+
+- `DAT_8007B2D0` = `0x1F801040`, the JOY register block. `+0x0` is the TX/RX
+  data byte, `+0x4` `JOY_STAT`, `+0x8` `JOY_MODE`, `+0xA` `JOY_CTRL`,
+  `+0xE` `JOY_BAUD`.
+- `DAT_8007B2CC` = `0x1F801044`, `JOY_STAT` again, read as a 32-bit word.
+
+`FUN_8006D358` writes `0x40` then `0` to `+0xA` (the `JOY_CTRL` reset pulse),
+`0x0D` to `JOY_MODE` (baud factor 1, 8-bit characters) and `0x88` to
+`JOY_BAUD` - the canonical pad / memory-card link setup. The `0x1003` /
+`0x3003` pair it then writes to `JOY_CTRL` differ only in bit 13, the desired
+slot number, so they select port 1 versus port 2. Neither value is an SPU
+transfer mode, `+0xE` on the SPU block is the read-only `SPUSTAT`, and
+`FUN_8006ED34` never touches SPUCNT at all.
+
+The rest of the family is the byte-exchange protocol around that: `FUN_8006D4F4`
+writes one byte and reads one back, `FUN_8006D768` waits for `JOY_STAT` bit 1
+(RX FIFO not empty), `FUN_8006D684` waits for bit 7 (`/ACK` asserted) and
+`FUN_8006D6D8` waits for the same bit to clear. Every one of those waits is
+bounded by the Timer-2 pair below. `FUN_8006D470` pumps a 5-state handler table
+at `0x8007B2E8` indexed by `0x8007B2B8` - the same state word `FUN_8006D4F4`
+reads to pick its timeout.
+
+#### `8006ED34` / `8006ED50` - the Timer-2 timeout pair
+
+`FUN_8006ED34(limit)` arms: it stores `limit` at `0x801CE80C` and snapshots
+Timer 2's count (`0x1F801120`) at `0x801CE808`. `FUN_8006ED50()` polls and
+returns 1 once the limit has elapsed:
+
+1. Settle-read Timer 2's mode register (`0x1F801124`) until two consecutive
+   reads agree. The guard meant to skip that loop compares the value against a
+   32-bit `-1`, which a zero-extending `lhu` can never produce, so the loop
+   always runs.
+2. Read the count. If it is **below** the snapshot the counter wrapped, so add
+   the wrap modulus - the target register `0x1F801128` when non-zero, else
+   `0x10000`.
+3. Subtract the snapshot. If Timer 2's mode bit `0x200` is clear the counter is
+   running at the full system clock, so shift the elapsed count right by 3;
+   with the bit set it is already sysclk/8 and is used as-is. Either way the
+   comparison unit is **sysclk/8 ticks**, whatever the timer was configured
+   with.
+4. Return `elapsed >= limit`.
+
+That normalisation step is the reason `limit` cannot be a command byte: the
+value is compared against a tick count, and the three call sites pass `0x91`
+(link open), `0x3C` and `0x05` (per-byte waits, chosen on the driver state).
+
+`see ghidra/scripts/funcs/8006ed50.txt` and `.../8006ed34.txt`.
 
 ### `8001E54C`
 

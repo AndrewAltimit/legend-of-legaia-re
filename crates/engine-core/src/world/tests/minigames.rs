@@ -399,3 +399,44 @@ fn minigame_return_warp_without_arm_keeps_scene_but_still_commits() {
     assert_eq!(world.casino_coins, 3);
     assert_eq!(world.active_scene_label, "town01");
 }
+
+/// The dance stager's pad-latch clear, applied on entry and on teardown.
+///
+/// Retail zeroes `_DAT_8007B880` inside `FUN_801D414C`, so the confirm press
+/// that opens the hall cannot also be judged as the run's first note (and the
+/// press that leaves cannot leak into the restored field mode).
+#[test]
+fn entering_the_dance_drops_the_confirm_press_edge() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    // Square is newly pressed on the frame the dance opens - exactly the shape
+    // of a script confirm that launches the minigame.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Square.mask());
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    let _ = world.tick();
+    assert_eq!(
+        world.dance_last_judge, None,
+        "the opening press was consumed as a note"
+    );
+    // The button is still *held*, so releasing and pressing it again scores.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Square.mask());
+    let _ = world.tick();
+    assert!(
+        world.dance_last_judge.is_some(),
+        "later presses still judge"
+    );
+}
+
+#[test]
+fn leaving_the_dance_drops_the_press_edge_too() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Circle.mask());
+    let _ = world.exit_dance();
+    assert!(!world.input.just_pressed(input::PadButton::Circle));
+    assert!(world.input.pressed(input::PadButton::Circle), "still held");
+}

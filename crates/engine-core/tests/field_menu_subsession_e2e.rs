@@ -226,7 +226,10 @@ fn apply_equip_outcome_writes_back_to_roster() {
         &SpellCatalog::vanilla(),
         &equip_table,
     );
-    sub.tick_pad_edge(PadButton::Down.mask());
+    // Slot-browse row 0 is "Best Equipment", so slot 1 is row 2.
+    for _ in 0..2 {
+        sub.tick_pad_edge(PadButton::Down.mask());
+    }
     for _ in 0..3 {
         sub.tick_pad_edge(PadButton::Cross.mask());
     }

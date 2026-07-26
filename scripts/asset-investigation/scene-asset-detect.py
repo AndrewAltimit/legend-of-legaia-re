@@ -56,22 +56,31 @@ def main() -> int:
     tim_dir = EXTRACTED / "tim_scan"
     tmd_dir = EXTRACTED / "tmd_scan"
 
+    # `asset categorize` emits `per_file` as a filename -> record MAP; older
+    # extractions on disk carry a LIST whose records repeat `path`. Accept both.
+    per_file = cat["per_file"]
+    items = (
+        list(per_file.items())
+        if isinstance(per_file, dict)
+        else [(e["path"], e) for e in per_file]
+    )
+
     candidates = []
-    for e in cat["per_file"]:
+    for path, e in items:
         if e["class"] not in classes_of_interest:
             continue
-        stem = Path(e["path"]).stem
+        stem = Path(path).stem
         n_tim = sum(1 for _ in (tim_dir / stem).glob("*.tim")) if (tim_dir / stem).exists() else 0
         n_tmd = sum(1 for _ in (tmd_dir / stem).glob("*.tmd")) if (tmd_dir / stem).exists() else 0
         if n_tim >= 1 and n_tmd >= 1:
             candidates.append({
-                "path": e["path"],
+                "path": path,
                 "class": e["class"],
                 "size": e["size"],
                 "tim": n_tim,
                 "tmd": n_tmd,
                 "total": n_tim + n_tmd,
-                "block": cdname_block(e["path"]),
+                "block": cdname_block(path),
             })
 
     # Sort by total sub-asset count, then by size.

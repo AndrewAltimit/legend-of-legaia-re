@@ -213,10 +213,11 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
 
     println!("equip: requested slot={slot} item=0x{item:02X} (encoded 0x{encoded_id:02X})");
 
-    // Drive: down `slot` times to reach the slot, cross to enter picker,
-    // cross to confirm item, cross to commit.
+    // Drive: down `slot + 1` times to reach the slot's browse row (row 0
+    // is "Best Equipment"), cross to enter the picker, cross to confirm
+    // the item, cross to commit.
     let mut step_count = 0;
-    for _ in 0..slot {
+    for _ in 0..=slot {
         session.input(EquipInput {
             down: true,
             ..Default::default()

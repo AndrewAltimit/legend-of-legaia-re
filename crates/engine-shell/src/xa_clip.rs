@@ -13,10 +13,10 @@
 //!
 //! All arithmetic is reproduced from the disassembly, not the decompiled C.
 //!
-//! # NOT WIRED
+//! # Why nothing *plays* one of these
 //!
-//! Two prerequisites are missing before anything can consume a
-//! `(clip_slot, channel, duration_sectors)` triple.
+//! The census host below reads the triple; two prerequisites are still missing
+//! before anything can **play** a `(clip_slot, channel, duration_sectors)`.
 //!
 //! **A drive model.** The clip starter is a `CdlSetfilter` / `CdlReadS` state
 //! machine over the physical disc, playing sectors out of `XA<n>.XA` in real
@@ -38,8 +38,16 @@
 //! `legaia_engine_audio::classify_cue` ports the same dispatcher's *routing*
 //! decision and is on the frame path, but the hosts log its `Voice` result
 //! rather than playing it - see `window/event_handler/redraw.rs`. Wiring this
-//! module means giving the engine a streamed-voice output first; the two
-//! `FUN_8003D53C` helpers below then have a caller with a real start LBA.
+//! module into playback means giving the engine a streamed-voice output first;
+//! the two `FUN_8003D53C` helpers below then get a caller with a real start LBA.
+//!
+//! # The census host
+//!
+//! `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs [`report_cues`],
+//! which resolves each id to its bank and filter channel and checks the bank
+//! against the extracted files. That is the question the module was written to
+//! answer - which `XA*.XA` a voice cue addresses - asked against a real disc
+//! rather than a fixture, and it needs no drive model to answer.
 
 /// A cue id at or above this value addresses an XA clip; below it the dispatcher
 /// takes a different (SFX-queue) path (`sltiu v0,s0,0x100` at `8004fcd4`).
@@ -123,6 +131,69 @@ pub fn clip_end_lba_offset(duration_sectors: u32) -> u32 {
 // PORT: FUN_8003d53c
 pub fn clip_duration_is_clamped(duration_sectors: u32) -> bool {
     duration_sectors > MAX_CLIP_DURATION_SECTORS
+}
+
+/// Resolve a cue id to the clip file the runtime table would open.
+///
+/// The clip table at `0x801C6ED8` is indexed by [`XaClipCue::clip_slot`] and
+/// its entries are `XA<slot + 1>.XA`, so the mapping is nameable without the
+/// table itself: it is the file-numbering convention, not a lookup.
+pub fn voice_clip_file(cue: XaClipCue) -> String {
+    format!("XA{}.XA", cue.clip_slot + 1)
+}
+
+/// Print the `(clip_slot, channel, duration)` triple `FUN_8004FCC8` would build
+/// for each cue id in `ids`, and what `FUN_8003D53C` would then do with it.
+///
+/// This is the **cutscene-audio census** view the module docs name: which of the
+/// `XA*.XA` banks a voice cue addresses and on which sector-filter channel.
+/// `xa_dir`, when given, is checked for the resolved file so a slot that names
+/// no disc file is visible as one.
+pub fn report_cues(ids: &[u32], len_field: u16, xa_dir: Option<&std::path::Path>) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "cue ids at or above {XA_CUE_BASE:#x} address an XA clip; below that the \
+dispatcher takes the SFX-queue path"
+    );
+    let duration = voice_clip_duration_sectors(len_field);
+    let _ = writeln!(
+        out,
+        "length field {len_field} -> duration {duration} sectors (ceil x 3/5), \
+end-LBA offset +{} (ceil x 2.5){}",
+        clip_end_lba_offset(duration),
+        if clip_duration_is_clamped(duration) {
+            format!(", CLAMPED at {MAX_CLIP_DURATION_SECTORS}")
+        } else {
+            String::new()
+        }
+    );
+    let _ = writeln!(out, "   cue    slot  chan  file            on disc");
+    for &id in ids {
+        if id < XA_CUE_BASE {
+            let _ = writeln!(out, "  {id:#06x}    -     -    (SFX queue)");
+            continue;
+        }
+        let cue = voice_clip_cue(id);
+        let file = voice_clip_file(cue);
+        let present = match xa_dir {
+            None => "?",
+            Some(d) => {
+                if d.join(&file).exists() {
+                    "yes"
+                } else {
+                    "NO"
+                }
+            }
+        };
+        let _ = writeln!(
+            out,
+            "  {id:#06x}   {:4}  {:4}  {file:<14}  {present}",
+            cue.clip_slot, cue.channel
+        );
+    }
+    out
 }
 
 #[cfg(test)]

@@ -14,16 +14,23 @@
 //!
 //! Companion prose: `docs/subsystems/minigame-fishing.md`.
 //!
-//! # NOT WIRED
+//! ## Wiring status is per item, not per module
 //!
-//! `crate::fishing` models the fishing minigame as *rules* - cast power,
-//! reel tug-of-war, catch scoring - with no actors, no camera and no
-//! ordering table. Everything in this module drives the retail overlay's
-//! per-frame actor structs (`+0x14/+0x16/+0x18` position, `+0x22` phase,
-//! `+0x26` facing) and the scene camera globals, none of which the engine's
-//! fishing session owns. Wiring needs a fishing *scene* host - an actor pool
-//! plus the venue geometry - which is the same prerequisite the venue mesh
-//! work carries.
+//! This file carried a blanket `# NOT WIRED` heading, and it stopped being
+//! true: the bite-roll trio ([`bite_interval`], [`bite_credit_override`],
+//! [`roll_hit_type`]) is now on the live fight path through
+//! [`crate::fishing::BandCheck::tick`]. A module blanket is read
+//! unconditionally by every anchor in the file, so one wired item makes it
+//! assert something false about that item and it cannot be narrowed in place.
+//! Each genuinely inert item therefore carries its own `NOT WIRED:` line.
+//!
+//! The recurring blocker those lines name is one thing: `crate::fishing`
+//! models the minigame as *rules* (cast power, reel tug-of-war, catch scoring)
+//! with no actors, no camera and no ordering table, whereas the actor-side
+//! kernels drive the retail overlay's per-frame actor structs
+//! (`+0x14/+0x16/+0x18` position, `+0x22` phase, `+0x26` facing) and the scene
+//! camera globals. What closes them is a fishing *scene* host, an actor pool
+//! plus the venue geometry, the same prerequisite the venue mesh work carries.
 
 use crate::dev_menu::{PACK_LEFT, PACK_RIGHT};
 
@@ -77,6 +84,12 @@ fn lerp12(delta: i32, t: i32) -> i32 {
 /// outcome the reject path produces.
 ///
 /// PORT: FUN_801d5c2c
+// NOT WIRED: the consumer is a **screen-space line primitive**, and the port
+// emits none - this is the 3-D half of the clipper `clip_segment_2d` below
+// names, and it is inert for exactly that reason. Neither `engine-ui`'s draw
+// list (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries
+// a line kind to project *for*. Wiring wants a line draw kind first, not a
+// fishing host.
 pub fn project_segment(a: [i32; 3], b: [i32; 3], near: i32, proj: i32) -> Option<ProjectedSegment> {
     if a[2] < near && b[2] < near {
         return None;
@@ -172,6 +185,11 @@ pub struct WanderTarget {
 /// pick. `rolls` must supply them in that order.
 ///
 /// PORT: FUN_801d2278 (re-target roll)
+// NOT WIRED: this re-targets a *free-swimming fish actor* between dwells, and
+// the engine has no such actor. `crate::fishing::PondSession` picks a species
+// from the locked cast power and never gives it a position, so there is nothing
+// holding the `(x, z)` this rolls a new target around. Needs the fishing scene
+// host's actor pool, per the module docs.
 pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> WanderTarget {
     let _rotation = rolls() & 0xFFF;
     let dwell = (rolls() as i32) % RETARGET_SPAN + RETARGET_MIN;
@@ -194,6 +212,11 @@ pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> Wa
 /// pad moved, so an out-of-range facing is pulled in on the first frame.
 ///
 /// PORT: FUN_801d2278 (facing arm)
+// NOT WIRED: the state it steps is the fish actor's `+0x26` facing word, which
+// no engine struct owns (see `roll_wander_target` above). It also wants the raw
+// packed held mask `_DAT_8007B850`; the engine's fishing input is the
+// abstracted `ReelInput` / `edge_bonus` pair, so even the argument would have
+// to be re-plumbed from the pad layer.
 pub fn step_facing(facing: i16, pad_held: u16) -> i16 {
     let mut f = facing;
     if pad_held & PACK_LEFT != 0 {
@@ -220,6 +243,11 @@ pub struct FishCamera {
 /// Publish the camera for a fish at `(x, y, z)` facing `facing`.
 ///
 /// PORT: FUN_801d2278 (camera publish)
+// NOT WIRED: it publishes into the retail scene-camera globals
+// (`_DAT_80089118`.. and `_DAT_800840BC`), and the engine's fishing session
+// owns no camera at all - the browser venue drives its own view matrix and the
+// native window has no fishing scene. Wiring means the fishing scene host
+// taking a `CameraController` feed, not a call at this site.
 pub fn fish_camera(x: i16, y: i16, z: i16, facing: i16) -> FishCamera {
     let yaw = ((facing as i32).wrapping_add(0x800) & 0xFFF).wrapping_neg() as i16;
     FishCamera {
@@ -255,6 +283,10 @@ pub const PACK_DEBUG_MODIFIER: u16 = 0x0002;
 /// the division truncates toward zero rather than toward negative infinity.
 ///
 /// PORT: FUN_801d2050 (debug readout)
+// NOT WIRED: the consumer is the fishing overlay's on-screen developer
+// readout, and the engine ships no fishing debug overlay to print a tile index
+// on. The prerequisite is that screen (plus the `_DAT_8007B9B0` print flag
+// `debug_readout_visible` below gates it on), not a call site here.
 #[inline]
 pub fn debug_tile(v: i16) -> i32 {
     let v = v as i32;
@@ -269,6 +301,10 @@ pub fn debug_tile(v: i16) -> i32 {
 /// (see [`bite_interval`]).
 ///
 /// PORT: FUN_801d2050 (readout gate)
+// NOT WIRED: same missing developer readout as `debug_tile` above. Note the
+// engine does reach the *other* half of this gate - `bite_interval`'s `debug`
+// arm is on the live path - but it is passed `false` unconditionally, because
+// nothing owns the `_DAT_8007B9B0` print flag this would compute it from.
 #[inline]
 pub fn debug_readout_visible(print_flag: bool, pad_held: u16) -> bool {
     print_flag && pad_held & PACK_DEBUG_MODIFIER != 0
@@ -293,10 +329,13 @@ pub const BITE_INTERVAL_FAR: i32 = 2000;
 /// The single distance the interval ladder actually discriminates on.
 pub const BITE_LADDER_PIVOT: i32 = 200;
 
-/// Bias added to the bite countdown in the far band.
-pub const BITE_FAR_BIAS: i32 = -100;
+/// Strike credit the far band **replaces** the whole credit base with.
+pub const BITE_FAR_CREDIT: i32 = -100;
 
 /// Bite cadence for a cast metric of `distance` (`DAT_801D9280`).
+///
+/// This is the **modulus** of the per-frame strike roll: retail's
+/// `(rand() % interval) < credit`, so a larger interval is a rarer bite.
 ///
 /// The retail ladder is six `slti`/`bne` pairs writing the same register in
 /// **ascending** threshold order, so every earlier arm is overwritten by a
@@ -324,17 +363,20 @@ pub fn bite_interval(distance: i32, debug: bool) -> i32 {
 /// unreachable, kept so the dead range is documented rather than lost.
 pub const BITE_LADDER_DEAD_ARMS: [(i32, i32); 4] = [(401, 200), (351, 350), (301, 400), (251, 500)];
 
-/// Bite cadence bias for a cast metric (`-100` in the far band, `0`
-/// otherwise). It rides on the same comparison as [`bite_interval`].
+/// The far band's strike-credit **override**, if it applies.
 ///
-/// PORT: FUN_801d26cc (bite-interval bias)
+/// This rides on the same comparison as [`bite_interval`], and it is not a
+/// bias: retail writes `li s1, -0x64` into the register that already holds
+/// the credit base (`countdown + 2`, or `0x40` on a cadence match), so the
+/// base is *replaced*, not offset. Everything added after the ladder - the
+/// water-class bonus and the pad nudges - still lands on top of the `-100`,
+/// which is why a shallow cast cannot strike at all: those add at most
+/// `0x1E + 3`, far short of zero.
+///
+/// PORT: FUN_801d26cc (far-band credit override)
 #[inline]
-pub fn bite_interval_bias(distance: i32) -> i32 {
-    if distance < BITE_LADDER_PIVOT {
-        BITE_FAR_BIAS
-    } else {
-        0
-    }
+pub fn bite_credit_override(distance: i32) -> Option<i32> {
+    (distance < BITE_LADDER_PIVOT).then_some(BITE_FAR_CREDIT)
 }
 
 /// Upper bound (inclusive) of each random band, most common first. A draw of
@@ -380,6 +422,12 @@ pub const WATER_TILE_CLASSES: [(u32, i32, i32); 3] =
 /// and the fish weight at their defaults (`0` and `10`).
 ///
 /// PORT: FUN_801d26cc (water-tile class)
+// NOT WIRED: its input is the `_DAT_8007B8F4` class word that retail reads
+// *after* the walk-grid probe reports the `0x4000` water bit, and the engine's
+// session carries no per-scene grid to probe (the same gap
+// [`walk_grid_overhead`] names). Its sibling kernels on the same address are on
+// the live path through [`crate::fishing::BandCheck::tick`]; this one is not,
+// because the tick has no tile under the lure to classify.
 pub fn water_tile_class(flags: u32) -> Option<(i32, i32)> {
     let mut got = None;
     for (bit, bonus, weight) in WATER_TILE_CLASSES {
@@ -401,6 +449,11 @@ pub const BITE_NUDGE_MASKS: [u32; 3] = [0x8000, 0x2000, 0x00C0];
 /// Count this frame's pad nudges into the bite countdown.
 ///
 /// PORT: FUN_801d26cc (pad nudge)
+// NOT WIRED: it counts raw held bits out of `_DAT_8007B874`, and the engine
+// never sees that word - [`crate::fishing::BandCheck::tick`] takes an already
+// abstracted `edge_bonus: i32` from the host instead, which is the same
+// quantity arrived at from the browser / native input layers. Wiring means
+// deciding the pad mask is the engine's representation, not adding a call.
 pub fn bite_pad_nudge(pad: u32) -> i32 {
     BITE_NUDGE_MASKS.iter().filter(|&&m| pad & m != 0).count() as i32
 }
@@ -428,6 +481,11 @@ impl LinePhase {
     /// Decode the raw sub-state word.
     ///
     /// PORT: FUN_801d4948 (sub-state decode)
+    // NOT WIRED: the word it decodes is `DAT_801D91C8`, the *reeling-line
+    // actor's* sub-state. The engine's fight phase lives on
+    // `crate::fishing::PondSession`'s own phase enum and there is no line actor
+    // to carry a second one; the arms also reference `actor[+0x48]`, which
+    // presupposes the actor pool the module docs name.
     pub fn from_raw(v: u32) -> LinePhase {
         match v {
             0 => LinePhase::Arm,
@@ -492,6 +550,11 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
 /// The bursts a catch score unlocks.
 ///
 /// PORT: FUN_801d4948 (celebration gate)
+// NOT WIRED: each burst is a scene-space *effect spawn* - an offset from the
+// catch position plus an SFX cue - and the engine's catch path awards the score
+// without staging anything at a position. Wiring needs the fishing scene host
+// (for the origin) and an effect-spawn sink for the `cue` field; the score
+// threshold arithmetic itself has nothing missing.
 pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static CelebrationBurst> {
     CELEBRATION_BURSTS.iter().filter(move |b| score > b.above)
 }
@@ -500,6 +563,213 @@ pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static Celebrati
 /// celebration advances stage: `(fire the bursts, fire the two flashes,
 /// hand the actor back)`.
 pub const CELEBRATION_STAGE_FRAMES: (i16, i16, i16) = (0x72, 0x87, 0xD2);
+
+// --- 2-D segment clip (FUN_801D56E4) ---------------------------------------
+
+/// The four scratchpad halfwords the 2-D clipper reads, in the order it
+/// reads them: `x_min` (`0x1F800388`, offset `+0x74` off the render block at
+/// `0x1F800314`), `y_min` (`+0x76`), `x_max` (`+0x78`), `y_max` (`+0x7A`).
+///
+/// Retail sign-extends each bound on the *comparison* and reloads it
+/// **zero-extended** (`lhu`) for the store, so a bound with the top bit set
+/// compares negative and stores positive. The port keeps the bounds signed;
+/// the retail window is a screen rectangle and never reaches that case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipRect {
+    pub x_min: i16,
+    pub y_min: i16,
+    pub x_max: i16,
+    pub y_max: i16,
+}
+
+// NOT WIRED: the consumer is a **screen-space line primitive**, and the port
+// emits none. `project_segment` above is this clipper's 3-D half and is inert
+// for the same reason: the fishing line, the slot machine's paylines and the
+// dance floor's guides are all two-point draws, and neither `engine-ui`'s draw
+// list (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries
+// a line primitive to clip *for*. Wiring wants a line draw kind first, not a
+// fishing host.
+/// Clip a 2-D segment in place against [`ClipRect`].
+///
+/// `p` and `q` are the two `(x, y)` endpoints; both are edited. Retail runs
+/// **eight** arms - each of the four bounds is applied to each endpoint in
+/// turn, in the order `x_min(p)`, `x_min(q)`, `x_max(p)`, `x_max(q)`,
+/// `y_min(p)`, `y_min(q)`, `y_max(p)`, `y_max(q)` - and each arm fires only
+/// when the endpoint it moves is outside the bound **and the other endpoint
+/// is strictly inside it**, so a segment wholly outside one bound is left
+/// alone rather than collapsed.
+///
+/// Every arm has the same fixed-point form. For the `x_min` arm on `p`:
+/// `t = ((q.x - bound) << 12) / (q.x - p.x)`, then
+/// `p.y = q.y + (((p.y - q.y) * t) >> 12)` with the `+0xFFF` bias that
+/// truncates a negative product toward zero, then `p.x = bound`. The `y`
+/// arms are the same with the roles of the two components swapped.
+///
+/// The parameter is measured from the **other** endpoint, which is why the
+/// blend is written against `q` rather than against `p`.
+///
+/// One deliberate deviation: retail reaches the R3000 divide-by-zero trap
+/// when the two endpoints share the component being clipped. That cannot
+/// happen on a firing arm - the arm requires one endpoint strictly below the
+/// bound and the other strictly above it, so the difference is non-zero - but
+/// the port returns without editing rather than trapping if it ever is.
+///
+/// PORT: FUN_801d56e4
+pub fn clip_segment_2d(p: &mut (i16, i16), q: &mut (i16, i16), rect: ClipRect) {
+    // `lo`: the endpoint sits below the bound and the other above it, so the
+    // low side is clipped up onto it. `hi` is the mirror.
+    fn arm_lo(a: &mut (i16, i16), b: (i16, i16), bound: i16, vertical: bool) {
+        let (ac, bc) = if vertical { (a.1, b.1) } else { (a.0, b.0) };
+        if !((ac as i32) < bound as i32 && (bound as i32) < bc as i32) {
+            return;
+        }
+        blend(
+            a,
+            b,
+            bound,
+            vertical,
+            (bc as i32 - bound as i32) << 12,
+            bc,
+            ac,
+        );
+    }
+    fn arm_hi(a: &mut (i16, i16), b: (i16, i16), bound: i16, vertical: bool) {
+        let (ac, bc) = if vertical { (a.1, b.1) } else { (a.0, b.0) };
+        if !((bound as i32) < ac as i32 && (bc as i32) < bound as i32) {
+            return;
+        }
+        blend(
+            a,
+            b,
+            bound,
+            vertical,
+            (bound as i32 - bc as i32) << 12,
+            ac,
+            bc,
+        );
+    }
+    fn blend(
+        a: &mut (i16, i16),
+        b: (i16, i16),
+        bound: i16,
+        vertical: bool,
+        num: i32,
+        den_hi: i16,
+        den_lo: i16,
+    ) {
+        let den = den_hi as i32 - den_lo as i32;
+        if den == 0 {
+            return;
+        }
+        let t = num / den;
+        if vertical {
+            a.0 = (b.0 as i32 + lerp12(a.0 as i32 - b.0 as i32, t)) as i16;
+            a.1 = bound;
+        } else {
+            a.1 = (b.1 as i32 + lerp12(a.1 as i32 - b.1 as i32, t)) as i16;
+            a.0 = bound;
+        }
+    }
+
+    arm_lo(p, *q, rect.x_min, false);
+    arm_lo(q, *p, rect.x_min, false);
+    arm_hi(p, *q, rect.x_max, false);
+    arm_hi(q, *p, rect.x_max, false);
+    arm_lo(p, *q, rect.y_min, true);
+    arm_lo(q, *p, rect.y_min, true);
+    arm_hi(p, *q, rect.y_max, true);
+    arm_hi(q, *p, rect.y_max, true);
+}
+
+// --- Walk-grid overhead probe (FUN_801D7030) -------------------------------
+
+/// Bytes per row of the `+0x4000` sub-cell grid (`(x_cell / 2) & 0x7F`
+/// column, `(z_cell / 2) & 0x7F` row, `row * 0x80 + column`).
+pub const WALK_GRID_PITCH: usize = 0x80;
+
+/// Rows in the same grid.
+pub const WALK_GRID_ROWS: usize = 0x80;
+
+/// Probe the per-scene walkability grid's **high** nibble.
+///
+/// `grid` is the byte block at `*(_DAT_1F8003EC) + 0x4000` - the same block
+/// the field overlay's per-axis collision reads (`FUN_801CFE4C`, see
+/// `docs/subsystems/field-locomotion.md`), which takes the byte's *low*
+/// nibble. This probe takes the high one, so the two read the two 4-bit
+/// masks packed into each grid byte independently.
+///
+/// The two coordinate conversions are **not** the same ladder, which is the
+/// thing to keep when re-deriving this:
+///
+/// - `z` truncates toward zero (`z < 0` is biased `+0x3F` before the
+///   arithmetic shift) and is then biased **`+2` sub-cells**.
+/// - `x` rounds up (`(x + 0x3F) >> 6`, no sign test - the bias is
+///   unconditional) and is then biased **`-1` sub-cell**.
+///
+/// The byte is `row * 0x80 + column` with `column` from **x** and `row` from
+/// **z**; the sub-cell bit is `1 << ((x_cell & 1) + 2 * (z_cell & 1))`.
+///
+/// PORT: FUN_801d7030
+// NOT WIRED: the engine's fishing model ([`crate::fishing::PondSession`]) is
+// venue *rules* - cast, band, strike, fight - and carries no per-scene grid at
+// all, so there is no `*(_DAT_1F8003EC) + 0x4000` block to probe. The browser
+// fishing venue does decode one (`legaia_asset::field_objects::WalkHeightfield`
+// in `crates/web-viewer/src/minigames_fishing_scene.rs`), so the missing piece
+// is a grid handle on the session rather than a decoder.
+pub fn walk_grid_overhead(grid: &[u8], x: i32, z: i32) -> bool {
+    let zc = (if z < 0 { z + 0x3F } else { z } >> 6) + 2;
+    let xc = ((x + 0x3F) >> 6) - 1;
+    // `srl 31; addu; sra 1` - divide by two truncating toward zero, which is
+    // what Rust's `/` already does on a signed integer.
+    let column = (xc / 2) & 0x7F;
+    let row = (zc / 2) & 0x7F;
+    let idx = row as usize * WALK_GRID_PITCH + column as usize;
+    let Some(byte) = grid.get(idx) else {
+        return false;
+    };
+    let bit = 1u8 << ((xc & 1) + 2 * (zc & 1)) as u32;
+    (byte >> 4) & bit != 0
+}
+
+// --- Tracked-point separation (FUN_801D765C) -------------------------------
+
+/// Runtime VA of the first tracked 2-D point (`+0` = x, `+4` = y).
+pub const TRACKED_POINT_A_VA: u32 = 0x801D_9184;
+
+/// Runtime VA of the second (`+0` = x, `+4` = y).
+pub const TRACKED_POINT_B_VA: u32 = 0x801D_918C;
+
+/// World units per sub-cell - the shift the separation is reported in.
+pub const SUBCELL_SHIFT: u32 = 6;
+
+/// Separation of the overlay's two tracked 2-D points, in sub-cells.
+///
+/// Retail takes no arguments: it reads `(i16 x, i16 y)` out of
+/// [`TRACKED_POINT_A_VA`] / [`TRACKED_POINT_B_VA`] - the same pair
+/// `FUN_801D26CC` feeds to the bearing helper `FUN_80019B28` - takes the
+/// absolute difference of each component, squares and sums them, and hands
+/// the sum to the SCUS normalise helper `FUN_8005AF0C` (`sqrt`).
+///
+/// The result is arithmetic-shifted right by [`SUBCELL_SHIFT`] and a negative
+/// result is clamped to zero. `>> 6` is the **sub-cell** step (64 units), not
+/// the 128-unit tile: the same shift `FUN_801D7030` uses to index the grid.
+///
+/// PORT: FUN_801d765c
+// NOT WIRED: both operands are *scene* positions - the angler and the lure -
+// and the port's fishing session models the cast as a scalar power / line
+// record, never as two points on a pond. The blocker is the same missing
+// fishing scene host [`walk_grid_overhead`] names, plus a binding for the SCUS
+// normalise helper `FUN_8005AF0C`, which the port takes as a closure rather
+// than owning.
+pub fn tracked_point_separation(
+    a: (i16, i16),
+    b: (i16, i16),
+    sqrt: impl FnOnce(i32) -> i32,
+) -> i32 {
+    let dx = (a.0 as i32 - b.0 as i32).abs();
+    let dy = (a.1 as i32 - b.1 as i32).abs();
+    (sqrt(dx * dx + dy * dy) >> SUBCELL_SHIFT).max(0)
+}
 
 #[cfg(test)]
 mod tests {
@@ -621,10 +891,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_far_band_carries_the_bias() {
-        assert_eq!(bite_interval_bias(199), BITE_FAR_BIAS);
-        assert_eq!(bite_interval_bias(200), 0);
-        assert_eq!(bite_interval_bias(1000), 0);
+    fn only_the_far_band_overrides_the_credit() {
+        assert_eq!(bite_credit_override(199), Some(BITE_FAR_CREDIT));
+        assert_eq!(bite_credit_override(200), None);
+        assert_eq!(bite_credit_override(1000), None);
+        // The override and the modulus flip on the same comparison.
+        for d in 0..400 {
+            assert_eq!(
+                bite_credit_override(d).is_some(),
+                bite_interval(d, false) == BITE_INTERVAL_FAR
+            );
+        }
     }
 
     #[test]
@@ -668,6 +945,106 @@ mod tests {
         assert_eq!(LinePhase::from_raw(2), LinePhase::Track);
         assert_eq!(LinePhase::from_raw(4), LinePhase::Celebrate);
         assert_eq!(LinePhase::from_raw(3), LinePhase::Idle(3));
+    }
+
+    const SCREEN: ClipRect = ClipRect {
+        x_min: 0,
+        y_min: 0,
+        x_max: 0x140,
+        y_max: 0xF0,
+    };
+
+    #[test]
+    fn a_segment_inside_the_window_is_untouched() {
+        let (mut p, mut q) = ((10, 20), (300, 200));
+        clip_segment_2d(&mut p, &mut q, SCREEN);
+        assert_eq!((p, q), ((10, 20), (300, 200)));
+    }
+
+    #[test]
+    fn a_crossing_endpoint_lands_on_the_bound_at_the_true_intersection() {
+        // p is left of x_min = 0; the segment crosses at x = 0, y = 50.
+        let (mut p, mut q) = ((-100, 0), (100, 100));
+        clip_segment_2d(&mut p, &mut q, SCREEN);
+        assert_eq!(p, (0, 50));
+        assert_eq!(q, (100, 100));
+    }
+
+    #[test]
+    fn each_bound_moves_the_endpoint_that_is_outside_it() {
+        // q is past x_max; the crossing sits halfway.
+        let (mut p, mut q) = ((0x100, 0), (0x180, 0x40));
+        clip_segment_2d(&mut p, &mut q, SCREEN);
+        assert_eq!(p, (0x100, 0));
+        assert_eq!(q, (0x140, 0x20));
+    }
+
+    #[test]
+    fn a_segment_wholly_outside_one_bound_is_left_alone() {
+        // Retail's arm needs one endpoint strictly below the bound and the
+        // other strictly above it, so a segment entirely left of x_min is
+        // untouched rather than collapsed onto the edge.
+        let (mut p, mut q) = ((-200, 10), (-100, 20));
+        clip_segment_2d(&mut p, &mut q, SCREEN);
+        assert_eq!((p, q), ((-200, 10), (-100, 20)));
+    }
+
+    #[test]
+    fn the_vertical_arms_swap_the_components() {
+        let rect = ClipRect {
+            x_min: -1000,
+            y_min: 0,
+            x_max: 1000,
+            y_max: 100,
+        };
+        let (mut p, mut q) = ((0, -100), (100, 100));
+        clip_segment_2d(&mut p, &mut q, rect);
+        // p rides up to y_min = 0 (halfway, x = 50); q rides down to y_max.
+        assert_eq!(p, (50, 0));
+        assert_eq!(q.1, 100);
+    }
+
+    #[test]
+    fn the_overhead_probe_reads_the_high_nibble_only() {
+        let mut grid = vec![0u8; WALK_GRID_PITCH * WALK_GRID_ROWS];
+        // x = 64 -> xc = ((64 + 63) >> 6) - 1 = 0; z = 0 -> zc = 0 + 2 = 2.
+        // column = 0, row = 1, bit = 1 << (0 + 2*0) = 1.
+        let idx = WALK_GRID_PITCH;
+        grid[idx] = 0x01; // low nibble only - the field collision's mask
+        assert!(!walk_grid_overhead(&grid, 64, 0));
+        grid[idx] = 0x10; // the same sub-cell in the high nibble
+        assert!(walk_grid_overhead(&grid, 64, 0));
+    }
+
+    #[test]
+    fn the_overhead_probe_selects_the_sub_cell_by_parity() {
+        let mut grid = vec![0u8; WALK_GRID_PITCH * WALK_GRID_ROWS];
+        // xc = 1 (x = 128), zc = 3 (z = 64) -> both odd -> bit 8.
+        // column = 0, row = 1.
+        grid[WALK_GRID_PITCH] = 0x80;
+        assert!(walk_grid_overhead(&grid, 128, 64));
+        // Same byte, wrong parity pair (xc = 0, zc = 2 -> bit 1).
+        assert!(!walk_grid_overhead(&grid, 64, 0));
+    }
+
+    #[test]
+    fn an_out_of_range_probe_reports_clear_instead_of_panicking() {
+        assert!(!walk_grid_overhead(&[], 0, 0));
+    }
+
+    #[test]
+    fn the_separation_is_a_sub_cell_count() {
+        let sqrt = |v: i32| (v as f64).sqrt() as i32;
+        // 64 units apart on one axis is exactly one sub-cell.
+        assert_eq!(tracked_point_separation((0, 0), (64, 0), sqrt), 1);
+        assert_eq!(tracked_point_separation((0, 0), (63, 0), sqrt), 0);
+        // The sign of each component is dropped before the square.
+        assert_eq!(
+            tracked_point_separation((0, 0), (-640, 0), sqrt),
+            tracked_point_separation((0, 0), (640, 0), sqrt)
+        );
+        // A negative normalise result clamps to zero rather than wrapping.
+        assert_eq!(tracked_point_separation((0, 0), (100, 100), |_| -1), 0);
     }
 
     #[test]

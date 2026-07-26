@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; SFX descriptor table</div>
   <h1>Sound-effect descriptor table <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">When the game plays a footstep or a sword clash, it looks the sound id up in a 100-entry table baked into <code>SCUS_942.54</code> (the game's main executable): an 8-byte descriptor per effect saying which instrument in the loaded <a href="vab.html">VAB</a> sound bank to trigger, how many SPU voices (hardware sound channels) to fan across, and which mixer channel carries it. The surprise is what bank those instruments come from - not a dedicated SFX bank, but <em>whichever music bank the current scene has open</em>, so a given effect can only sound in scenes whose bank carries its program. This static table covers ids <code>0x00..=0x63</code>;
+  <p class="lede">When the game plays a footstep or a sword clash, it looks the sound id up in a 100-entry table baked into <code>SCUS_942.54</code> (the game's main executable): an 8-byte descriptor per effect saying which instrument in a loaded <a href="vab.html">VAB</a> sound bank to trigger and how many SPU voices (hardware sound channels) to fan across. The interesting byte is the fifth one. It looks like a mixer channel, and it is - but it also picks <em>which bank</em> the cue plays out of, so a cue names its own instrument set rather than borrowing whatever the music left open. Four banks are live at once in retail. This static table covers ids <code>0x00..=0x63</code>;
 a runtime bank at <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <code>monster.snd</code>) covers ids <code>&ge; 0x200</code>.</p>
 </header>
 
@@ -25,7 +25,7 @@ a runtime bank at <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <c
     <tr><td><code>+1</code></td><td><code>t</code></td><td>tone / ADSR-region base; a multi-voice cue uses consecutive regions (<code>+i</code> per voice)</td></tr>
     <tr><td><code>+2</code></td><td><code>l</code></td><td>note-level voice attribute (MIDI-ish, clusters near <code>60</code>)</td></tr>
     <tr><td><code>+3</code></td><td><code>n</code></td><td>low 5 bits = <strong>voice count</strong>; bit <code>0x20</code> = sustained / continuous mode</td></tr>
-    <tr><td><code>+4</code></td><td><code>id</code></td><td>category / mixer-channel index (column in the channel-volume tables <code>DAT_80091510</code> / <code>DAT_80091513</code>)</td></tr>
+    <tr><td><code>+4</code></td><td><code>id</code></td><td>category - picks the 12-byte mixer record at <code>0x80091508 + category*12</code>, and through its <code>+8</code> the <strong>VAB slot</strong> the cue keys (see below). <code>DAT_80091510</code> / <code>DAT_80091513</code> are record 0's <code>+8</code> / <code>+0xB</code>, not two byte arrays.</td></tr>
     <tr><td><code>+5..7</code></td><td>-</td><td>no observed runtime reader (zero across the whole table)</td></tr>
   </tbody>
   </table>
@@ -46,14 +46,35 @@ a runtime bank at <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <c
 </section>
 
 <section class="doc-section" id="program-bank">
-  <h2>Program bank - the active scene's music VAB</h2>
-  <p>The descriptors' <code>program</code> / <code>tone</code> fields index a VAB, and that VAB is <strong>not a dedicated SFX master</strong> - it is the per-scene <a href="scene-bundles.html">scene-VAB-stream</a> bank the BGM sequencer has open. <code>FUN_80065034</code> reads the libsnd "current bank" globals: <code>_DAT_801ce33c</code> (VAB-header base), <code>_DAT_801ce334</code> (<code>ProgAtr</code> at <code>+0x20</code>), <code>_DAT_801ce340</code> (<code>VagAtr</code> at <code>+0x820</code>) - so a sound effect plays through the low programs of the same bank the music does.</p>
-  <p>Pinned from the save-state catalogue:</p>
-  <ul class="bullets">
-    <li>The bank <strong>varies per scene</strong> - across catalogued captures the open bank is 13 distinct VABs (used-program counts ranging <code>1..=16</code>).</li>
-    <li>For a <code>music_01</code>-scene state the live bank is <strong>byte-identical to the disc</strong> <code>music_01</code> VAB (PROT 1004 at offset <code>+4</code>): the <code>VabHdr</code> and every program's <code>ProgAtr</code> attribute bytes (<code>+0..7</code>) match exactly; only the PsyQ reserved per-program pointer field (<code>ProgAtr +8..15</code>) is runtime-patched to the RAM <code>VagAtr</code> address.</li>
-  </ul>
-  <p>Because scene banks differ in size, a cue resolves only where its <code>program</code> / <code>tone</code> exists - SFX availability is <strong>scene-dependent</strong>, not a guaranteed reservation. The engine therefore needs no separate SFX bank load: <code>SfxBank::from_descriptors(...)</code> plays through the scene's already-loaded BGM <code>VabBank</code> via <code>SfxBank::play_one_shot(spu, vab)</code>.</p>
+  <h2>Program bank - the cue's category picks it</h2>
+  <p>The descriptors' <code>program</code> / <code>tone</code> fields index a VAB, and <em>which</em> VAB is the cue's own choice. <code>FUN_80065034</code> calls <code>FUN_80068b98(vab_id, program)</code> first, which repoints the libsnd "current bank" globals - <code>_DAT_801ce33c</code> (VAB-header base), <code>_DAT_801ce334</code> (<code>ProgAtr</code> at <code>+0x20</code>), <code>_DAT_801ce340</code> (<code>VagAtr</code> at <code>+0x820</code>) - at the slot the cue's mixer record names, and only then reads them. So a cue is <strong>not</strong> keyed against whichever bank the BGM sequencer left open. That older reading was easy to reach: the globals really are shared with the sequencer, so a save state sampled between cues holds whatever keyed last, and after a BGM note that is the music bank.</p>
+  <p>Across the catalogued save states mixer record <code>N</code> holds <code>+8 == N</code> and <code>+0</code> == slot <code>N</code>'s live <code>VabHdr</code>, in every record of every state - so the category byte <em>is</em> the slot id.</p>
+  <table>
+  <thead><tr><th>Category</th><th>Descriptors</th><th>Bank it keys</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>16</td><td>Slot-0 system bank = <strong>PROT 0868</strong>. The shared UI cues (<code>0x1A</code>, <code>0x20</code>, <code>0x21</code>, <code>0x23</code>, <code>0x37</code>).</td></tr>
+    <tr><td><code>2</code></td><td>53</td><td>Slot-2 class-2 bank = <strong>PROT 0869</strong> (<code>0875</code> when <code>DAT_8007BD11 == 4</code>). Battle / duel (<code>0x09</code>, <code>0x4C</code>).</td></tr>
+    <tr><td><code>6</code></td><td>30</td><td>Slot 6, PROT entry <strong>unpinned</strong>. Includes the field script cues <code>0x2E</code> / <code>0x2F</code>.</td></tr>
+    <tr><td><code>11</code></td><td>1</td><td>Slot 11, PROT entry <strong>unpinned</strong>.</td></tr>
+  </tbody>
+  </table>
+  <p>PROT 0868's identity is a byte match, not a label: a live field state's slot-0 <code>VagAtr</code> program-0 page (512 bytes) occurs verbatim in extraction entry <code>0868</code> at VAB offset <code>+4</code>, with the header's <code>ps = 5</code> agreeing. Its CDNAME label reads <code>battle_data</code> and 0869's reads <code>monster_data</code> - the usual reminder that a label is a hint.</p>
+  <h3>Why staging one bank fails quietly</h3>
+  <p>Both viewers and the engine used to stage a single resident SFX bank, the class-2 one, and fire every cue through it. That is right for the 53 category-<code>2</code> cues and wrong for the 16 category-<code>0</code> ones - but it does not error and it does not go silent, because both banks carry a one-VAG-per-semitone UI key map at program 0. The id resolves to a <em>sibling</em> sample: a genuine retail blip, roughly twice as long and a fifth lower than the field menu's, because PROT 0869's <code>center</code> bytes are authored higher. That was the thump the browser play page's pause menu made. Peak, duration and "did a voice key on" all pass in that state; the only observable that separates the two is which PROT entry the samples came from.</p>
+  <p>Both hosts now stage the two pinned banks out of one SPU allocator over a shared reserved region and resolve each cue through its own category. The 31 category-<code>6</code>/<code>11</code> descriptors fall back to the class-2 bank - exactly what they did before - rather than being routed on a guess, and which PROT entries fill slots 1 / 3 / 6 / 11 is the remaining open question.</p>
+  <h3>SPU budget</h3>
+  <p>Two banks resident at once means the reserved region has to hold both, and the music region is what is left of the console's 512 KB of sound RAM.</p>
+  <table>
+  <thead><tr><th>Region</th><th>Bytes</th></tr></thead>
+  <tbody>
+    <tr><td>PROT 0868 VAG bodies</td><td>59 136</td></tr>
+    <tr><td>PROT 0869 VAG bodies</td><td>188 128</td></tr>
+    <tr><td>Reserved SFX region</td><td>249 856 (<code>0x3D000</code>)</td></tr>
+    <tr><td>BGM region (512 KB &minus; 4 KB scratch &minus; the above)</td><td>270 336</td></tr>
+    <tr><td>Largest scene BGM VAB on the disc</td><td>269 632</td></tr>
+  </tbody>
+  </table>
+  <p>Every VAG in both banks is already a multiple of the allocator's 16-byte ADPCM block, so the packed footprint equals the raw total and 2 592 bytes stay free. The figure is squeezed from both sides: one step larger drops the BGM region below the largest scene VAB and starts silencing music that plays today, one step smaller does not fit both banks.</p>
 </section>
 
 <section class="doc-section" id="provenance">
@@ -63,7 +84,9 @@ a runtime bank at <code>_DAT_8007B8D0</code> (loaded from <code>.dpk</code> / <c
 
 <section class="doc-section" id="parser">
   <h2>Parser</h2>
-  <p><code>legaia_asset::sfx_table::SfxTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="../subsystems/audio.html">item-name table</a> resolver); <code>from_table_bytes</code> parses a raw window straight out of save-state RAM. <code>SfxDescriptor</code> exposes the decoded fields plus <code>voice_count()</code> / <code>sustained()</code> / <code>is_active()</code>. The disc-gated <code>sfx_table_real</code> test pins the layout against the real executable, and <code>sfx_table_live</code> validates the parse against live RAM and feeds the descriptors into <code>legaia_engine_audio::SfxBank::from_descriptors</code> - the data path the engine uses to fire cues through the SPU.</p>
+  <p><code>legaia_asset::sfx_table::SfxTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="../subsystems/audio.html">item-name table</a> resolver); <code>from_table_bytes</code> parses a raw window straight out of save-state RAM. <code>SfxDescriptor</code> exposes the decoded fields plus <code>voice_count()</code> / <code>sustained()</code> / <code>is_active()</code> / <code>vab_slot()</code>.</p>
+  <p>The same module carries the routing law: <code>slot_for_category</code>, <code>prot_index_for_slot</code> (which returns <code>None</code> for the unpinned slots, so nothing downstream can guess one), the <code>PINNED_SLOT_BANKS</code> pairs, and <code>SfxTable::cue_slots</code> for the per-cue view.</p>
+  <p>The disc-gated <code>sfx_table_real</code> test pins the layout and the category histogram against the real executable; <code>sfx_table_live</code> validates the parse against live RAM and feeds the descriptors into <code>legaia_engine_audio::SfxBank::from_descriptors</code>; <code>sfx_cue_resident_bank</code> proves the routed cues key a voice and that both banks pack inside the reserved region; and the browser play page's <code>play_sfx_channel</code> asserts a category-0 and a category-2 cue resolve to <em>different</em> PROT entries.</p>
 </section>
 
 <section class="doc-section" id="see-also">

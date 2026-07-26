@@ -654,7 +654,8 @@ fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
 
 /// The equip-screen sprites pin the retail placements: pictograms at
 /// main+(0x10, 0xE*(i+1)), the party hand cursor at party+(-0xC,
-/// 0xE*row), and the slot hand cursor on the hovered row.
+/// 0xE*row), and the slot hand cursor on the hovered browse row - row 0
+/// being the "Best Equipment" line at the window origin.
 #[test]
 fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
     let rects = super::title_save_screen::pinned_save_menu_rects();
@@ -688,8 +689,10 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
     // Party hand cursor overhangs the window's left edge (X-0xC).
     let (px, py) = EQUIP_PARTY_PEN;
     assert_eq!(at(px - 0x0c, py).src, rects.cursor);
-    // Slot-picker hand cursor on row 1 at the main window's left edge.
-    assert_eq!(at(mx, my + 0x1c).src, rects.cursor);
+    // Slot-picker hand cursor on browse row 1 - the first *slot* row,
+    // one pitch below the "Best Equipment" line - at the main window's
+    // left edge.
+    assert_eq!(at(mx, my + 0x0e).src, rects.cursor);
 
     // Outside the slot picker no main-window hand is drawn.
     let no_slot_hand = equip_screen_sprites_for(
@@ -703,6 +706,24 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
         1,
     );
     assert_eq!(no_slot_hand.len(), draws.len() - 1);
+
+    // Browse row 0 is "Best Equipment": the hand parks on the window
+    // origin, not on a slot row.
+    let best_row = equip_screen_sprites_for(
+        &rects,
+        8,
+        EQUIP_MAIN_PEN,
+        EQUIP_PARTY_PEN,
+        0,
+        Some(0),
+        (0, 0),
+        1,
+    );
+    assert!(
+        best_row
+            .iter()
+            .any(|d| d.dst.0 == mx && d.dst.1 == my && d.src == rects.cursor)
+    );
 }
 
 #[test]

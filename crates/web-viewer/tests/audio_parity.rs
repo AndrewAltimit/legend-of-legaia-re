@@ -1,4 +1,4 @@
-//! Parity check: the in-memory XA demux + decode used by site/audio.html
+//! Parity check: the in-memory XA demux + decode used by site/media.html
 //! must produce the same PCM bytes as the proven path-based path in
 //! `legaia_xa::demux::demux_file` + `legaia_xa::decode`.
 //!

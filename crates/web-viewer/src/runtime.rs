@@ -30,13 +30,20 @@ use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 
-/// Default BGM output gain for the play page. Retail SEQ + clean-room SPU
-/// output sits around 1% of the i16 range (near-inaudible at unity); the audio
-/// audition page (`site/audio.html`) uses ~25x for the same reason. Match that
-/// ballpark so the play page's music is at a comfortable speaker level - JS can
-/// retune it live through [`LegaiaRuntime::audio_set_gain`].
+/// Default BGM output gain for the play page, parked on
+/// [`legaia_engine_audio::WebAudioOut`]'s post-mixer `GainNode` at
+/// [`LegaiaRuntime::audio_init`] and retunable live through
+/// [`LegaiaRuntime::audio_set_gain`].
+///
+/// Retail SEQ + clean-room SPU output really is quiet at unity, so some lift
+/// is needed. How much is a judgement about this page, **not** a number copied
+/// from the media page's BGM auditioner - the two are set differently on
+/// purpose. That page hands the choice to the listener (a 1x-10x slider
+/// defaulting to `1`, `site/media.html`); the play page bakes in a fixed level,
+/// picked by ear, deliberately on the loud side of comfortable because a track
+/// that is slightly hot is easier to live with than one that is inaudible.
 #[cfg(target_arch = "wasm32")]
-const BGM_DEFAULT_GAIN: f32 = 20.0;
+const BGM_DEFAULT_GAIN: f32 = 5.0;
 
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
@@ -108,12 +115,15 @@ pub struct LegaiaRuntime {
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
-    /// The resident class-2 SFX program bank, uploaded into its own region at
-    /// the top of SPU RAM the first time a cue fires. Separate from
+    /// The resident SFX program banks keyed by **VAB slot**, uploaded into a
+    /// shared region at the top of SPU RAM the first time a cue fires. A cue's
+    /// `+4` category names its slot, so this is a map rather than one bank:
+    /// slot 0 = PROT 0868 (shared UI), slot 2 = PROT 0869 (battle / duel). Both
+    /// come out of one allocator so they pack. Separate from
     /// [`Self::bgm_bank`], whose allocator is capped below this region so a
     /// scene change cannot stomp the SFX samples.
     #[cfg(target_arch = "wasm32")]
-    pub(crate) sfx_vab: Option<legaia_engine_audio::VabBank>,
+    pub(crate) sfx_vabs: std::collections::BTreeMap<u8, legaia_engine_audio::VabBank>,
     /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
@@ -168,7 +178,7 @@ impl LegaiaRuntime {
             fishing_venues: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
-            sfx_vab: None,
+            sfx_vabs: Default::default(),
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             #[cfg(target_arch = "wasm32")]

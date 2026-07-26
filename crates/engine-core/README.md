@@ -402,6 +402,10 @@ presentation left to the host:
 - `camera_ease` - the field camera's smoothed-yaw step (`FUN_801DA390`):
   settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
+- `world_map_panel_host` - the world-map band's panel screen: the
+  `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
+  travel arts, hosted on `WorldMapController::panels`. See
+  [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id
   resolution.

@@ -1295,11 +1295,13 @@ pub struct DanceSceneStage {
     pub arm_value: i32,
 }
 
-// NOT WIRED: this is engine scene plumbing, not rhythm logic - it names a
-// scene and pokes three field-subsystem globals. The port enters the dance
-// through `World::enter_dance`, which suspends the current scene mode rather
-// than staging a new scene bundle, so there is no scene-name buffer for it to
-// write. Wiring it needs the dance to become a real scene load.
+// PARTIALLY WIRED: `World::enter_dance` / `World::exit_dance` apply the record's
+// `clear_pad_latch` through `InputState::clear_edges`, which is the half of the
+// stager the port has an equivalent for. The other three fields still have no
+// consumer: the port enters the dance by suspending the current scene mode
+// rather than staging the `other1` bundle, so there is no scene-name buffer to
+// write, no scene-kind word to dispatch on and no `_DAT_8007BA9C` to arm.
+// Those wait on the dance becoming a real scene load.
 /// PORT: FUN_801d414c - the dance scene-name stager / teardown.
 ///
 /// Copies [`DANCE_SCENE_NAME`] into the scene-name buffer at `0x80084548`

@@ -115,6 +115,40 @@ enum Cmd {
         #[arg(long, default_value = "0")]
         end_frame: u32,
     },
+    /// Print the **retail** decode plan for an STR segment: what
+    /// `FUN_801CF098` would program the MDEC with, which VRAM rects it would
+    /// decode into and display from, and the DMA-0 slice walk that fills them.
+    ///
+    /// Nothing is decoded. The port presents a frame as an RGBA texture and
+    /// never writes MDEC registers or VRAM, so this is the one place the
+    /// hardware-facing half of `str_player` can be read against a real movie -
+    /// including the per-frame dimension override, which the play loop takes
+    /// from the sector header rather than from the dispatch slot.
+    StrPlan {
+        /// Path to a file containing raw 2048-byte STR sectors.
+        #[arg()]
+        str_file: PathBuf,
+        /// Dispatch-slot `+0x04`: the 24-bit colour flag. Off means 15-bit.
+        #[arg(long)]
+        colour: bool,
+        /// Dispatch-slot `+0x10` / `+0x14`: the decode rect's VRAM origin.
+        #[arg(long, default_value = "0")]
+        fb_x: i16,
+        /// Decode rect VRAM y.
+        #[arg(long, default_value = "0")]
+        fb_y: i16,
+        /// Dispatch-slot `+0x08`: first frame of the segment (1-based).
+        #[arg(long, default_value = "1")]
+        start_frame: u32,
+        /// Dispatch-slot `+0x0C`: last frame of the segment, inclusive.
+        /// 0 = to the end of the file.
+        #[arg(long, default_value = "0")]
+        end_frame: u32,
+        /// How many DMA-0 slice completions to walk. The walk stops early once
+        /// the cursor has flipped buffers twice.
+        #[arg(long, default_value = "24")]
+        slices: usize,
+    },
 }
 
 /// Accept `0x`-prefixed hex as well as decimal for address-shaped options.
@@ -162,7 +196,160 @@ fn main() -> Result<()> {
             end_frame,
         ),
         Cmd::Strv2Table { overlay, base } => cmd_strv2_table(&overlay, base),
+        Cmd::StrPlan {
+            str_file,
+            colour,
+            fb_x,
+            fb_y,
+            start_frame,
+            end_frame,
+            slices,
+        } => cmd_str_plan(
+            &str_file,
+            colour,
+            fb_x,
+            fb_y,
+            start_frame,
+            end_frame,
+            slices,
+        ),
     }
+}
+
+/// Print the retail decode plan for an STR segment. Decodes nothing.
+#[allow(clippy::too_many_arguments)]
+fn cmd_str_plan(
+    str_file: &Path,
+    colour: bool,
+    fb_x: i16,
+    fb_y: i16,
+    start_frame: u32,
+    end_frame: u32,
+    slices: usize,
+) -> Result<()> {
+    use legaia_mdec::str_player::{
+        Bitstream, FmvSlot, SLICE_W_16BPP, SLICE_W_24BPP, StrPlayer, end_of_stream,
+        slice_word_count, vram_units,
+    };
+
+    let data = std::fs::read(str_file).with_context(|| format!("read {}", str_file.display()))?;
+    let n_sectors = data.len() / 2048;
+
+    // Frame geometry comes from the movie's own sector headers, which is what
+    // the play loop's frame poll (`FUN_801CF740`) does too - the dispatch
+    // slot's `+0x18`/`+0x1C` only seed the decode context.
+    let mut asm = StrFrameAssembler::new();
+    let mut first: Option<(u32, u32, u32)> = None;
+    for i in 0..n_sectors {
+        if let Some((hdr, _)) = asm.push_sector(&data[i * 2048..(i + 1) * 2048])? {
+            first = Some((hdr.width as u32, hdr.height as u32, hdr.frame_number));
+            break;
+        }
+    }
+    let (hdr_w, hdr_h, first_frame) = first.context("no complete video frame in this file")?;
+
+    let slot = FmvSlot {
+        colour,
+        start_frame,
+        end_frame,
+        fb_x: fb_x as u32,
+        fb_y: fb_y as u32,
+        width: hdr_w,
+        height: hdr_h,
+    };
+    let mut player = StrPlayer::open(slot, Bitstream::Iki);
+
+    println!("file:   {} ({n_sectors} sectors)", str_file.display());
+    println!("header: first frame {first_frame}, {hdr_w}x{hdr_h}");
+    println!(
+        "slot:   colour {colour}, fb ({fb_x}, {fb_y}), frames {start_frame}..={}",
+        if end_frame == 0 {
+            "EOF".to_string()
+        } else {
+            end_frame.to_string()
+        }
+    );
+    println!(
+        "seek:   {} sectors from the stream origin ((start - 1) * 10)",
+        player.seek_sector_offset()
+    );
+    println!(
+        "vram:   {hdr_w} px -> {} cells; slice column {} cells",
+        vram_units(hdr_w as i32, colour),
+        if colour { SLICE_W_24BPP } else { SLICE_W_16BPP }
+    );
+    println!(
+        "mdec:   control word {:#010x} from 0 (flags {})",
+        player.mdec_control(0),
+        if colour { 3 } else { 2 }
+    );
+    println!(
+        "display rect (the buffer NOT being decoded into): {:?}",
+        player.display_rect()
+    );
+    for (i, r) in player.env().frame_buf.iter().enumerate() {
+        println!("  frame buf {i}: {r:?}");
+    }
+    println!("  slice rect:  {:?}", player.env().slice);
+
+    // The per-frame override the play loop applies from the sector header. It
+    // is a no-op whenever the header agrees with the slot, which is the retail
+    // case; printing both is how a disagreement becomes visible.
+    let before = *player.env();
+    player
+        .env_mut()
+        .apply_frame_dimensions(hdr_w as u16, hdr_h as u16);
+    if *player.env() == before {
+        println!("frame-dimension override: no change (header agrees with the slot)");
+    } else {
+        println!("frame-dimension override: rects became");
+        for (i, r) in player.env().frame_buf.iter().enumerate() {
+            println!("  frame buf {i}: {r:?}");
+        }
+    }
+
+    println!("DMA-0 slice walk ({slices} completion(s) at most):");
+    let mut flips = 0;
+    for i in 0..slices {
+        let Some(step) = player.env_mut().advance_slice() else {
+            println!("  slice callback is not armed");
+            break;
+        };
+        let words = step
+            .kick_words
+            .map(|w| w.to_string())
+            .unwrap_or_else(|| "-".into());
+        println!(
+            "  {i:3}  LoadImage {:?} from staging {}  next kick {words} words{}",
+            step.load_rect,
+            step.load_buffer,
+            if step.flipped {
+                "   <- buffer complete, rects flipped"
+            } else {
+                ""
+            }
+        );
+        if step.flipped {
+            flips += 1;
+            if flips == 2 {
+                break;
+            }
+        }
+    }
+    println!(
+        "one full column of {hdr_h} rows is {} words",
+        slice_word_count(
+            if colour { SLICE_W_24BPP } else { SLICE_W_16BPP },
+            hdr_h as i16
+        )
+    );
+    if end_frame != 0 {
+        println!(
+            "end-of-stream latches at frame {end_frame} (first frame reaches it: {})",
+            end_of_stream(first_frame, end_frame)
+        );
+    }
+    Ok(())
 }
 
 /// Unpack the STRv2/v3 VLC table (`FUN_801F1A00`) and report its shape.

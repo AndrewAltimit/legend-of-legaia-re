@@ -15,21 +15,44 @@ fn workspace() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The extracted `.BIN` for a PROT index, found by index prefix rather than a
+/// hardcoded filename.
+///
+/// The index comes from [`kingdom_bundle::BUNDLE_ENTRIES`] on purpose: this
+/// test used to name `0085` / `0244` / `0391`, which are the **prescript**
+/// entries the superseded over-reading entry size happened to start in. The
+/// bundles are `0086` / `0245` / `0392`. While the extracted tree over-read,
+/// `0085_map01.BIN` carried entry 85 *and* 86, so `decode_slot` found the
+/// bundle anyway; against a correctly sized tree it fails outright with
+/// "no 7-asset table found".
+fn kingdom_bin(prot: &std::path::Path, entry: u32) -> Option<PathBuf> {
+    let prefix = format!("{entry:04}_");
+    std::fs::read_dir(prot).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        let name = p.file_name()?.to_str()?;
+        (name.starts_with(&prefix) && name.ends_with(".BIN")).then_some(p)
+    })
+}
+
 #[test]
 fn ocean_assets_resolve_and_match_across_kingdoms_or_skip() {
     let Some(ws) = workspace() else { return };
-    // Drake / Sebucus / Karisto world-map kingdom bundles (PROT 0085 / 0244 / 0391).
-    let kingdoms = ["0085_map01.BIN", "0244_map02.BIN", "0391_map03.BIN"];
     let prot = ws.join("extracted").join("PROT");
-    if !kingdoms.iter().all(|k| prot.join(k).is_file()) {
+    // Drake / Sebucus / Karisto world-map kingdom bundles.
+    let Some(kingdoms) = kingdom_bundle::BUNDLE_ENTRIES
+        .iter()
+        .map(|&e| kingdom_bin(&prot, e))
+        .collect::<Option<Vec<_>>>()
+    else {
         eprintln!("extracted kingdom bundles not present - skipping");
         return;
-    }
+    };
 
     let mut shared_anim: Option<Vec<u8>> = None;
     let mut prev_texture: Option<Vec<u8>> = None;
-    for k in kingdoms {
-        let buf = std::fs::read(prot.join(k)).expect("read kingdom bundle");
+    for path in &kingdoms {
+        let k = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        let buf = std::fs::read(path).expect("read kingdom bundle");
         let slot0 = kingdom_bundle::decode_slot(&buf, 0).expect("decode kingdom slot 0");
         let ocean = find_ocean_assets(&slot0).unwrap_or_else(|| panic!("no ocean assets in {k}"));
 

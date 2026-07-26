@@ -342,6 +342,28 @@ fn main() -> Result<()> {
             party_size,
         ),
         Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
+        Cmd::XaCue { ids, len, xa_dir } => {
+            let parse = |t: &String| -> u32 {
+                let t = t.trim();
+                t.strip_prefix("0x")
+                    .or_else(|| t.strip_prefix("0X"))
+                    .and_then(|h| u32::from_str_radix(h, 16).ok())
+                    .or_else(|| t.parse().ok())
+                    .unwrap_or(0)
+            };
+            let ids: Vec<u32> = if ids.is_empty() {
+                (0..8)
+                    .map(|i| legaia_engine_shell::xa_clip::XA_CUE_BASE + i)
+                    .collect()
+            } else {
+                ids.iter().map(parse).collect()
+            };
+            print!(
+                "{}",
+                legaia_engine_shell::xa_clip::report_cues(&ids, len, xa_dir.as_deref())
+            );
+            Ok(())
+        }
         Cmd::PlayStr {
             str_file,
             disc,
