@@ -13,6 +13,22 @@ a second time, on a branch that *had* rebuilt the bundle.
 Gate: [`scripts/ci/check-wasm-freshness.py`](../../scripts/ci/check-wasm-freshness.py).
 Stamp writer: [`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh).
 
+## The committed bundle is a local-testing artifact
+
+Worth knowing before deciding this gate is redundant with CI: the `deploy-pages`
+job in `main-ci.yml` runs `wasm-pack build` itself and writes into `site/wasm/`
+before publishing, so **the deployed site is always built from source** and never
+loads the committed bundle.
+
+What the committed bundle serves is local browsing of `site/` without a
+`wasm-pack` toolchain - which is how the play page actually gets play-tested. So
+staleness here is not a shipping defect, it is a *verification* defect, and a
+sharper one than it first looks: it makes local testing disagree with the
+deployed page, and it is the reason a fix can be real, deployed-correct, and
+still absent from the build someone is looking at. Both misses that motivated
+this gate took that form - a fix that was genuinely in the sources being reported
+as done to someone whose bundle predated it.
+
 ## Why it needs a gate at all
 
 The bundle's source closure is not the `web-viewer` crate. `legaia-web-viewer`
