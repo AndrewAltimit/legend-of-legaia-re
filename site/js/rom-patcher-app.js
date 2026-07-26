@@ -444,6 +444,28 @@ function setSeg(name, value) {
   if (el) el.checked = true;
 }
 
+// The enemy difficulty scale's per-stat (advanced-mode) sliders.
+//
+// Each entry is the stat key the patcher's own parser accepts
+// (`StatScale::parse` in crates/patcher/src/monster_stats.rs), and the element
+// ids are derived from it - so the strings this page emits are the same ones
+// `legaia-patcher --enemy-stat-scale hp=2,attack=1.5` takes on the command line,
+// and there is no separate browser vocabulary to keep in sync. The order matches
+// that module's `STAT_FIELDS`, so an emitted list reads back in the order the
+// patcher prints it.
+//
+// Simple mode is not a different feature: it sends one bare multiplier, which is
+// the same type with every field equal. One parser, one planner, one set of bytes.
+const SCALE_STATS = [
+  ['hp', 'HP'],
+  ['mp', 'MP'],
+  ['attack', 'Attack'],
+  ['defense_high', 'Defense, upper'],
+  ['defense_low', 'Defense, lower'],
+  ['intelligence', 'Intelligence'],
+  ['speed', 'Speed'],
+];
+
 // --- Presets ---------------------------------------------------------------
 // Each preset is a full configuration: every control gets a value, so applying
 // one is unambiguous. Keys map to control names / element ids below.
@@ -548,6 +570,35 @@ function init() {
   if (enemyScaleSlider && enemyScaleVal) {
     enemyScaleSlider.addEventListener('input', () => {
       enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
+    });
+  }
+  // Advanced mode: one slider per stat, keyed by the patcher's own stat names.
+  // Dropped silently if the markup is absent, so an older page still works.
+  const enemyScaleFields = SCALE_STATS.map(([key]) => ({
+    key,
+    slider: $(`rom-enemy-scale-${key}`),
+    out: $(`rom-enemy-scale-${key}-val`),
+  })).filter((f) => f.slider && f.out);
+  for (const f of enemyScaleFields) {
+    f.slider.addEventListener('input', () => {
+      f.out.textContent = fmtScale(f.slider.value);
+    });
+  }
+  // Set every per-stat slider at once, and keep its read-out in step.
+  const setScaleFields = (valueFor) => {
+    for (const f of enemyScaleFields) {
+      f.slider.value = String(valueFor(f.key));
+      f.out.textContent = fmtScale(f.slider.value);
+    }
+  };
+  // Seven sliders need a way back to neutral that isn't "drag each one".
+  const enemyScaleReset = $('rom-enemy-scale-reset');
+  if (enemyScaleReset) {
+    enemyScaleReset.addEventListener('click', () => {
+      setScaleFields(() => 1);
+      // A button emits `click`, not `change`, so the form-level listener that
+      // normally flips the preset chip never sees this.
+      markCustom();
     });
   }
   const artsPowerInput = $('rom-arts-power');
@@ -721,9 +772,37 @@ function init() {
     damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
     damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
     damageApVal.textContent = damageApSlider.value;
+    // Difficulty scale. A config value is either a bare multiplier or a
+    // `stat=mult` list, so the string itself picks the view mode - a preset that
+    // shapes individual stats opens in Advanced without needing a second key.
     enemyScaleChk.checked = cfg.enemyStatScale !== '' && cfg.enemyStatScale != null;
-    enemyScaleSlider.value = String(enemyScaleChk.checked ? cfg.enemyStatScale : 1);
+    const scaleText = enemyScaleChk.checked ? String(cfg.enemyStatScale) : '';
+    const perStat = scaleText.includes('=');
+    setSeg('enemy_scale_mode', perStat ? 'advanced' : 'simple');
+    enemyScaleSlider.value = String(!scaleText || perStat ? 1 : scaleText);
     enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
+    // Whatever the list doesn't name goes back to 1.0x, so no stale slider
+    // survives a preset switch.
+    const named = new Map(
+      (perStat ? scaleText.split(/[,;\s]+/) : [])
+        .filter(Boolean)
+        .map((tok) => tok.split('='))
+        .filter((kv) => kv.length === 2)
+        .map(([k, v]) => [k.trim().toLowerCase(), v.trim()]),
+    );
+    // `defense` is the CLI's alias for both defense halves, so expand it rather
+    // than dropping it - the sliders are what the emitted string is rebuilt
+    // from, and a key nothing reads would silently apply a different difficulty
+    // than the config asked for. Only this one alias is honoured here: a config
+    // value should otherwise use the canonical SCALE_STATS keys, which are the
+    // only ones this page ever emits.
+    const bothDefenses = named.get('defense') ?? named.get('def');
+    if (bothDefenses !== undefined) {
+      for (const half of ['defense_high', 'defense_low']) {
+        if (!named.has(half)) named.set(half, bothDefenses);
+      }
+    }
+    setScaleFields((key) => named.get(key) ?? 1);
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
@@ -770,6 +849,13 @@ function init() {
     if (damageRow) damageRow.classList.toggle('is-disabled', !(damageApChk && damageApChk.checked));
     const enemyScaleRow = $('rom-enemy-scale-row');
     if (enemyScaleRow) enemyScaleRow.classList.toggle('is-disabled', !(enemyScaleChk && enemyScaleChk.checked));
+    // The scale's two view modes: exactly one pane is ever visible, and the
+    // hidden one's sliders are not read when the patch is built.
+    const scaleAdvanced = segVal('enemy_scale_mode', 'simple') === 'advanced';
+    const simplePane = $('rom-enemy-scale-simple-pane');
+    const advancedPane = $('rom-enemy-scale-advanced-pane');
+    if (simplePane) simplePane.hidden = scaleAdvanced;
+    if (advancedPane) advancedPane.hidden = !scaleAdvanced;
     // Equipment drops are additive (an extra reward-routine grant), so the
     // Monster drops control stays fully live alongside them - nothing to grey.
   }
@@ -819,13 +905,24 @@ function init() {
     // Both ranges include 0 and negatives, so read the value as-is.
     const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
     const damageAp = damageApChk.checked ? String(damageApSlider.value) : '';
-    // Difficulty scale: sent as a plain multiplier ('' = retail). Fixed to one
-    // decimal, because a 0.1 float step can land on 2.5000000000000004 and the
-    // parser rounds to thousandths. Left at 1.0 it is the identity, and the
-    // summary reports it as retail.
-    const enemyStatScale = enemyScaleChk.checked
-      ? Number(enemyScaleSlider.value).toFixed(1)
-      : '';
+    // Difficulty scale. Simple sends one multiplier for every stat; Advanced
+    // sends a `stat=mult` list naming only the stats that actually move, which
+    // is the same spelling the CLI takes. Every value is fixed to one decimal,
+    // because a 0.1 float step can land on 2.5000000000000004 and the parser
+    // rounds to thousandths.
+    //
+    // Advanced with every slider at 1.0x collapses to '' - the identity - so
+    // "enabled but asking for nothing" reads as retail rather than rewriting
+    // every monster slot with its own values.
+    let enemyStatScale = '';
+    if (enemyScaleChk.checked) {
+      enemyStatScale = segVal('enemy_scale_mode', 'simple') === 'advanced'
+        ? enemyScaleFields
+          .filter((f) => Number(f.slider.value) !== 1)
+          .map((f) => `${f.key}=${Number(f.slider.value).toFixed(1)}`)
+          .join(',')
+        : Number(enemyScaleSlider.value).toFixed(1);
+    }
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.
     const artOv = artBuilder.collect();

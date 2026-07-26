@@ -292,11 +292,42 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-enemy-scale-on">
-        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by one factor, from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and the whole roster shifts together - <strong>story bosses included</strong>. EXP, gold and drops are untouched, so a hard run is harder, not richer <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
+        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and the whole roster shifts together - <strong>story bosses included</strong>. EXP, gold and drops are untouched, so a hard run is harder, not richer. <em>Simple</em> scales every stat by one number; <em>Advanced</em> gives each stat its own slider, so you can shape a fight instead of just hardening it <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
-        <label class="rom-opt-label" for="rom-enemy-scale">&#8627; Enemy stat multiplier: <output id="rom-enemy-scale-val">1.0x</output></label>
-        <input type="range" id="rom-enemy-scale" min="0.1" max="5" step="0.1" value="1">
+        <div class="rom-scale-mode">
+          <span class="rom-opt-label">&#8627; Control</span>
+          <div class="seg" role="group" aria-label="Difficulty scale detail">
+            <input type="radio" name="enemy_scale_mode" id="enemy-scale-simple" value="simple" checked><label for="enemy-scale-simple">Simple</label>
+            <input type="radio" name="enemy_scale_mode" id="enemy-scale-advanced" value="advanced"><label for="enemy-scale-advanced">Advanced</label>
+          </div>
+        </div>
+
+        <div id="rom-enemy-scale-simple-pane">
+          <label class="rom-opt-label" for="rom-enemy-scale">Enemy stat multiplier: <output id="rom-enemy-scale-val">1.0x</output></label>
+          <input type="range" id="rom-enemy-scale" min="0.1" max="5" step="0.1" value="1">
+        </div>
+
+        <div id="rom-enemy-scale-advanced-pane" hidden>
+          <p class="rom-opt-note rom-scale-hint">One multiplier per stat. Anything left at <code>1.0x</code> keeps its disc value exactly, so <code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</p>
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-hp">HP <output id="rom-enemy-scale-hp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-hp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-mp">MP <output id="rom-enemy-scale-mp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-mp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-attack">Attack <output id="rom-enemy-scale-attack-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-attack" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-defense_high">Defense, upper <output id="rom-enemy-scale-defense_high-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-defense_high" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-defense_low">Defense, lower <output id="rom-enemy-scale-defense_low-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-defense_low" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-intelligence">Intelligence <output id="rom-enemy-scale-intelligence-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-intelligence" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-speed">Speed <output id="rom-enemy-scale-speed-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-speed" min="0.1" max="5" step="0.1" value="1">
+          </div>
+          <button type="button" class="rom-scale-reset" id="rom-enemy-scale-reset">Reset every stat to 1.0x</button>
+        </div>
       </div>
     </details>
 
@@ -544,6 +575,21 @@
   .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
   #rom-spirit-ap-val, #rom-damage-ap-val, #rom-enemy-scale-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
+
+  /* Difficulty scale: simple/advanced mode switch + the per-stat slider grid.
+     A .rom-opt is a space-between flex row, which is right for a label/slider
+     pair but would sit this row's three blocks (mode switch, simple pane,
+     advanced pane) side by side - so this one stacks. */
+  #rom-enemy-scale-row { flex-direction: column; align-items: stretch; }
+  .rom-scale-mode { display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .rom-scale-hint { margin: 0 0 0.6rem; max-width: 46rem; }
+  .rom-scale-grid { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: 0.3rem 0.9rem; align-items: center; max-width: 34rem; }
+  .rom-scale-grid input[type=range] { max-width: none; }
+  .rom-scale-grid output { font-weight: 700; color: var(--accent-hi); }
+  /* On narrow screens the label/slider pairs stack instead of squeezing. */
+  @media (max-width: 34rem) { .rom-scale-grid { grid-template-columns: 1fr; gap: 0.1rem; } }
+  .rom-scale-reset { margin-top: 0.7rem; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 6px; cursor: pointer; transition: color var(--transition), border-color var(--transition); }
+  .rom-scale-reset:hover { color: var(--accent-hi); border-color: var(--accent); }
 
   /* Segmented control (radio group styled as connected buttons) */
   .seg { display: inline-flex; border: 1px solid var(--border-hi); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
