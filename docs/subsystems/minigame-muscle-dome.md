@@ -78,6 +78,62 @@ Engine port: `engine-core::muscle_dome::settle_contest`. `see ghidra/scripts/fun
 
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
+## Arena backdrop (extraction 1225)
+
+The contest's 3D environment is an ordinary **battle backdrop** in the standard
+carrier shape ([`battle.md` § Battle background](battle.md#battle-background)),
+resident in the dome's own data file:
+
+- The `0977` door/init overlay loads the dome's data file by its dev path
+  `data\field\other6.lzs` - a string literal in the entry's own pool
+  (extraction `0977_other_game`, alongside its `mini_battle_flag %d` /
+  `round %d level %d` traces and the arena's monster-name roster).
+  CDNAME maps `other6` to raw TOC index **1222**, i.e. extraction block
+  **1220..=1225** (`legaia_prot::cdname::block_for_extraction_index`, the +2
+  filename skew - [`cdname.md`](../formats/cdname.md#numbering-space)).
+- The block's tail slot, extraction **1225**, is its only `scene_tmd_stream` -
+  the battle-backdrop carrier the battle init walker `FUN_8001FE70` records
+  into `_DAT_8007B864`: a leading arena-shell TMD (2 objects, 367 verts;
+  object 0 = the ring shell, authored at `X >= 0` with the open side facing
+  `-X` - the same half-stage authoring rule as `town01`'s dome) followed by
+  two type-`0x01` TIM chunks (`0x8220` bytes each, the town01-dome chunk
+  shape): 4bpp 256x256 pages at framebuffer `(768, 0)` / `(832, 0)` with CLUT
+  rows **473** / **479**.
+- `(832, 0)` through CLUT `(0, 479)` is exactly the constant address the
+  battle **ground grid** `func_0x801d02c0` samples, and that page's
+  `(192..255)^2` window is the dome's plain dirt tile; the rest of the two
+  pages is the arena furniture (chain-link fence, dirt/stone flooring, the
+  tiered ring wall).
+
+Confidence: the load chain, carrier shape and texture address are **Confirmed**
+(disassembly + structural decode of the entry); that a live contest's
+`_DAT_8007B864` holds this stream is **Inferred** - the dome runs as a battle
+with the battle overlay resident and 1225 is the only backdrop-shaped stream in
+the file its init loads, but no dome-battle save-state byte-match has been
+taken. The file's other slots: 1220 = the LZS data container the door/init
+strings reference (roster/course data), 1221/1222 = two 160 KB blobs
+(undecoded), 1223/1224 = pochi fillers ([`pochi.md`](../formats/pochi.md)).
+
+Site consumer: the minigames page's dome panel draws the shell + the retail
+ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`).
+
+## Sound
+
+**Cues.** The match SM fires its UI blips through the one-arg cue funnel
+`FUN_8004fcc8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor
+row ([`sfx-table.md`](../formats/sfx-table.md)). `FUN_801d0748` carries **34**
+immediate call sites - ids `0x21` (13 sites), `0x22` (7), `0x23` (14) - i.e.
+static rows `0x20`/`0x21`/`0x22`, whose category byte routes them to the slot-0
+system bank (extraction PROT **0868**). Which id belongs to which phase arm is
+not per-arm labelled (see Open). The **melee impact** is the shared battle
+path's: a card play resolves through the same battle-action machinery as an
+ordinary strike, and the shared battle/duel bank's impact cue is static row
+`0x09` (category 2 -> extraction PROT **0869**; pinned at the top of the Baka
+duel damage kernel `FUN_801D3B18`, the same bank the battle scene loader
+stages). The dome's basic swing commands map to move-power record 0, whose
+per-move sound-cue byte (`+0x0d`) is **0** - so no per-move cue overrides the
+shared impact.
+
 **BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
 
 ## Match state machine
@@ -271,6 +327,9 @@ real swing costs drive a decided contest through the world tick).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
+- The per-arm assignment of the three UI cue ids (`0x21`/`0x22`/`0x23` across the 34 `FUN_8004fcc8` sites in `FUN_801d0748`) - the id set is pinned, which blip belongs to pick / commit / deny is not.
+- A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
+- The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 

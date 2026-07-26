@@ -46,6 +46,8 @@ use legaia_asset::element_affinity::ElementAffinity;
 use legaia_asset::monster_archive;
 use legaia_asset::move_power;
 use legaia_asset::muscle_dome as md;
+use legaia_asset::scene_tmd_stream;
+use legaia_asset::sfx_table;
 use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_vm::battle_formulas::{
     DamageFinish, DefenderResist, RecordStats, SummonRollActor, arts_physical_predamage_lazy,
@@ -58,6 +60,31 @@ const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
 /// PROT entry of the first player battle file (`data\battle\PLAYER1`,
 /// extraction 863; `+ char_slot` for Noa / Gala / Terra).
 const PLAYER_BATTLE_FILE_BASE: u32 = 863;
+
+/// PROT entry (extraction space) of the Sol Muscle Dome **arena backdrop**
+/// stream - the tail slot of the dome's `data\field\other6.lzs` file (CDNAME
+/// `other6` = raw TOC 1222 -> extraction block 1220..=1225, loaded by the
+/// arena door/init overlay at extraction 0977). It is the block's only
+/// `scene_tmd_stream` - the battle-backdrop carrier format the battle init
+/// walker `FUN_8001FE70` records into `_DAT_8007B864`: a leading arena-shell
+/// TMD plus two type-0x01 TIM pages at framebuffer `(768, 0)` / `(832, 0)`
+/// (CLUT rows 473 / 479) - `(832, 0)` + CLUT `(0, 479)` being exactly the
+/// address the battle ground-grid renderer `func_0x801d02c0` samples. See
+/// `docs/subsystems/minigame-muscle-dome.md` (Arena backdrop).
+const ARENA_BACKDROP_PROT_INDEX: u32 = 1225;
+
+/// The dome match SM's own UI cue ids as **called** (`FUN_801d0748` passes
+/// these to the one-arg cue funnel `FUN_8004fcc8`, whose `< 0x40` leg
+/// enqueues `id - 1` as the static descriptor row). 34 immediate call sites:
+/// `0x21` x13, `0x22` x7, `0x23` x14.
+const MUSCLE_UI_CUE_CALL_IDS: [u8; 3] = [0x21, 0x22, 0x23];
+
+/// The physical-impact static cue row of the shared battle/duel bank
+/// (descriptor row `0x09`: program 0, tones 9..=10, category 2 -> the PROT
+/// 0869 VAB). Pinned as the melee hit at the top of the Baka duel damage
+/// kernel (`FUN_801D3B18`); the dome resolves its card plays through the same
+/// shared battle-action path and bank.
+const MUSCLE_HIT_CUE_ROW: u8 = 0x09;
 
 /// Flat per-card cost fallback (the native launcher's `FAVORED_COST`), used
 /// when the character's swing records don't decode.
@@ -278,6 +305,62 @@ impl LegaiaMinigames {
             },
             m.name.clone(),
         ))
+    }
+
+    /// The arena backdrop entry's bytes, gated on the scene_tmd_stream shape
+    /// (so a truncated / foreign image degrades to "no arena" rather than a
+    /// garbage mesh).
+    fn muscle_arena_entry(&self) -> Option<&[u8]> {
+        let buf = entry_bytes(&self.prot, &self.entries, ARENA_BACKDROP_PROT_INDEX)?;
+        scene_tmd_stream::detect(buf).map(|_| buf)
+    }
+
+    /// The arena-shell TMD built as a hybrid VRAM mesh (textured prims sample
+    /// the backdrop pages; untextured prims keep their baked colour word).
+    fn muscle_arena_hybrid(&self) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
+        let buf = self.muscle_arena_entry()?;
+        let stream = scene_tmd_stream::detect(buf)?;
+        let tmd_bytes = buf.get(stream.tmd_range())?;
+        let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
+        let (mesh, _oids, shading) =
+            legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
+        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
+        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
+            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
+        }
+        Some((mesh, flat))
+    }
+
+    /// Decode one static-table cue's voice layer to `(pcm, rate)`: descriptor
+    /// row `row` of the SCUS SFX table keys VAB program `p` tones
+    /// `t .. t+voices` at note `l` out of the bank its `+4` category routes to
+    /// (slot 0 = PROT 0868, slot 2 = PROT 0869 - `docs/formats/sfx-table.md`).
+    fn muscle_static_cue(&self, row: u8, voice: u8) -> Option<(Vec<i16>, u32)> {
+        let scus = self.scus.as_ref()?;
+        let table = sfx_table::SfxTable::from_scus(scus)?;
+        let desc = *table.get(row)?;
+        if voice >= desc.voice_count() {
+            return None;
+        }
+        let bank_prot = sfx_table::prot_index_for_slot(desc.vab_slot())?;
+        let entry = entry_bytes(&self.prot, &self.entries, bank_prot)?;
+        let off = *legaia_vab::find_vabs(entry).first()?;
+        let report = legaia_vab::parse(entry, off).ok()?;
+        // Multi-voice cues span consecutive tone regions (`sfx-table.md`:
+        // "the per-voice loop adds the voice index").
+        let atr = report
+            .tones
+            .get(desc.program as usize)?
+            .get(desc.tone as usize + voice as usize)?;
+        if atr.vag <= 0 {
+            return None;
+        }
+        let span = report.vag_samples.get(atr.vag as usize - 1)?;
+        let body = entry.get(span.byte_offset..span.byte_offset + span.size)?;
+        let pcm = legaia_vab::decode_vag_aligned(body).ok()?;
+        let semitones = desc.note as f64 - atr.center as f64;
+        let rate = (44100.0 * 2f64.powf(semitones / 12.0)).round();
+        Some((pcm, rate.clamp(4000.0, 96_000.0) as u32))
     }
 
     /// An opponent fighter out of the monster archive: the record's boosted
@@ -840,7 +923,10 @@ impl LegaiaMinigames {
     /// The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
     /// 1205, their bundled CLUT strips) plus monster `monster_id`'s texture
     /// pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
-    /// at `(320, 256)`) - the same layout the retail battle loader builds.
+    /// at `(320, 256)`) - the same layout the retail battle loader builds -
+    /// plus the arena backdrop's own TIM pages (PROT 1225 tail chunks: 4bpp
+    /// pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479; disjoint from
+    /// the fighter bands, so upload order doesn't matter).
     pub fn muscle_vram(&self, monster_id: u16) -> Vec<u8> {
         let mut vram = legaia_tim::Vram::new();
         if let Some(raw) = entry_bytes(
@@ -861,6 +947,147 @@ impl LegaiaMinigames {
             // Injects the pool at slot 0's CLUT row + page origin.
             let _ = mesh.battle_render_mesh(0, &mut vram);
         }
+        if let Some(buf) = self.muscle_arena_entry() {
+            for chunk in scene_tmd_stream::battle_tim_chunks(buf) {
+                if let Some(bytes) = buf.get(chunk.payload_offset..)
+                    && let Ok(tim) = legaia_tim::parse(bytes)
+                {
+                    vram.upload_tim(&tim);
+                }
+            }
+        }
         vram.as_bytes().to_vec()
+    }
+
+    // -------------------------------------------------------- arena backdrop
+
+    /// Status of the dome's arena backdrop (PROT 1225 - see
+    /// [`ARENA_BACKDROP_PROT_INDEX`] for the pin):
+    /// `{"ok":true,"prot":1225,"verts":N,"tris":N,"tims":2}`, or
+    /// `{"ok":false}` when the entry is absent / doesn't match the
+    /// scene_tmd_stream shape on this image.
+    pub fn muscle_arena_json(&self) -> String {
+        let Some((mesh, _)) = self.muscle_arena_hybrid() else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let tims = self
+            .muscle_arena_entry()
+            .map(|b| scene_tmd_stream::battle_tim_chunks(b).len())
+            .unwrap_or(0);
+        format!(
+            r#"{{"ok":true,"prot":{},"verts":{},"tris":{},"tims":{}}}"#,
+            ARENA_BACKDROP_PROT_INDEX,
+            mesh.positions.len(),
+            mesh.triangle_count(),
+            tims,
+        )
+    }
+
+    /// Arena-shell vertex positions (`[x, y, z, ...]`, retail Y-down world
+    /// coordinates, world-fixed - the shell is authored at `X >= 0` with the
+    /// open side facing `-X`, and retail seats the fighters near the world
+    /// origin). Empty when the backdrop doesn't decode.
+    pub fn muscle_arena_positions(&self) -> Vec<f32> {
+        let Some((mesh, _)) = self.muscle_arena_hybrid() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex `[u, v]` texel coords for the arena shell.
+    pub fn muscle_arena_uvs(&self) -> Vec<i32> {
+        let Some((mesh, _)) = self.muscle_arena_hybrid() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` for the arena shell (its TIMs' own authored
+    /// VRAM addresses - no battle-slot relocation applies to a backdrop).
+    pub fn muscle_arena_cba_tsb(&self) -> Vec<u32> {
+        let Some((mesh, _)) = self.muscle_arena_hybrid() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Triangle indices for the arena shell.
+    pub fn muscle_arena_indices(&self) -> Vec<u32> {
+        self.muscle_arena_hybrid()
+            .map(|(m, _)| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured_flag]` for the arena's hybrid textured /
+    /// vertex-colour render (same convention as the fighter bodies).
+    pub fn muscle_arena_flat_rgba(&self) -> Vec<u8> {
+        self.muscle_arena_hybrid()
+            .map(|(_, flat)| flat)
+            .unwrap_or_default()
+    }
+
+    // ------------------------------------------------------------- dome SFX
+
+    /// The dome's pinned sound-cue rows and whether each decodes on this
+    /// image:
+    ///
+    /// ```json
+    /// { "ok": true,
+    ///   "ui": [32, 33, 34],   // FUN_801d0748's own blips (call ids 0x21..0x23
+    ///                         // through FUN_8004fcc8's id-1 leg; PROT 0868)
+    ///   "hit": 9,             // shared battle/duel melee impact (PROT 0869)
+    ///   "hit_voices": 2 }
+    /// ```
+    ///
+    /// `ok` is false without a SCUS (raw `PROT.DAT` load - the descriptor
+    /// table lives in the executable).
+    pub fn muscle_sfx_json(&self) -> String {
+        let ui: Vec<String> = MUSCLE_UI_CUE_CALL_IDS
+            .iter()
+            .map(|&id| (id - 1).to_string())
+            .collect();
+        let hit_ok = self.muscle_static_cue(MUSCLE_HIT_CUE_ROW, 0).is_some();
+        let hit_voices = self
+            .scus
+            .as_ref()
+            .and_then(|s| sfx_table::SfxTable::from_scus(s))
+            .and_then(|t| t.get(MUSCLE_HIT_CUE_ROW).map(|d| d.voice_count()))
+            .unwrap_or(0);
+        format!(
+            r#"{{"ok":{},"ui":[{}],"hit":{},"hit_voices":{}}}"#,
+            hit_ok,
+            ui.join(","),
+            MUSCLE_HIT_CUE_ROW,
+            hit_voices,
+        )
+    }
+
+    /// Decode one voice layer of static SFX descriptor row `row` to mono i16
+    /// PCM (the dome's cues are static-table rows - see
+    /// [`Self::muscle_sfx_json`]). Empty when the row / voice / bank doesn't
+    /// resolve.
+    pub fn muscle_sfx_pcm(&self, row: u8, voice: u8) -> Vec<i16> {
+        self.muscle_static_cue(row, voice)
+            .map(|(pcm, _)| pcm)
+            .unwrap_or_default()
+    }
+
+    /// Playback rate for [`Self::muscle_sfx_pcm`] (`0` when absent).
+    pub fn muscle_sfx_rate(&self, row: u8, voice: u8) -> u32 {
+        self.muscle_static_cue(row, voice)
+            .map(|(_, rate)| rate)
+            .unwrap_or(0)
     }
 }

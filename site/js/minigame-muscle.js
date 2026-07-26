@@ -2,15 +2,25 @@
  *
  * Two layers over one <div> (the same template as the dance / Baka panels):
  *   - a WebGL canvas (the shared TmdRenderer R16UI paletted-VRAM pipeline)
- *     carrying the ARENA SCENE: the player's battle-form party mesh (PROT
- *     1204, posed from the PROT 1203 battle-form anim bank) versus a monster
- *     of the PROT 867 archive - its own embedded TMD, texture pool relocated
- *     to battle texture slot 0 exactly as the retail battle loader does
- *     (FUN_80055468 via `battle_render_mesh`), posed from its own rigid-part
- *     keyframe animations (docs/formats/monster-animation.md);
+ *     carrying the ARENA SCENE: the Sol arena backdrop (PROT 1225 - the
+ *     scene_tmd_stream tail slot of the dome's own `other6.lzs` file, the
+ *     fenced dirt ring the retail contest is fought in) plus the retail
+ *     battle ground grid (the func_0x801d02c0 flat tiled plane, sampling
+ *     the backdrop's own (832,0) page window through CLUT (0,479)); over
+ *     it the player's battle-form party mesh (PROT 1204, posed from the
+ *     PROT 1203 battle-form anim bank) versus a monster of the PROT 867
+ *     archive - its own embedded TMD, texture pool relocated to battle
+ *     texture slot 0 exactly as the retail battle loader does
+ *     (FUN_80055468 via `battle_render_mesh`), posed from its own
+ *     rigid-part keyframe animations (docs/formats/monster-animation.md);
  *   - a 2D canvas carrying the HUD text overlays: the round banner, HP +
- *     Spirit bars, damage numbers, the between-round interval panel and the
- *     verdict banners.
+ *     Spirit bars, damage numbers, the round time meter, the between-round
+ *     interval panel and the verdict banners.
+ *
+ * SOUND: the dome's own cue set, decoded from the disc's SFX banks - the
+ * match SM's UI blips (static rows 0x20..0x22, PROT 0868) and the shared
+ * battle/duel melee-impact cue (row 0x09, PROT 0869); the BGM (the battle
+ * theme the arena inherits) is the page-level MgBgm hook.
  *
  * The RULES are `legaia-engine-core::muscle_dome` + the ported battle
  * formulas, reached through `LegaiaMinigames` (crates/web-viewer/src/
@@ -22,11 +32,12 @@
  * This file is presentation only; it never computes a damage number itself.
  *
  * Traced vs fitted, stated plainly: the deal, budget gate, action queue,
- * score readout, damage rolls and spirit accrual are the disc's own tables +
- * ported kernels; the CAMERA, fighter spacing/facing, the plain-quad arena
- * floor (the dome's battle-scene backdrop entry is not pinned) and the HUD
- * text layout are fitted, and the panel's note says so. The card->animation
- * pairing is an approximation over the battle-form bank's attack records.
+ * score readout, damage rolls, spirit accrual, the arena backdrop + ground
+ * grid texture address, the time-meter ramp and the cue id set are the
+ * disc's own tables + traced constants; the CAMERA, fighter spacing/facing,
+ * the HUD text layout and the per-event cue assignment are fitted, and the
+ * panel's note says so. The card->animation pairing is an approximation
+ * over the battle-form bank's attack records.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  */
@@ -84,6 +95,7 @@ window.MgMuscle = (function () {
     let hpShow = [0, 0];       /* eased HP bar values */
     let lastOpts = null;       /* {char, level, monster} for restart */
     let roster = null;         /* muscle_roster_json rows */
+    let meter = 0;             /* round time meter 0..0xC (FUN_801d3444) */
 
     /* ------------------------------------------------ roster + spell names */
 
@@ -155,9 +167,9 @@ window.MgMuscle = (function () {
       return { half: (hi - lo) / 2 || 200, height: top || 400 };
     }
 
-    /* A plain-quad arena floor: alternating dark tiles on y = 0. The dome's
-     * real battle-scene backdrop entry is NOT pinned, so this is a stated
-     * approximation (flat-coloured geometry, no invented texture art). */
+    /* Fallback plain-quad floor: alternating dark tiles on y = 0. Used only
+     * when the arena backdrop entry (PROT 1225) doesn't decode on this image
+     * (flat-coloured geometry, no invented texture art). */
     function floorBuffers(extent) {
       const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
       const T = Math.max(160, Math.round(extent / 4));
@@ -175,6 +187,59 @@ window.MgMuscle = (function () {
             out.flat.push(c[0], c[1], c[2], 0);   /* flag 0 = flat colour */
           }
           out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+      }
+      return out;
+    }
+
+    /* The Sol arena backdrop (PROT 1225): the fenced dirt ring's own TMD,
+     * world-fixed at raw coordinates exactly as the retail battle renderer
+     * draws a stage dome (one instance, no mirror - docs/subsystems/
+     * battle.md). Its texture pages ride in muscle_vram. Null when the entry
+     * doesn't decode. */
+    function arenaBuffers() {
+      if (!api.muscle_arena_positions) return null;
+      const pos = api.muscle_arena_positions();
+      if (!pos.length) return null;
+      return {
+        pos,
+        uvs: api.muscle_arena_uvs(),
+        ct: api.muscle_arena_cba_tsb(),
+        flat: api.muscle_arena_flat_rgba(),
+        idx: api.muscle_arena_indices(),
+      };
+    }
+
+    /* The retail battle ground grid (func_0x801d02c0, battle overlay): a flat
+     * tiled plane on y = 0 centred at the world origin. Traced constants
+     * (docs/subsystems/battle.md "Backdrop ground"): cell pitch 0x200 with
+     * each cell emitted as FOUR quads (2x2 sub-step 0x100), texture = the
+     * 4bpp page at framebuffer (832, 0) (tpage attr 0x000D) through CLUT
+     * (0, 479) (CBA 0x77C0), UV window (192..255)^2 stretched across one
+     * cell - deterministic sub-tiling, no RNG. The live capture reads the
+     * grid as 28x28 cells; the page emits the same. */
+    function groundBuffers() {
+      const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
+      const CELL = 0x200, SUB = 0x100, N = 14;   /* 28x28 cells */
+      const CBA = 0x77C0, TSB = 0x000D;
+      for (let cz = -N; cz < N; cz++) {
+        for (let cx = -N; cx < N; cx++) {
+          for (let sr = 0; sr < 2; sr++) {
+            for (let sc = 0; sc < 2; sc++) {
+              const x0 = cx * CELL + sc * SUB, x1 = x0 + SUB;
+              const z0 = cz * CELL + sr * SUB, z1 = z0 + SUB;
+              const u0 = 192 + sc * 32, u1 = u0 + 31;
+              const v0 = 192 + sr * 32, v1 = v0 + 31;
+              const base = out.pos.length / 3;
+              out.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
+              out.uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
+              for (let k = 0; k < 4; k++) {
+                out.ct.push(CBA, TSB);
+                out.flat.push(255, 255, 255, 255);   /* textured */
+              }
+              out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+            }
+          }
         }
       }
       return out;
@@ -241,47 +306,75 @@ window.MgMuscle = (function () {
       const extM = poseExtent(M, clips[1].idle);
       const gap = (extP.half + extM.half) * 1.5 + 120;
 
-      const floor = floorBuffers(gap);
+      /* Static geometry behind the fighters: the real arena backdrop + the
+       * retail ground grid when PROT 1225 decodes, the flat fallback floor
+       * otherwise. */
+      const arena = arenaBuffers();
+      const statics = arena ? [arena, groundBuffers()] : [floorBuffers(gap)];
 
-      /* Combined buffers: player, monster, floor. */
-      const nP = P.pos.length / 3, nM = M.pos.length / 3, nF = floor.pos.length / 3;
-      const n = nP + nM + nF;
+      /* Combined buffers: player, monster, then the static set. */
+      const nP = P.pos.length / 3, nM = M.pos.length / 3;
+      let n = nP + nM;
+      for (const st2 of statics) n += st2.pos.length / 3;
       const pos = new Float32Array(n * 3);
-      pos.set(P.pos, 0); pos.set(M.pos, nP * 3); pos.set(floor.pos, (nP + nM) * 3);
       const uvs = new Uint8Array(n * 2);
-      uvs.set(P.uvs, 0); uvs.set(M.uvs, nP * 2); uvs.set(floor.uvs, (nP + nM) * 2);
       const ct = new Uint16Array(n * 2);
-      ct.set(P.ct, 0); ct.set(M.ct, nP * 2); ct.set(floor.ct, (nP + nM) * 2);
       const flat = new Uint8Array(n * 4);
-      flat.set(P.flat, 0); flat.set(M.flat, nP * 4); flat.set(floor.flat, (nP + nM) * 4);
       const idx = [];
+      pos.set(P.pos, 0); pos.set(M.pos, nP * 3);
+      uvs.set(P.uvs, 0); uvs.set(M.uvs, nP * 2);
+      ct.set(P.ct, 0); ct.set(M.ct, nP * 2);
+      flat.set(P.flat, 0); flat.set(M.flat, nP * 4);
       for (const i of P.idx) idx.push(i);
       for (const i of M.idx) idx.push(i + nP);
-      for (const i of floor.idx) idx.push(i + nP + nM);
+      let at = nP + nM;
+      for (const st2 of statics) {
+        pos.set(st2.pos, at * 3);
+        uvs.set(st2.uvs, at * 2);
+        ct.set(st2.ct, at * 2);
+        flat.set(st2.flat, at * 4);
+        for (const i of st2.idx) idx.push(i + at);
+        at += st2.pos.length / 3;
+      }
 
       const renderer = new window.TmdRenderer(glCanvas);
       renderer.uploadVram(api.muscle_vram(monsterId));
       renderer.uploadMesh(pos, uvs, ct, new Uint32Array(idx), flat);
 
+      /* With the real arena up, the shell is authored at X >= 0 with the
+       * open side facing -X (the town01 half-stage rule) and the fighters
+       * seat near the world origin; spread them across Z so the default
+       * camera - parked on the open side, looking into the shell - sees
+       * them side by side. Without the arena, keep the old X spread. The
+       * exact seats + camera remain FITTED, as the note says. */
+      const spreadZ = !!arena;
       const s = {
         renderer, P, M, nP, nM,
         clips,
         base: pos.slice(),
         out: pos,
-        /* Player left / monster right, facing each other. The fighter
-         * families' intrinsic facing needs opposite world yaws (the Baka
-         * finding); the monster family faces the party at yaw ~ -PI/2 in its
-         * battle placement - both FITTED, as the note says. */
-        dx: [-gap / 2, gap / 2],
-        yaw: [Math.PI / 2, -Math.PI / 2],
+        /* Fighter world placement: the families' intrinsic facing needs
+         * opposite world yaws (the Baka finding). */
+        dx: spreadZ ? [0, 0] : [-gap / 2, gap / 2],
+        dz: spreadZ ? [-gap / 2, gap / 2] : [0, 0],
+        yaw: spreadZ ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2],
         /* Per-fighter clip state: {clip, start, loop, hold} */
         act: [
           { clip: clips[0].idle, start: 0, loop: true },
           { clip: clips[1].idle, start: 0, loop: true },
         ],
-        cam: { yaw: 0.0, pitch: 0.14, distance: 1.75 },
-        defCam: { yaw: 0.0, pitch: 0.14, distance: 1.75 },
-        center: [0, -Math.max(extP.height, extM.height) * 0.42, 0],
+        cam: {
+          yaw: spreadZ ? Math.PI / 2 : 0.0,
+          pitch: 0.14,
+          distance: spreadZ ? 2.1 : 1.75,
+        },
+        defCam: {
+          yaw: spreadZ ? Math.PI / 2 : 0.0,
+          pitch: 0.14,
+          distance: spreadZ ? 2.1 : 1.75,
+        },
+        center: [spreadZ ? 260 : 0,
+          -Math.max(extP.height, extM.height) * 0.42, 0],
         radius: gap * 0.95 + Math.max(extP.half, extM.half) * 0.6,
       };
       attachOrbit(s);
@@ -311,6 +404,82 @@ window.MgMuscle = (function () {
         s.cam.distance = Math.max(0.9, Math.min(6,
           s.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
       }, { passive: false });
+    }
+
+    /* ---------------- sound ----------------
+     *
+     * The dome's own cue set, decoded once from the visitor's disc through
+     * the WASM API (crates/web-viewer/src/minigames_muscle.rs):
+     *   - the match SM's UI blips: FUN_801d0748 fires 34 immediate
+     *     FUN_8004fcc8(0x21/0x22/0x23) calls, whose < 0x40 leg enqueues
+     *     id-1 - static descriptor rows 0x20/0x21/0x22, category 0 ->
+     *     the PROT 0868 system bank;
+     *   - the melee impact: the shared battle/duel bank's row 0x09
+     *     (category 2 -> PROT 0869), the hit cue of the shared battle
+     *     path the dome resolves its card plays through.
+     * The id set is traced; WHICH blip fires on which page event is a
+     * fitted assignment (the 34 sites spread across phase arms this page
+     * does not reproduce one-to-one), and the note says so. */
+    let sfx = null;      /* { ctx, confirm, cursor, blip, hit[] } */
+    let sfxMeta;         /* parsed muscle_sfx_json (undefined until asked) */
+
+    function audioReady() {
+      /* Page-level sound gate (js/audio-toggle.js). */
+      if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return null;
+      if (!api.muscle_sfx_pcm) return null;
+      if (sfxMeta === undefined) {
+        try { sfxMeta = JSON.parse(api.muscle_sfx_json()); }
+        catch (e) { sfxMeta = null; }
+      }
+      if (!sfxMeta) return null;
+      if (!sfx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        const ctx = new Ctx();
+        const mk = (row, voice) => {
+          const pcm = api.muscle_sfx_pcm(row, voice);
+          const rate = api.muscle_sfx_rate(row, voice);
+          if (!pcm.length || !rate) return null;
+          const buf = ctx.createBuffer(1, pcm.length, rate);
+          const ch = buf.getChannelData(0);
+          for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+          return buf;
+        };
+        const ui = sfxMeta.ui || [0x20, 0x21, 0x22];
+        const hit = [];
+        for (let v = 0; v < (sfxMeta.hit_voices || 1); v++) {
+          const b = mk(sfxMeta.hit != null ? sfxMeta.hit : 9, v);
+          if (b) hit.push(b);
+        }
+        sfx = { ctx, confirm: mk(ui[0], 0), cursor: mk(ui[1], 0),
+                blip: mk(ui[2], 0), hit };
+      }
+      if (sfx.ctx.state === 'suspended') sfx.ctx.resume();
+      return sfx;
+    }
+
+    function playBuf(a, buf, gain) {
+      if (!a || !buf) return;
+      const src = a.ctx.createBufferSource();
+      src.buffer = buf;
+      const gn = a.ctx.createGain();
+      gn.gain.value = gain;
+      src.connect(gn).connect(a.ctx.destination);
+      src.start();
+    }
+
+    function playCue(name, gain) {
+      const a = audioReady();
+      if (a) playBuf(a, a[name], gain == null ? 0.5 : gain);
+    }
+
+    /* The impact cue keys every voice layer its descriptor declares that
+     * resolves to a real sample (row 0x09 declares two; a layer whose
+     * consecutive tone region names no VAG stays silent). */
+    function playHit() {
+      const a = audioReady();
+      if (!a) return;
+      for (const buf of a.hit) playBuf(a, buf, 0.5);
     }
 
     /* Trigger a one-shot clip on fighter `fi` (idle resumes after; `hold`
@@ -343,7 +512,7 @@ window.MgMuscle = (function () {
         }
         const f = fi === 0 ? s.P : s.M;
         poseInto(s.out, s.base, f.oid, clip, frame,
-          fi === 0 ? 0 : s.nP, s.dx[fi], s.yaw[fi], 0);
+          fi === 0 ? 0 : s.nP, s.dx[fi], s.yaw[fi], s.dz[fi]);
       }
       s.renderer.updatePositions(s.out);
       s.renderer.render(s.cam.yaw, s.cam.pitch, s.cam.distance,
@@ -391,6 +560,9 @@ window.MgMuscle = (function () {
     function commit(slot) {
       if (mode !== 'select') return false;
       const ok = api.muscle_commit(slot);
+      /* Confirm blip on a committed card; cursor blip on a rejected one
+       * (overspend / queue full) - fitted assignment over the traced ids. */
+      playCue(ok ? 'confirm' : 'cursor', ok ? 0.5 : 0.35);
       return ok;
     }
 
@@ -423,6 +595,8 @@ window.MgMuscle = (function () {
 
     function setBanner(text, sub, life, cls) {
       banner = { text, sub, t: 0, life: life || 75, cls: cls || '' };
+      /* Phase-advance blip (fitted assignment over the traced id set). */
+      playCue('blip', 0.35);
     }
 
     /* One play event lands: animations + popup + HP target. */
@@ -456,9 +630,12 @@ window.MgMuscle = (function () {
           play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].hit, true);
         }
         if (state.phase === 'won') {
+          /* Retail victory banner wording (FUN_801d8de8 case 0x59 composes
+           * "...acquired the power of..." + the reward spell name out of the
+           * shared spell-name table). */
           const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
           setBanner('YOU WIN!', spell
-            ? 'the power of ' + spell + ' is yours — SPACE for a rematch'
+            ? state.names[0] + ' acquired the power of ' + spell + '! — SPACE for a rematch'
             : 'SPACE for a rematch', 100000, 'good');
         } else {
           setBanner('YOU LOSE', 'SPACE for a rematch', 100000, 'bad');
@@ -504,10 +681,29 @@ window.MgMuscle = (function () {
         text('HP ' + Math.max(0, Math.round(p.hp)) + '/' + p.max,
           p.x + 4, 31, 6, '#aeb6c4', 'left', '');
         /* The per-fighter Spirit gauge (actor+0x170) - the value the dome
-         * HUD's own bar elements display (FUN_801d8de8 elems 0x52/0x53). */
+         * HUD's own bar elements display (FUN_801d8de8 elems 0x52/0x53),
+         * headed by the retail "Spirit" string (elem 0x0B). */
         bar(p.x + 74, 29, 66, 4, p.spirit / 100, '#7798d4');
-        text('SP', p.x + 66, 31, 6, '#7798d4', 'left', '');
+        text('Spirit', p.x + 71, 31, 6, '#7798d4', 'right', '');
       }
+    }
+
+    /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
+     * the commit/playback phase (`ctx+6 == 0x50`) runs and drains otherwise,
+     * mapped to a 160-px bar (`counter * 160 / 12`). The ramp + mapping are
+     * traced (port `engine-core::muscle_dome::time_meter_step`); the screen
+     * placement is fitted. */
+    function drawTimeMeter() {
+      const hFull = 160;
+      const hh = Math.round(meter * hFull / 12);
+      const x = 306, yBot = 196;
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(x * 2, (yBot - hFull) * 2, 6 * 2, hFull * 2);
+      g.fillStyle = '#ffd166';
+      g.fillRect(x * 2, (yBot - hh) * 2, 6 * 2, hh * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
+      g.strokeRect(x * 2 + 0.5, (yBot - hFull) * 2 + 0.5, 6 * 2, hFull * 2);
+      text('TIME', x + 3, yBot + 7, 6, '#aeb6c4', 'center', '');
     }
 
     function drawSelectHud(state) {
@@ -588,15 +784,18 @@ window.MgMuscle = (function () {
         if (playQueue.length) {
           if (playT === 0) {
             applyEvent(playQueue[0], false);
-            if (scene) {
-              /* Defender hit reaction fires as the swing lands. */
-              const ev = playQueue[0];
-              const defender = ev.attacker ^ 1;
-              const hitClip = defender === 0 ? scene.clips[0].hit : scene.clips[1].hit;
-              setTimeoutTick(12, () => {
-                if (mode === 'playback') play(defender, hitClip);
-              });
-            }
+            /* Defender hit reaction + the impact cue fire as the swing
+             * lands (the cue rides the same 12-tick connect delay). */
+            const ev = playQueue[0];
+            const defender = ev.attacker ^ 1;
+            const hitClip = scene
+              ? (defender === 0 ? scene.clips[0].hit : scene.clips[1].hit)
+              : null;
+            setTimeoutTick(12, () => {
+              if (mode !== 'playback') return;
+              if (hitClip) play(defender, hitClip);
+              playHit();
+            });
           }
           playT++;
           if (playT >= 34) { playQueue.shift(); playT = 0; }
@@ -605,6 +804,12 @@ window.MgMuscle = (function () {
         }
       }
       runTickTimers();
+
+      /* Round time meter: ramp while the round is playing out, drain
+       * otherwise (the FUN_801d3444 shape, one step per tick). */
+      meter = mode === 'playback'
+        ? Math.min(12, meter + 1)
+        : Math.max(0, meter - 1);
 
       /* Ease the HP bars toward their targets. */
       /* (targets are set per landed event; outside playback follow state) */
@@ -630,6 +835,7 @@ window.MgMuscle = (function () {
       if (!state.live) { drawBanner(); return; }
 
       drawFighterPlates(state);
+      if (meter > 0) drawTimeMeter();
       if (mode === 'select') drawSelectHud(state);
       if (mode === 'interval') drawInterval(state);
       drawPopups();
@@ -650,6 +856,14 @@ window.MgMuscle = (function () {
       state: st,
       mode: () => mode,
       sceneOk: () => !!scene,
+      arenaOk: () => {
+        try { return !!JSON.parse(api.muscle_arena_json()).ok; }
+        catch (e) { return false; }
+      },
+      sfxOk: () => {
+        try { return !!JSON.parse(api.muscle_sfx_json()).ok; }
+        catch (e) { return false; }
+      },
       camInfo: () => scene
         ? { cam: Object.assign({}, scene.cam), center: scene.center.slice(),
             radius: scene.radius }

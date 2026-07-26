@@ -195,3 +195,82 @@ fn muscle_scene_accessors_are_parallel() {
     let name = mg.muscle_spell_name(0x81);
     assert!(!name.is_empty(), "reward spell names from the disc");
 }
+
+#[test]
+fn muscle_arena_backdrop_decodes() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The Sol arena backdrop (PROT 1225, the other6.lzs tail slot) decodes as
+    // a scene_tmd_stream: shell TMD + two TIM pages.
+    let meta: serde_json::Value = serde_json::from_str(&mg.muscle_arena_json()).unwrap();
+    assert_eq!(meta["ok"], true, "arena backdrop: {meta}");
+    assert_eq!(meta["prot"], 1225);
+    assert_eq!(meta["tims"], 2, "two type-0x01 texture pages");
+
+    let pos = mg.muscle_arena_positions();
+    let n = pos.len() / 3;
+    assert!(n > 300, "arena shell has real geometry: {n} verts");
+    assert_eq!(mg.muscle_arena_uvs().len(), n * 2);
+    assert_eq!(mg.muscle_arena_cba_tsb().len(), n * 2);
+    assert_eq!(mg.muscle_arena_flat_rgba().len(), n * 4);
+    let idx = mg.muscle_arena_indices();
+    assert!(!idx.is_empty() && idx.len() % 3 == 0);
+    assert!(idx.iter().all(|&i| (i as usize) < n), "indices in range");
+
+    // Half-stage authoring rule: the shell sits at X >= 0 (open side -X),
+    // spanning thousands of world units on a Y <= ~0 (Y-down) profile.
+    let (mut min_x, mut max_x) = (f32::MAX, f32::MIN);
+    for v in pos.chunks_exact(3) {
+        min_x = min_x.min(v[0]);
+        max_x = max_x.max(v[0]);
+    }
+    assert!(min_x >= -1.0, "authored at X >= 0: min_x = {min_x}");
+    assert!(max_x > 2000.0, "arena-scale extent: max_x = {max_x}");
+
+    // The backdrop's texture pages ride in the dome VRAM: the (832, 0) page
+    // band (the ground-grid sampling address) is non-zero after the merge.
+    let monster = first_roster_id(&mg);
+    let vram = mg.muscle_vram(monster);
+    let row = 64usize; // inside the 0..256 page rows
+    let off = (row * 1024 + 832) * 2;
+    assert!(
+        vram[off..off + 128].iter().any(|&b| b != 0),
+        "arena texture page resident at (832, 0)"
+    );
+}
+
+#[test]
+fn muscle_sfx_cues_decode() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let meta: serde_json::Value = serde_json::from_str(&mg.muscle_sfx_json()).unwrap();
+    assert_eq!(meta["ok"], true, "sfx: {meta}");
+    // The match SM's blip ids 0x21/0x22/0x23 through FUN_8004fcc8's id-1 leg.
+    let ui: Vec<u64> = meta["ui"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap())
+        .collect();
+    assert_eq!(ui, vec![0x20, 0x21, 0x22]);
+    assert_eq!(meta["hit"], 0x09);
+    assert_eq!(meta["hit_voices"], 2, "row 9 keys two voice layers");
+
+    // Every pinned row decodes to real PCM at a sane rate.
+    for &row in &[0x20u8, 0x21, 0x22, 0x09] {
+        let pcm = mg.muscle_sfx_pcm(row, 0);
+        let rate = mg.muscle_sfx_rate(row, 0);
+        assert!(pcm.len() > 100, "row {row:#x} decodes PCM: {}", pcm.len());
+        assert!((4000..=96_000).contains(&rate), "row {row:#x} rate: {rate}");
+    }
+    // A second voice layer either resolves to real PCM or is cleanly absent
+    // (a consecutive tone region with no VAG is silent, never garbage) - and
+    // out-of-range voice indexes are refused rather than aliased.
+    let hit_l1 = mg.muscle_sfx_pcm(0x09, 1);
+    assert!(hit_l1.is_empty() || hit_l1.len() > 100);
+    assert!(mg.muscle_sfx_pcm(0x20, 4).is_empty());
+}
