@@ -423,7 +423,6 @@
 "80067d0c" = "write field into voice struct at _DAT_801ce334 (stride 0x10), guarded by FUN_80068b98"
 "80068568" = "note-range/key-split table scan (stride 0x20 @_DAT_801ce340, count DAT_801ce348)"
 "8006a0e0" = "register callback into slot 4 via FUN_8005fde8(4,cb)"
-"8006d470" = "stream stage dispatcher: indexes handler table PTR_FUN_8007b2e8[DAT_8007b2b8]"
 "8006d7d0" = "SEQ event state dispatch on struct +0x46 (states 2/3/4)"
 "8006d854" = "SEQ streaming state machine (states 2/3/4): header parse from +0x3c, buffer-size math"
 "8006d9a0" = "buffer-size calc from stream header bytes +0xe3/+0xe9/+0xec"
@@ -532,10 +531,7 @@
 "800694d0" = "SPU init: SpuMalloc-like FUN_80056638(0xf0000009,..), register callback FUN_8006a0e0"
 "8006a104" = "SPU DMA descriptor build: cmd word 0x40001010 + mask, stores DAT_8007af9c/a0/a4"
 "8006aae0" = "toggles SPU reverb-enable bit 0x80 at (DAT_8007af40+0x1aa), state DAT_8007aae0"
-"8006d358" = "SPU/stream xfer command-block build at DAT_8007b2d0 (cmd words 0xd/0x88/0x1003/0x3003)"
-"8006d768" = "busy-wait spin on (DAT_8007b2d0+4)&2 (SPU transfer-status poll)"
 "8006d9d8" = "SPU voice/stream setup: header parse, installs xfer handler FUN_8006daac"
-"8006ed34" = "SPU streaming leaf in the FUN_8006e8d4 handler set (SPU xfer control)"
 "8006ee8c" = "SPU streaming leaf (SPU voice/DMA control)"
 "8006eee0" = "SPU streaming leaf (SPU voice/DMA control)"
 "8006b684" = "libspu thunk (SPU voice/DMA management wrapper)"
@@ -594,6 +590,25 @@
 "8006954c" = "SPU transfer/DMA reset: resets the transfer state block driven by the software SPU in engine-audio. see ghidra/scripts/funcs/8006954c.txt"
 "800699ac" = "SPU DMA settle + kick: waits the transfer FIFO then starts the SPU DMA channel. No hardware DMA in the clean-room SPU. see ghidra/scripts/funcs/800699ac.txt"
 "8006b854" = "SpuSetKey: writes the SPU KON/KOFF key-on/off registers. engine-audio keys voices in its software SPU voice pool. see ghidra/scripts/funcs/8006b854.txt"
+# PSX serial-port (JOY) transfer driver - the controller / memory-card link
+# byte-exchange protocol plus its Timer-2 timeout pair. One driver, and it is
+# not audio: it polls the JOY register block at 0x1F801040 (via DAT_8007b2d0 /
+# DAT_8007b2cc) and Timer 2 at 0x1F801120. The family was long mis-read as the
+# SPU DMA transfer engine; the corrected reading is in
+# docs/reference/functions/audio.md#serial-port-joy-transfer-driver.
+# Hardware-comm infra with no game-logic content: the engine abstracts pad
+# input behind the platform layer and replaces memory-card I/O with LGSF disk
+# saves, so there is no port site for a byte-level SIO protocol.
+[joy_serial]
+"8006d358" = "serial-port open: JOY_CTRL reset pulse (0x40 then 0), JOY_MODE=0x0D, JOY_BAUD=0x88, arms the Timer-2 timeout via 8006ed34(0x91), raises TXEN with the port-select bit (0x1003 port 1 / 0x3003 port 2). see ghidra/scripts/funcs/8006d358.txt"
+"8006d470" = "serial-transfer state pump: calls the current handler from the 5-entry table at 0x8007B2E8, advances/wraps the state index at 0x8007B2B8, fires an error callback on a negative return. see ghidra/scripts/funcs/8006d470.txt"
+"8006d4f4" = "serial byte exchange: spins on JOY_STAT bit 0x1 (TX ready), writes the byte to JOY_DATA, waits /ACK assert (8006d684) then clear (8006d6d8), per-byte Timer-2 timeouts 0x3C or 0x05 chosen on the driver state at 0x8007B2B8. see ghidra/scripts/funcs/8006d4f4.txt"
+"8006d684" = "serial /ACK-assert wait: spins on bit 7 of the 32-bit JOY_STAT read at DAT_8007b2cc under the Timer-2 timeout poll 8006ed50. see ghidra/scripts/funcs/8006d684.txt"
+"8006d6d8" = "serial /ACK-clear wait + IRQ ack: clears the JOY_STAT latch (0xffffff7f store), spins on JOY_STAT bit 7 clearing, then sets JOY_CTRL bit 0x10 (interrupt acknowledge). see ghidra/scripts/funcs/8006d6d8.txt"
+"8006d768" = "serial RX-ready spin: polls JOY_STAT bit 0x2, RX FIFO not empty. see ghidra/scripts/funcs/8006d768.txt"
+"8006ed34" = "Timer-2 timeout arm: latches the tick limit at 0x801CE80C and the Timer 2 count snapshot (0x1F801120) at 0x801CE808; the limit is sysclk/8 ticks, not a command byte. see ghidra/scripts/funcs/8006ed34.txt"
+"8006ed50" = "Timer-2 timeout poll: settle-reads the mode register (0x1F801124), unwraps the count against the target register or 0x10000, normalises to sysclk/8 (>>3 when mode bit 0x200 is clear), returns elapsed >= limit. see ghidra/scripts/funcs/8006ed50.txt"
+
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
@@ -1452,6 +1467,7 @@
 "801f8c08" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801E23EC at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "801f8d0c" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801E2524 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/reference/overlay-va-..."
 "801fdde8" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801D8DE8 at delta 0x25000 (the 0x25000 footprint over-read alone - this dump's base tag is correct). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/refer..."
+"801ff930" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801DA930 at delta 0x25000 (the 0x25000 footprint over-read alone), INTERIOR of the initiative seeder FUN_801DA780. Evidence in the dump's own disassembly: it opens mid-flow on live s0..s3, its loop back-branch targets printed 0x801FF7B4 (before its own 'entry'; PC-relative, so it re-keys to the seeder's loop head 0x801DA7B4), and its absolute j/jal targets (0x801DAA20 / 0x801DAAB8 / 0x801DABA4) are byte properties that already land in the true band - 0x801DABA4 being the seeder's tail call into recompute_battle_order. Body content (ability arms 0x8000/0x40000 pin key 1, 0x20000 adds 0x1000, ctx+0x290 side lockout, monster 0xB4 key 30000, 0x4F scripted order) is the documented seeder, ported as engine-vm battle_formulas::seed_initiative (docs/subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). Sibling row 801dab7c under [worklist_interior] already names this dump as mis-based by +0x25000. see ghidra/scripts/funcs/overlay_0897_801ff930.txt"
 "80202b30" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EC0DC at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
 "80202bcc" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EC3E4 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: opening mnemonic stream matches the stream at the re-keyed VA in a base-tagged 0898 dump. See docs/reference/overlay-va-..."
 "80203a50" = "Phantom VA of the PROT 0897 import, not a routine: re-keys to battle_action(0898) 801EC3E4 at delta 0x167e8 (0x25000 footprint over-read minus the 0xE818 base error). Evidence: the re-keyed VA falls inside the dumped body of that entry; this row carries no body of its own. See docs/reference/over..."
