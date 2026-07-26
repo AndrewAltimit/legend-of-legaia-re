@@ -97,8 +97,18 @@ impl DevMenuRow {
 
     /// This row in retail's row model, or `None` if the index is outside
     /// retail's `0x00..=0x17` bounds (which no engine row is).
+    ///
+    /// The call is spelled through a scoped import of the real type name
+    /// rather than through this file's `RetailRow` alias, and that is
+    /// deliberate: the reachability pass resolves a `Qual::name` call site by
+    /// the qualifier **as written**, so `RetailRow::from_index` matched no
+    /// `impl` and this call was invisible to it - the one edge that decides
+    /// whether the ported row model reads as wired. See
+    /// [`stale-not-wired-triage.md`](../../../docs/tooling/stale-not-wired-triage.md)
+    /// for the sibling case on free-function names.
     pub fn retail_row(self) -> Option<RetailRow> {
-        RetailRow::from_index(self.retail_index())
+        use legaia_engine_vm::world_map_overlay::DevMenuRow;
+        DevMenuRow::from_index(self.retail_index())
     }
 }
 
@@ -116,6 +126,10 @@ pub enum DevPage {
 
 /// Default encounter rate the `ENCOUNT` row starts on.
 pub const DEFAULT_ENCOUNTER_RATE: i32 = 0x20;
+
+/// What retail's two gated rows draw in place of their label while
+/// `_DAT_8007B868` is non-zero.
+pub const CLOSED_LABEL: &str = "CLOSED";
 
 /// The whole dev-menu screen.
 #[derive(Debug, Clone, Default)]
@@ -206,6 +220,22 @@ impl DevMenuSession {
     pub fn row_is_closed(&self, row: DevMenuRow) -> bool {
         row.retail_row()
             .is_some_and(|r| r.is_closed(self.closed_gate))
+    }
+
+    /// The string the row list draws for `row` this frame.
+    ///
+    /// Retail's list body does not draw a label and then decide - the two
+    /// gated arms of `FUN_801EAD98` select the *string pointer* on the gate
+    /// (`beq v0,zero` at `0x801EAE40` / `0x801EB31C`, falling through to
+    /// [`CLOSED_LABEL`] when `_DAT_8007B868` is non-zero), and every other arm
+    /// loads its label unconditionally. This is that selection, so the row
+    /// model owns the decision and the renderer only draws what it returns.
+    pub fn row_label(&self, row: DevMenuRow) -> &'static str {
+        if self.row_is_closed(row) {
+            CLOSED_LABEL
+        } else {
+            row.label()
+        }
     }
 
     /// The row list's panel geometry, bottom-anchored the way retail's
@@ -621,6 +651,19 @@ mod tests {
         ] {
             assert!(!s.row_is_closed(row), "{row:?} is not a gated retail row");
         }
+    }
+
+    /// The label the list draws is the gate's output, not the row's name -
+    /// this is the string the renderer receives, so a host that never asked
+    /// would draw `MAP_CHANGE` on a closed row.
+    #[test]
+    fn the_gate_swaps_the_drawn_label_not_just_the_predicate() {
+        let mut s = DevMenuSession::new();
+        assert_eq!(s.row_label(DevMenuRow::MapChange), "MAP_CHANGE");
+        s.closed_gate = 1;
+        assert_eq!(s.row_label(DevMenuRow::MapChange), CLOSED_LABEL);
+        // An ungated row keeps its label whatever the gate says.
+        assert_eq!(s.row_label(DevMenuRow::EncounterRate), "ENCOUNT");
     }
 
     /// Every engine row maps onto a real retail list index.

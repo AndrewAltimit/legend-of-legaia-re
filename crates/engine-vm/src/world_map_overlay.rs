@@ -116,9 +116,13 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// data pointer whose text is not decoded here carry a neutral name.
 ///
 /// Wired: `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row` maps
-/// each engine row onto its retail index, which is what decides whether the
-/// row draws its label or `CLOSED`. The 18 rows the engine has no backing
-/// state for are modelled here and not listed there.
+/// each engine row onto its retail index, and `DevMenuSession::row_label`
+/// asks the resulting row kind, once per row per frame, whether it draws its
+/// label or `CLOSED`. The chain to a host root is
+/// `PlayWindowApp::handle_redraw` -> `tick_dev_menu` ->
+/// `build_dev_menu_draws` -> `row_label` -> `row_is_closed` -> `retail_row`.
+/// The 18 rows the engine has no backing state for are modelled here and not
+/// listed there.
 /// PORT: FUN_801EAD98 (row dispatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevMenuRow {
@@ -152,7 +156,9 @@ impl DevMenuRow {
     /// Map a list index to its row kind. Indices `>= 0x18` are out of the
     /// retail bounds check (`0x17 < local_40` short-circuits the switch).
     ///
-    /// Wired through `DevMenuRow::retail_row` - see [`DevMenuRow`].
+    /// Wired through `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row`,
+    /// which the row list's label builder calls every frame - see
+    /// [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (`switch(local_40)` + the default 0xC/0xD/0xE arm)
     pub fn from_index(index: u32) -> Option<DevMenuRow> {
         use DevMenuRow::*;
@@ -190,8 +196,15 @@ impl DevMenuRow {
     /// Whether this row renders as "CLOSED" instead of its label. Only the
     /// `MAP_CHANGE` and `CARD_OPTION` rows are gated, by `_DAT_8007B868 != 0`.
     ///
+    /// The polarity is the disassembly's: case 0 is `lw v0,-0x4798(0x8008)`
+    /// then `beq v0,zero,0x801EAE5C`, so the **zero** leg loads the
+    /// `MAP_CHANGE` string and the fall-through loads `CLOSED`; case 1 repeats
+    /// it at `0x801EB310` for `CARD_OPTION`.
+    ///
     /// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_is_closed`
-    /// gates the `MAP_CHANGE` row's label through here.
+    /// gates the `MAP_CHANGE` row's label through here, and its own caller
+    /// `DevMenuSession::row_label` is what the row list draws from every
+    /// frame - see [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (cases 0 and 1)
     pub fn is_closed(self, gate_b868: u32) -> bool {
         matches!(self, DevMenuRow::MapChange | DevMenuRow::CardOption) && gate_b868 != 0

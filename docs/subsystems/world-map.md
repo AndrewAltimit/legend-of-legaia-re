@@ -204,6 +204,16 @@ leaves stay without a consumer: `decode_camera_readout`, because nothing
 publishes retail's packed scratchpad camera word, and the 18 rows of retail's
 list the engine keeps no state for.
 
+The CLOSED gate reaches the screen the way retail's does - as a **string
+selection, not a post-hoc override**. Cases 0 and 1 of `FUN_801EAD98` read
+`_DAT_8007B868` and branch on zero (`0x801EAE40` / `0x801EB31C`), loading the
+row's own label on the zero leg and `CLOSED` on the fall-through; no other arm
+consults it. `DevMenuSession::row_label` is that selection, and the row list
+builds every label through it, so the host never spells a label the gate would
+have replaced. `closed_gate` itself is a host input: nothing in the engine
+publishes `_DAT_8007B868` yet, so it reads `0` and every row draws its name,
+which is what retail draws with the gate clear.
+
 The **cursor step is named `dev_menu_cursor_step`, not `cursor_step`**, on
 purpose. `legaia_engine_core::baka_cabinet` has a live free function called
 `cursor_step`, and a free function's name is the whole of its identity to the
@@ -353,6 +363,12 @@ Every terminal arm makes the same four stores through the scene struct at
 `ctx[+0x50] = <next handler id>`, `ctx[+0x54] = 0`. The handler id is what
 `FUN_801F159C` dispatches on next frame.
 
+`scene[+0x2E]` and `scene[+0x3E]` are different halfwords and the exit touches
+only the first. `FUN_801ED308` has both in view: its `case 5` is
+`sh zero,0x3e(v0)` at `0x801ED52C` and its exit arms are `li v0,-0x1;
+sh v0,0x2e(v1)` at `0x801ED538`. Conflating them writes the hand-back sentinel
+into the completion gate the scene manager polls.
+
 | Actor | Phases | Shape |
 |---|---|---|
 | `FUN_801ED308` | 8, JT `0x801CF4FC` | Brightness fade/flash. |
@@ -432,6 +448,10 @@ hangs off `WorldMapController::panels` and is stepped once a frame by
 accumulator and flash counter, the shared cursor, the records slide, the tint
 triple and its saved copy, the scene-struct fields the terminal arms write -
 and routes the picker's flag traffic into the world's shared system flag bank.
+The exit itself is not open-coded there: `ActorExit::apply` performs all four
+stores against the host's `scene[+0x2E]`, `scene[+0x40]`, `ctx[+0x50]` and
+`ctx[+0x54]` mirrors, so the arm order and the choice of halfword stay with
+the ported kernel rather than with the host.
 
 Three inputs it supplies are the **port's**, not retail's:
 
@@ -439,9 +459,17 @@ Three inputs it supplies are the **port's**, not retail's:
   `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`, `0x801F3304`) the
   engine never loads. `PanelScripts::stand_in` ships a minimal table keyed by
   the same VAs so the interpreter runs on real records.
-- **The handler-id dispatcher.** `FUN_801F159C` turns a retiring actor's new
-  `ctx[+0x50]` back into a function pointer; it is not ported, so an
-  `ActorExit` retires the actor and is recorded rather than followed.
+- **The handler-id table.** `FUN_801F159C` turns a retiring actor's new
+  `ctx[+0x50]` back into a function pointer through the 52-entry
+  `PTR_FUN_801F33B4`. The dispatcher itself *is* ported, as
+  `legaia_engine_vm::baka_hub_actors::hub_dispatch`, but it takes the resolved
+  handler as a caller-supplied closure, and only seven of the table's slots
+  are read out of the overlay image. The sub-list, text-box and flag-window
+  exits all hand back to slot `0x1A`, which is one of the seven; the
+  fade/flash exits pick `0x29` and `0x2B`, which are not. So `ActorExit::apply`
+  makes all four stores and `PanelActorHost::retire` drops the actor,
+  recording the handler pair in `PanelFrame::exits` rather than following it.
+  Reading the rest of that table is what would close this.
 - **The chords that install an actor.** Retail reaches this band from debug
   branches in the controller. The engine gates it behind the same
   `debug_enabled` flag the top-view toggle uses and binds Square (sub-list),

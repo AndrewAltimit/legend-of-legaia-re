@@ -27,11 +27,17 @@
 //!    on real records; a host with the overlay image can replace the table.
 //!    This is the same seam `crate::dev_menu_host::DevMenuSession::flag_tags`
 //!    has for the debug flag table.
-//! 2. **The handler-id dispatcher.** Retail retires an actor by writing a new
+//! 2. **The handler-id table.** Retail retires an actor by writing a new
 //!    handler id into `ctx[+0x50]`, which `FUN_801F159C` turns back into a
-//!    function pointer. That table is not ported, so an [`ActorExit`] retires
-//!    the actor here and is recorded in [`PanelFrame::exits`] rather than
-//!    dispatched.
+//!    function pointer through the 52-entry `PTR_FUN_801F33B4`. The
+//!    dispatcher itself is ported
+//!    ([`legaia_engine_vm::baka_hub_actors::hub_dispatch`]) but takes the
+//!    resolved handler as a closure, and only seven of the table's slots are
+//!    read out ([`legaia_engine_vm::baka_hub_actors::slot`]) - `0x1A`, which
+//!    the sub-list / text-box / flag-window exits hand back to, and not the
+//!    `0x29` / `0x2B` the fade/flash exits pick. So [`ActorExit::apply`] makes
+//!    all four stores here and [`PanelActorHost::retire`] drops the actor,
+//!    recording the pair in [`PanelFrame::exits`] rather than following it.
 //! 3. **Which pad chord installs which actor.** Retail reaches these from
 //!    debug branches in the world-map controller. The engine's bindings live
 //!    on `World::tick_world_map_panels` and are tabulated there.
@@ -457,7 +463,14 @@ pub struct PanelActorHost {
     pub tint: [u8; 3],
     /// The saved tint at `0x8007B634..636`.
     pub saved_tint: [u8; 3],
-    /// `scene[+0x3E]`, zeroed by two of the actors' terminal arms.
+    /// `scene[+0x2E]` - the hand-back sentinel every [`ActorExit`] clears.
+    /// Distinct from [`Self::scene_field_3e`]; the exit arms write this one
+    /// and the `ClearSceneField3E` arms write that one.
+    pub scene_field_2e: i16,
+    /// `scene[+0x40]` - where an [`ActorExit`] parks the retiring actor's old
+    /// handler id, for the dispatcher that would pick it back up.
+    pub scene_field_40: u16,
+    /// `scene[+0x3E]`, zeroed by two of the actors' own `case 5` arms.
     pub scene_field_3e: i16,
     /// `scene_obj[+0x10]`, whose bit `0x0008_0000` the fill-fade sets.
     pub scene_obj_flags: u32,
@@ -499,6 +512,8 @@ impl Default for PanelActorHost {
             load_pending: false,
             tint: [0; 3],
             saved_tint: [0; 3],
+            scene_field_2e: 0,
+            scene_field_40: 0,
             scene_field_3e: 0,
             scene_obj_flags: 0,
             text_actor_ticks: 0,
@@ -544,9 +559,10 @@ impl PanelActorHost {
     /// The **port's** escape hatch, not retail's. Several of these machines
     /// have arms that park rather than exit - the text box's phase 14, the
     /// fade/flash's phase 3, the soft reset's phase 3 - because retail's
-    /// release comes from the scene manager or from the handler dispatcher
-    /// `FUN_801F159C`, neither of which the engine models. Without this a
-    /// parked actor would wedge the screen for the rest of the session.
+    /// release comes from the scene manager, which the engine does not model,
+    /// or from a `PTR_FUN_801F33B4` slot the table read does not reach (see
+    /// the module docs). Without this a parked actor would wedge the screen
+    /// for the rest of the session.
     ///
     /// Returns whether anything was dismissed.
     pub fn dismiss(&mut self) -> bool {
@@ -586,13 +602,25 @@ impl PanelActorHost {
         }
     }
 
+    /// Retire the installed actor on a terminal arm's [`ActorExit`].
+    ///
+    /// The four stores are retail's and are made by [`ActorExit::apply`] - the
+    /// `scene[+0x2E]` sentinel, the old handler id parked in `scene[+0x40]`,
+    /// the new id into `ctx[+0x50]` and the phase reset. What is the port's is
+    /// only what happens *after*: retail leaves the actor installed for the
+    /// handler dispatcher to pick back up off the new id, and this host drops
+    /// it instead, recording the pair in [`PanelFrame::exits`].
     fn retire(&mut self, frame: &mut PanelFrame, exit: ActorExit) {
         frame.exits.push(exit);
         frame.retired = true;
-        self.scene_field_3e = ActorExit::SCENE_SLOT_CLEAR;
+        exit.apply(
+            &mut self.scene_field_2e,
+            &mut self.scene_field_40,
+            &mut self.handler_id,
+            &mut self.phase,
+        );
         self.kind = None;
         self.travel = None;
-        self.phase = 0;
         self.timer = 0;
     }
 

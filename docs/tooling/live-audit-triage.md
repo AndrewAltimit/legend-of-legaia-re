@@ -144,6 +144,22 @@ tagged type no `impl` block at all. A type that *does* have one keeps the
 precise rule, so the fallback only reaches the anchors the precise rule could
 never have settled.
 
+The fallback has one residual: an `impl` block that declares **no method**.
+`ActorExit` in `world_map_panel_actors.rs` is the case. It carries an `impl`,
+so the precise rule applies; that `impl` holds one associated `const` and no
+`fn`, and `type_scope` is built from functions, so the precise rule has nothing
+to resolve. The fallback does not rescue it, by design - the file gives the
+type an `impl`. The anchor is inert by construction, whatever the port is
+wired to.
+
+Widening the fallback again would be the wrong fix. A `type` anchor claims the
+*behaviour* at that address lives on the type, so a method-less `impl` under a
+`PORT:` tag is the analysis correctly reporting that the behaviour is
+somewhere else. The resolution is to put it back: `ActorExit::apply` performs
+retail's four terminal-arm stores and `PanelActorHost::retire` calls it, where
+the host had open-coded three of them and dropped the fourth. Read a
+method-less type anchor as a question about the port, not as a false negative.
+
 ### The module-disclosure regex misses the markdown-heading form
 
 `MODULE_NOT_WIRED_RE` was `^\s*//!\s*\**\s*NOT\s+WIRED`. It accepted
@@ -165,6 +181,77 @@ audit's first section - a granularity row, not a wrong tag.
 A related near-miss, left alone: `// PARTLY WIRED:` (used on `select_owned_rod`)
 matches neither regex. It is moot for that anchor, which the corrected audit
 resolves live, but a second use of the spelling would go unrecognised.
+
+### An import alias erases every `Alias::assoc_fn` edge under it
+
+`build_rust_graph` resolves a `Qual::name` call site by the qualifier **as
+written**: `by_qual[(qual, name)]`, then a module named `qual`, then free
+functions of that name - and never methods. So a call written through a
+`use ... as` alias looks for an `impl <alias>` that nothing declares, finds no
+free function either (the target is a method), and contributes **no edge at
+all**.
+
+`crates/engine-core/src/dev_menu_host.rs` is the live case. It imports the
+ported row model as `DevMenuRow as RetailRow`, because the host declares its
+own `DevMenuRow` for the row subset the engine keeps state for, and then calls
+`RetailRow::from_index(..)`. The `.is_closed(..)` sibling three lines away
+resolves fine - a method call is matched on the method name, with no qualifier
+to mis-resolve - which is why one of the two halves of the same row model read
+as wired and the other did not.
+
+The fix is a `use` of the real type name scoped to the function body, which
+shadows the outer one for exactly that call. The general rule: **an aliased
+qualifier is invisible to the reachability pass.** This is the `Qual::name`
+counterpart of the free-function name collision in
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md), and it fails the
+opposite way - a collision manufactures edges, an alias erases them. An alias
+introduced to dodge a name collision silently converts every associated-function
+call under it into a non-edge, so it costs a real edge to buy a fake one.
+
+## The world-map dev-menu row model and the panel exit
+
+Six anchors across two files, all of them cases where the port and its host
+both existed and the *last* call was missing.
+
+| addr | symbol | verdict |
+|---|---|---|
+| `801ead98` | `DevMenuRow`, `from_index`, `is_closed` | `WIRE` |
+| `801ed308` / `801ed590` / `801ee5d4` | `ActorExit` | `WIRE` |
+
+**The row model.** `DevMenuSession::row_is_closed` had no non-test caller: the
+row list built each row's label with `DevMenuRow::label()` and never asked the
+gate, so the ported `CLOSED` decision was hosted and then not consulted. The
+label selection now runs through `DevMenuSession::row_label`, which is what
+retail's own list body does - the two gated arms of `FUN_801EAD98` pick the
+*string pointer* on `_DAT_8007B868` rather than drawing a label and deciding
+afterwards. Chain: `PlayWindowApp::handle_redraw` -> `tick_dev_menu` ->
+`build_dev_menu_draws` -> `row_label` -> `row_is_closed` -> `retail_row` ->
+`from_index` / `is_closed`. The alias defect above is why `from_index` needed
+one further change after that.
+
+**The panel exit.** Three of the five addresses the `ActorExit` tag names are
+anchored to it (`PORT_ADDR_RE` reads the addresses on the tag's own line, and
+the tag wraps). The type is the method-less-`impl` case above; the wire is
+`ActorExit::apply`, called by `PanelActorHost::retire`, reached from
+`PanelActorHost::tick` -> `World::tick_world_map_panels` ->
+`World::tick_world_map` -> `World::tick`.
+
+Two things fell out of writing it. The host wrote the `scene[+0x2E]` sentinel
+into its `scene[+0x3E]` mirror, which the disassembly separates cleanly -
+`FUN_801ED308`'s exit arms store `-1` to `+0x2E` (`0x801ED53C`) and only its
+`case 5` zeroes `+0x3E` (`0x801ED52C`) - and it dropped the `ctx[+0x50] =
+next_handler` store entirely, recording the id in the frame instead. Both are
+now retail's.
+
+And the disclosure those anchors inherited from their module - "the id
+dispatcher `FUN_801F159C` is not ported" - no longer holds:
+[`baka_hub_actors::hub_dispatch`](../subsystems/world-map.md#the-panel-actor-state-machines)
+ports it. What is still missing is the *table*, not the dispatcher:
+`hub_dispatch` takes `PTR_FUN_801F33B4[state]` as a caller-supplied closure and
+only seven of the 52 slots are read out. The sub-list, text-box and flag-window
+exits hand back to `0x1A`, which is one of the seven; the fade/flash exits pick
+`0x29` and `0x2B`, which are not. A disclosure that names a dispatcher when the
+blocker is a table is the same error this page records for the panel painters.
 
 ## `engine-core` anchors
 

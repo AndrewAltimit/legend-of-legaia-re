@@ -175,6 +175,11 @@ impl PlayWindowApp {
     /// The renderer owns the geometry - the `+8` label column, the 8-px row
     /// pitch, the `0x17` row clamp and the cursor column - so the only thing
     /// assembled here is each row's `(label, value)` pair.
+    ///
+    /// Both halves of that pair are the ported row model's, not this host's:
+    /// the value through `DevMenuSession::row_value` and the label through
+    /// `DevMenuSession::row_label`, which asks retail's own row kind whether
+    /// the `_DAT_8007B868` gate closes it and substitutes `CLOSED` if so.
     fn build_dev_menu_draws(
         session: &DevMenuSession,
         font: &legaia_font::Font,
@@ -190,7 +195,7 @@ impl PlayWindowApp {
             .iter()
             .zip(values.iter())
             .map(|(r, v)| DevMenuListRow {
-                label: r.label(),
+                label: session.row_label(*r),
                 value: Some((v.as_str(), 0x68)),
             })
             .collect();
