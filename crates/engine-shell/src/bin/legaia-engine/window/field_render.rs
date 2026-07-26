@@ -428,8 +428,9 @@ impl PlayWindowApp {
         strips: Vec<legaia_asset::clut_walk::ParkStrip>,
     ) {
         /// Drake kingdom bundle (`map01`), the shared source of the
-        /// kingdom-invariant strip rows.
-        const DRAKE_KINGDOM_BUNDLE_ENTRY: u32 = 85;
+        /// kingdom-invariant strip rows. PROT 0086, not 0085 - see
+        /// `legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`.
+        const DRAKE_KINGDOM_BUNDLE_ENTRY: u32 = legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[0];
         let Some(base) = self.cpu_vram_base.as_mut() else {
             return;
         };
@@ -459,7 +460,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .index
-                .entry_bytes_extended(DRAKE_KINGDOM_BUNDLE_ENTRY)
+                .entry_bytes(DRAKE_KINGDOM_BUNDLE_ENTRY)
                 && let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&drake, 0)
             {
                 let missing_rows: Vec<u16> = missing.iter().map(|&(_, y)| y).collect();

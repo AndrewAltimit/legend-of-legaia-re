@@ -115,7 +115,7 @@ fn assembled_party_pose_matches_baka_reference() {
     // ANM bundle (per-character banks; the first record of each bank is the
     // idle whose frame 0 the reference poses with, bone i -> 1204 object i).
     let pack1204 = std::fs::read(dir.join("1204_other5.BIN")).expect("read 1204");
-    let bcp = legaia_asset::battle_char_pack::parse(&pack1204).expect("parse 1204");
+    let bcp = legaia_asset::battle_char_pack::parse_slots(&pack1204).expect("parse 1204");
     let raw1203 = std::fs::read(dir.join("1203_other5.BIN")).expect("read 1203");
     let anm1203 = [6usize, 3, 5, 7]
         .iter()
@@ -158,7 +158,7 @@ fn assembled_party_pose_matches_baka_reference() {
             .collect();
 
         // Reference-path centroid per 1204 object (identity bone mapping).
-        let slot = bcp.slot(cslot).expect("1204 slot");
+        let slot = bcp.get(cslot).expect("1204 slot");
         let rtmd = legaia_tmd::parse(&slot.tmd_bytes).expect("parse 1204 TMD");
         let rec = BANK_START[cslot];
         let ref_centroids: Vec<[f32; 3]> = rtmd

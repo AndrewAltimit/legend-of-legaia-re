@@ -31,8 +31,8 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
     // Vahn's battle mesh = PROT 1204 slot 0 -> distinct CLUT rows it samples.
     let pack_raw = prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
         .expect("PROT 1204 present");
-    let pack = legaia_asset::battle_char_pack::parse(pack_raw).expect("parse 1204");
-    let tmd_bytes = pack.slot(0).expect("slot 0").tmd_bytes.clone();
+    let slots = legaia_asset::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
+    let tmd_bytes = slots.first().expect("slot 0").tmd_bytes.clone();
     let tmd = legaia_tmd::parse(&tmd_bytes).expect("Vahn battle TMD");
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_bytes);
     let mut rows: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] >> 6) & 0x1FF).collect();
@@ -41,10 +41,14 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
     // Same rows the doc/runtime pin for Vahn's nominal CBA.
     assert_eq!(rows, vec![490, 491], "Vahn battle mesh CLUT rows");
 
-    // Vahn's true palette from edstati3 PROT 0861.
-    let edstati3 = prot_entry(&prot, 861).expect("PROT 0861 present");
-    let rec0 = legaia_asset::battle_char_palette::find_record0(edstati3).expect("record0");
-    let pal = legaia_asset::battle_char_palette::parse_record(edstati3, rec0).expect("palette");
+    // Vahn's true palette from his player battle file, PROT 0863 (`PLAYER1`) -
+    // the entry `battle_char_vram_bytes_battle` reads. It used to be written
+    // here as PROT 0861: 0861 is a one-sector entry, and `find_record0` only
+    // ever found Vahn's record0 in it because the pre-correction entry size
+    // gave 0861 a 343-sector window that ran into 0863.
+    let player1 = prot_entry(&prot, 863).expect("PROT 0863 present");
+    let rec0 = legaia_asset::battle_char_palette::find_record0(player1).expect("record0");
+    let pal = legaia_asset::battle_char_palette::parse_record(player1, rec0).expect("palette");
     assert_eq!(pal.bands.len(), 3, "Vahn has 3 effective bands");
 
     // Overlaying onto a fresh VRAM, each band's STP colours land at (row, base+i)
@@ -88,10 +92,10 @@ fn noa_gala_collected_palettes_cover_mesh_columns() {
     let prot = extract_prot_dat(&disc).expect("PROT.DAT");
     let pack_raw =
         prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX).expect("1204");
-    let pack = legaia_asset::battle_char_pack::parse(pack_raw).expect("parse 1204");
+    let slots = legaia_asset::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
 
     for &(slot, prot_index, name) in &[(1usize, 864u32, "Noa"), (2, 865, "Gala")] {
-        let tmd_bytes = pack.slot(slot).expect("slot").tmd_bytes.clone();
+        let tmd_bytes = slots.get(slot).expect("slot").tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).expect("battle TMD");
         let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_bytes);
         let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) * 16).collect();

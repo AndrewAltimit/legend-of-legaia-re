@@ -568,21 +568,26 @@ enum Cmd {
         out: Option<PathBuf>,
     },
     /// Decode the battle-form character mesh pack at PROT entry
-    /// `1204_other5`: five `TMD2` (asset type `0x09`) streaming chunks plus
-    /// seven 256x256 4bpp character TIM atlases at fixed `0x8224` stride.
+    /// `1204_other5`: five `TMD2` (asset type `0x09`) streaming chunks. The
+    /// eight 256x256 4bpp character TIM atlases are the **sibling entry**
+    /// `1205_other5` - pass it with `--atlas-entry` to decode those too.
     /// This is the party's in-battle mesh set (Vahn / Noa / Gala + 2 extra
     /// fighters); the Baka Fighter fist-fight minigame reuses the same pack.
     /// The field-form pack (`character-pack`, PROT 0874 §0) is field-only.
     BattleCharPack {
-        /// PROT entry 1204 bytes.
+        /// PROT entry 1204 bytes (the five TMD2 chunks).
         input: PathBuf,
+        /// PROT entry 1205 bytes (the eight TIM chunks). Omit to inspect the
+        /// meshes only.
+        #[arg(long)]
+        atlas_entry: Option<PathBuf>,
         /// Slot 0..=4 to inspect (omit to print all).
         #[arg(long)]
         slot: Option<usize>,
         /// Write the raw TMD body for `--slot` to this path (only with `--slot`).
         #[arg(long)]
         out_tmd: Option<PathBuf>,
-        /// Atlas 0..=6 to write to `--out-tim` (only with `--out-tim`).
+        /// Atlas 0..=7 to write to `--out-tim` (needs `--atlas-entry`).
         #[arg(long)]
         atlas: Option<usize>,
         /// Write the raw TIM bytes of `--atlas` to this path.
@@ -1272,11 +1277,19 @@ fn main() -> Result<()> {
         } => character_pack_one(&input, slot, equip, out.as_deref()),
         Cmd::BattleCharPack {
             input,
+            atlas_entry,
             slot,
             out_tmd,
             atlas,
             out_tim,
-        } => battle_char_pack_one(&input, slot, out_tmd.as_deref(), atlas, out_tim.as_deref()),
+        } => battle_char_pack_one(
+            &input,
+            atlas_entry.as_deref(),
+            slot,
+            out_tmd.as_deref(),
+            atlas,
+            out_tim.as_deref(),
+        ),
         Cmd::FieldCharTex {
             input,
             entry,

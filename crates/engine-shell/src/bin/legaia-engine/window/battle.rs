@@ -533,12 +533,18 @@ impl PlayWindowApp {
                 .session
                 .host
                 .index
-                .entry_bytes_extended(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
-            && let Ok(pack) = legaia_asset::battle_char_pack::parse(&pack_raw)
+                .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+            && let Ok(atlas_raw) = self
+                .session
+                .host
+                .index
+                .entry_bytes(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
+            && let Ok(pack) = legaia_asset::battle_char_pack::parse(&pack_raw, &atlas_raw)
         {
-            // Upload the 7 character atlases (256x256 4bpp + their CLUT rows)
+            // Upload the 8 character atlases (256x256 4bpp + their CLUT rows)
             // at their declared authoring rects (the Baka Fighter layout the
-            // fallback meshes sample).
+            // fallback meshes sample). They live in PROT 1205, the sibling of
+            // the mesh entry - see `legaia_asset::battle_char_pack`.
             for atlas in &pack.atlases {
                 if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
                     vram.upload_tim(&tim);

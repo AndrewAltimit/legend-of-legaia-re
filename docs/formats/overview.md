@@ -87,7 +87,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [Encounter record](encounter.md) | Confirmed | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 | [MAN relocation](man-relocation.md) | Confirmed | Variable-length editing of a decompressed MAN - how to resize a `0x3F` door destination and keep every internal offset valid. Powers the door randomizer. |
 | [STR FMV table](str-fmv-table.md) | Confirmed | FMV dispatch table at `0x801D0A6C` - 23 × 32-byte slots, of which nine are the retail `fmv_id 0..=8`. See below for the neighbouring table it is easily confused with. |
-| [World-map slot-4 records](world-map-overlay.md) | Inferred | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`): a per-kingdom library of small object-local 3D meshes. See below. |
+| [World-map slot-4 records](world-map-overlay.md) | Inferred | Slot 4 of each kingdom bundle (PROT 0086 / 0245 / 0392, type byte `0x05`): a per-kingdom library of small object-local 3D meshes. See below. |
 | [Per-scene primitive scratch buffer](navmesh.md) | Inferred | Documented negative finding - `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 
 ### Two easily-confused windows

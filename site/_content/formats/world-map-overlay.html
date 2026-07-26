@@ -91,7 +91,7 @@ copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
   <h2>Per-kingdom body inventory</h2>
   <p>Drake = 15 bodies; Sebucus = 16; Karisto = 16. The leading three bodies (<code>kind = 1</code>, <code>count_a = 10</code>) are byte-identical templates across all three kingdoms - whatever they encode, the engine ships the same generic shape in every bundle.</p>
 
-  <h3 id="drake-inventory">Drake (<code>map01</code>, PROT 0085)</h3>
+  <h3 id="drake-inventory">Drake (<code>map01</code>, PROT 0086)</h3>
   <table>
     <thead><tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>records</th><th>X span</th><th>Y span</th><th>Z span</th></tr></thead>
     <tbody>
@@ -114,10 +114,10 @@ copFunction(2, 0x1400006);             // NCLIP - backface cull</code></pre>
   </table>
   <p>Bodies 9 / 10 / 11 have Y spans comparable to the X/Z scale - 3D mesh extent, not 2D contour data. Body 12 is nearly flat (Y span 4K). Body 13 reaches the full &plusmn;32K world bounds on X and Z and clusters in the corners.</p>
 
-  <h3 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0244)</h3>
+  <h3 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0245)</h3>
   <p>16 bodies; same leading three templates as Drake. Bodies 8-11 are all <code>kind = 4</code> with <code>flag_a = 1</code> (more boundary-style bodies than Drake&apos;s single body 13).</p>
 
-  <h3 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0391)</h3>
+  <h3 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0392)</h3>
   <p>16 bodies; same leading three templates. Bodies 4-9 + 11 are <code>kind = 4</code> with <code>flag_a = 1</code>. Karisto body 10 is anomalous: <code>kind = 2, flag_a = 1</code> (the only non-<code>kind=4</code> body with <code>flag_a = 1</code> across all three kingdoms).</p>
 </section>
 

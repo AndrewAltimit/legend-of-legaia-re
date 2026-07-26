@@ -300,11 +300,11 @@ impl LegaiaViewer {
     //
     // Sister pack to the field-form one above. Same 5-slot shape, but
     // higher-fidelity battle TMDs (typical disc-nobj 15/16/15 vs 12/12/12)
-    // and an explicit 7-atlas trailer (256x256 4bpp TIMs at fixed stride).
+    // and an 8-atlas sibling entry (256x256 4bpp TIMs, PROT 1205).
     // ------------------------------------------------------------------
 
-    /// JSON summary of PROT 1204 (`other5`) - the battle-form mesh pack:
-    /// 5 TMD slots + 7 character-atlas TIMs. Shape:
+    /// JSON summary of the battle-form mesh pack: PROT 1204's 5 TMD slots +
+    /// PROT 1205's 8 character-atlas TIMs. Shape:
     /// ```text
     /// {
     ///   "slots":   [{"slot":0,"label":"Vahn","disc_nobj":15,"tmd_bytes":33516,"file_offset":4}, ...],
@@ -314,10 +314,13 @@ impl LegaiaViewer {
     /// }
     /// ```
     pub fn battle_char_pack_json(&self) -> String {
-        let Some(slice) = self.battle_char_pack_slice() else {
+        let (Some(slice), Some(atlas_slice)) = (
+            self.battle_char_pack_slice(),
+            self.battle_char_atlas_slice(),
+        ) else {
             return r#"{"slots":[],"atlases":[]}"#.to_string();
         };
-        let pack = match legaia_asset::battle_char_pack::parse(slice) {
+        let pack = match legaia_asset::battle_char_pack::parse(slice, atlas_slice) {
             Ok(p) => p,
             Err(e) => {
                 return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
@@ -358,18 +361,21 @@ impl LegaiaViewer {
     }
 
     fn battle_char_pack_slice(&self) -> Option<&[u8]> {
-        let meta = parse_prot_toc(&self.disc)?
-            .into_iter()
-            .find(|e| e.index == legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)?;
-        let off = meta.byte_offset as usize;
-        let end = off.saturating_add(meta.size_bytes as usize);
-        self.disc.get(off..end)
+        self.prot_entry(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+    }
+
+    /// The sibling entry holding the eight character atlases (PROT 1205). The
+    /// atlases are **not** in [`Self::battle_char_pack_slice`]'s entry; see
+    /// [`legaia_asset::battle_char_pack`] for why they used to look like they
+    /// were.
+    fn battle_char_atlas_slice(&self) -> Option<&[u8]> {
+        self.prot_entry(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
     }
 
     fn build_battle_char_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
         let raw = self.battle_char_pack_slice()?;
-        let pack = legaia_asset::battle_char_pack::parse(raw).ok()?;
-        let cslot = pack.slot(slot)?;
+        let slots = legaia_asset::battle_char_pack::parse_slots(raw).ok()?;
+        let cslot = slots.get(slot)?;
         let tmd_bytes = cslot.tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
         Some((tmd, tmd_bytes))
@@ -465,31 +471,33 @@ impl LegaiaViewer {
         let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+        let Ok(slots) = legaia_asset::battle_char_pack::parse_slots(raw) else {
             return Vec::new();
         };
-        pack.slot(slot as usize)
+        slots
+            .get(slot as usize)
             .map(|s| s.tmd_bytes.clone())
             .unwrap_or_default()
     }
 
-    /// Raw TIM bytes for battle-form atlas `atlas` (0..=6). 256x256 4bpp with
+    /// Raw TIM bytes for battle-form atlas `atlas` (0..=7). 256x256 4bpp with
     /// a 256x1 sub-CLUT row inside the TIM block.
     pub fn battle_char_atlas_bytes(&self, atlas: u32) -> Vec<u8> {
-        let Some(raw) = self.battle_char_pack_slice() else {
+        let Some(raw) = self.battle_char_atlas_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+        let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw) else {
             return Vec::new();
         };
-        pack.atlas(atlas as usize)
+        atlases
+            .get(atlas as usize)
             .map(|a| a.tim_bytes.clone())
             .unwrap_or_default()
     }
 
-    /// Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
+    /// Build the 1 MB PSX VRAM with each of PROT 1205's eight atlas TIMs
     /// uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
-    /// (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
+    /// (rows 490..=497). These bundled sub-CLUTs are the pack's **authoring
     /// palette** - what the Baka Fighter minigame renders with directly. Both
     /// the Battle and Baka Fighter forms on the site render against this VRAM
     /// with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
@@ -503,14 +511,14 @@ impl LegaiaViewer {
     /// disc source is pinned (open thread - needs a battle-LOAD overlay capture),
     /// the Battle form is the bundled-palette render, visually identical to Baka.
     pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
-        let Some(raw) = self.battle_char_pack_slice() else {
+        let Some(raw) = self.battle_char_atlas_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::battle_char_pack::parse(raw) else {
+        let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw) else {
             return Vec::new();
         };
         let mut vram = legaia_tim::Vram::new();
-        for atlas in &pack.atlases {
+        for atlas in &atlases {
             if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
                 vram.upload_tim(&tim);
             }

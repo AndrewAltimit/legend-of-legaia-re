@@ -52,9 +52,16 @@ buffer that the runtime loads verbatim into RAM. Three carriers:
 
 | Bundle | PROT index | CDNAME label | Decoded size |
 |---|---|---|---:|
-| Drake | 0085 | `map01` | 32304 |
-| Sebucus | 0244 | `map02` | 26964 |
-| Karisto | 0391 | `map03` | 24444 |
+| Drake | 0086 | `map01` | 32304 |
+| Sebucus | 0245 | `map02` | 26964 |
+| Karisto | 0392 | `map03` | 24444 |
+
+Those are the **bundle** entries, not the `0085` / `0244` / `0391` this page
+used to name. Each kingdom block runs `[.MAP 36 sectors] [v12 header 1]
+[prescript 1..3] [bundle N]`, so the bundle is one entry past the prescript;
+the older numbers came from scanning the prescript entry's pre-correction
+134-sector window and finding the bundle's table at `0x1800` - the next
+entry's offset 0. Constants: `legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`.
 
 The 7-asset bundle is the standard
 [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
@@ -234,7 +241,7 @@ bodies (`kind = 1`, `count_a = 10`) are byte-identical templates
 across all three kingdoms - whatever they encode, the engine ships
 the same generic shape in every bundle.
 
-### Drake (`map01`, PROT 0085)
+### Drake (`map01`, PROT 0086)
 
 | Body | count_a | count_b | kind | flag_a | records | X span | Y span | Z span |
 |---|---|---|---|---|---|---:|---:|---:|
@@ -259,7 +266,7 @@ extent, not 2D contour data. Body 12 is nearly flat (Y span 4K).
 Body 13 reaches the full ±32K world bounds on X and Z and clusters in
 the corners.
 
-### Sebucus (`map02`, PROT 0244)
+### Sebucus (`map02`, PROT 0245)
 
 | Body | count_a | count_b | kind | flag_a | records |
 |---|---|---|---|---|---|
@@ -268,7 +275,7 @@ the corners.
 | 8-11 | 11/11/1/1 | 30/15/30/15 | 4/4/4/4 | 1 | 330/165/30/15 |
 | 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 | 360/360/120/300 |
 
-### Karisto (`map03`, PROT 0391)
+### Karisto (`map03`, PROT 0392)
 
 | Body | count_a | count_b | kind | flag_a | records |
 |---|---|---|---|---|---|
@@ -287,9 +294,9 @@ unanimously):
 
 | Kingdom | bundle | resident base | end (excl.) | bytes | bodies matched |
 |---|---|---|---|---|---|
-| Drake   | `map01` / 0085 | `0x8011A624` | `0x80122454` | 32304 | 15/15 |
-| Sebucus | `map02` / 0244 | `0x80119CE4` | `0x80120638` | 26964 | 16/16 |
-| Karisto | `map03` / 0391 | `0x80108D84` | `0x8010ED00` | 24444 | 16/16 |
+| Drake   | `map01` / 0086 | `0x8011A624` | `0x80122454` | 32304 | 15/15 |
+| Sebucus | `map02` / 0245 | `0x80119CE4` | `0x80120638` | 26964 | 16/16 |
+| Karisto | `map03` / 0392 | `0x80108D84` | `0x8010ED00` | 24444 | 16/16 |
 
 Body 0's records start `0x40` past the base (after the 4-byte count and
 15-16 × 4-byte offsets). No runtime fixup is applied. Because the base

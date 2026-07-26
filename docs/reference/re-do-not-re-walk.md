@@ -105,6 +105,49 @@ kernel-path, single-target and party-wide kills: every assign hit
 | Thread | Verdict | Why |
 |---|---|---|
 | Pochi-fill slots are stale mastering scratch, and some parse as valid TIMs | falsified (every slot is one 2048-byte sector; 0 of 266 carry a TIM) | [details ↓](#pochi-fill-slots-as-stale-mastering-scratch) |
+| The world-map kingdom bundle is PROT `0085` / `0244` / `0391` | falsified (it is `0086` / `0245` / `0392`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+| The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+| The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+
+### Assets named by the entry the over-read window started in
+
+*Status:* falsified - each asset is where it always was; only the `(entry,
+offset)` name for it was wrong
+
+Same root as the pochi row below, but the symptom is a **name** rather than a
+corruption, which is why it survived longer. Under the pre-correction entry size
+a reader positioned on entry `N` could see entries `N+1`, `N+2`… so an asset was
+recorded as "PROT `N` offset `K`" whenever the scan that found it started at `N`.
+The coordinate is not wrong about the disc - `start_lba(N)*0x800 + K` really is
+where the bytes are - it is wrong about which entry owns them, which is the only
+thing a correctly-bounded reader can use.
+
+The plausible part is that each wrong name came with corroboration:
+
+- The kingdom bundle "at `0x1800` of entry 85" had a table there, with the right
+  count and the right first descriptor offset. It is entry 86's offset 0 - and
+  the block layout (`.MAP` / v12 header / prescript / bundle) says entry 85 is
+  the prescript.
+- The battle-pack atlases had a *consistent stride from a consistent base*, and
+  a truncated last member is a normal thing to find at the end of a container.
+  `0x25804` is 1204's own length plus 4, i.e. entry 1205 offset 4; the "seven"
+  and the "truncation" were both where the window stopped, and the eighth
+  atlas's CLUT row read as a deliberate gap in a 490..497 run.
+- The title TIM's three "duplicates" were **byte-equal**, which is exactly what
+  you would expect of a multi-bank duplicate - and also what you get when three
+  arithmetics resolve to one absolute offset.
+
+Two lessons worth carrying. First, byte-equality between two `(entry, offset)`
+pairs is evidence of *duplication* only after you have shown the two pairs
+resolve to different absolute offsets; otherwise it is a tautology, the same
+shape as the falsified "PROT 0900 and 0901 are shifted copies". Second, a
+container's member count and a member's size are properties of its **framing**
+(a chunk chain, a descriptor count), not of where a buffer happens to end - a
+count derived from "how many fit before the buffer ran out" is measuring the
+reader.
+
+The corrected coordinates, and the two invariants that keep them honest, are in
+[`prot.md`](../formats/prot.md#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry).
 
 ### Pochi-fill slots as stale mastering scratch
 

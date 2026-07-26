@@ -214,7 +214,7 @@ Type-sequence variants (count=7 unless noted):
 
 Sizes ~60 KB to ~452 KB.
 
-In the **world-map kingdom bundles** (PROT 0085 / 0244 / 0391) the type-6 slot
+In the **world-map kingdom bundles** (PROT 0086 / 0245 / 0392) the type-6 slot
 (**slot 5**) is not a field-actor ANM pack: it is the **CLUT-walk animation
 table** - an LZS-compressed 516-byte table, byte-identical across the three
 kingdoms, of eight `16x1` `MoveImage` walker entries (ocean head +

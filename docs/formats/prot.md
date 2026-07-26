@@ -60,6 +60,18 @@ Anything derived from a window that ran past an entry is suspect, and several su
 
 [`legaia_prot::archive::Archive`](../../crates/prot/src/archive.rs) now exposes one view that parses: `Entry::size_sectors` / `size_bytes`, read by `Archive::read_entry`. `read_entry_declared_span` reproduces the old window for diagnostics only.
 
+### A `(entry, offset)` pair is only a coordinate if the offset is inside the entry <a id="a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry"></a>
+
+The over-read's other legacy is a **naming** one, and it is the family to check first when an asset stops resolving. Every constant of the form "asset X lives at PROT `N` offset `K`" was measured inside the old window. When `K` was past entry `N`'s real end, the pair still named a real place on the disc - just not the one it said. Re-keying it to the entry whose own sectors hold those bytes changes no byte and fixes the read. Three cases, each with the same shape and each previously mistaken for something else:
+
+| Was | Is | What the wrong reading looked like |
+|---|---|---|
+| World-map kingdom bundle at PROT `0085` / `0244` / `0391` | `0086` / `0245` / `0392` ([`kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)) | The bundle's 7-asset table appeared to be "at `0x1800` of the prescript entry". It is at offset 0 of the next entry. |
+| Battle-form character atlases at PROT `1204` offset `0x25804 + k*0x8224`, seven of them, the last truncated | PROT `1205` offset `4 + k*0x8224`, **eight**, none truncated ([`battle_char_pack`](../../crates/asset/src/battle_char_pack.rs)) | `0x25800` is 1204's exact length, so `0x25804` is 1205 offset `4`. The window ended between atlas 6 and 7, so the eighth atlas was invisible and its CLUT row (496) read as "intentionally skipped". |
+| Title TIM at PROT `0888` `0x1AA28`, with duplicates at `0889` `0x19A28` and `0890` `0x14228` | PROT `0890` `0x14228`, one copy ([`title_pak`](../../crates/asset/src/title_pak.rs)) | All three expressions resolve to the same absolute offset. A whole-archive byte scan for the TIM header finds one hit. |
+
+Two properties make the corrected form checkable, and both are asserted by the disc-gated tests for those modules: the offset plus the asset's length must fit inside the entry, and a payload's own framing (a streaming chunk chain, a descriptor count in the header) must terminate inside it rather than run to the buffer end. A constant that needs a wider buffer than its entry is naming the wrong entry.
+
 > **Historical note.** An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes a size in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges. Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
 
 ## In-RAM TOC

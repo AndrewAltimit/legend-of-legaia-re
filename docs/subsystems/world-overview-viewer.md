@@ -400,8 +400,9 @@ animation, both shipped on disc:
 
 - **Texture:** PSX TIM image at VRAM ``(768, 256)`` 64 halfwords ×
   256 rows (= 256 × 256 logical pixels in 4bpp), inside slot 0
-  (TIM_LIST) of each world-map kingdom bundle (PROT 0085 Drake / 0244
-  Sebucus / 0391 Karisto). The kingdom-specific TIM is the one with
+  (TIM_LIST) of each world-map kingdom bundle (PROT 0086 Drake / 0245
+  Sebucus / 0392 Karisto - the bundle entry, one past the block's
+  prescript; see [`legaia_asset::kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)). The kingdom-specific TIM is the one with
   CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
   Texture bytes vary per kingdom (each ships its own variant).
 - **Wave-ramp region:** the ocean data fills the **top-left 96 × 96

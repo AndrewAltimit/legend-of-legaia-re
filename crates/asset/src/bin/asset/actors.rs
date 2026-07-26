@@ -153,6 +153,7 @@ pub(crate) fn field_char_tex_one(
 
 pub(crate) fn battle_char_pack_one(
     input: &Path,
+    atlas_entry: Option<&Path>,
     slot: Option<usize>,
     out_tmd: Option<&Path>,
     atlas: Option<usize>,
@@ -160,7 +161,14 @@ pub(crate) fn battle_char_pack_one(
 ) -> Result<()> {
     use legaia_asset::battle_char_pack;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
-    let pack = battle_char_pack::parse(&bytes)?;
+    let slots = battle_char_pack::parse_slots(&bytes)?;
+    let atlases = match atlas_entry {
+        Some(p) => {
+            let raw = std::fs::read(p).with_context(|| format!("read {}", p.display()))?;
+            Some(battle_char_pack::parse_atlases(&raw)?)
+        }
+        None => None,
+    };
     let print_slot = |s: &battle_char_pack::BattleCharSlot| {
         let label = battle_char_pack::slot_label(s.slot);
         println!(
@@ -182,8 +190,8 @@ pub(crate) fn battle_char_pack_one(
         );
     };
     if let Some(s_idx) = slot {
-        let s = pack
-            .slot(s_idx)
+        let s = slots
+            .get(s_idx)
             .ok_or_else(|| anyhow::anyhow!("slot {s_idx} out of range (0..=4)"))?;
         print_slot(s);
         if let Some(p) = out_tmd {
@@ -196,22 +204,29 @@ pub(crate) fn battle_char_pack_one(
         }
     } else if atlas.is_none() && out_tim.is_none() {
         println!(
-            "PROT {} (other5, battle character pack): {} slots + {} atlases",
+            "PROT {} (other5, battle character pack): {} slots, {} atlases from PROT {}",
             battle_char_pack::PROT_ENTRY_INDEX,
-            pack.slots().len(),
-            pack.atlases.len()
+            slots.len(),
+            atlases.as_ref().map_or(0, |a| a.len()),
+            battle_char_pack::ATLAS_PROT_ENTRY_INDEX,
         );
-        for s in pack.slots() {
+        for s in &slots {
             print_slot(s);
         }
-        for a in &pack.atlases {
+        for a in atlases.iter().flatten() {
             print_atlas(a);
         }
     }
     if let Some(a_idx) = atlas {
-        let a = pack
-            .atlas(a_idx)
-            .ok_or_else(|| anyhow::anyhow!("atlas {a_idx} out of range (0..=6)"))?;
+        let atlases = atlases.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "--atlas needs --atlas-entry <PROT {} bytes>",
+                battle_char_pack::ATLAS_PROT_ENTRY_INDEX
+            )
+        })?;
+        let a = atlases
+            .get(a_idx)
+            .ok_or_else(|| anyhow::anyhow!("atlas {a_idx} out of range (0..=7)"))?;
         print_atlas(a);
         if let Some(p) = out_tim {
             std::fs::write(p, &a.tim_bytes).with_context(|| format!("write {}", p.display()))?;

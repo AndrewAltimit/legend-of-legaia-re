@@ -74,8 +74,8 @@ impl LegaiaMinigames {
             0 => {
                 let raw =
                     self.baka_entry(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)?;
-                let pack = legaia_asset::battle_char_pack::parse(raw).ok()?;
-                pack.slot(id as usize)?.tmd_bytes.clone()
+                let slots = legaia_asset::battle_char_pack::parse_slots(raw).ok()?;
+                slots.get(id as usize)?.tmd_bytes.clone()
             }
             1 => {
                 let prot_index = baka::fighter_pack_prot_index(id as usize)?;
@@ -429,10 +429,10 @@ impl LegaiaMinigames {
             }
         }
         if let Some(raw) =
-            self.baka_entry(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)
-            && let Ok(pack) = legaia_asset::battle_char_pack::parse(raw)
+            self.baka_entry(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX as usize)
+            && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw)
         {
-            for atlas in &pack.atlases {
+            for atlas in &atlases {
                 if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
                     vram.upload_tim(&tim);
                 }

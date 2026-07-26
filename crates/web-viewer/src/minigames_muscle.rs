@@ -838,7 +838,7 @@ impl LegaiaMinigames {
     }
 
     /// The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
-    /// 1204, their bundled CLUT strips) plus monster `monster_id`'s texture
+    /// 1205, their bundled CLUT strips) plus monster `monster_id`'s texture
     /// pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
     /// at `(320, 256)`) - the same layout the retail battle loader builds.
     pub fn muscle_vram(&self, monster_id: u16) -> Vec<u8> {
@@ -846,10 +846,10 @@ impl LegaiaMinigames {
         if let Some(raw) = entry_bytes(
             &self.prot,
             &self.entries,
-            legaia_asset::battle_char_pack::PROT_ENTRY_INDEX,
-        ) && let Ok(pack) = legaia_asset::battle_char_pack::parse(raw)
+            legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX,
+        ) && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw)
         {
-            for atlas in &pack.atlases {
+            for atlas in &atlases {
                 if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
                     vram.upload_tim(&tim);
                 }

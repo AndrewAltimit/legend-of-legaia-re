@@ -1,18 +1,32 @@
 //! Title-screen TIM extractor.
 //!
 //! The "Legend of Legaia" title screen lives as a 256x256 8bpp TIM in
-//! PROT entries `0888..=0890` (labelled `sound_data2` per CDNAME, but
-//! the multi-bank sound-data cluster carries title art in the trailing
-//! pool past the actual sound payload). The byte layout below is stable
-//! across the NA retail build.
+//! PROT entry `0890` at file offset `0x14228` (labelled `level_up` per
+//! CDNAME's block numbering, physically in the trailing pool of the
+//! multi-bank sound-data cluster past the actual sound payload). The byte
+//! layout below is stable across the NA retail build.
 //!
-//! ## Sources by PROT entry
+//! ## Correction: one copy, not three
+//!
+//! This module used to list three sources - `0888 @ 0x1AA28`,
+//! `0889 @ 0x19A28`, `0890 @ 0x14228` - as "the same content, multi-bank
+//! duplicates". They are not duplicates. They are one set of sectors named
+//! three times, because the pre-correction PROT entry size
+//! (`toc[p+5] - toc[p+3] + 4`) gave 888 an 88-sector window and 889 a
+//! 3008-sector one, both of which run over entry 890:
 //!
 //! ```text
-//!   PROT 0888 (sound_data2)    @ file offset 0x1AA28    - PRIMARY
-//!   PROT 0889 (sound_data2)    @ file offset 0x19A28    - same content,
-//!   PROT 0890 (sound_data2)    @ file offset 0x14228    - multi-bank duplicates
+//!   888 starts at LBA 37956, + 0x1AA28  -> LBA 38009 + 0x228
+//!   889 starts at LBA 37958, + 0x19A28  -> LBA 38009 + 0x228
+//!   890 starts at LBA 37969, + 0x14228  -> LBA 38009 + 0x228
 //! ```
+//!
+//! All three arithmetics land on the same absolute PROT.DAT offset. Entry 890
+//! is the one whose own 73 sectors contain it (`0x14228 + 66080 = 0x24448` of
+//! `0x24800`), so it is the source. A byte scan for the TIM's 64-byte header
+//! signature over the whole of `PROT.DAT` returns exactly **one** hit, at that
+//! offset. Same over-read family as the eight-vs-seven atlas count in
+//! [`crate::battle_char_pack`].
 //!
 //! The TIM is 33312 bytes total (8-byte header + 12 + 512 CLUT block +
 //! 12 + 65536 pixel block). Pixel-block VRAM target is `fb=(512,256)`,
@@ -56,19 +70,21 @@
 
 use anyhow::{Context, Result};
 
-/// Primary PROT entry index for the main title TIM (NA retail build).
+/// PROT entry index for the main title TIM (NA retail build): the entry whose
+/// own sectors carry it.
 ///
-/// Entries 0889 and 0890 carry duplicate copies; see
-/// [`TITLE_TIM_ALTERNATE_SOURCES`].
-pub const PROT_INDEX_PRIMARY: u16 = 888;
+/// Was `888` while the entry size over-read; see the module docs.
+pub const PROT_INDEX_PRIMARY: u16 = 890;
 
-/// Alternate PROT entry indices carrying the same title TIM at
-/// different file offsets (multi-bank duplicates in the
-/// `sound_data2` cluster).
-pub const TITLE_TIM_ALTERNATE_SOURCES: &[(u16, usize)] = &[(889, 0x19A28), (890, 0x14228)];
+/// Alternate PROT entries carrying the title TIM. **Empty** - the three
+/// historical "multi-bank duplicates" were one set of sectors reached through
+/// three overlapping over-read windows, and a whole-archive byte scan finds
+/// exactly one copy. Kept as a named constant so the falsified reading has a
+/// place to be asserted against.
+pub const TITLE_TIM_ALTERNATE_SOURCES: &[(u16, usize)] = &[];
 
-/// File offset within PROT 0888 where the main title TIM begins.
-pub const TITLE_TIM_OFFSET: usize = 0x1AA28;
+/// File offset within PROT 0890 where the main title TIM begins.
+pub const TITLE_TIM_OFFSET: usize = 0x14228;
 
 /// Total byte length of the title TIM (header + CLUT block + pixel
 /// block). The main title is 256x256 8bpp + 256-colour CLUT:
@@ -558,12 +574,11 @@ pub struct TitleTim<'a> {
     pub mode: u8,
 }
 
-/// Extract the main title TIM from PROT 0888 (or 889 / 890) bytes.
+/// Extract the main title TIM from PROT 0890's bytes.
 ///
 /// Validates the TIM header at [`TITLE_TIM_OFFSET`]. Pass the bytes of
-/// PROT entry [`PROT_INDEX_PRIMARY`] (or an alternate from
-/// [`TITLE_TIM_ALTERNATE_SOURCES`] - in which case pass the matching
-/// offset as `at_offset`).
+/// PROT entry [`PROT_INDEX_PRIMARY`]; `at_offset` stays a parameter so a
+/// caller can point the same parser at a re-mastered layout.
 pub fn extract_title_tim(bytes: &[u8], at_offset: usize) -> Result<TitleTim<'_>> {
     parse_tim_at(bytes, at_offset)
 }
@@ -694,20 +709,39 @@ fn parse_tim_at(bytes: &[u8], off: usize) -> Result<TitleTim<'_>> {
 mod tests {
     use super::*;
 
-    /// Disc-gated: extract the main title TIM from a real PROT 0888.
-    /// Skips when `extracted/` is missing (CI runs without disc data).
+    /// Read one PROT entry out of `extracted/PROT.DAT` at its **own** sector
+    /// span (`Archive::read_entry`). Reading the archive rather than a
+    /// pre-extracted `.BIN` is what makes the offsets below a claim about the
+    /// entry instead of about an extractor's window.
+    fn prot_entry_bytes(index: u32) -> Option<Vec<u8>> {
+        let mut archive =
+            legaia_prot::archive::Archive::open(std::path::Path::new("../../extracted/PROT.DAT"))
+                .ok()?;
+        let entry = archive.entries.iter().find(|e| e.index == index)?.clone();
+        let mut out = Vec::new();
+        archive.read_entry(&entry, &mut out).ok()?;
+        Some(out)
+    }
+
+    /// Disc-gated: extract the main title TIM from a real PROT 0890, read at
+    /// the entry's own sector span. Skips when `extracted/PROT.DAT` is missing
+    /// (CI runs without disc data).
     #[test]
     fn extracts_real_title_tim_when_disc_extracted() {
-        let path = "../../extracted/PROT/0888_sound_data2.BIN";
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
-            Err(_) => {
-                eprintln!("skip: extracted/PROT/0888_sound_data2.BIN missing");
-                return;
-            }
+        let Some(bytes) = prot_entry_bytes(PROT_INDEX_PRIMARY as u32) else {
+            eprintln!("skip: extracted/PROT.DAT missing");
+            return;
         };
+        // The whole TIM is inside this entry's own sectors. That is the
+        // property the old `0888 @ 0x1AA28` attribution failed: entry 888 is
+        // two sectors long, so the offset was not in it at all.
+        assert!(
+            TITLE_TIM_OFFSET + TITLE_TIM_SIZE <= bytes.len(),
+            "title TIM must fit inside PROT {PROT_INDEX_PRIMARY}'s own {} bytes",
+            bytes.len()
+        );
         let tim =
-            extract_title_tim(&bytes, TITLE_TIM_OFFSET).expect("extract main title TIM at 0x1AA28");
+            extract_title_tim(&bytes, TITLE_TIM_OFFSET).expect("extract main title TIM at 0x14228");
 
         // Canonical layout: 256x256 8bpp + 256-colour CLUT. The runtime
         // patches fb_x/fb_y for CLUT relocation; the dimensions + size
@@ -764,31 +798,38 @@ mod tests {
         assert_eq!(tim.pixel_rect.3, 16); // ph (14 frames + small gutter)
     }
 
-    /// Disc-gated: each alternate source PROT entry should carry an
-    /// identical (byte-equal) copy of the title TIM at its listed offset.
+    /// Disc-gated: the title TIM has exactly one source. The historical
+    /// "duplicates" at `0888 @ 0x1AA28` / `0889 @ 0x19A28` were the same
+    /// absolute PROT.DAT offset reached through over-read windows, so those
+    /// offsets must now land **outside** their own entries - and no alternate
+    /// may be listed.
     #[test]
-    fn alternate_sources_byte_equal_when_disc_extracted() {
-        let primary_path = "../../extracted/PROT/0888_sound_data2.BIN";
-        let primary_bytes = match std::fs::read(primary_path) {
-            Ok(b) => b,
-            Err(_) => {
-                eprintln!("skip: extracted/PROT/0888_sound_data2.BIN missing");
-                return;
-            }
+    fn the_title_tim_has_one_source_when_disc_extracted() {
+        assert!(
+            TITLE_TIM_ALTERNATE_SOURCES.is_empty(),
+            "the multi-bank duplicates were the over-read; see the module docs"
+        );
+        let Some(primary) = prot_entry_bytes(PROT_INDEX_PRIMARY as u32) else {
+            eprintln!("skip: extracted/PROT.DAT missing");
+            return;
         };
-        let primary = extract_title_tim(&primary_bytes, TITLE_TIM_OFFSET).unwrap();
-
-        for &(prot_idx, alt_offset) in TITLE_TIM_ALTERNATE_SOURCES {
-            let alt_path = format!("../../extracted/PROT/{:04}_sound_data2.BIN", prot_idx);
-            let alt_bytes = match std::fs::read(&alt_path) {
-                Ok(b) => b,
-                Err(_) => continue,
+        let want = extract_title_tim(&primary, TITLE_TIM_OFFSET)
+            .expect("title TIM in PROT 890")
+            .bytes
+            .to_vec();
+        for &(idx, off) in &[(888u32, 0x1AA28usize), (889, 0x19A28)] {
+            let Some(bytes) = prot_entry_bytes(idx) else {
+                continue;
             };
-            let alt = extract_title_tim(&alt_bytes, alt_offset).unwrap();
-            assert_eq!(
-                primary.bytes, alt.bytes,
-                "PROT {} title TIM at 0x{:x} should byte-equal PROT 888",
-                prot_idx, alt_offset
+            assert!(
+                off + TITLE_TIM_SIZE > bytes.len(),
+                "PROT {idx} is {} bytes; offset 0x{off:X} was only reachable \
+                 through the over-read",
+                bytes.len()
+            );
+            assert!(
+                !bytes.windows(want.len().min(64)).any(|w| w == &want[..64]),
+                "PROT {idx}'s own sectors must not carry a second copy"
             );
         }
     }
@@ -828,10 +869,8 @@ mod tests {
             OVERLAY_SYSTEM_UI_TIM_SIZE,
             8 + (12 + 16 * 16 * 2) + (12 + 64 * 192 * 2)
         );
-        // Alternate-source list shouldn't include the primary.
-        for &(idx, _) in TITLE_TIM_ALTERNATE_SOURCES {
-            assert_ne!(idx, PROT_INDEX_PRIMARY);
-        }
+        // Alternate-source list is empty - one copy on the disc.
+        assert!(TITLE_TIM_ALTERNATE_SOURCES.is_empty());
     }
 
     #[test]

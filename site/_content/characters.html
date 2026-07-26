@@ -1101,8 +1101,9 @@ table.arts-list .cmd-tag {
   // The single-model orbit view + animation player lives in js/mesh-view.js
   // (window.MeshView), shared with the NPC catalog: same TmdRenderer paletted-
   // VRAM pipeline, same object-local bone poser (v_world = R.v + T). It samples
-  // the seven 256x256 4bpp character atlases inside PROT 1204 at their
-  // disc-pinned VRAM coords, and the PROT 0874 section-2 atlas for the field form.
+  // the eight 256x256 4bpp character atlases in PROT 1205 (the sibling of the
+  // PROT 1204 mesh entry) at their disc-pinned VRAM coords, and the PROT 0874
+  // section-2 atlas for the field form.
 
   // PSX-Y flipped via uniform; the canvas sits in a +Y-up viewport.
   function lookAt(eye, at, up) {

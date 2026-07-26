@@ -1,15 +1,19 @@
 //! Disc-gated regression for [`legaia_asset::battle_char_pack`].
 //!
-//! Pins the on-disc layout of PROT 1204 (`other5`): five battle-form character
-//! TMD chunks at the streaming offsets the doc page lists + seven 256x256 4bpp
-//! TIM atlases at fixed `0x8224` stride. Skips when `LEGAIA_DISC_BIN` is
-//! unset so CI works without redistributing Sony data.
+//! Pins the on-disc layout of the two-entry `other5` battle pack: PROT 1204's
+//! five battle-form character TMD chunks at the streaming offsets the doc page
+//! lists, and PROT 1205's eight 256x256 4bpp TIM atlases at `0x8224` stride.
+//! Entries are read at their **own** sector spans through
+//! `legaia_prot::Archive` rather than out of pre-extracted `.BIN`s, so the
+//! offsets asserted here are a claim about the entries and not about an
+//! extractor's window. Skips when `LEGAIA_DISC_BIN` is unset so CI works
+//! without redistributing Sony data.
 
 use legaia_asset::battle_char_pack::{
-    ATLAS_CLUT_ROWS, ATLAS_COUNT, ATLAS_STRIDE_BYTES, BATTLE_TMD_CHUNK_TYPE, FIRST_ATLAS_OFFSET,
-    PROT_ENTRY_INDEX, SLOT_COUNT, parse, slot_label,
+    ATLAS_CLUT_ROWS, ATLAS_COUNT, ATLAS_PROT_ENTRY_INDEX, ATLAS_STRIDE_BYTES,
+    BATTLE_TMD_CHUNK_TYPE, FIRST_ATLAS_OFFSET, PROT_ENTRY_INDEX, SLOT_COUNT, parse, slot_label,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Pinned on-disc TMD body byte sizes (5 slots) - matches the streaming
 /// chunk sizes `0x82EC`, `0x8364`, `0x60CC`, `0x699C`, `0x823C`.
@@ -33,13 +37,28 @@ fn extracted_root() -> Option<PathBuf> {
     prot.is_dir().then_some(prot)
 }
 
-fn locate_prot_1204() -> Option<PathBuf> {
-    let prot_dir = extracted_root()?;
-    let entries = std::fs::read_dir(&prot_dir).ok()?;
-    for e in entries.flatten() {
+/// One PROT entry's own sectors, straight out of `extracted/PROT.DAT`.
+fn prot_entry_bytes(index: u32) -> Option<Vec<u8>> {
+    std::env::var_os("LEGAIA_DISC_BIN")?;
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut archive =
+        legaia_prot::archive::Archive::open(&repo.join("extracted").join("PROT.DAT")).ok()?;
+    let entry = archive.entries.iter().find(|e| e.index == index)?.clone();
+    let mut out = Vec::new();
+    archive.read_entry(&entry, &mut out).ok()?;
+    Some(out)
+}
+
+fn locate_entry_bin(prot_dir: &Path, index: u32) -> Option<PathBuf> {
+    for e in std::fs::read_dir(prot_dir).ok()?.flatten() {
         let name = e.file_name();
         let s = name.to_string_lossy();
-        if s.starts_with(&format!("{PROT_ENTRY_INDEX:04}_")) && s.ends_with(".BIN") {
+        if s.starts_with(&format!("{index:04}_")) && s.ends_with(".BIN") {
             return Some(e.path());
         }
     }
@@ -48,12 +67,32 @@ fn locate_prot_1204() -> Option<PathBuf> {
 
 #[test]
 fn real_pack_layout() {
-    let Some(path) = locate_prot_1204() else {
-        eprintln!("LEGAIA_DISC_BIN or extracted/PROT not available; skipping");
+    let (Some(mesh_bytes), Some(atlas_bytes)) = (
+        prot_entry_bytes(PROT_ENTRY_INDEX),
+        prot_entry_bytes(ATLAS_PROT_ENTRY_INDEX),
+    ) else {
+        eprintln!("LEGAIA_DISC_BIN or extracted/PROT.DAT not available; skipping");
         return;
     };
-    let bytes = std::fs::read(&path).expect("read PROT 1204");
-    let pack = parse(&bytes).expect("parse PROT 1204 as battle character pack");
+    let pack = parse(&mesh_bytes, &atlas_bytes).expect("parse the two-entry battle character pack");
+
+    // The split is the point: each half must fit in its own entry, and the
+    // mesh entry must not be readable as the atlas entry. The pre-correction
+    // reading had all fifteen regions inside 1204.
+    assert_eq!(
+        mesh_bytes.len(),
+        0x25800,
+        "PROT {PROT_ENTRY_INDEX} is its own 75 sectors"
+    );
+    assert_eq!(
+        atlas_bytes.len(),
+        0x41800,
+        "PROT {ATLAS_PROT_ENTRY_INDEX} is its own 131 sectors"
+    );
+    assert!(
+        legaia_asset::battle_char_pack::parse_atlases(&mesh_bytes).is_err(),
+        "the mesh entry carries no atlases"
+    );
 
     // Slot pin: count + sizes + nobj + file offsets.
     assert_eq!(pack.slots.len(), SLOT_COUNT);
@@ -83,9 +122,21 @@ fn real_pack_layout() {
         assert_eq!(parsed.objects.len(), EXPECTED_NOBJ[i] as usize);
     }
 
-    // Atlas pin: 7 TIMs at stride 0x8224 starting at 0x25804, CLUTs at
-    // y=490..495,497.
+    // Atlas pin: 8 TIMs at stride 0x8224 starting at offset 4 of PROT 1205,
+    // CLUT rows 490..495, 497, 496 in disc order (496 last - the row the
+    // over-read window cut off, not a skipped row).
     assert_eq!(pack.atlases.len(), ATLAS_COUNT);
+    assert_eq!(ATLAS_COUNT, 8);
+    assert_eq!(ATLAS_CLUT_ROWS.last(), Some(&496));
+    // The eight chunks plus the terminator fill the entry, with only zero
+    // padding left - the invariant that says eight is the whole set.
+    let consumed = FIRST_ATLAS_OFFSET + ATLAS_COUNT * ATLAS_STRIDE_BYTES;
+    assert!(consumed <= atlas_bytes.len());
+    assert!(
+        atlas_bytes[consumed - 4..].iter().all(|&b| b == 0),
+        "no ninth chunk after atlas {}",
+        ATLAS_COUNT - 1
+    );
     for (i, atlas) in pack.atlases.iter().enumerate() {
         assert_eq!(atlas.atlas_index, i);
         assert_eq!(
@@ -122,36 +173,29 @@ fn battle_pack_is_distinct_from_field_pack() {
         eprintln!("LEGAIA_DISC_BIN or extracted/PROT not available; skipping");
         return;
     };
-    let Some(path_1204) = locate_prot_1204() else {
+    let Some(battle_bytes) = prot_entry_bytes(PROT_ENTRY_INDEX) else {
         return;
     };
     // Locate the field-form character pack entry (PROT 0874).
     let field_idx = legaia_asset::character_pack::PROT_ENTRY_INDEX;
-    let mut field_path = None;
-    for e in std::fs::read_dir(&prot_dir).unwrap().flatten() {
-        let s = e.file_name().to_string_lossy().into_owned();
-        if s.starts_with(&format!("{field_idx:04}_")) && s.ends_with(".BIN") {
-            field_path = Some(e.path());
-        }
-    }
-    let Some(field_path) = field_path else {
+    let Some(field_path) = locate_entry_bin(&prot_dir, field_idx) else {
         eprintln!("PROT 0874 entry missing; skipping");
         return;
     };
 
-    let battle_bytes = std::fs::read(&path_1204).expect("read PROT 1204");
-    let battle = parse(&battle_bytes).expect("parse battle pack");
+    let battle = legaia_asset::battle_char_pack::parse_slots(&battle_bytes)
+        .expect("parse the battle pack's meshes");
     let field_bytes = std::fs::read(&field_path).expect("read PROT 0874");
 
     // Battle Vahn (slot 0) is nobj 15; the field Vahn is nobj 12 - different
     // object counts to begin with.
-    assert_eq!(battle.slot(0).unwrap().disc_nobj, 15);
+    assert_eq!(battle[0].disc_nobj, 15);
 
     // Take a window of battle-Vahn's first object's vertex pool and assert it
     // does NOT occur in the field-pack entry bytes. (Vertex SVECTORs are
     // pose-independent geometry: if the two packs were the same mesh, this
     // window would be present in both.)
-    let vahn = legaia_tmd::parse(&battle.slot(0).unwrap().tmd_bytes).expect("battle Vahn TMD");
+    let vahn = legaia_tmd::parse(&battle[0].tmd_bytes).expect("battle Vahn TMD");
     let obj0 = &vahn.objects[0];
     // Rebuild the raw 8-byte SVECTOR stream (x,y,z,pad LE) from the parsed
     // vertices - pack-form-independent geometry bytes.

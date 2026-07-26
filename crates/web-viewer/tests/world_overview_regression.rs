@@ -32,8 +32,18 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Per-kingdom: (PROT base index, classification-TOML section name).
-const KINGDOMS: &[(u32, &str)] = &[(85, "drake"), (244, "sebucus"), (391, "karisto")];
+/// Per-kingdom: (PROT bundle entry, classification-TOML section name).
+///
+/// These are the **bundle** entries (`legaia_asset::kingdom_bundle::
+/// BUNDLE_ENTRIES`). They were `85` / `244` / `391` while the PROT entry size
+/// over-read into the following entries: scanning entry 85's 134-sector window
+/// found the 7-asset table at `0x1800`, which is entry 86's offset 0. The
+/// fixture digests moved with this change and **only** because the digest text
+/// carries `prot_base=`: reading 86 / 245 / 392 while still printing
+/// `prot_base=85` / `244` / `391` reproduces the previous digests exactly, so
+/// every pack-TMD fingerprint, every MAN placement record and every
+/// classification row is byte-identical. Nothing about the content changed.
+const KINGDOMS: &[(u32, &str)] = &[(86, "drake"), (245, "sebucus"), (392, "karisto")];
 
 const SECTOR_ALIGN: usize = 0x800;
 const ASSET_TABLE_COUNT: u32 = 7;

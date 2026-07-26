@@ -618,13 +618,13 @@ Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` rea
 
 The 256-KiB `overlay_title.bin` window does carry two real TIMs embedded in the title overlay's data segment, at the same addresses the tick body's `FUN_800198E0` sprite-descriptor calls reference: `0x801E5120` (256×256 4bpp save-menu UI atlas - memcard icons + Japanese strings) and `0x801EE120` (256×16 4bpp animated PSX memcard icon strip, 14 frames). Both byte-match `extracted/PROT/0899_xxx_dat.BIN` at file offsets `0x16908` / `0x1F908` (i.e. they live in the trailing-overlay portion of PROT 899). A reusable scanner at [`scripts/asset-investigation/scan_tims_and_match_prot.py`](../../scripts/asset-investigation/scan_tims_and_match_prot.py) walks a PSX main-RAM dump for TIM-magic records and byte-greps the PROT corpus to pin each candidate.
 
-The **main title-screen art** itself (Legend of Legaia wordmark, orb, `PRESS START BUTTON`, `NEW GAME` / `CONTINUE` menu, copyright lines) lives outside the title-overlay window - it's loaded into main RAM at `0x80170DF8` and sourced from **PROT 0888** (CDNAME label `sound_data2`; the multi-bank sound-data cluster carries title art in the trailing pool past the audio payload). Duplicate copies live in PROT 0889 and 0890 at slightly different file offsets:
+The **main title-screen art** itself (Legend of Legaia wordmark, orb, `PRESS START BUTTON`, `NEW GAME` / `CONTINUE` menu, copyright lines) lives outside the title-overlay window - it's loaded into main RAM at `0x80170DF8` and sourced from **PROT 0890** (the multi-bank sound-data cluster carries title art in the trailing pool past the audio payload):
 
 ```text
-PROT 0888 @ 0x1AA28    - 256×256 8bpp, 66 080 bytes - PRIMARY
-PROT 0889 @ 0x19A28    - same content (multi-bank dup)
-PROT 0890 @ 0x14228    - same content (multi-bank dup)
+PROT 0890 @ 0x14228    - 256×256 8bpp, 66 080 bytes - the only copy
 ```
+
+There is exactly **one** copy on the disc. This page used to list three sources - `0888 @ 0x1AA28`, `0889 @ 0x19A28`, `0890 @ 0x14228` - as "multi-bank duplicates". All three expressions resolve to the same absolute `PROT.DAT` offset (LBA 38009 + `0x228`); they read as three entries only under the pre-correction entry size, which gave 0888 an 88-sector window and 0889 a 3008-sector one, both running over 0890. A byte scan for the TIM's header signature across the whole archive returns one hit, inside 0890's own 73 sectors. See [`docs/formats/prot.md`](../formats/prot.md).
 
 The 256×256 image is a **sprite sheet** that bundles every text band the title screen *could* draw - retail composes the screen by sampling specific sub-rects rather than blitting the full quad. The bands, top to bottom in source-y, are:
 
@@ -637,9 +637,9 @@ The 256×256 image is a **sprite sheet** that bundles every text band the title 
 | `(8, 209, 234, 14)` | "© 1998,1999..." copyright | every post-fade phase |
 | `(0, 226, 256, 11)` | small "NEW GAME CONTINUE" footer | replaced by larger font glyphs |
 
-The `<DEMO>` band is a residual from a development demo build that retail simply never samples - verified by capturing main RAM at the live title screen (sstate8, sub-mode `0x10` AttractIdle) and confirming the in-RAM TIM bytes byte-match PROT 0888 while the live framebuffer omits the band. The small footer "NEW GAME CONTINUE" is similarly never drawn; retail renders the menu labels using the dialog-font glyph atlas instead (which is why the on-screen "NEW GAME / CONTINUE" letters are visibly larger than the embedded footer text).
+The `<DEMO>` band is a residual from a development demo build that retail simply never samples - verified by capturing main RAM at the live title screen (sstate8, sub-mode `0x10` AttractIdle) and confirming the in-RAM TIM bytes byte-match the disc TIM while the live framebuffer omits the band. The small footer "NEW GAME CONTINUE" is similarly never drawn; retail renders the menu labels using the dialog-font glyph atlas instead (which is why the on-screen "NEW GAME / CONTINUE" letters are visibly larger than the embedded footer text).
 
-A typed parser lives at [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs) - `extract_title_tim(&prot_0888_bytes, TITLE_TIM_OFFSET)` returns a zero-copy slice + decoded VRAM rects, and the band-rect constants `TITLE_BAND_WORDMARK` / `TITLE_BAND_PRESS_START` / `TITLE_BAND_TM_COPYRIGHT` / `TITLE_BAND_C_COPYRIGHT` (plus `TITLE_BAND_DEMO` for reference) pin the sub-rects listed above. The disc-gated unit test (`extracts_real_title_tim_when_disc_extracted`) locks the on-disc layout. An engine-side RGBA decoder lives at [`legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888`](../../crates/engine-core/src/title_screen_atlas.rs);
+A typed parser lives at [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs) - `extract_title_tim(&prot_0890_bytes, TITLE_TIM_OFFSET)` returns a zero-copy slice + decoded VRAM rects, and the band-rect constants `TITLE_BAND_WORDMARK` / `TITLE_BAND_PRESS_START` / `TITLE_BAND_TM_COPYRIGHT` / `TITLE_BAND_C_COPYRIGHT` (plus `TITLE_BAND_DEMO` for reference) pin the sub-rects listed above. The disc-gated unit test (`extracts_real_title_tim_when_disc_extracted`) locks the on-disc layout. An engine-side RGBA decoder lives at [`legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888`](../../crates/engine-core/src/title_screen_atlas.rs);
 the play-window subcommand uploads it as a sprite atlas and emits one [`SpriteDraw`] per active band each frame (`title_screen_sprite_draws` in [`legaia-engine`](../../crates/engine-shell/src/bin/legaia-engine.rs)), with the press-start band gated on phase. The font-rendered "PRESS START" overlay is suppressed via the `atlas_present` flag on `title_draws_for` so the TIM band isn't duplicated.
 
 ### Pad-mask layout (important)

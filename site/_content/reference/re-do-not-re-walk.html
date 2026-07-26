@@ -123,8 +123,42 @@
     </tbody>
   </table>
 </section>
+<section class="doc-section" id="containers">
+  <h2>Containers / entry coordinates</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The world-map kingdom bundle is PROT <code>0085</code> / <code>0244</code> / <code>0391</code></td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>It is <code>0086</code> / <code>0245</code> / <code>0392</code>. Those indices are the block's <em>prescript</em> entry; the bundle's 7-asset table is at offset 0 of the next entry, which the over-read window saw as "offset <code>0x1800</code>".</td>
+        <td><a href="#d-entry-coordinates">below</a></td>
+      </tr>
+      <tr>
+        <td>The battle-form character pack holds seven atlases inside PROT <code>1204</code>, the last truncated, with CLUT row 496 skipped</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>Eight whole atlases, in PROT <code>1205</code>. Row 496 is the eighth atlas, not a gap; the "seven" and the "truncation" were where the over-read window stopped.</td>
+        <td><a href="#d-entry-coordinates">below</a></td>
+      </tr>
+      <tr>
+        <td>The title TIM ships as three multi-bank duplicates in PROT <code>0888</code> / <code>0889</code> / <code>0890</code></td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>One copy, in <code>0890</code> at <code>0x14228</code>. All three <code>(entry, offset)</code> pairs resolve to the same absolute <code>PROT.DAT</code> offset.</td>
+        <td><a href="#d-entry-coordinates">below</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="doc-section" id="details">
   <h2>Details</h2>
+
+  <h3 id="d-entry-coordinates">Assets named by the entry the over-read window started in</h3>
+  <p><em>Status:</em> falsified - each asset is where it always was; only the <code>(entry, offset)</code> name for it was wrong.</p>
+  <p>Under the pre-correction PROT entry size a reader positioned on entry <code>N</code> could see entries <code>N+1</code>, <code>N+2</code>&hellip;, so an asset got recorded as "PROT <code>N</code> offset <code>K</code>" whenever the scan that found it started at <code>N</code>. The coordinate is not wrong about the disc - <code>start_lba(N)*0x800 + K</code> really is where the bytes are - it is wrong about which entry <em>owns</em> them, which is the only thing a correctly-bounded reader can use. The symptom is a name rather than a corruption, which is why it outlived the reader.</p>
+  <p>Each wrong name came with corroboration, and that is the instructive part. The kingdom bundle's table really was at <code>0x1800</code>, with the right count and the right first descriptor offset. The battle-pack atlases really did sit at a consistent stride from a consistent base, and a truncated last member is an ordinary thing to find at the end of a container. The title TIM's three "duplicates" really were byte-equal.</p>
+  <p>Two transferable lessons. Byte-equality between two <code>(entry, offset)</code> pairs is evidence of <em>duplication</em> only once you have shown the pairs resolve to different absolute offsets - otherwise it is a tautology, the same shape as the falsified "PROT 0900 and 0901 are shifted copies". And a container's member count and a member's size are properties of its <strong>framing</strong> - a chunk chain, a descriptor count in the header - not of where a buffer happens to end; a count derived from "how many fit before the buffer ran out" is measuring the reader, not the disc.</p>
+  <p>Corrected coordinates and the two invariants that keep them honest: <a href="../formats/prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">prot &sect; a (entry, offset) pair</a>.</p>
 
   <h3 id="d-op4e">Op-<code>0x4E</code> sub-op family - every sub-op 0..9 is a compare</h3>
   <p><em>Status:</em> falsified ("absolute jump" 5..8 and "rand &rarr; next PC" 4 were Ghidra's collapsed switch).</p>
