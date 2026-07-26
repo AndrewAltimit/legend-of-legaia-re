@@ -515,6 +515,8 @@ the integration is ever wanted - but the draw behaviour is no longer unknown.
 
 **Animation driver landed.** `engine_core::summon::SummonScene` seeds one move-VM `ActorState` per parsed part (PC=2 → `record+4`, mirroring `FUN_80021B04`) and ticks every part through the already-ported move VM each frame (`World::spawn_summon` / `tick_summon` / `active_summon_part_draws`; `play-window` `G` debug-spawns the Gimard summon and renders one textured TMD per mesh part). The per-part animation *computation* is faithful (verified: every Gimard part runs the move VM without an unimplemented opcode; disc-gated `summon_scene_real`).
 
+**Read the mesh-part draw count off the entry's own footprint.** Gimard's stager (PROT 0903) resolves to a pure transform rig - every recovered record is `model_sel == -1` - so its draw list is legitimately empty and any assertion of the form "this stager has a mesh part" is vacuous on it. Mesh-bearing records are rare across the whole stager corpus, and the ones a stager appears to gain from a longer buffer are the *next* stagers' record offsets read against this entry's bytes. `summon_scene_real` therefore drives two legs: Gimard for the tick path, Nighto (`0x85` → PROT 0907, one mesh record) for the draw path.
+
 **Production cast-band trigger wired.** A player Seru-magic cast (`spell_id` in `0x81..=0x8b`)
 now requests the summon at the cast point in both engine cast paths - the action-SM
 `spell_anim_trigger` (`World::fold_battle_event` on `BattleEvent::SpellAnimTrigger`) and the

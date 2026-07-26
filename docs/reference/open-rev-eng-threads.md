@@ -448,8 +448,10 @@ self-pointer resolution (`static_overlay::pointer_resolution`, ≥70%). Pinned:
 - **0900/0901** = the slot-B *default* pair - `FUN_80025BA0` loads param 5 or 6 by flag
   `DAT_8007B6A8`, agreeing with 0900's byte-residency in mid-cast saves (the summon-render
   overlay).
-- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived 38-spawn-call stager file is
-  extraction **0905** = the `0x83` slot. The summon arithmetic range is extraction
+- **0903** = the Gimard `0x81` arithmetic slot; the deep-dived stager file is
+  extraction **0905** = the `0x83` slot (22 spawn calls inside its own TOC-gap
+  footprint - the "38 calls" figure counted the two following stagers' code as
+  well). The summon arithmetic range is extraction
   `0903..=0913` (raw `0x389..=0x393`) - **fully capture-pinned per spell id**, incl. 0907 =
   Nighto on the `0x85` slot (head title "Hell's Music" = the attack's display name; the
   dance-song reading is refuted).
