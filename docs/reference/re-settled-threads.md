@@ -1249,12 +1249,14 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | `FUN_80018DB0` is a rumble cadence, not an audio one | resolved (libpad, not SsAPI; no cue to pin) | `disassembly` | [details ↓](#fun_80018db0-is-a-rumble-cadence-not-an-audio-one) |
 | Key-on pitch: what does retail put in the voice pitch register? | resolved (unity on centre; the port was an octave low) | `disassembly` | [details ↓](#key-on-pitch-unity-on-centre) |
 | SFX cue bank routing - the category byte selects the VAB slot | resolved (mechanism + the two pinned banks; ported) | `capture` | [details ↓](#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot) |
+| Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11 | resolved (slot 6 = 0876, slot 11 = 0889; 1 / 3 are variable banks) | `disassembly` | [details ↓](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11) |
+| The `FUN_8006EF18` trio is a BIOS kernel-patch sequence, not an SPU init | resolved-negative | `disassembly` | [details ↓](#the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init) |
 
 ### SFX cue bank routing - the category byte selects the VAB slot
 
-*Status:* resolved - a cue names its own bank, and both hosts now stage the two
-pinned banks and route by category. Which PROT entries fill the *other* slots is
-the narrower question that stays open: [`open-rev-eng-threads.md`](open-rev-eng-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
+*Status:* resolved - a cue names its own bank, and both hosts now stage two banks
+and route by category. Which PROT entry fills each slot is
+[the next entry](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
 
 The mechanism. A descriptor's `+4` byte is a category, and it selects the 12-byte
 mixer record at `0x80091508 + category*12`. That record's `+8` is a **VAB slot
@@ -1279,13 +1281,92 @@ observable that separates them is which entry the samples came from, which is
 what the disc-gated oracles now assert.
 
 The port. `legaia_asset::sfx_table` carries the law (`slot_for_category`,
-`prot_index_for_slot`, `PINNED_SLOT_BANKS`, and `None` for the unpinned slots so
-nothing can guess one); `engine-shell`'s boot and the browser play page each
-stage both pinned banks out of **one** SPU allocator over their shared reserved
-region and resolve every cue through its own slot. Categories `6` and `11` fall
-back to the class-2 bank - the exact pre-routing behaviour - rather than being
-routed on a guess. Byte-level detail:
+`prot_index_for_slot`, `SLOT_BANKS`, `PINNED_SLOT_BANKS`); `engine-shell`'s boot
+and the browser play page each stage the two resident banks out of **one** SPU
+allocator over their shared reserved region and resolve every cue through its
+own slot. Categories `6` and `11` fall back to the class-2 bank - the exact
+pre-routing behaviour. Byte-level detail:
 [`sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
+
+### Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11
+
+*Status:* resolved - slot `6` is **PROT 0876** and slot `11` **PROT 0889**; slots
+`1` and `3` hold banks that are re-selected at runtime, so neither has a fixed
+entry to name. Grade `disassembly` for the bindings, with a `capture` byte-pin
+and a structural cross-check on top.
+
+**The installer names every binding.** A bank reaches a slot through one pair of
+calls: `FUN_8001FC00(raw_toc_index, category, buf, append, len)` streams the
+entry in, and `FUN_8001E54C(category, buf, len)` installs it - indexing the same
+12-byte mixer record the descriptors do, taking the header buffer from `+0` and
+the VAB slot from `+8`, and opening the bank via `FUN_8002630C` →
+`SsVabOpenHead` (sticky, at the SPU address the per-slot table at `0x800917B0`
+holds) → `SsVabTransBody`. Reading `a0` at every call site of `FUN_8001E54C` is
+therefore the sweep that closes this, and the earlier framing ("sweep the
+loader's `a1`") named the wrong argument: `FUN_8001FC00` ignores its second
+argument entirely - it is carried only so the pair reads as one binding.
+
+| Slot | Filler | Call site |
+|---|---|---|
+| `0` | PROT 0868 | resident system bank |
+| `1` | current BGM bank (`music_01`), variable | `FUN_800243F0`, `raw = *(0x8007BC64) + id - 2000` |
+| `2` | PROT 0869 (raw `0x367`) / `0875` | `FUN_800520F0`, `FUN_801CF00C` |
+| `3` | a `vab_01` side-band bank, variable | `FUN_800243F0`, `raw = *(0x8007BBE4) + id - 2000` from `_DAT_8007BABC` |
+| `6` | PROT 0876 (raw `0x36E`) | field init `FUN_801D6704` |
+| `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` from `FUN_800520F0` |
+| `11` | PROT 0889 (raw `0x37B`) | battle-end reward resolution `FUN_8004E568` |
+
+**Why the two new pins are not just an argument read.** PROT 0889 populates
+exactly one `ProgAtr` slot - number **10** - and the one category-`11`
+descriptor (`0x50`) names program 10 with 2 voices against that program's 2
+tones; the function that loads it is the same one that fires the cue. PROT 0876
+holds **30** VAGs for the 30 category-`6` descriptors, and its populated
+programs `1..=7` cover 29 of the 30. A catalogued field state's live slot-6 and
+slot-1 header buffers match extraction 0876 and 0998 byte for byte - unique hits
+across all 218 VABs on the disc, once the runtime-written `ProgAtr +8..0xF`
+words are excluded.
+
+**Two laws fell out of the same read.** `FUN_8001D424` writes `+8 = record
+index` for all 16 mixer records, so "category *is* the slot" is the
+initialiser's own statement rather than a cross-state observation; and it
+assigns four pairs of records one shared header buffer, which `FUN_800265E8`
+matches with one shared SPU base. Slot 6 and slot 2 are consequently **the same
+physical bank in two modes** - which is why retail needs no extra SPU room for
+the field cues, and why a host that stages once at boot cannot simply add them.
+Map, budget arithmetic and the port surface:
+[`sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
+
+### The `FUN_8006EF18` trio is a BIOS kernel-patch sequence, not an SPU init
+
+*Status:* resolved-negative - the trio touches no SPU register, voice block or
+libspu global. Grade `disassembly`: the veneer bodies and the patch payloads are
+both read out of the executable, which is what the open thread asked for.
+
+`FUN_8006EF68` is a bare BIOS stub (`li t2,0xb0; jr t2; li t1,0x4c`) = B0 `0x4C`
+`StopCARD`; its immediate neighbours `8006EF48` / `8006EF58` are the same shape
+with `0x4A` `InitCARD` and `0x4B` `StartCARD`. The other two callees patch
+kernel **code**:
+
+- `FUN_8006F088` calls `GetB0Table`, takes entry `0x5B` (`ChangeClearPAD`) as a
+  version-stable anchor, and **swaps** five words between `+0x9C8` off it and
+  the static block at `0x8006F058`. The shipped block is a `jalr` trampoline
+  back to `0x8006F058`, so after the swap the kernel calls a buffer that holds
+  its own displaced instructions, falls through into a `0xC8`-iteration
+  busy-wait at `0x8006F070`, and returns - a timing delay spliced into a kernel
+  routine. A swap is its own inverse, which is why install and teardown both
+  call it.
+- `FUN_8006F118` calls `GetC0Table`, takes entry `6` (`ExceptionHandler`) and
+  copies three words from `0x8006F180` over `+0x70..+0x78` - blanking the
+  immediate pair that its install-side sibling `FUN_8006EFD0` reads to
+  reconstruct a kernel address (and then patches at `+0x28` with a jump out into
+  SCUS).
+
+Both are bracketed by `EnterCriticalSection` (`syscall(1)`) and `FlushCache`
+(A0 `0x44`). The install veneer is `FUN_8006EE8C(pad_enable)` -
+`ChangeClearPAD(0)`, `InitCARD`, then `_EFD0` + `_F088` - and `FUN_8006EF18` is
+its teardown mirror, which is exactly why the caller `FUN_8002035C` runs it after
+closing eight kernel event handles. Table + citations:
+[`functions/runtime-libs.md`](functions/runtime-libs.md#the-bios-kernel-patch-cluster-8006ee8c--8006ef18).
 
 ### Key-on pitch: unity on centre
 

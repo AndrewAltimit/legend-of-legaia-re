@@ -91,7 +91,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`mips-overlay.md`](docs/formats/mips-overlay.md) | Per-PROT MIPS-code-likelihood detection. |
 | [`overlay-ptr-table.md`](docs/formats/overlay-ptr-table.md) | Sister of `mips-overlay`. |
 | **Auxiliary** | |
-| [`sfx-table.md`](docs/formats/sfx-table.md) | Static `SCUS_942.54` sound-effect descriptor table `DAT_8006F198 + id*8` (8-byte stride, 100 entries `0x00..=0x63`): program/VAG, ADSR base, voice count, and the `+4` **category** that selects the cue's VAB slot (slot 0 = PROT 0868, slot 2 = PROT 0869; 1/3/6/11 unpinned). Ids `>= 0x200` come from a runtime bank instead. Parser `legaia_asset::sfx_table`. |
+| [`sfx-table.md`](docs/formats/sfx-table.md) | Static `SCUS_942.54` sound-effect descriptor table `DAT_8006F198 + id*8` (8-byte stride, 100 entries `0x00..=0x63`): program/VAG, ADSR base, voice count, and the `+4` **category** that selects the cue's VAB slot (0 = PROT 0868, 2 = 0869, 6 = 0876, 11 = 0889; slots 1/3 hold variable banks). Ids `>= 0x200` come from a runtime bank instead. Parser `legaia_asset::sfx_table`. |
 | [`bse-dat.md`](docs/formats/bse-dat.md) | `bse.dat` master sound bank - the one bank the sound subsystem loads at init and keeps a pointer into for the session (`0x1800`-byte buffer at `_DAT_8007B8D0`). Detection class `bse_bank`; parser `legaia_asset::bse_bank`. Header word and record stride are Confirmed; what the record columns mean is Unknown. |
 | [`sound-driver.md`](docs/formats/sound-driver.md) | `.dpk` / `.spk` / `.MAP` / `.PCH` (sound-driver outputs in `sound_data` blocks). |
 | [`dialog-font.md`](docs/formats/dialog-font.md) | Glyph metadata at SCUS `0x80074050`; bitmaps in VRAM. |

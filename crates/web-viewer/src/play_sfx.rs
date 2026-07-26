@@ -338,16 +338,15 @@ impl PlaySfx {
 
     /// The staged bank a cue must key, with the fallback the routing needs.
     ///
-    /// **The fallback is the pre-routing behaviour on purpose.** Only slots `0`
-    /// and `2` are pinned to PROT entries; categories `6` (30 descriptors) and
-    /// `11` (1) name slots whose filler is untraced, and inventing one would be
-    /// worse than the sibling sample they already got. So an unpinned slot -
-    /// and an unknown cue id - resolves to
-    /// [`FALLBACK_VAB_SLOT`] = the class-2 bank, exactly the bank this page
-    /// staged for every cue before the routing existed. That keeps categories
-    /// 6 / 11 sounding as they did while categories 0 / 2 become correct. The
-    /// remaining slot-to-PROT hunt is the "Which PROT entries fill SFX VAB
-    /// slots 1 / 3 / 6 / 11" row in `docs/reference/open-rev-eng-threads.md`.
+    /// **The fallback is the pre-routing behaviour on purpose.** This page
+    /// stages slots `0` and `2`; categories `6` and `11` name banks it does not
+    /// hold (PROT 0876 / 0889 - traced, but they do not fit beside the other
+    /// two in the shared SPU region), so those - and an unknown cue id -
+    /// resolve to [`FALLBACK_VAB_SLOT`] = the class-2 bank, exactly the bank
+    /// this page staged for every cue before the routing existed. That keeps
+    /// categories 6 / 11 sounding as they did while categories 0 / 2 become
+    /// correct. Retail avoids the arithmetic because slot 6 *is* slot 2's
+    /// region, refilled per game mode - see `docs/formats/sfx-table.md`.
     fn resolve_slot(&self, id: u8) -> u8 {
         let slot = self.slot_for_cue(id).unwrap_or(FALLBACK_VAB_SLOT);
         if self.bank_bytes.contains_key(&slot) {

@@ -68,6 +68,36 @@ Bulk scan finds 1191 `VABp` headers across 239 PROT entries. Multi-bank archives
 
 The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_asset::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, out of clean-room scope.
 
+## VAB slots - one installer, twelve records
+
+Every bank retail opens goes through one installer, and its argument is the same
+category byte the SFX descriptors carry. `FUN_8001FC00(raw_toc_index, category,
+buf, append, len)` streams the entry into a staging buffer; **`FUN_8001E54C(category,
+buf, len)`** then walks the streamed chunk list and installs it, taking the
+header buffer from the 12-byte mixer record at `0x80091508 + category*12` (`+0`)
+and the VAB slot from that record's `+8`, and opening the bank through
+`FUN_8002630C` → `SsVabOpenHead` (sticky, at the SPU address the per-slot table
+at `0x800917B0` holds) → `SsVabTransBody`. So every call site's
+`FUN_8001FC00` / `FUN_8001E54C` pair names one `(PROT entry, slot)` binding
+outright.
+
+| Slot | Bank | Installed by |
+|---|---|---|
+| `0` | PROT 0868 system bank | resident |
+| `1` | the current BGM bank (`music_01`, variable) | `FUN_800243F0` |
+| `2` | PROT 0869 class-2 bank (`0875` alternate) | `FUN_800520F0`, `FUN_801CF00C` |
+| `3` | a `vab_01` side-band bank (variable) | `FUN_800243F0`, from `_DAT_8007BABC` |
+| `6` | PROT 0876 field bank | field init `FUN_801D6704` |
+| `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` (below) |
+| `11` | PROT 0889 reward bank | `FUN_8004E568` |
+
+The record initialiser `FUN_8001D424` writes `+8 = record index` for all 16
+records, then assigns their header buffers from one base with four pairs sharing
+one - and `FUN_800265E8` gives those same pairs one SPU base. Slot 6 and slot 2
+are therefore the same physical bank in two modes, which is why retail needs no
+extra SPU room for the field cues. Slot sizes, the SPU map and the structural
+checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
+
 ## Monster sound bank - `h:\mpack\monster.snd`
 
 Battle-time monster sound banks live in a single packed `monster.snd` file. The loader is `FUN_8003E104(monster_idx, slot, dst_buf)` - called twice from the battle scene loader `FUN_800520F0` (slots 7 and 8, for the active battle's two monster sound banks). It reads the file's per-monster TOC at `0x801C8980 - 0x10` (4-byte stride, paired entries giving `[start_lba, end_lba+1]`), computes the LBA range, and dispatches:
@@ -847,7 +877,7 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
-**The bank those programs index is named by the cue itself.** `FUN_80065034` calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that repoints the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`) at the slot the cue's `+4` category selects. The older reading - "the globals hold whichever VAB is open, so a cue plays out of the scene's music bank" - was a save-state artefact: the globals really are shared with the sequencer, so a state sampled after a BGM note holds the music bank, and across the catalogue that is 13 distinct VABs. Full law, the category -> slot -> PROT map and its two pinned entries: [`formats/sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
+**The bank those programs index is named by the cue itself.** `FUN_80065034` calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that repoints the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`) at the slot the cue's `+4` category selects. The older reading - "the globals hold whichever VAB is open, so a cue plays out of the scene's music bank" - was a save-state artefact: the globals really are shared with the sequencer, so a state sampled after a BGM note holds the music bank, and across the catalogue that is 13 distinct VABs. Full law, the category -> slot -> PROT map and its four entries: [`formats/sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
 
 Practically, that makes the low id range emphatically **not** the scene's music VAB. The class-2 bank (PROT 0869) that the battle scene loader `FUN_800520F0` (`a1 = 2`) and the Baka init `FUN_801CF00C` stage carries a purpose-built SFX key map at **program 0**: one distinct VAG per semitone, single-note windows `min == max == 60 + i`, lining up 1:1 with the descriptor notes of the UI cue ids (`0x20` note 60, `0x21` note 61, `0x23` note 63, `0x09` note 69). The slot-0 system bank (PROT 0868) carries its own copy of that map, and it is the one the shared UI cues - which are category `0` - actually key.
 

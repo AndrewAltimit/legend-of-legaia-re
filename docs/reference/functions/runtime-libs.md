@@ -26,7 +26,8 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8006B844` | `WaitEvent` BIOS thunk - `jr 0xB0` with `t1=0x0A`. Blocks on a kernel event handle. |
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
 | `8006D7A4` | BIOS C0 thunk - `li t2,0xC0; jr t2; li t1,0x3`. Dispatches to C0 vector 0x03 (`ChangeThreadSubFunction`). Called from `FUN_8006D2AC` (audio subsystem init). |
-| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | SPU voice-state init sequence. `FUN_8006EF18` calls all three in order. `_EF68` = B0 0x4C (`InitCd`-adjacent). `_F088` = B0 0x57 then swaps 5 dwords between `DAT_8006F058..F06C` (static table) and `iVar1 + 0x9C8` (SPU voice block) + `FlushCache`. `_F118` = B0 0x56 + symmetric swap at `iVar1 + 0x18 / -0xE80`. |
+| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | **Card teardown + BIOS kernel un-patch**, not an SPU init - [details below](#the-bios-kernel-patch-cluster-8006ee8c--8006ef18). |
+| `8006EE8C` / `8006EEE0` / `8006EFD0` | The install half of the same cluster - [details below](#the-bios-kernel-patch-cluster-8006ee8c--8006ef18). |
 | `800567B8` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. Body spans `0x800567B8..0x8005700F`, so the `0x80056B18` this row used to list beside it is **interior** to it, not a second entry - the dump named `80056b18.txt` holds this same routine from its real start. |
 | `80057024` | `memmove` - overlap-safe direction-aware copy. |
 | `8005ACAC` | `memset`. |
@@ -44,7 +45,28 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80058170` | libgpu debug rectangle validator. Reads the library debug-level byte `_DAT_80078D56`; at level 1 it bounds-checks the four `RECT` halfwords at `a1+0x0/2/4/6` against the framebuffer limits `_DAT_80078D58` / `_DAT_80078D5A` and rejects non-positive extents, at level 2 it reports unconditionally, and either way it reports through the installed printf hook `*_DAT_80078D50` with a caller-name argument. Pure diagnostics - the retail path leaves the level byte at 0 and the whole body falls through. `see ghidra/scripts/funcs/80058170.txt`. |
 | `8005860C` | Sibling of the validator above on the primitive-submission path: same `_DAT_80078D56` debug gate and `*_DAT_80078D50` hook, then dispatch through slot `+0x2C` of the GPU module function table `*_DAT_80078D4C`, then a 24-bit-masked pointer store into the primitive's first word - the OT/tag link every libgpu submit ends with. `see ghidra/scripts/funcs/8005860c.txt`. |
 | `8005F9C8` | Raw DMA-channel start - spins for the channel idle, enables it in DPCR, programs MADR/BCR/CHCR at `0x1F801080 + chan*0x10` and the DICR bit; the low-level transfer kick under libgpu/libspu. `see ghidra/scripts/funcs/8005f9c8.txt`. |
-| `8002035C` | Kernel-event teardown + SPU re-init - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then re-runs the SPU voice-state init `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
+| `8002035C` | Kernel-event teardown - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then runs the card-teardown / un-patch trio `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
+
+### The BIOS kernel-patch cluster (`8006EE8C` / `8006EF18`)
+
+Six functions in one address bank patch **kernel code**, bracketed by
+`EnterCriticalSection` and `FlushCache`. Nothing in them touches an SPU
+register, a voice block or a libspu global; the "SPU voice-state init sequence"
+label the trio used to carry was read off vector numbers alone.
+
+| Address | What the disassembly does |
+|---|---|
+| `8006EF48` / `8006EF58` / `8006EF68` | Bare BIOS stubs (`li t2,0xb0; jr t2; li t1,N`): B0 `0x4A` `InitCARD`, `0x4B` `StartCARD`, `0x4C` `StopCARD`. |
+| `8006EFD0` | B0 `0x56` `GetC0Table`, reads `C0table[6]` (`ExceptionHandler`), rebuilds a kernel address from the `lui`/`ori`-style immediate pair at `+0x70` / `+0x74`, and copies a 5-word block from `0x8006EF78` to that address `+0x28`. The block is `lui/addiu` + `jr` to `0x8006EF8C` - a jump out into SCUS code. |
+| `8006F088` | B0 `0x57` `GetB0Table`, takes `B0table[0x5B]` (the `ChangeClearPAD` entry - an anchor whose *relative* offsets are BIOS-version-stable) and **swaps** 5 words between `+0x9C8` there and the static block at `0x8006F058`. The shipped block is a `jalr` trampoline to `0x8006F058` itself, so after the swap the kernel calls a buffer holding its own displaced instructions, which fall through into a `0xC8`-iteration busy-wait at `0x8006F070` and `jr ra`. A swap is its own inverse, which is why install and teardown both call it. |
+| `8006F118` | B0 `0x56` again, then copies 3 words from `0x8006F180` (zero in the shipped image) over `ExceptionHandler + 0x70..+0x78` - blanking the immediate pair `8006EFD0` reads. |
+
+`FUN_8006EE8C(pad_enable)` is the install veneer (`ChangeClearPAD(0)`,
+`InitCARD`, then `_EFD0` + `_F088`), `FUN_8006EEE0` the `StartCARD` sibling, and
+`FUN_8006EF18` the teardown trio (`StopCARD`, `_F088` swapping the delay back
+out, `_F118` clearing the address pair). `see
+ghidra/scripts/funcs/8006ee8c.txt`, `8006ef18.txt`, `8006efd0.txt`,
+`8006f088.txt`, `8006f118.txt`.
 
 ### libgte primitives
 

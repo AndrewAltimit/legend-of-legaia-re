@@ -398,14 +398,16 @@ impl BgmDirector for AudioBgmDirector {
 /// Which VAB slot a cue resolves to, given the installed cue -> slot routing
 /// and the set of slots that actually staged.
 ///
-/// **The fallback is the pre-routing behaviour on purpose.** Only slots `0` and
-/// `2` are pinned to PROT entries; categories `6` (30 descriptors) and `11` (1)
-/// name slots whose filler is untraced, so those - and any id the descriptor
-/// table doesn't carry - resolve to [`FALLBACK_VAB_SLOT`], the class-2 bank
-/// this host staged for every cue before the routing existed. Categories 0 and
-/// 2 become correct without changing what 6 / 11 sound like. The remaining
-/// slot-to-PROT hunt is the "Which PROT entries fill SFX VAB slots 1 / 3 / 6 /
-/// 11" row in `docs/reference/open-rev-eng-threads.md`.
+/// **The fallback is the pre-routing behaviour on purpose.** This host stages
+/// slots `0` and `2`; categories `6` and `11` name banks it does not hold
+/// (PROT 0876 / 0889 - traced, but they do not fit beside the other two in the
+/// reserved SPU region), so those - and any id the descriptor table doesn't
+/// carry - resolve to [`FALLBACK_VAB_SLOT`], the class-2 bank this host staged
+/// for every cue before the routing existed. Categories 0 and 2 become correct
+/// without changing what 6 / 11 sound like. Retail needs no extra room because
+/// slot 6 *is* slot 2's SPU region, refilled on the field/battle transition;
+/// staging them here means reloading that region per mode - see
+/// `docs/formats/sfx-table.md`.
 ///
 /// Free function rather than a method so it is testable without a cpal device
 /// (an [`AudioBgmDirector`] needs a live [`AudioOut`]).

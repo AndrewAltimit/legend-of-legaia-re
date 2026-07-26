@@ -114,8 +114,8 @@ every record of every state - so **a cue's category byte selects its VAB slot**.
 |---|---|---|
 | `0` | 16 | Slot-0 system bank = **PROT 0868**. Shared UI cues (`0x1A`, `0x20`, `0x21`, `0x23`, `0x37`). |
 | `2` | 53 | Slot-2 class-2 bank = **PROT 0869** (`0875` when `DAT_8007BD11 == 4`). Battle / duel (`0x09`, `0x4C`). |
-| `6` | 30 | Slot 6, PROT entry **unpinned**. Includes the field script cues `0x2E` / `0x2F`. |
-| `11` | 1 | Slot 11, PROT entry **unpinned**. |
+| `6` | 30 | Slot-6 field bank = **PROT 0876**. Field script cues (`0x2E`, `0x2F`) and the rest of the field/player set. |
+| `11` | 1 | Slot-11 battle-reward bank = **PROT 0889**. The single cue `0x50`. |
 
 PROT 0868's identity is a byte match, not a label: a live field state's slot-0
 `VagAtr` program-0 page (512 bytes) occurs verbatim in extraction entry
@@ -123,10 +123,71 @@ PROT 0868's identity is a byte match, not a label: a live field state's slot-0
 Its CDNAME label reads `battle_data` and 0869's reads `monster_data`, which is
 the usual reminder that a label is a hint.
 
-Slots `1`, `3`, `6` and `11` have no traced PROT entry. That is the open half of
-this question, and it is deliberately a hole rather than a guess:
-`legaia_asset::sfx_table::prot_index_for_slot` returns `None` for them. Thread:
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
+The other four open slots carry no descriptors of their own: **`1` and `3` hold
+variable banks**, not fixed entries - slot 1 is the scene's current BGM bank and
+slot 3 a script-selected side-band bank, both re-filled per selection by
+`FUN_800243F0` (see [below](#which-prot-entry-reaches-which-slot)) - and slots
+`7` / `8` hold the battle's two `monster.snd` banks. That is why "the SFX bank is
+the scene's music VAB" is a half-truth rather than a mistake: it is exactly true
+of slot 1, and no descriptor keys slot 1.
+
+### Which PROT entry reaches which slot
+
+A bank reaches a slot through one call pair, and the pair names the binding at
+every call site: `FUN_8001FC00(raw_toc_index, category, buf, append, len)`
+streams the entry into a staging buffer, then
+**`FUN_8001E54C(category, buf, len)`** installs it. The installer indexes the
+same 12-byte mixer record the descriptors do (`0x80091508 + category*12`), takes
+the header buffer from `+0` and the VAB slot from `+8`, and walks the streamed
+chunk list: chunk type `1` / `3` goes to `FUN_8002630C` → `FUN_80068D34`
+(`SsVabOpenHead`, sticky, with the SPU address read from the per-slot table at
+`0x800917B0`) → `FUN_80069170` (`SsVabTransBody`). Raw TOC indices run two above
+extraction indices ([numbering](cdname.md#numbering-space)).
+
+| Slot | Filler | Call site |
+|---|---|---|
+| `0` | PROT 0868 | resident system bank |
+| `1` | the scene's BGM bank (`music_01`, variable) | `FUN_800243F0`, index `*(0x8007BC64) + id - 2000` |
+| `2` | PROT 0869 (raw `0x367`), `0875` alternate | battle scene loader `FUN_800520F0`, Baka init `FUN_801CF00C` |
+| `3` | a `vab_01` side-band bank (variable) | `FUN_800243F0`, index `*(0x8007BBE4) + id - 2000` from `_DAT_8007BABC` |
+| `6` | PROT 0876 (raw `0x36E`) | field init `FUN_801D6704` |
+| `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` + `FUN_8001E54C(7\|8, …)` from `FUN_800520F0` |
+| `11` | PROT 0889 (raw `0x37B`) | battle-end reward resolution `FUN_8004E568` |
+
+Both new pins carry an independent structural check. PROT 0876 holds **30** VAGs
+for the 30 category-`6` descriptors, its populated program slots are `1..=7`, and
+29 of the 30 descriptors name a program in that set. PROT 0889 is a one-program
+bank whose only populated `ProgAtr` slot is **10** - which is exactly the program
+the single category-`11` descriptor (`0x50`) names, with 2 voices against the
+program's 2 tones; and the function that loads it, `FUN_8004E568`, is the same
+one that fires cue `0x50`. Slot 6 and slot 1 are also byte-pinned: in a
+catalogued field state the live header buffers match extraction 0876 and
+(for that state's track) 0998 exactly, over the whole corpus of 218 disc VABs,
+once the runtime-written `ProgAtr +8..0xF` words are excluded.
+
+The `DAT_8007BD11 == 4` alternate for slot 2 shows up in the same structural
+check: descriptors `0x40` / `0x41` name program 10, which PROT 0869 does not
+populate and PROT **0875** does.
+
+### The slots are aliased in pairs
+
+`FUN_8001D424` (sound-system init, called from the boot init `FUN_80015E90`)
+builds the 16 mixer records: it clears `+0` / `+9` / `+0xB` and writes
+**`+8 = record index`** for every record (`sb a3,0x8(t0)` with `addiu t0,t0,0xc`,
+`0x8001D68C`) - so the "category *is* the slot" identity is written by the
+initialiser, not merely observed in states. It then assigns the header buffers
+from one base, and four pairs share one: records `0`/`10`, `1`/`5`, `2`/`6`,
+`8`/`11`.
+
+`FUN_800265E8` installs the matching per-slot SPU addresses at `0x800917B0`, and
+the same pairs share a base there too (`0`/`10` at `0x1010`, `1`/`5` at
+`0x10010`, `2`/`6` at `0x33010`, `4`/`7` at `0x65010`), with `3` at `0x60010`,
+`8` at `0x6C810` and `11` at `0x6F010`. So the **field bank (slot 6) and the
+class-2 battle bank (slot 2) are the same physical bank**, used by two
+categories in two modes - they can never be resident together, and neither can
+the BGM slot 1 and its alias 5. The gaps are the retail allocation, not a
+hardware cap: a bank larger than the gap to the next base simply overruns it,
+which is legal exactly while the neighbour slot is closed.
 
 ### What a single-bank port gets wrong, and why it is silent
 
@@ -139,10 +200,15 @@ than the field menu's, because 0869's `center` bytes are authored higher. Peak,
 duration and "did a voice key on" all pass in that state. The only observable
 that separates the two is which PROT entry the samples came from.
 
-Both hosts now stage the two pinned banks and route each cue through
+Both hosts stage two banks - slot 0 and slot 2 - and route each cue through
 `slot_for_category(descriptor.category)`; the 31 category-`6`/`11` descriptors
-fall back to the class-2 bank, which is exactly the behaviour they had before,
-so nothing changes for them while their slots stay unpinned.
+fall back to the class-2 bank, which is exactly the behaviour they had before.
+That fallback is now a **residency** limit rather than a gap in the map: slots 6
+and 11 name real entries (0876 / 0889), and what stops a host staging them is
+the [SPU budget](#spu-budget---both-banks-in-one-region) below. Retail does not
+need the room because slot 6 *is* slot 2's region, refilled per mode; a host that
+wants the field cues right has to reload the shared region on the field/battle
+transition the way `FUN_801D6704` and `FUN_800520F0` do, not widen the reservation.
 
 ### The ring value **is** the descriptor index
 
@@ -317,6 +383,25 @@ BGM region to 266 240 and starts silencing music that plays today, one step
 smaller does not fit both banks. Both hosts use the same constant, and the two
 must stay equal.
 
+Retail's own map, from the initialiser `FUN_800265E8`, is the reason it does not
+face this: the four fixed banks never sum, because slot 6 shares slot 2's SPU
+base and only one of the two is open per mode.
+
+| Slot | SPU base | Gap to the next base | Bank's VAG bodies |
+|---|---|---|---|
+| `0` / `10` | `0x1010` | 61 440 | PROT 0868 - 59 136 |
+| `1` / `5` | `0x10010` | 143 360 | current BGM bank |
+| `2` / `6` | `0x33010` | 184 320 | PROT 0869 - 188 128 / PROT 0876 - 174 192 |
+| `3` | `0x60010` | 20 480 | side-band bank |
+| `4` / `7` | `0x65010` | 30 720 | `monster.snd` bank A |
+| `8` | `0x6C810` | 10 240 | `monster.snd` bank B |
+| `11` | `0x6F010` | 69 616 | PROT 0889 - 19 344 |
+
+The gaps are allocation, not enforcement - PROT 0869 is 3 808 bytes larger than
+the gap below slot 3, and the largest `music_01` bank is nearly three times slot
+1's gap. A bank overruns its neighbour's base whenever that neighbour is closed,
+which for a mode-partitioned slot set is most of the time.
+
 ### The class-2 sound bank (PROT 0869)
 
 Slot 2 of the [category map](#category-is-a-bank-selector-and-four-banks-are-open-at-once) is a **dedicated class-2 sound bank**,
@@ -365,9 +450,12 @@ table window straight out of save-state RAM. `SfxDescriptor` exposes the decoded
 fields plus `voice_count()` / `sustained()` / `is_active()` / `vab_slot()`.
 
 The same module carries the **routing law**: `slot_for_category`,
-`prot_index_for_slot` (`None` for the unpinned slots, so a host cannot guess
-one), `prot_index_for_category`, the `PINNED_SLOT_BANKS` pairs, and
-`FALLBACK_VAB_SLOT` for the categories with no traced entry.
+`prot_index_for_slot` (`None` only for the slots whose bank is variable rather
+than a fixed entry, so a host cannot mistake one for the other),
+`prot_index_for_category`, the `SLOT_BANKS` pairs (every fixed-entry slot),
+`PINNED_SLOT_BANKS` (the subset a single-region host stages),
+`spu_base_for_slot` + `SLOT_ALIASES` (retail's SPU map and the pairs that share
+a region), and `FALLBACK_VAB_SLOT` for the categories a host has not staged.
 `SfxTable::cue_slots` / `slots_used` are the per-cue and per-table views.
 
 The disc-gated

@@ -300,48 +300,11 @@ menu.md#use-list-row-build-content-id-3-fun_80030628). |
 | Thread | Status | What would close it |
 |---|---|---|
 | `_DAT_8007B910` carries two incompatible roles | open | The corpus calls it "live brightness" (seeded `0xD7` beside the brightness reference `_DAT_8008457C` by `FUN_8001FFA4`; ramped as a screen fade by the battle-action SM states `0x35`/`0x51`/`0x6F`) **and** feeds it as an audio scalar: `FUN_80026478` passes `_DAT_8007B910 >> 1` to the pan primitive `FUN_8002657C`, and `FUN_800267A8` passes the same halved value to the libsnd wrapper `FUN_80062004`. Both readings are already committed, in different pages. Closing it needs a live watch on the cell across a summon cast (brightness ramp) with the audio mix observed, or the identification of `FUN_80062004`'s libsnd entry - if its second argument is a volume, one of the two labels is wrong. |
-| Is the `FUN_8006EF18` trio an SPU voice-state init at all? | open (two pages disagree; the label is contradicted by its own cited vectors) | [details ↓](#is-the-fun_8006ef18-trio-an-spu-voice-state-init) |
+| Is the `FUN_8006EF18` trio an SPU voice-state init at all? | resolved-negative (moved to re-settled) | No - grade `disassembly`. The three callees are a `StopCARD` stub and two **BIOS kernel-code patchers** (a swap-in delay trampoline anchored off `B0table[0x5B]`, and a 3-word blank over `ExceptionHandler + 0x70`), with the install half at `FUN_8006EE8C`. Nothing touches an SPU register or voice block. See [`re-settled-threads.md`](re-settled-threads.md#the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init). |
 | Is `FUN_80018DB0` a rumble cadence rather than an audio one? | resolved (moved to re-settled) | Yes - grade `disassembly`. `FUN_8006E2B4` is `PadInitDirect` and `FUN_8006CE30` is a three-argument `PadSetAct`; `DAT_800915DA/DB` are port 0's actuator bytes, so the kernel drives vibration and plays nothing. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
 | Retail's footstep SFX cue id | resolved-negative (moved to re-settled) | There is no cue to pin: the only "cadence" is the rumble one above, and the capture already showed retail plays nothing on a step. See [`re-settled-threads.md`](re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one). |
-| Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11 | partial | The routing above it is settled: a descriptor's `+4` category selects a VAB slot and both hosts now stage and route by it (grade `capture`, see [`re-settled-threads.md`](re-settled-threads.md#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot)). What is left is the slot-to-PROT map for the slots with no traced loader; 31 descriptors (categories `6` and `11`) fall back to the class-2 bank until they have one. [details ↓](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11) |
+| Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11 | resolved (moved to re-settled) | Slot 6 = **PROT 0876**, slot 11 = **PROT 0889**; slots 1 and 3 hold *variable* banks (the current BGM bank and a script-selected side-band bank), so they have no fixed entry to name. Grade `disassembly` + `capture`. See [`re-settled-threads.md`](re-settled-threads.md#which-prot-entries-fill-sfx-vab-slots-1--3--6--11). |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved | Writer pinned statically: `FUN_801CFA78` in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs) sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4`; called once from the init boot tick `0x801CF500`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md); grade `disassembly` (byte-level, base self-consistent). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls). [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
-
-### Is the `FUN_8006EF18` trio an SPU voice-state init?
-
-*Status:* open - two committed pages disagree, and the older label is
-contradicted by the BIOS vectors it cites itself.
-
-[`functions/runtime-libs.md`](functions/runtime-libs.md) calls `FUN_8006EF18` an
-"SPU voice-state init sequence" over three callees, and
-[`functions/audio.md`](functions/audio.md) describes `FUN_8006EFD0` as a sibling
-of the same "init trio". But the vectors that row cites are not SPU calls:
-
-| Callee | Cited vector | What that vector is |
-|---|---|---|
-| `_EF68` | B0 `0x4C` | `StopCARD` |
-| `_F088` | B0 `0x57` | `GetB0Table` |
-| `_F118` | B0 `0x56` | `GetC0Table` |
-
-`GetB0Table` / `GetC0Table` return the kernel's own vector tables, so "swaps 5
-dwords between a static table and `iVar1 + <offset>`, then `FlushCache`" is
-**BIOS-vector patching** - a library installing its own veneers over kernel
-entries - not voice-block manipulation. `FlushCache` after writing to a returned
-kernel table is the tell. On that reading `iVar1 + 0x9C8` is an offset into a
-vector table, and the "SPU voice block" identification is the part with no
-instruction behind it.
-
-What it is *not* safe to conclude: that this makes the trio libcard. `StopCARD`
-appears because both libcard and libspu patch BIOS vectors, and the caller
-`FUN_8002035C` re-runs `FUN_8006EF18` right after closing eight kernel event
-handles - which fits either library. One proposed relabel (`StopCARD` + siblings)
-rests on the same vector-number-to-name mapping with no veneer body read, so it
-would grade `decompiled-C` too; swapping one unverified label for another is not
-progress.
-
-**What would close it:** read the three veneer bodies and name which table
-entries they overwrite. If the patched entries are B0/C0 slots belonging to the
-card or SPU families, the owning library follows directly. Until then treat both
-labels as unconfirmed rather than picking the newer one.
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
 
@@ -350,46 +313,6 @@ labels as unconfirmed rather than picking the newer one.
 The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..XA34`, title-capture byte-exact vs the disc files). The filler is **`FUN_801CFA78`** in PROT 0895 `init.pak` (base `0x801CE818`, recovered from four in-blob string refs): it sprintf-generates `\XA\XA%d.XA;1` per slot and fills `[BCD-MSF][size]` via the ISO9660 lookup `FUN_8005DBB4`, called once from the init boot tick `0x801CF500`. The earlier "filler is an untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two `lui 0x801c` materialisation sites in SCUS (`FUN_8003D53C`/`FUN_8003EAE4`) are the **readers**, and the writer is overlay-resident, so no absolute-form scan of SCUS could see it.
 
 A caller census of `FUN_8003D53C`/`FUN_8003EAE4` names each `(clip_id, chan)` cue. Decoded: menu voice `FUN_8004FCC8`; the normal-move grunt (`XA30` chan 0/4/6, overlay `0x801EEB44`); the **arts shout** (`FUN_8004C140` → `XA2`/`XA4`/`XA6` per character, per-art channel pool, capture-verified; [battle-action.md](../subsystems/battle-action.md)); SM state-`0x6E` (`XA9` via `0x800787AF`); slot machine `XA1`. Full deduped one-shot + streamed cue census in [`audio.md`](../subsystems/audio.md). Census note: PROT-entry over-read aliases callsites into neighbouring overlays - dedupe by true entry extent (gameover 0902 / world-map 0901 have zero genuine XA calls).
-
-### Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11
-
-*Status:* partial - the routing is settled and ported; the slot-to-PROT map for
-four of the six slots retail opens is not.
-
-What is settled. A descriptor's `+4` category selects the 12-byte mixer record at
-`0x80091508 + category*12`, and that record's `+8` is a **VAB slot id**, not a
-level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it unless the
-per-bank open-state byte `_DAT_801CE368[id] == 1` and then repoints the
-current-bank globals at that slot before the program / tone lookup. Across
-catalogued states record `N` holds `+8 == N` and `+0` == slot `N`'s live
-`VabHdr`, in every record of every state. Slot 0 is **PROT 0868**, slot 2 the
-class-2 bank **PROT 0869**, and both hosts now stage the pair and resolve each
-cue through its own category - so the shared UI blips sound out of 0868 the way
-retail's field menu does. Law, port and evidence:
-[`sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once)
-and [`re-settled-threads.md`](re-settled-threads.md#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot).
-
-What is not pinned. Which PROT entries fill slots `1`, `3`, `6` and `11`, and
-who loads each - only slot 2's loader (`FUN_800520F0` with `a1 = 2`, and the Baka
-init) and slot 0's *identity* are traced. A field state has slots `0, 1, 3, 6`
-open at once. Slot 6 carries the field script cues `0x2E` / `0x2F`, so it is a
-field-resident bank; slot 1 was the scene music VAB in the state examined, which
-is what makes "the SFX bank is the scene's music VAB" a half-truth rather than a
-mistake - category 1 has no descriptors.
-
-What it costs while it is open. 31 of the 100 descriptors are category `6` (30)
-or `11` (1). Both hosts route those to the class-2 bank, which is the behaviour
-they had before any routing existed - so those cues sound exactly as they did,
-and nothing regressed - but for 30 of them that is the wrong bank, quietly, in
-the same way the 16 category-`0` cues were.
-
-What would close it. A sweep of the streaming loader's `a1` argument at its call
-sites should name the remaining slots the way `a1 = 2` named the class-2 bank;
-the field overlay is where slot 6's loader has to be. Anything found also has to
-fit the SPU budget: the reserved region holds the two pinned banks with 2592
-bytes spare, and the BGM region below it is already down to the size of the
-largest scene VAB on the disc, so a third resident bank needs the allocation
-rethought rather than widened.
 
 ## Title / boot / overlays
 
