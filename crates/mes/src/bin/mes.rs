@@ -64,6 +64,36 @@ enum Cmd {
     /// Walk every offset-table entry, print event-stats for each message.
     /// Input: a Compact-variant MES blob from `legaia-extract`.
     StatsAll { path: PathBuf },
+    /// Group a conversation branch into **dialog boxes** - the page-at-a-time
+    /// view, rather than the segment-at-a-time one the runtime steps through.
+    ///
+    /// Retail's per-actor dialog SM (`FUN_80039B7C`) shows up to three `0x1F`
+    /// lines per window and then reads the control byte that follows the last
+    /// one to decide what the pager does next. This walks that grouping from a
+    /// starting `0x1F` lead and prints one line per box: its rows and the
+    /// dispatch that ends it. Useful when editing a MAN's dialog, where what
+    /// matters is which lines share a window.
+    Boxes {
+        /// A blob containing `0x1F`-lead dialog segments - a MES blob from
+        /// `legaia-extract` (see extracted/streaming/), or a decompressed MAN.
+        path: PathBuf,
+        /// Byte offset of the first `0x1F` lead. Defaults to the first one in
+        /// the file.
+        #[arg(long, value_parser = parse_hex_usize)]
+        start: Option<usize>,
+        /// Stop after this many boxes (also the runaway guard).
+        #[arg(long, default_value_t = 32)]
+        limit: usize,
+        /// Walk every `0x1F` lead in the file, not just one branch. A raw
+        /// scene entry is full of `0x1F` bytes that are not dialog leads, so
+        /// this filters to boxes with a recognised dispatch byte and no empty
+        /// row - pass `--unfiltered` to see every hit.
+        #[arg(long)]
+        all: bool,
+        /// With `--all`, print every `0x1F` hit including the coincidental ones.
+        #[arg(long)]
+        unfiltered: bool,
+    },
 }
 
 /// Rust ignores SIGPIPE by default; restore SIG_DFL so `mes disasm f | head`
@@ -87,7 +117,89 @@ fn main() -> Result<()> {
             verbose,
         } => events(&path, index, verbose),
         Cmd::StatsAll { path } => stats_all(&path),
+        Cmd::Boxes {
+            path,
+            start,
+            limit,
+            all,
+            unfiltered,
+        } => boxes(&path, start, limit, all, unfiltered),
     }
+}
+
+/// Group `0x1F`-lead dialog segments into boxes and print them.
+fn boxes(
+    path: &PathBuf,
+    start: Option<usize>,
+    limit: usize,
+    all: bool,
+    unfiltered: bool,
+) -> Result<()> {
+    let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let leads: Vec<usize> = if all {
+        raw.iter()
+            .enumerate()
+            .filter(|(_, b)| **b == 0x1F)
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        let at = match start {
+            Some(s) => s,
+            None => raw
+                .iter()
+                .position(|b| *b == 0x1F)
+                .context("no 0x1F dialog lead in this file")?,
+        };
+        vec![at]
+    };
+
+    println!("file:  {}", path.display());
+    println!("size:  {} bytes", raw.len());
+    println!("rows per box: {}", legaia_mes::dialog_box::LINES_PER_BOX);
+
+    let mut total = 0usize;
+    let mut covered = 0usize;
+    for lead in leads {
+        let packed = legaia_mes::dialog_box::pack_boxes(&raw, lead, limit);
+        if packed.is_empty() {
+            continue;
+        }
+        if all && packed[0].lead != lead {
+            continue;
+        }
+        // A raw scene entry carries plenty of `0x1F` bytes that are not dialog
+        // leads. A real box has a dispatch byte the pager recognises and no
+        // zero-length row; both together cut the coincidences.
+        if all
+            && !unfiltered
+            && (matches!(packed[0].dispatch, legaia_mes::Dispatch::Unknown(_))
+                || packed[0].lines.iter().any(|r| r.is_empty()))
+        {
+            continue;
+        }
+        for b in &packed {
+            let rows: Vec<String> = b
+                .lines
+                .iter()
+                .map(|r| format!("{:#x}..{:#x} ({}B)", r.start, r.end, r.len()))
+                .collect();
+            println!(
+                "  box @{:#08x}  {} row(s) [{}]  dispatch {:?} @{:#x}",
+                b.lead,
+                b.lines.len(),
+                rows.join(", "),
+                b.dispatch,
+                b.dispatch_at
+            );
+            covered += b.dispatch_at.saturating_sub(b.lead);
+        }
+        total += packed.len();
+        if !all {
+            break;
+        }
+    }
+    println!("-- {total} box(es), {covered} bytes grouped");
+    Ok(())
 }
 
 fn info(path: &PathBuf) -> Result<()> {

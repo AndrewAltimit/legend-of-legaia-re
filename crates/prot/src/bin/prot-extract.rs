@@ -69,6 +69,22 @@ enum Cmd {
         #[arg(long)]
         clamp_footprint: bool,
     },
+    /// Show what the **retail loader** reads back out of a `CDNAME.TXT`, next
+    /// to what the tolerant parser reads.
+    ///
+    /// The loader copies each name into a 16-byte record with no bound and no
+    /// terminator, then stores the block index over bytes `+0xC`/`+0xD`, so
+    /// every name of 12 bytes or more comes back with index bytes buried
+    /// inside it. This prints both readings and flags each disagreement -
+    /// the view a tool editing `CDNAME.TXT` needs, because it is the edited
+    /// file's *retail* reading that decides what the game sees.
+    RetailNames {
+        /// CDNAME.TXT, extracted next to PROT.DAT on the disc.
+        cdname: PathBuf,
+        /// Print every block, not just the ones the two readers disagree on.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 /// Restore default SIGPIPE behaviour so piping into `head` etc. exits
@@ -96,7 +112,81 @@ fn main() -> Result<()> {
             cdname,
             clamp_footprint,
         } => extract(&prot, &out, cdname.as_deref(), clamp_footprint),
+        Cmd::RetailNames { cdname, all } => retail_names(&cdname, all),
     }
+}
+
+/// Print the retail loader's view of a `CDNAME.TXT` beside the tolerant one.
+fn retail_names(path: &Path, all: bool) -> Result<()> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let tolerant = cdname::parse_str(&text).context("tolerant CDNAME parse")?;
+    let (table, order) = cdname::retail_name_table(&text);
+
+    // Declaration order, not the tolerant map: `parse_str` keys on the index,
+    // and `CDNAME.TXT` declares at least one index twice, so a lookup by index
+    // silently reports the wrong `#define` for the earlier record.
+    let declared: Vec<&str> = text
+        .lines()
+        .filter_map(|l| l.strip_prefix("#define "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect();
+
+    println!(
+        "retail name table: {} record(s) x {} bytes = {} bytes, index stored at +{:#x}/+{:#x}",
+        order.len(),
+        cdname::RETAIL_RECORD_STRIDE,
+        table.len(),
+        cdname::RETAIL_INDEX_OFFSET,
+        cdname::RETAIL_INDEX_OFFSET + 1,
+    );
+    println!(
+        "clean C-string capacity is {} bytes; anything longer keeps index bytes",
+        cdname::RETAIL_NAME_CLEAN_CAPACITY
+    );
+
+    let mut divergent = 0usize;
+    for (record, index) in order.iter().enumerate() {
+        let retail = cdname::retail_name_at(&table, record);
+        let declared = declared.get(record).copied().unwrap_or("<no #define>");
+        let same = retail.as_slice() == declared.as_bytes();
+        if !same {
+            divergent += 1;
+        }
+        if all || !same {
+            let shown = String::from_utf8_lossy(&retail);
+            let escaped: String = shown
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_graphic() || c == ' ' {
+                        c.to_string()
+                    } else {
+                        format!("\\x{:02x}", c as u32 & 0xFF)
+                    }
+                })
+                .collect();
+            println!(
+                "  record {record:4}  index {index:5}  declared {declared:<20} retail {escaped}{}",
+                if same { "" } else { "   <- differs" }
+            );
+        }
+    }
+    println!(
+        "-- {divergent} of {} block name(s) read back differently under the retail loader",
+        order.len()
+    );
+    // The retail table is record-indexed, the tolerant map index-keyed, so a
+    // repeated index costs the tolerant map a block. Say so rather than let the
+    // count difference pass unexplained.
+    let dupes = order.len() - tolerant.len();
+    if dupes > 0 {
+        println!(
+            "-- {dupes} record(s) share an index with an earlier one, so the \
+index-keyed map carries {} of the {} declarations",
+            tolerant.len(),
+            order.len()
+        );
+    }
+    Ok(())
 }
 
 /// Parse a `0x…` hex or decimal offset string.
