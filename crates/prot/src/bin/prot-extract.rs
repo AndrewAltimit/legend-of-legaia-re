@@ -153,14 +153,18 @@ fn retail_names(path: &Path, all: bool) -> Result<()> {
             divergent += 1;
         }
         if all || !same {
-            let shown = String::from_utf8_lossy(&retail);
-            let escaped: String = shown
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_graphic() || c == ' ' {
-                        c.to_string()
+            // Escape from the **bytes**. A lossy UTF-8 conversion first would
+            // fold every non-ASCII index byte to U+FFFD, and masking that back
+            // to 8 bits prints `fd` for all of them - which is exactly how a
+            // 0x03CC index reads as `fd 03`, one wrong byte that still looks
+            // like a plausible little-endian pair.
+            let escaped: String = retail
+                .iter()
+                .map(|&b| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        (b as char).to_string()
                     } else {
-                        format!("\\x{:02x}", c as u32 & 0xFF)
+                        format!("\\x{b:02x}")
                     }
                 })
                 .collect();
