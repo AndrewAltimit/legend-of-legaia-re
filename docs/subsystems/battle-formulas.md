@@ -766,7 +766,7 @@ respect, each module's own extent bounded by the next entry's head-overlap):
 | PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
 | PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
 | PROT 960 | Plasma Strike `0x7B` -> `+0xB0C` tick = **bypass**; Neo Star Slash `0xA6` -> `+0x0` tick = **respect** (dispatcher `+0x1C60`) | Lu Delilas; Gaza (Sim-Seru) | per-spell (see cells) |
-| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... | various | respect |
+| every other damage-dealing capture module (935..966) | Earthquake, Hyper Crush/Lightning, Chaos Breath/Flare, Call/Big Wave, Water Column/Crystals/Hazard, Cross Beam, V-/Neo Windhash, Rolling Flare, Scythe Wind, Dead End / Final Crisis, Blade Breath band, Genocidal Cannon, Doomsday, Mystic Circle, enemy ESM, ... (the full per-entry spell↔module map is static spell-table data - [spell-table.md](../formats/spell-table.md#capture-class-module-index-prot-09350966)) | various | respect |
 
 Status-only modules (Glare / Divide / Curse / White Shield cluster / Mystic
 Shield / Clone / Fatal Decision / Kiss of Death band) carry no damage-wrapper
