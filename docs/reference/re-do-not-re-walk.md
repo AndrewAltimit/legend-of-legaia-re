@@ -100,6 +100,42 @@ kernel-path, single-target and party-wide kills: every assign hit
 |---|---|---|
 | `FUN_80068D94` as "`SsSepOpen` / SEP loader" (with `FUN_80068B98` as "`SsSeqOpen`") | falsified (it is the VAB-open head) | The plausible part: it validates a magic, reads a count at `+0x12`, `SsSpuMalloc`s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is `0x564142` against `word >> 8` plus low byte `0x70` - `pBAV`, the **VAB** magic - and `+0x12` is `ps`. The "per-track pointer table" is the ProgAtr table receiving the program → packed-tone-page rank map ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: [`audio.md`](../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |
 
+## Containers / placeholder slots
+
+| Thread | Verdict | Why |
+|---|---|---|
+| Pochi-fill slots are stale mastering scratch, and some parse as valid TIMs | falsified (every slot is one 2048-byte sector; 0 of 266 carry a TIM) | [details ↓](#pochi-fill-slots-as-stale-mastering-scratch) |
+
+### Pochi-fill slots as stale mastering scratch
+
+*Status:* falsified - the corrupting pages came from the **next** entry, reached
+through an over-reading size expression
+
+The plausible part was strong enough to reach [`CLAUDE.md`](../../CLAUDE.md) and
+stay there: reserved-but-unused filler holding leftover bytes from an earlier
+master is an ordinary thing to find on a PSX disc, and the hazard had a
+**reproducible exhibit**. Two `64x256` pages uploading to framebuffer `(768,0)`
+and `(832,0)` erased a ground atlas, every run, and the sweep was positioned on a
+pochi slot when it happened.
+
+What refutes it: every one of the 266 `Class::PochiFiller` entries is exactly one
+2048-byte sector of fill, and **none** carries a parseable TIM header. There is no
+stale image in a pochi slot to upload. The corrupting pages belong to the
+`scene_tmd_stream` entry that *follows* the pochi slot, and the sweep reached them
+through the entry-size expression that spanned into neighbouring entries - since
+corrected in [`prot.md`](../formats/prot.md).
+
+The lesson is the transferable part, and it is not about pochi slots. **An
+over-reading reader makes the next entry's bytes look like the current entry's
+content**, so a symptom gets attributed to the entry the reader is positioned on
+rather than the entry it actually read into. The bug reproducing every single time
+is what made the wrong attribution durable: reproducibility confirms that
+*something* is wrong at that step, and says nothing about which entry owns the
+bytes. Format-level claims derived from a sweep are only as sound as the sweep's
+bounds - re-derive the bound before believing the claim.
+
+See [`pochi.md`](../formats/pochi.md) for what the slots actually contain.
+
 ## Field / locomotion
 
 | Thread | Verdict | Why |
