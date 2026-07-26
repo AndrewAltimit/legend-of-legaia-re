@@ -538,23 +538,37 @@ Enemy-stat multiplier (`monster_stats::plan_scale`) - the same seven halfwords,
 edited a different way.
 
 - `--enemy-stat-scale` multiplies every monster's stats by a factor
-  (`StatScale` - a `ScalePermille` per stat field, each `0.1x..=5x`, retail `1`)
-  instead of moving values between monsters, so each keeps its own profile while
-  the whole roster shifts together. Seedless, and applied after
-  `--monster-stats`, so the two compose.
-- **Two spellings, one type.** A bare multiplier (`2`) scales all seven fields; a
-  `stat=mult` list (`hp=3`, `attack=2,defense=0.5`) scales only what it names and
-  leaves the rest byte-identical. A uniform scale is simply every field holding
-  the same value, so both share one parser, one planner and one clamp rule -
-  which is what keeps the CLI flag and the browser page's simple / advanced
-  slider modes from drifting apart. Keys: `hp`, `mp`, `attack`, `defense` (both
-  halves), `defense_high` / `defense_low`, `intelligence`, `speed`, plus the
-  runtime's `udf` / `ldf` and the obvious synonyms. An unknown key, a
-  twice-set field or an out-of-range value is refused, not guessed.
+  (`ScalePermille`, each `0.1x..=5x`, retail `1`) instead of moving values
+  between monsters, so each keeps its own profile while its group shifts
+  together. Seedless, and applied after `--monster-stats`, so the two compose.
+- **Three spellings, one type, each a widening of the last.** A bare multiplier
+  (`2`) scales all seven fields; a `stat=mult` list (`hp=3`,
+  `attack=2,defense=0.5`) scales only what it names and leaves the rest
+  byte-identical; a `|`-separated group split (`regular:0.75|boss:2`,
+  `boss:hp=2`) gives random encounters and bosses their own scale, each half
+  spelled either of the first two ways. `StatScale` is a `ScalePermille` per stat
+  field and `ScaleProfile` a `StatScale` per group, so a uniform scale is just
+  every field equal and a whole-roster dial just both groups equal - one parser,
+  one planner, one clamp rule behind all three, which is what keeps the CLI flag
+  and the browser page's simple / advanced panes from drifting apart. Stat keys:
+  `hp`, `mp`, `attack`, `defense` (both halves), `defense_high` / `defense_low`,
+  `intelligence`, `speed`, plus the runtime's `udf` / `ldf` and the obvious
+  synonyms; group keys `regular` / `boss` / `all` and their aliases. An unknown
+  key, a twice-set field or group, or an out-of-range value is refused, not
+  guessed.
 - **Story bosses are scaled** - a multiplier keeps a scripted fight's shape, so
-  the randomizer's `PROTECTED_MONSTER_IDS` guard does not apply here. The one
-  carve-out (`SCALE_PINNED_MONSTER_IDS`) is the unwinnable-by-design Rim Elm
-  sparring partner, pinned in both directions.
+  the randomizer's `PROTECTED_MONSTER_IDS` guard does not apply here; the split
+  hands them their own multiplier rather than skipping them. The one carve-out
+  (`SCALE_PINNED_MONSTER_IDS`) is the unwinnable-by-design Rim Elm sparring
+  partner, pinned in both directions and in either group.
+- **Which enemies are bosses is read off the disc** (`monster_class`), not a
+  hard-coded list: a monster is a boss iff every formation naming it is one the
+  field VM starts by index, never one a random-encounter roll can reach - the
+  same mask the encounter randomizer uses. `STORY_BOSS_MONSTER_IDS` is unioned in
+  as a floor for the boss forms swapped in mid-battle, which no formation names,
+  and `TUTORIAL_MONSTER_IDS` forced back to regular so a boss slider can't reach
+  a fresh save's opening fights. The corpus walk only runs when the two halves
+  actually differ.
 - AGL stays untouched (it gates the AI's action economy, not difficulty), and
   EXP / gold / drops are outside the scaled set, so a hard run is harder, not
   richer.
@@ -1213,9 +1227,10 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   disjoint bytes of the equipment table (stat tuple vs. equip mask), so they
   compose.
 - `--enemy-stat-scale` scales enemy combat stats by a difficulty multiplier
-  (`0.1`..`5`, retail `1`) - one number for all seven stats, or a `stat=mult`
-  list for individual ones. Seedless, and applied after `--monster-stats`, so a
-  shuffle-then-scale run scales the shuffled values.
+  (`0.1`..`5`, retail `1`) - one number for all seven stats, a `stat=mult` list
+  for individual ones, or a `regular:...|boss:...` split for the two enemy groups.
+  Seedless, and applied after `--monster-stats`, so a shuffle-then-scale run
+  scales the shuffled values.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
   battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).

@@ -84,6 +84,7 @@ pub mod location_name;
 pub mod map_door;
 pub(crate) mod mips;
 pub mod monster;
+pub mod monster_class;
 pub mod monster_stats;
 pub mod move_power;
 pub mod ppf;

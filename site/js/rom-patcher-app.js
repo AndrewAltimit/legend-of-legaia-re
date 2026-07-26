@@ -466,6 +466,44 @@ const SCALE_STATS = [
   ['speed', 'Speed'],
 ];
 
+// The two enemy groups the scale addresses separately, in the order the emitted
+// string lists them. Same widening again: a run that moves both groups together
+// sends one unscoped scale, and only a genuine split sends `regular:...|boss:...`
+// - so every setting written before the split existed still means what it did.
+// The group keys are `ScaleProfile::parse`'s own, so nothing is translated here.
+const SCALE_GROUPS = [
+  ['regular', 'Random encounters'],
+  ['boss', 'Bosses'],
+];
+
+// Split an emitted scale string into `{regular, boss}` bodies. The mirror of
+// `ScaleProfile::parse`, and deliberately only as much of it as this page can
+// itself emit plus what a preset may carry: `|`-separated `group:scale`
+// segments, with a bare segment as the `all` base. Anything it can't read comes
+// back as retail on both halves rather than a half-applied guess - the sliders
+// are what the outgoing string is rebuilt from, so a value nothing reads would
+// silently patch a different difficulty than the config asked for.
+function splitScaleGroups(text) {
+  const out = { regular: '', boss: '' };
+  const t = String(text || '').trim();
+  if (!t) return out;
+  if (!t.includes(':')) return { regular: t, boss: t };
+  let base = '';
+  const named = {};
+  for (const seg of t.split('|')) {
+    const s = seg.trim();
+    if (!s) continue;
+    const at = s.indexOf(':');
+    const group = at < 0 ? 'all' : s.slice(0, at).trim().toLowerCase();
+    const body = at < 0 ? s : s.slice(at + 1).trim();
+    if (group === 'all' || group === 'both' || group === 'every') base = body;
+    else if (group === 'regular' || group === 'normal' || group === 'random' || group === 'common') named.regular = body;
+    else if (group === 'boss' || group === 'bosses') named.boss = body;
+    else return { regular: '', boss: '' }; // unknown group - don't guess
+  }
+  return { regular: named.regular ?? base, boss: named.boss ?? base };
+}
+
 // --- Presets ---------------------------------------------------------------
 // Each preset is a full configuration: every control gets a value, so applying
 // one is unambiguous. Keys map to control names / element ids below.
@@ -556,8 +594,6 @@ function init() {
   const damageApSlider = $('rom-damage-ap');
   const damageApVal = $('rom-damage-ap-val');
   const enemyScaleChk = $('rom-enemy-scale-on');
-  const enemyScaleSlider = $('rom-enemy-scale');
-  const enemyScaleVal = $('rom-enemy-scale-val');
   // Live read-out next to each AP slider. `input` fires while dragging;
   // `change` (which drives markCustom/syncDependents) only fires on release.
   for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal]]) {
@@ -567,35 +603,45 @@ function init() {
   // is 0.1, and float steps can land on 2.5000000000000004 - fix the display
   // (and everything derived from it) to one decimal.
   const fmtScale = (v) => Number(v).toFixed(1) + 'x';
-  if (enemyScaleSlider && enemyScaleVal) {
-    enemyScaleSlider.addEventListener('input', () => {
-      enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
-    });
-  }
-  // Advanced mode: one slider per stat, keyed by the patcher's own stat names.
+  // Bind one slider + read-out pair, and return a handle the setters use.
   // Dropped silently if the markup is absent, so an older page still works.
-  const enemyScaleFields = SCALE_STATS.map(([key]) => ({
-    key,
-    slider: $(`rom-enemy-scale-${key}`),
-    out: $(`rom-enemy-scale-${key}-val`),
-  })).filter((f) => f.slider && f.out);
-  for (const f of enemyScaleFields) {
-    f.slider.addEventListener('input', () => {
-      f.out.textContent = fmtScale(f.slider.value);
-    });
-  }
-  // Set every per-stat slider at once, and keep its read-out in step.
-  const setScaleFields = (valueFor) => {
-    for (const f of enemyScaleFields) {
+  const bindScale = (id, key) => {
+    const slider = $(id);
+    const out = $(`${id}-val`);
+    if (!slider || !out) return null;
+    slider.addEventListener('input', () => { out.textContent = fmtScale(slider.value); });
+    return { key, slider, out };
+  };
+  // Simple mode: one slider per enemy group. Advanced mode: one per (group,
+  // stat). Both keyed by the patcher's own group and stat names, so the strings
+  // this page emits are the ones `legaia-patcher --enemy-stat-scale` takes.
+  const enemyScaleSimple = new Map(
+    SCALE_GROUPS.map(([g]) => [g, bindScale(`rom-enemy-scale-${g}`, g)]).filter(([, f]) => f),
+  );
+  const enemyScaleFields = new Map(
+    SCALE_GROUPS.map(([g]) => [
+      g,
+      SCALE_STATS.map(([key]) => bindScale(`rom-enemy-scale-${g}-${key}`, key)).filter(Boolean),
+    ]),
+  );
+  // Set one group's per-stat sliders at once, and keep their read-outs in step.
+  const setScaleFields = (group, valueFor) => {
+    for (const f of enemyScaleFields.get(group) || []) {
       f.slider.value = String(valueFor(f.key));
       f.out.textContent = fmtScale(f.slider.value);
     }
   };
-  // Seven sliders need a way back to neutral that isn't "drag each one".
+  const setSimpleScale = (group, value) => {
+    const f = enemyScaleSimple.get(group);
+    if (!f) return;
+    f.slider.value = String(value);
+    f.out.textContent = fmtScale(f.slider.value);
+  };
+  // Fourteen sliders need a way back to neutral that isn't "drag each one".
   const enemyScaleReset = $('rom-enemy-scale-reset');
   if (enemyScaleReset) {
     enemyScaleReset.addEventListener('click', () => {
-      setScaleFields(() => 1);
+      for (const [g] of SCALE_GROUPS) setScaleFields(g, () => 1);
       // A button emits `click`, not `change`, so the form-level listener that
       // normally flips the preset chip never sees this.
       markCustom();
@@ -772,37 +818,47 @@ function init() {
     damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
     damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
     damageApVal.textContent = damageApSlider.value;
-    // Difficulty scale. A config value is either a bare multiplier or a
-    // `stat=mult` list, so the string itself picks the view mode - a preset that
-    // shapes individual stats opens in Advanced without needing a second key.
+    // Difficulty scale. A config value is one string carrying both groups; each
+    // group's body is either a bare multiplier or a `stat=mult` list, so the
+    // string itself picks the view mode - a preset that shapes individual stats
+    // opens in Advanced without needing a second key.
     enemyScaleChk.checked = cfg.enemyStatScale !== '' && cfg.enemyStatScale != null;
     const scaleText = enemyScaleChk.checked ? String(cfg.enemyStatScale) : '';
-    const perStat = scaleText.includes('=');
+    const scaleByGroup = splitScaleGroups(scaleText);
+    // Advanced as soon as *either* group shapes individual stats: the two panes
+    // are one control, and a mixed config must not open on the pane that would
+    // drop half of it.
+    const perStat = Object.values(scaleByGroup).some((v) => v.includes('='));
     setSeg('enemy_scale_mode', perStat ? 'advanced' : 'simple');
-    enemyScaleSlider.value = String(!scaleText || perStat ? 1 : scaleText);
-    enemyScaleVal.textContent = fmtScale(enemyScaleSlider.value);
-    // Whatever the list doesn't name goes back to 1.0x, so no stale slider
-    // survives a preset switch.
-    const named = new Map(
-      (perStat ? scaleText.split(/[,;\s]+/) : [])
-        .filter(Boolean)
-        .map((tok) => tok.split('='))
-        .filter((kv) => kv.length === 2)
-        .map(([k, v]) => [k.trim().toLowerCase(), v.trim()]),
-    );
-    // `defense` is the CLI's alias for both defense halves, so expand it rather
-    // than dropping it - the sliders are what the emitted string is rebuilt
-    // from, and a key nothing reads would silently apply a different difficulty
-    // than the config asked for. Only this one alias is honoured here: a config
-    // value should otherwise use the canonical SCALE_STATS keys, which are the
-    // only ones this page ever emits.
-    const bothDefenses = named.get('defense') ?? named.get('def');
-    if (bothDefenses !== undefined) {
-      for (const half of ['defense_high', 'defense_low']) {
-        if (!named.has(half)) named.set(half, bothDefenses);
+    for (const [group] of SCALE_GROUPS) {
+      const body = scaleByGroup[group] || '';
+      setSimpleScale(group, !body || body.includes('=') ? 1 : body);
+      // Whatever the list doesn't name goes back to 1.0x, so no stale slider
+      // survives a preset switch.
+      const named = new Map(
+        (body.includes('=') ? body.split(/[,;\s]+/) : [])
+          .filter(Boolean)
+          .map((tok) => tok.split('='))
+          .filter((kv) => kv.length === 2)
+          .map(([k, v]) => [k.trim().toLowerCase(), v.trim()]),
+      );
+      // `defense` is the CLI's alias for both defense halves, so expand it
+      // rather than dropping it - the sliders are what the emitted string is
+      // rebuilt from, and a key nothing reads would silently apply a different
+      // difficulty than the config asked for. Only this one alias is honoured
+      // here: a config value should otherwise use the canonical SCALE_STATS
+      // keys, which are the only ones this page ever emits.
+      const bothDefenses = named.get('defense') ?? named.get('def');
+      if (bothDefenses !== undefined) {
+        for (const half of ['defense_high', 'defense_low']) {
+          if (!named.has(half)) named.set(half, bothDefenses);
+        }
       }
+      // A group given only a bare multiplier still has to reach the advanced
+      // pane, or switching to Advanced would silently drop it back to 1.0x.
+      const fallback = !body || body.includes('=') ? 1 : body;
+      setScaleFields(group, (key) => named.get(key) ?? fallback);
     }
-    setScaleFields((key) => named.get(key) ?? 1);
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
@@ -905,23 +961,40 @@ function init() {
     // Both ranges include 0 and negatives, so read the value as-is.
     const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
     const damageAp = damageApChk.checked ? String(damageApSlider.value) : '';
-    // Difficulty scale. Simple sends one multiplier for every stat; Advanced
-    // sends a `stat=mult` list naming only the stats that actually move, which
-    // is the same spelling the CLI takes. Every value is fixed to one decimal,
-    // because a 0.1 float step can land on 2.5000000000000004 and the parser
-    // rounds to thousandths.
+    // Difficulty scale. Per enemy group: Simple sends one multiplier for every
+    // stat; Advanced sends a `stat=mult` list naming only the stats that
+    // actually move, which is the same spelling the CLI takes. Every value is
+    // fixed to one decimal, because a 0.1 float step can land on
+    // 2.5000000000000004 and the parser rounds to thousandths.
     //
-    // Advanced with every slider at 1.0x collapses to '' - the identity - so
-    // "enabled but asking for nothing" reads as retail rather than rewriting
-    // every monster slot with its own values.
+    // The two groups then collapse where they can: equal bodies send one
+    // unscoped scale (byte-identical to what this page sent before the split
+    // existed, and it skips the patcher's encounter-table scan entirely), and
+    // only a genuine split sends `regular:...|boss:...`. A group asking for
+    // nothing has to be spelled `1.0` rather than left empty, since an empty
+    // segment is not a scale.
+    //
+    // Both groups at 1.0x collapses to '' - the identity - so "enabled but
+    // asking for nothing" reads as retail rather than rewriting every monster
+    // slot with its own values.
     let enemyStatScale = '';
     if (enemyScaleChk.checked) {
-      enemyStatScale = segVal('enemy_scale_mode', 'simple') === 'advanced'
-        ? enemyScaleFields
+      const advanced = segVal('enemy_scale_mode', 'simple') === 'advanced';
+      const bodyFor = (group) => {
+        if (!advanced) {
+          const f = enemyScaleSimple.get(group);
+          return f ? Number(f.slider.value).toFixed(1) : '1.0';
+        }
+        return (enemyScaleFields.get(group) || [])
           .filter((f) => Number(f.slider.value) !== 1)
           .map((f) => `${f.key}=${Number(f.slider.value).toFixed(1)}`)
-          .join(',')
-        : Number(enemyScaleSlider.value).toFixed(1);
+          .join(',');
+      };
+      const bodies = SCALE_GROUPS.map(([g]) => [g, bodyFor(g)]);
+      const retail = (b) => b === '' || b === '1.0';
+      if (bodies.every(([, b]) => retail(b))) enemyStatScale = '';
+      else if (bodies[0][1] === bodies[1][1]) enemyStatScale = bodies[0][1];
+      else enemyStatScale = bodies.map(([g, b]) => `${g}:${b || '1.0'}`).join('|');
     }
     // Art overrides = the per-art rows serialized to `combo=value` pairs,
     // merged with anything typed into the raw (advanced) inputs.

@@ -58,6 +58,14 @@
 //!   rather than just hardening it: `"hp=3"` alone makes enemies spongy without
 //!   making them lethal, and `"attack=2,defense=0.5"` makes them glass cannons.
 //!
+//! A [`ScaleProfile`] then carries **two** of those - one for random encounters
+//! and one for bosses - so a run can soften the trash and harden the set-pieces
+//! (or the reverse) instead of moving the whole roster together. It is the same
+//! widening trick one level up: a single-scale profile is just the case where
+//! both halves are equal, spelled `"2"`, and the split is spelled
+//! `"regular:1|boss:2.5"`. Which monsters land in which half is read off the
+//! disc's own encounter tables - see [`crate::monster_class`].
+//!
 //! One parser serves the CLI flag and the browser's simple/advanced slider modes,
 //! so every front end accepts the same spellings and emits the same bytes.
 //!
@@ -85,6 +93,7 @@
 //! the loader's own integer rounding.
 
 use crate::monster::repack_slot;
+use crate::monster_class::{MonsterClass, MonsterClasses};
 use crate::rng::SplitMix64;
 use anyhow::Result;
 
@@ -108,15 +117,54 @@ pub const STAT_FIELDS: [(&str, usize); 7] = [
 /// Number of stat fields a [`StatAssignment`] carries.
 pub const FIELD_COUNT: usize = STAT_FIELDS.len();
 
+/// 1-based monster ids of the early **tutorial enemies** - the first fights a
+/// fresh save meets, which must stay beatable at level 1.
+///
+/// One half of [`PROTECTED_MONSTER_IDS`]; the other is
+/// [`STORY_BOSS_MONSTER_IDS`].
+pub const TUTORIAL_MONSTER_IDS: &[u16] = &[
+    19, 20, 21, // Red / Black / Blue Piura - the first wild enemies, deliberately weak.
+    79, // Tetsu, the Rim Elm sparring partner (999/999, unwinnable by design).
+];
+
+/// 1-based monster ids of the **story bosses**, every version of each.
+///
+/// Hand-curated from the game's set-piece fights, which makes it a provenance
+/// the disc's encounter tables don't share - and it earns its keep twice over.
+/// The stat *shuffle* needs it because reassigning a boss's stats breaks a
+/// fight scripted around them (see the module docs). The difficulty *scale*
+/// needs it for the opposite reason: it is the curated floor under
+/// [`crate::monster_class`]'s disc-derived split, covering the boss forms the
+/// game swaps in mid-battle, which no formation record names and no scan can
+/// therefore find.
+///
+/// The other half of [`PROTECTED_MONSTER_IDS`]; see [`TUTORIAL_MONSTER_IDS`].
+pub const STORY_BOSS_MONSTER_IDS: &[u16] = &[
+    10, // Gimard - the early scripted Seru-boss fight (also guarded on the encounter side).
+    73, 171, 172, // Caruban
+    75,  // Zeto
+    76, 136, 179, // Songi
+    77, 173, 174, // Berserker
+    175, // Tetsu (boss form; 79 in TUTORIAL_MONSTER_IDS is the tutorial form)
+    138, // Dohati
+    139, // Xain
+    162, 163, 164, // Gi / Che / Lu Delilas
+    165, 166, // Gaza
+    169, // Zora
+    170, // Jette
+    180, 181, 183, 184, 185, 186, // Cort
+];
+
 /// 1-based monster ids the stat randomizer must never modify.
 ///
 /// 1-based monster ids pinned to their disc stats - never modified, and never a
-/// donor into another monster's stats. Two groups (see the module docs):
-/// the early **tutorial enemies** (the Piura and the scripted Tetsu sparring
-/// partner) that must stay beatable on a fresh save, and the **story bosses**
-/// whose set-piece fights randomized stats could break (or whose extreme stats
-/// would wreck balance if leaked to a trash mob). Every version of each named
-/// boss is listed.
+/// donor into another monster's stats. The union of the two groups the module
+/// docs describe: [`TUTORIAL_MONSTER_IDS`] (must stay beatable on a fresh save)
+/// and [`STORY_BOSS_MONSTER_IDS`] (set-piece fights randomized stats could
+/// break, or whose extreme stats would wreck balance if leaked to a trash mob).
+/// Spelled out rather than concatenated so the guard stays a `const` the shuffle
+/// can test against directly; `protected_ids_are_the_two_groups` pins the
+/// partition.
 pub const PROTECTED_MONSTER_IDS: &[u16] = &[
     // Early tutorial enemies.
     19, 20, 21, // Red / Black / Blue Piura - the first wild enemies, deliberately weak.
@@ -480,6 +528,165 @@ impl std::fmt::Display for StatScale {
     }
 }
 
+/// A difficulty scale **per enemy class** - one [`StatScale`] for random
+/// encounters and one for bosses.
+///
+/// The same widening as [`StatScale`] itself, one level up: a whole-roster scale
+/// is not a separate mode, just the case where both halves hold the same value
+/// ([`uniform`](Self::uniform)). That is what lets the CLI flag, the wasm
+/// boundary and the browser's four slider panes all stay one string through one
+/// [`parse`](Self::parse) - adding the split needed no new argument anywhere.
+///
+/// Which half a monster is scaled by comes from
+/// [`crate::monster_class::MonsterClasses`], read off the disc's encounter
+/// tables. A uniform profile never consults it, so the classification scan is
+/// only paid for when the two halves actually differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScaleProfile {
+    regular: StatScale,
+    boss: StatScale,
+}
+
+/// The enemy-group keys [`ScaleProfile::parse`] accepts, for error messages.
+const PROFILE_KEYS: &str = "regular, boss, all";
+
+impl ScaleProfile {
+    /// Retail stats on both halves. Applies no edit.
+    pub fn retail() -> Self {
+        Self::uniform(StatScale::retail())
+    }
+
+    /// One scale across the whole roster - bosses and trash alike. The classic
+    /// single-dial difficulty knob, and the shape every pre-split setting takes.
+    pub fn uniform(scale: StatScale) -> Self {
+        Self {
+            regular: scale,
+            boss: scale,
+        }
+    }
+
+    /// An explicit split.
+    pub fn new(regular: StatScale, boss: StatScale) -> Self {
+        Self { regular, boss }
+    }
+
+    /// The random-encounter half.
+    pub fn regular(self) -> StatScale {
+        self.regular
+    }
+
+    /// The boss half.
+    pub fn boss(self) -> StatScale {
+        self.boss
+    }
+
+    /// The half that scales `class`.
+    pub fn get(self, class: MonsterClass) -> StatScale {
+        match class {
+            MonsterClass::Regular => self.regular,
+            MonsterClass::Boss => self.boss,
+        }
+    }
+
+    /// Whether both halves are retail, i.e. the whole profile is a no-op.
+    pub fn is_retail(self) -> bool {
+        self.regular.is_retail() && self.boss.is_retail()
+    }
+
+    /// Whether both halves are the same scale - a whole-roster dial rather than
+    /// a split. The caller's cue that no monster classification is needed.
+    pub fn is_uniform(self) -> bool {
+        self.regular == self.boss
+    }
+
+    /// Parse either spelling of the knob:
+    ///
+    /// - **no `:`** -> the text is one [`StatScale`] applied to the whole roster
+    ///   (`"2.5"`, `"hp=2,attack=1.5"`). Every setting written before the split
+    ///   existed still means exactly what it did.
+    /// - **scoped** -> `|`-separated `group:scale` segments
+    ///   (`"regular:1|boss:2.5"`, `"regular:hp=2|boss:hp=4,attack=2"`). Groups
+    ///   are `regular` (aliases `normal`, `random`, `common`), `boss` (`bosses`)
+    ///   and `all` (`both`, `every`). An unscoped segment among scoped ones is
+    ///   read as `all`, so `"2|boss:4"` is "everything 2x, bosses 4x".
+    ///
+    /// `|` is the segment separator precisely because [`StatScale::parse`] never
+    /// uses it: a segment's own body keeps the full `key=value` grammar,
+    /// separators and all, so the two parsers compose without escaping.
+    ///
+    /// A group left unnamed falls back to the `all` segment, or to retail when
+    /// there isn't one - `"boss:3"` hardens bosses and leaves random encounters
+    /// exactly as shipped. Like [`StatScale::parse`] this errors rather than
+    /// ignoring: an unknown group or a group set twice is a typo, and quietly
+    /// applying a different difficulty is the failure worth being loud about.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let t = text.trim();
+        if t.is_empty() {
+            return Err("no enemy stat scale given (want a multiplier like 2.5, a \
+                        per-stat list like hp=2,attack=1.5, or a per-group split \
+                        like regular:1|boss:2.5)"
+                .to_string());
+        }
+        if !t.contains(':') {
+            return Ok(Self::uniform(StatScale::parse(t)?));
+        }
+
+        let (mut regular, mut boss, mut all) = (None, None, None);
+        for seg in t.split('|').filter(|s| !s.trim().is_empty()) {
+            let seg = seg.trim();
+            // A segment with no `:` among scoped ones is the `all` base.
+            let (group, spec) = match seg.split_once(':') {
+                Some((g, v)) => (g.trim().to_ascii_lowercase().replace('-', "_"), v.trim()),
+                None => ("all".to_string(), seg),
+            };
+            let slot = match group.as_str() {
+                "regular" | "normal" | "random" | "common" => &mut regular,
+                "boss" | "bosses" => &mut boss,
+                "all" | "both" | "every" => &mut all,
+                _ => {
+                    return Err(format!(
+                        "unknown enemy group {group:?} (want one of: {PROFILE_KEYS})"
+                    ));
+                }
+            };
+            if slot.is_some() {
+                return Err(format!("enemy group {group:?} is set more than once"));
+            }
+            *slot = Some(StatScale::parse(spec)?);
+        }
+        let base = all.unwrap_or_else(StatScale::retail);
+        Ok(Self {
+            regular: regular.unwrap_or(base),
+            boss: boss.unwrap_or(base),
+        })
+    }
+}
+
+impl Default for ScaleProfile {
+    fn default() -> Self {
+        Self::retail()
+    }
+}
+
+impl From<StatScale> for ScaleProfile {
+    fn from(scale: StatScale) -> Self {
+        Self::uniform(scale)
+    }
+}
+
+impl std::fmt::Display for ScaleProfile {
+    /// A uniform profile prints as the bare scale (`2.5x`, `hp=2x`), so a
+    /// single-dial run's manifest line is unchanged by the split existing; a
+    /// genuine split prints the scoped spelling its own [`parse`](Self::parse)
+    /// accepts back.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_uniform() {
+            return write!(f, "{}", self.regular);
+        }
+        write!(f, "regular:{}|boss:{}", self.regular, self.boss)
+    }
+}
+
 /// Multiply one monster's stats by `scale`, field by field.
 ///
 /// Each [`STAT_FIELDS`] halfword is scaled independently with
@@ -519,6 +726,27 @@ pub fn scale_stats(stats: &[u16; FIELD_COUNT], scale: StatScale) -> [u16; FIELD_
 /// else - story bosses included - is scaled. An all-retail scale is the identity,
 /// so the caller writes nothing.
 pub fn plan_scale(current: &[StatAssignment], scale: StatScale) -> Vec<StatAssignment> {
+    plan_scale_profile(
+        current,
+        ScaleProfile::uniform(scale),
+        &MonsterClasses::all_regular(),
+    )
+}
+
+/// Plan a **split** difficulty scale: each monster is multiplied by the half of
+/// `profile` its [`MonsterClass`] selects, per `classes`.
+///
+/// The general form of [`plan_scale`], which is this with a uniform profile and
+/// a classification that cannot matter. Seedless and total, same as the uniform
+/// pass: the result depends only on `(current, profile, classes)`.
+/// [`SCALE_PINNED_MONSTER_IDS`] still passes through untouched **whichever class
+/// it lands in** - the tutorial fight is unwinnable by design and a boss slider
+/// must not resurrect it any more than a regular one may.
+pub fn plan_scale_profile(
+    current: &[StatAssignment],
+    profile: ScaleProfile,
+    classes: &MonsterClasses,
+) -> Vec<StatAssignment> {
     current
         .iter()
         .map(|a| {
@@ -527,7 +755,7 @@ pub fn plan_scale(current: &[StatAssignment], scale: StatScale) -> Vec<StatAssig
             } else {
                 StatAssignment {
                     monster_id: a.monster_id,
-                    stats: scale_stats(&a.stats, scale),
+                    stats: scale_stats(&a.stats, profile.get(classes.class_of(a.monster_id))),
                 }
             }
         })
@@ -735,6 +963,54 @@ mod tests {
                 "the page can emit {label}=, so it must parse"
             );
         }
+    }
+
+    /// The split spellings the page emits, exactly as its collect block builds
+    /// them. Pinned here for the same reason as the per-stat keys above: the
+    /// browser sends one opaque string across the wasm boundary, so a grammar
+    /// change that this parser stopped accepting would surface only as a patch
+    /// silently skipped in a browser.
+    #[test]
+    fn parses_the_split_strings_the_browser_emits() {
+        // Both groups equal collapse to an unscoped scale - the page never emits
+        // `regular:2.0|boss:2.0`, and this is why the pre-split wire format is
+        // still what a whole-roster run sends.
+        assert!(prof("2.0").is_uniform());
+
+        // A genuine split, simple mode. A group at rest is spelled `1.0`, not
+        // left empty, because an empty segment is not a scale.
+        let p = prof("regular:0.5|boss:3.0");
+        assert_eq!(p.regular(), uni("0.5"));
+        assert_eq!(p.boss(), uni("3.0"));
+        let only_boss = prof("regular:1.0|boss:3.0");
+        assert!(only_boss.regular().is_retail());
+        assert_eq!(only_boss.boss(), uni("3"));
+
+        // Advanced mode: each group's body is the same comma-joined list the
+        // single-group advanced pane already emitted, including one group at
+        // rest while the other shapes stats.
+        let adv = prof("regular:1.0|boss:hp=3.0,defense_high=0.5,defense_low=0.5");
+        assert!(adv.regular().is_retail());
+        assert_eq!(adv.boss().get(0), scale("3"));
+        assert_eq!(adv.boss().get(3), scale("0.5"));
+        assert_eq!(adv.boss().get(4), scale("0.5"));
+
+        // Every (group, stat) pair the advanced panel can emit - the
+        // `SCALE_GROUPS` x `SCALE_STATS` grid in site/js/rom-patcher-app.js.
+        for group in ["regular", "boss"] {
+            for (label, _) in STAT_FIELDS {
+                let text = format!("{group}:{label}=2.0|{}:1.0", other_group(group));
+                assert!(
+                    ScaleProfile::parse(&text).is_ok(),
+                    "the page can emit {text:?}, so it must parse"
+                );
+            }
+        }
+    }
+
+    /// The other half of the two-group grid, for the emit-every-pair loop above.
+    fn other_group(g: &str) -> &'static str {
+        if g == "boss" { "regular" } else { "boss" }
     }
 
     /// The user-facing multiplier round-trips through permille and back to a
@@ -947,6 +1223,187 @@ mod tests {
             }
             assert_eq!(&c.stats[1..], &p.stats[1..], "only HP may move");
         }
+    }
+
+    /// The two named groups exactly partition the shuffle's guard: no id is in
+    /// both, none is in neither, and none is listed twice. Three lists that must
+    /// agree, so the one a caller picks can't quietly be the stale one.
+    #[test]
+    fn protected_ids_are_the_two_groups() {
+        use std::collections::HashSet;
+        let tutorial: HashSet<u16> = TUTORIAL_MONSTER_IDS.iter().copied().collect();
+        let bosses: HashSet<u16> = STORY_BOSS_MONSTER_IDS.iter().copied().collect();
+        let protected: HashSet<u16> = PROTECTED_MONSTER_IDS.iter().copied().collect();
+
+        assert_eq!(tutorial.len(), TUTORIAL_MONSTER_IDS.len(), "no duplicates");
+        assert_eq!(bosses.len(), STORY_BOSS_MONSTER_IDS.len(), "no duplicates");
+        assert_eq!(
+            protected.len(),
+            PROTECTED_MONSTER_IDS.len(),
+            "no duplicates"
+        );
+        assert!(
+            tutorial.is_disjoint(&bosses),
+            "an id cannot be both a tutorial enemy and a story boss"
+        );
+        assert_eq!(
+            &tutorial | &bosses,
+            protected,
+            "the two groups must be exactly the shuffle's guard"
+        );
+        // The pinned tutorial partner is a tutorial enemy, not a boss - the
+        // scale's pin is about the fight being unwinnable, not about rank.
+        for &id in SCALE_PINNED_MONSTER_IDS {
+            assert!(tutorial.contains(&id), "id {id} should be a tutorial enemy");
+        }
+    }
+
+    /// A profile parsed from the given text.
+    fn prof(text: &str) -> ScaleProfile {
+        ScaleProfile::parse(text).expect("valid profile")
+    }
+
+    /// Every pre-split spelling still means "the whole roster", so a saved
+    /// setting, a preset or a manifest line written before the split cannot
+    /// change meaning.
+    #[test]
+    fn unscoped_profile_is_the_whole_roster() {
+        for text in ["2", "2.5x", "0.1", "hp=2,attack=1.5", "defense=0.5"] {
+            let p = prof(text);
+            assert!(p.is_uniform(), "{text:?} must apply to both classes");
+            assert_eq!(p.regular(), uni(text));
+            assert_eq!(p.boss(), uni(text));
+            assert_eq!(
+                p.to_string(),
+                uni(text).to_string(),
+                "{text:?} prints as the bare scale"
+            );
+        }
+        assert!(prof("1").is_retail());
+        assert!(ScaleProfile::retail().is_retail());
+        assert_eq!(ScaleProfile::default(), ScaleProfile::retail());
+        assert_eq!(
+            ScaleProfile::from(uni("2")),
+            ScaleProfile::uniform(uni("2"))
+        );
+    }
+
+    /// The scoped spelling, including the group aliases and the `all` base.
+    #[test]
+    fn scoped_profile_splits_the_roster() {
+        let p = prof("regular:0.5|boss:3");
+        assert!(!p.is_uniform() && !p.is_retail());
+        assert_eq!(p.get(MonsterClass::Regular), uni("0.5"));
+        assert_eq!(p.get(MonsterClass::Boss), uni("3"));
+
+        // A group left unnamed is retail, not a copy of the other one.
+        let boss_only = prof("boss:3");
+        assert!(boss_only.regular().is_retail(), "trash ships as authored");
+        assert_eq!(boss_only.boss(), uni("3"));
+
+        // An unscoped segment among scoped ones is the `all` base.
+        let based = prof("2|boss:4");
+        assert_eq!(based.regular(), uni("2"));
+        assert_eq!(based.boss(), uni("4"));
+        assert_eq!(prof("all:2|regular:0.5").boss(), uni("2"));
+
+        // Aliases, whitespace and per-stat bodies inside a segment.
+        assert_eq!(prof("normal:2|bosses:3"), prof("regular:2|boss:3"));
+        assert_eq!(prof(" random : 2 | boss : 3 "), prof("regular:2|boss:3"));
+        let per = prof("regular:hp=2|boss:hp=4,attack=2");
+        assert_eq!(per.regular().get(0), scale("2"));
+        assert_eq!(per.boss().get(0), scale("4"));
+        assert_eq!(per.boss().get(2), scale("2"));
+        assert!(per.regular().get(2).is_retail(), "only HP moves on trash");
+    }
+
+    /// A split profile prints the scoped spelling its own parser reads back, so
+    /// a manifest line is a usable setting rather than a lossy summary.
+    #[test]
+    fn profile_display_round_trips() {
+        for text in [
+            "regular:0.5|boss:3",
+            "boss:3",
+            "regular:hp=2|boss:hp=4,attack=2",
+            "2",
+            "hp=2",
+        ] {
+            let p = prof(text);
+            assert_eq!(
+                ScaleProfile::parse(&p.to_string()),
+                Ok(p),
+                "{text:?} -> {} must parse back",
+                p
+            );
+        }
+        assert_eq!(
+            prof("regular:0.5|boss:3").to_string(),
+            "regular:0.5x|boss:3x"
+        );
+        assert_eq!(prof("boss:3").to_string(), "regular:1x|boss:3x");
+        assert_eq!(prof("2|boss:2").to_string(), "2x", "equal halves collapse");
+    }
+
+    /// Bad group names and doubly-set groups are refused rather than ignored -
+    /// same reason as the per-stat list.
+    #[test]
+    fn profile_rejects_bad_groups() {
+        for bad in [
+            "regular:2|regular:3",  // same group twice
+            "boss:2|bosses:3",      // ...through an alias
+            "2|all:3",              // the bare segment *is* `all`
+            "elite:2|boss:3",       // no such group
+            "regular:|boss:3",      // empty body
+            "regular:9|boss:3",     // body out of range
+            "regular:hp=2|boss:hp", // body isn't a scale
+            ":2",                   // no group name
+        ] {
+            assert!(
+                ScaleProfile::parse(bad).is_err(),
+                "{bad:?} should be refused, got {:?}",
+                ScaleProfile::parse(bad).map(|p| p.to_string())
+            );
+        }
+    }
+
+    /// The split planner: each monster takes the half its class selects, and the
+    /// pinned tutorial fight is untouched whichever class it lands in.
+    #[test]
+    fn plan_scale_profile_scales_each_class_by_its_own_half() {
+        let mut current = sample(24);
+        let boss_id = 138; // Dohati
+        current[2].monster_id = boss_id;
+        current[7].monster_id = SCALE_PINNED_MONSTER_IDS[0];
+        let pinned_stats = current[7].stats;
+
+        // The pinned tutorial partner classified as a *boss*, to prove the pin
+        // outranks the class rather than only holding on the regular half.
+        let classes = MonsterClasses::from_boss_ids([boss_id, SCALE_PINNED_MONSTER_IDS[0]]);
+        let profile = prof("regular:0.5|boss:3");
+        let plan = plan_scale_profile(&current, profile, &classes);
+        assert_eq!(plan.len(), current.len());
+        for (c, p) in current.iter().zip(&plan) {
+            if c.monster_id == SCALE_PINNED_MONSTER_IDS[0] {
+                assert_eq!(p.stats, pinned_stats, "the tutorial fight is pinned");
+            } else if c.monster_id == boss_id {
+                assert_eq!(p.stats, scale_stats(&c.stats, uni("3")), "boss half");
+            } else {
+                assert_eq!(p.stats, scale_stats(&c.stats, uni("0.5")), "regular half");
+            }
+        }
+
+        // A uniform profile is the old whole-roster pass, whatever the classes
+        // say - so the split cannot perturb a single-dial run.
+        assert_eq!(
+            plan_scale_profile(&current, ScaleProfile::uniform(uni("2")), &classes),
+            plan_scale(&current, uni("2")),
+            "a uniform profile ignores the classification"
+        );
+        assert_eq!(
+            plan_scale_profile(&current, ScaleProfile::retail(), &classes),
+            current,
+            "an all-retail profile is a no-op"
+        );
     }
 
     /// Shuffle still preserves each column's full multiset even with a protected
