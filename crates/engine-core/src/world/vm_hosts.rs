@@ -632,9 +632,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // `FUN_801F159C`-class actor writes `1` there. That writer is
             // `World::tick_submode_screen`; without it these sub-ops re-armed
             // and halted on the same PC every frame, forever.
-            if self.world.submode_screen.is_open() {
+            //
+            // The park is read only by the context that armed it
+            // (`Op49ParkOwner`): retail's `_DAT_8007B450` is one global, but
+            // the port steps the field script, the channels and the spawned
+            // record contexts inside one `World::tick`, so a screen armed by
+            // the field script must not park the cutscene timeline's own
+            // op-`0x49` - which is the town01 name-entry hand-off.
+            let owner = self.world.op49_park_owner();
+            if self.world.submode_screen.is_open_for(owner) {
                 Op49State::Armed
-            } else if self.world.submode_screen.is_done() {
+            } else if self.world.submode_screen.is_done_for(owner) {
                 Op49State::Done
             } else {
                 Op49State::Idle
@@ -648,8 +656,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // A finished tile-board segment resumes the same way.
         self.world.tile_board_armed = false;
         // The submode screen's Done is one-shot: consume it so the next
-        // op-0x49 opens a fresh screen rather than resuming instantly.
-        self.world.submode_screen.done = false;
+        // op-0x49 opens a fresh screen rather than resuming instantly. Only
+        // the context that armed the park may consume it - the name-entry
+        // hand-off's own resume runs through this same hook, and clearing
+        // another context's pending Done would strand it back on Idle and
+        // re-open the screen it had just finished.
+        let owner = self.world.op49_park_owner();
+        if self.world.submode_screen.owner == owner {
+            self.world.submode_screen.done = false;
+        }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0

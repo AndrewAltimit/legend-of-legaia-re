@@ -10,7 +10,9 @@
 //! reaches it at all.
 
 use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::field_submode_screen::{SUBMODE_ACCEPT_MASK, slot_for_op49_sub_op};
+use legaia_engine_core::field_submode_screen::{
+    Op49ParkOwner, SUBMODE_ACCEPT_MASK, slot_for_op49_sub_op,
+};
 use legaia_engine_core::world::World;
 use legaia_engine_vm::baka_hub_actors::{GOLD_PER_COIN, PICK_ACCEPT, slot};
 
@@ -149,6 +151,75 @@ fn the_three_dedicated_sub_ops_still_own_their_own_paths() {
     for s in [1u8, 2, 4, 6, 7, 8, 9, 0xA, 0xB, 0xC, 0xD] {
         assert_eq!(slot_for_op49_sub_op(s), Some(slot::CLOSE_TICK));
     }
+}
+
+/// Retail's op-`0x49` Idle arm calls the allocator on **every** arm
+/// (`jal 0x80020de0` at `0x801E09A0`, unconditional for any `sub_op < 0xE`),
+/// so a scene gets a fresh driver per screen. The port only had the one
+/// `man_load_actor_reset` spawns, and the dispatcher retires it on hand-back -
+/// so the second screen of a scene had no dispatcher and never handed back,
+/// leaving the park Armed for the rest of the scene.
+#[test]
+fn a_second_screen_gets_its_own_driver_and_still_hands_back() {
+    let mut w = field_world();
+    w.open_field_submode_screen(slot::CLOSE_TICK, None);
+    assert!(tick_until(&mut w, 32, |w| w.submode_screen.is_done()));
+    assert!(
+        w.find_actor_by_handler(ActorHandler::SubmodeDriver)
+            .is_none(),
+        "the first screen's hand-back retired the driver"
+    );
+
+    // The arm re-allocates, exactly as the retail Idle arm does.
+    w.open_field_submode_screen(slot::CLOSE_TICK, None);
+    assert!(
+        w.find_actor_by_handler(ActorHandler::SubmodeDriver)
+            .is_some(),
+        "arming a screen with no live driver must spawn one"
+    );
+    assert!(
+        tick_until(&mut w, 32, |w| w.submode_screen.is_done()),
+        "the second screen never handed back - the park would stay Armed forever"
+    );
+}
+
+/// The park is per-context. Retail's `_DAT_8007B450` is one global, but the
+/// port steps the field script, the per-actor channels and the spawned
+/// partition-2 records inside one `World::tick` - and the town01 opening's
+/// name-entry hand-off is a *dedicated* sub-op that bypasses the global. A
+/// screen armed by the field script answering the cutscene timeline's own
+/// op-`0x49` is what swallows that beat.
+#[test]
+fn a_field_script_park_never_answers_the_cutscene_timeline() {
+    let mut w = field_world();
+    // The per-tick field script arms a default submode park.
+    w.in_spawned_record_slice = false;
+    w.in_cutscene_timeline = false;
+    assert_eq!(w.op49_park_owner(), Op49ParkOwner::FieldScript);
+    w.open_field_submode_screen(slot::CLOSE_TICK, None);
+    assert!(w.submode_screen.is_open());
+
+    // Same frame, the modal timeline steps its own op-0x49. It must read Idle
+    // (so `op49_invoke_setup` runs), not the field script's Armed.
+    w.in_spawned_record_slice = true;
+    w.in_cutscene_timeline = true;
+    assert_eq!(w.op49_park_owner(), Op49ParkOwner::CutsceneTimeline);
+    assert!(
+        !w.submode_screen
+            .is_open_for(Op49ParkOwner::CutsceneTimeline)
+    );
+    assert!(
+        !w.submode_screen
+            .is_done_for(Op49ParkOwner::CutsceneTimeline)
+    );
+    // ... and the field script still owns its own park.
+    assert!(w.submode_screen.is_open_for(Op49ParkOwner::FieldScript));
+
+    // A helper context is a third owner, distinct from both.
+    w.in_spawned_record_slice = true;
+    w.in_cutscene_timeline = false;
+    assert_eq!(w.op49_park_owner(), Op49ParkOwner::HelperContext);
+    assert!(!w.submode_screen.is_open_for(Op49ParkOwner::HelperContext));
 }
 
 #[test]

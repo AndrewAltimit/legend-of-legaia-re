@@ -27,6 +27,18 @@
 //! freshly spawned driver carries `+0x50 = 0`, so a sub-screen the engine
 //! cannot draw yet still closes itself the retail way instead of parking.
 //!
+//! Two properties of that park are load-bearing and easy to lose:
+//!
+//! - **A driver per arm.** The dispatcher retires the driver when a screen
+//!   hands back, and retail's Idle arm allocates a fresh one every time it
+//!   arms - so [`World::open_field_submode_screen`] spawns one when none is
+//!   live. Relying on the single MAN-load driver leaves every screen after
+//!   the first with no dispatcher, hence Armed for the rest of the scene.
+//! - **A park per context.** Retail's `_DAT_8007B450` is one global; the port
+//!   steps several field-VM contexts inside one `World::tick` and resolves
+//!   three sub-ops through host paths that bypass the global. The park is
+//!   therefore tagged with its [`Op49ParkOwner`] and read only by that owner.
+//!
 //! REF: FUN_8002519C (the `jalr node[+0x0C]` walk this hangs off),
 //! FUN_801D9C3C (the spawn), FUN_801E9B3C (the panel install this records
 //! rather than performs)
@@ -38,6 +50,34 @@ use legaia_engine_vm::baka_hub_actors::{
 
 use crate::actor_handler::ActorHandler;
 use crate::world::World;
+
+/// Which field-VM context armed the op-`0x49` park.
+///
+/// Retail's park is a single global (`_DAT_8007B450`) and every context shares
+/// it. The port cannot: it runs the per-tick field script
+/// ([`World::step_field`]), the per-actor channels, and the spawned
+/// partition-2 record contexts (the modal cutscene timeline and its concurrent
+/// helpers) inside the *same* `World::tick`, and it resolves three sub-ops
+/// ([`OP49_DEDICATED_SUB_OPS`]) through dedicated host paths that bypass the
+/// global entirely. A park armed by one context and read by another therefore
+/// answers a question that was never asked - which is exactly how the town01
+/// opening's name-entry hand-off gets swallowed: the field script arms a
+/// screen, and the modal timeline's own op-`0x49` reads that screen's Armed
+/// and halts before `op49_invoke_setup` can open name entry.
+///
+/// Tagging the park with its owner keeps every context's Done its own.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Op49ParkOwner {
+    /// The per-tick field script / interaction + inline-dialogue runners -
+    /// everything stepped outside a spawned record slice.
+    #[default]
+    FieldScript,
+    /// The modal cutscene timeline (`in_cutscene_timeline`).
+    CutsceneTimeline,
+    /// A concurrent helper context (a spawned partition-2 record that is not
+    /// the modal timeline).
+    HelperContext,
+}
 
 /// The live state of the one submode screen a field frame can have up.
 ///
@@ -65,6 +105,9 @@ pub struct SubmodeScreen {
     /// `FUN_801E9DC8`'s return for the confirm panel, supplied by the host
     /// that owns the two-option picker. `0` while nothing is picking.
     pub picker_result: i32,
+    /// The field-VM context that armed this park - see [`Op49ParkOwner`].
+    /// Only that context's op-`0x49` reads [`Self::open`] / [`Self::done`].
+    pub owner: Op49ParkOwner,
 }
 
 impl SubmodeScreen {
@@ -76,6 +119,16 @@ impl SubmodeScreen {
     /// Did the last tick hand the frame back (the park should read Done)?
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// Is a screen up *and* armed by `owner` (the park this context reads)?
+    pub fn is_open_for(&self, owner: Op49ParkOwner) -> bool {
+        self.open && self.owner == owner
+    }
+
+    /// Did a screen armed by `owner` hand the frame back?
+    pub fn is_done_for(&self, owner: Op49ParkOwner) -> bool {
+        self.done && self.owner == owner
     }
 
     /// Every text/sprite draw the last tick produced.
@@ -94,8 +147,40 @@ impl World {
     /// Retail's enter path also seeds the cursor context's completion gate to
     /// `1` (`FUN_801F1278` writes `_DAT_801C6EA4+0x3E = 1`); without it the
     /// dispatcher would retire the actor on its very first frame.
+    ///
+    /// It also **spawns the driver actor**, and that is not optional. The
+    /// op-`0x49` Idle arm calls the allocator unconditionally on every arm,
+    /// before it stores the operand pointer into the park:
+    ///
+    /// ```text
+    /// 801e0984  lbu   v0,0x0(s6)        ; sub_op
+    /// 801e098c  sltiu v0,v0,0xe         ; sub_op < 0xE ?
+    /// 801e0990  beq   v0,zero,0x801e3624
+    /// 801e09a0  jal   0x80020de0        ; spawn the driver - EVERY arm
+    /// 801e09a4  _addiu a0,a0,0x65c      ;   from descriptor 0x8007065C
+    /// 801e09a8  sw    s6,-0x4bb0(s0)    ; _DAT_8007B450 = operand ptr
+    /// ```
+    ///
+    /// (`overlay_0897_801de840.txt`, `FUN_801DE840` case `0x49`.) The engine
+    /// had only the one driver [`World::man_load_actor_reset`] spawns per MAN
+    /// load, and [`World::tick_submode_screen`] *retires* that driver when a
+    /// screen hands back - so the second screen of a scene had no dispatcher,
+    /// never handed back, and left the park Armed for the rest of the scene.
+    ///
+    /// REF: FUN_80020DE0 (the allocator), FUN_801D9C3C (the MAN-load spawn)
     pub fn open_field_submode_screen(&mut self, handler: u16, window: Option<usize>) {
+        let owner = self.op49_park_owner();
+        if self
+            .find_actor_by_handler(ActorHandler::SubmodeDriver)
+            .is_none()
+            && let Some(slot) = self.spawn_handler_actor(ActorHandler::SubmodeDriver)
+        {
+            // Retail clears the fresh driver's `+0x50` / `+0x54`; the handler
+            // slot this screen wants goes on the screen's own actor view.
+            self.actors[slot].state_54 = 0;
+        }
         let s = &mut self.submode_screen;
+        s.owner = owner;
         s.actor = HubActor {
             width: SUBMODE_PANEL_WIDTH,
             state: handler,
@@ -120,6 +205,22 @@ impl World {
     /// panel-window record whose painter is `FUN_801F1950`.
     pub fn open_coin_counter(&mut self) {
         self.open_field_submode_screen(slot::COIN_COUNTER, Some(COIN_PANEL_WINDOW));
+    }
+
+    /// Which field-VM context is stepping right now - the owner an op-`0x49`
+    /// park armed on this step belongs to, and the only one that may read it.
+    ///
+    /// [`World::in_spawned_record_slice`] is set by `run_spawned_record_slice`
+    /// for both spawned-record shapes, and [`World::in_cutscene_timeline`]
+    /// only for the modal one, so the pair separates all three contexts.
+    pub fn op49_park_owner(&self) -> Op49ParkOwner {
+        if !self.in_spawned_record_slice {
+            Op49ParkOwner::FieldScript
+        } else if self.in_cutscene_timeline {
+            Op49ParkOwner::CutsceneTimeline
+        } else {
+            Op49ParkOwner::HelperContext
+        }
     }
 
     /// Close whatever screen is up without running its hand-back.
