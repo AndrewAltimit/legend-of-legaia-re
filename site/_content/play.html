@@ -178,6 +178,14 @@
 }
 .play-btn-row button:hover { border-color: var(--accent); }
 .play-btn-row button[disabled] { opacity: 0.45; cursor: not-allowed; }
+.play-volume {
+  display: flex; align-items: center; gap: 0.35rem;
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.2rem 0.5rem; font-family: var(--font-mono); font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.play-volume input[type="range"] { width: 5.5rem; }
+#play-volume-value { min-width: 2.4rem; text-align: right; color: var(--text); }
 
 /* Saves card (export / import / block chooser status line). */
 .play-save-import { display: block; margin-top: 0.45rem; font-size: 0.74rem; color: var(--text-muted); }
@@ -299,6 +307,10 @@
           <button id="play-fishing" type="button"
                   title="Start the fishing minigame here (Z casts and reels, V reels harder)">Fish here</button>
           <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
+            &#9834; <input type="range" id="play-volume" min="0" max="12" step="0.5" value="5">
+            <span id="play-volume-value">5x</span>
+          </label>
         </div>
       </div>
 
@@ -1284,6 +1296,25 @@
     view.cam.pitch = 0.62;
     view.cam.halfWidth = view.cam.halfHeight = 520;
   });
+
+  /* BGM volume. The engine's SPU mixer feeds a WebAudio `GainNode` inside
+   * `WebAudioOut`; `audio_set_gain` is the live handle on it. The slider's
+   * HTML `value` is the same number the engine parks on the node at
+   * `audio_init` (`BGM_DEFAULT_GAIN`), so the control starts where the audio
+   * actually is instead of jumping on first drag. Re-applied whenever the
+   * runtime is rebuilt (a WASM trap makes a fresh instance at unity). */
+  const volEl    = document.getElementById('play-volume');
+  const volValEl = document.getElementById('play-volume-value');
+  function applyVolume() {
+    const v = parseFloat(volEl.value);
+    volValEl.textContent = v === 0 ? 'mute' : `${v}x`;
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.audio_set_gain === 'function') {
+      try { rt.audio_set_gain(v); } catch (e) { /* audio not up yet */ }
+    }
+  }
+  volEl.addEventListener('input', applyVolume);
+  window.__playApplyVolume = applyVolume;
 
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own

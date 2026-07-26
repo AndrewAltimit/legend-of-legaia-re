@@ -30,13 +30,20 @@ use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 
-/// Default BGM output gain for the play page. Retail SEQ + clean-room SPU
-/// output sits around 1% of the i16 range (near-inaudible at unity); the audio
-/// audition page (`site/audio.html`) uses ~25x for the same reason. Match that
-/// ballpark so the play page's music is at a comfortable speaker level - JS can
-/// retune it live through [`LegaiaRuntime::audio_set_gain`].
+/// Default BGM output gain for the play page, parked on
+/// [`legaia_engine_audio::WebAudioOut`]'s post-mixer `GainNode` at
+/// [`LegaiaRuntime::audio_init`] and retunable live through
+/// [`LegaiaRuntime::audio_set_gain`].
+///
+/// Retail SEQ + clean-room SPU output really is quiet at unity, so some lift
+/// is needed. How much is a judgement about this page, **not** a number copied
+/// from the media page's BGM auditioner - the two are set differently on
+/// purpose. That page hands the choice to the listener (a 1x-10x slider
+/// defaulting to `1`, `site/media.html`); the play page bakes in a fixed level,
+/// picked by ear, deliberately on the loud side of comfortable because a track
+/// that is slightly hot is easier to live with than one that is inaudible.
 #[cfg(target_arch = "wasm32")]
-const BGM_DEFAULT_GAIN: f32 = 20.0;
+const BGM_DEFAULT_GAIN: f32 = 5.0;
 
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a

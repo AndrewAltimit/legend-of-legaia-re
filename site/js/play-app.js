@@ -1237,6 +1237,10 @@
           this._audioUp = true;
         }
         if (typeof rt.audio_resume === 'function') rt.audio_resume();
+        /* `audio_init` parks the engine's default gain on the GainNode, which
+         * would silently override wherever the page's volume slider is sitting
+         * (and does, after a trap-recovery rebuild). Re-assert the control. */
+        if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
       } catch (e) { console.warn('play audio enable', e); }
     }
 

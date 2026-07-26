@@ -50,6 +50,9 @@ Usage:
     python3 scripts/ci/check-ui-host-drift.py            # check, exit 1 on drift
     python3 scripts/ci/check-ui-host-drift.py --quiet    # findings only
     python3 scripts/ci/check-ui-host-drift.py --list     # full surface table
+    python3 scripts/ci/check-ui-host-drift.py --selftest # detector control suite
+
+Exit status: 0 = clean, 1 = drift / stale waiver, 2 = self-test failed.
 """
 
 import argparse
@@ -86,6 +89,27 @@ HOSTS = {
 # than from a single-line pattern.
 BUILDER_RE = re.compile(r"^pub fn (?P<name>[a-z0-9_]+)\s*[<(]", re.MULTILINE)
 DRAW_RET_RE = re.compile(r"->[^;{]*(?:TextDraw|SpriteDraw)")
+
+# ...but returning quads is not sufficient. A function that *takes* draw
+# records and hands them back is a batching transform inside the draw
+# pipeline, not a projection of a model into a screen. Counting those as
+# screens is a defect of the instrument: nothing about a host "having" or
+# "not having" one describes a gap between the two hosts, and the surface
+# they inflate is exactly the surface a waiver file then has to explain.
+#
+# The shape the return-type rule alone could not see: `sprite_draws_for(
+# requests: &[SpriteRequest], anchor)` - draw records in, draw records out,
+# no model anywhere in the signature. It read as an unwired screen for as
+# long as the gate has existed, and the waiver written for it says so in
+# prose ("a generic anchor-translate helper ... not a screen").
+#
+# Deliberately keyed on the crate's own draw/request record types appearing
+# in the PARAMETER list, which is the narrowest statement of "this consumes
+# the thing screens produce". Over the current surface it reclassifies
+# exactly one function; every real screen takes a model (a session, a row
+# list, a rect, a font layout) and is untouched. `--selftest` pins both
+# directions.
+TRANSFORM_PARAM_RE = re.compile(r"\b(?:SpriteRequest|TextDraw|SpriteDraw)\b")
 
 LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 
@@ -132,6 +156,25 @@ def strip_comments(text: str) -> str:
     return LINE_COMMENT_RE.sub("", text)
 
 
+def is_screen_signature(signature: str) -> bool:
+    """Is this `fn` signature one screen's geometry builder?
+
+    `signature` is the source span from the `fn` keyword up to (not
+    including) the body's opening brace. Two conditions, and the second is
+    the one a return-type-only rule was missing:
+
+    1. it returns quads (`TextDraw` / `SpriteDraw`), and
+    2. it does **not** take quads - a function fed the crate's own draw or
+       request records is a transform over a draw list, not a projection of
+       a model into one.
+    """
+    if not DRAW_RET_RE.search(signature):
+        return False
+    arrow = signature.rfind("->")
+    params = signature[:arrow] if arrow >= 0 else signature
+    return not TRANSFORM_PARAM_RE.search(params)
+
+
 def collect_builders() -> dict[str, str]:
     """Map builder name -> `path:line` where it is defined."""
     out: dict[str, str] = {}
@@ -144,7 +187,7 @@ def collect_builders() -> dict[str, str]:
             brace = text.find("{", m.start())
             if brace < 0:
                 continue
-            if not DRAW_RET_RE.search(text[m.start() : brace]):
+            if not is_screen_signature(text[m.start() : brace]):
                 continue
             line = text[: m.start()].count("\n") + 1
             rel = path.relative_to(REPO)
@@ -274,11 +317,109 @@ def load_waivers() -> dict[str, dict]:
     return out
 
 
+# Detector control suite for `is_screen_signature`. Real signatures, copied
+# from `crates/engine-ui/src` (multi-line ones flattened - the caller feeds it
+# a raw source span either way).
+SELFTEST_SCREENS: list[tuple[str, str]] = [
+    # A model in, quads out: the ordinary screen shape.
+    ("shop_draws_for",
+     "pub fn shop_draws_for(font: &legaia_font::Font, title: &str, rows: &[ShopRow<'_>], "
+     "cursor: usize, gold: Option<i32>, pen: (i32, i32)) -> Vec<TextDraw>"),
+    # A glyph layout is a model of text, not a draw record - the sibling of
+    # `sprite_draws_for` that must stay counted, or the surface loses a
+    # screen fragment both hosts really do share.
+    ("text_draws_for",
+     "pub fn text_draws_for(layout: &legaia_font::Layout, pen: (i32, i32), "
+     "color: [f32; 4]) -> Vec<TextDraw>"),
+    # Sprite-returning screens are screens: the parameters are a model.
+    ("equip_screen_sprites_for",
+     "pub fn equip_screen_sprites_for(view: &EquipView<'_>, rects: &SaveMenuAtlasRects, "
+     "origin: (i32, i32), scale: u32) -> Vec<SpriteDraw>"),
+    # Tuple returns count too - the painter family returns quads beside
+    # pictogram / cursor requests.
+    ("sell_quantity_draws_for",
+     "pub fn sell_quantity_draws_for(font: &legaia_font::Font, rect: PainterRect, "
+     "selected: bool, heading: &str, quantity: u32, held: u32, unit_price: u32) "
+     "-> (Vec<TextDraw>, Option<PainterPictogram>, Option<PainterSprite>)"),
+]
+
+SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
+    # The shape the return-type-only rule could not see.
+    ("sprite_draws_for",
+     "pub fn sprite_draws_for(requests: &[SpriteRequest], anchor: (i32, i32)) "
+     "-> Vec<SpriteDraw>"),
+    # Same shape with the other two record types, so the rule is not pinned
+    # to one name.
+    ("rebatch_text",
+     "pub fn rebatch_text(draws: &[TextDraw], origin: (i32, i32)) -> Vec<TextDraw>"),
+    ("merge_sprites",
+     "pub fn merge_sprites(a: &[SpriteDraw], b: &[SpriteDraw]) -> Vec<SpriteDraw>"),
+    # Not a draw builder at all - no quads out.
+    ("scale_stage_text_draws",
+     "pub fn scale_stage_text_draws(draws: &mut [TextDraw], stage_origin: (i32, i32), "
+     "stage_scale: u32)"),
+]
+
+
+def run_selftest() -> int:
+    failures = 0
+    for name, sig in SELFTEST_SCREENS:
+        if is_screen_signature(sig):
+            print(f"  ok    {name}: counted as a screen")
+        else:
+            print(f"  FAIL  {name}: dropped from the surface (expected a screen)")
+            failures += 1
+    for name, sig in SELFTEST_TRANSFORMS:
+        if is_screen_signature(sig):
+            print(f"  FAIL  {name}: counted as a screen (expected a transform)")
+            failures += 1
+        else:
+            print(f"  ok    {name}: excluded as a draw-list transform")
+    total = len(SELFTEST_SCREENS) + len(SELFTEST_TRANSFORMS)
+    if failures:
+        print(
+            f"\nself-test: {failures} of {total} case(s) failed - the surface this "
+            f"gate measures is not the set of screens, so its verdict means nothing"
+        )
+        return 2
+    print(f"\nself-test: all {total} cases pass")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
     ap.add_argument("--list", action="store_true", help="print the full surface table")
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run the screen-vs-transform control suite and exit",
+    )
     args = ap.parse_args()
+
+    if args.selftest:
+        print("check-ui-host-drift self-test")
+        return run_selftest()
+
+    # The surface is only meaningful if the classifier demonstrably separates
+    # the two shapes. Run the control every time: a "0 orphans" verdict from a
+    # classifier that counts everything, or nothing, is not a measurement.
+    for _name, sig in SELFTEST_SCREENS:
+        if not is_screen_signature(sig):
+            print(
+                "ERROR: built-in screen control failed; the builder surface is not "
+                "trustworthy. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _name, sig in SELFTEST_TRANSFORMS:
+        if is_screen_signature(sig):
+            print(
+                "ERROR: built-in transform control failed; the builder surface is not "
+                "trustworthy. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
 
     builders = collect_builders()
     if not builders:

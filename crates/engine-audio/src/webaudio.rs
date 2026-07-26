@@ -35,9 +35,8 @@ pub struct WebAudioOut {
     _onaudioprocess: Closure<dyn FnMut(AudioProcessingEvent)>,
     state: Rc<RefCell<StreamResampler>>,
     /// User-controllable gain stage between the `ScriptProcessorNode` and
-    /// the destination. Retail SEQs + clean-room SPU produce SPU samples at
-    /// roughly 1% of the i16 range, which is barely audible at normal
-    /// speaker volume - the JS host bumps this gain to compensate.
+    /// the destination, so a host can scale output without re-mixing in
+    /// WASM. Defaults to unity; the play page hangs its volume slider here.
     gain: web_sys::GainNode,
 }
 
@@ -84,8 +83,8 @@ impl WebAudioOut {
 
         // Insert a `GainNode` between the script processor and the
         // destination so the JS side can scale SPU output without
-        // re-mixing in WASM. Default gain matches the engine-shell
-        // cpal path (1.0); the site/audio.html page exposes a slider.
+        // re-mixing in WASM. Default gain matches the engine-shell cpal
+        // path (1.0); the play page overrides it from its volume slider.
         let gain = ctx
             .create_gain()
             .map_err(|e| anyhow::anyhow!("createGain: {:?}", e))?;
@@ -103,9 +102,11 @@ impl WebAudioOut {
         })
     }
 
-    /// Set the post-mixer gain. `1.0` matches the native cpal path; the
-    /// audio page bumps this to ~25.0 because retail SEQ+SPU output sits
-    /// around 1% of the i16 range, which is inaudible at speaker level.
+    /// Set the post-mixer gain. `1.0` matches the native cpal path, and the
+    /// browser hosts drive it from a user-facing volume control rather than
+    /// from a fixed compensation factor - the mixer's nominal level is the
+    /// same on both targets, so a large constant here is loudness, not
+    /// correction.
     pub fn set_gain(&self, gain: f32) {
         self.gain.gain().set_value(gain);
     }

@@ -96,8 +96,19 @@ the playhead survives. `audio_resume()` (browsers open the context suspended),
 `audio_set_gain()`, and `audio_ready()` round out the JS surface; routing and
 staging no-op until audio is live, so the field VM's events stay queued until
 the user enables sound. Not built into a disc-gated parity test - the SPU
-render path is exercised by the audio page (`audio_api`) and the native
-`audio-trace` oracle; the play-page wiring needs an in-browser listen.
+render path is exercised by the media page (`audio_api`) and the native
+`audio-trace` oracle.
+
+### Output level
+
+`BGM_DEFAULT_GAIN` is the gain the runtime parks on `WebAudioOut`'s post-mixer
+`GainNode` at `audio_init`, and the play page's volume slider is a live handle
+on the same node through `audio_set_gain`. It is a judgement about this page,
+not a constant shared with the media page's BGM auditioner: that page renders
+PCM offline and plays it through an `AudioBufferSourceNode` behind its own
+1x-10x slider defaulting to `1`, so quoting its level as this one's
+justification argued for a default several times hotter than the mixer needs -
+which is how the page came to clip on peaks.
 
 ## Retail dialog reading box (`play_dialog`)
 
@@ -202,6 +213,17 @@ the shared `legaia-engine-ui` builders (`shop_draws_for`, `level_up_draws_for`,
 `capture_banner_draws_for`) driven by the real
 `legaia_engine_core::menu_runtime::MenuRuntime`; `play_shop_input` forwards pad
 edges and `play_overlay_draws_json` serves the quads.
+
+Retail's shop is five windows rather than one panel, so alongside the engine's
+interactive list the page paints the four **descriptor windows** that have
+painters - 33 vendor plate, 32 purse, 34 item info, 37 sell quantity - through
+the same `painter_at` renderer dispatch and the same disc-parsed rects the
+native `play-window` uses. They draw only when the menu-overlay window table
+parsed: a `renderer_va` is not something the pinned-rect fallback can invent,
+so without the real table the windows are absent rather than mislocated.
+`tests/shop_overlay_parity.rs` asserts content lands inside window 32's and
+34's rects, keyed off the table re-parsed from the disc in the test rather than
+off any constant this crate carries.
 
 The shop and its **catalog** have to ship together, and the reason is worth
 knowing before touching either. `World::try_arm_field_shop` sets both

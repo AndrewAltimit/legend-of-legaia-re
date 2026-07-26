@@ -39,8 +39,15 @@ encounters - none of `tick_encounter`, `arm_scripted_encounter`,
 it exports no battle render, camera or command-menu path. There is also no
 battle HUD in the page's JS: `site/js/play-app.js` mentions battle only in a
 comment about Start being inert. Wiring the HUD would draw a readout of state
-the page never produces. Closing this is a battle-host job, not a draw-call
-one.
+the page never produces.
+
+Stated plainly, because the honest label matters when the rest of this file
+does describe capability gaps: this one is **undone work**, not something the
+browser cannot do. Nothing about a battle host needs a process, a filesystem
+or a native window - `engine-core` drives the whole encounter path on both
+targets. The waiver stands because closing it is a battle-host port, an order
+of magnitude past a draw call, and drawing an HP readout over a mode the page
+never enters would be worse than the gap.
 """
 
 [[waiver]]
@@ -58,14 +65,19 @@ banner, so it does not call this either.
 builder = "dialog_box_draws_for"
 kind = "orphan"
 reason = """
-The plain typewriter fallback, reached by neither host. The browser page always
-runs the field-VM inline dialogue runner and draws the retail reading box
-(`crate::play_dialog`, built from `dialog_window_chrome_draws_for` +
-`text_draws_for`), so it has no use for a degraded path. On the native side its
-only in-tree caller is `dialog_panel_draws_for`, which is itself an orphan (see
-below) - so this is the tail of a two-builder chain whose head nothing calls.
-Not a missing screen: a missing *fallback*, kept because `--simple-dialogue`
-is the documented escape hatch when the retail box misrenders.
+The plain typewriter fallback, reached by neither host, and - correcting what
+this entry used to claim - **not** kept alive by `--simple-dialogue`. That flag
+only clears `World::use_vm_dialogue`, choosing which state machine produces the
+text; both settings then render through the same `DialogSnapshot` path
+(`window/hud.rs`), which never calls this builder. So there is no fallback
+chain in the tree, degraded or otherwise: this and `dialog_panel_draws_for`
+below are a two-builder chain whose head nothing calls and whose only
+references anywhere are unit tests in `engine-render/src/tests/text_dialog.rs`.
+
+Genuinely dead code rather than a host gap, and the honest resolution is
+deletion, not a waiver. It is left standing only because the tests that keep
+it compiling sit outside the crate, so removing it is an `engine-ui` +
+`engine-render` edit rather than a drift fix.
 """
 
 [[waiver]]
@@ -73,22 +85,32 @@ builder = "dialog_panel_draws_for"
 kind = "orphan"
 reason = """
 The `OwnedDialogPanel` projection, written for the native window but not called
-by it - the native dialogue path draws the retail box directly, and this
-survives only as the entry point of the `--simple-dialogue` fallback chain
-(it delegates to `dialog_box_draws_for`). The browser page builds its box from
-its own `DialogSnapshot` at the byte-pinned retail geometry
+by it: the native path holds an `OwnedDialogPanel` and then flattens it to a
+`DialogSnapshot` rather than to quads, so the panel type reaches the window and
+this builder does not. The browser page builds its box from the same snapshot
+shape at the byte-pinned retail geometry
 (`crate::play_dialog::dialog_stage_layout`, REF FUN_801D84D0) because it also
-has to place the option picker and the two hand cursors. Closing this means
-deciding whether the fallback chain is still wanted; if it is, the native
-window has to actually route `--simple-dialogue` through it.
+has to place the option picker and the two hand cursors.
+
+Dead for the same reason as `dialog_box_draws_for` above (it delegates to it),
+and with the same resolution: delete both, or give one host a reason to
+project a panel straight to quads. `--simple-dialogue` is not that reason -
+see above.
 """
 
 [[waiver]]
 builder = "game_over_draws_for"
 kind = "web_missing"
 reason = """
-Unreachable on BOTH hosts, and deliberately so. The native window declares
-`BootUiState::GameOver` but never constructs it, because retail's trigger is
+Unreachable on BOTH hosts, and deliberately so - so read the `web_missing`
+bucket as an artifact of the instrument, not a claim: the checker classifies on
+whether a host's source *names* the builder, and the native window names it in
+a `match` arm over a variant nothing constructs. Referenced is not reached, and
+no textual gate can tell them apart.
+
+The native window declares `BootUiState::GameOver` but never constructs it
+(`window/boot_cutscene.rs` matches it at two sites; no `BootUiState::GameOver(`
+constructor exists outside tests), because retail's trigger is
 not pinned: the action-SM `0x5A` gate detects the wipe, but the battle-exit
 selector never reads the wipe cause, and no static mode-0x12 writer exists on
 the disc (see docs/subsystems/battle.md § party wipe). Worse, retail's game
@@ -112,35 +134,27 @@ window's menu tree. Closing it is a native-only job: give the options menu a
 rebind entry that opens this screen.
 """
 
-[[waiver]]
-builder = "sprite_draws_for"
-kind = "orphan"
-reason = """
-A generic anchor-translate helper for `SpriteRequest` batches, not a screen -
-it matches the builder pattern only because it returns `SpriteDraw`. Neither
-host routes through it: the browser page emits its quads through
-`crate::play_menu::quad_json` after `scale_stage_text_draws`, which already
-applies the stage transform this would duplicate, and the native window
-translates its sprite batches at the point of use. Nor does any engine-ui
-builder compose it - its only reference outside its own definition is a unit
-test in `engine-render/src/tests/`, which the checker excludes by design.
-
-So this is genuinely uncalled rather than reached one call deep, and the
-distinction is now measured: the AP gauge, once waived beside this on the same
-"composes into a drawn builder" reasoning, is counted as drawn and its waiver
-is gone. This one is a delete candidate, not a screen gap - kept only because
-deleting a helper is a decision about the sprite path, not about drift.
-"""
+# `sprite_draws_for` used to be waived here as "a generic anchor-translate
+# helper ... not a screen". That prose was the right reading and the wrong
+# instrument: a waiver says "this gap is acceptable", and there was no gap -
+# the function was never a screen to begin with. The checker now classifies on
+# the whole signature rather than the return type alone (draw records IN means
+# a transform over a draw list, not a projection of a model), so the surface
+# no longer contains it and there is nothing left to waive.
 
 [[waiver]]
 builder = "records_screen_draws_for"
 kind = "web_missing"
 reason = """
 The retail world-map Records screen renderer (`FUN_801ED710`). The native
-window draws it from the developer-menu host (`window/dev_menu.rs`, behind the
-same `LEGAIA_DEV_MENU` opt-in as its list sibling `dev_menu_list_draws_for`
-below); the browser play page exposes no debug-menu route - a debug surface is
-deliberately out of the web page's scope rather than a wiring gap.
+window draws it from the developer-menu host (`window/dev_menu.rs`), gated on
+the `LEGAIA_DEV_MENU` **process environment variable** - the capability the web
+host lacks. A browser tab has no process environment, so the gate that keeps
+this surface off a player's screen has no equivalent there; a URL parameter or
+a build flag would put a debug menu one shared link away from every visitor,
+which is a different security posture, not the same screen ported. The engine
+also reaches it through the world-map controller, which the play page does not
+host at all.
 """
 
 [[waiver]]
@@ -148,51 +162,28 @@ builder = "dev_menu_list_draws_for"
 kind = "web_missing"
 reason = """
 The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
-list sibling of `records_screen_draws_for` above. The native window now
-routes it (`window/dev_menu.rs`, behind the debug toggle mirroring retail's
-`_DAT_8007B98C` gate); the browser play page exposes no debug-menu route -
-a debug surface is deliberately out of the web page's scope rather than a
-wiring gap.
+list sibling of `records_screen_draws_for` above and behind the same
+`LEGAIA_DEV_MENU` process-environment gate in `window/dev_menu.rs`. Same
+capability gap, same reasoning: the web host has no process environment to
+gate a debug surface on, so shipping the screen there means shipping it to
+every visitor.
 """
 
 
-[[waiver]]
-builder = "record_title_tab_draws_for"
-kind = "web_missing"
-reason = """
-Native draws it as the shop's **vendor-name plate** (window 33,
-`FUN_801DCF14`), dispatched on `renderer_va` in `window/shop_windows.rs`.
-The text resolves exactly as retail's does: `_DAT_8007B450` points at the
-armed op-`0x49` opcode's sub-op byte, the renderer starts the string at
-`record + record[2] + 3`, and for a shop record (`[count][count x id][name]`)
-that lands one past the last item id - the trailing ASCII name
-`legaia_asset::shop_stock` decodes. The host recovers it by matching the live
-session's stock against `World::scene_shops`.
-
-The browser play page has no shop host: nothing in `crates/web-viewer/src`
-opens a `ShopSession` or drains `take_pending_field_shop`, so there is no
-vendor for a plate to name.
-"""
-
-[[waiver]]
-builder = "counter_panel_draws_for"
-kind = "web_missing"
-reason = """
-Native draws it as the shop's **purse** (window 32, `FUN_801DCF84`), at the
-disc-parsed rect, in `window/shop_windows.rs`. Both the pictogram id and
-which live total the digits print come out of the dispatch
-(`CounterSource`), because retail's two counter renderers are one routine
-with two literals changed: window 32 reads party gold `_DAT_8008459C`
-(engine `World::money`), window 45 the casino coin bank `_DAT_800845A4`
-(engine `World::casino_coins`). The engine shop panel drops its own gold
-footer whenever this window paints, so the readout is not doubled.
-
-Window 45 stays unopened on both hosts - its content is pinned but the screen
-that opens it is not.
-
-The browser play page has no shop host to hang the purse off (see
-`record_title_tab_draws_for`).
-"""
+# The shop's four retail descriptor windows - 33 (vendor plate), 32 (purse),
+# 34 (item info), 37 (sell quantity) - were each waived here on the premise
+# that "the browser play page has no shop host: nothing in
+# `crates/web-viewer/src` opens a `ShopSession` or drains
+# `take_pending_field_shop`". That premise was false against the tree it
+# claimed to describe: `web-viewer/src/play_shop.rs` drains
+# `take_pending_field_shop` in `poll_field_shop`, `runtime.rs` calls it every
+# `tick_frame`, and `site/js/play-app.js` drives the session through
+# `play_shop_is_open` / `play_shop_input` / `play_overlay_draws_json`. The
+# waivers were undone work wearing the language of an exemption, which is the
+# one failure mode this file exists to prevent - the checker validates a
+# waiver's BUCKET against the source but cannot read its prose, so a false
+# reason survives every re-derivation. All four now paint on the web host off
+# the same `painter_at` dispatch and the same disc-parsed rects.
 
 [[waiver]]
 builder = "char_prompt_draws_for"
@@ -270,24 +261,6 @@ comes from window 50, so this is not that list under another id.
 """
 
 [[waiver]]
-builder = "item_description_draws_for"
-kind = "web_missing"
-reason = """
-Native draws it as the shop's **item-info panel** (window 34,
-`FUN_801D4A80`), dispatched on `renderer_va` in `window/shop_windows.rs`:
-the hovered buy / sell row's name and owned count in the accent pen, the
-description below it, and nothing at all when no row is staged - retail's
-`DAT_801E46B0 > 0` gate. Accessories route through the passive table
-(`description_source`; the host resolves the same chain via
-`MenuTextTables::item_passive_lines`, which applies the `>= 0x40` sentinel
-bound).
-
-The browser play page has no shop host (see `record_title_tab_draws_for`),
-and its own inventory description comes from `inventory_panel_draws_for` at
-that screen's own layout.
-"""
-
-[[waiver]]
 builder = "equip_target_list_draws_for"
 kind = "orphan"
 reason = """
@@ -299,22 +272,6 @@ the equip screen they do draw picks its target from the party window. Wiring
 it into the shop's buy flow instead would invent a screen; retail's shop
 open script does not list window 36. The mask rule (`equip_row_enabled`) is
 unit-tested independently.
-"""
-
-[[waiver]]
-builder = "sell_quantity_draws_for"
-kind = "web_missing"
-reason = """
-Native draws it as the shop's **sell quantity panel** (window 37,
-`FUN_801D5944`), dispatched on `renderer_va` in `window/shop_windows.rs`
-whenever the session is sizing a stack to sell. Quantity, held count and the
-halved gold total come from the live `ShopSession`; the unit price comes from
-`World::item_shop_data`, which is the item record's own `+2` word - what
-retail reads - rather than the merchant's stock entry, so a bag item the shop
-does not sell still prices correctly. The digit ladder still sizes the field
-off the unit price.
-
-The browser play page has no shop host (see `record_title_tab_draws_for`).
 """
 
 [[waiver]]

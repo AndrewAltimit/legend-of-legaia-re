@@ -668,7 +668,7 @@ fn detect_tmd_in_entry(buf: &[u8], class: Class) -> (Option<TmdSource>, usize) {
 }
 
 // ---------------------------------------------------------------------------
-// LegaiaAudio: WASM bindings for site/audio.html
+// LegaiaAudio: WASM bindings for site/media.html
 // ---------------------------------------------------------------------------
 
 /// In-browser audio extraction surface. Owns the loaded Mode2/2352 disc plus

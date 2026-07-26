@@ -1,4 +1,4 @@
-//! `LegaiaAudio` WASM bindings for site/audio.html.
+//! `LegaiaAudio` WASM bindings for site/media.html.
 use super::*;
 
 #[wasm_bindgen]
@@ -384,10 +384,14 @@ impl LegaiaAudio {
         }
     }
 
-    /// Set the BGM playback gain. Retail SEQ + clean-room SPU output sits
-    /// around 1% of the i16 range, so the audio page defaults to ~25x to
-    /// bring playback to a comfortable level. `1.0` matches the native
-    /// engine-shell cpal path.
+    /// Set the BGM playback gain on the streaming [`Self::start_bgm`] path.
+    /// `1.0` matches the native engine-shell cpal path.
+    ///
+    /// No site page calls this. The media page's BGM auditioner takes the
+    /// pre-rendered [`Self::render_bgm_pcm_i16`] route instead and owns its
+    /// own `GainNode`, driven by a 1x-10x slider that defaults to `1`; the
+    /// play page's live equivalent is
+    /// [`crate::LegaiaRuntime::audio_set_gain`].
     #[cfg(target_arch = "wasm32")]
     pub fn set_bgm_gain(&mut self, gain: f32) {
         if let Some(out) = self.audio_out.as_ref() {
