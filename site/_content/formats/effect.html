@@ -133,7 +133,7 @@ if let Some(eb) = effect_bundle::detect(&amp;buf) {
 <tr>
 <td><code>0x801DFDF8</code></td>
 <td>0x290</td>
-<td><strong>Public spawn-effect API.</strong> Signature: <code>(byte effect_id, short* world_pos, ushort angle)</code>. Reads <code>pack1[effect_id]</code> from the head record to find the effect's script. Allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies script header bytes, sets script cursor to <code>entry + 4</code>. Special-cases <code>effect_id = 4 → 0x801F5D90</code> and <code>effect_id = 0x13 → 0x801F5CF8</code>.</td>
+<td><strong>Public spawn-effect API.</strong> Signature: <code>(byte effect_id, short* world_pos, ushort angle)</code>. Reads <code>pack1[effect_id]</code> from the head record to find the effect's script. Allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies script header bytes, sets script cursor to <code>entry + 4</code>. Special-cases <code>effect_id = 4 → 0x801F5D90</code> and <code>effect_id = 0x13 → 0x801F5CF8</code> - the bytes at both are 18-byte move-VM trigger programs in <code>0898</code>'s tail (the two arms of the radial particle burst <code>FUN_801F30C4</code>), not pack1 scripts.</td>
 </tr>
 <tr>
 <td><code>0x801E0088</code></td>

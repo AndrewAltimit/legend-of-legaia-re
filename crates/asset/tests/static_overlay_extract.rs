@@ -109,17 +109,35 @@ fn committed_overlays_reproduce_from_disc() {
         // slot-B way: a high fraction of the overlay's internal absolute
         // self-pointers must resolve in-file at the committed base. This keeps
         // the cross_ref/capture base claims non-vacuous.
+        //
+        // Both halves of that measurement are bounded by the overlay's own
+        // sectors, and two things follow from reading only those.
+        //
+        // The sample shrinks. Some slot-B images are a few sectors: PROT 0901
+        // carries three pairs. It used to clear a flat `>= 8` only because the
+        // reader ran past the entry and counted a *neighbouring* overlay's
+        // code. A thin sample is held to a stricter bar rather than a lower
+        // one: every pair must resolve.
+        //
+        // The acceptance range shrinks too, and that is what moves the
+        // fraction. The pairs an image does not resolve in-file are not noise
+        // - for PROT 0924 and 0967 they cluster in `0x801F99xx..0x801FA4xx`,
+        // just above each image's end: the working storage a PSX overlay
+        // reaches past its loaded image inside the slot-B buffer, which is
+        // `.bss`-shaped and by definition not in the file. An over-read window
+        // swallowed those addresses and scored them as hits.
         if rec.base_va == legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE {
             let (resolved, total) = static_overlay::pointer_resolution(&as_loaded, rec.base_va);
             assert!(
-                total >= 8,
+                total >= 3,
                 "{} (PROT {}): too few self-pointers to confirm base ({total})",
                 rec.label,
                 rec.prot_index
             );
             let frac = resolved as f64 / total as f64;
+            let want = if total >= 8 { 0.60 } else { 1.0 };
             assert!(
-                frac >= 0.70,
+                frac >= want,
                 "{} (PROT {}): only {resolved}/{total} self-pointers resolve in-file at base 0x{:08x}",
                 rec.label,
                 rec.prot_index,

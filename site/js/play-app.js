@@ -738,6 +738,65 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
+    /* ---------- sound effects ---------- */
+
+    /* Fire the cue mapped to a named event. The event -> cue-id map and each
+     * id's provenance (`disc` = traced to a retail ring write, `site` = the
+     * port's pick) live in the engine (`play_sfx_events_json`), so the page
+     * names behaviour and never a cue number. Silent no-op until the disc's
+     * descriptor table and program bank have staged, and against a cached WASM
+     * that predates the channel. */
+    sfxEvent(name) {
+      if (typeof this.rt.play_sfx_event !== 'function') return false;
+      try { return !!this.rt.play_sfx_event(name); } catch (e) { return false; }
+    }
+
+    /* The SFX channel's state (`{descriptors, bank_prot, vab_staged, fired,
+     * last_cue, idle_voices, pending}`), or `null`. */
+    sfxState() {
+      if (typeof this.rt.play_sfx_state_json !== 'function') return null;
+      try { return JSON.parse(this.rt.play_sfx_state_json()); }
+      catch (e) { return null; }
+    }
+
+    /* ---------- fishing minigame ---------- */
+
+    /* Is a fishing session live on the engine's world this frame? */
+    fishingActive() {
+      if (typeof this.rt.play_fishing_active !== 'function') return false;
+      try { return !!this.rt.play_fishing_active(); } catch (e) { return false; }
+    }
+
+    /* Start / leave the fishing minigame. The engine suspends the current
+     * scene mode and restores it on exit, banking the session's points into the
+     * world's persistent pool - so the field is exactly where it was left and
+     * the point total survives. Returns `true` on a state change. */
+    toggleFishing() {
+      const rt = this.rt;
+      if (typeof rt.play_fishing_start !== 'function') return false;
+      try {
+        if (this.fishingActive()) {
+          rt.play_fishing_stop();
+          /* Drop the HUD immediately rather than waiting for the next layer to
+           * claim the overlay. */
+          if (this._menuCtx && this.menuOverlay) {
+            this._menuCtx.clearRect(0, 0, this.menuOverlay.width, this.menuOverlay.height);
+            this._overlayActive = false;
+          }
+          return true;
+        }
+        return !!rt.play_fishing_start();
+      } catch (e) { return false; }
+    }
+
+    /* The live session's readout (`{live, phase, cast_power, tension, ...}`), or
+     * `{live:false}`. */
+    fishingState() {
+      if (typeof this.rt.play_fishing_state_json !== 'function') return { live: false };
+      try { return JSON.parse(this.rt.play_fishing_state_json()); }
+      catch (e) { return { live: false }; }
+    }
+
     /* ---------- retail pause menu (engine-driven) ---------- */
 
     /* Drive the retail pause menu from this frame's just-pressed edges (the
@@ -755,6 +814,7 @@
       if (!open) {
         if (startEdge && this._canOpenFieldMenu()) {
           try { rt.play_menu_open(); } catch (e) { return false; }
+          this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
            * open is not menu time. */
@@ -768,9 +828,29 @@
       /* Menu up: Start toggles it shut; every other edge is the engine's. */
       if (startEdge) {
         try { rt.play_menu_close(); } catch (e) {}
+        this.sfxEvent('menu_cancel');
       } else {
         let edge = 0;
         for (const k of p) edge |= (PAD[k] || 0);
+        /* Cue the engine's own blips off this frame's edges: a direction is a
+         * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
+         * provenance come from the engine (`play_sfx_events_json`) - the page
+         * never hard-codes one.
+         *
+         * These sound again. They were silent for a while by the engine's
+         * choice: retail's three ids are pinned (`FUN_80032A44`), but the port
+         * keyed them an octave below retail, which is why menu navigation
+         * played thuds. That pitch is measured and fixed. The engine still
+         * counts every request (`menu_cue_requests` in `play_sfx_state_json`)
+         * alongside `queued`, so keep firing the events either way - the wiring
+         * is what stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
+         * inexactness left, which is a bank choice rather than a pitch. */
+        if (edge) {
+          const DIRS = 0x0010 | 0x0020 | 0x0040 | 0x0080;
+          if (edge & 0x4000) this.sfxEvent('menu_confirm');
+          else if (edge & 0x2000) this.sfxEvent('menu_cancel');
+          else if (edge & DIRS) this.sfxEvent('menu_cursor');
+        }
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
@@ -924,6 +1004,42 @@
       } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
     }
 
+    /* Fishing HUD layer. Returns `true` when it drew (a session is live), so
+     * `_drawOverlay` can stop there.
+     *
+     * The text quads come from the engine's shared draw-list consumer
+     * (`fishing_hud_draws_for`, the same call the native window makes) and are
+     * blitted from the font atlas like every other overlay layer. The `bars`
+     * channel is separate for one reason: the fishing sprite page is the one
+     * asset in the chain nobody has decoded, so the consumer's atlas is blind
+     * and it drops the gauge fills. Their geometry still comes from the engine
+     * (the ported cap/body/cap frame), so this only fills the rect it is told
+     * to. */
+    _drawFishingHud(ctx, ov) {
+      if (typeof this.rt.play_fishing_hud_json !== 'function') return false;
+      let hud = null;
+      try { hud = JSON.parse(this.rt.play_fishing_hud_json(ov.width, ov.height)); }
+      catch (e) { return false; }
+      if (!hud || !hud.open) return false;
+      this._ensureMenuBlitters();
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      /* Gauge fills first, so the digit rows read on top of them. Coordinates
+       * are retail 320x240 stage pixels; `stage` is the engine's own
+       * origin/scale for this surface, the same transform its text quads were
+       * already scaled by. */
+      const st = hud.stage || [0, 0, 1];
+      for (const b of (hud.bars || [])) {
+        if (b.w <= 0 || b.h <= 0) continue;
+        ctx.fillStyle = 'rgb(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ')';
+        ctx.fillRect(st[0] + b.x * st[2], st[1] + b.y * st[2],
+          Math.max(1, b.w * st[2]), Math.max(1, b.h * st[2]));
+      }
+      if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
+      this._overlayActive = true;
+      this.dialogOnCanvas = false;
+      return true;
+    }
+
     /* Blit the current pause-menu OR retail-dialog draw lists onto the 2D
      * overlay canvas: the gold 9-slice / filigree chrome from the menu sheet,
      * then the font glyphs. A no-op (and a one-shot clear) when neither is up.
@@ -983,6 +1099,14 @@
         this.dialogOnCanvas = false;
         return;
       }
+
+      /* Fishing minigame HUD (the retail persistent + catch rows through the
+       * shared `fishing_hud_draws_for` consumer, plus the gauge frames the
+       * undecoded sprite page cannot fill). Checked before the shop / dialog
+       * layers because fishing is a mode *suspend*: while it runs, the field
+       * underneath is frozen and nothing else can be up. Composites over the
+       * live scene rather than blacking it. */
+      if (this._drawFishingHud(ctx, ov)) return;
 
       /* Field merchant panel + post-action banners (level-up, Seru capture).
        * Same builders as the native window (`shop_draws_for`,

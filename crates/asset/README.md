@@ -74,8 +74,11 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `categorize` | Dispatcher - runs every detector and tags the entry's `Class`. |
 | `mips_overlay` | RAM overlays loaded into the `0x801C0000+` window. |
 | `overlay_ptr_table` | Sister format: pointer tables that index into overlays. |
-| `effect_bundle` | `efect.dat` and friends - magic `0x02018B0C`. |
+| `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. |
+| `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
+| `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain. See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
+| `bse_bank` | The `bse.dat` master sound bank `FUN_8001FA88` loads at sound-init - `[u16 tag][u16 body_offset = 4][8-byte records]`. Two entries: extraction 888 (the loader's raw TOC `0x37A`) and an uncalled sibling at 1195. See [`docs/formats/bse-dat.md`](../../docs/formats/bse-dat.md). |
 | `battle_data_pack` | Player battle files (`PLAYER1..4`, extraction 863..866 = retail `battle_data` block): header + 12-byte descriptor table + per-slot LZS streams of `[header + TMD + texture pool]`. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |
@@ -320,10 +323,10 @@ Footprint-bounded extraction of the four-entry window the CDNAME symbol
 `befect_data` resolves to in define-number space (extraction PROT 872..875 -
 retail-semantically `vdf.dat` / `efect.dat` / the `player_data` file
 `player.lzs` / a `sound_data2` VAB stream; the retail befect block proper is
-extraction 870..873, see `docs/formats/cdname.md`). The naive per-entry
-extractor over-reads these entries (they overlap on disc), so
-`extract(archive, cdname)` footprint-bounds each one, expands the
-LZS-container entry into its sections, and classifies each part (the
+extraction 870..873, see `docs/formats/cdname.md`).
+`extract(archive, cdname)` footprint-bounds each entry (a no-op now that
+`Archive::read_entry` returns the entry, kept as the explicit contract),
+expands the LZS-container entry into its sections, and classifies each part (the
 `efect.dat` 2-pack / the field-character TMD pack / the field-character
 texture TIMs / packs).
 
@@ -335,7 +338,7 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | Module | What it parses |
 |---|---|
 | `character_pack` | Field-form player-character mesh pack (PROT 0874 §0, 5 slots: Vahn/Noa/Gala + savepoint + aux), incl. the `FUN_8001EBEC` equipment-swap pose patch (`equipment_swap::apply`) and the §1 **party locomotion ANM bundle** accessor (`field_locomotion_anm` + the `LOCOMOTION_*` bank constants: three 7-record character banks, idle = bank slot 1, walk = slot 0, both capture-pinned; frame 0 of idle = the field rest pose). CLI `asset character-pack`. |
-| `battle_char_pack` | The PROT 1204 `other5` mesh pack (five `TMD2` streaming chunks + seven 256×256 4bpp atlases at `0x8224` stride): the Baka Fighter / default-equipment sibling of the assembled battle meshes. CLI `asset battle-char-pack`. |
+| `battle_char_pack` | The `other5` battle-form mesh pack, **two entries**: PROT 1204's five `TMD2` streaming chunks and PROT 1205's eight 256×256 4bpp atlases at `0x8224` stride. The Baka Fighter / default-equipment sibling of the assembled battle meshes. CLI `asset battle-char-pack ... --atlas-entry`. |
 | `battle_char_assembly` | Battle character-mesh assembler: selects a player file's five equipment sections by equipped item ids and splices them into the merged battle TMD (bone tags + attach bones; `PORT: FUN_80052770` case 4 / `FUN_800536BC` / `FUN_80053898`), plus `relocate_tsb_cba` - the registration-time per-slot TSB/CBA rewrite into the runtime VRAM band (`PORT: FUN_80053a28`; texpages `x in [512, 896), y = 256`, CLUT row `481 + slot`). Assembly + relocation reproduces the live runtime blob. |
 | `battle_char_assembly` (battle animations) | The character's battle animations from `record[0]` of the same file (`battle_animations` / `idle_battle_animation`: action-offset table at the record head, monster-format `[parts][frames][9-byte TRS]` stream at entry `+0xAC`, `parts` = skeleton bones, entry first byte = action tag with tags `2..5`/`0xB` the hit-reaction family, rate byte at `+0x78` - the in-battle pose source for the assembled mesh, NOT PROT 1203), plus the per-object pose-channel map (`anm_bones` + `expand_animation_for_objects`; equipment extras ride their attach bone). |
 | `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
@@ -363,7 +366,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 
 | Module | What it parses |
 |---|---|
-| `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). |
+| `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). `parse` doubles as the `categorize` detector for `Class::InitPak`. |
 | `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
 | `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
 | `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F20`, VA `0x801E4738`): per-window content id / park edge / class + content rect + content-renderer VA - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
@@ -426,9 +429,10 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
   transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
-  in-file under link base `0x801F69D8`. Trim the entry to its TOC-gap
-  unique-content footprint first (`unique_content_len`) - stager extraction
-  files over-read into the following entries.
+  in-file under link base `0x801F69D8`. The input must be one entry's bytes
+  and no more; `unique_content_len` recomputes that bound from a start/next
+  LBA pair, and trims a stale `.BIN` written before the entry size was
+  corrected (those run on into the following stagers).
 
 CLI `asset summon-overlay <stager .BIN> [--trim 0xNNNN]`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
@@ -443,6 +447,15 @@ TMD + texture pool) and the player art-animation `"ME"` stream archives
 classifies every slot; `stream_target(action_id)` mirrors the retail
 id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
 [`summon-readef.md`](../../docs/formats/summon-readef.md).
+
+`detect` is the `categorize` entry point (`Class::SummonReadef`): footprint
+divisible by `0x10800`, at least 16 slots, and at least three quarters of them
+classifying as something other than `SlotKind::Payload`. It **must** run before
+the `monster_sound_bank` detector - `summon.dat` opens with `[u32 mode = 2]`
+followed by a 256-entry CLUT whose every colour carries the STP bit, which is
+byte-for-byte the `[u32 format = 2][u16 spu_addrs[256] all >= 0x8000]` shape that
+detector matches. With `summon_readef` ahead of it, `monster_sound_bank` matches
+no PROT entry at all.
 
 `summon_creatures` - the player-summon → namesake `battle_data` creature map.
 A base or evolved-Seru summon renders an ordinary `monster_archive` creature

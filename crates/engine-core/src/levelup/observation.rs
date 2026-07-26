@@ -23,8 +23,10 @@ use super::*;
 /// victory-path applier `FUN_801E9504` - installed directly via
 /// [`LevelUpTracker::with_growth_tables`]. (The earlier "Seru struct
 /// +0x74" pointer-dereference path was falsified: the only `+0x74` reads
-/// in the captured overlay surface a 32-bit battle-state flag the
-/// SCUS-side handler `FUN_800480D8` writes with the constant `0x80808080`.)
+/// in the captured overlay surface the actor **colour** word, which the
+/// SCUS-side handler `FUN_800480D8` stamps with `0x00808080` - 24-bit RGB
+/// mid-grey - not `0x80808080`; `lui v0, 0x80` + `ori v0, v0, 0x8080` is
+/// `0x00808080`, and a 32-bit flag word would need `lui v0, 0x8080`.)
 /// This observation type stays useful as a flat-curve fallback when a
 /// `SCUS_942.54` isn't reachable.
 ///

@@ -99,6 +99,123 @@ kernel-path, single-target and party-wide kills: every assign hit
 | Thread | Verdict | Why |
 |---|---|---|
 | `FUN_80068D94` as "`SsSepOpen` / SEP loader" (with `FUN_80068B98` as "`SsSeqOpen`") | falsified (it is the VAB-open head) | The plausible part: it validates a magic, reads a count at `+0x12`, `SsSpuMalloc`s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is `0x564142` against `word >> 8` plus low byte `0x70` - `pBAV`, the **VAB** magic - and `+0x12` is `ps`. The "per-track pointer table" is the ProgAtr table receiving the program → packed-tone-page rank map ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: [`audio.md`](../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |
+| The entry that matches "`[u32 format == 2][u16 spu_addr[256]]`, every address `>= 0x8000`" is `monster.snd` | falsified (it is `summon.dat`; `monster.snd` is a multi-bank VAB two entries away) | [details ↓](#the-256-slot-spu-address-run-that-was-really-a-clut) |
+
+### The 256-slot SPU-address run that was really a CLUT
+
+**Falsified:** that a `[u32 mode == 2]` header followed by 256 `u16`s all
+`>= 0x8000` identifies a packed monster sound bank, and that the entry matching
+it is `h:\mpack\monster.snd`.
+
+Why it was convincing: `0x8000` is exactly the boundary an SPU sample address
+clears once the reserved low region is skipped, so "256 halfwords, every one
+`>= 0x8000`" reads as a fully-populated 256-slot address table, and a leading
+`2` reads as a format word. One PROT entry matched, and its CDNAME label named
+the sound cluster.
+
+What it actually matched is `summon.dat` (extraction 893,
+[`summon-readef.md`](../formats/summon-readef.md)), whose header word is a mode
+`2` and whose next `0x200` bytes are a **BGR555 CLUT with the STP bit forced on
+every non-zero entry** - which sets bit 15 of all 256 halfwords for a reason that
+has nothing to do with addresses. The tell the predicate cannot see: the values
+**repeat** (`0x8000 0x8000 0x8000 0x8000 0x8001 0x8001 …`), and SPU sample
+addresses are strictly increasing. A monotonicity check would have rejected it;
+a threshold check could not.
+
+`monster.snd` is extraction **891**, and the loader says so outright:
+`FUN_8003E104` does `li v0,0x37d` (raw TOC `0x37D` = extraction 891) beside the
+`h:\mpack\monster.snd` path string. Entry 891 is a 206-bank multi-VAB archive, so
+the monster SE bank is a **multi-bank VAB**, not a bespoke address table - and the
+`vab_multi_bank` class that had been described as "the `level_up` cluster's"
+archive was reading the same CDNAME `+2` shift off an extraction filename
+([`cdname.md`](../formats/cdname.md#numbering-space)). `see
+ghidra/scripts/funcs/8003e104.txt`.
+
+**Generalises to:** a byte-histogram or threshold predicate over a fixed-size run
+identifies a *shape*, never a format. Where the shape encodes an ordering
+(addresses, offsets, LBAs), assert the ordering - it is the cheapest thing that
+separates the format from its look-alikes. The `monster_sound_bank` class is kept
+and pinned at zero matches so the shape stays named rather than being
+re-derived by accident.
+
+## Containers / placeholder slots
+
+| Thread | Verdict | Why |
+|---|---|---|
+| Pochi-fill slots are stale mastering scratch, and some parse as valid TIMs | falsified (every slot is one 2048-byte sector; 0 of 266 carry a TIM) | [details ↓](#pochi-fill-slots-as-stale-mastering-scratch) |
+| The world-map kingdom bundle is PROT `0085` / `0244` / `0391` | falsified (it is `0086` / `0245` / `0392`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+| The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+| The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
+
+### Assets named by the entry the over-read window started in
+
+*Status:* falsified - each asset is where it always was; only the `(entry,
+offset)` name for it was wrong
+
+Same root as the pochi row below, but the symptom is a **name** rather than a
+corruption, which is why it survived longer. Under the pre-correction entry size
+a reader positioned on entry `N` could see entries `N+1`, `N+2`… so an asset was
+recorded as "PROT `N` offset `K`" whenever the scan that found it started at `N`.
+The coordinate is not wrong about the disc - `start_lba(N)*0x800 + K` really is
+where the bytes are - it is wrong about which entry owns them, which is the only
+thing a correctly-bounded reader can use.
+
+The plausible part is that each wrong name came with corroboration:
+
+- The kingdom bundle "at `0x1800` of entry 85" had a table there, with the right
+  count and the right first descriptor offset. It is entry 86's offset 0 - and
+  the block layout (`.MAP` / v12 header / prescript / bundle) says entry 85 is
+  the prescript.
+- The battle-pack atlases had a *consistent stride from a consistent base*, and
+  a truncated last member is a normal thing to find at the end of a container.
+  `0x25804` is 1204's own length plus 4, i.e. entry 1205 offset 4; the "seven"
+  and the "truncation" were both where the window stopped, and the eighth
+  atlas's CLUT row read as a deliberate gap in a 490..497 run.
+- The title TIM's three "duplicates" were **byte-equal**, which is exactly what
+  you would expect of a multi-bank duplicate - and also what you get when three
+  arithmetics resolve to one absolute offset.
+
+Two lessons worth carrying. First, byte-equality between two `(entry, offset)`
+pairs is evidence of *duplication* only after you have shown the two pairs
+resolve to different absolute offsets; otherwise it is a tautology, the same
+shape as the falsified "PROT 0900 and 0901 are shifted copies". Second, a
+container's member count and a member's size are properties of its **framing**
+(a chunk chain, a descriptor count), not of where a buffer happens to end - a
+count derived from "how many fit before the buffer ran out" is measuring the
+reader.
+
+The corrected coordinates, and the two invariants that keep them honest, are in
+[`prot.md`](../formats/prot.md#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry).
+
+### Pochi-fill slots as stale mastering scratch
+
+*Status:* falsified - the corrupting pages came from the **next** entry, reached
+through an over-reading size expression
+
+The plausible part was strong enough to reach [`CLAUDE.md`](../../CLAUDE.md) and
+stay there: reserved-but-unused filler holding leftover bytes from an earlier
+master is an ordinary thing to find on a PSX disc, and the hazard had a
+**reproducible exhibit**. Two `64x256` pages uploading to framebuffer `(768,0)`
+and `(832,0)` erased a ground atlas, every run, and the sweep was positioned on a
+pochi slot when it happened.
+
+What refutes it: every one of the 266 `Class::PochiFiller` entries is exactly one
+2048-byte sector of fill, and **none** carries a parseable TIM header. There is no
+stale image in a pochi slot to upload. The corrupting pages belong to the
+`scene_tmd_stream` entry that *follows* the pochi slot, and the sweep reached them
+through the entry-size expression that spanned into neighbouring entries - since
+corrected in [`prot.md`](../formats/prot.md).
+
+The lesson is the transferable part, and it is not about pochi slots. **An
+over-reading reader makes the next entry's bytes look like the current entry's
+content**, so a symptom gets attributed to the entry the reader is positioned on
+rather than the entry it actually read into. The bug reproducing every single time
+is what made the wrong attribution durable: reproducibility confirms that
+*something* is wrong at that step, and says nothing about which entry owns the
+bytes. Format-level claims derived from a sweep are only as sound as the sweep's
+bounds - re-derive the bound before believing the claim.
+
+See [`pochi.md`](../formats/pochi.md) for what the slots actually contain.
 
 ## Field / locomotion
 
@@ -173,6 +290,53 @@ prologue, carrying the bit-7 test at `801f1644` and both staging arms.
 dump header is the cheap first filter - a 47-instruction "function" that restores
 four callee-saved registers is not a function. The corpus-wide picture is in
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
+### `0x801D84B4` is inter-function padding
+
+**Falsified:** that the VA is alignment `nop` in every overlay that maps it, and
+therefore no routine at all.
+
+The reading is right about four images and wrong about the one that mattered.
+`0x801D84B4` really is padding in the fishing, dance, debug-menu and slot-machine
+extractions - 17 consecutive `nop`, and 32 with one stray `sllv zero,zero,zero`
+in the baka-fighter image - and the only dump that resolves an entry here is the
+field overlay's, whose header reads `entry=801d8308`, i.e. interior. Both facts
+are true and neither is about the field overlay's bytes.
+
+Read `overlay_field_0897.bin` at base `0x801CE818` instead: `jr ra` at
+`0x801D84AC` with `addiu sp,sp,0x20` in its delay slot closes the predecessor,
+and a six-instruction leaf follows - store master game mode `_DAT_8007B83C = 0x16`
+(22, CARD INIT), raise the entry-context word `_DAT_8007BB00 = 1`, `jr ra`. That
+is the overlay-local twin of the SCUS scripted game-over trigger `FUN_8003C7EC`,
+and the field image carries exactly one `jal 0x801D84B4`. Two base-tagged dumps
+hold that seven-word body as well, both of them field-overlay captures, so the
+padding reading was not even the only dump evidence available.
+
+**Generalises to:** a padding verdict is per image, like every other containment
+fact. Counting how many extractions agree does not make the disagreeing one
+wrong - slot A holds a different overlay per game mode, so `nop` in four of them
+says nothing about the fifth.
+
+### `FUN_801dfb10` is a scripted player-turn state machine
+
+**Falsified:** that a routine exists at `0x801DFB10` at all.
+
+The address is a phantom of the `overlay_0897_xxx_dat` import's `+0xE818` base
+error, and its bytes are field (0897) `0x801EE328` - the world-map `ON RULA`
+travel-art actor, which is documented and ported under that VA. The printed VA is
+interior in every image that covers it: the fall-through of
+`bnez v0,0x801dfb28` in the battle overlay, a branch label in the field overlay,
+and the delay slot of `jal 0x8003ce64` in the menu overlay.
+
+What makes this one durable is that the *behaviour* attributed to the phantom is
+accurate - the player-input lock, the per-frame `+0x16` angle rotation, the
+story-flag `0xb` gate - because it was read off a correctly-decoded body. Only the
+address is fiction, so nothing in the description looks wrong.
+
+**Generalises to:** a plausible write-up is not evidence of a base. The same
+routine is also printed at `0x801E8B10` by the `overlay_0896` batch at its
+`+0x5818` delta, and two independent phantoms landing on one VA is the check that
+pins it - see [`phantom-print-index.md`](../tooling/phantom-print-index.md).
 
 ## No overlay function lives below `0x801CE818`
 

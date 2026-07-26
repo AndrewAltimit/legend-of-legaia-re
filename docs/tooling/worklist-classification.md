@@ -50,7 +50,33 @@ at a base the earlier run did not have.
 The audit does **not** simply re-run the classifier over an absorbed row: that
 re-derives the row's own evidence and reads agreement as disagreement.
 [What an `--audit-ignored` re-raise means](#what-an---audit-ignored-re-raise-means)
-gives the test order and the two noise shapes it exists to suppress.
+gives the test order and the two noise shapes it exists to suppress, and
+[the two kinds of ignore claim](#the-two-kinds-of-ignore-claim) says which rows
+it can speak about at all.
+
+### The two kinds of ignore claim
+
+The `worklist_*` prefix on an ignore-list section is not cosmetic, and the audit's
+scope is exactly that prefix. Two different assertions live in
+[`port-catalog-ignore.toml`](port-catalog.md), and only one of them is a claim
+the images can settle:
+
+- an **address** claim - *no routine begins at this VA*: `worklist_interior`,
+  `worklist_phantom`, `worklist_data`, `worklist_shared_tail`,
+  `worklist_duplicate`, `worklist_misbased_print`, `worklist_uncertain`;
+- a **scope** claim - *the routine is real, and the clean-room port covers it
+  another way*: every unprefixed section, from `libgte` and `bios` through
+  `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`.
+
+The [entry-boundary test](#the-entry-boundary-test) refutes an address claim by
+finding a routine where the row says there is none. Against a scope claim it has
+no purchase at all: such a row already describes the body, instruction by
+instruction, so "an image starts a routine at this VA" is what the row says
+rather than a contradiction of it. Filing a scope row under a `worklist_*` name
+therefore guarantees a re-raise on every run, which is how the audit's exit code
+stops meaning anything. A scope claim is checked by re-reading the body against
+the engine's own implementation - a human task the reason exists to make cheap -
+so scope sections stay unprefixed however they were arrived at.
 
 The decisive check is neither the dump nor the reason string: disassemble the
 mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
@@ -222,6 +248,20 @@ the two verdicts that turn on which image a dump came from - and yields:
 | Two or more images hold distinct code there | `VA_ALIASED`, naming the overlays rather than the capture programs |
 | No dump testifies | `UNCERTAIN`, with the reason narrowed by the follow-up below |
 | A `DUPLICATE` peer has no matching body at its own VA | `REAL`, duplicate claim withdrawn |
+| Every dump is bounded short, and one image starts a routine at the VA | `REAL`, naming that overlay |
+
+The last row is the one case where the arbiter overrides an `UNCERTAIN` the
+metadata tests reached rather than an alias. A dump Ghidra bounded short - no
+`jr ra`, no exit jump, the stream simply stops - is a statement about the dump:
+every test that would place the VA reads that stream, so none of them sees the
+address at all. The [entry-boundary test](#the-entry-boundary-test) needs no dump,
+so one image beginning a routine there settles what the truncation could not, and
+two or more leave the row `UNCERTAIN`, which is never ignored. Both shapes occur:
+`FUN_801D56E4`, the fishing overlay's 2-D segment clipper, is dumped 131
+instructions deep and cut off mid-body, and `0x801D0290`'s only dump is the field
+VM's `addiu fp,fp,2` label-call idiom printed at the wrong base, five
+instructions long - while the battle overlay begins its 12-instruction PRNG leaf
+at that VA.
 
 #### Asking the images directly, with no dump involved
 
@@ -487,7 +527,7 @@ Three signatures, read from each image at its mapped base, any one sufficient:
 - the word two back decodes `jr ra` - the predecessor's return, with its delay
   slot between;
 - the word at the VA decodes `addiu sp,sp,-N`, a non-leaf prologue, which occurs
-  nowhere else in this codebase;
+  nowhere else in this codebase, **and** no routine opened earlier in the window;
 - the words before the VA carry the `$zero`-absolute data signature and the
   words at it do not - a code region opening after a header or string blob,
   which is how an overlay's first routine looks.
@@ -495,6 +535,24 @@ Three signatures, read from each image at its mapped base, any one sufficient:
 All three are needed. A **leaf** has no prologue, so requiring one calls every
 frameless routine a fragment; a leaf sited immediately after the overlay's data
 header is preceded by neither a return nor code.
+
+#### A prologue is not a boundary
+
+The second signature reads a prologue and needs one more condition, because a
+routine may open with instructions its body needs *before* it allocates a frame.
+`FUN_80021934` is the case that pins it: the predecessor's `jr ra; addiu sp,sp,0x30`
+closes at `0x80021930`, then three words load a scratchpad byte and a `gp` word,
+and only at `0x80021940` comes `addiu sp,sp,-0x120`. Reading that prologue as the
+entry sends a caller three instructions in, onto a subtract over the registers
+those loads were meant to fill - which is why the ignore list carries
+`0x80021940` as interior and names `0x80021934` as the entry to port.
+
+So the prologue branch is refused when a `jr ra` appears earlier in the window
+with no body-closing transfer between it and the VA: the boundary is the word
+after that return's delay slot, and anything past it is inside the routine the
+return opened. A transfer out in between means another whole body closed, and the
+prologue can be a real entry after all. `jal` does not count - a call returns, so
+it does not end the routine it sits in.
 
 Both ends are guarded. The word at the VA must decode and must not be padding or
 a transfer out, which rejects the shape that otherwise reads as a boundary: a
@@ -516,3 +574,12 @@ on the extracted corpus being complete for that slot. It is not - an overlay
 nobody has extracted can hold an entry at a VA every extracted sibling uses as
 interior code. That is the direction in which the audit stays silent about a
 wrong row, and it is closed by extracting overlays, not by tuning the test.
+
+The same corpus growth is what makes the audit worth re-running rather than
+trusted once. Extracting an overlay can *refute* a merged row as readily as it
+can support one: the row that carried `0x801D84B4` as inter-function padding was
+read off the minigame images, where the VA really is a `nop` run, and the field
+overlay begins a six-instruction leaf there that stores master game mode
+`0x16` (CARD INIT) and raises the entry-context word - the overlay-local twin of
+the SCUS scripted game-over trigger. The row was deleting that routine with a
+reason true of four other images, and the audit is what surfaced it.

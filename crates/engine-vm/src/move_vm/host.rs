@@ -19,8 +19,16 @@ pub trait MoveHost {
     /// no-op the VM only calls to mirror dispatch. Default impl is a no-op.
     fn stub_16(&mut self, _state: &mut ActorState, _arg: i16) {}
 
-    /// Op 0x17 - `func_0x801f30c4(actor, op[1])`. Overlay-resident effect
-    /// trigger (the actual handler isn't yet decompiled). Default no-op.
+    /// Op 0x17 - `FUN_801F30C4(actor, op[1])`, the **battle**-overlay escape,
+    /// symmetric with op 0x2F's field escape.
+    ///
+    /// The handler is decoded and ported: [`crate::battle_burst`]. `arg` is its
+    /// `mode`, and only `0` and `1` do anything - each seats twelve child
+    /// actors on one of two stager records in `0898`'s tail. A host that serves
+    /// this drives `battle_burst::run_burst` with a `BurstHost` over its own
+    /// actor pool; the default is a no-op because no engine path spawns a
+    /// move-VM actor yet (same prerequisite as
+    /// [`crate::move_vm::spawn::spawn_move_actor`]).
     fn ext_17(&mut self, _state: &mut ActorState, _arg: i16) {}
 
     /// Op 0x1D - write `DAT_8007B6DE = op[1]`. A single-byte global slot.

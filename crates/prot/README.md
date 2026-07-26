@@ -10,19 +10,25 @@ random blobs).
 
 ## What it provides
 
-- `archive` - TOC math and per-entry slicing. Two key invariants traced
-  back to `FUN_8003e4e8` (the boot-time loader that reads the first three
-  sectors of `PROT.DAT` into RAM at `0x801C70F0`):
+- `archive` - TOC math and per-entry slicing, traced back to
+  `FUN_8003e4e8` (the boot-time loader that reads the first three sectors
+  of `PROT.DAT` into RAM at `0x801C70F0`):
 
   ```text
-  start_lba = toc[p + 2]
-  size      = toc[p + 5] - toc[p + 3] + 4
+  start_lba    = toc[p + 2]
+  size_sectors = toc[p + 3] - toc[p + 2]
   ```
 
-  This was the fix for an early off-by-one in Sam Ste's Python unpacker
-  that read `size` as `start_lba`; see
-  [`docs/formats/prot.md`](../../docs/formats/prot.md) for the full
-  derivation.
+  Each entry contributes one word - its start LBA - and its size is the
+  gap to the next entry. `toc[p+5] - toc[p+3] + 4` is *not* that size: it
+  expands to `size(p+1) + size(p+2) + 4`. `Entry::declared_span_sectors`
+  keeps it for diagnostics; nothing parses against it. See
+  [`docs/formats/prot.md`](../../docs/formats/prot.md) for the evidence.
+
+- `tiling` - the property that pins the size: the entries partition
+  `PROT.DAT` with no gaps and no overlaps, summing to the span from the
+  first start LBA to the archive's last sector. `check` returns the
+  measurement; `tests/archive_tiling_real.rs` asserts it against a disc.
 
 - `cdname` - parser for `CDNAME.TXT`, the human-readable symbol map.
   `#define name N` lines mark **block starts**: every entry from index
@@ -43,11 +49,10 @@ random blobs).
 
 - `runtime_toc` - queries against the in-RAM TOC copy the boot loader
   installs at `0x801C70F0`. `entry_sector_span` is the port of
-  `FUN_8003E68C` (`TABLE[i+3] - TABLE[i+2]`), the entry's on-disc sector
-  footprint - the same `next_start - start_lba` quantity `archive`
-  computes when extending an entry over a trailing gap, and *not* the
-  TOC-indexed payload size. The module also pins the `+2` word skew
-  between the RAM word array and `Archive::toc`.
+  `FUN_8003E68C` (`TABLE[i+3] - TABLE[i+2]`), the entry's size in
+  sectors; `archive` calls it for every entry, so the arithmetic has one
+  implementation. The module also pins the `+2` word skew between the RAM
+  word array and `Archive::toc`.
 
 - `timpack` - the standalone TIM-pack subformat used by some PROT
   entries (notably `tim.dat`). Header is
@@ -67,14 +72,17 @@ prot-extract extract <PROT.DAT> <out_dir> [--cdname <CDNAME.TXT>] [--clamp-footp
 Names from `CDNAME.TXT` propagate to the extracted filenames
 (`0865_battle_data.BIN`, etc.) so downstream tools stay self-describing.
 
-`list` shows each entry's declared size next to its true `footprint` (the
-sector span to the next entry) and flags an `OVR` when the extracted `.BIN`
-over-reads that footprint. `locate` is the reverse lookup: given a PROT.DAT
-byte offset (or an in-`.BIN` offset via `--in-entry`), it names the entry
-whose footprint actually owns those bytes and warns when the offset lands in
-an over-read tail. The footprint/owner logic is `legaia_prot::locate`
-(unit-tested); it shares the `next_start - start` span arithmetic with
-`runtime_toc`.
+Every `.BIN` is the entry's own sectors, so `--clamp-footprint` is a
+deprecated no-op (there is no larger window left to trim).
+
+`list` shows each entry's `size` next to `decl_span`, the historical
+`toc[p+5] - toc[p+3] + 4` value, and flags `OVR` where that value overshoots
+the entry - the rows whose pre-correction `.BIN` carried a neighbour's bytes.
+`locate` is the reverse lookup: given a PROT.DAT byte offset (or an in-`.BIN`
+offset via `--in-entry`), it names the owning entry and says plainly when the
+offset runs past that entry, which an offset taken from a stale `.BIN` does.
+The owner logic is `legaia_prot::locate` (unit-tested); it shares the
+`next_start - start` span arithmetic with `runtime_toc`.
 
 ## See also
 

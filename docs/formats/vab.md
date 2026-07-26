@@ -26,6 +26,23 @@ Each 32-byte tone (`VagAtr`) carries the standard Sony fields. A disc-wide censu
 - **Used by playback:** `vol`/`pan` (mix), `center`/`shift` (key → pitch), `min`/`max` (note range → tone select), `adsr1`/`adsr2` (envelope), and **`pbmin`/`pbmax`** - the per-tone pitch-bend range in semitones (`pbmin` down, `pbmax` up). Only some tones carry a non-zero range; the common value is 2 (the GM-default ±2 semitones), with a few at 4/12/24/40. The sequencer scales a `0xEn` wheel event by the **sounding tone's** range (`VabBank::pitch_bend_range`), so a `(0, 0)` tone does not bend - see [`subsystems/audio.md`](../subsystems/audio.md).
 - **Always zero in retail (no consumer needed):** `vibw`/`vibt` (vibrato) and `porw`/`port` (portamento) are zero on every tone, so the clean-room voice model needs no LFO.
 
+#### `center` / `shift` are the whole of the pitch, rate included
+
+`center` is the key at which the tone plays back at **unity** - SPU pitch
+`0x1000`, 44.1 kHz - and `shift` raises that by `shift/128` of a semitone
+(positive, quantised to 1/16 by the driver). The full law, both key-on paths and
+the table they index, is in
+[`subsystems/audio.md`](../subsystems/audio.md#the-key-on-pitch-law---note-against-the-tones-center).
+
+The consequence worth stating on this page: **a VAG body's sample rate is
+encoded in `center`, not anywhere else.** The bank header carries no per-sample
+rate and the 1-indexed size table's leading spacer is not one either (above);
+a body recorded at 22.05 kHz is authored with `center` twelve semitones above
+the key it is meant to sound at. So a port that multiplies the key-on pitch by a
+nominal `22050/44100` *on top of* `note - center` double-counts the resampling
+and plays every voice an octave low. `crates/vab`'s WAV writer hard-codes 22050
+for the standalone-extraction case, which is a separate question from playback.
+
 ## API
 
 ```rust

@@ -2,10 +2,11 @@
 //!
 //! Companion to [`crate::title`] (state machine) and
 //! [`crate::publisher_logos`] (boot-phase logo atlas). Decodes the
-//! 256×256 8bpp title TIM from PROT 0888 (`sound_data2` per CDNAME,
-//! actually carries title art - see
-//! [`legaia_asset::title_pak`] for the disc-source pin) into RGBA8
-//! pixels the engine layer uploads as a sprite atlas.
+//! 256×256 8bpp title TIM from PROT 0890 (the multi-bank sound-data
+//! cluster's trailing pool - see [`legaia_asset::title_pak`] for the
+//! disc-source pin, and for why 0888 / 0889 used to look like
+//! duplicate sources) into RGBA8 pixels the engine layer uploads as a
+//! sprite atlas.
 //!
 //! The title TIM renders to the complete Legend of Legaia title
 //! screen: wordmark, orb, "PRESS START BUTTON" prompt, "NEW GAME" /
@@ -76,12 +77,12 @@ impl TitleScreenAtlas {
     }
 }
 
-/// Build a [`TitleScreenAtlas`] from a PROT 0888 byte buffer (or one
-/// of its multi-bank duplicates - see
-/// [`title_pak::TITLE_TIM_ALTERNATE_SOURCES`]).
+/// Build a [`TitleScreenAtlas`] from the PROT 0890 byte buffer
+/// ([`title_pak::PROT_INDEX_PRIMARY`]; the name keeps the historical
+/// `888` for call-site stability).
 ///
 /// Validates the TIM header at [`title_pak::TITLE_TIM_OFFSET`] (or the
-/// caller-supplied alternate `tim_offset`), decodes the 256-colour
+/// caller-supplied `tim_offset`), decodes the 256-colour
 /// CLUT against the pixel block, and returns RGBA8 pixels in
 /// row-major order.
 pub fn build_atlas_from_prot_888(
@@ -112,18 +113,28 @@ pub fn build_atlas_from_prot_888(
 mod tests {
     use super::*;
 
-    /// Disc-gated: build the real title atlas from extracted PROT 0888.
-    /// Skips when `extracted/` is missing (CI runs without disc data).
+    /// Disc-gated: build the real title atlas from PROT 0890, read at the
+    /// entry's own sector span. Skips when `extracted/PROT.DAT` is missing
+    /// (CI runs without disc data).
     #[test]
     fn builds_real_title_atlas_when_disc_extracted() {
-        let path = "../../extracted/PROT/0888_sound_data2.BIN";
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
+        let mut archive = match legaia_prot::archive::Archive::open(std::path::Path::new(
+            "../../extracted/PROT.DAT",
+        )) {
+            Ok(a) => a,
             Err(_) => {
-                eprintln!("skip: extracted/PROT/0888_sound_data2.BIN missing");
+                eprintln!("skip: extracted/PROT.DAT missing");
                 return;
             }
         };
+        let entry = archive
+            .entries
+            .iter()
+            .find(|e| e.index == title_pak::PROT_INDEX_PRIMARY as u32)
+            .expect("PROT 0890 in the TOC")
+            .clone();
+        let mut bytes = Vec::new();
+        archive.read_entry(&entry, &mut bytes).expect("read entry");
         let atlas = build_atlas_from_prot_888(&bytes, title_pak::TITLE_TIM_OFFSET)
             .expect("build title atlas");
         assert_eq!(atlas.width, ATLAS_WIDTH);

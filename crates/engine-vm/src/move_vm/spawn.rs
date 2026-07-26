@@ -27,14 +27,28 @@ pub const MOVE_SPAWN_POOL_B: u32 = 0x8007_C350;
 /// Selects the per-actor sub-state init pattern in [`spawn_move_actor`].
 /// Decoded by [`SpawnSubmode::classify`].
 ///
-/// Retail equivalent: the four-way branch in `FUN_80021B04` at
-/// `0x80021bd0..0x80021d3c`.
+/// Retail is **not** a four-way branch. `FUN_80021B04` tests the init word
+/// twice, on two independent predicates:
+///
+/// 1. `bltz` on the sign (`0x80021bd8`) picks the OBJECT-table rebuild arm.
+/// 2. `sltiu (word - 0x4000), 2` (`0x80021cc0`) picks the keyframe / tween
+///    arms, and its **else** branch is the render-scratch clear at
+///    `0x80021d3c` that also seeds `+0x96` from `rot[1]`.
+///
+/// A negative init word is negative *and* outside `{0x4000, 0x4001}`, so it
+/// takes arm 1's negative side **and** arm 2's else side - it does not skip
+/// the render-scratch clear. [`SpawnSubmode::clears_render_scratch`] is the
+/// second predicate; the four variants here are the joint classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpawnSubmode {
     /// Init word has the high bit set (negative as `i16`).
     ///
-    /// Retail writes: clear `+0x56` and `+0x5A`, set bit `0x2` in flags,
-    /// skip the OBJECT-table rebuild, skip the type-keyed slot clear.
+    /// Retail writes: clear `+0x56` and `+0x5A`, set bit `0x2` in flags, skip
+    /// the OBJECT-table rebuild - and, because the second predicate is on the
+    /// value and not the sign, **also** run the render-scratch clear
+    /// ([`SpawnSubmode::clears_render_scratch`]) with its `+0x96 = rot[1] &
+    /// 0xFFF` write. This is the dominant kind: it is what every
+    /// transform/pivot stager record uses.
     Negative,
     /// Init word == `0x4000`.
     ///
@@ -58,7 +72,7 @@ pub enum SpawnSubmode {
 
 impl SpawnSubmode {
     /// Classify the move buffer's init word (`*move_buffer`) per the
-    /// retail four-way branch.
+    /// retail branches.
     pub fn classify(init_word: u16) -> Self {
         let signed = init_word as i16;
         if signed < 0 {
@@ -70,6 +84,26 @@ impl SpawnSubmode {
         } else {
             Self::Default
         }
+    }
+
+    /// Retail's **second** predicate, `!(init_word - 0x4000 <u 2)`: whether the
+    /// spawn runs the render-scratch clear at `0x80021d3c` (`+0xC0..+0xCA`,
+    /// `+0x80..+0x84`, `+0x90..+0x9A` zeroed, then `+0x96 = rot[1] & 0xFFF`).
+    ///
+    /// True for [`Negative`](Self::Negative) as well as
+    /// [`Default`](Self::Default) - the two arms that are *not* one of the two
+    /// render-mode-node values. The sign of the init word does not enter this
+    /// test, which is the part a four-way reading loses.
+    pub fn clears_render_scratch(self) -> bool {
+        !matches!(self, Self::Keyframe | Self::Tween)
+    }
+
+    /// Retail's **first** predicate, `bgez` on the init word: whether the
+    /// spawn runs the OBJECT-table rebuild (`actor[+0x44]` from
+    /// `DAT_8007C018[actor[+0x64]]`) and takes `+0x5A = 1` /
+    /// `flags |= 0x08000000` before any later arm overwrites them.
+    pub fn rebuilds_object_table(self) -> bool {
+        !matches!(self, Self::Negative)
     }
 }
 
@@ -173,7 +207,7 @@ pub fn spawn_move_actor<H: MoveSpawnHost + ?Sized>(
 ) -> Option<ActorHandle> {
     let submode = SpawnSubmode::classify(req.init_word);
     let actor = host.spawn_at_position(req.pos, MOVE_SPAWN_POOL_A, MOVE_SPAWN_POOL_B)?;
-    if submode != SpawnSubmode::Negative {
+    if submode.rebuilds_object_table() {
         host.rebuild_object_table(actor);
     }
     host.apply_move_spawn_state(actor, submode, &req);

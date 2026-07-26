@@ -39,7 +39,7 @@ share.)
   - [Assembly - object-local pieces posed by the character's own battle streams](#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)
   - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
   - [Equipment groups (battle only)](#equipment-groups-battle-only)
-  - [On-disc layout (PROT 1204)](#on-disc-layout-prot-1204)
+  - [On-disc layout (PROT 1204 + 1205)](#on-disc-layout-prot-1204--1205)
 - [Animation](#animation)
 - [Readers (retail)](#readers-retail)
 - [CLI](#cli)
@@ -769,26 +769,40 @@ count is the player-file section splice `FUN_800536BC` (see
 "the equipment swap `FUN_8001EBEC` sources it / adds the groups" framing
 conflated the two.
 
-### On-disc layout (PROT 1204)
+### On-disc layout (PROT 1204 + 1205)
 
-PROT 1204 is a flat streaming-format container (no LZS wrapper) with five
-chunks of **asset type `0x09` (TMD2)** plus a terminator plus seven trailing
-TIMs at fixed `0x8224` stride:
+The pack is **two entries**. PROT 1204 is a flat streaming-format container
+(no LZS wrapper) with five chunks of **asset type `0x09` (TMD2)** plus a
+terminator, and ends there - `0x25800`, its own 75 sectors exactly. PROT 1205
+is the sibling container holding the eight character atlases as type-`0x00`
+(TIM) chunks at `0x8224` stride:
 
-| Region   | Offset      | Type | Size       | Role                                           |
-|----------|-------------|------|------------|------------------------------------------------|
-| chunk 0  | `0x000004`  | TMD2 | 33 516     | Vahn battle (`nobj=15`)                        |
-| chunk 1  | `0x0082F4`  | TMD2 | 33 636     | Noa battle (`nobj=16`)                         |
-| chunk 2  | `0x01065C`  | TMD2 | 24 780     | Gala battle (`nobj=15`)                         |
-| chunk 3  | `0x01672C`  | TMD2 | 27 036     | Extra fighter (`nobj=20`)                       |
-| chunk 4  | `0x01D0CC`  | TMD2 | 33 340     | Extra fighter (`nobj=15`)                       |
-| atlas 0  | `0x025804`  | TIM  | ~33 312    | 256×256 4bpp + 256×1 CLUT @ `(0, 490)`         |
-| atlas 1  | `0x02DA28`  | TIM  | ~33 312    | CLUT @ `(0, 491)`                              |
-| atlas 2  | `0x035C4C`  | TIM  | ~33 312    | CLUT @ `(0, 492)`                              |
-| atlas 3  | `0x03DE70`  | TIM  | ~33 312    | CLUT @ `(0, 493)`                              |
-| atlas 4  | `0x046094`  | TIM  | ~33 312    | CLUT @ `(0, 494)`                              |
-| atlas 5  | `0x04E2B8`  | TIM  | ~33 312    | CLUT @ `(0, 495)`                              |
-| atlas 6  | `0x0564DC`  | TIM  | ~23 332    | CLUT @ `(0, 497)` - truncated, last in pack    |
+| Region   | Entry | Offset      | Type | Size       | Role                                    |
+|----------|------:|-------------|------|-----------:|-----------------------------------------|
+| chunk 0  |  1204 | `0x000004`  | TMD2 | 33 516     | Vahn battle (`nobj=15`)                 |
+| chunk 1  |  1204 | `0x0082F4`  | TMD2 | 33 636     | Noa battle (`nobj=16`)                  |
+| chunk 2  |  1204 | `0x01065C`  | TMD2 | 24 780     | Gala battle (`nobj=15`)                 |
+| chunk 3  |  1204 | `0x01672C`  | TMD2 | 27 036     | Extra fighter (`nobj=20`)               |
+| chunk 4  |  1204 | `0x01D0CC`  | TMD2 | 33 340     | Extra fighter (`nobj=15`)               |
+| atlas 0  |  1205 | `0x000004`  | TIM  | 33 312     | 256×256 4bpp + 256×1 CLUT @ `(0, 490)`  |
+| atlas 1  |  1205 | `0x008228`  | TIM  | 33 312     | CLUT @ `(0, 491)`                       |
+| atlas 2  |  1205 | `0x01044C`  | TIM  | 33 312     | CLUT @ `(0, 492)`                       |
+| atlas 3  |  1205 | `0x018670`  | TIM  | 33 312     | CLUT @ `(0, 493)`                       |
+| atlas 4  |  1205 | `0x020894`  | TIM  | 33 312     | CLUT @ `(0, 494)`                       |
+| atlas 5  |  1205 | `0x028AB8`  | TIM  | 33 312     | CLUT @ `(0, 495)`                       |
+| atlas 6  |  1205 | `0x030CDC`  | TIM  | 33 312     | CLUT @ `(0, 497)`                       |
+| atlas 7  |  1205 | `0x038F00`  | TIM  | 33 312     | CLUT @ `(0, 496)`                       |
+
+**Correction: eight atlases, and none truncated.** This table used to place
+seven atlases inside PROT 1204 at `0x25804 + k*0x8224`, the last one
+"truncated, last in pack", and to call row 496 skipped. Every part of that was
+the pre-correction entry size: 1204's `toc[p+5] - toc[p+3] + 4` span was 184
+sectors instead of 75, so it ran `0x36800` into 1205 - `0x25804` is 1205's
+offset `0x4`, the window stopped between atlas 6 and atlas 7, and the "~23 332
+truncated" size was the window's end, not the TIM's. 1205's own 131 sectors
+hold eight whole TIMs (`4 + 8*0x8224 = 0x41124` of `0x41800`). The live capture
+already agreed: a played battle uploads party CLUTs at rows 490..497 including
+496 (see [`re-settled-threads.md`](../reference/re-settled-threads.md)).
 
 The bundled CLUTs (declared at rows 490..497) are the pack's **authoring
 palette** - what the Baka Fighter minigame renders with directly. A normal
@@ -826,12 +840,15 @@ state offsets.
 # Field-form pack (PROT 0874 §0): list the five-slot shape + active-party templates.
 asset character-pack extracted/PROT/0874_befect_data.BIN
 
-# Battle-form pack (PROT 1204, also the Baka Fighter pack): list the five TMD2 chunks + seven character atlases.
-asset battle-char-pack extracted/PROT/1204_other5.BIN
+# Battle-form pack (PROT 1204 + 1205, also the Baka Fighter pack): the five
+# TMD2 chunks, plus the eight character atlases from the sibling entry.
+asset battle-char-pack extracted/PROT/1204_other5.BIN \
+    --atlas-entry extracted/PROT/1205_other5.BIN
 
 # Export one battle character TMD and one atlas TIM.
 asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd
-asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
+asset battle-char-pack extracted/PROT/1204_other5.BIN \
+    --atlas-entry extracted/PROT/1205_other5.BIN --atlas 0 --out-tim vahn_atlas.tim
 
 # Apply the equipment swap for a single slot + export the patched TMD.
 asset character-pack extracted/PROT/0874_befect_data.BIN \

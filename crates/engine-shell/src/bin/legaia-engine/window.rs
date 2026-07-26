@@ -563,6 +563,15 @@ struct PlayWindowApp {
     /// This frame's dev-menu row-list draws, rebuilt by `tick_dev_menu` and
     /// appended by the (immutable) HUD builder. Empty unless the menu is on.
     dev_menu_draws: Vec<TextDraw>,
+    /// Whole seconds of window wall clock already folded into
+    /// `World::play_time_seconds`. The high-water mark `tick_play_clock`
+    /// deltas against, so a loaded save's accumulated total survives.
+    play_clock_secs: u32,
+    /// Whether the dev menu is showing the battle-records page
+    /// (`FUN_801ED710`) instead of its row list. Square toggles it while the
+    /// list has the pad; retail reaches the same readout from a row of the
+    /// world-map dev menu this screen stands in for.
+    dev_menu_records: bool,
     /// The two fishing point-exchange venue pages (0 = Buma, 1 = Vidna),
     /// decoded from the fishing overlay when the minigame starts
     /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
@@ -799,6 +808,8 @@ mod record;
 mod run;
 #[path = "window/save_select_helpers.rs"]
 mod save_select_helpers;
+#[path = "window/shop_windows.rs"]
+mod shop_windows;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]
@@ -906,6 +917,22 @@ impl PlayWindowApp {
     fn menu_window_pen(&self, id: usize) -> (i32, i32) {
         let (x, y, _, _) = self.menu_window_rect(id);
         (x, y)
+    }
+
+    /// Advance `World::play_time_seconds` by the whole seconds elapsed since
+    /// the last call.
+    ///
+    /// Kept as a delta against a host-side high-water mark rather than as an
+    /// assignment: the world's counter is restored from a save
+    /// (`SaveExtV2::play_time_seconds`), so an absolute write would discard
+    /// every previously accumulated hour the moment a save loaded.
+    pub(super) fn tick_play_clock(&mut self) {
+        let now = self.win.elapsed_secs().max(0.0) as u32;
+        if now > self.play_clock_secs {
+            let delta = now - self.play_clock_secs;
+            self.play_clock_secs = now;
+            self.session.host.world.advance_play_time(delta);
+        }
     }
 
     /// Frame rect (the 9-slice chrome box) for a menu window id: the

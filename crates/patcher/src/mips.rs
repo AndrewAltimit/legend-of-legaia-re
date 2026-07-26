@@ -192,6 +192,11 @@ pub(crate) const fn sw(rt: u32, rs: u32, off: u16) -> u32 {
 pub(crate) const fn addu(rd: u32, rs: u32, rt: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x21
 }
+/// `subu rd,rs,rt` - subtract unsigned (no overflow trap). `subu rd,zero,rt`
+/// is the standard two's-complement negate.
+pub(crate) const fn subu(rd: u32, rs: u32, rt: u32) -> u32 {
+    (rs << 21) | (rt << 16) | (rd << 11) | 0x23
+}
 /// `slt rd,rs,rt` - set-less-than (signed).
 pub(crate) const fn slt(rd: u32, rs: u32, rt: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x2a

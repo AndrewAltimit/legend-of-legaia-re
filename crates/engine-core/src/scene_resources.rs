@@ -389,28 +389,117 @@ fn v12_sidecar_skip(entry: &SceneEntry, host_idx: Option<u32>) -> bool {
 
 /// `true` when `entry` is a **pochi-filler** slot: a reserved-but-unused PROT
 /// entry whose payload is the `pochipochipochi...` + `0x1A` dev fill
-/// ([`legaia_asset::categorize`], `docs/formats/pochi.md`). Retail never
-/// dispatches one - a scene reserves N asset slots and fills only some - but
-/// the bytes *behind* the fill prefix are stale scratch from an earlier build,
-/// and a fair amount of that scratch is a well-formed TIM.
+/// ([`legaia_asset::categorize`], `docs/formats/pochi.md`). A scene reserves N
+/// asset slots and fills only some; retail never dispatches one, so neither
+/// does the build.
 ///
-/// Sweeping a pochi slot therefore uploads **leftover** texture pages on top of
-/// the scene's real ones. The stale pages are the scene's battle-side character
-/// atlases: two `256 x 256` 4bpp pages at fb `(768, 0)` (tpage `0x0C`) and
-/// `(832, 0)` (tpage `0x1D`) with CLUT rows 473 / 479 - and tpage `0x0C` is
-/// exactly where most field scenes put their **ground-tile atlas**
-/// ([`legaia_asset::field_objects::WalkHeightfield`], whose per-cell page comes
-/// from the `.MAP` object record's `+0x15`). A full-page stale upload lands
-/// last and erases the terrain atlas, so the ground quads sample character /
-/// backdrop texels instead of dirt (Jeremi's "tombstone" lattice, Mt. Dhini's
-/// repeating vine texture). Rim Elm escaped only because *its* siblings all
-/// parse as `scene_tmd_stream` and were already excluded in field mode.
+/// The skip is cheap correctness, not a hazard guard. Every retail
+/// pochi-filler entry is **one 2048-byte sector** of fill and none of them
+/// parses as a TIM - measured over the whole corpus by
+/// `tests/field_ground_texture_pages_disc.rs`, which also carries the
+/// correction: the "stale scratch behind the fill prefix that often forms a
+/// complete valid TIM" was the *next* entry, seen through the historical PROT
+/// entry-size expression. The pages that erased Jeremi's ground atlas (fb
+/// `(768, 0)` tpage `0x0C`, `(832, 0)` tpage `0x1D`) belong to the
+/// `scene_tmd_stream` sibling that follows the pochi slot, and field-mode
+/// dispatch already excludes those.
 ///
 /// Retail parity check: a live `keikoku` field VRAM capture has the scene's
-/// rock atlas at `(768, 0)`, not the character page - the field loader never
-/// touches these entries.
+/// rock atlas at `(768, 0)`, not the character page.
 fn pochi_filler_skip(entry: &SceneEntry) -> bool {
     entry.class == Class::PochiFiller
+}
+
+/// The scene's mesh pool as **retail enumerates it**: the asset-table
+/// descriptor walk, not a byte scan for TMD magic.
+///
+/// `FUN_80020224` walks the bundle's `count` descriptors and hands each to
+/// `FUN_8001F05C`; case `0x02` LZS-decodes an [`legaia_asset::pack`] of
+/// meshes and calls `FUN_80026B4C` (`tmd_register`) once per member, case
+/// `0x09` registers a single bare mesh. Those registrations *are* the pool -
+/// slot `k` of `DAT_8007C018` past the resident head. See
+/// [`legaia_asset::scene_asset_table::mesh_pool`].
+///
+/// Why this is not a byte scan: an entry's bytes carry meshes the walk never
+/// registers, and a scan therefore over-collects. `town01`'s block is the
+/// case that shows it - the block's `field_pack` sibling and the boot
+/// `init_data` stream both hold TMDs a magic sweep finds, while the walk
+/// registers only the bundle's own 114-member pack. With the resident 5-mesh
+/// head (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`, the runtime
+/// prefix `DAT_8007b6f8` that `FUN_80020f88` adds to every placement's mesh
+/// id) that is a 119-slot pool, which is what the live table holds.
+///
+/// Returns every entry's contribution in CDNAME order, then descriptor order,
+/// then pack order - the order the registrations happen in. Meshes that fail
+/// [`legaia_tmd::parse`] are dropped (retail registers them anyway, logging
+/// `Model Version Err`; the engine has nothing to render). Empty when no
+/// entry in the block carries a mesh-bearing asset table, which is the
+/// v12-family dungeon shape (`rikuroa`, `dolk2`, …) whose geometry lives in a
+/// standalone LZS container instead - those fall back to the byte sweep.
+fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
+    let mut out = Vec::new();
+    for entry in &scene.entries {
+        if pochi_filler_skip(entry) {
+            continue;
+        }
+        for mesh in legaia_asset::scene_asset_table::mesh_pool(&entry.bytes) {
+            let Ok(tmd) = legaia_tmd::parse(&mesh.bytes) else {
+                continue;
+            };
+            out.push(ResolvedTmd {
+                entry_idx: entry.idx,
+                offset: mesh.offset,
+                byte_len: mesh.bytes.len(),
+                tmd,
+                raw: mesh.bytes,
+            });
+        }
+    }
+    out
+}
+
+/// A shared block's contribution to the field mesh pool: the **resident
+/// head**, and nothing else.
+///
+/// The head is the five party / savepoint meshes at `DAT_8007C018[0..=4]` -
+/// section 0 of the `player_data` character pack
+/// ([`legaia_asset::character_pack`]). Its size is pinned independently of
+/// this code: `FUN_80020f88` computes a placement's pool index as
+/// `record[+0x10] + DAT_8007b6f8` with the prefix `= 5`
+/// ([`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`], pinned 14/14
+/// against a live walk capture), so the field pool head is exactly those five
+/// slots.
+///
+/// Every other shared block therefore contributes no meshes. `init_data`
+/// (PROT 0) is the case that matters: it is the boot system-UI bundle, a
+/// DATA_FIELD stream whose `TIM_LIST` chunk is the UI/sprite atlas
+/// [`legaia_asset::system_ui_bundle`] uploads. Its sibling TMD chunk is
+/// registered at boot, before the per-scene pool is rebuilt - a magic sweep
+/// of the block pulls those meshes into the field pool where the pinned
+/// 5-slot prefix says they are not.
+fn shared_head_pool(scene: &Scene) -> Vec<ResolvedTmd> {
+    for entry in &scene.entries {
+        let Ok(pack) = legaia_asset::character_pack::parse(&entry.bytes) else {
+            continue;
+        };
+        let mut out = Vec::new();
+        for slot in pack.slots() {
+            let Ok(tmd) = legaia_tmd::parse(&slot.tmd_bytes) else {
+                continue;
+            };
+            out.push(ResolvedTmd {
+                entry_idx: entry.idx,
+                offset: slot.slot,
+                byte_len: slot.tmd_bytes.len(),
+                tmd,
+                raw: slot.tmd_bytes.clone(),
+            });
+        }
+        if !out.is_empty() {
+            return out;
+        }
+    }
+    Vec::new()
 }
 
 fn parse_world_map_slot4(
@@ -525,6 +614,38 @@ impl SceneResources {
             if !is_main && matches!(kind, SceneLoadKind::WorldMap) {
                 return;
             }
+            // The field mesh pool comes from the retail enumeration: the
+            // asset-table descriptor walk for the scene
+            // ([`descriptor_walk_pool`]), the character pack for a shared
+            // block ([`shared_head_pool`]). `walked` says the pool for this
+            // block is settled, which turns the generic magic sweep below off
+            // - that sweep is the fallback for blocks with no enumeration to
+            // walk, not a supplement to one. A shared block is always settled
+            // even when its head pool is empty: `init_data` carries no
+            // character pack and contributes no meshes to the field pool.
+            //
+            // Only the field loader is modelled this way. `WorldMap` has its
+            // own descriptor read (the kingdom bundle's slot-1 landmark pack,
+            // decoded explicitly below) and would otherwise be walked twice;
+            // `Battle` is a different retail loader (`FUN_8001FE70` over the
+            // block's `scene_tmd_stream` entries, which is what supplies a
+            // battle's backdrop dome), so it keeps the sweep.
+            let mut walked = false;
+            if matches!(kind, SceneLoadKind::Field) {
+                if is_main {
+                    let pool = descriptor_walk_pool(s);
+                    if !pool.is_empty() {
+                        *tmd_count += pool.len();
+                        tmds.extend(pool);
+                        walked = true;
+                    }
+                } else {
+                    let head = shared_head_pool(s);
+                    *tmd_count += head.len();
+                    tmds.extend(head);
+                    walked = true;
+                }
+            }
             let mut took_kingdom = false;
             let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
@@ -583,16 +704,17 @@ impl SceneResources {
                 }
                 let skip_scene_tmd_stream = kind.excludes_scene_tmd_stream()
                     && scene_tmd_stream::is_scene_tmd_stream(bytes);
-                if !skip_scene_tmd_stream {
-                    // Scan raw bytes AND any LZS-decompressed sections. A
-                    // field/town `scene_asset_table` entry stores its
-                    // environment geometry (the town's many building / prop
-                    // meshes) as TMDs packed inside LZS streams - the raw-only
-                    // scanner can't see them, so the field pool came up nearly
-                    // empty and the town rendered as a single stray mesh. The
-                    // TIM pass below already walks `scan_entry`'s LZS sections;
-                    // the TMD pass now matches it. (The `scene_tmd_stream` skip
-                    // above still drops battle-character meshes in field mode.)
+                if !walked && !skip_scene_tmd_stream {
+                    // Fallback sweep, for blocks the descriptor walk cannot
+                    // enumerate: scan raw bytes AND any LZS-decompressed
+                    // sections. The v12-family dungeons (`rikuroa`, `dolk2`)
+                    // ship their environment geometry as a standalone
+                    // `lzs_container` with no descriptor table over it, so a
+                    // magic sweep is the only reader they have.
+                    //
+                    // This is a heuristic and it over-collects when a block
+                    // *does* have a table - which is why it is off whenever
+                    // one was walked. See [`descriptor_walk_pool`].
                     let scan = tmd_scan::scan_entry(bytes);
                     for (source, hit) in &scan.hits {
                         let src: &[u8] = match source {

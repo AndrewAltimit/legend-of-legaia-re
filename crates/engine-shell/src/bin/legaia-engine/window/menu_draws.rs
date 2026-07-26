@@ -12,11 +12,23 @@ impl PlayWindowApp {
     ///
     /// REF: FUN_801DCAD8 - the Status tab's content renderer (label
     /// string at `(a0+0xa, a0+0xc)`, staged text CLUT 7). The five tab
-    /// renderers share one shape, so the draw itself lives in the shared
-    /// builder `tab_label_draws` and this method only resolves the pen.
+    /// renderers share one shape with window 43's `FUN_801DCFE4`, so the
+    /// painter is picked by asking the descriptor which renderer it names
+    /// rather than by trusting the id: `painter_at` resolves the disc
+    /// table's `renderer_va` and hands back the descriptor whose rect the
+    /// painter hangs off. A table whose renderer moved (a modded disc), or
+    /// no disc table at all, falls back to the pinned rect.
     fn menu_tab_title_draws(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
-        let pen = self.menu_window_pen(tab_id);
-        legaia_engine_render::tab_label_draws(&self.font, label, pen)
+        use legaia_engine_render::MenuWindowPainter;
+        use legaia_engine_render::ui_menu_window_painters::title_tab_draws_for;
+        if let Some((d, _)) = self
+            .menu_window_table
+            .as_ref()
+            .and_then(|t| legaia_engine_render::painter_at(t, tab_id, MenuWindowPainter::TitleTab))
+        {
+            return title_tab_draws_for(&self.font, legaia_engine_render::painter_rect(d), label);
+        }
+        legaia_engine_render::tab_label_draws(&self.font, label, self.menu_window_pen(tab_id))
     }
 
     /// Build [`TextDraw`]s for an active field-menu sub-session. Each

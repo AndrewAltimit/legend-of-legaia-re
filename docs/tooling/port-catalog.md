@@ -76,6 +76,16 @@ Rules:
 When porting a Ghidra function, add the tag once in the Rust function that
 *implements* its behaviour. Don't tag every caller of the ported function.
 
+Prefer a `///` tag on that function to a `//!` tag on the module. A module tag
+anchors the address to the whole *file*, which is coarse enough to report the
+address wired on the strength of any other function in the same file - so it is
+only safe while the whole file shares one wiring status. Same for a `PORT:` tag
+on a plain data struct: tag the function that computes the value, and let the
+struct carry a `REF:` instead. See
+[Anchors](#anchors) for how each form resolves and
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md#anchor-granularity) for
+the edit that splits a module tag safely.
+
 ## The `// REF:` tag
 
 Sibling of `// PORT:`. Marks an address as a **cross-reference citation** -
@@ -235,6 +245,14 @@ stale tag:
 
 Causes 2-4 are properties of the analysis or the tag's granularity, not defects
 in the tree. Read the section as a queue of questions, not a defect list.
+
+Causes 2 and 4 are still usually closable, and in source rather than in the tool:
+a colliding symbol can be renamed and a coarse anchor can be moved onto the item
+it claims. `--live-audit` reads a receiver-gated second graph precisely so
+cause 2 does not fire on unambiguous names, but the gate cannot see a name `std`
+also defines, nor a free function, nor a crate-root re-export.
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md#the-fix-each-mechanism-takes)
+tabulates which fix each mechanism takes.
 
 Comparison is per **anchor**, not per address. A formula ported into both
 `engine-vm` and `engine-core` has two anchors and can legitimately be wired in

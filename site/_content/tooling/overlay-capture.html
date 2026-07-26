@@ -155,7 +155,7 @@
 </tr>
 <tr>
 <td><code>0x801F5CF8</code>, <code>0x801F5D90</code></td>
-<td>Binary animation tables passed to particle spawner</td>
+<td>18-byte move-VM trigger programs, one per burst arm - not tables, and they reach the particle spawner only via the <code>0x17</code> escape inside them</td>
 </tr>
 <tr>
 <td><code>0x801F6000+</code></td>
@@ -163,7 +163,7 @@
 </tr>
 </tbody>
 </table>
-  <p>Per-character growth does not come from a table in this <em>display</em> overlay - it is in static <code>SCUS_942.54</code> (<code>DAT_800769CC</code> curves + <code>DAT_80076918</code> param block), applied by the victory-path level-up function <code>FUN_801E9504</code>. The writer-search here came up empty because it scanned the <code>magic_level_up</code> overlay, not that applier. The earlier &ldquo;HP grant at Seru <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> - those <code>+0x74</code> reads surface a <code>0x80808080</code> battle-state flag, not a stat grant. See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
+  <p>Per-character growth does not come from a table in this <em>display</em> overlay - it is in static <code>SCUS_942.54</code> (<code>DAT_800769CC</code> curves + <code>DAT_80076918</code> param block), applied by the victory-path level-up function <code>FUN_801E9504</code>. The writer-search here came up empty because it scanned the <code>magic_level_up</code> overlay, not that applier. The earlier &ldquo;HP grant at Seru <code>+0x74</code>&rdquo; reading is <strong>falsified</strong> - <code>+0x74</code> is the actor&rsquo;s colour word, stamped with the 24-bit mid-grey <code>0x00808080</code> under the mask <code>0x00FFFFFF</code>, not a stat grant and not a <code>0x80808080</code> flag. See <a href="../subsystems/level-up.html#stat-gains"><code>subsystems/level-up.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="capturing-with-pcsx-redux">

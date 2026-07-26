@@ -1226,7 +1226,7 @@ never installs - so slot-4 is *not* the terrain-mesh source.
 `0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
 entries**: `[0..4]` = 5 party meshes (heap addresses ~`0x8014xxxx`), `[5..44]` =
 **the 40-mesh slot-1 landmark pack** (`prefix = 5`, install count 45). So the
-walk-view pool *is* the landmark pack the port already loads. (0085's and 0093's
+walk-view pool *is* the landmark pack the port already loads. (0086's and 0093's
 slot-0 atlases target the *same* VRAM pages, so the walk-view and overview pools
 are mutually-exclusive sets that clobber each other if co-loaded - see
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
@@ -1519,7 +1519,7 @@ looks fine. The field build therefore skips pochi slots outright; regression:
 `(768, 256)` whose CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine
 rewrites every few game ticks - the rolling-wave shimmer - along with seven
 more shoreline/terrain shimmer cells. **The operand source is the kingdom
-bundle's slot 5** (the type-byte `0x06` slot of PROT 0085 / 0244 / 0391): an
+bundle's slot 5** (the type-byte `0x06` slot of PROT 0086 / 0245 / 0392): an
 LZS-compressed 516-byte **CLUT-walk animation table**, byte-identical across
 the three kingdoms (the per-kingdom colours come from the parked source
 strips, not the table). Format (parser [`legaia_asset::clut_walk`]):
@@ -1876,7 +1876,7 @@ driven from the world-map controller's gate consumer
 The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
 draws every **landmark** TMD (castle, towers, bridges, gates) - each
 world-map actor's `actor[+0x44]` mesh chain points into Drake's
-40-TMD landmark pack at PROT entry 0085 slot 1, which the dispatcher
+40-TMD landmark pack at PROT entry 0086 slot 1, which the dispatcher
 walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
 renderer). That accounts for the landmark prims in the GPU pool.
 

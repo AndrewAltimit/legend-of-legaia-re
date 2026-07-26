@@ -625,6 +625,19 @@ impl PlayWindowApp {
                         }
                         _ => (label, Vec::new(), None),
                     };
+                // The retail descriptor windows for this phase - vendor
+                // plate, purse, item info, sell quantity - each painted by
+                // dispatching on its descriptor's `renderer_va`
+                // (`window/shop_windows.rs`). Empty without a disc table.
+                // The purse window is the retail gold readout, so the
+                // engine panel below drops its own footer whenever it draws.
+                let retail_windows = self.shop_window_draws(shop, state, cursor);
+                let show_gold = if retail_windows.is_empty() {
+                    show_gold
+                } else {
+                    None
+                };
+                out.extend(retail_windows);
                 if !rows_spec.is_empty() {
                     let rows: Vec<ShopRow<'_>> = rows_spec
                         .iter()

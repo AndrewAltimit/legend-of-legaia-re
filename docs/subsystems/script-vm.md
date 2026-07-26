@@ -34,6 +34,20 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
+The heading is a warning, not a nicety: any census of a field-VM opcode must
+read the MAN, and one aimed at `scene_event_scripts` measures the wrong thing.
+Those entries carry **move-VM prescripts**, so a correct reader of them
+reports zero field-VM opcodes. Such a census can still come back non-zero, and
+the way it does is worth recognising, because the failure is invisible from
+inside the instrument: a scene block's prescript entry is one sector, and read
+under the superseded declared-span PROT entry size (`toc[p+5] - toc[p+3] + 4`,
+which measures entry `p`'s two *successors*) its window ran past itself into
+the block's bundle - so the bundle MAN's field-VM opcodes were reported under
+the prescript's name. With entry sizes corrected to `toc[p+3] - toc[p+2]` the
+over-read is gone and the count is zero. See [`prot.md`](../formats/prot.md);
+the worked case is the `0x4C 0xD8` synchronous-spawn census in
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
+
 ### Record headers are per-partition; the record index space is flat
 
 Every partition prefixes its script with a **different** header, so the offset
@@ -769,6 +783,23 @@ Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices
 
 `system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
 
+**Carriers are byte-unique, and every per-scene count depends on it.**
+No two MAN carriers on the disc share bytes, so walking every carrier of every
+scene visits each MAN exactly once and a per-scene census is a partition of the
+corpus. When that does not hold, one MAN reached through two scenes' windows
+inflates every count over it by an amount no assertion inside the census can
+see.
+
+That is what the superseded declared-span entry size produced. A scene block
+whose CDNAME window is a subset of its neighbour's, with no asset-table bundle
+of its own, would over-read into the neighbour's bundle and present the
+neighbour's MAN as a second "dev copy" under its own name. `gameover_data` is
+that case, and the copy it appeared to hold was `town01`'s MAN. With the entry
+size corrected the block resolves no MAN, and the Rim Elm renditions gating the
+opening one-shot `0x225` are the three real ones (`town01` / `town0b` /
+`town0c`), each a distinct PROT entry at a distinct start LBA. The property
+itself is asserted disc-wide by `no_two_man_carriers_share_bytes_disc_wide`.
+
 **Decode-coherence flag.** The census walker desyncs inside unframed Shift-JIS dialogue and inline data tables, where text bytes alias the `0x50..=0x7F` flag ops
 (the full-width digit run `82 54 82 4F` aliases `SysFlag.Set idx=0x482`; a repeating full-width `ＥＸＩＴ` label table aliases `64 82` clears).
 Every census site therefore carries `GFlagSite::clean`: `true` only when at least `CLEAN_RESYNC_INSNS` instructions decoded error-free between the walker's last decode error (or record start) and the site.
@@ -938,6 +969,32 @@ ran, leaving it parked while retail seats it at `(5440,14400)`). The tail's
 The executing port (`legaia-engine-vm`, field `menu_ctrl` nibble 7) already
 returned the correct `Advance` with the correct 6/7 split; it was the prose
 and the port's own explanatory comment that carried the false mechanism.
+
+### The two actor-list leaves the VM keys on `+0x0C`
+
+Several opcodes reach the actor list not by index but by **per-frame handler
+address** - the function pointer at `actor[+0x0C]` that `FUN_80020DE0` stamps
+from a spawn descriptor's `+8` word. Two 15-instruction SCUS leaves are the
+whole vocabulary, and they differ only in their tail:
+
+| Leaf | Body | What it is |
+|---|---|---|
+| `FUN_8003CF04` | walk `+0x00`; skip `+0x0C != handler`; skip `+0x10 & 8`; return the first survivor, `0` on exhaustion | **finder**. The kill-bit skip is what stops a find-or-spawn API adopting an actor retired earlier the same frame. |
+| `FUN_8003CF40` | walk `+0x00`; `+0x10 \|= 8` on every `+0x0C == handler`; no return value | **retire sweep**. Not a registration of any kind - it writes nothing but the flag word. |
+
+That matters for the ops long labelled "register callback" - `4C 9F` and
+`4C 87`, both `func_0x8003CF40(_DAT_8007C34C, LAB_801DA930)`. `LAB_801DA930`
+is the handler on spawn descriptor `0x801F27EC`, the one the fade spawner
+`FUN_801DDE34` allocates from, so those ops **cancel a running fade**. Nothing
+is registered and nothing waits: with no fade live the sweep is entirely
+inert, which is exactly what a live opening-chain probe measured (zero hits on
+the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the same sweep
+twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
+`FUN_80037018`, immediately before it opens the submode - so a driver actor
+either sweep marked is invisible to the open's find.
+
+Ports: `engine-core::World::{find_actor_by_handler, retire_actors_by_handler}`,
+over the handler identity `engine-core::actor_handler::ActorHandler`.
 
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
@@ -1132,7 +1189,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 
 | Address | Class | What it is | Dump |
 |---|---|---|---|
-| `0x801D9D3C` | INTERIOR | Tail-call fragment: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`; no prologue. | `overlay_0897_801d9d3c.txt` |
+| `0x801D9D3C` | INTERIOR **in 0897 only** | Tail-call fragment here: `a0 -= 0xE10` then block-copy `func 0x8001AA68` with register-arg `a1=s3`/`a2=s5`, no prologue. The **battle**-overlay occupant of the same VA is a different, portable function - see the note below. | `overlay_0897_801d9d3c.txt` |
 | `0x801D71B8` | SHARED_TAIL | Fixed-point tail `(v1*v0 + m[0]*base[_DAT_8007B7F8]) >> 12`; enters with `v0`/`v1` preset (2-term q12 accumulate). | `overlay_0897_801d71b8.txt` |
 | `0x801E2650` | INTERIOR | Branch-delay-slot entry; decimal splitter storing 8 digit bytes at `&DAT_801F35F0`, tail-jumps `FUN_801F1118`/`FUN_801F1278`. | `overlay_0897_801e2650.txt` |
 | `0x801E805C` | INTERIOR | Actor command commit: writes action id to actor `+0x1DF`, reads a per-command descriptor at `0x8007..52C0` (stride 4), branches on bits `0x40`/`0x20`. | `overlay_0897_801e805c.txt` |
@@ -1165,6 +1222,17 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
 
 `FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
+
+### `0x801D9D3C` is two functions, and the battle one is the real entry
+
+The `0x801D9D3C` row above is the field-overlay (0897) occupant, and it is a fragment. The **battle**-overlay (0898) occupant of the same VA is a 388-instruction function with its own prologue and `jr ra` - the **enemy target-selection-menu builder**, documented in [`functions/battle.md`](../reference/functions/battle.md#battle-command-block-persistence--target-menu-overlay-0898-trace-surfaced). Four dumps of it agree byte for byte (`overlay_battle_action_801d9d3c.txt`, `overlay_magic_capture_…`, `overlay_magic_level_up_…`, `overlay_muscle_dome_…`), which is what makes it a real entry rather than an alias artifact.
+
+Two structural facts about it are worth stating where the address is first met, because both invite a wrong reading:
+
+- **The dedup is positional, not a set operation.** It walks the four-byte formation-id table `_DAT_8007BD0C` and collapses *consecutive* identical ids into one row, resetting its run counter on any id change. So a formation `A A B A` produces **three** rows, not two.
+- **The row suffix overwrites, it does not append.** The second member of a run replaces the label's **final character** with a one-glyph dedup literal (the store at `0x801d9e54` zeroes that byte before the concat), and the third and later members increment that character in place. Labels therefore stay the same byte length as the plain name - there is no `" x2"`-style growth, and the row rect never has to widen.
+
+Its layout half - average the members' projected screen X, centre, then relax overlaps pairwise and clamp inside `[0x06, 0x13A - width]`, repeating until a pass clamps nothing - shares its inner loop with the `0x801F07AC` / `0x801F0ADC` de-overlap fragment two rows up in the table. Ported as `legaia_engine_core::target_picker::enemy_menu_rows` + `layout_enemy_menu_rows`.
 
 ### The op-`0x49` party-cursor submode (`FUN_801F1278` / `FUN_801F159C`)
 

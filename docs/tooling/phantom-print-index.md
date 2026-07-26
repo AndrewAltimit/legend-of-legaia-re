@@ -30,11 +30,14 @@ image. Adding a dump does not change any row here; only a change to
 [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) can, and
 that is exactly when the sweep is supposed to be re-run anyway.
 
-Every address on this page is already carried by
+Every address in the tables below is already carried by
 [`port-catalog-ignore.toml`](port-catalog.md) under a `worklist_*` category, so
 none of them is open port work. What the ignore list does not carry is *where the
 bytes are*, and a merged reason that names the wrong true VA sends the next
 reader to the wrong routine. This page is the resolution those reasons point at.
+The exception is the closing section, [printed VAs that are entries after
+all](#printed-vas-that-are-entries-after-all-in-a-different-overlay), whose rows
+are open port work precisely because the phantom print is not the whole story.
 
 ## Re-key deltas measured in this band
 
@@ -69,6 +72,39 @@ Two independent batches agree where they overlap, which is the check that makes
 the deltas more than a curve fit. Printed `0x801C4520` (`+0xE818`) and printed
 `0x801CD520` (`+0x5818`) both land on field `0x801D2D38`; printed `0x801C46A4`
 and `0x801CD6A4` both land on field `0x801D2EBC`.
+
+## The band is a sample of a corpus-wide shape
+
+The tables below are the worked cases. The general result is measurable without
+enumerating anything, and it is stronger than the tables suggest: when every
+defective cited dump is re-resolved to the VA its bytes occupy and that VA is
+put back to Ghidra in a program imported at the image's own base, **more of
+those addresses turn out to be interiors of other routines than turn out to be
+function entries.**
+
+Two independent instruments say so, and they are built on different evidence:
+
+- The shape sweep's name-mismatch check compares a dump's filename address
+  against the address its content starts at. Every delta it reports is
+  **negative** - the resolved entry always sits below the requested address.
+  Nothing but `getFunctionContaining()` paired with a requested-address filename
+  produces that one-sided distribution, so the signature identifies the defect
+  rather than merely being consistent with it.
+- Asking Ghidra directly, per address, in the correctly-based program, returns
+  `INTERIOR of <function> at <entry>` for a large plurality of them - and the
+  reported enclosing entry is again always below.
+
+The practical consequence for anyone reading this page: **treat "there is a dump
+file at this address" as carrying almost no information about whether a routine
+begins there.** That was already the headline for this band. It holds across the
+whole corpus, and it holds for base-correct dumps too - a mis-based print and a
+genuine interior are different causes with the same symptom, and the second is
+the more common of the two.
+
+The right repair differs by cause, which is why the distinction is worth
+keeping. A mis-based print is re-keyed: the routine exists, at another VA. An
+interior is retired: no routine begins there, and re-dumping the address only
+manufactures a second file asserting the same non-existent entry.
 
 ## Group 1 - re-keys into the field/event VM `FUN_801DE840`
 
@@ -119,6 +155,7 @@ tracked there.
 | `0x801D5C58` | `0x801E4470` | field | attached-sprite projection tick, [`actor-vm.md`](../subsystems/actor-vm.md) |
 | `0x801D886C` | `0x801DE084` | field | camera-param commit, [`cutscene.md`](../subsystems/cutscene.md) |
 | `0x801D8B24` | `0x801E733C` | field | two-field value panel, [`functions.md`](../reference/functions.md) |
+| `0x801DFB10` | `0x801EE328` | field | `ON RULA` travel-art actor, [`world-map.md`](../subsystems/world-map.md) |
 | `0x801C3594` | `0x801D1DAC` | menu | pause-menu panel renderer, [`field-menu.md`](../subsystems/field-menu.md) |
 | `0x801C6CF8` | `0x801D5510` | menu | shop quantity selector, [`shop.md`](../subsystems/shop.md) |
 | `0x801C0F18` | `0x801CF730` | debug_menu | mode-6 TMD-TEST init, [`boot.md`](../subsystems/boot.md) |
@@ -137,9 +174,16 @@ Same failure, one step worse: the resolved VA is not an entry either, so there i
 nothing to port at either address. The right-hand column is the routine that owns
 the bytes.
 
+**"Not an entry" is a per-image fact, and the first row shows why the image has
+to be named.** `0x801D4A80` is interior to `FUN_801D4A60` in **field(897)** - and
+in the **menu** overlay the same VA is a real, already-ported function, the
+window-34 content renderer. Both statements are true; they are different images
+at one aliased address. A row here that omits the image reads as a contradiction
+against any page that ports the other occupant.
+
 | Printed | Real | Interior of |
 |---|---|---|
-| `0x801C6268` | `0x801D4A80` | `FUN_801D4A60` |
+| `0x801C6268` | `0x801D4A80` (in field(897)) | `FUN_801D4A60` |
 | `0x801C9C04` | `0x801CF41C` | the field overlay's leading data segment - not code |
 | `0x801CAC44` | `0x801D045C` | `FUN_801D01B0` |
 | `0x801CAE64` | `0x801D067C` | `FUN_801D01B0` |
@@ -287,6 +331,34 @@ the clamped counter before reading the actor's `+0x90` back-pointer. Its `jr ra`
 predecessor pair makes it a genuine entry despite having no stack frame - the
 [leaf case](worklist-classification.md#jr-ra-does-not-prove-a-function) that a
 prologue-only entry test misses.
+
+`0x801DFB10` is the same routine as `0x801E8B10` two batches over: `+0xE818` from
+the `overlay_0897_xxx_dat` program and `+0x5818` from the `overlay_0896` one both
+land on `0x801EE328`, which is the check that pins the pair. Its `FUN_801dfb10`
+form is nonetheless cited as a scripted player-turn state machine keyed on `+0x54`
+- the description belongs to `FUN_801EE328`, which reads `+0x54` in its first
+instructions, and the address does not exist.
+
+## Printed VAs that are entries after all, in a different overlay
+
+The headline above holds for the tables: almost no address in this band begins a
+routine where its dump prints it. A handful do, and they are the sharpest form of
+the trap, because both readings are correct at once. The dump is mis-based and its
+bytes belong somewhere else entirely - *and* the printed VA is a real function
+entry, in an overlay that never dumped it. Re-keying the dump and stopping there
+deletes that routine.
+
+| Printed | The dump's bytes | The printed VA itself |
+|---|---|---|
+| `0x801D0290` | field 0897 `0x801DEAA8`, a `FUN_801DE840` label-call slice (`addiu s8,s8,2`) | battle 0898's 12-instruction overlay-local PRNG over `0x801F6950`, a leaf preceded by `jr ra` |
+
+The distinguishing question is the one the
+[entry-boundary test](worklist-classification.md#the-entry-boundary-test) asks:
+does any image *begin* a routine at the printed VA. Where the answer is no, the
+row is a phantom and belongs in the tables above; where it is yes, the row is port
+work at the printed address and the re-key is a fact about one dump only.
+`docs/reference/functions/battle.md` records the `0x801D0290` reading, with the
+warning that the `overlay_0897` dump holds a different body at the VA.
 
 ## See also
 

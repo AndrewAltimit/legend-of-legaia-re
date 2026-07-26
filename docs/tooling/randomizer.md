@@ -77,7 +77,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Weapon specialty](#weapon-specialty)
   - [Arts button combos](#arts-button-combos)
   - [Arts damage power](#arts-damage-power)
-  - [Arts AP-grant](#arts-ap-grant)
+  - [Arts AP override](#arts-ap-override)
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
   - [The signed accrual tail](#the-signed-accrual-tail)
@@ -196,7 +196,8 @@ legaia-patcher earth-egg --input DISC.bin                                       
 legaia-patcher randomize --input DISC.bin --earth-egg-price 25000                         # Earth Egg costs 25000 casino coins
 legaia-patcher arts      --input DISC.bin                                                 # read-only: list every art's combo + damage-power tiers
 legaia-patcher randomize --input DISC.bin --seed pow --arts-power RDLDL=0x0C              # power Vahn's Burning Flare down to tier 0x0C
-legaia-patcher randomize --input DISC.bin --arts-ap-grant RDLDL=10                        # Burning Flare (arts row 1) GRANTS 10 AP instead of costing it
+legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10                   # Vahn's Burning Flare GRANTS 10 AP instead of costing it
+legaia-patcher randomize --input DISC.bin --arts-ap-cost Vahn:RDLDL=5                     # ... or costs a flat 5 AP instead of the computed 50
 legaia-patcher randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-patcher randomize --input DISC.bin --seed 0xC0FFEE --drops random \
     --encounters shuffle --steals shuffle --arts shuffle --doors shuffle --door-coupling coupled \
@@ -276,7 +277,8 @@ unless asked for:
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
-| `--arts-ap-grant COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Config row = arts-table index, **shared across all three characters**. Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP-grant](#arts-ap-grant) |
+| `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
+| `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
 | `--enemy-stat-scale MULT` | multiply every enemy's combat stats (HP / MP / ATK / UDF / LDF / INT / SPD) by one difficulty factor, story bosses included; nothing moves between monsters, and EXP / gold / drops are untouched | single value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
@@ -1338,38 +1340,59 @@ matching art in each file. `legaia-patcher arts` lists every art's combo, AP, an
 current power tiers. Seedless targeted edit; no Sony bytes. Module
 [`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
 `crates/patcher/tests/arts_power_real.rs`. The web patcher exposes this (and the
-AP-grant below) as a per-art picker - "Tactical-Art overrides": choose the art
+AP override below) as a per-art picker - "Tactical-Art overrides": choose the art
 by name, pick a per-hit damage tier or "no damage", and a note under the row
 spells out any combo-sharing art the edit also reaches; the raw
 `combo=value` syntax stays available on the same page as an advanced input.
 
-### Arts AP-grant
+### Arts AP override
 
-`--arts-ap-grant COMBO=AMOUNT` makes a targeted Tactical Art **grant** `AMOUNT`
-AP (Spirit, `actor[+0x170]`, clamped at the native 100 cap) instead of costing
-it, and admits it at any AP level. It is a MIPS code hook into the **party** arts
-queue-builder `FUN_801EED1C` (PROT 0898, base `0x801CE818`; slot < 3, so enemies
-are unaffected) - three same-size detours plus the routines and a 26-entry `i8`
-config table injected into a verified-dead SCUS arena. The pinned sites, the AP
-math, and the placement are documented in
-[arts-command-gauge.md § Arts AP-grant hook](../subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+`--arts-ap-grant [CHARACTER:]COMBO=AMOUNT` makes a targeted Tactical Art
+**grant** `AMOUNT` AP (Spirit, `actor[+0x170]`, clamped at the native 100 cap)
+instead of costing it, and admits it at any AP level.
+`--arts-ap-cost [CHARACTER:]COMBO=AMOUNT` instead sets what the art **costs**,
+replacing the value retail computes. Both ride one MIPS code hook into the
+**party** arts queue-builder `FUN_801EED1C` (PROT 0898, base `0x801CE818`;
+slot < 3, so enemies are unaffected) - three same-size detours plus the routines
+and a `4 x 32` `i8` config table injected into verified-dead SCUS regions. The
+pinned sites, the AP math, and the placement are documented in
+[arts-command-gauge.md](../subsystems/arts-command-gauge.md#arts-ap-override-hook).
 
-An art is targeted by its **input combo** (like `--arts-power`). The combo
-resolves to its arts-table display index, which is the config **row** (`s3 -
-0x0B`, art rows `0x0B..=0x24`). The row is **shared across the three characters**
-- the table is indexed by the art-row cursor, not by character - so a grant
-applies to every character's art at that same index (`legaia-patcher arts` prints
-each art's index; the apply report lists the full set a grant touches). Because
-the injected bytes are the same verified-dead arena the [Shiny Seru](#shiny-seru)
-feature reuses, **`--arts-ap-grant` is mutually exclusive with `--shiny-seru`** -
-enforced in the CLI and the web patcher.
+**Retail has no per-art AP cost to edit.** The builder computes it as
+`multiplier x command_count`, the multiplier coming from three code immediates
+keyed on the art's position in its character's list. A per-art cost therefore
+exists only because the hook introduces one, which is also why the cost side
+cannot be a plain table patch.
+
+`AMOUNT` is `1..=100` in both directions. `0` is unavailable: it is the config
+table's "leave at retail" value, so the cheapest configurable art is 1 AP rather
+than free.
+
+An art is targeted by its **input combo** (like `--arts-power`), optionally
+prefixed with `Vahn:` / `Noa:` / `Gala:`. The config is keyed by
+**(character, arts row)**, so an override never moves another character's art;
+without a prefix, every character holding that combo is targeted, each in its own
+cell. (`--arts-power` is different - it rewrites the shared art record, so a
+combo two characters share changes for both.) Because the injected bytes are the
+same verified-dead regions the [Shiny Seru](#shiny-seru) feature reuses, **the
+arts AP override is mutually exclusive with `--shiny-seru`** - enforced in the
+CLI and the web patcher.
+
+Each targeted art's **menu AP number** is rewritten alongside the hook. That
+number is a separate byte (`+2` of the SCUS arts-name table record) with its own
+single reader in the menu overlay, so patching only the hook would leave the
+pause-menu arts list showing the retail figure. A cost writes the cost; a grant
+writes `0`, which no retail art carries and no configurable cost can produce -
+the in-game marker for "this art pays you". The number renderer draws digits
+only, so a literal `+`/`-` is not available without a further code injection.
 
 Seedless targeted edit; no Sony bytes. Module
 [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs); disc
 oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
 where the bytes land, not in-game behaviour** - a live battle playtest (a
-configured art grants AP, admits at 0 AP, clamps at 100, and the refund is not
-double-counted) is required before treating it as runtime-verified.
+configured art grants or costs what it says, admits at the right AP level, clamps
+at 100, the refund is not double-counted, and the pause-menu list shows the new
+number) is required before treating it as runtime-verified.
 
 ### Spirit AP
 

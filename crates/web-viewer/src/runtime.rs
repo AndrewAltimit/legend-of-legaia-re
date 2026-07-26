@@ -92,8 +92,33 @@ pub struct LegaiaRuntime {
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
     pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
+    /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
+    /// strike splash), serviced once per sim tick by
+    /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
+    /// same-named field ([`crate::play_fishing`]).
+    pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
+    /// This tick's live banner draws, folded into the fishing HUD list.
+    pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
+    /// Last observed fishing phase, so the banner timers seed on phase *edges*.
+    pub(crate) fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
+    /// The two point-exchange venue pages decoded alongside the species table
+    /// when a fishing session starts. `None` until then (or if they don't
+    /// decode).
+    pub(crate) fishing_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
+    /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
+    /// footstep cadence ([`crate::play_sfx`]).
+    pub(crate) sfx: crate::play_sfx::PlaySfx,
+    /// The resident class-2 SFX program bank, uploaded into its own region at
+    /// the top of SPU RAM the first time a cue fires. Separate from
+    /// [`Self::bgm_bank`], whose allocator is capped below this region so a
+    /// scene change cannot stomp the SFX samples.
     #[cfg(target_arch = "wasm32")]
-    audio_out: Option<WebAudioOut>,
+    pub(crate) sfx_vab: Option<legaia_engine_audio::VabBank>,
+    /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
+    /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
+    /// BGM sequencer feeds - one mixer, as on hardware.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) audio_out: Option<WebAudioOut>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -137,6 +162,13 @@ impl LegaiaRuntime {
             title_atlas: None,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
+            fishing_banners: Default::default(),
+            fishing_banner_draws: Vec::new(),
+            fishing_prev_phase: None,
+            fishing_venues: None,
+            sfx: Default::default(),
+            #[cfg(target_arch = "wasm32")]
+            sfx_vab: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             #[cfg(target_arch = "wasm32")]
@@ -189,6 +221,12 @@ impl LegaiaRuntime {
         // pause screens' info windows print. Executable-only, like above.
         if let Some(s) = scus.as_ref() {
             host.world.install_menu_text(s);
+        }
+        // Sound-effect descriptors from the same executable (`DAT_8006F198`,
+        // see docs/formats/sfx-table.md). Data only - the program bank uploads
+        // into the SPU lazily once audio is live ([`crate::play_sfx`]).
+        if let Some(s) = scus.as_ref() {
+            self.install_sfx_descriptors(s);
         }
         // The menu overlay (PROT 0899) also carries the Arrange display-order
         // table (FUN_801D64A8): install it so the Items screen's Arrange
@@ -411,6 +449,13 @@ impl LegaiaRuntime {
         if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
             host.world.finish_cutscene();
         }
+        // Fishing HUD one-shot banners ride the sim clock, not the page's
+        // animation frame, so a heavy scene does not slow them down. The `host`
+        // borrow is dead from here, so this can re-borrow.
+        self.tick_fishing_banners();
+        // Sound-effect channel: feed the footstep cadence this tick's movement
+        // magnitude, advance the delay scheduler, key whatever matured.
+        self.tick_sfx();
         // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
         // the scene's music, started/queued/paused/stopped by the same events
         // the native `AudioBgmDirector` consumes. The `host` borrow above is
@@ -1101,9 +1146,15 @@ impl LegaiaRuntime {
             }
         };
         let bank = out.with_spu(|spu| {
+            // Cap the BGM region below the resident class-2 SFX bank at the
+            // top of SPU RAM, the way the native boot's `stage_scene_vab`
+            // does, so a BGM upload never stomps the SFX samples
+            // ([`crate::play_sfx`]).
             let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                0x1000,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+                crate::play_sfx::SPU_RESERVED_BYTES,
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
+                    - crate::play_sfx::SPU_RESERVED_BYTES
+                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
             );
             legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
         });
@@ -1155,9 +1206,15 @@ impl WebBgmDirector<'_> {
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
         let bank = self.out.with_spu(|spu| {
+            // Cap the BGM region below the resident class-2 SFX bank at the
+            // top of SPU RAM, the way the native boot's `stage_scene_vab`
+            // does, so a BGM upload never stomps the SFX samples
+            // ([`crate::play_sfx`]).
             let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                0x1000,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
+                crate::play_sfx::SPU_RESERVED_BYTES,
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
+                    - crate::play_sfx::SPU_RESERVED_BYTES
+                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
             );
             legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
         });

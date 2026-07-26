@@ -511,6 +511,23 @@ class StaticArbiter:
     def available(self):
         return bool(self.images)
 
+    @staticmethod
+    def _fold(tok):
+        """Fold the one operand spelling the two disassemblers disagree on.
+
+        Ghidra prints `break`'s whole code field (`break 0x1c00`), capstone a
+        sub-field (`break 7`). Same instruction, so the immediate is dropped on
+        both sides rather than compared - which
+        [`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md)
+        already prescribes. It matters out of proportion to its size because
+        `div; bne; break 0x1c00` is the signed-division overflow check emitted at
+        every integer divide, so an unfolded `break` makes any window containing
+        a division fail to match the image it came from - and the failure lands
+        in the class that reads as "no image holds these bytes", i.e. as a fact
+        about the corpus rather than about the comparison.
+        """
+        return "BREAK||" if tok.startswith("BREAK|") else tok
+
     def _img_tokens(self, data, off, n):
         out = []
         for k in range(n):
@@ -522,11 +539,12 @@ class StaticArbiter:
             # the first word capstone rejects, silently truncating the compare.
             for ins in self._md.disasm(w, 0x80000000):
                 tok = self._cdbi.canon(ins.mnemonic, ins.op_str)
-            out.append(tok or "BAD||")
+            out.append(self._fold(tok) if tok else "BAD||")
         return out
 
     def _dump_tokens(self, d, n):
-        return [self._cdbi.canon(mn, ops) for _, mn, ops in d["insns"][:n]]
+        return [self._fold(self._cdbi.canon(mn, ops))
+                for _, mn, ops in d["insns"][:n]]
 
     @staticmethod
     def _looks_like_data(insns):
@@ -682,6 +700,37 @@ class StaticArbiter:
     # A word that cannot open a function body: padding, or a transfer out.
     NON_ENTRY_MNEMONICS = frozenset(("nop", "jr", "j", "b", "jalr"))
 
+    # Transfers that can close a body. `jal` is excluded: a call returns, so it
+    # does not end the routine it appears in.
+    BODY_CLOSING_MNEMONICS = frozenset(("jr", "j", "b", "jalr"))
+
+    @classmethod
+    def _entry_above(cls, before):
+        """True when a routine already opened inside the window.
+
+        A prologue is not a boundary. A routine may open with instructions its
+        body needs BEFORE it allocates a frame: `FUN_80021934` loads three
+        values and only then runs `addiu sp,sp,-0x120`, so reading that
+        prologue as the entry sends a caller three instructions in, onto a
+        subtract over registers those loads were meant to fill.
+
+        The boundary is the word after the predecessor's `jr ra` delay slot. So
+        a `jr ra` earlier in the window with no body-closing transfer between it
+        and the VA means the prologue at the VA is interior to the routine that
+        return opened. The `prev2` case is the caller's first branch; a transfer
+        out in between means another whole body closed, and the prologue can be
+        a real entry after all.
+        """
+        for i in range(len(before) - 2):
+            tok = before[i]
+            if not (tok and tok[0] == "jr" and tok[1] in ("ra", "ra,")):
+                continue
+            rest = [t for t in before[i + 2 :] if t]
+            if any(t[0] in cls.BODY_CLOSING_MNEMONICS for t in rest):
+                continue
+            return True
+        return False
+
     def entry_boundary(self, addr_int):
         """Images whose bytes make this VA a function entry at their base.
 
@@ -696,7 +745,8 @@ class StaticArbiter:
         * the word two back decodes `jr ra` - the classic boundary, the
           predecessor's return with its delay slot between;
         * the word at the VA decodes `addiu sp,sp,-N` - a non-leaf prologue,
-          which in this codebase occurs nowhere else;
+          which in this codebase occurs nowhere else - and no routine opened
+          earlier in the window (`_entry_above`, the `FUN_80021934` shape);
         * the words before the VA carry the `$zero`-absolute data signature and
           the words at it do not - a code region opening after a header or
           string blob, which is how an overlay's first routine looks.
@@ -727,7 +777,11 @@ class StaticArbiter:
             prev2 = before[-2]
             if prev2 and prev2[0] == "jr" and prev2[1] in ("ra", "ra,"):
                 hits.append((label, "preceded by `jr ra`"))
-            elif head[0] in ("addiu", "addi") and head[1].startswith("sp,sp,-"):
+            elif (
+                head[0] in ("addiu", "addi")
+                and head[1].startswith("sp,sp,-")
+                and not self._entry_above(before)
+            ):
                 hits.append((label, "opens `%s %s`" % head))
             elif self._looks_like_data([t for t in before if t]) and all(after):
                 hits.append((label, "code opening after a data run"))
@@ -907,6 +961,15 @@ class StaticArbiter:
         )
 
 
+# A body Ghidra bounded short: no `jr ra` and no exit jump, so the stream stops
+# mid-routine. Named because the arbitration step below keys off it - the one
+# `UNCERTAIN` reason that is a statement about the dump and not the address.
+TRUNCATED_BODY = (
+    "UNCERTAIN",
+    "no `jr ra` and no trailing unconditional jump - body may be truncated",
+)
+
+
 def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
              all_dumps_by_addr=None):
     """Return (class, reason) for one worklist address."""
@@ -950,6 +1013,29 @@ def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
                     % peer.group(1),
                 )
             return (cls, why)
+        if cls == "UNCERTAIN" and why == TRUNCATED_BODY[1]:
+            # A dump Ghidra bounded short says nothing about the address: every
+            # test that would place the VA - own return, exit jump, fragment
+            # shape - reads a stream that stops mid-body, so the verdict is
+            # about the dump. The images answer independently, with no dump
+            # involved, so one image starting a routine at this VA settles what
+            # the truncation could not. Two or more would be a real alias and
+            # are left `UNCERTAIN`, which is never ignored.
+            va = int(addr, 16)
+            bounds = arb.entry_boundary(va) if arb.covers(va) else []
+            if len({lbl for lbl, _ in bounds}) == 1:
+                lbl, sig = bounds[0]
+                return (
+                    "REAL",
+                    "dump is bounded short (%d instructions, no `jr ra`), but "
+                    "%s starts a routine at this VA at its mapped base (%s)"
+                    % (
+                        max((len(d["insns"]) for d in funcs if d["entry"] == addr),
+                            default=0),
+                        lbl,
+                        sig,
+                    ),
+                )
         if cls != "VA_ALIASED":
             # Nothing to arbitrate: the metadata tests reached a verdict that
             # does not turn on which image a dump came from.
@@ -1124,10 +1210,7 @@ def classify(addr, dumps, dup_groups, ported, owners=None, arb=None,
                 "truncated %d-instruction dump; stream is a strict prefix of %s"
                 % (len(rec["insns"]), pfx),
             )
-        return (
-            "UNCERTAIN",
-            "no `jr ra` and no trailing unconditional jump - body may be truncated",
-        )
+        return TRUNCATED_BODY
 
     # 7. Duplicate of another worklist entry or of already-ported work.
     if not rec["insns"] or len(rec["insns"]) >= MIN_DUP_INSNS:
@@ -1385,6 +1468,15 @@ def main():
     # classifier proposed each of them, so re-classifying them is the only way
     # a later dump - one taken at a base the earlier run did not have - can
     # overturn a verdict that has since deleted a real port site.
+    #
+    # The prefix is the scope, and it is load-bearing. A `worklist_*` section
+    # asserts that NO ROUTINE BEGINS at the VA, which `entry_boundary` can
+    # refute from the images. Every unprefixed section - `libgte`, `bios`,
+    # `prim_builder`, `mesh_submit`, `noop_frame`, ... - asserts only that the
+    # clean-room port covers a real, described body another way, and no image
+    # test can speak to that: such a row already says the routine is there, so
+    # auditing it re-raises on every run and the exit code stops meaning
+    # anything. Keep scope claims out of the `worklist_*` namespace.
     absorbed = [
         r["addr"].lower()
         for r in rows

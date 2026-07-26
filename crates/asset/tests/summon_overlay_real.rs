@@ -53,10 +53,10 @@ fn summon_stager_parses_into_move_vm_part_records() {
         .read_entry(&entry, &mut bytes)
         .expect("read PROT 0905");
 
-    // Trim the over-read window (the extraction footprint runs into PROT
-    // 0906's content) down to 0905's own TOC-gap footprint; the record table
-    // at 0x180C..0x1E00 sits inside it.
+    // `read_entry` stops at 0905's own end, so the independent TOC-gap trim
+    // removes nothing; the record table at 0x180C..0x1E00 sits inside it.
     let unique = summon_overlay::unique_content_len(bytes.len(), entry.start_lba, next.start_lba);
+    assert_eq!(unique, bytes.len(), "read_entry is PROT 0905's own sectors");
     bytes.truncate(unique);
     assert!(
         bytes.len() >= 0x1E00,

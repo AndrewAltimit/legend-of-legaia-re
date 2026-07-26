@@ -7,6 +7,7 @@
 
 pub mod accessory_passives;
 pub mod actor_alloc_host;
+pub mod actor_handler;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod baka_fighter;
@@ -136,6 +137,15 @@ pub mod world;
 pub mod world_map;
 
 pub mod float_tween;
+
+pub mod action_effect_script;
+pub mod baka_cabinet;
+pub mod camera_ease;
+pub mod effect_ribbon;
+pub mod field_actor_kernels;
+pub mod field_actor_program;
+pub mod field_submode;
+pub mod mode_entry_init;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;

@@ -384,7 +384,17 @@ store:
 ```
 
 All three of its seeds - `0x800408FC`, `0x80040D28`, `0x800410BC` - are that
-same shape. Because none of them reads the old accumulator, **a restore that
+same shape.
+
+**`amount` here is a signed stat change, not a damage magnitude** - which is what
+makes the negation land on the *same* convention `FUN_801EC3E4` uses rather than
+the opposite one. The `v0` being negated is the value folded into the stat
+halfword sixty instructions earlier (`0x800408A8`: `lhu v0,0x0(v1)` / `addu
+v0,v0,s4` / `sh v0,0x0(v1)`), so damage arrives as a **negative** `s4` and a heal
+as a positive one, and `-s4` is positive-means-the-readout-falls either way.
+Reading the seed in isolation is the reliable way to get the sign backwards.
+
+Because none of the three seeds reads the old accumulator, **a restore that
 lands while a damage drain is still in flight discards the remainder.** The rest
 is forced arithmetic: with live HP `L`, bar `D` and remainder `A = D - L`, a
 restore of `H` leaves live HP at `L + H` and ramps the bar from `D` to `D + H`,
@@ -899,8 +909,26 @@ covers the cheapest command, halving the budget when the AP-Used-Down passive bi
 0x2000` / `+0x16E & 0x404` rather than the `0x380` delegation bits directly, so
 confirming it is *the* Rage-delegate path (versus a shared auto-fight assembler)
 still wants the runtime `actor[+0x1DF]`-writer capture this section calls for. No
-engine consumer yet; documented, unported. See
+engine consumer yet. See
 `ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.
+
+Two refinements from the disassembly. The gate is a **fork, not a filter**: the
+`+0xF8 & 0x2000` set / `+0x16E & 0x404` clear case takes a *simpler* arm that
+skips the arts-command table entirely - it seeds category `+0x1DE = 3`, rolls a
+target over the live monster slots through `FUN_801DB124`, and then draws blindly
+from the character's own learned-arts list (`record[+0x185]` count,
+`record[+0x186 + i]` ids), appending `id + 0x1B` per keep with a per-character
+floor of `6` for participant id `2` and `4` otherwise, stopping on a `rand() % 7
+== 0` roll or at fifteen entries. The pool arm above is the *other* side of that
+fork. And the weight a command earns is a four-rung ladder (`8` default, `1` low
+band, `4` high band, `2` both) over two byte ranges selected by the **target
+monster's type byte** `+0x1E` - type `3` reads `..=0x10` / `0x16..=0x1A`, type
+`2` reads `0x11..=0x15` / `0x1B..=0x1F`, and any other type leaves every command
+at `8`, which is enough pushes to overrun the `0x10`-byte candidate scratch.
+
+Both arms plus the ladder, the guard reject and the gauge-spend loop are ported
+as `engine-vm::battle_arts_auto_combo`; the arm-by-arm decode lives in
+[`reference/functions/battle.md`](../reference/functions/battle.md#801f0450).
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -928,6 +956,30 @@ commands" mechanic the party's arm width drives ([arts-command-gauge.md
 - **`FUN_801DBF9C(party, spell_id)`** + **`FUN_801DC0A0(actor, anim_id)`** - chained from state `0x29` and `0x2A..0x2D` to drive spell visuals. These ultimately fan out to the [effect VM](effect-vm.md) which uses `FUN_801DFDF8` for the actual sprite-anim spawn.
 
 So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+
+### `FUN_801F30C4` - the move VM's battle escape (op `0x17`)
+
+A third spawn indirection, and the only one the action SM never touches: the
+battle overlay's half of the move-VM extension pair. `FUN_80023070` case `0x17`
+calls `FUN_801F30C4(actor, op[1])` exactly as case `0x2F` calls the field
+overlay's `FUN_801D362C` - so `0x17` is battle-resident-only in the same sense
+`0x2F` is field-resident-only.
+
+Its `mode` operand takes `0` or `1` and nothing else. Either arm seats **twelve
+child actors** through `FUN_80050ED4` → `FUN_80021B04`: four iterations round the
+compass, three spawn blocks each, every child on one of two static move-VM stager
+records in `0898`'s tail and carrying a per-child heading, a `+0x3E` value and a
+`+0x98` value the burst computes from the trig LUTs plus bounded RNG jitter. The
+two arms are the same loop written twice, differing in nine constants that
+collapse to two exact relations. Byte-level decode, the two records, and the
+18-byte trigger programs that fire each arm:
+[`functions/battle.md`](../reference/functions/battle.md#801f30c4). Port:
+`engine-vm::battle_burst`.
+
+This path is disjoint from the `FUN_801D8DE8` / `FUN_801DBF9C` family above -
+those spawn 2D billboard quads out of the effect pool, this seats full move-VM
+actors - and from the summon-overlay dispatch below, which pages in code rather
+than running bytecode.
 
 ### Seru-magic summon-overlay dispatch
 
@@ -1473,7 +1525,12 @@ they are documented here rather than lifted whole into `engine-vm`.
   still mid-animation: `+1` per live actor with `+0x1D9 != 0`, less party actors
   whose `+0x1D9 == 8`) and `ctx[+0x24D]` (active spell-children over `ctx[+0x252..]`),
   plus the sole-survivor target indices `ctx[+0x24A]` (party) / `ctx[+0x24B]`
-  (monster). These are **live counts, not latched flags**, which is why state
+  (monster). `ctx[+0x24D]`'s count is **gated**: it counts non-zero entries of
+  `ctx[+0x252..=+0x255]` only if at least one entry of `ctx[+0x24E..=+0x251]` (the
+  per-slot kind array) is non-zero, and retail returns from the whole tick before
+  reaching the count otherwise (`0x801E0BA8`) - so an empty kind array reads as
+  "nothing outstanding" whatever the child array holds. These are **live counts,
+  not latched flags**, which is why state
   `0x2E` (magic exit, gated on `ctx[+0x249] == 0`) and state `0x35` (summon
   sustain) wait on them - a stalled effect child that never dies pins the count
   above zero and holds the band. **(2) Flight/impact**: it steps the in-flight
@@ -1492,8 +1549,14 @@ they are documented here rather than lifted whole into `engine-vm`.
   `>>4` / `>>0xC`) per part, then in a third pass builds textured-sprite GPU
   primitives (`0x09000000` command word, per-particle brightness) into the OT at
   `_DAT_1F8003A0`, projecting each via `FUN_800195A8` and linking with
-  `FUN_8003D2C4`. Pure GTE / GPU-primitive emit; not ported. See
-  `overlay_battle_action_801e0080.txt`.
+  `FUN_8003D2C4`. The two pools are **emitters and their particles**, not two
+  parallel effect pools: the `0x1C`-stride pool spawns into the `0x20`-stride one
+  and each record runs its own byte script. Record layouts, the two *different*
+  script-advance shapes, the countdown drain, the position integration, the
+  brightness ramp and the mirror-bit UV assignment are ported as
+  `engine-vm::battle_scatter`; the GTE projection and the OT link are not. See
+  `overlay_battle_action_801e0080.txt` and
+  [`reference/functions/battle.md`](../reference/functions/battle.md#801e0080).
 - **`FUN_801DF6B8` - damage-number popup renderer.** Draws a scaling decimal
   number sprite for one actor's accumulated damage `ctx[+0x83C]`: extracts each
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
@@ -1854,19 +1917,38 @@ s = *0x801F6950
 v = s * 12 + 2              ; (s << 2) + (s << 3) + 2
 s = (v << 16) + (v >> 16)   ; 32-bit rotate by 16
 *0x801F6950 = s
-return s
+return s                    ; the store is the jr-ra delay slot
 ```
 
-The multiply-add is done with shifts, and the "rotate" is an `addu` of the
-two shifted halves rather than an `or`, so a carry out of the low half
-propagates - the result is not a pure rotate. Five call sites, all in the
-overlay's leading function, none in SCUS.
+The multiply-add is done with shifts. The final step **is** a rotate, and an
+earlier note here saying it is not can be discarded: the `addu` sums `v << 16`,
+whose low sixteen bits are all zero, with `v >> 16`, whose high sixteen bits are
+all zero because the shift is `srl` and not `sra`. The two operands occupy
+disjoint bit ranges, so no carry can arise and the `addu` is bit-for-bit an
+`or`. Five call sites, all in the overlay's leading function `FUN_801CFB94`
+(`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` / `0x801CFF1C` / `0x801CFF5C`), none
+in SCUS.
 
 Because its state lives in overlay memory rather than the SCUS RNG seed,
 draws from this generator do **not** perturb the `FUN_80056798` stream the
 determinism oracles follow. Which battle quantities it feeds is
 **Unknown**; the arithmetic and the state address are **Confirmed** from
 the disassembly of PROT entry 0898 at base `0x801CE818`.
+
+**Read the 0898 image for this one.** There is no `overlay_battle_action_801d0290`
+dump; the only dump at that VA is an `overlay_0897` slice holding a *different*
+five-instruction body that advances a VM PC in `s8` - a field-VM opcode-handler
+fragment, i.e. the intra-function-label-promoted-to-fake-`FUN_` artifact
+[`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)
+catalogues. Disassemble the routine instead:
+
+```bash
+scripts/ghidra-analysis/disasm-overlay-fn.py \
+    extracted/overlays/overlay_battle_action_0898.bin \
+    --base 0x801CE818 --addr 0x801d0290
+```
+
+Ported as `engine-vm::battle_action::OverlayRng`.
 
 ## Open work
 

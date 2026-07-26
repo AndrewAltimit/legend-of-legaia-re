@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use legaia_asset::static_overlay;
-use legaia_engine_core::dance::{DanceDir, DanceGame, Judge};
+use legaia_engine_core::dance::{DANCE_SCORE_BOX_X, DanceDir, DanceGame, DanceHudDraw, Judge};
 use legaia_prot::archive::Archive;
 
 fn prot_dat() -> Option<PathBuf> {
@@ -320,4 +320,63 @@ fn each_mode_spawns_its_own_floor() {
         legaia_engine_core::dance::SONG_LEN_SHORT,
         "the how-to demo's song length is fixed short"
     );
+}
+
+/// The HUD driver and its quad emitter are ported but **not** reached by any
+/// host (see the `NOT WIRED:` notes on both). That makes them exactly the shape
+/// that is easy to get wrong without noticing: a kernel nothing calls can rot
+/// into one that would produce nothing even if it were called, and the two are
+/// indistinguishable from the outside.
+///
+/// So pin the *output*, not the call. Against the real overlay's widget table
+/// this asserts the driver emits a full frame and the emitter turns the score
+/// boxes into geometry with real disc-derived fields - so when a host does
+/// arrive, the only missing piece is the host surface.
+#[test]
+fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT unset (disc-gated)");
+        return;
+    };
+    let game = DanceGame::from_overlay(&overlay, false).expect("chart parses");
+
+    // The driver lays out a full frame: three score readouts, three box frames,
+    // the human's gauge and beat track.
+    let draws = game.hud_draws(false);
+    let count = |f: fn(&DanceHudDraw) -> bool| draws.iter().filter(|d| f(d)).count();
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::Score { .. })), 3);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::ScoreBox { .. })), 3);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::Gauge { .. })), 1);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::BeatTrack { .. })), 1);
+
+    // The rival gate really gates: the two rival rows appear only with it set.
+    assert_eq!(
+        game.hud_draws(true).len(),
+        draws.len() + 4,
+        "the rival flag adds a gauge + track per rival"
+    );
+
+    // The emitter resolves those boxes into geometry off the overlay's own
+    // widget table - the part that would silently return empty if the table
+    // failed to parse or the ABR byte lift went out of range.
+    let quads = game.hud_quads(false);
+    assert_eq!(quads.len(), 3, "one quad per score box");
+    for q in &quads {
+        assert!(q.x1 > q.x0 && q.y1 > q.y0, "a box quad has real extent");
+        assert_eq!(q.poly_code & 0xFC, 0x3C, "POLY_GT4 command byte");
+        // The retail HUD rows all name the 4bpp page at (512, 0) with a CLUT
+        // on the row-500 strip; a mis-offset decode fails this immediately.
+        assert_eq!(q.tpage_attr & 0x1F, 0x08, "the HUD texture page");
+        assert_eq!(q.clut & 0xFFC0, 0x7D00, "a row-500 CLUT");
+        assert!(
+            q.uv[3].0 > q.uv[0].0 && q.uv[3].1 > q.uv[0].1,
+            "the cell rect is non-degenerate"
+        );
+    }
+    // The three boxes sit at the three traced screen positions, centred.
+    let mut xs: Vec<i16> = quads.iter().map(|q| (q.x0 + q.x1) / 2).collect();
+    xs.sort_unstable();
+    let mut want = DANCE_SCORE_BOX_X.to_vec();
+    want.sort_unstable();
+    assert_eq!(xs, want);
 }

@@ -2,11 +2,32 @@
 //! entries (`map01`/`map02`/`map03`) and pull a requested slot out of its
 //! 7-asset table as decoded bytes.
 //!
-//! Locates the `scene_asset_table` (or its `scene_scripted_asset_table`
-//! prescript-prefixed variant) by scanning 0x800-aligned offsets for
-//! `[u32 count = 7]` with `descriptor[0].data_offset == 0x40`, then
-//! reads each slot's `(type, size, data_offset)` triple and LZS-decodes
-//! the payload.
+//! Locates the `scene_asset_table` by scanning 0x800-aligned offsets for
+//! `[u32 count = 7]` with `descriptor[0].data_offset == 0x40`, then reads
+//! each slot's `(type, size, data_offset)` triple and LZS-decodes the
+//! payload. In the corrected entry space the table is always at **offset 0**
+//! of its own entry; the scan is kept because it is cheap and because it
+//! makes the decoder tolerant of being handed a whole CDNAME block.
+//!
+//! ## Which entry is the bundle
+//!
+//! [`BUNDLE_ENTRIES`] - PROT `0086` / `0245` / `0392`, not `0085` / `0244` /
+//! `0391`. Each world-map block has the same positional layout every field
+//! block has:
+//!
+//! ```text
+//! [.MAP 36 sectors] [v12 header 1] [prescript 1..3] [bundle N] ...
+//!   map01:   83          84            85 (3)         86 (129)
+//!   map02:  242         243           244 (1)        245 (106)
+//!   map03:  389         390           391 (3)        392 (156)
+//! ```
+//!
+//! The bundle used to be attributed to the *prescript* entry because the
+//! pre-correction entry size (`toc[p+5] - toc[p+3] + 4`) gave entry 85 a
+//! 134-sector window, and scanning that window found the 7-asset table at
+//! `0x1800` - which is entry 86's offset 0, three sectors along. The
+//! "prescript-prefixed `scene_scripted_asset_table` variant" was that same
+//! artifact; see `docs/formats/prot.md`.
 //!
 //! ## Per-slot semantics (per the asset-type table)
 //!
@@ -29,6 +50,26 @@
 //! format and `world_map_overlay::parse` for the parser.
 
 use legaia_lzs as lzs;
+
+/// PROT entry of each kingdom's 7-asset bundle, in kingdom order: Drake
+/// (`map01`), Sebucus (`map02`), Karisto (`map03`). See the module docs for
+/// why these are the bundle entries and `0085`/`0244`/`0391` are not.
+pub const BUNDLE_ENTRIES: [u32; 3] = [86, 245, 392];
+
+/// The `.MAP` / v12-header / prescript entry each kingdom block opens with -
+/// the index the bundle used to be attributed to. Kept so a caller holding
+/// one of the historical `0085`/`0244`/`0391` numbers can map it forward.
+pub const PRESCRIPT_ENTRIES: [u32; 3] = [85, 244, 391];
+
+/// Map a historical kingdom "base" index (`85` / `244` / `391`) to the entry
+/// that actually carries the bundle. Any other index passes through unchanged,
+/// so a caller that already holds a bundle entry stays correct.
+pub fn bundle_entry_for(index: u32) -> u32 {
+    match PRESCRIPT_ENTRIES.iter().position(|&p| p == index) {
+        Some(k) => BUNDLE_ENTRIES[k],
+        None => index,
+    }
+}
 
 /// One slot's `(type, size, data_offset)` descriptor plus its
 /// LZS-decoded payload.
@@ -59,10 +100,9 @@ pub struct KingdomBundle {
 /// Locate the 7-asset table inside a kingdom PROT entry buffer.
 ///
 /// Scans 0x800-aligned offsets for `u32_le[0] == 7` and
-/// `descriptor[0].data_offset == 0x40`. Catches both the bare
-/// `scene_asset_table` and the prescript-prefixed
-/// `scene_scripted_asset_table` variants without needing a separate
-/// detector.
+/// `descriptor[0].data_offset == 0x40`. Handed one of
+/// [`BUNDLE_ENTRIES`] this returns `0`; the scan only earns its keep when
+/// the caller passes a wider buffer than one entry.
 pub fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
     let mut off = 0usize;
     while off + 64 <= buf.len() {

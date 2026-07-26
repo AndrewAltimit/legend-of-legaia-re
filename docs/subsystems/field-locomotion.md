@@ -49,10 +49,19 @@ World coordinates are plain `s16` in 1-unit resolution; one collision tile is `0
 
 The player actor's spawn position is set by the per-scene initializer `FUN_801D6704` (MAIN_INIT), not by the locomotion controller. There are two cases, selected by the field-entry mode global `_DAT_8007b8b8`:
 
-- **Cold entry (`_DAT_8007b8b8 == 0`).** The player actor is created at actor coords **`(0xA40, 0, 0xA40)`** - the centre of the camera's `0x20`-tile view window - via `func_0x80024c88(&local_68=…)`, which writes `actor+0x14 = sVar13 + 0xA40`, `actor+0x16 = 0`, `actor+0x18 = sVar14 + 0xA40`. On a cold entry the sub-tile terms `sVar13`/`sVar14` are zero, so the spawn is the fixed window centre. The camera itself is seeded onto the MAN anchor (`local_60`/`local_5e`, filled by `FUN_8003AEB0`), then the follow camera tracks the player. **Cold entry only ever happens for the New Game opening scene (`town01`, Rim Elm)** - every other scene change is a warp - so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn. Byte-checked walkable against town01's base collision grid.
-- **Warp entry (`_DAT_8007b8b8 == 2`).** `sVar13`/`sVar14` carry the sub-tile offset of the saved transition coords `_DAT_80084568`/`_DAT_8008456C` (`saved & 0x7F` minus `0x40`), so the player lands at the destination door rather than the window centre.
+- **Cold entry (`_DAT_8007b8b8 == 0`).** An actor is created at coords **`(0xA40, 0, 0xA40)`** - the centre of the camera view window - via `func_0x80024c88` from template `0x801F271C`, which writes `actor+0x14`/`+0x16`/`+0x18` from the arg vec. The player actor itself is *allocated* on this arm (`FUN_80020DE0` from the resident template, stored at the scene control block's `+0x1C`). **Cold entry only ever happens for the New Game opening scene (`town01`, Rim Elm)** - every other scene change is a warp - so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn. Byte-checked walkable against town01's base collision grid.
+- **Warp entry (`_DAT_8007b8b8 == 2`).** No actor is spawned. Instead the seven per-list actor sweeps run (`FUN_801D7518` once per list head), the existing player actor is reused, and the saved transition coords `_DAT_80084568`/`_DAT_8008456C` overwrite the MAN camera anchor that `FUN_8003AEB0` left on the stack. The landing position then comes from the window branch below.
 
-Provenance: `ghidra/scripts/funcs/overlay_0897_801d6704.txt` (the `func_0x80024c88` call + the `_DAT_8007b8b8 == 2` sub-tile block), `ghidra/scripts/funcs/80024c88.txt` (sets `actor+0x14/16/18` from the arg vec). Engine mirror: `legaia_engine_core::world::FIELD_COLD_SPAWN_XZ`, applied in `SceneHost::enter_field_scene`.
+**The sub-tile remainders are dead code.** An earlier reading had the warp landing built from the sub-tile offsets of the saved coords (`saved % 0x80 - 0x40` per axis) added into the spawn vector. Those remainders *are* computed - at `0x801d6e1c..0x801d6e78` - but that block is gated on `_DAT_8007b8b8 == 2`, and the only place the registers holding them are read is the `func_0x80024c88` vector at `0x801d6fc8`/`0x801d6fd0`, which is gated on `_DAT_8007b8b8 == 0`. The two gates are mutually exclusive, so the remainders never reach an actor write: the cold spawn is exactly `(0xA40, 0, 0xA40)`, and a warp's position comes from the branch below.
+
+Whichever arm ran, the initializer then installs the camera view window and writes the player actor's position, choosing between two forms on the one-shot request flag `_DAT_8007bacc` (which it clears afterwards):
+
+- `_DAT_8007bacc == 0`: the window is installed on the anchor's own tile (`FUN_80017DD4(anchor >> 7, …, 0x0E, 0x10)` - the window is `0x0E` by `0x10` tiles, from the scratchpad pair `0x1F8003F8`/`0x1F8003FA`) and the player keeps the anchor's exact world coords.
+- `_DAT_8007bacc != 0`: the window is re-centred on the map origin (`_DAT_8007b76c + 0x0E/2 - 1`, `_DAT_8007b770 + 0x10/2`) and the player is seated at that tile's centre, `tile * 0x80 + 0x40`.
+
+Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x801C0000` live-RAM capture; 901 instructions, epilogue at `0x801d7510`) and `ghidra/scripts/funcs/80024c88.txt` (sets `actor+0x14/16/18` from the arg vec). Engine port: `legaia_engine_core::mode_entry_init::field_spawn`, whose `FIELD_COLD_SPAWN` agrees with `legaia_engine_core::world::FIELD_COLD_SPAWN_XZ`; applied in `SceneHost::enter_field_scene`.
+
+**Do not cite `overlay_0897_801d6704.txt` for this function.** That dump is base-correct (the static-overlay map puts `FUN_801D6704` at `0x801CE818 + 0x7EEC`) but **incomplete**: its instruction stream jumps `0x801d71b4 -> 0x801d72d4`, dropping the two-part-BGM arm entirely, and it carries no `jr ra`. The live-RAM captures agree with each other across all 901 instructions. See [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
 ## Per-frame flow
 
@@ -563,6 +572,24 @@ the `0x400` footprint bit on the anchor tile (`801d7ccc: andi v0,v0,0x400` ->
 from the gate-0 bind triggers. So it creates exactly the records the init sweep
 did *not*.
 
+Four more things distinguish it from the init sweep, all of them in the bytes and
+all mirrored by the port `legaia_engine_core::field_regions::window_rebuild_spawns`:
+
+- **It is bounded.** Both loops run over the scratchpad region box
+  `0x1F800384..0x1F800387` (`[x0, z0, x1, z1]`, the box
+  `FUN_800180EC` latches - see [region attributes](#where-the-collision-grid-comes-from)),
+  not the full `0x80 x 0x80` grid, and both bounds are half-open (`while t < limit`),
+  so an empty or inverted box spawns nothing.
+- **It frees first.** Before spawning anything it walks the whole actor list head
+  at the scene control block's `+0x24` and releases each entry, including the
+  mesh buffer of any actor whose `+0x10` carries bit `0x800`.
+- **Y comes from the walk grid, not the descriptor.** It reads the walkability
+  byte at `.MAP +0x4000 + tile_x + tile_z * 0x80`, takes its low nibble, and
+  indexes the scene's 16-entry elevation LUT at `0x1F80035C` before adding the
+  descriptor's `+0x2`.
+- **Two enable gates.** `_DAT_8007b868 & 2` and `_DAT_8007b8b8 != 0` each skip the
+  whole sweep, and it resets the spawn counter `_DAT_8007b924` on entry either way.
+
 The two sets are complementary on the disc: across `town01` / `town0c` / `koin3` /
 `map01`, every placement whose anchor tile carries a bind trigger also carries
 `0x400` (37 / 58 / 6 of them), and every placement without one has the bit clear
@@ -1050,9 +1077,73 @@ The field offsets they touch are the same ones tabulated in [Player actor fields
 | `FUN_801d701c` | Spawn a positioned sub-actor (template `0x801f2978`): inits `+0x54 = 0`, `+0x50`, `+0x14`, `+0x16`, `+0x9c` from operands. |
 | `FUN_801cff3c` | Spawn a sub-actor (template `0x801f2858`): inits `+0x54`/`+0x9e = 0` and writes operands into `+0xb8`/`+0xba`/`+0xbc`. |
 
-`FUN_801d4a60` is the largest of the group: a scripted actor-approach state machine keyed on the actor's `+0x54` state byte. It snapshots the player transform (`_DAT_8007c364 + 0x14/0x18/0x24/0x28`), then in its running state steps toward the target vector `DAT_801f2658` once per frame scaled by the per-frame delta `DAT_1f800393`, accumulating progress in `+0x9e` until it reaches its arrival threshold - a camera-relative "walk the actor to a scripted spot" controller.
+`FUN_801d4a60` is the largest of the group, and it is not a locomotion handler at all - it is the **scripted-scene actor**, four voice-over cutscene programs sharing one 38-state jump table. It has [its own section below](#the-scripted-scene-actor---fun_801d4a60).
 
-`FUN_801dfb10` is a scripted player-turn cutscene state machine (also keyed on `+0x54`): its active state locks player input (`_DAT_8007c364 + 0x10 |= 1`, system word `_DAT_1f800394 |= 0x1000000`) and rotates the player's `+0x16` angle by `DAT_1f800393` per frame until it crosses a fixed threshold, then triggers a fade. It gates its entry/exit on the story flags `0xb` (`func_0x8003ce08` set / `func_0x8003ce64` test).
+The rise-up actor that locks player input and scrolls the player's `+0x16` is **`FUN_801EE328`**, and it is not a locomotion handler at all - it is the dev-menu **"ON RULA," MAP CHANGE warp applier** already documented in [`world-map.md`](world-map.md#field-overlay-actor-state-machines-sparkle--travel-magic--dev) and [`functions/world-map.md`](../reference/functions/world-map.md). A 5-state actor SM on `+0x54`:
+
+| `+0x54` | What it does |
+|---|---|
+| `0` | Sets story flag `0xB` (`func_0x8003ce08`), calls `FUN_801d5a24(0)`, clears `+0x9E`. |
+| `1` | Waits while flag `0xB` still tests set; otherwise accumulates `+0x9E += *(u8*)0x1F800393` per frame until `(i16)+0x9E >= 0x28`, then clears `+0x9E`. |
+| `2` | Locks the player (`player[+0x10] \|= 1`, `*(0x1F800394) \|= 0x1000000`), accumulates `+0x9E` the same way and **subtracts** it from `player[+0x16]` each frame; once `(i16)player[+0x16] < -0x618` it spawns a full-white flash quad (`FUN_80024E80`) and clears `_DAT_8007B6B4`. |
+| `3` | Walks the map table from `func_0x80019788()` (stride `0x10`) for map number `_DAT_80084628`; on a hit loads it via `func_0x8001fd44` and teleports the player (`_DAT_80073EF4`/`EF8` = `_DAT_80084624`/`_DAT_8008462C * 0x80 + 0x40`), on a miss jumps to state `0x63`. |
+| `4` / `0x63` | Done / print the `"UNFIND MAP NUMBER %d"` report. |
+
+So the input lock and the `+0x16` scroll are the *rise-up animation of a debug warp*, not a scripted player-turn cutscene, and the threshold crossing spawns a flash quad rather than starting a fade.
+
+**`FUN_801dfb10` is a phantom print, not an entry point.** No extracted overlay image has a function boundary there. The bytes printed at `0x801dfb10` are field (0897) at `0x801EE328` - the `+0xE818` re-key, which is also exactly the `+0x1FB10` file offset [`functions/world-map.md`](../reference/functions/world-map.md) already records for `FUN_801EE328`. Byte-checked: the two dumps' prologues (`addiu sp,sp,-0x50` / `sw s3,0x3c(sp)` / `move s3,a0` / … / `lh a2,0x54(s3)`) are identical instruction for instruction under the shift, and the mis-based slice stops at 133 instructions where the based dump runs 171 to its `jr ra`. `0x801E8B10` is a second independent phantom landing on the same routine. See [`phantom-print-index.md`](../tooling/phantom-print-index.md).
+
+## The scripted-scene actor - `FUN_801d4a60`
+
+A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-core/src/field_actor_program.rs).
+
+### `+0x50` is a program selector, and that is what makes the table readable
+
+The entry state computes its own successor:
+
+```text
+actor[+0x54] = (actor[+0x54] + 1) + actor[+0x50] * 10
+```
+
+(`sll v1,a0,2; addu v1,v1,a0; sll v1,v1,1`). So the state space is **four programs on a stride of ten**, entered at `1` / `11` / `21` / `31` - exactly where the table's live entries sit. The fifteen slots that point at the epilogue (`6..=10`, `16..=20`, `27..=30`) are the unused tails of each ten-wide block, not fifteen independent dead states. Read without the `×10` the table looks like a sparse mess; with it, it is four short programs of 5, 5, 6 and 7 states.
+
+The spawner is **`FUN_801D5A24(program)`** (17 instructions): allocate from spawn descriptor `0x801F26D8` - whose `+8` handler word is `FUN_801D4A60` itself - then `+0x54 = 0`, `+0x50 = program`.
+
+### Openers and closers
+
+The scene MAN loader `FUN_8003AEB0` spawns two of the programs, each gated on a bit of the shared flag bank `DAT_80085758` (MSB-first, so `0x8008575A & 0x01` is flag `0x17` and `0x80085759 & 0x08` is flag `0x0C`):
+
+| loader site | gate | spawns |
+|---|---|---|
+| `0x8003BB10` | flag `0x17` set | program `2` |
+| `0x8003BB38` | flag `0x0C` set | program `3` |
+
+Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So the loader is not starting cutscenes - it is finishing ones a scene change interrupted. Programs 0 and 1 are openers, 2 and 3 their closers, and the flag is the handshake that survives the scene boundary.
+
+| program | states | what it does |
+|---|---|---|
+| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request BGM `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
+| 1 | `11..=15` | Set flag `0x0C`, clear `0x18`, SFX `0x1B`; two staged part-pair beats at `0x14` and `0x32`; a third at `0x14` that clears flag `0x0B`, zeroes the player's `+0x72` and raises `player[+0x10] \|= 0x200000`; retire at `0x64`. |
+| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the BGM acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
+| 3 | `31..=37` | Engage as program 2 does; SFX `0x1B` at `0x28`; the same two part-pair beats as program 1; restore the parked speed and drop `0x200000`; a `0x40` beat; clear flag `0x0C`, release, retire. |
+
+### Three shapes that make the 23 live arms short
+
+- **snapshot** (prologue, and again inside state `0x18`): copy the player's `+0x14..+0x1B` and `+0x24..+0x2B` into two stack vectors through unaligned `lwl`/`lwr` pairs, then bias the position's Y by `-0x40`. Those two vectors are the `(pos, rot)` arguments of every `FUN_80021B04(pos, rot, record, 0x1000)` part stage.
+- **stage-per-vsync**: `for _ in 0..DAT_1F800393 { stage }` - one stage per vsync the game tick spans, so the emission rate is cadence-invariant.
+- **accumulate**: `+0x9E += DAT_1F800393`, compare `(i16)+0x9E` against a per-state threshold; below it the arm returns, at or above it it does its one-shot work and advances through the shared tail `0x801D5594` (`+0x9E = 0`, `+0x54 += 1`).
+
+Several arms **fall through** into the next state inside the same call - `1→2→3→4`, `11→12`, `21→22`, `23→24`, `31→32→33` - because they bump `+0x54` without a jump and the arms are laid out in state order. A one-arm-per-frame reading delays each program's first part stage by three frames and its voice cue by two.
+
+The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that angle returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
+
+Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `player[+0x10] & 0x80000` only if it is **clear**, then set the actor's own retire bit `+0x10 |= 8`. The guard gates the release, not the retire - a close-out under a set guard still removes the actor while leaving the player engaged.
+
+### Provenance, and why the old reading was wrong
+
+The static `overlay_0897_801d4a60.txt` dump stops at **690** instructions. Five independent live-RAM field captures agree on **756**, and so does capstone over `extracted/overlays/overlay_field_0897.bin` at the committed base `0x801CE818` (file `0x006248`), which decodes 756 instructions ending on the `jr ra` epilogue at `0x801D5628`. The 66 dropped instructions are states `0x22`..`0x25` and the shared tail - most of program 3 - which is how a four-program state machine came to be documented as a single "scripted actor-approach controller".
+
+The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
 
 `FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
 

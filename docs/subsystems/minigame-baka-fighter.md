@@ -105,6 +105,151 @@ There are 0x11 (17) table entries of 9 actions each in the dump loop.
 Confidence: **Confirmed** record-field usage; **Inferred** action-slot meanings
 (idle/attacks/etc.) from how the per-fighter controller indexes them.
 
+## Cabinet state machine (`FUN_801cf388`)
+
+Above the fight sits the **cabinet**, and it is one function:
+`overlay_baka_fighter_801cf388.txt`, 2973 instructions, switching on the single
+word `DAT_801DBF44`. That word has **37** branch targets, so it is the whole
+run - attract, player select, per-rung setup, the round bracket, the duel, the
+win / lose / all-clear sequences, the "NEXT GAME / PAY OUT" menu, the in-duel
+pause menu and the developer menu. Calling `DAT_801DBF44` "the match-active
+gate" is true only of the one value `100`; `FUN_801D4FC8`'s "editor band" gate
+(`DAT_801DBF44 - 400 < 100`) is the same word, and the band exists because
+states `0x190` / `0x191` are the keyframe editor.
+
+Every unlisted value falls through to the shared epilogue, which draws the
+arena, calls the HUD renderer for the in-duel states, and decays the screen
+shake. Read this from the **disassembly**: the dispatcher's decompiled C renders
+most of its exit paths as fake `FUN_801Dxxxx()` label-calls.
+
+| State | Role | Leaves on |
+|---|---|---|
+| `0x00` | cold entry: zero the counters, arm the attract BGM | immediately, to `0x01` |
+| `0x01` | attract / title card (`FUN_801D59D4` animates it) | pad edge `0x844` |
+| `0x02` | attract fade-out | `DAT_801DC128 >= 0x3D` |
+| `0x0A` | spawn the three party fighters, seed the RNG | immediately |
+| `0x0B` | **player select** - a horizontal 3-way cursor | confirm edge `0x44` |
+| `0x0C` / `0x0D` / `0x0E` | wipe start / hold (`0x1F`) / preview pose | timer, then immediately |
+| `0x1E` | **opponent install**: resolve the rung, load its mesh + roster record | immediately |
+| `0x32` | round setup: seat both fighters, HP to `0xC80` | immediately |
+| `0x33`..`0x36` | round-banner beats (`FUN_801D5C7C`); the last holds `0x79` | timers |
+| `0x37` / `0x38` | scene-ready wait / "FIGHT!" flash | flag, then `0x31` |
+| `0x64` | **the duel** - the round bracket + the pause-menu edge | round timer `0xB5` |
+| `0x65` / `0x66` / `0x67` | perfect flourish / score tally / wind-down | timers |
+| `0x68` | **"NEXT GAME / PAY OUT"** - a horizontal 2-way cursor | confirm edge |
+| `0x6D` | the secret opponent's own tally variant | timer `0xB5` |
+| `0x6E` | teardown + reload for the next rung | immediately |
+| `0x96` / `0x97` | match lost / **"GAME OVER"** | timers |
+| `0xBE` / `0xBF` | in-duel pause menu, 2 / 3 options (vertical cursor) | confirm or cancel |
+| `0xC0` | "How to Play" screen (`FUN_801D6CBC`) | any face button `0xF0` |
+| `0xC8` | **developer menu**, 5 rows | confirm edge |
+| `0xFA`..`0xFE` | the all-stage-clear sequence, five beats | timers |
+| `0x190` / `0x191` | developer keyframe editor entry / run | Select edge `0x100` |
+| `0x1F4` | exit: pay the pot into the coin bank, fade out | never (mode leaves) |
+
+Confidence: **Confirmed** - the branch targets, the thresholds and the
+transitions are read straight off the dispatcher's disassembly.
+
+### The epilogue's two draw gates
+
+The dispatcher carries two draw flags in registers, both entering at `0`, and
+which states raise them is narrower than the state list. `s4` gates the **arena
+pass** (four walls through `FUN_801D6BB8` / `FUN_801D6D60`): the attract pair
+(`0x00`..`0x02`), the score tally (`0x66`), three of the five all-clear beats
+(`0xFB` / `0xFD` / `0xFE` - the last two `clear s4` explicitly) and the exit
+state all leave it clear. `s7` gates the **HUD pass** (`FUN_801D2AFC`) and only
+eight states raise it: `0x36`, `0x37`, `0x38`, `0x64`, `0x65`, `0x6E`, `0x96`,
+`0x97` - the round-hold / duel / result band. The tally screen and the
+"NEXT GAME / PAY OUT" menu are their own presentation and draw no duel HUD.
+Both passes are additionally suppressed whole by `DAT_801DBED4`. Port:
+`engine-core::baka_cabinet::{draws_arena, draws_hud}`. **Confirmed.**
+
+### The cabinet's pad masks
+
+The cabinet reads the **packed** Legaia pad word, not the raw PSX layout (see
+the `PACK_*` bits in `engine-core::dev_menu` and the pump in
+`engine-core::retail_pad`). That is what makes the same numbers mean different
+things on the two screen orientations, and it is the anchor for reading every
+other mask in this overlay:
+
+| Mask | Meaning |
+|---|---|
+| `0x44` | confirm (Cross plus L1) |
+| `0x21` | cancel (Circle plus L2) |
+| `0x844` | attract "press to start" (Start, Cross or L1) |
+| `0xF0` | any of the four face buttons |
+| `0x110` | in-duel menu (Select or Triangle - the HUD's "PRESS SELECT TO MENU") |
+| `0x8000` / `0x2000` | cursor **left** / **right** (player select, tally menu) |
+| `0x1000` / `0x4000` | cursor **up** / **down** (the pause + developer menus) |
+| `0x4` / `0x100` | developer editor: dump the action table (L1) / leave (Select) |
+
+### Three cursor folds, and one of them is sticky
+
+The cabinet's menus do not all wrap the same way, which is easy to miss because
+they all *look* like a cursor over `n` rows:
+
+| Screen | Fold | Behaviour |
+|---|---|---|
+| player select `0x0B` | two clamps: `>= 3` -> `0`, then `< 0` -> `2` | wraps both ways |
+| tally choice `0x68`, pause `0xBE` | `& 1` | wraps both ways (same thing for a span of 2) |
+| pause `0xBF`, developer menu `0xC8` | unsigned `% 3` / `% 5` | wraps at the bottom, **sticks** at the top |
+
+The third row is the interesting one. `-1` as a `u32` is `0xFFFFFFFF`, and both
+`3` and `5` divide it exactly, so stepping *up* off row `0` folds back to row `0`
+rather than to the bottom row. Ports:
+`engine-core::baka_cabinet::{cursor_step, cursor_step_mod}`. **Confirmed** (the
+`0xAAAAAAAB` / `0xCCCCCCCD` reciprocal multiplies are in the disassembly).
+
+### The secret opponents are score-gated, not lap-gated
+
+Between the match-won test and the stage advance, the cabinet tests the rung it
+just cleared against the **running high score** `DAT_801DBEE4` and may arm the
+override `DAT_801DBF06`:
+
+```text
+stage == 5    && high_score > 0x3D090 (250,000)  ->  override = 1
+stage == 0xD  && high_score > 0xAAE60 (700,000)  ->  override = 2
+```
+
+Both comparisons are `slt`, so a score exactly on the threshold does not
+qualify. An armed override **suppresses the stage advance** and replaces the
+rung fold: instead of `roster = stage + 3` / `mesh = stage + 5` the
+opponent-install state loads `roster = override + 2` / `mesh = override + 4`.
+So the two secret rungs are roster ids `3` and `4`, inserted into the ladder at
+stages 5 and 13 rather than replacing a rung - which is a second, earlier route
+to those ids than the counter wrap described in
+[The ladder](#the-ladder---which-roster-id-each-round-serves). The override is
+consumed on use (the install state clears it, and `override == 2` additionally
+latches `DAT_801DBEB8 = 2`), so each bonus rung is served once per arming. A
+dev build can force either one through the held pad (`_DAT_8007B9B0` gate,
+`_DAT_8007B850 & 0x8` / `& 0xA`).
+
+Port: `engine-core::baka_cabinet::{secret_opponent_gate, rung_fold,
+advance_stage}`. **Confirmed.**
+
+### A mid-run defeat really does forfeit the pot
+
+The "GAME OVER" state `0x97` zeroes `_DAT_80084440` - the casino prize
+accumulator every won rung's gold was added into - on its first frame, before
+the banner even spawns. So losing mid-run costs the whole accumulated pot, and
+paying out (state `0x68` cursor row 1, or the all-clear chain reaching `0x1F4`)
+is the only way any of it reaches the coin bank. This was previously recorded on
+this page as a *stated* reading of the risk; it is now pinned to the
+disassembly. The same state also fires the game-over voice line
+(`FUN_8003D53C(0x20, 8, 0x4A)`) and spawns banner widget `0xB`.
+
+The tally's first score row is seeded by the same arm: `0x7530` (30,000) when
+the opponent won **no** round at all, else `0x4E20` (20,000) - a shutout bonus.
+Port: `engine-core::baka_cabinet::match_bonus`. **Confirmed.**
+
+One delay slot in that arm is worth reading carefully. The store that sets the
+next state to the victory flourish (`0x65`) sits in the **delay slot** of the
+"did the opponent take a round" branch, so it runs whichever way the branch
+goes: *any* match win reaches the flourish, and the branch only skips the
+dropped-round tally `DAT_801DBF28`. Reading the branch as gating the state -
+which the decompiled C invites - would make a 2-1 win fall through to the round
+setup instead.
+
 ## Round / match state machine
 
 The match driver is `overlay_baka_fighter_801d3468.txt`. It is gated by a phase
@@ -337,12 +482,19 @@ mesh_name_idx = stage + 5
 
 So the twelve rungs the cabinet actually serves first are roster ids **5..=16** -
 and across exactly those the prize gold is **strictly monotonic**. Roster ids `3`
-and `4` are reachable only on the **second lap**, after the all-clear wraps the
-counter; they are the post-clear opponents the victory art promises ("ALL STAGE
+and `4` are the post-clear opponents the victory art promises ("ALL STAGE
 CLEAR! ... IT'S NOT OVER YET"). This is the whole explanation for the roster's
 gold column looking out of order when read straight down: it is not sorted by
-prize, it is sorted so that the two secret opponents sit in the wrap-around slots.
-Stages `5` and `0xD` (the last rung) are special-cased in the SM. **Confirmed.**
+prize, it is sorted so that the two secret opponents sit outside the first lap's
+range.
+
+They are reachable **two** ways, and the second is the interesting one. The
+counter wrap serves them on a second lap (stage `0` / `1` fold to roster `3` /
+`4`), and the special-casing of stages `5` and `0xD` in the SM is a
+**high-score gate** that inserts them mid-run - see
+[The secret opponents are score-gated](#the-secret-opponents-are-score-gated-not-lap-gated)
+for the thresholds and the `DAT_801DBF06` override that carries them.
+**Confirmed.**
 
 Helper [`legaia_asset::minigame_art::baka_ladder`].
 
@@ -588,9 +740,10 @@ action-id fold reading), the loser holds its knockdown frame, and the retail
 "GET COIN" (widget 46) and its coin-digit strip (widget 47's cell row,
 `u = 88 + digit*16` - inferred from the sheet layout the way the traced digit
 widgets step). Fighting on risks the accumulated prize pot on the next rung;
-paying out banks it; the page treats a mid-run loss as forfeiting the whole
-pot and the final rung as an automatic payout (stated readings - the menu
-cells are the cabinet's, the forfeit grain is not overlay-pinned). The
+paying out banks it; a mid-run loss forfeits the whole pot, which the
+["GAME OVER" state](#a-mid-run-defeat-really-does-forfeit-the-pot) zeroes
+`_DAT_80084440` to do, and the final rung pays out automatically through the
+all-clear chain. The
 pot/choice bookkeeping is `engine-core::baka_fighter::LadderRun`, reached
 through the `baka_run_*` WASM surface; the per-rung prizes are the roster
 records' gold column, so a full 14-rung clear pays the 460-coin total
@@ -677,7 +830,11 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | Global | Role |
 |---|---|
 | `DAT_801dbf78` | match phase (0 teardown / 1 paused / 2 active) |
-| `DAT_801dbf44` | match-active gate (`== 100` while a round runs) |
+| `DAT_801dbf44` | **cabinet state** - the 37-way `FUN_801cf388` switch; `== 100` is the one value a live round runs in (see [Cabinet state machine](#cabinet-state-machine-fun_801cf388)) |
+| `DAT_801dbf06` | secret-opponent override (`0` none / `1` / `2`), armed by the high-score gate |
+| `DAT_801dbf58` | second running-max latch, fed from `DAT_801dc094` alongside `DAT_801dbec8` |
+| `DAT_801dbec0` | screen-shake amplitude the epilogue decays toward zero |
+| `_DAT_8007b868` | non-zero routes the in-duel menu to the developer menu (state `0xC8`) |
 | `DAT_801dbf94` | difficulty / debug-verbosity mode (enables `func_0x8001a068` traces; `== 2` = mirror input mode) |
 | `DAT_801dbf50` | special-attack-in-progress latch |
 | `DAT_801dbf54` | per-exchange settle timer (guards `FUN_801d3a14`); **vestigial** - only ever decremented / zeroed in `FUN_801d3a14`, never positively stored anywhere in the overlay, so it stays `0` and the guard is a no-op. Exchange pacing comes from the cooldown timers `DAT_801dbea0` / `DAT_801dbea4` instead. |
@@ -717,6 +874,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | Address | Role |
 |---|---|
 | `FUN_801cf00c` | overlay init: loads `other5`/PROT 1204 battle pack + BGM, installs both fighter meshes (`overlay_baka_fighter_801cf00c.txt`) |
+| `FUN_801cf388` | **cabinet state machine** - the 37-state top-level driver (port `engine-core::baka_cabinet::BakaCabinet`) |
 | `FUN_801d4c50` | per-fighter mesh installer (data_field or PROT `idx+0x4b6`, walks the pack, registers TMDs) |
 | `FUN_801d3468` | round / match resolution state machine |
 | `FUN_801d3a14` | exchange win-condition (rock-paper-scissors + special) |
@@ -724,7 +882,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d6660` | critical / lucky-hit roll |
 | `FUN_801d3f44` | per-fighter combat tick (input/AI → attack type, action sequencing) |
 | `FUN_801d487c` | opponent AI move picker (random + scripted pattern table) |
-| `FUN_801d2afc` | HUD renderer (HP bars, combo, round pips, timer, high score) |
+| `FUN_801d2afc` | HUD renderer (HP bars, combo, round pips, timer, high score), called from the cabinet SM's epilogue (port `engine-core::baka_cabinet::hud_frame`) |
 | `FUN_801d239c` | end-of-match score tally → gold payout |
 | `FUN_801d21fc` | round-start READY/FIGHT banner + countdown |
 | `FUN_801d4df8` | per-slot **impact effect pair** spawn at the current action keyframe's TRS offset (see [Impact, cue and mirror](#impact-cue-and-mirror)) |
@@ -735,7 +893,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d69e4` / `FUN_801d6a18` | 8px single-digit draw (widget `0x13`, `u = digit * 8`, port `single_digit_cell`) / right-aligned decimal number drawer (port `right_aligned_number_cells`) |
 | `FUN_801d6f44` | "GET COIN" coin-count digit-strip drawer (widget `0x2f`, `u = 0x58 + digit * 0x10`, `0x10`-px stride; port `engine-core::baka_fighter::coin_digit_cells`) |
 | `FUN_801d6710` | end-of-match tally drain step (not a drawer - see above) |
-| `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
+| `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`), reached from cabinet state `0x191` on the L1 edge (port `engine-core::baka_cabinet::action_table_dump`) |
 | `FUN_801d4fc8` | the **developer action-table keyframe editor** tick (see [The developer keyframe editor](#the-developer-keyframe-editor)) |
 | `FUN_801d5c7c` | round-result banner fly-in / hold / fly-out animator (horizontal slide offset + brightness ramp, draws widget 3 through `FUN_801d5ed0` / `FUN_801d69a8`) |
 | `FUN_801d59d4` | title / logo flash animator (widget `0x28`, brightness `iVar << 3` ramp + the two XA stings) |
@@ -893,6 +1051,25 @@ tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate
 (cooldowns pace re-entry) and the special's final-keyframe gate is modelled
 as a held charge.
+
+One host departure is worth naming: retail's duel state only *reads* the round
+timer `DAT_801DBF88` against `0xB5` - the fight resolution SM and the actor tick
+are what advance it - while the port's cabinet has no sibling driving it and so
+advances it itself. The threshold and everything it gates are retail's.
+
+The **cabinet shell** (`FUN_801cf388`) runs clean-room as
+`engine-core::baka_cabinet::BakaCabinet`, and `BakaFight` owns one, stepping it
+once per tick alongside the chrome. Retail has the nesting the other way up -
+the cabinet SM owns the frame and the fight resolution runs under it - but the
+port's host enters through the duel, so the duel owns the frame and the cabinet
+runs as its shell. The state the cabinet occupies while a duel is live is the
+same one retail uses (`0x64`), so the bracket it drives is retail's: the round
+count, the win / lose exits, the score-gated secret rung, the stage advance and
+wrap, the shutout bonus and the pot. Its epilogue calls the HUD renderer
+(`hud_frame`, the `FUN_801d2afc` port) for the in-duel states exactly as retail
+does, and its developer editor state reaches the action-table dump
+(`action_table_dump`, `FUN_801d553c`) when a host has installed the parsed
+tables.
 
 The **round chrome** runs off the same clock. `BakaFight` owns a
 `baka_fighter_chrome::BakaChrome`, steps it once per tick, and starts the

@@ -18,6 +18,15 @@ The failure this catches: an engine wave adds a screen to engine-ui, wires it
 into the native window, and the browser play page silently drifts a release
 behind. Nothing about that is visible in a diff. Here it is a red CI run.
 
+A host reaches a screen transitively too. Builders compose - the party info
+panel folds in the AP gauge, the pen-only tab alias delegates to the tab
+painter - so "is this screen on screen" is a question about the call graph, not
+about which name the host happens to type. Host references seed the used-set and
+then propagate along engine-ui's own builder-to-builder edges. Counting only the
+shallowest wrapper made every composed widget read as unused, which is a defect
+of the instrument rather than a gap in the port, and it rewarded a host for
+naming a wrapper over calling the thing that draws.
+
 Classification per builder:
 
 * used by both hosts              -> ok
@@ -143,6 +152,99 @@ def collect_builders() -> dict[str, str]:
     return out
 
 
+def fn_body(text: str, brace: int) -> str:
+    """The source between `text[brace]` and its matching close brace.
+
+    Rust-aware enough to brace-match: comments, string / raw-string / char
+    literals are skipped so a `format!("{}", ..)` or a lone brace in a string
+    cannot unbalance the scan. Everything else is counted, which is all the
+    caller needs - it only greps the result for identifiers.
+    """
+    n = len(text)
+    i, depth = brace, 0
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            nl = text.find("\n", i)
+            i = n if nl < 0 else nl
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if c == "r" and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            j = i + 1
+            while j < n and text[j] == "#":
+                j += 1
+            if j < n and text[j] == '"':
+                term = '"' + "#" * (j - i - 1)
+                end = text.find(term, j + 1)
+                i = n if end < 0 else end + len(term)
+                continue
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+            continue
+        if c == "'":
+            m = re.match(r"'(?:\\.|[^\\'])'", text[i:])
+            if m:
+                i += m.end()
+                continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace + 1 : i]
+        i += 1
+    return text[brace + 1 :]
+
+
+def collect_builder_refs(names: set[str]) -> dict[str, set[str]]:
+    """Map builder name -> the builders its own body references.
+
+    This is the engine-ui-internal half of the call graph. It is deliberately
+    limited to builder-to-builder edges: a host that draws one screen draws
+    whatever that screen composes, and nothing further is claimed.
+    """
+    refs: dict[str, set[str]] = {n: set() for n in names}
+    for path in sorted(UI_SRC.rglob("*.rs")):
+        text = path.read_text(encoding="utf-8")
+        for m in BUILDER_RE.finditer(text):
+            name = m.group("name")
+            if name not in names:
+                continue
+            brace = text.find("{", m.start())
+            if brace < 0:
+                continue
+            body = strip_comments(fn_body(text, brace))
+            for other in names:
+                if other != name and re.search(rf"\b{re.escape(other)}\b", body):
+                    refs[name].add(other)
+    return refs
+
+
+def seed_transitively(uses: dict[str, set[str]], refs: dict[str, set[str]]) -> None:
+    """Propagate each host label along the builder call graph, to a fixpoint.
+
+    If a host draws builder A and A composes builder B, the host draws B. Cycles
+    are harmless - the loop only ever adds labels, so it terminates.
+    """
+    changed = True
+    while changed:
+        changed = False
+        for name, callees in refs.items():
+            hosts = uses.get(name)
+            if not hosts:
+                continue
+            for callee in callees:
+                if not hosts <= uses[callee]:
+                    uses[callee] |= hosts
+                    changed = True
+
+
 def collect_uses(names: set[str]) -> dict[str, set[str]]:
     """Map builder name -> set of host labels that call it."""
     uses: dict[str, set[str]] = {n: set() for n in names}
@@ -183,6 +285,7 @@ def main() -> int:
         print("[ui-drift] no draw builders found - is crates/engine-ui/src present?", file=sys.stderr)
         return 1
     uses = collect_uses(set(builders))
+    seed_transitively(uses, collect_builder_refs(set(builders)))
     waivers = load_waivers()
 
     drift: list[str] = []

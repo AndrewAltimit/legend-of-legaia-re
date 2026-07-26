@@ -15,38 +15,64 @@ The detector tries offset 0x000 first, then 0x800, accepting whichever yields pl
 
 ## TOC (immediately after header)
 
-The TOC is a flat array of `u32` words (`toc[]` below - word 0 is the first u32 after the 8-byte header). `p` is the 0-based **entry index** (the extraction index); each entry contributes one start-LBA word at `toc[p+2]`, so the formulas below reach into neighbouring entries' words (`toc[p+3]` is both entry `p`'s footprint end and entry `p+1`'s start). For entry index `p`:
+The TOC is a flat array of `u32` words (`toc[]` below - word 0 is the first u32 after the 8-byte header). `p` is the 0-based **entry index** (the extraction index). Each entry contributes exactly one word, its start LBA at `toc[p+2]`; an entry's size is the gap to the next one. For entry index `p`:
 
 ```
-start_lba             = toc[p + 2]                       // absolute LBA into PROT.DAT
-indexed_size_sectors  = toc[p + 5] - toc[p + 3] + 4      // TOC-declared payload size
-footprint_sectors     = toc[p + 3] - toc[p + 2]          // on-disc span to next entry
-size_sectors          = max(indexed_size_sectors, footprint_sectors)
-byte_offset           = start_lba * 0x800
-size_bytes            = size_sectors * 0x800
+start_lba    = toc[p + 2]                 // LBA relative to PROT.DAT
+size_sectors = toc[p + 3] - toc[p + 2]    // the gap to entry p+1
+byte_offset  = start_lba * 0x800
+size_bytes   = size_sectors * 0x800
 ```
 
-`toc[p+5]` is the absolute LBA of entry `p+3` (an end-marker that aliases the next-entry's start), so `toc[p+5] - toc[p+3] + 4` recovers the indexed size in sectors.
+That subtraction is retail's own routine, `FUN_8003E68C`, and the loader passes its result straight to the sector read. Implementation: [`legaia_prot::runtime_toc`](../../crates/prot/src/runtime_toc.rs), called once by [`Archive`](../../crates/prot/src/archive.rs) so the arithmetic exists in one place.
 
 **The TOC LBAs are `PROT.DAT`-relative, not absolute disc LBAs.** `byte_offset = start_lba * 0x800` is an offset *into* `PROT.DAT`, and the in-RAM TOC is raw `PROT.DAT` bytes, so the values are position-independent w.r.t. where `PROT.DAT` sits on the disc. Verified by diffing USA against the PAL discs: entry-0's TOC start LBA is identical on every disc despite `PROT.DAT` living at a different disc LBA per region. This is what makes a whole-sector entry-growth **relayout** tractable - growing an interior entry needs only an internal-TOC shift of the later entries' start-LBA words (at `PROT.DAT` byte `8 + (j+2)*4`), not a disc-wide cascade. See [disc.md § Full-ISO relayout](disc.md#full-iso-relayout).
 
-### Trailing-overlay sectors (`indexed_size` vs `size`)
+### The entries tile the archive
 
-For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).
+The sizes above partition `PROT.DAT`: start LBAs strictly ascending, every entry ending where the next begins, and the sizes summing to exactly the span from entry 0's start (LBA 121) to the archive's last sector (LBA 59206) - no gaps, no overlaps. The two words below entry 0, `toc[0]` and `toc[1]`, tile the rest: the boot-resident system-UI region runs from LBA 3, immediately after the 3-sector TOC.
 
-[`legaia_prot::archive::Archive`](../../crates/prot/src/archive.rs) exposes both views:
+A partition with that property *is* the entry layout, and it is what makes the reading self-defending rather than merely plausible. [`legaia_prot::tiling`](../../crates/prot/src/tiling.rs) states it as a checkable measurement; `crates/prot/tests/archive_tiling_real.rs` runs it against a real disc.
 
-- `Entry::size_sectors` / `size_bytes` - full on-disc footprint (default).
-- `Entry::indexed_size_sectors` / `indexed_size_bytes` - TOC-indexed payload only.
-- `Archive::read_entry` reads the footprint; `Archive::read_entry_indexed` reads only the indexed sub-region.
+### `toc[p+5] - toc[p+3] + 4` is not an entry's size
 
-Scene-side parsers were designed for the indexed view and use `read_entry_indexed` via [`ProtIndex::entry_bytes`](../../crates/engine-core/src/scene.rs). Asset-viewer / disc-browser consumers use the full footprint so trailing-overlay content is visible.
+That expression - which this project used as the entry size for a long time, taking `max()` of it and the real one - does not measure entry `p` at all. `toc[p+3]` is entry `p+1`'s start LBA and `toc[p+5]` is entry `p+3`'s, so it expands to `size(p+1) + size(p+2) + 4`: the two *following* entries. It exceeds the real size for 931 of the 1233 entries and falls short for the rest.
 
-> **Historical note.**
->
-> - An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes the SIZE in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges.
-> - Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
-> - The `size_sectors = max(indexed, footprint)` extension is a later correction (the indexed formula alone misses trailing-overlay sectors for entries like 899).
+`Entry::declared_span_sectors` keeps the value for diagnostics, and `prot-extract list` prints it in the `decl_span` column with an `OVR` flag where it overshoots. Nothing parses against it.
+
+Six independent lines of evidence, none of which relies on the definition of a footprint being "the gap to the next entry" (the "entry `p` ends where `p+1` starts" check is a tautology under that definition and is deliberately not cited):
+
+1. **The tiling above.** The declared spans instead total ~2.5x the archive. No partition of a file can exceed the file.
+2. **The runtime uses the gap.** `FUN_8003E8A8` returns `TABLE[idx+3] - TABLE[idx+2]`, and `byindex_sync_loader` (`FUN_8003EB98`) passes that straight to the sector read. See [In-RAM TOC](#in-ram-toc) below.
+3. **Known-length files agree with it and not with the other expression.** `readef.DAT` is exactly 78 x `0x10800` and `summon.dat` exactly 103 x `0x10800` ([summon-readef.md](summon-readef.md)); every [field map](field-map.md) is exactly `0x12000`, the sum of its four regions; `bse.dat` is 2 sectors, which is what makes it fit the `0x1800`-byte buffer its loader allocates. The `+4` expression gives a non-multiple, a truncation that stops inside the object table, and a 43x buffer overrun respectively.
+4. **A capture-pinned boundary.** Each of the six Cort mid-cast save states holds a summon stager byte-resident in the slot-B buffer, matching its file exactly up to the sector gap and diverging after it - stale bytes of the previous occupant. The battle-action overlay's RAM-verified clean-copy prefix, `0x28800`, is likewise exactly PROT 0898's 81 sectors.
+5. **Every asset table lands at offset 0.** Reading each entry's own sectors, all 88 scene-asset tables sit at offset 0 of their entry with every descriptor payload inside it. See [the phantom below](#the-prescript-prefixed-asset-table-was-an-over-read).
+6. **The one documented counter-example isn't one.** PROT 899's "trailing overlay" finding is the entry size being right and the `+4` expression being short: 14 declared sectors against 74 real ones, the last 60 of which are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).
+
+### What reading the neighbours produced
+
+Anything derived from a window that ran past an entry is suspect, and several such claims were load-bearing:
+
+- **The prescript-prefixed asset table was an over-read.** <a id="the-prescript-prefixed-asset-table-was-an-over-read"></a>A `scene_scripted_asset_table` was a descriptor table found at a 0x800-aligned offset inside an entry that led with an event prescript. Every one of those offsets is a sector boundary that is **the next entry's start LBA** - the neighbour's ordinary offset-0 table, seen through the over-read. Reading each entry's own sectors leaves the 88 bare tables untouched and zero scripted ones; the carriers classify as what they are, event-script prescripts. The `0x1000` variant aliases the entry two rows later; [scene-v12-table.md](scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read) recorded two cases of it.
+- **Overlay identity by pointer resolution was inflated.** The static-overlay map cross-checks a base by how many of an image's own LUI+ADDIU self-pointers resolve inside it. A longer window widens the acceptance range *and* adds a neighbour's code, so both halves of that ratio were borrowed. On its own sectors PROT 0901 carries three such pairs, not nine.
+- **"Shifted copy" claims between adjacent entries.** `0900[0x2800:0x5000] == 0901[0x0:0x2800]` was cited as making PROT 0900 and 0901 shifted images of one library. PROT 0900 is `0x2800` bytes and 0901 begins exactly `0x2800` past its start, so the claim says only that entry 0901's bytes equal entry 0901's bytes.
+- **A detector calibrated on the wrong length.** The `init.pak` parser required `>= 0x30000` bytes - PROT 0895's old declared span. The entry is 75 sectors (`0x25800`), so the floor rejected the real file; all four publisher-logo TIMs sit inside it.
+
+[`legaia_prot::archive::Archive`](../../crates/prot/src/archive.rs) now exposes one view that parses: `Entry::size_sectors` / `size_bytes`, read by `Archive::read_entry`. `read_entry_declared_span` reproduces the old window for diagnostics only.
+
+### A `(entry, offset)` pair is only a coordinate if the offset is inside the entry <a id="a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry"></a>
+
+The over-read's other legacy is a **naming** one, and it is the family to check first when an asset stops resolving. Every constant of the form "asset X lives at PROT `N` offset `K`" was measured inside the old window. When `K` was past entry `N`'s real end, the pair still named a real place on the disc - just not the one it said. Re-keying it to the entry whose own sectors hold those bytes changes no byte and fixes the read. Three cases, each with the same shape and each previously mistaken for something else:
+
+| Was | Is | What the wrong reading looked like |
+|---|---|---|
+| World-map kingdom bundle at PROT `0085` / `0244` / `0391` | `0086` / `0245` / `0392` ([`kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)) | The bundle's 7-asset table appeared to be "at `0x1800` of the prescript entry". It is at offset 0 of the next entry. |
+| Battle-form character atlases at PROT `1204` offset `0x25804 + k*0x8224`, seven of them, the last truncated | PROT `1205` offset `4 + k*0x8224`, **eight**, none truncated ([`battle_char_pack`](../../crates/asset/src/battle_char_pack.rs)) | `0x25800` is 1204's exact length, so `0x25804` is 1205 offset `4`. The window ended between atlas 6 and 7, so the eighth atlas was invisible and its CLUT row (496) read as "intentionally skipped". |
+| Title TIM at PROT `0888` `0x1AA28`, with duplicates at `0889` `0x19A28` and `0890` `0x14228` | PROT `0890` `0x14228`, one copy ([`title_pak`](../../crates/asset/src/title_pak.rs)) | All three expressions resolve to the same absolute offset. A whole-archive byte scan for the TIM header finds one hit. |
+
+Two properties make the corrected form checkable, and both are asserted by the disc-gated tests for those modules: the offset plus the asset's length must fit inside the entry, and a payload's own framing (a streaming chunk chain, a descriptor count in the header) must terminate inside it rather than run to the buffer end. A constant that needs a wider buffer than its entry is naming the wrong entry.
+
+> **Historical note.** An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes a size in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges. Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
 
 ## In-RAM TOC
 

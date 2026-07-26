@@ -69,28 +69,50 @@ def in_program(addr):
 
 
 def dump(addr_str):
+    """Dump the function containing `addr_str`, named for ITS OWN entry.
+
+    Ghidra resolves an address with `getFunctionContaining()`, so asking for
+    an interior address yields the ENCLOSING function. Naming the output after
+    the address that was REQUESTED then writes a file asserting an entry point
+    that does not exist, and every citation of that filename inherits the
+    assertion. The corpus-wide signature is that the resolved entry always
+    sits BELOW the requested address; nothing else produces it.
+
+    So the filename, the header and the `entry=` field all come from
+    `getEntryPoint()`, and a differing request is recorded as `requested=`
+    inside the file - which keeps the citation traceable instead of losing it.
+    """
     addr = af.getAddress(addr_str)
     if addr is None:
         print("[skip] {} not an address".format(addr_str))
         return
     if not in_program(addr):
         return
-    func = fm.getFunctionContaining(addr) or fm.getFunctionAt(addr)
+    func = fm.getFunctionAt(addr) or fm.getFunctionContaining(addr)
     if func is None:
         print("[skip] no function at {} in {}".format(addr_str, prog_name))
         return
 
+    entry_str = "%08x" % func.getEntryPoint().getOffset()
+    interior = entry_str != addr_str.lower()
+    if interior:
+        print("[interior] {} is inside {} at {} - dumping the enclosing body"
+              .format(addr_str, func.getName(), entry_str))
+
     body = func.getBody()
     instrs = list(listing.getInstructions(body, True))
 
-    out_path = out_path_for(addr_str)
+    out_path = out_path_for(entry_str)
     fh = open(out_path, "w")
     try:
         fh.write("== {} {} (entry={}) [{}] ==\n".format(
-            func.getName(), addr_str, func.getEntryPoint(), prog_name))
-        fh.write("size={} bytes, {} instructions\n\n".format(
+            func.getName(), entry_str, entry_str, prog_name))
+        fh.write("size={} bytes, {} instructions\n".format(
             body.getNumAddresses(), len(instrs)))
-        fh.write("--- DISASSEMBLY ---\n")
+        if interior:
+            fh.write("requested={} (INTERIOR of this body - not an entry "
+                     "point)\n".format(addr_str.lower()))
+        fh.write("\n--- DISASSEMBLY ---\n")
         for ins in instrs:
             fh.write("{}  {}\n".format(ins.getAddress(), ins.toString()))
         fh.write("\n--- DECOMPILED ---\n")

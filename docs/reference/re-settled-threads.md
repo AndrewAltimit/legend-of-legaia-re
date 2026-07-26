@@ -943,7 +943,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Overworld story-conditional destination (`dolk`→`dolk2`) | resolved (mechanism + engine port) | `capture` | Beyond the record-level C1/C2 gate, an entrance record can switch its `0x3F` target by an in-record op-`0x70` `SysFlag.Test`. `map01`'s dungeon entrance (`P2[1]`/`P2[2]`) branches on flag `0x142`: clear → `dolk` (pre-boss), set → `dolk2` (post-boss), same trigger + arrival tile. `overworld_portal_sites` decodes the conditional `0x3F` pair (`ConditionalDest`); the seeder resolves via `World::system_flag_test` (`chapter1_boss_spine_oracle` Part D). **Falsifies** "dolk2 is reached from a dungeon interior". The `0x142` setter is now pinned (rikuroa streaming-carrier script records; see the spine `0x142` row). See [world-map.md](../subsystems/world-map.md). |
 | Retail-vs-engine NPC + story-flag state parity across the capture library | resolved (breadth oracle); residuals filed as their own rows | `capture` | The sweep oracle `crates/engine-core/tests/field_npc_state_parity_disc.rs` compares every catalogued field-mode library capture against a cold engine entry with the capture's `DAT_80085758` bank seeded byte-for-byte: park/place visibility, seat position within the patrol-locality bound, heading (diagnostic), post-entry flag neutrality. Divergences are classified in-test (`KNOWN_DIVERGENCES`); the dominant class is capture-mid-beat dynamics - a mid-visit choreography re-arranged NPCs after retail's own entry, while the engine reproduces the FRESH-entry arrangement (cross-pinned by sibling captures, e.g. rikuroa `pre_caruban`). |
 | Entry pre-run channel slice ends on a no-mask `4C 70` wall paint | resolved (slice-continue landed) | `disassembly` | All four nibble-7 paints CONTINUE - but **not** by the mechanism first claimed. There is no shared continue label and no label-call idiom: `0x801E3624` is the *epilogue*, all four sub-ops genuinely return, and advances differ (subs 0/1 `+6`, subs 2/3 `+7`). The slice continues because the **caller loops**; breaks come only from an executed `0x21` NOP, a stalled PC, or a next opcode whose `& 0x7F` is `< 0x20`. Detail: [`script-vm.md`](../subsystems/script-vm.md). |
-| Writer of the Rim Elm opening flag (`549`) | resolved (self-latching script SET; the census was width-blind) | `capture` | Writer = **town01 `P2[3]` itself**: a plain `52 25` SET at body `+0x3` in the very record its C1 gates (the rikuroa-`P2[50]`/`0x142` self-latch shape) + the `gameover_data` dev copy. Runtime-pinned first (reader-watch from `s2_rimelm_town01`: SET `ra 0x801E3598`, script-PC offset `+0xF`), then found statically: the preceding `4C ED` op had no width in the disassembler, so the walk desynced one byte short - the old "capture-only" verdict was **width blindness**. Full write-up in [script-vm.md](../subsystems/script-vm.md) (decode-coherence section); anchors `flag_549_reader_is_the_rim_elm_p2_gate` + `flag_549_writer_is_the_rim_elm_p2_3_self_latch`. |
+| Writer of the Rim Elm opening flag (`549`) | resolved (self-latching script SET; the census was width-blind) | `capture` | Writer = **town01 `P2[3]` itself**, one site: a plain `52 25` SET at body `+0x3` in the very record its C1 gates (the rikuroa-`P2[50]`/`0x142` self-latch shape). A second site once reported in a `gameover_data` "dev copy" was town01's own MAN seen through a neighbouring block's window. Runtime-pinned first (reader-watch from `s2_rimelm_town01`: SET `ra 0x801E3598`, script-PC `+0xF`), then found statically: the preceding `4C ED` op had no width in the disassembler, so the walk desynced one byte short - the old "capture-only" verdict was **width blindness**. See [script-vm.md](../subsystems/script-vm.md); anchor `flag_549_writer_is_the_rim_elm_p2_3_self_latch`. |
 | Field `.MAP` PROT resolution - which entry holds a scene's map | resolved (census-pinned; engine resolver corrected) | `capture` | [details ↓](#field-map-prot-resolution---define--2-universal) |
 | World-map CLUT cycling beyond the ocean head | closed (operand table + emitter + cadence pinned) | `capture` | [details ↓](#world-map-clut-cycling-beyond-the-ocean-head---closed-operand-table--emitter--cadence-all-pinned) |
 | `init_data` UI-tile page residency; the map03 terrain column | resolved (both premises falsified) | `capture` | [details ↓](#init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified) |
@@ -1242,6 +1242,67 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 |---|---|---|---|
 | SPU reverb live routing (C7-REVERB) | resolved (wired; Studio C, global) | `capture` | [details ↓](#spu-reverb-live-routing-c7-reverb) |
 | XA channel map / STR demux SM | resolved (static decompile of PROT 0970 + SCUS) | `disassembly` | [details ↓](#xa-channel-map--str-demux-sm) |
+| `FUN_80018DB0` is a rumble cadence, not an audio one | resolved (libpad, not SsAPI; no cue to pin) | `disassembly` | [details ↓](#fun_80018db0-is-a-rumble-cadence-not-an-audio-one) |
+| Key-on pitch: what does retail put in the voice pitch register? | resolved (unity on centre; the port was an octave low) | `disassembly` | [details ↓](#key-on-pitch-unity-on-centre) |
+
+### Key-on pitch: unity on centre
+
+*Status:* resolved - `note == center` keys **`0x1000`**, unity, 44.1 kHz.
+
+Both the SFX/direct key-on path (`FUN_80065034`) and the sequencer note-on path
+(`FUN_80066308`) reach the same arithmetic (`FUN_80066e50` / `FUN_80066d8c`) and
+hand the result to `FUN_80067550`, which stores it **verbatim** into the shadow
+register file at `0x801CE084 + voice*16` (voice `+4` = pitch). Nothing rescales it
+afterwards:
+
+```
+n     = note + 60 - center + carry        (MIPS div: truncates toward zero)
+pitch = PITCH[(n % 12) * 16 + fine] << (n / 12 - 5)
+```
+
+`PITCH` is the 192-entry table at `DAT_8007A940` (SCUS file `0x6B140`). Every
+entry is exactly `floor(0x1000 * 2^(k/192))` - **192/192 verified against the
+disc**, first entry `0x1000`, last `0x1fe2`. So it is a one-octave table at
+1/16-semitone resolution starting at unity, and the octave is applied by the
+shift. Because the closed form is exact, no disc bytes are needed to reproduce it.
+
+The retail cue arm passes `fine = 0x40` at every traced `FUN_80065034` call site,
+so a cue keys half a semitone above the sequencer for the same tone; the two paths
+also differ in whether the fine index saturates or carries a whole semitone.
+
+**Why this was worth grading rather than assuming.** A 22.05 kHz VAG body is
+authored with `center` twelve semitones high, so the sample rate is *already
+encoded in `center`*. Applying a `22050/44100` factor on top double-counts it and
+keys every voice exactly one octave low - which is what the port did, for BGM and
+SFX alike. Corroborated by capture: 126 of 128 voices holding a non-zero staged
+pitch match this law exactly, with the 2 misses being records whose bank was
+swapped after key-on.
+
+**The recomp PCM oracle could not have caught it**, because it mirrors retail's
+captured pitch into the engine SPU rather than deriving a pitch to compare. An
+oracle that copies the answer cannot check the answer. Full law and the port's
+two defects: [`audio.md` § key-on pitch law](../subsystems/audio.md).
+
+### `FUN_80018DB0` is a rumble cadence, not an audio one
+
+*Status:* resolved - the surrounding cluster is **libpad**, `DAT_800915DA`/`DB` are port 0's actuator bytes, and the kernel plays no sound at all. Closes "retail's footstep SFX cue id" as a resolved-negative: there is no cue to pin.
+
+The two entries the corpus filed as SsAPI are libpad, and the identification is instruction-level on both sides (the `FUN_8006CE30` and `FUN_8001D230` windows were re-read straight out of `extracted/SCUS_942.54` at `0x800 + va - 0x80010000`, so the dump's printed addresses are not load-bearing).
+
+- **`FUN_8006E2B4(buf0, buf1)` = `PadInitDirect`.** `FUN_8001D230` `bzero`s `0x44` = 2 x `0x22` bytes at `0x800840F8` and calls it with `(0x800840F8, 0x800840F8 + 0x22)` (`addiu a1,a0,0x22`) - the canonical pair of 34-byte direct-mode report buffers. It clears `0x1E0` = 2 x `0xF0` at `0x801CE628` (one context per socket), stores the two buffers at each context `+0x30`, seeds each buffer `[0] = 0xFF` / `[1] = 0`, and fills six bytes at context `+0x5D` with `0xFF` - `PadSetActAlign`'s unassigned default. The pad pump `FUN_8001822C` decodes those very buffers as `[status][type nibble][inverted u16 buttons]`, port 1 at `+0x22`/`+0x23`.
+- **`FUN_8006CE30(socket, table, len)` = `PadSetAct`.** Three arguments in the instructions: `a0` passes through untouched into the context resolver `jalr _DAT_801CE564`, `a1`/`a2` are stashed in `s0`/`s1` and forwarded. Ghidra's C drops `param_1` - artifact #1 in [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims), and exactly what made a 3-argument libpad call read as a 2-argument sequencer setter. The tail `FUN_8006D7B4` stores `ctx+0x28 = table`, `ctx+0x34 = (u8)len`.
+- **The siblings agree.** `FUN_8006CA7C` = `PadGetState` (report status byte through `ctx+0x30`, then normalises `ctx+0x49`); `FUN_8006CB3C` = `PadInfoMode`, whose `term = 4` branch returns the id-table length `ctx+0xE3` for `offs < 0` and otherwise the bounds-checked `((u16 *)ctx[0])[offs]` - `InfoModeIdTable`'s contract, with no sequencer analogue; `FUN_8006CDB0` = `PadSetActAlign`; `FUN_8006D1E0`/`FUN_8006D2AC` = `PadStartCom`/`PadStopCom` (`ChangeClearRCnt(3, 0)` vs `(3, 1)`). `FUN_8006EE8C`/`FUN_8006EEE0` call `ChangeClearPAD` (B0 `0x5B`) and wrap `InitCARD`/`StartCARD` (B0 `0x4A`/`0x4B`); `FUN_80056618` = `_bu_init`. The eight `OpenEvent`/`EnableEvent` pairs on `0xF4000001`/`0xF0000011` are the memory-card event set.
+- **The bytes `FUN_80018DB0` writes are that actuator table.** It stores to `0x800915DA`/`0x800915DB`, and `FUN_80018F94` registers the same block per port with `PadSetAct(socket, block+2, 2)` where `block = 0x800915D8 + (socket>>4)*0x40 + (socket&3)*0x10` - the `0x40` stride matching `FUN_8001D230`'s `s1+2` / `s1+0x42`, and the `0x80`-byte `bzero` matching 2 x `0x40`.
+- **`DAT_8007B79C` is not a footstep-active flag.** `FUN_80018F94` sets it from `_DAT_800845A8 == 0 && PadInfoMode(socket, 2, 0) == 0` - the pad reports no extended-mode data. It selects between two actuator payload layouts: set → `act[0] = 0x40` fixed with `act[1]` carrying the pulse; clear → `act[0]` carries the pulse and `act[1]` is loaded with the low byte of `gp+0x618` every frame.
+- **There is no audio call in the kernel.** Its other branch counts down ~1200 frames and calls `FUN_8005C034(9, 0)`, the retry wrapper over `CdControl` (`FUN_8005CF80`) issuing `CdlPause` - a CD-drive pause, not a voice stop or rewind.
+
+**What this implies for the two "per-voice trigger bytes".** They are one actuator payload: a per-step on/off pulse and an intensity level, transmitted by libpad every poll. Correspondingly, `gp+0x614`/`gp+0x618` are not a locomotion speed - `+0x618` is written verbatim into an actuator level byte, so they read as vibration-intensity requests, and their writers stay unpinned. That also explains the capture: `_DAT_8007B8A4` pinned at `2` across four field and overworld runs means nothing was requesting vibration while walking, which is what the game's own Vibration options (battles / events / encounters) would predict.
+
+**What the SsAPI label rested on, and why it fails.** Three things, each individually reasonable: the `0x8006C000..0x8006F000` band does hold genuine libspu/libsnd code; a vtable of installed hooks over a stride-`0xF0` record array with an `0xFF` idle fill and a per-record state byte reads exactly like a sequence-worker table; and with `param_1` dropped, `FUN_8006CE30` renders as "set user data on a resolved context".
+
+It fails on three checks: the resolved context's `+0x30` is provably the button report `FUN_8001822C` decodes, `PadInfoMode`'s id-table branch has no sequencer reading, and the record count is 2 - the number of controller sockets, not a sequencer's slot count. The port `engine-audio::footstep` mirrors the arithmetic correctly and keeps its `// PORT:` tag; only its labels were wrong. Corrected cluster: [`audio.md`](../subsystems/audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad).
+
+Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`, `8006d7b4.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006cdb0.txt`, `8006d1e0.txt`, `8006d2ac.txt`, `8001d230.txt`, `8001822c.txt`, `80018db0.txt`, `80018f94.txt`, `8005c034.txt`.
 
 ### XA channel map / STR demux SM
 
@@ -1594,10 +1655,14 @@ Recorded so the same entries aren't re-flagged:
   **not** a mode dispatcher.
 - **Still open from the same inventory:** the general-game band (never
   per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
-  no static caller), `0x80056208` (libgpu-band SCUS→overlay bridge into
-  `0x801F69xx`), `0x8004DC68`, `0x8002149C`, `0x80036D80`, `0x80059E10`,
-  `0x80025DA4`. Next step: behavior-read each against its `0x8007xxxx`/`gp`
-  globals the way this thread's entries were closed. The PsyQ sound-driver
+  no static caller), `0x8004DC68`, `0x80036D80`, `0x80025DA4`. Next step:
+  behavior-read each against its `0x8007xxxx`/`gp` globals the way this
+  thread's entries were closed. Three former members are now closed:
+  `0x80056208` is **not** a libgpu-band bridge - it is a battle side-band tick
+  (three submodes off `DAT_8007B64A`) that merely sits at a PsyQ-adjacent
+  address, ported to `engine-render`; and `0x8002149C` / `0x80059E10` both now
+  carry full disassembly, so their grade is `disassembly` rather than the
+  weaker evidence this line assumed. The PsyQ sound-driver
   cluster is tracked separately under Audio.
 
 ### Full-window item-add OOB reachability

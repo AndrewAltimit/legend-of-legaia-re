@@ -10,14 +10,3 @@
 # more work than one port site, not less, and UNCERTAIN needs a human.
 #
 # Merge into the main ignore list after review - do not consume directly.
-
-[worklist_duplicate]
-"80062310" = "DUPLICATE: 12-instruction stream identical modulo relocation to 8006ef18"
-
-[worklist_interior]
-"801ef9b4" = "INTERIOR: dump is a citation stub for 801ef6e0"
-
-[worklist_phantom]
-"8002b92c" = "PHANTOM: only dump body is a 2-instruction stub"
-"8003f084" = "PHANTOM: only dump body is a 2-instruction stub"
-"801ecc00" = "PHANTOM: only dump body is a 0-instruction stub"

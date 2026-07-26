@@ -174,6 +174,58 @@ Formats: [item-table.md](../formats/item-table.md),
 [steal-table.md](../formats/steal-table.md),
 [new-game-table.md](../formats/new-game-table.md).
 
+## Shop inventories - a table joined from two files
+
+A town's stock is **not** in a shop table. It is inline in that scene's MAN
+field-VM script (op `0x49`, sub-op `0`), in the same place the scene's chests
+and doors live. The item *names and prices* come from somewhere else entirely -
+the static item record table in `SCUS_942.54` (`DAT_80074368`, `0xC` stride,
+file offset `0x64B68`; the price is the `u16` at `+2`). `shop-stock` opens both
+and joins them:
+
+```bash
+./asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                   --cdname extracted/CDNAME.TXT             # every shop on the disc
+./asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                   --cdname extracted/CDNAME.TXT --scene bylon      # one scene
+```
+
+`--scene` matches the CDNAME block name; `--entry N` takes a single extraction
+index instead; `--json` emits the same data for scripting. Output:
+
+```text
+== bylon (entry 0053, MAN +0x406a) - "Morlang"  decodes 10 ids, sells 7
+    0. 0x22  Survival Knife            180
+    ...
+    6. 0x60  Electric Shoes            560
+    7. 0x01  Ra-Seru Meta $1             0   <- unsellable tail (record padding, not stock)
+```
+
+Three things to read carefully, because each has caught people out.
+
+**"decodes 10 ids, sells 7" is two different numbers on purpose.** The record's
+`count` byte over-counts: it includes a trailing run of price-`0` *template*
+ids - usually the "Ra-Seru Meta $N" placeholders `0x01/0x02/0x03`. The shop UI
+stops at the priced run, so that tail is structural padding, not stock. The
+listing flags it instead of truncating, because a reader shown only one of the
+two numbers will assume the other.
+
+**Sites are found by scanning, not by walking the script.** A shop's `0x49` is
+often gated behind a dialogue confirm-picker whose option-jump table desyncs a
+linear disassembler before it ever reaches the op. Biron Monastery's Corey
+vendor is the case that exposed this - a walk silently misses it and reports
+one shop too few, with no error. Do not "improve" the scan into a walk.
+
+**The entry column is in extraction-index space; the scene column is not.**
+CDNAME `#define <name> N` names the content at extraction entry `N − 2`, so the
+scene label is resolved through that shift and can disagree with the extraction
+*filename* near a block boundary. See
+[cdname.md](../formats/cdname.md#numbering-space).
+
+Subsystem page: [shop.md](../subsystems/shop.md). The curated walkthrough
+tables on the project site are the other half of this - when the decoded record
+and the human-readable table agree, both are confirmed.
+
 ## The dialog font
 
 The pipeline's final step writes `extracted/font/` (atlas PNG, tile-page

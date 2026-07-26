@@ -4,8 +4,11 @@
 //!
 //! Each descriptor's `renderer_va` names the routine that fills that
 //! window's content rect; the 9-slice frame around it is drawn by the
-//! caller, not here (see `docs/subsystems/field-menu.md`). This module
-//! ports the painters for the confirm / prompt / counter / options block:
+//! caller, not here (see `docs/subsystems/field-menu.md`).
+//! [`crate::ui_menu_window_dispatch`] maps a parsed descriptor to the painter
+//! below that draws it, the way the retail window walker maps the live
+//! window's `+0x28` to a routine. This module ports the painters for the
+//! tab / prompt / counter / shop-panel block:
 //!
 //! | window | routine | content |
 //! |---|---|---|
@@ -95,6 +98,17 @@ pub struct PainterPictogram {
 /// Row pitch the label painters step by (`addiu s0,s0,0xe`).
 pub const PAINTER_ROW_PITCH: i32 = 0x0E;
 
+/// The **accent pen** three painters here stage for exactly one field before
+/// restoring the default.
+///
+/// Retail stages `_DAT_8007B454 = 6` around window 34's item name, window
+/// 24's count and window 31's number, and `7` for everything else in the
+/// block. `6` is the same staging id the compare panels use for a rising
+/// stat, so it resolves to the same colour ([`compare_panel_ink`]).
+///
+/// [`compare_panel_ink`]: crate::compare_panel_ink
+pub const PAINTER_INK_ACCENT: [f32; 4] = MENU_TEXT_GOLD;
+
 /// Right-hand pictogram id of the primary counter window (id 32).
 pub const COUNTER_PICTOGRAM_PRIMARY: u8 = 0x62;
 /// Pictogram id of the secondary counter window (id 45).
@@ -106,6 +120,64 @@ pub const COUNTER_DIGIT_INSET: i32 = 0x28;
 
 /// Advance of one fixed-width digit cell in the number writer.
 const NUM_CELL_W: i32 = 8;
+
+// --- Separator glyph (`FUN_8003C1F8`) ---------------------------------
+//
+// `FUN_8003C1F8(glyph, x, y)` draws one symbol from the fixed-cell glyph
+// page. Two independent uses pin the same id space: the records screen
+// (`crate::ui_menu::records_screen`, whose fields are `:` / `/` / `.`) and
+// window 37, which calls it with glyph `6` between its quantity and held
+// counts (`li a0,0x6; addiu a1,s5,0x20` at `0x801D59D4`) - a `/` between
+// "how many" and "how many you have", which is what that row reads as.
+
+/// Separator glyph `6`: `/`.
+pub const SEPARATOR_GLYPH_SLASH: u8 = 6;
+/// Separator glyph `9`: `:`.
+pub const SEPARATOR_GLYPH_COLON: u8 = 9;
+/// Separator glyph `0xD`: `.`.
+pub const SEPARATOR_GLYPH_DOT: u8 = 0x0D;
+
+/// The character a separator-glyph id draws, or `None` for an id outside
+/// the three the corpus pins.
+pub fn separator_glyph_char(glyph: u8) -> Option<char> {
+    match glyph {
+        SEPARATOR_GLYPH_SLASH => Some('/'),
+        SEPARATOR_GLYPH_COLON => Some(':'),
+        SEPARATOR_GLYPH_DOT => Some('.'),
+        _ => None,
+    }
+}
+
+/// Draw one separator glyph at `pen`.
+///
+/// `pub(crate)` on purpose: this is a retail *primitive*, not a screen, and
+/// the UI host-drift gate classifies every `pub fn` returning draws as a
+/// screen builder. Keeping it crate-internal states what it is - the thing
+/// screens call - and keeps the gate's surface a list of screens.
+///
+/// PORT: FUN_8003c1f8
+pub(crate) fn separator_glyph_draws(
+    font: &legaia_font::Font,
+    glyph: u8,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    match separator_glyph_char(glyph) {
+        Some(ch) => separator_glyph_char_draws(font, ch, pen, color),
+        None => Vec::new(),
+    }
+}
+
+/// [`separator_glyph_draws`] for a caller that already resolved the glyph to
+/// a character.
+pub(crate) fn separator_glyph_char_draws(
+    font: &legaia_font::Font,
+    ch: char,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    text_draws_for(&font.layout_ascii(&ch.to_string()), pen, color)
+}
 
 /// Right-align `value` into a `digits`-wide fixed cell field.
 ///
@@ -140,8 +212,13 @@ fn digits_draws(
 /// The shortest painter in the table - set the draw order, draw one
 /// overlay-literal string at `(WX, WY)`, return.
 ///
+/// The five pause-menu tab renderers (`FUN_801DCA0C` / `CA50` / `CA94` /
+/// `CAD8` / `CB1C`) are the same 17 instructions with a different string
+/// pointer, so this one painter serves all six windows;
+/// [`crate::ui_menu_window_dispatch`] resolves any of them to it.
+///
 /// PORT: FUN_801DCFE4
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// PORT: FUN_801DCA0C, FUN_801DCA50, FUN_801DCA94, FUN_801DCAD8, FUN_801DCB1C
 pub fn title_tab_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -163,8 +240,12 @@ pub fn title_tab_draws_for(
 /// `0x10` cell for this draw and restores it afterwards. The port lays the
 /// label out proportionally, which is the engine-wide choice.
 ///
+/// The retail record is the armed op-`0x49` payload: `_DAT_8007B450` points
+/// at the opcode's sub-op byte, so for a shop record (`[count][ids][name]`)
+/// `record[2]` is `count` and the string starts one past the last id - the
+/// vendor name `legaia_asset::shop_stock` decodes.
+///
 /// PORT: FUN_801DCF14
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn record_title_tab_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -188,13 +269,15 @@ pub fn title_record_text_offset(skip_byte: u8) -> usize {
 /// Windows 32 and 45: a pictogram plus an 8-digit right-aligned counter.
 ///
 /// Both routines are the same shape and differ only in the pictogram id
-/// and which global counter they read - `0x8008459C` for window 32,
-/// `0x800845A4` for window 45. The pictogram sits two pixels below the
-/// content origin and the digit field starts `0x28` to its right.
+/// and which global counter they read - `0x8008459C` (party gold) for
+/// window 32, `0x800845A4` (the casino coin bank) for window 45. The
+/// pictogram sits two pixels below the content origin and the digit field
+/// starts `0x28` to its right. Which of the two a descriptor names, and
+/// therefore which live total a host feeds, is
+/// [`crate::CounterSource`].
 ///
 /// PORT: FUN_801DCF84
 /// PORT: FUN_801DD028
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn counter_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -236,8 +319,25 @@ pub fn counter_panel_draws_for(
 /// The cursor lands at a fixed inset from the content origin, not from the
 /// window extent: `(WX + 0xE6, WY + 0xD)`.
 ///
+/// The record indexing is worth spelling out, because it is what a host
+/// would have to reproduce: `0x8007BB70` is scaled by the `0x414` character
+/// record stride (`(x<<6 + x)<<2 + x` then `<<2`) and `0x8007BB78` is added
+/// as a plain byte offset, so the substituted glyph is
+/// `record[0x13D + DAT_8007BB78]` off the `0x80084708` record base - not a
+/// name byte, whose field is `+0x2A7`.
+///
+/// `+0x13D` is not an arbitrary field. It is the first entry of the
+/// character's **learned-magic id list**, whose length byte sits one earlier
+/// at `+0x13C` - the same byte the records page prints under "Magic"
+/// (`crate::ui_menu::records_screen`, whose own rebase table pins the pair).
+/// So `DAT_8007BB78` is a list index and the substituted byte is a spell id:
+/// window 7 is a prompt about one of the selected character's spells, which
+/// narrows "which flow opens it" to the magic-side flows even though the
+/// exact one is still unpinned.
+///
 /// PORT: FUN_801DCCB4
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: which flow opens window 7 is unknown, and no host produces the
+/// NOT WIRED: `record[0x13D + sel]` glyph it substitutes; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -259,13 +359,14 @@ pub fn char_prompt_draws_for(
 /// the row below, then the same corner cursor as window 7.
 ///
 /// `FUN_801DCE20` draws the heading at the content origin, drops one row
-/// pitch, writes the `0x800845B4` counter as an 8-digit field at the left
-/// margin and puts the unit label `0x40` to its right. The number is
-/// emitted one draw-order step below the text, which is the only place in
-/// this block where the two differ.
+/// pitch, writes the `0x800845B4` counter - the **Point Card** total (see
+/// `docs/subsystems/shop.md`) - as an 8-digit field at the left margin in
+/// the accent pen, and puts the unit label `0x40` to its right back in the
+/// default pen.
 ///
 /// PORT: FUN_801DCE20
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: the engine models no Point Card total, so there is nothing to
+/// NOT WIRED: print; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -285,7 +386,7 @@ pub fn amount_prompt_draws_for(
         rect.x,
         row1,
         COUNTER_DIGITS,
-        MENU_TEXT_WHITE,
+        PAINTER_INK_ACCENT,
     ));
     out.extend(text_draws_for(
         &font.layout_ascii(unit_label),
@@ -306,14 +407,21 @@ pub fn amount_prompt_draws_for(
 /// Window 24: a two-digit count field, drawn only when the selection index
 /// is live, over a reserved sub-rect.
 ///
-/// `FUN_801DCC20` guards the whole text pass on `DAT_801E46B0 > 0`; the
-/// trailing `FUN_8002C69C` box at `(WX, WY + 0x38)` sized `0x90 x 0x28` is
-/// emitted either way, which is why an empty selection still reserves the
-/// space. The count itself comes back from `FUN_80042F4C`, a lookup on the
-/// selection index, and lands at `WX + 0x80`.
+/// `FUN_801DCC20` guards its whole body on `DAT_801E46B0 > 0`; the trailing
+/// `FUN_8002C69C` box at `(WX, WY + 0x38)` sized `0x90 x 0x28` is emitted
+/// either way, which is why an empty selection still reserves the space.
+/// The count itself comes back from `FUN_80042F4C`, a lookup on the
+/// selection index, and lands at `WX + 0x80` in the accent pen.
+///
+/// **This painter is only the delta.** The gated body opens with
+/// `jal 0x801D0F1C` - the *shared item-info panel*, the same routine window
+/// 17's `FUN_801DCB60` calls - so window 24 is the item-info window plus a
+/// count. A host adopting it draws the info panel
+/// ([`crate::inventory_panel_draws_for`]) into the same rect first.
 ///
 /// PORT: FUN_801DCC20
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: which flow opens window 24 rather than window 17 (identical
+/// NOT WIRED: rect) is unknown; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -321,7 +429,7 @@ pub fn count_panel_draws_for(
 ) -> (Vec<TextDraw>, (i32, i32, i32, i32)) {
     let reserved = (rect.x, rect.y + 0x38, 0x90, 0x28);
     let draws = match selection {
-        Some(count) => digits_draws(font, count, rect.x + 0x80, rect.y, 2, MENU_TEXT_WHITE),
+        Some(count) => digits_draws(font, count, rect.x + 0x80, rect.y, 2, PAINTER_INK_ACCENT),
         None => Vec::new(),
     };
     (draws, reserved)
@@ -413,7 +521,8 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// `0x10` step below the heading.
 ///
 /// PORT: FUN_801D603C
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: adopting windows 46 / 5 replaces the engine-styled options
+/// NOT WIRED: screen's layout, a host decision; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -445,7 +554,7 @@ pub fn choice_panel_draws_for(
 /// branch chain as window 46.
 ///
 /// PORT: FUN_801D61B0
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: same host decision as `choice_panel_draws_for`; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn two_line_choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -483,7 +592,8 @@ pub fn two_line_choice_panel_draws_for(
 /// one whose cursor moves when a window is resized.
 ///
 /// PORT: FUN_801D6360
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: no host opens window 6, and which flow does is unknown; the
+/// NOT WIRED: pause command list is window 50; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -557,13 +667,14 @@ pub fn description_source(item_kind: u8, passive_index: u8) -> DescriptionSource
 /// `DAT_801E46B0` is not positive - that word is the id the routine
 /// multiplies by 12 to reach `0x80074368`, not a list row. Otherwise the
 /// name goes at the content
-/// origin, the two-digit owned count at `WX + 0x94`, and the description
-/// one row pitch down at `WX + 8` - routed through
-/// [`description_source`]. The owned count comes back from
-/// `FUN_80042EE0`; the sentinel `0x100` means "not held" and draws `0`.
+/// origin, then the two-digit owned count at `WX + 0x94` - **both in the
+/// accent pen**, which retail stages once before the name and restores only
+/// after the count - and the description one row pitch down at `WX + 8` back
+/// in the default pen, routed through [`description_source`]. The owned
+/// count comes back from `FUN_80042EE0`; the sentinel `0x100` means "not
+/// held" and draws `0`.
 ///
 /// PORT: FUN_801D4A80
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn item_description_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -575,14 +686,18 @@ pub fn item_description_draws_for(
     if !selected {
         return Vec::new();
     }
-    let mut out = text_draws_for(&font.layout_ascii(name), (rect.x, rect.y), MENU_TEXT_WHITE);
+    let mut out = text_draws_for(
+        &font.layout_ascii(name),
+        (rect.x, rect.y),
+        PAINTER_INK_ACCENT,
+    );
     out.extend(digits_draws(
         font,
         owned as u64,
         rect.x + 0x94,
         rect.y,
         2,
-        MENU_TEXT_WHITE,
+        PAINTER_INK_ACCENT,
     ));
     if !description.is_empty() {
         out.extend(text_draws_for(
@@ -658,7 +773,8 @@ pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
 /// `DAT_801E46C0` rather than `DAT_801E46D0`.
 ///
 /// PORT: FUN_801D56FC
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: the flows that open window 36 (the party-target panel
+/// NOT WIRED: `FUN_801D8308` drives it) are not ported; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn equip_target_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -750,8 +866,11 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
 /// are then right-packed against `WX + 0x88` / `WX + 0x94` by the digit
 /// ladder ([`sell_total_digits`]), so a bigger total pushes both left.
 ///
+/// The unit price retail reads is the **item record's own** `+2` word
+/// (`0x80074368 + id*12 + 2`), not the merchant's stock entry, so a bag item
+/// the shop does not sell still prices correctly.
+///
 /// PORT: FUN_801D5944
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn sell_quantity_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -782,6 +901,12 @@ pub fn sell_quantity_draws_for(
         rect.x + 0x10,
         row,
         2,
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(separator_glyph_draws(
+        font,
+        SEPARATOR_GLYPH_SLASH,
+        (rect.x + 0x20, row),
         MENU_TEXT_WHITE,
     ));
     out.extend(digits_draws(
@@ -828,14 +953,33 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 
 /// The box a guarded fill would emit, or `None` when it is clipped away.
 ///
-/// `FUN_801E4140` takes six arguments, forwards the first to the fill-mode
-/// setter and the last four to the box writer, and runs neither when the
-/// `y` argument exceeds `0xF0`. That single comparison is the whole
-/// routine - it is a bottom-of-screen guard on an otherwise unconditional
-/// pair of calls.
+/// `FUN_801E4140` takes six arguments, runs nothing when the `y` argument
+/// exceeds `0xF0`, and otherwise calls the fill-state setter `FUN_80034B6C`
+/// and then the box writer `FUN_8002C69C(x, y, w, h)`. That single
+/// comparison is the whole routine - it is a bottom-of-screen guard on an
+/// otherwise unconditional pair of calls.
+///
+/// The decompiled C renders the first call as `func_0x80034b6c()` with no
+/// arguments; the disassembly shows `a0` / `a1` untouched between the
+/// prologue and the `jal`, so it in fact receives the caller's first two
+/// arguments - the dropped-register-argument artifact, not a niladic call.
+/// A live menu caller passes `(0x44, 0x02202020, …)`, i.e. a mode selector
+/// and a packed RGB word, so this pair is a **shaded colour fill**, not the
+/// gold 9-slice window border.
 ///
 /// PORT: FUN_801E4140
-/// NOT WIRED: no host walks the disc window table and dispatches on renderer_va; waived in scripts/ci/ui-host-drift-waivers.toml
+/// REF: FUN_80034b6c - the fill-state setter this guard gates, which takes
+/// the caller's mode selector and packed RGB word. Not ported.
+/// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
+/// every side. Not ported; the hosts draw their window chrome from the UI
+/// atlas instead.
+/// NOT WIRED: no host emits the block's box fills. What the hosts do draw is
+/// NOT WIRED: the UI-atlas 9-slice window chrome, a different primitive from
+/// NOT WIRED: this colour-fill pair, and they draw it at the already-inflated
+/// NOT WIRED: frame rect - whereas `FUN_8002C69C` inflates its own argument
+/// NOT WIRED: by 8px on every side, so this guard tests the *content* y.
+/// NOT WIRED: Gating that chrome on this rect would clip on the wrong
+/// NOT WIRED: coordinate and claim a guard over a draw it does not own.
 pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
     (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }
@@ -1050,6 +1194,33 @@ mod tests {
         assert_eq!(sell_total(1, 100), 50);
         assert_eq!(sell_total(3, 25), 37);
         assert_eq!(sell_total(0, 9_999), 0);
+    }
+
+    #[test]
+    fn the_sell_row_carries_its_separator_glyph() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(14, 46, 144, 33);
+        let (draws, _, _) = sell_quantity_draws_for(&font, rect, true, "h", 1, 9, 10);
+        // Glyph 6 at (WX + 0x20, WY + 0x14) - one draw between the quantity
+        // and the held count, which is what separates "how many" from "how
+        // many you have".
+        let sep = separator_glyph_draws(&font, SEPARATOR_GLYPH_SLASH, (0, 0), MENU_TEXT_WHITE);
+        assert_eq!(sep.len(), 1);
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.0 == rect.x + 0x20 && d.dst.1 == rect.y + 0x14)
+        );
+    }
+
+    #[test]
+    fn only_the_three_pinned_separator_ids_resolve() {
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_SLASH), Some('/'));
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_COLON), Some(':'));
+        assert_eq!(separator_glyph_char(SEPARATOR_GLYPH_DOT), Some('.'));
+        assert_eq!(separator_glyph_char(0), None);
+        let font = legaia_font::Font::placeholder();
+        assert!(separator_glyph_draws(&font, 0, (0, 0), MENU_TEXT_WHITE).is_empty());
     }
 
     #[test]

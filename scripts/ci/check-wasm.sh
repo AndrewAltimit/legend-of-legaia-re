@@ -7,12 +7,14 @@
 # on `cdylib` targets, or wasm-bindgen feature gates).
 #
 # Heavier check: append `--full` to also run `wasm-pack build --target web
-# --release` and verify the resulting `crates/web-viewer/pkg/` matches the
-# checked-in copy. Useful before tagging a release.
+# --release`, then assert your local `site/wasm/` bundle was built from the
+# sources in this tree. Useful before tagging a release, or before telling anyone
+# a play-page fix is live - a locally served page loads the bundle you built, not
+# the sources, and the two have silently diverged before.
 #
 # Usage:
 #     scripts/ci/check-wasm.sh           # cargo build only (fast)
-#     scripts/ci/check-wasm.sh --full    # full wasm-pack build + diff
+#     scripts/ci/check-wasm.sh --full    # wasm-pack build + bundle freshness
 
 set -euo pipefail
 
@@ -34,6 +36,12 @@ if [[ "${1:-}" == "--full" ]]; then
     fi
     echo "[check-wasm] wasm-pack build --target web --release..."
     (cd crates/web-viewer && wasm-pack build --target web --release)
+
+    # The build above proves the crate compiles; it says nothing about whether
+    # the bundle sitting under site/wasm/ came from these sources. That is the
+    # check people actually want here, so make it hard.
+    echo "[check-wasm] verifying site/wasm/ freshness..."
+    python3 scripts/ci/check-wasm-freshness.py --strict
     echo "[check-wasm] OK"
 fi
 

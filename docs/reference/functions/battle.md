@@ -6,7 +6,12 @@ Part of the [key function directory](../functions.md) - the conventions for read
 
 | Address | Role |
 |---|---|
-| `801D0290` | **Overlay-local PRNG** (battle-action overlay 0898). Twelve instructions, no frame; the whole state is the word at `0x801F6950`. `v = s*12 + 2` (built as `s<<2` + `s<<3`), then `s = (v << 16) + (v >> 16)` - an `addu` of the halves, so a carry propagates and it is **not** a rotate. Distinct from the SCUS BIOS `rand` thunk `FUN_80056798`, so its draws do not perturb that stream. `overlay_0897` dumps a *different* body at this VA; read the 0898 image. |
+| `801D0290` | **Overlay-local PRNG** (battle-action overlay 0898). Twelve instructions, no frame; the whole state is the word at `0x801F6950`. `v = s*12 + 2` (built as `s<<2` + `s<<3`), then `s = (v << 16) + (v >> 16)`, which **is** exactly `rotate_left(16)` - see [the PRNG section](../../subsystems/battle-action.md#overlay-local-prng-fun_801d0290) for why the `addu` cannot carry. Distinct from the SCUS BIOS `rand` thunk `FUN_80056798`, so its draws do not perturb that stream. `overlay_0897` dumps a *different* body at this VA; read the 0898 image. Ported as `engine-vm::battle_action::OverlayRng`. |
+| `801EC0DC` | **Monster escape roll** (battle overlay 0898): `(slot) -> bool`, "does this monster break off and flee?" The enemy-side mirror of the party roll `FUN_801E791C` - [details ↓](#801ec0dc). Ported as `engine-vm::battle_formulas::monster_escape_roll`. |
+| `801DF570` | **Attack-approach distance clamp** (0898): `(slot, requested) -> i16`. Projects the attacker/target separation along the reverse bearing and clamps the requested step into `[3d/4, d]` - [details ↓](#801df570). Ported as `engine-vm::battle_approach`. |
+| `801DBB8C` / `801D84C0` | **Battle party-name panel open / teardown** (0898). A matched pair over the label-actor block at `0x801F4E08`: the former registers a text actor through `FUN_8003541C` and stashes the handle, the latter builds the four panel buffers and clears that block - [details ↓](#801d84c0). Ported as `engine-vm::battle_party_panel`. |
+| `801DBC30` | **Battle label-strip blit** (0898): `(x, y)`. A 1:1 `0x40 x 0x10` textured quad from atlas `(0, 0x60)`, CLUT `0x7704` / tpage `7`, gated on `ctx[+0x6CE] == 0`. Ported as `engine-vm::battle_party_panel::label_strip`. |
+| `801F30C4` | **Two-mode effect burst** (0898, 563 instructions spanning `0x801F30C4..0x801F398C`): `(record, mode)`. Four iterations around the compass, three spawns each, placed by a trig term plus bounded random jitter. The entry is **one loop written twice** - [details ↓](#801f30c4). Ported as `engine-vm::battle_burst`. |
 | `801D5778` | **Pose-slot re-mapped copy** (battle-action overlay 0898). `(dst_slot, src_slot)` - both **indices**, scaled `*0x18` into the pose-slot array at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
 | `801D57E8` | **Pose-slot straight copy** (battle-action overlay 0898). `(dst_slot, src_slot)` over the same `0x80076C10` array and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
 | `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation - [details ↓](#80052fa0) |
@@ -36,7 +41,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801E9504` | Level-up applier - [details ↓](#801e9504) |
 | `80025358` | **Gated sub-overlay load sequencer** (`(void) -> u32`). Runs only while `_DAT_8007BC20 == 0`. Advances a 3-state counter `DAT_8007B6C8`: state 0 waits on the loader-ready poll `FUN_8003DE7C(1)`, then issues `overlay_loader_b(0x53, 0)` (`FUN_8003EC70`, extraction PROT 978 - the `"FIELD BACK READ"` / `"efect init"` slot-B blob) and bumps the counter; state 1 waits again and bumps; state 2 calls the loaded overlay's tick `func_0x801F6B24`. Returns `1` while still loading. Invoked from the battle-end reward routine `FUN_8004E568` to stage and then tick a sub-overlay. |
 | `801F6B24` | **Slot-B "FIELD BACK READ" staged-loader tick** (PROT 0978 at the slot-B link base `0x801F69D8`, entry = file `+0x14C`; called by `FUN_80025358` state 2). A `DAT_8007B6C8`-indexed multi-phase streamer: phase 2 stages a `0xA000`-byte texture read into `_DAT_8007B728 + 0x28000` - dev path `h:\prot\field\other6\tim_int.tim` / `tim_int2.tim` (retail branch resolves PROT index `0x4C7 + sel` via `FUN_8003E8A8`), with the variant selected by a party-state compare (`u16 0x8008480E < u16 0x80084824 >> 1`); odd phases poll `FUN_8003DE7C(1)`. `see ghidra/scripts/funcs/overlay_0978_other_game_801f6b24.txt`. |
-| `801CE844` | **Game-over overlay init** (PROT 0902 at slot-A base `0x801CE818`, entry = file `+0x2C`; called by mode-18 `GAME OVER INIT` `FUN_80025B30` after `FUN_8003EBE4(7)` - retail-unreachable, dev harness only). Resets render + heap (`FUN_80017888(0, 0x32000)`), sets game mode `_DAT_8007B83C = 0x13` (GAMEOVER MODE), seeds `_DAT_800840C0 = 3000`, and streams `gameover.pak` (dev-host path branch on `_DAT_8007B8C2`, retail via `FUN_8003EB98(1, buf, 1)`). Base pinned by the SCUS `jal`, the `+0x2C` prologue and in-file string anchors (see the static-overlay map's 0902 row; its old slot-B row was a `pointer_resolution` false positive - `docs/tooling/static-overlay-pipeline.md`). `see ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`. |
+| `801CE844` | **Game-over overlay init** - [details ↓](#801ce844) |
 | `80026018` | **Mode-24 minigame exit / return-warp handler** (`(void)`; called on exit by the slot-A minigame overlays; no battle-path caller in the dump corpus). **Restores the scene the `0x3E` warp left**: `memcpy(0x80084548, 0x8007BAE8, 8)` + `_DAT_80084540` from `0x8007BAC4`; commits session winnings into the casino-coin bank (`_DAT_800845A4 += _DAT_80084440`, cap `9999999`); latches `_DAT_8007B8B8 = 2`, `DAT_8007BD60 \|= 0x80`; sets mode 2 (field MAIN INIT reloads the restored scene; `0` when `_DAT_8007B8B8 == 0`). The old "victory/reward XP-bank commit beneath `FUN_8004E568`" reading is wrong (gold lands in `_DAT_8008459C` in `FUN_8004E568` itself). See [`subsystems/script-vm.md`](../../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp); `funcs/80026018.txt`. |
 | `8020E748` | **Per-slot item swap-back sync** (overlay 0897; alias `801C0F48` in overlay 0899 - byte-identical, relocated). `(char_idx) -> n_changed`. For each of 4 slots, compares the desired id `(&DAT_801E43E8)[i]` with the id stored at `record + char_idx*0x414 + 0x75E`; on mismatch it refunds the displaced old id to the bag via the add-item trio (`FUN_80042EE0` capacity -> `FUN_80043048` reserve -> `FUN_800421D4(old_id, 1)`) then writes the new id. Reclaims a replaced equip/consumable slot into inventory - not a fresh give. `see ghidra/scripts/funcs/overlay_0897_xxx_dat_8020e748.txt`. |
 | `801E01F0` | **Typed equip-with-swap-back** (menu overlay 0899; the dump file keeps its historical `0896` capture label). `(item_id, char_idx, slot)`. Capacity-checks (`FUN_80042EE0`) and reserves (`FUN_80043048`), classifies the item by its record type bits `(type & 0x60) >> 5` to resolve the destination slot, writes the new id into `record + char_idx*0x414 + 0x75E`, refunds the displaced old id via `FUN_800421D4(old_id, 1)`, and plays the equip SFX `FUN_80035BD0(0x24)`. The single-slot parameterized form of the 4-slot swap-back sync `8020E748`. `see ghidra/scripts/funcs/overlay_0896_bat_back_dat_801e01f0.txt`. |
@@ -56,7 +61,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `80055B6C` | Battle-init (SCUS). Zeroes the per-battle scratch (`DAT_801C8FA0[0..0x10]`, `_DAT_8007bd08/34/38/44/48/4c`), then resolves the formation: when `DAT_8007b7fc != 0` it calls `FUN_80055B20` + `FUN_8005567C` (battle-id path); when `0` it only refreshes the cell from `FUN_8005567C` if the cell is empty (preserving an `actor[+0x94]`-installed formation). Calls `FUN_8005567C`. |
 | `80046A20` | Post-battle **mode gate** (SCUS). Reads the transient battle-id `DAT_8007b7fc`: when `0` it selects the return game-mode `_DAT_8007b83c` (`0x18` field / `2` / `0`); a nonzero id routes the boss/scripted-battle continuation instead. The third and last **reader** of `DAT_8007b7fc` (with `FUN_8005567C` + `FUN_80055B6C`); a 47-program Ghidra sweep finds **no writer**, and a live write-watch (firehose from `chapter2_garmel_pre_zeto`, width 1 **and** 4) stayed **silent** across three Zeto fights - so it reads `0` in captured retail and may be **vestigial** (Zeto's formation comes from the `FUN_801DA51C` `actor[+0x94]` record path instead). See [`formats/encounter.md`](../../formats/encounter.md#scripted-battle-id-path-fun_8005567c). `see ghidra/scripts/funcs/80046a20.txt`. |
 | `80055468` | Monster battle texture / CLUT pool loader: `(pool_ptr, tmd_ptr, wide_flag, slot)`. Builds a `StoreImage` RECT keyed on the battle slot - page at `(slot*0x40 + 0x140, 0x100)` (`= (slot*64 + 320, 256)`), width `0x20`/`0x40` fb-units per the wide flag - and calls `FUN_800583C8` twice to upload the 4bpp page and the CLUT region. The `_DAT_8007BD24+0x13` read selects the active battle slot for placement. Decoded into `legaia_asset::monster_archive`; see [battle](../../subsystems/battle.md#monster-mesh-record-0x04). |
-| `80055B4C` | Side-band stream request arm. Writes `_DAT_8007BD24+0x26B = slot + 1`, `+0x26C = 0` - queues one `0x10800`-byte slot of `summon.dat` / `readef.DAT` for the transfer SM in `FUN_801F17F8` (bit 7 of `slot` selects the file). See [`formats/summon-readef.md`](../../formats/summon-readef.md). |
+| `80055B4C` | Side-band stream request arm. Writes `_DAT_8007BD24+0x26B = slot + 1`, `+0x26C = 0` - queues one `0x10800`-byte slot of `summon.dat` / `readef.DAT` for the transfer SM in `FUN_801F17F8` (bit 7 of `slot` selects the file). Both stores are `sb`, so slot `0xFF` wraps the request byte to the idle value and **disarms**; retail has no guard, and no caller reaches it. Ported as `engine-vm::battle_stream_slot::StreamSlotSm::arm`, the exact inverse of that module's `decode_request`. See [`formats/summon-readef.md`](../../formats/summon-readef.md). |
 | `800557B8` | Action-record copy (the swing-record splice helper). Copies `0x2B` words (`0xAC` bytes) of action-entry header + `(parts * frames * 9 + 5) >> 2` words of the packed keyframe stream at `+0xAC` into the persistent buffer - the shape pin for the equipment swing records `FUN_80052FA0` installs at runtime slots `0xC..0xF`. Sibling `80055854` copies the equipment attach-object records linked into entry `+0x04`/`+0x08`. Ported as `legaia_asset::battle_char_assembly::swing_battle_animations`. `800557b8.txt`. |
 | `8002B28C` | `"ME"` stream-archive reader: `(archive, dest, n)`. Magic `'M' 'E'`, `u8 count`, `u16 entry_sizes[count]` (bit 15 = compressed → `FUN_8002A9CC`, clear → raw copy). Called by `FUN_8004AD80` with `_DAT_8007BD74` (the side-band streaming buffer) to load an art record's keyframe stream - the archives live in `readef.DAT` slots `3*char+1`/`3*char+2`. Ported as `legaia_asset::me_archive`. `8002b28c.txt`. |
 | `8002A9CC` | Channel-delta keyframe codec (the `"ME"` bit-15 decompressor). Header `(b0 & 0xC0) == 0x40` + u16 offsets to nibble / byte streams; selector bits pick 12-bit literal / previous-part-delta ± nibble / literal-nibble per channel; frame 0 accumulates spatially down the parts, later frames temporally; emits the packed `[parts][frames][9-byte TRS]` stream via scratchpad tables. Ported as `legaia_asset::me_archive::decode_channel_delta`. `8002a9cc.txt`. |
@@ -163,10 +168,11 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 | `801E2524` / `801E2650` | **Battle full-screen flash / fade overlay.** `FUN_801E2524` reads a trigger byte `ctx[+0x28B]` (`_DAT_8007BD24`) and, while `1..4`, draws up to four stacked full-screen layers via `FUN_801E2650(x, brightness%, tpage_flag, level)` - each a grey GP0 quad whose brightness `= min((brightness<<8)/100, 0xFF)` - then ramps the fade-progress byte `ctx[+0x28C]` by `DAT_1F800393*8` (capped `0xF0`, which gates off the brighter layers as it climbs). The white-flash / screen-dim used on impacts and battle transitions. |
 | `801DF6B8` | **Per-actor battle draw/position loop** (1848 bytes). Iterates the 8 battle actors via the ctx order/select tables (`ctx+0x318` → `DAT_801C9370` slot, `ctx+idx*4+0x83C` liveness gate), reading each live actor's screen transform (`+0x3C`) and applying a `/10` scale (`0x66666667` magic). The builder that positions the on-screen per-actor elements (HP tags / markers) each frame; the top consumer of the SCUS on-screen-element helpers above. |
 | `801D829C` | **Camera-state per-actor transform builder** (548 bytes). Reads the battle camera-state registers `DAT_8007B790/2/4` and composes per-actor transforms over the actor table (`DAT_801C9370`) + `DAT_800840BC` - the billboard/rotation setup that orients battle 2D-in-3D elements toward the orbit camera. |
-| `801D71B8` | **Attack-phase actor sub-handler** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`; a major per-frame Attack-execution routine driving the swing arc (seeds `local = 0x400` angle). One of the hottest attack-chain bodies. |
-| `801E805C` | **Battle effect/summon-band orchestrator** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`; batches `FUN_801D8DE8(id, 0)` effect/anim requests off a count at `_DAT_801F6974`. Touches the `0x801F69xx` summon-overlay link-base window (not exercised by the Tetsu spar beyond its guard checks). |
-| `801E0080` | **Battle-arena procedural scatter/placement** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`; each frame (`DAT_1F800393`-driven) it walks a `0x1C`-stride record table at `_DAT_8007BD30+0x1010`, scans the 128-wide grid at `_DAT_8007BD30+0x10` for empty cells, and places records at RNG-chosen (`func_0x80056798`) free cells. The per-frame arena-clutter / ambient-element scatter over the battle-scene buffer; the in-`0898` half of the S5 render-tail hits. |
-| `801F0450` | **Per-party-slot Arts command-window builder** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). For each party member acting in the Attack category (`actor[+0x1DE] == 3`, gated on char-record `& 0x2000` + actor `+0x16E & 0x404`) it reads the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) + per-command AP cost `+0x74` + command-direction bytes to assemble that slot's Arts command display state. Sibling of the AP-gauge builder `FUN_801D388C`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
+| `801D71B8` | **Per-art attack-camera framing** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`. Builds a rotation / distance / look-at halfword triple on the stack (`0x400` seeds, look-at = the actor's *negated* position and facing) and dispatches per participant id `1`/`2`/`3` and then per art id `0x1A..=0x2A` through a 17-slot `jr` table, each arm folding its own halfword track from the per-phase data at `0x801F4E10`. One of the hottest attack-chain bodies. Gate + pose seed + dispatch + the `(anim_frame - 0x60) << 4` push ported as `engine-vm::battle_attack_camera`; the arms need the `0x801F4E10` table parsed. |
+| `801E805C` | **Multi-cast value readout + UI teardown** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`. Two halves: it batches `FUN_801D8DE8(id, 0)` then `(id - 4, 0)` teardown pairs off the count at `_DAT_801F6974` (row `_DAT_801F6834 + (count-1)*4`), and it renders each populated slot in `_DAT_801F6988` as a label quad plus the slot's value from `_DAT_801F6980` split into decimal digits by reciprocal divides (`0xD1B71759 >> 45` = `/10000`, `0xCCCCCCCD >> 35` = `/10`), positioned off the HP-bar widget at `ctx[+0x1074 + ctx[+0x11B6 + slot*0xC]*4]`. Kernels ported as `engine-vm::battle_value_readout`. |
+| `801E0080` | **Battle-arena emitter-driven sprite scatter** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`. A 32-slot `0x1C`-stride **emitter** pool at `_DAT_8007BD30+0x1010` spawns into a 128-slot `0x20`-stride **particle** pool at `_DAT_8007BD30+0x10`, each record driven by its own byte script (emitter step 14 bytes, particle step 6, delay bytes `<< 3`), then a third pass emits one `0x28`-byte textured quad per live particle with a brightness ramp. Whole update repeats until its cost reaches `DAT_1F800393`. Ported as `engine-vm::battle_scatter` - [details ↓](#801e0080). |
+| `801F0450` | **AI-side Arts command assembler** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). Two arms on the char-record `& 0x2000` / actor `+0x16E & 0x404` pair: a blind weighted draw from the character's learned-arts list, or a weighted candidate pool over the arts command table [`DAT_801C9360[char][cmd]`](../../subsystems/arts-command-gauge.md) (cmd from `0xC`) drawn against the AP gauge `actor[+0x154]`. It **writes** `actor[+0x1DF..]`, so it is an action producer rather than a display builder - [details ↓](#801f0450). Ported as `engine-vm::battle_arts_auto_combo`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
+| `801D02C0` | **Procedural battle ground grid** - the flat tiled floor the mode-`0x15` render draws under the combatants. Two GTE passes over a `_DAT_1F8003F8 x _DAT_1F8003FA` cell grid at pitch `0x200`; see [`battle.md`](../../subsystems/battle.md#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) for its place in the backdrop and [details ↓](#801d02c0) for the per-cell emit. CPU-side kernels ported as `engine-vm::battle_ground_grid`. |
 
 ## Battle sparring-tutorial overlay (PROT 0967)
 
@@ -327,8 +333,359 @@ The global pseudo-action `case 0xFF` increments the battle-mode counter `_DAT_80
 
 Generic core ported as `engine-core::World::pick_monster_action`; the per-monster-id switch + recent-target ring ported as `engine-core::monster_ai` (`decide` / `apply_recent_target_ring`, over `MonsterAiState`). `overlay_battle_action_801e9fd4.txt`.
 
+### `801EC0DC`
+
+**Monster escape roll.** `(slot) -> bool` - the enemy-side mirror of the party
+escape roll [`FUN_801E791C`](../../subsystems/battle-formulas.md#run--escape-roll---fun_801e791c),
+called from the AI picker `FUN_801E9FD4`. Reads the same `ctx[+0x287]` no-escape
+gate the party roll's failure arm tests and returns "no" outright when it is set.
+
+```text
+monster_sum = SUM over live monster slots:  maxHP + curHP>>1 + ATK
+for each party slot:
+    curHP == 0  ->  monster_sum <<= 1
+    else        ->  party_sum += maxHP>>3 + curHP>>4 + ATK>>3
+                    blocked |= record[+0xF8] & 0x400000
+party_avg   = party_sum / party_count      +  (target.maxHP - target.curHP) >> 5
+monster_avg = max(monster_sum / monster_count, (party_avg * 3) >> 1)
+spread      = max(monster_avg - target.INT * 2, 1)
+flee  iff   monster_avg + rand()%spread  <  party_avg + rand()%(party_avg + target.INT)
+            and rand() & 7 == 0 and !blocked
+```
+
+Three things pin the direction of the compare, and they agree: a wounded monster
+flees more easily (its own missing HP is added to the side it has to beat), a
+winning monster flees less (each downed party member doubles the monster side),
+and the blocking ability bit is `record[+0xF8] & 0x400000` = accessory-passive
+index `0x36`, **No Escape** / Chicken Guard, whose in-game text is "enemies can't
+escape" (see [`accessory-passive-table.md`](../../formats/accessory-passive-table.md)).
+The flat `rand() & 7` gate makes a flee at most a one-in-eight event even when
+the scores allow it. Stats are the actor block's ATK `+0x158` and INT `+0x168`
+(see [`battle-formulas.md`](../../subsystems/battle-formulas.md)).
+
+Ported as `engine-vm::battle_formulas::monster_escape_roll`;
+`see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
+
+### `801DF570`
+
+**Attack-approach distance clamp.** `(slot, requested) -> i16`. Resolves the
+acting actor and its target (`+0x1DD`), takes the bearing between them through
+`FUN_80019B28`, adds a half turn (`+0x800`, masked to 12 bits), and projects the
+separation:
+
+```text
+d = |(|actor.x - target.x| * sin[a]) >> 12| + |(|actor.z - target.z| * cos[a]) >> 12|
+r = requested
+if d  <u r      { r = d }        // cap at the separation
+if r  <u 3d/4   { r = 3d/4 }     // floor at three quarters of it
+```
+
+Each of the four magnitudes is its own `bgez`/`negu` pair - the coordinate
+deltas are absolutised *before* the multiply and the two products *again* after
+the shift, so one axis can never cancel the other. Both clamp compares are
+**`sltu`**, and `requested` arrives sign-extended from a halfword, so a negative
+request compares as a huge unsigned value and takes the cap arm rather than the
+floor arm.
+
+A clamp whose output is confined to `[3d/4, d]` cannot close the last quarter of
+an approach on its own, which is worth noting alongside the `0x19`
+[approach-park](../../subsystems/battle-action.md#state-table) thread.
+
+Ported as `engine-vm::battle_approach`. Read the mapped image, not a dump: the
+`overlay_0897` slice at this VA reports 94 instructions against the
+battle-action image's 82.
+
+### `801D84C0`
+
+**Battle party-name panel build + teardown**, with `FUN_801DBB8C` as its opening
+half. The pair is fixed by shared state: `FUN_801DBB8C` writes the label-actor
+block at `0x801F4E08` (`+0x01 = 0x80`, `+0x00`/`+0x02` cleared), publishes the
+active participant id minus one at `0x8007BB8C`, registers a text actor via
+`FUN_8003541C(0, 0xC, 0, -0x92, 0x24, 0x8A, 0x90, 3)` and stores the handle at
+`+0x04`; `FUN_801D84C0` ends by clearing `+0x01`, `+0x02` and that handle - and
+notably **not** `+0x00`.
+
+`FUN_801D84C0` forks on the *second* party slot's participant id
+(`DAT_8007BD11`). Zero takes a solo arm sourcing every buffer from the first
+slot's name; non-zero takes a roster arm that sources three of four from fixed
+strings and measures each with `FUN_8003CBF8(buf, 0xC1, 1)`, storing
+`participant_id - 1` at the returned offset. Either way it then publishes the
+four label buffers (`ctx+0xA9 / +0x129 / +0x159 / +0x189`) into the pose-slot
+table `0x80076C10`, resets **all three** party actors to `+0x1DD = 3` (target the
+first monster) and `+0x1DE = 0` (Martial Arts), writes each portrait cell as
+`participant_id + 0x32`, and anchors the panels by party size:
+
+| Party size | Primary X | Secondary X |
+|---|---|---|
+| 1 | `0x72` | (not written) |
+| 2 | `0x3F` | `0xA5` |
+| 3 | `0x0C` | `0x72` |
+
+A solo member sits centred and a pair splits outward - the same centring rule
+the field VM's member picker `FUN_801F1278` uses, arrived at independently.
+
+**The name pointer confirms the save record.** Both arms resolve a member's name
+as `0x8008459B + id * 0x414`, which is exactly
+`0x80084708 + (id - 1) * 0x414 + 0x2A7` - the live character record's display
+name at the offset [`save-record.md`](../../formats/save-record.md) documents.
+
+Ported as `engine-vm::battle_party_panel`. Read the mapped image: the
+`overlay_0897` dump at `801D84C0` holds 212 instructions against the
+battle-action image's 259, and the one at `801DBB8C` is a four-instruction
+label-call slice leaving via `j 0x801EA7AC` rather than a function at all.
+
+### `801CE844`
+
+**Game-over overlay init.** PROT 0902 at slot-A base `0x801CE818`, entry = file
+`+0x2C`; called by mode-18 `GAME OVER INIT` `FUN_80025B30` after
+`FUN_8003EBE4(7)`. Retail-unreachable - nothing statically writes mode 18 - so
+this is a dev harness, and worth having as the smallest complete example of the
+overlay-init shape. Base pinned by the SCUS `jal`, the `+0x2C` prologue and
+in-file string anchors (see the static-overlay map's 0902 row; its old slot-B row
+was a `pointer_resolution` false positive -
+[`static-overlay-pipeline.md`](../../tooling/static-overlay-pipeline.md)).
+
+**Read it out of the `0902` image, not `0898`.** The VA falls inside the
+battle-action image's footprint too, and the dump taken there reports `NOFUNC`
+with a garbage decode window. The `0902` copy has the clean `addiu sp, sp, -0x58`
+prologue: 193 instructions, `see
+ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`.
+
+Three phases, and only the third is renderer-free:
+
+1. **Reset + stream.** GPU/heap resets (`FUN_8001DAF8`, `FUN_8001DCF8`,
+   `FUN_80058068`, `FUN_8001E3B8`, a `0x32000`-byte `FUN_80017888`), game mode
+   `_DAT_8007B83C = 0x13` (GAMEOVER MODE), counter seed `_DAT_800840C0 = 3000`,
+   and a `gameover.pak` load forking on `_DAT_8007B8C2` between the dev-host path
+   (`FUN_8003E6BC`) and the retail CD path (`FUN_8003EB98(1, buf, 1)`).
+2. **Pak walk.** A `[u32 tag][…]` chunk loop over the loaded pak, dispatching
+   kind `1` to `FUN_800198E0` (per entry, plus a nested `[count][offsets]` table)
+   and kind `2` to `FUN_80026B4C`. Host-side asset installation.
+3. **The banner stager.** Nine fixed slots on a line, one child actor per
+   non-blank slot, each seated through `FUN_80021B04` on a **shared** move record
+   whose `model_sel` the loop rewrites per letter (`sh v0, 0x0(s5)` in the `jal`'s
+   delay slot). `model_sel = glyph_byte - 0x3F`; scale `0x1000`; the child's
+   `+0x60` takes the letter ordinal and `+0x54` the move-VM wait timer. The loop
+   retires with `_DAT_8007B6F4 = 0x140`.
+
+Two details of phase 3 come from delay slots and are lost in the C rendering. The
+pen advance `addiu $s3, $s3, 0x1c2` sits in the blank test's delay slot, so it
+runs on **every** slot including the skipped one - which is what keeps the two
+words of the label evenly spaced rather than butted together. The stagger
+accumulator `addiu $s1, $s1, 0xf0` sits inside the spawn arm, so the wait timers
+count **letters**, not slots. The pen is symmetric about zero by construction:
+nine slots at `0x1C2` from `-0x708` give `-1800..+1800`, centre slot on the
+origin.
+
+Phases 1 and 2 are a deliberate non-port - host emission (GPU state, heap, CD
+reads, asset install) with no arithmetic of its own. Phase 3 is ported as
+`engine-vm::gameover_banner`, which takes the label bytes as an argument rather
+than carrying them.
+
+### `801F30C4`
+
+**Move-VM opcode `0x17` - the battle-side escape.** `(actor, mode)`. The first
+argument is an actor: the caller is `FUN_80023070` case `0x17` and `mode` is that
+instruction's single operand, making this the exact sibling of the field escape
+`0x2F` ([`move-vm-overlay-ext.md`](../../subsystems/move-vm-overlay-ext.md)).
+It seats **twelve child actors** - four iterations round the compass, three spawn
+blocks each - on one of two static move-VM stager records in `0898`'s tail.
+
+The span is `0x801F30C4..0x801F398C` - 563 instructions, ending exactly where the
+cast audio-cue dispatcher `func_0x801F3990` begins (`0x801F3988` is the `jr ra`,
+`0x801F3990` a clean `addiu sp, sp, -0x20`). **`disasm-overlay-fn.py` historically
+could not read it**: that tool stopped at the first unconditional `j` and reported
+18 instructions here, so use raw capstone over the mapped `0898` image at base
+`0x801CE818`.
+
+**The entry is one loop written twice.** A three-way fork on `mode` (`0`, `1`,
+and a fall-through that returns immediately) reaches two loop bodies of 260
+instructions each. Diffed instruction by instruction, twelve differ, and three of
+those are only the loop-latch shape (arm `0` exits on `beqz` and jumps back, arm
+`1` falls through on `bnez`). The nine real differences are three constants
+repeated once per spawn block:
+
+| | arm `0` | arm `1` |
+|---|---|---|
+| stager record | `0x801F5DA4` | `0x801F5D0C` |
+| cosine divisors | `/48`, `/72`, `/96` | `/96`, `/144`, `/192` |
+| tail offsets | `+0x70`, `+0xA8`, `+0x38` | `+0x30`, `+0x48`, `+0x18` |
+
+Two exact relations follow: every arm-`1` cosine divisor is **twice** its arm-`0`
+counterpart (the same magic multiply with one extra `sra`), and every arm-`1`
+tail offset is exactly **3/7** of its counterpart. So `mode` selects the same
+burst at a smaller radius, not a different effect.
+
+Per spawn block: copy eight bytes from `actor[+0x24]` - the rotation triple - to
+a stack scratch, fold `sin[angle] / 2^n` plus a bounded jitter into the scratch's
+second halfword, call `FUN_80050ED4(actor + 0x14, scratch, record, scale)`, then
+write `cos[angle] / d + jitter` to the child's `+0x3E` and a second jitter to its
+`+0x98` (`sh v0, 0x18(s0)` after `addiu s0, s0, 0x80`). Block `0` indexes the LUTs
+on the four cardinals (`sll $s1, $s2, 0xb`, unmasked); blocks `1` and `2` share
+the diagonals (`(iteration * 1024 + 512) & 0xFFF` - only this arm masks), block
+`2` reusing block `1`'s index register.
+
+The jittered scratch halfword is `param_2[1]`, which `FUN_80021B04` masks to 12
+bits into the child's `+0x96` - the rotation-LUT index move-VM op `0x03` reads.
+The value **is** the child's heading, modulo the 4096-step circle.
+
+**The scale argument is per block, not per arm.** Blocks `0` and `1` load
+`actor[+0x72]` with `lhu` and pass `>> 1`; block `2` loads it with `lh` and passes
+it unshifted (its `jal` delay slot carries `move $a1, $s5` instead of the `srl`).
+Both arms agree, so blocks `0`/`1` spawn at half the parent's scale and block `2`
+at full.
+
+**Reciprocal divides: fourteen distinct (magic, shift, divisor) triples, all
+verified against plain truncating division.** The shift is the part that gets
+dropped: `0x2AAAAAAB` is `/6` read bare, `/48` with its `>> 3`, `/96` with `>> 4`
+and `/192` with `>> 5` - all four appear in this one function. `0x88888889` is the
+signed magic-with-add form (`mfhi`, `addu` the original, `sra 3`) and needs signed
+arithmetic to reproduce; it is `/15`. All are used as `x - (x / d) * d` except the
+three cosine divides.
+
+#### The two records, and how the burst is reached
+
+`0x801F5DA4` and `0x801F5D0C` are **move-VM stager records**, not tables:
+`[i16 model_sel][u16 flags][move-VM bytecode]`, the format
+[`move-vm.md`](../../subsystems/move-vm.md#move-buffer-record-sources) documents
+for every move-buffer source. Both are transform-node records terminating at op
+`0x08` HALT, both run the same instruction sequence - a render-mode-2 child spawn
+(op `0x23`) followed by a strictly alternating `WAIT_SET` / sprite-add strip - and
+the two differ in **exactly one halfword**, operand 8 of that `0x23`, which lands
+in the child's `+0xB2`. What `+0xB2` means under render mode `2` is open; the
+ported actor tick names `+0xB0`/`+0xB2` for the mode-`5` SFX-emitter arm, which is
+a different mode.
+
+Each record is preceded in the tail by an 18-byte trigger of the shape
+`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`, whose operand matches the arm
+whose record follows one alignment word later (`0x801F5D90` → mode `0`,
+`0x801F5CF8` → mode `1`). Those two addresses are cited on
+[`level-up.md`](../../subsystems/level-up.md) as "binary animation tables passed
+to particle spawner `FUN_80050ED4`" - they are neither tables nor direct callers
+of the spawner. They are move programs, and it is the `0x17` inside them that
+reaches it.
+
+`FUN_80050ED4` is **not** a boundary either: it is decoded (`see
+ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot
+pointer pool at `DAT_801C90F0` that forwards the same four arguments to
+`FUN_80021B04`, sign-extending the low halfword of the fourth, stores the returned
+actor pointer in the first null slot and returns it, or returns `0` when all 96
+slots are taken. The port catalog carries it as subsumed glue.
+
+Ported as `engine-vm::battle_burst`, including a record parser
+(`BurstRecord::parse`) that slices an arm's record out of a supplied `0898` image
+and walks its extent with the ported move-VM dispatcher rather than restating the
+opcode sizes. The records are disc data; none of their bytes are reproduced, and
+the structural claims above are asserted by the image-gated
+`battle_burst_real_records` test.
+
 ### `80048A08`
 
 **Battle per-actor draw.** `(actor)`. The per-frame draw for every battle actor (monster bodies, party, AND the player Seru-summon parts): loads the actor base matrix (`FUN_80026988`), runs the per-object rigid-TRS keyframe decoder `FUN_8004998C` (see [`monster-animation.md`](../../formats/monster-animation.md)), then for each TMD object composes a per-object Euler via `RotMatrixX/Y/Z` (`0x800461A4`/`629C`/`638C`) and emits through the cluster-A renderer `FUN_80043390`. Walks the actor `+0x44` mesh-table (`[u32 count, u32 group_desc_ptr[count]]`, 0x1C-byte group stride) and reads the monster-anim archive at `*(actor+0x4C)+0x88`. Ported as the battle draw in `crates/engine-vm/src/anim_vm.rs` (`// PORT: FUN_80048A08`).
 
 **Live trace - player Gimard "Burning Attack" cast (scenarios `gimard_summon_start`/`_visible`/`_burning_attack`, Vahn solo): this is the path that draws the summon - `FUN_80048A08`→`FUN_80043390` fires 35-64×/frame, while the summon-rotation candidate `FUN_801F7088` fires 0× and the move VM `FUN_80023070` only 2-3× (not a per-part driver). The player summon is posed exactly like a battle monster (per-object rigid TRS keyframes), NOT the move-VM / `FUN_801F7088` camera+local-Euler path.** `see ghidra/scripts/funcs/80048a08.txt`.
+
+### `801D02C0`
+
+**Procedural battle ground grid.** Two GTE passes over a
+`_DAT_1F8003F8 x _DAT_1F8003FA` cell grid, cell pitch `0x200`, sub-step `0x100`.
+Grid origin is `x_min = -(w>>1) * 0x200` and `z_min = -(h>>1) * 0x200 - 0x200` -
+centred in X, biased a whole cell toward the camera in Z.
+
+Pass 1 `RTPS`-projects one probe per cell at `(x_min + 0x100 + col*0x200,
+z_min + 0x100 + row*0x200)` and stores a class byte in the `0x1000`-byte buffer
+`_DAT_8007B814`: `-1` when `IR3 + 0x200 <= 0` (behind the near plane), `0` when
+that biased depth exceeds `0x6700` (too far), `1` otherwise. Pass 2 draws the `1`
+class only.
+
+Pass 2 `RTPT`-projects a **3x3 lattice** per visible cell (three rows of three at
+the sub-step) and emits **four** `POLY_GT4` sub-quads - the cell subdivided 2x2 -
+after a four-corner screen reject against `0x140 x 0xF0` (keep iff some corner is
+inside each edge). Sub-quad `(row, col)` takes sub-tile `row*2 + col`, and the
+four sub-tiles are the four `0x20 x 0x20` corners of the `(192..255)^2` UV window
+in scan order (u rising with the column, v with the row), CBA `0x77C0`, tpage
+`0x000D`, `0x34` bytes per prim.
+
+Two readings this corrects. **The sub-tiling is deterministic**: a single 64x64
+texture is stretched over one whole `0x200` cell as four quads - no cell picks a
+single sub-tile and nothing about the choice is random. (The random corner mirror
+does exist in the battle overlay, but it belongs to the *particle* scatter
+`FUN_801E0080`, not here.) And **`Y` is the sign bit of `X`**: every vertex is
+loaded as `mtc2 <x_word>, VXY<n>`, so the GTE's `VY` half takes the upper 16 bits
+of the same sign-extended word - `0` for `X >= 0`, `-1` otherwise. That is the
+exact sense in which the plane is "flat at `Y ~ 0`"; there is no per-cell Y.
+
+The dump's C is not usable alone for this routine: it renders the GTE traffic as
+`setCopReg`/`getCopReg` with raw immediates, drops which shifted scratchpad slot
+each store lands in, and carries an
+`Instruction at 0x801d06ec overlaps 0x801d06e8` warning where a branch delay slot
+doubles as a jump target. Ported (CPU side) as `engine-vm::battle_ground_grid`;
+`see ghidra/scripts/funcs/overlay_battle_action_801d02c0.txt`.
+
+### `801E0080`
+
+**Battle-arena emitter-driven sprite scatter.** Gated on `DAT_8007BD58 != 0` and
+`DAT_8007BD71 == 0xFF` (battle live, no end signal). Two pools off the battle
+scene buffer `_DAT_8007BD30`: 32 **emitters** at `+0x1010`, `0x1C` stride, and
+128 **particles** at `+0x10`, `0x20` stride.
+
+An emitter holds a spawn count (`+0x00`, zero = inactive), a spawn counter
+(`+0x02`), a delay countdown (`+0x03`), a 12-bit heading (`+0x04`), a base
+position (`+0x08`/`+0x0C`/`+0x10`) and a script cursor (`+0x18`). When the
+countdown expires it scans the 128 particle slots for one whose `+0x00` is zero
+and seeds it: type and lifetime from the definition the pointer table at
+`_DAT_8007BD30+8` resolves, mirror flags from `rand() % 4`, the base position
+copied through, the script's planar offset rotated by the heading (`>> 4`) and
+its velocity pair rotated the same way (`>> 0xC`) - while the offset's Y is
+*subtracted* scaled by `0x100` and the velocity's Y is copied unrotated.
+
+Countdowns drain `-8` floored at zero. Positions integrate as
+`pos += ((vel * script_speed * scene_scale) << 3) >> 15`. The two script advances
+are **not** the same shape: the emitter reads its next delay byte at
+`cursor + 1` *before* advancing 14 bytes, the particle advances 6 bytes *first*
+and reads at the new `cursor + 1`.
+
+The render pass emits one `0x28`-byte textured quad per live particle with a
+brightness ramp: `total >> 3` is the fade-in length, below it the level is
+`((steps+1) << 7) / ramp` and at or above it `((total - steps) << 7) /
+(total - ramp)`, clamped at `0x80` by an **unsigned** `sltiu 0x81`. The level is
+splatted into all three colour bytes and summed with `0x2E000000`. The mirror
+bits are negative logic: with `mirror == 0` the *high* U lands in corners 0 and 2
+and the *high* V in corners 0 and 1.
+
+The whole emitter+particle update repeats: a pass that touched a live countdown
+costs `1`, an idle pass costs `5`, and passes run while the accumulated cost is
+below `DAT_1F800393`. Ported as `engine-vm::battle_scatter`;
+`see ghidra/scripts/funcs/overlay_battle_action_801e0080.txt`.
+
+### `801F0450`
+
+**AI-side Arts command assembler** - the counterpart to the player queue-builder
+`FUN_801EED1C`. Two arms, chosen by the character record's `+0xF8 & 0x2000` and
+the actor's `+0x16E & 0x404`:
+
+- **Bit set, status clear** - the auto-fill arm. Writes category `+0x1DE = 3`
+  (Attack), rolls a target `rand() % monster_count + 3` and pushes it through the
+  dead-target redirect `FUN_801DB124`, then loops: a stop roll (`rand() % 7 == 0`
+  ends it), an index roll over the character's learned-arts list
+  (`record[+0x185]` count, `record[+0x186 + i]` ids), and a floor test - a list
+  entry below `6` for participant id `2` or below `4` otherwise is discarded and
+  the slot re-rolled, otherwise `id + 0x1B` is appended. Stops at 15 entries.
+- **Otherwise** - the pool arm. Scans arts commands `0x0C..=0x0F`, tracks the
+  cheapest `+0x74` AP cost, gives each command a weight from a `8 -> 1 / 4 -> 2`
+  ladder over two byte bands selected by the target monster's type byte
+  (`+0x1E`: type `3` uses `..=0x10` and `0x16..=0x1A`, type `2` uses `0x11..=0x15`
+  and `0x1B..=0x1F`, anything else leaves every weight at `8`), zeroes the weight
+  when the command's guard mask at `0x801F672C` intersects the actor's `+0x16E`,
+  and repeats the id that many times into a `0x10`-byte scratch. Then it draws
+  uniformly from the scratch, refuses a pick the gauge `actor[+0x154]` cannot
+  cover, consumes taken entries, and loops while the gauge still covers the
+  cheapest cost.
+
+So it is an action **producer** writing `actor[+0x1DF..]`, not a display builder -
+which makes it the natural source of the observed AI-delegated multi-strike
+streams (see
+[`battle-action.md`](../../subsystems/battle-action.md#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)).
+The tail from `0x801F0B4C` is a second budget stage keyed on `actor[+0x170]` and
+is not decoded. Ported as `engine-vm::battle_arts_auto_combo`;
+`see ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.

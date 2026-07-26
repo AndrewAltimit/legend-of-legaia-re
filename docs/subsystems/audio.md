@@ -34,7 +34,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
 - [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
 - [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
-- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
+- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [clean-room SPU port](#engine-audio-model---clean-room-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
 - [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
@@ -199,9 +199,107 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_8006206C(...)` | `_SsSetSlideVolume` - ramp from→to over N ticks. Touches `+0x48/0x4A/0x9C/0xA0/0x4C`, signed-divide per-tick delta. Gated by flags `4 & 0x100` in `+0x98`. |
 | `FUN_8006171C(vab, prog, ev)` | Per-program SEQ controller/meta dispatch - post-increments the program's stream cursor (`_DAT_801CD2C0[vab] + prog*0xB0`, deref `+0`), switches on the event byte `ev`, routes through the installed handler vector `_DAT_801CD238..248`, and falls to the varint decoder `FUN_80061C68` for value events, storing the result at `+0x90`. |
 
-**Per-frame tick call graph.** The concrete chain behind the prose "hand the payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) → `FUN_8006320C` / `FUN_8006352C` (the per-channel note/expression handlers over `_DAT_801CD2C0[slot]`) → `FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status `_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978` (`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush / release sweep below) carrying the result to the SPU. The SEQ-stream cursor advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps `_DAT_801CD220..230`) with track-end / vab-release in `FUN_80063AA8`. This is `sequencer.rs`'s integer-accumulator event loop in retail form.
+**Per-frame tick call graph.** The concrete chain behind the prose "hand the
+payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →
+`FUN_8006320C` / `FUN_8006352C` (the **volume-slide ticks** over
+`_DAT_801CD2C0[slot]` - see below) → `FUN_80067E9C` (`_SsSeqNoteOn`) →
+`FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status
+`_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978`
+(`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush /
+release sweep below) carrying the result to the SPU. The SEQ-stream cursor
+advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps
+`_DAT_801CD220..230`). The per-`+0x98`-flag-bit map of everything `FUN_80062F98`
+fans out to is tabulated once, in
+[`reference/functions/audio.md`](../reference/functions/audio.md); this page
+carries only the handlers whose labels had been wrong.
 
-**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged elsewhere as "fixed-point div" pitch kernels - they carry **no division** and are per-channel note/expression handlers. The fixed-point note→pitch math is confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4` (`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+**The volume-slide pair.** `FUN_8006320C` and `FUN_8006352C` are the
+**ascending** and **descending** halves of one slide, not note or expression
+handlers. Three things identify them together. They read exactly the field set
+their installer `FUN_8006206C` (`_SsSetSlideVolume`) writes - `+0x48` / `+0x4A` /
+`+0x4C` / `+0x9C` / `+0xA0`. They fetch `(vol_l, vol_r)` through `FUN_800683D8`,
+the same helper `SsSeqSetVol` uses. And their arithmetic mirrors: `FUN_8006320C`
+adds the step and bumps both sides (`addu` at `0x8006331C`, `addiu …,1` at
+`0x8006332C` / `0x80063340`), `FUN_8006352C` subtracts it and lowers both
+(`subu` at `0x8006363C`, `addiu …,-1` at `0x8006368C` / `0x80063698`).
+
+### The calc tier's two shared conventions
+
+Everything `SsSeqCalc` fans out to is ported as `legaia_engine_audio::seq_calc`
+(`NOT WIRED` - [`Sequencer`](#engine-audio-model---sequencer-port) is the engine's
+replacement for the tier, and these kernels are the reference it has to agree
+with). Two conventions recur across the whole family and are worth stating once.
+
+**The flag word is re-read from memory before every test.** `FUN_80062F98` does
+not snapshot `+0x98`; it reloads it ahead of each `andi`. So a handler that
+clears its own bit is observed immediately by the next test, and the dispatch is
+a sequence of decisions rather than one decoded mask. Two consequences fall out
+of that directly. The bit-`0x4` arm runs `SsSeqRewind` and then **zeroes the
+whole word**, so the `0x200` "finished" flag `FUN_80063AA8` sets on a track's
+last repeat - alongside `0x4` - never survives into the next frame. And because
+`0x40` and `0x80` both dispatch to the tempo slide, a tempo tick that does *not*
+settle leaves both bits standing and is therefore called **twice** in one frame,
+while one that settles clears both and is called once.
+
+**The sign of a step field selects the rate mode, not the direction.** Both the
+volume slide (`+0x4C`) and the tempo slide (`+0x4E`) read a signed step and
+branch on `blez`. A **positive** step means "move one unit every `step` ticks" -
+the tick is gated on `remaining % step == 0` and skips entirely otherwise. A
+**non-positive** step means "move `|step|` units every tick", clamped at the
+target. Direction is carried by the function (`FUN_8006320C` up toward
+`(0x7F, 0x7F)`, `FUN_8006352C` down toward `(0, 0)`) or by the target
+(`+0xAC` for tempo), never by the step's sign. A `step` of exactly `0` lands in
+the second arm and moves nothing.
+
+### Where wall-clock tempo becomes an integer tick step
+
+`FUN_800649B0`'s tail is the single place the sequence's tempo turns into the
+per-frame budget the delta-time pump spends:
+
+```text
++0x54 = (+0x50 * +0x94 * 10) / (*0x801CD2BC * 60)      ; unsigned divide
+if ((s16) +0x54 <= 0) +0x54 = 1
+```
+
+`+0x50` is the sequence resolution (ticks per quarter), `+0x94` the current
+tempo, and `0x801CD2BC` a runtime divisor. The floor at `1` is what keeps a very
+slow tempo from stalling the pump outright. The multiply is signed on `+0x50` but
+the divide is `divu`, so a negative tempo yields a huge quotient rather than a
+negative one, and the `i16` truncation is what the floor then catches.
+
+The recompute is skipped entirely on the sub-step early-out (a positive `+0x4E`
+off its boundary returns before reaching the tail), so the budget only moves on
+frames the tempo itself moved.
+
+The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
+of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
+fixed-point ×10 quantity. That reading is an **inference from the arithmetic
+alone** - `0x801CD2BC` has not been read from a live capture - so the port takes
+the divisor as a parameter and bakes no `60` in. This matters because the engine
+`Sequencer` clocks in exact integer SPU samples: a wrong constant here is a
+tempo error, and a tempo error is audible while remaining perfectly
+self-consistent under any test written against the same wrong constant.
+
+**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
+elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the
+earlier stated reason, that they carry no division, is itself wrong. Each carries
+exactly one `div`, and it is a **modulo of the slide tick counter, not a
+fixed-point pitch divide**: `FUN_8006320C` at `0x8006329C..0x800632C4` and
+`FUN_8006352C` at `0x800635BC..0x800635E4`, both dividing the just-decremented
+remaining-tick counter `+0xA0` by the signed per-tick step `+0x4C` and reading
+the **remainder** back with `mfhi`. A non-zero remainder skips the update, so the
+pair is a sub-tick divider - one volume unit every `N` ticks rather than `N`
+units every tick. The divisor is positive on that path: a `blez` diverts a
+non-positive step to its own arm first. The fixed-point note→pitch math is
+confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4`
+(`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+
+**Track end is a loop-repeat chain, not a vab release.** `FUN_80063AA8` handles
+the last repeat of a track by **chaining to another `(slot, channel)`** named by
+its own `+0x22` / `+0x23` bytes: `beq +0x22, 0xFF` at `0x80063C84` skips the
+chain, otherwise `FUN_80064090(+0x22, +0x23)` starts the successor and `+0x14` is
+zeroed. Both arms then kill the finished track's notes through `FUN_800684CC`.
+Nothing in the body releases a VAB.
 
 ### Voice / mixer (audible-output critical path)
 
@@ -227,6 +325,62 @@ Between the sequencer event loop and the raw voice registers sits a band of SsAP
 | `FUN_80066F4C(voice)` | **Per-voice vol/pan/reverb recompute** - re-derives one sounding voice's L/R from the current channel vol (`prog_attr +0x58/+0x5A`), prog/tone vol, three pan attenuations and the `_DAT_801CE330` mono fold, commits reverb depth via `FUN_8006AA90(_DAT_801CE34A - _DAT_801CE358)`, and stages the result into `&DAT_801CE080/082[voice]` with flags `0x3`. |
 
 `FUN_80067A1C` is the retail source for the per-tone pitch-bend range the engine ports as `VabBank::pitch_bend_range`: the wheel scales by the *sounding tone's* own `pbmin`/`pbmax` bytes, so a `(0,0)`-range tone does not bend - exactly the law [`engine-audio`'s sequencer](#engine-audio-model---sequencer-port) applies. `FUN_80066F4C` is the retail twin of `sequencer.rs`'s `remix_channel` (re-derive every sounding voice on a mid-note CC7/CC10 change) - the same vol/pan chain as `FUN_80067550`, run standalone rather than at note-on. Provenance: `see ghidra/scripts/funcs/80064cf0.txt`, `80064df8.txt`, `800655cc.txt`, `8006861c.txt`, `80067a1c.txt`, `80066f4c.txt`.
+
+### The key-on pitch law - `note` against the tone's `center`
+
+Both key-on paths converge on one arithmetic, and it is the value written
+straight into the SPU voice's pitch register - nothing rescales it afterwards.
+
+```text
+  fine, carry = per-path from the tone's shift byte
+  n           = note + 60 - center + carry
+  pitch       = PITCH[(n % 12) * 16 + fine]  shifted by  (n / 12 - 5)
+```
+
+`PITCH` is the 192-entry `u16` table at `DAT_8007A940` (`SCUS_942.54` file
+offset `0x6B140`), which is exactly `floor(0x1000 * 2^(k/192))` for every
+entry - one octave at 1/16-semitone resolution. `n / 12` and `n % 12` truncate
+toward zero (MIPS `div`). So `note == center` selects `PITCH[0] = 0x1000`:
+
+- **Unity is 44.1 kHz, and it is what a tone plays at on its own centre note.**
+  There is no separate source-sample-rate factor. A 22.05 kHz VAG body is
+  authored with `center` twelve semitones above the key it is meant to sound
+  at, so the same law lands on `0x800`. Folding a `22050/44100` ratio in as
+  well - the shape a "libspu key-to-pitch formula" write-up invites - puts
+  every voice, BGM note and sound effect alike, an octave low.
+- **`shift` raises the pitch** by `shift/128` of a semitone, quantised to 1/16.
+  It is the tone's fine-tune, positive, in 1/128-semitone units - not
+  centi-semitones and not a downward correction.
+
+The two paths differ only in how the fine index is formed:
+
+| Path | Entry | Fine index |
+|---|---|---|
+| Sequencer note-on | `FUN_80066308` → `FUN_80066d8c` | `min(shift >> 3, 15)`; saturates, never carries a semitone |
+| SFX / direct key-on | `FUN_80065034` → `FUN_80066e50` | `(0x40 + shift) >> 3`; `>= 16` carries one whole semitone and keeps the remainder |
+
+`FUN_80065034`'s sixth argument is that `fine`, and it is the literal `0x40` at
+every traced call site - the cue-ring drainer `FUN_80016B6C` (both arms), the
+per-actor trigger under `FUN_80021DF4`, and the slot-machine / dance / debug
+overlays' direct key-ons. So a **cue keys half a semitone above** where the
+sequencer would put the same `(tone, note)` pair. Both paths hand the result to
+`FUN_80067550`, which stores it into the shadow register file at
+`0x801CE084 + voice*16` (SPU voice `+4` = pitch) and ORs the flush flags.
+
+Measured, not just read: across catalogued mednafen states, 126 of the 128
+voices whose libsnd note-staging record (`0x801CDB50 + voice*54`) holds a
+non-zero pitch have exactly the value this law computes from that record's
+`(note, program, tone)` against the live bank's `center` / `shift` - sequencer
+voices and SFX voices (record `+0x10 == 0x21`) alike. The two misses are
+records whose bank was swapped after the key-on, so the reconstruction reads a
+`center` that is no longer the one used.
+
+Port: `compute_pitch` + `PitchPath` in
+[`crates/engine-audio/src/vab_bind.rs`](../../crates/engine-audio/src/vab_bind.rs);
+`play_note` takes the sequencer arm and `play_tone` the cue arm. The table is
+computed from its closed form rather than carried as data.
+`see ghidra/scripts/funcs/80065034.txt`, `80066e50.txt`, `80066d8c.txt`,
+`80067550.txt`, `80066308.txt`.
 
 ### Voice allocator + key-on/off flush (the middle tier)
 
@@ -300,9 +454,7 @@ Provenance: `see ghidra/scripts/funcs/80060a1c.txt`, `80060a94.txt`,
 | `FUN_80068C70` | `SsSetStereo` - zeroes the mono-fold flag `_DAT_801CE330`. (Its `SsSetMono` twin `FUN_80068C5C` sets it to `1`.) |
 | `FUN_800693B8` | One-argument shim - tail-calls `FUN_800693D8(0)`, the SPU key/reset routine. |
 | `FUN_8006B684` | Two-constant shim - calls `FUN_8006A7C8(a0, a1, 0xCC, 0xCD)`; the constants select the SPU register pair the callee programs. |
-| `FUN_8006C9E4` / `FUN_8006CA04` | Argument-free shims onto `FUN_8006D1E0` / `FUN_8006D2AC` (the transfer-mode setters in the [DMA engine](#spu-dma-transfer-engine)). |
-| `FUN_8006D2F0` | DMA-completion path: clears `_DAT_8007B2B8`, latches the block count `_DAT_8007B2C4` into `_DAT_8007B2B4`, advances the SPU address by `count * 0xF0`, calls `FUN_8006D358`, and on failure invokes the installed callback at `_DAT_801CE560` with `0xFFFF`. |
-| `FUN_8006E600` | Per-voice release/steal sweep over one driver record: reads the voice-count byte `+0x34` (clamped to `6`), scans the `+0x57`/`+0x5D` parallel byte arrays for a free slot, and accumulates the global voice budget `_DAT_8007B2BC` against the `0x3D` ceiling. |
+| `FUN_8006C9E4` / `FUN_8006CA04` / `FUN_8006D2F0` / `FUN_8006E600` | **Not libspu** - argument-free shims and helpers of the libpad driver; see [the `0x801CE628` cluster](#not-ssapi-the-0x801ce628-cluster-is-libpad). |
 | `FUN_8005EBFC` | Single-hop shim onto `FUN_8005F024`. |
 
 Provenance: `see ghidra/scripts/funcs/80064bd0.txt`, `80065b98.txt`,
@@ -337,7 +489,7 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 | `_DAT_801CD2C0[i]` | Per-VAB program-attr table. Stride `0xB0` per program (`prog * 0xB0 + 0x58/0x5A`). |
 | `_DAT_801CE344` | Open-seq-slot count. |
 | `_DAT_801CE368` | Per-slot status byte (`0` = free, `1` = open, `2` = playing). |
-| `_DAT_801CE564 / _DAT_801CE574` | **Function-pointer hooks installed by Legaia.** `_564` resolves the active script-VM seq context; `_574` is a worker-availability check. Distinct from the standard PsyQ in-line slot lookup, so the actor / field VM is wiring callbacks here. |
+| `_DAT_801CE564 / _DAT_801CE574` | **Not SPU globals** - the libpad driver's socket → port-context resolver and its port-busy check, installed by `PadInitDirect` / `FUN_8006E8D4`. See [the `0x801CE628` cluster](#not-ssapi-the-0x801ce628-cluster-is-libpad). |
 
 ### libspu primitives
 
@@ -445,26 +597,70 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | `FUN_80069170(slot)` | `SsSeqPlayResolved` - final play-start stage; calls `8006BB08(0)` (xfer-mode), `8006BAB0` (commit), `8006BA50` (data feed). |
 | `FUN_80069230(...)` | Streaming SEP feeder - partial-buffer continuation via `_DAT_8007AAC4/AAC8`. |
 | `FUN_80069390(...)` | `SsIsEos` - tail-call to `FUN_8006BBC8`. |
-| `FUN_8006CA7C` | `SsSeqGetStatus` - resolves ctx via `_DAT_801CE564`, returns ctx `+0x49` with state-code normalization (`3↔1, 2→1, 6→4`). |
-| `FUN_8006CB3C(attr_id)` | `SsSeqGetAttr` - switches on `attr_id`: `1` byte@`+0xE8`, `2` u16@`+0xE6`, `3` byte@`+0xE4`, `4` u16@`+0+idx*2`/count@`+0xE3`, `100` u32@`+0x4C`. |
-| `FUN_8006CDB0` | `SsSeqSetCallback` - resolves ctx via `_DAT_801CE564`, tail-calls `FUN_8006DDC8`. |
-| `FUN_8006CE30` | `SsSeqSetUserData` - resolves ctx via `_DAT_801CE564`, tail-calls `FUN_8006D7B4`. |
-| `FUN_8006D7B4` | `_SsSeqSetUserDataInner` - `ctx[+0x28] = p2; ctx[+0x34] = p3`. |
-| `FUN_8006DDC8` | `SsSeqSetMarkCallback` - installs trampolines at ctx `+0x14/+0x18`, sets active-flag at `+0x46`. |
-
-**Seq-worker callback table.** Above the per-slot record chain the layer installs a dispatch vtable at `_DAT_801CE540..580` and walks a stride-`0xF0` worker-record table at `0x801CE628` (cursor `_DAT_8007B2B4`) - the mechanism behind the `_DAT_801CE564` / `_DAT_801CE574` hooks flagged in [SPU globals](#spu-globals).
-
-| Function | Role |
-|---|---|
-| `FUN_8006E2B4(cb1, cb2)` | Worker-table init - clears the `0x1E0`-byte record table at `0x801CE628`, installs the hook vector (`_DAT_801CE560 = FUN_8006E46C` advance, plus the `_DAT_801CE564` / `_56C` / `_558` / `_578` / `_580` resolvers), stores the two user callbacks, and fills each record's control bytes with the `0xFF` idle sentinel. |
-| `FUN_8006E46C(rec)` | Per-slot advance - steps the worker cursor `_DAT_8007B2B4` by one `0xF0` record and services it via `FUN_8006E9C0` / `FUN_8006EC24`, looping while the cursor is `<= _DAT_8007B2C8`. |
-| `FUN_8006DAAC(rec)` | Per-record state dispatch - branches on the record's state byte `+0x47` into `FUN_8006E0A0` / `_E0C0` / `_E0E0` / `_E100`. |
-| `FUN_8006CF9C()` | Hook installer - `_DAT_801CE544 = FUN_8006D030`, `_DAT_801CE548 = FUN_8006CFC8`. |
-| `FUN_8006D1E0()` | Callback install under a BIOS critical section (`FUN_80056678` / `FUN_80056688`) touching the `_DAT_801CE540` vector. |
-
-Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006e46c.txt`, `8006daac.txt`, `8006cf9c.txt`, `8006d1e0.txt`.
 
 The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801CD2B8` → ptr table @ `0x801CD2C0` → per-slot record (stride `0x36`) at `0x801CDB60` → VAB program-attr (stride `0xB0`) at `0x801CD2C0[i] + prog*0xB0`.
+
+### Not SsAPI: the `0x801CE628` cluster is libpad
+
+`0x801CE628` is **not** a sequencer worker table. It is libpad's two-port
+driver-context array - stride `0xF0`, `0x1E0` bytes total, one context per
+controller socket - and every entry that resolves a context through the
+`_DAT_801CE564` hook is a libpad API call. Nothing in the cluster touches an
+SPU register, a VAB, or a voice key. The correction is recorded on this page
+because this is where the corpus filed the cluster.
+
+The chain anchors on the game's controller + memory-card init `FUN_8001D230`,
+which `bzero`s `0x44` = 2 x `0x22` bytes at `0x800840F8` and hands the two
+halves to `FUN_8006E2B4` (`addiu a1,a0,0x22`). Those two 34-byte buffers are
+what the pad pump `FUN_8001822C` decodes as `[status][type nibble][buttons:
+inverted u16]`, port 1 at `+0x22`/`+0x23`.
+
+| Function | PsyQ entry | What the instructions show |
+|---|---|---|
+| `FUN_8006E2B4(buf0, buf1)` | `PadInitDirect` | Clears `0x1E0` = 2 x `0xF0` at `0x801CE628`, stores `buf0`/`buf1` at each context `+0x30`, seeds each report buffer `[0] = 0xFF` / `[1] = 0`, and fills the six bytes at context `+0x5D` with `0xFF` - the actuator-alignment table's unassigned default. |
+| `FUN_8006CE30(socket, table, len)` | `PadSetAct` | **Three** arguments: `a0` passes through untouched into the context resolver, `a1`/`a2` are forwarded to `FUN_8006D7B4`. Ghidra's C drops `param_1`. |
+| `FUN_8006D7B4(ctx, table, len)` | `PadSetAct` inner | `ctx[+0x28] = table`, `ctx[+0x34] = (u8)len` - the per-port actuator buffer pointer and its length. |
+| `FUN_8006CDB0(socket, align)` | `PadSetActAlign` | Two arguments, tail-calling `FUN_8006DDC8`: stores `align` at `ctx+0x20`, installs trampolines at `ctx+0x14`/`+0x18`, sets the port state byte `ctx+0x46 = 1`. |
+| `FUN_8006CA7C(socket)` | `PadGetState` | Tests the report buffer's status byte through `ctx+0x30`, then normalises the port state byte `ctx+0x49` (`3 → 1`, `2 → 1`, `6 → 4`). |
+| `FUN_8006CB3C(socket, term, offs)` | `PadInfoMode` | `term = 4` returns the id-table length `ctx+0xE3` when `offs < 0`, else `((u16 *)ctx[0])[offs]` bounds-checked against it - `InfoModeIdTable`'s contract verbatim. `1` → byte `+0xE8`, `2` → u16 `+0xE6`, `3` → byte `+0xE4`, `0x64` → u32 `+0x4C`. |
+| `FUN_8006D1E0` / `FUN_8006D2AC` | `PadStartCom` / `PadStopCom` | Mirrored pair inside a BIOS critical section: `ChangeClearRCnt(3, 0)` against `(3, 1)`, hooking / unhooking the `_DAT_801CE540` vector. `FUN_8006C9E4` / `FUN_8006CA04` are their argument-free shims. |
+| `FUN_8006E600(ctx)` | actuator payload build | Clears the 6-byte staging area `ctx+0x57`, bails when the extended-mode offset `ctx+0xE6` or the act-table pointer `ctx+0x28` is zero, clamps the act length `ctx+0x34` to `6`, and maps the caller's actuator values through the align table at `ctx+0x5D` into the outgoing poll packet. |
+| `FUN_8006E46C(ack)` | per-port service step | Advances the port cursor `_DAT_8007B2B4` by one `0xF0` context from the base `_DAT_8007B2A8` and services it via `FUN_8006E9C0` / `FUN_8006EC24`. |
+| `FUN_8006DAAC(ctx)` | per-port state dispatch | Branches on the port state byte `ctx+0x46` into `FUN_8006E0A0` / `_E0C0` / `_E0E0` / `_E100`, passing `ctx+0x47`. |
+| `FUN_8006D2F0` | per-port transfer kick | Latches `_DAT_8007B2C4` into the cursor, calls `FUN_8006D358` on `base + idx*0xF0`, and on failure invokes the installed callback `_DAT_801CE560` with `0xFFFF`. |
+| `FUN_8006CF9C` | hook installer | `_DAT_801CE544 = FUN_8006D030`, `_DAT_801CE548 = FUN_8006CFC8`; called at the tail of `PadInitDirect`. |
+
+The BIOS thunks around it agree. `FUN_8005FD68` = `ChangeClearPAD` (B0 `0x5B`)
+is called by `FUN_8006EE8C` / `FUN_8006EEE0` to hand the pad off from the BIOS
+handler to the direct driver; `FUN_8005FD78` = `ChangeClearRCnt` (C0 `0x0A`);
+`FUN_8006EF48` / `FUN_8006EF58` / `FUN_8006EF68` = `InitCARD` / `StartCARD` /
+`StopCARD` (B0 `0x4A` / `0x4B` / `0x4C`); `FUN_80056618` = `_bu_init` (A0
+`0x70`). `FUN_8001D230`'s eight `OpenEvent` / `EnableEvent` pairs on classes
+`0xF4000001` / `0xF0000011` (specs `0x0004` / `0x8000` / `0x0100` / `0x2000`,
+mode `0x2000`, no handler) are the **memory-card** event set, not SPU or DMA
+interrupts.
+
+**What put the SsAPI label there.** Three things, each individually
+reasonable: the `0x8006C000..0x8006F000` band does hold genuine libspu /
+libsnd code; a vtable of installed hooks over a stride-`0xF0` record array
+with an `0xFF` idle fill and a per-record state byte reads exactly like the
+sequence-worker table; and with `param_1` dropped, `FUN_8006CE30` renders as a
+two-argument "set user data on a resolved context". It fails on the buffers
+(`ctx+0x30` is provably the button report `FUN_8001822C` decodes), on
+`FUN_8006CB3C`'s `term = 4` branch (an id-table query with no sequencer
+analogue), and on the record count, which is 2 - the number of controller
+sockets, not a sequencer's slot count.
+
+**Consequence.** `DAT_800915DA` / `DAT_800915DB` are port 0's two actuator
+bytes, so the per-frame kernel `FUN_80018DB0` that writes them is a **rumble**
+cadence, not an audio one - see the
+[`80018DB0` row](../reference/functions/audio.md) and
+[`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+
+Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
+`8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,
+`8006d2ac.txt`, `8006e600.txt`, `8006e46c.txt`, `8006daac.txt`, `8001d230.txt`,
+`8001822c.txt`.
 
 ## File-API leaf cluster
 
@@ -612,7 +808,11 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
-The bank those programs index is **not a dedicated SFX VAB** - it is the active scene's music VAB. `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at the per-scene `scene_vab_stream` bank the BGM sequencer has open: across the save-state catalogue that bank is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So the engine fires a cue with `SfxBank::play_one_shot(spu, scene_vab)` against the BGM `VabBank` it already loaded - no separate SFX bank. Because scene banks differ in size (`1..=16` used programs), a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
+The bank those programs index is selected at key-on time, not by the cue: `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at whichever VAB is open. Across the save-state catalogue that is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So a cue is fired with `SfxBank::play_one_shot(spu, vab)` against a `VabBank` the host already loaded, and because banks differ in size a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
+
+**"So the SFX bank is always the scene's music VAB" does not follow, and for the low id range it is false.** The class-2 bank (PROT 0869) that the battle scene loader `FUN_800520F0` (`a1 = 2`) and the Baka init `FUN_801CF00C` stage carries a purpose-built SFX key map at **program 0**: one distinct VAG per semitone, single-note windows `min == max == 60 + i`, lining up 1:1 with the descriptor notes of the UI cue ids (`0x20` note 60, `0x21` note 61, `0x23` note 63, `0x09` note 69).
+
+A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in the `town01` case two tones spanning keys `0..=68` and `69..=101`, with tones 3/5/9 empty - so those same ids resolve there to an arbitrary instrument note or to nothing at all. The UI/common cues belong to the class-2 program-0 map; only a cue whose program is genuinely part of the open music bank resolves against that bank.
 
 | Cue ID | Meaning |
 |---|---|
@@ -620,7 +820,7 @@ The bank those programs index is **not a dedicated SFX VAB** - it is the active 
 | `0x4C` | Hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot). |
 | `0x80..=0xFE` | Reserved per-character / per-art SFX IDs. Indexed from the per-actor `+0x9C0` table at retail. |
 
-`SfxBank::play_one_shot` delegates to the existing `VabBank::play_note` for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call so engines can dispatch through the same `VabBank` they already wired for the BGM sequencer. A `PendingCue` with `frames_remaining = 0` fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first - matching the retail timing where a `HitCue::timing_frames = 1` cue plays one frame after the strike begins.
+`SfxBank::play_one_shot` delegates to `VabBank::play_tone` - tone by explicit **region index**, the retail cue shape, not the sequencer's key-range `play_note` - for sample, ADSR and the [cue-arm pitch](#the-key-on-pitch-law---note-against-the-tones-center); the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call so engines can dispatch through the same `VabBank` they already wired for the BGM sequencer. A `PendingCue` with `frames_remaining = 0` fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first - matching the retail timing where a `HitCue::timing_frames = 1` cue plays one frame after the strike begins.
 
 Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
 
@@ -640,6 +840,47 @@ The engine wires this end-to-end:
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` drives an art through the live battle session and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check.
+
+### The second shout trigger - the animation cue track (`FUN_800508DC`)
+
+`FUN_8004C140` above is not the only route to a shout. A playing battle action
+entry also carries its own **cue track** at `entry + 0x54` - eight `(u16 frame,
+u16 cue)` pairs, terminated by `cue == 0` - which `FUN_800508DC` walks once per
+animation frame, resuming from a persistent cursor in the battle actor at
+`+0x1F6`. Each call fires every cue whose trigger frame the clip has reached and
+parks on the first it has not. Everything it fires goes out through the cue router
+`FUN_8004FE5C`. Port: `legaia_engine_audio::anim_cue` (`walk_anim_cues`,
+`AnimCueState`).
+
+On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
+single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
+exactly what lifts `0xC8` to `0x100` and so puts the whole band in the `>= 0x100`
+namespace `FUN_8004FE5C` routes to `FUN_8003D53C` instead of the SPU ring. Three
+ids inside it are the per-character shout, and they map onto the same clip slots
+the `FUN_8004C140` path uses:
+
+| cue id | re-based | clip slot | character | XA file |
+|---|---|---|---|---|
+| `0xD7` | `0x10F` | `26` | Vahn | `XA2.XA` |
+| `0xE7` | `0x11F` | `27` | Noa | `XA4.XA` |
+| `0xF7` | `0x12F` | `28` | Gala | `XA6.XA` |
+
+Those three, and only those three, get a **two-take coin flip**: one BIOS `rand()`
+draw and `id + 0x38 - (r % 2)`, so the shout alternates between channels `7` and
+`6` of the character's bank. They also bump a per-character tally at the live
+`0x414`-stride record's `+0x98`, before any gate, and they honour a mute bit at
+record `+0xF8 & 0x2000` that suppresses the shout outright.
+
+The coin flip is further conditional on the CD being **free**. While a load is in
+flight (`_DAT_8007BC20 != 0`) no XA stream can start, so the shout degrades to a
+fixed SPU ring cue through `FUN_8004FCC8` - and the roster mapping there is not
+monotonic: Vahn `0x56`, Noa `0x62`, Gala `0x5C`.
+
+Cue ids below the band (and `0xFA`, and every id on a monster seat) route
+unchanged except for a `+1` nudge when the entry's staged anim id is exactly
+`0x12`; on a party seat whose record carries the `0x2000` bit that nudge becomes a
+**suppression** for ids `>= 0x4D`. Source: `ghidra/scripts/funcs/800508dc.txt`
+(disassembly).
 
 ### CD-XA voice-clip dispatchers and static cue census
 

@@ -38,4 +38,14 @@ cp "${PKG_DIR}/legaia_web_viewer.d.ts" "${SITE_DIR}/"
 cp "${PKG_DIR}/legaia_web_viewer.js" "${SITE_DIR}/"
 cp "${PKG_DIR}/package.json" "${SITE_DIR}/"
 
+# Record what these artifacts were built from. Without this the tree has no way
+# to answer "is the shipped bundle current?" - and answering it from file
+# mtimes or `git log` gets it wrong, because a branch can build the bundle and
+# then be rebased onto different sources. See check-wasm-freshness.py.
+if command -v python3 >/dev/null 2>&1; then
+    python3 "${REPO}/scripts/ci/check-wasm-freshness.py" --write
+else
+    echo "[build-wasm] WARN: no python3; site/wasm/SOURCE_STAMP.json not updated" >&2
+fi
+
 echo "[build-wasm] done. site/wasm/ is now in sync with crates/web-viewer."

@@ -1,7 +1,12 @@
 //! GP0 `0x80` VRAM-to-VRAM rectangle copy: packet builder, ordering-table
 //! emitter, and the field-VM sub-op `0x43`/`0x12` call sequencer.
 //!
-//! PORT: FUN_80057914, FUN_800468a4
+//! Both addresses are tagged on the function that ports them - `FUN_80057914`
+//! on [`build_packet`], `FUN_800468A4` on [`enqueue`] - and not on this module.
+//! A module-level `PORT:` tag makes the whole file the anchor, and the file is
+//! read as live whenever *any* function in it is reachable; here the third
+//! routine [`op43_sub12_calls`] **is** reachable, so a module anchor reports
+//! both helpers wired while neither has a host.
 //!
 //! Three layers, matching the retail call chain:
 //!
@@ -124,6 +129,10 @@ const fn pack_yx(x: i16, y: i16) -> u32 {
 ///
 /// Every other word is written unconditionally, so a skipped packet still
 /// carries well-formed coordinates.
+///
+/// PORT: FUN_80057914
+/// NOT WIRED: reached only from [`enqueue`], which itself has no host - see the
+/// module doc's wiring-status section.
 pub fn build_packet(src: SrcRect, dst_x: i16, dst_y: i16) -> MoveImagePacket {
     let tag_len = if src.w == 0 || src.h == 0 {
         0
@@ -191,6 +200,11 @@ pub enum EnqueueOutcome {
 ///
 /// The bias lands on the **source** rect only - the destination corner is
 /// passed through untouched.
+///
+/// PORT: FUN_800468a4
+/// NOT WIRED: `FieldHost::op43_vram_rect_copy` has a no-op default body and no
+/// renderer implements it, so no host ever runs a [`RectCopyCall`] through
+/// here - see the module doc's wiring-status section.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {
     if call.ot_slot <= 0 || call.ot_slot >= ot_len {
         return EnqueueOutcome::SlotOutOfRange;

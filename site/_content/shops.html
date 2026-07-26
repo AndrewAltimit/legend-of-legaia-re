@@ -44,6 +44,40 @@
   </div>
 </section>
 
+<section class="doc-section" id="from-disc">
+  <h2>Read it off your own disc</h2>
+  <p>
+    This page tells you what the shops sell. <code>asset shop-stock</code> tells you what the
+    <em>disc</em> says they sell - and when the two agree, both are confirmed. That is the other half
+    of the sentence at the top of this page: the curated tables are ground truth, and this command
+    produces the decoded record they validate.
+  </p>
+<pre><code>asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                 --cdname extracted/CDNAME.TXT            # every shop on the disc
+
+asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                 --cdname extracted/CDNAME.TXT --scene bylon    # one scene</code></pre>
+  <p>
+    The join is the interesting part, because the data is in two unrelated files. A town's stock is
+    <strong>not</strong> a shop table - it is inline in that scene's MAN field-VM script (op
+    <code>0x49</code>, sub-op <code>0</code>), next to the scene's chests and doors. The item names
+    and prices come from the static item record table in <code>SCUS_942.54</code>. The command opens
+    both and joins them.
+  </p>
+  <p>
+    Two results are reported per shop, on purpose - <em>"decodes 10 ids, sells 7"</em>. The record's
+    <code>count</code> byte includes a trailing run of unsellable price-<code>0</code> template ids
+    that the in-game shop never displays, so the listing flags that tail rather than hiding it.
+    Shops are also located by <em>scanning</em> for the opcode rather than walking the script: a
+    vendor behind a dialogue confirm-picker desyncs a linear disassembler, and a walk would report
+    one shop too few with no error.
+  </p>
+  <p>
+    Full walkthrough, with the byte offsets and the CDNAME index shift:
+    <a href="guides/extracting-assets.html#shop-stock">Extracting assets</a>.
+  </p>
+</section>
+
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>

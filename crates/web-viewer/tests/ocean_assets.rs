@@ -47,7 +47,10 @@ fn ocean_assets_extract_from_every_world_map_kingdom() {
     let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
     let entries = parse_prot_toc(&prot).expect("PROT TOC parse");
 
-    for prot_index in [85u32, 244, 391] {
+    // The bundle entries (0086 / 0245 / 0392), not the prescript entries the
+    // pre-correction PROT entry size made them look like - see
+    // `legaia_asset::kingdom_bundle`.
+    for prot_index in legaia_asset::kingdom_bundle::BUNDLE_ENTRIES {
         let entry = entries
             .iter()
             .find(|e| e.index == prot_index)

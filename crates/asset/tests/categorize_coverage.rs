@@ -68,10 +68,12 @@ fn categorize_coverage() {
             .or_insert(0) += entry_buf.len() as u64;
         total_extended += entry_buf.len() as u64;
 
-        // Indexed classification (TOC-declared payload only).
+        // The same classification over the historical `toc[p+5] - toc[p+3] +
+        // 4` window, which measures entry `p`'s two successors rather than
+        // `p` - kept as the contrast the coverage numbers are read against.
         archive
-            .read_entry_indexed(entry, &mut entry_buf)
-            .expect("read entry indexed");
+            .read_entry_declared_span(entry, &mut entry_buf)
+            .expect("read entry declared span");
         let ix_report = classify(&entry_buf);
         *indexed_class_bytes
             .entry(ix_report.class.name())

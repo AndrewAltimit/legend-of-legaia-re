@@ -424,9 +424,10 @@ anchor. Wrap to the file's comment width.
 - **`exec_centered_bar` / `exec_centered_text` / `exec_card_init` /
   `init_card_state`** - the engine's title and save screens are drawn by
   `engine-ui`'s `ui_title_save` draw-list builders, not by replaying the retail
-  overlay's primitive descriptors, so no host supplies a `PrimHost`. Note the
-  module's "What's deferred" section still lists these three addresses as not
-  yet ported; that paragraph is stale and should be corrected in the same edit.
+  overlay's primitive descriptors, so no host supplies a `PrimHost`. The same
+  reason covers `exec_clear_image` / `exec_move_image` /
+  `exec_sprite_descriptor` in that file, which is where its three SCUS-helper
+  addresses are tagged now that the module tag has been split onto them.
 
 ## The battle-camera rows
 
@@ -477,10 +478,13 @@ reachable, and its `.arm(` call on a `CameraMover` resolves by name to
 audit cause 2 - a method-name collision - and it hides a genuine gap. The
 verdict stands on the hand evidence, not on the tool.
 
-**`new`** (`crates/engine-vm/src/scus_core_helpers.rs:135`) now shows in the
-audit's *first* section, tagged `NOT WIRED` by the widened module disclosure yet
-analysed live. `new` is the most collision-prone name in the workspace, so read
-it as audit cause 4 - anchor granularity - and not as a wired port.
+**`new`** (`crates/engine-vm/src/scus_core_helpers.rs:135`) was tagged
+`NOT WIRED` by the widened module disclosure yet analysed live, and surfaced in
+the audit's *first* section for a while. `new` is the most collision-prone name
+in the workspace, so it was always audit cause 4 - anchor granularity - and not
+a wired port; the receiver gate has since cleared it, and
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)
+records the collision it resolved through.
 
 ## See also
 

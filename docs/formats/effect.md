@@ -253,6 +253,18 @@ The two init immediates are the walker's global scalars: the i16 at pool `+0` (`
 
 **`0x801DFDF8` - public spawn-effect API.** Signature `(byte effect_id, short* world_pos, ushort angle)`. It reads `pack1[effect_id]` from the head record to find the effect's script, allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies the script header bytes, and sets the script cursor to `entry + 4`. When the script's flags bit 0 is set it also rewrites every spawn record's `+0x02`/`+0x06` offsets in place with `rand() % (2*spread) - spread` (see the pack1 layout above). Two ids are special-cased: `effect_id = 4 → 0x801F5D90` and `effect_id = 0x13 → 0x801F5CF8`.
 
+What the bytes at those two targets are is settled, and they are **not** pack1
+scripts and not tables: each is an 18-byte move-VM program in `0898`'s tail -
+`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`, `0x801F5D90` carrying mode `0`
+and `0x801F5CF8` mode `1` - sitting one alignment word before the burst stager
+record its mode selects (`0x801F5DA4` / `0x801F5D0C`). The `0x17` in them is the
+battle-overlay escape into the radial particle burst `FUN_801F30C4`, whose two
+arms are the same burst at two radii. So if the special-case installs the address
+as a move buffer - which is the only consumer a move program has, though this
+call has not been traced through - ids `4` and `0x13` are the wide and narrow
+burst rather than two unrelated effects. Burst anatomy:
+[`functions/battle.md`](../reference/functions/battle.md#801f30c4).
+
 **`0x801E0088` - per-frame walker.** Runs two passes over the pools: pass 1 (spawn cadence + child anim/motion, repeated `DAT_1F800393` times for frame-skip catch-up) and pass 2 (render - one flat textured semi-transparent quad per live child, `0x09000000` packet tag + `0x2E`-code prim, brightness from the triangular age envelope, submitted through `func_0x8003D2C4`). The complete per-slot algebra is documented in [`effect-vm.md`](../subsystems/effect-vm.md#the-extracted-pass-1-state-algebra).
 
 Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.

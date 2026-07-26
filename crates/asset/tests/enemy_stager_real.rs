@@ -9,17 +9,19 @@
 //!
 //! Two structural facts are pinned here:
 //!
-//! 1. **Each entry must be trimmed to its TOC-gap unique-content footprint**
-//!    (`unique_content_len`) - the extraction `.BIN`s over-read into the
-//!    following entries, and the over-read tail's spawn sites belong to
-//!    *neighbouring* stagers (their record pointers are only valid for the
-//!    neighbour's own load). The live mid-cast captures pin the boundary: the
-//!    slot-B resident image matches the file exactly up to the TOC gap.
-//! 2. After trimming, every recovered record first word is a `-1` transform
-//!    node or a small library-mesh index - no out-of-band "sentinel" values
-//!    (those were over-read artifacts). The enemy stagers spawn dominantly
-//!    through the `FUN_80050ED4` pool wrapper, which `parse` scans alongside
-//!    the direct `FUN_80021B04` calls.
+//! 1. **Each entry ends at its TOC gap**, and `Archive::read_entry` now
+//!    delivers exactly that - so the independent `unique_content_len` trim is
+//!    a no-op, which is what the first assertion checks. It used to trim, back
+//!    when the reader over-read into the following entries and the tail's
+//!    spawn sites belonged to *neighbouring* stagers (their record pointers
+//!    are only valid for the neighbour's own load). The live mid-cast captures
+//!    pin the boundary: the slot-B resident image matches the file exactly up
+//!    to the TOC gap.
+//! 2. Every recovered record first word is a `-1` transform node or a small
+//!    library-mesh index - no out-of-band "sentinel" values (those were
+//!    over-read artifacts). The enemy stagers spawn dominantly through the
+//!    `FUN_80050ED4` pool wrapper, which `parse` scans alongside the direct
+//!    `FUN_80021B04` calls.
 //!
 //! Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
 
@@ -68,14 +70,14 @@ fn enemy_boss_stagers_parse_as_summon_scene_graphs() {
             .read_entry(&entry, &mut bytes)
             .unwrap_or_else(|_| panic!("read PROT {entry_idx}"));
 
-        // Trim to the entry's own on-disc content; the extraction footprint
-        // over-reads into the next stagers.
+        // The reader already stops at the entry's end, so the independent
+        // TOC-gap trim has nothing left to remove. Cross-checking it here
+        // keeps the two derivations of that boundary pinned to each other.
         let unique = unique_content_len(bytes.len(), entry.start_lba, next.start_lba);
-        assert!(
-            unique < bytes.len(),
-            "PROT {entry_idx}: stager entries are over-read windows \
-             (unique {unique:#x} vs footprint {:#x})",
+        assert_eq!(
+            unique,
             bytes.len(),
+            "PROT {entry_idx}: read_entry must already be the entry's own sectors",
         );
         bytes.truncate(unique);
 
@@ -120,9 +122,8 @@ fn enemy_boss_stagers_parse_as_summon_scene_graphs() {
         );
 
         eprintln!(
-            "PROT {entry_idx} enemy stager: unique {unique:#x} of {:#x}, {} spawn sites, \
+            "PROT {entry_idx} enemy stager: {unique:#x} bytes, {} spawn sites, \
              {} parts ({nodes} transform nodes, {meshes} library meshes)",
-            entry.indexed_size_bytes,
             overlay.spawn_sites,
             overlay.parts.len(),
         );

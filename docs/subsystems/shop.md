@@ -289,6 +289,31 @@ dialogue-picker jump tables a linear walk desyncs on) locates these records;
 for the active scene, and `World::scene_shop_session(idx)` hands a host a
 ready-to-open [`ShopSession`].
 
+### Recipe: reading a town's stock off a disc
+
+```bash
+asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
+                 --cdname extracted/CDNAME.TXT [--scene bylon | --entry 53] [--json]
+```
+
+The command joins the two files this stock is spread across - the scene MAN
+inside `PROT.DAT` for the ids, and `SCUS_942.54`'s item record table for the
+names and prices - and prints one block per shop. Full walkthrough:
+[extracting-assets.md](../guides/extracting-assets.md#shop-inventories---a-table-joined-from-two-files).
+
+Three things the output is deliberately explicit about, each a trap when the
+same thing is done by hand:
+
+| Trap | What the tool does |
+|---|---|
+| `count` over-counts by the unsellable template tail | prints both numbers ("decodes 10 ids, sells 7") and flags the tail rather than truncating it |
+| a linear opcode walk desyncs on a confirm-picker's option-jump table and silently misses shops (Biron Monastery's Corey) | byte-scans for the op-`0x49` signature; never walks |
+| CDNAME `#define <name> N` names extraction entry `N − 2`, so a filename label can disagree with the retail scene at a block edge | resolves the scene column through `block_for_extraction_index`; the entry column stays extraction-space |
+
+The curated walkthrough shop tables and this command are two halves of one
+check: the tables are human-readable ground truth, the command is the decoded
+record. Agreement confirms both.
+
 ### Live trigger (op `0x49` sub-0)
 
 Opening a merchant in-game is the field VM's own op `0x49` (`STATE_RESUME`).

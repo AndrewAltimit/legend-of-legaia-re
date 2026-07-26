@@ -429,6 +429,22 @@ pub struct World {
     /// Stepped once per [`World::tick`]; dropped once neutral.
     pub screen_tint: Option<crate::fade::SceneTintRamp>,
 
+    /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
+    /// zero**; a non-zero value is the dev build's "not an ordinary field
+    /// frame" state. Read by [`World::man_load_actor_reset`] through
+    /// [`crate::field_submode::scene_actor_initial_state`], which forces the
+    /// spawned scene actor's state word to `1` when it is set. Mirrors of the
+    /// same word live on [`crate::cd_dma`] and [`crate::overlay_loader`]; this
+    /// is the field-side copy.
+    pub field_mode_flags: u32,
+
+    /// The op-`0x49` submode context block (`0x801F2734..`), in the order
+    /// [`crate::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
+    /// that const carries the offsets. Reseeded on every MAN load by
+    /// [`World::man_load_actor_reset`]; word `0` is the submode state
+    /// ([`crate::field_submode::SUBMODE_STATE_OPEN`] once opened).
+    pub submode_context: [u32; 10],
+
     /// Persistent per-character roster - populated by [`World::load_party`]
     /// and written back by [`World::save_party`]. Each record is the
     /// 0x414-byte struct documented in `docs/subsystems/battle.md`. The
@@ -2257,6 +2273,8 @@ impl World {
             screen_fade: None,
             effect_tint: None,
             screen_tint: None,
+            field_mode_flags: 0,
+            submode_context: [0; 10],
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,

@@ -192,6 +192,8 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 | Script | Purpose |
 |---|---|
 | `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
+| `dump_scus_gaps.py` | Dumper for the disc-denominated **code gap** worklist [`disc-coverage.py`](disc-coverage.md) emits. Takes address `RANGES` rather than entry points, because a gap is bounded by dumped functions rather than named by one: it walks the listing per range, dumps every function entry inside, and reports the bytes no function covers. Those go in `FORCE_RANGES`, which force-disassembles the run and creates one function per `jr ra` + delay-slot unit - the shape a sequence of separately-emitted library leaves has, where `force_disasm_dump.py`'s one-entry-per-address model needs the entries known in advance. `in_program()`-guarded. |
+| `repair_truncated_dumps.py` | Repairs dumps whose function **body ends before the routine does** - the defect class on [`dump-corpus-integrity.md`](dump-corpus-integrity.md) that no header or base check can see, because such a dump is internally consistent. Ignores Ghidra's boundary, walks from the entry to the first `jr ra`, deletes the interior `FUN_` entries that cut the body, and rebuilds over the whole span. Targets come from `TARGETS` or the gitignored `redump_targets.txt`; a bare address is a plain re-dump and a `!` suffix forces the rebuild. **Only force where the sweep says `NO_RETURN`** - the walk stops at the first return in address order, so forcing it on a routine with an early-exit arm truncates the very dump it is meant to repair. |
 | `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
 | `resolve_render_tail.py` | Companion to the [trace-driven coverage](playthrough-coverage.md) program: for a hardcoded list of overlay trace-hit addresses (default = the S5 battle render-tail), reports `getFunctionContaining` + `memory.contains` per hit in the currently-open overlay program - separating "in-program but un-analyzed" (a create+dump target) from "out-of-program" (a different co-resident overlay). |
 | `dump_battle_rendertail.py` | Disassemble + create-function + dump the in-`0898` battle render-tail functions the trace found un-analyzed (e.g. `FUN_801E0080`). Output naming matches the overlay dumps (`overlay_battle_action_<addr>.txt`). Run against `overlay_battle_action.bin`. |
@@ -317,6 +319,13 @@ The `h:\` prefix indicates a Windows dev box. The runtime doesn't actually open 
 ## Decompiler artifacts that have produced false claims
 
 Ghidra's C output is a *rendering* of the instruction stream, and each artifact below has already put a wrong statement into this repo's committed docs. Port and document from the disassembly; treat the C as a hint that tells you where to look.
+
+A dump can also be defective *as a file*, independently of how anyone reads it -
+truncated bodies, missing headers, addresses printed at the wrong base, slices of
+a larger function, and filenames that name an address the content does not start
+at. Those are a separate axis with their own sweep:
+`scripts/ghidra-analysis/check-dump-base-integrity.py --shape`. See
+[`dump-corpus-integrity.md`](dump-corpus-integrity.md).
 
 | Artifact | What it looks like | What settles it |
 |---|---|---|

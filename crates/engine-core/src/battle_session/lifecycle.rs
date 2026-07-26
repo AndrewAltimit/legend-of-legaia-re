@@ -28,6 +28,7 @@ impl BattleSession {
             monster_count: 0,
             target_picker: None,
             pending_target_command: None,
+            enemy_menu_rows: Vec::new(),
             resolve_driver: None,
             rng_seed: 0xDEAD_C0DE,
         }

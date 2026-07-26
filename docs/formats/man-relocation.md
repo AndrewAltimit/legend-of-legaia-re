@@ -76,6 +76,17 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
   footprint (the gap to the next descriptor). A scene that can't grow in place -
   the big overworld hubs, whose next asset is flush after the MAN - is skipped
   and reported rather than relocating the whole bundle.
+- **Identify the carrier, not the scene name.** An edit is keyed to the PROT
+  entry the MAN actually lives in. A scene may have no MAN of its own, one
+  bundle MAN, or a bundle MAN plus a streaming variant carrier
+  (`legaia_asset::man_section` parses all of them identically); the enumerator
+  is `legaia_engine_core::man_field_scripts::scene_man_carriers`. Every carrier
+  on the disc is byte-unique, so a name that appears to resolve the *same* MAN
+  as another scene is a framing bug, not a shared asset - a CDNAME block whose
+  window is a subset of its neighbour's (the two head defines keep unshifted
+  legacy windows, see [cdname.md](cdname.md)) can reach the neighbour's bundle
+  if entry sizes over-read, and an edit made under that name would rewrite the
+  neighbour's sectors.
 
 ## Generalized interior-text growth
 

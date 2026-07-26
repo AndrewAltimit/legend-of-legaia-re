@@ -9,7 +9,8 @@ disclosed-inert count and hides a real gap.
 
 This page is the per-row verdict, so the tag edits are mechanical rather than
 re-derived. It is a snapshot of a worklist, not a specification - a row
-disappears from it once the tag or the analysis is fixed.
+disappears from it once the tag or the analysis is fixed. What outlives the rows
+is the mechanism list plus the fix recipe each mechanism takes, both below.
 
 ## Verdicts
 
@@ -21,20 +22,38 @@ disappears from it once the tag or the analysis is fixed.
 
 ## What the false edges are
 
-Three mechanisms produce every FALSE-EDGE row, and only the first is what
-`--live-audit` warns about.
+Five mechanisms produce every FALSE-EDGE row this page has recorded, and only
+the first is what `--live-audit` warns about. All five are name resolution
+without type inference; they differ in *which* name space collides, and that is
+what decides the fix.
 
 **A generic method or constructor name.** `build_rust_graph` resolves `.name(`
 against every in-tree method called `name` and never infers a receiver type, so
-one `session.tick(...)` in the browser title driver links to all 63 in-tree
-`tick` methods, and one `new(` links to all 192 in-tree `new`. This is the
-documented over-approximation, and it is what makes `--not-live` a floor - but
-it means a `NOT WIRED` port whose entry point is called `new`, `tick`, `add`,
-`len`, `is_empty`, `default`, `normalize`, `from_byte` or `to_le_bytes` reads
-live no matter how inert it is. Two of these edges can chain: the browser's
+one `session.tick(...)` in the browser title driver links to all in-tree `tick`
+methods, and one `new(` links to every in-tree `new`. This is the documented
+over-approximation, and it is what makes `--not-live` a floor - but it means a
+`NOT WIRED` port whose entry point is called `new`, `tick`, `add`, `len`,
+`is_empty`, `default`, `normalize`, `from_byte` or `to_le_bytes` reads live no
+matter how inert it is. Two of these edges can chain: the browser's
 `session.tick(...)` reaches `BattleTutorial::tick`, whose own `dispatch(...)`
-call then reaches `SaveScreenMachine::dispatch`, and from there every
-`tick_*` sub-screen handler in `save_subscreen.rs`.
+call then reaches `SaveScreenMachine::dispatch`, and from there every `tick_*`
+sub-screen handler in `save_subscreen.rs`.
+
+**A method name that is unique in-tree but ubiquitous in `std`.** The receiver
+gate fires only where the name is ambiguous, so a name with exactly one in-tree
+definition is never gated - and if `std` also defines it on a common type, every
+call site in the workspace becomes an in-edge. `Rect12::to_le_bytes` in
+`crates/engine-vm/src/title_prim.rs` was the case: it was the only in-tree
+`fn to_le_bytes`, so each `x.to_le_bytes()` on an integer anywhere in a
+reachable function linked to it. Uniqueness reads like precision here and is the
+opposite.
+
+**A duplicate free-function name.** The receiver gate is defined over
+`impl_type`, and a free function has none, so free-function edges are never
+gated however many definitions share the name. `countdown_frame` existed twice -
+in `crates/engine-core/src/baka_fighter_chrome.rs`, called every frame by the
+Baka round chrome, and in `crates/engine-core/src/dance_tutorial.rs`, called by
+nothing - and the one bare call linked to both.
 
 **A bare identifier matching a free function.** The `IDENT_RE` pass links a bare
 identifier to any free function of that name, which is how a function value
@@ -43,18 +62,32 @@ reaches `map` / `sort_by_key`. It does not distinguish a function value from a
 `crates/engine-core/src/seru_stats.rs` links to the free `stat_deltas` in
 `crates/engine-vm/src/world_map_overlay.rs`.
 
-**A module anchor covering more than the tag.** A `//! PORT:` tag makes the
-anchor the whole file, and the file is live if any non-test `fn` in it is
-reachable. `crates/engine-vm/src/vram_rect_copy.rs` is the clean example: its
-module tag covers `build_packet` and `enqueue`, which nothing calls, while the
-file's third routine `op43_sub12_calls` is genuinely reached from the field VM's
-sub-op `0x43` arm. Neither the tag nor the edge is wrong - the anchor is too
-coarse to tell them apart.
+**An anchor covering more than the tag.** A `//! PORT:` tag makes the anchor the
+whole file, and the file is live if any non-test `fn` in it is reachable. A
+`PORT:` tag on a plain data struct behaves the same way, because a type anchor
+with no `impl` block in its file falls back to module scope. Neither the tag nor
+the edge is wrong - the anchor is too coarse to tell them apart.
 
-## What that means for the reachability pass
+## The fix each mechanism takes
 
-Fixing this is a change to `scripts/ci/port-catalog.py`, not to any tag. Two of
-the three sharpenings below are implemented; the third is not.
+Two of the five are analysis defects and were fixed in the tool. The other three
+are properties of the *names and anchors in source*, and the fix belongs there -
+sharpening the shared permissive graph is the wrong move and has been tried and
+reverted twice.
+
+| Mechanism | Fix |
+|---|---|
+| Generic method / constructor name | The receiver gate, in the strict graph. Implemented. |
+| Struct field read as a function value | Field-colon exclusion, in the strict graph. Implemented. |
+| Unique in-tree name shadowing a `std` method | Rename the in-tree method so no `std` call site spells it. |
+| Duplicate free-function name | Rename the copy that has no caller. |
+| Coarse anchor (module tag, or a tag on a data struct) | Move the anchor to the item that ports the address. |
+
+The last three are source edits, and each wants a comment saying why the name or
+the tag placement is the way it is - otherwise the next refactor undoes it and
+the false accusation returns. `footstep.rs`, `dance_tutorial.rs`,
+`title_prim.rs`, `vram_rect_copy.rs` and `world_map_overlay.rs` each carry that
+note now.
 
 ### The two-graph split (implemented)
 
@@ -72,8 +105,7 @@ consults the graph whose error mode is safe for it.
 
 1. **Struct fields are excluded from the bare-identifier edge.** An identifier
    immediately followed by `:` - and not `::` - is a field declaration or a
-   struct-literal key, so it is not a function value reaching `map`. Without it
-   the field `stat_deltas` links to a free `stat_deltas` in another crate.
+   struct-literal key, so it is not a function value reaching `map`.
 2. **Ambiguous method edges take a receiver gate.** A `.name(...)` or
    `name(...)` edge onto an `impl Type` method survives only if the calling file
    names `Type`, or defines the method itself.
@@ -83,94 +115,80 @@ consults the graph whose error mode is safe for it.
    binding whose type the calling file never spells, as in
    `ctrl.run_horizon_emitter(..)`. Gating an already-unambiguous name on the
    spelling drops a real edge - which silently removes a correct row from this
-   audit, the one failure mode the strict graph must not have. Applying the gate
-   unconditionally lost `801d7ea0`, the single genuine stale tag on this page.
+   audit, the one failure mode the strict graph must not have.
 
-Measured over the whole tree, the two together take the audit's first section
-from 78 rows to 26, with `801d7ea0` still reported and every FALSE-EDGE row on
-this page cleared.
+   The qualifier has a cost, recorded above as its own mechanism: an
+   unambiguous in-tree name is never gated even when `std` spells it too. A
+   crate-root re-export is the other soft spot - `pub use footstep::{..,
+   FootstepCadence}` makes `lib.rs` a file that "names the type", so any
+   `.tick(` in `lib.rs` passes the gate onto `FootstepCadence::tick`.
 
-### Anchor granularity (not implemented)
+### Anchor granularity
 
-**Report a module anchor at the granularity the tag claims.** When a `//! PORT:`
-tag names specific addresses and the module doc marks specific items
-`NOT WIRED`, the live verdict should be read off those items, not off any
-function in the file.
+**Read a module anchor at the granularity the tag claims.** When a `//! PORT:`
+tag names specific addresses and specific items in the file are inert, the live
+verdict should be read off those items, not off any function in the file.
 
-This is a different defect from edge inference and it is what most of the
-residual 26 rows now are: a file whose tagged state machine is inert while some
-small helper or trait impl in the same file is legitimately reachable
-(`card_flow.rs`, `cutscene_script_elements.rs`, `vram_rect_copy.rs`). Closing it
-needs the `PORT:` tag to carry item-level information, or a rule for reading a
-module tag against inherent methods only - and the rows below were triaged by
-hand against the pre-fix output, so there is no ground truth here to validate a
-heuristic against. Until then those rows stay a prompt, and this page is the
-answer for them.
+The tool still reads a module tag as the whole file, and a type tag with no
+`impl` block as the whole file too. Closing that inside the tool needs the
+`PORT:` tag to carry item-level information, so the practical fix is to *write*
+it at item level:
+
+- A `//! PORT:` line moves onto the function that implements the address. Every
+  address the module tag listed keeps an anchor, and the anchor is now precise.
+- A `PORT:` tag on a plain data struct - a return type or an input record, with
+  the computation in a free function beside it - becomes a `REF:` tag naming the
+  function that carries the `PORT:`. The address loses nothing: it is still
+  tagged, on the item that ports it.
+- Dropping a blanket `//! NOT WIRED` heading un-discloses every item anchor in
+  the file, so each genuinely inert item needs its own `NOT WIRED:` line in the
+  same edit. Doing only half of this converts a granularity row into a
+  disclosure gap, which is the worse of the two.
+
+That third point is why a blanket module disclosure is only safe while *nothing*
+in the file has a caller. The moment one item is wired, the blanket asserts
+something false about it and cannot be narrowed, because per-anchor disclosure
+reads the module doc unconditionally.
 
 ## Rows
 
-| addr | crate | symbol | site | verdict | evidence |
-|---|---|---|---|---|---|
-| `80018db0` | engine-audio | `tick` | `crates/engine-audio/src/footstep.rs:154` | FALSE-EDGE | `.tick()` collides with `TitleSession::tick` (boot_title.rs:133); `FootstepCadence` is named only in its own file and lib.rs |
-| `800198e0` | engine-vm | `(module)` | `crates/engine-vm/src/title_prim.rs:3` | FALSE-EDGE | `new(` / `.to_le_bytes()` collide with `Rect12::new` / `Rect12::to_le_bytes`; `Rect12` is named only in its own file |
-| `8001fa68` | engine-vm | `(module)` | `crates/engine-vm/src/scus_core_helpers.rs:4` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `800203ec` | engine-vm | `(module)` | `crates/engine-vm/src/scus_core_helpers.rs:4` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `800203ec` | engine-vm | `new` | `crates/engine-vm/src/scus_core_helpers.rs:135` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `80020424` | engine-vm | `(module)` | `crates/engine-vm/src/scus_core_helpers.rs:4` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `80020454` | engine-vm | `(module)` | `crates/engine-vm/src/scus_core_helpers.rs:4` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `800204a4` | engine-vm | `(module)` | `crates/engine-vm/src/scus_core_helpers.rs:4` | FALSE-EDGE | `new(` / `default(` collide with `ActorNodePool::new` / `::default`; `ActorNodePool` is named only in its own file |
-| `800421d4` | save | `(module)` | `crates/save/src/retail_inventory.rs:124` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `800421d4` | save | `add` | `crates/save/src/retail_inventory.rs:582` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80042310` | save | `(module)` | `crates/save/src/retail_inventory.rs:125` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `800423e0` | save | `(module)` | `crates/save/src/retail_inventory.rs:125` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `800423e0` | save | `normalize` | `crates/save/src/retail_inventory.rs:553` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80042ee0` | save | `(module)` | `crates/save/src/retail_inventory.rs:124` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80042ee0` | save | `find_slot` | `crates/save/src/retail_inventory.rs:457` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80042f4c` | save | `(module)` | `crates/save/src/retail_inventory.rs:124` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80043048` | save | `(module)` | `crates/save/src/retail_inventory.rs:127` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `8004313c` | save | `(module)` | `crates/save/src/retail_inventory.rs:126` | FALSE-EDGE | `new(` / `.add(` / `normalize(` / `.len()` / `.is_empty()` collide with `RetailInventory` and `ItemWindow` methods; neither type is named outside its own file and the crate's `lib.rs` re-export |
-| `80046870` | engine-vm | `(module)` | `crates/engine-vm/src/battle_helpers.rs:169` | FALSE-EDGE | `from_byte(` collides with `ScreenOrient::from_byte`; `ScreenOrient` is named only in its own file and `advance_gauge` is cited only in a doc comment (battle_action/validator.rs:152) |
-| `800468a4` | engine-vm | `(module)` | `crates/engine-vm/src/vram_rect_copy.rs:4` | FALSE-EDGE | coarse module anchor: the file is live via `op43_sub12_calls` (actor_ctrl.rs:277), which no `PORT:` tag covers; the tagged `build_packet` / `enqueue` have no non-test caller |
-| `80057914` | engine-vm | `(module)` | `crates/engine-vm/src/vram_rect_copy.rs:4` | FALSE-EDGE | coarse module anchor: the file is live via `op43_sub12_calls` (actor_ctrl.rs:277), which no `PORT:` tag covers; the tagged `build_packet` / `enqueue` have no non-test caller |
-| `80058298` | engine-vm | `(module)` | `crates/engine-vm/src/title_prim.rs:3` | FALSE-EDGE | `new(` / `.to_le_bytes()` collide with `Rect12::new` / `Rect12::to_le_bytes`; `Rect12` is named only in its own file |
-| `80058490` | engine-vm | `(module)` | `crates/engine-vm/src/title_prim.rs:3` | FALSE-EDGE | `new(` / `.to_le_bytes()` collide with `Rect12::new` / `Rect12::to_le_bytes`; `Rect12` is named only in its own file |
-| `801d2ebc` | engine-vm | `(module)` | `crates/engine-vm/src/world_map_overlay.rs:19` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801d2ebc` | engine-vm | `TimerInk` | `crates/engine-vm/src/world_map_overlay.rs:437` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801d2ebc` | engine-vm | `TimerFlagEvents` | `crates/engine-vm/src/world_map_overlay.rs:467` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801d2ebc` | engine-vm | `EscapeTimer` | `crates/engine-vm/src/world_map_overlay.rs:478` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801d2ebc` | engine-vm | `tick` | `crates/engine-vm/src/world_map_overlay.rs:499` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801d6d38` | engine-core | `tick_confirm_yes_no` | `crates/engine-core/src/save_subscreen.rs:438` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801d7ea0` | engine-vm | `emit_horizon` | `crates/engine-vm/src/world_map_horizon.rs:214` | STALE-TAG | `World::tick_world_map_horizon` (world/worldmap.rs:83) -> `WorldMapController::run_horizon_emitter` (world_map.rs:209) -> `emit_horizon` (world_map_horizon.rs:214), all non-test |
-| `801d8a58` | engine-core | `tick_confirm_exit` | `crates/engine-core/src/save_subscreen.rs:509` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801d98f0` | engine-core | `tick_party_picker` | `crates/engine-core/src/save_subscreen.rs:541` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dae24` | engine-core | `tick_card_driver` | `crates/engine-core/src/save_subscreen.rs:577` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801daef4` | engine-core | `tick_card_driver` | `crates/engine-core/src/save_subscreen.rs:577` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dafd4` | engine-core | `tick_save_confirm` | `crates/engine-core/src/save_subscreen.rs:622` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801db380` | engine-core | `BuyRecipientSession` | `crates/engine-core/src/shop.rs:666` | FALSE-EDGE | `new(` collides with the session constructors; all three types are constructed only inside this file's `#[cfg(test)]` module |
-| `801db7f4` | engine-core | `BuyQuantitySession` | `crates/engine-core/src/shop.rs:506` | FALSE-EDGE | `new(` collides with the session constructors; all three types are constructed only inside this file's `#[cfg(test)]` module |
-| `801dbc5c` | engine-core | `tick_quantity_spinner` | `crates/engine-core/src/save_subscreen.rs:667` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dbd94` | engine-core | `SellQuantitySession` | `crates/engine-core/src/shop.rs:263` | FALSE-EDGE | `new(` collides with the session constructors; all three types are constructed only inside this file's `#[cfg(test)]` module |
-| `801dc6b4` | engine-core | `(module)` | `crates/engine-core/src/save_subscreen.rs:3` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dc6b4` | engine-core | `SaveScreenMachine` | `crates/engine-core/src/save_subscreen.rs:275` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dd12c` | engine-core | `tick_final_exit` | `crates/engine-core/src/save_subscreen.rs:413` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dd1b8` | engine-core | `tick_post_save_return` | `crates/engine-core/src/save_subscreen.rs:473` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801dd26c` | engine-core | `tick_pad_release_wait` | `crates/engine-core/src/save_subscreen.rs:491` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801e4f40` | engine-core | `(module)` | `crates/engine-core/src/save_subscreen.rs:3` | FALSE-EDGE | `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`; both hops are name collisions and `SaveScreenMachine` is named nowhere outside its own file |
-| `801e5b4c` | engine-vm | `(module)` | `crates/engine-vm/src/world_map_overlay.rs:20` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801e5b4c` | engine-vm | `StatDelta` | `crates/engine-vm/src/world_map_overlay.rs:542` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801e5b4c` | engine-vm | `can_equip` | `crates/engine-vm/src/world_map_overlay.rs:584` | FALSE-EDGE | bare-identifier edge from `BuyRecipientSession::new` (shop.rs), itself reached only through the `new(` collision |
-| `801e5b4c` | engine-vm | `stat_deltas` | `crates/engine-vm/src/world_map_overlay.rs:612` | FALSE-EDGE | bare-identifier edge onto the struct FIELD `stat_deltas` (seru_stats.rs:87), not a call; the free fn is unique in-tree |
-| `801ead98` | engine-vm | `(module)` | `crates/engine-vm/src/world_map_overlay.rs:16` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801eca08` | engine-vm | `(module)` | `crates/engine-vm/src/world_map_overlay.rs:17` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801eca08` | engine-vm | `PanelGeometry` | `crates/engine-vm/src/world_map_overlay.rs:215` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801ed710` | engine-vm | `(module)` | `crates/engine-vm/src/world_map_overlay.rs:18` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801ed710` | engine-vm | `CharRecordStats` | `crates/engine-vm/src/world_map_overlay.rs:322` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
-| `801ed710` | engine-vm | `RecordsScreen` | `crates/engine-vm/src/world_map_overlay.rs:342` | FALSE-EDGE | `.tick()` collides with `EscapeTimer::tick`; no type in this file is named outside it |
+None open.
 
-The single STALE-TAG row needs a rewrite rather than a deletion. `emit_horizon`
-is statically reachable through three unambiguous non-test hops, so the tag's
-opening clause "reached only from tests" is false - but the rest of the same
-comment is correct and explains why the port is still inert: the gate
-`run_horizon_emitter` consults is never armed, because `EmitterGate::arm` has no
-non-test caller. That is a runtime fact the reachability pass does not model and
-cannot be expressed by the tag as the audit reads it.
+## How the recorded rows were closed
+
+Kept as a record of which resolution each shape took, keyed by address and site
+so a recurrence is recognisable rather than re-derived.
+
+| addr | site | verdict | resolution |
+|---|---|---|---|
+| `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
+| `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
+| `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own `NOT WIRED:`; the file is live through `op43_sub12_calls`, which no tag covers. |
+| `80053cb8` | `engine-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
+| `801d0750` | `engine-core/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
+| `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | STALE-TAG in part | `resolve_equip_slot` is reached through `dev_equip_commit::commit_equip` -> `DevMenuSession::commit_equip_row` -> `PlayWindowApp::tick_dev_menu`. The other items of the same address stay inert with their own notes. |
+| `801ead98`, `801eca08`, `801ed710` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors; the file is live only through the `801e5b4c` item above. |
+| `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/scus_core_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
+| `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
+| `80046870` | `engine-vm/src/battle_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
+| `801d2ebc` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
+| `801d6d38`, `801d8a58`, `801d98f0`, `801dae24`, `801daef4`, `801dafd4`, `801dbc5c`, `801dc6b4`, `801dd12c`, `801dd1b8`, `801dd26c`, `801e4f40` | `engine-core/src/save_subscreen.rs` | FALSE-EDGE | Cleared by the receiver gate; the chain was `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`. |
+| `801db380`, `801db7f4`, `801dbd94` | `engine-core/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
+
+The `world_map_overlay.rs` rows are the worked example of the whole granularity
+shape: one genuinely wired item made a module blanket false, and through the
+module scope it also lifted four data-struct type anchors to live. Nine audit
+rows, one edge.
+
+## Superseded rows
+
+`801d7ea0` (`emit_horizon`, `crates/engine-vm/src/world_map_horizon.rs`) was the
+one STALE-TAG an earlier snapshot carried, and it needed a rewrite rather than a
+deletion. `emit_horizon` is statically reachable through three unambiguous
+non-test hops, so a tag clause reading "reached only from tests" is false - but
+the port is still inert, because the gate `run_horizon_emitter` consults is
+never armed: `EmitterGate::arm` has no non-test caller. That is a runtime fact
+the reachability pass does not model and cannot be expressed by the tag as the
+audit reads it. See
+[`live-audit-triage.md`](live-audit-triage.md#disclose-texts) for the `arm`
+disclosure that pins the other half.

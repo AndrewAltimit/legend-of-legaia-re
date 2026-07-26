@@ -22,11 +22,16 @@
 //! REF: FUN_801D0148, FUN_801D5DE0, FUN_801D84D0, FUN_801E08D8, FUN_801E1C1C, FUN_801E36C4
 //! REF: FUN_801E3EE0, FUN_801E3FF0
 
+pub mod actor_bind;
 pub mod actor_cull;
 pub mod afterimage;
+pub mod attach_swap;
+pub mod battle_actor_tick;
+pub mod battle_sideband;
 pub mod billboard;
 pub mod gte;
 pub mod gte_trace;
+pub mod mode_transition;
 pub mod window;
 
 pub use glam;

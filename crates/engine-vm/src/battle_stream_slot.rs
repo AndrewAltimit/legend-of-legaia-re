@@ -122,10 +122,28 @@ pub struct StreamSlotSm {
 }
 
 impl StreamSlotSm {
-    /// Arm a transfer for `slot` - retail's `FUN_80055B4C`, which writes
-    /// `ctx[+0x26B] = slot + 1`.
+    /// Arm a transfer for `slot`.
     ///
-    /// REF: FUN_80055B4C
+    /// PORT: FUN_80055B4C
+    ///
+    /// The whole retail body is eight instructions and two byte stores through
+    /// `_DAT_8007BD24` - the battle context this struct's three fields model:
+    /// `ctx[+0x26B] = slot + 1` and `ctx[+0x26C] = 0`. Both are `sb`, so the
+    /// increment is a **byte** wrap, which is why this takes `u8` and wraps:
+    /// arming slot `0xFF` writes `0` and therefore *disarms*. Retail has no
+    /// guard against that; the caller shapes are `char_id * 3 - 1` and the
+    /// applier SM's `base..base+3`, neither of which reaches it.
+    ///
+    /// The value written is the request byte [`decode_request`] reads back, so
+    /// the two functions are exact inverses over the armable range - the
+    /// round-trip is a test in this module rather than a claim here.
+    ///
+    /// NOT WIRED: nothing calls it. The two retail callers are the side-band
+    /// applier SM `FUN_801F12D0` and the battle scene loader's per-turn "ME"
+    /// archive request, and the engine reads the side-band files whole off the
+    /// extracted PROT entries (`legaia_asset::summon_readef`) instead of
+    /// arming one `0x10800`-byte slot at a time. The specific missing input is
+    /// the same as [`StreamSlotSm::step`]'s: a slot-at-a-time CD streamer.
     pub fn arm(&mut self, slot: u8) {
         self.request = slot.wrapping_add(1);
         self.stage = 0;
@@ -256,5 +274,50 @@ mod tests {
                 offset: 0,
             }
         );
+    }
+
+    // -- FUN_80055B4C -------------------------------------------------------
+
+    #[test]
+    fn arming_writes_slot_plus_one_and_resets_the_stage() {
+        // Both of retail's two byte stores, on a context whose stage is dirty.
+        let mut sm = StreamSlotSm {
+            request: 0x11,
+            stage: 2,
+            handle_open: true,
+        };
+        sm.arm(0x36);
+        assert_eq!(sm.request, 0x37);
+        assert_eq!(sm.stage, 0);
+        assert!(sm.handle_open, "arming does not touch the handle slot");
+    }
+
+    #[test]
+    fn arm_and_decode_request_are_inverses() {
+        // The property, not the implementation: whatever `arm` writes is what
+        // the sequencer decodes back, for every slot the request byte can name.
+        for slot in 0u8..=0xFE {
+            let mut sm = StreamSlotSm::default();
+            sm.arm(slot);
+            let (file, index) = decode_request(sm.request).expect("armed");
+            let want_file = if slot & 0x80 != 0 {
+                StreamFile::Summon
+            } else {
+                StreamFile::Readef
+            };
+            assert_eq!(file, want_file, "slot {slot:#04X}");
+            assert_eq!(index, slot & 0x7F, "slot {slot:#04X}");
+        }
+    }
+
+    #[test]
+    fn the_byte_increment_wraps_and_slot_ff_disarms() {
+        // `addiu a0,a0,1` then `sb` - the store truncates, so 0xFF arms 0,
+        // which is the idle value. Retail does not guard it.
+        let mut sm = StreamSlotSm::default();
+        sm.arm(0xFF);
+        assert_eq!(sm.request, 0);
+        assert_eq!(decode_request(sm.request), None);
+        assert_eq!(sm.step(false), StreamStep::Idle);
     }
 }

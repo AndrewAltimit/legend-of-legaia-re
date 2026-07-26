@@ -65,6 +65,9 @@ pub use enemy_budget::*;
 mod validator;
 pub use validator::*;
 
+mod overlay_rng;
+pub use overlay_rng::*;
+
 mod pool_ops;
 pub use pool_ops::*;
 

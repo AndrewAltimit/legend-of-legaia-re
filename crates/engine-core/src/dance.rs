@@ -372,6 +372,12 @@ pub struct DanceGame {
     dancers: Vec<Dancer>,
     /// Triangle feedback window (`DAT_801d5144`), armed on the human's spend.
     feedback: u32,
+    /// The mode global (`DAT_801d514c`), which the HUD driver's score-box
+    /// permutation and its solo arm both key off.
+    mode: DanceMode,
+    /// The overlay's HUD widget table with each record's `+0x13` ABR byte
+    /// alongside it, when the run was started from a real overlay image.
+    widgets: Vec<(legaia_asset::dance_art::DanceWidget, u8)>,
 }
 
 impl DanceGame {
@@ -407,6 +413,8 @@ impl DanceGame {
             },
             dancers: kinds.iter().map(|&k| Dancer::new(k)).collect(),
             feedback: 0,
+            mode: DanceMode::Qualifier,
+            widgets: Vec::new(),
         }
     }
 
@@ -453,7 +461,83 @@ impl DanceGame {
             .filter(|k: &Vec<usize>| !k.is_empty())
             .unwrap_or_else(|| QUALIFIER_KINDS[..mode.cast_size().min(DANCER_SLOTS)].to_vec());
         let long = long_song && mode != DanceMode::HowTo;
-        Some(Self::with_tables(chart, tables, &kinds, long))
+        let mut game = Self::with_tables(chart, tables, &kinds, long);
+        game.mode = mode;
+        game.widgets = dance_widgets_with_abr(overlay);
+        Some(game)
+    }
+
+    /// This run's mode (`DAT_801d514c`).
+    pub fn mode(&self) -> DanceMode {
+        self.mode
+    }
+
+    // NOT WIRED: the missing input is a **screen-space dance HUD surface**, and
+    // neither host has one. Both hosts that own a `DanceGame` (the play window's
+    // `window/hud.rs`, the browser page's `minigames.rs`) draw a *single-dancer*
+    // readout through the proportional font atlas at their own pens - the play
+    // window's are `(8, 62)` / `(8, 80)` / `(8, 98)` with its own
+    // `TRACK_BASE_X = 60`. They read `score()` / `gauge()` / `lane()` and never
+    // touch `dancer_score(1..2)` or `dancer_gauge(1..2)` at all, so there is no
+    // second or third dancer on screen for the box permutation to permute and
+    // no row for the rival gate to gate. `_DAT_8007B6D0` likewise has no engine
+    // counterpart - nothing sets or reads a rival-HUD flag. Wiring this needs a
+    // host that lays the dance HUD out in retail framebuffer coordinates
+    // (`DanceHudDraw` carries 320x240 positions, not pen offsets) and a
+    // rival-HUD toggle to stand in for that flag.
+    //
+    /// PORT: FUN_801d231c - one frame of the HUD driver, laid out off this
+    /// run's own live state.
+    ///
+    /// `rival_hud` is the `_DAT_8007B6D0` gate: with it clear the two rival
+    /// gauges and beat tracks are not drawn at all, even in the versus modes.
+    ///
+    /// The output is pinned non-vacuous against a real overlay by
+    /// `engine-core/tests/dance_minigame_real.rs` - the kernel is inert for want
+    /// of a consumer, not because it produces nothing.
+    pub fn hud_draws(&self, rival_hud: bool) -> Vec<DanceHudDraw> {
+        dance_hud_draws(
+            self.mode.value(),
+            [
+                self.dancer_score(0),
+                self.dancer_score(1),
+                self.dancer_score(2),
+            ],
+            [
+                self.dancer_gauge(0),
+                self.dancer_gauge(1),
+                self.dancer_gauge(2),
+            ],
+            rival_hud,
+        )
+    }
+
+    /// The score-box frame quads for [`DanceGame::hud_draws`], resolved through
+    /// the overlay's widget table. Empty when the run was not started from a
+    /// real overlay image (the table is disc data).
+    pub fn hud_quads(&self, rival_hud: bool) -> Vec<DanceHudQuad> {
+        let Some((widget, abr)) = self
+            .widgets
+            .get(DANCE_SCORE_BOX_WIDGET as usize)
+            .map(|(w, a)| (w, *a))
+        else {
+            return Vec::new();
+        };
+        self.hud_draws(rival_hud)
+            .into_iter()
+            .filter_map(|d| match d {
+                DanceHudDraw::ScoreBox { x, y } => Some(dance_hud_widget_quad(
+                    widget,
+                    abr,
+                    x,
+                    y,
+                    DANCE_SCORE_BOX_WIDGET,
+                    DANCE_HUD_BRIGHTNESS,
+                    0x1000,
+                )),
+                _ => None,
+            })
+            .collect()
     }
 
     // ---------------------------------------------------------------- clock
@@ -1316,6 +1400,306 @@ pub fn dancer_emit(mode: u32, x: i16, y: i16, sprite: u16) -> DancerEmit {
     }
 }
 
+// --------------------------------------------- HUD widget quad + HUD driver
+
+/// One resolved dance HUD quad - the renderer-agnostic form of the 12-word
+/// `POLY_GT4` packet the overlay's emitter builds.
+///
+/// Deliberately **not** [`crate::baka_fighter::HudWidgetQuad`]: the two
+/// emitters differ on their edges. Baka's spans `u ..= u + w - 1` inclusive;
+/// the dance emitter writes `u + w` and `x + hw` straight out, so its rects
+/// are half-open. Sharing one struct would silently pick one convention for
+/// both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DanceHudQuad {
+    /// GP0 polygon code (`(semi << 1) | 0x3C`).
+    pub poly_code: u8,
+    /// Quad corners, **half-open**: `x0 .. x1` by `y0 .. y1`.
+    pub x0: i16,
+    pub y0: i16,
+    pub x1: i16,
+    pub y1: i16,
+    /// Per-corner texture coordinates in vertex order (TL, TR, BL, BR),
+    /// half-open the same way.
+    pub uv: [(u8, u8); 4],
+    /// Brightness-scaled gouraud colours: verts 0/1 take `rgb_top`, verts 2/3
+    /// take `rgb_bottom`.
+    pub rgb_top: [u8; 3],
+    pub rgb_bottom: [u8; 3],
+    /// CLUT id, after the mode-2 override.
+    pub clut: u16,
+    /// Texpage attribute after the ABR fold (`tpage + abr * 0x20`).
+    pub tpage_attr: u16,
+}
+
+/// Parse the HUD widget table out of an overlay image, pairing each record
+/// with its `+0x13` ABR byte.
+///
+/// `legaia_asset::dance_art::parse_widgets` decodes every field the emitter
+/// reads **except** `+0x13`, the semi-transparency rate that folds into the
+/// texpage attribute. Until that parser carries it the byte is lifted here off
+/// the same committed offsets the parser uses, so there is one source for the
+/// table's geometry.
+pub fn dance_widgets_with_abr(overlay: &[u8]) -> Vec<(legaia_asset::dance_art::DanceWidget, u8)> {
+    use legaia_asset::dance_art::{DANCE_OVERLAY_BASE_VA, WIDGET_STRIDE, WIDGET_TABLE_VA};
+    let Ok(widgets) = legaia_asset::dance_art::parse_widgets(overlay) else {
+        return Vec::new();
+    };
+    let base = (WIDGET_TABLE_VA - DANCE_OVERLAY_BASE_VA) as usize;
+    widgets
+        .into_iter()
+        .enumerate()
+        .map(|(i, w)| {
+            let abr = overlay
+                .get(base + i * WIDGET_STRIDE + 0x13)
+                .copied()
+                .unwrap_or(0);
+            (w, abr)
+        })
+        .collect()
+}
+
+/// Widget id bits the emitter takes as the widget **index** (`id & 0x3FF`).
+pub const DANCE_WIDGET_ID_MASK: u32 = 0x3FF;
+/// Blend mode the emitter takes from the id's upper bits (`id >> 10`).
+pub const DANCE_WIDGET_MODE_SHIFT: u32 = 10;
+/// CLUT the emitter substitutes when the id's mode field is `2`: palette
+/// `0x0F` of the row-500 strip, i.e. VRAM `(240, 500)`.
+pub const DANCE_MODE2_CLUT: u16 = 0x7D0F;
+
+/// The MIPS `mult` / `sra` scale idiom: signed multiply, then shift with the
+/// `bgez` bias so the round is toward zero.
+fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
+    let p = value.wrapping_mul(factor);
+    let p = if p < 0 { p + ((1 << shift) - 1) } else { p };
+    p >> shift
+}
+
+// NOT WIRED: the missing input is the dance overlay's **HUD sprite page in
+// VRAM**, and nothing uploads it. The widget records name the 4bpp page at
+// `(512, 0)` with its CLUT strip on row 500, but the dance overlay itself
+// issues no texture load at all (its art is staged by the entry path, PROT
+// 1230), and no host resident-VRAM path uploads that page. Without it a quad is
+// a rect sampling nothing, so both hosts draw the dance HUD as font text
+// instead and there is no textured-quad sink to emit into - the same blocker
+// already disclosed on [`score_thousands_glyph_u`] / [`dance_score_digit_u`].
+// Wiring this needs that page resident plus a quad sink in the sprite pass.
+//
+// A second, narrower gap is already closed here: the record's `+0x13` ABR byte
+// is not decoded by `legaia_asset::dance_art::parse_widgets`, so
+// [`dance_widgets_with_abr`] lifts it and the caller passes it in.
+/// PORT: FUN_801d2f38 - the dance overlay's textured-quad emitter, the
+/// sibling of Baka Fighter's `FUN_801d5ed0`.
+///
+/// `FUN_801d2f38(x, y, id, brightness, size)` draws one record of the
+/// 34-record widget table `DAT_801D46CC`
+/// ([`legaia_asset::dance_art::parse_widgets`]) as a quad **centred** on
+/// `(x, y)`:
+///
+/// - the id is two fields. `id & 0x3FF` is the widget index; `id >> 10`
+///   (rounded toward zero) is a **blend mode** that overrides the record:
+///   mode `0` takes the record's own semi-transparency bit and ABR rate, and
+///   any other mode forces semi-transparency on and uses the mode value
+///   *itself* as the ABR rate. Mode `2` additionally replaces the CLUT with
+///   the fixed [`DANCE_MODE2_CLUT`];
+/// - half-extent per axis = `((cell * scale) >> 13) * size >> 12`, both shifts
+///   rounding toward zero, so `scale = size = 0x1000` is exactly `cell / 2`;
+/// - every colour channel is `channel * brightness >> 8`; verts 0/1 carry
+///   `rgb_top`, verts 2/3 `rgb_bottom` - a vertical gradient;
+/// - the texpage attribute folds the ABR rate in as `tpage + abr * 0x20`.
+///
+/// Retail then links the packet into the OT bucket `DAT_801D5154` and forces
+/// that slot to `3`, so every draw after the first shares one bucket. That
+/// scheduling is host-side; the port returns the quad.
+///
+/// `abr` is the record's `+0x13` byte. [`legaia_asset::dance_art::DanceWidget`]
+/// does not decode it yet, so the caller supplies it - see
+/// `handoff/lane-5.md`.
+pub fn dance_hud_widget_quad(
+    widget: &legaia_asset::dance_art::DanceWidget,
+    abr: u8,
+    x: i16,
+    y: i16,
+    id: u32,
+    brightness: i32,
+    size: i32,
+) -> DanceHudQuad {
+    let signed = id as i32;
+    let mode = (if signed < 0 { signed + 0x3FF } else { signed }) >> DANCE_WIDGET_MODE_SHIFT;
+    let (semi, abr) = if mode == 0 {
+        (widget.semi, abr)
+    } else {
+        (1, mode as u8)
+    };
+    let scale8 = |c: u8| mips_scale(c as i32, brightness, 8).clamp(0, 0xFF) as u8;
+    let half = |cell: u8| mips_scale(size, mips_scale(cell as i32, widget.scale, 13), 12) as i16;
+    let hw = half(widget.w);
+    let hh = half(widget.h);
+    let (u0, v0) = (widget.u, widget.v);
+    let (u1, v1) = (
+        widget.u.wrapping_add(widget.w),
+        widget.v.wrapping_add(widget.h),
+    );
+    DanceHudQuad {
+        poly_code: (semi << 1) | 0x3C,
+        x0: x - hw,
+        y0: y - hh,
+        x1: x + hw,
+        y1: y + hh,
+        uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+        rgb_top: widget.rgb_top.map(scale8),
+        rgb_bottom: widget.rgb_bottom.map(scale8),
+        clut: if mode == 2 {
+            DANCE_MODE2_CLUT
+        } else {
+            widget.clut
+        },
+        tpage_attr: widget.tpage + abr as u16 * 0x20,
+    }
+}
+
+/// Which score slot each of the three on-screen score boxes shows, for a mode.
+///
+// NOT WIRED: same missing input as [`DanceGame::hud_draws`], and this is the
+// sharpest statement of it - the permutation only means anything on a screen
+// with three score boxes, and neither host draws more than the human's own
+// score. Nothing in the engine reads `dancer_score(1)` or `dancer_score(2)` for
+// display at all.
+/// PORT: FUN_801d231c (`0x801D2320`..`0x801D23AC`) - the HUD driver's slot
+/// permutation. The screen's three boxes are fixed; which dancer's score each
+/// carries is chosen per mode so the **human** dancer always lands in the
+/// centre one. Returns `(centre, left, right)` as indices into
+/// `DAT_801D53CC`.
+///
+/// Retail's default arm (any mode outside `0..=3`) reads its third index out
+/// of a register it never writes - an uninitialised read, visible in the
+/// disassembly and rendered `unaff_s1` by Ghidra. The mode global is always
+/// `0..=3`, so the arm is unreachable; the port returns `None` rather than
+/// inventing a value for it.
+pub fn dance_score_box_slots(mode: u32) -> Option<(usize, usize, usize)> {
+    match mode {
+        0 => Some((0, 1, 2)),
+        1 => Some((1, 2, 0)),
+        2 | 3 => Some((0, 2, 1)),
+        _ => None,
+    }
+}
+
+/// Screen x of the three score boxes' widget-8 frames (`FUN_801d231c`).
+pub const DANCE_SCORE_BOX_X: [i16; 3] = [0xA0, 0x40, 0x100];
+/// Digit-run origin x paired with each of [`DANCE_SCORE_BOX_X`].
+pub const DANCE_SCORE_DIGIT_X: [i16; 3] = [0x40, -0x20, 0xA0];
+/// Scanline the whole score strip sits on.
+pub const DANCE_SCORE_Y: i16 = 0x14;
+/// Widget id of a score-box frame.
+pub const DANCE_SCORE_BOX_WIDGET: u32 = 8;
+/// Brightness every element of the score strip draws at.
+pub const DANCE_HUD_BRIGHTNESS: i32 = 0x80;
+/// Groove-gauge readout position for the human dancer, `(x, y)`.
+pub const DANCE_GAUGE_XY: (i16, i16) = (0x58, 0xC0);
+/// Beat-track anchor for the human dancer, `(x, y)`.
+pub const DANCE_TRACK_XY: (i16, i16) = (0x78, 0xC0);
+/// Rival gauge / track positions, `(gauge_xy, track_xy)` per rival.
+pub const DANCE_RIVAL_XY: [((i16, i16), (i16, i16)); 2] =
+    [((0xDC, 0x40), (0xDC, 0xD4)), ((0x50, 0x40), (0x18, 0xD4))];
+
+/// One element of the dance HUD's per-frame draw list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DanceHudDraw {
+    /// A dancer's score, drawn as a run of digits from `x` (the emitter's
+    /// leading-zero suppression is [`dance_number_digits`]).
+    Score {
+        slot: usize,
+        x: i16,
+        y: i16,
+        value: u32,
+    },
+    /// A score-box frame (widget [`DANCE_SCORE_BOX_WIDGET`]).
+    ScoreBox { x: i16, y: i16 },
+    /// A groove-gauge `Lv.` readout for `slot`.
+    Gauge {
+        slot: usize,
+        x: i16,
+        y: i16,
+        value: u32,
+    },
+    /// A beat track for `slot`.
+    BeatTrack { slot: usize, x: i16, y: i16 },
+}
+
+// NOT WIRED: the free-function half of [`DanceGame::hud_draws`], and inert for
+// the same missing input - no host lays the dance HUD out in retail
+// framebuffer coordinates, and `_DAT_8007B6D0` (the `rival_hud` gate) has no
+// engine counterpart to drive it from.
+/// PORT: FUN_801d231c - the dance HUD render driver.
+///
+/// Per frame it draws the three score readouts and their box frames, then the
+/// human dancer's groove gauge and beat track, then - **only while the rival
+/// HUD flag `_DAT_8007B6D0` is set** - the two rivals' gauges and tracks. Mode
+/// `3` (free play) is the single-dancer mode: it draws just the centre box and
+/// its digits, skipping both side boxes.
+///
+/// `scores` and `gauges` are `DAT_801D53CC` / `DAT_801D544C`; `mode` is
+/// `DAT_801D514C`.
+pub fn dance_hud_draws(
+    mode: u32,
+    scores: [u32; 3],
+    gauges: [u32; 3],
+    rival_hud: bool,
+) -> Vec<DanceHudDraw> {
+    let mut out = Vec::with_capacity(12);
+    let Some((centre, left, right)) = dance_score_box_slots(mode) else {
+        return out;
+    };
+    let solo = mode == 3;
+    let boxes: &[(usize, usize)] = if solo {
+        &[(centre, 0)]
+    } else {
+        &[(centre, 0), (left, 1), (right, 2)]
+    };
+    for &(slot, pos) in boxes {
+        out.push(DanceHudDraw::Score {
+            slot,
+            x: DANCE_SCORE_DIGIT_X[pos],
+            y: DANCE_SCORE_Y,
+            value: scores[slot],
+        });
+    }
+    for &(_, pos) in boxes {
+        out.push(DanceHudDraw::ScoreBox {
+            x: DANCE_SCORE_BOX_X[pos],
+            y: DANCE_SCORE_Y,
+        });
+    }
+    out.push(DanceHudDraw::Gauge {
+        slot: 0,
+        x: DANCE_GAUGE_XY.0,
+        y: DANCE_GAUGE_XY.1,
+        value: gauges[0],
+    });
+    out.push(DanceHudDraw::BeatTrack {
+        slot: 0,
+        x: DANCE_TRACK_XY.0,
+        y: DANCE_TRACK_XY.1,
+    });
+    if rival_hud {
+        for (i, &(gauge_xy, track_xy)) in DANCE_RIVAL_XY.iter().enumerate() {
+            out.push(DanceHudDraw::Gauge {
+                slot: i + 1,
+                x: gauge_xy.0,
+                y: gauge_xy.1,
+                value: gauges[i + 1],
+            });
+            out.push(DanceHudDraw::BeatTrack {
+                slot: i + 1,
+                x: track_xy.0,
+                y: track_xy.1,
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1887,5 +2271,155 @@ mod tests {
         // Neither: idle, no clip drive.
         assert!(!dance_clip_driver_gate(0, 0));
         assert!(!dance_clip_driver_gate(-1, 0x2000));
+    }
+
+    fn probe_widget() -> legaia_asset::dance_art::DanceWidget {
+        legaia_asset::dance_art::DanceWidget {
+            scale: 0x1000,
+            tpage: 0x0008,
+            clut: 0x7D08,
+            u: 0x10,
+            v: 0x20,
+            w: 0x20,
+            h: 0x10,
+            rgb_top: [0x80, 0x40, 0x20],
+            rgb_bottom: [0x40, 0x20, 0x10],
+            semi: 0,
+        }
+    }
+
+    #[test]
+    fn widget_quad_is_centred_and_half_open() {
+        let w = probe_widget();
+        let q = dance_hud_widget_quad(&w, 0, 100, 50, 0, 0x100, 0x1000);
+        // 1:1 scale + 1:1 size means half-extent is exactly cell/2.
+        assert_eq!((q.x0, q.x1), (100 - 0x10, 100 + 0x10));
+        assert_eq!((q.y0, q.y1), (50 - 8, 50 + 8));
+        // Half-open UVs: `u + w`, not `u + w - 1` like the Baka emitter's.
+        assert_eq!(q.uv[0], (0x10, 0x20));
+        assert_eq!(q.uv[3], (0x30, 0x30));
+        assert_eq!(q.poly_code, 0x3C);
+        assert_eq!(q.tpage_attr, 0x0008);
+        // Brightness 0x100 passes the tints through unchanged.
+        assert_eq!(q.rgb_top, w.rgb_top);
+        assert_eq!(q.rgb_bottom, w.rgb_bottom);
+        // Half brightness halves every channel.
+        let dim = dance_hud_widget_quad(&w, 0, 0, 0, 0, 0x80, 0x1000);
+        assert_eq!(dim.rgb_top, [0x40, 0x20, 0x10]);
+    }
+
+    #[test]
+    fn the_widget_ids_upper_bits_override_the_records_blend() {
+        let w = probe_widget();
+        // Mode 0 takes the record's own semi bit and the caller's abr byte.
+        let m0 = dance_hud_widget_quad(&w, 1, 0, 0, 8, 0x100, 0x1000);
+        assert_eq!(m0.poly_code, 0x3C);
+        assert_eq!(m0.tpage_attr, 0x0008 + 0x20);
+        // Any other mode forces semi-transparency on and *is* the abr rate.
+        let m1 = dance_hud_widget_quad(&w, 0, 0, 0, (1 << 10) | 8, 0x100, 0x1000);
+        assert_eq!(m1.poly_code, 0x3E);
+        assert_eq!(m1.tpage_attr, 0x0008 + 0x20);
+        assert_eq!(m1.clut, w.clut);
+        // Mode 2 additionally replaces the CLUT with the fixed override.
+        let m2 = dance_hud_widget_quad(&w, 0, 0, 0, (2 << 10) | 8, 0x100, 0x1000);
+        assert_eq!(m2.clut, DANCE_MODE2_CLUT);
+        assert_eq!(m2.tpage_attr, 0x0008 + 0x40);
+        // The index field is masked, so the mode bits never leak into it.
+        assert_eq!(DANCE_WIDGET_ID_MASK & ((2 << 10) | 8), 8);
+    }
+
+    #[test]
+    fn the_human_always_lands_in_the_centre_score_box() {
+        // Whichever mode, slot 0 (the human) is in the centre box except in
+        // the finals, where the mode global rotates the trio.
+        assert_eq!(dance_score_box_slots(0), Some((0, 1, 2)));
+        assert_eq!(dance_score_box_slots(1), Some((1, 2, 0)));
+        assert_eq!(dance_score_box_slots(2), Some((0, 2, 1)));
+        assert_eq!(dance_score_box_slots(3), Some((0, 2, 1)));
+        // The unreachable default arm reads an unwritten register in retail;
+        // the port refuses rather than inventing a slot.
+        assert_eq!(dance_score_box_slots(4), None);
+    }
+
+    #[test]
+    fn hud_driver_skips_the_side_boxes_in_free_play() {
+        let scores = [111, 222, 333];
+        let gauges = [1500, 500, 2500];
+        let versus = dance_hud_draws(0, scores, gauges, false);
+        assert_eq!(
+            versus
+                .iter()
+                .filter(|d| matches!(d, DanceHudDraw::ScoreBox { .. }))
+                .count(),
+            3
+        );
+        let solo = dance_hud_draws(3, scores, gauges, false);
+        assert_eq!(
+            solo.iter()
+                .filter(|d| matches!(d, DanceHudDraw::ScoreBox { .. }))
+                .count(),
+            1
+        );
+        // Only the centre box, and it carries slot 0's score.
+        assert_eq!(
+            solo[0],
+            DanceHudDraw::Score {
+                slot: 0,
+                x: DANCE_SCORE_DIGIT_X[0],
+                y: DANCE_SCORE_Y,
+                value: 111
+            }
+        );
+    }
+
+    #[test]
+    fn the_rival_hud_rows_are_gated_off_by_default() {
+        let off = dance_hud_draws(0, [0; 3], [0; 3], false);
+        let on = dance_hud_draws(0, [0; 3], [0; 3], true);
+        let tracks = |v: &[DanceHudDraw]| {
+            v.iter()
+                .filter(|d| matches!(d, DanceHudDraw::BeatTrack { .. }))
+                .count()
+        };
+        assert_eq!(tracks(&off), 1, "only the human's track without the flag");
+        assert_eq!(tracks(&on), 3);
+        // The rivals' rows sit at the traced off-centre positions.
+        assert!(on.contains(&DanceHudDraw::BeatTrack {
+            slot: 1,
+            x: 0xDC,
+            y: 0xD4
+        }));
+        assert!(on.contains(&DanceHudDraw::BeatTrack {
+            slot: 2,
+            x: 0x18,
+            y: 0xD4
+        }));
+    }
+
+    #[test]
+    fn a_running_game_lays_its_own_hud_out() {
+        let mut g = DanceGame::new(chart(), false);
+        assert_eq!(g.mode(), DanceMode::Qualifier);
+        let draws = g.hud_draws(false);
+        assert!(draws.contains(&DanceHudDraw::Gauge {
+            slot: 0,
+            x: DANCE_GAUGE_XY.0,
+            y: DANCE_GAUGE_XY.1,
+            value: 0
+        }));
+        // With no overlay image behind it there is no widget table to resolve.
+        assert!(g.hud_quads(false).is_empty());
+        // The score readout tracks the run: land a step, then re-read the HUD.
+        g.press(DanceDir::A);
+        let scored = g.hud_draws(false);
+        assert_eq!(
+            scored[0],
+            DanceHudDraw::Score {
+                slot: 0,
+                x: DANCE_SCORE_DIGIT_X[0],
+                y: DANCE_SCORE_Y,
+                value: g.score()
+            }
+        );
     }
 }

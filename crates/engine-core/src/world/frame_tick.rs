@@ -361,6 +361,13 @@ impl World {
         if actor_tick_fired {
             self.actor_vsync_accum = 0;
             self.tick_actor_physics();
+            // The `jalr node[+0x0C]` arm of the same walk: run the ported
+            // per-frame handler kernels (today the colour tween) and drop the
+            // actors that raised the kill bit - both this pass's tweens and
+            // any marked by the scene-transition sweep or a `FUN_8003CF40`
+            // retire since the last tick.
+            // REF: FUN_8002519C
+            self.tick_handler_actors(cadence);
             self.tick_actors();
             // Actor-VM glides (op 0x09 `MotionAt` -> `start_motion`): one
             // motion-VM pursue step per game tick toward the recorded target.

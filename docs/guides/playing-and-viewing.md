@@ -50,7 +50,50 @@ the audio cursor). Without `--disc` it plays a raw extracted `.STR` file
 ([extracting-assets.md](extracting-assets.md)). Background:
 [cutscene.md](../subsystems/cutscene.md).
 
-## 4. Saves and config live next to you
+## 4. Start a minigame from a live scene
+
+Every ported minigame is a **mode suspend** on the running world, not a
+separate program: the field scene stays loaded underneath and comes back when
+you leave, so you start one from wherever you happen to be standing.
+
+In `play-window` each is one key, and the same key leaves again: `L` fishing,
+`K` dance, `O` the casino slot machine, `B` Baka Fighter, `M` Muscle Dome. Each
+loads that minigame's overlay off the disc and installs a session, so the rules,
+tables and scoring all come from the disc rather than from hardcoded numbers.
+
+The browser play page carries the fishing entry as a **Fish here** button under
+the canvas. Cross casts and reels, Square reels harder, Cross recasts once a
+catch resolves - the same pad the field controller reads, because the driver is
+the shared per-frame fishing tick rather than a per-host input handler. Points
+bank into the world's persistent pool, so they survive leaving and re-entering,
+and the prize-exchange rows come off the same overlay with retail availability
+gating. Background: [minigame-fishing.md](../subsystems/minigame-fishing.md).
+
+One HUD caveat that looks like a bug and is not: the fishing sprite page is the
+one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
+and caption rows from the dialog font and skip its glyphs. The captions are
+engine-side English placeholders at the retail pen positions, so a long
+placeholder can overlap the count beside it.
+
+## 5. What you hear
+
+Both hosts decode their audio from the disc you supply - no samples ship with
+the engine or the site. Music is a SEQ played through the clean-room SPU against
+the scene's own sound bank; sound effects come from the executable's descriptor
+table plus the resident program bank, and both hosts key them into the **same**
+SPU the music uses, so a cue shares the voice pool exactly as it does on
+hardware.
+
+Cue *provenance* is worth knowing before you judge a sound. Retail fires an
+effect by writing an id into a ring, and only a handful of those writes have
+been traced, so a cue is either `disc` (the id is retail's, at the place retail
+writes it) or `site` (retail's id there is unpinned and the port reuses the
+closest one). The browser page reports the split per event rather than presenting
+a guess as the game's sound. The footstep is the clearest example: its *timing*
+is the retail cadence - a faster walk steps more often, standing still is silent
+- while the cue id it fires is the port's pick.
+
+## 6. Saves and config live next to you
 
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode) in
@@ -69,7 +112,7 @@ Rebind keys with `config`:
 `KEY=BUTTON` uses friendly key names (`Z`, `Up`, `Enter`, `RShift`) and PSX
 pad button names (`Cross`, `Circle`, `Start`, `L1`).
 
-## 5. Record and replay a session
+## 7. Record and replay a session
 
 ```bash
 ./legaia-engine record --disc "/path/to/disc.bin" --out session.toml
@@ -87,7 +130,7 @@ at all. Details: [determinism-replay.md](../tooling/determinism-replay.md).
 footer separates the player-facing ones above from the development
 diagnostics (parity oracles, synthetic state drivers) you can ignore.
 
-## 6. Browse assets interactively
+## 8. Browse assets interactively
 
 `asset-viewer` reads the `extracted/` tree (there is no `--disc` here - run
 `legaia-extract` first). The `field` and `dialog` demos additionally need the
@@ -109,7 +152,7 @@ same keys. The `tim` subcommand also takes `extracted/PROT.DAT` itself with
 `--offset`/`--clut` for the system-UI textures that live outside any TOC
 entry.
 
-## 7. Read the game's scripts
+## 9. Read the game's scripts
 
 The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:
@@ -126,9 +169,35 @@ MAN sub-asset), the engine has the direct path:
 ./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"
 ```
 
+## 10. Run the browser version locally
+
+The same engine runs in a browser as the static site's play page, sharing the
+simulation kernels with the native window. That build is **not in the clone** -
+`site/wasm/` is generated output. Build it once:
+
+```bash
+scripts/ci/build-wasm.sh            # ~9 min cold; needs wasm-pack
+python3 -m http.server -d site      # then open /play.html
+```
+
+Nothing is uploaded: the disc image you pick stays in the tab.
+
+Rebuild after changing anything the page compiles - which is most of the
+workspace, not just `crates/web-viewer`. To check whether the bundle you built
+still matches your sources:
+
+```bash
+python3 scripts/ci/check-wasm-freshness.py
+```
+
+Worth running before concluding a change did or didn't work in the browser: a
+stale bundle looks exactly like a fix that had no effect. See
+[shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
+
 ## Related docs
 
 - [engine.md](../subsystems/engine.md) - the engine's architecture and clean-room boundaries.
+- [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md) - why `site/wasm/` is generated, not committed.
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.
 - [determinism-replay.md](../tooling/determinism-replay.md) - the replay format.
 - [modding-and-translation.md](modding-and-translation.md) - randomize or translate the disc you just booted.

@@ -4,20 +4,35 @@
 //! A field/town scene's ground is a heightfield whose per-cell texture comes
 //! from the `.MAP` object record (`+0x14` atlas tile, `+0x15` tpage, `+0x16`
 //! CLUT - [`legaia_asset::field_objects::WalkHeightfield`]). The atlas pages
-//! and their CLUT rows live in the scene's `scene_asset_table` entry, but the
-//! scene's CDNAME block also reserves **pochi-filler** slots
-//! (`pochipochi...`, `docs/formats/pochi.md`) whose bytes behind the fill
-//! prefix are stale scratch - and that scratch is often a well-formed
-//! `256 x 256` 4bpp TIM declaring fb `(768, 0)` / `(832, 0)`, i.e. tpages
-//! `0x0C` / `0x1D`. Uploading one lands last and erases the terrain atlas, so
-//! the ground quads sample character / backdrop texels (Jeremi's "tombstone"
-//! lattice, Mt. Dhini's repeating vine texture).
+//! and their CLUT rows live in the scene's `scene_asset_table` entry. The
+//! observed failure this file guards is real: Jeremi's ground rendered as a
+//! "tombstone" lattice and Mt. Dhini's as a repeating vine, because a full
+//! `64 x 256` page landed on fb `(768, 0)` (tpage `0x0C`) - exactly where most
+//! field scenes put their ground-tile atlas - after the atlas had been
+//! uploaded, so the ground quads sampled character / backdrop texels.
 //!
-//! Two assertions:
-//! 1. the hazard is real on the disc - `geremi`'s block *does* carry a
-//!    pochi slot whose leftover TIM targets the ground page - and the built
-//!    VRAM does **not** contain that leftover;
-//! 2. across a spread of field scenes, every ground cell's `(tpage, clut)`
+//! **What that page was is a corrected attribution.** It was read as stale
+//! mastering scratch behind a **pochi-filler** slot's `pochipochi...` prefix
+//! (`docs/formats/pochi.md`). It is not. Every one of the retail
+//! `Class::PochiFiller` entries is exactly one 2048-byte sector of fill and
+//! carries no parseable TIM at all; there is no scratch behind the prefix
+//! because there is nothing behind the prefix. The page came from the pochi
+//! entry's *neighbour* - the `scene_tmd_stream` entry that follows it, whose
+//! `FUN_8001FE70` type-`0x01` chunks are the battle-character atlases at
+//! `(768, 0)` and `(832, 0)` - reached through the historical PROT
+//! entry-size expression, which spanned an entry into the next one. With the
+//! entry sized as the sector gap to its successor
+//! ([`docs/formats/prot.md`](../../../docs/formats/prot.md)) a pochi slot has
+//! no reach, and the field loader's own `scene_tmd_stream` exclusion keeps the
+//! neighbour's battle pages out.
+//!
+//! Three assertions:
+//! 1. the corpus invariant that dissolves the hazard - every pochi-filler
+//!    entry is one sector with no TIM in it;
+//! 2. the real source, positively: `geremi`'s pochi slot is followed by a
+//!    `scene_tmd_stream` that *does* carry the `(768, 0)` / `(832, 0)` pages,
+//!    and the built field VRAM does **not** contain that page;
+//! 3. across a spread of field scenes, every ground cell's `(tpage, clut)`
 //!    resolves to a populated palette + page, and virtually every ground
 //!    vertex finds texel data.
 //!
@@ -90,16 +105,75 @@ fn clut_origin(clut: u16) -> (usize, usize) {
     )
 }
 
+/// Every parseable TIM in `bytes`, raw and inside its LZS sections.
+fn tims_in(bytes: &[u8]) -> Vec<legaia_tim::Tim> {
+    let scan = legaia_asset::tim_scan::scan_entry(bytes);
+    let mut out = Vec::new();
+    for (source, hit) in &scan.hits {
+        let src: &[u8] = match source {
+            legaia_asset::tim_scan::Source::Raw => bytes,
+            legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
+        };
+        let Some(payload) = src.get(hit.offset..hit.offset + hit.byte_len) else {
+            continue;
+        };
+        if let Ok(tim) = legaia_tim::parse(payload) {
+            out.push(tim);
+        }
+    }
+    out
+}
+
 #[test]
 fn pochi_leftovers_never_reach_the_ground_atlas_page() {
     let Some(index) = open_index() else {
         eprintln!("LEGAIA_DISC_BIN unset - skipping");
         return;
     };
-    let scene = Scene::load(&index, "geremi").expect("load geremi");
 
-    // 1. The hazard: a pochi-filler slot in this block carries a stale TIM
-    //    whose image block targets the very page the ground records name.
+    // 1. The corpus invariant that dissolves the hazard. A pochi-filler slot
+    //    is one reserved sector of `pochipochi...` + 0x1A fill. It has no
+    //    second sector for scratch to live in, and nothing in it parses as a
+    //    TIM - so no sweep of one can put a page anywhere. (The historical
+    //    reading, that the bytes behind the fill prefix are stale scratch that
+    //    often forms a complete valid TIM, was reading the *next* entry
+    //    through the old PROT entry-size expression.)
+    let mut pochi_slots = 0usize;
+    let mut multi_sector = Vec::<u32>::new();
+    let mut carrying_a_tim = Vec::<u32>::new();
+    for idx in 0..index.entry_count() as u32 {
+        if index.class_of(idx).ok() != Some(legaia_asset::categorize::Class::PochiFiller) {
+            continue;
+        }
+        pochi_slots += 1;
+        let Ok(bytes) = index.entry_bytes(idx) else {
+            continue;
+        };
+        if bytes.len() != 2048 {
+            multi_sector.push(idx);
+        }
+        if !tims_in(&bytes).is_empty() {
+            carrying_a_tim.push(idx);
+        }
+    }
+    assert!(
+        pochi_slots >= 100,
+        "expected the retail pochi-filler class to be populated, found {pochi_slots}"
+    );
+    assert!(
+        multi_sector.is_empty(),
+        "pochi-filler entries are single reserved sectors; these are not: {multi_sector:?}"
+    );
+    assert!(
+        carrying_a_tim.is_empty(),
+        "a pochi-filler entry parsed as carrying a TIM - the stale-scratch hazard would be \
+         back, and the ground-atlas sweep needs re-auditing: {carrying_a_tim:?}"
+    );
+
+    // 2. The real source of the page that broke Jeremi's ground, positively:
+    //    the `scene_tmd_stream` entry that follows the pochi slot carries the
+    //    battle-character atlas at the ground page's own origin.
+    let scene = Scene::load(&index, "geremi").expect("load geremi");
     let hf = scene
         .walk_heightfield(&index)
         .expect("geremi map")
@@ -120,46 +194,41 @@ fn pochi_leftovers_never_reach_the_ground_atlas_page() {
         "geremi's ground atlas is the fb (768,0) page"
     );
 
-    let mut hazard: Option<legaia_tim::Tim> = None;
-    for entry in &scene.entries {
-        if entry.class != legaia_asset::categorize::Class::PochiFiller {
-            continue;
-        }
-        let scan = legaia_asset::tim_scan::scan_entry(&entry.bytes);
-        for (source, hit) in &scan.hits {
-            let src: &[u8] = match source {
-                legaia_asset::tim_scan::Source::Raw => &entry.bytes,
-                legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
-            };
-            let Some(payload) = src.get(hit.offset..hit.offset + hit.byte_len) else {
-                continue;
-            };
-            let Ok(tim) = legaia_tim::parse(payload) else {
-                continue;
-            };
-            if (tim.image.fb_x as usize, tim.image.fb_y as usize) == (px, py) {
-                hazard = Some(tim);
-            }
-        }
-    }
-    let hazard = hazard.expect(
-        "geremi's block carries a pochi-filler slot whose leftover TIM targets the ground page",
+    let pochi_at = scene
+        .entries
+        .iter()
+        .position(|e| e.class == legaia_asset::categorize::Class::PochiFiller)
+        .expect("geremi's block reserves a pochi-filler slot");
+    let neighbour = scene
+        .entries
+        .get(pochi_at + 1)
+        .expect("the pochi slot has a successor inside the block");
+    assert_eq!(
+        neighbour.class,
+        legaia_asset::categorize::Class::SceneTmdStream,
+        "the entry the old over-read reached is geremi's scene_tmd_stream sibling"
     );
+    let intruder = tims_in(&neighbour.bytes)
+        .into_iter()
+        .find(|t| (t.image.fb_x as usize, t.image.fb_y as usize) == (px, py))
+        .expect("that sibling carries the battle-character page at the ground page's origin");
 
-    // 2. The build must not contain it: compare the first image row.
+    // 3. The build must not contain it: compare the first image row. Field
+    //    dispatch skips `scene_tmd_stream` TIM chunks, so the page that
+    //    survives is the scene's own atlas.
     let res = build_field(&index, &scene);
-    let row: Vec<u16> = (0..hazard.image.fb_w as usize)
+    let row: Vec<u16> = (0..intruder.image.fb_w as usize)
         .map(|i| res.vram.pixel(px + i, py))
         .collect();
-    let stale: Vec<u16> = (0..hazard.image.fb_w as usize)
+    let stale: Vec<u16> = (0..intruder.image.fb_w as usize)
         .map(|i| {
             let o = i * 2;
-            u16::from_le_bytes([hazard.image.data[o], hazard.image.data[o + 1]])
+            u16::from_le_bytes([intruder.image.data[o], intruder.image.data[o + 1]])
         })
         .collect();
     assert_ne!(
         row, stale,
-        "the pochi-filler leftover was uploaded over geremi's ground atlas"
+        "the scene_tmd_stream battle page was uploaded over geremi's ground atlas"
     );
     // And the page is not simply empty - the scene's own atlas is there.
     assert!(

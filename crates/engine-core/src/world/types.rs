@@ -363,6 +363,52 @@ pub struct Actor {
     /// dispatcher.
     pub active: bool,
 
+    /// `+0x0C` - the actor's **per-frame handler**. Retail's actor identity:
+    /// the allocator `FUN_80020DE0` stamps it from the spawn descriptor, the
+    /// frame dispatcher `FUN_8002519C` calls it, and the find / retire
+    /// leaves (`FUN_8003CF04` / `FUN_8003CF40`) plus the scene-transition
+    /// sweep `FUN_801D7518` all key on it. See
+    /// [`crate::actor_handler::ActorHandler`] for how a VA and a ported Rust
+    /// kernel travel together in one value.
+    ///
+    /// [`ActorHandler::None`] for slots seated by paths that predate handler
+    /// installation (the actor VM's own `Spawn*` opcodes, scene NPC binding);
+    /// those are invisible to every identity test, which is the same thing
+    /// retail's null `+0x0C` does.
+    ///
+    /// [`ActorHandler::None`]: crate::actor_handler::ActorHandler::None
+    pub handler: crate::actor_handler::ActorHandler,
+
+    /// `+0x50` - the per-handler **parameter word**. What it selects is the
+    /// handler's business: the scripted-scene actor reads it as a program id
+    /// ([`crate::field_actor_program`]), the submode driver has it cleared at
+    /// spawn. Zero for handlers that never look at it.
+    pub state_50: u16,
+
+    /// `+0x54` - the **actor state word** every overlay-resident handler
+    /// state-machines on (`FUN_801D4A60`'s 38-state jump table,
+    /// `FUN_801EE328`'s five states, the submode driver's `0`). Retail unions
+    /// this halfword with the countdown timer
+    /// [`ActorPhysics::timer`](legaia_engine_vm::actor_tick::ActorPhysics::timer)
+    /// that the `FUN_80021DF4` handler drains - same storage, and which
+    /// meaning applies is decided by [`Self::handler`], which is precisely the
+    /// kind of thing the handler field exists to express. The engine keeps the
+    /// two views in separate fields so the ported physics tick cannot
+    /// accidentally count a state number down to zero.
+    pub state_54: u16,
+
+    /// `+0xB8..+0xD6` - the colour-tween block, present only on actors whose
+    /// [`Self::handler`] is
+    /// [`ActorHandler::ColourTween`](crate::actor_handler::ActorHandler::ColourTween).
+    /// Stepped once per game tick by [`World::tick_handler_actors`].
+    pub colour_tween: Option<crate::field_actor_kernels::ColourTween>,
+
+    /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
+    /// handler emitted one. Cleared at the top of every
+    /// [`World::tick_handler_actors`] pass, so it is always "this frame's",
+    /// never a stale one.
+    pub tint_push: Option<crate::field_actor_kernels::ScreenTintPush>,
+
     /// Default-position lookup result for the actor VM. Retail reads this
     /// from a 16-byte-stride table at `0x801E4738`; engines populate per
     /// scene from extracted assets.

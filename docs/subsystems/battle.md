@@ -317,9 +317,17 @@ TMD walk:
   `0x000D`) with **CLUT `(0, 479)`** (CBA `0x77C0`), UV window
   **`(192..255)²`** - scratch literals in `func_0x801d02c0`, confirmed
   against the GT4 packets in the live prim pool of the Tetsu battle states.
-  The 64² window holds **four 32×32 sub-tiles** (two distinct variants, each
-  duplicated across the row); each cell samples one sub-tile with a
-  per-cell random corner mirror. The *address* is scene-independent - the
+  The 64² window is stretched across one whole `0x200` cell as **four quads**:
+  the emit loop runs 2×2 times per visible cell and advances the sub-tile row
+  pointer by `0x10` each time, so the sub-tile is `sub_row * 2 + sub_col` and
+  there is **no RNG anywhere in the routine**. An earlier reading here - "each
+  cell samples one sub-tile with a per-cell random corner mirror", over "two
+  distinct variants duplicated across the row" - was wrong on both counts: the
+  tiling is deterministic, and the variant count is a claim about the texture's
+  content rather than about the renderer. The random corner mirror is real but
+  belongs to the *particle* scatter `FUN_801E0080` (`rand() % 4` → two mirror
+  bits). See [`functions/battle.md`](../reference/functions/battle.md#801d02c0).
+  The *address* is scene-independent - the
   scene's battle VRAM build is what places that scene's own ground tile
   there (`town01` = warm sandy pebbles; an earlier engine heuristic that
   borrowed the dome's nearest "grass vertex" sampled a blue texel region in
@@ -1789,8 +1797,9 @@ overlay level-up function `FUN_801E9504` (see
 [`subsystems/level-up.md`](level-up.md#stat-gains)). The earlier writer-search
 came up empty because it scanned the `magic_level_up` *display* overlay, not the
 victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those
-`+0x74` reads are a `0x80808080` battle-state flag the SCUS handler
-`FUN_800480D8` writes, not a stat grant).
+`+0x74` reads are the actor's **colour word**, which `FUN_800480D8` stamps with
+the 24-bit mid-grey `0x00808080` under the mask `0x00FFFFFF`, not a stat grant -
+see [`functions/renderer.md`](../reference/functions/renderer.md#800480d8)).
 `legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves +
 param block, and the engine applies them: `LevelUpTracker::with_growth_tables`
 installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot,

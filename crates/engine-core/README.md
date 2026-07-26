@@ -373,6 +373,34 @@ presentation left to the host:
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#items-screen).
 - `menu_arrange` - the Items screen's Arrange rank table (menu-overlay
   `0x801E4A88`) + the retail bag-sort kernel (`FUN_801D64A8`).
+- `mode_entry_init` - the one-time **mode-entry initialisers**: the field /
+  town scene init (`FUN_801D6704` - step order, BGM slot resolve, primitive
+  buffer sizing, and the cold/warp player seat `SceneHost::enter_field_scene`
+  applies) plus the duel-arena overlay seeds (`FUN_801CF00C`). See
+  [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224---the-slotasset-mapping).
+- `effect_ribbon` - the battle effect-**ribbon** geometry generator
+  (`FUN_801CFA48`): a seeded random walk emitting six vertices per step with a
+  tapering radius, plus the packet-chain layout its render half consumes.
+  Geometry only; the GPU emit is render-track.
+- `action_effect_script` - the battle action's 8-byte **effect-script** record
+  walk (`FUN_801DEA50`): frame gates, facing rotation, the move-power record
+  index, and the target band the terminator's homing seed sweeps.
+- `field_regions::window_rebuild_spawns` - the sub-area **window rebuild**
+  placed-object sweep (`FUN_801D7B50`), complement of the scene-init sweep.
+- `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
+  target-menu row dedup / labelling and the overlap-relaxation layout
+  (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every
+  time a picker opens.
+- `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
+  context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
+  fixed-template spawn (`FUN_801DE478`), the list-panel row layout
+  (`FUN_801E6984`), and the CARD mode-request leaf (`FUN_801D84B4`).
+- `field_actor_kernels` - the scene-transition **teardown sweep**
+  (`FUN_801D7518`, which the field initialiser runs once per actor list on a
+  warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
+  the sweep retires by handler address.
+- `camera_ease` - the field camera's smoothed-yaw step (`FUN_801DA390`):
+  settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id

@@ -91,6 +91,15 @@ impl SceneHost {
         // engines drive via [`SceneHost::release_sustained_sfx`] directly).
         // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
         self.release_sustained_sfx();
+        // Scene-to-scene teardown sweep over the actor pool. Retail's field
+        // initialiser `FUN_801D6704` runs `FUN_801D7518` once per actor list
+        // on a **warp** entry (`_DAT_8007B8B8 == 2`) and not on a cold one;
+        // "a scene is already loaded" is exactly that condition, so a cold
+        // boot skips it and every door / scene change takes it.
+        // PORT: FUN_801D7518 (live wiring; kernel = `field_actor_kernels::sweep_actor`)
+        if self.scene.is_some() {
+            self.world.scene_transition_actor_sweep();
+        }
         // Re-allocate + reset the scene control block `_DAT_801C6EA4` before
         // the new scene's records are installed. Retail's reset also clears
         // the tile-descriptor pointer `_DAT_8007B450`, which is what keeps a
@@ -122,6 +131,15 @@ impl SceneHost {
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
             .map(Arc::new);
+        // The actor-list work retail's MAN loader `FUN_8003AEB0` does around
+        // its own decode: two inlined `FUN_8003CF40` retire sweeps, the
+        // submode open `FUN_801D9C3C()`, and the fixed-template scene-actor
+        // spawn `FUN_801DE478(0xF)`. Runs whether or not this scene carries a
+        // MAN, matching retail - `FUN_8003AEB0` reaches all four before any
+        // payload-dependent branch.
+        // PORT: FUN_801D9C3C, FUN_801DE478 (live wiring; kernels in
+        //       `field_submode`)
+        self.world.man_load_actor_reset();
         // Scan the cached MAN for scripted gold charges (inn gate + debit
         // pairs) so the inn UI can open with this scene's real cost.
         self.scene_gold_charges = self

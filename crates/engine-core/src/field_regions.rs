@@ -440,6 +440,159 @@ pub fn refresh_object_grid_marks(map: &mut [u8]) {
     }
 }
 
+/// Object-cell bit that marks a tile as **owned by the scene-init bind sweep**
+/// (`legaia_asset::field_objects::CELL_BIND_OWNED`, stamped by `FUN_8003AEB0`
+/// from the gate-0 bind triggers). The window sweep skips any placement whose
+/// footprint-anchor tile carries it, which is what keeps the two sweeps
+/// disjoint.
+pub const CELL_BIND_OWNED: u16 = 0x400;
+
+/// Offset of the walkability / floor-nibble grid inside the `.MAP` file - the
+/// byte the window sweep reads to index the scene's elevation LUT.
+pub const MAP_WALK_GRID_OFFSET: usize = 0x4000;
+
+/// One actor the sub-area window sweep creates.
+///
+/// Field names are the actor fields retail seeds, so the struct doubles as the
+/// spawn descriptor a host would apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowSpawn {
+    /// Object descriptor index (`cell & 0x1FF`; retail writes it to the actor's
+    /// `+0x60`).
+    pub descriptor: u16,
+    /// Object-map tile the placement sits on.
+    pub tile: (u8, u8),
+    /// The spawn vector retail hands `FUN_80024C88`: `x = tile_x * 0x80 +
+    /// 0x40 + desc[+0]`, `y = elevation_lut[nibble] + desc[+2]`,
+    /// `z = tile_z * 0x80 - (desc[+4] - 0x40)`.
+    pub world: (i16, i16, i16),
+    /// Rotation triple from the descriptor's `+0x8` / `+0xA` / `+0xC`, written
+    /// to the actor's `+0x24` / `+0x26` / `+0x28`.
+    pub rotation: (u16, u16, u16),
+    /// Sprite-template selector written to the template's `+0x14`: `5` when the
+    /// descriptor's flags carry bit `0x2`, else `0`.
+    pub template_kind: u16,
+    /// Descriptor `+0x1E` is non-zero, so the actor takes `+0x74 |=
+    /// 0x40000000`.
+    pub flag_40000000: bool,
+    /// Descriptor flags bit `0x800`, so the actor takes `+0x74 |= 0x10000000`.
+    pub flag_10000000: bool,
+    /// Descriptor flags bit `0x1000`, so the actor takes `+0x10 |= 4`.
+    pub flag_state_4: bool,
+}
+
+/// Plan the sub-area **window rebuild** sweep.
+///
+/// PORT: FUN_801D7B50.
+///
+/// The complement of the scene-init object sweep [`parse_map_objects`]
+/// (`FUN_8003A55C`). Retail runs this one whenever the camera's sub-area window
+/// changes: it frees the whole static-object actor list and re-populates it from
+/// the placements inside the **current region box** only. Differences from the
+/// init sweep, all of them load-bearing:
+///
+/// - **Bounded, not whole-grid.** The walk covers `window = [x0, z0, x1, z1)`,
+///   the scratchpad region box `0x1F800384..0x1F800387` that
+///   [`refresh_region_attributes`] latches - not the full `0x80 x 0x80` grid.
+///   Both loops are half-open (`while t < limit`), so an empty or inverted box
+///   spawns nothing.
+/// - **No bind lookup.** It never resolves a trigger, so its actors carry no
+///   script and no animation clip (`+0x5C == 0`, draw kind `5`).
+/// - **The `0x400` gate instead.** Its only extra test is
+///   [`CELL_BIND_OWNED`] on the *footprint-anchor* tile
+///   (`0x801d7ccc`): set means the init sweep already owns this placement, so
+///   the window sweep skips it. Across the disc corpus the bit and the bind are
+///   complementary, so the union of the two sweeps is every placed record.
+/// - **Elevation from the walk grid.** Y is not the descriptor's raw `+0x2`: the
+///   sweep reads the walk-grid byte at
+///   [`MAP_WALK_GRID_OFFSET`]` + tile_x + tile_z * 0x80`, takes its low nibble,
+///   and indexes the scene's 16-entry elevation LUT in the scratchpad
+///   (`0x1F80035C`) before adding `+0x2`.
+///
+/// `window` is `(x0, z0, x1, z1)` and `elevation_lut` the scratchpad LUT. The
+/// returned list is in the sweep's own order (X outer, Z inner).
+///
+/// NOT WIRED: retail's two enable gates and its whole effect need state the
+/// engine does not keep. The sweep is a *mutation* of a resident actor list
+/// (it frees every entry, including the `flags & 0x800` mesh buffers, before
+/// re-creating them) driven by a resident `.MAP` image - the same missing
+/// buffer that leaves [`refresh_object_grid_marks`] unwired. The engine decodes
+/// the object grid once at scene entry into typed state and draws every
+/// placement for the whole map through
+/// [`crate::field_env::resolve_placed_env_draws`], which already honours this
+/// sweep's `0x400` gate as the *ownership* rule; nothing re-runs a windowed
+/// rebuild. Wiring it needs the field host to hold the `.MAP` bytes resident
+/// and to re-plan on every region-box change.
+// REF: FUN_8003A55C (the complementary init sweep), FUN_80024C88 (the spawn),
+// FUN_801D7518 (the per-list free the sweep opens with)
+pub fn window_rebuild_spawns(
+    map: &[u8],
+    window: (u8, u8, u8, u8),
+    elevation_lut: [i16; 16],
+) -> Vec<WindowSpawn> {
+    let (x0, z0, x1, z1) = window;
+    let mut out = Vec::new();
+    let cell_at = |tx: usize, tz: usize| -> Option<u16> {
+        let o = MAP_OBJECT_INDEX_OFFSET + tx * 2 + tz * 0x100;
+        Some(u16::from_le_bytes([*map.get(o)?, *map.get(o + 1)?]))
+    };
+    let mut tx = i32::from(x0);
+    while tx < i32::from(x1) {
+        let mut tz = i32::from(z0);
+        while tz < i32::from(z1) {
+            let this = tz;
+            tz += 1;
+            let Some(cell) = cell_at(tx as usize, this as usize) else {
+                continue;
+            };
+            let descriptor = cell & 0x1FF;
+            let base = usize::from(descriptor) * MAP_OBJECT_DESCRIPTOR_STRIDE;
+            let Some(d) = map.get(base..base + MAP_OBJECT_DESCRIPTOR_STRIDE) else {
+                continue;
+            };
+            let flags = u16::from_le_bytes([d[0x12], d[0x13]]);
+            if flags & MAP_OBJECT_SPAWN_BIT as u16 == 0 {
+                continue;
+            }
+            // Footprint-anchor range guards, then the ownership gate.
+            let (ax, az) = (tx + i32::from(d[6] as i8), this + i32::from(d[7] as i8));
+            if !(0..0x80).contains(&ax) || !(0..0x80).contains(&az) {
+                continue;
+            }
+            let Some(anchor_cell) = cell_at(ax as usize, az as usize) else {
+                continue;
+            };
+            if anchor_cell & CELL_BIND_OWNED != 0 {
+                continue; // the init sweep's placement
+            }
+            let wx = tx * 0x80 + i32::from(u16::from_le_bytes([d[0], d[1]])) + 0x40;
+            let nibble = map
+                .get(MAP_WALK_GRID_OFFSET + tx as usize + this as usize * 0x80)
+                .map(|b| usize::from(b & 0xF))
+                .unwrap_or(0);
+            let wy = i32::from(elevation_lut[nibble])
+                + i32::from(u16::from_le_bytes([d[2], d[3]]) as i16);
+            let wz = this * 0x80 - (i32::from(u16::from_le_bytes([d[4], d[5]])) - 0x40);
+            out.push(WindowSpawn {
+                descriptor,
+                tile: (tx as u8, this as u8),
+                world: (wx as i16, wy as i16, wz as i16),
+                rotation: (
+                    u16::from_le_bytes([d[8], d[9]]),
+                    u16::from_le_bytes([d[0x0A], d[0x0B]]),
+                    u16::from_le_bytes([d[0x0C], d[0x0D]]),
+                ),
+                template_kind: if flags & 2 != 0 { 5 } else { 0 },
+                flag_40000000: d[0x1E] != 0,
+                flag_10000000: flags & 0x800 != 0,
+                flag_state_4: flags & 0x1000 != 0,
+            });
+        }
+        tx += 1;
+    }
+    out
+}
+
 /// Region-record stride. Retail reads it from the resident byte
 /// `DAT_8007B31B`; in the disc corpus the table body is 8-byte records
 /// (`[x0, z0, x1, z1, type, 0, 0, 0]` - see the disc-gated structural test).
@@ -972,5 +1125,92 @@ mod tests {
         };
         assert_eq!(cell_a & MAP_OBJECT_TRIGGER_BITS, 0x600, "kind 0 + kind 1");
         assert_eq!(cell_b, 0x800, "kind 2 = elevation-override marker");
+    }
+
+    /// Put a spawnable descriptor `d` on tile `(tx, tz)` with a zero footprint
+    /// offset, so its anchor tile is the tile itself.
+    fn place(map: &mut [u8], d: u16, tx: usize, tz: usize, extra_flags: u16) {
+        let base = usize::from(d) * MAP_OBJECT_DESCRIPTOR_STRIDE;
+        let flags = MAP_OBJECT_SPAWN_BIT as u16 | extra_flags;
+        map[base + 0x12..base + 0x14].copy_from_slice(&flags.to_le_bytes());
+        let o = MAP_OBJECT_INDEX_OFFSET + tx * 2 + tz * 0x100;
+        map[o..o + 2].copy_from_slice(&d.to_le_bytes());
+    }
+
+    fn lut() -> [i16; 16] {
+        let mut l = [0i16; 16];
+        for (i, v) in l.iter_mut().enumerate() {
+            *v = -(i as i16) * 16;
+        }
+        l
+    }
+
+    #[test]
+    fn window_sweep_only_visits_the_region_box() {
+        let mut map = synthetic_map();
+        place(&mut map, 5, 3, 4, 0);
+        place(&mut map, 6, 40, 40, 0);
+        // A box that contains only the first placement.
+        let got = window_rebuild_spawns(&map, (0, 0, 10, 10), lut());
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].tile, (3, 4));
+        assert_eq!(got[0].descriptor, 5);
+        // The full-map default box picks up both.
+        assert_eq!(
+            window_rebuild_spawns(&map, (0, 0, 0x7F, 0x7F), lut()).len(),
+            2
+        );
+        // Half-open bounds: an empty or inverted box spawns nothing.
+        assert!(window_rebuild_spawns(&map, (3, 4, 3, 4), lut()).is_empty());
+        assert!(window_rebuild_spawns(&map, (10, 10, 0, 0), lut()).is_empty());
+    }
+
+    #[test]
+    fn window_sweep_skips_bind_owned_anchors() {
+        let mut map = synthetic_map();
+        place(&mut map, 5, 3, 4, 0);
+        // Mark the anchor tile as the init sweep's.
+        let o = MAP_OBJECT_INDEX_OFFSET + 3 * 2 + 4 * 0x100;
+        let cell = u16::from_le_bytes([map[o], map[o + 1]]) | CELL_BIND_OWNED;
+        map[o..o + 2].copy_from_slice(&cell.to_le_bytes());
+        assert!(window_rebuild_spawns(&map, (0, 0, 10, 10), lut()).is_empty());
+        // The two sweeps are complementary: the init sweep still takes it.
+        assert!(parse_map_objects(&map).iter().any(|o| o.tile == (3, 4)));
+    }
+
+    #[test]
+    fn window_sweep_takes_y_from_the_walk_grid_nibble() {
+        let mut map = synthetic_map();
+        place(&mut map, 5, 3, 4, 0);
+        // Descriptor `+0x2` adds 7 on top of the LUT entry.
+        map[5 * 0x20 + 2..5 * 0x20 + 4].copy_from_slice(&7i16.to_le_bytes());
+        // Walk-grid nibble 3 -> lut[3] = -48.
+        map[MAP_WALK_GRID_OFFSET + 3 + 4 * 0x80] = 0xA3;
+        let got = window_rebuild_spawns(&map, (0, 0, 10, 10), lut());
+        assert_eq!(got[0].world.1, -48 + 7);
+        // X/Z carry the tile-centre bias, and Z *subtracts* the descriptor's
+        // `+0x4` word.
+        assert_eq!(got[0].world.0, 3 * 0x80 + 0x40);
+        assert_eq!(got[0].world.2, 4 * 0x80 + 0x40);
+    }
+
+    #[test]
+    fn window_sweep_decodes_the_descriptor_flag_arms() {
+        let mut map = synthetic_map();
+        place(&mut map, 5, 1, 1, 0x2 | 0x800 | 0x1000);
+        map[5 * 0x20 + 0x1E] = 1;
+        map[5 * 0x20 + 8..5 * 0x20 + 0x0E].copy_from_slice(&[0x11, 0, 0x22, 0, 0x33, 0]);
+        let got = window_rebuild_spawns(&map, (0, 0, 4, 4), lut());
+        let s = got[0];
+        assert_eq!(s.template_kind, 5, "flags bit 0x2 picks template 5");
+        assert!(s.flag_40000000, "descriptor +0x1E non-zero");
+        assert!(s.flag_10000000, "flags bit 0x800");
+        assert!(s.flag_state_4, "flags bit 0x1000");
+        assert_eq!(s.rotation, (0x11, 0x22, 0x33));
+        // Non-spawnable descriptors are skipped outright.
+        let mut map2 = synthetic_map();
+        let o = MAP_OBJECT_INDEX_OFFSET + 2 + 0x100;
+        map2[o..o + 2].copy_from_slice(&9u16.to_le_bytes());
+        assert!(window_rebuild_spawns(&map2, (0, 0, 4, 4), lut()).is_empty());
     }
 }

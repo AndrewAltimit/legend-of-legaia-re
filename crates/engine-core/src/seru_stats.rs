@@ -36,10 +36,16 @@
 //! `+0x161` returns no code-side hits, because the writer is `FUN_801E9504` (the
 //! victory-reward overlay), not the display code that was searched. And the
 //! "Seru struct `+0x74`" pointer-dereference hypothesis stays **falsified**: the
-//! five `+0x74` reads in that overlay each load a 32-bit battle-state flag
-//! written with the constant `0x80808080` by the SCUS battle-actor handler
-//! `FUN_800480D8` (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`), not a
-//! stat-grant pointer.
+//! five `+0x74` reads in that overlay each load the actor's **colour** word,
+//! which the SCUS battle-actor handler `FUN_800480D8` stamps with
+//! `0x00808080` - 24-bit RGB mid-grey, the defeated-monster grey - and not a
+//! stat-grant pointer. The instruction pair is
+//! `lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)` at `0x800482d4`
+//! (and again at `0x80048238`), gated on the record byte `+0x21C == 2`:
+//! `lui 0x80` gives `0x00800000`, `ori 0x8080` gives `0x00808080`. A
+//! `0x80808080` flag word would need `lui v0, 0x8080`, so this is not one -
+//! `+0x74`'s **high** byte is the flag half (the placed-object sweep ORs
+//! `0x40000000` / `0x10000000` into it), and here it is deliberately zero.
 //!
 //! The pinned destination offsets
 //! ([`crate::levelup::observations::vahn_4_level_jump`]) still describe the

@@ -303,6 +303,39 @@ decode - the outcome pointer, the accessory-bit fold over living wearers, the
 forced-flee battle flag and the success-side flee staging - lives in
 [battle-action.md § the escape roll](battle-action.md#the-escape-roll-fun_801e791c).
 
+### Monster escape roll - `FUN_801EC0DC`
+
+The enemy-side mirror, asked once per monster from the AI picker `FUN_801E9FD4`:
+"does this monster break off and flee?" It weighs HP and **ATK** where the party
+roll weighs SPD, and it opens on the *same* `ctx[+0x287]` no-escape gate:
+
+```text
+monster_sum = Σ over live monster slots:  maxHP + curHP>>1 + ATK
+per party slot:  curHP == 0  ->  monster_sum <<= 1
+                 else        ->  party_sum += maxHP>>3 + curHP>>4 + ATK>>3
+                                 blocked |= record[+0xF8] & 0x400000
+party_avg   = party_sum / party_count  +  (target.maxHP - target.curHP) >> 5
+monster_avg = max(monster_sum / monster_count, (party_avg * 3) >> 1)
+spread      = max(monster_avg - target.INT * 2, 1)
+flee iff  monster_avg + rand()%spread < party_avg + rand()%(party_avg + target.INT)
+          and rand() & 7 == 0  and  !blocked
+```
+
+`target` is the monster being asked about, so its own missing HP is added to the
+side it has to *beat* - a wounded monster flees more readily. Symmetrically, each
+downed party member doubles the monster side, so a monster that is winning stops
+fleeing. The `*3/2` floor plus the flat `rand() & 7` gate keep a flee to at most
+one action in eight even when the scores allow it.
+
+The blocking bit is the accessory-passive index `0x36`, **No Escape** / Chicken
+Guard ("enemies can't escape") - bit 54 of the 64-bit ability field, i.e.
+`record[+0xF8] & 0x400000`. See
+[`accessory-passive-table.md`](../formats/accessory-passive-table.md). Retail
+traps on a zero side count (`break 0x1C00`); the port saturates the divisors.
+
+Ported as `engine-vm::battle_formulas::monster_escape_roll` /
+`monster_escape_side_scores`; `see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
+
 ## Per-round status DoT ticker - `FUN_801E752C`
 
 `ghidra/scripts/funcs/overlay_battle_action_801e752c.txt` (760 bytes / 190

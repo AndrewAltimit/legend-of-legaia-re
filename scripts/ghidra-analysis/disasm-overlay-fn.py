@@ -52,45 +52,82 @@ def virt_to_file(addr: int, base: int, header: int) -> int:
     return header + (addr - base)
 
 
+# Branch opcodes whose target is PC-relative (MIPS I). `jal` is deliberately
+# absent: a call returns, so it does not extend the body.
+_REGIMM = 0x01
+_PC_REL_BRANCH = frozenset((0x04, 0x05, 0x06, 0x07))
+
+
+def _forward_target(raw: int, cur_pc: int):
+    """The forward branch target of this word, or None.
+
+    Only forward edges matter: a backward branch is a loop inside the body and
+    says nothing about where the body ends.
+    """
+    op = raw >> 26
+    if op == 0x02:  # j
+        return ((cur_pc + 4) & 0xF000_0000) | ((raw & 0x03FF_FFFF) << 2)
+    if op == _REGIMM or op in _PC_REL_BRANCH:
+        imm = raw & 0xFFFF
+        if imm & 0x8000:
+            imm -= 0x10000
+        tgt = cur_pc + 4 + (imm << 2)
+        return tgt if tgt > cur_pc else None
+    return None
+
+
 def find_function_end(data: bytes, file_off: int, fn_start_addr: int,
-                      base: int, header: int) -> int:
-    """Walk forward from `file_off` until a function exit.
+                      base: int, header: int):
+    """Walk forward from `file_off` to the end of the function.
 
-    Recognised exits:
-      * `jr ra` with a delay slot. Returns one past the delay slot.
-      * Unconditional `j <target>` whose target lands more than 0x1000
-        bytes from the current function start AND outside the range
-        we've already walked. The classic Legaia overlay-leaf tail call
-        `j 0x80043580` (back to SCUS continuation) matches this.
+    Returns `(end_offset, status)` where status is `"complete"` or a string
+    naming why the walk is a lower bound rather than the body.
 
-    Bounded to avoid runaway when a function lacks any recognisable exit.
+    **Neither obvious rule is safe on its own, and each fails silently.**
+    Stopping at the first unconditional `j` truncates any routine that jumps
+    forward to a shared epilogue - it reported `FUN_801D84C0` as 85 instructions
+    where the body is 259. Stopping at the first `jr ra` truncates any routine
+    with an early-exit arm, which is the mirror-image defect.
+
+    So a terminator only ends the body when nothing already walked branches
+    PAST it. The walk tracks `frontier`, the highest forward branch or jump
+    target seen so far; a `jr ra` or an outbound `j` at a PC below the frontier
+    is an early exit or a jump between basic blocks, and the walk continues.
+    That is the same reasoning either rule applies locally, applied over the
+    whole body instead.
+
+    A walk that ends any other way returns a status the caller must print. A
+    truncated read that looks like a whole one is the failure this function
+    exists to avoid, so it is never reported silently.
     """
     MAX_INSTRS = 8192
     JR_RA = b"\x08\x00\xe0\x03"
+    frontier = fn_start_addr
     for i in range(MAX_INSTRS):
         off = file_off + i * 4
         if off + 8 > len(data):
-            return min(off, len(data))
+            return min(off, len(data)), "input ended before a function exit"
         word = data[off:off + 4]
-        # jr $ra (any delay slot).
-        if word == JR_RA:
-            return off + 8
-        # Unconditional `j <target26>`. Opcode 0x02 in the top 6 bits.
+        cur_pc = fn_start_addr + i * 4
         raw = int.from_bytes(word, "little", signed=False)
-        if (raw >> 26) == 0x02:
-            cur_pc = fn_start_addr + i * 4
+
+        tgt = _forward_target(raw, cur_pc)
+        if tgt is not None and fn_start_addr <= tgt < fn_start_addr + MAX_INSTRS * 4:
+            frontier = max(frontier, tgt)
+
+        # `jr ra` + delay slot: an exit, but only THE exit once no earlier
+        # instruction branches past it.
+        if word == JR_RA and cur_pc >= frontier:
+            return off + 8, "complete"
+
+        # Unconditional `j` out of the walked range - a tail call or a jump
+        # into a shared epilogue. Same frontier condition.
+        if (raw >> 26) == 0x02 and cur_pc >= frontier:
             target = ((cur_pc + 4) & 0xF000_0000) | ((raw & 0x03FF_FFFF) << 2)
-            # A `j` is a function exit when its target sits outside the
-            # range we've walked so far - either backward past the function
-            # entry, or forward past a small lookahead (a forward `j`
-            # inside that lookahead might be a tail-of-loop into a basic
-            # block we haven't reached yet, so don't terminate on it).
-            lookahead = 0x100  # 64 instructions
-            if target < fn_start_addr or target > cur_pc + lookahead:
-                return off + 8  # consume the delay slot too
-    # No exit within bound. Return file_off + cap so the caller at least
-    # dumps what we walked.
-    return file_off + MAX_INSTRS * 4
+            if target < fn_start_addr or target > cur_pc:
+                return off + 8, "complete"
+    return (file_off + MAX_INSTRS * 4,
+            "no exit within %d instructions" % MAX_INSTRS)
 
 
 def disasm_function(data: bytes, addr: int, base: int, header: int,
@@ -100,9 +137,10 @@ def disasm_function(data: bytes, addr: int, base: int, header: int,
     if file_off < 0 or file_off >= len(data):
         return f"; ERROR: address 0x{addr:08X} outside input data " \
                f"(file_off 0x{file_off:X}, data size 0x{len(data):X})\n"
-    end_off = find_function_end(data, file_off, addr, base, header)
-    if max_size is not None:
-        end_off = min(end_off, file_off + max_size)
+    end_off, status = find_function_end(data, file_off, addr, base, header)
+    if max_size is not None and file_off + max_size < end_off:
+        end_off = file_off + max_size
+        status = "cut by --max-size, not by a function exit"
     body = data[file_off:end_off]
 
     md = Cs(CS_ARCH_MIPS, CS_MODE_MIPS32 | CS_MODE_LITTLE_ENDIAN)
@@ -113,6 +151,14 @@ def disasm_function(data: bytes, addr: int, base: int, header: int,
     lines.append(f"; function @ 0x{addr:08X}  ({end_off - file_off} bytes, "
                  f"{(end_off - file_off) // 4} instructions)")
     lines.append(f"; input: {len(body)} bytes from file offset 0x{file_off:X}")
+    if status != "complete":
+        # Loud on purpose. A truncated read that reads as a whole body is the
+        # defect this marker exists to prevent, and a comment line is the only
+        # channel a caller reading stdout will see.
+        lines.append(f"; !!! INCOMPLETE BODY: {status}")
+        lines.append(f"; !!! the instruction count above is a LOWER BOUND - "
+                     f"re-read with raw capstone over the true span before "
+                     f"citing it")
     lines.append("")
 
     cur_addr = addr

@@ -43,7 +43,8 @@ invoke them by `scripts/ci/<name>` path.
 - `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
-- `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke.
+- `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke. `site/wasm/` is **not committed**; run `build-wasm.sh` once to browse `site/` locally. It also stamps `site/wasm/SOURCE_STAMP.json` (untracked); `check-wasm.sh --full` verifies it.
+- `check-wasm-freshness.py` - does your locally built `site/wasm/` bundle still match this tree's sources? Content-addressed, because mtime and `git log` reasoning both return false "in sync" answers. Not a gate; run it before trusting a locally served play page. See [`docs/tooling/shipped-bundle-freshness.md`](../docs/tooling/shipped-bundle-freshness.md).
 - `setup-cross-toolchain.sh` - provision one release target's cross toolchain (rustup std, zig + `cargo-zigbuild`, the amd64 ALSA sysroot); idempotent, root-free except mingw-w64, which it only checks for. See [`docs/tooling/releases.md`](../docs/tooling/releases.md).
 - `release-build.sh` - build + package one release target into `target/dist` (archive + `.sha256`). Driven per target by `.github/workflows/release.yml`.
 
@@ -85,6 +86,15 @@ See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 
 Disc-asset RE probes. `decode_slot4_subbodies.py`, `slot4_to_obj.py`, and
 `slot4_topdown_png.py` borrow disc helpers from `pcsx-redux/` via `sys.path`.
+
+**Run these from the repo, not from a scratch directory.** `sys.path[0]` is the
+running script's own directory, so any `.py` sitting beside a script shadows a
+module of that name for every import beneath it - including imports a dependency
+makes internally. A stray helper dropped next to a script has already presented
+as `capstone` failing with a circular-import "partially initialized module",
+reproducible only from that directory. Same shape as the self-matching observers
+in [`shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md): the tool
+is inside what it is measuring.
 
 - TIM/TMD: `build_tim_review.py` / `apply_tim_review.py`, `montage_tims.py`, `scan_tims_and_match_prot.py`, `find_large_tmd_packs.py`, `render_battle_char_true.py`, `render-unplaced-tmds.py`, `verify_battle_char_pack.py`.
 - World-map / slot-4: `decode_slot4_subbodies.py`, `slot4_to_obj.py`, `slot4_topdown_png.py`, `classify_dat_8007c018.py`, `extract-world-placements.py`, `analyze_world_map_vm_log.py` (the live-RAM GPU-tile variant `analyze-walk-ground-tiles.py` lives in `ghidra-analysis/`).

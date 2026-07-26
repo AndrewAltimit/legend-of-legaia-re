@@ -217,6 +217,81 @@ Two deliberate divergences from the native window: input is **edge**-triggered
 held pad), and the buy/sell rows carry **real item names** off the SCUS table
 the page already parses, where the native rows are placeholder labels.
 
+## Fishing minigame (`play_fishing`)
+
+`LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
+through the static-overlay map, decodes its per-species table plus the two
+point-exchange venue pages off the visitor's own disc, and installs a
+`legaia_engine_core::fishing::FishingSession` with `World::enter_fishing` - the
+same mode-suspend contract the native window uses, so the field scene stays
+intact underneath and comes back on exit. `play_fishing_hud_json` serves the
+retail HUD through the shared `fishing_hud_draws_for` consumer, and
+`play_fishing_prizes_json` / `play_fishing_prize_buy` expose the prize rows with
+retail availability gating.
+
+Nothing here is an input path, and that is the design: the driver is
+`World::tick_fishing`, which reads the pad word the page already routes each
+frame. Cross casts and reels, Square reels harder, Cross recasts - and because
+the ported reel decoder classifies the two held bits, holding both resolves the
+way retail does rather than the way a host `if` chain would.
+
+The one place the page draws more than the native window: with the fishing
+sprite page undecoded, `fishing_hud_draws_for`'s atlas is blind on both hosts
+and it drops every glyph and gauge fill, so native's fishing HUD is digits and
+captions only. The gauges are the functional half of the tension tug-of-war, so
+this host also emits their resolved frames (the ported cap/body/cap geometry) as
+a `bars` channel the page fills as rects. Disc-gated oracle:
+`tests/play_fishing_host.rs`.
+
+## Sound effects (`play_sfx`)
+
+The play page ran with music and no sound effects at all: the native window
+stages a descriptor bank from the disc executable plus a resident program bank
+into its own SPU region, and this host staged neither. `play_sfx` is that
+channel, assembled from what already existed rather than as a second audio path.
+
+The chain is the retail one. `SCUS_942.54`'s static descriptor table
+(`DAT_8006F198 + id*8`) is parsed at `load_disc` into a
+`legaia_engine_audio::SfxBank` - pure data, so it lands whether or not the
+visitor has enabled sound. The resident class-2 program bank (PROT 0869, with
+the documented 0875 alternate as a fallback) uploads into a dedicated region at
+the **top** of SPU RAM the first time a cue fires, and cues key through
+`SfxBank::play_one_shot` into the **live** `WebAudioOut` SPU - the same mixer the
+BGM sequencer feeds, so a cue and the music share one voice pool as they do on
+hardware.
+
+That last part forced a fix worth knowing about: the page's BGM allocator
+previously claimed all of SPU RAM above `0x1000`, so a scene-BGM upload could
+have overwritten the SFX region. Both BGM upload sites are now capped below it,
+matching the native boot's split, and a unit test asserts the two regions stay
+disjoint.
+
+### Cue provenance is reported, not assumed
+
+Retail fires a cue by writing an id into the ring at `_DAT_8007B6D8`, and only a
+handful of those writes are traced. So this host carries the same `disc` / `site`
+split [`sfx_view`](src/sfx_view.rs) established, and `play_sfx_events_json`
+reports it per event with a note explaining the choice - the page names
+behaviour (`menu_confirm`) and never a cue number, and can label which sounds
+are the game's.
+
+The footstep row is the instructive one. Its *cadence* is the ported retail
+kernel `FUN_80018db0` (interval derived from movement magnitude, the `0xB`
+stationary gate, the `0x4B0` ambient period) getting its first host caller - but
+**two** of its inputs are port picks, and the second is worth knowing before
+touching this code. Retail's "movement magnitude" is a controller speed word,
+not a world-space delta: the kernel's own arithmetic requires `speed >= 0x30`
+before a step can fire, and the port's controller moves 2 units per tick, so
+feeding the raw displacement in leaves the interval permanently below the gate
+and no footstep ever sounds. `WALK_SPEED_UNITS` places a single-speed walker at
+the conservative end of retail's moving band instead. Pinning the real speed
+word is what would retire the pick.
+
+`play_sfx_probe_peak` is the measurement that keeps this honest: it renders a cue
+through a throwaway SPU and reports its peak sample, so "wired but every cue is
+inaudible" fails a test instead of shipping. Disc-gated oracle:
+`tests/play_sfx_channel.rs`.
+
 ## Keeping the two hosts in step
 
 The browser play page and `legaia-engine play-window` are two framebuffers over

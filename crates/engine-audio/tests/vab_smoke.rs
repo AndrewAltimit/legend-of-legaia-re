@@ -109,20 +109,20 @@ fn synth_vab_pitches_correctly_for_octave_step() {
     let mut alloc = SpuAllocator::new(0x1000, 0x10_0000);
     let bank = VabBank::upload(&mut spu, &mut alloc, &report, &blob);
 
-    // Note 60 at center -> base pitch = 0x800.
+    // Note 60 at center -> unity, 0x1000. Retail's note-to-pitch table starts
+    // at 0x1000 and the VAG body's own rate is encoded in `center`, so there is
+    // no source-rate factor to fold in on top.
     bank.play_note(&mut spu, 0, 0, 60, 100);
     let p_center = spu.voices[0].pitch;
     spu.voices[0].adsr.phase = legaia_engine_audio::Phase::Off; // reset for next test
 
-    // Note 72 (one octave up) -> pitch should be 2× base = 0x1000.
+    // Note 72 (one octave up) -> pitch should be 2x base = 0x2000, and retail
+    // gets there by shifting the register, so it is exact rather than close.
     bank.play_note(&mut spu, 0, 0, 72, 100);
     let p_octave = spu.voices[0].pitch;
 
-    assert_eq!(p_center, 0x800);
-    assert!(
-        (p_octave as i32 - 0x1000).abs() < 4,
-        "octave-up pitch {p_octave:#x} should be ~0x1000"
-    );
+    assert_eq!(p_center, 0x1000);
+    assert_eq!(p_octave, 0x2000, "octave-up pitch should be exactly 2x");
 }
 
 /// Build a bank whose used programs are SPARSE in slot space: slots 1 and 3

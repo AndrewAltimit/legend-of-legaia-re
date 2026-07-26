@@ -2,19 +2,25 @@
 
 266 of 1233 PROT entries are placeholder slots filled with a developer fill pattern - reserved-but-unused asset slots the game never loads. Detection class: `pochi_filler`. Detector + class: `crates/asset/src/categorize.rs`.
 
-> **These slots are a trap, not just dead weight.** The bytes behind the
-> `pochipochi…` prefix are **not zeros** - they are stale mastering scratch, and
-> in most scene blocks that scratch parses as a *complete, valid* TIM. Any
-> "scan the block for TIMs" sweep that does not skip `pochi_filler` will upload
-> a stale texture page over one the scene is actively using. See
-> [the scratch tail is live-looking data](#the-scratch-tail-is-live-looking-data---never-load-it).
+> **The "stale scratch that parses as a TIM" reading is falsified.** Every one
+> of the 266 slots is exactly **one 2048-byte sector**, and **zero** of them
+> carry a parseable TIM - measured over the whole corpus, and asserted as a
+> test. A pochi slot is a reserved sector of fill and nothing else.
+>
+> The rendering bug that produced the old reading was real: two `64x256` pages
+> at framebuffer `(768,0)` and `(832,0)` erased a scene's ground atlas. They
+> came from the **`scene_tmd_stream` entry that follows the pochi slot**,
+> reached through the entry-size expression that spanned neighbouring entries
+> (corrected in [`prot.md`](prot.md)). The symptom was attributed to the slot
+> a sweep was standing on rather than to the entry it over-read into. See
+> [the scratch tail](#the-scratch-tail-is-live-looking-data---never-load-it).
 
 ## Layout
 
 ```
 +0x000..0x786   ASCII "pochipochi..." (37 lines × 52 bytes + "po" = 1926 bytes)
 +0x786          0x1A (DOS EOF marker)
-+0x787..end     scratch / leftover data (no consistent format)
++0x787..0x800   scratch / leftover fill to the end of the single sector
 ```
 
 `pochi` (Japanese `ポチ`) is a generic dog name common in Japanese dev fill - uninitialised memory shows up obviously in a debugger this way.

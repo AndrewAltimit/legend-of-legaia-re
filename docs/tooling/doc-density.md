@@ -116,3 +116,13 @@ It runs in two places:
 Both exit non-zero on violations; fix the `_content/` fragment hrefs (the
 generated pages mirror them) and regenerate. Pure standard library,
 ASCII-only.
+
+### The guides are mirrored by hand, not converted
+
+`site/_content/guides/*.html` is a **hand-authored parallel copy** of
+`docs/guides/*.md`, not a rendering of it. `_gen.py`'s "mirrored from
+docs/guides/" comment reads as though it converts the markdown; it does not, so a
+section added to a guide does not reach the site until it is written into the
+fragment too. Nothing fails when it is skipped except `check-site-links.py`, and
+only if something links to the new anchor - so the omission is silent by default.
+Edit both, then regenerate.

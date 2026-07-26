@@ -103,6 +103,11 @@ The field VM reaches this packet through **opcode `0x3F`** (named scene-change),
 
 Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls the asset-type dispatcher per descriptor. Its sole runtime caller in retail is the town overlay's `FUN_801D6704` (MAIN_INIT) at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the walker IS exercised by retail gameplay, just not from a static call site inside `SCUS_942.54`.
 
+`FUN_801D6704`'s own step order, the BGM-slot resolve it does on the way, and the player seat it ends with are ported as `legaia_engine_core::mode_entry_init` (`FIELD_INIT_STEPS` / `field_bgm_plan` / `field_spawn`); the spawn arms are detailed in [`field-locomotion.md`](field-locomotion.md#spawn-position-on-scene-entry). Two things about the function are easy to get wrong from the corpus:
+
+- **Cite the live-RAM captures, not `overlay_0897_801d6704.txt`.** The static-base dump is correctly based but has a gap - it jumps `0x801d71b4 -> 0x801d72d4` and carries no `jr ra`. The base-`0x801C0000` captures agree with each other across all 901 instructions.
+- **The BGM id is not the slot.** `_DAT_8007BAC8` below `0x7D0` (= 2000) is *relative*: the slot is `id + _DAT_80084540 + 6`. At or above 2000 the id passes straight through, which is the same `2000 + track` global space [`music-tracks.md`](../reference/music-tracks.md) describes. Id `0x814` is special-cased into a **two-stream** load (asset ids `0x428` then `0x422`), latched by `_DAT_8007B9B8` so a re-entry does not re-read them.
+
 The mapping a scene loads is **positional** - there is no separate slot→asset indirection table; the descriptor's `data_offset` field *is* the indirection. The full chain, traced from the field init at `FUN_801D6704`:
 
 1. **`per_stage_init` (`FUN_8001E1B4`)** allocates a single 0x62C00-byte asset buffer once at boot and stores its base at `_DAT_8007b85c` (`FUN_80017888(0, 0x62c00)`).
@@ -113,13 +118,17 @@ The mapping a scene loads is **positional** - there is no separate slot→asset 
 So **slot `i` ⇒ the `i`-th 8-byte descriptor; payload at `base + data_offset`; handler keyed by `type_size >> 24`.** `legaia_asset::scene_asset_table::resolve` returns the table plus the base it is relative to for **both** the bare variant (count word at offset 0) and the prescript-prefixed [`SceneScriptedAssetTable`](../formats/scene-bundles.md) variant (count word at a 0x800-aligned offset past the event prescript); `SceneAssetTable::slots` reproduces the positional walk and `SceneAssetTable::payload_range(slot, base)` resolves a slot's payload span. A disc-gated corpus test (`scene_asset_table_walk_real`) verifies the walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type.
 The base the walker receives is `_DAT_8007b85c` because the transition streamer put the raw bundle there (statically pinned - the former "relocation is capture-blocked" note is closed); for the scripted variant the count word sits at its 0x800-aligned in-file offset past the prescript, which the static resolver reconstructs structurally.
 
+### The walk is what fills the mesh pool
+
+Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`, and the walk above is the only path to them: type `0x02` (`TMD`) decodes its payload to an [`asset::pack`](../formats/pack.md) and calls `FUN_80026B4C` once per member, type `0x09` (`TMD2`) registers a single bare mesh. `FUN_80026B4C` stores at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments, so the pool is those registrations in walk order, past the resident 5-mesh head. Byte-level detail, and why a magic sweep of a scene block is not equivalent, in [`scene-bundles.md` § The mesh pool is the descriptor walk](../formats/scene-bundles.md#the-mesh-pool-is-the-descriptor-walk). Engine side: `legaia_asset::scene_asset_table::mesh_pool` feeding `legaia-engine-core::scene_resources`.
+
 ## CLUT-data scattering
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
 Engines that drive a clean-room scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
 
-1. Parses every TMD in the scene's CDNAME block (plus the optional shared blocks - see below).
+1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. Blocks with no asset table (the v12-family dungeons' standalone `lzs_container`) fall back to a TMD-magic sweep of their entries.
 2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
 3. Walks every TIM and decides per-block whether to upload it, suppressing the image block when it would land on a CLUT row another mesh references and vice-versa.
 

@@ -228,9 +228,15 @@ pub fn talk_advance(state: i16, pad: u16) -> Option<(i16, u16)> {
 /// `DAT_1F800393`. The step advances only once the counter goes **negative**,
 /// so a countdown seeded at [`HANDOFF_FRAMES`] runs one frame longer than the
 /// seed suggests. Returns the new counter and whether the state advances.
+///
+/// Named `tutorial_countdown_frame` and not `countdown_frame` on purpose: the
+/// Baka Fighter round chrome carries an unrelated free `countdown_frame`
+/// (`crates/engine-core/src/baka_fighter_chrome.rs`) that a live host does
+/// call, and the reachability audit resolves a bare call against every free
+/// function of that name. Sharing the name made this disclosure read as stale.
 // PORT: FUN_801d0750 cases 0x0C / 0x11 (the countdown steps)
 // NOT WIRED: same missing host as [`tutorial_step`].
-pub fn countdown_frame(remaining: i32, frame_step: i32) -> (i32, bool) {
+pub fn tutorial_countdown_frame(remaining: i32, frame_step: i32) -> (i32, bool) {
     let next = remaining - frame_step;
     (next, next < 0)
 }
@@ -404,9 +410,12 @@ mod tests {
 
     #[test]
     fn the_countdown_advances_only_once_it_goes_negative() {
-        assert_eq!(countdown_frame(1, 1), (0, false));
-        assert_eq!(countdown_frame(0, 1), (-1, true));
-        assert_eq!(countdown_frame(HANDOFF_FRAMES, 2).0, HANDOFF_FRAMES - 2);
+        assert_eq!(tutorial_countdown_frame(1, 1), (0, false));
+        assert_eq!(tutorial_countdown_frame(0, 1), (-1, true));
+        assert_eq!(
+            tutorial_countdown_frame(HANDOFF_FRAMES, 2).0,
+            HANDOFF_FRAMES - 2
+        );
     }
 
     #[test]

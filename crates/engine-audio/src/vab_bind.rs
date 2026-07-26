@@ -11,25 +11,27 @@
 //!  3. sets sample address, ADSR, volume, pitch,
 //!  4. fires `key_on`.
 //!
-//! Pitch math follows the standard libspu key-to-pitch formula:
+//! Pitch math is retail's own, traced to the two libsnd entry points that
+//! compute it and the table they share - see [`compute_pitch`] and
+//! [`PitchPath`]. In one line: the voice pitch register is
+//! `0x1000 * 2^((note - center + fine/128) / 12)`, evaluated through a
+//! 192-entry table plus a whole-octave shift, and **unity (`0x1000`, i.e.
+//! 44.1 kHz) is what a tone plays at when `note == center`**.
 //!
-//! ```text
-//!   semitones = (note - center) + (-fine_cents / 100)
-//!   pitch_ratio = 2^(semitones / 12)
-//!   pitch_register = base_pitch * pitch_ratio  (clipped to 0..=0x3FFF)
-//! ```
+//! There is no separate source-sample-rate factor. A VAG body recorded at
+//! 22.05 kHz is authored with its `center` an octave above the key it is
+//! meant to be played at, so the rate is already encoded in `center`;
+//! multiplying by `22050 / 44100` on top of that plays every voice an octave
+//! low. See [`VAB_SAMPLE_RATE`].
 //!
-//! `base_pitch` is the playback pitch when `note == center`. For a 22.05 kHz
-//! VAG body played by an SPU running at 44.1 kHz internal, that's
-//! `0x1000 * 22050 / 44100 = 0x800`.
-//!
-//! No Sony bytes - algorithm is the documented libspu surface.
+//! No Sony bytes - the algorithm is traced from the disassembly and the
+//! table it indexes is a closed form.
 
 use crate::Spu;
 use crate::spu::{
     adsr::AdsrConfig,
     ram::{SpuAllocator, TransferDirection},
-    voice::{PITCH_UNITY, SPU_INTERNAL_RATE},
+    voice::PITCH_UNITY,
 };
 use legaia_vab::{VabReport, VagAtr};
 
@@ -51,10 +53,17 @@ pub struct VabProgram {
     pub tones: Vec<VagAtr>,
 }
 
-/// Default sample rate of Legaia VAG bodies. The bank header doesn't carry
-/// a per-sample rate; the engine has historically used 22.05 kHz across the
-/// extracted corpus (see `crates/vab` extractor + the WAV writer that hard-
-/// codes 22050).
+/// Nominal sample rate used when writing a VAG body out as a standalone WAV
+/// (`crates/vab`'s extractor hard-codes it, and the browser sample player
+/// reports durations against it). The bank header carries no per-sample rate.
+///
+/// **This is not part of the key-on pitch.** Retail's voice pitch is a pure
+/// function of `note` against the tone's own `center` / `shift`
+/// ([`compute_pitch`]), and unity is 44.1 kHz - a 22.05 kHz body is authored
+/// with `center` twelve semitones high so the same law lands on `0x800`.
+/// Folding this constant into the pitch as well double-counts the
+/// resampling and puts every voice - BGM note and sound effect alike - an
+/// octave below retail.
 pub const VAB_SAMPLE_RATE: u32 = 22_050;
 
 /// Per-VAG metadata after upload: where in SPU RAM the body lives.
@@ -201,7 +210,7 @@ impl VabBank {
         let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
             return false;
         };
-        self.fire(spu, voice, prog, tone, note, velocity)
+        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
     }
 
     /// Play the tone at an **explicit index** inside `program`, rather than
@@ -232,12 +241,13 @@ impl VabBank {
         let Some(tone) = prog.tones.get(tone_index) else {
             return false;
         };
-        self.fire(spu, voice, prog, tone, note, velocity)
+        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Cue)
     }
 
     /// Configure + key on `voice` for one resolved tone. Shared by
-    /// [`Self::play_note`] (key-range lookup) and [`Self::play_tone`]
-    /// (explicit region index).
+    /// [`Self::play_note`] (key-range lookup, [`PitchPath::Sequencer`]) and
+    /// [`Self::play_tone`] (explicit region index, [`PitchPath::Cue`]).
+    #[allow(clippy::too_many_arguments)]
     fn fire(
         &self,
         spu: &mut Spu,
@@ -246,6 +256,7 @@ impl VabBank {
         tone: &legaia_vab::VagAtr,
         note: u8,
         velocity: u8,
+        path: PitchPath,
     ) -> bool {
         // tone.vag is 1-based in PSX VAB format. legaia_vab::VabReport's
         // `vag_samples` is 0-indexed (samples[0..vs]), so subtract 1.
@@ -259,7 +270,7 @@ impl VabBank {
         if voice >= spu.voices.len() {
             return false;
         }
-        let pitch = compute_pitch(note, tone, VAB_SAMPLE_RATE, SPU_INTERNAL_RATE);
+        let pitch = compute_pitch(note, tone, path);
         // PORT: FUN_80067550 (head) - the key-on volume chain, retail's
         // staged integer arithmetic with its truncation points:
         //
@@ -355,13 +366,89 @@ impl VabBank {
     }
 }
 
-/// Compute the SPU pitch register value for `note` against `tone.center`,
-/// `tone.shift` (centi-semitones), and the source/dest sample rates.
-fn compute_pitch(note: u8, tone: &VagAtr, src_rate: u32, dst_rate: u32) -> u16 {
-    let semitones = note as f64 - tone.center as f64 - (tone.shift as i8 as f64) / 100.0;
-    let ratio = 2f64.powf(semitones / 12.0);
-    let base = (PITCH_UNITY as f64) * (src_rate as f64) / (dst_rate as f64);
-    let pitch = (base * ratio).round() as i64;
+/// Entries in retail's note-to-pitch table: 12 semitones x 16 sixteenth-of-a
+/// -semitone fine steps, i.e. one octave at 1/16-semitone resolution.
+const PITCH_TABLE_LEN: i32 = 192;
+
+/// The fine-tune value every retail SFX / direct key-on call site passes.
+///
+/// `FUN_80065034`'s sixth argument is a `fine` in 1/128-semitone units, and it
+/// is the literal `0x40` at every traced call site - the cue-ring drainer
+/// `FUN_80016B6C` (both its one-shot and sustained arms), the per-actor trigger
+/// under `FUN_80021DF4`, and the minigame overlays' direct key-ons. So a cue
+/// plays a **half semitone above** where the sequencer would put the same
+/// `(tone, note)` pair. It is a constant, not a parameter, hence no argument
+/// for it here.
+const CUE_FINE: u32 = 0x40;
+
+/// One entry of retail's note-to-pitch table (`DAT_8007A940` in
+/// `SCUS_942.54`, 192 x `u16`, also resident in RAM at that VA).
+///
+/// The table is exactly `floor(0x1000 * 2^(k / 192))` for all 192 entries -
+/// verified entry-by-entry against the executable's rodata - so the port
+/// computes it instead of carrying a copy. No entry lands closer than 0.004 to
+/// an integer, so the `floor` is not sensitive to `exp2` rounding.
+fn pitch_table_entry(index: i32) -> u32 {
+    let k = index.clamp(0, PITCH_TABLE_LEN - 1);
+    ((PITCH_UNITY as f64) * (k as f64 / PITCH_TABLE_LEN as f64).exp2()).floor() as u32
+}
+
+/// Which of retail's two key-on paths is computing the pitch. They share the
+/// table and the octave shift and differ only in how the fine index is formed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PitchPath {
+    /// Sequencer note-on (`FUN_80066308` -> `FUN_80066d8c`). The fine index is
+    /// the tone's own `shift` alone, `min(shift >> 3, 15)`, and it can never
+    /// carry into the semitone: a tone with `shift = 0xFF` is pinned at
+    /// +15/16 of a semitone.
+    Sequencer,
+    /// SFX / direct key-on (`FUN_80065034` -> `FUN_80066e50`). The index is
+    /// `(0x40 + shift) >> 3` ([`CUE_FINE`]) with **no** clamp; a value of 16 or
+    /// more instead carries one whole semitone and keeps the remainder.
+    Cue,
+}
+
+/// Compute the SPU pitch register value for `note` against `tone.center` and
+/// `tone.shift`, exactly as retail's libsnd does.
+///
+/// ```text
+///   fine, carry = per-path from tone.shift        (see PitchPath)
+///   n           = note + 60 - tone.center + carry
+///   pitch       = table[(n % 12) * 16 + fine] shifted by (n / 12 - 5)
+/// ```
+///
+/// `n == 60` (`note == center`) selects `table[0] = 0x1000`, so a tone plays
+/// its body back at 44.1 kHz at its own centre note; each semitone away
+/// scales by `2^(1/12)`, in whole octaves by a register shift. `shift` moves
+/// the pitch **up** by `shift/128` of a semitone (quantised to 1/16), which is
+/// the opposite sign and a different scale from the "centi-semitone"
+/// interpretation this function used to carry.
+///
+/// `n / 12` and `n % 12` truncate toward zero, matching MIPS `div`. For
+/// `n < 0` - a note more than five octaves under the tone's centre, which no
+/// disc-authored pair reaches - the remainder goes negative and retail reads
+/// off the front of its own table; the port clamps the index instead.
+///
+/// PORT: FUN_80066d8c (sequencer arm), FUN_80066e50 (cue arm)
+fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
+    let shift = tone.shift as u32;
+    let (semitone_carry, fine_index) = match path {
+        PitchPath::Sequencer => (0i32, ((shift >> 3) as i32).min(15)),
+        PitchPath::Cue => {
+            let raw = ((CUE_FINE + shift) >> 3) as i32;
+            if raw >= 16 { (1, raw - 16) } else { (0, raw) }
+        }
+    };
+    let n = note as i32 + 60 - tone.center as i32 + semitone_carry;
+    let octave = n / 12 - 5;
+    let mut pitch = pitch_table_entry((n % 12) * 16 + fine_index);
+    if octave > 0 {
+        // Retail shifts a 16-bit value and stores 16 bits back: an octave-up
+        // that overflows wraps rather than saturating.
+        pitch = (pitch << octave.min(31)) & 0xFFFF;
+    } else if octave < 0 {
+        pitch >>= (-octave).min(31);
+    }
     // Hardware clamps the pitch-counter step at 0x4000 (4.0x / 176.4 kHz).
     pitch.clamp(1, 0x4000) as u16
 }
@@ -430,24 +517,134 @@ mod tests {
         }
     }
 
-    /// Note at center plays at the source/dest rate ratio.
-    #[test]
-    fn pitch_at_center_matches_rate_ratio() {
-        let tone = dummy_tone(60, 1, 127, 64);
-        let pitch = compute_pitch(60, &tone, 22_050, 44_100);
-        // Expected: 0x1000 * 22050/44100 = 0x800.
-        assert_eq!(pitch, 0x800);
+    fn tone_with_shift(center: u8, shift: u8) -> VagAtr {
+        VagAtr {
+            shift,
+            ..dummy_tone(center, 1, 127, 64)
+        }
     }
 
-    /// One semitone above center bumps pitch by 2^(1/12) ≈ 1.0595.
+    /// A note at the tone's centre plays at **unity** - 0x1000, 44.1 kHz - not
+    /// at a source/dest sample-rate ratio. This is the whole defect that put
+    /// every voice an octave low: retail's table entry 0 is 0x1000, and the
+    /// sample's own rate is already encoded in `center`.
+    #[test]
+    fn pitch_at_center_is_unity_not_the_vag_sample_rate_ratio() {
+        let tone = dummy_tone(60, 1, 127, 64);
+        assert_eq!(compute_pitch(60, &tone, PitchPath::Sequencer), 0x1000);
+        assert_ne!(
+            compute_pitch(60, &tone, PitchPath::Sequencer),
+            0x800,
+            "0x800 is the 22050/44100 double-count, not retail's unity"
+        );
+    }
+
+    /// One semitone above center bumps pitch by 2^(1/12) ≈ 1.0595; one octave
+    /// doubles it exactly (retail shifts the register rather than multiplying).
     #[test]
     fn pitch_one_semitone_above_is_higher() {
         let tone = dummy_tone(60, 1, 127, 64);
-        let p_center = compute_pitch(60, &tone, 22_050, 44_100);
-        let p_above = compute_pitch(61, &tone, 22_050, 44_100);
+        let p_center = compute_pitch(60, &tone, PitchPath::Sequencer);
+        let p_above = compute_pitch(61, &tone, PitchPath::Sequencer);
         assert!(p_above > p_center);
         let ratio = p_above as f64 / p_center as f64;
         assert!((ratio - 2f64.powf(1.0 / 12.0)).abs() < 0.001);
+        assert_eq!(compute_pitch(72, &tone, PitchPath::Sequencer), 0x2000);
+        assert_eq!(compute_pitch(48, &tone, PitchPath::Sequencer), 0x800);
+    }
+
+    /// The 192-entry table retail indexes is `floor(0x1000 * 2^(k/192))` - a
+    /// closed form, which is why the port computes it instead of carrying a
+    /// copy of the executable's rodata. Endpoints and monotonicity pinned.
+    #[test]
+    fn pitch_table_is_the_closed_form_retail_carries() {
+        assert_eq!(pitch_table_entry(0), 0x1000);
+        assert_eq!(pitch_table_entry(PITCH_TABLE_LEN - 1), 8162);
+        for k in 0..PITCH_TABLE_LEN {
+            let want = (4096.0_f64 * (k as f64 / 192.0).exp2()).floor() as u32;
+            assert_eq!(pitch_table_entry(k), want, "table entry {k}");
+            if k > 0 {
+                assert!(pitch_table_entry(k) > pitch_table_entry(k - 1));
+            }
+        }
+        // One octave up from entry 0 must not have been reached yet - the
+        // table spans an open octave and the register shift covers the rest.
+        assert!(pitch_table_entry(PITCH_TABLE_LEN - 1) < 0x2000);
+    }
+
+    /// `shift` moves the pitch **up** by `shift/128` of a semitone, quantised
+    /// to 1/16, and the sequencer arm clamps the index at 15 rather than
+    /// carrying. The old reading (`- shift/100` semitones) had both the sign
+    /// and the scale wrong.
+    #[test]
+    fn shift_raises_pitch_by_sixteenths_of_a_semitone() {
+        let flat = tone_with_shift(60, 0);
+        let sharp = tone_with_shift(60, 64);
+        assert_eq!(compute_pitch(60, &flat, PitchPath::Sequencer), 0x1000);
+        // 64 >> 3 = 8 -> half a semitone up -> table entry 8.
+        assert_eq!(
+            compute_pitch(60, &sharp, PitchPath::Sequencer),
+            pitch_table_entry(8) as u16
+        );
+        assert!(
+            compute_pitch(60, &sharp, PitchPath::Sequencer)
+                > compute_pitch(60, &flat, PitchPath::Sequencer)
+        );
+        // The sequencer arm saturates at 15/16 of a semitone: 0xFF >> 3 = 31
+        // clamps to 15, and never carries into the next semitone.
+        let extreme = tone_with_shift(60, 0xFF);
+        assert_eq!(
+            compute_pitch(60, &extreme, PitchPath::Sequencer),
+            pitch_table_entry(15) as u16
+        );
+    }
+
+    /// A cue keys on half a semitone above where the sequencer would put the
+    /// same tone, because every retail SFX call site passes `fine = 0x40`.
+    #[test]
+    fn cue_path_sits_a_half_semitone_above_the_sequencer_path() {
+        let tone = dummy_tone(60, 1, 127, 64);
+        assert_eq!(
+            compute_pitch(60, &tone, PitchPath::Cue),
+            pitch_table_entry(8) as u16
+        );
+        // With shift >= 0x40 the cue arm carries a whole semitone instead of
+        // clamping, so it keeps climbing where the sequencer arm has stopped.
+        let sharp = tone_with_shift(60, 0x40);
+        assert_eq!(
+            compute_pitch(60, &sharp, PitchPath::Cue),
+            pitch_table_entry(16) as u16
+        );
+        assert_eq!(
+            compute_pitch(60, &sharp, PitchPath::Cue),
+            compute_pitch(61, &tone, PitchPath::Sequencer),
+            "0x40 fine + 0x40 shift is exactly one semitone"
+        );
+    }
+
+    /// Anchors read out of retail's own libsnd note-staging block in mednafen
+    /// save states: `(note, center, shift)` against the pitch the driver had
+    /// already written to the voice. The sequencer rows are BGM notes, the cue
+    /// row is the pause-menu cursor blip (program 0 / tone 1 / note 61).
+    #[test]
+    fn pitch_matches_values_captured_from_retail() {
+        for (note, center, shift, path, want) in [
+            (64u8, 72u8, 0u8, PitchPath::Sequencer, 2580u16),
+            (52, 68, 54, PitchPath::Sequencer, 1661),
+            (57, 68, 124, PitchPath::Sequencer, 2290),
+            (33, 60, 30, PitchPath::Sequencer, 870),
+            (78, 73, 70, PitchPath::Sequencer, 5627),
+            (64, 86, 0, PitchPath::Cue, 1183),
+            (61, 85, 59, PitchPath::Cue, 1080),
+            (60, 72, 59, PitchPath::Cue, 2161),
+        ] {
+            let tone = tone_with_shift(center, shift);
+            assert_eq!(
+                compute_pitch(note, &tone, path),
+                want,
+                "note {note} center {center} shift {shift} {path:?}"
+            );
+        }
     }
 
     /// Pan=0 silences right; pan=127 silences left; pan=64 is roughly equal.

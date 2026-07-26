@@ -41,9 +41,12 @@ pub struct EquipBonus {
 ///
 /// Adds wrap like retail (`u16`, no clamp).
 ///
-/// NOT WIRED: no engine caller. `engine-core` seeds party battle stats through
-/// its own `seed_party_battle_stats`, which has not been moved onto this kernel;
-/// until it is, this is a verified transcription with no runtime effect.
+/// Wired through [`init_party_battle_stats`], which folds these three deltas
+/// into the actor's base halfwords - see that function for the caller.
+///
+/// One gap remains, and it is not a wiring gap in this kernel: `engine-core`'s
+/// own `seed_party_battle_stats` still computes the native battle party's stats
+/// itself rather than delegating here, so the two paths can drift.
 ///
 /// PORT: FUN_80053cb8 (the equipment-bonus loop)
 pub fn equip_stat_bonuses(equipped: &[Option<EquipBonus>; EQUIP_SLOTS]) -> (u16, u16, u16) {
@@ -142,7 +145,13 @@ pub struct BattleActorStats {
 /// identity-ordered, so no search is needed. Monster actors take the scanning
 /// path instead; see `legaia_asset::monster_archive::reaction_map`.
 ///
-/// NOT WIRED: no engine caller - see [`equip_stat_bonuses`].
+/// Wired: the browser Muscle Dome page builds its player fighter through this
+/// kernel - `LegaiaMinigames::muscle_player_fighter` in
+/// `crates/web-viewer/src/minigames_muscle.rs` levels the SCUS new-game
+/// template through the growth curves and then calls this with an empty equip
+/// window, and `muscle_start_vs` (a `#[wasm_bindgen]` export) is the host root
+/// above it. `engine-core`'s own `seed_party_battle_stats` does not route here
+/// yet; see [`equip_stat_bonuses`].
 ///
 /// PORT: FUN_80053cb8 (the stat-block half)
 pub fn init_party_battle_stats(

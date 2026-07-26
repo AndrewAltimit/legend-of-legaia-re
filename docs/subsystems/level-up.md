@@ -199,8 +199,10 @@ reading held that a Seru gaining a level applied a per-Seru `+0x74` "HP grant"
 to the battle actor. That is wrong, and this finding confirms it from the other
 side: growth comes from the `DAT_800769CC` / `DAT_80076918` static tables, not a
 Seru `+0x74` dereference. (The only `+0x74` reads in the captured overlays
-surface a 32-bit battle-state flag the SCUS handler `FUN_800480D8` stamps with
-`0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots -
+surface a colour word the SCUS handler `FUN_800480D8` stamps with
+`0x00808080` - `lui 0x80` + `ori 0x8080` masked under `0x00FFFFFF`, the
+defeated-monster grey, not a 32-bit flag.) Battle actor base for reference:
+`DAT_801C9370[slot]`, 8 slots -
 party 0..2, monsters 3..7; current HP at `+0x14C`.
 
 ### Battle-actor stat struct (`DAT_801C9370` pool)
@@ -262,7 +264,7 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 | `0x801F4B8C` | 4-byte display row-ID table for magic slots (indices 12–17) |
 | `0x801F4B98` | Magic-type name strings: Spirit / Defense / Meta / Terra / Ozma |
 | `0x801F4C28+` | Battle-result text strings (win / annihilated / escaped / …) |
-| `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
+| `0x801F5CF8`, `0x801F5D90` | 18-byte **move-VM trigger programs** (`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`), one per burst arm. Not tables, and they do not call `FUN_80050ED4` - the `0x17` in them escapes to `FUN_801F30C4`, which does. Each precedes its arm's stager record one alignment word later (`0x801F5DA4` / `0x801F5D0C`); the constant `-0x14` skew between the two address pairs is the tell. See [`functions/battle.md`](../reference/functions/battle.md#801f30c4). |
 | `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
 
 No increment table lives in this *display* overlay - the growth tables
@@ -500,7 +502,7 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   parameter block selecting curve rows), read and applied by `FUN_801E9504` (see
   *Stat gains* above). The earlier negative results came from searching the wrong
   code: the `magic_level_up` overlay is the display path, not the writer; the
-  `+0x74` reads are a `0x80808080` battle-state flag (`FUN_800480D8`), not a
+  `+0x74` reads are a `0x00808080` grey colour word (`FUN_800480D8`), not a
   grant; and the PROT.DAT `0x033E9000` cluster is animation-curve data. The
   **engine port is done**: the two tables are parsed by
   `legaia_asset::level_up_tables::growth_tables_from_scus`,

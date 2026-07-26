@@ -270,42 +270,34 @@ pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
 
-    // Mirror crates/prot::archive size math: max(indexed_size, footprint).
-    // The indexed formula `toc[p+5] - toc[p+3] + 4` gives the TOC-declared
-    // payload; the footprint `toc[p+3] - toc[p+2]` gives the full on-disc
-    // span between this entry and the next. The boot loader sometimes reads
-    // past the indexed end into trailing-overlay content (e.g. PROT 899's
-    // trailing 60 sectors are the title-screen overlay code; see
-    // docs/subsystems/boot.md). Honor the larger of the two so the WASM
-    // disc browser sees the same bytes the SCUS loader sees.
+    // An entry's size is the sector gap to the next entry, and the span comes
+    // from the port of retail's own routine rather than a second copy of the
+    // arithmetic - `crates/prot`'s `Archive` calls the same function. The walk
+    // is open-coded here only because it must stay zero-copy over a borrowed
+    // 121 MB buffer in WASM; the size rule is not duplicated. See
+    // docs/formats/prot.md (in particular why `toc[p+5] - toc[p+3] + 4` is
+    // *not* this entry's size).
     const MAX_FOOTPRINT_SECTORS: u32 = 64 * 1024;
     let count = file_num.saturating_sub(1) as usize;
     let mut entries = Vec::with_capacity(count);
     for p in 0..count {
-        if p + 5 >= toc.len() {
+        if p + 3 >= toc.len() {
             break;
         }
         let start_lba = toc[p + 2];
-        let indexed_raw = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
-        let footprint_sectors = toc[p + 3].wrapping_sub(start_lba);
-        let footprint_sane = footprint_sectors > 0 && footprint_sectors <= MAX_FOOTPRINT_SECTORS;
-        // The last real rows sit against the zeroed TOC tail, so the indexed
-        // formula underflows for them (`toc[p+5]` = 0). They are real content
-        // - retail extraction 1231 is the dance minigame's SFX VAB - so fall
-        // back to the LBA footprint rather than dropping them (mirrors
-        // crates/prot::archive).
-        let indexed_size_sectors = if indexed_raw <= MAX_FOOTPRINT_SECTORS {
-            indexed_raw
-        } else if footprint_sane {
-            footprint_sectors
-        } else {
+        // LBA 0 is the archive header - a row pointing there is TOC padding.
+        if start_lba == 0 {
+            continue;
+        }
+        let Some(size_sectors) =
+            legaia_prot::runtime_toc::entry_sector_span_from_archive_toc(&toc, p)
+        else {
             continue;
         };
-        let size_sectors = if footprint_sane && footprint_sectors > indexed_size_sectors {
-            footprint_sectors
-        } else {
-            indexed_size_sectors
-        };
+        // A wrapped (non-monotonic / zero-padded) or empty row is not an entry.
+        if size_sectors == 0 || size_sectors > MAX_FOOTPRINT_SECTORS {
+            continue;
+        }
         let byte_offset = (start_lba as u64) * (SECTOR as u64);
         let size_bytes = (size_sectors as u64) * (SECTOR as u64);
         if byte_offset.saturating_add(size_bytes) > buf.len() as u64

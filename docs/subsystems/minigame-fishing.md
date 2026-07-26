@@ -380,6 +380,40 @@ disassembly of the extracted 0972 image). What the two clippers *draw* is
 **Inferred** - `FUN_801d26cc` is the fish / lure / line actor handler, so
 the fishing line is the natural reading, but no capture pins it.
 
+### The shared polar-offset helper (`FUN_801d7bb8`)
+
+One routine in the same band is **not** a fishing copy: `FUN_801d7bb8` is
+byte-identical across the fishing, slot-machine and debug-menu overlay images
+(only the `[overlay_*.bin]` header line of the dump differs), so it is shared
+library code the hub overlays link, like the [ground-height
+solver](#the-scene-floor-buffer). The fourth dump at this VA - under the field
+overlay, PROT 0897 - reports `0 instructions` and carries only decompiler
+output; that is the empty-dump artifact, not a fourth copy, and it is not
+evidence of a VA alias here.
+
+`FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)` is a **polar offset**: it
+masks the angle to 12 bits (so a full turn is 4096 steps), reads the same index
+out of two quadrature tables whose pointers live at `_DAT_8007B81C` and
+`_DAT_8007B7F8`, and writes `table[angle] * radius * scale >> 12` through each
+of the two output pointers. Which table is sine and which cosine is a property
+of the table data, not of this code, so the port keeps them positional.
+
+The tables are not overlay-local and are not an open question: `FUN_80026BE0`
+installs the pointer pair at boot from the SCUS statics `0x80070A2C` and
+`0x8007122C` (4096 entries, amplitude `0x1000`;
+[`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)), which is
+the same pair the slot-machine reel cylinder reads
+([`minigame-slot-machine.md`](minigame-slot-machine.md)). A consumer of this
+helper can decode them off `SCUS_942.54` directly.
+
+The shift matters: both products are formed at full 32-bit width and folded by a
+plain arithmetic `sra`, which rounds toward **minus infinity** - unlike the
+`bgez`-biased shifts the HUD emitters in these overlays use. Feeding a 12.12
+`scale` gives a 12.12 result back. Port:
+`engine-core::minigame_floor::polar_offset`. **Confirmed** arithmetic; which
+callers use it is **Inferred** (the hub overlays' circular-motion paths - the
+slot machine's reel cylinders, the float's drift).
+
 ## VA aliasing in this band
 
 The dumps covering `0x801d1xxx` and `0x801d6f00`..`0x801d78ff` are runtime
@@ -482,6 +516,7 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d7450` / `FUN_801d3db4` / `FUN_801d746c` - the reel-button decoder, the reel-cadence recogniser, and its buffer reset (see [Reel-button decode and cadence](#reel-button-decode-and-cadence)).
 - `FUN_801d0f5c` / `FUN_801d1c5c` / `FUN_801d2050` / `FUN_801d2278` / `FUN_801d70ec` / `FUN_801d4948` / `FUN_801d67bc` / `FUN_801d24ec` / `FUN_801d6bbc` / `FUN_801d78c0` / `FUN_801d79e0` - the rod/lure select screen, the actor handlers, and the scene render pass (see [Fishing actors and scene render](#fishing-actors-and-scene-render)).
 - `FUN_801d7030` / `FUN_801d765c` / `FUN_801d56e4` / `FUN_801d5c2c` - the overlay's own walk-grid probe, tile-distance, 2-D clip and 3-D clip helpers (see [Scene geometry helpers](#scene-geometry-helpers)).
+- `FUN_801d7bb8` - the **shared** polar-offset helper (not a fishing copy: byte-identical across the hub overlays; see [The shared polar-offset helper](#the-shared-polar-offset-helper-fun_801d7bb8)).
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 

@@ -21,7 +21,7 @@ A page may mix levels, and the good ones say so per-field rather than per-page: 
 | Page | Confidence | What it covers |
 |---|---|---|
 | [PSX disc geometry](disc.md) | Confirmed | Mode2/2352 sector layout, ISO9660 walk |
-| [PROT.DAT / DMY.DAT TOC](prot.md) | Confirmed | Top-level archive: 1233 numbered entries, TOC math, in-RAM TOC at `0x801C70F0` |
+| [PROT.DAT / DMY.DAT TOC](prot.md) | Confirmed | Top-level archive: 1233 numbered entries whose extents tile the file exactly, TOC math, in-RAM TOC at `0x801C70F0` |
 | [CDNAME.TXT name map](cdname.md) | Confirmed | The `#define`-driven naming for PROT entries. **Numbers are raw in-RAM TOC indices - extraction labels are shifted +2.** |
 | [DMY.DAT (dev fixtures)](dmy.md) | Confirmed | Memory-bus test pattern + paired random blobs. Not real game data. |
 
@@ -78,6 +78,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [DATA_FIELD streaming](data-field.md) | Confirmed | `[type, size, data]` chunk stream consumed by `FUN_8002541C` |
 | [Scene bundles](scene-bundles.md) | Confirmed | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes |
 | [scene_v12_table](scene-v12-table.md) | Confirmed | Per-scene container with a runtime-fixup header + inline record table + event-script prescript at sector offset `0x800`. 97 PROT entries (one per scene). |
+| [Per-scene field map](field-map.md) | Confirmed | `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Four regions (object descriptors, collision + floor grid, object-index map, trigger block) whose sizes sum to the footprint exactly. |
 | [Effect bundles](effect.md) | Confirmed | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [summon.dat / readef.DAT](summon-readef.md) | Confirmed | Battle side-band streaming slots (`0x10800` bytes each): per-special-attack CLUTs + 4bpp texture pages + summon-creature actor records. Extraction PROT 893 / 894 (retail TOC `0x37F` / `0x380`) |
 | [Field-pack format](field-pack.md) | Confirmed | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
@@ -86,7 +87,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [Encounter record](encounter.md) | Confirmed | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 | [MAN relocation](man-relocation.md) | Confirmed | Variable-length editing of a decompressed MAN - how to resize a `0x3F` door destination and keep every internal offset valid. Powers the door randomizer. |
 | [STR FMV table](str-fmv-table.md) | Confirmed | FMV dispatch table at `0x801D0A6C` - 23 × 32-byte slots, of which nine are the retail `fmv_id 0..=8`. See below for the neighbouring table it is easily confused with. |
-| [World-map slot-4 records](world-map-overlay.md) | Inferred | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`): a per-kingdom library of small object-local 3D meshes. See below. |
+| [World-map slot-4 records](world-map-overlay.md) | Inferred | Slot 4 of each kingdom bundle (PROT 0086 / 0245 / 0392, type byte `0x05`): a per-kingdom library of small object-local 3D meshes. See below. |
 | [Per-scene primitive scratch buffer](navmesh.md) | Inferred | Documented negative finding - `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 
 ### Two easily-confused windows
@@ -107,6 +108,7 @@ World-map slot 4 is likewise not what it was first read as. Each 8-byte record i
 | Page | Confidence | What it covers |
 |---|---|---|
 | [Sound-driver path-string cluster](sound-driver.md) | Confirmed | The string-builder cluster at `0x8007B38C` and the eight file extensions the runtime resolves through it (`.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat`) |
+| [`bse.dat` master sound bank](bse-dat.md) | Confirmed | The bank `FUN_8001FA88` loads once at sound-init: `[u16 tag][u16 body_offset][8-byte records]`. Extraction 888 (the loader's `0x37A`) plus an uncalled sibling at 1195. Record columns are shape, not semantics. |
 
 The dispatch chain *into* these formats is fully traced. The byte-level layout of the individual `.spk` / `.dpk` / `.MAP` / `.PCH` files is still open.
 

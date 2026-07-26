@@ -24,17 +24,18 @@ use legaia_prot::archive::Archive;
 /// guard).
 const EXPECTED_PROT_ENTRIES: usize = 1233;
 
-/// Class breakdown from `categorize::classify` over every PROT entry's
-/// **full on-disc footprint** (indexed payload + any trailing-overlay
-/// sectors the boot loader reads past the TOC-indexed end - see
-/// `docs/subsystems/boot.md`). Order doesn't matter; the test asserts each
-/// `(class_name, count)` pair.
+/// Class breakdown from `categorize::classify` over every PROT entry's own
+/// sectors (`toc[p+3] - toc[p+2]`; see `docs/formats/prot.md`). Order
+/// doesn't matter; the test asserts each `(class_name, count)` pair.
 ///
-/// Re-pinned after the prot crate's `size_sectors = max(indexed, footprint)`
-/// fix that surfaces trailing-overlay content (e.g. PROT 899's trailing
-/// 60 sectors are the title-screen overlay code). Many entries shifted
-/// class as their trailing sectors changed the byte histogram or extended
-/// the data-shape past the previous detector boundaries.
+/// Re-pinned when the entry size was corrected. The reader used to return
+/// `max(toc[p+5] - toc[p+3] + 4, footprint)`, and that first term is entry
+/// `p`'s two *successors'* sizes plus 4 - so 931 of the 1233 entries were
+/// classified over a buffer that ran into their neighbours. Three kinds of
+/// movement follow, and each is called out on the affected row below:
+/// phantom classes that only ever matched a neighbour's content, entries
+/// whose byte histogram was being set by borrowed bytes, and formats whose
+/// detector reached past the entry.
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `battle_data_pack` = the player battle files (retail `battle_data`
     // block, extraction 0863..0866 = PLAYER1..4). The realigned
@@ -42,87 +43,115 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // Terra's 0866 all-default (`id = 0`) table.
     ("battle_data_pack", 4),
     ("data_field_streaming", 34),
+    // `data_field_truncated` 0 → 1: a streaming entry whose chunk walk runs
+    // to the end of its own sectors. It used to complete only because the
+    // buffer continued into the next entry.
+    ("data_field_truncated", 1),
     // `field_pack` 2 → 1: one of the two entries (PROT 4) leads with a
     // count=6 scene-asset table at offset 0 and only carries a field-pack
     // *region* deeper in the file. The offset-0 scene-table shape is the
     // authoritative outer classification (same precedence as v12-over-
-    // fieldpack), so it now lands in `scene_asset_table`. PROT 5 remains
-    // the sole pure field_pack.
+    // fieldpack), so it lands in `scene_asset_table`. PROT 5 remains the
+    // sole pure field_pack.
     ("field_pack", 1),
-    // `lzs_container` 42 → 35: the count=6 scene-asset-table variant
-    // (town01/town0c-class MAN bundles) now claims 7 entries that were
-    // coincidental strict-LZS matches before the more specific schema ran.
-    // 35 → 34: Terra's player file (extraction 0866) moved to
-    // `battle_data_pack` once the realigned table frame accepted its
-    // all-default descriptor table.
-    ("lzs_container", 34),
+    // `lzs_container` 34 → 33: one entry's descriptor walk no longer
+    // completes inside its own sectors.
+    ("lzs_container", 33),
+    // `bse_bank` - the `bse.dat` master sound bank (extraction 888, the loader's
+    // raw TOC `0x37A`) plus its uncalled sibling at 1195.
+    ("bse_bank", 2),
+    // `efect_pack` - the runtime `efect.dat` 2-pack (extraction 0873). One entry.
+    ("efect_pack", 1),
+    // `field_map` 101 → 104: the per-scene `DATA\FIELD\<scene>.MAP`, slot 0
+    // of every scene block at a fixed `0x12000` bytes. Three more resolve now
+    // that each entry is exactly its own `0x12000` - the class is pinned on
+    // the trigger block's sub-table chain (`docs/formats/field-map.md`).
+    ("field_map", 104),
+    // `init_pak` - the boot logo/overlay pack (extraction 0895). One entry.
+    // Its detector carried a `>= 0x30000` length floor taken from the entry's
+    // old over-read size; PROT 0895 is 75 sectors (`0x25800`), so the floor
+    // rejected the real file. The floor is now the reach of the last logo TIM.
+    ("init_pak", 1),
     ("mips_overlay", 22),
-    ("monster_sound_bank", 1),
-    // `mostly_zeros` dropped (101 → 70) because many zero-padded entries
-    // gained non-zero trailing-overlay content that shifts them out of the
-    // dominant-zero bucket.
-    ("mostly_zeros", 70),
-    // `overlay_data_blob` 27 → 26: the phantom zeroed-TOC-row entry
-    // (offset 0 = the archive header bytes, mixed-text shape) is dropped
-    // by the archive's zero-row guard.
-    ("overlay_data_blob", 26),
+    // `monster_sound_bank` matches **nothing**: its only historical match was
+    // `summon.dat` (extraction 893), whose leading `[u32 mode = 2][256-entry
+    // CLUT, every colour STP-set]` satisfies the `[u32 format = 2][256 SPU
+    // addresses >= 0x8000]` test byte-for-byte. The real `h:\mpack\monster.snd`
+    // is extraction 891 (`FUN_8003E104`'s `li v0,0x37d`) and lands in
+    // `vab_multi_bank`. Kept pinned at 0 so a detector-order regression that
+    // re-steals summon.dat fails here.
+    ("monster_sound_bank", 0),
+    // `all_zeros` 0 → 4 and `mostly_zeros` 0 → 16: entries that really are
+    // (near-)empty. Their previous classes were read off borrowed bytes - the
+    // histogram of a buffer that continued into a populated neighbour. These
+    // are honest verdicts about small entries, not lost content.
+    ("all_zeros", 4),
+    ("mostly_zeros", 16),
+    // `overlay_data_blob` 26 → 24.
+    ("overlay_data_blob", 24),
     ("overlay_ptr_table", 42),
-    // `pochi_filler` 265 → 266: the recovered final TOC entry (index 1232,
-    // the archive's last data sector) is a single padding sector.
+    // `pochi_filler` - reserved dev filler slots, incl. the final TOC entry
+    // (index 1232, the archive's last data sector).
     ("pochi_filler", 266),
-    // `scene_asset_table` 80 → 88: the detector now also accepts the
-    // count=6 header variant used by the early standalone towns (first
-    // descriptor anchored at 0x38, MAN at descriptor index 1/2). Eight
-    // entries (PROT 4, 13, 22, 183, 348, 742, 1196, 1229) shifted in - one
-    // from `field_pack`, seven from `lzs_container`.
+    // `scene_asset_table` 88, unchanged - every one of them sits at offset 0
+    // of its own entry with every descriptor payload inside it.
     ("scene_asset_table", 88),
-    // `scene_tmd_stream` jumped (148 → 182) as 34 entries' trailing-overlay
-    // bytes happened to fit the streaming-with-bare-TMD shape.
-    ("scene_tmd_stream", 182),
-    // `scene_vab_stream` 217 → 218: the recovered TOC-tail entry 1231 is
-    // the dance minigame's SFX VAB.
+    // `scene_tmd_stream` 182 → 179: three entries' streaming-with-bare-TMD
+    // shape was completed by a neighbour's bytes.
+    ("scene_tmd_stream", 179),
     ("scene_vab_stream", 218),
     ("scene_v12_table", 97),
-    ("scene_scripted_asset_table", 79),
-    ("scene_event_scripts", 21),
+    // `scene_scripted_asset_table` 79 → **0**, and `scene_event_scripts`
+    // 21 → 78 as the same entries reclassify by their own content.
+    //
+    // The "prescript-prefixed asset table" was never a format. Every one of
+    // those 79 hits was a table found at a 0x800-aligned offset that is
+    // exactly the **next entry's start LBA** - i.e. the neighbour's ordinary
+    // offset-0 table, seen through a window that ran past the entry. Reading
+    // each entry's own sectors leaves the 88 bare tables untouched and the
+    // carrier entries classed as what they are: event-script prescripts.
+    // Pinned at 0 so a reader or detector regression that resurrects the
+    // phantom fails here (see `crates/asset/tests/scene_asset_table_walk_real.rs`).
+    ("scene_scripted_asset_table", 0),
+    ("scene_event_scripts", 78),
+    // `summon_readef` - `summon.dat` / `readef.DAT` (extraction 893 / 894).
+    ("summon_readef", 2),
     ("tim_pack", 7),
-    // `vab_multi_bank` matches the level_up multi-bank archive. One PROT entry.
+    // `vab_multi_bank` matches one PROT entry: extraction 891, the content the
+    // CDNAME `monster_se` define points at (`h:\mpack\monster.snd`). The
+    // `level_up` in its extraction filename is the +2 label shift.
     ("vab_multi_bank", 1),
-    // `zero_sector_high_entropy` covers files with leading zeros + high-
-    // entropy body. Four PROT entries.
-    ("zero_sector_high_entropy", 4),
-    // Residual buckets. Trailing-overlay MIPS code doesn't fit any PROT-
-    // format detector, so some entries land here (~8.4 MiB total
-    // unclassified by extended coverage, vs 1.9 MiB by indexed coverage -
-    // see categorize_coverage.rs for the split).
-    ("unknown_high_entropy", 1),
-    ("unknown_low_entropy", 29),
-    ("unknown_other", 6),
+    // `zero_sector_high_entropy` 4 → 0: those four entries are leading zeros
+    // followed by *nothing* of their own - the high-entropy body belonged to
+    // the next entry. They are `all_zeros` above.
+    ("zero_sector_high_entropy", 0),
+    // Statistical residual buckets. `unknown_low_entropy` 0 → 8: eight small
+    // entries whose format is not recognised from their own bytes alone. The
+    // other three stay empty; an entry landing in one of them is a detector
+    // regression, and the point of the census is to notice.
+    ("unknown_low_entropy", 8),
+    ("unknown_high_entropy", 0),
+    ("unknown_other", 0),
+    ("constant_byte", 0),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter
-/// (terminator + ≥2 chunks + all known types + magic OK). Bumped from 26
-/// → 34 after the size-math fix surfaced 8 entries whose trailing-overlay
-/// bytes complete a streaming-format suffix.
+/// (terminator + ≥2 chunks + all known types + magic OK).
 const EXPECTED_STREAM_HITS: usize = 34;
 
-/// Total sub-assets across all streaming hits. Jumped from 49 → 583 after
-/// the size-math fix: the 8 new streaming hits include TimList/Tmd PACK
-/// chunks (not just single-asset chunks), and the pack walkers expand each
-/// into multiple sub-assets.
+/// Total sub-assets across all streaming hits.
 const EXPECTED_TOTAL_SUBASSETS: usize = 583;
 
 /// One pinned PROT entry's size, used as a quick sanity check that the TOC
-/// math hasn't drifted.
-const PINNED_ENTRY: (u32, u64) = (148, 172_032); // entry 148 = retock
+/// math hasn't drifted. 41 sectors - the sector gap to entry 149.
+const PINNED_ENTRY: (u32, u64) = (148, 83_968); // entry 148 = retock
 
 /// Number of PROT entries that strict-validate as real LZS containers
 /// (the strict check requires no section-input-overrun and a minimum decoded
-/// total of [`MIN_REAL_DECODE_BYTES`]). Jumped from 33 → 113 after the
-/// size-math fix: many entries' trailing-overlay tails extend the LZS-
-/// descriptor walk past its previous truncation point, satisfying the
-/// strict decode check.
-const EXPECTED_LZS_CONTAINERS_STRICT: usize = 113;
+/// total of [`MIN_REAL_DECODE_BYTES`]). 113 → 110 with the corrected entry
+/// size: three entries' descriptor walks were completing on bytes that
+/// belong to the following entry.
+const EXPECTED_LZS_CONTAINERS_STRICT: usize = 110;
 
 /// Constant matching `lzs-decode`'s MIN_REAL_DECODE_BYTES - kept in sync
 /// to prove the validation suite checks the same thing the audit tool does.

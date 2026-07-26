@@ -25,6 +25,16 @@ navigation logic depends on the GPU backend.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.
+- `ui_menu_window_painters` (+ `_large`) - content painters for the
+  menu-overlay **window-descriptor table**: title tabs, prompt / counter /
+  choice windows, the shop's item-info and sell-quantity panels, and the two
+  equip stat-compare panels.
+- `ui_menu_window_dispatch` - which of those painters draws a given
+  descriptor, keyed on its `renderer_va` the way the retail window walker
+  keys on the live window's `+0x28`. A host resolves a parsed descriptor
+  (`painter_at`) or walks a whole table (`menu_window_painters`) instead of
+  hard-coding a screen; the disc oracle is
+  `engine-shell/tests/menu_window_dispatch_real.rs`.
 
 `ui_fishing` is the one module that owns both halves. The fishing overlay's
 HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,

@@ -177,7 +177,31 @@ pub fn detect(buf: &[u8]) -> Option<SceneEventScripts> {
 /// `end` is the next record's `start`, or `buf.len()` for the final record.
 /// Use the returned slice with `&buf[start..end]` to extract one script.
 pub fn record_ranges(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
-    let offsets = detect_prescript(buf)?;
+    ranges_from_offsets(buf, detect_prescript_min(buf, MIN_PRESCRIPT_COUNT)?)
+}
+
+/// [`record_ranges`] for a caller that has already identified `buf` as a
+/// prescript **positionally** rather than by its own contents.
+///
+/// [`MIN_PRESCRIPT_COUNT`] exists because the `[count][offsets]` shape is weak
+/// on its own: run over a context-free buffer it matches arbitrary data whose
+/// leading `u16` happens to land in range. A scene block supplies the missing
+/// context - the prescript is the entry seated between the `scene_v12_table`
+/// header and the bundle - and with the slot identified, a small record count
+/// is a fact about that scene rather than a reason to doubt the read. This
+/// entry point therefore keeps the structural checks (first offset anchored at
+/// the table end, offsets monotonic and in-buffer) and drops only the floor.
+///
+/// `edteien` is the case: its prescript holds **two** records, the first of
+/// which has the same `[00 00][3C 01]` lead as `geremi`'s, and the standalone
+/// detector rejects it purely on the count. Only a caller that knows the
+/// entry's slot in its scene block should reach this; anything scanning raw
+/// buffers wants [`record_ranges`].
+pub fn record_ranges_positional(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
+    ranges_from_offsets(buf, detect_prescript_min(buf, 1)?)
+}
+
+fn ranges_from_offsets(buf: &[u8], offsets: Vec<u16>) -> Option<Vec<(usize, usize)>> {
     let mut out = Vec::with_capacity(offsets.len());
     for (i, &off) in offsets.iter().enumerate() {
         let start = off as usize;
@@ -262,11 +286,18 @@ pub fn move_stager_records(buf: &[u8]) -> Option<Vec<SummonPart>> {
 /// Validate the leading `[u16 count][u16 offsets[count]]` prescript shape.
 /// Returns the offsets vector on success.
 fn detect_prescript(buf: &[u8]) -> Option<Vec<u16>> {
+    detect_prescript_min(buf, MIN_PRESCRIPT_COUNT)
+}
+
+/// [`detect_prescript`] with a caller-chosen record-count floor. Callers with
+/// positional evidence pass `1`; every content-only caller passes
+/// [`MIN_PRESCRIPT_COUNT`]. See [`record_ranges_positional`].
+fn detect_prescript_min(buf: &[u8], min_count: u16) -> Option<Vec<u16>> {
     if buf.len() < 4 {
         return None;
     }
     let count = u16::from_le_bytes(buf[0..2].try_into().ok()?);
-    if !(MIN_PRESCRIPT_COUNT..=MAX_PRESCRIPT_COUNT).contains(&count) {
+    if !(min_count..=MAX_PRESCRIPT_COUNT).contains(&count) {
         return None;
     }
     let table_end = 2usize.checked_add((count as usize) * 2)?;

@@ -28,9 +28,11 @@ Three patching families share that machinery:
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
-  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant COMBO=AMOUNT` makes an art
-  grant AP instead of costing it (a battle-overlay code hook -
-  [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with `--shiny-seru`);
+  [`arts_power`](src/arts_power.rs)); `--arts-ap-grant` / `--arts-ap-cost`
+  `[CHAR:]COMBO=AMOUNT` set what one character's art does to the AP gauge - grant
+  AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
+  hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
+  `--shiny-seru`);
   `--spirit-ap AP` sets how much AP the Spirit command charges (retail 32; four
   battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)); `--damage-ap AP`
   sets how much AP taking damage charges, per 100% of max HP lost (retail 100 -
@@ -71,7 +73,7 @@ full design.
   - [Weapon specialty](#weapon-specialty)
   - [Arts](#arts)
   - [Arts damage power](#arts-damage-power-arts_power-module)
-  - [Arts AP-grant](#arts-ap-grant-arts_ap_grant-module)
+  - [Arts AP override](#arts-ap-override-arts_ap_grant-module)
   - [Spirit AP](#spirit-ap-spirit_ap-module)
   - [Enemy-damage AP](#enemy-damage-ap-damage_ap-module)
   - [Doors](#doors)
@@ -688,34 +690,48 @@ no-damage-byte art like Gala's spirit Miracle is skipped), and recompresses
 disable. No display copy to sync (the power is not shown in the menu).
 `legaia-patcher arts` lists every art's combo, AP, and power tiers.
 
-## Arts AP-grant (`arts_ap_grant` module)
+## Arts AP override (`arts_ap_grant` module)
 
-`--arts-ap-grant COMBO=AMOUNT` makes a targeted art **grant** `AMOUNT` AP (Spirit,
-`actor[+0x170]`, clamped at 100) instead of costing it, and admits it at any AP
-level. A MIPS code hook into the **party** arts queue-builder `FUN_801EED1C`
+`--arts-ap-grant [CHAR:]COMBO=AMOUNT` makes a targeted art **grant** `AMOUNT` AP
+(Spirit, `actor[+0x170]`, clamped at 100) instead of costing it, and admits it at
+any AP level; `--arts-ap-cost [CHAR:]COMBO=AMOUNT` sets what it **costs**
+(`1..=100`) instead. **Retail stores no per-art AP cost** - the builder computes
+`multiplier x command_count` from three code immediates - so the cost side is a
+hook, not a table edit, and `0` is unavailable because it is the config table's
+"leave at retail" value.
+
+Both ride one MIPS code hook into the **party** arts queue-builder `FUN_801EED1C`
 (PROT 0898, base `0x801CE818`; slot < 3, so enemies are unaffected): three
 same-size detours - the affordability guard (`0x801EF410`), the AP debit/accrual
 (`0x801EF490`), and the end-of-turn refund clamp (`0x801EF988`) - plus the
-routines and a 26-entry `i8` config table injected into a verified-dead SCUS
-arena (the same `shiny_seru::ARENA1_VA` the [Shiny Seru](#shiny-seru) feature
-reuses, so the two are **mutually exclusive** - enforced in the CLI and the web
-patcher). Trap-wise it is the same class as `shiny_seru`/`bonus_drop`: honour the
-R3000 load-delay slot, never split a `mult`/`mflo` (the guard replays `mflo t7`
-without issuing its own multiply), and "zero is not dead" (the arena is
-read-watch-verified, not merely all-zero).
+routines in `shiny_seru::ARENA1_VA` / `ARENA2_VA` and a `4 x 32` `i8` config
+table in `SCUS_GAP_VA`. Those are the regions the [Shiny Seru](#shiny-seru)
+feature reuses, so the two are **mutually exclusive** - enforced in the CLI and
+the web patcher. Trap-wise it is the same class as `shiny_seru`/`bonus_drop`:
+honour the R3000 load-delay slot, never split a `mult`/`mflo` (the guard replays
+`mflo t7` without issuing its own multiply), and "zero is not dead" (the regions
+are read-watch-verified, not merely all-zero).
 
-The config index is `s3 - 0x0B` (`s3` = the art-table row cursor), which equals
-the art's arts-table display index; an art is targeted by its input combo, which
-resolves to that index. The row is **shared across the three characters**, so a
-grant applies to every character's art at that same index. Site details + AP math:
-[`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#arts-ap-grant-hook).
+The config index is `(DAT_8007BD10[slot] - 1) * 32 + (s3 - 0x0B)` - the 1-based
+party-record id the builder already holds in `t6`, times the row stride, plus the
+art-table row cursor. So the setting is **per (character, art row)**: an override
+never moves another character's art. An art is targeted by its input combo, with
+an optional `Vahn:`/`Noa:`/`Gala:` prefix; without one, every character holding
+that combo is targeted in its own cell.
+
+The art's **menu AP number** is rewritten alongside - it is a separate byte
+(`+2` of the SCUS arts-name table record) with its own single reader in the menu
+overlay, so patching only the hook leaves the pause-menu list stale. A cost
+writes the cost; a grant writes `0` (no retail art and no configurable cost can
+produce it, so it reads as the "gives AP back" marker). Site details + AP math:
+[`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#arts-ap-override-hook).
 Disc oracle `tests/arts_ap_grant_real.rs` proves *where* the bytes land; a live
 battle playtest is still required to certify in-game behaviour.
 
 ## Spirit AP (`spirit_ap` module)
 
 `--spirit-ap AP` (0..=100) sets how much AP the **Spirit** command charges into
-the battle AP gauge (`actor[+0x170]`; retail 32). Unlike the AP-grant hook this
+the battle AP gauge (`actor[+0x170]`; retail 32). Unlike the AP-override hook this
 is a pure immediate edit - no injected code, no arena, composes with
 everything. Four `addiu` immediates in the raw battle-action overlay (PROT
 0898): the state-`0x50` Spirit accrual (`0x801E5D84`, the value the engine

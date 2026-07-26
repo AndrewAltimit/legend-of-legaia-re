@@ -10,8 +10,8 @@ use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 
 use crate::util::{
-    parse_arts_ap_grant, parse_arts_power, parse_item_spec, parse_location_rename,
-    parse_prize_price, parse_stat_scale,
+    parse_arts_ap_cost, parse_arts_ap_grant, parse_arts_power, parse_item_spec,
+    parse_location_rename, parse_prize_price, parse_stat_scale,
 };
 
 #[derive(Parser)]
@@ -25,6 +25,10 @@ pub(crate) struct Cli {
     pub(crate) cmd: Cmd,
 }
 
+// `Randomize` carries the whole option surface (one field per feature), so it
+// dwarfs the read-only inspection subcommands. Boxing it would only move the
+// allocation - clap parses exactly one variant per process.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub(crate) enum Cmd {
     /// Plan a randomization from a seed and write a PPF patch (and optionally a
@@ -578,17 +582,30 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, value_name = "COMBO=VALUE", value_delimiter = ',', value_parser = parse_arts_power)]
     pub(crate) arts_power: Vec<(Vec<legaia_art::queue::Command>, u8)>,
     /// **Make a Tactical Art grant AP instead of costing it** ("arts AP-grant").
-    /// Comma- or repeat-separated `COMBO=AMOUNT` entries, targeting an art by its
-    /// input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10`). `AMOUNT` is the
-    /// AP (Spirit) granted per use (1..=100); the art becomes castable at any AP
-    /// level and *adds* that much (clamped at 100) rather than paying a cost. A
-    /// same-size code hook into the party arts queue-builder (PROT 0898) plus
-    /// routines + a 26-entry config table in a verified-dead SCUS arena. The
-    /// config is a **shared row** (arts-table index): a combo's row grants that
-    /// index for *all three characters*; `legaia-patcher arts` lists each art's
-    /// index. **Mutually exclusive with `--shiny-seru`** (same arena bytes).
+    /// Comma- or repeat-separated `[CHARACTER:]COMBO=AMOUNT` entries, targeting
+    /// an art by its input combo (`L/R/D/U`, e.g. `--arts-ap-grant RDLDL=10` or
+    /// `--arts-ap-grant Vahn:RDLDL=10`). `AMOUNT` is the AP (Spirit) granted per
+    /// use (1..=100); the art becomes castable at any AP level and *adds* that
+    /// much (clamped at 100) rather than paying a cost. A same-size code hook
+    /// into the party arts queue-builder (PROT 0898) plus routines + a
+    /// per-(character, row) config table in verified-dead SCUS regions. Without
+    /// a `CHARACTER:` prefix every character holding that combo is targeted -
+    /// each in its own cell, so nothing spills onto another character's art.
+    /// The art's menu AP number is rewritten to match (a grant shows `0`).
+    /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
     #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_grant)]
-    pub(crate) arts_ap_grant: Vec<(Vec<legaia_art::queue::Command>, u8)>,
+    pub(crate) arts_ap_grant: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
+    /// **Set what a Tactical Art costs in AP** ("arts AP-cost"). Same
+    /// `[CHARACTER:]COMBO=AMOUNT` syntax as `--arts-ap-grant`; `AMOUNT` is the
+    /// flat AP (Spirit) the art charges per use (1..=100), replacing retail's
+    /// computed `multiplier x command_count`. Retail stores no per-art cost, so
+    /// this rides the same code hook as `--arts-ap-grant`; both the
+    /// affordability gate and the charged amount follow the setting, and the
+    /// art's menu AP number is rewritten to match. `0` is not available - it is
+    /// the config table's "leave at retail" value, so the cheapest art is 1 AP.
+    /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
+    #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_cost)]
+    pub(crate) arts_ap_cost: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
     /// **Rename a world-map location** (the names shown on the quick-travel
     /// menu and the save / load / pause location display). Repeatable
     /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher
