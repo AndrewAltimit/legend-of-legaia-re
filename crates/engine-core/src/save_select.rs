@@ -217,12 +217,17 @@ const CARD_PREFIX_LEN: usize = 16;
 ///
 /// PORT: FUN_801E1208
 ///
-/// NOT WIRED: the engine's saves are LGSF files on disk
-/// (`crate::menu_runtime` writes `slot_NN.bin`). Nothing mounts a raw PSX
-/// memory-card image at runtime, so no 15-frame card directory exists to
-/// walk; the one caller chain ([`card_directory_slots`] ->
-/// [`SaveSelectSession::from_card_directory`]) is entered only by tests.
-/// Wiring this needs a card-image backend behind the save-slot session.
+/// NOT WIRED: the index-space mismatch is the blocker, not the backend.
+/// The browser card rack **does** mount raw card images now and runs the
+/// sibling scan/budget pair ([`card_directory_scan`] ->
+/// [`card_free_blocks`], `web-viewer::cards`), but its 5x3 grid is keyed
+/// by **physical block** (`cell = block - 1`) while this classifier keys
+/// by the **filename's save index** ([`card_dir_slot_of`] parses the
+/// digits after the `BASCUS-` prefix), and nothing guarantees the two
+/// agree on a player's card. Adopting it means re-keying the grid to the
+/// retail name-index space; until then the one caller chain
+/// ([`card_directory_slots`] -> [`SaveSelectSession::from_card_directory`])
+/// is entered only by tests.
 pub fn classify_card_directory(
     frames: &[&[u8]],
     avail_blocks: u32,
@@ -404,9 +409,10 @@ impl CardDirEntry {
 ///
 /// PORT: FUN_801E3AF0
 ///
-/// NOT WIRED: same missing prerequisite as [`classify_card_directory`] -
-/// no host mounts a memory-card image, so nothing produces the BIOS file
-/// enumeration this table is filled from.
+/// Wired: the browser card rack enumerates the player's inserted card
+/// image's directory frames into [`CardDirEntry`]s and fills this table
+/// (`web-viewer::cards::card_block_snapshots`), pairing it with
+/// [`card_free_blocks`] to price the free-cell captions of the 5x3 grid.
 pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR_FRAMES], usize) {
     // Retail clears every slot before the walk, so a shorter enumeration
     // than the previous one cannot leave stale names behind.
@@ -432,9 +438,11 @@ pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR
 ///
 /// PORT: FUN_801E3BA0
 ///
-/// NOT WIRED: costs the [`card_directory_scan`] table, which no host
-/// fills - see that tag. A disk-backed slot list has no block budget to
-/// spend.
+/// Wired: costs the [`card_directory_scan`] table the browser card rack
+/// fills off an inserted card image; the resulting budget decides whether
+/// an unclaimed grid cell captions free or foreign
+/// (`web-viewer::cards::card_block_snapshots`). The engine's own
+/// disk-backed LGSF slot list has no block budget to spend.
 pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
     let mut used: i32 = 0;
     for entry in table.iter().take(count) {
@@ -487,12 +495,17 @@ pub const SAVE_BLOCK_CHECKSUM_WORD: usize = 0x7FF;
 /// `0x800`-word block are ignored.
 // PORT: FUN_801E38D8
 //
-// NOT WIRED: the engine never materialises a retail save block. Its saves
-// are LGSF files (`legaia_save::SaveFile`), and the one path that reads a
-// real `0x2000`-byte block - `SaveFile::from_retail_sc_block` - lives in
-// `legaia-save` and takes the block already extracted by a card walker.
-// Wiring the validity gate needs the block itself to flow through the
-// save-slot session, which the LGSF model does not carry.
+// NOT WIRED: the browser card rack now reads real `0x2000`-byte blocks
+// (`web-viewer::cards`), so the missing backend is no longer the blocker -
+// a **corpus contradiction** is. `legaia-save`'s card layer documents "the
+// SC payload itself has no checksum" (`card::encode_dir_frame`, citing the
+// `FUN_8001A8B0(SC_base, staging, 0x1A18)` copy, which stops short of the
+// `0x1FFC` word this sum is stored at), and its in-place SC edits
+// (`SaveFile::write_into_retail_sc_block`) never recompute the word - so
+// gating the card grid on this sum would caption the engine's own writes
+// as corrupt. Until the `0x801df888` compare is re-verified against a
+// retail-written card (does retail enforce it on load, and over which
+// buffer?), wiring the gate would encode one of two contradictory claims.
 pub fn save_block_checksum(block: &[u32]) -> u32 {
     block
         .iter()

@@ -28,7 +28,10 @@
 //!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
-use legaia_engine_core::save_select::{SlotContent, SlotSnapshot};
+use legaia_engine_core::save_select::{
+    CARD_DIRENTRY_NAME_LEN, CardDirEntry, SlotContent, SlotSnapshot, card_directory_scan,
+    card_free_blocks,
+};
 use legaia_save::emu::{self, CardView};
 use legaia_save::{SaveFile, card};
 use wasm_bindgen::prelude::*;
@@ -130,12 +133,42 @@ impl LegaiaRuntime {
         let Some(view) = cardslot.view() else {
             return (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect();
         };
+        // The retail free-block budget (`FUN_801E3AF0` -> `FUN_801E3BA0`):
+        // enumerate the card's files off the live directory frames, fill the
+        // fixed 15-entry table, and price how many blocks the card itself
+        // says are free. Retail only captions a cell "free" while that
+        // budget pays for it - absence of a claim is not evidence a block is
+        // free, so an unclaimed cell past the budget captions as foreign
+        // rather than inviting an overwrite.
+        let entries: Vec<CardDirEntry> = (1..=CARD_BLOCKS)
+            .filter(|&b| view.block_is_save_start(&cardslot.bytes, b))
+            .filter_map(|b| view.dir_frame(&cardslot.bytes, b))
+            .filter_map(|f| {
+                // The BIOS `firstfile` walk retail's table fill rides builds
+                // each `DIRENTRY` from the raw 128-byte frame: the 20-byte
+                // filename at `+0x0A`, the byte size at `+0x04`.
+                let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
+                name.copy_from_slice(f.get(0x0A..0x0A + CARD_DIRENTRY_NAME_LEN)?);
+                let s = f.get(4..8)?;
+                Some(CardDirEntry {
+                    name,
+                    size: u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+                })
+            })
+            .collect();
+        let (dir_table, dir_count) = card_directory_scan(&entries);
+        let mut free_budget = card_free_blocks(&dir_table, dir_count).max(0);
         (0..CARD_BLOCKS)
             .map(|cell| {
                 let block = cell + 1;
-                // A block nothing claims is free; the info panel says so.
+                // A block nothing claims is free while the card's own
+                // free-block count affords it (the retail budget loop).
                 if !view.block_is_save_start(&cardslot.bytes, block) {
-                    return SlotSnapshot::empty(cell);
+                    if free_budget > 0 {
+                        free_budget -= 1;
+                        return SlotSnapshot::empty(cell);
+                    }
+                    return SlotSnapshot::foreign(cell);
                 }
                 // Past here the block IS claimed, so every way of failing to
                 // read it is someone else's save rather than a free block -
@@ -457,6 +490,39 @@ mod tests {
         assert_eq!(cell.leader_mp, (20, 30));
         assert!(!blocks[0].present, "block 1 is free");
         assert!(!blocks[14].present, "block 15 is free");
+        assert!(
+            blocks
+                .iter()
+                .filter(|b| !b.present)
+                .all(|b| b.content == SlotContent::Free),
+            "a well-formed card's unclaimed cells caption free (budget affords them)"
+        );
+    }
+
+    /// The retail free-block budget (`card_directory_scan` ->
+    /// `card_free_blocks`): a card whose directory declares more used bytes
+    /// than its claims account for stops paying for "free" captions, and the
+    /// unafforded cells caption foreign instead of inviting an overwrite.
+    #[test]
+    fn block_snapshots_spend_the_retail_free_block_budget() {
+        let mut bytes = card_with_save(3, "Vahn", 900);
+        // Declare the save as spanning the whole card (15 blocks) in its
+        // directory frame's size field - the card now reports zero free
+        // blocks even though 14 cells carry no claim.
+        let f = card::DIR_FRAME_SIZE * 3;
+        bytes[f + 4..f + 8].copy_from_slice(&(15u32 * card::BLOCK_SIZE as u32).to_le_bytes());
+        let ck = bytes[f..f + 0x7F].iter().fold(0u8, |a, &b| a ^ b);
+        bytes[f + 0x7F] = ck;
+        let rt = rt_with_card(0, bytes);
+        let blocks = rt.card_block_snapshots(0);
+        assert_eq!(blocks[2].content, SlotContent::LegaiaSave);
+        assert!(
+            blocks
+                .iter()
+                .filter(|b| b.content != SlotContent::LegaiaSave)
+                .all(|b| b.content == SlotContent::Foreign),
+            "no free-block budget left: unclaimed cells caption foreign"
+        );
     }
 
     #[test]

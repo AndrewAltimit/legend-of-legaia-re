@@ -54,11 +54,13 @@
 //!
 //! # NOT WIRED
 //!
-//! Same missing prerequisite as the rest of the card stack: the engine
-//! saves to LGSF files (`legaia_save::SaveFile`), never to a `0x2000`-byte
-//! card block, and no host owns a [`CardIoMachine`] to produce the poll
-//! results these fold. `SaveSelectSession` runs its own `NowChecking` beat
-//! straight off `card_status_poll`, so there is no frame on which to tick
+//! No host owns a [`CardIoMachine`] to produce the poll results these
+//! fold. The one card-image backend - the browser card rack
+//! (`web-viewer::cards`), which does write real `0x2000`-byte blocks -
+//! patches the container bytes synchronously through `legaia_save`, with
+//! no asynchronous BIOS beat to sequence; the native saves are LGSF files.
+//! `SaveSelectSession` runs its own `NowChecking` beat straight off
+//! `card_status_poll`, so there is no frame on which to tick
 //! [`CardWriteMachine`] and nothing that would consume a
 //! [`SaveBlockSummary`].
 
