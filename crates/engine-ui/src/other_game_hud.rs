@@ -273,6 +273,14 @@ fn corner_span(texels: u8, size: i32, scale: i32) -> i32 {
 /// the shared record as its transparency flag and tpage page.
 ///
 /// PORT: FUN_801d050c
+///
+/// NOT WIRED: the retail quad emitter behind the dome HUD's centred sprites.
+/// The web host consumes the parsed sprite-table *geometry*
+/// ([`parse_sprite_table`] via `minigames_muscle::muscle_hud_json`) and
+/// composes its quads in the page's GL layer, so no non-test caller runs the
+/// engine-side emit math. Wiring needs an engine-side dome HUD renderer (a
+/// mode-24 HUD surface in the play-window or a web draw path that requests
+/// emitted quads instead of raw geometry).
 pub fn hud_quad_centred(
     rec: &mut HudSprite,
     x: i16,
@@ -300,6 +308,10 @@ pub fn hud_quad_centred(
 /// covers twice the pixels for the same `scale`.
 ///
 /// PORT: FUN_801d08ec
+///
+/// NOT WIRED: same host gap as [`hud_quad_centred`] - the web host draws from
+/// the parsed geometry, so the corner-anchored emit math has no non-test
+/// caller until an engine-side dome HUD renderer exists.
 pub fn hud_quad_corner(
     rec: &mut HudSprite,
     x: i16,
@@ -329,6 +341,8 @@ pub fn hud_quad_corner(
 /// time, so a **negative `value` renders nothing at all**.
 ///
 /// PORT: FUN_801d1308 (slot fill)
+///
+/// NOT WIRED: reached only through [`decimal_quads`] - see its note.
 pub fn decimal_slots(value: i32) -> [Option<u8>; DECIMAL_SLOTS] {
     let mut raw = [-1i32; DECIMAL_SLOTS];
     raw[DECIMAL_SLOTS - 1] = 0;
@@ -352,6 +366,8 @@ pub fn decimal_slots(value: i32) -> [Option<u8>; DECIMAL_SLOTS] {
 /// Texture-U column of one decimal glyph (`digit * 8 - 0x80`, byte-wrapped).
 ///
 /// PORT: FUN_801d1308 (glyph column)
+///
+/// NOT WIRED: reached only through [`decimal_quads`] - see its note.
 #[inline]
 pub fn digit_column(digit: u8) -> u8 {
     ((digit as i32) * 8 + DIGIT_U_BASE) as u8
@@ -367,6 +383,11 @@ pub fn digit_column(digit: u8) -> u8 {
 /// [`DIGIT_ADVANCE`] per slot **including** the slots that draw nothing.
 ///
 /// PORT: FUN_801d1308
+///
+/// NOT WIRED: the retail decimal-readout emitter. The dome page renders its
+/// numerals in the page's GL layer from the parsed digit-strip geometry, so
+/// the engine-side emit path (slot fill, glyph columns, pen advance) has no
+/// non-test caller until an engine-side dome HUD renderer exists.
 pub fn decimal_quads(
     digit: &mut HudSprite,
     x: i16,
