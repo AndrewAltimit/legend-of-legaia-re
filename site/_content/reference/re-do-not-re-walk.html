@@ -115,6 +115,18 @@
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
+        <td>Scene-bundle type-6 descriptors are "all small placeholders"</td>
+        <td><span class="tag tag-done">falsified</span> (12 are walker tables)</td>
+        <td>Plausible: the modal slot really is a 4-byte <code>count = 0</code> filler (85 of 97 bundles) and the three kingdom tables had been attributed to a "kingdom slot 5" special. But the 80/172/516-byte type-6 payloads (<code>garmel</code>, <code>dohaty</code>, the <code>geremi</code>/<code>rayman</code>/tunnel/<code>son</code>/<code>edson</code> family) parse as the same CLUT-walk table, installed identically for every bundle &mdash; the water/waterfall shimmer. The <code>rayman</code>-family carrier is the count-4 MAN-less table variant the strict detector rejects; resolve the slot <strong>by type byte</strong>.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>Move-VM loop op <code>0x19</code> "retires past itself (size 2), loops back to the saved PC"</td>
+        <td><span class="tag tag-done">falsified</span> (both halves inverted by the C rendering)</td>
+        <td>Wrong against the raw arm (<code>80023070.txt</code> <code>0x800235DC</code> + the <code>0x80024150</code> epilogue): retail <strong>loops while the decremented count has not underflowed</strong>, retires on underflow with size <strong>1</strong>, and the loop-back lands at <strong>saved&nbsp;+&nbsp;2</strong> (the epilogue adds <code>a2 = 2</code> after the PC store) &mdash; re-running the <code>0x18</code> itself would re-seed the counter forever. jou's 15-instance ambient cycler fan-out is the disc witness. Sibling correction: ext <code>0x1E</code> returns size <strong>4</strong>, hidden behind a <code>func_0x801d4a3c()</code> label-call return.</td>
+        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
+      </tr>
+      <tr>
         <td>"~270 undumped field-overlay functions" (recomp dispatch-entry seed list)</td>
         <td><span class="tag tag-done">falsified</span> (not a function inventory gap)</td>
         <td>Not a function inventory. The recomp capture's seed PCs are interpreter <em>dispatch entries</em> &mdash; return sites, interrupt-resume PCs and <code>jr</code>-table labels &mdash; accumulated across every overlay generation of the session (title / FMV / menu / field) while only the byte snapshot is per-dump. Dozens of listed addresses land in 0897's <em>data</em> head, one source capture's resident bytes match disc 0897 at only ~16%, and only two coincidental hits verify at all (both in the never-resident slot-machine image), the rest being <code>j</code>-target labels rather than function entries. Seed lists need per-hit resident-image resolution before any identity claim.</td>

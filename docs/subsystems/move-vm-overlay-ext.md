@@ -78,7 +78,7 @@ Other player-relative predicates:
 - Sub-ops `0x36`/`0x37` are axis predicates against `0x8E - DAT_8007C348`: pass → continue (size 1), fail → skip 3-u16 follow-up (size 4).
 - Sub-ops `0x38`/`0x39` are squared-distance gates between the move actor and the player (`_DAT_8007C364`); `0x38` continues when *outside* radius `op[2]`, `0x39` continues when *inside*.
 - Sub-op `0x23` is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at `_DAT_1F800393` over `op[5]`, with the divide guarded against `op[5] == 0`.
-- Sub-ops `0x13`/`0x14` query the fourth flag bank (`DAT_80085758`) and gate on the result with the same size-1-or-4 shape; `0x14` inverts the predicate.
+- Sub-ops `0x13`/`0x14` are **conditional branches** on the fourth flag bank (`DAT_80085758`): encoding `[2F][13|14][flag][delta]`, where the taken side returns size `4 + delta` (`lhu v0,0x6(s3); addiu s2,v0,4` at `0x801D4838`) and the untaken side returns 4. `0x13` branches when the flag is set, `0x14` when it is clear; `delta` is signed, and a negative delta onto a preceding `0x09` wait forms the spin-wait-until-flag idiom jou's ambient lightning cyclers idle on (`2F 14 0364 FFFA`).
 
 ### Self-modifying bytecode ops (`0x04` / `0x1B` / `0x1E`)
 
@@ -86,6 +86,15 @@ Three sub-ops mutate the move bytecode buffer in place - these are "self-modifyi
 
 - `0x04` writes `actor[+0x14..+0x18]` (world XYZ) into `buffer[state.pc + op[2] + 3..+6]` (3 u16 stores); subsequent ops that read those slots see the captured world snapshot.
 - `0x1E` is read-modify-write on a single u16 - `buffer[state.pc + op[2] + 4] += op[3]`.
+  Its size is **4** (it skips its own operand words): the raw arm at
+  `overlay_0897_801d362c` `0x801D3E18..` ends `li s2, 0x4` before the shared
+  `j 0x801D4A3C` size-return, which the decompiled C renders as a
+  `func_0x801d4a3c()` label-call with the size dropped. The default-arm
+  reading made a `0x2F 0x1E` instruction re-execute its own operands as
+  opcodes - jou's ambient CLUT-cycler record (which patches its *following*
+  op-`0x2C` operand, then falls through to execute that `0x2C`) is the disc
+  witness for the size-4 decode. See
+  [`field-ambient-fx.md`](field-ambient-fx.md#the-self-modifying-spawn-stepper).
 - `0x1B` is an in-bytecode copy loop - for `i in 0..op[4]`, `buffer[state.pc + op[3] + i + 5] = buffer[state.pc + op[2] + i + 5]`.
 
 The base offset of 5 (versus 3 for `0x04`, 4 for `0x1E`) targets the operand region past the count word, so the bytes following `0x1B`'s instruction header are effectively an inline scratch buffer indexed by op[2]/op[3]. The `MoveHost::move_bytecode_{read,write}_u16` callbacks expose the actor's move buffer to these ops; the engine layer wires them to `actor[+0x48][word_off]`.

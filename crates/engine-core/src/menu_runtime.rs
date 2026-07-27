@@ -21,8 +21,9 @@ use legaia_engine_vm::menu::{MenuCtx, MenuHost, open, step};
 pub use legaia_engine_vm::menu::{MenuInput, MenuState};
 use legaia_save::{EquipmentSlots, Party, SpellList};
 
+use crate::equipment::DiscEquipInfo;
 use crate::inn::InnSession;
-use crate::shop::ShopSession;
+use crate::shop::{BuyListRoute, BuyRecipientEvent, BuyRecipientSession, ShopSession};
 use crate::world::World;
 
 /// File extension the runtime uses for save slots. PSX memory-card `.mcr`
@@ -87,6 +88,27 @@ pub struct MenuRuntime {
     /// Offer index selected at `ShopTrade`, applied at `ShopTradeConfirm` (the
     /// `ShopTradeConfirm` cursor is the yes/no slot, not the offer).
     trade_pending_offer: usize,
+    /// Disc-pinned per-item equip restrictions (character mask + slot
+    /// category), installed by hosts via [`MenuRuntime::install_equip_info`].
+    /// Feeds the retail buy-list kind dispatch: without it an equipment row
+    /// cannot open the recipient picker.
+    pub equip_info: Option<DiscEquipInfo>,
+    /// Opt into the retail-shaped **equipment buy** flow: a confirmed
+    /// buy-list row whose item kind is `1` (equipment) opens the
+    /// buy-recipient picker (retail sub-screen `0x1C`, `FUN_801DB380`)
+    /// instead of the quantity picker. Off by default - a host that enables
+    /// it must also draw the picker (window 36 + the stat-compare windows
+    /// 25 / 41); the browser play page does.
+    pub retail_equipment_buy: bool,
+    /// The live buy-recipient picker. While `Some`, [`MenuRuntime::tick`]
+    /// drives it instead of the menu VM (the menu ctx stays parked on
+    /// `ShopBuy`, exactly as retail parks list mode 1 under sub-screen
+    /// `0x1C`).
+    pub recipient_session: Option<BuyRecipientSession>,
+    /// Cursor to restore after a stay-on-the-list route (a refused buy and
+    /// the recipient-picker hand both keep the hand on the confirmed row;
+    /// the VM's route reset would drop it to row 0).
+    stay_cursor: Option<u8>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -109,8 +131,19 @@ impl MenuRuntime {
             inn_session: None,
             trade_session: None,
             trade_pending_offer: 0,
+            equip_info: None,
+            retail_equipment_buy: false,
+            recipient_session: None,
+            stay_cursor: None,
             pending: None,
         }
+    }
+
+    /// Install the disc-pinned equip restrictions the retail buy dispatch
+    /// reads ([`crate::equipment::DiscEquipInfo`], built from the static
+    /// `SCUS_942.54` equipment stat-bonus table).
+    pub fn install_equip_info(&mut self, info: DiscEquipInfo) {
+        self.equip_info = Some(info);
     }
 
     /// Install a shop session and prepare for `ShopBuy` entry. Engines call
@@ -126,6 +159,7 @@ impl MenuRuntime {
     pub fn open_shop_menu(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.trade_session = None;
+        self.recipient_session = None;
         self.ctx.state = MenuState::ShopMenu.as_byte();
         self.ctx.cursor = 0;
     }
@@ -197,7 +231,15 @@ impl MenuRuntime {
 
     /// Per-frame tick. Drives the menu VM; on `SavePickSlot` / `LoadSlot`
     /// commit, runs disk I/O and emits a [`MenuTickEvent`].
+    ///
+    /// While a [`BuyRecipientSession`] is live the tick drives *it* instead
+    /// of the menu VM - the retail shape, where sub-screen `0x1C` owns the
+    /// pad and the buy list stays parked behind it.
     pub fn tick(&mut self, world: &mut World, input: MenuInput) -> MenuTickEvent {
+        if self.recipient_session.is_some() {
+            self.tick_recipient(world, input);
+            return MenuTickEvent::Stepped;
+        }
         let mut host = MenuRuntimeHost {
             world,
             slot_count: self.slot_count,
@@ -207,8 +249,17 @@ impl MenuRuntime {
             inn_session: &mut self.inn_session,
             trade_session: &mut self.trade_session,
             trade_pending_offer: &mut self.trade_pending_offer,
+            equip_info: &self.equip_info,
+            retail_equipment_buy: self.retail_equipment_buy,
+            recipient_session: &mut self.recipient_session,
+            stay_cursor: &mut self.stay_cursor,
         };
         step(&mut host, &mut self.ctx, input);
+        // A stay-route (refused buy / recipient open) keeps the hand on the
+        // confirmed row; the VM's transition reset dropped it to 0.
+        if let Some(cursor) = self.stay_cursor.take() {
+            self.ctx.cursor = cursor;
+        }
 
         // After the host hooks fire, consume any pending op.
         let pending = self.pending.take();
@@ -229,6 +280,99 @@ impl MenuRuntime {
             },
             None => MenuTickEvent::Stepped,
         }
+    }
+
+    /// Drive the live buy-recipient picker one frame (retail sub-screen
+    /// `0x1C`, `FUN_801DB380`). Confirming row 0 buys one copy into the bag;
+    /// a party row buys **and equips immediately**, returning the displaced
+    /// piece to the bag - both then drop back to the buy list.
+    ///
+    /// The Point Card accrual the retail commit runs stays out: `World`
+    /// keeps no Point Card counter (see the window-31 waiver in
+    /// `scripts/ci/ui-host-drift-waivers.toml`), so the session is opened
+    /// with `point_card_held = false` and the toast beat never arms.
+    fn tick_recipient(&mut self, world: &mut World, input: MenuInput) {
+        let Some(session) = self.recipient_session.as_mut() else {
+            return;
+        };
+        let buttons = crate::menu_input::NavButtons::new(
+            input.cross,
+            input.circle || input.triangle,
+            input.up,
+            input.down,
+        );
+        let event = session.tick(buttons);
+        let done = session.is_done();
+        match event {
+            BuyRecipientEvent::BoughtToBag { item_id, cost, .. } => {
+                Self::apply_recipient_bag_buy(world, item_id, cost);
+            }
+            BuyRecipientEvent::BoughtAndEquipped {
+                party_index,
+                item_id,
+                cost,
+                ..
+            } => {
+                self.apply_recipient_equip_buy(world, party_index, item_id, cost);
+            }
+            _ => {}
+        }
+        if done || self.recipient_session.as_ref().is_some_and(|s| s.is_done()) {
+            self.recipient_session = None;
+        }
+    }
+
+    /// Row-0 commit of the recipient picker: one copy into the bag plus the
+    /// gold debit (retail `FUN_800421D4(id, 1)` + the purse store), refused
+    /// past the 99-per-id stack cap the buy paths share.
+    fn apply_recipient_bag_buy(world: &mut World, item_id: u8, cost: i32) {
+        let owned = *world.inventory.get(&item_id).unwrap_or(&0);
+        if owned >= crate::shop::SHOP_HELD_CAP || world.money < cost {
+            return;
+        }
+        world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        *world.inventory.entry(item_id).or_insert(0) += 1;
+    }
+
+    /// Party-row commit: the buy **equips directly** - the piece never
+    /// enters the bag - and the previously equipped item in the slot the
+    /// disc category names returns to the bag (`FUN_801DB380` at
+    /// `0x801db6a4`), then the gold debit runs and the ability bits rebuild
+    /// (`FUN_80042558` - engine side `World::refresh_party_ability_bits`).
+    fn apply_recipient_equip_buy(
+        &self,
+        world: &mut World,
+        party_index: u8,
+        item_id: u8,
+        cost: i32,
+    ) {
+        use crate::equipment::EquipSlot;
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+        let Some(entry) = self.equip_info.as_ref().and_then(|i| i.entry(item_id)) else {
+            return;
+        };
+        if world.money < cost {
+            return;
+        }
+        let slot = match entry.category {
+            Disc::Weapon => EquipSlot::Weapon,
+            Disc::Body => EquipSlot::BodyArmor,
+            Disc::Head => EquipSlot::Helmet,
+            Disc::Footwear => EquipSlot::Boot,
+        };
+        let idx = slot.as_index() as usize;
+        let Some(record) = world.roster.members.get_mut(party_index as usize) else {
+            return;
+        };
+        let mut equip = record.equipment();
+        let displaced = equip.slots[idx];
+        equip.slots[idx] = item_id;
+        record.set_equipment(equip);
+        if displaced != 0 {
+            *world.inventory.entry(displaced).or_insert(0) += 1;
+        }
+        world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.refresh_party_ability_bits();
     }
 
     /// Build the `<save_dir>/slot_NN.bin` path for `slot`.
@@ -387,12 +531,77 @@ struct MenuRuntimeHost<'a> {
     inn_session: &'a mut Option<InnSession>,
     trade_session: &'a mut Option<crate::seru_trade::SeruTradeSession>,
     trade_pending_offer: &'a mut usize,
+    equip_info: &'a Option<DiscEquipInfo>,
+    retail_equipment_buy: bool,
+    recipient_session: &'a mut Option<BuyRecipientSession>,
+    stay_cursor: &'a mut Option<u8>,
 }
 
 impl MenuRuntimeHost<'_> {
     /// Row actions for the current `ShopMenu` (Trade present iff trading on).
     fn shop_menu_rows(&self) -> &'static [MenuState] {
         shop_menu_rows(self.world.seru_trade_enabled())
+    }
+
+    /// The retail buy-list confirm dispatch for the row at `slot`
+    /// ([`crate::shop::buy_list_confirm_route`], `FUN_801DB21C` state 2):
+    /// affordability against the purse first, then the item record's `+0`
+    /// kind byte picks the follow-up screen. The kind comes from the
+    /// on-disc item-effect tables ([`World::item_effects`]); a
+    /// PROT.DAT-only load has no kind byte and falls back to the stackable
+    /// arm (the quantity flow), which is also where an equipment row lands
+    /// while [`MenuRuntime::retail_equipment_buy`] is off.
+    fn shop_buy_route(&self, slot: u8) -> Option<BuyListRoute> {
+        let session = self.shop_session.as_ref()?;
+        let item = session.inventory.items.get(slot as usize)?;
+        // The item-name table's `+0` kind byte, via the item-effect parse.
+        // Without it, the disc-built `DiscEquipInfo` indexes exactly the
+        // kind-1 ids, so it answers the equipment test; a build with
+        // neither table falls back to the stackable arm.
+        let kind = match self.world.item_effects.as_ref() {
+            Some(t) => t.kind(item.item_id),
+            None => match self.equip_info.as_ref() {
+                Some(info) if info.is_equipment(item.item_id) => 1,
+                _ => 2,
+            },
+        };
+        let price = u16::try_from(item.price).unwrap_or(u16::MAX);
+        Some(crate::shop::buy_list_confirm_route(
+            kind,
+            self.world.money,
+            price,
+        ))
+    }
+
+    /// The recipient picker needs both the opt-in and the disc mask table.
+    fn recipient_enabled(&self) -> bool {
+        self.retail_equipment_buy && self.equip_info.is_some()
+    }
+
+    /// Open the buy-recipient picker for the confirmed buy-list row (retail
+    /// sub-screen `0x1C`): `party_count + 1` rows, per-member equippability
+    /// off the equip record's character mask. The Point Card gate stays
+    /// closed - `World` carries no Point Card counter.
+    fn open_recipient_picker(&mut self, slot: u8) {
+        let Some(session) = self.shop_session.as_ref() else {
+            return;
+        };
+        let Some(item) = session.inventory.items.get(slot as usize) else {
+            return;
+        };
+        let Some(info) = self.equip_info.as_ref() else {
+            return;
+        };
+        let can_equip: Vec<bool> = (0..self.world.roster.members.len().min(3))
+            .map(|i| info.can_equip(item.item_id, i as u8))
+            .collect();
+        let price = u16::try_from(item.price).unwrap_or(u16::MAX);
+        *self.recipient_session = Some(BuyRecipientSession::new(
+            item.item_id,
+            price,
+            can_equip,
+            false,
+        ));
     }
 
     /// `StatusEquipment` commit: unequip the picked slot, credit the item back
@@ -586,6 +795,20 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
         // so resolve the committed slot against the live row list here.
         match state {
             MenuState::ShopMenu => self.shop_menu_rows().get(slot as usize).copied(),
+            // The buy list's confirm dispatch (`FUN_801DB21C` state 2):
+            // gold short stays on the list (retail buzzes and re-arms list
+            // mode 1); an equipment row parks the list under the recipient
+            // picker; a kind outside 1/2 falls back to the Buy/Sell/Quit
+            // mode select. The stackable arm keeps the default
+            // `ShopQuantity` route.
+            MenuState::ShopBuy => match self.shop_buy_route(slot) {
+                Some(BuyListRoute::Refused) => Some(MenuState::ShopBuy),
+                Some(BuyListRoute::RecipientPicker) if self.recipient_enabled() => {
+                    Some(MenuState::ShopBuy)
+                }
+                Some(BuyListRoute::ModeSelect) => Some(MenuState::ShopMenu),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -613,11 +836,24 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                     *self.trade_session = self.world.open_seru_trade(vendor);
                 }
             }
-            MenuState::ShopBuy => {
-                if let Some(session) = self.shop_session.as_mut() {
-                    session.select_buy_item(slot as usize);
+            MenuState::ShopBuy => match self.shop_buy_route(slot) {
+                // Gold short: the retail refusal beat (buzz SFX `0x23`,
+                // list re-armed) - no pending item, hand stays on the row.
+                Some(BuyListRoute::Refused) => {
+                    *self.stay_cursor = Some(slot);
                 }
-            }
+                // Equipment: the recipient picker takes the pad; the buy
+                // list parks behind it with the hand on the row.
+                Some(BuyListRoute::RecipientPicker) if self.recipient_enabled() => {
+                    self.open_recipient_picker(slot);
+                    *self.stay_cursor = Some(slot);
+                }
+                _ => {
+                    if let Some(session) = self.shop_session.as_mut() {
+                        session.select_buy_item(slot as usize);
+                    }
+                }
+            },
             MenuState::ShopSell => self.commit_shop_sell(slot),
             MenuState::ShopQuantity => {
                 if let Some(session) = self.shop_session.as_mut() {
@@ -645,6 +881,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             MenuState::ShopExit => {
                 *self.shop_session = None;
                 *self.trade_session = None;
+                *self.recipient_session = None;
             }
             // --- Inn states ---
             MenuState::InnConfirm => self.commit_inn_confirm(slot),
@@ -660,6 +897,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
         *self.shop_session = None;
         *self.inn_session = None;
         *self.trade_session = None;
+        *self.recipient_session = None;
     }
 }
 
@@ -1051,6 +1289,191 @@ mod tests {
         assert_eq!(world.money, 400, "100 gold deducted");
         assert_eq!(world.inventory.get(&10), Some(&1), "one item 10 granted");
         assert!(runtime.shop_session.is_some(), "still shopping");
+    }
+
+    #[test]
+    fn shop_buy_refusal_beat_stays_on_the_list_row() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        // 50 gold against a 100-gold row: the retail state-2 dispatch
+        // refuses at the list (`slt gold, price` + buzz) - no pending
+        // item, no quantity screen, hand still on the confirmed row.
+        let mut world = world_with_party(1);
+        world.money = 50;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![
+                ShopItem {
+                    item_id: 9,
+                    price: 10,
+                },
+                ShopItem {
+                    item_id: 10,
+                    price: 100,
+                },
+            ],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.ctx.cursor, 1);
+        runtime.tick(&mut world, cross());
+        assert_eq!(
+            runtime.ctx.state,
+            MenuState::ShopBuy.as_byte(),
+            "refused buy stays on the list"
+        );
+        assert_eq!(runtime.ctx.cursor, 1, "hand stays on the refused row");
+        assert!(
+            runtime
+                .shop_session
+                .as_ref()
+                .is_some_and(|s| s.pending_item_id.is_none()),
+            "no pending item was staged"
+        );
+        // An affordable row still routes into the quantity picker.
+        world.money = 500;
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    }
+
+    #[test]
+    fn equipment_buy_opens_recipient_picker_and_equips_now() {
+        use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+
+        let mut world = world_with_party(2);
+        world.money = 300;
+        // Party member 1 already wears item 7 in the weapon slot.
+        let mut eq = world.roster.members[1].equipment();
+        eq.slots[crate::equipment::EquipSlot::Weapon.as_index() as usize] = 7;
+        world.roster.members[1].set_equipment(eq);
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.retail_equipment_buy = true;
+        runtime.install_equip_info(DiscEquipInfo::from_entries([(
+            0x30,
+            DiscEquipEntry {
+                mask: 0b010, // second party member only
+                category: Disc::Weapon,
+                is_ra_seru: false,
+            },
+        )]));
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 0x30,
+                price: 120,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+
+        // Confirming the equipment row parks the list under the picker.
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
+        let session = runtime.recipient_session.as_ref().expect("picker open");
+        assert_eq!(session.can_equip, vec![false, true]);
+
+        // Row 2 = party member 1: buy and equip now. The displaced weapon
+        // returns to the bag, the purse debits, the piece never enters it.
+        runtime.tick(&mut world, MenuInput::default()); // Init frame
+        runtime.tick(&mut world, down());
+        runtime.tick(&mut world, down());
+        // A confirm on row 1 (member 0, mask-rejected) would buzz and stay;
+        // row 2 is the equippable member.
+        runtime.tick(&mut world, cross());
+        // One exit-beat frame drops back to the buy list (retail's
+        // post-commit return).
+        runtime.tick(&mut world, MenuInput::default());
+        assert!(runtime.recipient_session.is_none(), "picker closed");
+        assert_eq!(world.money, 180, "120 gold debited");
+        assert_eq!(
+            world.roster.members[1].equipment().slots
+                [crate::equipment::EquipSlot::Weapon.as_index() as usize],
+            0x30,
+            "bought piece equipped directly"
+        );
+        assert_eq!(
+            world.inventory.get(&7).copied(),
+            Some(1),
+            "displaced weapon returned to the bag"
+        );
+        assert_eq!(
+            world.inventory.get(&0x30),
+            None,
+            "the purchase never entered the bag"
+        );
+    }
+
+    #[test]
+    fn recipient_row_zero_buys_one_copy_into_the_bag() {
+        use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+
+        let mut world = world_with_party(1);
+        world.money = 200;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.retail_equipment_buy = true;
+        runtime.install_equip_info(DiscEquipInfo::from_entries([(
+            0x31,
+            DiscEquipEntry {
+                mask: 0b111,
+                category: Disc::Body,
+                is_ra_seru: false,
+            },
+        )]));
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 0x31,
+                price: 60,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+        assert!(runtime.recipient_session.is_some());
+        // Row 0 (the bag) is the seeded cursor; confirm buys one copy.
+        runtime.tick(&mut world, MenuInput::default()); // Init frame
+        runtime.tick(&mut world, cross());
+        assert_eq!(world.money, 140);
+        assert_eq!(world.inventory.get(&0x31).copied(), Some(1));
+        runtime.tick(&mut world, MenuInput::default()); // exit beat
+        assert!(runtime.recipient_session.is_none());
+    }
+
+    #[test]
+    fn equipment_buy_keeps_quantity_flow_while_retail_flow_is_off() {
+        use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+        use legaia_asset::equip_stats::EquipSlot as Disc;
+
+        let mut world = world_with_party(1);
+        world.money = 500;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        // Equip info installed, but the retail flow not opted into: the
+        // legacy quantity route must survive (the native window has no
+        // picker surface yet).
+        runtime.install_equip_info(DiscEquipInfo::from_entries([(
+            0x30,
+            DiscEquipEntry {
+                mask: 0b111,
+                category: Disc::Weapon,
+                is_ra_seru: false,
+            },
+        )]));
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 0x30,
+                price: 100,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+        assert!(runtime.recipient_session.is_none());
     }
 
     #[test]

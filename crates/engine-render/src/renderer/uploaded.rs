@@ -95,6 +95,66 @@ pub(super) struct MeshUniforms {
     /// keeps every path bit-identical. Set with
     /// [`Renderer::set_palette_grade`].
     pub(super) palette: [f32; 4],
+    /// The draw's model (mesh -> world) matrix as its three affine ROWS
+    /// (`world = [dot(r0, p4), dot(r1, p4), dot(r2, p4)]`), recovered per
+    /// draw as `view_proj^-1 * mvp` when a scene camera is registered via
+    /// [`Renderer::set_scene_lights`] (identity otherwise). Row form keeps
+    /// the struct at exactly 256 bytes - one dynamic-offset uniform slot.
+    /// Read only by the per-scene point-light layer, which shades and
+    /// shadow-tests in world space.
+    pub(super) model_rows: [[f32; 4]; 3],
+}
+
+/// One dynamic-offset uniform slot: `MeshUniforms` must stay exactly 256
+/// bytes (the universal `min_uniform_buffer_offset_alignment`) - the scene
+/// staging packs one struct per aligned slot, so growing past this would
+/// silently overlap slots on 256-alignment adapters.
+const _: () = assert!(std::mem::size_of::<MeshUniforms>() == 256);
+
+/// The three affine rows of `m` for [`MeshUniforms::model_rows`].
+pub(super) fn model_rows(m: &Mat4) -> [[f32; 4]; 3] {
+    [
+        m.row(0).to_array(),
+        m.row(1).to_array(),
+        m.row(2).to_array(),
+    ]
+}
+
+/// Identity [`MeshUniforms::model_rows`].
+pub(super) const MODEL_ROWS_IDENTITY: [[f32; 4]; 3] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+];
+
+/// One point light of the [`SceneLightsUniform`] block - matches the WGSL
+/// `ScenePointLightU` layout.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct ScenePointLightUniform {
+    /// xyz = world position, w = influence radius.
+    pub(super) pos_radius: [f32; 4],
+    /// rgb = gain colour, w unused.
+    pub(super) color: [f32; 4],
+    /// The light's shadow view-projection ([`crate::scene_lights::light_view_proj`]).
+    pub(super) viewproj: [[f32; 4]; 4],
+}
+
+/// The per-frame scene point-light uniform block (WGSL `SceneLightsU`).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct SceneLightsUniform {
+    /// x = active light count, y = shadow-map texel size, z = compare
+    /// bias, w reserved.
+    pub(super) params: [f32; 4],
+    pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
+}
+
+/// Per-(light, draw) shadow-pass uniform: the light-space MVP.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct ShadowUniforms {
+    pub(super) mvp: [[f32; 4]; 4],
 }
 
 pub struct UploadedTexture {

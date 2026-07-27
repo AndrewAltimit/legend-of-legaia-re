@@ -140,14 +140,14 @@ fn move_vm_ext_query_flag_bank_reads_world_system_flags() {
     let mut world = World::new();
     world.actors[0].active = true;
     world.system_flag_set(42);
-    // Bytecode: 0x2F sub-op 0x13 - predicate-true → default_arm (size 1),
-    // predicate-false → size 4.
-    let bc = vec![0x002F, 0x0013, 42];
+    // Bytecode: 0x2F sub-op 0x13 `[2F][13][flag][delta]` - a conditional
+    // branch: flag set → `pc += 4 + delta`, clear → `pc += 4`.
+    let bc = vec![0x002F, 0x0013, 42, 2];
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
-    // Predicate true → PC advanced by 1.
-    assert_eq!(world.actors[0].move_state.pc, 1);
-    // Now clear and re-run - predicate false → PC += 4.
+    // Flag set → branch taken: PC = 4 + 2.
+    assert_eq!(world.actors[0].move_state.pc, 6);
+    // Now clear and re-run - branch untaken → PC += 4.
     world.system_flag_clear(42);
     world.actors[0].move_state.pc = 0;
     let _ = world.step_move_vm(0, &bc);

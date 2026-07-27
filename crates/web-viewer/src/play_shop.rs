@@ -87,12 +87,32 @@ const WIN_VENDOR_PLATE: usize = 33;
 const WIN_PURSE: usize = 32;
 /// Item info (`0x22`): name + owned count + description.
 const WIN_ITEM_INFO: usize = 34;
+/// Buy quantity (`0x23`): held count, prompt, qty x unit = total.
+const WIN_BUY_QUANTITY: usize = 35;
+/// Equip-target recipient list (`0x24`).
+const WIN_EQUIP_TARGET: usize = 36;
 /// Sell quantity (`0x25`): quantity, held count, halved total.
 const WIN_SELL_QUANTITY: usize = 37;
+/// Sell-list item detail (`0x27`): name / desc / price row / passive lines.
+const WIN_SELL_DETAIL: usize = 39;
+/// Active-character stat compare (`0x19`).
+const WIN_COMPARE_ACTIVE: usize = 25;
+/// Party-wide stat compare (`0x29`).
+const WIN_COMPARE_PARTY: usize = 41;
+/// Renderer VA of window 35 (`FUN_801D5510`) - its port
+/// (`engine_core::shop::shop_buy_quantity_panel`) returns pens rather than a
+/// draw list, so `painter_at` deliberately does not resolve it and the id is
+/// verified against the descriptor's renderer here instead.
+const RENDERER_BUY_QUANTITY: u32 = 0x801D_5510;
+/// Renderer VA of window 39 (`FUN_801D5AE8`), the pens-only sibling.
+const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// Heading window 37 draws above its quantity row. Retail's own string is a
 /// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
 /// engine-authored line so the translation layer owns the text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+/// Window 36's header row - the recipient picker's bag row (marker index 0).
+/// Engine-authored for the same reason as [`SELL_QUANTITY_HEADING`].
+const RECIPIENT_HEADING: &str = "Put in bag";
 /// Stage-pixel pen for the level-up banner (native `(8, 60)`).
 const LEVEL_UP_PEN: (i32, i32) = (8, 60);
 /// Stage-pixel pen for the Seru-capture banner (native `(8, 40)`).
@@ -386,10 +406,15 @@ impl LegaiaRuntime {
             out.extend(self.painter_glyph_stand_in(font, glyph, (pic.x, pic.y)));
         }
 
-        // Window 34 - the hovered item's info panel.
+        // Window 34 - the hovered item's info panel. The sell list draws
+        // window 39 (the price + passive detail panel) instead - retail's
+        // `FUN_801D5AE8` is the sell-family renderer, and the two windows
+        // print the same name/description head at overlapping rects.
         let staged = self.shop_staged_item(shop, state, cursor, &bag);
-        if let Some((d, _)) =
-            ui::painter_at(table, WIN_ITEM_INFO, ui::MenuWindowPainter::ItemDescription)
+        let selling_list = matches!(state, Some(MenuState::ShopSell));
+        if !selling_list
+            && let Some((d, _)) =
+                ui::painter_at(table, WIN_ITEM_INFO, ui::MenuWindowPainter::ItemDescription)
         {
             let id = staged.unwrap_or(0);
             out.extend(item_description_draws_for(
@@ -400,6 +425,9 @@ impl LegaiaRuntime {
                 held_of(id).min(u32::from(u8::MAX)) as u8,
                 &self.shop_item_description(id),
             ));
+        }
+        if selling_list {
+            out.extend(self.sell_detail_window_draws(font, table, staged));
         }
 
         // Window 37 - the sell quantity panel, while the sell flow is sizing
@@ -435,6 +463,413 @@ impl LegaiaRuntime {
             if let Some(cur) = cur {
                 out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
             }
+        }
+
+        // Window 35 - the buy-quantity prompt panel, while the buy flow is
+        // sizing a stack. The engine's interactive 1..=9 list stays the
+        // control; this is the retail readout beside it, keyed to the
+        // hovered quantity row.
+        if matches!(state, Some(MenuState::ShopQuantity))
+            && shop.pending_is_buying
+            && let Some(id) = staged
+            && let Some(d) = table
+                .window(WIN_BUY_QUANTITY)
+                .filter(|d| d.renderer_va == RENDERER_BUY_QUANTITY)
+        {
+            let rect = ui::painter_rect(d);
+            let unit_price = shop
+                .inventory
+                .find(id)
+                .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+                .unwrap_or(0);
+            let held = bag.iter().find(|(i, _)| *i == id).map(|(_, q)| *q);
+            let quantity = (cursor as u8).saturating_add(1);
+            let panel = legaia_engine_core::shop::shop_buy_quantity_panel(
+                (rect.x as i16, rect.y as i16),
+                held,
+                quantity,
+                unit_price,
+            );
+            out.extend(self.buy_quantity_panel_draws(font, &panel));
+        }
+        out
+    }
+
+    /// Render a [`legaia_engine_core::shop::BuyQuantityPanel`]'s pens to text
+    /// draws - the window-35 content (`FUN_801D5510`), whose port returns
+    /// field pens rather than a draw list.
+    fn buy_quantity_panel_draws(
+        &self,
+        font: &legaia_font::Font,
+        panel: &legaia_engine_core::shop::BuyQuantityPanel,
+    ) -> Vec<TextDraw> {
+        let mut out = Vec::new();
+        let text = |out: &mut Vec<TextDraw>, s: &str, pen: (i16, i16), ink: [f32; 4]| {
+            out.extend(ui::text_draws_for(
+                &font.layout_ascii(s),
+                (i32::from(pen.0), i32::from(pen.1)),
+                ink,
+            ));
+        };
+        match panel.have {
+            Some(count) => {
+                text(
+                    &mut out,
+                    &format!("{count:2}"),
+                    panel.have_count_pen,
+                    ui::MENU_TEXT_WHITE,
+                );
+                text(&mut out, "held", panel.have_tail_pen, ui::MENU_TEXT_WHITE);
+            }
+            None => text(
+                &mut out,
+                "None held",
+                panel.have_tail_pen,
+                ui::MENU_TEXT_WHITE,
+            ),
+        }
+        text(
+            &mut out,
+            "How many will you buy?",
+            panel.prompt_pen,
+            ui::MENU_TEXT_WHITE,
+        );
+        let (qty, qty_pen) = panel.quantity;
+        text(&mut out, &format!("{qty:2}"), qty_pen, ui::MENU_TEXT_WHITE);
+        let (unit, unit_pen) = panel.unit;
+        text(&mut out, &format!("x{unit}"), unit_pen, ui::MENU_TEXT_WHITE);
+        let (total, digits, total_pen) = panel.total;
+        // Right-pack the running total into its digit field, retail's
+        // price-magnitude width law (`shop_total_digit_field`).
+        let s = total.to_string();
+        let cells = i32::from(digits).max(s.len() as i32);
+        text(
+            &mut out,
+            &s,
+            (
+                total_pen.0 + ((cells - s.len() as i32) * 8) as i16,
+                total_pen.1,
+            ),
+            ui::MENU_TEXT_GOLD,
+        );
+        out.extend(self.painter_glyph_stand_in(
+            font,
+            ">",
+            (i32::from(panel.cursor_pen.0), i32::from(panel.cursor_pen.1)),
+        ));
+        out
+    }
+
+    /// Window 39 - the sell list's item detail panel (`FUN_801D5AE8` via
+    /// `engine_core::shop::shop_sell_detail_panel`): name, description, the
+    /// halved price row (or "Cannot sell"), and the accessory passive lines
+    /// resolved through the renderer's own double-table chain
+    /// (`engine_core::shop::item_passive_index`).
+    fn sell_detail_window_draws(
+        &self,
+        font: &legaia_font::Font,
+        table: &legaia_asset::menu_windows::MenuWindowTable,
+        staged: Option<u8>,
+    ) -> Vec<TextDraw> {
+        let mut out = Vec::new();
+        let Some(d) = table
+            .window(WIN_SELL_DETAIL)
+            .filter(|d| d.renderer_va == RENDERER_SELL_DETAIL)
+        else {
+            return out;
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return out;
+        };
+        let rect = ui::painter_rect(d);
+        let id = staged.unwrap_or(0);
+        let price = world
+            .item_shop_data
+            .as_ref()
+            .map(|t| t.price(id))
+            .unwrap_or(0);
+        // The renderer's passive chain: item kind picks which table the
+        // subtype indexes (equip record `+5` vs effect record `+3`).
+        let passive = world.item_effects.as_ref().and_then(|effects| {
+            legaia_engine_core::shop::item_passive_index(
+                effects.kind(id),
+                effects.subtype(id),
+                |sub| {
+                    self.equip_stats
+                        .as_ref()
+                        .and_then(|t| t.rows().get(sub as usize))
+                        .map(|b| b.raw[5])
+                        .unwrap_or(0x40)
+                },
+                |sub| {
+                    world
+                        .item_effects
+                        .as_ref()
+                        .and_then(|t| t.descriptor(sub))
+                        .map(|e| e.marker)
+                        .unwrap_or(0x41)
+                },
+            )
+        });
+        let panel = legaia_engine_core::shop::shop_sell_detail_panel(
+            (rect.x as i16, rect.y as i16),
+            i32::from(id),
+            price,
+            passive,
+        );
+        if staged.is_none() {
+            // Retail leaves only the shade box when nothing is staged; this
+            // host draws no colour-fill primitives, so nothing renders.
+            return out;
+        }
+        let text = |out: &mut Vec<TextDraw>, s: &str, pen: (i16, i16), ink: [f32; 4]| {
+            out.extend(ui::text_draws_for(
+                &font.layout_ascii(s),
+                (i32::from(pen.0), i32::from(pen.1)),
+                ink,
+            ));
+        };
+        text(
+            &mut out,
+            &self.shop_item_label(id),
+            panel.name_pen,
+            ui::MENU_TEXT_GOLD,
+        );
+        let desc = self.shop_item_description(id);
+        if !desc.is_empty() {
+            text(&mut out, &desc, panel.desc_pen, ui::MENU_TEXT_WHITE);
+        }
+        match panel.sell {
+            Some(row) => {
+                text(&mut out, "Price", row.label_pen, ui::MENU_TEXT_TEAL);
+                out.extend(self.painter_glyph_stand_in(
+                    font,
+                    "G",
+                    (i32::from(row.icon_pen.0), i32::from(row.icon_pen.1)),
+                ));
+                text(
+                    &mut out,
+                    &row.price.to_string(),
+                    row.value_pen,
+                    ui::MENU_TEXT_WHITE,
+                );
+            }
+            None => text(
+                &mut out,
+                "Cannot sell",
+                panel.cannot_sell_pen,
+                ui::MENU_TEXT_ORANGE,
+            ),
+        }
+        if let Some((name, line)) = panel.passive.and_then(|_| {
+            self.scene_host
+                .as_ref()
+                .and_then(|h| h.world.menu_text.as_ref())
+                .and_then(|t| t.item_passive_lines(id))
+        }) {
+            text(&mut out, &name, panel.passive_name_pen, ui::MENU_TEXT_GREEN);
+            text(&mut out, &line, panel.passive_desc_pen, ui::MENU_TEXT_WHITE);
+        }
+        out
+    }
+
+    /// The three retail windows of the **equipment-buy recipient flow**
+    /// (menu-overlay sub-screen `0x1C`), drawn while
+    /// [`legaia_engine_core::menu_runtime::MenuRuntime::recipient_session`]
+    /// owns the pad:
+    ///
+    /// | Id | Renderer | Content |
+    /// |---|---|---|
+    /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
+    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
+    /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
+    fn recipient_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        use legaia_engine_ui::ui_menu_window_painters::{ChoiceFlags, EquipTargetRow};
+        let mut out = Vec::new();
+        let Some(session) = self.menu.recipient_session.as_ref() else {
+            return out;
+        };
+        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
+            return out;
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return out;
+        };
+        let item_id = session.item_id;
+        let members: Vec<&legaia_save::CharacterRecord> = world
+            .roster
+            .members
+            .iter()
+            .take(session.can_equip.len())
+            .collect();
+        let labels: Vec<String> = members
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let n = r.name();
+                if n.is_empty() {
+                    format!("Member {}", i + 1)
+                } else {
+                    n
+                }
+            })
+            .collect();
+        // The slot the disc category names, and what currently sits in it -
+        // both feed the trial-equip (candidate) stat blocks.
+        let slot_idx = self
+            .menu
+            .equip_info
+            .as_ref()
+            .and_then(|i| i.entry(item_id))
+            .map(|e| {
+                use legaia_asset::equip_stats::EquipSlot as Disc;
+                use legaia_engine_core::equipment::EquipSlot;
+                match e.category {
+                    Disc::Weapon => EquipSlot::Weapon,
+                    Disc::Body => EquipSlot::BodyArmor,
+                    Disc::Head => EquipSlot::Helmet,
+                    Disc::Footwear => EquipSlot::Boot,
+                }
+                .as_index() as usize
+            });
+        let category_of = |id: u8| -> u8 {
+            self.equip_stats
+                .as_ref()
+                .and_then(|t| t.bonus(id))
+                .map(|b| b.raw[5])
+                .unwrap_or(ui::CATEGORY_DEFAULT)
+        };
+        let candidate_for = |rec: &legaia_save::CharacterRecord,
+                             current: ui::EquipStatBlock|
+         -> ui::EquipStatBlock {
+            let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
+            let old_m = world
+                .equipment_table
+                .get(displaced)
+                .copied()
+                .unwrap_or_default();
+            let new_m = world
+                .equipment_table
+                .get(item_id)
+                .copied()
+                .unwrap_or_default();
+            let mut cand = current;
+            cand.atk += i32::from(new_m.atk) - i32::from(old_m.atk);
+            cand.udf += i32::from(new_m.udf) - i32::from(old_m.udf);
+            cand.ldf += i32::from(new_m.ldf) - i32::from(old_m.ldf);
+            cand.spd += i32::from(new_m.spd) - i32::from(old_m.spd);
+            cand.int += i32::from(new_m.int) - i32::from(old_m.int);
+            cand
+        };
+
+        // Window 36 - the recipient list. The header row is the bag row
+        // (marker index 0); each member row takes marker index i + 1.
+        if let Some((d, _)) = ui::painter_at(
+            table,
+            WIN_EQUIP_TARGET,
+            ui::MenuWindowPainter::EquipTargetList,
+        ) {
+            let rows: Vec<(EquipTargetRow, &str)> = labels
+                .iter()
+                .enumerate()
+                .map(|(i, label)| {
+                    (
+                        EquipTargetRow {
+                            member_class: i as u8,
+                            equippable: session.can_equip.get(i).copied().unwrap_or(false),
+                        },
+                        label.as_str(),
+                    )
+                })
+                .collect();
+            let (text, sprites) =
+                legaia_engine_ui::ui_menu_window_painters::equip_target_list_draws_for(
+                    font,
+                    ui::painter_rect(d),
+                    RECIPIENT_HEADING,
+                    &rows,
+                    ChoiceFlags(session.cursor),
+                );
+            out.extend(text);
+            for s in sprites {
+                out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
+            }
+        }
+
+        // Window 41 - the party-wide compare column.
+        if let Some((d, _)) = ui::painter_at(
+            table,
+            WIN_COMPARE_PARTY,
+            ui::MenuWindowPainter::PartyStatCompare,
+        ) {
+            let views: Vec<ui::PartyCompareMemberView<'_>> = members
+                .iter()
+                .zip(labels.iter())
+                .enumerate()
+                .filter_map(|(i, (rec, label))| {
+                    let current = ui::EquipStatBlock::from_character_record(&rec.raw)?;
+                    let outcome = if rec.equipment().slots.contains(&item_id) {
+                        ui::PartyCompareOutcome::Equipped("Equipped")
+                    } else if !session.can_equip.get(i).copied().unwrap_or(false) {
+                        ui::PartyCompareOutcome::CannotEquip("Cannot equip")
+                    } else {
+                        ui::PartyCompareOutcome::Stats {
+                            current,
+                            candidate: Some(candidate_for(rec, current)),
+                            labels: ["ATK", "UDF", "LDF"],
+                        }
+                    };
+                    Some(ui::PartyCompareMemberView {
+                        name: label.as_str(),
+                        outcome,
+                    })
+                })
+                .collect();
+            let rect = ui::painter_rect(d);
+            let fields = ui::party_compare_panel_fields(&views, (rect.x, rect.y));
+            out.extend(ui::compare_panel_draws_for(font, &fields));
+        }
+
+        // Window 25 - the highlighted member's own compare panel (rows 1..
+        // of the picker; row 0 is the bag).
+        let row = (session.cursor & 0xFFF) as usize;
+        if row >= 1
+            && let Some((rec, label)) = members.get(row - 1).zip(labels.get(row - 1))
+            && let Some(current) = ui::EquipStatBlock::from_character_record(&rec.raw)
+            && let Some((d, _)) = ui::painter_at(
+                table,
+                WIN_COMPARE_ACTIVE,
+                ui::MenuWindowPainter::ActiveStatCompare,
+            )
+        {
+            let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
+            let category = ui::active_compare_category(ui::CompareCategoryInputs {
+                // The staged-item detail arm: the picker always has a
+                // staged equipment id, retail's `slot_row >= 4` case.
+                slot_row: 4,
+                staged_id: i32::from(item_id),
+                staged_category: category_of(item_id),
+                equipped_id: displaced,
+                equipped_category: category_of(displaced),
+            });
+            let rows = ui::CompareRows::from_category(category);
+            let labels3 = match rows {
+                ui::CompareRows::SpdIntAgl => ["SPD", "INT", "AGL"],
+                _ => ["ATK", "UDF", "LDF"],
+            };
+            let hms = rec.hp_mp_sp();
+            let view = ui::EquipComparePanelView {
+                name: label.as_str(),
+                current,
+                candidate: candidate_for(rec, current),
+                hp_max: hms.hp_max,
+                mp_max: hms.mp_max,
+                rows,
+                labels: labels3,
+            };
+            let rect = ui::painter_rect(d);
+            let fields = ui::equip_compare_panel_fields(&view, (rect.x, rect.y));
+            out.extend(ui::compare_panel_draws_for(font, &fields));
         }
         out
     }
@@ -583,7 +1018,7 @@ impl LegaiaRuntime {
         // The retail descriptor windows ride alongside the engine's own
         // interactive list, exactly as they do in the native window: the list
         // is the control, these are the readouts around it.
-        let windows = match self.menu.shop_session.as_ref() {
+        let mut windows = match self.menu.shop_session.as_ref() {
             Some(session) => self.shop_window_draws(
                 font,
                 session,
@@ -592,6 +1027,11 @@ impl LegaiaRuntime {
             ),
             None => Vec::new(),
         };
+        // The equipment-buy recipient flow's windows (36 / 25 / 41) ride
+        // over the parked buy list while the picker owns the pad.
+        if self.menu.recipient_session.is_some() {
+            windows.extend(self.recipient_window_draws(font));
+        }
         let banners = self.banner_stage_draws(font);
         // In-battle overlay (HUD rows / encounter banner / command menus),
         // already in surface pixels - appended after the stage-space scale

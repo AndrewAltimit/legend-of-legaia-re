@@ -34,6 +34,12 @@ impl ApplicationHandler for PlayWindowApp {
             r.set_dynamic_lighting(true);
             log::info!("play-window: dynamic-lighting enhancement enabled (I toggles)");
         }
+        // Shadow sub-toggle (`--no-dyn-shadows` / the `Y` key): the derived
+        // per-scene point lights + their PCF shadow maps. Inert while
+        // dynamic lighting is off, so this is safe to stage unconditionally.
+        if let Some(r) = self.win.renderer.as_ref() {
+            r.set_dyn_shadows(self.dyn_shadows);
+        }
         self.upload_assets();
         self.win.request_redraw();
     }

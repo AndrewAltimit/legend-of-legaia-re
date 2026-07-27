@@ -735,8 +735,9 @@ rather than to frame the current view:
   every camera. A field map is `256 x 256` tiles of 128 units (~23 k units on
   the diagonal), and the **overworld walk camera composes a 6x world scale**
   onto `psx_camera_mvp`, so eye-space depth there runs to ~140 k. Raising the
-  far plane costs no depth precision - projected depth is `1 - near/z` to
-  within `O(near/far)`, i.e. the *near* plane sets the resolution.
+  far plane costs no depth precision: the renderer runs **reversed-Z** (see
+  the coplanar-surfaces section below), where resolution is proportional to
+  view depth at every distance.
 - `window::scene_clip_planes(distance)` gives the orbit-family cameras
   (`orbit_camera_mvp`, `world_map_camera_mvp`, `walk_view_camera_mvp`,
   `cutscene_camera_mvp`) a near plane of `distance * 0.005` clamped into
@@ -760,6 +761,74 @@ buildings, so as the camera orbited or the player walked, the lens-to-player
 segment swept through a *neighbour's* box and blinked it out. The cull code is
 kept for reference but the branch is never taken.
 
+## Coplanar surfaces: retail's ordering model, the port's depth policy
+
+Retail has **no depth buffer**. Every primitive is inserted into the ordering
+table by its mean GTE Z and the table is drawn back-to-front, so coplanar
+surfaces - which the assets use freely - resolve painter-style:
+
+- a small decal prim on a large base surface usually lands in a **nearer OT
+  bucket** than the base (its mean Z is its own local Z; the base's mean Z
+  averages a span that reaches deeper), so the decal paints after the base
+  and wins;
+- prims in the **same** bucket resolve by insertion order (`AddPrim` is a
+  head insertion, so the earliest-emitted prim draws last, on top);
+- **double-sided prims** - the same triangle authored once per visible side,
+  with opposite winding - never conflict at all, because the per-prim NCLIP
+  test rasterises only the camera-facing copy.
+
+A depth-tested port turns each of those into per-pixel z-fighting: the two
+surfaces interpolate to depths that differ only by float rounding, and the
+winner flickers per fragment as the camera moves. The scene data is full of
+them - a disc census over `town01` / `rikuroa` / `jou` finds ~200 double-sided
+pairs per cave/town environment pack (about half differing per side in UVs,
+i.e. visibly), dozens of exactly-coplanar decal prims inside single meshes,
+and hundreds of cross-draw pairs where terrain tiles overlap each other or a
+placed slab on an identical world plane.
+
+The port resolves each class at the level it occurs, shared by the native
+renderer and the site's WebGL viewers:
+
+- **Double-sided pairs** - `legaia_tmd::mesh::mark_double_sided_pairs` (an
+  opt-in post-pass the scene-assembly consumers run; preservation/export
+  builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
+  CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
+  discard the away-facing copy of *flagged* prims only - retail's per-prim
+  NCLIP, without the unsafe global cull (winding is not globally consistent
+  across the corpus). Which facing is "away" depends on the view chain's
+  reflection parity: the native field frame and the site's `buildMvp` carry
+  one net reflection, the site's assembled views add the retail screen-X
+  mirror on top; the WebGL shader takes the parity as the `u_pair_front`
+  uniform, the native shader's parity is fixed by its field frame.
+- **Intra-mesh coplanar decals** - `legaia_tmd::mesh::separate_coplanar_prims`
+  nudges each successive overlapping layer half a unit toward its visible
+  side (the negative cross-product side of the emitted winding), ranks
+  assigned by greedy graph colouring so chains of edge-adjacent prims
+  alternate 0/1 instead of accumulating. Retail art itself authors ~1-unit
+  offsets for the decals it separates explicitly, so the nudge stays inside
+  authored practice and far below visibility against 128-unit tiles.
+- **Cross-draw overlaps** - `legaia_engine_core::coplanar_draws` detects the
+  coplanar overlap clusters across a scene's resolved `EnvDraw` list (terrain
+  + placed layers combined) and returns a per-draw world offset: the largest
+  surface in a cluster stays put, each overlapping smaller/later draw lifts
+  one unit per rank toward the surface's visible side - the same "small decal
+  wins" outcome retail's mean-Z bucketing produces. The native play-window
+  applies the offsets in its placement/posed-prop resolvers; the web viewer
+  applies them in the placement/terrain position exporters, so the two stay
+  consistent.
+- **Depth precision** - the native renderer runs **reversed-Z**
+  (`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
+  compares mirrored to Greater/GreaterEqual, applied centrally at the two MVP
+  upload sites so every camera inherits it). With the `Depth32Float` target
+  this keeps depth resolution proportional to view depth (`~z * 2^-23`), so
+  the sub-unit nudges above - and the assets' own ~1-unit authored offsets -
+  resolve at every camera distance up to `SCENE_FAR`. The clip `w` row is
+  untouched, so CPU blend-order keys and the shaders' `clip_pos.w` depth-cue
+  reads are unaffected. The WebGL side keeps a fixed-function 24-bit buffer
+  (no clip-control on WebGL2), so its single-mesh projection instead scales
+  the near plane with the framing distance (`buildMvp`), which restores the
+  same sub-unit resolution at real mesh scale.
+
 ## Rendering knobs: what is faithful, what is a choice
 
 **Simulation is faithful, with no opt-out. Shading defaults to retail;
@@ -774,6 +843,7 @@ different default:
 | `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
+| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light + shadow sub-layer of dynamic lighting |
 
 Two things routinely get mis-stated about this table, so they are worth saying
 plainly:
@@ -849,10 +919,54 @@ parity oracles are unaffected.
 Enabled, the VRAM / colour mesh shaders layer a soft warm directional light (off
 the smoothed per-vertex normals, with a screen-space-derivative fallback for the
 normal-less colour-mesh prims) plus a screen-centred light pool over the baked
-colours, with the gain capped at ~1.3x. This is explicitly a non-retail
-enhancement - retail's field path has no light source. See
-`crates/engine-render/src/dyn_light.rs` and the `DYN_*` tunables in
-`renderer/state.rs`.
+colours, with the global gain capped at ~1.3x (and ~1.9x once the point-light
+layer below adds on top). This is explicitly a non-retail enhancement - retail's
+field path has no light source. See `crates/engine-render/src/dyn_light.rs` and
+the `DYN_*` tunables in `renderer/state.rs`.
+
+### Per-scene point lights + shadows (sub-toggle)
+
+`Renderer::set_dyn_shadows` (default on; `--no-dyn-shadows` / the `Y` key in
+`play-window`) gates the enhancement's second layer: real point lights at the
+scene's own light-emitting props, each with a shadow map. It only acts while
+dynamic lighting is on and the host has staged lights, so the faithful path
+pays one uniform read and nothing else.
+
+**Light derivation** (`crates/engine-render/src/scene_lights.rs`). What the
+player reads as candles and wall lights in retail interiors is emissive-looking
+geometry - small additive-blended (ABE, ABR mode 1) flame prims and
+bright-modulated lamp meshes. The derivation reads that authoring signal back
+out of the mesh data: a triangle is an emitter sample when it is an additive
+semi prim, or an ABE prim whose baked colour is bright and warm
+(`EMIT_MIN_BRIGHT`, red >= blue - excludes blue water/glass); triangles above
+`EMIT_MAX_TRI_AREA` are rejected as sheets. Every *placement instance* of an
+emitting mesh contributes its samples in world space; greedy clustering
+(`CLUSTER_MERGE_DIST`, wide clusters dropped at `CLUSTER_MAX_EXTENT`) yields at
+most `MAX_SCENE_LIGHTS` (8) lights, position/colour/radius weighted by
+`sqrt(area) * luminance`. The play-window derives lights from the field
+placement + terrain layers at scene load (`upload_assets`) and stages them per
+frame with the camera (`Renderer::set_scene_lights`) so the shaders can recover
+world space from each draw's MVP (`model = view_proj^-1 * mvp`, carried in
+`MeshUniforms.model`).
+
+**Shadows.** Per light, a depth-only pass renders the scene's draws into one
+layer of an 8-layer `Depth32Float` array (512x512 per light) from a downward
+cone (`scene_lights::light_view_proj` - fov ~120 deg, near plane clipping out
+the emitting flame quad itself so it never occludes its own light). The scene
+fragment shaders (`scene_point_gain` in the group-2-bound scene shader
+variants) apply distance attenuation `(1 - (d/r)^2)^2`, the same
+mixed-winding `|N.L|` term as the global light, and a 3x3 PCF comparison
+(`textureSampleCompareLevel`) for soft shadow edges; fragments outside a
+light's cone shade unshadowed. Known approximations, on purpose: casters
+render opaque in the shadow pass (cutout texels shadow as solid), and the
+downward cone is a spot approximation of a point source - geometry above the
+light attenuates but is never shadowed.
+
+The single-mesh (non-scene) pipelines compile a zero-stub `scene_point_gain`,
+so only the scene pipelines carry the lights bind group; both shader variants
+are naga-validated by the engine-render test suite, and
+`scene_lights::point_gain` / `point_attenuation` are the CPU mirror of the
+analytic part, asserted in lockstep with the WGSL.
 
 **The viewer-only exception, so nobody re-derives the wrong conclusion.** There
 *is* a fixed directional light with a `max(dot(n, l), 0.0)` diffuse term in the

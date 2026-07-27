@@ -12,6 +12,7 @@
 
 mod basic;
 mod color;
+mod coplanar;
 mod textured;
 mod vram;
 mod vram_filtered;
@@ -19,6 +20,7 @@ mod vram_posed;
 
 pub use basic::*;
 pub use color::*;
+pub use coplanar::*;
 pub use textured::*;
 pub use vram::*;
 pub use vram_filtered::*;

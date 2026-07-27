@@ -1177,6 +1177,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-iso",
  "libc",
  "serde",
  "serde_json",
@@ -1607,6 +1608,7 @@ dependencies = [
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",
  "legaia-mdec",

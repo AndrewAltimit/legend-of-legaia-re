@@ -182,6 +182,29 @@ impl ResolvedTmd {
     /// Use [`legaia_tmd::mesh::tmd_to_vram_mesh`] directly instead when
     /// the caller wants every prim regardless of VRAM state (e.g. the
     /// flat-shaded pre-VRAM path).
+    /// Clone with the VDF morph deltas staged onto object `group`'s
+    /// vertices (`vertex[i] += deltas[i]`, wrapping i16 per component -
+    /// the `FUN_8005B038` add). The clone is what the mesh builders read
+    /// (`Object::vertices`), so rebuilding a mesh from it yields the same
+    /// vertex-stream order as the rest-pose build with only positions
+    /// moved - the retail render substitution (`FUN_8001C604` staging a
+    /// scratch copy and retargeting the group's vertex pointer for the
+    /// draw) expressed as data. Deltas past the object's vertex count are
+    /// ignored.
+    ///
+    /// REF: FUN_8001C604, FUN_8005B038
+    pub fn with_group_deltas(&self, group: u32, deltas: &[[i16; 3]]) -> ResolvedTmd {
+        let mut out = self.clone();
+        if let Some(obj) = out.tmd.objects.get_mut(group as usize) {
+            for (v, d) in obj.vertices.iter_mut().zip(deltas.iter()) {
+                v.x = v.x.wrapping_add(d[0]);
+                v.y = v.y.wrapping_add(d[1]);
+                v.z = v.z.wrapping_add(d[2]);
+            }
+        }
+        out
+    }
+
     pub fn build_filtered_vram_mesh(&self, vram: &Vram) -> legaia_tmd::mesh::VramMesh {
         legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&self.tmd, &self.raw, |cba, tsb, uvs| {
             vram.prim_has_texture_data(cba, tsb, uvs)

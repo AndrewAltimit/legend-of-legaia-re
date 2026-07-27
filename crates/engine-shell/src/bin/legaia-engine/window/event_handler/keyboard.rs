@@ -318,7 +318,12 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            if self.session.host.world.mode == SceneMode::Dance {
+            if self.dance_countin.is_some() {
+                // Abort during the pre-song count-in: nothing entered yet.
+                self.dance_countin = None;
+                self.dance_countin_draw = None;
+                log::info!("dance: count-in aborted");
+            } else if self.session.host.world.mode == SceneMode::Dance {
                 if let Some(g) = self.session.host.world.exit_dance() {
                     log::info!(
                         "dance: aborted at score {} (pass={})",
@@ -328,7 +333,24 @@ impl PlayWindowApp {
                     self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
-                log::info!("dance: started - Square/Circle/Triangle are the arrows, K to quit");
+                log::info!("dance: count-in - Square/Circle/Triangle are the arrows, K to quit");
+            }
+            return;
+        }
+        // `U`: the how-to dance (retail's setumei mode) with the Disco King
+        // tutorial actor running beside the session - the opening prompt,
+        // the caption steps and the two practice gates, with placeholder
+        // caption text (the overlay's strings are Sony rodata).
+        if matches!(code, KeyCode::KeyU)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+            && self.dance_countin.is_none()
+            && self.session.host.world.mode != SceneMode::Dance
+        {
+            if self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::HowTo, false) {
+                self.dance_tutorial =
+                    Some(legaia_engine_core::dance_tutorial::DanceTutorial::new());
+                log::info!("dance: how-to started - face buttons advance the tutorial");
             }
             return;
         }
@@ -533,6 +555,27 @@ impl PlayWindowApp {
                     "ON (enhancement - not retail)"
                 } else {
                     "off (faithful baked shading)"
+                }
+            );
+            return;
+        }
+        // `Y`: toggle the shadow-casting per-scene point-light sub-layer of
+        // the dynamic-lighting enhancement (the `--no-dyn-shadows` flag's
+        // runtime twin). Only visible while dynamic lighting (`I`) is on -
+        // the layer stages a zero light count otherwise. Pure renderer
+        // state, like `I`.
+        if matches!(code, KeyCode::KeyY) && state == ElementState::Pressed {
+            self.dyn_shadows = !self.dyn_shadows;
+            if let Some(r) = self.win.renderer.as_ref() {
+                r.set_dyn_shadows(self.dyn_shadows);
+            }
+            log::info!(
+                "render: scene light-source shadows {}{}",
+                if self.dyn_shadows { "ON" } else { "off" },
+                if self.dynamic_lighting {
+                    ""
+                } else {
+                    " (inert until dynamic lighting is on - press I)"
                 }
             );
             return;

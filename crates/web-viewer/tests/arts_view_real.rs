@@ -446,6 +446,97 @@ fn arts_voice_bank_demuxes_per_character() {
     }
 }
 
+/// The Hyper/Super/Miracle FANFARE bank: each hero's stereo fanfare file
+/// (Vahn=`XA1`, Noa=`XA3`, Gala=`XA5` - the even clip slots, pinned by the
+/// `FUN_8004AD80` anim-`0x1A` selector + recomp cue captures). Assert the
+/// WASM surface demuxes the bank, maps every Hyper art to its capture-
+/// witnessed coin-flip pair member, maps Super/Miracle constants to the
+/// generic channel 1, and leaves regular arts (and Terra) fanfare-less.
+#[test]
+fn hyper_fanfare_bank_demuxes_and_maps_per_character() {
+    let Some((mut arts, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let expect_file: [Option<&str>; 4] = [Some("XA1.XA"), Some("XA3.XA"), Some("XA5.XA"), None];
+    // (anim_id, witnessed fanfare channel) per character - every row is a
+    // live capture (legaia_art::hyper_fanfare::CAPTURED_FANFARES).
+    let witnessed: [&[(u8, u8)]; 3] = [
+        &[(0x1C, 4), (0x1D, 6), (0x1E, 2)], // Vahn
+        &[(0x1D, 4), (0x1F, 3), (0x20, 2)], // Noa
+        &[(0x1C, 4), (0x1D, 3), (0x1E, 5)], // Gala
+    ];
+    for (cslot, want) in expect_file.iter().enumerate() {
+        let st: serde_json::Value =
+            serde_json::from_str(&arts.set_character(cslot as u32)).unwrap();
+        assert_eq!(st["ok"], true, "char {cslot} assembles");
+        let name = st["character"].as_str().unwrap().to_string();
+        let Some(file) = want else {
+            assert!(st["fanfare"].is_null(), "{name}: no fanfare bank");
+            assert!(arts.art_fanfare_pcm_i16(0).is_empty(), "{name}: empty PCM");
+            continue;
+        };
+        let f = &st["fanfare"];
+        assert!(f.is_object(), "{name}: fanfare metadata present");
+        assert_eq!(f["file"], *file, "{name}: fanfare file");
+        let channels = f["channels"].as_array().unwrap();
+        // The selector reaches channels 1..=7 (generic + three pairs); all
+        // must demux stereo at 37.8 kHz with real audio in them.
+        for need in 1..=7u64 {
+            let ch = channels
+                .iter()
+                .find(|c| c["channel"].as_u64() == Some(need))
+                .unwrap_or_else(|| panic!("{name}: fanfare channel {need} demuxed"));
+            assert_eq!(ch["rate"].as_u64(), Some(37_800), "{name} ch{need}: rate");
+            assert_eq!(ch["stereo"], true, "{name} ch{need}: stereo");
+            let pcm = arts.fanfare_channel_pcm_i16(need as u32);
+            let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+            assert!(peak > 3200, "{name} ch{need}: fanfare peak {peak}");
+        }
+        let bank = st["arts"].as_array().unwrap();
+        // Hyper arts land on their capture-witnessed channel.
+        for &(anim_id, chan) in witnessed[cslot] {
+            let a = bank
+                .iter()
+                .find(|a| a["anim_id"].as_u64() == Some(u64::from(anim_id)))
+                .unwrap_or_else(|| panic!("{name}: bank record 0x{anim_id:02X}"));
+            assert_eq!(
+                a["fanfare_channel"].as_u64(),
+                Some(u64::from(chan)),
+                "{name} 0x{anim_id:02X}: witnessed fanfare channel"
+            );
+            let i = a["index"].as_u64().unwrap() as u32;
+            assert_eq!(
+                arts.art_fanfare_pcm_i16(i),
+                arts.fanfare_channel_pcm_i16(u32::from(chan)),
+                "{name}: art {i} -> fanfare channel {chan}"
+            );
+            // A Hyper has no pool shout - the fanfare replaces it.
+            assert!(
+                a["voice_channel"].is_null(),
+                "{name} 0x{anim_id:02X}: hyper has no pool shout"
+            );
+        }
+        // Super/Miracle constants take the generic channel 1; regular arts
+        // stay fanfare-less (the pool shout keeps covering them).
+        let mut generic = 0;
+        let mut regular = 0;
+        for a in bank {
+            let id = a["anim_id"].as_u64().unwrap() as u8;
+            let fc = a["fanfare_channel"].as_u64();
+            if id == 0x1B || (0x2A..=0x32).contains(&id) {
+                assert_eq!(fc, Some(1), "{name} 0x{id:02X}: generic fanfare");
+                generic += 1;
+            } else if !witnessed[cslot].iter().any(|&(w, _)| w == id) && id >= 0x1B {
+                assert_eq!(fc, None, "{name} 0x{id:02X}: regular art, no fanfare");
+                regular += 1;
+            }
+        }
+        assert!(generic > 0, "{name}: some Super/Miracle records");
+        assert!(regular > 0, "{name}: some regular records");
+    }
+}
+
 /// The arts-voice cue (`FUN_8004C140`) parsed from the disc's `SCUS_942.54`:
 /// the per-character clip file must be XA2 / XA4 / XA6, and the per-art channel
 /// each character's bank record plays must be a real member of that art's

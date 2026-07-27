@@ -86,6 +86,9 @@
        * so the VR loop can re-issue the exact same draw the flat loop does. */
       this.draws = [];
       this.ext = [16384, 16384];
+      /* {walker_entries, ambient_parts} once field_scene_anim_init reports
+       * animation sources for the loaded scene; null otherwise. */
+      this.anim = null;
       this.spawn = { x: 0, y: 0, z: 0 };
       /* VR: present this scene in a headset. The button is always visible;
        * without an immersive-vr device it reads "VR unavailable" and click /
@@ -96,7 +99,7 @@
         renderer: () => this.renderer,
         cam: () => this.cam,
         extent: () => this.ext,
-        draw: () => this.renderer.renderAssembled(this.draws, this.ext, this.cam),
+        draw: () => { this.stepAnim(); this.renderer.renderAssembled(this.draws, this.ext, this.cam); },
         /* Stand in the middle of the built-up area, on its floor, facing the
          * way the flat camera faces. */
         start: () => ({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z }),
@@ -115,6 +118,20 @@
 
       const packCount = v.set_scene_field(label);
       const status = JSON.parse(v.field_scene_status_json());
+
+      /* Live VRAM animation: the bundle's CLUT-walk table (water/waterfall
+       * shimmer) + the scene-entry ambient move-VM tree (jou's pulsating
+       * flesh-palette cyclers and lightning). Init parks the walker source
+       * strips into the WASM-side VRAM, so it must run BEFORE the first
+       * texture upload. The render loop then ticks the animation and
+       * re-uploads the VRAM texture whenever texels changed. */
+      this.anim = null;
+      if (typeof v.field_scene_anim_init === 'function') {
+        try {
+          const a = JSON.parse(v.field_scene_anim_init());
+          if (a.walker_entries > 0 || a.ambient_parts > 0) this.anim = a;
+        } catch (e) { /* animation is optional; the static map still renders */ }
+      }
       this.renderer.uploadVram(v.field_scene_vram_bytes());
 
       /* Ground heightfield may be absent - some interiors floor entirely with
@@ -271,10 +288,35 @@
       if (this.raf || !this.renderer) return;
       if (this.vr && this.vr.isActive()) return;
       const tick = () => {
+        this.stepAnim();
         this.renderer.renderAssembled(this.draws, this.ext, this.cam);
         this.raf = requestAnimationFrame(tick);
       };
       this.raf = requestAnimationFrame(tick);
+    }
+
+    /* Advance the scene's VRAM animation one vsync and re-upload the VRAM
+     * texture when texels changed (CLUT-walk shimmer fires every few game
+     * ticks; the ambient palette cyclers every game tick while lit). Called
+     * from both the flat loop and (via LegaiaVr's draw callback path) each
+     * XR frame. No-op for scenes with no animation sources. */
+    stepAnim() {
+      if (!this.anim) return;
+      const v = this.viewer;
+      if (typeof v.field_scene_anim_tick !== 'function') return;
+      if (v.field_scene_anim_tick(1)) {
+        this.renderer.uploadVram(v.field_scene_vram_bytes());
+      }
+      /* VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
+       * sacs): the ambient world reports which env-pack meshes' deltas
+       * moved this tick; re-upload just those meshes' positions. */
+      if (typeof v.field_scene_morph_slots === 'function') {
+        const slots = v.field_scene_morph_slots();
+        for (let i = 0; i < slots.length; i++) {
+          const pos = v.field_scene_morph_positions(slots[i]);
+          if (pos.length) this.renderer.updateSceneMeshPositions(slots[i], pos);
+        }
+      }
     }
 
     /* One-line summary of the loaded scene, for a status bar. */
@@ -284,8 +326,11 @@
       const sky = s.skyDrawsHidden
         ? ` · ${s.skyDrawsHidden} sky-backdrop draw${s.skyDrawsHidden > 1 ? 's' : ''} hidden`
         : '';
+      const anim = this.anim
+        ? ` · animated (${this.anim.walker_entries} CLUT walkers, ${this.anim.ambient_parts} ambient fx)`
+        : '';
       return `${s.packCount} environment meshes (${s.drawn} drawn) · ${s.status.placements} placements`
-        + ` · ${s.status.terrain} terrain tiles · ${s.status.ground_quads} ground quads${sky}`;
+        + ` · ${s.status.terrain} terrain tiles · ${s.status.ground_quads} ground quads${sky}${anim}`;
     }
 
     /* Feed the assembled draw list to the WASM .glb exporter and return the

@@ -97,10 +97,13 @@ pub trait MoveHost {
     /// of world coords. Default no-op.
     fn ext_debug_world(&mut self, _x: i16, _y: i16, _z: i16) {}
 
-    /// Extension sub-op 0x05 / 0x30 - `func_0x80056798()` - opaque, returns
-    /// the size to advance by. Default returns `default_arm()`.
-    fn ext_func56798(&mut self, _state: &mut ActorState) -> MoveExtResult {
-        MoveExtResult::default_arm()
+    /// Random source for ext sub-ops 0x05 (RAND_ADD) / 0x30 (RAND_PICK) -
+    /// retail is the BIOS `A(2Fh) rand` thunk `FUN_80056798`. The default
+    /// returns 0, which keeps flow + advance exact and pins every
+    /// randomised operand at its authored minimum / first choice; engines
+    /// override with their world RNG.
+    fn ext_rand16(&mut self) -> u16 {
+        0
     }
 
     /// Extension sub-op 0x0E - `FUN_801E45BC(out_xy, sub_a, sub_b, mode)` -

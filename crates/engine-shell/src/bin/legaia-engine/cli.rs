@@ -918,6 +918,20 @@ pub(crate) enum Cmd {
         /// without it. Toggle at runtime with the `I` key.
         #[arg(long, default_value_t = false)]
         dynamic_lighting: bool,
+        /// Disable the shadow-casting per-scene point-light sub-layer of
+        /// `--dynamic-lighting` (candle / wall-light sources derived from the
+        /// scene's emissive prims, each with a PCF-filtered shadow map). On
+        /// by default whenever `--dynamic-lighting` is on; irrelevant (and
+        /// costless) without it. Toggle at runtime with the `Y` key.
+        #[arg(long, default_value_t = false)]
+        no_dyn_shadows: bool,
+        /// Disable the scene-entry VDF pulse enhancement (the rolling
+        /// vertex-morph envelope over packs retail never arms at entry -
+        /// jou's flesh ground). Retail draws those scenes static outside
+        /// their cutscene set pieces; this flag restores that. Scenes whose
+        /// morphs retail itself arms (rikuroa) are unaffected either way.
+        #[arg(long, default_value_t = false)]
+        no_entry_pulse: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

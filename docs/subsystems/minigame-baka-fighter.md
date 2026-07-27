@@ -1155,6 +1155,14 @@ screen-centre wrapper (`FUN_801d6e04`), binds and draws it through the actor
 callbacks (`FUN_801d3390` / `FUN_801d67f0`), and hands the host a per-frame
 `ChromeFrame` of widget draws plus whichever announcer line fired.
 
+The play window consumes that frame each tick (`BakaFight::chrome_frame`,
+`window/minigames.rs`): a glyph-carrying draw is resolved against the
+overlay's parsed widget table (`legaia_asset::baka_opponents::parse_baka_hud`,
+loaded at duel start) with the `glyph_u` stamp paging widget 5's cell rect -
+the byte store `FUN_801d69a8` performs - and the resolved draws render as
+placeholder text at their stage positions (the glyph page's texels are not
+uploaded).
+
 ## Open
 
 No open items.

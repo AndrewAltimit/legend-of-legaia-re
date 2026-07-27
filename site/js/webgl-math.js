@@ -147,10 +147,16 @@ function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, v
   const Tv = translate(panX, panY, -cameraDist);
   const V = mulMat4(Tv, mulMat4(Rx, Ry));
 
-  /* Projection. Tiny near plane so fly-through views don't clip out the
-   * model walls when the camera passes through them. */
+  /* Projection. The near plane scales with the framing distance: a fixed
+   * tiny near plane (the old 0.001) spent virtually all of the 24-bit depth
+   * buffer's precision inside [0.001, 0.002] and left the model itself with
+   * ~0.4-unit depth ambiguity at real mesh scale - authored ~1-unit decal
+   * offsets z-fought. At `distance * 0.01` the buffer resolves sub-0.02-unit
+   * separations at the default framing, while a fly-through (distance below
+   * 1) still gets a small enough plane not to clip the near walls. */
   const aspect = viewportW / viewportH;
-  const P = perspective(fovY || 1.2, aspect, 0.001, 100.0);
+  const near = Math.max(0.0005, cameraDist * 0.01);
+  const P = perspective(fovY || 1.2, aspect, near, 100.0);
 
   return mulMat4(P, mulMat4(V, M));
 }

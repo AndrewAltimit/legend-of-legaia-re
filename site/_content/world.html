@@ -167,11 +167,11 @@ canvas.world-canvas {
 </section>
 
 <script src="js/vr-mode.js?v=vr-3"></script>
-<script src="js/webgl-shaders.js?v=world-map-1"></script>
-<script src="js/webgl-math.js?v=world-map-1"></script>
-<script src="js/webgl-tmd.js?v=world-map-1"></script>
+<script src="js/webgl-shaders.js?v=zfight-1"></script>
+<script src="js/webgl-math.js?v=zfight-1"></script>
+<script src="js/webgl-tmd.js?v=zfight-1"></script>
 <!-- Assembled full-map view, shared with the asset viewer's full-map button. -->
-<script src="js/field-scene-view.js?v=fsview-1"></script>
+<script src="js/field-scene-view.js?v=fsview-3"></script>
 <script>
 /* ------------------------------------------------------------------
  * Game-world page.
@@ -315,8 +315,10 @@ canvas.world-canvas {
       fsView.load(label);
       mapStatus.innerHTML = `<b>${label}</b> · ${fsView.summary()} · drag pan / right-drag pivot / wheel zoom`;
       glbBtn.disabled = false;
-      /* Headless-verification hook: the assembled state of the last load. */
+      /* Headless-verification hooks: the assembled state of the last load
+       * and the view itself (canvas + WASM viewer poking). */
       window.__worldState = fsView.state;
+      window.__fsView = fsView;
     } catch (err) {
       mapStatus.textContent = `${label}: ${err.message || err}`;
       window.__worldState = null;

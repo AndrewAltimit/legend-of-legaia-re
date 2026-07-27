@@ -3,6 +3,7 @@
 //! `renderer.rs`.
 
 use super::*;
+use bytemuck::Zeroable;
 
 /// A CPU-side RGBA8 readback of one rendered frame, produced by
 /// [`Renderer::capture_rgba`]. `rgba` is exactly `width * height * 4`
@@ -67,7 +68,8 @@ impl Renderer {
                     &self.mesh_uniforms_buf,
                     0,
                     bytemuck::cast_slice(&[MeshUniforms {
-                        mvp: mvp.to_cols_array_2d(),
+                        // Reversed-Z applied centrally (see `reverse_z`).
+                        mvp: reverse_z(*mvp).to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
                         depth_cue: self.depth_cue.get(),
                         psx_params: [
@@ -88,11 +90,13 @@ impl Renderer {
                         light_color: self.dyn_light_color_uniform(),
                         cue_ramp: self.cue_ramp.get(),
                         palette: self.palette_grade.get(),
+                        model_rows: MODEL_ROWS_IDENTITY,
                     }]),
                 );
             }
             RenderTarget::Scene(scene) => {
                 self.stage_scene_uniforms(scene);
+                self.stage_scene_lights_and_shadows(scene);
                 let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                 if let Some(s) = scene.overlay_sprites {
                     overlays.push(s);
@@ -146,7 +150,8 @@ impl Renderer {
             .then(|| wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    // Reversed-Z: 0.0 is the far plane (see `reverse_z`).
+                    load: wgpu::LoadOp::Clear(DEPTH_CLEAR),
                     store: wgpu::StoreOp::Discard,
                 }),
                 stencil_ops: None,
@@ -259,6 +264,13 @@ impl Renderer {
                     let bg: &wgpu::BindGroup = &bg_borrow;
                     rp.set_pipeline(&self.scene_vram_mesh_pipeline);
                     rp.set_bind_group(1, &scene.vram.bind_group, &[]);
+                    // Point-light layer (lights uniform + shadow array +
+                    // comparison sampler). Always bound - the uniform's
+                    // light count is zero whenever the layer is inert, and
+                    // every scene pipeline (VRAM + colour, opaque + blend)
+                    // shares the same three-group layout so the binding
+                    // stays valid across the whole pass.
+                    rp.set_bind_group(2, &self.scene_lights_bg, &[]);
                     let stride = self.uniform_offset_alignment;
                     for (i, draw) in scene.draws.iter().enumerate() {
                         let off = (i as u32) * stride;
@@ -549,6 +561,159 @@ impl Renderer {
         })
     }
 
+    /// True when the per-scene point-light layer should shade this frame:
+    /// dynamic lighting on, the shadow sub-toggle on, lights staged, and a
+    /// scene camera registered.
+    pub(super) fn scene_lights_active(&self) -> bool {
+        self.dyn_lighting.get()
+            && self.dyn_shadows.get()
+            && self.scene_view_proj.get().is_some()
+            && !self.scene_lights.borrow().is_empty()
+    }
+
+    /// Stage the scene-lights uniform for the current frame and, when the
+    /// layer is live, render one shadow-map layer per light over the
+    /// scene's geometry (its own encoder, submitted ahead of the frame
+    /// encoder). With the layer inert this writes a zero light count and
+    /// encodes nothing - the faithful path's whole cost.
+    fn stage_scene_lights_and_shadows(&self, scene: &Scene<'_>) {
+        use crate::scene_lights::{MAX_SCENE_LIGHTS, light_view_proj};
+        let active = self.scene_lights_active();
+        let lights = self.scene_lights.borrow();
+        let n = if active {
+            lights.len().min(MAX_SCENE_LIGHTS)
+        } else {
+            0
+        };
+        let mut u = SceneLightsUniform::zeroed();
+        u.params = [
+            n as f32,
+            1.0 / SHADOW_MAP_DIM as f32,
+            SHADOW_COMPARE_BIAS,
+            0.0,
+        ];
+        let light_vps: Vec<Mat4> = lights[..n].iter().map(light_view_proj).collect();
+        for (i, l) in lights[..n].iter().enumerate() {
+            u.lights[i] = ScenePointLightUniform {
+                pos_radius: [l.pos[0], l.pos[1], l.pos[2], l.radius],
+                color: [l.color[0], l.color[1], l.color[2], 0.0],
+                viewproj: light_vps[i].to_cols_array_2d(),
+            };
+        }
+        self.queue
+            .write_buffer(&self.scene_lights_buf, 0, bytemuck::bytes_of(&u));
+        if n == 0 {
+            return;
+        }
+        // Per-(light, draw) light-space MVPs. `model = view_proj^-1 * mvp`
+        // (same recovery as the main pass), so
+        // `light_mvp = light_vp * model`.
+        let Some(inv_vp) = self.scene_view_proj.get().map(|vp| vp.inverse()) else {
+            return;
+        };
+        let stride = self.uniform_offset_alignment as usize;
+        let n_draws = scene.draws.len() + scene.color_draws.len();
+        if n_draws == 0 {
+            return;
+        }
+        let needed = n * n_draws;
+        let mut cap = self.shadow_uniforms_capacity.get();
+        if cap < needed {
+            cap = needed.next_power_of_two().max(needed);
+            let new_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shadow uniforms (resized)"),
+                size: (cap * stride) as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let new_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shadow uniforms bg (resized)"),
+                layout: &self.shadow_uniforms_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &new_buf,
+                        offset: 0,
+                        size: std::num::NonZeroU64::new(
+                            std::mem::size_of::<ShadowUniforms>() as u64
+                        ),
+                    }),
+                }],
+            });
+            *self.shadow_uniforms_buf.borrow_mut() = new_buf;
+            *self.shadow_uniforms_bg.borrow_mut() = new_bg;
+            self.shadow_uniforms_capacity.set(cap);
+        }
+        let mut bytes = vec![0u8; needed * stride];
+        for (li, lvp) in light_vps.iter().enumerate() {
+            for (di, mvp) in scene
+                .draws
+                .iter()
+                .map(|d| d.mvp)
+                .chain(scene.color_draws.iter().map(|d| d.mvp))
+                .enumerate()
+            {
+                let smvp = *lvp * inv_vp * mvp;
+                let su = ShadowUniforms {
+                    mvp: smvp.to_cols_array_2d(),
+                };
+                let off = (li * n_draws + di) * stride;
+                bytes[off..off + std::mem::size_of::<ShadowUniforms>()]
+                    .copy_from_slice(bytemuck::bytes_of(&su));
+            }
+        }
+        {
+            let buf = self.shadow_uniforms_buf.borrow();
+            self.queue.write_buffer(&buf, 0, &bytes);
+        }
+        // Depth-only passes, one per light layer. Full opaque index range
+        // of every draw; the light's near plane keeps the emitting flame
+        // quads themselves from occluding (see `scene_lights`).
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("shadow encoder"),
+            });
+        let bg_borrow = self.shadow_uniforms_bg.borrow();
+        for li in 0..n {
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scene light shadow pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_layer_views[li],
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            rp.set_pipeline(&self.shadow_vram_pipeline);
+            for (di, draw) in scene.draws.iter().enumerate() {
+                let off = ((li * n_draws + di) * stride) as u32;
+                rp.set_bind_group(0, &*bg_borrow, &[off]);
+                rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                rp.set_index_buffer(draw.mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+            }
+            rp.set_pipeline(&self.shadow_color_pipeline);
+            for (ci, draw) in scene.color_draws.iter().enumerate() {
+                let di = scene.draws.len() + ci;
+                let off = ((li * n_draws + di) * stride) as u32;
+                rp.set_bind_group(0, &*bg_borrow, &[off]);
+                rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                rp.set_index_buffer(draw.mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+            }
+            drop(rp);
+        }
+        drop(bg_borrow);
+        self.queue.submit(std::iter::once(enc.finish()));
+        crate::profile::mark("shadow");
+    }
+
     /// Resize the scene-uniforms buffer (and its bind group) to hold at
     /// least `slots` `MeshUniforms` entries, then write each entry.
     fn stage_scene_uniforms(&self, scene: &Scene<'_>) {
@@ -608,9 +773,25 @@ impl Renderer {
         let light_color = self.dyn_light_color_uniform();
         let cue_ramp = self.cue_ramp.get();
         let palette = self.palette_grade.get();
+        // Per-draw model matrix for the point-light layer: recovered from
+        // the draw's MVP through the registered scene camera
+        // (`model = view_proj^-1 * mvp`). Identity when no camera is
+        // registered or the layer is inert - the shader then shades the
+        // lights in mesh space, but with a zero light count it never reads
+        // the matrix at all.
+        let inv_vp = if self.scene_lights_active() {
+            self.scene_view_proj.get().map(|vp| vp.inverse())
+        } else {
+            None
+        };
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
+            let model = match inv_vp {
+                Some(inv) => model_rows(&(inv * mvp)),
+                None => MODEL_ROWS_IDENTITY,
+            };
             let u = MeshUniforms {
-                mvp: mvp.to_cols_array_2d(),
+                // Reversed-Z applied centrally (see `reverse_z`).
+                mvp: reverse_z(mvp).to_cols_array_2d(),
                 depth_cue: self.depth_cue.get(),
                 psx_params,
                 tex_window,
@@ -620,6 +801,7 @@ impl Renderer {
                 light_color,
                 cue_ramp,
                 palette,
+                model_rows: model,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();

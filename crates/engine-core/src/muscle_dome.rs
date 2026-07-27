@@ -290,6 +290,32 @@ impl MuscleDomeSession {
         }
     }
 
+    /// Whether `slot`'s selection is exhausted: no hand card is affordable
+    /// (or the queue is full). Retail ends the command input automatically
+    /// at this point - the phase byte advances off the input arm without a
+    /// confirm press (recomp capture: three 30-cost commits on a 100 budget
+    /// move `ctx+6` `0x50 -> 0x5a` on the third press).
+    ///
+    /// REF: FUN_801d0748 phase 0x50
+    pub fn selection_exhausted(&self, slot: usize) -> bool {
+        self.phase == MusclePhase::Select && (0..HAND_SLOTS).all(|c| !self.can_commit(slot, c))
+    }
+
+    /// Reselect: throw the fighter's committed queue away and restore the
+    /// round budget (the retail confirm menu's "Reselect" arm returns to a
+    /// clean input state - queue re-zeroed, budget back at the pool seed).
+    ///
+    /// REF: FUN_801d0748 phase 0x6e
+    pub fn reset_selection(&mut self, slot: usize) {
+        if self.phase != MusclePhase::Select && self.phase != MusclePhase::Resolve {
+            return;
+        }
+        self.f[slot].queue.clear();
+        self.f[slot].budget += self.f[slot].spent;
+        self.f[slot].spent = 0;
+        self.phase = MusclePhase::Select;
+    }
+
     /// Play the round out: both queues resolve through `damage(attacker_slot,
     /// command_id) -> damage` (the host's battle-path stand-in), alternating
     /// player-first, stopping at a KO. Retail resolves each queued action
@@ -591,6 +617,34 @@ mod tests {
         assert_eq!(s.phase(), MusclePhase::Select);
         assert_eq!(s.budget(0), 100);
         assert!(s.queue(0).is_empty());
+    }
+
+    #[test]
+    fn selection_exhausts_when_no_card_is_affordable() {
+        let mut s = session();
+        assert!(!s.selection_exhausted(0));
+        s.commit_card(0, 0); // 30, budget 70
+        s.commit_card(0, 0); // 30, budget 40
+        assert!(!s.selection_exhausted(0), "a 30-cost card still fits in 40");
+        s.commit_card(0, 0); // 30, budget 10
+        assert!(
+            s.selection_exhausted(0),
+            "cheapest card is 30, budget 10: retail ends the input here"
+        );
+    }
+
+    #[test]
+    fn reset_selection_clears_the_queue_and_refunds_the_budget() {
+        let mut s = session();
+        s.commit_card(0, 0);
+        s.commit_card(0, 1);
+        assert_eq!(s.budget(0), 28);
+        s.end_selection();
+        s.reset_selection(0);
+        assert_eq!(s.phase(), MusclePhase::Select);
+        assert!(s.queue(0).is_empty());
+        assert_eq!(s.budget(0), 100);
+        assert_eq!(s.spent(0), 0);
     }
 
     #[test]

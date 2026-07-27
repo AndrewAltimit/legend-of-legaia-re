@@ -51,6 +51,13 @@
         <td>It does not. The field decoration path never reaches the NCC light handlers - field shading is the GTE depth cue alone, with no light source applied.</td>
         <td><a href="../subsystems/renderer.html">renderer</a></td>
       </tr>
+      <tr>
+        <td>Kingdom slot 4 - per-record semantic + consumer</td>
+        <td><span class="tag tag-done">resolved</span> (read in place; <code>attr</code> render-unused)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>Each 8-byte record is a <strong>GTE vertex</strong>: the cluster-A handler <code>FUN_80044c14</code> loads its two words into the GTE vertex registers and <code>RTPT</code>-transforms them, and each slot-4 body is a self-contained render packet (header + object-local vertex pool) walked <strong>in place</strong> - there is no transcode and no separate command-stream builder. <code>kind</code> tags body class/scope (the <code>kind 1</code> bodies are byte-identical across all three kingdoms - a shared mesh library); <code>attr</code> is genuinely per-vertex yet the full handler-family sweep finds no reader - authoring data the render path ignores.</td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -60,6 +67,13 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
+      <tr>
+        <td>Arts command-input UI decomposition (the Muscle Dome runs the standard battle input)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>A live dome match in the static recomp, read through the runtime's <code>gpu_frame_dump</code> GP0 packet ring + a same-moment full-VRAM dump, pins the input screen piece by piece: the High/Left/Right/Low chips are boot-gap widget-page hexagon pieces + baked label strips + gold diamond ends; the input bar is the tiled maroon widget bar filling with committed-command pennants at cost-wide pitch; the right-hand AP plate reads the <em>Spirit</em> gauge (the entry budget's only visible form is the bar); Triangle cycles a five-row-per-page learned-arts window (system-UI interior tiles under a <code>0x40..0x88</code> gouraud) whose name / arrow-string / AP columns are the SCUS arts-name table's own, in orange sub-palette 15; the green Triangle circle is its own tiny gap TIM at <code>PROT.DAT 0x7B00</code>. Flow pinned live: per-press budget debit + queue append, auto-end on exhaustion (<code>0x50 &rarr; 0x5a</code>), the Begin|Reselect chain (<code>0x6e</code>), Triangle inert with no learned arts.</td>
+        <td><a href="../minigames.html#muscle-dome">muscle dome</a> &middot; <a href="../subsystems/arts-command-gauge.html">arts gauge</a></td>
+      </tr>
       <tr>
         <td>Encounter MAN sub-section layout</td>
         <td><span class="tag tag-done">resolved</span></td>
@@ -71,7 +85,14 @@
         <td>Endless camera orbit (Gaza 2 softlock) - the <code>0x19</code> attack-approach park</td>
         <td><span class="tag tag-done">resolved</span> (caught live; root-caused; disc fix shipped)</td>
         <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
-        <td>State <code>0x14</code> (attack approach setup) looks up the approach-transition clip - action tag <code>0x20</code>, distinct from the tag-<code>1</code> "Move" locomotion loop the enemy viewer shows (that one is only played inside the walk chain this gate protects) - in the acting monster's action table (<code>FUN_80050E2C</code> over <code>record+0x4C</code>); when absent (bosses generally never walk; Gaza's parked-save table reads <code>[00 01 02 03 04 05 0B 0E 13 0C 23 23]</code>), the fallback drops straight into the state-<code>0x19</code> range re-poll, whose SM arm has <strong>no movement code and no timeout</strong>. The staged Move clip's playback normally still closes the gap during <code>0x19</code> (~19 units/vsync, measured); in the caught parks the clip engages and dies ~12 vsyncs in (anim pair back to <code>0/0</code>, frozen beyond reach), so the attack waits forever while the idle camera orbits. Trigger reproduced: a summon immediately followed by the boss's melee; which anim-driver field the staging leaves stale is the remaining open sub-question. Caught live by the poll-only dynarec-speed hunter (scenario <code>battle_gaza2_park_0x19</code>); the stall counter <code>ctx[+0x6D4]</code> feeds only the arms-resolver roll. Fix: <code>legaia-patcher --approach-softlock-fix</code> - a nine-word guard replacing the poll's redundant facing recompute: a dead approach clip bounces the state back to <code>0x14</code>, retail re-stages it, and the boss resumes walking (runtime-verified on both park savestates). The sibling <code>0x51</code> HP-settle class stays injection-only (twelve-revive retail campaign; both candidate generators measured out).</td>
+        <td>State <code>0x14</code> (attack approach setup) looks up the approach-transition clip - action tag <code>0x20</code>, distinct from the tag-<code>1</code> "Move" locomotion loop the enemy viewer shows (that one is only played inside the walk chain this gate protects) - in the acting monster's action table (<code>FUN_80050E2C</code> over <code>record+0x4C</code>); when absent (bosses generally never walk; Gaza's parked-save table reads <code>[00 01 02 03 04 05 0B 0E 13 0C 23 23]</code>), the fallback drops straight into the state-<code>0x19</code> range re-poll, whose SM arm has <strong>no movement code and no timeout</strong>. The staged Move clip's playback normally still closes the gap during <code>0x19</code> (~19 units/vsync, measured); in the caught parks the clip engages and dies ~12 vsyncs in (anim pair back to <code>0/0</code>, frozen beyond reach), so the attack waits forever while the idle camera orbits. Trigger reproduced: a summon immediately followed by the boss's melee; the anim-driver field the staging leaves stale is pinned in the next row. Caught live by the poll-only dynarec-speed hunter (scenario <code>battle_gaza2_park_0x19</code>); the stall counter <code>ctx[+0x6D4]</code> feeds only the arms-resolver roll. Fix: <code>legaia-patcher --approach-softlock-fix</code> - a nine-word guard replacing the poll's redundant facing recompute: a dead approach clip bounces the state back to <code>0x14</code>, retail re-stages it, and the boss resumes walking (runtime-verified on both park savestates). The sibling <code>0x51</code> HP-settle class stays injection-only (twelve-revive retail campaign; both candidate generators measured out).</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
+        <td><code>0x19</code> fallback approach drive - which anim-driver field does summon staging leave stale?</td>
+        <td><span class="tag tag-done">resolved</span> (pinned + causally reproduced)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>The battle actor's anim event-flag byte <code>+0x1DC</code>, bit 2 (<code>0x4</code>) - the <strong>stage-idle-at-clip-end</strong> flag. The summon's hit stages the flinch with <code>+0x1DC |= 4|1</code>; when the boss's melee follows immediately, state <code>0x14</code>'s fallback stages the Move clip through the tick's event-path commit, which clears only bits 0-1 where the natural-end path clears bits 0-2 - so the Move clip runs with bit 2 still set and, at its first natural end, the tick stages idle over the queued clip (<code>sb zero,0x1da</code> at <code>0x80047B44</code>) instead of re-looping. Both halves replayed causally on the parked save (clearing the flag lets the clip loop and arrive; re-arming it reproduces the kill write at exactly the first natural end). The park save reads <code>+0x1DC == 0</code> because the killing commit consumed the flag - it is only visible in flight.</td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
       <tr>
@@ -80,6 +101,34 @@
         <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
         <td>Saved-chain preseed <code>FUN_801DA34C</code> (verbatim <code>+0x76F &rarr; +0x1DF</code> copy - the char-record chain uses the queue-space encoding), queue-builder <code>FUN_801EED1C</code> (ActionSeed <code>0x0C</code>), Miracle replacement inline, Super find&rarr;tail-replace in <code>FUN_801EF9E4</code> (table-driven off <code>(actor slot, char index)</code>; find <code>0x801F6524 + char*65 + row*13</code>, replace <code>0x801F65E8 + char*80 + row*16</code>, first-match-wins). The queue proper is 16 bytes at <code>actor[+0x1DF..+0x1EE]</code>. All 30 resident find/replace strings byte-exact vs the modeled tables, and all 15 Supers live-executed via applier-entry injection, each tail-replace byte-exact; per-character library states re-checked by <code>crates/pcsxr/tests/super_art_queue_replace.rs</code>.</td>
         <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
+      <tr>
+        <td>Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>Not an element drop - a <strong>resist-ladder bypass</strong>. Capture-class casts (spell byte <code>+0</code> = <code>'c'</code>) run per-spell modules (PROT 944..966) whose damage calls pick one of two wrappers: <code>FUN_801DD4B0</code> (finisher <code>param_5=0</code>, resist ladder runs) or <code>FUN_801DD6B4</code> (<code>param_5=1</code>, the whole party-defender jewel/guard block is skipped). BH (952) / TP (953) use the bypass wrapper for their main hits; enemy ESM (966) uses the respecting one (hence Cort reads as Dark). Element attribution law + live confirmation: <a href="../subsystems/battle-formulas.html">battle-formulas</a>.</td>
+        <td><a href="../formats/spell-table.html">spell-table</a></td>
+      </tr>
+      <tr>
+        <td>First boss trigger &rarr; Battle</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The scripted-battle arm is the field-VM op <code>3E FF &lt;formation_row&gt;</code>: Zeto = garmel <code>P2[12]</code> row 9 (lone <code>0x4B</code>), Caruban = rikuroa stager <code>P1[3]</code> row 17 (lone <code>0x49</code>) - the same record path, entered organically by the engine (<code>World::run_boss_stager_record</code>). <code>DAT_8007b7fc</code> is closed: writer-less across <code>SCUS_942.54</code> + every static overlay (absolute + gp-relative + address-materialisation sweep); readers pin it as the <strong>debug forced-battle formation id</strong> - battle init <code>FUN_80055b6c</code> &rarr; <code>FUN_8005567c</code> seeds the formation cells <code>DAT_8007BD0C+</code> from it, and <code>FUN_80046A20</code> routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Enemy-ally charm battle softlock</td>
+        <td><span class="tag tag-done">resolved</span> (both tracks fixed)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The state-<code>0x5A</code> victory arm's party-slot assumption OOB-indexes the win-pose roster <code>DAT_8007BD10</code> (via <code>0x801E6770</code>) when a living charmed ally is the acting actor at monster-wipe victory - the <code>FUN_801E7320</code> "unbounded reroll" theory is falsified (<a href="re-do-not-re-walk.html">do not re-walk</a>). Fixed on both tracks: engine <code>victory_pose_fixup</code>/<code>charm_widen</code>, and the disc-side <code>legaia_patcher::charm_fix</code> guard - a single-word detour at the <code>0x801E6690</code> keep-branch into a SCUS dead-space liveness guard.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
+        <td><span class="tag tag-done">resolved</span> (exhaustive negative)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Bit <code>0x400</code> has <strong>no retail setter</strong>: a word-level decode of <code>SCUS_942.54</code> plus every static-overlay image (all stores covering <code>+0x16C..+0x171</code>, pointer precomputes, <code>ori</code>/<code>sllv</code> bit-set shapes, the <code>+0x6F6</code> mirror, the <code>+0x21F</code> deferral) finds only clears. The infliction appliers (hit leg <code>FUN_801EC3E4</code>, cast leg <code>FUN_801E09F8</code>) map kinds 3/4/5/6 to bits <code>0x1</code>/<code>0x2</code>/random-<code>0x38</code>/<code>0x1000</code> and kinds 1-2 to the <code>0x380</code> deferral; no kind reaches <code>0x400</code>. Latent content with a full consumer/cure lifecycle.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
         <td>Effect-VM pass-1 "state token algebra" (<code>FUN_801E0088</code>)</td>
@@ -346,6 +395,27 @@
         <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
       </tr>
       <tr>
+        <td>Field ambient animation - what makes jou's ground pulse and the water shimmer</td>
+        <td><span class="tag tag-done">resolved</span> (residuals on the open page)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field water/waterfall scenes), the ambient move-VM tree the MAN P1 effect scripts install at scene entry (<code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> spawn-time first run + op-<code>0x25</code> fan-out), and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler: op <code>0x2C</code> captures a palette rect and <code>FUN_80019D50</code> rewrites it per frame with integrated H/S/V adds (lightning = flag <code>0x364</code> brightness spikes + screen flash + thunder cues). Runs in the engine and the site field-scene viewer.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>Scene bundle type-7 slot content (VDF)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries of ground-vertex deltas), installed at <code>DAT_8007B7DC</code> via <code>FUN_8001FBCC</code> and consumed by the morph stager <code>FUN_8001C604</code> through move-VM morph lanes. Parser <code>legaia_asset::scene_vdf</code>.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>VDF morph render substitution - what draws the staged vertices, and what arms the lanes</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Per drawn group of a part whose flags carry op-<code>0x0A</code>'s bit <code>0x1000</code>, <code>FUN_8001ADA4</code> calls <code>FUN_8001C604</code> (rest-pose scratch copy + weighted-delta blend <code>FUN_8005B038</code> + group vertex-pointer retarget) and restores the pointer after the draw. Arming = op-<code>0x0A</code> <em>mesh</em> stager parts in the ambient tree (pack slot = <code>model_sel - 5</code>; rikuroa's flag-gated records 69/70, town0e 10/11, jagaroom 20/21), weights ramped by the <code>FUN_80020740</code> envelope under op-<code>0x32</code> flags. jou arms nothing at plain entry (cutscene op <code>0x1F</code> only) - its entry throb in the engine is the documented <code>vdf_pulse</code> enhancement. Ported to the play-window, the field-scene viewer, and the web play runtime.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
         <td>Field collision-map source</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-partial">decompiled-C</span></td>
@@ -478,6 +548,34 @@
         <td>All four nibble-7 tile-flag paints continue in the same interpreter call; the apparent <code>Yield</code> was the label-call idiom. The pre-run and runner break a slice only on a real yield.</td>
         <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
+      <tr>
+        <td>What transitions retail into game over?</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>Retail has <strong>no</strong> mode-<code>0x12</code> transition. A party wipe exits battle to mode 2; MAIN INIT <code>FUN_8003AEB0</code>'s back-from-battle arm (gated on the <code>DAT_8007BD60 &amp; 0x80</code> survivor latch and the scripted-loss story-flag latch) stores <code>game_mode = 0x16</code> (CARD INIT) at <code>0x8003B5D4</code>, landing on the title screen with CONTINUE preselected - no GAME OVER art, no dedicated menu. Every store PC captured live. Mode 18/19 + PROT 0902 are an unreachable dev harness; the port's three-row session stays an engine invention.</td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>dolk2: the swap is <code>P2[11]</code>, spawned by <code>.MAP</code> fallback walk-on-trigger rows (C1=<code>0x27C</code>, C2=<code>0x142</code>) - eight <code>CC &lt;crowd&gt; E3 &lt;day&gt;</code> position-copy seats (op <code>4C</code> nE sub-3, <code>0x801E3108</code>) put <code>P1[53..60]</code> on the day cohort's market tiles and park the day cohort at <code>(127,127)</code>. garmel: the Zeto stager <code>P2[12]</code> materializes <code>P1[3]</code>/<code>P1[4]</code> beside the player; post-battle re-entries run <code>P1[0]</code>'s flag-consume arms. Pinned by <code>man_midvisit_rearrangement_disc.rs</code>.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
+      </tr>
+      <tr>
+        <td>Region story-flag gate families (record-header C1/C2 gates)</td>
+        <td><span class="tag tag-done">resolved</span> as structure (play-order residual on the <a href="open-rev-eng-threads.html">open page</a>)</td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>Field-scene progression is driven almost entirely by the C1/C2 flag lists in each partition-2 record <em>header</em> (evaluated by <code>FUN_8003BDE0</code>: C1 = one-shot latch, C2 = requires-all), which the inline opcode census cannot see. Every region's families are pinned disc-static by census anchor tests: the Sebucus dungeon spokes, the Rim Elm opening/revisit/final town-state variants, Uru Mais, Nivora Ravine, the Karisto region and castle depth, and Conkram - with the low flags <code>0x7</code>/<code>0xF</code> recurring as scene-variant discriminators. The chapter-2 spine is engine-wired through real <code>0x3F</code> scene transitions with no chapter-specific code.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
+      </tr>
+      <tr>
+        <td>Extraction-0874 &sect;2 (<code>player.lzs</code>) F-variant pixels</td>
+        <td><span class="tag tag-done">resolved</span> (installing event named)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>Both prior premises fell: the pause walk issues zero image transfers (menu-writer falsified), and the wrap-scroll-phase reading is a frame-content coincidence. The variant is a <strong>one-shot face-frame stamp</strong>: town01 opening record <code>P2[3]</code> (C1-gated on the opening latch <code>0x225</code>) runs field-VM op <code>4C 60</code> MoveImage <code>(852,336,6,16) &rarr; (852,268)</code> after the white flash - the parked alternate frame differs from the boot cell at exactly the three F-variant halfwords. Live-caught at <code>ra 0x801E1B8C</code>; disc ops at MAN <code>0x735A</code>/<code>0x7368</code> (misaligned-u16 operands, which is why aligned scans missed them).</td>
+        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
+      </tr>
     </tbody>
   </table>
 
@@ -513,6 +611,13 @@
         <td><span class="tag tag-done">capture</span></td>
         <td>A standard <code>0x29</code> 4-option MES inline picker in the partner's dialogue (immediate-labels form); confirming index 2 starts the spar, driven by the dialog SM. The engine engages the carrier only on the fight option.</td>
         <td><a href="../formats/mes.html">mes</a></td>
+      </tr>
+      <tr>
+        <td>Pause Items/Magic screens: remaining sub-flows</td>
+        <td><span class="tag tag-done">resolved</span> (dim-bit residual closed)</td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>All four sub-flows traced from disassembly and ported: the <strong>window-14 target panel</strong> (<code>FUN_801D0520</code>; the preview modes are the permanent-stat Water previews, superseding the "HP-restore" reading), the <strong>PAGE sprite</strong> (UI-icon <code>0x76</code>), the <strong>SCUS kind-4 list kernel</strong> (<code>FUN_80032A44</code> + allocator <code>FUN_80030104</code>), and the <strong>class-<code>0x80..0x82</code> Use routes</strong> (single-target apply <code>FUN_801D8308</code>, Door of Light/Wind <code>FUN_801D8A58</code>/<code>FUN_801D8B90</code>, Incense <code>FUN_801D8D94</code>); Throw Out / Arrange likewise. Engine <code>engine-ui</code>/<code>pause_screens</code>. The <code>0x800</code> dim bit is set at build time by the SCUS content builder <code>FUN_80030628</code>'s content-id-3 case (equipment always-dim, field-usable bit <code>0x2</code>, then the <code>FUN_8003043C</code> applicability probe); no focus-dependent write exists - the white&rarr;grey flip is the kernel mode-4 park override.</td>
+        <td><a href="../subsystems/field-menu.html">field-menu</a></td>
       </tr>
     </tbody>
   </table>
@@ -580,6 +685,27 @@
         <td><span class="tag tag-done">disassembly</span></td>
         <td>Statically decompiled from PROT 0970 + SCUS. No channel selector exists in the STR overlay: FMVs play filter-off (each movie = one <code>(1, 0)</code> track); the <code>XA*.XA</code> clip path selects <code>CdlSetfilter {file 1, chan}</code> per cue (<code>FUN_8003D764</code>). Falsified: the "<code>\DATA\MOV.STR</code> multi-channel container" hypothesis; the 64-byte dispatch stride (real stride 32 B - all nine retail slots resolve, every disc movie plays, <code>town0d</code>/<code>uru</code>/<code>jouine</code> triggers are not vestigial); the name-first "compact MV table" phase (it is libcd's <code>CdlFILE</code> dir cache). The engine resolver <code>fmv_index_to_str_filename</code> mirrors the corrected nine-slot map and the return-scene list.</td>
         <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11</td>
+        <td><span class="tag tag-done">resolved</span> (slot 6 = 0876, slot 11 = 0889; 1 / 3 are variable banks)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The installer names every binding: a bank reaches a slot through the pair <code>FUN_8001FC00(raw_toc_index, &hellip;)</code> + <code>FUN_8001E54C(category, &hellip;)</code>, and reading the install call sites closes the map - slot 6 = <strong>PROT 0876</strong> (field init <code>FUN_801D6704</code>; its programs cover 29 of the 30 category-<code>6</code> descriptors), slot 11 = <strong>PROT 0889</strong> (battle-end reward resolution <code>FUN_8004E568</code>; its lone program matches the one category-<code>11</code> cue), while slots 1 and 3 hold the current BGM / <code>vab_01</code> side-band banks re-selected at runtime, so neither has a fixed entry to name. Two laws fell out of the same read: <code>FUN_8001D424</code> writes mixer <code>+8 = record index</code> for all 16 records ("category is the slot" is the initialiser's own statement), and slots 2 / 6 share one header buffer + SPU base - the same physical bank in two modes, never open together.</td>
+        <td><a href="../formats/sfx-table.html">sfx-table</a></td>
+      </tr>
+      <tr>
+        <td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td>
+        <td><span class="tag tag-done">resolved</span> (writer pinned; cue census decoded)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files). The filler is <strong><code>FUN_801CFA78</code></strong> in PROT 0895 <code>init.pak</code> (base <code>0x801CE818</code>): it sprintf-generates <code>\XA\XA%d.XA;1</code> per slot and fills <code>[BCD-MSF][size]</code> via the ISO9660 lookup <code>FUN_8005DBB4</code>, called once from the init boot tick <code>0x801CF500</code>. The earlier "untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two <code>lui 0x801c</code> sites in SCUS (<code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code>) are the <strong>readers</strong>; the writer is overlay-resident. Cue census (callers of those readers): menu voice <code>FUN_8004FCC8</code>; the normal-move grunt (<code>XA30</code> chan 0/4/6, overlay <code>0x801EEB44</code>); the arts shout (<code>FUN_8004C140</code> &rarr; <code>XA2</code>/<code>XA4</code>/<code>XA6</code> per character); SM state-<code>0x6E</code> (<code>XA9</code>); slot machine <code>XA1</code>. Full deduped census in <a href="../subsystems/audio.html">audio</a>; dedupe by true entry extent - PROT over-read aliases callsites into neighbouring overlays.</td>
+        <td><a href="../subsystems/audio.html">audio</a></td>
+      </tr>
+      <tr>
+        <td>Hyper Arts fanfare selector - what audio fires when a Hyper executes</td>
+        <td><span class="tag tag-done">resolved</span> (per-(char, art) coin flip over a fixed channel pair)</td>
+        <td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td>
+        <td>A Hyper art fires <strong>no pool shout</strong> (its action constant sits below the shout table's <code>lo</code> bound). The staged-animation materialiser <code>FUN_8004AD80</code>, on the Hyper class byte <code>0x1A</code>, fires the jingle queue with <code>jingle_id = rand()%2*3 + base</code> - a per-(character, art) coin flip between the fixed channel pair <code>{base, base+3}</code> of the character's stereo fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>). Super/Miracle expansions take fixed ids = the bank's generic channel 1; a Miracle's finisher adds its anim cue track. No avoid-repeat memory, unlike the shout pool. All nine Hyper rows capture-witnessed; durations reproduce the <code>0x800788B8</code> table. Engine table <code>legaia_art::hyper_fanfare::CAPTURED_FANFARES</code>; the arts page plays the pinned cue per card.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
     </tbody>
   </table>
@@ -672,6 +798,41 @@
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">disassembly</span></td>
         <td>Not separate entries: the world-map controller <code>FUN_801E76D4</code> lives in field overlay 0897, the save dispatcher <code>FUN_801DC6B4</code> + shop session in menu overlay 0899 (signature-matched). They are subsystems of existing slot-A overlays.</td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>Debug flag <code>0x8007B98F</code></td>
+        <td><span class="tag tag-done">resolved</span> (the MSB of the debug-mode word <code>_DAT_8007B98C</code>)</td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td><code>0x8007B98F</code> has zero <em>byte</em>-granular references because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>0x8007B98C</code>, and code reads the word. <code>_DAT_8007B98C</code> is the debug gate tested by the input dispatcher <code>FUN_8001822c</code> plus the resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the MSB, so every <code>!= 0</code> gate reads debug active and SELECT+&#9651; opens the debug menu. Statically pinned and runtime-confirmed.</td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
+      </tr>
+      <tr>
+        <td><code>_DAT_8007B8C2</code> polarity, and its writer</td>
+        <td><span class="tag tag-done">resolved</span> (docs were backwards)</td>
+        <td><span class="tag tag-done">disassembly</span> + <span class="tag tag-done">capture</span></td>
+        <td>The old reading had the branch sense backwards and named the wrong loader for one arm. Every site reads the flag with <code>lh</code> and takes the <strong>zero</strong> arm to the host-PC debug station (<code>FUN_8003E360</code> falls through to <code>jal 0x800608F0</code>, whose body is <code>break 0x103</code>), the <strong>non-zero</strong> arm to the PROT-index resolver. The writer that makes it self-consistent is <strong>gp-relative</strong>: <code>main()</code> (<code>FUN_80015E90</code>) stores the flag once at cold boot, <code>sh v0,0x5aa(gp)</code> at <code>0x80015F08</code>, taking the constant <code>1</code> from the two-instruction leaf <code>FUN_8003F084</code> - an absolute-form-only scan cannot see it, and no BSS is cleared for this executable at all (<code>b_size = 0</code>).</td>
+        <td><a href="memory-map.html">memory-map</a></td>
+      </tr>
+      <tr>
+        <td>New-Game opening chain + narration roller</td>
+        <td><span class="tag tag-done">resolved</span> (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>The opening is a five-scene chain (<code>opdeene</code> &rarr; <code>opstati</code> &rarr; <code>opurud</code> &rarr; <code>map01</code> &rarr; <code>town01</code>, all master mode 3, zero input), live-probe + pixel-capture pinned; the narration is a bottom-up scrolling crawl on a child-context roller actor (<code>FUN_80037174</code>), the "It was the Seru." caption is a pre-rendered TIM in PROT 0749, and the camera op <code>0x45</code> map, name-entry auto-open and the eye-back depth (offset-trio slot 5, <code>0x800840B8</code>) are all pinned. Both former render-fidelity residuals had one root cause: the <strong>prologue gold grade is a capture-pinned palette-space collapse</strong> (<code>L = max(r,g,b) &rarr; (L, max(L-1,0), L&gt;&gt;1)</code> applied to every uploaded CLUT + the TMDs' colour packets; the per-node depth-cue reading is falsified - <a href="re-do-not-re-walk.html">do not re-walk</a>). Engine port <code>Renderer::set_palette_grade</code>. The far-geometry-brightness residual closed <strong>resolved-negative</strong>: reproducing retail's scene GTE far/back-colour ambient would contradict the port's no-field-light boundary, so no engine change was warranted.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>Overlay-loader index off-by-2 - remaining ripple</td>
+        <td><span class="tag tag-done">resolved</span> (slot A reconciled; slot-B per-spell identity capture-pinned)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>The loaded entry is extraction <code>param + 0x37F</code> (the in-RAM TOC is raw PROT.DAT), so every historical <code>+ 0x381</code> attribution was 2 high. Slot A reconciled; the player, evolved (Kemaro &rarr; 918, Spoon &rarr; 919, pinned by injected casts), high, flute (0924/0925 Lippian/Spikefish), and Cort enemy stager blocks are all capture-pinned on the linear <code>spell &minus; 0x79</code> arithmetic, each loader-B-id-confirmed mid-cast with the slot-B image a full byte-match over the entry's LBA footprint; engine mirrors corrected.</td>
+        <td><a href="../formats/prot.html">prot</a></td>
+      </tr>
+      <tr>
+        <td>Slot-B overlay cluster (<code>0900..0969</code>) per-entry identity</td>
+        <td><span class="tag tag-done">resolved</span> except 0968 (that residual is on the <a href="open-rev-eng-threads.html">open page</a>)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>0900/0901 = the default move-FX pair, 0902 = GAME OVER, 0903..0913 = player summon stagers (capture-pinned per spell id), 0924/0925 = the rare-Seru flute summons Lippian / Spikefish (loader-B ids <code>0x1D</code>/<code>0x1E</code> mid-cast, extending the player run <code>loader = spell &minus; 0x79</code> unbroken through 927; the "other enemies' specials" guess is refuted), 0926 = the unused-<code>0x98</code> one-sector <code>jr ra</code> stub, 0957 = summon-effect strings. The <code>0x4000</code>/<code>0x4001</code> render-mode nodes are statically decoded (moving particle / 3D positional <em>sound</em> emitter) and the classification is ported.</td>
         <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
       </tr>
     </tbody>

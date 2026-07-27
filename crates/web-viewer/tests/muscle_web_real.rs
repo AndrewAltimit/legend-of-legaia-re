@@ -152,7 +152,7 @@ fn muscle_scene_accessors_are_parallel() {
         return;
     };
     let monster = first_roster_id(&mg);
-    assert!(mg.muscle_scene_ready(monster), "3D scene decodes");
+    assert!(mg.muscle_scene_ready(monster, 0), "3D scene decodes");
 
     let pos = mg.muscle_monster_positions(monster);
     let n = pos.len() / 3;
@@ -182,7 +182,7 @@ fn muscle_scene_accessors_are_parallel() {
 
     // One VRAM serves both bodies: 1 MB, with the monster page injected at
     // battle slot 0 (some non-zero bytes in the (320,256) page region).
-    let vram = mg.muscle_vram(monster);
+    let vram = mg.muscle_vram(monster, 0);
     assert_eq!(vram.len(), 1024 * 512 * 2);
     let row = 300usize; // inside the 256..512 page rows
     let off = (row * 1024 + 320) * 2;
@@ -194,6 +194,89 @@ fn muscle_scene_accessors_are_parallel() {
     // The reward names through the SCUS spell table (player Seru block).
     let name = mg.muscle_spell_name(0x81);
     assert!(!name.is_empty(), "reward spell names from the disc");
+}
+
+#[test]
+fn muscle_fighter_battle_form_accessors_are_parallel() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Every dome fighter slot (Vahn / Noa / Gala) assembles its battle form
+    // from its player battle file, with parallel accessor buffers.
+    for ch in 0..3u32 {
+        let pos = mg.muscle_fighter_positions(ch);
+        let n = pos.len() / 3;
+        assert!(n > 0, "char {ch} battle form assembles");
+        assert_eq!(mg.muscle_fighter_uvs(ch).len(), n * 2);
+        assert_eq!(mg.muscle_fighter_cba_tsb(ch).len(), n * 2);
+        assert_eq!(mg.muscle_fighter_flat_rgba(ch).len(), n * 4);
+        assert_eq!(mg.muscle_fighter_object_ids(ch).len(), n);
+        let idx = mg.muscle_fighter_indices(ch);
+        assert!(!idx.is_empty() && idx.len() % 3 == 0);
+        assert!(idx.iter().all(|&i| (i as usize) < n), "indices in range");
+
+        let parts = mg.muscle_fighter_part_count(ch);
+        assert!(parts > 0);
+        let anims: serde_json::Value =
+            serde_json::from_str(&mg.muscle_fighter_anims_json(ch)).unwrap();
+        let anims = anims.as_array().unwrap();
+        // Idle (slot 0) and all four per-command swings (0xC..=0xF - the
+        // card ids themselves) must be present; the flinch (slot 2) too.
+        for want in [0u64, 2, 0xC, 0xD, 0xE, 0xF] {
+            let row = anims
+                .iter()
+                .find(|a| a["slot"].as_u64() == Some(want))
+                .unwrap_or_else(|| panic!("char {ch} slot {want:#x} clip decodes"));
+            let frames = row["frame_count"].as_u64().unwrap() as usize;
+            assert!(frames > 0);
+            let stream = mg.muscle_fighter_pose_frames(ch, want as u32, parts);
+            assert_eq!(
+                stream.len(),
+                frames * parts as usize * 6,
+                "char {ch} slot {want:#x} pose stream padded to the rig"
+            );
+        }
+    }
+}
+
+#[test]
+fn muscle_queue_resolves_arts_through_the_real_tables() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+    // Level 50 Vahn: enough AGL budget for a three-swing sequence.
+    assert!(mg.muscle_start_vs(0, 50, monster, 0x2A));
+    let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    let hand = st["hand"].as_array().unwrap();
+    let slot_for = |cmd: u64| {
+        hand.iter()
+            .position(|c| c["cmd"].as_u64() == Some(cmd))
+            .expect("hand carries all four directions")
+    };
+    // Vahn's Tornado Flame (Hyper): Ra-Seru Ra-Seru Arms = R R L =
+    // command ids 0xD 0xD 0xC (curated arts table, cross-checked against
+    // the SCUS arts-name table's own combo string).
+    for cmd in [0xDu64, 0xD, 0xC] {
+        assert!(mg.muscle_commit(slot_for(cmd)), "commit {cmd:#x}");
+    }
+    let arts: serde_json::Value = serde_json::from_str(&mg.muscle_round_arts_json()).unwrap();
+    let arts = arts.as_array().unwrap();
+    assert!(!arts.is_empty(), "queue R R L performs an art");
+    assert_eq!(arts[0]["start"], 0);
+    assert_eq!(arts[0]["len"], 3);
+    assert_eq!(arts[0]["kind"], "hyper", "Tornado Flame is a Hyper Art");
+    assert!(
+        arts[0]["name"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("tornado"),
+        "named off the disc's arts table: {}",
+        arts[0]["name"]
+    );
 }
 
 #[test]
@@ -232,7 +315,7 @@ fn muscle_arena_backdrop_decodes() {
     // The backdrop's texture pages ride in the dome VRAM: the (832, 0) page
     // band (the ground-grid sampling address) is non-zero after the merge.
     let monster = first_roster_id(&mg);
-    let vram = mg.muscle_vram(monster);
+    let vram = mg.muscle_vram(monster, 0);
     let row = 64usize; // inside the 0..256 page rows
     let off = (row * 1024 + 832) * 2;
     assert!(
@@ -273,4 +356,145 @@ fn muscle_sfx_cues_decode() {
     let hit_l1 = mg.muscle_sfx_pcm(0x09, 1);
     assert!(hit_l1.is_empty() || hit_l1.len() > 100);
     assert!(mg.muscle_sfx_pcm(0x20, 4).is_empty());
+}
+
+#[test]
+fn muscle_hud_chrome_decodes_from_the_disc() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let hud: serde_json::Value = serde_json::from_str(&mg.muscle_hud_json()).unwrap();
+    assert_eq!(hud["ok"], true, "hud: {hud}");
+
+    // Sheet dimensions: the boot-gap chrome TIMs + the etim banner page +
+    // the dome-hub pages, exactly as the capture pinned them in VRAM.
+    assert_eq!(hud["sheets"]["widget"][0], 256);
+    assert_eq!(hud["sheets"]["widget"][1], 192);
+    assert_eq!(hud["sheets"]["font"][0], 256);
+    assert_eq!(hud["sheets"]["atlas"][1], 256);
+    assert_eq!(hud["sheets"]["banner"][0], 256);
+    assert_eq!(hud["sheets"]["hub0"][0], 256, "hub pages from 1220: {hud}");
+    assert_eq!(hud["sheets"]["hub1"][0], 256);
+
+    // The SCUS element table: capture-verified anchors. Element 8 is the
+    // Item chip gliding to (204, 34); element 9 the Attack chip to
+    // (160, 66); element 7 the 288-wide status plate at (16, 236->194).
+    let elems = hud["elements"].as_array().unwrap();
+    assert_eq!(elems.len(), 80);
+    assert_eq!(elems[8]["b"][0], 204);
+    assert_eq!(elems[8]["b"][1], 34);
+    assert_eq!(elems[9]["b"][0], 160);
+    assert_eq!(elems[9]["b"][1], 66);
+    assert_eq!(elems[7]["w"], 288);
+    assert_eq!(elems[7]["a"][1], 236);
+    assert_eq!(elems[7]["b"][1], 194);
+
+    // The PROT 0977 hub sprite table: record 3 is the 240x18 "Welcome to
+    // the Muscle Dome!" strip on hub page 0; record 16 the 192x32 INTERVAL
+    // heading; record 0 the 144x32 ROUND word.
+    let hub = hud["hub"].as_array().unwrap();
+    assert_eq!(hub.len(), 17);
+    assert_eq!(hub[3]["wh"][0], 240);
+    assert_eq!(hub[3]["wh"][1], 18);
+    assert_eq!(hub[3]["sheet"], 4);
+    assert_eq!(hub[16]["uv"][1], 192);
+    assert_eq!(hub[16]["wh"][0], 192);
+    assert_eq!(hub[0]["wh"][0], 144);
+
+    // Font advances reproduce the captured chip-label pen positions:
+    // "Begin" drew B->e at +7, e->g at +6, g->i at +6, i->n at +4.
+    let adv = hud["advance"].as_array().unwrap();
+    assert_eq!(adv.len(), 96);
+    let a = |c: char| adv[c as usize - 0x20].as_u64().unwrap() as i32;
+    assert_eq!(a('B'), 7);
+    assert_eq!(a('e'), 6);
+    assert_eq!(a('g'), 6);
+    assert_eq!(a('i'), 4);
+
+    // Every sheet the page fetches decodes to RGBA with real opaque
+    // coverage (the chrome art is opaque-on-transparent).
+    for (source, pal, name) in [
+        (0u32, 4u32, "widget/blue"),
+        (0, 12, "widget/gold"),
+        (0, 7, "widget/dpad"),
+        (0, 1, "widget/gauge"),
+        (0, 5, "widget/slash"),
+        (0, 6, "widget/chip+bar (arts input)"),
+        (0, 2, "widget/list window"),
+        (1, 13, "font"),
+        (1, 15, "font/orange (arts list)"),
+        (2, 13, "atlas"),
+        (2, 15, "atlas/orange arrows"),
+        (3, 3, "banner words"),
+        (3, 4, "red X"),
+        (4, 6, "hub0"),
+        (5, 0, "hub1"),
+        (6, 0, "button glyphs"),
+    ] {
+        let rgba = mg.muscle_hud_sheet_rgba(source, pal);
+        assert!(!rgba.is_empty(), "{name} decodes");
+        let opaque = rgba.chunks_exact(4).filter(|p| p[3] != 0).count();
+        assert!(
+            opaque * 50 > rgba.len() / 4,
+            "{name} has real opaque coverage: {opaque}"
+        );
+    }
+
+    // The arts-input piece block (recomp GP0 packet capture) rides in the
+    // hud JSON, and the button-glyph gap TIM at PROT.DAT 0x7B00 decodes at
+    // its captured shape (64x32 texels, own 16-entry CLUT).
+    let ai = &hud["arts_input"];
+    assert_eq!(ai["cmd_chip"]["body"][0], 215);
+    assert_eq!(ai["cmd_label"]["v"]["high"], 104);
+    assert_eq!(ai["arts_arrows"]["u"]["left"], 244);
+    assert_eq!(ai["tri_button"]["r"][2], 16);
+    assert_eq!(hud["sheets"]["button"][0], 64, "button TIM: {hud}");
+    assert_eq!(hud["sheets"]["button"][1], 32);
+}
+
+#[test]
+fn muscle_arts_list_rows_come_from_the_scus_table() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+    assert!(mg.muscle_start_vs(0, 30, monster, 7));
+    let rows: serde_json::Value = serde_json::from_str(&mg.muscle_arts_list_json()).unwrap();
+    let rows = rows.as_array().unwrap();
+    assert!(!rows.is_empty(), "Vahn's arts resolve from the SCUS table");
+    for row in rows {
+        assert!(!row["name"].as_str().unwrap().is_empty());
+        let dirs = row["dirs"].as_array().unwrap();
+        assert!(!dirs.is_empty());
+        assert!(dirs.iter().all(|d| (1..=4).contains(&d.as_u64().unwrap())));
+        // Every SCUS-backed row carries the retail AP byte (the menu
+        // minimum is 18).
+        assert!(row["ap"].as_u64().unwrap() >= 18, "row: {row}");
+    }
+
+    // The retail input flow: committing until exhaustion trips the
+    // auto-end, and reselect refunds the budget.
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    let pool = state["budget"][0].as_u64().unwrap();
+    let mut committed = 0u64;
+    while !mg.muscle_selection_exhausted() {
+        assert!(
+            (0..4).any(|slot| mg.muscle_commit(slot)),
+            "some card commits until exhausted"
+        );
+        committed += 1;
+        assert!(committed < 32);
+    }
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert!(state["budget"][0].as_u64().unwrap() < pool);
+    mg.muscle_reset_selection();
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert_eq!(
+        state["budget"][0].as_u64().unwrap(),
+        pool,
+        "reselect refunds"
+    );
+    assert_eq!(state["queue"][0].as_array().unwrap().len(), 0);
 }

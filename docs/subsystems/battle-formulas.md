@@ -78,7 +78,7 @@ The seeder is the direct caller of `FUN_801DABA4` and runs once per round over t
 
 Finally the `ctx+0x290` formation advantage zeroes one side's keys outright (see [formation advantage](#formation-advantage-fun_80051d84)), and two scripted boss orders override the result: monster id `0xB4` with `ctx+0x28A == 0` keys slot 3 at `30000`, and monster id `0x4F` fixes slots 0 and 3 to a hand-written order.
 
-Ported as `battle_formulas::seed_initiative` / `wounded_bonus` / `apply_side_lockout`, and driven by `World::reseed_initiative`. The engine has no `+0x16E` status word yet, so the Slow halving never fires there; the wounded bonus, the lockout and the `+0xF4` ability arms all do.
+Ported as `battle_formulas::seed_initiative` / `wounded_bonus`, driven by `World::reseed_initiative` (which carries the `PORT: FUN_801DA780` tag). The engine has no `+0x16E` status word yet, so the Slow halving never fires there; the wounded bonus, the lockout and the `+0xF4` ability arms all do. The lockout sweep is applied by `reseed_initiative` itself against its own `party_count` boundary, because the engine compacts battle seating where retail reserves three party slots; `battle_formulas::apply_side_lockout` keeps retail's fixed `0..=2` / `3..=6` split as the test-side reference the adapter is checked against.
 
 > **Address caution.** The base roll was long attributed to `overlay_0897_801e23ec`. That is an **aliased VA**: PROT 0897's extraction over-reads into 0898 and the Ghidra program maps the file at `0x801C0000` instead of the true slot-A base `0x801CE818`, so every `0x801Exxxx`/`0x801Fxxxx` function it surfaces is a different battle-overlay routine. The aliased reading recovered only the base roll and dropped all three modifier terms above.
 

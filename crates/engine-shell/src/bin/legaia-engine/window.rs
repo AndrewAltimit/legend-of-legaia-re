@@ -322,6 +322,14 @@ type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
 type NpcPoseVerify = std::collections::HashMap<(u8, usize), Vec<([i16; 3], [i16; 3])>>;
 
 /// Windowed engine runner state. Owned by the winit event loop.
+/// One Baka round-chrome draw plus its stamped glyph cell rect
+/// (`glyph_u`-paged `u` + the widget record's `v/w/h`), when the draw pages
+/// the glyph strip and the parsed widget table is resident.
+type ResolvedChromeDraw = (
+    legaia_engine_core::baka_fighter_chrome::ChromeDraw,
+    Option<(u8, u8, u8, u8)>,
+);
+
 struct PlayWindowApp {
     session: BootSession,
     font: Font,
@@ -397,6 +405,18 @@ struct PlayWindowApp {
     /// to draw op-0x34-sub-3 field effects against the SCENE meshes, not the
     /// battle `global_tmd_pool`.
     field_stager_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
+    /// Per env-pack-slot uploaded-mesh index (`meshes`), for the VDF morph
+    /// substitution: `field_pack_mesh_idx[pack_slot]` names the static mesh
+    /// a live morph rebuild stands in for. `None` for pack TMDs with no
+    /// uploaded textured mesh. Rebuilt per scene in `upload_assets`.
+    field_pack_mesh_idx: Vec<Option<usize>>,
+    /// Live VDF-morphed replacements keyed by uploaded-mesh index: when the
+    /// world's morph deltas move (`World::take_morph_dirty_slots`), the
+    /// affected pack mesh is rebuilt with the staged vertices
+    /// (`ResolvedTmd::with_group_deltas` arithmetic) and every draw of that
+    /// mesh substitutes this upload - the native side of the
+    /// `FUN_8001C604` render substitution.
+    field_morph_live: std::collections::HashMap<usize, UploadedVramMesh>,
     /// Untextured (`F*`/`G*`) vertex-colour meshes for field props whose prims
     /// carry per-vertex colours instead of UVs (the textured VRAM-mesh path
     /// drops them). Parallel render list to `meshes`.
@@ -412,6 +432,14 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// Cross-draw coplanar-surface offsets for the current scene's resolved
+    /// [`legaia_engine_core::field_env::EnvDraw`] lists (terrain + placed
+    /// layers combined), from `legaia_engine_core::coplanar_draws`. Applied to
+    /// each matching draw's world translation so overlapping same-plane tiles
+    /// resolve to a stable winner instead of z-fighting (retail painter-orders
+    /// them through the ordering table). Rebuilt per scene in `upload_assets`.
+    coplanar_env_offsets:
+        std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]>,
     /// Terrain tiles whose mesh is untextured (`F*`/`G*` vertex-colour prims
     /// only): `(index into `color_meshes`, world model)`, resolved through the
     /// colour-mesh bridge the same way `field_placement_color_draws` is. The
@@ -589,6 +617,46 @@ struct PlayWindowApp {
     /// The fishing phase seen on the previous frame, so the redraw handler can
     /// detect the hook / landed / snapped / recast edges that seed the banners.
     fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
+    /// The minigame effect-part pool (`window/minigame_fx.rs`): the host sink
+    /// for the overlays' part spawns - dance sequence banner, fishing strike
+    /// splash, wander ripples, catch-celebration bursts. Ticked per frame in
+    /// `tick_minigame_extras`; drawn by the HUD builder.
+    minigame_fx: minigame_fx::MinigameFxPool,
+    /// The dance pre-song count-in phase (the `FUN_801cf470` below-10 states
+    /// as a host phase): the parsed game held pending, the banner's own frame
+    /// counter, and the once-only intro-cue latch. The dance enters when the
+    /// envelope finishes.
+    dance_countin: Option<(legaia_engine_core::dance::DanceGame, i32, bool)>,
+    /// This frame's count-in banner envelope, for the HUD builder.
+    dance_countin_draw: Option<legaia_engine_core::dance::CountInBanner>,
+    /// The Disco King tutorial actor running beside a how-to dance run
+    /// (`J` starts one).
+    dance_tutorial: Option<legaia_engine_core::dance_tutorial::DanceTutorial>,
+    /// This frame's tutorial captions / cursor, for the HUD builder.
+    dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
+    /// Score high-water mark the sequence-banner spawn edges against.
+    dance_fx_score: u32,
+    /// The fishing venue's free-swimming fish actor (idle/cast phases).
+    fish_wander: Option<legaia_engine_core::fishing_actors::FishWander>,
+    /// The reeling-line actor sim (hook -> fight -> celebration).
+    fish_line: Option<legaia_engine_core::fishing_actors::LineActorSim>,
+    /// The venue scene's `.MAP` extended footprint, read at fishing entry -
+    /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
+    fishing_floor: Option<Vec<u8>>,
+    /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
+    fishing_sway_angle: i32,
+    /// This frame's sway offset, applied to the point-exchange panel.
+    fishing_sway_offset: (i16, i16),
+    /// Small xorshift state for the minigame actors' `rand()` draws.
+    minigame_rng: u32,
+    /// The duel overlay's parsed HUD widget table, for resolving chrome
+    /// glyph draws (`parse_baka_hud`).
+    baka_hud_widgets: Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>>,
+    /// This frame's resolved chrome draws (the duel's own `BakaChrome`
+    /// output): each with its stamped glyph cell rect (`u` paged through
+    /// `glyph_u`, plus the record's `v/w/h`) when the draw pages the glyph
+    /// strip and the widget table is resident.
+    baka_chrome_frame: Vec<ResolvedChromeDraw>,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
@@ -678,6 +746,18 @@ struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     dynamic_lighting: bool,
+    /// Shadow-casting per-scene **point-light sub-layer** of the
+    /// dynamic-lighting enhancement: candle / wall-light sources derived
+    /// from the scene's emissive prims ([`legaia_engine_render::scene_lights`])
+    /// with per-light PCF shadow maps. Default `true`, but only effective
+    /// while `dynamic_lighting` is on; disable with `--no-dyn-shadows`, or
+    /// toggle at runtime with the `Y` key. Mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
+    dyn_shadows: bool,
+    /// The current scene's derived point lights (world space), rebuilt by
+    /// `upload_assets` at scene load and staged into the renderer each
+    /// field frame together with the camera's view-projection.
+    scene_point_lights: Vec<legaia_engine_render::scene_lights::ScenePointLight>,
     /// Mouse drag-orbit state: the last cursor X (window pixels) while the
     /// left button is held, `None` when not dragging. A horizontal drag in
     /// field free-roam rotates `session.camera.manual_orbit`, which both
@@ -808,6 +888,8 @@ mod geometry;
 mod hud;
 #[path = "window/menu_draws.rs"]
 mod menu_draws;
+#[path = "window/minigame_fx.rs"]
+mod minigame_fx;
 #[path = "window/minigames.rs"]
 mod minigames;
 #[path = "window/record.rs"]

@@ -369,11 +369,18 @@ pub fn check_and_learn_art(
 
 /// NOT WIRED: `FUN_801E91E8` is **not** called by the queue-builder
 /// `FUN_801EED1C` (whose only `jal`s are `0x80056798`, `0x801EFBFC` and
-/// `0x801EF9E4`); it belongs to the per-keypress input recognizer that arms
-/// the slot's Miracle marker `ctx[+0x25F + slot]`. The engine's Miracle gate is
-/// the whole-string match in
-/// [`resolve_action_queue`](super::resolve_action_queue), so the per-token
-/// position has no consumer until that recognizer is ported.
+/// `0x801EF9E4`). Its two retail caller families are (a) the per-keypress
+/// arts-input recognizer in the menu band (`jal` at `0x80204AA8` inside
+/// `FUN_80202BCC`, `overlay_0897_80202bcc.txt`), which arms the slot's Miracle
+/// marker `ctx[+0x25F + slot]`, and (b) the arms execution resolver
+/// `FUN_801EC3E4` (`jal` at `0x801EE2C0`, `overlay_0898_801ec3e4.txt`), which
+/// reads a strike record's `+0x3E` token and, on a zero position, stages the
+/// token into the reward byte `ctx[+0x269]`. The engine's Miracle gate is the
+/// whole-string match in
+/// [`resolve_action_queue`](super::resolve_action_queue), and its execution
+/// point (`attack_chain`) models neither the per-slot marker nor
+/// `ctx[+0x269]`, so the per-token position has no consumer until one of
+/// those two pieces of context state exists.
 ///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///

@@ -175,6 +175,39 @@ pub fn from_kingdom_entry(entry: &[u8]) -> Result<ClutWalkTable, String> {
     parse(&decoded)
 }
 
+/// Decode **any** scene bundle's walker table: the type-byte `0x06` slot of a
+/// `scene_asset_table` entry, located by type (not position, so the count-6
+/// early-town variants resolve too). This is the same table format the
+/// kingdom bundles carry in slot 5 - the world-map ocean was just the first
+/// carrier found. Nine *field* scenes ship one as well (`garmel`, `geremi`,
+/// `rayman`, `dohaty`, `tunnelb`, `tunnelc`, `rayman2`, `son`, `edson`): 1-2
+/// entry tables animating their water / waterfall CLUT cells at rows 505/506
+/// from park rows 503..505.
+///
+/// Errors when the entry has no asset table, no type-6 slot, the slot is one
+/// of the 4-byte placeholders (`count == 0` - the majority of field scenes),
+/// or the decoded bytes don't parse.
+// REF: FUN_8001f05c - asset-type dispatch case 6 installs the decoded table
+// at DAT_8007B7C8 regardless of which bundle carried it; FUN_8001ada4 case
+// 0xB is the per-entry walker actor.
+pub fn from_scene_bundle(entry: &[u8]) -> Result<ClutWalkTable, String> {
+    let decoded = crate::scene_asset_table::decode_slot_by_type(entry, 6)
+        .ok_or("no type-6 slot in the entry's asset table")??;
+    parse(&decoded)
+}
+
+/// Locate the parked CLUT source strips of **any** scene bundle: the raw
+/// CLUT-block records inside the type-byte `0x01` TIM_LIST slot (the same
+/// records [`park_strips`] finds in a kingdom slot 0, located by type).
+/// Returns an empty vec when the bundle has no TIM_LIST slot or it fails to
+/// decode.
+pub fn scene_park_strips(entry: &[u8]) -> Vec<ParkStrip> {
+    match crate::scene_asset_table::decode_slot_by_type(entry, 1) {
+        Some(Ok(slot)) => park_strips(&slot),
+        _ => Vec::new(),
+    }
+}
+
 /// A parked source strip from the kingdom bundle's slot-0 TIM_LIST: a
 /// raw VRAM CLUT-block record (NOT a TIM - no `0x10` magic, so plain
 /// TIM walkers skip it) that the retail loader `LoadImage`s verbatim.

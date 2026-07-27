@@ -18,5 +18,8 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+legaia-iso = { path = "../iso" }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

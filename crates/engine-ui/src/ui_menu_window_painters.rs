@@ -773,8 +773,12 @@ pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
 /// `DAT_801E46C0` rather than `DAT_801E46D0`.
 ///
 /// PORT: FUN_801D56FC
-/// NOT WIRED: the flows that open window 36 (the party-target panel
-/// NOT WIRED: `FUN_801D8308` drives it) are not ported; waived in scripts/ci/ui-host-drift-waivers.toml
+///
+/// Wired on the web host: the shop's equipment-buy recipient flow
+/// (`engine-core`'s `menu_runtime` + `shop::BuyRecipientSession`) opens
+/// this window over the parked buy list, and the browser play page paints
+/// it (`web-viewer::play_shop::recipient_window_draws`). The native window
+/// has not grown the surface yet - web-ahead in the host-drift gate.
 pub fn equip_target_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

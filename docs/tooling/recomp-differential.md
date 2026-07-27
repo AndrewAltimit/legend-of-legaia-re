@@ -275,8 +275,8 @@ longer and let alignment find the first change.
 
 ## Driving the game to an uncovered scene
 
-Two routes reach a scene the opening chain does not contain. Prefer the
-first; it costs seconds rather than minutes.
+Three routes reach a scene the opening chain does not contain. Prefer the
+earliest that applies; Route 1 costs seconds rather than minutes.
 
 ### Route 1 - load a parked savestate
 
@@ -341,6 +341,53 @@ screenshot rather than pressing blind. The navigation is
   immediately on seeing it; save the confirming screenshot for after.
 - **`START` does not always skip the attract demo.** The field-demo segment
   plays out on its own; poll gently for mode `0x17` rather than mashing.
+
+### Route 3 - warp into a mode-24 minigame
+
+The minigames (fishing, casino slots, Baka Fighter, Muscle Dome, the Noa
+dance) are entered in retail by the field VM's op `0x3E` door-warp, whose
+warp arm performs no call and names no scene - it only writes SCUS globals
+and lets the mode dispatcher pick up mode `0x18`
+([`script-vm.md` § 0x3E WARP](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+`scripts/recomp/minigame_warp.py` replays exactly those writes over the
+debug server's `write_ram` from any live **field-mode** state, so a
+minigame no savestate covers is seconds away from any field slot - no
+walking, no venue script:
+
+```bash
+python3 scripts/recomp/minigame_warp.py --port 4517 \
+    --from-slot 3 --sub-id 5 --save-slot 5 --screenshot /tmp/scratch/dome.bmp
+```
+
+The Muscle Dome (`--sub-id 5`) settles as a battle: mode chain
+`0x18 -> 0x19 -> 0x14 -> 0x15` (the middle steps can be too brief to
+sample), the arena backdrop with the Begin/Run menu, and the dome match SM
+cycling its phase byte (`ctx+6` through the context pointer `0x8007BD24` -
+`0x1e` is the menu-idle/orbit phase). **The scene name is not a fingerprint
+here**: it holds the backed-up *host* scene (`town01` when warped from the
+town slot) for the whole minigame. Identify a dome-resident state by
+`mode == 0x15` together with the sub-id global `0x8007BA34 == 5` plus the
+phase byte - the fingerprint the tool prints and a load-side check should
+re-read. The synthetic-fixture test is
+`scripts/recomp/test_minigame_warp.py` (`python3 -m unittest`, no server).
+
+### Capturing and verifying a scene-resident slot
+
+`{"cmd":"savestate","op":"save","slot":N}` (`probe.py`'s `save_savestate`)
+captures the current state into a slot; like the load, the save is staged
+and executes at the next block boundary. A capture is believed only after
+three checks, in order:
+
+1. the written `.pst` carries a non-zero resume PC
+   (`preflight.py --slot N` - a zero-PC snapshot self-wipes on load);
+2. a **fresh** process's `load-state N` lands on the expected content
+   fingerprint (scene/mode/globals, per the route that produced it);
+3. a scripted input advances the state - for the dome, Cross on `Begin`
+   opens the battle command cluster and the phase byte moves off `0x1e`.
+
+Recapture into a slot preflight already reports STALE rather than over an
+ok slot. Slot contents drift (Route 1), so the fingerprint, not the slot
+number, is the durable identity of a capture.
 
 ## The engine side: `legaia-engine sim-trace`
 
@@ -621,6 +668,21 @@ downstream of it.
 The `v` (voice index) channel differs whenever either of the above does:
 allocation order is a function of the note stream, so it is an effect, not
 an independent finding.
+
+## CD-XA cue capture
+
+`scripts/recomp/xa_cue_capture.py` applies the same snapshot-ring machinery to
+the **CD-XA voice-cue layer**: every `FUN_8003D53C(clip_slot, channel, dur)`
+fire (arts shouts, grunts, streamed BGM, fanfares) stages its parameters in a
+cluster of SCUS globals before arming the CdlSetfilter state machine, and the
+tool records those globals per frame, detects cue edges on the
+`play_state == 2` write, and resolves each staged `CdlLOC` against the
+`0x801C6ED8` clip table to name the `XA<n>.XA` file. The full address map and
+the end-of-playback artifact the detector must gate out are in the module
+docstring; `test_xa_cue_capture.py` locks the edge semantics on synthetic
+fixtures. This is the instrument behind the arts-voice channel pins in
+`legaia_art::arts_voice::CAPTURED_ART_CHANNELS`
+(see [`battle-action.md`](../subsystems/battle-action.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout)).
 
 ## See also
 

@@ -39,10 +39,42 @@ pub struct FieldScenePack {
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
     pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    /// Cross-draw coplanar lifts (`legaia_engine_core::coplanar_draws`) for
+    /// the combined terrain + placement lists, applied by the position
+    /// exporters so overlapping same-plane tiles resolve deterministically
+    /// instead of z-fighting (mirrors the native play-window).
+    pub coplanar_offsets: std::collections::HashMap<EnvDraw, [f32; 3]>,
     /// Currently-selected env-pack slot + its built mesh + the parallel
     /// per-vertex flat-colour array (see [`build_hybrid_env_mesh`]), cached
     /// so the positions/uvs/cba_tsb/indices accessors don't rebuild per call.
     pub cur: Option<(usize, legaia_tmd::mesh::VramMesh, Vec<u8>)>,
+    /// Live VRAM animation state ([`LegaiaViewer::field_scene_anim_init`]):
+    /// the bundle's type-6 CLUT-walk table + the scene-entry ambient move-VM
+    /// tree. `None` until initialised (or when the scene has neither).
+    pub anim: Option<FieldSceneAnim>,
+}
+
+/// Per-scene VRAM animation runner for the browser viewer - the two field
+/// mechanisms that mutate VRAM frame-over-frame (see
+/// `docs/subsystems/field-ambient-fx.md`):
+///
+/// 1. the bundle type-6 **CLUT-walk table** (`legaia_asset::clut_walk`,
+///    `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers), and
+/// 2. the **ambient move-VM effect tree** (`World::spawn_ambient_record` -
+///    jou's pulsating-flesh palette cyclers + lightning).
+///
+/// Both run on the retail game-tick clock: a game tick every
+/// [`Self::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
+/// overworld).
+pub struct FieldSceneAnim {
+    /// Parsed walker table + per-entry `(accumulator, frame_index)` state.
+    walker: Option<(legaia_asset::clut_walk::ClutWalkTable, Vec<(u32, usize)>)>,
+    /// Ambient move-VM world (only the effect subsystem is used).
+    ambient: Option<Box<legaia_engine_core::world::World>>,
+    /// Vsyncs per game tick (retail `DAT_1F800393`).
+    frame_step: u8,
+    /// Vsyncs banked toward the next game tick.
+    vsync_accum: u8,
 }
 
 /// Build one env-pack mesh the way the native play-window renders it: the
@@ -62,7 +94,13 @@ pub fn build_hybrid_env_mesh(
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     let mesh = rtmd.build_filtered_vram_mesh(vram);
     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`, mirrors the
+    // native play-window): flag double-sided pairs for the shader's facing
+    // discard, nudge distinct coplanar decal layers toward their visible side.
+    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
+    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
+    (mesh, flat)
 }
 
 /// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
@@ -78,7 +116,10 @@ pub fn build_hybrid_env_mesh_posed(
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
+    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
+    (mesh, flat)
 }
 
 /// Merge the untextured vertex-colour half into the textured half's vertex
@@ -208,6 +249,15 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         .flatten()
         .filter(|h| !h.indices.is_empty());
 
+    // Cross-draw coplanar lifts over the combined layers (terrain first,
+    // then placements - the same concatenation the native shell ranks).
+    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    combined.extend_from_slice(&terrain);
+    combined.extend_from_slice(&placements);
+    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&combined, &res);
+    let coplanar_offsets =
+        legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
+
     Ok(FieldScenePack {
         name: name.to_string(),
         res,
@@ -215,8 +265,177 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         placements,
         terrain,
         ground,
+        coplanar_offsets,
         cur: None,
+        anim: None,
     })
+}
+
+/// Build the VRAM animation state for a loaded field scene: parse the
+/// bundle's type-6 walker table (parking its source strips into the pack's
+/// VRAM) and stage the scene's ambient move-VM effect tree. Returns `None`
+/// when the scene has neither animation source.
+pub fn build_field_scene_anim(
+    index: &ProtIndex,
+    pack: &mut FieldScenePack,
+) -> Option<FieldSceneAnim> {
+    let scene = Scene::load(index, &pack.name).ok()?;
+    let is_world_map = legaia_engine_core::scene::is_world_map_scene(&pack.name);
+    let frame_step: u8 = if is_world_map { 3 } else { 2 };
+
+    // Walker table (any scene bundle; kingdom bundles resolve through the
+    // same by-type path).
+    let mut walker = None;
+    for entry in &scene.entries {
+        let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+            continue;
+        };
+        for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
+            pack.res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+        }
+        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+        walker = Some((table, state));
+        break;
+    }
+
+    // Ambient move-VM tree: prescript stagers + the MAN P1 effect-script
+    // installs (field scenes only; the overworld has no ambient tree).
+    let mut ambient: Option<Box<legaia_engine_core::world::World>> = None;
+    if !is_world_map && let Some(scripts) = scene.find_event_scripts() {
+        let stager_bytes = scripts.bytes.to_vec();
+        if let Ok(Some(man_bytes)) = scene.field_man_payload(index)
+            && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
+        {
+            let installs = legaia_engine_core::man_field_scripts::ambient_effect_installs(
+                &man_file, &man_bytes,
+            );
+            if !installs.is_empty() {
+                let mut world = Box::new(legaia_engine_core::world::World::default());
+                world.frame_step = frame_step;
+                world.install_field_stagers(&stager_bytes);
+                // VDF buffer before the spawn: flag-gated installer records
+                // resolve morph lanes at spawn-run.
+                world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+                for arg in installs {
+                    world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
+                }
+                // Scene-entry VDF pulse (enhancement, `engine-core::vdf_pulse`):
+                // jou's flesh-ground morph pack moves at plain entry; scenes
+                // whose stager table arms morphs itself keep retail behaviour
+                // (the installer self-guards).
+                let pack_objects: Vec<Vec<usize>> = pack
+                    .env_tmds
+                    .iter()
+                    .map(|&ti| {
+                        pack.res.tmds[ti]
+                            .tmd
+                            .objects
+                            .iter()
+                            .map(|o| o.vertices.len())
+                            .collect()
+                    })
+                    .collect();
+                world.install_entry_vdf_pulse(&pack_objects);
+                if !world.ambient_fx.is_empty() {
+                    ambient = Some(world);
+                }
+            }
+        }
+    }
+
+    if walker.is_none() && ambient.is_none() {
+        return None;
+    }
+    Some(FieldSceneAnim {
+        walker,
+        ambient,
+        frame_step,
+        vsync_accum: 0,
+    })
+}
+
+impl FieldSceneAnim {
+    /// Walker-only animation state for the **play** runtime
+    /// ([`crate::runtime::LegaiaRuntime`]): there the live scene host's own
+    /// `World` carries the ambient move-VM tree (spawned at scene entry and
+    /// drained per sim tick), so only the CLUT-walk half runs here.
+    pub(crate) fn walker_only(
+        table: legaia_asset::clut_walk::ClutWalkTable,
+        frame_step: u8,
+    ) -> FieldSceneAnim {
+        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+        FieldSceneAnim {
+            walker: Some((table, state)),
+            ambient: None,
+            frame_step,
+            vsync_accum: 0,
+        }
+    }
+
+    /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
+    /// `vram`. Returns `true` when texels changed.
+    pub fn tick(&mut self, vsyncs: u32, vram: &mut legaia_tim::Vram) -> bool {
+        let dt = u32::from(self.frame_step.max(1));
+        let mut game_ticks = 0u32;
+        for _ in 0..vsyncs.min(64) {
+            self.vsync_accum += 1;
+            if u32::from(self.vsync_accum) >= dt {
+                self.vsync_accum = 0;
+                game_ticks += 1;
+            }
+        }
+        if game_ticks == 0 {
+            return false;
+        }
+        let mut wrote = false;
+        // Walker entries: acc += dt per game tick; on crossing the frame's
+        // hold, MoveImage the 16x1 source cell in and reset (the retail
+        // FUN_8001ada4 case-0xB law, same as the play-window animator).
+        if let Some((table, state)) = self.walker.as_mut() {
+            for _ in 0..game_ticks {
+                for (entry, (acc, idx)) in table.entries.iter().zip(state.iter_mut()) {
+                    *acc += dt;
+                    let frame = &entry.frames[*idx];
+                    if *acc < u32::from(frame.hold_vsyncs) {
+                        continue;
+                    }
+                    *acc = 0;
+                    vram.move_image(
+                        frame.src_x,
+                        frame.src_y,
+                        legaia_asset::clut_walk::COPY_WIDTH,
+                        1,
+                        entry.dest_x,
+                        entry.dest_y,
+                    );
+                    *idx = (*idx + 1) % entry.frames.len();
+                    wrote = true;
+                }
+            }
+        }
+        // Ambient move-VM tree: bank the game ticks and drain against VRAM.
+        if let Some(world) = self.ambient.as_mut() {
+            world.ambient_pending_game_ticks += game_ticks;
+            if world.step_ambient_fx(vram) {
+                wrote = true;
+            }
+        }
+        wrote
+    }
+
+    /// One-line status for the UI: walker entry count + live ambient parts.
+    pub fn status(&self) -> (usize, usize) {
+        (
+            self.walker
+                .as_ref()
+                .map(|(t, _)| t.entries.len())
+                .unwrap_or(0),
+            self.ambient
+                .as_ref()
+                .map(|w| w.ambient_fx.len())
+                .unwrap_or(0),
+        )
+    }
 }
 
 impl LegaiaViewer {
@@ -388,6 +607,97 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// Initialise the loaded field scene's VRAM animation: the bundle's
+    /// type-6 CLUT-walk table (water / waterfall shimmer) + the scene-entry
+    /// ambient move-VM effect tree (jou's pulsating flesh / lightning).
+    /// Returns a JSON status `{"walker_entries", "ambient_parts"}`; both
+    /// zero when the scene has no animation sources. Call once after
+    /// `set_scene_field`; then drive [`Self::field_scene_anim_tick`] per
+    /// rendered frame and re-upload the VRAM texture when it returns `true`.
+    pub fn field_scene_anim_init(&mut self) -> Result<String, JsValue> {
+        let index = self
+            .ensure_prot_index()
+            .map_err(|e| JsValue::from_str(&format!("field_scene_anim_init: {e}")))?;
+        let Some(pack) = self.field_scene.as_mut() else {
+            return Err(JsValue::from_str("field_scene_anim_init: no field scene"));
+        };
+        pack.anim = build_field_scene_anim(&index, pack);
+        let (walker, ambient) = pack.anim.as_ref().map(|a| a.status()).unwrap_or((0, 0));
+        Ok(format!(
+            r#"{{"walker_entries":{walker},"ambient_parts":{ambient}}}"#
+        ))
+    }
+
+    /// Advance the field scene's VRAM animation by `vsyncs` retail vsyncs
+    /// (pass 1 per 60 Hz rendered frame). Returns `true` when VRAM texels
+    /// changed - re-upload [`Self::field_scene_vram_bytes`] to the GPU then.
+    pub fn field_scene_anim_tick(&mut self, vsyncs: u32) -> bool {
+        let Some(pack) = self.field_scene.as_mut() else {
+            return false;
+        };
+        let Some(anim) = pack.anim.as_mut() else {
+            return false;
+        };
+        anim.tick(vsyncs, &mut pack.res.vram)
+    }
+
+    /// Drain the environment-pack slots whose VDF morph deltas changed
+    /// since the last call (retail-armed ambient morph parts + the
+    /// scene-entry pulse). For each returned slot the page re-uploads that
+    /// mesh's positions from [`Self::field_scene_morph_positions`] - the
+    /// browser side of the `FUN_8001C604` render substitution.
+    pub fn field_scene_morph_slots(&mut self) -> Vec<u32> {
+        let Some(world) = self
+            .field_scene
+            .as_mut()
+            .and_then(|p| p.anim.as_mut())
+            .and_then(|a| a.ambient.as_mut())
+        else {
+            return Vec::new();
+        };
+        let mut slots: Vec<u32> = world
+            .take_morph_dirty_slots()
+            .into_iter()
+            .map(|(s, _)| s as u32)
+            .collect();
+        slots.sort_unstable();
+        slots.dedup();
+        slots
+    }
+
+    /// The morphed vertex-position stream for environment-pack slot `slot`:
+    /// the same hybrid mesh build as [`Self::field_scene_mesh`] with the
+    /// live VDF deltas staged onto the TMD's group vertices
+    /// (`ResolvedTmd::with_group_deltas` - the rest pose is never
+    /// mutated). The prim walk is position-independent, so the stream
+    /// aligns 1:1 with the uploaded mesh; the page swaps positions only.
+    /// Empty when no morph targets the slot.
+    pub fn field_scene_morph_positions(&mut self, slot: u32) -> Vec<f32> {
+        let Some(pack) = self.field_scene.as_mut() else {
+            return Vec::new();
+        };
+        let Some(world) = pack.anim.as_mut().and_then(|a| a.ambient.as_mut()) else {
+            return Vec::new();
+        };
+        let s = slot as usize;
+        let Some(&res_idx) = pack.env_tmds.get(s) else {
+            return Vec::new();
+        };
+        let rtmd = &pack.res.tmds[res_idx];
+        let mut morphed: Option<legaia_engine_core::scene_resources::ResolvedTmd> = None;
+        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
+            if let Some(deltas) = world.current_morph_deltas(s, group as u32, obj.vertices.len()) {
+                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
+                morphed = Some(base.with_group_deltas(group as u32, &deltas));
+            }
+        }
+        let Some(m) = morphed else {
+            return Vec::new();
+        };
+        let (mesh, _) = build_hybrid_env_mesh(&m, &pack.res.vram);
+        mesh.positions.iter().flatten().copied().collect()
+    }
+
     /// Per-placement env-pack slot, one `u32` per placed object. Feed each
     /// into [`Self::field_scene_mesh`] and draw at the matching
     /// [`Self::field_scene_placement_positions`] entry.
@@ -407,9 +717,10 @@ impl LegaiaViewer {
         };
         let mut out = Vec::with_capacity(f.placements.len() * 3);
         for d in &f.placements {
-            out.push(d.world_x as f32);
-            out.push(d.world_y as f32);
-            out.push(d.world_z as f32);
+            let off = f.coplanar_offsets.get(d).copied().unwrap_or([0.0; 3]);
+            out.push(d.world_x as f32 + off[0]);
+            out.push(d.world_y as f32 + off[1]);
+            out.push(d.world_z as f32 + off[2]);
         }
         out
     }
@@ -439,9 +750,10 @@ impl LegaiaViewer {
         };
         let mut out = Vec::with_capacity(f.terrain.len() * 3);
         for d in &f.terrain {
-            out.push(d.world_x as f32);
-            out.push(d.world_y as f32);
-            out.push(d.world_z as f32);
+            let off = f.coplanar_offsets.get(d).copied().unwrap_or([0.0; 3]);
+            out.push(d.world_x as f32 + off[0]);
+            out.push(d.world_y as f32 + off[1]);
+            out.push(d.world_z as f32 + off[2]);
         }
         out
     }

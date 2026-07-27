@@ -105,6 +105,8 @@ pub(crate) fn cmd_play_window(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     dynamic_lighting: bool,
+    dyn_shadows: bool,
+    entry_pulse: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -131,6 +133,8 @@ pub(crate) fn cmd_play_window(
         screenshot,
         seed_party,
         dynamic_lighting,
+        dyn_shadows,
+        entry_pulse,
         None,
     )
 }
@@ -258,6 +262,8 @@ pub(super) fn cmd_play_window_with_record(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     dynamic_lighting: bool,
+    dyn_shadows: bool,
+    entry_pulse: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -305,6 +311,9 @@ pub(super) fn cmd_play_window_with_record(
     }
 
     let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    // Scene-entry VDF pulse (enhancement) gate - must land before the first
+    // `enter_field_scene`, which is where the installer runs.
+    session.host.world.entry_pulse_enabled = entry_pulse;
     // Drive field dialogue through the inline-script field-VM runner so branch
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
@@ -761,9 +770,12 @@ pub(super) fn cmd_play_window_with_record(
         field_posed_props: Vec::new(),
         field_posed_tmds: Vec::new(),
         field_stager_tmds: Vec::new(),
+        field_pack_mesh_idx: Vec::new(),
+        field_morph_live: std::collections::HashMap::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_terrain_draws: Vec::new(),
+        coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         ground_heightfield: None,
@@ -788,6 +800,20 @@ pub(super) fn cmd_play_window_with_record(
         fishing_banners: Default::default(),
         fishing_banner_draws: Vec::new(),
         fishing_prev_phase: None,
+        minigame_fx: Default::default(),
+        dance_countin: None,
+        dance_countin_draw: None,
+        dance_tutorial: None,
+        dance_tutorial_frame: None,
+        dance_fx_score: 0,
+        fish_wander: None,
+        fish_line: None,
+        fishing_floor: None,
+        fishing_sway_angle: 0,
+        fishing_sway_offset: (0, 0),
+        minigame_rng: 0x1234_5678,
+        baka_hud_widgets: None,
+        baka_chrome_frame: Vec::new(),
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_ground_mesh: None,
@@ -836,6 +862,8 @@ pub(super) fn cmd_play_window_with_record(
         seru_names: None,
         battle_camera: None,
         dynamic_lighting,
+        dyn_shadows,
+        scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         cursor_x: 0.0,
     };

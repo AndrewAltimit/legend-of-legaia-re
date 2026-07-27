@@ -14,9 +14,15 @@
 //! # The model
 //!
 //! ```text
-//! gain = ambient + (DIFFUSE * |N.L| + POOL * pool(frag)) * warm_tint
-//! out  = baked_rgb * min(gain, MAX_GAIN)        (saturating at 1.0)
+//! base = min(ambient + (DIFFUSE * |N.L| + POOL * pool(frag)) * warm_tint, MAX_GAIN)
+//! out  = baked_rgb * min(base + point_gain, TOTAL_MAX_GAIN)   (saturating at 1.0)
 //! ```
+//!
+//! `point_gain` is the per-scene point-light layer's contribution (the
+//! derived candle / wall-light sources with their shadow terms - see
+//! [`crate::scene_lights`]); it is zero outside the scene pipelines and
+//! whenever the shadow sub-toggle is off, in which case the model reduces
+//! to the original global gain.
 //!
 //! * `|N.L|` - a soft directional term off the smoothed per-vertex normals
 //!   the VRAM-mesh vertex format already carries (built by
@@ -41,8 +47,14 @@
 pub const DIFFUSE: f32 = 0.55;
 /// Weight of the screen-space light pool. WGSL twin: `DYN_POOL`.
 pub const POOL: f32 = 0.35;
-/// Gain ceiling relative to the baked colour. WGSL twin: `DYN_MAX_GAIN`.
+/// Gain ceiling of the global (directional + pool) term relative to the
+/// baked colour. WGSL twin: `DYN_MAX_GAIN`.
 pub const MAX_GAIN: f32 = 1.3;
+/// Gain ceiling with the per-scene point-light layer added on top - a
+/// candle can push a fragment brighter than the global light alone, but
+/// never past ~1.9x the baked colour (just below the PSX modulation
+/// maximum of 255/128). WGSL twin: `DYN_TOTAL_MAX_GAIN`.
+pub const TOTAL_MAX_GAIN: f32 = 1.9;
 /// Orientation term used when no normal is available (zero vertex normal
 /// and degenerate geometric normal). WGSL twin: `DYN_LAMBERT_FALLBACK`.
 pub const LAMBERT_FALLBACK: f32 = 0.6;
@@ -84,6 +96,10 @@ pub fn pool_factor(frag_px: [f32; 2], viewport: [f32; 2]) -> f32 {
 /// * `light_dir` - `[x, y, z, enable]`; `enable < 0.5` returns `rgb`
 ///   unchanged (the default-off identity the parity oracles rely on).
 /// * `light_color` - `[tint_r, tint_g, tint_b, ambient]`.
+/// * `point_gain` - the per-scene point-light layer's additive gain (the
+///   analytic part is mirrored by [`crate::scene_lights::point_gain`]);
+///   `[0.0; 3]` outside the scene pipelines.
+#[allow(clippy::too_many_arguments)] // mirrors the WGSL twin's signature 1:1
 pub fn shade(
     rgb: [f32; 3],
     normal: [f32; 3],
@@ -92,6 +108,7 @@ pub fn shade(
     viewport: [f32; 2],
     light_dir: [f32; 4],
     light_color: [f32; 4],
+    point_gain: [f32; 3],
 ) -> [f32; 3] {
     if light_dir[3] < 0.5 {
         return rgb;
@@ -113,8 +130,9 @@ pub fn shade(
     let pool = pool_factor(frag_px, viewport);
     let mut out = [0.0f32; 3];
     for i in 0..3 {
-        let gain = light_color[3] + (DIFFUSE * lambert + POOL * pool) * light_color[i];
-        out[i] = (rgb[i] * gain.min(MAX_GAIN)).clamp(0.0, 1.0);
+        let base = light_color[3] + (DIFFUSE * lambert + POOL * pool) * light_color[i];
+        let gain = (base.min(MAX_GAIN) + point_gain[i]).min(TOTAL_MAX_GAIN);
+        out[i] = (rgb[i] * gain).clamp(0.0, 1.0);
     }
     out
 }
@@ -153,6 +171,7 @@ mod tests {
             [960.0, 720.0],
             off,
             light_color(),
+            [0.0; 3],
         );
         assert_eq!(out, rgb, "disabled dyn_light must not touch the colour");
     }
@@ -172,6 +191,7 @@ mod tests {
             [960.0, 720.0],
             light_dir_on(),
             light_color(),
+            [0.0; 3],
         );
         for (i, c) in out.iter().enumerate() {
             assert!(
@@ -202,6 +222,7 @@ mod tests {
             vp,
             light_dir_on(),
             light_color(),
+            [0.0; 3],
         );
         let wall = shade(
             rgb,
@@ -211,6 +232,7 @@ mod tests {
             vp,
             light_dir_on(),
             light_color(),
+            [0.0; 3],
         );
         assert!(
             wall[0] < ground[0],
@@ -235,6 +257,7 @@ mod tests {
             vp,
             light_dir_on(),
             light_color(),
+            [0.0; 3],
         );
         let down = shade(
             rgb,
@@ -244,6 +267,7 @@ mod tests {
             vp,
             light_dir_on(),
             light_color(),
+            [0.0; 3],
         );
         assert_eq!(up, down);
     }
@@ -270,6 +294,7 @@ mod tests {
             "const DYN_DIFFUSE: f32 = 0.55;",
             "const DYN_POOL: f32 = 0.35;",
             "const DYN_MAX_GAIN: f32 = 1.3;",
+            "const DYN_TOTAL_MAX_GAIN: f32 = 1.9;",
             "const DYN_LAMBERT_FALLBACK: f32 = 0.6;",
             "const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45);",
             "const DYN_POOL_INNER: f32 = 0.15;",
@@ -281,5 +306,68 @@ mod tests {
             );
         }
         assert!(src.contains("fn dyn_light"));
+    }
+
+    /// The point-light layer adds on top of the (capped) global gain and
+    /// the combined gain caps at TOTAL_MAX_GAIN; with the master enable
+    /// off it contributes nothing at all.
+    #[test]
+    fn point_gain_adds_and_caps() {
+        let rgb = [0.4, 0.4, 0.4];
+        let at = [480.0, 324.0];
+        let vp = [960.0, 720.0];
+        let base = shade(
+            rgb,
+            [0.0, -1.0, 0.0],
+            [0.0; 3],
+            at,
+            vp,
+            light_dir_on(),
+            light_color(),
+            [0.0; 3],
+        );
+        let lit = shade(
+            rgb,
+            [0.0, -1.0, 0.0],
+            [0.0; 3],
+            at,
+            vp,
+            light_dir_on(),
+            light_color(),
+            [0.3, 0.3, 0.3],
+        );
+        for i in 0..3 {
+            assert!(
+                lit[i] > base[i],
+                "point gain must brighten: {lit:?} vs {base:?}"
+            );
+        }
+        // A huge point gain saturates at TOTAL_MAX_GAIN x baked.
+        let capped = shade(
+            rgb,
+            [0.0, -1.0, 0.0],
+            [0.0; 3],
+            at,
+            vp,
+            light_dir_on(),
+            light_color(),
+            [100.0; 3],
+        );
+        for c in capped {
+            assert!(c <= rgb[0] * TOTAL_MAX_GAIN + 1e-6, "{capped:?}");
+        }
+        // Master enable off: identity regardless of point gain.
+        let off = [DYN_LIGHT_DIR[0], DYN_LIGHT_DIR[1], DYN_LIGHT_DIR[2], 0.0];
+        let out = shade(
+            rgb,
+            [0.0, -1.0, 0.0],
+            [0.0; 3],
+            at,
+            vp,
+            off,
+            light_color(),
+            [100.0; 3],
+        );
+        assert_eq!(out, rgb);
     }
 }

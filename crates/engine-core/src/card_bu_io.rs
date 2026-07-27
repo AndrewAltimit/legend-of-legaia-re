@@ -236,7 +236,7 @@ impl CardIoState {
     /// behind a pointer, so there is nothing to re-point here.
     ///
     /// PORT: FUN_801E0598
-    /// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+    /// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
     pub fn reset(&mut self, keep_directory: bool) {
         self.phase = CardPhase::Idle;
         self.write_failed = false;
@@ -255,7 +255,7 @@ impl CardIoState {
     /// completion arrives later through [`Self::step`], not here.
     ///
     /// PORT: FUN_801E3C90
-    /// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+    /// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
     pub fn read_file(
         &mut self,
         port: u8,
@@ -284,7 +284,7 @@ impl CardIoState {
     /// latches the failure flag and returns without issuing the write.
     ///
     /// PORT: FUN_801E3D68
-    /// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+    /// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
     pub fn write_file(
         &mut self,
         port: u8,
@@ -328,7 +328,7 @@ impl CardIoState {
     /// Either way the phase drops back to idle.
     ///
     /// PORT: FUN_801E380C
-    /// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+    /// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
     pub fn step(&mut self, events: [bool; CARD_EVENTS]) -> CardStep {
         let phase = self.phase;
         if phase == CardPhase::Idle {
@@ -364,7 +364,7 @@ impl CardIoState {
     /// which is the artifact the repo's Ghidra notes warn about.
     ///
     /// PORT: FUN_801E3BEC
-    /// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+    /// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
     pub fn find_directory_name(&self, count: usize, name: &str) -> bool {
         self.dir_names.iter().take(count).any(|n| n == name)
     }
@@ -381,7 +381,7 @@ impl CardIoState {
 /// whenever more than one handle fires in the same frame.
 ///
 /// PORT: FUN_801E435C
-/// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+/// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
 pub fn poll_events_a(events: [bool; CARD_EVENTS]) -> u32 {
     for (i, fired) in events.iter().enumerate() {
         if *fired {
@@ -399,7 +399,7 @@ pub fn poll_events_a(events: [bool; CARD_EVENTS]) -> u32 {
 /// ([`card_events_drain`](crate::save_select::card_events_drain)).
 ///
 /// PORT: FUN_801E3A98
-/// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+/// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
 pub fn drain_events_b(events: &mut [bool; CARD_EVENTS]) {
     *events = [false; CARD_EVENTS];
 }
@@ -414,7 +414,7 @@ pub fn drain_events_b(events: &mut [bool; CARD_EVENTS]) {
 /// spin, so a host-side deadlock is a choice rather than a translation.
 ///
 /// PORT: FUN_801E3A00
-/// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+/// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
 pub fn wait_events_b(events: [bool; CARD_EVENTS]) -> Option<u32> {
     let fired = poll_events_a(events);
     (fired != 0).then_some(fired)
@@ -441,7 +441,7 @@ pub fn format_card_result(handle: u32) -> FormatResult {
 /// resolves the handle through [`format_card_result`].
 ///
 /// PORT: FUN_801E3E7C
-/// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+/// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
 pub fn format_card(port: u8, unit: u8, events: &mut [bool; CARD_EVENTS]) -> CardOp {
     drain_events_b(events);
     CardOp::Format {
@@ -456,7 +456,7 @@ pub fn format_card(port: u8, unit: u8, events: &mut [bool; CARD_EVENTS]) -> Card
 /// completion beat at all.
 ///
 /// PORT: FUN_801E37CC
-/// NOT WIRED: no card-image backend sits behind the save-slot session; the engine's saves are disk-backed LGSF
+/// NOT WIRED: no host routes card I/O through the [`CardOp`] model - the one card-image backend (`web-viewer::cards`) patches container bytes synchronously and the native saves are disk-backed LGSF
 pub fn erase_file(port: u8, unit: u8, name: &str) -> CardOp {
     CardOp::Erase {
         path: bu_path(port, unit, Some(name)),

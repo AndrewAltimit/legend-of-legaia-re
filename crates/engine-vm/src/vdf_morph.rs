@@ -208,6 +208,119 @@ pub fn stage_group_morph_for_actor<'a>(
     stage_group_morph(rest_pose, group_idx, &slots)
 }
 
+/// Retail lane-array capacity on the actor record: the weights live at
+/// `+0xA0..+0xB0` (8 u16 halfwords) and the sub-entry index bytes at
+/// `+0xB0..+0xB8`, so a part can drive at most 8 morph lanes.
+pub const ACTOR_MORPH_LANES: usize = 8;
+
+/// Read the morph-lane weight halfword at `actor + 0xA0 + lane*2` off the
+/// retail overlap storage ([`crate::move_vm::ActorState`] keeps the
+/// `+0xA0..` window split across `keyframe_desc` / `field_a8` /
+/// `anim_block`, mirroring the retail record layout - see
+/// `ActorState::zero_keyframe_weight`).
+pub fn keyframe_weight(state: &crate::move_vm::ActorState, lane: usize) -> u16 {
+    match 0xA0 + lane * 2 {
+        off @ 0xA0..=0xA6 => state.keyframe_desc[(off - 0xA0) / 2],
+        0xA8 => (state.field_a8 as u32 & 0xFFFF) as u16,
+        0xAA => (state.field_a8 as u32 >> 16) as u16,
+        off => state.anim_block_u16(off - 0xAC),
+    }
+}
+
+/// Write the morph-lane weight halfword at `actor + 0xA0 + lane*2` (the
+/// mutating sibling of [`keyframe_weight`]).
+pub fn set_keyframe_weight(state: &mut crate::move_vm::ActorState, lane: usize, value: u16) {
+    match 0xA0 + lane * 2 {
+        off @ 0xA0..=0xA6 => state.keyframe_desc[(off - 0xA0) / 2] = value,
+        0xA8 => {
+            state.field_a8 = ((state.field_a8 as u32 & 0xFFFF_0000) | u32::from(value)) as i32;
+        }
+        0xAA => {
+            state.field_a8 =
+                ((state.field_a8 as u32 & 0x0000_FFFF) | (u32::from(value) << 16)) as i32;
+        }
+        off => state.anim_block_u16_set(off - 0xAC, value),
+    }
+}
+
+/// The morph lanes a move-VM part carries: `(vdf_sub_entry_index, weight)`
+/// per armed lane, read off the retail record arrays op `0x0A` writes
+/// (`+0x6C` count, `+0xB0 + lane` index byte, `+0xA0 + lane*2` weight).
+pub fn actor_morph_lanes(state: &crate::move_vm::ActorState) -> Vec<(u8, u16)> {
+    let count = (state.keyframe_count as usize).min(ACTOR_MORPH_LANES);
+    (0..count)
+        .map(|lane| {
+            (
+                state.anim_block_u8(0x04 + lane), // +0xB0 + lane
+                keyframe_weight(state, lane),
+            )
+        })
+        .collect()
+}
+
+/// Run the retail ramp envelope (`FUN_80020740`,
+/// [`crate::move_buffer::envelope_tick`]) over a move-VM part's morph
+/// lanes, bridging the [`crate::move_vm::ActorState`] overlap storage into
+/// the envelope's [`crate::move_buffer::MoveBufferState`] field view:
+///
+/// * `bone_count`   = `+0x6C` (`keyframe_count`, op `0x0A`)
+/// * `lanes[i]`     = `+0xA0 + i*2` ([`keyframe_weight`])
+/// * `up/down[i]`   = `+0xB8 + i*2` / `+0xC8 + i*2` (anim block)
+/// * `done_mask`    = `+0x7C` (`field_7c`)
+/// * `env_flags`    = `+0x62` (`local_flags` - the records steer the
+///   envelope through move-VM ops `0x31`/`0x32`, e.g. town0e's
+///   `0x32 [0x1000]` LANE0_SNAP_DOWN cycle and rikuroa's `0x32 [0x400]`
+///   HOLD)
+///
+/// Retail runs the envelope from the per-frame actor tick gated on the
+/// `+0x10` flag bit `0x1000`
+/// ([`crate::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE`], the same bit op
+/// `0x0A` sets and the render substitution tests); callers mirror that
+/// gate.
+///
+/// PORT: FUN_80020740 (via `move_buffer::envelope_tick`; this is the
+/// ActorState storage bridge)
+pub fn envelope_tick_actor(state: &mut crate::move_vm::ActorState, frame_delta: u8) {
+    use crate::move_buffer::MoveBufferState;
+    let mut env = MoveBufferState {
+        bone_count: (state.keyframe_count).min(ACTOR_MORPH_LANES as u8),
+        done_mask: state.field_7c,
+        env_flags: state.local_flags,
+        ..Default::default()
+    };
+    for lane in 0..env.bone_count as usize {
+        env.lanes[lane] = keyframe_weight(state, lane);
+        env.up_velocity[lane] = state.anim_block_u16(0x0C + lane * 2) as i16;
+        env.down_velocity[lane] = state.anim_block_u16(0x1C + lane * 2) as i16;
+    }
+    crate::move_buffer::envelope_tick(&mut env, frame_delta);
+    for lane in 0..env.bone_count as usize {
+        set_keyframe_weight(state, lane, env.lanes[lane]);
+    }
+    state.field_7c = env.done_mask;
+    state.local_flags = env.env_flags;
+}
+
+/// Summed weighted morph deltas for one TMD group: the [`stage_group_morph`]
+/// arithmetic applied to a zero rest pose, read back as one `[dx, dy, dz]`
+/// triple per vertex. Adding the triple (wrapping) onto the authored vertex
+/// reproduces the staged buffer exactly - the wrapping add is associative,
+/// and the GTE saturation applies to the scaled per-record delta on both
+/// paths.
+pub fn sum_group_deltas(n_verts: usize, group_idx: u32, slots: &[(&[u8], i16)]) -> Vec<[i16; 3]> {
+    let staged = stage_group_morph(&vec![0u8; n_verts * 8], group_idx, slots);
+    (0..n_verts)
+        .map(|i| {
+            let o = i * 8;
+            [
+                i16::from_le_bytes([staged[o], staged[o + 1]]),
+                i16::from_le_bytes([staged[o + 2], staged[o + 3]]),
+                i16::from_le_bytes([staged[o + 4], staged[o + 5]]),
+            ]
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +416,81 @@ mod tests {
         let recs = parse_vdf_morph_records(&e);
         apply_weighted_deltas(&mut buf, 0, &recs[0], 0x1000);
         assert_eq!(&buf[6..8], &[0xAB, 0xCD]);
+    }
+
+    /// The retail record chain on a move-VM **part** (the ambient-tree
+    /// shape): op `0x0A` arms the lanes + flags bit `0x1000`, op `0x32`
+    /// steers the envelope flags, and the ActorState envelope bridge ramps
+    /// the `+0xA0` weights the render substitution reads back.
+    #[test]
+    fn op0a_arms_actor_state_and_envelope_bridge_ramps_weights() {
+        use crate::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE;
+        use crate::move_vm::{ActorState, StepResult};
+
+        struct NullHost;
+        impl crate::move_vm::MoveHost for NullHost {}
+
+        // town0e record 11's arm: `0A 00 02 (0A 800 800) (0B 800 800)`.
+        let bc: Vec<u16> = vec![
+            0x0A, 0x0000, 0x0002, 0x000A, 0x0800, 0x0800, 0x000B, 0x0800, 0x0800, 0x32,
+            0x1000, // env_flags |= LANE0_SNAP_DOWN
+            0x08,   // HALT
+        ];
+        let mut st = ActorState::new();
+        let mut host = NullHost;
+        while let StepResult::Advance = crate::move_vm::step(&mut host, &mut st, &bc) {}
+        assert_ne!(
+            st.flags & STATUS_FLAG_ENVELOPE_ACTIVE,
+            0,
+            "op 0A arms +0x10 bit 0x1000"
+        );
+        assert_eq!(
+            actor_morph_lanes(&st),
+            vec![(0x0A, 0), (0x0B, 0)],
+            "lane indices land in the +0xB0 byte array, weights start 0"
+        );
+
+        // Envelope: lane 0 ramps first (cascade - lane 1 waits on lane 0's
+        // peak). Op 0x0A pre-scales the record's velocity by the host's
+        // curve multiplier (default 0x10, the retail scratchpad scalar), so
+        // 0x800 raw is a one-tick rise here.
+        envelope_tick_actor(&mut st, 1);
+        assert!(keyframe_weight(&st, 0) > 0, "lane 0 ramps on tick 1");
+        assert_eq!(keyframe_weight(&st, 1), 0, "lane 1 cascades behind lane 0");
+        envelope_tick_actor(&mut st, 1);
+        envelope_tick_actor(&mut st, 1);
+        assert_eq!(keyframe_weight(&st, 0), 0x1000, "lane 0 clamped at peak");
+        // Keep ticking: lane 1 peaks, the down-ramp drains, and with
+        // LANE0_SNAP_DOWN the cycle restarts instead of retiring.
+        let mut weights = Vec::new();
+        for _ in 0..16 {
+            envelope_tick_actor(&mut st, 1);
+            weights.push((keyframe_weight(&st, 0), keyframe_weight(&st, 1)));
+        }
+        assert!(
+            weights.iter().any(|&(w0, _)| w0 == 0),
+            "down-ramp drains lane 0: {weights:x?}"
+        );
+        assert!(
+            weights.windows(2).any(|w| w[0].0 == 0 && w[1].0 > 0),
+            "LANE0_SNAP_DOWN recycles the pulse: {weights:x?}"
+        );
+    }
+
+    #[test]
+    fn sum_group_deltas_matches_staged_minus_rest() {
+        let rest: Vec<u8> = [vert(100, 200, 300), vert(-5, -6, -7)].concat();
+        let e = entry(&[(3, 0, &[(10, -20, 30), (1, 2, 3)])]);
+        let slots: Vec<(&[u8], i16)> = vec![(&e, 0x800)];
+        let staged = stage_group_morph(&rest, 3, &slots);
+        let deltas = sum_group_deltas(2, 3, &slots);
+        for (i, d) in deltas.iter().enumerate() {
+            let o = i * 8;
+            let rest_x = i16::from_le_bytes([rest[o], rest[o + 1]]);
+            let staged_x = i16::from_le_bytes([staged[o], staged[o + 1]]);
+            assert_eq!(rest_x.wrapping_add(d[0]), staged_x, "vertex {i} x");
+        }
+        assert_eq!(deltas[0], [5, -10, 15]);
     }
 
     /// The full retail chain on one actor: move-VM op `0x0A` installs the

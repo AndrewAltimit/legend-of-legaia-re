@@ -24,6 +24,14 @@
  * already_applied, skipped, untranslated, sections: [{name, total, filled,
  * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
  * when no language pack was chosen).
+ * The structured "Prices & names" editors ride `read_manual_edit_tables(image)
+ * -> { max_name_len, locations: [name x16], fishing: [{ page, row, item, name,
+ * price, one_time }] }` - the disc's own location-name slots and fishing
+ * prize rows (with item names resolved from the disc's SCUS table), decoded
+ * client-side after the user picks their disc so the site itself ships no game
+ * text. The editors serialize back to the exact `fishing_prices` /
+ * `location_renames` strings the raw (advanced) inputs feed, so the wire
+ * format into patch_rom is unchanged.
  * Texture replacement rides three more exports: `scan_textures(image,
  * thumbMax) -> { raw_count, lzs_count, textures }` (every TIM on the disc,
  * with thumbnails), `preview_texture_replace(image, entry, section, offset,
@@ -145,6 +153,257 @@ function langCoverageText(lang) {
 // and error if it points at a missing file, so we ship a matching one.
 function cueFor(binName) {
   return `FILE "${binName}" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n`;
+}
+
+// --- Info tooltips ----------------------------------------------------------
+// Every `.info-tip` is a "?" bead whose `.tip-pop` popover opens on hover /
+// keyboard focus (pure CSS) and toggles on click or Enter/Space (for touch),
+// with Escape and outside-clicks closing any pinned tip. Delegated on the
+// document so the JS-built editor rows get the behavior for free. The bead is
+// a span (not a <button>) so a tip may carry links, and being interactive
+// content it never forwards a click to the checkbox of a wrapping <label>.
+function setupInfoTips() {
+  const openTips = () => document.querySelectorAll('.info-tip.is-open');
+  const close = (tip) => {
+    tip.classList.remove('is-open');
+    tip.setAttribute('aria-expanded', 'false');
+  };
+  // Popovers center under the bead by default; near a viewport edge they pin
+  // to the bead's side instead so they stay readable.
+  const position = (tip) => {
+    tip.classList.remove('tip-align-right', 'tip-align-left');
+    const r = tip.getBoundingClientRect();
+    const half = Math.min(384, window.innerWidth * 0.78) / 2;
+    const mid = r.left + r.width / 2;
+    if (mid + half > window.innerWidth - 12) tip.classList.add('tip-align-right');
+    else if (mid - half < 12) tip.classList.add('tip-align-left');
+  };
+  const toggle = (tip) => {
+    const open = !tip.classList.contains('is-open');
+    openTips().forEach((t) => { if (t !== tip) close(t); });
+    tip.classList.toggle('is-open', open);
+    tip.setAttribute('aria-expanded', String(open));
+    if (open) position(tip);
+  };
+  document.addEventListener('click', (e) => {
+    const tip = e.target.closest('.info-tip');
+    if (!tip) {
+      openTips().forEach(close);
+      return;
+    }
+    if (e.target.closest('a')) return; // links inside an open tip stay links
+    // Inside a <summary> or <label>, a plain click would also toggle the
+    // group / checkbox - the tip click is only ever about the tip.
+    e.preventDefault();
+    e.stopPropagation();
+    toggle(tip);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      openTips().forEach(close);
+      return;
+    }
+    const tip = e.target.closest && e.target.closest('.info-tip');
+    if (tip && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      toggle(tip);
+    }
+  });
+  // Hover / focus opens via CSS; JS only fixes the edge alignment.
+  document.addEventListener('mouseover', (e) => {
+    const tip = e.target.closest && e.target.closest('.info-tip');
+    if (tip && !tip.classList.contains('is-open')) position(tip);
+  });
+  document.addEventListener('focusin', (e) => {
+    const tip = e.target.closest && e.target.closest('.info-tip');
+    if (tip) position(tip);
+  });
+}
+
+// --- Prices & names: structured editors over the disc's own tables ----------
+// Friendly rows over the same `fishing_prices` / `location_renames` strings
+// the raw (advanced) inputs feed - the structured editors serialize to that
+// exact syntax and the two sources are merged, so the patch_rom wire format is
+// unchanged. Current values come from the user's own disc via
+// `read_manual_edit_tables` (populated when a disc is chosen; placeholders
+// before that). Capability bounds mirror the patcher's: a fishing prize can
+// only be REPRICED (the 12 rows and their items are fixed on the disc, and a
+// price is keyed by item id across both venues), and a location slot can only
+// be RENAMED (16 fixed slots, ASCII, 31 chars).
+function setupManualTables(wasm, fileInput, discBytes) {
+  const statusEl = $('rom-tables-status');
+  const fishRowsEl = $('rom-fish-rows');
+  const locRowsEl = $('rom-loc-rows');
+  if (!fishRowsEl || !locRowsEl) {
+    return { clear() {}, collect() { return { fishing: '', locations: '', error: '' }; } };
+  }
+
+  let maxNameLen = 31;
+
+  const setNote = (msg) => { if (statusEl) statusEl.textContent = msg; };
+  const showEmpty = (el, msg) => {
+    el.textContent = '';
+    const p = document.createElement('p');
+    p.className = 'rom-edit-empty';
+    p.textContent = msg;
+    el.appendChild(p);
+  };
+
+  // Highlight rows that will patch, so "what did I change" is scannable.
+  const markEdited = (input) => {
+    const row = input.closest('.rom-edit-row');
+    if (row) row.classList.toggle('is-edited', input.value.trim() !== '');
+  };
+
+  function renderFish(prizes) {
+    fishRowsEl.textContent = '';
+    if (!prizes || !prizes.length) {
+      showEmpty(fishRowsEl, 'No fishing prize rows found on this disc.');
+      return;
+    }
+    // One row per distinct prize item: the patch is keyed by item id and a
+    // reprice hits every venue row granting that item, so a per-venue split
+    // would promise control the patcher does not have.
+    const byItem = new Map();
+    for (const p of prizes) {
+      const cur = byItem.get(p.item) || { item: p.item, name: p.name, venues: [] };
+      cur.venues.push(p);
+      byItem.set(p.item, cur);
+    }
+    const venueName = (page) => (page === 0 ? 'Buma' : 'Vidna');
+    for (const g of byItem.values()) {
+      const row = document.createElement('label');
+      row.className = 'rom-edit-row';
+      const name = document.createElement('span');
+      name.className = 'rom-edit-name';
+      const hex = '0x' + g.item.toString(16).toUpperCase().padStart(2, '0');
+      name.textContent = (g.name || `item ${hex}`) + ' ';
+      const code = document.createElement('code');
+      code.textContent = hex;
+      name.appendChild(code);
+      const cur = document.createElement('span');
+      cur.className = 'rom-edit-cur';
+      cur.textContent = g.venues
+        .map((v) => `${venueName(v.page)} ${v.price.toLocaleString()} pts${v.one_time ? ' (one-time)' : ''}`)
+        .join(' · ');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '1';
+      input.max = '9999999';
+      input.placeholder = String(g.venues[0].price);
+      input.dataset.item = String(g.item);
+      input.dataset.cur = JSON.stringify(g.venues.map((v) => v.price));
+      input.addEventListener('input', () => markEdited(input));
+      const unit = document.createElement('span');
+      unit.className = 'rom-edit-unit';
+      unit.textContent = 'pts';
+      row.appendChild(name);
+      row.appendChild(cur);
+      row.appendChild(input);
+      row.appendChild(unit);
+      fishRowsEl.appendChild(row);
+    }
+  }
+
+  function renderLocations(names) {
+    locRowsEl.textContent = '';
+    if (!names || !names.length) {
+      showEmpty(locRowsEl, 'No location-name table found on this disc.');
+      return;
+    }
+    names.forEach((cur, i) => {
+      const row = document.createElement('label');
+      row.className = 'rom-edit-row';
+      const name = document.createElement('span');
+      name.className = 'rom-edit-name';
+      name.textContent = cur || `(slot ${i})`;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = maxNameLen;
+      input.placeholder = 'new name (blank = keep)';
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      input.dataset.index = String(i);
+      input.dataset.cur = cur;
+      input.addEventListener('input', () => markEdited(input));
+      row.appendChild(name);
+      row.appendChild(input);
+      locRowsEl.appendChild(row);
+    });
+  }
+
+  // Populate from the chosen disc. Guarded per-file so re-picking the same
+  // disc is a no-op, and tolerant of an older WASM bundle without the export.
+  let loadedFor = null;
+  async function load() {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const key = `${file.name}/${file.size}/${file.lastModified}`;
+    if (key === loadedFor) return;
+    try {
+      setNote('Reading current prices & names from your disc ...');
+      const mod = await wasm();
+      if (typeof mod.read_manual_edit_tables !== 'function') {
+        setNote('This patcher build cannot list disc values here - the raw lists under "Advanced" still work.');
+        return;
+      }
+      const buf = await discBytes();
+      const t = mod.read_manual_edit_tables(buf);
+      maxNameLen = t.max_name_len || 31;
+      renderFish(t.fishing);
+      renderLocations(t.locations);
+      loadedFor = key;
+      setNote("Current values read from your disc. Leave a box empty to keep the disc's value.");
+    } catch (e) {
+      setNote('Could not read the disc tables: ' + (e && e.message ? e.message : e));
+    }
+  }
+  fileInput.addEventListener('change', () => { load(); });
+
+  return {
+    load,
+    clear() {
+      for (const input of fishRowsEl.querySelectorAll('input')) {
+        input.value = '';
+        markEdited(input);
+      }
+      for (const input of locRowsEl.querySelectorAll('input')) {
+        input.value = '';
+        markEdited(input);
+      }
+    },
+    // Serialize the edited rows to the raw inputs' exact syntax:
+    // `0xHH=points` pairs for fishing, `index=name` lines for locations.
+    collect() {
+      const fail = (error) => ({ fishing: '', locations: '', error });
+      const fishing = [];
+      for (const input of fishRowsEl.querySelectorAll('input')) {
+        const v = input.value.trim();
+        if (!v) continue;
+        const points = parseInt(v, 10);
+        if (!Number.isFinite(points) || points < 1) {
+          return fail('Fishing prize prices must be positive numbers of points.');
+        }
+        const curs = JSON.parse(input.dataset.cur || '[]');
+        if (curs.length && curs.every((c) => c === points)) continue; // no-op
+        const hex = '0x' + Number(input.dataset.item).toString(16).toUpperCase().padStart(2, '0');
+        fishing.push(`${hex}=${points}`);
+      }
+      const locations = [];
+      for (const input of locRowsEl.querySelectorAll('input')) {
+        const v = input.value.trim();
+        if (!v || v === input.dataset.cur) continue;
+        if (!/^[\x20-\x7E]+$/.test(v)) {
+          return fail(`Location name ${JSON.stringify(v)} has characters outside plain ASCII - the retail font can't draw them.`);
+        }
+        if (v.length > maxNameLen) {
+          return fail(`Location name ${JSON.stringify(v)} is over ${maxNameLen} characters.`);
+        }
+        locations.push(`${input.dataset.index}=${v}`);
+      }
+      return { fishing: fishing.join(', '), locations: locations.join('\n'), error: '' };
+    },
+  };
 }
 
 // --- Tactical-Art override builder ------------------------------------------
@@ -965,6 +1224,11 @@ function init() {
   // the language choice).
   const texture = setupTextureReplacer(() => ensureWasm(setStatus), discBytes);
 
+  // Hover/tap tooltips + the structured "Prices & names" editors (rows filled
+  // from the user's own disc when one is chosen).
+  setupInfoTips();
+  const manualTables = setupManualTables(() => ensureWasm(setStatus), fileInput, discBytes);
+
   // "Check pack against my disc": the same disc-measured dry run the CLI does.
   langValidateBtn.addEventListener('click', async () => {
     try {
@@ -1129,6 +1393,7 @@ function init() {
     artsPowerInput.value = cfg.artsPower || '';
     artsApGrantInput.value = cfg.artsApGrant || '';
     artBuilder.clear();
+    manualTables.clear();
     weaponSpecialtyChk.checked = cfg.weaponSpecialty;
     startingItemsSel.value = String(cfg.startingItems);
     startingLevelSel.value = String(cfg.startingLevel);
@@ -1223,8 +1488,17 @@ function init() {
     const shinySeru = shinySeruChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
-    const fishingPrice = (fishingPriceInput.value || '').trim();
-    const renameLocation = (renameLocationInput.value || '').trim();
+    // Prices & names = the structured rows serialized to the raw inputs'
+    // syntax, merged with anything typed into the raw (advanced) inputs.
+    const manual = manualTables.collect();
+    if (manual.error) {
+      setStatus(manual.error, 'err');
+      return;
+    }
+    const fishingPrice = [manual.fishing, (fishingPriceInput.value || '').trim()]
+      .filter(Boolean).join(', ');
+    const renameLocation = [manual.locations, (renameLocationInput.value || '').trim()]
+      .filter(Boolean).join('\n');
     const earthEggPrice = (earthEggPriceInput.value || '').trim();
     // AP sliders: only sent when their override checkbox is on ('' = retail).
     // Both ranges include 0 and negatives, so read the value as-is.

@@ -93,12 +93,11 @@ pub enum TutorialStep {
 }
 
 // PORT: FUN_801d0750 (the tutorial script's jump-table shape)
-// NOT WIRED: the tutorial is a *dance-hall actor* handler. The port models the
-// dance as a rules session ([`crate::dance::DanceGame`]) with no Disco King
-// actor, no caption renderer bound to the overlay's own string table, and no
-// pre-song phase for the prompt to sit in front of. Wiring it needs a dance
-// presentation host that owns the hall's actors and can resolve the overlay
-// string rows.
+// Wired: [`DanceTutorial::step`] dispatches on this per frame, and the play
+// window hosts a tutorial run beside the how-to dance session
+// (`window/minigames.rs` -> `window/hud.rs`), drawing placeholder captions at
+// the retail line positions (the caption strings themselves are overlay
+// rodata and stay unread).
 /// Classify a tutorial state.
 ///
 /// The line counts and advances are read straight off the switch arms:
@@ -165,9 +164,8 @@ pub struct PromptFrame {
 }
 
 // PORT: FUN_801d0750 case 0 (the prompt's cursor + confirm)
-// NOT WIRED: same missing host as [`tutorial_step`] - there is no Disco King
-// actor for the prompt to live on and no pre-song phase in the port's dance
-// session.
+// Wired: [`DanceTutorial::step`]'s prompt arm, on the play window's tutorial
+// path (see [`tutorial_step`]).
 /// Step the opening prompt.
 ///
 /// `pad` is the retail pad word `_DAT_8007B874`. Left ([`PAD_CURSOR_PREV`])
@@ -211,7 +209,8 @@ pub fn prompt_frame(cursor: u32, pad: u16) -> PromptFrame {
 /// Returns `None` while no face button is held - retail leaves the state alone
 /// and falls through to the actor dispatcher.
 // PORT: FUN_801d0750 (the shared caption-step advance tail)
-// NOT WIRED: same missing host as [`tutorial_step`].
+// Wired: [`DanceTutorial::step`]'s talk arm, on the play window's tutorial
+// path (see [`tutorial_step`]).
 pub fn talk_advance(state: i16, pad: u16) -> Option<(i16, u16)> {
     let TutorialStep::Talk { advance, .. } = tutorial_step(state) else {
         return None;
@@ -235,7 +234,8 @@ pub fn talk_advance(state: i16, pad: u16) -> Option<(i16, u16)> {
 /// call, and the reachability audit resolves a bare call against every free
 /// function of that name. Sharing the name made this disclosure read as stale.
 // PORT: FUN_801d0750 cases 0x0C / 0x11 (the countdown steps)
-// NOT WIRED: same missing host as [`tutorial_step`].
+// Wired: [`DanceTutorial::step`]'s countdown arm, on the play window's
+// tutorial path (see [`tutorial_step`]).
 pub fn tutorial_countdown_frame(remaining: i32, frame_step: i32) -> (i32, bool) {
     let next = remaining - frame_step;
     (next, next < 0)
@@ -259,10 +259,9 @@ pub struct PracticeFrame {
 }
 
 // PORT: FUN_801d0750 case 0x0D (the practice step's feedback + score gate)
-// NOT WIRED: same missing host as [`tutorial_step`]. The *inputs* all exist on
-// [`crate::dance::DanceGame`] (score, and the combo-slot test
-// [`crate::dance::DanceGame::on_combo_slot`]); what is missing is the caption
-// sink.
+// Wired: [`DanceTutorial::step`]'s practice arm, fed the live session's score
+// / feedback window / combo-slot latch on the play window's tutorial path
+// (see [`tutorial_step`]).
 /// Step the practice state.
 ///
 /// The feedback window decays by the frame step and is floored at zero; while
@@ -301,7 +300,8 @@ pub struct WarmupFrame {
 }
 
 // PORT: FUN_801d0750 case 0x07 (the warm-up step's scold blink + score gate)
-// NOT WIRED: same missing host as [`tutorial_step`].
+// Wired: [`DanceTutorial::step`]'s warm-up arm, on the play window's tutorial
+// path (see [`tutorial_step`]).
 /// Step the warm-up state. `scold` is `DAT_801D5140`.
 ///
 /// With the window at zero the script instead captions the run off the
@@ -333,6 +333,146 @@ impl TutorialStep {
             _ => 0,
         };
         (0..n).map(caption_pos).collect()
+    }
+}
+
+/// What one tutorial frame asks the host to do (the drawn/audible half of a
+/// [`DanceTutorial::step`] call; the state store already happened).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TutorialFrame {
+    /// Cue id to fire into the SFX scheduler (`_DAT_8007B6D8`).
+    pub cue: Option<u16>,
+    /// Caption line positions to draw this frame. The strings are overlay
+    /// rodata the port does not read; the host draws its own text here.
+    pub captions: Vec<(i16, i16)>,
+    /// The opening prompt's two option rows, when it is up.
+    pub options: Option<[(i16, i16); 2]>,
+    /// The option cursor's position, when the prompt is up.
+    pub cursor_pos: Option<(i16, i16)>,
+    /// Practice / warm-up feedback caption: `Some(true)` = the praise line,
+    /// `Some(false)` = the timing scold.
+    pub feedback: Option<bool>,
+    /// The script ran off the jump table - the tutorial is over.
+    pub done: bool,
+}
+
+/// The Disco King tutorial actor as one advancing object - the host-facing
+/// runner over the per-state kernels ([`tutorial_step`], [`prompt_frame`],
+/// [`talk_advance`], [`tutorial_countdown_frame`], [`warmup_frame`],
+/// [`practice_frame`]). A host drives it one [`DanceTutorial::step`] per frame
+/// beside the live [`crate::dance::DanceGame`] session, exactly as the retail
+/// handler runs beside the dance states.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DanceTutorial {
+    /// The actor's `+0x9C` state word.
+    pub state: i16,
+    /// The opening prompt's cursor row.
+    pub cursor: u32,
+    /// The countdown counter (`DAT_801D6080`), seeded on countdown-step entry.
+    countdown: i32,
+    /// The warm-up scold window (`DAT_801D5140`).
+    scold: i32,
+}
+
+impl Default for DanceTutorial {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DanceTutorial {
+    /// A tutorial parked on the opening prompt (state `0`).
+    pub fn new() -> Self {
+        DanceTutorial {
+            state: 0,
+            cursor: 0,
+            countdown: HANDOFF_FRAMES,
+            scold: 0,
+        }
+    }
+
+    /// Store a new state, re-seeding the countdown when the new state is one
+    /// of the two countdown steps (retail's callers park `DAT_801D6080` at
+    /// [`HANDOFF_FRAMES`] before handing off to them).
+    fn enter(&mut self, state: i16) {
+        self.state = state;
+        if matches!(tutorial_step(state), TutorialStep::Countdown) {
+            self.countdown = HANDOFF_FRAMES;
+        }
+    }
+
+    /// One frame of the tutorial script.
+    ///
+    /// `pad` is this frame's pad word in the retail `_DAT_8007B874` layout;
+    /// `score` / `feedback_frames` / `combo_hit` are the live session's
+    /// [`crate::dance::DanceGame::score`] /
+    /// [`crate::dance::DanceGame::feedback_frames`] /
+    /// [`crate::dance::DanceGame::triangle_feedback`] reads; `frame_step` is
+    /// the host's frame delta (`DAT_1F800393`). The session owns the feedback
+    /// window's decay - the practice arm only reads it.
+    pub fn step(
+        &mut self,
+        pad: u16,
+        score: i32,
+        feedback_frames: i32,
+        combo_hit: bool,
+        frame_step: i32,
+    ) -> TutorialFrame {
+        let step = tutorial_step(self.state);
+        let mut out = TutorialFrame {
+            captions: step.captions(),
+            ..TutorialFrame::default()
+        };
+        match step {
+            TutorialStep::Prompt => {
+                let f = prompt_frame(self.cursor, pad);
+                self.cursor = f.cursor;
+                out.cue = f.cue;
+                out.options = Some([option_pos(0), option_pos(1)]);
+                out.cursor_pos = Some(cursor_pos(self.cursor));
+                if let Some(next) = f.next_state {
+                    self.enter(next);
+                }
+            }
+            TutorialStep::Talk { .. } => {
+                if let Some((next, cue)) = talk_advance(self.state, pad) {
+                    out.cue = Some(cue);
+                    self.enter(next);
+                }
+            }
+            TutorialStep::Countdown => {
+                let (next, advance) = tutorial_countdown_frame(self.countdown, frame_step);
+                self.countdown = next;
+                if advance {
+                    self.enter(self.state + 1);
+                }
+            }
+            TutorialStep::Warmup => {
+                // A mistimed triangle (feedback window open, spend off the
+                // combo slot) arms the scold blink; retail's handler seeds the
+                // same window from the session's spend latch.
+                if self.scold == 0 && feedback_frames > 0 && !combo_hit {
+                    self.scold = 1;
+                }
+                let f = warmup_frame(self.scold, score, frame_step);
+                self.scold = f.scold;
+                out.feedback = f.caption_scold.then_some(false);
+                if f.advance {
+                    self.enter(self.state + 1);
+                }
+            }
+            TutorialStep::Practice => {
+                let f = practice_frame(feedback_frames, combo_hit, score, frame_step);
+                out.feedback = f.caption_praise;
+                if f.advance {
+                    self.enter(self.state + 1);
+                }
+            }
+            TutorialStep::Idle => {
+                out.done = true;
+            }
+        }
+        out
     }
 }
 
@@ -437,6 +577,58 @@ mod tests {
     fn practice_hands_off_at_the_score_gate() {
         assert!(!practice_frame(0, false, PRACTICE_SCORE_GATE - 1, 1).advance);
         assert!(practice_frame(0, false, PRACTICE_SCORE_GATE, 1).advance);
+    }
+
+    #[test]
+    fn the_runner_walks_the_script_end_to_end() {
+        let mut t = DanceTutorial::new();
+        // Prompt: yes on row 0 advances to state 1 with the confirm cue.
+        let f = t.step(PAD_ADVANCE, 0, 0, false, 1);
+        assert_eq!(f.cue, Some(CUE_CONFIRM));
+        assert_eq!(t.state, 1);
+        assert!(f.options.is_some() && f.cursor_pos.is_some());
+        // A talk step holds without a face button, advances with one.
+        assert_eq!(t.step(0, 0, 0, false, 1).cue, None);
+        assert_eq!(t.state, 1);
+        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        assert_eq!(t.state, 2);
+        // The skip arm at 5 hops the acknowledgement.
+        t.state = 5;
+        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        assert_eq!(t.state, 7, "state 5 stores state + 2");
+        // Warm-up: parks until the score gate, then advances.
+        let f = t.step(PAD_ADVANCE, 0, 0, false, 1);
+        assert_eq!(t.state, 7);
+        assert_eq!(f.feedback, None);
+        t.step(0, PRACTICE_SCORE_GATE, 0, false, 1);
+        assert_eq!(t.state, 8);
+        // Countdown: seeded on entry, advances only past negative.
+        t.enter(0xC);
+        for _ in 0..HANDOFF_FRAMES {
+            t.step(PAD_ADVANCE, 0, 0, false, 1);
+            assert_eq!(t.state, 0xC, "the pad is ignored and the seed holds");
+        }
+        t.step(0, 0, 0, false, 1);
+        assert_eq!(t.state, 0xD);
+        // Practice: captions the spend while the window is open, gates on
+        // the score.
+        let f = t.step(0, 0, 10, true, 1);
+        assert_eq!(f.feedback, Some(true));
+        assert_eq!(t.state, 0xD);
+        t.step(0, PRACTICE_SCORE_GATE, 0, false, 1);
+        assert_eq!(t.state, 0xE);
+        // Running off the table reports done.
+        t.state = 0x12;
+        assert!(t.step(0, 0, 0, false, 1).done);
+    }
+
+    #[test]
+    fn the_prompt_no_branch_reaches_the_skip_arm() {
+        let mut t = DanceTutorial::new();
+        t.step(PAD_CURSOR_NEXT, 0, 0, false, 1);
+        assert_eq!(t.cursor, 1);
+        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        assert_eq!(t.state, 5, "row 1 jumps straight to state 5");
     }
 
     #[test]

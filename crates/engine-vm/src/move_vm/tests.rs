@@ -1115,40 +1115,56 @@ fn op2f_subop_12_uses_slot_indexed_by_field_86_low_byte() {
 }
 
 #[test]
-fn op2f_subop_13_falls_through_when_flag_set() {
+fn op2f_subop_13_branches_by_delta_when_flag_set() {
+    // `[2F][13][flag][delta]`: flag SET takes the branch, `pc += 4 + delta`
+    // (`lhu v0,0x6(s3); addiu s2,v0,4` at the 0x801D4838 epilogue arm).
     let mut host = TestHost::default();
     host.ext_query_flag_bank_returns = 1;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x13, 7]);
+    let bc = program(&[0x2F, 0x13, 7, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1, "predicate-true → default-arm size 1");
+    assert_eq!(state.pc, 7, "flag set → pc += 4 + delta(3)");
 }
 
 #[test]
-fn op2f_subop_13_skips_when_flag_clear() {
+fn op2f_subop_13_falls_through_when_flag_clear() {
     let mut host = TestHost::default();
     host.ext_query_flag_bank_returns = 0;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x13, 7]);
+    let bc = program(&[0x2F, 0x13, 7, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 4, "predicate-false → skip past 3-u16 follow-up");
+    assert_eq!(state.pc, 4, "flag clear → fall through the 4-word op");
 }
 
 #[test]
-fn op2f_subop_14_inverts_predicate() {
+fn op2f_subop_14_branches_by_delta_when_flag_clear() {
     let mut host = TestHost::default();
     let mut state = ActorState::new();
-    // 0x14 with predicate set → SKIP (size 4).
+    // 0x14 with the flag set falls through (size 4).
     host.ext_query_flag_bank_returns = 1;
-    let bc = program(&[0x2F, 0x14, 7]);
+    let bc = program(&[0x2F, 0x14, 7, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 4);
-    // 0x14 with predicate clear → fall through (size 1).
+    assert_eq!(state.pc, 4, "flag set → fall through");
+    // Flag clear takes the branch: `pc += 4 + delta`.
     let mut host2 = TestHost::default();
     host2.ext_query_flag_bank_returns = 0;
     let mut state2 = ActorState::new();
     step(&mut host2, &mut state2, &bc);
-    assert_eq!(state2.pc, 1);
+    assert_eq!(state2.pc, 7, "flag clear → pc += 4 + delta(3)");
+}
+
+#[test]
+fn op2f_subop_14_negative_delta_spin_waits() {
+    // jou's ambient lightning cyclers idle on `2F 14 0364 FFFA` placed at
+    // word 2 after a wait op: flag clear → `pc += 4 - 6 = -2`, landing back
+    // on the preceding op - the retail spin-wait-until-flag idiom.
+    let mut host = TestHost::default();
+    host.ext_query_flag_bank_returns = 0;
+    let mut state = ActorState::new();
+    state.pc = 2;
+    let bc = program(&[0x00, 0x00, 0x2F, 0x14, 0x364, 0xFFFA]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(state.pc, 0, "flag clear → pc += 4 + (-6) = back 2 words");
 }
 
 #[test]

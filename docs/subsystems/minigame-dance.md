@@ -158,6 +158,11 @@ Its output is Sony dialogue, so only the script's *shape* is ported
 (`legaia_engine_core::dance_tutorial`): the step classification, the option
 prompt, the advance tails and the two free-dance steps. The mutations it makes
 are on the same run-state globals the [RAM table](#ram-state) lists.
+`DanceTutorial` is the actor as one advancing object - one `step` per frame,
+fed the live session's score / feedback window / combo latch - and the play
+window hosts a run beside the how-to floor, firing its cues into the SFX
+scheduler and drawing placeholder captions at the retail line positions (the
+strings stay unread).
 
 Dispatch is a **19**-slot jump table at `0x801ceee8`, guarded by an unsigned
 `state < 0x13`; slot `0x12` has no body, so 18 states do anything. Three tails
@@ -317,6 +322,30 @@ forces the short song. `DanceGame::from_overlay` stays the qualifier entry
 point.
 
 Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), judges the three retail pad bits directly (Square/Circle/Triangle = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
+
+Three further pieces of the retail frame run in the same host
+(`window/minigames.rs` + `window/hud.rs`):
+
+- **Count-in**: the parsed game is held pending while the
+  `dance_countin_banner_envelope` timeline (`FUN_801d2d98`) plays out - the
+  host owns the banner's frame counter and the once-only intro-cue latch, and
+  only enters the dance (and starts the song) when the slide-out finishes.
+  This is the `FUN_801cf470` below-10 pre-song band as a host phase.
+- **Retail-coordinate HUD**: each frame the host lays the HUD out from
+  `DanceGame::hud_draws` at its 320x240 stage positions (all three score
+  boxes, the rivals' rows included), with the rival gate raised in the two
+  versus modes as the `_DAT_8007B6D0` stand-in, and builds the full
+  textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
+  emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
+  The dance sprite page is not uploaded, so the quad sink materialises draws
+  only against a solid atlas source; the values render as font text.
+- **Effect spawns**: the human's scoring judge spawns the sequence-clear
+  banner + stars (`good_banner_spawn` -> `step_mark_effect_spawn`) into the
+  window's minigame effect pool (`window/minigame_fx.rs`), which ages the
+  parts and draws them as placeholder glyphs.
+
+The `U` key starts the how-to floor with the Disco King tutorial runner
+(`DanceTutorial`, below) ticking beside the session.
 
 ### Entering and leaving the hall
 

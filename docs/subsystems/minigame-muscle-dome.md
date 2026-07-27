@@ -104,29 +104,217 @@ resident in the dome's own data file:
   `(192..255)^2` window is the dome's plain dirt tile; the rest of the two
   pages is the arena furniture (chain-link fence, dirt/stone flooring, the
   tiered ring wall).
-- The shell TMD carries two **semi-transparent prim groups** (ABE set, ABR
-  mode 1 = additive): a cloudy dust decal (page `(832, 0)` window
-  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base, and
-  the lamp-glow quads (page `(768, 0)` window `(48..109, 161..251)`, CLUT
-  x 112 of row 473). Retail blends both additively; a renderer that draws
-  ABE prims opaque turns the dust decal into a solid dark "mist" band the
-  retail arena does not have (the arena interior is mist-free - fence,
-  wooden wall, light-grey floor; capture: the `minigame_muscle_dome_pcsx`
-  scenario run forward into the live match).
+- The stream carries two **semi-transparent prim sets** (ABE set, ABR mode
+  1 = additive), in two different TMD objects. The shell (object 0) owns
+  the lamp-glow quads (mode `0x3F`, page `(768, 0)` window
+  `(48..109, 161..251)`, CLUT x 112 of row 473). **Object 1 is a separate
+  12-quad dust-decal object** (mode `0x2F`, page `(832, 0)` window
+  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base.
+- **The dust decal is not part of the live match's visible backdrop.** Its
+  texels are genuinely bright - the CLUT ramp at `(16, 479)` climbs to
+  whitish `(208, 208, 248)`, window average luminance ~70/255 - so *any*
+  draw of it is conspicuous: opaque it reads as a solid dark "mist" band,
+  and even a correct ABR-1 additive draw reads as a white cloud band. The
+  retail match capture shows a mist-free interior (fence, wooden wall,
+  light-grey floor; capture: the `minigame_muscle_dome_pcsx` scenario run
+  forward into the live match), so the retail backdrop path evidently does
+  not draw object 1 as static geometry. Which runtime path (if any) does
+  draw it is open. The lamp glows stay with the shell and blend additively.
 
 Confidence: the load chain, carrier shape and texture address are **Confirmed**
 (disassembly + structural decode of the entry); that a live contest's
 `_DAT_8007B864` holds this stream is **Inferred** - the dome runs as a battle
 with the battle overlay resident and 1225 is the only backdrop-shaped stream in
 the file its init loads, but no dome-battle save-state byte-match has been
-taken. The file's other slots: 1220 = the LZS data container the door/init
-strings reference (roster/course data), 1221/1222 = two 160 KB blobs
-(undecoded), 1223/1224 = pochi fillers ([`pochi.md`](../formats/pochi.md)).
+taken. The file's other slots: 1220 = an LZS container whose section 0 is
+the dome's **hub UI art** - two plain TIMs uploading the pages at
+`(320, 0)` / `(320, 256)` with CLUT rows 502/503 (the Welcome / INTERVAL /
+ROUND / course-name strips; see
+[HUD chrome](#hud-chrome-texture-sources-capture-pinned)), 1221/1222 = two
+160 KB blobs (undecoded), 1223/1224 = pochi fillers
+([`pochi.md`](../formats/pochi.md)).
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
-with the shell's ABE prims routed through the renderer's two-pass PSX blend
-(`site/js/minigame-muscle.js`, `semiTwoPass`).
+with the shell's ABE lamp glows routed through the renderer's two-pass PSX
+blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust
+decal omitted per the capture above (`muscle_arena_hybrid` filters it).
+
+## Retail presentation
+
+Retail presents the contest as a **standard battle** - the normal Legaia
+battle chrome with the course restrictions applied - not a bespoke card UI.
+Capture evidence: retail captures of the contest entry, the command menu and
+an art playing out.
+
+- **Intro card.** Contest entry opens on a pure black frame with a single
+  centred line of white cursive script, soft blue-white glow:
+  "Welcome to the Muscle Dome!". Then the fight begins.
+- **Fighter roster.** The player fields Vahn, Noa or Gala in their normal
+  **assembled battle form** (fighter form, [`character-mesh.md`](../formats/character-mesh.md)) -
+  not the PROT 1204 Baka form.
+- **Command menu.** The standard battle command cluster: two bevelled gold
+  chips top-left ("Begin" and the fighter's name); on the right the **Item**
+  chip **crossed out with a red X** (the course forbids items), below it
+  "Attack" (left) + a grey D-pad glyph + the character's **Ra-Seru name**
+  ("Meta" for Vahn - the magic command) + "Spirit"; chips are blue-marble
+  plates with gold borders. Bottom: the pointed blue status plate (fighter
+  name, gold "HP" `cur/max`, teal "MP" `cur/max`) with the pointed **AP**
+  plate above-right (red "AP" label, orange gauge, remaining-points
+  numeral). Course gating (curated, `data/gamedata/casino.toml`): no
+  equipment, no items on every course; magic allowed on Beginner/Expert,
+  forbidden on Master - which is why Item is crossed out while the Ra-Seru
+  chip is not.
+- **Arts banner.** A committed directional sequence that performs a
+  Tactical Art raises the art-class banner during playback - block-capital
+  orange-gradient text with a dark outline ("HYPER ARTS!!") over white
+  radial speed-line rays, the attacker's gold name chip top-left and the
+  defender's blue name chip bottom-right. The commit path appends raw
+  direction ids `0xC..=0xF` into `actor+0x1df`, so the recognition happens
+  on the battle-action side as it does for a normal battle's input string.
+- **No enemy HP display, no mist.** The enemy's HP is never drawn (standard
+  Legaia battle rule), and the arena interior is mist-free (see
+  [Arena backdrop](#arena-backdrop-extraction-1225) for the ABE-prim defect
+  that fakes a mist band).
+
+Site consumer: the minigames page's dome panel mirrors this presentation -
+the intro card, the command cluster with Item crossed out, the AP/status
+plates and the arts banner - with the fighter body from the assembled
+battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
+below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
+resolution done against the SCUS arts-name table's combo strings
+(`muscle_round_arts_json`, kind labels joined from the curated gamedata
+arts table). Two disclosed gaps: the ported rules resolve each queued
+command as a basic strike (no art-record damage expansion), and the
+Ra-Seru chip renders disabled (the port has no cast path).
+
+## HUD chrome texture sources (capture-pinned)
+
+The dome match's entire on-screen chrome resolves to five disc sources, and
+its screen geometry to one SCUS-static table. Provenance: a live PCSX-Redux
+dome battle (the `minigame_muscle_dome_pcsx` scenario driven forward with a
+scripted pad, capture tool
+`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`) snapshotted at the
+command cluster, an enemy art, and a player HYPER ARTS!! playback; the GP0
+packet stream was read out of the live prim arena and every texture page was
+byte-matched between the snapshot VRAM and the disc bytes.
+
+**Layout.** The element layout table at SCUS `0x80076C10` (24-byte stride,
+80 records, initialised data in `SCUS_942.54` at file `0x67410`) carries per
+element: two sprite/style selector bytes (`+0`/`+1`), two screen anchors
+`(x, y)` at `+2`/`+4` and `+0xA`/`+0xC` (the glide endpoints the
+`FUN_801db7b0` slide moves between), width/height at `+6`/`+8`, per-variant
+style bytes at `+0xE`/`+0xF`, a kind byte at `+0x10` and a text pointer at
+`+0x14` (rewired at runtime - `FUN_801d8de8`'s labelled cases write it).
+Confirmed anchors: element 8 = the Item chip arriving at `(204, 34)`,
+9 = Attack at `(160, 66)`, `0xA` = the Ra-Seru chip at `(248, 66)`,
+`0xB` = Spirit at `(204, 98)`, 0..5 = the Begin / Run centre-menu chips,
+7 / `0x34` = the 288-wide status plate at `(16, 236 -> 194)`,
+`0x29`/`0x2A` = the opponent name chip at `(200, 162)`. Sprites emit
+through the SCUS text-actor pipeline (`FUN_8003541C`), not the battle
+overlay.
+
+**Textures.** Per element family, `(page, uv)` from the captured packets,
+byte-matched to its disc source:
+
+| Chrome | Page / CLUT | Piece rects (texels) | Disc source |
+|---|---|---|---|
+| Chip / plate 3-slice art | `(896,256)`; CLUT row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)`/`(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
+| D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 between Attack and the Ra-Seru chip | same TIM |
+| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end `(176,64)` 16×16, cap `(184,80)` 8×16, orange fill tile `(64,136)` 16×6; drawn at `(208..312, 172)` | same TIM |
+| Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |
+| Chip / caption text | `(896,0)`; menu-atlas bank sub-pal 13 = CLUT `(208,510)` | 16×16 cells drawn 14×15; cell = ASCII − 0x20, column-major 16/row; pen advance = glyph texel width (`i`/`m`/`M` +1, space 5 - capture-measured) | boot-gap ASCII font TIM `PROT.DAT 0x7F40` |
+| Small digits | `(960,256)`; sub-pal 13 | `u = digit*8`, `v=208`, 8×12 | menu-glyph atlas `PROT.DAT 0x11218` |
+| Red cross-out X | `(448,0)`; CLUT row 476 sub-pal 4 | `(0,96)` 64×16 drawn over the forbidden chip (`(196,30)` for Item) | `etim` (extraction 0870) third TIM at file `+0x10450` |
+| Arts banner words | `(448,0)`; sub-pal 3 | SUPER `(3,152)` 105×24, HYPER ARTS!! full row `(0,176)` 216×24, MIRACLE `(0,200)` 127×24, NEW `(132,200)` 64×24; the pinned draw: two FT4s covering `(52,144)-(268,178)` - 1:1 wide, 24 texels stretched to 34 px | same `etim` TIM |
+| Damage numerals + words | `(448,0)`; sub-pal 3 | digits 24×24 cells at `v=64`, `u=(d−1)*24`, `0` at `u=216`; DAMAGE `(0,224)` 52×14, HIT `(0,240)` 32×16, TOTAL `(32,240)` 48×16; hit numbers drawn 24×23, tally row 16×15 | same `etim` TIM |
+| "Welcome to the Muscle Dome!" / INTERVAL / ROUND / hub digits | `(320,0)` + `(320,256)`; CLUT rows 502/503 | geometry = the PROT 0977 sprite descriptor table at VA `0x801D170C` (file `+0x2EF4`, 17 × `0x14`-byte records; parser `legaia_engine_ui::other_game_hud::parse_sprite_table`): record 3 = the Welcome strip `(0,224)` 240×18, 16 = INTERVAL `(0,192)` 192×32, 0 = ROUND `(0,0)` 144×32, 1 = the 24×32 hub digit strip | extraction **1220** (`other6.lzs` slot 0): LZS section 0 = `[12-byte header][TIM -> (320,0), CLUT row 502][TIM -> (320,256), CLUT row 503]`, byte-identical to the live course-menu VRAM |
+
+The CLUT-bank packing rule the capture pinned: a gap TIM's 16-row CLUT
+block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes
+(widget bank -> row 511, menu-atlas bank -> row 510), which is what the
+packets' CLUT words (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`,
+`0x7F8D` = `(208,510)`, ...) address.
+
+## Arts command input (packet-pinned)
+
+The dome's Attack command runs the **standard battle arts input** verbatim -
+the same `FUN_801D0748` state `0x50` gauge-input arm and `FUN_801D388C`
+case-`9`/`0xB` accounting [`arts-command-gauge.md`](arts-command-gauge.md)
+documents. This section pins the *presentation*: what the input screen and
+its Triangle arts list draw, from where. Provenance: a live dome match in
+the static recomp (savestate + scripted pad over the debug TCP server,
+[`recomp-differential.md`](../tooling/recomp-differential.md)), read out
+with the runtime's `gpu_frame_dump` per-frame GP0 packet ring - every rect,
+palette and screen seat below is byte-read from captured SPRT / FT4 /
+shaded-quad words, cross-checked against a full-VRAM dump of the same
+moment.
+
+**Flow** (phase byte `ctx+6`, captured transitions): command cluster
+(`0x28`) -> Attack opens an **Auto | Command** pick (`0x78`, chips at the
+Attack / Ra-Seru element anchors) -> Command opens the input screen
+(`0x50`). Directions append commands (each press debits `ctx+0x6dc` by the
+command's `+0x74` cost and appends to `actor+0x1df` - RAM-verified per
+press); entry **ends by itself** the moment no command is affordable
+(`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
+committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`);
+Begin plays the round out, Reselect returns to a clean input. The previous
+round's pennants persist in the bar when the input reopens and clear on
+the first fresh press. **Triangle** cycles the learned-arts list: closed ->
+page 1 -> ... -> last page -> closed; it is inert when the character's
+learned-art constant ([`art-data.md`](../formats/art-data.md#learned-art-constant))
+names no art. The right-hand AP plate reads the **Spirit gauge**
+(`actor+0x170`) and never moves during entry - the input budget's visible
+form is the bar itself filling with pennants.
+
+**Input screen pieces.** All from the boot-gap widget TIM's page
+(`(896,256)`; sub-palette = row-511 CLUT x/16) unless noted:
+
+| Piece | Sub-pal | Rects (texels) | Screen seats |
+|---|---|---|---|
+| Direction chip | 6 | body `(215,96)` 24x26, caps `(200,96)`/`(239,96)` 15x26 | body anchors: High `(216,26)`, Left `(176,58)`, Right `(256,58)`, Low `(216,90)`; caps at body -15 / +24 |
+| Chip label strip | 5 | `u=104` 24x18; `v`: Left 20, Low 40, Right 84, High 104 (Arms 0, RaSeru 64 sheet-read) | FT4 at body `+ (0,4)` |
+| Diamond ends | 5 | `(192,24)` / `(204,24)` 9x18 | body -9 / +24, `y+4` |
+| D-pad glyph | 7 | `(0,112)` 16x16 | FT4 `(220,62)`-`(235,77)` |
+| Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
+| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 7 + spent-AP-before (pitch 30 at cost 30) |
+| AP plate | 4 | the pinned label/trough/end/cap pieces | `(208,172)`; fill = two 3-px **gouraud strips** x `235..285`, y `177..183`, RGB `(128,32,16)` dark <-> `(192,160,64)` orange (dark-orange-dark sheen) |
+| Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(12,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at glyph `+ (16, 2)` |
+
+The status plate is parked off-screen during input (its draws move to
+`y=230`, below the 228-line display window).
+
+**Arts list window** (Triangle): rect `(6,28)`-`(160,188)`. Interior =
+the system-UI panel tile `(128,0)` 32x32 (sub-pal **2** - the same
+`OVERLAY_SYSTEM_UI_PANEL_INTERIOR` region the pause menu tiles,
+[`field-menu.md`](field-menu.md)), tiled 32x32 as shaded-textured quads
+under a per-window vertical gouraud, `0x40` top -> `0x88` bottom. Borders
+(sub-pal 2): edge strips `(164,0)`/`(164,28)` 24x4 and `(160,4)`/`(188,4)`
+4x24, corners at `(160,0)`/`(188,0)`/`(160,28)`/`(188,28)` 4x4. Five rows
+per page at `y = 36 + 30n`: art name (battle font, 14x15 glyphs) and AP
+cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
+**orange sub-palette 15** of CLUT row 510, and the art's command string at
+`(44 + 12k, y+14)` as 12x12 menu-atlas arrow glyphs at `v=208`,
+`u`: Up 208, Down 220, Right 232, Left 244. Name / AP / command string are
+the SCUS arts-name table's own columns
+([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
+
+Still unpinned here: the Auto arm's command picker, the pennant geometry
+for non-30-cost commands (only the favored-class pitch is captured), the
+exact pennant spawn anchor (it spawns at the fighter and glides in via
+`FUN_801d9bbc`), and the review / Begin-Reselect screens' piece
+decomposition (screenshot-read only).
+
+Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
+`muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the
+dome panel draws the chrome from them - including the whole
+[arts command input](#arts-command-input-packet-pinned) (`arts_input`
+pieces + `muscle_arts_list_json`); the disc-gated oracle is
+`crates/web-viewer/tests/muscle_web_real.rs`
+(`muscle_hud_chrome_decodes_from_the_disc`). Still fitted on the page: the
+banner's speed-line rays (retail draws untextured polys), the SUPER/MIRACLE
+word composition (atlas layout; only the HYPER strip's draw is
+packet-pinned), and the chips' glide-in motion.
 
 ## Sound
 
@@ -337,10 +525,15 @@ real swing costs drive a decided contest through the world tick).
 
 ## Open
 
-- The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
+- The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
+- The Auto arm's command picker, and the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
 - The per-arm assignment of the three UI cue ids (`0x21`/`0x22`/`0x23` across the 34 `FUN_8004fcc8` sites in `FUN_801d0748`) - the id set is pinned, which blip belongs to pick / commit / deny is not.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.
+- Which runtime path (if any) draws the backdrop stream's **object-1 dust
+  decal** - the live-match capture shows it absent from the static backdrop
+  (see [Arena backdrop](#arena-backdrop-extraction-1225)); a candidate is a
+  phase-gated effect draw, unpinned.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 

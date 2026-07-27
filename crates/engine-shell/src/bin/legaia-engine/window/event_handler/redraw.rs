@@ -182,6 +182,13 @@ impl PlayWindowApp {
             // (the per-frame `tick_sfx_frame` below fires it against the
             // resident class-2 sound bank).
             self.drain_baka_sfx_cues();
+            // Minigame side-channels: the dance count-in + tutorial + effect
+            // spawns, the fishing venue actors (wander / line / floor solve /
+            // camera publish / sway), the Baka round chrome, and the shared
+            // effect pool. Runs BEFORE tick_fishing_banners so
+            // `fishing_prev_phase` still holds last frame's phase for its own
+            // edge detection.
+            self.tick_minigame_extras();
             // Fishing: advance the HUD's one-shot banner animations (hook /
             // reel-in / miss / auxiliary / strike splash) and cache their
             // draws - the retail driver tail's own per-frame timer loop.
@@ -436,6 +443,10 @@ impl PlayWindowApp {
             self.pending_camera_snaps.clear();
             None
         };
+        // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
+        // sacs): rebuild the pack meshes whose morph deltas moved this frame
+        // (collected outside the renderer borrow; uploaded inside it below).
+        let field_morph_rebuilds = self.take_field_morph_rebuilds();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -543,6 +554,42 @@ impl PlayWindowApp {
             // uses the orbit camera.
             let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
             let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
+            // Stage the derived scene point lights (the dynamic-lighting
+            // enhancement's candle / wall-light layer) with this frame's
+            // camera so the renderer can recover world space from the
+            // per-draw MVPs. Field free-roam only - battle / world map /
+            // boot UI clear them so the layer never lights the wrong
+            // coordinate space. Inert (zero staged count, no shadow pass)
+            // while dynamic lighting or the shadow sub-toggle is off.
+            if !self.boot_ui.is_active()
+                && !in_world_map
+                && self.session.host.world.mode == SceneMode::Field
+                && !self.scene_point_lights.is_empty()
+            {
+                // Per-frame selection: a scene can carry dozens of candle
+                // props but only 8 lights shade at once, so pick the ones
+                // nearest the player (falling back to the origin when no
+                // player actor is seated).
+                let w = &self.session.host.world;
+                let focus = w
+                    .player_actor_slot
+                    .and_then(|s| w.actors.get(s as usize))
+                    .map(|a| {
+                        [
+                            a.move_state.world_x as f32,
+                            a.move_state.world_y as f32,
+                            a.move_state.world_z as f32,
+                        ]
+                    })
+                    .unwrap_or([0.0; 3]);
+                let picked = legaia_engine_render::scene_lights::nearest_lights(
+                    &self.scene_point_lights,
+                    focus,
+                );
+                r.set_scene_lights(&picked, cam);
+            } else {
+                r.clear_scene_lights();
+            }
             // Drain queued spawn slots: build a VRAM mesh from each
             // actor's `tmd_ref` (global-pool TMD that the field-VM
             // 0x4C 0xD8 host hook installed) and append it to
@@ -629,6 +676,21 @@ impl PlayWindowApp {
             let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
                 self.posed_prop_frame_draws(r);
             legaia_engine_render::profile::mark("pose:prop");
+            // VDF vertex morphs: upload this frame's rebuilt morph meshes;
+            // the draw loops below substitute them for the static uploads
+            // (`field_morph_live` - the `FUN_8001C604` render substitution).
+            for (mesh_idx, vmesh) in &field_morph_rebuilds {
+                if let Ok(m) = r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    self.field_morph_live.insert(*mesh_idx, m);
+                }
+            }
 
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
@@ -957,7 +1019,11 @@ impl PlayWindowApp {
                     // (stone plaza, paths, riverbank).
                     if layer_on("tiles") {
                         for (mesh_idx, model) in &self.field_terrain_draws {
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            let mesh = self
+                                .field_morph_live
+                                .get(mesh_idx)
+                                .or_else(|| self.meshes.get(*mesh_idx));
+                            if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
@@ -998,7 +1064,11 @@ impl PlayWindowApp {
                             {
                                 continue;
                             }
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            let mesh = self
+                                .field_morph_live
+                                .get(mesh_idx)
+                                .or_else(|| self.meshes.get(*mesh_idx));
+                            if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,

@@ -102,6 +102,64 @@ impl World {
         )
     }
 
+    /// The enemy-side flee decision for the monster in `slot` - the roll the
+    /// action picker's once-per-pass checkpoint makes (`FUN_801E9FD4` calling
+    /// `FUN_801EC0DC` with the monster's pool slot).
+    ///
+    /// Side scores fold live HP/max-HP off the actors and live ATK off the
+    /// [`World::battle_attack`] sidecar (retail reads actor `+0x158`); the
+    /// party's No Escape / Chicken Guard bit folds from each living member's
+    /// second ability word exactly as [`Self::roll_battle_escape`] folds its
+    /// escape accessories. The fleeing monster's INT (`+0x168`) comes from the
+    /// monster catalog - the engine carries no live INT sidecar, and no battle
+    /// buff writes INT, so the catalog stat is the live value.
+    ///
+    /// Draws battle RNG through the closure in retail call order (two draws,
+    /// plus the 1-in-8 gate draw only when the score compare passes).
+    ///
+    /// REF: FUN_801EC0DC
+    pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
+        use vm::battle_formulas::FleeActor;
+        let pc = (self.party_count as usize).min(self.actors.len());
+        let fold = |world: &Self, i: usize| FleeActor {
+            hp: world.actors[i].battle.hp,
+            max_hp: world.actors[i].battle.max_hp,
+            atk: world.battle_attack.get(i).copied().unwrap_or(0),
+        };
+        let party: Vec<FleeActor> = (0..pc).map(|i| fold(self, i)).collect();
+        let monsters: Vec<FleeActor> = (pc..self.actors.len()).map(|i| fold(self, i)).collect();
+        let ability_word1: Vec<u32> = (0..pc)
+            .map(|i| {
+                self.roster
+                    .members
+                    .get(self.party_roster_slot(i))
+                    .map(|m| {
+                        let bits = m.ability_bits();
+                        u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]])
+                    })
+                    .unwrap_or(0)
+            })
+            .collect();
+        let target = fold(self, slot as usize);
+        let target_int = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.intel)
+            .unwrap_or(0);
+        let no_escape = u8::from(self.battle_no_escape);
+        vm::battle_formulas::monster_escape_roll(
+            no_escape,
+            &party,
+            &monsters,
+            &ability_word1,
+            target,
+            target_int,
+            || self.next_rng(),
+        )
+    }
+
     /// Accrue the defender's spirit-art gauge (`actor+0x170`) from a hit that
     /// landed `over` damage, the spirit stage of the shared damage finisher
     /// `FUN_801ddb30`. Runs for *any* defender (the base `pct` term is

@@ -284,6 +284,16 @@ impl World {
                 self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
             }
         }
+        // Same game-tick law for the ambient move-VM effect parts (jou's
+        // CLUT-cell cyclers / lightning director); drained by the host's
+        // `step_ambient_fx` against its VRAM.
+        if self.field_frame_step == 1 && !self.ambient_fx.is_empty() {
+            self.ambient_vsync_accum += 1;
+            if self.ambient_vsync_accum >= self.frame_step.max(1) {
+                self.ambient_vsync_accum = 0;
+                self.ambient_pending_game_ticks = (self.ambient_pending_game_ticks + 1).min(600);
+            }
+        }
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,

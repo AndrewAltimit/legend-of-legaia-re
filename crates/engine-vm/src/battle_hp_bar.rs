@@ -231,12 +231,18 @@ pub fn assign_pending(delta: i16) -> i32 {
 /// arithmetic (`0x800475A4..0x80047620`). The only difference is the load
 /// width: `+0x178` is read `lh`, a signed halfword.
 ///
-/// PORT: FUN_80047430 (party arm of the MP readout ramp)
-/// NOT WIRED: there is no MP readout to move. [`crate::battle_action::BattleActor`]
-/// carries live `mp` (`+0x150`) and `last_mp_cost` (`+0x178`) but no
-/// `mp_display` (`+0x174`), and the battle HUD draws live MP directly. Adding
-/// the field without a consumer would be dead state, so the missing
-/// prerequisite is an MP readout in the HUD, not a caller for this leaf.
+/// The arithmetic is [`party_bar_step`]'s, byte for byte - this wrapper only
+/// renames the fields onto the MP pair, so it carries a `REF` rather than a
+/// second `PORT` tag and the `FUN_80047430` anchor stays on the live HP arms
+/// above (the `first_live_monster_slot` precedent in
+/// `battle_action::pool_ops`). It has no production caller because there is
+/// no MP readout to move: [`crate::battle_action::BattleActor`] carries live
+/// `mp` (`+0x150`) and `last_mp_cost` (`+0x178`) but no `mp_display`
+/// (`+0x174`), and the battle HUD draws live MP directly. Adding the field
+/// without a HUD consumer would be dead state, so the missing prerequisite is
+/// an MP readout in the HUD, not a caller for this leaf.
+///
+/// REF: FUN_80047430 (party arm of the MP readout ramp)
 pub fn party_mp_step(display: u16, pending: i16) -> BarStep {
     let st = party_bar_step(display, i32::from(pending));
     BarStep {

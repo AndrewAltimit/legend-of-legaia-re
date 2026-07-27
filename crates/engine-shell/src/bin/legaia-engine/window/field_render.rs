@@ -97,10 +97,18 @@ impl PlayWindowApp {
             let Some(&baked) = posed.get(&(d.res_tmd, d.anim_id)) else {
                 continue; // no baked pose - the unposed fallback draws it
             };
+            // Same coplanar lift as the static placement pass (see
+            // `resolve_placement_draws`), so a posed prop stays consistent
+            // with the tile it rests on.
+            let off = self
+                .coplanar_env_offsets
+                .get(d)
+                .copied()
+                .unwrap_or([0.0; 3]);
             let t = Mat4::from_translation(Vec3::new(
-                d.world_x as f32,
-                d.world_y as f32,
-                d.world_z as f32,
+                d.world_x as f32 + off[0],
+                d.world_y as f32 + off[1],
+                d.world_z as f32 + off[2],
             ));
             let rot = Mat4::from_rotation_y(
                 f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0),
@@ -118,6 +126,137 @@ impl PlayWindowApp {
             bank.props.values().filter(|p| p.program.animates()).count(),
         );
         props
+    }
+
+    /// Rebuild the cross-draw coplanar-offset map for the current scene: the
+    /// combined terrain + placed [`legaia_engine_core::field_env::EnvDraw`]
+    /// lists (field scenes) or the walk landmark + decoration lists (world
+    /// map), run through `legaia_engine_core::coplanar_draws`. Overlapping
+    /// same-plane draws otherwise z-fight - retail painter-orders them
+    /// through the ordering table, the port's depth buffer ties per pixel.
+    ///
+    /// Resolves the layers with the same inputs the draw resolvers use so
+    /// the map's `EnvDraw` keys match theirs by identity.
+    pub(super) fn compute_coplanar_env_offsets(
+        &self,
+        res: &SceneResources,
+    ) -> std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]> {
+        use legaia_engine_core::{coplanar_draws, field_env};
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Default::default();
+        };
+        let index = &self.session.host.index;
+        let env_tmds = field_env::env_pack_tmd_indices(scene, res);
+        if env_tmds.is_empty() {
+            return Default::default();
+        }
+        let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
+        let mut draws: Vec<field_env::EnvDraw> = Vec::new();
+        if legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+            let mut tiles = scene
+                .walk_object_placements(index)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
+                tiles.extend(deco);
+            }
+            let (d, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
+            draws.extend(d);
+        } else {
+            if let Ok(Some(tiles)) = scene.field_terrain_tiles(index) {
+                let tiles: Vec<_> = tiles
+                    .into_iter()
+                    .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                    .collect();
+                let (d, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
+                draws.extend(d);
+            }
+            if let Ok(Some(placements)) = scene.field_object_placements(index) {
+                let binds = scene.field_object_binds(index).ok().flatten();
+                let (d, _) = field_env::resolve_placed_env_draws(
+                    &env_tmds,
+                    &placements,
+                    floor_lut,
+                    binds.as_ref(),
+                );
+                draws.extend(d);
+            }
+        }
+        if draws.is_empty() {
+            return Default::default();
+        }
+        let planes = coplanar_draws::draw_plane_summaries(&draws, res);
+        let offs = coplanar_draws::coplanar_draw_offsets(&draws, &planes);
+        if !offs.is_empty() {
+            log::info!(
+                "play-window: {} coplanar draw lifts (of {} env draws)",
+                offs.len(),
+                draws.len()
+            );
+        }
+        offs
+    }
+
+    /// Rebuild + re-upload the env-pack meshes whose VDF morph deltas moved
+    /// this frame (the world's dirty set: retail op-`0x0A` ambient morph
+    /// parts + the scene-entry pulse). The rebuilt mesh replaces the static
+    /// upload in every draw of that mesh (`field_morph_live` substitution
+    /// in the redraw loops) - the native side of the `FUN_8001C604` render
+    /// substitution: staged vertices for the draw, authored rest pose
+    /// untouched.
+    ///
+    /// REF: FUN_8001C604
+    pub(super) fn take_field_morph_rebuilds(&mut self) -> Vec<(usize, legaia_tmd::mesh::VramMesh)> {
+        let dirty = self.session.host.world.take_morph_dirty_slots();
+        if dirty.is_empty() {
+            return Vec::new();
+        }
+        let mut slots: Vec<usize> = dirty.iter().map(|&(s, _)| s).collect();
+        slots.sort_unstable();
+        slots.dedup();
+        let Some(vram) = self.cpu_vram_base.as_ref() else {
+            return Vec::new();
+        };
+        let mut rebuilds = Vec::new();
+        for slot in slots {
+            let Some(Some(mesh_idx)) = self.field_pack_mesh_idx.get(slot).copied() else {
+                continue;
+            };
+            let Some((tmd, raw)) = self.field_stager_tmds.get(slot) else {
+                continue;
+            };
+            // Stage the deltas onto a cloned TMD (rest pose untouched).
+            let mut morphed = tmd.clone();
+            let mut any = false;
+            for (group, obj) in morphed.objects.iter_mut().enumerate() {
+                let Some(deltas) = self.session.host.world.current_morph_deltas(
+                    slot,
+                    group as u32,
+                    obj.vertices.len(),
+                ) else {
+                    continue;
+                };
+                for (v, d) in obj.vertices.iter_mut().zip(deltas.iter()) {
+                    v.x = v.x.wrapping_add(d[0]);
+                    v.y = v.y.wrapping_add(d[1]);
+                    v.z = v.z.wrapping_add(d[2]);
+                }
+                any = true;
+            }
+            if !any {
+                continue;
+            }
+            let vmesh =
+                legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&morphed, raw, |cba, tsb, uvs| {
+                    vram.prim_has_texture_data(cba, tsb, uvs)
+                });
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            rebuilds.push((mesh_idx, vmesh));
+        }
+        rebuilds
     }
 
     /// Shim kept for the redraw loop: prop clips + touch/interact dispatch
@@ -355,6 +494,24 @@ impl PlayWindowApp {
     pub(super) fn resolve_ocean_anim(&mut self) -> Option<WaterAnim> {
         let scene = self.session.host.scene.as_ref()?;
         if !legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+            // The walker table is not kingdom-only: nine field scenes carry
+            // one in their bundle's type-6 slot (garmel / dohaty water,
+            // the geremi / rayman / tunnel / son / edson waterfall family).
+            // Same table format, same walker actor, resolved by type byte.
+            for entry in &scene.entries {
+                let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+                    continue;
+                };
+                let strips = legaia_asset::clut_walk::scene_park_strips(&entry.bytes);
+                self.park_clut_walk_strips(&table, strips);
+                let state =
+                    vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+                return Some(WaterAnim::Walk(ClutWalkAnim {
+                    table,
+                    state,
+                    vsyncs_to_game_tick: 0,
+                }));
+            }
             return None;
         }
         let mut walk: Option<legaia_asset::clut_walk::ClutWalkTable> = None;
@@ -616,6 +773,7 @@ impl PlayWindowApp {
         }
         if self.session.host.world.clut_fx.is_empty()
             && self.session.host.world.script_vram_moves.is_empty()
+            && self.session.host.world.ambient_fx.is_empty()
         {
             return;
         }
@@ -623,7 +781,10 @@ impl PlayWindowApp {
             return;
         };
         let moved = self.session.host.world.apply_script_vram_moves(base);
-        if !self.session.host.world.step_clut_fx(base) && !moved {
+        // The ambient move-VM effect parts (jou's flesh-palette cyclers /
+        // lightning) run on the same game-tick bank and write the same VRAM.
+        let ambient = self.session.host.world.step_ambient_fx(base);
+        if !self.session.host.world.step_clut_fx(base) && !moved && !ambient {
             return;
         }
         if let Some(r) = self.win.renderer.as_ref() {
@@ -768,10 +929,20 @@ impl PlayWindowApp {
             // the per-model flip; the FIELD frame draws raw vertices and the
             // camera's FIELD_WORLD_FLIP provides the single net negation
             // (elevation renders retail-correct).
+            //
+            // `coplanar_env_offsets` lifts draws whose surfaces coincide with
+            // a larger/earlier draw's plane (sub-2-unit, toward the visible
+            // side) so overlapping tiles resolve deterministically instead of
+            // z-fighting.
+            let off = self
+                .coplanar_env_offsets
+                .get(d)
+                .copied()
+                .unwrap_or([0.0; 3]);
             let t = Mat4::from_translation(Vec3::new(
-                d.world_x as f32,
-                d.world_y as f32,
-                d.world_z as f32,
+                d.world_x as f32 + off[0],
+                d.world_y as f32 + off[1],
+                d.world_z as f32 + off[2],
             ));
             // Authored yaw from the object record's `+0x0A` (PSX 4096-per-rev;
             // bridge quarter-turns, tree variety). `Mat4::from_rotation_y`

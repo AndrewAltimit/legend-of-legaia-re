@@ -64,13 +64,13 @@
 #![allow(clippy::too_many_arguments)]
 
 mod color;
+pub use color::{hsv_to_rgb, rgb_to_hsv};
 mod dispatch;
 mod ext;
 mod host;
 mod spawn;
 mod state;
 
-pub(crate) use color::*;
 pub use dispatch::*;
 pub(crate) use ext::*;
 pub use host::*;

@@ -26,8 +26,14 @@
  *     (Vahn=XA2, Noa=XA4, Gala=XA6; Terra none), and each art plays a real
  *     member of its action constant's candidate channel pool (the record's
  *     voice_channel). XA30.XA is the ordinary directional-attack grunt (not
- *     the arts voice); XA3/XA5 are the stereo Miracle fanfares. Demuxed +
- *     trimmed by the WASM side, fired at art start.
+ *     the arts voice). Demuxed + trimmed by the WASM side, fired at art start.
+ *   - FANFARE (Hyper/Super/Miracle): a Hyper art has NO pool shout in retail
+ *     (its constant sits below the pool range) - the FUN_8004AD80 selector
+ *     fires the character's stereo fanfare bank instead (Vahn=XA1, Noa=XA3,
+ *     Gala=XA5; per-art coin-flip channel pair, capture-pinned), and Super /
+ *     Miracle expansions fire the same bank's generic channel 1. The record's
+ *     fanfare_channel carries the resolved channel (crates/art
+ *     hyper_fanfare); fired at art start alongside any Super pool shout.
  *   - TRAIL: the tinted after-image (Vahn red / Noa green / Gala blue) -
  *     delayed poses of the same mesh re-drawn additively via
  *     MeshView.setTrail (the PSX ABE semi-transparency trick).
@@ -132,6 +138,9 @@
                                * voice bank ({file, base, count, channels}) -
                                * per-ART clips in XA2 (Vahn/Noa) / XA4 (Gala),
                                * or null when the disc has no voice audio. */
+      this.fanfare = null;    /* set_character().fanfare: the character's
+                               * Hyper/Super/Miracle fanfare bank (stereo
+                               * XA1/XA3/XA5), or null without disc audio. */
       this._trailCfg = null;  /* the playing art's trail config (tint+echoes),
                                * kept even while the toggle is off so flipping
                                * it back on mid-art restores the echoes. */
@@ -207,6 +216,10 @@
        * for Terra, or an art the retail build plays silent. */
       this.voice = (this.charState.voice && window.LegaiaSfx
         && this.api.art_voice_pcm_i16) ? this.charState.voice : null;
+      /* FANFARE: the Hyper/Super/Miracle bank (stereo XA1/XA3/XA5) - the
+       * FUN_8004AD80 cue, capture-pinned per art (record fanfare_channel). */
+      this.fanfare = (this.charState.fanfare && window.LegaiaSfx
+        && this.api.art_fanfare_pcm_i16) ? this.charState.fanfare : null;
       if (!this.view) {
         this.view = new window.MeshView(this.els.canvas, {
           cam: { yaw: Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
@@ -348,6 +361,23 @@
         }
         if (LegaiaSfx.hasPcm(key)) LegaiaSfx.playPcm(key, 'arts.voice');
       }
+      /* FANFARE: a Hyper plays its capture-pinned pair member of the stereo
+       * XA1/XA3/XA5 bank INSTEAD of a pool shout (retail plays none); a
+       * Super/Miracle plays the generic channel 1 alongside its shout, the
+       * way the FUN_8004AD80 anim-0x1A stage fires before the components
+       * execute. Cached per (character, channel) like the shouts. */
+      const fanfareCh = this.fanfare ? bank[first].fanfare_channel : null;
+      if (this.fanfare && fanfareCh != null && window.LegaiaSfx) {
+        const key = `arts-fanfare:${this.charName}:${fanfareCh}`;
+        if (!LegaiaSfx.hasPcm(key)) {
+          const pcm = this.api.art_fanfare_pcm_i16(first);
+          const meta = (this.fanfare.channels || []).find((c) => c.channel === fanfareCh) || {};
+          if (pcm && pcm.length) {
+            LegaiaSfx.registerPcm(key, pcm, meta.rate || 37800, !!meta.stereo);
+          }
+        }
+        if (LegaiaSfx.hasPcm(key)) LegaiaSfx.playPcm(key, 'arts.fanfare');
+      }
       /* Per-character tinted after-image echoes (the retail arts trail).
        * The config is kept either way; the user toggle gates the draw. */
       this._trailCfg = {
@@ -373,11 +403,14 @@
       const voiceNote = this.voice && bank[first].voice_channel != null
         ? `; voice ${this.voice.file} ch${bank[first].voice_channel}`
         : '';
+      const fanfareNote = this.fanfare && bank[first].fanfare_channel != null
+        ? `; fanfare ${this.fanfare.file} ch${bank[first].fanfare_channel}`
+        : '';
       this.els.now.textContent =
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}${fanfareNote}`;
     }
 
     /* Bake the selected character's assembled battle mesh + its WHOLE
@@ -504,6 +537,9 @@
       /* Voice: the character's per-art arts-voice bank (XA2/XA4 slice). */
       voice: app.charState ? app.charState.voice || null : null,
       voiceReady: !!app.voice,
+      /* Fanfare: the Hyper/Super/Miracle bank (stereo XA1/XA3/XA5 slice). */
+      fanfare: app.charState ? app.charState.fanfare || null : null,
+      fanfareReady: !!app.fanfare,
       sfxReady: !!(window.LegaiaSfx && LegaiaSfx.ready()),
       sfxInfo: window.LegaiaSfx && LegaiaSfx.ready() ? LegaiaSfx.info() : null,
       sfxLog: window.LegaiaSfx ? LegaiaSfx.log() : [],

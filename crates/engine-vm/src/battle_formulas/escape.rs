@@ -271,12 +271,13 @@ pub fn monster_escape_side_scores(
 ///
 /// PORT: FUN_801EC0DC
 ///
-/// NOT WIRED: the only retail caller is the monster action picker
-/// `FUN_801E9FD4`, whose port is `engine-core::monster_ai` - a different crate,
-/// and one whose queue builder has no flee branch to hang this off yet. Wiring
-/// it needs the picker to own a per-monster "flee instead of act" decision that
-/// seeds action category `+0x1DE == 5`, which routes to `ctx[7] == 0x68` (the
-/// monster arm of the Run band). See `handoff/lane-3.md`.
+/// Wired at the retail call site's mirror: the monster action picker's
+/// once-per-pass flee checkpoint (`FUN_801E9FD4`, `jal 0x801ec0dc` at
+/// `0x801ea980`) is `engine-core`'s `World::pick_monster_action`, which calls
+/// this through `World::monster_flee_roll` and seeds action category
+/// `+0x1DE == 5` on success - the monster arm of the Run band (the state-0x68
+/// leave-battle states). See `docs/subsystems/battle-formulas.md`
+/// ("Monster escape roll - FUN_801EC0DC").
 pub fn monster_escape_roll(
     no_escape_flag: u8,
     party: &[FleeActor],

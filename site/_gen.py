@@ -124,6 +124,7 @@ WIDE_PAGES: set[str] = {
     "architecture",
     "world-overview",
     "reference/music-tracks",
+    "tooling/rom-patcher",
 }
 
 

@@ -129,14 +129,27 @@ impl PlayWindowApp {
     }
 
     /// Load the Noa dance overlay (PROT 0980), decode its baked step chart, and
-    /// start a dance run in the world (suspending the current scene). Returns
-    /// `false` (and logs) when no disc is attached or the chart can't decode.
+    /// arm a dance run on the qualifier floor. Returns `false` (and logs) when
+    /// no disc is attached or the chart can't decode.
+    pub(super) fn start_dance_minigame(&mut self, long_song: bool) -> bool {
+        self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::Qualifier, long_song)
+    }
+
+    /// Load the dance overlay and arm a run on `mode`'s floor, holding the
+    /// parsed game pending behind the pre-song **count-in** phase (retail
+    /// `FUN_801cf470` runs its below-10 states - the `1 2 3 READY... GO!`
+    /// banner - before the beat clock starts; `tick_dance_countin` plays that
+    /// envelope out and only then enters the dance + starts the song).
     ///
     /// Mirrors the disc-gated `dance_minigame_real` test's overlay path: read
     /// the raw PROT entry, lift it to its statically-recovered loaded form via
     /// [`static_overlay::as_loaded`], then parse through
-    /// [`DanceGame::from_overlay`].
-    pub(super) fn start_dance_minigame(&mut self, long_song: bool) -> bool {
+    /// [`DanceGame::from_overlay_for_mode`].
+    pub(super) fn start_dance_minigame_mode(
+        &mut self,
+        mode: legaia_engine_core::dance::DanceMode,
+        long_song: bool,
+    ) -> bool {
         use legaia_asset::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
             .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
@@ -158,14 +171,11 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        match legaia_engine_core::dance::DanceGame::from_overlay(&loaded, long_song) {
+        match legaia_engine_core::dance::DanceGame::from_overlay_for_mode(&loaded, mode, long_song)
+        {
             Some(game) => {
-                self.session.host.world.enter_dance(game);
-                // The dance overlay loads one of two mode-selected chart loops
-                // (global BGM 2058/2064 = extraction 1048/1054). The exact
-                // mode->song arm is unpinned; approximate it by song length.
-                self.session
-                    .start_global_bgm(if long_song { 2064 } else { 2058 });
+                self.dance_countin = Some((game, 0, false));
+                self.dance_fx_score = 0;
                 true
             }
             None => {
@@ -173,6 +183,305 @@ impl PlayWindowApp {
                 false
             }
         }
+    }
+
+    /// Advance the pre-song count-in banner one frame
+    /// ([`legaia_engine_core::dance::dance_countin_banner_envelope`]): fire
+    /// the once-only intro cue on the hold-segment entry, cache the envelope
+    /// for the HUD, and enter the pending dance (+ start the song) when the
+    /// slide-out finishes.
+    pub(super) fn tick_dance_countin(&mut self) {
+        use legaia_engine_core::dance;
+        // The banner's whole timeline: slide-in (0x1e) + hold (to 0x5a) +
+        // slide-out (0x1e more).
+        const COUNTIN_END: i32 = 0x5a + 0x1e;
+        let Some((_, t, cue_fired)) = self.dance_countin.as_mut() else {
+            self.dance_countin_draw = None;
+            return;
+        };
+        let env = dance::dance_countin_banner_envelope(*t);
+        if env.hold && !*cue_fired {
+            *cue_fired = true;
+            if let Some(bgm) = self.session.bgm.as_mut() {
+                bgm.enqueue_sfx(dance::COUNTIN_INTRO_CUE, 0, 0, 0);
+            }
+        }
+        self.dance_countin_draw = Some(env);
+        *t += 1;
+        if *t >= COUNTIN_END {
+            let (game, _, _) = self.dance_countin.take().expect("count-in armed");
+            self.dance_countin_draw = None;
+            let long = game.song_len() == dance::SONG_LEN_LONG;
+            self.session.host.world.enter_dance(game);
+            // The dance overlay loads one of two mode-selected chart loops
+            // (global BGM 2058/2064 = extraction 1048/1054). The exact
+            // mode->song arm is unpinned; approximate it by song length.
+            self.session
+                .start_global_bgm(if long { 2064 } else { 2058 });
+        }
+    }
+
+    /// The dance side-channel frame: spawn the sequence-clear banner + stars
+    /// into the effect pool on the human's scoring judge
+    /// ([`legaia_engine_core::dance::good_banner_spawn`]), and run the Disco
+    /// King tutorial actor beside a how-to run.
+    pub(super) fn tick_dance_side(&mut self) {
+        use legaia_engine_core::dance::{self, Judge};
+        let in_dance = self.session.host.world.mode == SceneMode::Dance;
+        if !in_dance && self.dance_countin.is_none() {
+            self.dance_tutorial = None;
+            self.dance_tutorial_frame = None;
+            self.dance_fx_score = 0;
+            return;
+        }
+        let (score, feedback_frames, combo_hit) = self
+            .session
+            .host
+            .world
+            .dance
+            .as_ref()
+            .map(|g| {
+                (
+                    g.score(),
+                    g.feedback_frames() as i32,
+                    matches!(g.triangle_feedback(), Some(true)),
+                )
+            })
+            .unwrap_or((0, 0, false));
+        // Sequence-clear banner on the score edge of a scoring judge.
+        if in_dance && score > self.dance_fx_score {
+            if let Some(Judge::Sequence { weight }) = self.session.host.world.dance_last_judge {
+                self.minigame_fx
+                    .spawn_good_banner(&dance::good_banner_spawn(weight.min(0xFFFF) as u16));
+            }
+            self.dance_fx_score = score;
+        }
+        // The tutorial actor runs one handler call per frame, on the retail
+        // pad-word layout (the same rotate `World::tick_dance` applies).
+        if let Some(tut) = self.dance_tutorial.as_mut() {
+            let pressed = (self.pad & !self.prev_pad).rotate_right(8);
+            let frame = tut.step(pressed, score as i32, feedback_frames, combo_hit, 1);
+            if let Some(cue) = frame.cue
+                && let Some(bgm) = self.session.bgm.as_mut()
+            {
+                bgm.enqueue_sfx(cue, 0, 0, 0);
+            }
+            if frame.done {
+                self.dance_tutorial = None;
+                self.dance_tutorial_frame = None;
+            } else {
+                self.dance_tutorial_frame = Some(frame);
+            }
+        }
+    }
+
+    /// The venue scene's `.MAP` extended footprint - the engine's
+    /// `_DAT_1F8003EC` floor buffer (tile records at `+0`, height/wall grid
+    /// at `+0x4000`, cell grid at `+0x8000`). `None` when the current scene
+    /// carries no field map.
+    fn venue_floor_bytes(&self) -> Option<Vec<u8>> {
+        let scene = self.session.host.scene.as_ref()?;
+        let idx = scene.field_map_index(&self.session.host.index)?;
+        self.session.host.index.entry_bytes_extended(idx).ok()
+    }
+
+    /// The fishing venue's actor-side frame: the free-swimming fish wander
+    /// (idle/cast), the venue floor solve for its height, the retail camera
+    /// publish, the reeling-line actor across hook -> fight -> celebration,
+    /// and the sub-screen idle sway.
+    pub(super) fn tick_fishing_actors(&mut self) {
+        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
+        use legaia_engine_core::fishing_actors as fa;
+        use legaia_engine_core::fishing_chrome as fc;
+        if self.session.host.world.mode != SceneMode::Fishing {
+            self.fish_wander = None;
+            self.fish_line = None;
+            self.fishing_floor = None;
+            self.fishing_sway_offset = (0, 0);
+            return;
+        }
+        let Some(phase) = self.session.host.world.fishing.as_ref().map(|s| s.phase()) else {
+            return;
+        };
+        // One-time venue arm: the wander actor, the floor buffer, and the
+        // venue camera reset (through the engine camera's retail global
+        // trios; axis 4 = `TR.y` deliberately untouched, as retail leaves
+        // `_DAT_800840BC` alone).
+        if self.fish_wander.is_none() {
+            self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
+            self.fishing_floor = self.venue_floor_bytes();
+            let reset = fc::venue_camera_reset();
+            let g = &mut self.session.camera.globals.0;
+            g[0] = reset.rot[0] as i32;
+            g[1] = reset.rot[1] as i32;
+            g[2] = reset.rot[2] as i32;
+            g[3] = reset.tr_x;
+            g[5] = reset.tr_z;
+        }
+        // The wander runs while the cast is idle (retail's MODE_IDLE_CAST
+        // fishing-SM state); the D-pad steers the fish.
+        if phase == FishingPhase::Casting {
+            let held = self.pad.rotate_right(8);
+            let mut rng = self.minigame_rng;
+            let rolled = self.fish_wander.as_mut().and_then(|w| {
+                w.tick(held, || {
+                    let mut x = rng;
+                    x ^= x << 13;
+                    x ^= x >> 17;
+                    x ^= x << 5;
+                    rng = x;
+                    x
+                })
+            });
+            self.minigame_rng = rng;
+            if rolled.is_some()
+                && let Some(w) = self.fish_wander.as_ref()
+                && let Some(r) = fc::ripple_spawn(w.x, w.z, 0)
+            {
+                self.minigame_fx.spawn_ripple(&r);
+            }
+        }
+        // Settle the actor onto the venue floor (the `.MAP` height grid
+        // through the shared ground solver) and publish its camera.
+        if let (Some(w), Some(buf)) = (self.fish_wander.as_mut(), self.fishing_floor.as_ref()) {
+            let ramp = legaia_engine_core::minigame_floor::height_ramp();
+            let grid = legaia_engine_core::minigame_floor::FloorGrid::new(buf);
+            let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
+            w.y = t.y;
+        }
+        if let Some(w) = self.fish_wander.as_ref() {
+            let cam = w.camera();
+            let g = &mut self.session.camera.globals.0;
+            g[1] = cam.yaw as i32;
+            g[4] = cam.pitch_term;
+            g[6] = cam.translation.0;
+            g[7] = cam.translation.1;
+            g[8] = cam.translation.2;
+        }
+        // The line actor: armed on the hook edge, landed on the catch edge.
+        // `fishing_prev_phase` still holds last frame's phase here (the
+        // banner tick that refreshes it runs after this method).
+        let outcome = self
+            .session
+            .host
+            .world
+            .fishing
+            .as_ref()
+            .and_then(|s| s.last_outcome());
+        match (self.fishing_prev_phase, phase) {
+            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
+                self.minigame_fx.spawn_splash(&fc::splash_burst(
+                    fa::SCREEN_CENTRE.0,
+                    fa::SCREEN_CENTRE.1,
+                    0,
+                    0x40,
+                ));
+                self.fish_line = Some(fa::LineActorSim::hooked());
+            }
+            (Some(FishingPhase::Fighting), FishingPhase::Done) => {
+                if let (Some(line), Some(FightOutcome::Landed { points })) =
+                    (self.fish_line.as_mut(), outcome)
+                {
+                    line.land(points);
+                } else {
+                    self.fish_line = None;
+                }
+            }
+            _ => {}
+        }
+        if let Some(mut line) = self.fish_line.take() {
+            let f = line.tick(1);
+            let origin = self
+                .fish_wander
+                .as_ref()
+                .map(|w| (w.x, w.z))
+                .unwrap_or((0, 0));
+            let mut cues: Vec<u8> = Vec::new();
+            if let Some(cue) = f.cue {
+                cues.push(cue);
+            }
+            for b in &f.bursts {
+                self.minigame_fx.spawn_burst(b, origin);
+                if let Some(cue) = b.cue {
+                    cues.push(cue);
+                }
+            }
+            if let Some(bgm) = self.session.bgm.as_mut() {
+                for cue in cues {
+                    bgm.enqueue_sfx(cue as u16, 0, 0, 0);
+                }
+            }
+            if !f.done {
+                self.fish_line = Some(line);
+            }
+        }
+        // Sub-screen idle sway while the point-exchange list is up.
+        if self.session.host.world.fishing_exchange.is_some() {
+            let (v, next) = fc::sway_vector(sway_sine_table(), self.fishing_sway_angle, 1);
+            self.fishing_sway_angle = next;
+            self.fishing_sway_offset = (v.x, v.y);
+        } else {
+            self.fishing_sway_offset = (0, 0);
+        }
+    }
+
+    /// Consume the Baka Fighter round-chrome frame the duel produced this
+    /// tick (`BakaFight` owns the [`BakaChrome`] runner and steps it inside
+    /// `tick_with_input`; the round banners start at its own round ends) and
+    /// resolve each glyph draw's `u` stamp against the overlay's parsed
+    /// widget table ([`legaia_engine_core::baka_fighter_chrome::glyph_u`]).
+    ///
+    /// [`BakaChrome`]: legaia_engine_core::baka_fighter_chrome::BakaChrome
+    pub(super) fn tick_baka_chrome(&mut self) {
+        use legaia_engine_core::baka_fighter_chrome as bc;
+        if self.session.host.world.mode != SceneMode::BakaFighter {
+            self.baka_chrome_frame.clear();
+            return;
+        }
+        let Some(f) = self.session.host.world.baka_fighter.as_ref() else {
+            return;
+        };
+        let frame = f.chrome_frame();
+        if let Some(xa) = frame.xa {
+            log::debug!(
+                "baka chrome: announcer XA clip {} chan {} ({} frames)",
+                xa.clip,
+                xa.chan,
+                xa.dur
+            );
+        }
+        // Resolve the draws: a glyph-carrying draw pages the glyph strip by
+        // stamping `u = glyph_u(index)` into widget 5's record - performed
+        // here against the parsed table, exactly where retail's emitter does
+        // the byte store.
+        let widgets = self.baka_hud_widgets.as_deref();
+        self.baka_chrome_frame = frame
+            .draws
+            .iter()
+            .map(|d| {
+                // The stamped cell rect: widget 5's record with its `u`
+                // paged to the glyph index. The page's texels are not
+                // uploaded; the rect is the future atlas source.
+                let stamped = d.glyph.and_then(|idx| {
+                    let u = bc::glyph_u(idx);
+                    widgets
+                        .and_then(|t| t.get(bc::GLYPH_WIDGET as usize))
+                        .map(|w| (u, w.v, w.w, w.h))
+                });
+                (*d, stamped)
+            })
+            .collect();
+    }
+
+    /// Per-frame driver for every minigame side-channel this window hosts:
+    /// the dance count-in + tutorial + effect spawns, the fishing venue
+    /// actors, the Baka round chrome, and the shared effect pool's ageing.
+    pub(super) fn tick_minigame_extras(&mut self) {
+        self.tick_dance_countin();
+        self.tick_dance_side();
+        self.tick_fishing_actors();
+        self.tick_baka_chrome();
+        self.minigame_fx.tick();
     }
 
     /// Load the fishing overlay (PROT 0972), decode its per-species table, and
@@ -386,6 +695,8 @@ impl PlayWindowApp {
             log::warn!("baka: roster-table parse failed");
             return false;
         };
+        // The HUD widget table, for the round chrome's glyph-strip paging.
+        self.baka_hud_widgets = legaia_asset::baka_opponents::parse_baka_hud(&loaded);
         let Some(actions) = legaia_asset::baka_opponents::parse_actions(&loaded) else {
             log::warn!("baka: action-table parse failed");
             return false;
@@ -483,4 +794,21 @@ impl PlayWindowApp {
         self.session.start_global_bgm(2026);
         true
     }
+}
+
+/// The 4096-step sine table the sub-screen sway samples. Retail reads the
+/// shared table through `*_DAT_8007B81C` (runtime data the port does not
+/// stage); the host synthesizes an equivalent once.
+fn sway_sine_table() -> &'static [i16] {
+    use std::sync::OnceLock;
+    static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        (0..legaia_engine_core::fishing_chrome::SINE_TURN)
+            .map(|i| {
+                let f = (i as f64) * std::f64::consts::TAU
+                    / legaia_engine_core::fishing_chrome::SINE_TURN as f64;
+                (f.sin() * 4096.0).round() as i16
+            })
+            .collect()
+    })
 }

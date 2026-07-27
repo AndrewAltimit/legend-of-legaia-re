@@ -42,6 +42,8 @@
 
 use super::*;
 
+use legaia_art::queue::{Character as ArtCharacter, Command as ArtCommand};
+use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::element_affinity::ElementAffinity;
 use legaia_asset::monster_archive;
 use legaia_asset::move_power;
@@ -98,12 +100,24 @@ const WEB_REWARD_SERU: u8 = 1;
 /// Non-elemental element id (`element_affinity` id space).
 const ELEMENT_NEUTRAL: u8 = 7;
 
+/// The curated gamedata tables (baked-in TOML), parsed once per session -
+/// the arts **kind** labels (regular / hyper / super / miracle) the banner
+/// classifier joins onto the disc's own arts rows.
+fn gamedata_db() -> &'static legaia_gamedata::Database {
+    static DB: std::sync::OnceLock<legaia_gamedata::Database> = std::sync::OnceLock::new();
+    DB.get_or_init(legaia_gamedata::Database::load)
+}
+
 /// One fighter's battle-formula inputs, resolved from disc records at contest
 /// start. Field names follow the battle-actor offsets the damage kernel reads.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MuscleFighter {
     /// Max HP (`+0x14e`); current HP lives in the rules session.
     hp_max: u16,
+    /// Max MP (`+0x152`) - displayed on the retail battle status plate. The
+    /// dome rules never spend it (the port has no cast path); `0` for a
+    /// monster opponent, whose plate retail does not draw.
+    mp_max: u16,
     /// AGL (`+0x154`) - the round-budget pool the dome seeds `ctx+0x6dc` from.
     budget_pool: u16,
     /// INT working value (`+0x168`) - the damage kernel's roll stat.
@@ -297,6 +311,7 @@ impl LegaiaMinigames {
         Some((
             MuscleFighter {
                 hp_max: actor.hp_max,
+                mp_max: actor.mp_max,
                 budget_pool: actor.agl,
                 int: actor.int,
                 udf: actor.udf,
@@ -322,13 +337,187 @@ impl LegaiaMinigames {
         let stream = scene_tmd_stream::detect(buf)?;
         let tmd_bytes = buf.get(stream.tmd_range())?;
         let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
-        let (mesh, _oids, shading) =
+        let (mesh, oids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
         let mut flat = Vec::with_capacity(shading.colors.len() * 4);
         for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
             flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
         }
+        // Drop TMD object 1 - the wall-base dust-decal object (12 ABE ABR-1
+        // quads over the (128..190, 192..253) window of the (832, 0) page,
+        // CLUT (16, 479)). Its texels are genuinely BRIGHT (whitish wisps up
+        // to ~(208, 208, 248)), so even a correct additive draw reads as a
+        // white cloud band ringing the arena - and the retail match capture
+        // shows a mist-free interior, i.e. the retail backdrop path does not
+        // draw this object as static geometry. The shell (object 0) keeps
+        // its own ABE lamp-glow prims. See
+        // docs/subsystems/minigame-muscle-dome.md (Arena backdrop).
+        if oids.iter().any(|&o| o != 0) {
+            let mut mesh2 = mesh.clone();
+            mesh2.positions.clear();
+            mesh2.uvs.clear();
+            mesh2.cba_tsb.clear();
+            mesh2.normals.clear();
+            mesh2.colors.clear();
+            mesh2.indices.clear();
+            let mut remap = vec![u32::MAX; oids.len()];
+            let mut flat2 = Vec::new();
+            for (i, &o) in oids.iter().enumerate() {
+                if o != 0 {
+                    continue;
+                }
+                remap[i] = mesh2.positions.len() as u32;
+                mesh2.positions.push(mesh.positions[i]);
+                mesh2.uvs.push(mesh.uvs[i]);
+                mesh2.cba_tsb.push(mesh.cba_tsb[i]);
+                mesh2.normals.push(mesh.normals[i]);
+                mesh2.colors.push(mesh.colors[i]);
+                flat2.extend_from_slice(&flat[i * 4..i * 4 + 4]);
+            }
+            for t in mesh.indices.chunks_exact(3) {
+                let (a, b, c) = (
+                    remap[t[0] as usize],
+                    remap[t[1] as usize],
+                    remap[t[2] as usize],
+                );
+                if a != u32::MAX && b != u32::MAX && c != u32::MAX {
+                    mesh2.indices.extend_from_slice(&[a, b, c]);
+                }
+            }
+            return Some((mesh2, flat2));
+        }
         Some((mesh, flat))
+    }
+
+    /// The player battle file (`data\battle\PLAYER1..3`) for a dome fighter
+    /// slot (0 = Vahn, 1 = Noa, 2 = Gala).
+    fn muscle_player_file(&self, char_slot: u32) -> Option<&[u8]> {
+        entry_bytes(
+            &self.prot,
+            &self.entries,
+            PLAYER_BATTLE_FILE_BASE + char_slot.min(2),
+        )
+    }
+
+    /// Assemble the character's **battle form** (fighter form) - the same
+    /// retail chain the arts viewer / native battles use: equipment-id
+    /// sections spliced (`assemble_character`, all-default sections - the
+    /// dome forbids equipment), TSB/CBA relocated to runtime band 0
+    /// (`FUN_800513F0` registration pass). Returns the assembly (for
+    /// `anm_bones`), the VRAM mesh and the per-vertex object ids.
+    fn muscle_fighter_build(
+        &self,
+        char_slot: u32,
+    ) -> Option<(
+        bca::AssembledCharacter,
+        legaia_tmd::mesh::VramMesh,
+        Vec<u32>,
+    )> {
+        let raw = self.muscle_player_file(char_slot)?;
+        let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+        let mut asm = bca::assemble_character(raw, &pack, &[0u8; 5]).ok()?;
+        bca::relocate_tsb_cba(&mut asm.tmd, 0).ok()?;
+        let tmd = legaia_tmd::parse(&asm.tmd).ok()?;
+        let (mesh, oids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &asm.tmd);
+        (!mesh.indices.is_empty()).then_some((asm, mesh, oids))
+    }
+
+    /// One battle-form action clip by **runtime action slot**, expanded per
+    /// assembled TMD object so channel `i` drives object `i`:
+    ///
+    /// - slot `0` - the record[0] idle loop (`idle_battle_animation`);
+    /// - slots `0xC..=0xF` - the per-command **swing records** of the
+    ///   equipment sections (`swing_battle_animations`, section defaults) -
+    ///   the same entries the dome's card ids `0xC..=0xF` name, so the
+    ///   card -> clip pairing is the disc's own, not a fit;
+    /// - other slots - the record[0] action table by index (the party
+    ///   hit-reaction family: `FUN_80053CB8` writes the constant map
+    ///   `[2, 3, 4, 5, 0xB]` to `+0x1EF..`, and the damage primitive
+    ///   `FUN_800402F4` stages the light flinch from `+0x1EF` = slot 2).
+    fn muscle_fighter_clip(
+        &self,
+        char_slot: u32,
+        slot: u32,
+    ) -> Option<monster_archive::MonsterAnimation> {
+        let raw = self.muscle_player_file(char_slot)?;
+        let (asm, _, _) = self.muscle_fighter_build(char_slot)?;
+        let anim = if (0xC..=0xF).contains(&slot) {
+            let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+            bca::swing_battle_animations(raw, &pack, &[0u8; 5])
+                .ok()?
+                .into_iter()
+                .find(|s| s.slot as u32 == slot)?
+                .anim
+        } else if slot == 0 {
+            bca::idle_battle_animation(raw).ok()??
+        } else {
+            bca::battle_animations(raw)
+                .ok()?
+                .into_iter()
+                .find(|a| a.action_id as u32 == slot)?
+        };
+        Some(bca::expand_animation_for_objects(&anim, &asm.anm_bones))
+    }
+
+    /// The character's Tactical-Arts catalog for the queue -> art resolver:
+    /// `(display name, kind, command string)` rows. Directions + names come
+    /// from the disc's own SCUS arts-name table when an executable was
+    /// loaded ([`legaia_art::arts_table`]); the curated
+    /// [`legaia_gamedata`] arts table is the fallback catalog on a raw
+    /// `PROT.DAT` load and, in both cases, the source of the **kind** label
+    /// (regular / hyper / super / miracle - ground-truth walkthrough
+    /// labels), joined by exact direction sequence.
+    fn muscle_art_catalog(&self, char_slot: usize) -> Vec<(String, &'static str, Vec<ArtCommand>)> {
+        let art_char = match char_slot {
+            1 => ArtCharacter::Noa,
+            2 => ArtCharacter::Gala,
+            _ => ArtCharacter::Vahn,
+        };
+        let gd_char = match char_slot {
+            1 => legaia_gamedata::Character::Noa,
+            2 => legaia_gamedata::Character::Gala,
+            _ => legaia_gamedata::Character::Vahn,
+        };
+        let db = gamedata_db();
+        let kind_str = |k: legaia_gamedata::ArtKind| match k {
+            legaia_gamedata::ArtKind::Regular => "regular",
+            legaia_gamedata::ArtKind::Hyper => "hyper",
+            legaia_gamedata::ArtKind::Super => "super",
+            legaia_gamedata::ArtKind::Miracle => "miracle",
+        };
+        let disc_rows: Vec<(String, &'static str, Vec<ArtCommand>)> = self
+            .scus
+            .as_deref()
+            .and_then(legaia_art::arts_table::parse_from_scus)
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .filter(|e| e.character == art_char && !e.commands.is_empty())
+                    .map(|e| {
+                        let dirs: Vec<u8> = e.commands.iter().map(|c| c.as_byte()).collect();
+                        let kind = db
+                            .find_art_by_directions(gd_char, &dirs)
+                            .map(|a| kind_str(a.kind))
+                            .unwrap_or("regular");
+                        (e.name, kind, e.commands)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !disc_rows.is_empty() {
+            return disc_rows;
+        }
+        db.arts_for(gd_char)
+            .filter(|a| !a.directions.is_empty())
+            .filter_map(|a| {
+                let cmds: Option<Vec<ArtCommand>> = a
+                    .directions
+                    .iter()
+                    .map(|&b| ArtCommand::from_byte(b))
+                    .collect();
+                Some((a.name.clone(), kind_str(a.kind), cmds?))
+            })
+            .collect()
     }
 
     /// Decode one static-table cue's voice layer to `(pcm, rate)`: descriptor
@@ -373,6 +562,7 @@ impl LegaiaMinigames {
         Some((
             MuscleFighter {
                 hp_max: rec.hp,
+                mp_max: 0,
                 budget_pool: bs[0],
                 int: bs[4],
                 udf: bs[2],
@@ -443,6 +633,7 @@ impl LegaiaMinigames {
                 // constants, surfaced as "fallback" in the state JSON.
                 MuscleFighter {
                     hp_max: 500,
+                    mp_max: 50,
                     budget_pool: 120,
                     int: 60,
                     udf: 40,
@@ -676,6 +867,7 @@ impl LegaiaMinigames {
             "round": s.round(),
             "hp": [s.hp(0), s.hp(1)],
             "hp_max": [c.fighters[0].hp_max, c.fighters[1].hp_max],
+            "mp_max": [c.fighters[0].mp_max, c.fighters[1].mp_max],
             "budget": [s.budget(0), s.budget(1)],
             "spent": [s.spent(0), s.spent(1)],
             "score": [s.score_percent(0), s.score_percent(1)],
@@ -747,20 +939,271 @@ impl LegaiaMinigames {
     // The opponent is the monster archive's own mesh + rigid-part animation
     // set (PROT 867), relocated to battle texture slot 0 exactly as the
     // battle loader does (`battle_render_mesh`, FUN_80055468); the player
-    // fighter reuses the Baka surface's battle-form party accessors
-    // (`baka_fighter_*` side 0 - the same PROT 1204 pack + PROT 1203 anim
-    // bank the turn-based battles draw). `muscle_vram` merges the party
-    // atlases with the monster's texture pool so one TmdRenderer VRAM serves
-    // both bodies.
+    // fighter is the character's **assembled battle form** - retail fields
+    // the party's normal fighter forms in the dome, not the Baka pack - the
+    // same `battle_char_assembly` chain the arts viewer and the native
+    // battles use: player battle file (PROT 863+char) equipment-id sections
+    // assembled + TSB/CBA-relocated to band 0, posed from the file's own
+    // record[0] action streams and per-command swing records. `muscle_vram`
+    // merges the character's band-0 texture pool + battle palette with the
+    // monster's texture pool so one TmdRenderer VRAM serves both bodies.
 
-    /// Whether the dome's 3D scene decodes for `monster_id`: the battle-form
-    /// party pack plus the monster's mesh + idle animation.
-    pub fn muscle_scene_ready(&self, monster_id: u16) -> bool {
+    /// Whether the dome's 3D scene decodes for `(monster_id, char_slot)`:
+    /// the character's assembled battle form plus the monster's mesh + idle
+    /// animation.
+    pub fn muscle_scene_ready(&self, monster_id: u16, char_slot: u32) -> bool {
         let monster_ok = self.monster_archive_entry().is_some_and(|e| {
             matches!(monster_archive::mesh(e, monster_id), Ok(Some(_)))
                 && matches!(monster_archive::idle_animation(e, monster_id), Ok(Some(_)))
         });
-        monster_ok && !self.baka_fighter_positions(0, 0).is_empty()
+        monster_ok && self.muscle_fighter_build(char_slot).is_some()
+    }
+
+    /// Per-vertex positions of the character's assembled battle-form mesh
+    /// (flat `f32`, 3 per vertex). Empty when the player file doesn't
+    /// assemble on this image.
+    pub fn muscle_fighter_positions(&self, char_slot: u32) -> Vec<f32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex `[u, v]` texel coords, parallel to the positions.
+    pub fn muscle_fighter_uvs(&self, char_slot: u32) -> Vec<i32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` (band-0 relocated), parallel to the positions.
+    pub fn muscle_fighter_cba_tsb(&self, char_slot: u32) -> Vec<u32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Triangle indices of the assembled battle-form mesh.
+    pub fn muscle_fighter_indices(&self, char_slot: u32) -> Vec<u32> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, m, _)| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex TMD object index (the rigid part a vertex hangs from).
+    pub fn muscle_fighter_object_ids(&self, char_slot: u32) -> Vec<u32> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, _, oids)| oids)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured_flag]` - the assembled form draws
+    /// fully textured (kept for parity with the monster API).
+    pub fn muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, m, _)| vec![255u8; m.positions.len() * 4])
+            .unwrap_or_default()
+    }
+
+    /// Assembled TMD object count (pose rig width).
+    pub fn muscle_fighter_part_count(&self, char_slot: u32) -> u32 {
+        self.muscle_fighter_build(char_slot)
+            .map(|(asm, _, _)| asm.anm_bones.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// Every battle-form clip the dome page plays, in runtime action-slot
+    /// order: `[{"slot":0,"rate":r,"frame_count":f}, ...]` for the idle
+    /// (slot 0), the light flinch (slot 2, the head of the party
+    /// hit-reaction map `[2,3,4,5,0xB]` `FUN_80053CB8` writes to
+    /// `+0x1EF..`), the knockdown-family entry (slot 4) and the four
+    /// per-command swings (slots `0xC..=0xF` - the card ids themselves).
+    /// A slot whose stream doesn't decode is omitted.
+    pub fn muscle_fighter_anims_json(&self, char_slot: u32) -> String {
+        let rows: Vec<String> = [0u32, 2, 4, 0xC, 0xD, 0xE, 0xF]
+            .iter()
+            .filter_map(|&slot| {
+                let a = self.muscle_fighter_clip(char_slot, slot)?;
+                Some(format!(
+                    r#"{{"slot":{},"rate":{},"frame_count":{}}}"#,
+                    slot, a.rate, a.frame_count
+                ))
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// Battle-form clip `slot`'s pose frames: per (frame, part) absolute
+    /// `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), expanded per
+    /// assembled object and padded to `target_part_count` - the same pose
+    /// layout every other site animator consumes.
+    pub fn muscle_fighter_pose_frames(
+        &self,
+        char_slot: u32,
+        slot: u32,
+        target_part_count: u32,
+    ) -> Vec<i32> {
+        let Some(anim) = self.muscle_fighter_clip(char_slot, slot) else {
+            return Vec::new();
+        };
+        let parts = (target_part_count as usize).max(anim.part_count);
+        let mut out = Vec::with_capacity(anim.frame_count * parts * 6);
+        for frame in &anim.frames {
+            for p in 0..parts {
+                match frame.get(p) {
+                    Some(t) => out.extend_from_slice(&[
+                        t.tx as i32,
+                        t.ty as i32,
+                        t.tz as i32,
+                        t.rx as i32,
+                        t.ry as i32,
+                        t.rz as i32,
+                    ]),
+                    None => out.extend_from_slice(&[0; 6]),
+                }
+            }
+        }
+        out
+    }
+
+    /// Resolve the player's **committed card queue** through the character's
+    /// real Tactical-Arts tables: the greedy longest-match walk of the
+    /// runtime art recognizer (`legaia_art::recognize`), with the span each
+    /// matched art covers so the page can time the retail arts banner over
+    /// the playback:
+    ///
+    /// ```json
+    /// [ { "name": "Tornado Flame", "kind": "hyper", "start": 0, "len": 3 } ]
+    /// ```
+    ///
+    /// `start`/`len` index the player's committed queue (= the player's
+    /// playback events in order). Directions + names come from the disc's
+    /// own SCUS arts-name table (curated-table fallback on a raw `PROT.DAT`
+    /// load); the kind label joins the curated arts table by exact direction
+    /// sequence. Empty when no contest is live or nothing in the queue
+    /// performs an art.
+    pub fn muscle_round_arts_json(&self) -> String {
+        let Some(c) = self.muscle.as_ref() else {
+            return "[]".to_string();
+        };
+        // Card ids 0xC..=0xF are the direction-command ids; the art tables'
+        // direction bytes are 1..=4 in the same L/R/D/U order.
+        let input: Vec<ArtCommand> = c
+            .session
+            .queue(0)
+            .iter()
+            .filter_map(|&cmd| ArtCommand::from_byte(cmd.wrapping_sub(0xB)))
+            .collect();
+        if input.is_empty() {
+            return "[]".to_string();
+        }
+        let catalog = self.muscle_art_catalog(c.char_slot);
+        // Greedy longest-match, left to right, connectors skipped - the
+        // recognizer's documented walk (REF: legaia_art::recognize::
+        // recognize_art_sequence), tracked here with span positions.
+        let mut out: Vec<String> = Vec::new();
+        let mut i = 0usize;
+        while i < input.len() {
+            let mut best: Option<(usize, usize)> = None;
+            for (idx, (_, _, cmds)) in catalog.iter().enumerate() {
+                if cmds.is_empty() || !input[i..].starts_with(cmds) {
+                    continue;
+                }
+                if best.is_none_or(|(_, len)| len < cmds.len()) {
+                    best = Some((idx, cmds.len()));
+                }
+            }
+            match best {
+                Some((idx, len)) => {
+                    let (name, kind, _) = &catalog[idx];
+                    out.push(format!(
+                        r#"{{"name":{},"kind":{},"start":{},"len":{}}}"#,
+                        jstr(name),
+                        jstr(kind),
+                        i,
+                        len
+                    ));
+                    i += len;
+                }
+                None => i += 1,
+            }
+        }
+        format!("[{}]", out.join(","))
+    }
+
+    /// The retail Triangle-list rows for the contest fighter: the character's
+    /// arts out of the disc's own SCUS arts-name table (`DAT_80075EC4` -
+    /// name, `+2` AP byte, directional command string), the exact source the
+    /// retail battle input's "Hyper Arts list" overlay draws its
+    /// name / arrow-string / AP columns from. Rows:
+    ///
+    /// ```json
+    /// [ { "name": "Slash Kick", "ap": 40, "dirs": [4,3,2], "kind": "hyper" } ]
+    /// ```
+    ///
+    /// `dirs` are the art-table direction bytes (1 Left, 2 Right, 3 Down,
+    /// 4 Up). Miracle rows (marker-only command strings) are skipped, as the
+    /// retail list skips them. The curated gamedata table is the fallback on
+    /// a raw `PROT.DAT` load (no AP column there - `ap` reads 0) and the
+    /// source of the `kind` label in both cases. The page does not model
+    /// arts *learning*, so every table row lists (disclosed on the page);
+    /// retail gates rows on the character's learned-art constant.
+    pub fn muscle_arts_list_json(&self) -> String {
+        let Some(c) = self.muscle.as_ref() else {
+            return "[]".to_string();
+        };
+        let ap_by_name: std::collections::HashMap<String, u8> = self
+            .scus
+            .as_deref()
+            .and_then(legaia_art::arts_table::parse_from_scus)
+            .map(|entries| entries.into_iter().map(|e| (e.name, e.ap)).collect())
+            .unwrap_or_default();
+        let rows: Vec<String> = self
+            .muscle_art_catalog(c.char_slot)
+            .into_iter()
+            .filter(|(name, _, _)| !name.is_empty())
+            .map(|(name, kind, cmds)| {
+                let dirs: Vec<String> = cmds.iter().map(|c| c.as_byte().to_string()).collect();
+                format!(
+                    r#"{{"name":{},"ap":{},"dirs":[{}],"kind":{}}}"#,
+                    jstr(&name),
+                    ap_by_name.get(&name).copied().unwrap_or(0),
+                    dirs.join(","),
+                    jstr(kind)
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// Whether the player's selection is exhausted (no hand card affordable):
+    /// the retail auto-end of the command input.
+    pub fn muscle_selection_exhausted(&self) -> bool {
+        self.muscle
+            .as_ref()
+            .is_some_and(|c| c.session.selection_exhausted(0))
+    }
+
+    /// The retail confirm menu's "Reselect" arm: throw the player's committed
+    /// queue away and restore the round budget.
+    pub fn muscle_reset_selection(&mut self) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.reset_selection(0);
+        }
     }
 
     fn muscle_monster_render_mesh(&self, monster_id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
@@ -920,24 +1363,56 @@ impl LegaiaMinigames {
         out
     }
 
-    /// The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
-    /// 1205, their bundled CLUT strips) plus monster `monster_id`'s texture
-    /// pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
-    /// at `(320, 256)`) - the same layout the retail battle loader builds -
-    /// plus the arena backdrop's own TIM pages (PROT 1225 tail chunks: 4bpp
-    /// pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479; disjoint from
-    /// the fighter bands, so upload order doesn't matter).
-    pub fn muscle_vram(&self, monster_id: u16) -> Vec<u8> {
+    /// The dome duel's 1 MB PSX VRAM: the character's **battle-form texture
+    /// pool** at the pinned band-0 placement (`FUN_80052FA0` uploads +
+    /// the decoded battle palette overlaid on the CLUT rows the assembled
+    /// mesh samples - the arts viewer's chain), plus monster `monster_id`'s
+    /// texture pool injected at battle slot 0's coordinates (CLUT row 484,
+    /// 4bpp page at `(320, 256)`) - the layout the retail battle loader
+    /// builds - plus the arena backdrop's own TIM pages (PROT 1225 tail
+    /// chunks: 4bpp pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479;
+    /// all three bands are disjoint, so upload order doesn't matter).
+    pub fn muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
         let mut vram = legaia_tim::Vram::new();
-        if let Some(raw) = entry_bytes(
-            &self.prot,
-            &self.entries,
-            legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX,
-        ) && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw)
+        if let Some(raw) = self.muscle_player_file(char_slot)
+            && let Ok(pack) = legaia_asset::battle_data_pack::parse(raw)
         {
-            for atlas in &atlases {
-                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
-                    vram.upload_tim(&tim);
+            if let Ok(uploads) = bca::character_texture_uploads(raw, &pack, &[0u8; 5], 0) {
+                for u in &uploads {
+                    vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
+                    if !u.clut.is_empty() {
+                        vram.write_clut_row(u.clut_x, u.clut_row(), &u.clut_bytes());
+                    }
+                }
+            }
+            // Battle palette on the CLUT rows/columns the relocated mesh
+            // samples (Vahn = the byte-exact fixed-stride record parse; the
+            // others = the equipment-robust collector).
+            if let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) {
+                let mut rows: Vec<u16> = mesh.cba_tsb.iter().map(|c| (c[0] >> 6) & 0x1FF).collect();
+                rows.sort_unstable();
+                rows.dedup();
+                let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
+                cols.sort_unstable();
+                cols.dedup();
+                let pal = if char_slot == 0 {
+                    legaia_asset::battle_char_palette::find_record0(raw).and_then(|rec0| {
+                        legaia_asset::battle_char_palette::parse_record(raw, rec0).ok()
+                    })
+                } else {
+                    legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok()
+                };
+                if let Some(pal) = pal {
+                    for &row in &rows {
+                        for band in &pal.bands {
+                            let bytes: Vec<u8> = band
+                                .vram_words()
+                                .iter()
+                                .flat_map(|w| w.to_le_bytes())
+                                .collect();
+                            vram.write_clut_row(band.base, row, &bytes);
+                        }
+                    }
                 }
             }
         }
@@ -1089,5 +1564,369 @@ impl LegaiaMinigames {
         self.muscle_static_cue(row, voice)
             .map(|(_, rate)| rate)
             .unwrap_or(0)
+    }
+}
+
+// ------------------------------------------------------------- retail HUD
+//
+// The dome presents as a standard battle, and its whole on-screen chrome is
+// disc data reachable without a save: the chip/plate art + D-pad live in a
+// boot-time TIM in the unindexed pre-`init_data` gap of PROT.DAT (pixels at
+// VRAM (896, 256), CLUT bank packed into row 511 as 16 sub-palettes), the
+// chip-label font is the gap's 256x256 ASCII TIM at (896, 0) (drawn through
+// the menu-glyph atlas's CLUT bank on row 510, sub-palette 13), the small
+// digits are the menu-glyph atlas itself at (960, 256), and the arts-banner
+// words / big damage numerals / red cross-out X are the third TIM of the
+// battle-effect bank `etim` (extraction 0870) at (448, 0) with CLUT row 476.
+// The dome-hub art (the "Welcome to the Muscle Dome!" cursive, INTERVAL /
+// ROUND headings, hub digit strip) is the two-TIM LZS payload of the dome's
+// own data file (extraction 1220, `other6.lzs` slot 0), whose on-screen
+// geometry is the PROT 0977 overlay's sprite descriptor table
+// (`legaia_engine_ui::other_game_hud::parse_sprite_table`).
+//
+// Every piece rect below is capture-pinned: a live PCSX-Redux Muscle Dome
+// battle (the `minigame_muscle_dome_pcsx` scenario driven into the match)
+// was snapshotted at the command cluster, an enemy art, and a player HYPER
+// ARTS!! playback, and the GP0 packet stream + VRAM were read out of the
+// savestates (`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`). The
+// sprite geometry (screen anchors, glide endpoints, widths) additionally
+// lives in the SCUS-static battle HUD element table at `0x80076C10`
+// (24-byte stride, 80 records), exported raw below.
+
+/// `PROT.DAT` file offset of the battle-chrome widget TIM (plates, D-pad,
+/// AP-plate art, HP/MP badges) in the unindexed pre-`init_data` gap.
+/// Uploads to VRAM (896, 256) 256x192; CLUT bank -> row 511.
+const HUD_WIDGET_TIM_OFFSET: usize = 0x18E0;
+
+/// `PROT.DAT` gap offset of the 256x256 ASCII battle font TIM -> (896, 0).
+const HUD_FONT_TIM_OFFSET: usize = 0x7F40;
+
+/// `PROT.DAT` gap offset of the menu-glyph atlas TIM -> (960, 256); its
+/// CLUT bank packs into VRAM row 510 (16 sub-palettes).
+const HUD_MENU_ATLAS_TIM_OFFSET: usize = 0x11218;
+
+/// PROT entry of the battle-effect TIM bank (`etim`, `befect_data`).
+const HUD_ETIM_PROT_INDEX: u32 = 870;
+
+/// Offset of `etim`'s third TIM - the arts-banner / damage-numeral / red-X
+/// page -> VRAM (448, 0), CLUT row 476.
+const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
+
+/// PROT entry (extraction space) of the dome data container
+/// (`other6.lzs` slot 0): LZS section 0 carries the two hub-page TIMs.
+const HUD_HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+
+/// `PROT.DAT` gap offset of the small pad-button-glyph TIM (the four
+/// button circles + the R1/R2/L1/L2 labels): image -> VRAM (928, 352)
+/// (page (896,256) local texels (128,96)..(192,128)), own 16-entry CLUT ->
+/// (304, 511). The arts-input caption's green Triangle circle is its local
+/// rect (48, 0, 16, 16) - the recomp GP0 capture of the input screen draws
+/// it as `uv (176,96) clut (304,511)` on the widget page.
+const HUD_BUTTON_TIM_OFFSET: usize = 0x7B00;
+
+/// The arts command-input piece rects (recomp GP0 packet capture of a live
+/// dome input screen + Triangle arts list; every rect and palette index is
+/// byte-read out of the captured SPRT/FT4/shaded-quad words -
+/// `docs/subsystems/minigame-muscle-dome.md` "Arts command input"). Split
+/// out of [`LegaiaMinigames::muscle_hud_json`]'s `json!` so the macro stays
+/// under the recursion limit.
+fn arts_input_pieces() -> serde_json::Value {
+    serde_json::json!({
+        "cmd_chip": {"body": [215,96,24,26], "cap_l": [200,96,15,26],
+                      "cap_r": [239,96,15,26], "pal": 6},
+        "cmd_label": {"u": 104, "w": 24, "h": 18, "pal": 5,
+                       "v": {"high": 104, "left": 20, "right": 84,
+                             "low": 40, "arms": 0, "raseru": 64}},
+        "chip_diamond_l": {"r": [192,24,9,18], "pal": 5},
+        "chip_diamond_r": {"r": [204,24,9,18], "pal": 5},
+        "pennant_cap_l": {"r": [192,24,9,18], "pal": 5},
+        "pennant_cap_r": {"r": [216,24,9,18], "pal": 5},
+        "bar_end_l": {"r": [240,0,16,18], "pal": 6},
+        "bar_body": {"r": [224,0,16,18], "pal": 6},
+        "bar_arrow": {"r": [192,44,18,18], "pal": 6},
+        "list_win": {"interior": [128,0,32,32], "edge_top": [164,0,24,4],
+                      "edge_bottom": [164,28,24,4], "edge_l": [160,4,4,24],
+                      "edge_r": [188,4,4,24], "corner_tl": [160,0,4,4],
+                      "corner_tr": [188,0,4,4], "corner_bl": [160,28,4,4],
+                      "corner_br": [188,28,4,4], "pal": 2,
+                      "grad": [0x40, 0x88]},
+        "arts_arrows": {"v": 208, "w": 12, "h": 12, "pal": 15,
+                         "u": {"up": 208, "down": 220, "right": 232,
+                               "left": 244}},
+        "arts_text_pal": 15,
+        "tri_button": {"r": [48,0,16,16]},
+        "ap_input_fill": {"rect": [235,177,50,6],
+                           "rgb": [[192,160,64],[128,32,16]]},
+    })
+}
+
+/// SCUS VA of the battle HUD element layout table (24-byte stride).
+const HUD_ELEMENT_TABLE_VA: u32 = 0x8007_6C10;
+
+/// Element records in the table.
+const HUD_ELEMENT_COUNT: usize = 80;
+
+/// Sub-palette (of the menu-glyph atlas CLUT bank) the battle font and the
+/// small digits draw through (capture: SPRT clut word `0x7F8D` = row 510,
+/// x 208 = bank sub-palette 13).
+const HUD_TEXT_SUB_PALETTE: usize = 13;
+
+impl LegaiaMinigames {
+    /// Parse a plain TIM out of the raw `PROT.DAT` image at `offset`
+    /// (the boot-gap system TIMs are not PROT entries).
+    fn hud_gap_tim(&self, offset: usize) -> Option<legaia_tim::Tim> {
+        legaia_tim::parse(self.prot.get(offset..)?).ok()
+    }
+
+    /// The `etim` banner TIM (third TIM of PROT 0870).
+    fn hud_banner_tim(&self) -> Option<legaia_tim::Tim> {
+        let entry = entry_bytes(&self.prot, &self.entries, HUD_ETIM_PROT_INDEX)?;
+        legaia_tim::parse(entry.get(HUD_BANNER_TIM_OFFSET..)?).ok()
+    }
+
+    /// The two dome-hub page TIMs out of the extraction-1220 LZS container
+    /// (section 0 = `[u32 tag][u32 count][u32 size]` + TIM at `0xC` + TIM
+    /// immediately after).
+    fn hud_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+        let entry = entry_bytes(&self.prot, &self.entries, HUD_HUB_CONTAINER_PROT_INDEX)?;
+        let sections = legaia_lzs::decompress_container(entry).ok()?;
+        let blob = sections.first()?;
+        let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
+        let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
+        Some((t0, t1))
+    }
+
+    /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8
+    /// (texel index 0 = transparent, everything else opaque).
+    fn hud_tim_rgba(tim: &legaia_tim::Tim, pal: &[u16]) -> Vec<u8> {
+        let w = tim.pixel_width();
+        let h = tim.pixel_height();
+        let mut out = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let byte = tim.image.data[y * (w / 2) + x / 2];
+                let idx = if x % 2 == 0 { byte & 0xF } else { byte >> 4 } as usize;
+                if idx == 0 {
+                    continue;
+                }
+                let c = legaia_tim::bgr555_to_rgba8(*pal.get(idx).unwrap_or(&0));
+                let o = (y * w + x) * 4;
+                out[o..o + 3].copy_from_slice(&c[..3]);
+                out[o + 3] = 255;
+            }
+        }
+        out
+    }
+
+    /// The SCUS battle HUD element table rows, or empty without a SCUS.
+    fn hud_elements_json(&self) -> Vec<serde_json::Value> {
+        let Some(scus) = self.scus.as_deref() else {
+            return Vec::new();
+        };
+        if scus.len() < 0x20 || &scus[0..8] != b"PS-X EXE" {
+            return Vec::new();
+        }
+        let t_addr = u32::from_le_bytes(scus[0x18..0x1C].try_into().unwrap());
+        let Some(off) = (HUD_ELEMENT_TABLE_VA.checked_sub(t_addr))
+            .map(|d| d as usize + 0x800)
+            .filter(|o| o + HUD_ELEMENT_COUNT * 24 <= scus.len())
+        else {
+            return Vec::new();
+        };
+        let i16_at = |p: usize| i16::from_le_bytes(scus[p..p + 2].try_into().unwrap());
+        (0..HUD_ELEMENT_COUNT)
+            .map(|i| {
+                let r = off + i * 24;
+                serde_json::json!({
+                    "id": i,
+                    "spr": [scus[r], scus[r + 1]],
+                    "a": [i16_at(r + 2), i16_at(r + 4)],
+                    "w": i16_at(r + 6), "h": i16_at(r + 8),
+                    "b": [i16_at(r + 10), i16_at(r + 12)],
+                    "style": [scus[r + 0xE], scus[r + 0xF]],
+                    "kind": scus[r + 0x10],
+                })
+            })
+            .collect()
+    }
+
+    /// Per-character advance widths of the ASCII battle font. The pen
+    /// advance retail uses equals the glyph's occupied texel width for every
+    /// character measured in the captured chip-label runs (`Begin`, `Carl`,
+    /// `Attack`, `Item`, `Spirit`, `Meta`, `Run`, `Ironman`, `Fire Blow`,
+    /// `Auto`, `Command`) except three - `i`, `m`, `M` advance one texel
+    /// wider - and the space advances 5. A retail width *table* was not
+    /// found statically (SCUS + battle overlay byte-scanned), so this is
+    /// texel-derived with the capture-measured exceptions baked in.
+    fn hud_font_advances(&self) -> Vec<u8> {
+        let Some(tim) = self.hud_gap_tim(HUD_FONT_TIM_OFFSET) else {
+            return Vec::new();
+        };
+        let w = tim.pixel_width();
+        let mut out = Vec::with_capacity(96);
+        for ch in 0..96usize {
+            let (cx, cy) = ((ch % 16) * 16, (ch / 16) * 16);
+            let mut maxc = 0usize;
+            for y in 0..16 {
+                for x in 0..16 {
+                    let (px, py) = (cx + x, cy + y);
+                    let byte = tim.image.data[py * (w / 2) + px / 2];
+                    let idx = if px % 2 == 0 { byte & 0xF } else { byte >> 4 };
+                    if idx != 0 && x + 1 > maxc {
+                        maxc = x + 1;
+                    }
+                }
+            }
+            let adv = match (ch + 0x20) as u8 {
+                b' ' => 5,
+                b'i' | b'm' | b'M' => (maxc + 1).min(16),
+                _ if maxc == 0 => 5,
+                _ => maxc.min(16),
+            };
+            out.push(adv as u8);
+        }
+        out
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// One HUD sprite sheet decoded to RGBA8 (row-major, texel index 0
+    /// transparent). `source`: 0 = battle-chrome widget page (own CLUT-bank
+    /// sub-palette `palette`), 1 = ASCII battle font (through the
+    /// menu-glyph atlas bank sub-palette `palette`), 2 = menu-glyph atlas,
+    /// 3 = `etim` banner page (CLUT-row sub-palette), 4/5 = dome hub pages
+    /// (320,0)/(320,256), 6 = the pad-button-glyph TIM (own CLUT). Empty
+    /// when the source doesn't decode on this image. Sheet dimensions ride
+    /// in [`Self::muscle_hud_json`].
+    pub fn muscle_hud_sheet_rgba(&self, source: u32, palette: u32) -> Vec<u8> {
+        let pal_idx = palette as usize;
+        let (tim, pal_tim) = match source {
+            0 => {
+                let t = self.hud_gap_tim(HUD_WIDGET_TIM_OFFSET);
+                (t.clone(), t)
+            }
+            1 => (
+                self.hud_gap_tim(HUD_FONT_TIM_OFFSET),
+                self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET),
+            ),
+            2 => {
+                let t = self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET);
+                (t.clone(), t)
+            }
+            3 => {
+                let t = self.hud_banner_tim();
+                (t.clone(), t)
+            }
+            4 => {
+                let t = self.hud_hub_tims().map(|(a, _)| a);
+                (t.clone(), t)
+            }
+            5 => {
+                let t = self.hud_hub_tims().map(|(_, b)| b);
+                (t.clone(), t)
+            }
+            6 => {
+                let t = self.hud_gap_tim(HUD_BUTTON_TIM_OFFSET);
+                (t.clone(), t)
+            }
+            _ => (None, None),
+        };
+        let (Some(tim), Some(pal_tim)) = (tim, pal_tim) else {
+            return Vec::new();
+        };
+        let Some(pal) = pal_tim
+            .clut
+            .as_ref()
+            .and_then(|c| c.entries.get(pal_idx * 16..pal_idx * 16 + 16))
+        else {
+            return Vec::new();
+        };
+        Self::hud_tim_rgba(&tim, pal)
+    }
+
+    /// The retail-HUD description the page renders from: sheet dimensions,
+    /// the capture-pinned piece rects (chips, plates, D-pad, red X, AP
+    /// plate, HP/MP badges, arts-banner strips, damage numerals), the
+    /// SCUS element-table rows (screen anchors + glide endpoints), the
+    /// PROT 0977 hub sprite records, and the font advance table. `ok` is
+    /// false when the chrome TIMs don't decode on this image.
+    pub fn muscle_hud_json(&self) -> String {
+        let widget = self.hud_gap_tim(HUD_WIDGET_TIM_OFFSET);
+        let font = self.hud_gap_tim(HUD_FONT_TIM_OFFSET);
+        let atlas = self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET);
+        let banner = self.hud_banner_tim();
+        let button = self.hud_gap_tim(HUD_BUTTON_TIM_OFFSET);
+        if widget.is_none() || font.is_none() || atlas.is_none() {
+            return r#"{"ok":false}"#.to_string();
+        }
+        let dims = |t: &Option<legaia_tim::Tim>| {
+            t.as_ref()
+                .map(|t| serde_json::json!([t.pixel_width(), t.pixel_height()]))
+                .unwrap_or(serde_json::Value::Null)
+        };
+        let hub = self.hud_hub_tims();
+        let hub_sprites: Vec<serde_json::Value> = entry_bytes(&self.prot, &self.entries, 977)
+            .map(legaia_engine_ui::other_game_hud::parse_sprite_table)
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                serde_json::json!({
+                    "i": i,
+                    // tpage 0x0005 -> hub page 0 (VRAM (320,0)),
+                    // 0x0015 -> hub page 1 ((320,256)).
+                    "sheet": if s.tpage & 0x10 != 0 { 5 } else { 4 },
+                    // CLUT word: bits 0..5 = x/16 (the row sub-palette).
+                    "pal": s.clut & 0x3F,
+                    "uv": [s.u0, s.v0], "wh": [s.w, s.h],
+                    "semi": s.semi_transparent,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "ok": true,
+            "sheets": {
+                "widget": dims(&widget), "font": dims(&font),
+                "atlas": dims(&atlas), "banner": dims(&banner),
+                "hub0": dims(&hub.as_ref().map(|(a, _)| a.clone())),
+                "hub1": dims(&hub.as_ref().map(|(_, b)| b.clone())),
+                "button": dims(&button),
+            },
+            // Capture-pinned piece rects: [u, v, w, h] on the named sheet,
+            // "pal" = the sub-palette observed in the live packets.
+            "pieces": {
+                "plate_blue": {"cap_l": [208,0,8,20], "body": [192,0,16,20],
+                                "cap_r": [216,0,8,20], "pal": 4},
+                "plate_gold": {"cap_l": [208,64,8,20], "body": [192,64,16,20],
+                                "cap_r": [216,64,8,20], "pal": 12},
+                "dpad": {"r": [0,112,16,16], "pal": 7},
+                "slash": {"r": [96,64,8,16], "pal": 5},
+                "hp_badge": {"r": [208,86,16,10], "pal": 1},
+                "mp_badge": {"r": [224,86,16,10], "pal": 1},
+                "ap_label": {"r": [128,64,24,16], "pal": 4},
+                "ap_trough": {"r": [128,80,56,16], "pal": 4},
+                "ap_end": {"r": [176,64,16,16], "pal": 4},
+                "ap_cap": {"r": [184,80,8,16], "pal": 4},
+                "gauge_fill": {"r": [64,136,16,6], "pal": 1},
+                "red_x": {"r": [0,96,64,16], "pal": 4},
+                "digit24_v": 64,
+                "word_super": {"r": [3,152,105,24], "pal": 3},
+                "word_hyper": {"r": [3,176,105,24], "pal": 3},
+                "word_arts": {"r": [115,176,97,24], "pal": 3},
+                "word_miracle": {"r": [0,200,127,24], "pal": 3},
+                "word_new": {"r": [132,200,64,24], "pal": 3},
+                "word_damage": {"r": [0,224,52,14], "pal": 3},
+                "word_hit": {"r": [0,240,32,16], "pal": 3},
+                "word_total": {"r": [32,240,48,16], "pal": 3},
+                "atlas_digits": {"v": 208, "x0": 0, "cell": 8, "h": 12, "pal": HUD_TEXT_SUB_PALETTE},
+                "font_pal": HUD_TEXT_SUB_PALETTE,
+            },
+            "arts_input": arts_input_pieces(),
+            "elements": self.hud_elements_json(),
+            "hub": hub_sprites,
+            "advance": self.hud_font_advances(),
+        })
+        .to_string()
     }
 }

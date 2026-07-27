@@ -85,11 +85,12 @@ impl PlayWindowApp {
                 },
             )
             .unwrap_or_default();
-        // Dynamic-lighting enhancement state (opt-in, non-retail; `I` toggles).
-        let light_str = if self.dynamic_lighting {
-            "  light ON (I)"
-        } else {
-            ""
+        // Dynamic-lighting enhancement state (opt-in, non-retail; `I`
+        // toggles; `Y` toggles the point-light/shadow sub-layer).
+        let light_str = match (self.dynamic_lighting, self.dyn_shadows) {
+            (true, true) => "  light+shadows ON (I/Y)",
+            (true, false) => "  light ON (I) shadows off (Y)",
+            (false, _) => "",
         };
         // Camera-distance preset (`T` cycles) + precise-movement toggle
         // (`R`) - the compass/zoom state, appended to the status line.
@@ -212,6 +213,153 @@ impl PlayWindowApp {
                     ));
                 }
             }
+
+            // The retail-coordinate HUD frame: the HUD driver's per-frame
+            // list (`DanceGame::hud_draws`, FUN_801d231c) laid out at its
+            // 320x240 stage positions and upscaled with the stage transform.
+            // The rival-HUD gate stands in for `_DAT_8007B6D0`: raised in the
+            // two versus modes, so the rivals' score boxes, gauges and beat
+            // tracks draw there and nowhere else.
+            {
+                use legaia_engine_core::dance::{DanceHudDraw, DanceMode};
+                let rival_hud = matches!(g.mode(), DanceMode::Qualifier | DanceMode::Finals);
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut stage_draws: Vec<TextDraw> = Vec::new();
+                for d in g.hud_draws(rival_hud) {
+                    match d {
+                        DanceHudDraw::Score { x, y, value, .. } => {
+                            let digits: String =
+                                legaia_engine_core::dance::dance_number_digits(value)
+                                    .iter()
+                                    .filter_map(|d| d.map(|v| char::from(b'0' + v)))
+                                    .collect();
+                            let ly = self.font.layout_ascii(&digits);
+                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), white));
+                        }
+                        DanceHudDraw::ScoreBox { x, y } => {
+                            // The frame itself is the quad layer's; a dim
+                            // bracket marks its slot in the text layer.
+                            let ly = self.font.layout_ascii("[");
+                            stage_draws.extend(text_draws_for(&ly, (x as i32 - 12, y as i32), dim));
+                        }
+                        DanceHudDraw::Gauge { x, y, value, .. } => {
+                            let lv = value / legaia_engine_core::dance::GAUGE_STEP;
+                            let ly = self.font.layout_ascii(&format!("Lv.{lv}"));
+                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
+                        }
+                        DanceHudDraw::BeatTrack { slot, x, y } => {
+                            // The rival tracks draw their own lane's next
+                            // cells at the retail anchor; the human's full
+                            // track is the pen-space row above.
+                            if slot == 0 {
+                                continue;
+                            }
+                            if let Some(row) = g.chart_row(g.dancer_lane(slot)) {
+                                let cells: String = (0..8u32)
+                                    .map(|i| match row[((beat + i) % row.len() as u32) as usize] {
+                                        1 => '<',
+                                        2 => '>',
+                                        3 => '^',
+                                        _ => '.',
+                                    })
+                                    .collect();
+                                let ly = self.font.layout_ascii(&cells);
+                                stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
+                            }
+                        }
+                    }
+                }
+                legaia_engine_render::scale_stage_text_draws(
+                    &mut stage_draws,
+                    stage_origin,
+                    stage_scale,
+                );
+                out.extend(stage_draws);
+                // The quad half of the same frame (the FUN_801d2f38 emits,
+                // with the digit / gauge glyph-U patches applied): geometry +
+                // gouraud colours are computed live; without the dance sprite
+                // page resident there is no solid atlas source, so the sink
+                // materialises nothing (same degradation as the fishing
+                // gauge fills).
+                let quads = g.hud_draw_quads(rival_hud);
+                out.extend(minigame_fx::dance_quad_draws(
+                    &quads,
+                    None,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+
+            // Disco King tutorial captions (the how-to run): placeholder
+            // text at the retail caption / option / cursor positions - the
+            // line strings themselves are overlay rodata the port does not
+            // read.
+            if let Some(tf) = &self.dance_tutorial_frame {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut tut_draws: Vec<TextDraw> = Vec::new();
+                for (i, &(cx, cy)) in tf.captions.iter().enumerate() {
+                    let ly = self
+                        .font
+                        .layout_ascii(&format!("(Disco King, line {})", i + 1));
+                    tut_draws.extend(text_draws_for(&ly, (cx as i32, cy as i32), white));
+                }
+                if let Some(opts) = &tf.options {
+                    for (label, &(ox, oy)) in ["Yes", "No thanks"].iter().zip(opts.iter()) {
+                        let ly = self.font.layout_ascii(label);
+                        tut_draws.extend(text_draws_for(&ly, (ox as i32, oy as i32), white));
+                    }
+                }
+                if let Some((cx, cy)) = tf.cursor_pos {
+                    let ly = self.font.layout_ascii(">");
+                    tut_draws.extend(text_draws_for(&ly, (cx as i32, cy as i32), white));
+                }
+                if let Some(praise) = tf.feedback {
+                    let ly = self.font.layout_ascii(if praise {
+                        "(praise - right on the beat)"
+                    } else {
+                        "(scold - watch the timing)"
+                    });
+                    tut_draws.extend(text_draws_for(&ly, (8, 0x68), dim));
+                }
+                legaia_engine_render::scale_stage_text_draws(
+                    &mut tut_draws,
+                    stage_origin,
+                    stage_scale,
+                );
+                out.extend(tut_draws);
+            }
+        }
+        // Dance pre-song count-in banner (`1 2 3 READY... GO!`): the
+        // envelope's two sliding halves / held centre drawn as placeholder
+        // text at the retail x offsets, faded by its brightness ramp.
+        if let Some(env) = &self.dance_countin_draw {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let alpha = (env.brightness.clamp(0, 0xFF) as f32) / 255.0;
+            let color = [1.0f32, 1.0, 1.0, alpha];
+            let mut cd: Vec<TextDraw> = Vec::new();
+            if env.hold {
+                let ly = self.font.layout_ascii("READY... GO!");
+                cd.extend(text_draws_for(&ly, (0xA0 - 40, 0x40), color));
+            } else {
+                let left = self.font.layout_ascii("READY");
+                cd.extend(text_draws_for(
+                    &left,
+                    (0xA0 - env.x_offset - 40, 0x40),
+                    color,
+                ));
+                let right = self.font.layout_ascii("GO!");
+                cd.extend(text_draws_for(&right, (0xA0 + env.x_offset, 0x40), color));
+            }
+            legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
+            out.extend(cd);
+        }
+        // The minigame effect pool's live parts (dance banner / stars,
+        // fishing splash / ripples / celebration bursts), in stage space.
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut fx = self.minigame_fx.stage_draws(&self.font);
+            legaia_engine_render::scale_stage_text_draws(&mut fx, stage_origin, stage_scale);
+            out.extend(fx);
         }
         // Fishing minigame HUD: the phase-specific line (cast-power bar while
         // casting; tension + strength while fighting; the catch result when
@@ -248,6 +396,36 @@ impl PlayWindowApp {
             out.extend(text_draws_for(&ly, (8, 62), white));
             let ly2 = self.font.layout_ascii("(L = quit, P = prizes)");
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+
+            // The overlay's developer readout (FUN_801d2050): the wander
+            // actor's tile pair + settled height, shown only when the
+            // dev-menu session (the engine's `_DAT_8007B9B0` print-flag
+            // stand-in) is up AND the held pad carries the modifier bit -
+            // the same two-sided gate retail applies.
+            if let Some(wd) = &self.fish_wander {
+                use legaia_engine_core::fishing_actors::{
+                    debug_readout_visible, debug_tile, tracked_point_separation,
+                };
+                let held = self.pad.rotate_right(8);
+                if debug_readout_visible(self.dev_menu.is_some(), held) {
+                    // Separation of the actor from the venue anchor it
+                    // spawned at, in sub-cells (the overlay's tracked-point
+                    // pair, with an integer sqrt for the SCUS normalise
+                    // helper).
+                    let sep = tracked_point_separation((0x400, 0x400), (wd.x, wd.z), |v| {
+                        (v.max(0) as f64).sqrt() as i32
+                    });
+                    let line = format!(
+                        "tile ({}, {})  y {}  facing {:#x}  sep {sep}",
+                        debug_tile(wd.x),
+                        debug_tile(wd.z),
+                        wd.y,
+                        wd.facing
+                    );
+                    let ly = self.font.layout_ascii(&line);
+                    out.extend(text_draws_for(&ly, (8, 116), dim));
+                }
+            }
 
             // The retail persistent HUD rows (best-catch, capped point total,
             // rod label, lures remaining) at their traced stage-pixel pens,
@@ -317,13 +495,22 @@ impl PlayWindowApp {
             && let Some(ex) = &self.session.host.world.fishing_exchange
         {
             let world = &self.session.host.world;
+            // The venue sub-screen's panel frame (FUN_801d74b0): the retail
+            // menu-picker rect, centre-x converted to a left edge with the
+            // two-left / six-down skin bias, swaying on the overlay's idle
+            // sway triple (FUN_801d03b0). The list is anchored inside it.
+            let sway = self.fishing_sway_offset;
+            let panel = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
+            let (px, py) = panel
+                .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
+                .unwrap_or((8, 98));
             let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
             let head = format!(
                 "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
                 world.fishing_points
             );
             let ly = self.font.layout_ascii(&head);
-            out.extend(text_draws_for(&ly, (8, 98), white));
+            out.extend(text_draws_for(&ly, (px, py), white));
             let first = ex.first_visible(world.fishing_points);
             for (i, r) in ex.rows.iter().enumerate().skip(first) {
                 let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
@@ -348,8 +535,12 @@ impl PlayWindowApp {
                     r.price
                 );
                 let ly = self.font.layout_ascii(&line);
-                let y = 116 + 18 * (i - first) as i32;
-                out.extend(text_draws_for(&ly, (8, y), if avail { white } else { dim }));
+                let y = py + 18 + 18 * (i - first) as i32;
+                out.extend(text_draws_for(
+                    &ly,
+                    (px, y),
+                    if avail { white } else { dim },
+                ));
             }
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
@@ -456,6 +647,29 @@ impl PlayWindowApp {
             if let Some(t) = f.tally() {
                 cell_row(&right_aligned_number_cells(t.total()), 40, 98);
                 cell_row(&coin_digit_cells(t.gold_remaining()), 140, 98);
+            }
+
+            // The round chrome's resolved draws (`BakaChrome` - the intro
+            // title, round banner and countdown timelines): each widget at
+            // its stage position, faded by its brightness. A glyph draw
+            // shows its paged cell index; the stamped cell rect
+            // (`glyph_u`-paged `u` + the record's `v/w/h`) rides alongside
+            // as the future atlas source.
+            if !self.baka_chrome_frame.is_empty() {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut cd: Vec<TextDraw> = Vec::new();
+                for (d, _cell) in &self.baka_chrome_frame {
+                    let alpha = (d.brightness.clamp(0, 0xFF) as f32) / 255.0;
+                    let color = [1.0f32, 1.0, 1.0, alpha];
+                    let label = match d.glyph {
+                        Some(idx) => format!("{}", idx.rem_euclid(10)),
+                        None => format!("w{:02x}", d.widget),
+                    };
+                    let ly = self.font.layout_ascii(&label);
+                    cd.extend(text_draws_for(&ly, (d.x as i32, d.y as i32), color));
+                }
+                legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
+                out.extend(cd);
             }
         }
         // Muscle Dome HUD: HP + score readouts, the hand with costs, the

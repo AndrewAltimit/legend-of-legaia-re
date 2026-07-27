@@ -72,6 +72,16 @@ pub struct LegaiaRuntime {
     /// The PROT 0874 §1 party locomotion bundle - the pose source for the
     /// global-pool specials (save point / party heads).
     pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// The scene's CLUT-walk (water / waterfall shimmer) animation state,
+    /// rebuilt at every scene entry with its source strips parked into the
+    /// host's VRAM. Only the walker half lives here - the ambient move-VM
+    /// tree (jou's palette cyclers / lightning) is spawned into the live
+    /// `World` by the scene host and drained by `step_field_vram_fx`.
+    pub(crate) field_vram_anim: Option<crate::field_scene::FieldSceneAnim>,
+    /// Set when a field VRAM effect (CLUT walker / ambient tree / scripted
+    /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
+    /// so the page re-uploads the VRAM texture only on real changes.
+    pub(crate) field_vram_dirty: bool,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -145,6 +155,12 @@ pub struct LegaiaRuntime {
     /// BGM sequencer feeds - one mixer, as on hardware.
     #[cfg(target_arch = "wasm32")]
     pub(crate) audio_out: Option<WebAudioOut>,
+    /// The parsed `SCUS_942.54` equipment stat-bonus table
+    /// (`DAT_80074F68`), kept for the shop's retail descriptor windows:
+    /// the sell-detail panel's passive chain reads the equip record's `+5`
+    /// byte and the stat-compare windows read the bonus columns. `None` on
+    /// a PROT.DAT-only load.
+    pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -180,6 +196,8 @@ impl LegaiaRuntime {
             npc_clips: std::collections::HashMap::new(),
             scene_anm: None,
             locomotion_anm: None,
+            field_vram_anim: None,
+            field_vram_dirty: false,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -192,6 +210,7 @@ impl LegaiaRuntime {
             fishing_banner_draws: Vec::new(),
             fishing_prev_phase: None,
             fishing_venues: None,
+            equip_stats: None,
             live_battles: true,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -302,14 +321,28 @@ impl LegaiaRuntime {
         // they persist across scene entry (`enter_field_scene` never clears
         // them). Without them the sub-sessions build from empty catalogs and the
         // menu falls back to a generic frame.
+        self.equip_stats = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s));
         host.world.set_equipment_table(
-            scus.as_ref()
-                .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s))
-                .map(|t| legaia_engine_core::equipment::equip_modifier_table_from_disc(&t))
+            self.equip_stats
+                .as_ref()
+                .map(legaia_engine_core::equipment::equip_modifier_table_from_disc)
                 .unwrap_or_else(|| {
                     legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
                 }),
         );
+        // Retail-shaped equipment buy: this page draws the recipient picker
+        // (window 36) and the stat-compare windows (25 / 41) over the parked
+        // buy list ([`crate::play_shop`]), so opt into the flow and install
+        // the disc restrictions the buy-list kind dispatch reads.
+        if let Some(table) = self.equip_stats.as_ref() {
+            self.menu
+                .install_equip_info(legaia_engine_core::equipment::DiscEquipInfo::from_disc(
+                    table,
+                ));
+            self.menu.retail_equipment_buy = true;
+        }
         host.world.set_spell_catalog(
             scus.as_ref()
                 .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
@@ -489,6 +522,10 @@ impl LegaiaRuntime {
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
         self.tick_sfx();
+        // Field VRAM effects: CLUT-walk shimmer + ambient palette cyclers +
+        // scripted CLUT fx, drained against the scene VRAM; the page re-reads
+        // `field_vram_bytes` when `field_vram_take_dirty` reports a change.
+        self.step_field_vram_fx();
         // Battle presentation: encounter-banner arming on the Field -> Battle
         // edge, battle-event fold, HUD row refresh, popup aging
         // ([`crate::play_battle`]). Cheap no-op outside battle.
@@ -808,6 +845,7 @@ impl LegaiaRuntime {
         self.npc_clips.clear();
         self.scene_anm = None;
         self.locomotion_anm = None;
+        self.field_vram_anim = None;
         let Some(host) = self.scene_host.as_ref() else {
             return Ok(());
         };
@@ -854,7 +892,59 @@ impl LegaiaRuntime {
         }
         self.build_npc_clips();
         self.build_player_rig();
+        // CLUT-walk shimmer (water / waterfall scenes): parse the bundle's
+        // type-6 walker table and park its source strips into the host's
+        // VRAM - this must land before the page's post-entry
+        // `field_vram_bytes` upload, which is why it lives in the rebuild.
+        // The ambient move-VM tree needs no sibling here: the scene host
+        // spawned it into the live world at scene entry, and
+        // `step_field_vram_fx` drains it against the same VRAM.
+        if let Some(host) = self.scene_host.as_mut()
+            && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_mut())
+        {
+            for entry in &scene.entries {
+                let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+                    continue;
+                };
+                for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
+                    res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                }
+                self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
+                    table,
+                    host.world.frame_step.max(1),
+                ));
+                break;
+            }
+        }
         Ok(())
+    }
+
+    /// Drain this sim tick's VRAM-mutating field effects against the host's
+    /// scene VRAM - the browser twin of the native play-window's
+    /// `apply_world_clut_fx` + water-CLUT animator: the type-6 CLUT-walk
+    /// shimmer, the scripted `MoveImage` stamps, the ambient move-VM tree
+    /// (jou's pulsating-flesh palette cyclers + lightning), and the CLUT-cell
+    /// one-shots. Battle-guarded like the native path: while a battle is up
+    /// the page's GPU texture holds the battle VRAM and a field re-upload
+    /// would clobber it.
+    fn step_field_vram_fx(&mut self) {
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        if host.world.mode == SceneMode::Battle {
+            return;
+        }
+        let Some(res) = host.resources.as_mut() else {
+            return;
+        };
+        let mut dirty = false;
+        if let Some(anim) = self.field_vram_anim.as_mut() {
+            dirty |= anim.tick(1, &mut res.vram);
+        }
+        dirty |= host.world.apply_script_vram_moves(&mut res.vram);
+        dirty |= host.world.step_ambient_fx(&mut res.vram);
+        dirty |= host.world.step_clut_fx(&mut res.vram);
+        self.field_vram_dirty |= dirty;
     }
 
     /// Build one [`NpcClip`] per catalogued placement that names a clip - the

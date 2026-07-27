@@ -106,11 +106,11 @@ pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 ///
 /// PORT: FUN_801D69A8 (the store half) / FUN_801D67F0 mode 2.
 ///
-/// NOT WIRED: the two timelines carry the cell index through
-/// [`ChromeDraw::glyph`] and leave the `u` stamp to whoever owns the parsed
-/// widget table, so nothing in the port performs the store itself. It becomes
-/// reachable when a host resolves a [`ChromeDraw`] against
-/// `legaia_asset::baka_opponents::parse_baka_hud`.
+/// Wired: the duel's own [`BakaChrome`] produces the draws
+/// ([`crate::baka_fighter::BakaFight::chrome_frame`]), and the play window
+/// resolves each glyph-carrying [`ChromeDraw`] against the overlay's parsed
+/// widget table (`legaia_asset::baka_opponents::parse_baka_hud`), performing
+/// this `u` stamp per draw (`window/minigames.rs`).
 pub fn glyph_u(index: i32) -> u8 {
     (index.wrapping_mul(GLYPH_CELL_WIDTH) & 0xFF) as u8
 }

@@ -7,7 +7,7 @@
 /// The original SCUS implementation uses signed-integer division with
 /// fixed-point scaling by `0x100` and the `0x60 / 0x100 = 60/256` segment
 /// multiplier - the result space is effectively degrees in 0..360 (= 0x168).
-pub(crate) fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
+pub fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
     let diff = max - min;
@@ -37,7 +37,7 @@ pub(crate) fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
 /// Clean-room HSV→RGB port of `FUN_8001a8dc`. `H ∈ 0..0x167`, `S, V ∈ 0..256`.
 /// Returns `(R, G, B)` each in 0..255 (caller may clamp further; FUN_8001a6c8
 /// caps at 0xF8). Used by ext sub-ops 0x1F / 0x20.
-pub(crate) fn hsv_to_rgb(h: i32, s: i32, v: i32) -> (i32, i32, i32) {
+pub fn hsv_to_rgb(h: i32, s: i32, v: i32) -> (i32, i32, i32) {
     let s = s.clamp(0, 0x100);
     let v = v.clamp(0, 0x100);
     let mut h_scaled = (h.rem_euclid(0x168)) * 0x100;

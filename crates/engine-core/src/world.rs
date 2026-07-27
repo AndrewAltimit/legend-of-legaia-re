@@ -60,6 +60,7 @@ pub use state::*;
 pub use types::*;
 
 mod actors;
+pub mod ambient;
 mod assets_events;
 mod battle;
 mod effects;

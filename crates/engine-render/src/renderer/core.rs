@@ -231,6 +231,15 @@ impl Renderer {
             ..Default::default()
         });
 
+        // Depth convention: **reversed-Z** across every 3D pipeline. The MVP
+        // upload sites post-multiply [`reverse_z`] (clip z' = w - z), the pass
+        // clears depth to 0.0, and the compare functions below are the
+        // mirrored Greater / GreaterEqual. With the Depth32Float attachment
+        // this makes depth resolution proportional to view depth (~z * 2^-23)
+        // instead of collapsing quadratically toward the far plane, which is
+        // what lets sub-unit coplanar-separation nudges (see
+        // `legaia_tmd::mesh::coplanar`) hold at every camera distance.
+
         // Mesh pipeline: 3D triangle list, depth-tested, single directional light.
         let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia mesh shader"),
@@ -256,6 +265,7 @@ impl Renderer {
                 ],
                 cue_ramp: [0.0; 4],
                 palette: [0.0; 4],
+                model_rows: MODEL_ROWS_IDENTITY,
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -304,7 +314,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -371,7 +381,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -470,7 +480,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -533,7 +543,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -584,10 +594,213 @@ impl Renderer {
             }],
         });
 
+        // ---- Per-scene point-light layer (dynamic-lighting enhancement) ----
+        //
+        // Shadow-map depth array (one layer per possible light), the lights
+        // uniform, and the comparison sampler, bound at group 2 of the SCENE
+        // pipelines. The single-mesh pipelines keep the stub shader variant
+        // and never see these. All of it is inert (light count staged to 0,
+        // no shadow pass encoded) unless dynamic lighting + the shadow
+        // sub-toggle are on and the host staged lights.
+        let shadow_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("scene light shadow maps"),
+            size: wgpu::Extent3d {
+                width: SHADOW_MAP_DIM,
+                height: SHADOW_MAP_DIM,
+                depth_or_array_layers: crate::scene_lights::MAX_SCENE_LIGHTS as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_array_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("scene light shadow array view"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let shadow_layer_views: Vec<wgpu::TextureView> = (0..crate::scene_lights::MAX_SCENE_LIGHTS)
+            .map(|i| {
+                shadow_tex.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("scene light shadow layer view"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: i as u32,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("scene light shadow sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+        let scene_lights_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("scene lights bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Depth,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+        });
+        let scene_lights_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("scene lights uniform"),
+            contents: bytemuck::bytes_of(&<SceneLightsUniform as bytemuck::Zeroable>::zeroed()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let scene_lights_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene lights bg"),
+            layout: &scene_lights_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: scene_lights_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&shadow_array_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
+        });
+        // Shadow-pass uniforms: one light-space MVP per (light, draw),
+        // dynamic-offset like the scene uniforms.
+        let shadow_uniforms_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("shadow uniforms bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
+                            ShadowUniforms,
+                        >()
+                            as u64),
+                    },
+                    count: None,
+                }],
+            });
+        let initial_shadow_capacity: usize = 1;
+        let shadow_uniforms_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shadow uniforms"),
+            size: (initial_shadow_capacity * uniform_offset_alignment as usize) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let shadow_uniforms_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shadow uniforms bg"),
+            layout: &shadow_uniforms_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &shadow_uniforms_buf,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(std::mem::size_of::<ShadowUniforms>() as u64),
+                }),
+            }],
+        });
+        let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia shadow shader"),
+            source: wgpu::ShaderSource::Wgsl(SHADOW_MESH_SHADER_SRC.into()),
+        });
+        let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("legaia shadow pipeline layout"),
+            bind_group_layouts: &[&shadow_uniforms_bgl],
+            push_constant_ranges: &[],
+        });
+        // Depth-only pipelines: position attribute only, over each mesh
+        // path's native vertex stride. Rasterizer depth bias keeps the
+        // casters' own surfaces from self-shadow acne (the shader adds a
+        // small compare bias on top - SHADOW_COMPARE_BIAS).
+        let make_shadow_pipeline = |label: &'static str, stride: u64| -> wgpu::RenderPipeline {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&shadow_layout),
+                vertex: wgpu::VertexState {
+                    module: &shadow_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: stride,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        }],
+                    }],
+                    compilation_options: Default::default(),
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let shadow_vram_pipeline = make_shadow_pipeline("legaia shadow pipeline (vram mesh)", 36);
+        let shadow_color_pipeline = make_shadow_pipeline("legaia shadow pipeline (color mesh)", 20);
+
+        // Scene shader variants: same WGSL bodies as the single-mesh
+        // pipelines but with the REAL point-light layer (group 2 bindings)
+        // in the prelude instead of the zero stub.
+        let scene_vram_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia scene vram mesh shader"),
+            source: wgpu::ShaderSource::Wgsl(compose_scene_lit_shader(VRAM_MESH_SHADER_SRC).into()),
+        });
+
         let scene_vram_mesh_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("legaia scene vram mesh pipeline layout"),
-                bind_group_layouts: &[&scene_uniforms_bgl, &vram_bgl],
+                bind_group_layouts: &[&scene_uniforms_bgl, &vram_bgl, &scene_lights_bgl],
                 push_constant_ranges: &[],
             });
         let scene_vram_mesh_pipeline =
@@ -595,7 +808,7 @@ impl Renderer {
                 label: Some("legaia scene vram mesh pipeline"),
                 layout: Some(&scene_vram_mesh_layout),
                 vertex: wgpu::VertexState {
-                    module: &vram_mesh_shader,
+                    module: &scene_vram_mesh_shader,
                     entry_point: Some("vs_main"),
                     // Same vertex layout as the non-scene VRAM pipeline - share
                     // it rather than restating it, so the two cannot drift (an
@@ -605,7 +818,7 @@ impl Renderer {
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &vram_mesh_shader,
+                    module: &scene_vram_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: view_format,
@@ -622,7 +835,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -639,8 +852,8 @@ impl Renderer {
         // equation (mode 3 pre-scales F by 0.25 via its own entry point).
         // Depth: test against the opaque pass but don't write (the PSX has
         // no depth buffer and blended fragments must not occlude later
-        // draws); LessEqual so decal prims coplanar with already-drawn
-        // geometry aren't z-rejected.
+        // draws); GreaterEqual (reversed-Z LessEqual) so decal prims coplanar
+        // with already-drawn geometry aren't z-rejected.
         let make_blend_pipeline = |label: &'static str,
                                    layout: &wgpu::PipelineLayout,
                                    module: &wgpu::ShaderModule,
@@ -679,7 +892,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -701,7 +914,7 @@ impl Renderer {
             make_blend_pipeline(
                 "legaia scene vram mesh blend pipeline",
                 &scene_vram_mesh_layout,
-                &vram_mesh_shader,
+                &scene_vram_mesh_shader,
                 &vram_vertex_layout,
                 m as u8,
             )
@@ -753,7 +966,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -762,19 +975,25 @@ impl Renderer {
             cache: None,
         });
 
-        // Vertex-colour mesh pipeline (untextured F*/G* props): same scene-
-        // uniforms dynamic-offset layout as the lines pipeline (group 0 only,
-        // no VRAM), TriangleList, position(12) + Unorm8x4 colour(4) +
-        // Uint32 blend word(4) = 20 bytes. The blend word carries the prim's
-        // ABE/ABR state in the low 16 bits ([`psx_blend::pack_blend_word`]).
+        // Vertex-colour mesh pipeline (untextured F*/G* props): scene-
+        // uniforms dynamic-offset layout, TriangleList, position(12) +
+        // Unorm8x4 colour(4) + Uint32 blend word(4) = 20 bytes. The blend
+        // word carries the prim's ABE/ABR state in the low 16 bits
+        // ([`psx_blend::pack_blend_word`]). The layout mirrors the scene
+        // VRAM path's three groups (the shader ignores the VRAM group) so
+        // the blend pass can interleave textured and untextured prims
+        // without invalidating sticky bind groups, and the scene-lit
+        // shader variant reaches the group-2 point-light layer.
         let color_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia color mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(compose_psx_shader(COLOR_MESH_SHADER_SRC).into()),
+            source: wgpu::ShaderSource::Wgsl(
+                compose_scene_lit_shader(COLOR_MESH_SHADER_SRC).into(),
+            ),
         });
         let scene_color_mesh_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("legaia scene color mesh pipeline layout"),
-                bind_group_layouts: &[&scene_uniforms_bgl],
+                bind_group_layouts: &[&scene_uniforms_bgl, &vram_bgl, &scene_lights_bgl],
                 push_constant_ranges: &[],
             });
         let color_mesh_attributes = [
@@ -826,7 +1045,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -969,9 +1188,10 @@ impl Renderer {
         // POLY_FT4 textured quads + flat quads in NDC, sampling the shared
         // VRAM (group 0 = `vram_bgl`) through the same CBA/TSB CLUT decode as
         // the 3D VRAM-mesh path. Opaque pipeline (replace) + four per-ABR
-        // blend pipelines. Depth: LessEqual, no write - clip z is fixed at
-        // 0.0 so every overlay quad passes the test and composites on top,
-        // without occluding later draws (matches the text overlay's role).
+        // blend pipelines. Depth: GreaterEqual, no write - clip z is fixed at
+        // 1.0 (the reversed-Z near plane) so every overlay quad passes the
+        // test and composites on top, without occluding later draws (matches
+        // the text overlay's role).
         let screen_overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia screen overlay shader"),
             source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
@@ -1045,7 +1265,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -1130,6 +1350,20 @@ impl Renderer {
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.
             semi_blend: std::cell::Cell::new(true),
             dyn_lighting: std::cell::Cell::new(false),
+            // Shadow sub-toggle defaults ON - it only bites while dynamic
+            // lighting is enabled and lights are staged.
+            dyn_shadows: std::cell::Cell::new(true),
+            scene_lights: std::cell::RefCell::new(Vec::new()),
+            scene_view_proj: std::cell::Cell::new(None),
+            scene_lights_buf,
+            scene_lights_bg,
+            shadow_layer_views,
+            shadow_vram_pipeline,
+            shadow_color_pipeline,
+            shadow_uniforms_bgl,
+            shadow_uniforms_buf: std::cell::RefCell::new(shadow_uniforms_buf),
+            shadow_uniforms_bg: std::cell::RefCell::new(shadow_uniforms_bg),
+            shadow_uniforms_capacity: std::cell::Cell::new(initial_shadow_capacity),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

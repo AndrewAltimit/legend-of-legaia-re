@@ -100,6 +100,7 @@ class TmdRenderer {
     this.locGrade   = gl.getUniformLocation(this.program, 'u_grade');
     this.locCue     = gl.getUniformLocation(this.program, 'u_cue');
     this.locCueFar  = gl.getUniformLocation(this.program, 'u_cue_far');
+    this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     /* Prologue colour grade + depth-cue ramp, staged per frame by the play
      * page (identity / off by default - no other page is affected). */
     this.gradeParams = { rgb: null, strength: 0 };
@@ -595,6 +596,9 @@ class TmdRenderer {
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
     gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
+    /* buildMvp = single reflection (Y flip): a double-sided pair's visible
+     * copy is the front-facing one under this projection. */
+    gl.uniform1i(this.locPairFront, 1);
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
     /* Single-mesh inspector: legacy single pass (no semi-transparency defer,
      * ABE prims draw opaque) - only renderAssembled runs the blend pass. */
@@ -946,6 +950,10 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
+    /* Assembled VPs add the retail screen-X mirror on top of the per-model
+     * Y flip (two reflections), which inverts gl_FrontFacing - a pair's
+     * visible copy is the back-facing one here (see u_pair_front). */
+    gl.uniform1i(this.locPairFront, 0);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();

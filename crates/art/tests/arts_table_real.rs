@@ -134,3 +134,51 @@ fn prot_record_parser_command_decode_agrees_with_scus_oracle_or_skips() {
         "expected to validate most arts, got {checked}"
     );
 }
+
+#[test]
+fn captured_art_channels_are_members_of_the_real_pools_or_skips() {
+    use legaia_art::arts_voice::{ArtsVoiceTable, CAPTURED_ART_CHANNELS};
+
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = ArtsVoiceTable::parse_from_scus(&bytes).expect("arts-voice table parses");
+
+    // Every capture-witnessed pick is a member of the art's decoded pool
+    // (the pools are what retail rolls the pick from), and pick_channel
+    // surfaces exactly the witnessed member.
+    for cue in CAPTURED_ART_CHANNELS {
+        let pool = table
+            .channels(cue.cslot as usize, cue.action_constant)
+            .unwrap_or_else(|| {
+                panic!(
+                    "captured art (char {}, ac 0x{:02X}) has no decoded pool",
+                    cue.cslot, cue.action_constant
+                )
+            });
+        assert!(
+            pool.contains(&cue.channel),
+            "captured channel {} not in pool {pool:?} for (char {}, ac 0x{:02X})",
+            cue.channel,
+            cue.cslot,
+            cue.action_constant
+        );
+        assert_eq!(
+            table.pick_channel(cue.cslot as usize, cue.action_constant),
+            Some(cue.channel)
+        );
+    }
+
+    // The second-half walk is bounded to the packed spans: the row past each
+    // character's last art constant (which is the NEXT character's base
+    // record) does not decode as a phantom pool.
+    for (cslot, past_end) in [(0usize, 0x31u8), (1, 0x33)] {
+        assert_eq!(
+            table.channels(cslot, past_end),
+            None,
+            "char {cslot} ac 0x{past_end:02X} is past the packed second-half span"
+        );
+    }
+}

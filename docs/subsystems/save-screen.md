@@ -535,6 +535,15 @@ route the slot to the valid or the corrupt state. Ported as
 `save_select::save_block_checksum` with the compose helper
 `save_block_checksum_valid` mirroring that load-path compare.
 
+An open tension worth knowing before wiring the gate anywhere:
+`legaia-save`'s card layer models the SC payload as checksum-free (its
+in-place block edits copy `0x1A18` bytes and never touch `0x1FFC`, citing
+the `FUN_8001A8B0` staging copy), while the compare above reads `0x1FFC`
+on load. Which buffer the `0x801df888` compare really runs over - and
+whether retail enforces it against a card-written block - has not been
+re-verified against a retail-written card, so no engine host gates a
+card read on this sum yet.
+
 ### Equip-candidate list handler (`FUN_801D9C14`, sub-screen `0x14`)
 
 Not a save-screen function at all: sub-screen `0x14` is the pause menu's
@@ -1032,7 +1041,11 @@ The class byte's job falls to whichever scanner builds the `SlotSnapshot`, and
 both answer it the same way: **only positive evidence of absence yields
 `SlotContent::Free`** - a directory frame no save claims (card path,
 `web-viewer::cards`), or a `NotFound` on the slot file (disk path,
-`scan_save_dir`). Every other failure to read a slot means something occupies
+`scan_save_dir`). The card path additionally spends the retail free-block
+budget (`card_directory_scan` -> `card_free_blocks`, the `FUN_801E3AF0` /
+`FUN_801E3BA0` pair above): an unclaimed cell the card's own free count
+cannot pay for captions foreign, mirroring step 3 of the retail walk. Every
+other failure to read a slot means something occupies
 it, so it classifies `SlotContent::Foreign` and captions as mode `2` rather
 than inviting a save into a block whose contents were never read. Both build
 foreign slots through `SlotSnapshot::foreign` so the two paths cannot drift.
