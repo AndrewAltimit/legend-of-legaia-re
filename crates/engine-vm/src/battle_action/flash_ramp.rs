@@ -41,7 +41,11 @@
 //!
 //! # NOT WIRED
 //!
-//! Two prerequisites are missing on the engine side. The ramp is driven
+//! The retail per-frame caller is the battle draw tick `FUN_800480D8`
+//! (`jal 0x801e2524` at `0x80048140`, `ghidra/scripts/funcs/800480d8.txt`),
+//! whose own port - `engine-render::battle_actor_tick` - is a schedule with no
+//! host yet, so the wire's location is known but does not exist. Two further
+//! prerequisites are missing on the engine side. The ramp is driven
 //! entirely by the two battle-context bytes `ctx[+0x28B]` (stage) and
 //! `ctx[+0x28C]` (level), and `BattleActionCtx` carries neither - nothing in
 //! the port can raise a flash or hold its level between frames. And the layer

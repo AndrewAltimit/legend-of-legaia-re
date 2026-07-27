@@ -38,7 +38,11 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine caller. Two prerequisites, both outside this crate:
+//! No engine caller. The retail per-frame caller is the battle draw tick
+//! `FUN_800480D8` (`jal 0x801e0080` at `0x80048128`,
+//! `ghidra/scripts/funcs/800480d8.txt`), whose own port -
+//! `engine-render::battle_actor_tick` - is a schedule with no host yet. Two
+//! further prerequisites, both outside this crate:
 //!
 //! * The **records are disc data**. Both pools live inside the per-scene battle
 //!   buffer `_DAT_8007BD30` and their scripts are byte streams the scene's
