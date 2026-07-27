@@ -689,23 +689,42 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
             from your image, with the battle theme the arena inherits as BGM.
           </p>
           <p>
+            <b>The chrome is the game's art now, too.</b> Every chip, plate, badge, numeral and
+            banner strip on the HUD is decoded from your disc: the blue/gold plate slices, the
+            D-pad glyph, the AP-plate pieces and the HP/MP badges from the boot-time widget
+            page in <code>PROT.DAT</code>'s unindexed system-TIM gap; the chip labels in the
+            game's own small battle font; the digits from the menu-glyph atlas; the red
+            cross-out X, the <b>SUPER / HYPER / MIRACLE ARTS!!</b> strips, the DAMAGE / HIT /
+            TOTAL words and the big orange damage numerals from the battle-effect bank
+            (PROT&nbsp;0870); and the <em>&ldquo;Welcome to the Muscle Dome!&rdquo;</em>
+            cursive, the INTERVAL heading and the ROUND word from the dome's own data file
+            (extraction&nbsp;1220), placed by the PROT&nbsp;0977 overlay's sprite table. Screen
+            positions come from the SCUS-static battle HUD element table plus a live PCSX-Redux
+            packet capture of a real dome match (command cluster, enemy art, player
+            <b>HYPER&nbsp;ARTS!!</b>).
+          </p>
+          <p>
             <b>Fitted rather than traced:</b> the base camera seat, fighter spacing and facing
-            (the slow spin between rounds is the traced idle-phase camera tick); the exact chip
-            and plate pixel geometry + colours (canvas approximations of the retail chrome
-            captures &mdash; the wording, the crossed-out Item, the intro card's script text and
-            the <b>ARTS!!</b> banner look are the captures' own); the time-meter placement (its
-            ramp is the traced <code>FUN_801d3444</code> shape) and the interval-panel framing;
-            which of the three traced UI blips fires on which page event; the KO clip pick
-            (slot&nbsp;4 of the pinned party hit-reaction family &mdash; the flinch, slot 2, is
-            traced); the opponent's greedy command AI (retail has no dome-specific AI table);
-            the jitter-free level growth (retail adds a zero-mean random spread); and the
-            awarded Seru. <b>Two honest gaps:</b> the rules engine resolves each command as a
-            basic strike &mdash; retail expands a recognized art through its art records for
-            more damage, so the arts banner here is presentation over the real recognition, not
-            an arts damage model &mdash; and the Ra-Seru (magic) chip renders disabled because
-            the port has no cast path, though retail's Beginner/Expert courses allow magic.
-            When the 3D bodies don't decode, the fight falls back to the text HUD and says so;
-            when the backdrop entry doesn't decode, the floor falls back to plain tiles.
+            (the slow spin between rounds is the traced idle-phase camera tick); the banner's
+            white speed-line rays (polygonal in retail, procedural here) and the SUPER/MIRACLE
+            banner word composition (atlas layout &mdash; only the HYPER strip's draw is
+            packet-pinned); the chips' glide-in motion (the page parks them at the element
+            table's arrived endpoints); the interval panel's info layout (its INTERVAL/ROUND
+            headings are the retail art, the rows below are a page aid); the time-meter
+            placement (its ramp is the traced <code>FUN_801d3444</code> shape); which of the
+            three traced UI blips fires on which page event; the KO clip pick (slot&nbsp;4 of
+            the pinned party hit-reaction family &mdash; the flinch, slot 2, is traced); the
+            opponent's greedy command AI (retail has no dome-specific AI table); the
+            jitter-free level growth (retail adds a zero-mean random spread); and the awarded
+            Seru. <b>Two honest gaps:</b> the rules engine resolves each command as a basic
+            strike &mdash; retail expands a recognized art through its art records for more
+            damage, so the arts banner here is presentation over the real recognition, not an
+            arts damage model &mdash; and the Ra-Seru (magic) chip renders crossed out because
+            the port has no cast path, though retail crosses it only on its magic-forbidden
+            courses. Without a disc image the chrome falls back to the old canvas
+            approximation; when the 3D bodies don't decode, the fight falls back to the text
+            HUD and says so; when the backdrop entry doesn't decode, the floor falls back to
+            plain tiles.
           </p>
         </div>
         <div class="see-also">

@@ -52,17 +52,34 @@
  * command -> swing-clip pairing (the four card ids 0xC..0xF ARE the swing
  * record slots of the player battle file - the disc's own pairing), the
  * flinch clip (slot 2, the head of the party hit-reaction map FUN_80053CB8
- * writes), and the queue -> art resolution (the SCUS arts-name table's own
+ * writes), the queue -> art resolution (the SCUS arts-name table's own
  * combo strings through the recognizer's greedy walk; kind labels joined
- * from the curated gamedata table). CAPTURE-VERIFIED WORDING/LOOK: the
- * "Welcome to the Muscle Dome!" intro, the Begin/name/Item/Attack/Ra-Seru/
- * Spirit command chips with Item crossed out, the AP plate + name/HP/MP
- * plate, the "... ARTS!!" banner + speed-lines + attacker/defender chips,
- * and the "ROUND"/"INTERVAL"/"TOTAL" texts. FITTED: the base camera seat,
- * fighter spacing/facing, exact chip/plate pixel geometry + colours (canvas
- * approximations of the retail chrome), which traced blip fires on which
- * page event, the KO clip pick (slot 4 of the pinned reaction family), and
- * the small art-name caption under the banner (a page aid).
+ * from the curated gamedata table), and - new - THE CHROME ITSELF: every
+ * chip, plate, badge, digit and banner strip is the retail graphic decoded
+ * off the visitor's disc (muscle_hud_json / muscle_hud_sheet_rgba):
+ * the chip/plate 3-slice art, D-pad, AP-plate pieces and HP/MP badges from
+ * the boot-gap widget TIM (VRAM (896,256), CLUT row 511), chip labels in
+ * the boot-gap ASCII battle font ((896,0) through the menu-atlas palette),
+ * small digits from the menu-glyph atlas ((960,256)), the red cross-out X +
+ * SUPER/HYPER/MIRACLE ARTS!! strips + DAMAGE/HIT/TOTAL words + the big
+ * orange damage numerals from the battle-effect bank etim (PROT 0870, VRAM
+ * (448,0), CLUT row 476), and the "Welcome to the Muscle Dome!" cursive +
+ * INTERVAL/ROUND headings from the dome's own data file (extraction 1220)
+ * through the PROT 0977 overlay's sprite descriptor table
+ * (engine-ui::other_game_hud). Screen geometry comes from the SCUS-static
+ * battle HUD element table (0x80076C10) plus a live PCSX-Redux packet
+ * capture of a dome match (command cluster, enemy art, player HYPER ARTS!!
+ * playback - scripts/pcsx-redux/autorun_muscle_hud_capture.lua).
+ * STILL FITTED: the base camera seat, fighter spacing/facing, which traced
+ * blip fires on which page event, the KO clip pick (slot 4 of the pinned
+ * reaction family), the small art-name caption + hint lines (page aids),
+ * the banner speed-line rays (polygonal in retail, procedural here), the
+ * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
+ * strip's draw is packet-pinned), the interval panel's info layout (only
+ * its INTERVAL/ROUND headings are the retail art), and the glide-in motion
+ * (retail slides chips between the element table's two endpoints; the page
+ * draws them parked at the arrived endpoint). Without a disc image the
+ * chrome falls back to the old canvas approximation.
  *
  * HONEST GAPS: the rules engine resolves each committed command as a basic
  * strike - retail expands a recognized art sequence through the art records
@@ -154,6 +171,143 @@ window.MgMuscle = (function () {
     function st() {
       try { return JSON.parse(api.muscle_state_json()); }
       catch (e) { return { live: false }; }
+    }
+
+    /* -------------------------------------------- retail chrome (disc art)
+     *
+     * Sheets are the retail texture pages decoded through their captured
+     * palettes on the Rust side (muscle_hud_sheet_rgba); hudMeta carries
+     * the capture-pinned piece rects, the SCUS element-table anchors, the
+     * PROT 0977 hub sprite records and the font advances. See the header
+     * note for the per-sheet disc sources. */
+    let hudMeta;               /* undefined until asked; null = unavailable */
+    const hudSheets = {};      /* "src:pal" -> canvas (null = failed) */
+    const SHEET_NAMES = ['widget', 'font', 'atlas', 'banner', 'hub0', 'hub1'];
+
+    function hudOk() {
+      if (hudMeta === undefined) {
+        try {
+          const m = JSON.parse(api.muscle_hud_json());
+          hudMeta = m && m.ok ? m : null;
+        } catch (e) { hudMeta = null; }
+      }
+      return !!hudMeta;
+    }
+
+    function sheet(src, pal) {
+      const key = src + ':' + pal;
+      if (hudSheets[key] !== undefined) return hudSheets[key];
+      let c = null;
+      try {
+        const dims = hudMeta.sheets[SHEET_NAMES[src]];
+        const rgba = api.muscle_hud_sheet_rgba(src, pal);
+        if (dims && rgba && rgba.length === dims[0] * dims[1] * 4) {
+          c = document.createElement('canvas');
+          c.width = dims[0]; c.height = dims[1];
+          const cg = c.getContext('2d');
+          const id = cg.createImageData(dims[0], dims[1]);
+          id.data.set(rgba);
+          cg.putImageData(id, 0, 0);
+        }
+      } catch (e) { c = null; }
+      hudSheets[key] = c;
+      return c;
+    }
+
+    /* Blit sheet rect (u,v,w,h) to retail-space (dx,dy), optional dest size. */
+    function blit(src, pal, u, v, w, h, dx, dy, dw, dh) {
+      const s = sheet(src, pal);
+      if (!s) return false;
+      g.drawImage(s, u, v, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2);
+      return true;
+    }
+
+    function hudAdv(ch) {
+      const i = ch.charCodeAt(0) - 0x20;
+      return (hudMeta.advance && hudMeta.advance[i]) || 6;
+    }
+    function hudTextW(s) {
+      let w = 0;
+      for (const c of s) w += hudAdv(c);
+      return w;
+    }
+    /* The retail ASCII battle font: 16x16 cells drawn as 14x15 sprites,
+     * pen stepped by the per-glyph advance (capture-matched). */
+    function hudText(s, x, y) {
+      const pal = hudMeta.pieces.font_pal;
+      let pen = x;
+      for (const c of s) {
+        const i = c.charCodeAt(0) - 0x20;
+        if (i > 0 && i < 96) {
+          blit(1, pal, (i % 16) * 16, ((i / 16) | 0) * 16, 14, 15, pen, y);
+        }
+        pen += hudAdv(c);
+      }
+      return pen - x;
+    }
+    /* Menu-atlas small digits (8x12, u = digit*8) + the widget '/'. */
+    function hudDigits(str, x, y) {
+      const d = hudMeta.pieces.atlas_digits;
+      const sl = hudMeta.pieces.slash;
+      let pen = x;
+      for (const c of str) {
+        if (c === '/') {
+          blit(0, sl.pal, sl.r[0], sl.r[1], sl.r[2], sl.r[3], pen, y - 2);
+          pen += 8;
+        } else if (c >= '0' && c <= '9') {
+          blit(2, d.pal, d.x0 + (c.charCodeAt(0) - 48) * d.cell, d.v, 8, d.h, pen, y);
+          pen += 8;
+        } else {
+          pen += 8;
+        }
+      }
+      return pen - x;
+    }
+    /* The etim big orange numerals: 24x24 cells at v=64, u=(d-1)*24, 0 at
+     * u=216 (packet-pinned); default screen size 16x15 (the TOTAL row),
+     * 24x23 for the flying hit numbers. */
+    function hudBigDigits(str, x, y, dw, dh) {
+      const v = hudMeta.pieces.digit24_v;
+      let pen = x;
+      for (const c of str) {
+        if (c >= '0' && c <= '9') {
+          const dgt = c.charCodeAt(0) - 48;
+          const u = dgt === 0 ? 216 : (dgt - 1) * 24;
+          blit(3, 3, u, v, 24, 24, pen, y, dw || 16, dh || 15);
+        }
+        pen += (dw || 16);
+      }
+      return pen - x;
+    }
+    function hudWord(name, x, y, dw, dh) {
+      const p = hudMeta.pieces[name];
+      if (!p) return 0;
+      blit(3, p.pal, p.r[0], p.r[1], p.r[2], p.r[3], x, y, dw, dh);
+      return dw || p.r[2];
+    }
+    /* One dome-hub sprite (PROT 0977 descriptor record) at 1:1. */
+    function hubSprite(i, dx, dy, dw, dh) {
+      const r = hudMeta.hub && hudMeta.hub[i];
+      if (!r) return false;
+      return blit(r.sheet, r.pal, r.uv[0], r.uv[1], r.wh[0], r.wh[1], dx, dy, dw, dh);
+    }
+
+    /* Retail chip: 3-slice plate (8px caps + 16px body slices, 20 tall)
+     * with the label left-aligned at the body start - exactly the captured
+     * packet decomposition. (x, y) anchor the BODY's top-left (the element
+     * table's chip anchor minus the retail (8, 6) label offset is applied
+     * by the callers). bodyW defaults to the label width. */
+    function rChip(label, x, y, style, bodyW) {
+      const p = style === 'gold' ? hudMeta.pieces.plate_gold : hudMeta.pieces.plate_blue;
+      const bw = Math.max(bodyW || 0, hudTextW(label));
+      blit(0, p.pal, p.cap_l[0], p.cap_l[1], 8, 20, x - 8, y);
+      for (let bx = 0; bx < bw; bx += 16) {
+        const w = Math.min(16, bw - bx);
+        blit(0, p.pal, p.body[0], p.body[1], w, 20, x + bx, y);
+      }
+      blit(0, p.pal, p.cap_r[0], p.cap_r[1], 8, 20, x + bw, y);
+      hudText(label, x, y + 4);
+      return bw;
     }
 
     /* --------------------------------------------------- 3D scene assembly */
@@ -751,7 +905,7 @@ window.MgMuscle = (function () {
           if (span) {
             const kind = String(span.kind || 'regular');
             const text = (kind === 'regular' ? '' : kind.toUpperCase() + ' ') + 'ARTS!!';
-            artsBanner = { text, name: span.name || '', t: 0, life: span.len * 34 };
+            artsBanner = { text, kind, name: span.name || '', t: 0, life: span.len * 34 };
           }
         }
         pIdx++;
@@ -923,50 +1077,87 @@ window.MgMuscle = (function () {
       g.restore();
     }
 
-    /* Retail intro card: pure black, centred white cursive script with a
-     * soft blue-white glow - "Welcome to the Muscle Dome!". */
+    /* Retail intro card: pure black with the "Welcome to the Muscle Dome!"
+     * cursive strip - the 240x18 hub sprite (PROT 0977 record 3) off the
+     * dome data file (extraction 1220), drawn 1:1 (its glow is baked into
+     * the texels). Falls back to a system cursive without disc chrome. */
     function drawIntro() {
       g.fillStyle = '#000';
       g.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
       const a = Math.min(1, introT / 25);
       g.save();
       g.globalAlpha = a;
-      g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.shadowColor = 'rgba(176,186,255,0.95)';
-      g.shadowBlur = 16;
-      g.fillStyle = '#f4f6ff';
-      g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
-      g.shadowBlur = 6;
-      g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
+      if (hudOk() && hubSprite(3, (320 - 240) / 2, 112)) {
+        /* drawn */
+      } else {
+        g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.shadowColor = 'rgba(176,186,255,0.95)';
+        g.shadowBlur = 16;
+        g.fillStyle = '#f4f6ff';
+        g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
+        g.shadowBlur = 6;
+        g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
+      }
       g.restore();
       if (introT > 90) {
         text('SPACE', 306, 230, 6, 'rgba(174,182,196,0.7)', 'right', '');
       }
     }
 
-    /* Top-left Begin + fighter-name chips (retail command-input header). */
+    /* Top-left Begin + fighter-name chips (retail command-input header;
+     * capture: gold body starts at x=16 / x=68, plates 20 tall at y=8). */
     function drawHeaderChips(state) {
+      if (hudOk()) {
+        const w = rChip('Begin', 16, 8, 'gold');
+        rChip(state.names[0], 24 + w + 8, 8, 'gold');
+        return;
+      }
       chip(6, 6, 40, 13, 'gold', 'Begin');
       chip(52, 6, Math.max(36, state.names[0].length * 7 + 10), 13, 'gold', state.names[0]);
     }
 
     /* The retail command cluster: Item (crossed out) on top; Attack +
-     * D-pad + Ra-Seru; Spirit below. Gold marks the live pick. */
+     * D-pad + Ra-Seru; Spirit below. Anchors + widths are the SCUS element
+     * table's arrived glide endpoints (elements 8 / 9 / 0xA / 0xB), the
+     * plate/label offsets and the D-pad seat the captured packets. */
     function drawCommandCluster(state) {
       const raSeru = RA_SERU[state.char] || 'Meta';
       const inAttack = selectSub === 'attack';
-      /* Item - crossed out, non-interactive (the course rules). */
+      if (hudOk()) {
+        const el = (i, dx, dy) => {
+          const e = hudMeta.elements[i];
+          return e ? { x: e.b[0], y: e.b[1], w: e.w } : { x: dx, y: dy, w: 48 };
+        };
+        const item = el(8, 204, 34);
+        const atk = el(9, 160, 66);
+        const ras = el(0xA, 248, 66);
+        const spi = el(0xB, 204, 98);
+        /* Item - crossed out with the retail 64x16 red X (etim page). */
+        rChip('Item', item.x, item.y - 6, 'blue', item.w);
+        hudWord('red_x', item.x - 8, item.y - 4);
+        /* Attack + the D-pad glyph between it and the Ra-Seru chip. */
+        rChip('Attack', atk.x, atk.y - 6, inAttack ? 'gold' : 'blue', atk.w);
+        blit(0, hudMeta.pieces.dpad.pal,
+          hudMeta.pieces.dpad.r[0], hudMeta.pieces.dpad.r[1], 16, 16,
+          (atk.x + atk.w + ras.x - 8) / 2 - 8, atk.y - 4);
+        /* Ra-Seru (magic) - crossed out too: the port has no cast path
+         * (honest gap; retail crosses it only on magic-forbidden courses). */
+        rChip(raSeru, ras.x, ras.y - 6, 'blue', ras.w);
+        hudWord('red_x', ras.x - 8, ras.y - 4);
+        /* Spirit - ends selection. */
+        rChip('Spirit', spi.x, spi.y - 6, 'blue', spi.w);
+        if (!inAttack && !banner) {
+          text('←Attack  ↓Spirit  SPACE Begin', 214, 116, 6, '#aeb6c4', 'center', '');
+        }
+        return;
+      }
       chip(196, 20, 60, 13, 'blue', 'Item');
       crossOut(196, 20, 60, 13);
-      /* Attack (left) - gold when the directional input is live. */
       chip(150, 48, 54, 14, inAttack ? 'gold' : 'blue', 'Attack');
       dpadGlyph(216, 55, 7);
-      /* Ra-Seru (magic) - rendered disabled: the port has no cast path
-       * (retail Beginner/Expert allow it; honest gap, see header). */
       chip(228, 48, 50, 14, 'grey', raSeru);
-      /* Spirit - ends selection (the rules' spirit path). */
       chip(178, 76, 60, 14, 'blue', 'Spirit');
       if (!inAttack && !banner) {
         text('←Attack  ↓Spirit  SPACE Begin', 214, 100, 6, '#aeb6c4', 'center', '');
@@ -974,52 +1165,101 @@ window.MgMuscle = (function () {
     }
 
     /* Committed directional input (the retail arts strip: arrows appear as
-     * you enter them), drawn over the AP plate while selecting. */
+     * you enter them), drawn over the AP plate while selecting. The strip
+     * itself is a page aid (retail consumes the AP gauge instead). */
     function drawQueueStrip(state) {
       const q = state.queue[0];
       if (!q.length && selectSub !== 'attack') return;
       let s = '';
       for (const cmd of q) s += (CMD[cmd] ? CMD[cmd].glyph : '?') + ' ';
-      plate(180, 172, 126, 12, 'blue', false);
-      text(s || '· · ·', 243, 178, 8, '#ffe9a8', 'center');
+      plate(180, 160, 126, 12, 'blue', false);
+      text(s || '· · ·', 243, 166, 8, '#ffe9a8', 'center');
       if (selectSub === 'attack') {
-        text('arrows commit · SPACE fight · ESC back', 306, 166, 6, '#aeb6c4', 'right', '');
+        text('arrows commit · SPACE fight · ESC back', 306, 152, 6, '#aeb6c4', 'right', '');
       }
     }
 
-    /* The retail AP plate: pointed blue plate, red "AP" label, orange
-     * gauge, remaining-points numeral. */
+    /* The retail AP plate. Capture decomposition at (208, 172): the 24x16
+     * pointed "AP" label piece, the 56x16 gauge trough, the 16x16 end
+     * piece + 8x16 cap, the 16x6 orange fill tile, small numerals. */
     function drawApPlate(state) {
       const budget = state.budget[0];
       const pool = state.stats ? state.stats[0].budget_pool : budget;
+      if (hudOk()) {
+        const x = 208, y = 172, p = hudMeta.pieces;
+        blit(0, p.ap_label.pal, ...p.ap_label.r, x, y);
+        blit(0, p.ap_trough.pal, ...p.ap_trough.r, x + 24, y);
+        blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
+        blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
+        const frac = pool ? Math.max(0, Math.min(1, budget / pool)) : 0;
+        if (frac > 0) {
+          blit(0, p.gauge_fill.pal, p.gauge_fill.r[0], p.gauge_fill.r[1],
+            p.gauge_fill.r[2], p.gauge_fill.r[3], x + 28, y + 5, 48 * frac, 6);
+        }
+        const num = String(budget);
+        hudDigits(num, x + 96 - num.length * 8 + 6, y + 3);
+        return;
+      }
       plate(190, 188, 112, 12, 'blue', true);
       text('AP', 196, 194, 7, '#e2453a');
       bar(210, 191, 64, 6, pool ? budget / pool : 0, '#f0a428', 'rgba(20,16,40,0.8)');
       text(String(budget), 298, 194, 7, '#ffd166', 'right');
     }
 
-    /* The retail bottom status plate: fighter name, gold HP, teal MP. */
+    /* The retail bottom status plate. Capture decomposition: caps at
+     * (8, 188)/(304, 188), 16x20 body slices across, name in the battle
+     * font at (16, 192), HP/MP badges at (80, 194)/(192, 194), menu-atlas
+     * digits with the widget '/' at the captured columns. */
     function drawStatusPlate(state) {
+      const mp = (state.mp_max && state.mp_max[0]) || 0;
+      const cur = String(Math.max(0, Math.round(hpShow[0])));
+      const max = String(state.hp_max[0]);
+      if (hudOk()) {
+        const p = hudMeta.pieces, y = 188;
+        blit(0, p.plate_blue.pal, p.plate_blue.cap_l[0], p.plate_blue.cap_l[1], 8, 20, 8, y);
+        for (let bx = 16; bx < 304; bx += 16) {
+          blit(0, p.plate_blue.pal, p.plate_blue.body[0], p.plate_blue.body[1],
+            Math.min(16, 304 - bx), 20, bx, y);
+        }
+        blit(0, p.plate_blue.pal, p.plate_blue.cap_r[0], p.plate_blue.cap_r[1], 8, 20, 304, y);
+        hudText(state.names[0], 16, y + 4);
+        blit(0, p.hp_badge.pal, ...p.hp_badge.r, 80, y + 6);
+        hudDigits(cur, 134 - cur.length * 8, y + 4);
+        hudDigits('/', 134, y + 4);
+        hudDigits(max, 144, y + 4);
+        blit(0, p.mp_badge.pal, ...p.mp_badge.r, 192, y + 6);
+        const mps = String(mp);
+        hudDigits(mps, 238 - mps.length * 8, y + 4);
+        hudDigits('/', 238, y + 4);
+        hudDigits(mps, 248, y + 4);
+        return;
+      }
       plate(8, 214, 304, 16, 'blue', true);
       text(state.names[0], 16, 222, 8, '#f2f4fa');
       text('HP', 96, 222, 8, '#ffd23e');
-      text(Math.max(0, Math.round(hpShow[0])) + '/' + state.hp_max[0], 118, 222, 8, '#f2f4fa');
-      const mp = (state.mp_max && state.mp_max[0]) || 0;
+      text(cur + '/' + max, 118, 222, 8, '#f2f4fa');
       text('MP', 208, 222, 8, '#37d3b1');
       text(mp + '/' + mp, 230, 222, 8, '#f2f4fa');
     }
 
-    /* Defender name chip, bottom-right (retail shows it during playback;
-     * enemy HP is never drawn - the retail battle UI hides it). */
+    /* Defender name chip (retail shows it during playback at the element
+     * table's arrived endpoint (200, 162); enemy HP is never drawn). */
     function drawFoeChip(state) {
       const name = state.names[1] || '';
       if (!name) return;
+      if (hudOk()) {
+        const e = hudMeta.elements[0x29];
+        rChip(name, e ? e.b[0] : 200, (e ? e.b[1] : 162) - 6, 'blue',
+          e ? e.w : undefined);
+        return;
+      }
       const w = Math.max(44, name.length * 7 + 12);
       chip(310 - w, 196, w, 13, 'blue', name);
     }
 
     /* Attacker name chip, top-left gold (retail arts-playback header). */
     function drawAttackerChip(name) {
+      if (hudOk()) { rChip(name, 16, 8, 'gold'); return; }
       chip(6, 6, Math.max(40, name.length * 7 + 12), 13, 'gold', name);
     }
 
@@ -1050,30 +1290,66 @@ window.MgMuscle = (function () {
         g.fill();
       }
       g.restore();
-      /* Block-capital gradient text with dark outline. */
+      /* The banner strip. Retail draws the etim word row as two textured
+       * quads at (52,144)-(268,178) - 1:1 horizontally, 24 texels
+       * stretched to 34 px vertically (packet-pinned for HYPER ARTS!!).
+       * SUPER / MIRACLE compose their word + the ARTS!! strip from the
+       * same atlas rows (layout-inferred - only HYPER is packet-pinned);
+       * a regular art raises the ARTS!! strip alone. */
       const pop = b.t < 6 ? 0.7 + 0.3 * (b.t / 6) : 1;
-      g.translate(cx, cy + 24);
-      g.scale(pop, pop);
-      g.font = 'bold ' + (26 * 2) + 'px "Arial Black", ui-sans-serif, sans-serif';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      const grad = g.createLinearGradient(0, -30, 0, 30);
-      grad.addColorStop(0, '#ffe98a');
-      grad.addColorStop(0.55, '#ffab2e');
-      grad.addColorStop(1, '#f2600f');
-      g.lineWidth = 8;
-      g.strokeStyle = '#4a1404';
-      g.strokeText(b.text, 0, 0);
-      g.fillStyle = grad;
-      g.fillText(b.text, 0, 0);
-      /* Small art-name caption - a page aid (retail names the move on the
-       * Spirit panel instead). */
+      let drawn = false;
+      if (hudOk()) {
+        const kind = b.kind || 'regular';
+        g.save();
+        g.translate(HUD_W * (1 - pop), (161 * 2) * (1 - pop));
+        g.scale(pop, pop);
+        const vs = 34 / 24;   /* the captured vertical stretch */
+        const seat = (w) => (320 - w) / 2;
+        if (kind === 'hyper') {
+          /* The packet-pinned draw: uv (0,176)-(215,199) at (52,144),
+           * 216 wide 1:1, stretched to 34 px tall. */
+          const p = hudMeta.pieces.word_hyper;
+          drawn = blit(3, p.pal, 0, 176, 216, 24, 52, 144, 216, 34);
+        } else if (kind === 'super' || kind === 'miracle') {
+          const word = hudMeta.pieces[kind === 'super' ? 'word_super' : 'word_miracle'];
+          const q = hudMeta.pieces.word_arts;
+          const total = word.r[2] + 8 + q.r[2];
+          const x0 = seat(total);
+          drawn = blit(3, word.pal, ...word.r, x0, 144, word.r[2], word.r[3] * vs);
+          blit(3, q.pal, ...q.r, x0 + word.r[2] + 8, 144, q.r[2], q.r[3] * vs);
+        } else {
+          const q = hudMeta.pieces.word_arts;
+          drawn = blit(3, q.pal, ...q.r, seat(q.r[2]), 144, q.r[2], q.r[3] * vs);
+        }
+        g.restore();
+      }
+      if (!drawn) {
+        g.translate(cx, cy + 24);
+        g.scale(pop, pop);
+        g.font = 'bold ' + (26 * 2) + 'px "Arial Black", ui-sans-serif, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        const grad = g.createLinearGradient(0, -30, 0, 30);
+        grad.addColorStop(0, '#ffe98a');
+        grad.addColorStop(0.55, '#ffab2e');
+        grad.addColorStop(1, '#f2600f');
+        g.lineWidth = 8;
+        g.strokeStyle = '#4a1404';
+        g.strokeText(b.text, 0, 0);
+        g.fillStyle = grad;
+        g.fillText(b.text, 0, 0);
+      }
+      /* Small art-name caption - a page aid (retail names the move in a
+       * floating caption near the fighter). */
       if (b.name) {
         g.font = 'bold ' + (8 * 2) + 'px ui-monospace, monospace';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
         g.lineWidth = 3;
-        g.strokeText(b.name, 0, 40);
+        g.strokeStyle = '#4a1404';
+        g.strokeText(b.name, HUD_W, 200 * 2);
         g.fillStyle = '#ffe9a8';
-        g.fillText(b.name, 0, 40);
+        g.fillText(b.name, HUD_W, 200 * 2);
       }
       g.restore();
       b.t++;
@@ -1102,9 +1378,13 @@ window.MgMuscle = (function () {
       g.fillRect(30 * 2, 52 * 2, 260 * 2, 136 * 2);
       g.strokeStyle = 'rgba(255,255,255,0.25)';
       g.strokeRect(30 * 2 + 0.5, 52 * 2 + 0.5, 260 * 2, 136 * 2);
-      /* "INTERVAL" is retail's own between-round heading (its glyph texture
-       * sits in the muscle-state VRAM alongside the ROUND digits). */
-      text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
+      /* "INTERVAL" is retail's own between-round heading - the 192x32 hub
+       * sprite (PROT 0977 record 16) off the dome data file. The panel's
+       * info layout below is a page aid (the retail interval screen's own
+       * layout is uncaptured). */
+      if (!(hudOk() && hubSprite(16, (320 - 192) / 2, 56))) {
+        text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
+      }
       text('round ' + (state.round + 1) + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
       /* The retail score readout: hp * 0x6c / max (FUN_801d0748 phase 0x6e),
        * rendered per fighter out of 108. */
@@ -1132,28 +1412,58 @@ window.MgMuscle = (function () {
         : banner.t > banner.life - 12 ? (banner.life - banner.t) / 12 : 1;
       g.save();
       g.globalAlpha = Math.max(0, Math.min(1, a));
-      const col = banner.cls === 'good' ? '#2dcca7'
-        : banner.cls === 'bad' ? '#d84b4b' : '#ffd166';
-      text(banner.text, 160, 108, 16, col, 'center');
+      /* "ROUND n": the retail hub art - the 144x32 ROUND word (PROT 0977
+       * record 0) + the hub 24x32 digit strip (record 1, u = digit*24). */
+      const round = /^ROUND (\d+)$/.exec(banner.text);
+      if (round && hudOk() && hudMeta.hub && hudMeta.hub[1]) {
+        const num = round[1];
+        const total = 144 + 10 + num.length * 24;
+        const x0 = (320 - total) / 2;
+        hubSprite(0, x0, 92);
+        const d1 = hudMeta.hub[1];
+        for (let i = 0; i < num.length; i++) {
+          const dgt = num.charCodeAt(i) - 48;
+          blit(d1.sheet, d1.pal, dgt * 24, d1.uv[1], 24, 32,
+            x0 + 154 + i * 24, 92);
+        }
+      } else {
+        const col = banner.cls === 'good' ? '#2dcca7'
+          : banner.cls === 'bad' ? '#d84b4b' : '#ffd166';
+        text(banner.text, 160, 108, 16, col, 'center');
+      }
       if (banner.sub) text(banner.sub, 160, 126, 7, '#e8ecf2', 'center', '');
       g.restore();
       banner.t++;
     }
 
-    /* The retail play-out damage tally: yellow numerals lower-right while
-     * the committed commands resolve ("TOTAL n" in the live match HUD). */
+    /* The retail play-out damage tally: the etim TOTAL word + the big
+     * orange numerals, at the captured seat (word at (184, 170), 16x15
+     * digit cells ending at x=304 - run5 packet listing). */
     function drawTally() {
       if (!tally || !tally.total) return;
+      if (hudOk()) {
+        const num = String(tally.total);
+        hudWord('word_total', 184, 170);
+        hudBigDigits(num, 304 - num.length * 16, 168);
+        return;
+      }
       text('TOTAL ' + tally.total, 296, 186, 9, '#ffd166', 'right');
     }
 
+    /* Flying damage numbers: the etim numerals at the captured hit size
+     * (24x23, drawn 1:1 off the 24x24 atlas cells). */
     function drawPopups() {
       popups = popups.filter(p => p.t < p.life);
       for (const p of popups) {
         const rise = Math.min(p.t, 20) * 0.8;
         g.save();
         g.globalAlpha = p.t > p.life - 12 ? (p.life - p.t) / 12 : 1;
-        text(p.text, p.x, p.y - rise, 12, p.color, 'center');
+        const num = String(p.text).replace(/^-/, '');
+        if (hudOk() && /^\d+$/.test(num)) {
+          hudBigDigits(num, p.x - num.length * 12, p.y - rise - 12, 24, 23);
+        } else {
+          text(p.text, p.x, p.y - rise, 12, p.color, 'center');
+        }
         g.restore();
         p.t++;
       }
