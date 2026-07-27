@@ -104,6 +104,15 @@ resident in the dome's own data file:
   `(192..255)^2` window is the dome's plain dirt tile; the rest of the two
   pages is the arena furniture (chain-link fence, dirt/stone flooring, the
   tiered ring wall).
+- The shell TMD carries two **semi-transparent prim groups** (ABE set, ABR
+  mode 1 = additive): a cloudy dust decal (page `(832, 0)` window
+  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base, and
+  the lamp-glow quads (page `(768, 0)` window `(48..109, 161..251)`, CLUT
+  x 112 of row 473). Retail blends both additively; a renderer that draws
+  ABE prims opaque turns the dust decal into a solid dark "mist" band the
+  retail arena does not have (the arena interior is mist-free - fence,
+  wooden wall, light-grey floor; capture: the `minigame_muscle_dome_pcsx`
+  scenario run forward into the live match).
 
 Confidence: the load chain, carrier shape and texture address are **Confirmed**
 (disassembly + structural decode of the entry); that a live contest's
@@ -115,7 +124,9 @@ strings reference (roster/course data), 1221/1222 = two 160 KB blobs
 (undecoded), 1223/1224 = pochi fillers ([`pochi.md`](../formats/pochi.md)).
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
-ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`).
+ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
+with the shell's ABE prims routed through the renderer's two-pass PSX blend
+(`site/js/minigame-muscle.js`, `semiTwoPass`).
 
 ## Sound
 

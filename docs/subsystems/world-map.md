@@ -1468,15 +1468,28 @@ the `0x1000`-gated continent is a smooth heightfield surface, and the slot-1
 prefix` set above, spawned by `FUN_8003A55C` gated on `flags & 0x4`).
 
 The only per-cell terrain emitter that sweeps this grid is **`FUN_801F69D8`**
-(the **top-view overview** renderer, gate `cell & 0x2000`): for each occupied
-cell it reads the object record (grid base + `(cell & 0x1ff) * 0x20`), takes the
-**mesh-pool index from `+0x10`** (`record[+0x10]` plus a per-scene base, into a
-drawable-pointer table), computes the same bilinear corner height as
-`FUN_80019278`, and submits the per-cell mesh through `FUN_80043390` - the sole
-caller of that bulk-terrain emit. The overview ground is therefore **per-cell
-meshes** keyed by `+0x10`, each carrying its own TMD UVs. `FUN_80019278` (the
-height math) is the reliable anchor and is all the heightfield port needs for
-correct geometry. (The earlier `FUN_801F5748` write-probe lead is dead: in a
+(the **top-view overview** renderer, PROT 0901, gate `cell & 0x2000`): for each
+occupied cell it reads the object record (grid base + `(cell & 0x1ff) * 0x20`),
+**skips records carrying the placed flag** (`+0x12` bit `0x4` - those are the
+`FUN_8003A55C` actor sweep's), takes the **mesh-pool index from `+0x10`**
+(`record[+0x10]` plus a per-scene base, into a drawable-pointer table), and
+submits the per-cell mesh through `FUN_80043390` - the sole caller of that
+bulk-terrain emit. Its cell world **Y** is the **flat mean of the four
+corner tiles' LUT heights** - the `+0x4000` bytes at `+0`, `+1`, `+0x80`,
+`+0x81`, each `& 0xF` through the scratchpad LUT, summed and divided by 4
+rounding toward zero (`if (sum < 0) sum += 3; sum >>= 2`; body
+`0x801F6FC8..0x801F7040`) - plus the record's `+0x02` `y_off`. That is
+`FUN_80019278`'s bilinear surface evaluated at the exact tile centre, so a
+tier-edge cell lands mid-slope where its mesh's baked ramp expects it. The
+**ordinary-field sibling `FUN_801F7088`** (PROT 0900, the town static-object /
+decoration pass, body `0x801F7668..0x801F76E0`) is instruction-identical over
+this cell kernel - same `0x2000` gate, same placed-flag skip, same corner
+average. Sampling only the cell's own nibble instead snaps every edge cell a
+whole tier up or down, which shears a terraced town (Vidna / `balden`) into
+stair-stepped plateaus. Port: `legaia_asset::field_objects` carries the corner
+block on each terrain [`Placement`], and `engine-core::field_env` applies the
+average. The overview ground is therefore **per-cell meshes** keyed by
+`+0x10`, each carrying its own TMD UVs. (The earlier `FUN_801F5748` write-probe lead is dead: in a
 genuine continent-**walk** RAM image that address disassembles as data, not
 code - the `0x801F76xx` range aliases across overlays.)
 

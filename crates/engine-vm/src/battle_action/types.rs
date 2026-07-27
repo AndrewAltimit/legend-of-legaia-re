@@ -188,8 +188,15 @@ pub enum ActionState {
 
     /// Idle hold (battle paused?).
     IdleHold = 0xFD,
-    /// Battle complete - terminal.
-    BattleComplete = 0xFF,
+    /// End of round. Retail's only writer is the **non-wipe** arm of the
+    /// `0x5A` end-of-action gate, reached when every living actor has acted
+    /// and BOTH sides still have someone standing. The wipe arms never write
+    /// a state byte - they raise the battle-end signal `DAT_8007BD71 = 0xFE`
+    /// instead (as does the escape teardown `0x66`), so battle end is
+    /// signalled through the signal byte, never through this state. See
+    /// `docs/subsystems/battle-action.md`
+    /// § "`0xFF` is the round boundary, not the battle's end".
+    RoundEnd = 0xFF,
 }
 
 impl ActionState {
@@ -258,7 +265,7 @@ impl ActionState {
             0x71 => Self::MagicCaptureFinalize,
 
             0xFD => Self::IdleHold,
-            0xFF => Self::BattleComplete,
+            0xFF => Self::RoundEnd,
 
             _ => return None,
         })
@@ -655,7 +662,10 @@ impl BattleActionCtx {
 ///
 /// Most states return [`StepOutcome::Stay`] (waiting on an animation match or
 /// timer expiration); transitions are signalled by [`StepOutcome::Transition`].
-/// Battle-end and terminal states surface via [`StepOutcome::BattleComplete`].
+/// Battle end surfaces via [`StepOutcome::BattleComplete`], raised only by
+/// the paths that raise retail's battle-end signal `DAT_8007BD71 = 0xFE`
+/// (the wipe arms of the `0x5A` gate and the successful-escape teardown
+/// `0x66`) - never by the `0xFF` round boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepOutcome {
     /// Stayed in the current state - condition not yet met.

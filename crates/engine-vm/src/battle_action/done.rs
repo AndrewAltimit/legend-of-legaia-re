@@ -325,8 +325,10 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     }
 
     // Pick next active actor: bump active actor's queue counter; if still
-    // less than (alive_count), restart at PreActionWait. Otherwise → battle
-    // complete (BattleComplete state which then calls battle_end).
+    // less than (alive_count), restart at PreActionWait. Otherwise every
+    // living actor has acted → the ROUND is over (retail's `0x5A` non-wipe
+    // arm writes state `0xFF`, the round boundary - not a battle end; see
+    // `round_end`).
     let bumped = if let Some(actor) = host.actor_mut(ctx.active_actor) {
         actor.action_queue_counter = actor.action_queue_counter.saturating_add(1);
         actor.action_queue_counter
@@ -337,5 +339,5 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     if bumped < alive_total {
         return transition(ctx, ActionState::PreActionWait);
     }
-    transition(ctx, ActionState::BattleComplete)
+    transition(ctx, ActionState::RoundEnd)
 }

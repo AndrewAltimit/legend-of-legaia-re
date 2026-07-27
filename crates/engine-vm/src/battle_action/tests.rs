@@ -198,7 +198,7 @@ fn action_state_byte_roundtrip() {
         ActionState::AttackChain,
         ActionState::DoneCleanup,
         ActionState::EndOfAction,
-        ActionState::BattleComplete,
+        ActionState::RoundEnd,
     ] {
         assert_eq!(ActionState::from_byte(s.as_byte()).unwrap(), s);
     }
@@ -1461,11 +1461,97 @@ fn idle_hold_stays_and_pose_recover() {
 }
 
 #[test]
-fn battle_complete_terminal() {
+fn round_end_is_a_round_boundary_not_a_battle_end() {
+    // Retail state 0xFF is written only by the NON-wipe arm of 0x5A (both
+    // sides standing, everyone has acted); wipes signal through
+    // DAT_8007BD71 = 0xFE without writing a state byte. Reaching 0xFF must
+    // therefore never end the battle - the earlier port mapped it to
+    // battle_end(MonsterWipe), a spurious victory.
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
-    ctx.action_state = ActionState::BattleComplete.as_byte();
+    // Give an actor a stale acted counter; the boundary clears it.
+    host.actors[3].action_queue_counter = 7;
+    ctx.action_state = ActionState::RoundEnd.as_byte();
+    let out = step(&mut host, &mut ctx);
+    assert!(
+        matches!(
+            out,
+            StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+        ),
+        "round boundary hands control back through EndOfAction, got {out:?}"
+    );
+    assert!(
+        !host.take().iter().any(|e| matches!(e, Event::BattleEnd(_))),
+        "the round boundary must not signal battle end"
+    );
+    assert_eq!(
+        host.actors[3].action_queue_counter, 0,
+        "acted counters reset for the new round"
+    );
+}
+
+/// Regression for the spurious-victory defect: drive a full attack action to
+/// its end with BOTH sides alive and keep stepping without re-arming, the way
+/// a driver that parks the SM at `EndOfAction` (e.g. a folded monster cast)
+/// does. The acted counter - stamped from `ctx.queued_action = 3` at `Begin`,
+/// exactly like `engine-core`'s arming - reaches `alive_total` and routes the
+/// `0x5A` gate to `0xFF`. Pre-fix that produced
+/// `battle_end(BattleEndCause::MonsterWipe)` + `StepOutcome::BattleComplete`
+/// after one round; post-fix it is a round boundary and the battle continues.
+#[test]
+fn full_round_with_both_sides_alive_does_not_end_the_battle() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    // 3 party + 1 monster alive = alive_total 4, the smallest retail-shaped
+    // battle and the easiest for the stamped counter (3 + 1 bump) to reach.
+    for i in 4..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    // Arm exactly the way engine-core does (queued_action = 3, state Begin).
+    ctx.queued_action = 3;
+    ctx.action_state = ActionState::Begin.as_byte();
+    // One swing then the terminator, so the attack chain resolves.
+    host.actors[0].params[0] = 0x10;
+    host.actors[0].params[1] = 0xFF;
+
+    let mut saw_round_boundary = false;
+    for _ in 0..0x400 {
+        let out = step(&mut host, &mut ctx);
+        // Stand in for the anim system: signal the staged swing finished so
+        // the chain's 0x801E370C read gate opens (same edge the existing
+        // full-flow test drives by hand).
+        host.actors[0].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+        assert_ne!(
+            out,
+            StepOutcome::BattleComplete,
+            "both sides alive: no step may complete the battle (state {:#04X})",
+            ctx.action_state
+        );
+        if let StepOutcome::Transition { from, .. } = out
+            && from == ActionState::RoundEnd.as_byte()
+        {
+            saw_round_boundary = true;
+            break;
+        }
+    }
+    assert!(
+        saw_round_boundary,
+        "the drive must cross the 0xFF round boundary to be non-vacuous"
+    );
+    assert!(
+        !host.take().iter().any(|e| matches!(e, Event::BattleEnd(_))),
+        "no battle-end cause may be signalled with both sides standing"
+    );
+
+    // The same gate still ends the battle on a GENUINE wipe: kill the last
+    // monster and let the next EndOfAction pass resolve it.
+    host.actors[3].liveness = 0;
+    ctx.action_state = ActionState::EndOfAction.as_byte();
     let out = step(&mut host, &mut ctx);
     assert_eq!(out, StepOutcome::BattleComplete);
+    assert!(
+        host.take()
+            .contains(&Event::BattleEnd(BattleEndCause::MonsterWipe)),
+        "a genuine monster wipe still ends the battle"
+    );
 }
 
 /// Full magic-spell flow walking from `MagicCastBegin` all the way to

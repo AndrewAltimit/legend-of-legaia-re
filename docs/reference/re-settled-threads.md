@@ -96,6 +96,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
+| `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
@@ -117,6 +118,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Battle-stage overlay band (`+0x47`) | resolved | `disassembly` | `FUN_800520F0` pages a per-stage slot-B overlay via `FUN_8003EC70(_DAT_8007B64A + 0x47)`, skipped when the id is `0` (which every catalogued battle but the Tetsu tutorial reads). Engine `engine-core::overlay_loader::battle_stage_overlay_entry`. [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
 | Battle-intro tutorial boxes (Tetsu sparring fight) | resolved (machine pinned, ported and wired) | `disassembly` (exclusivity `inference`) | The prompts are resident in stage overlay 967, so porting the battle SM alone could never emit them - though "**only** in 967" is corpus-exhaustiveness, not an instruction claim, and is graded separately. `FUN_801F6B70` is a 91-entry jump-table hook on the flow-state byte `ctx[+0x06]` with just **nine** live slots; each switches on `ctx[+0x28A]` - the battle-mode counter, read here as a lesson index - making the script a `(state × lesson)` cross-product. Port `engine-core::battle_tutorial` reads the prompt text off the user's disc. [details ↓](../subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967) |
 | Battle command-flow byte `ctx[+0x06]` | resolved | `disassembly` | The *other* battle SM - `FUN_801D0748`, the menu half, distinct from the action SM's `ctx[+0x07]` and overlapping its value space. Its selection band is regular decimal tens `30..120` (turn prompt / category menu / escape / item / magic / arts entry / target / target confirm / commit / attack-mode), which is what identifies it as the tutorial hook table's key: the nine live hook slots are that band minus the magic window. Engine mirror `engine-core::battle_flow`. [details ↓](../subsystems/battle.md#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) |
+| Action-SM state `0xFF` treated as battle end by the port | resolved (path was live-reachable; port fixed) | `disassembly` | [details ↓](#action-sm-state-0xff-treated-as-battle-end-by-the-port) |
 | Spine flag `0x142` (Caruban beat / dolk-dolk2 switch) writer | resolved (disc writers + engine port + oracle) | `capture` | [details ↓](#spine-flag-0x142-caruban-beat--dolk-dolk2-switch-writer) |
 | Spine flag `0x482` (Drake mist-wall) writer | resolved (writer-less; "direct code path" presumption falsified) | `capture` | [details ↓](#spine-flag-0x482-drake-mist-wall-writer) |
 | CDNAME scene-window frame (`raw = extraction + 2`) in `Scene::load` | resolved (engine converts; misattributions corrected) | `capture` | Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the `.MAP` is the retail block's FIRST entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = [18,70,20]" were next-block sidecars under the wrong label; "urudre1 tests 0x15E" and "0x63A has no writer" are falsified; "0x1BE = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See [cdname.md](../formats/cdname.md#numbering-space). |
@@ -132,6 +134,45 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Action-SM state `0xFF` treated as battle end by the port
+
+*Status:* resolved - the retail half was already graded `disassembly`; the
+port-side reachability question is settled (the path **was** reachable in a
+live battle) and the port is fixed.
+
+Retail `0xFF` is the **round boundary**: its only writer is the non-wipe arm
+of the `0x5A` end-of-action gate, and wipes signal through
+`DAT_8007BD71 = 0xFE` without writing a state byte
+([battle-action.md](../subsystems/battle-action.md#0xff-is-the-round-boundary-not-the-battles-end)).
+The engine port mapped `0xFF` to a `battle_end(BattleEndCause::MonsterWipe)`
+terminal instead, and the open question was whether a live battle reaches it.
+
+It does, by concrete trace through `engine-vm`'s own accumulation logic:
+
+- `Begin` stamps the acting actor's counter (`actor[+0x1A]`,
+  `BattleActor::action_queue_counter`) from `ctx.queued_action`, which the
+  engine's arming paths set to `3`;
+- the `0x5A` gate's non-wipe arm bumps it and compares against
+  `party_alive + monsters_alive`, so `3 + 1 = 4 >= alive_total` in any battle
+  with four or fewer living combatants (3 party + 1 monster, or later rounds
+  of a larger fight);
+- the gate is dispatched whenever a driver leaves the SM parked at
+  `EndOfAction` across a tick - which the live loop does after a folded
+  monster spell cast and after a Sleep/Stone skipped turn (a repeatedly
+  casting monster's never-restamped counter also walks `1, 2, 3, ...` up to
+  the same threshold).
+
+Symptom: a spurious victory - loot and XP granted - after one round with both
+sides standing. The fix renames the state to `ActionState::RoundEnd`, whose
+handler clears every actor's acted counter and hands control back through
+`EndOfAction` (the state the arming driver keys the next turn on); the retail
+`0xFF` body (`ctx[+0x28A]` round bump, `FUN_801F45A4` settle) already runs
+host-side in `engine-core`'s live loop. `battle_end(..)` now fires only from
+the paths that raise retail's `0xFE` signal: the `0x5A` wipe arms and the
+escape teardown `0x66`. Regressions: engine-vm
+`full_round_with_both_sides_alive_does_not_end_the_battle`, engine-core
+`round_boundary_state_is_not_a_spurious_victory`.
 
 ### Endless camera orbit - the `0x19` attack-approach park
 
@@ -162,10 +203,11 @@ units/vsync, driven from the staged Move clip's playback, not the SM); in the
 caught parks the drive dies ~12 vsyncs in (anim pair back to `0/0`, frozen
 beyond reach), so the fight waits forever on an attack that can never
 connect. The trigger is reproduced - a summon immediately followed by the
-boss's melee (scenario `battle_gaza2_park_0x19_summon_melee`); which
-anim-driver field the staging round-trip leaves stale is the remaining open
-sub-question (tracked in open-rev-eng-threads.md). The fix below is
-indifferent to it. Full anatomy + fix + engine-port note:
+boss's melee (scenario `battle_gaza2_park_0x19_summon_melee`) - and the
+anim-driver field the staging round-trip leaves stale is pinned: actor
+`+0x1DC` bit 2, the exit-to-idle anim event flag ([details
+↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2)).
+The fix is indifferent to it. Full anatomy + fix + engine-port note:
 [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
 
 Sub-answers settled along the way: the wedged-looking `+0x1DD == 8` targets on
@@ -178,6 +220,44 @@ its candidate generators
 `0x19` class explains the community exhibits without any HP desync. Stated
 limit: whether any retail sequence can still produce a `0x51` park is unproven
 either way; nothing observed requires it.
+
+### The summon-then-melee park trigger - the stale field is `+0x1DC` bit 2
+
+*Status:* resolved - the "frame cursor / clip-length latch" hypotheses are both
+wrong; the field the summon staging leaves stale is the battle actor's anim
+event-flag byte `+0x1DC`, bit 2 (mask `0x4`), the **stage-idle-at-clip-end**
+flag.
+
+*Evidence:* `disassembly` (the driver pair `FUN_80047430`/`FUN_8004AD80`
+in `ghidra/scripts/funcs/80047430.txt`/`8004ad80.txt`; the damage primitive's
+flinch staging at `0x80042124..0x80042170` in `800402f4.txt`; the SM's `0x14`
+fallback stores at `0x801E32B0`/`0x801E32D4` in
+`overlay_battle_action_801e295c.txt`) + `capture` (causal control/experiment
+replay on the parked save `battle_gaza2_park_0x19_summon_melee`, probe
+`scripts/pcsx-redux/autorun_gaza2_stale_flag_repro.lua` with write-watchpoints
+on `+0x1DA`/`+0x1D9`/`+0x1DC` logging writer PCs).
+
+The chain: the summon's hit stages Gaza's light flinch with `+0x1DC |= 4|1`
+(exit-to-idle + commit-now, `FUN_800402F4`); the flag is normally consumed at
+the flinch's own natural end. When the boss's melee follows the summon
+immediately, state `0x14`'s walk-less fallback stages the Move clip with
+`|= 1` before that happens, and the tick's **event-path** commit - which
+clears only bits 0-1 (`andi 0xFC`) where the natural-end path clears bits 0-2
+(`andi 0xF8`) - installs the Move clip with bit 2 still set. The Move cycle
+(5 frames, rate 2, speed scale 8 → ~12 vsyncs) then hits its first natural
+end, where the tick sees bit 2 and stages idle over the queued clip
+(`sb zero,0x1da` at `0x80047B44`) instead of re-looping - pair `0/0`, the
+idle entry's per-tick speed is 0, state `0x19` re-polls forever. The live
+replay shows both halves: the control bounce (state → `0x14`, flag clear)
+loops the clip across its natural end (pair stays `1/1`) and arrives ~21
+vsyncs later; re-arming bit 2 first reproduces the kill write from
+`0x80047B44` at exactly the first natural end, 12 vsyncs after engage, with
+the position frozen thereafter. The park save reads `+0x1DC == 0` because the
+killing commit consumed the flag - it is only visible in flight, which is
+why the parked-state reads never caught it. Full mechanism:
+[battle-action.md](../subsystems/battle-action.md#the-stale-field-0x1dc-bit-2-the-exit-to-idle-anim-event-flag);
+driver + flag-byte reference:
+[monster-animation.md](../formats/monster-animation.md#playback).
 
 ### Super / Miracle Arts trigger chain
 
@@ -1512,6 +1592,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | `disassembly` | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
 | PROT 0977 / 0978 extraction + the dump re-key | resolved | `disassembly` | [details ↓](#prot-0977--0978-extraction--the-dump-re-key) |
 | Slot-B capture-module band `0935..0966` per-entry identity | resolved (statically derived, capture-corroborated) | `disassembly` | [details ↓](#slot-b-capture-module-band-09350966-per-entry-identity) |
+| Phantom-VA sweep of the PROT 0897 imports | resolved | `disassembly` | [details ↓](#phantom-va-sweep-of-the-prot-0897-imports) |
 
 ### PROT 0977 / 0978 extraction + the dump re-key
 
@@ -1942,6 +2023,51 @@ live ids) could still force the exit with an attacker-influenced byte - outside
 `MAX_DISTINCT_ITEM_IDS`, `OobReachability`). Provenance:
 `ghidra/scripts/funcs/{800421d4,8004313c,8004e568,8003ce64}.txt`,
 `overlay_0971_801c36b0.txt`.
+
+### Phantom-VA sweep of the PROT 0897 imports
+
+*Status:* resolved - the three residues the delta arithmetic left open are
+byte-decided; standing results in
+[`overlay-va-aliases.md § the byte-level sweep`](overlay-va-aliases.md#the-byte-level-sweep)
+
+The two measured deltas (`0xE818` base error, `0x25000` over-read) re-keyed
+most of the 0897-import prints but could not decide three residues: the
+`0x801E5000` boundary band, the "doubly-aliased" `0x8020D05C`, and whether
+PROT 0896's imports obey a law of their own. All three yield to a word-level
+comparison
+([`resolve-phantom-va.py`](../../scripts/ghidra-analysis/resolve-phantom-va.py)):
+compare the dump against each candidate (image, base) reading at the printed
+VA, re-encoding Ghidra's data-as-instruction renderings (`nop`,
+`<load> rt,imm(zero)`) into exact 32-bit words so that *data* regions - which
+defeat any stream match - decide at full strength.
+
+- **Boundary band**: every dump printed in `0x801E4000..0x801E6000` resolves
+  to exactly one reading, and the strata switch exactly at `0x801E5000`. The
+  two open addresses are 0897 own-content **data** (pointer tables at true
+  VAs `0x801F3308` / `0x801F3450`, 14/14 and 13/13 words; the rival 0898
+  reading scores 0). `0x801E5134` is printed by two programs with two
+  different owners - one print correct, one a phantom of 0898 `0x801CE94C`.
+- **`0x8020D05C`**: 0898 rodata at true VA `0x801F6874` (a
+  `(pointer, count)` table into 0898's `0x801CF9xx` band). Its words include
+  values with no R3000 decoding, matching the dump's zero-instruction
+  `halt_baddata`; every rival reading maps the VA to code that would have
+  decoded. Not a function under any reading.
+- **PROT 0896**: the `overlay_0896_*` prefix covers **two** imports of the
+  over-read footprint - untagged at `0x801C0000` (three strata: own content
+  `< 0x9000`; field `+ 0x5818`; battle `- 0x1F7E8`) and tagged
+  `base=0x801C5818` (the phantom jal-recovered base; prints are 0896's own
+  bytes at `printed - 0x801C5818`). Every addressed dump in the family
+  resolves under exactly one program, zero exceptions; the header-tag
+  partition and the byte partition agree dump-for-dump. Same function
+  printed by both programs pins the pair (file `+0x5C90` at `0x801C5C90` /
+  `0x801CB4A8`; file `+0xD1C` at `0x801C0D1C` / `0x801C6534`).
+- **`0x801FD4C0`** (bonus residue): its dump starts at printed `0x801FD150`
+  and is the battle image's `FUN_801E6968`; the printed VA is that body's
+  interior at 0898 VA `0x801E6CD8`, not the field image's `FUN_801E6B34`.
+
+Grade `disassembly`: every verdict is a word- or token-exact comparison
+against the corrected-extent extracted images, with each rival reading
+excluded by the same comparison rather than by arithmetic.
 
 ## Related pages
 

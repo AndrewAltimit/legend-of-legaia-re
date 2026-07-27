@@ -166,6 +166,32 @@ loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
 (e.g. the player defeat entries hold a 2-frame loop); `+0x87` is a sound
 cue fired at install.
 
+Three consequences of that commit shape:
+
+- **A "looping" clip (idle, the walk/Move cycle) loops by re-committing.**
+  Nothing counts loops: at every natural end the commit re-installs the
+  still-queued `+0x1DA` and zeroes the cursor, so the same entry replays
+  seamlessly until something re-stages `+0x1DA`.
+- **The event-flag byte `actor +0x1DC` steers the commit.** Bit 0 = commit
+  now; bit 1 = commit when the cursor passes the entry's event frame
+  (list at entry `+0x10`, gated on `entry[+0x76] == 0`); bit 2 = **stage
+  idle at the natural end** (the tick clobbers `+0x1DA` to `0` at
+  `0x80047B44` before committing - the exit-to-idle that returns a hit
+  reaction to the idle loop, set with bit 0 by the damage primitive
+  `FUN_800402F4`); bit 3 = knockdown latch (set by the commit's tag-4
+  chain; blocks the root-motion drive below). The two commit sites clear
+  the byte **asymmetrically**: the mid-clip event path clears bits 0-1
+  only (`andi 0xFC`) while the natural-end path clears bits 0-2
+  (`andi 0xF8`) - so a pending bit 2 survives an event-path commit onto
+  the next clip, the race behind the summon-then-melee `0x19` park
+  ([battle-action.md](../subsystems/battle-action.md#the-stale-field-0x1dc-bit-2-the-exit-to-idle-anim-event-flag)).
+- **Approach root motion is the tick's, not the SM's**: while a clip plays
+  (and `+0x1DC` bit 3 is clear), `0x80047D20..0x80047E18` advances the
+  actor by `facing sin/cos × entry[+0xC] × frame_dt × actor[+0x21D] >>
+  0xF` per tick while out of range, and entry `+0xE` contributes a
+  phase-proportional displacement at clip end - which is how a monster
+  slides toward its target during the `0x19` range poll.
+
 ### Vertex-blend variants (`FUN_800495C8` / `FUN_80049858`)
 
 Once the decoder has a pose, two sibling routines write it onto the object

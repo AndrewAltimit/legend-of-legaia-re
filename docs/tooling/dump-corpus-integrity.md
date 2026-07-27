@@ -194,6 +194,15 @@ with the 0897 batch's `+0xE818`, or with the `0x167E8` the 0897-into-0898
 over-read uses, lands `0x9000` off - close enough to disassemble into plausible
 code, which is exactly how a wrong re-key survives review.
 
+The table is a **per-program** law, not a per-prefix one. The byte-level sweep
+([`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each))
+splits the `overlay_0896_*` family into two imports: the untagged batch above
+at `0x801C0000`, and a batch tagged `base=0x801C5818` (the phantom
+jal-recovered base) whose prints are 0896's **own** bytes at
+`printed - 0x801C5818` - including prints above `0x801C9000`, exactly where
+the untagged law would mis-read them as `+0x5818` field code. Pick the program
+from the header tag or the bytes before applying any row.
+
 **`+0xD018` is a third mis-based batch, seen through an over-read tail.** It was
 settled the way this page proposed: extract PROT 0971 (now mapped as
 `debug_menu` at `0x801CE818`, see
@@ -307,7 +316,7 @@ function lives there.
 | `0x801E0BE8` | `overlay_0896_bat_back_dat_801e0be8` | field (0897) `0x801E6400` | `+0x5818`. A real entry, the world-map numeric-field draw `FUN_801E6400`, printed at a VA no runtime image uses. |
 | `0x801E205C` | `overlay_0896_801e205c` | field (0897) `0x801E7874` | `+0x5818`. Interior of the world-map controller `FUN_801E76D4`. |
 | `0x801E249C` | `overlay_0897_xxx_dat_801e249c` | - | The dump's stream starts at `0x801DAAAC`, a disjoint region. At the correct base the VA is a lone `j 0x801E3628` inside the field VM `FUN_801DE840`. |
-| `0x801E5520` | `overlay_0897_801e5520` | field (0897) `0x801E5520` | Two words of data decoded as code. The VA is an intra-function `j` label of `FUN_801E5338`, reached from `0x801E537C` / `0x801E538C` / `0x801E54D0` / `0x801E54D8`. |
+| `0x801E5520` | `overlay_0897_801e5520` | battle-action (0898) `0x801CED38` | Two words of ASCII string data decoded as code, word-exact at 0898 file `+0x520` (`- 0x167E8`); the field image holds a real instruction at the print-correct offset, which Ghidra would have decoded rather than printing `SPECIAL2` garbage. Separately, the *VA* `0x801E5520` in the field image is an intra-function `j` label of `FUN_801E5338`, reached from `0x801E537C` / `0x801E538C` / `0x801E54D0` / `0x801E54D8` - a fact about the image, not about this dump's bytes. |
 | `0x801E9D8C` | `801e9d8c` | battle-action (0898) `0x801D35A4` | `+0xE818`. Interior of `FUN_801D344C`. |
 | `0x801E9F48` | `overlay_0896_801e9f48` | field (0897) `0x801EF760` | `+0x5818`. Interior of the tile-board walk SM `FUN_801EF2B0`. |
 | `0x801F04B0` | `overlay_0896_801f04b0` | battle-action (0898) `0x801D0CC8` | `+0x5818` lands in 0897's over-read tail, i.e. 0898's own image. Interior of the battle dispatcher `FUN_801D0748`; the fragment exits `j 0x801D3290`, that function's epilogue hop. |
@@ -319,7 +328,7 @@ function lives there.
 | `0x801E158C` | `overlay_0897_801e158c` | field (0897) `0x801EFDA4` | `+0xE818`. Opens in a delay slot (`_nop`) and exits `j 0x801EFEA0`, a VA outside its own printed window. |
 | `0x801E175C` | `overlay_0897_801e175c` | field (0897) `0x801EFF74` | `+0xE818`. |
 | `0x801E22C4` | `overlay_0897_801e22c4` | field (0897) `0x801F0ADC` | `+0xE818`. A real entry with a prologue - a five-case state machine on `s16 arg[+0x54]` through the jump table at `0x801CF734` - printed at a VA no runtime image uses. |
-| `0x801E5134` | `overlay_0897_xxx_dat_801e5134` | field (0897) `0x801F394C` | `+0xE818`. |
+| `0x801E5134` | `overlay_0897_xxx_dat_801e5134` | battle-action (0898) `0x801CE94C` | `- 0x167E8`. An earlier `+0xE818` reading ("field `0x801F394C`") resolved against the pre-correction over-read field image; 0897's own content ends at `0x801F3818`, so the bytes are 0898 file `+0x134`. The *other* dump at this printed VA, `overlay_0897_801e5134`, is print-correct field code - two programs, one VA, two owners. |
 | `0x801EC370` | `overlay_0897_801ec370` | field (0897) `0x801FAB88` | `+0xE818`. The dump's own body jumps from `0x801EC394` straight to `0x801ED920`, i.e. it splices two disjoint regions - a second reason not to read its addresses. |
 | `0x801E6A7C` | `overlay_0896_801e6a7c` (cite of `FUN_801E66D8`) | field (0897) via `+0x5818` | The enclosing dump `overlay_0896_801e66d8` is itself `SHIFTED +0x5818`, so the cited interior VA is phantom twice over. |
 | `0x801E8B34` | `overlay_0896_801e8b34` (cite of `FUN_801E8B10`) | field (0897) via `+0x5818` | Same shape; enclosing dump resolves to `0x801EE328`. |

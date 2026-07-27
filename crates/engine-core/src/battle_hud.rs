@@ -511,6 +511,149 @@ pub fn log_accent_color(accent: LogAccent) -> [f32; 4] {
     }
 }
 
+/// Numeric half of one battle-HUD row, staged while the world is still
+/// borrowed and applied to the HUD model afterwards.
+struct SlotRow {
+    is_party: bool,
+    alive: bool,
+    hp: u16,
+    hp_max: u16,
+    mp: u16,
+    mp_max: u16,
+    /// Index into `World::ap_gauges` for party rows; `None` for monsters.
+    ap_slot: Option<usize>,
+}
+
+/// Fold the live battle-actor table into `hud`'s per-slot rows, so a host's
+/// shared `battle_hud_draws_for` builder has something to draw.
+///
+/// Without this the HUD model carries only popups and status icons and every
+/// slot reads `active == false`, so the builder emits an empty draw list.
+/// Shared by the native window and the browser play page - each host calls it
+/// once per battle frame, then projects `BattleHud` into its renderer's view
+/// types.
+///
+/// Slot indices are **absolute actor-table indices**, not a compacted list:
+/// party ordinals `0..party_count`, monsters above that. Renderers key popup
+/// anchoring off the same index space, so compacting here would mis-anchor
+/// every damage number.
+pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let party_names = crate::field_menu_dispatch::roster_names(world);
+
+    // Party rows. `character_max_mp` is the only MP ceiling the world carries
+    // (`BattleActor` has live `mp` but no max), and it is keyed by battle
+    // ordinal - the same index `build_battle_item_session` uses.
+    let mut rows: Vec<(u8, String, SlotRow)> = Vec::new();
+    for (i, a) in world.actors.iter().take(pc).enumerate() {
+        let name = party_names
+            .get(world.party_roster_slot(i))
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("P{}", i + 1));
+        rows.push((
+            i as u8,
+            name,
+            SlotRow {
+                is_party: true,
+                alive: a.battle.liveness != 0,
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                mp: a.battle.mp,
+                mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
+                ap_slot: (i < world.ap_gauges.len()).then_some(i),
+            },
+        ));
+    }
+
+    // Monster rows. Named from the live catalog when the formation resolved
+    // one; `M<n>` otherwise. Monsters have no MP ceiling in the model, so the
+    // builder draws no MP field for them.
+    let mut cleared: Vec<u8> = Vec::new();
+    for slot in pc..world.actors.len().min(hud.slots.len()) {
+        let a = &world.actors[slot];
+        if a.battle.max_hp == 0 {
+            cleared.push(slot as u8);
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", slot - pc + 1));
+        rows.push((
+            slot as u8,
+            name,
+            SlotRow {
+                is_party: false,
+                alive: a.battle.liveness != 0,
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                mp: 0,
+                mp_max: 0,
+                ap_slot: None,
+            },
+        ));
+    }
+    // Slots past the actor table are stale from a previous formation.
+    for slot in world.actors.len()..hud.slots.len() {
+        cleared.push(slot as u8);
+    }
+
+    for (slot, name, row) in &rows {
+        let ap = row.ap_slot.map(|i| &world.ap_gauges[i]);
+        hud.sync_slot(
+            *slot,
+            SlotSyncInfo {
+                name,
+                is_party: row.is_party,
+                alive: row.alive,
+                hp: row.hp,
+                hp_max: row.hp_max,
+                mp: row.mp,
+                mp_max: row.mp_max,
+                ap,
+            },
+        );
+    }
+    for slot in cleared {
+        hud.clear_slot(slot);
+    }
+}
+
+/// Formation label for the encounter-transition banner, reusing the battle
+/// HUD's monster naming: the live catalog name when the formation resolved
+/// one, `M<n>` otherwise. Slots with `max_hp == 0` (unseeded / cleared) are
+/// skipped, so a formation that has not resolved HP yet yields an empty label
+/// and the banner shows only its "ENCOUNTER!" head line. Shared by both hosts
+/// (armed on each `Field -> Battle` mode edge).
+pub fn encounter_banner_label(world: &crate::world::World) -> String {
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    // `World::actors` is the fixed 64-slot table, not a battle-sized list;
+    // a formation seats at most 5 monsters directly after the party
+    // (`World::enter_battle`), so only those slots can be formation members.
+    const MAX_FORMATION_MONSTERS: usize = 5;
+    let mut names: Vec<String> = Vec::new();
+    for (i, a) in world
+        .actors
+        .iter()
+        .enumerate()
+        .skip(pc)
+        .take(MAX_FORMATION_MONSTERS)
+    {
+        if a.battle.max_hp == 0 {
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", i - pc + 1));
+        names.push(name);
+    }
+    names.join("  ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

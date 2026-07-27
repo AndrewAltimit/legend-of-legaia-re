@@ -1068,6 +1068,11 @@
 # 0x801CE818, and only its first 0x25000 bytes are its own content.
 "801f03b0" = "INTERIOR: field(0897) file +0x21B98 (own content). The three instructions at this VA are `addiu s2,s2,1 / slti v0,s2,0xf / bnez v0,0x801F02E8` - the increment-and-test block of a 15-iteration loop whose body starts at 0x801F02E8, followed at +0x10 by the parent's `lw ra,0x44(sp)` epilogue. No prologue, and no `jal 0x801F03B0` encoding exists anywhere in extracted/PROT, so the ref count is Ghidra label promotion off a backward branch."
 "801f2098" = "INTERIOR: field(0897) file +0x23880 (own content). Opens `jal 0x80031D00` in a delay-slot pair and is immediately followed by `lw ra,0x14(sp) / lw s0,0x10(sp) / jr ra` - the tail of the routine that built that 0x18-byte frame. No prologue; no `jal 0x801F2098` encoding exists in any extracted PROT image."
+# Cited by the phantom-VA sweep table in docs/reference/overlay-va-aliases.md
+# (print-correct 0897 own content); the sweep resolves byte OWNERSHIP, it does
+# not promote an address to a function entry.
+"801e4000" = "INTERIOR: VA lies inside the dumped body of 801e3f30 in field(0897). Opens `nop / nop / div v1,v0` on live v0/v1 and reads s2 it never writes - no `addiu sp,sp,-N` prologue; the dump's own header records requested=801e4404 as INTERIOR of this body. see ghidra/scripts/funcs/overlay_0897_801e4000.txt"
+"801e4a8c" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s2 and a caller stack slot (`lhu v0,0x10(sp)`) it never writes - a tail fragment reaching the parent's epilogue. see ghidra/scripts/funcs/overlay_0897_801e4a8c.txt"
 [worklist_shared_tail]
 "801d3290" = "SHARED_TAIL: 5 instructions, no `jr ra`; reads s5 it never writes, ends `addiu s8,s8,0x6` + `j 0x801df8dc` - the field-VM label-call idiom (s8 = script PC), not a function. Ghidra renders it as two calls and a return."
 "801e00b8" = "SHARED_TAIL: common exit slice - no prologue, reads live s1, restores s0..s2/ra from a 0x60-byte frame it never built; entered by `j 0x801e00b8` from FUN_801D4908 (and siblings) in the 0897 field overlay"

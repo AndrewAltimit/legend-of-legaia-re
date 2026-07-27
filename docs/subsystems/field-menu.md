@@ -1664,12 +1664,18 @@ buckets follow the [worklist classification](../tooling/worklist-classification.
 vocabulary and the `0x801CE818` seam of
 [`call-target-integrity.md`](../tooling/call-target-integrity.md).
 
-- **Interior / tail fragment of a larger 0896 body** - the VA is not an
-  entry. `0x801CA998` decodes inside `0x801CA850`, `0x801CCDD4` inside
-  `0x801CCBB0`, `0x801C802C` inside `0x801C7F38`; prologue-less tail
-  fragments (`0x801D34A4`, `0x801D95A8`, `0x801DCF24`, `0x801DD690`,
-  `0x801DE268`) read caller-saved registers and fall into a parent's
-  epilogue.
+- **Cross-program print collision / tail fragment** - the VA is not an
+  entry. The apparent nestings (`0x801CA998` "inside" `0x801CA850`,
+  `0x801CCDD4` "inside" `0x801CCBB0`, `0x801C802C` "inside" `0x801C7F38`)
+  compare two different import programs' bytes at overlapping printed
+  ranges: `0x801CA998` / `0x801CCDD4` are untagged phantom prints of the
+  *field* entries `FUN_801D01B0` / `FUN_801D25EC` (`+0x5818`), while
+  `0x801CA850` / `0x801CCBB0` / `0x801C7F38` are `base=0x801C5818`-tagged
+  prints of 0896's own content (see
+  [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each));
+  prologue-less tail fragments (`0x801D34A4`, `0x801D95A8`, `0x801DCF24`,
+  `0x801DD690`, `0x801DE268`) read caller-saved registers and fall into a
+  parent's epilogue.
 - **Interior of a resident SCUS function** (below `0x801C0000`, not
   overlay-resident) - `0x80016E4C` / `0x80016EB8` sit inside entry
   `0x80016B6C`, `0x800379A8` inside `0x8003774C` (the NPC motion VM of

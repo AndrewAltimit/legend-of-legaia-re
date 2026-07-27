@@ -21,6 +21,7 @@ pub mod minigames;
 mod monster;
 mod nav_disc;
 pub mod play;
+pub mod play_battle;
 pub mod play_cutscene;
 pub mod play_dialog;
 pub mod play_fishing;

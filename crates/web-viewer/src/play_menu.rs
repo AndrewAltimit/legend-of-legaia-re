@@ -1881,8 +1881,9 @@ impl LegaiaRuntime {
 
     /// Build the inventory item-use overlay text draws. Ported verbatim from
     /// the native shell's `items_session_draws` so the site emits the identical
-    /// draw list.
-    fn items_session_draws(
+    /// draw list. Crate-visible: the battle overlay draws the in-battle Item
+    /// submenu through the same projection ([`crate::play_battle`]).
+    pub(crate) fn items_session_draws(
         &self,
         assets: &PlayMenuAssets,
         s: &InventoryUseSession,

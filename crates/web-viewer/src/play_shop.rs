@@ -593,7 +593,11 @@ impl LegaiaRuntime {
             None => Vec::new(),
         };
         let banners = self.banner_stage_draws(font);
-        if shop.is_none() && windows.is_empty() && banners.is_empty() {
+        // In-battle overlay (HUD rows / encounter banner / command menus),
+        // already in surface pixels - appended after the stage-space scale
+        // below ([`crate::play_battle`]). Empty outside battle.
+        let battle = self.battle_overlay_draws(assets, surface_w, surface_h);
+        if shop.is_none() && windows.is_empty() && banners.is_empty() && battle.is_empty() {
             return CLOSED.to_string();
         }
 
@@ -622,6 +626,10 @@ impl LegaiaRuntime {
         texts.extend(windows);
         texts.extend(banners);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
+        // Battle draws stay in surface pixels: the shared HUD's measured
+        // column offsets span wider than the 320-px menu stage, exactly as
+        // drawn by the native window (surface-space HUD).
+        texts.extend(battle);
 
         serde_json::json!({
             "open": true,

@@ -49,8 +49,10 @@ something real.
 | Dump program | Delta | Bytes live in |
 |---|---|---|
 | `overlay_0897_*`, `overlay_0897_xxx_dat_*`, untagged `801d….txt` | `+0xE818` | field, PROT 0897 |
-| `overlay_0896_*`, printed `- 0x801C0000 >= 0x9000` | `+0x5818` | field, PROT 0897 |
-| `overlay_0896_*`, printed `- 0x801C0000 < 0x9000` | - | PROT 0896's own content; link base unrecovered |
+| `overlay_0896_*` untagged, printed `- 0x801C0000` in `0x9000..0x2E000` | `+0x5818` | field, PROT 0897 |
+| `overlay_0896_*` untagged, printed `- 0x801C0000 >= 0x2E000` | `-0x1F7E8` | battle_action, PROT 0898 |
+| `overlay_0896_*` untagged, printed `- 0x801C0000 < 0x9000` | - | PROT 0896's own content; link base unrecovered |
+| `overlay_0896_*` tagged `base=0x801C5818` | - | PROT 0896's own content at file `printed - 0x801C5818`; link base unrecovered |
 | `overlay_0899_xxx_dat_*` | `+0xE818` | menu, PROT 0899 |
 | `overlay_0971_*` | `+0xE818` / `+0xD018` | debug_menu 0971 / fishing 0972 |
 | `overlay_0977_*`, printed `- 0x801C0000 < 0x3800` | `+0xE818` | arena_init, PROT 0977 |
@@ -76,7 +78,12 @@ The `0896` split is the re-key table from
 [`dump-corpus-integrity.md`](dump-corpus-integrity.md#the-shift-clusters)
 applied per row, and it is the trap in this band: two of these batches take
 different deltas, and a `0896` VA re-keyed with the `0897` batch's `+0xE818`
-lands `0x9000` past where the bytes are, in plausible-looking code.
+lands `0x9000` past where the bytes are, in plausible-looking code. The
+untagged/tagged split is the byte-level sweep's finding: `overlay_0896_*` is
+**two** imports, and the tagged program's prints reach `0x801CE818` without
+ever holding field bytes - so the `+0x5818` row applies only to untagged
+dumps. Full partition + cross-checks:
+[`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each).
 
 Two independent batches agree where they overlap, which is the check that makes
 the deltas more than a curve fit. Printed `0x801C4520` (`+0xE818`) and printed
@@ -194,7 +201,6 @@ against any page that ports the other occupant.
 | Printed | Real | Interior of |
 |---|---|---|
 | `0x801C6268` | `0x801D4A80` (in field(897)) | `FUN_801D4A60` |
-| `0x801C9C04` | `0x801CF41C` | the field overlay's leading data segment - not code |
 | `0x801CAC44` | `0x801D045C` | `FUN_801D01B0` |
 | `0x801CAE64` | `0x801D067C` | `FUN_801D01B0` |
 | `0x801CC810` | `0x801D2028` | `FUN_801D1EC4` |
@@ -302,12 +308,12 @@ warns must not be collapsed to one verdict.
 
 | Printed | Why |
 |---|---|
-| `0x801C5CF8` | `overlay_0896` citation stub for `FUN_801C5C90`; both below `0x9000` |
-| `0x801C5E28` | `overlay_0896` citation stub for `FUN_801C5C90`; both below `0x9000` |
-| `0x801C6534` | `overlay_0896`, printed offset `0x6534`; PROT 0896's own content |
-| `0x801C8178` | `overlay_0896` citation stub for `FUN_801C802C`; both below `0x9000` |
-| `0x801C81A8` | `overlay_0896`, printed offset `0x81A8`; PROT 0896's own content |
-| `0x801C82E0` | `overlay_0896` citation stub for `FUN_801C81A8`; both below `0x9000` |
+| `0x801C5CF8` | `overlay_0896` citation stub for `FUN_801C5C90`; 0896 own content, file `+0x5C90` |
+| `0x801C5E28` | `overlay_0896` citation stub for `FUN_801C5C90`; 0896 own content, file `+0x5C90` |
+| `0x801C6534` | `overlay_0896` **tagged** program; 0896 own content at file `+0xD1C` - the same function `overlay_0896_bat_back_dat` prints at `0x801C0D1C` |
+| `0x801C8178` | `overlay_0896` citation stub for `FUN_801C802C`; 0896 own content, file `+0x802C` |
+| `0x801C81A8` | `overlay_0896` untagged program; 0896 own content at file `+0x81A8` |
+| `0x801C82E0` | `overlay_0896` citation stub for `FUN_801C81A8`; 0896 own content, file `+0x81A8` |
 | `0x801C8F00` | data-region dump, no disassembly at all |
 | `0x801CE9C4` | Ghidra `caseD_` switch fragment, tagged `base=0x801C0000`, resolves nowhere |
 
@@ -317,12 +323,15 @@ now re-key at `+0xA018` into the field-battle-intro overlay 0979
 (`0x801D0280` / `0x801D0D10`) - the strata decode in the re-key table above.
 
 The six `overlay_0896` rows are the only ones in the band that cannot be
-re-keyed even in principle. Their printed offset from `0x801C0000` falls below
-`0x9000`, which is PROT 0896's own content rather than its over-read of the field
-overlay, and PROT 0896's link base is unrecovered - see
+re-keyed to a runtime VA even in principle. The byte-level sweep attributes
+each to a PROT 0896 **file offset** (the sweep also separates the family's two
+import programs - untagged `0x801C0000` and tagged `base=0x801C5818`, which is
+how `0x801C6534` and `0x801C0D1C` print the same function; see
+[`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each)) -
+but PROT 0896's link base is unrecovered, so no printed VA in the family's
+own-content strata names a runtime address - see
 [call-target integrity](call-target-integrity.md#scope-the-overlay_0896-window-below-0x801ce818).
-Neither the printed VA nor any re-key of it is usable, and the routines
-themselves are only reachable by recovering that base.
+The routines themselves are only reachable by recovering that base.
 
 ## Two real entries this resolution turned up
 

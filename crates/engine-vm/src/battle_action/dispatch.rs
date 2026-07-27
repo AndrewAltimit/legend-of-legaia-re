@@ -184,7 +184,7 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
         ActionState::MagicCaptureFinalize => magic_capture_finalize(host, ctx),
 
         ActionState::IdleHold => idle_hold(host, ctx),
-        ActionState::BattleComplete => battle_complete(host, ctx),
+        ActionState::RoundEnd => round_end(host, ctx),
     }
 }
 

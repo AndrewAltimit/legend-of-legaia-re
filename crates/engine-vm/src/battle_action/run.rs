@@ -169,14 +169,35 @@ pub(super) fn idle_hold<H: BattleActionHost + ?Sized>(
     stay(ctx)
 }
 
-pub(super) fn battle_complete<H: BattleActionHost + ?Sized>(
+/// Round boundary - the `0xFF` arm of `FUN_801E295C` (`801e67e8`).
+///
+/// Retail reaches this state only through the **non-wipe** arm of the `0x5A`
+/// end-of-action gate: every living actor has acted and BOTH sides still have
+/// someone standing. Its body parks the flow byte at `0x14` (`ctx[+0x6]`, the
+/// round driver), bumps the round counter `ctx[+0x28A]` and calls
+/// `func_0x801F45A4` (the per-round status-`0x400` settle); the next round's
+/// actor selection follows. It never signals battle end - the wipe arms and
+/// the escape teardown do that through `DAT_8007BD71 = 0xFE`, which the port
+/// surfaces as the `battle_end(..)` + `StepOutcome::BattleComplete` pair on
+/// those paths. See `docs/subsystems/battle-action.md`
+/// § "`0xFF` is the round boundary, not the battle's end".
+///
+/// The port hosts the retail body on the driver side (`engine-core`'s live
+/// loop runs `advance_battle_mode` - the `ctx[+0x28A]` bump - and
+/// `tick_status_0x400_wakes` - `FUN_801F45A4` - at its round boundary), so
+/// this handler does the SM-side bookkeeping only: clear every actor's
+/// acted counter (`+0x1A`) for the new round and hand control back through
+/// `EndOfAction`, the state the arming driver keys the next turn on.
+///
+/// PORT: FUN_801E295C case 0xFF (round boundary, `801e67e8`)
+pub(super) fn round_end<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    let _ = ctx;
-    // The retail handler increments a battle-count and calls
-    // `func_0x801F45A4` (battle teardown). For the port we surface this as
-    // BattleComplete and let the caller drive overlay unload.
-    host.battle_end(BattleEndCause::MonsterWipe);
-    StepOutcome::BattleComplete
+    for slot in 0..host.slot_count() {
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.action_queue_counter = 0;
+        }
+    }
+    transition(ctx, ActionState::EndOfAction)
 }

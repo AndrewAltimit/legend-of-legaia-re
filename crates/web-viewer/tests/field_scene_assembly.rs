@@ -61,9 +61,12 @@ fn field_scene_assembles_full_maps() {
         // it asserts the MAN -> LUT chain over all 101 field-map blocks. Do not
         // reformulate this line as the floor coverage; it once let 79 scenes
         // ship floorless.
+        // (>= 20: korb3 floors with exactly 20 terrain-tile draws once the
+        // retail emitters' FLAG_PLACED skip keeps the placement layer's
+        // records out of the terrain list - they still draw, as placements.)
         let ground_quads = pack.ground.as_ref().map(|h| h.quad_count()).unwrap_or(0);
         assert!(
-            ground_quads > 0 || pack.terrain.len() > 20,
+            ground_quads > 0 || pack.terrain.len() >= 20,
             "{name}: no ground layer (0 heightfield quads, {} terrain tiles)",
             pack.terrain.len()
         );
