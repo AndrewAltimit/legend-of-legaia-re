@@ -36,6 +36,7 @@
 
 pub mod arts_table;
 pub mod arts_voice;
+pub mod hyper_fanfare;
 pub mod miracle;
 pub mod parse;
 pub mod power;

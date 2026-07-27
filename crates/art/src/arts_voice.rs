@@ -19,9 +19,10 @@
 //! | Noa  (1) | 3 | `XA4.XA` |
 //! | Gala (2) | 5 | `XA6.XA` |
 //!
-//! Each of these is a 16-channel short-mono shout bank. (`XA3` / `XA5` are the
-//! 8-channel *stereo* Miracle/summon fanfares fired from the separate
-//! `FUN_8004FCC8` jingle path - NOT the per-art shout, an easy mis-ID by ear.)
+//! Each of these is a 16-channel short-mono shout bank. (`XA1` / `XA3` / `XA5`
+//! are the 8-channel *stereo* Hyper/Super/Miracle **fanfare** banks fired from
+//! the separate `FUN_8004AD80` jingle path - NOT the per-art shout, an easy
+//! mis-ID by ear; see [`crate::hyper_fanfare`].)
 //! This mapping is capture-verified: a live PCSX-Redux trace of Vahn's
 //! Tri-Somersault fired `FUN_8003D53C(0x01=XA2, chan 0/6, ...)` and Noa's
 //! Miracle fired `FUN_8003D53C(0x03=XA4, ...)`, both from `FUN_8004C140`
@@ -297,8 +298,8 @@ pub const CAPTURED_ART_CHANNELS: &[CapturedArtCue] = &[
     // Noa - Swan Driver: the round's action queue read `19 24` (Starter +
     // Swan Driver) at the cue frame, the only pooled art in her string
     // (the trailing `1A 20` Frost Breath sits below her table's `lo` and
-    // fired no XA4 shout - a stereo XA3 fanfare cue fired at its execution
-    // instead).
+    // fired no XA4 shout - its stereo XA3 fanfare fired at execution
+    // instead; selector pinned in `crate::hyper_fanfare`).
     CapturedArtCue {
         cslot: 1,
         action_constant: 0x24,
