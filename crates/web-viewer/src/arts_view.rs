@@ -32,6 +32,7 @@
 use super::*;
 
 use legaia_art::arts_voice::ArtsVoiceTable;
+use legaia_art::hyper_fanfare;
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::monster_archive::MonsterAnimation;
 
@@ -63,10 +64,14 @@ const PLAYER_FILE_BASE: u32 = 863;
 /// (`arts_voice::CAPTURED_ART_CHANNELS` - live recomp-runtime battle fires
 /// captured off the `FUN_8003D53C` cue globals), and a stable member of the
 /// art's decoded pool otherwise - both via `ArtsVoiceTable::pick_channel`.
-/// `XA30.XA` is the ordinary directional-attack grunt (different cue);
-/// `XA3`/`XA5` are the stereo Miracle/summon fanfares (the `FUN_8004FCC8`
-/// jingle path), not the per-art shout. See
-/// `docs/subsystems/battle-action.md`.
+/// `XA30.XA` is the ordinary directional-attack grunt (different cue).
+///
+/// A **Hyper** art has no pool row at all (its action constant sits below the
+/// range table's `lo`): retail plays the character's stereo **fanfare** bank
+/// instead - `XA1.XA` / `XA3.XA` / `XA5.XA`, selected per art by the
+/// `FUN_8004AD80` anim-`0x1A` block through the `FUN_8004FCC8` jingle queue
+/// (`legaia_art::hyper_fanfare`); Super and Miracle expansions play the same
+/// bank's generic channel 1. See `docs/subsystems/battle-action.md`.
 const VOICE_XA_FILE: [Option<&str>; 4] = [Some("XA2.XA"), Some("XA4.XA"), Some("XA6.XA"), None];
 /// `readef.DAT` (extraction PROT 894) - the battle side-band file carrying
 /// the per-character art `"ME"` stream archives.
@@ -92,6 +97,28 @@ struct ArtSlot {
     /// has no voice bank or the art has no arts-voice entry (retail plays it
     /// silent).
     voice_channel: Option<u8>,
+    /// The **fanfare** XA channel this art plays (in the character's
+    /// `XA1`/`XA3`/`XA5` fanfare bank): a Hyper art's capture-witnessed
+    /// coin-flip pair member (`legaia_art::hyper_fanfare`), or the generic
+    /// channel 1 for a Super / Miracle constant. `None` for regular arts
+    /// (those play the pool shout instead).
+    fanfare_channel: Option<u8>,
+}
+
+/// The fanfare channel the retail selector assigns to a bank record's action
+/// constant, when it assigns one. Per-art for the nine Hyper constants; the
+/// generic channel 1 for the constants only a Super (`0x2B..=0x32`) or
+/// Miracle (`0x1B` trigger, `0x2A` finisher) expansion stages - both paths
+/// fire inside the materialiser's anim-`0x1A` block, which regular arts never
+/// enter (their pool shout comes from `FUN_8004C140` instead).
+fn fanfare_channel_for(cslot: usize, anim_id: u8) -> Option<u8> {
+    if cslot >= 3 {
+        return None; // Terra has no fanfare bank.
+    }
+    hyper_fanfare::pick_fanfare_channel(cslot, anim_id).or_else(|| {
+        (anim_id == 0x1B || (0x2A..=0x32).contains(&anim_id))
+            .then_some(hyper_fanfare::GENERIC_FANFARE_CHANNEL)
+    })
 }
 
 /// One character's fully-decoded view bundle, cached on the host so the
@@ -112,12 +139,23 @@ struct LoadedCharacter {
     /// for Terra, or when the file didn't demux. An art plays the channel in
     /// its [`ArtSlot::voice_channel`].
     voice: Vec<audio::DecodedXa>,
+    /// The character's decoded **fanfare** bank
+    /// (`legaia_art::hyper_fanfare::FANFARE_XA_FILE` = `XA1`/`XA3`/`XA5`,
+    /// 8-channel stereo), same keying and trimming as `voice`. A Hyper /
+    /// Super / Miracle art plays the channel in its
+    /// [`ArtSlot::fanfare_channel`].
+    fanfare: Vec<audio::DecodedXa>,
 }
 
 impl LoadedCharacter {
     /// The decoded voice clip for XA channel `ch`, if it demuxed.
     fn voice_clip(&self, ch: u8) -> Option<&audio::DecodedXa> {
         self.voice.iter().find(|v| v.ch_no == ch)
+    }
+
+    /// The decoded fanfare clip for XA channel `ch`, if it demuxed.
+    fn fanfare_clip(&self, ch: u8) -> Option<&audio::DecodedXa> {
+        self.fanfare.iter().find(|v| v.ch_no == ch)
     }
 }
 
@@ -275,10 +313,16 @@ fn extract_named_xa_raw(disc_bytes: &[u8], file_name: &str) -> Option<Vec<u8>> {
 }
 
 /// Slice out every distinct arts-voice file referenced by [`VOICE_XA_FILE`]
-/// (`XA2.XA`, `XA4.XA`, `XA6.XA`), keyed by upper-case name for [`decode_voice_bank`].
+/// (`XA2.XA`, `XA4.XA`, `XA6.XA`) **and** every fanfare bank
+/// (`hyper_fanfare::FANFARE_XA_FILE` = `XA1.XA`, `XA3.XA`, `XA5.XA`), keyed
+/// by upper-case name for [`decode_xa_bank`].
 fn extract_voice_files(disc_bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    for name in VOICE_XA_FILE.into_iter().flatten() {
+    let names = VOICE_XA_FILE
+        .into_iter()
+        .flatten()
+        .chain(hyper_fanfare::FANFARE_XA_FILE);
+    for name in names {
         let key = name.to_ascii_uppercase();
         if out.iter().any(|(k, _)| *k == key) {
             continue;
@@ -314,14 +358,12 @@ fn trim_trailing_silence(pcm: &mut Vec<i16>) {
     pcm.truncate(keep);
 }
 
-/// Demux + decode every channel of character `cslot`'s arts-voice file
-/// ([`VOICE_XA_FILE`]) out of the pre-sliced voice files. Each clip is trimmed
-/// of its trailing silence and keyed by its own `ch_no`, so an art can address
-/// the exact channel its `FUN_8004C140` pool selects.
-fn decode_voice_bank(voice_files: &[(String, Vec<u8>)], cslot: usize) -> Vec<audio::DecodedXa> {
-    let Some(Some(file_name)) = VOICE_XA_FILE.get(cslot) else {
-        return Vec::new();
-    };
+/// Demux + decode every channel of one named XA bank out of the pre-sliced
+/// voice/fanfare files. Each clip is trimmed of its trailing silence and
+/// keyed by its own `ch_no`, so an art can address the exact channel its
+/// selector picks (`FUN_8004C140` pool for shouts, `FUN_8004AD80` fanfare
+/// pair / generic channel for Hyper/Super/Miracle).
+fn decode_xa_bank(voice_files: &[(String, Vec<u8>)], file_name: &str) -> Vec<audio::DecodedXa> {
     let key = file_name.to_ascii_uppercase();
     let Some((_, raw)) = voice_files.iter().find(|(k, _)| *k == key) else {
         return Vec::new();
@@ -441,6 +483,7 @@ fn build_character(
                     None => (None, Some("ME archive did not decode".to_string())),
                 };
                 let voice_channel = voice_table.and_then(|t| t.pick_channel(cslot, rec.anim_id));
+                let fanfare_channel = fanfare_channel_for(cslot, rec.anim_id);
                 arts.push(ArtSlot {
                     anim_id: rec.anim_id,
                     name: rec.name.clone(),
@@ -450,6 +493,7 @@ fn build_character(
                     anim,
                     why,
                     voice_channel,
+                    fanfare_channel,
                 });
             }
         }
@@ -464,7 +508,14 @@ fn build_character(
         vram,
         idle,
         arts,
-        voice: decode_voice_bank(voice_files, cslot),
+        voice: match VOICE_XA_FILE.get(cslot) {
+            Some(Some(name)) => decode_xa_bank(voice_files, name),
+            _ => Vec::new(),
+        },
+        fanfare: match hyper_fanfare::fanfare_file(cslot) {
+            Some(name) => decode_xa_bank(voice_files, name),
+            None => Vec::new(),
+        },
     })
 }
 
@@ -564,6 +615,12 @@ impl LegaiaArts {
                             // The arts-voice XA channel this art plays (its
                             // real FUN_8004C140 pool member), or null.
                             "voice_channel": a.voice_channel,
+                            // The fanfare XA channel (in the character's
+                            // XA1/XA3/XA5 stereo bank) this art plays: a
+                            // Hyper's witnessed coin-flip pair member, the
+                            // generic channel 1 for a Super/Miracle constant,
+                            // or null (regular arts - pool shout instead).
+                            "fanfare_channel": a.fanfare_channel,
                         })
                     })
                     .collect();
@@ -585,6 +642,21 @@ impl LegaiaArts {
                         "file": VOICE_XA_FILE[c.cslot],
                         "count": c.voice.len(),
                         "channels": c.voice.iter().map(|v| serde_json::json!({
+                            "channel": v.ch_no,
+                            "rate": v.sample_rate,
+                            "stereo": v.stereo,
+                            "samples": v.pcm.len(),
+                        })).collect::<Vec<_>>(),
+                    })),
+                    // The character's Hyper/Super/Miracle fanfare bank (the
+                    // stereo XA1/XA3/XA5 sibling of the shout bank), same
+                    // shape as `voice`. Null when the disc slice or demux is
+                    // missing. Each art's channel is in its `arts[]` entry's
+                    // `fanfare_channel` (see `art_fanfare_pcm_i16`).
+                    "fanfare": (!c.fanfare.is_empty()).then(|| serde_json::json!({
+                        "file": hyper_fanfare::fanfare_file(c.cslot),
+                        "count": c.fanfare.len(),
+                        "channels": c.fanfare.iter().map(|v| serde_json::json!({
                             "channel": v.ch_no,
                             "rate": v.sample_rate,
                             "stereo": v.stereo,
@@ -807,6 +879,39 @@ impl LegaiaArts {
         self.current
             .as_ref()
             .and_then(|c| c.voice_clip(channel as u8))
+            .map(|v| v.pcm.clone())
+            .unwrap_or_default()
+    }
+
+    /// The **fanfare** PCM for the art at bank index `art_index`: the XA
+    /// channel of the character's `XA1`/`XA3`/`XA5` fanfare bank that the
+    /// `FUN_8004AD80` selector assigns the art (the art's `fanfare_channel`:
+    /// a Hyper's witnessed coin-flip pair member, or the generic channel 1
+    /// for a Super/Miracle), trimmed of its trailing silence. Interleaved
+    /// stereo at the rate reported in `set_character`'s
+    /// `fanfare.channels[..]`. Empty when the character has no fanfare bank
+    /// (raw `PROT.DAT` load, Terra, demux failure) or the art has no fanfare
+    /// cue (regular arts). Also exposed by-channel via
+    /// [`Self::fanfare_channel_pcm_i16`].
+    pub fn art_fanfare_pcm_i16(&self, art_index: u32) -> Vec<i16> {
+        self.current
+            .as_ref()
+            .and_then(|c| {
+                let a = c.arts.get(art_index as usize)?;
+                let ch = a.fanfare_channel?;
+                Some(c.fanfare_clip(ch)?.pcm.clone())
+            })
+            .unwrap_or_default()
+    }
+
+    /// The fanfare PCM of the current character's XA channel `channel`,
+    /// regardless of any art mapping (the by-channel sibling of
+    /// [`Self::art_fanfare_pcm_i16`]). Empty when out of range or the
+    /// character has no fanfare bank.
+    pub fn fanfare_channel_pcm_i16(&self, channel: u32) -> Vec<i16> {
+        self.current
+            .as_ref()
+            .and_then(|c| c.fanfare_clip(channel as u8))
             .map(|v| v.pcm.clone())
             .unwrap_or_default()
     }
