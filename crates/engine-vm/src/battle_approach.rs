@@ -57,7 +57,7 @@
 //! approach states asking for a step length first - which is also the shape the
 //! `0x19` approach-park investigation wants, since a clamp that can only return
 //! `[3d/4, d]` can never close the last quarter on its own. See
-//! `handoff/lane-3.md`.
+//! `docs/subsystems/battle-action.md` ("The `0x19` attack-approach park").
 
 /// Half-turn added to the bearing before the LUT lookup (`0x800` of a 12-bit
 /// angle).

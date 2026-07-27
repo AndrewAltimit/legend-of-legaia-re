@@ -276,7 +276,8 @@ pub fn monster_escape_side_scores(
 /// and one whose queue builder has no flee branch to hang this off yet. Wiring
 /// it needs the picker to own a per-monster "flee instead of act" decision that
 /// seeds action category `+0x1DE == 5`, which routes to `ctx[7] == 0x68` (the
-/// monster arm of the Run band). See `handoff/lane-3.md`.
+/// monster arm of the Run band). See `docs/subsystems/battle-formulas.md`
+/// ("Monster escape roll - FUN_801EC0DC").
 pub fn monster_escape_roll(
     no_escape_flag: u8,
     party: &[FleeActor],

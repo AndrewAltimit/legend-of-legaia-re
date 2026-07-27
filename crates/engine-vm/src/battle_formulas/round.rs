@@ -355,20 +355,25 @@ pub fn roll_formation_advantage(
 
 /// Apply the `ctx+0x290` side lockout over a seeded 7-slot key table, in place.
 ///
-/// NOT WIRED - **and not wirable as written**, which is a statement about the
-/// engine's seating rather than about a missing caller. The round-boundary
-/// pass this belongs to *does* exist (`engine-core`'s `BattleRound::boundary`
-/// plus the reseed that follows it); what cannot be reused is the slot split.
-/// This function hardcodes retail's **fixed** boundary (party `0..=2`,
-/// monsters `3..=6`), because retail reserves three party slots whatever the
-/// party size. `engine-core` compacts instead - `enter_battle` seats the first
-/// monster at `party_count`, so slot 1 can be a monster - and
-/// `World::reseed_initiative` therefore applies the same rule against its own
-/// `party_count` boundary. Calling this instead would lock out the wrong side
-/// for any party smaller than three. Kept as the retail-layout reference the
-/// engine's adapter is checked against.
+/// This is the **retail-layout reference**, deliberately without a production
+/// caller - and calling it would be wrong, which is a statement about the
+/// engine's seating rather than about a missing consumer. It hardcodes
+/// retail's **fixed** boundary (party `0..=2`, monsters `3..=6`), because
+/// retail reserves three party slots whatever the party size. `engine-core`
+/// compacts instead - `enter_battle` seats the first monster at `party_count`,
+/// so slot 1 can be a monster - and the address's live port,
+/// `World::reseed_initiative` in `engine-core/src/world/battle/initiative.rs`
+/// (which carries the `PORT: FUN_801DA780` tag), therefore applies the same
+/// rule against its own `party_count` boundary. Calling this copy instead
+/// would lock out the wrong side for any party smaller than three.
 ///
-/// PORT: FUN_801da780 (the lockout sweep that runs after the per-slot scoring)
+/// It carries a `REF` rather than a second `PORT` tag so the anchor stays
+/// attributed to the live implementation (the `first_live_monster_slot`
+/// precedent in `battle_action::pool_ops`); the sweep stays here, exercised by
+/// `battle_formulas/tests.rs`, as the fixed-slot oracle the engine's seating
+/// adapter is checked against.
+///
+/// REF: FUN_801da780 (the lockout sweep that runs after the per-slot scoring)
 pub fn apply_side_lockout(keys: &mut [u16; 7], lockout: SideLockout) {
     for (slot, key) in keys.iter_mut().enumerate() {
         if lockout.zeroes_slot(slot as u8) {
