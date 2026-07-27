@@ -295,6 +295,7 @@ fn main() -> Result<()> {
             pad_script,
             seed_party,
             dynamic_lighting,
+            no_dyn_shadows,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -327,6 +328,7 @@ fn main() -> Result<()> {
             )?,
             seed_party,
             dynamic_lighting,
+            !no_dyn_shadows,
         ),
         Cmd::Save {
             extracted_root,

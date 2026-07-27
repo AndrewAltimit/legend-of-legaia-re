@@ -726,6 +726,18 @@ struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     dynamic_lighting: bool,
+    /// Shadow-casting per-scene **point-light sub-layer** of the
+    /// dynamic-lighting enhancement: candle / wall-light sources derived
+    /// from the scene's emissive prims ([`legaia_engine_render::scene_lights`])
+    /// with per-light PCF shadow maps. Default `true`, but only effective
+    /// while `dynamic_lighting` is on; disable with `--no-dyn-shadows`, or
+    /// toggle at runtime with the `Y` key. Mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
+    dyn_shadows: bool,
+    /// The current scene's derived point lights (world space), rebuilt by
+    /// `upload_assets` at scene load and staged into the renderer each
+    /// field frame together with the camera's view-projection.
+    scene_point_lights: Vec<legaia_engine_render::scene_lights::ScenePointLight>,
     /// Mouse drag-orbit state: the last cursor X (window pixels) while the
     /// left button is held, `None` when not dragging. A horizontal drag in
     /// field free-roam rotates `session.camera.manual_orbit`, which both

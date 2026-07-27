@@ -72,6 +72,18 @@ fn psx_shaders_parse_and_validate() {
         ),
         ("vram_mesh", compose_psx_shader(VRAM_MESH_SHADER_SRC)),
         ("color_mesh", compose_psx_shader(COLOR_MESH_SHADER_SRC)),
+        // Scene-pipeline variants: same bodies with the REAL point-light
+        // layer (group-2 lights + shadow bindings) in place of the stub.
+        (
+            "scene_vram_mesh",
+            compose_scene_lit_shader(VRAM_MESH_SHADER_SRC),
+        ),
+        (
+            "scene_color_mesh",
+            compose_scene_lit_shader(COLOR_MESH_SHADER_SRC),
+        ),
+        // Depth-only shadow pass (vertex stage only).
+        ("shadow", SHADOW_MESH_SHADER_SRC.to_string()),
         // Screen-space 2D overlay pass (POLY_FT4 + flat quads). No dither
         // helper - it samples raw VRAM texels and modulates in NDC.
         ("screen_overlay", SCREEN_OVERLAY_SHADER_SRC.to_string()),

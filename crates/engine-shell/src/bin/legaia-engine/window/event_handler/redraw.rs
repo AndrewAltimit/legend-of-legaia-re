@@ -550,6 +550,42 @@ impl PlayWindowApp {
             // uses the orbit camera.
             let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
             let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
+            // Stage the derived scene point lights (the dynamic-lighting
+            // enhancement's candle / wall-light layer) with this frame's
+            // camera so the renderer can recover world space from the
+            // per-draw MVPs. Field free-roam only - battle / world map /
+            // boot UI clear them so the layer never lights the wrong
+            // coordinate space. Inert (zero staged count, no shadow pass)
+            // while dynamic lighting or the shadow sub-toggle is off.
+            if !self.boot_ui.is_active()
+                && !in_world_map
+                && self.session.host.world.mode == SceneMode::Field
+                && !self.scene_point_lights.is_empty()
+            {
+                // Per-frame selection: a scene can carry dozens of candle
+                // props but only 8 lights shade at once, so pick the ones
+                // nearest the player (falling back to the origin when no
+                // player actor is seated).
+                let w = &self.session.host.world;
+                let focus = w
+                    .player_actor_slot
+                    .and_then(|s| w.actors.get(s as usize))
+                    .map(|a| {
+                        [
+                            a.move_state.world_x as f32,
+                            a.move_state.world_y as f32,
+                            a.move_state.world_z as f32,
+                        ]
+                    })
+                    .unwrap_or([0.0; 3]);
+                let picked = legaia_engine_render::scene_lights::nearest_lights(
+                    &self.scene_point_lights,
+                    focus,
+                );
+                r.set_scene_lights(&picked, cam);
+            } else {
+                r.clear_scene_lights();
+            }
             // Drain queued spawn slots: build a VRAM mesh from each
             // actor's `tmd_ref` (global-pool TMD that the field-VM
             // 0x4C 0xD8 host hook installed) and append it to

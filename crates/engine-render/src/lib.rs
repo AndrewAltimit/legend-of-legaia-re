@@ -51,6 +51,7 @@ pub mod psx_blend;
 pub mod psx_dither;
 pub mod psx_light;
 mod renderer;
+pub mod scene_lights;
 pub mod screen_overlay;
 mod shaders;
 

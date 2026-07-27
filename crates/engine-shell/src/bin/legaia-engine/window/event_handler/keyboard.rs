@@ -559,6 +559,27 @@ impl PlayWindowApp {
             );
             return;
         }
+        // `Y`: toggle the shadow-casting per-scene point-light sub-layer of
+        // the dynamic-lighting enhancement (the `--no-dyn-shadows` flag's
+        // runtime twin). Only visible while dynamic lighting (`I`) is on -
+        // the layer stages a zero light count otherwise. Pure renderer
+        // state, like `I`.
+        if matches!(code, KeyCode::KeyY) && state == ElementState::Pressed {
+            self.dyn_shadows = !self.dyn_shadows;
+            if let Some(r) = self.win.renderer.as_ref() {
+                r.set_dyn_shadows(self.dyn_shadows);
+            }
+            log::info!(
+                "render: scene light-source shadows {}{}",
+                if self.dyn_shadows { "ON" } else { "off" },
+                if self.dynamic_lighting {
+                    ""
+                } else {
+                    " (inert until dynamic lighting is on - press I)"
+                }
+            );
+            return;
+        }
         // `C`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better

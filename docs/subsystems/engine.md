@@ -27,6 +27,7 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | Knob | Default | Effect |
 |---|---|---|
 | `Renderer::set_dynamic_lighting` (`--dynamic-lighting`, `I` in `play-window`) | off | Soft warm directional light + screen-centred light pool over the baked shading. |
+| `Renderer::set_dyn_shadows` (`--no-dyn-shadows` disables, `Y` in `play-window`) | on | Sub-toggle of dynamic lighting: per-scene candle / wall-light point lights with PCF shadow maps ([renderer](renderer.md#per-scene-point-lights--shadows-sub-toggle)). Inert while dynamic lighting is off. |
 | `World::precise_movement` (`R`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`) | off | Strict-PS1 rasterisation artefacts - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |

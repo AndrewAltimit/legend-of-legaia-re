@@ -6,6 +6,14 @@ use super::*;
 
 pub(super) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// Shadow-map resolution per light (square). One layer of the depth array
+/// per possible scene light.
+pub(super) const SHADOW_MAP_DIM: u32 = 512;
+
+/// Shader-side depth-compare bias for the shadow test (on top of the
+/// pipeline's rasterizer depth bias); staged into `SceneLightsU.params.z`.
+pub(super) const SHADOW_COMPARE_BIAS: f32 = 0.0015;
+
 pub(super) fn create_depth_view(
     device: &wgpu::Device,
     width: u32,

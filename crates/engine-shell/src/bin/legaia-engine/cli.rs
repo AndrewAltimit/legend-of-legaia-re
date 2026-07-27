@@ -918,6 +918,13 @@ pub(crate) enum Cmd {
         /// without it. Toggle at runtime with the `I` key.
         #[arg(long, default_value_t = false)]
         dynamic_lighting: bool,
+        /// Disable the shadow-casting per-scene point-light sub-layer of
+        /// `--dynamic-lighting` (candle / wall-light sources derived from the
+        /// scene's emissive prims, each with a PCF-filtered shadow map). On
+        /// by default whenever `--dynamic-lighting` is on; irrelevant (and
+        /// costless) without it. Toggle at runtime with the `Y` key.
+        #[arg(long, default_value_t = false)]
+        no_dyn_shadows: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

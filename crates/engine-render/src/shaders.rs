@@ -205,10 +205,16 @@ fn cue_ramp_ir0(cue_a: f32, ramp: vec4<f32>, frag_w: f32) -> f32 {
 //   * the whole gain is clamped to DYN_MAX_GAIN so nothing ever exceeds
 //     ~1.3x the baked brightness (no blow-out), and the result saturates.
 //
+// `point_gain` is the per-scene point-light layer's additive gain (candle
+// / wall-light sources with shadows - `scene_point_gain`, compiled only
+// into the scene pipelines); the global term caps at DYN_MAX_GAIN and the
+// combined gain at DYN_TOTAL_MAX_GAIN.
+//
 // Tunables (kept in lockstep with the CPU mirror `crate::dyn_light`):
 const DYN_DIFFUSE: f32 = 0.55;   // weight of the orientation (|N.L|) term
 const DYN_POOL: f32 = 0.35;      // weight of the screen-space light pool
 const DYN_MAX_GAIN: f32 = 1.3;   // gain ceiling relative to baked colour
+const DYN_TOTAL_MAX_GAIN: f32 = 1.9; // ceiling with the point-light layer added
 const DYN_LAMBERT_FALLBACK: f32 = 0.6; // orientation term when no normal exists
 const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45); // pool centre, 0..1
 const DYN_POOL_INNER: f32 = 0.15; // pool full-strength radius (screen frac)
@@ -222,6 +228,7 @@ fn dyn_light(
     viewport: vec2<f32>,
     light_dir: vec4<f32>,
     light_color: vec4<f32>,
+    point_gain: vec3<f32>,
 ) -> vec3<f32> {
     if (light_dir.w < 0.5) {
         return rgb;
@@ -245,18 +252,172 @@ fn dyn_light(
         let d = distance(frag_px / viewport, DYN_POOL_CENTER);
         pool = 1.0 - smoothstep(DYN_POOL_INNER, DYN_POOL_OUTER, d);
     }
-    let gain = light_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * light_color.xyz;
-    let capped = min(gain, vec3<f32>(DYN_MAX_GAIN));
-    return clamp(rgb * capped, vec3<f32>(0.0), vec3<f32>(1.0));
+    let base = light_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * light_color.xyz;
+    let gain = min(min(base, vec3<f32>(DYN_MAX_GAIN)) + point_gain, vec3<f32>(DYN_TOTAL_MAX_GAIN));
+    return clamp(rgb * gain, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 "#;
 
-/// Prepend [`PSX_DITHER_WGSL`] to a shaded 3D shader source so its fragment
-/// stage can call `psx_dither`. WGSL module-scope declarations are
-/// order-independent, so the leading helper is valid ahead of the shader's
-/// own structs and entry points.
+/// Per-scene point-light layer - the REAL variant, compiled only into the
+/// multi-actor **scene** pipelines (VRAM + colour mesh), whose layouts bind
+/// the lights uniform + shadow-map array at group 2. Derivation of the
+/// lights lives in [`crate::scene_lights`]; the analytic (non-shadow) part
+/// of `scene_point_gain` is mirrored there by `point_gain` /
+/// `point_attenuation`, and the count is staged to zero whenever dynamic
+/// lighting (or its shadow sub-toggle) is off, so this whole layer costs
+/// one uniform read on the faithful path.
+///
+/// Shadowing: each light renders the scene's opaque geometry into one
+/// layer of a depth array from a downward cone ([`crate::scene_lights::
+/// light_view_proj`]); fragments compare through a 3x3 PCF kernel
+/// (`textureSampleCompareLevel`, hardware-filtered comparisons) for soft
+/// edges. Fragments outside a light's cone sample as unshadowed - they
+/// still attenuate by distance.
+pub(crate) const SCENE_LIGHTS_REAL_WGSL: &str = r#"
+const SCENE_LIGHT_MAX: u32 = 8u;
+
+struct ScenePointLightU {
+    // xyz = world position, w = influence radius (attenuation reaches 0).
+    pos_radius: vec4<f32>,
+    // rgb = gain colour, w unused.
+    color: vec4<f32>,
+    // The light's shadow view-projection (downward cone, 0..1 depth).
+    viewproj: mat4x4<f32>,
+};
+
+struct SceneLightsU {
+    // x = active light count (0 = layer off), y = shadow-map texel size
+    // (1 / dimension), z = depth-compare bias, w reserved.
+    params: vec4<f32>,
+    lights: array<ScenePointLightU, 8u>,
+};
+
+@group(2) @binding(0) var<uniform> sl: SceneLightsU;
+@group(2) @binding(1) var t_shadow: texture_depth_2d_array;
+@group(2) @binding(2) var s_shadow: sampler_comparison;
+
+// 3x3 PCF visibility of `world_pos` from light `idx`: 0 = fully shadowed,
+// 1 = fully lit. Out-of-cone / behind-the-light fragments return 1.0
+// (distance attenuation still bounds them).
+fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
+    let clip = sl.lights[idx].viewproj * vec4<f32>(world_pos, 1.0);
+    if (clip.w <= 0.0) {
+        return 1.0;
+    }
+    let ndc = clip.xyz / clip.w;
+    if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0
+        || ndc.z <= 0.0 || ndc.z >= 1.0) {
+        return 1.0;
+    }
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    let depth_ref = ndc.z - sl.params.z;
+    let ts = sl.params.y;
+    var sum = 0.0;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            let o = vec2<f32>(f32(dx), f32(dy)) * ts;
+            sum = sum + textureSampleCompareLevel(
+                t_shadow, s_shadow, uv + o, i32(idx), depth_ref);
+        }
+    }
+    return sum / 9.0;
+}
+
+// Summed point-light gain for one fragment (the `point_gain` argument of
+// `dyn_light`). Attenuation `(1 - (d/r)^2)^2`, |N.L| orientation with the
+// mixed-winding abs() the global term uses, PCF shadow per light.
+fn scene_point_gain(
+    world_pos: vec3<f32>,
+    vert_normal: vec3<f32>,
+    geo_normal: vec3<f32>,
+) -> vec3<f32> {
+    let n_lights = u32(sl.params.x);
+    if (n_lights == 0u) {
+        return vec3<f32>(0.0);
+    }
+    var n = vert_normal;
+    if (dot(n, n) < 1e-8) {
+        n = geo_normal;
+    }
+    let n_len = length(n);
+    var gain = vec3<f32>(0.0);
+    for (var i = 0u; i < SCENE_LIGHT_MAX; i = i + 1u) {
+        if (i >= n_lights) {
+            break;
+        }
+        let l = sl.lights[i];
+        let to_l = l.pos_radius.xyz - world_pos;
+        let dist = length(to_l);
+        let radius = l.pos_radius.w;
+        if (radius <= 0.0 || dist >= radius) {
+            continue;
+        }
+        var att = clamp(1.0 - (dist * dist) / (radius * radius), 0.0, 1.0);
+        att = att * att;
+        var lam = DYN_LAMBERT_FALLBACK;
+        if (n_len > 1e-6 && dist > 1e-3) {
+            lam = abs(dot(n / n_len, to_l / dist));
+        }
+        gain = gain + l.color.rgb * (att * lam * scene_light_shadow(i, world_pos));
+    }
+    return gain;
+}
+"#;
+
+/// Stub twin of [`SCENE_LIGHTS_REAL_WGSL`] for the single-mesh pipelines,
+/// whose layouts carry no lights group: same signature, always zero, so
+/// one shader body serves both variants.
+pub(crate) const SCENE_LIGHTS_STUB_WGSL: &str = r#"
+fn scene_point_gain(
+    world_pos: vec3<f32>,
+    vert_normal: vec3<f32>,
+    geo_normal: vec3<f32>,
+) -> vec3<f32> {
+    return vec3<f32>(0.0);
+}
+"#;
+
+/// Depth-only shadow-pass shader: one light-space MVP per (light, draw)
+/// slot, position attribute only (both the 36-byte VRAM-mesh layout and
+/// the 20-byte colour-mesh layout put the position at offset 0). No
+/// fragment stage - opaque geometry writes depth; cutout texels of
+/// foliage-style prims therefore shadow as solid, an accepted
+/// approximation for the prop-scale casters this pass serves.
+pub(crate) const SHADOW_MESH_SHADER_SRC: &str = r#"
+struct ShadowUniforms {
+    mvp: mat4x4<f32>,
+};
+@group(0) @binding(0) var<uniform> su: ShadowUniforms;
+
+@vertex
+fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    return su.mvp * vec4<f32>(position, 1.0);
+}
+"#;
+
+/// The real scene-lights WGSL, exposed for the lockstep tests in
+/// [`crate::scene_lights`].
+#[cfg(test)]
+pub(crate) fn scene_lights_wgsl_for_tests() -> &'static str {
+    SCENE_LIGHTS_REAL_WGSL
+}
+
+/// Prepend [`PSX_DITHER_WGSL`] (and the stub `scene_point_gain`) to a
+/// shaded 3D shader source so its fragment stage can call `psx_dither` /
+/// `dyn_light`. WGSL module-scope declarations are order-independent, so
+/// the leading helpers are valid ahead of the shader's own structs and
+/// entry points. Single-mesh pipelines compile this variant - their
+/// layouts carry no lights group, so the point-light layer is the zero
+/// stub.
 pub(crate) fn compose_psx_shader(base: &str) -> String {
-    format!("{PSX_DITHER_WGSL}\n{base}")
+    format!("{PSX_DITHER_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}")
+}
+
+/// The scene-pipeline twin of [`compose_psx_shader`]: same prelude but
+/// with the REAL per-scene point-light layer ([`SCENE_LIGHTS_REAL_WGSL`] -
+/// lights uniform + shadow-map array at group 2) in place of the stub.
+pub(crate) fn compose_scene_lit_shader(base: &str) -> String {
+    format!("{PSX_DITHER_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}")
 }
 
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
@@ -488,6 +649,14 @@ struct MeshUniforms {
     // view-depth cue ramp is inert (the capture shows no node carries a
     // depth cue during the prologue).
     palette: vec4<f32>,
+    // The draw's model (mesh -> world) matrix as its three affine rows,
+    // staged by the renderer as `view_proj^-1 * mvp` when a scene camera
+    // is registered (identity otherwise). Row form keeps the struct at one
+    // 256-byte dynamic-offset slot. Only the per-scene point-light layer
+    // reads it - it shades and shadow-tests in world space.
+    model_r0: vec4<f32>,
+    model_r1: vec4<f32>,
+    model_r2: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -507,6 +676,9 @@ struct VsOut {
     // correct for both. PSX gouraud interpolation is affine in screen space,
     // same as the UVs, hence `linear` rather than the default perspective.
     @location(4) @interpolate(linear) prim_color: vec3<f32>,
+    // World-space position (`u.model * position`) for the per-scene
+    // point-light layer.
+    @location(5) world_w: vec3<f32>,
 };
 
 // Snap a clip-space x/y to the nearest integer pixel of a viewport sized
@@ -552,6 +724,8 @@ fn vs_main(
     out.cba_tsb = cba_tsb_in;
     out.normal = normal_in;
     out.prim_color = vec3<f32>(f32(color_in.x), f32(color_in.y), f32(color_in.z));
+    let p4 = vec4<f32>(position, 1.0);
+    out.world_w = vec3<f32>(dot(u.model_r0, p4), dot(u.model_r1, p4), dot(u.model_r2, p4));
     return out;
 }
 
@@ -670,8 +844,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
+        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
     );
     // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
     // the GPU multiplies the texel by the result - so the far term reaches the
@@ -736,8 +911,9 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
     }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
+        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
     );
     // Same grade-then-cue order as the opaque pass (see fs_main): the far
     // term is the texel-modulated far colour, un-tinted.
@@ -808,6 +984,12 @@ struct MeshUniforms {
     // view-depth cue ramp is inert (the capture shows no node carries a
     // depth cue during the prologue).
     palette: vec4<f32>,
+    // The draw's model (mesh -> world) matrix as its three affine rows
+    // (see the VRAM-mesh shader). Only the per-scene point-light layer
+    // reads it.
+    model_r0: vec4<f32>,
+    model_r1: vec4<f32>,
+    model_r2: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -816,6 +998,9 @@ struct VsOut {
     @location(0) world_pos: vec3<f32>,
     @location(1) color: vec4<f32>,
     @location(2) @interpolate(flat) blend: u32,
+    // World-space position (`u.model * position`) for the per-scene
+    // point-light layer.
+    @location(3) world_w: vec3<f32>,
 };
 
 @vertex
@@ -829,6 +1014,8 @@ fn vs_main(
     out.world_pos = position;
     out.color = color;
     out.blend = blend;
+    let p4 = vec4<f32>(position, 1.0);
+    out.world_w = vec3<f32>(dot(u.model_r0, p4), dot(u.model_r1, p4), dot(u.model_r2, p4));
     return out;
 }
 
@@ -861,9 +1048,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         base = u.grade.rgb * m;
     }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);
     let enhanced = dyn_light(
         base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
-        u.light_dir, u.light_color,
+        u.light_dir, u.light_color, pg,
     );
     // An untextured prim is filled with the packet colour, so its DPCS far
     // term is the far colour itself (no texel multiply). Grade-then-cue,
@@ -903,9 +1091,10 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
         base = u.grade.rgb * m;
     }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);
     let enhanced = dyn_light(
         base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
-        u.light_dir, u.light_color,
+        u.light_dir, u.light_color, pg,
     );
     // Grade-then-cue, matching the opaque colour pass (far colour direct -
     // an untextured prim has no texel multiply).

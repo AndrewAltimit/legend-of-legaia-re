@@ -774,6 +774,7 @@ different default:
 | `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
+| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light + shadow sub-layer of dynamic lighting |
 
 Two things routinely get mis-stated about this table, so they are worth saying
 plainly:
@@ -849,10 +850,54 @@ parity oracles are unaffected.
 Enabled, the VRAM / colour mesh shaders layer a soft warm directional light (off
 the smoothed per-vertex normals, with a screen-space-derivative fallback for the
 normal-less colour-mesh prims) plus a screen-centred light pool over the baked
-colours, with the gain capped at ~1.3x. This is explicitly a non-retail
-enhancement - retail's field path has no light source. See
-`crates/engine-render/src/dyn_light.rs` and the `DYN_*` tunables in
-`renderer/state.rs`.
+colours, with the global gain capped at ~1.3x (and ~1.9x once the point-light
+layer below adds on top). This is explicitly a non-retail enhancement - retail's
+field path has no light source. See `crates/engine-render/src/dyn_light.rs` and
+the `DYN_*` tunables in `renderer/state.rs`.
+
+### Per-scene point lights + shadows (sub-toggle)
+
+`Renderer::set_dyn_shadows` (default on; `--no-dyn-shadows` / the `Y` key in
+`play-window`) gates the enhancement's second layer: real point lights at the
+scene's own light-emitting props, each with a shadow map. It only acts while
+dynamic lighting is on and the host has staged lights, so the faithful path
+pays one uniform read and nothing else.
+
+**Light derivation** (`crates/engine-render/src/scene_lights.rs`). What the
+player reads as candles and wall lights in retail interiors is emissive-looking
+geometry - small additive-blended (ABE, ABR mode 1) flame prims and
+bright-modulated lamp meshes. The derivation reads that authoring signal back
+out of the mesh data: a triangle is an emitter sample when it is an additive
+semi prim, or an ABE prim whose baked colour is bright and warm
+(`EMIT_MIN_BRIGHT`, red >= blue - excludes blue water/glass); triangles above
+`EMIT_MAX_TRI_AREA` are rejected as sheets. Every *placement instance* of an
+emitting mesh contributes its samples in world space; greedy clustering
+(`CLUSTER_MERGE_DIST`, wide clusters dropped at `CLUSTER_MAX_EXTENT`) yields at
+most `MAX_SCENE_LIGHTS` (8) lights, position/colour/radius weighted by
+`sqrt(area) * luminance`. The play-window derives lights from the field
+placement + terrain layers at scene load (`upload_assets`) and stages them per
+frame with the camera (`Renderer::set_scene_lights`) so the shaders can recover
+world space from each draw's MVP (`model = view_proj^-1 * mvp`, carried in
+`MeshUniforms.model`).
+
+**Shadows.** Per light, a depth-only pass renders the scene's draws into one
+layer of an 8-layer `Depth32Float` array (512x512 per light) from a downward
+cone (`scene_lights::light_view_proj` - fov ~120 deg, near plane clipping out
+the emitting flame quad itself so it never occludes its own light). The scene
+fragment shaders (`scene_point_gain` in the group-2-bound scene shader
+variants) apply distance attenuation `(1 - (d/r)^2)^2`, the same
+mixed-winding `|N.L|` term as the global light, and a 3x3 PCF comparison
+(`textureSampleCompareLevel`) for soft shadow edges; fragments outside a
+light's cone shade unshadowed. Known approximations, on purpose: casters
+render opaque in the shadow pass (cutout texels shadow as solid), and the
+downward cone is a spot approximation of a point source - geometry above the
+light attenuates but is never shadowed.
+
+The single-mesh (non-scene) pipelines compile a zero-stub `scene_point_gain`,
+so only the scene pipelines carry the lights bind group; both shader variants
+are naga-validated by the engine-render test suite, and
+`scene_lights::point_gain` / `point_attenuation` are the CPU mirror of the
+analytic part, asserted in lockstep with the WGSL.
 
 **The viewer-only exception, so nobody re-derives the wrong conclusion.** There
 *is* a fixed directional light with a `max(dot(n, l), 0.0)` diffuse term in the

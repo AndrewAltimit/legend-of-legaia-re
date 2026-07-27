@@ -105,6 +105,7 @@ pub(crate) fn cmd_play_window(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     dynamic_lighting: bool,
+    dyn_shadows: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -131,6 +132,7 @@ pub(crate) fn cmd_play_window(
         screenshot,
         seed_party,
         dynamic_lighting,
+        dyn_shadows,
         None,
     )
 }
@@ -258,6 +260,7 @@ pub(super) fn cmd_play_window_with_record(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     dynamic_lighting: bool,
+    dyn_shadows: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -850,6 +853,8 @@ pub(super) fn cmd_play_window_with_record(
         seru_names: None,
         battle_camera: None,
         dynamic_lighting,
+        dyn_shadows,
+        scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         cursor_x: 0.0,
     };

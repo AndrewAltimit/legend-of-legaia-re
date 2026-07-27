@@ -183,6 +183,38 @@ pub struct Renderer {
     /// per-vertex normals) + a screen-space light pool over the baked
     /// colours, capped at ~1.3x. Set with [`Renderer::set_dynamic_lighting`].
     pub(super) dyn_lighting: std::cell::Cell<bool>,
+    /// Shadow sub-toggle of the dynamic-lighting enhancement: when `true`
+    /// (the default) AND [`Self::dyn_lighting`] is on AND the host staged
+    /// scene lights ([`Self::set_scene_lights`]), the derived per-scene
+    /// point lights shade with per-light PCF shadow maps. `false` drops
+    /// the whole point-light layer (lights + shadows), leaving the global
+    /// gain only. Irrelevant while dynamic lighting is off.
+    pub(super) dyn_shadows: std::cell::Cell<bool>,
+    /// Derived per-scene point lights (world space), staged by the host
+    /// via [`Self::set_scene_lights`]. Cleared on scene change.
+    pub(super) scene_lights: std::cell::RefCell<Vec<crate::scene_lights::ScenePointLight>>,
+    /// The scene camera's view-projection registered with the lights -
+    /// inverted per frame to recover each draw's model matrix from its MVP
+    /// (`model = view_proj^-1 * mvp`).
+    pub(super) scene_view_proj: std::cell::Cell<Option<Mat4>>,
+    /// Per-frame scene-lights uniform buffer (one [`SceneLightsUniform`]).
+    pub(super) scene_lights_buf: wgpu::Buffer,
+    /// Group-2 bind group of the scene pipelines: lights uniform + shadow
+    /// depth array + comparison sampler.
+    pub(super) scene_lights_bg: wgpu::BindGroup,
+    /// Per-layer render-target views of the shadow-map depth array (one
+    /// layer per possible light).
+    pub(super) shadow_layer_views: Vec<wgpu::TextureView>,
+    /// Depth-only shadow pipelines: VRAM-mesh vertex layout and colour-mesh
+    /// vertex layout (position attribute only).
+    pub(super) shadow_vram_pipeline: wgpu::RenderPipeline,
+    pub(super) shadow_color_pipeline: wgpu::RenderPipeline,
+    /// Dynamic-offset uniform buffer for the shadow passes: one
+    /// [`ShadowUniforms`] slot per (light, draw), grown on demand.
+    pub(super) shadow_uniforms_bgl: wgpu::BindGroupLayout,
+    pub(super) shadow_uniforms_buf: std::cell::RefCell<wgpu::Buffer>,
+    pub(super) shadow_uniforms_bg: std::cell::RefCell<wgpu::BindGroup>,
+    pub(super) shadow_uniforms_capacity: std::cell::Cell<usize>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -263,6 +295,58 @@ impl Renderer {
     /// Read the current dynamic-lighting flag.
     pub fn dynamic_lighting(&self) -> bool {
         self.dyn_lighting.get()
+    }
+
+    /// Toggle the **shadow-casting point-light sub-layer** of the
+    /// dynamic-lighting enhancement (default on). Effective only while
+    /// [`Self::set_dynamic_lighting`] is on and the host has staged scene
+    /// lights via [`Self::set_scene_lights`]; when any of the three is
+    /// off, the point-light uniform stages a zero count and no shadow
+    /// pass runs, so the faithful path stays pixel-identical and pays
+    /// nothing.
+    pub fn set_dyn_shadows(&self, enable: bool) {
+        self.dyn_shadows.set(enable);
+    }
+
+    /// Read the current shadow sub-toggle.
+    pub fn dyn_shadows(&self) -> bool {
+        self.dyn_shadows.get()
+    }
+
+    /// Stage the derived per-scene point lights (see
+    /// [`crate::scene_lights`]) together with the scene camera's
+    /// view-projection for the current frame. The renderer recovers each
+    /// scene draw's model matrix as `view_proj^-1 * mvp`, renders one
+    /// shadow-map layer per light over the scene's opaque geometry, and
+    /// the scene fragment shaders add the shadowed point-light gain on
+    /// top of the global dynamic light. At most
+    /// [`crate::scene_lights::MAX_SCENE_LIGHTS`] lights are consumed.
+    ///
+    /// Call every frame the lights should apply (the camera moves);
+    /// [`Self::clear_scene_lights`] drops them (scene change / non-field
+    /// modes).
+    pub fn set_scene_lights(
+        &self,
+        lights: &[crate::scene_lights::ScenePointLight],
+        view_proj: Mat4,
+    ) {
+        let mut cur = self.scene_lights.borrow_mut();
+        cur.clear();
+        cur.extend_from_slice(&lights[..lights.len().min(crate::scene_lights::MAX_SCENE_LIGHTS)]);
+        self.scene_view_proj.set(Some(view_proj));
+    }
+
+    /// Drop the staged scene lights (and the registered camera): the
+    /// point-light layer goes inert until the next
+    /// [`Self::set_scene_lights`].
+    pub fn clear_scene_lights(&self) {
+        self.scene_lights.borrow_mut().clear();
+        self.scene_view_proj.set(None);
+    }
+
+    /// Number of currently staged scene lights (for HUD / logs).
+    pub fn scene_light_count(&self) -> usize {
+        self.scene_lights.borrow().len()
     }
 
     /// The `MeshUniforms.light_dir` word for the current frame:

@@ -46,6 +46,8 @@ impl PlayWindowApp {
             lo,
             hi,
             world_map_hf,
+            tmd_vram_emitters,
+            tmd_color_emitters,
         ) = {
             let Some(r) = self.win.renderer.as_ref() else {
                 self.scene_res = Some(res);
@@ -68,6 +70,17 @@ impl PlayWindowApp {
             // parallel to `meshes` / `tmd_src_index` but on the colour pipeline.
             let mut color_meshes: Vec<UploadedColorMesh> = Vec::new();
             let mut color_tmd_src_index: Vec<usize> = Vec::new();
+            // Model-space light-emitter samples per res.tmds slot (candle
+            // flames / wall-light glow prims), split by pipeline half so a
+            // mixed mesh appearing in both draw bridges never double-counts.
+            // Consumed after the placement lists resolve, where every
+            // *instance* of an emitting mesh contributes its own world-space
+            // samples (see `legaia_engine_render::scene_lights`).
+            let mut tmd_vram_emitters: Vec<Vec<legaia_engine_render::scene_lights::EmitterSample>> =
+                vec![Vec::new(); res.tmds.len()];
+            let mut tmd_color_emitters: Vec<
+                Vec<legaia_engine_render::scene_lights::EmitterSample>,
+            > = vec![Vec::new(); res.tmds.len()];
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
@@ -93,6 +106,13 @@ impl PlayWindowApp {
                             }
                         }
                     }
+                    tmd_color_emitters[src_i] =
+                        legaia_engine_render::scene_lights::color_mesh_emitters(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.blend,
+                            &cmesh.indices,
+                        );
                     match r.upload_color_mesh_blended(
                         &cmesh.positions,
                         &cmesh.colors,
@@ -228,6 +248,12 @@ impl PlayWindowApp {
                         color_hist
                     );
                 }
+                tmd_vram_emitters[src_i] = legaia_engine_render::scene_lights::vram_mesh_emitters(
+                    &vmesh.positions,
+                    &vmesh.cba_tsb,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                );
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
@@ -400,6 +426,8 @@ impl PlayWindowApp {
                 lo,
                 hi,
                 world_map_hf,
+                tmd_vram_emitters,
+                tmd_color_emitters,
             )
         };
         // Kingdom slot-4 inspection wireframe (env-gated). Build the
@@ -451,6 +479,36 @@ impl PlayWindowApp {
             field_terrain_draws.len(),
             field_terrain_color_draws.len()
         );
+        // Emitter samples for the scene's point lights (dynamic-lighting
+        // enhancement): every *instance* of an emitter-carrying mesh -
+        // candle flames, wall lights - contributes its world-space samples.
+        // The static placement + terrain layers accumulate here; the MAN
+        // NPC/prop layer (where most interior candle sconces actually live)
+        // adds its own below, and the combined set clusters into at most
+        // `MAX_SCENE_LIGHTS` lights at the end of this function.
+        let mut light_samples: Vec<legaia_engine_render::scene_lights::EmitterSample> = Vec::new();
+        {
+            use legaia_engine_render::scene_lights as sl;
+            for (mesh_idx, model) in field_placement_draws.iter().chain(&field_terrain_draws) {
+                if let Some(&src) = tmd_src_index.get(*mesh_idx)
+                    && let Some(em) = tmd_vram_emitters.get(src)
+                    && !em.is_empty()
+                {
+                    light_samples.extend(sl::transform_samples(em, model));
+                }
+            }
+            for (mesh_idx, model) in field_placement_color_draws
+                .iter()
+                .chain(&field_terrain_color_draws)
+            {
+                if let Some(&src) = color_tmd_src_index.get(*mesh_idx)
+                    && let Some(em) = tmd_color_emitters.get(src)
+                    && !em.is_empty()
+                {
+                    light_samples.extend(sl::transform_samples(em, model));
+                }
+            }
+        }
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
         // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
@@ -988,6 +1046,37 @@ impl PlayWindowApp {
                     self.npc_bundle_special
                         .insert(p.index as u8, p.special_model);
                 }
+                // Light-emitter samples from this prop's meshes at its
+                // spawn transform - the interior candle sconces / wall
+                // lamps are MAN scene-actor props, not `.MAP` placements,
+                // so this layer is where most of them surface. Hide-box
+                // parked conditional spawns don't emit (they aren't drawn).
+                {
+                    use legaia_engine_render::scene_lights as sl;
+                    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+                    if p.world_x != hide || p.world_z != hide {
+                        let y = world.sample_field_floor_height(p.world_x as i32, p.world_z as i32);
+                        let model = Mat4::from_translation(Vec3::new(
+                            p.world_x as f32,
+                            y as f32,
+                            p.world_z as f32,
+                        ));
+                        let em = sl::vram_mesh_emitters(
+                            &vmesh.positions,
+                            &vmesh.cba_tsb,
+                            &vmesh.colors,
+                            &vmesh.indices,
+                        );
+                        light_samples.extend(sl::transform_samples(&em, &model));
+                        let em = sl::color_mesh_emitters(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.blend,
+                            &cmesh.indices,
+                        );
+                        light_samples.extend(sl::transform_samples(&em, &model));
+                    }
+                }
                 self.field_npc_draws.push(FieldNpcDraw {
                     slot: p.index as u8,
                     mesh_idx,
@@ -1004,6 +1093,44 @@ impl PlayWindowApp {
                     self.field_npc_draws.len(),
                     placements.len()
                 );
+            }
+        }
+        // Cluster the accumulated emitter samples (static layers + MAN
+        // props) into the scene's point lights. Consumed per frame by the
+        // redraw staging; inert unless dynamic lighting + shadows are on.
+        {
+            use legaia_engine_render::scene_lights as sl;
+            self.scene_point_lights = sl::cluster_all_scene_lights(&light_samples);
+            if !self.scene_point_lights.is_empty() {
+                let w = &*world;
+                let ppos = w.player_actor_slot.and_then(|s| {
+                    w.actors.get(s as usize).map(|a| {
+                        (
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        )
+                    })
+                });
+                log::info!(
+                    "play-window: {} derived scene light(s) from {} emitter sample(s) \
+                     (nearest 8 to the player shade per frame; player at {ppos:?})",
+                    self.scene_point_lights.len(),
+                    light_samples.len()
+                );
+                for (i, l) in self.scene_point_lights.iter().take(12).enumerate() {
+                    log::info!(
+                        "  light {i}: pos ({:.0}, {:.0}, {:.0}) radius {:.0} colour \
+                         ({:.2}, {:.2}, {:.2})",
+                        l.pos[0],
+                        l.pos[1],
+                        l.pos[2],
+                        l.radius,
+                        l.color[0],
+                        l.color[1],
+                        l.color[2]
+                    );
+                }
             }
         }
         // Initial floor snap: locomotion only re-samples the floor height on a
