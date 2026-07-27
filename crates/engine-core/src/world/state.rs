@@ -216,6 +216,13 @@ pub struct World {
     /// path stays bit-identical to the retail-faithful quantised remap
     /// (replays / oracles are unaffected unless a host opts in).
     pub precise_movement: bool,
+    /// Scene-entry VDF pulse **enhancement** gate
+    /// ([`World::install_entry_vdf_pulse`]). On by default; clearing it
+    /// keeps every never-retail-armed morph pack (jou's flesh ground)
+    /// static at plain entry, exactly as retail draws it. Retail-armed
+    /// scenes are unaffected either way - the installer stands aside for
+    /// them regardless.
+    pub entry_pulse_enabled: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
@@ -2279,6 +2286,7 @@ impl World {
             walk_regen_window: 0,
             field_camera_azimuth: 0,
             precise_movement: false,
+            entry_pulse_enabled: true,
             precise_move_carry: (0.0, 0.0),
             party_actor_slots: Vec::new(),
             pending_fade: None,

@@ -29,6 +29,7 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | `Renderer::set_dynamic_lighting` (`--dynamic-lighting`, `I` in `play-window`) | off | Soft warm directional light + screen-centred light pool over the baked shading. |
 | `Renderer::set_dyn_shadows` (`--no-dyn-shadows` disables, `Y` in `play-window`) | on | Sub-toggle of dynamic lighting: per-scene candle / wall-light point lights with PCF shadow maps ([renderer](renderer.md#per-scene-point-lights--shadows-sub-toggle)). Inert while dynamic lighting is off. |
 | `World::precise_movement` (`R`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
+| `World::entry_pulse_enabled` (`--no-entry-pulse` disables) | on | Scene-entry VDF pulse: a rolling vertex-morph envelope over packs retail never arms at entry (jou's flesh ground; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`) | off | Strict-PS1 rasterisation artefacts - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
 | `CameraDistance` (`T`) / debug orbit camera (`C`) | `Far` / off | Framing only; never feeds the simulation. |

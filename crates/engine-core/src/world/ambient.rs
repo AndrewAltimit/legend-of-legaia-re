@@ -355,6 +355,9 @@ impl World {
     /// where retail's own entry ambience has no morph carrier (jou).
     pub fn install_entry_vdf_pulse(&mut self, pack_objects: &[Vec<usize>]) -> bool {
         self.entry_vdf_pulse = None;
+        if !self.entry_pulse_enabled {
+            return false;
+        }
         if !self.ambient_morph_parts().is_empty() {
             return false;
         }

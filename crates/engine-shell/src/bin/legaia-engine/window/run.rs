@@ -106,6 +106,7 @@ pub(crate) fn cmd_play_window(
     seed_party: bool,
     dynamic_lighting: bool,
     dyn_shadows: bool,
+    entry_pulse: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -133,6 +134,7 @@ pub(crate) fn cmd_play_window(
         seed_party,
         dynamic_lighting,
         dyn_shadows,
+        entry_pulse,
         None,
     )
 }
@@ -261,6 +263,7 @@ pub(super) fn cmd_play_window_with_record(
     seed_party: bool,
     dynamic_lighting: bool,
     dyn_shadows: bool,
+    entry_pulse: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -308,6 +311,9 @@ pub(super) fn cmd_play_window_with_record(
     }
 
     let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    // Scene-entry VDF pulse (enhancement) gate - must land before the first
+    // `enter_field_scene`, which is where the installer runs.
+    session.host.world.entry_pulse_enabled = entry_pulse;
     // Drive field dialogue through the inline-script field-VM runner so branch
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.

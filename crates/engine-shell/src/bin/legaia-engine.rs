@@ -296,6 +296,7 @@ fn main() -> Result<()> {
             seed_party,
             dynamic_lighting,
             no_dyn_shadows,
+            no_entry_pulse,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -329,6 +330,7 @@ fn main() -> Result<()> {
             seed_party,
             dynamic_lighting,
             !no_dyn_shadows,
+            !no_entry_pulse,
         ),
         Cmd::Save {
             extracted_root,
