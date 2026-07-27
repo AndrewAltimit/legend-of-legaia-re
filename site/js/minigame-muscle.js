@@ -1189,15 +1189,24 @@ window.MgMuscle = (function () {
         const x = 208, y = 172, p = hudMeta.pieces;
         blit(0, p.ap_label.pal, ...p.ap_label.r, x, y);
         blit(0, p.ap_trough.pal, ...p.ap_trough.r, x + 24, y);
-        blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
-        blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
         const frac = pool ? Math.max(0, Math.min(1, budget / pool)) : 0;
+        if (budget >= pool) {
+          /* Full gauge: the captured end piece (its numeral is baked). */
+          blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
+        } else {
+          /* Partial: continue the trough under small digits (the partial
+           * numeral styling is approximated; retail redraws it during
+           * direction entry, which the capture didn't pin). */
+          blit(0, p.ap_trough.pal, p.ap_trough.r[0] + 16, p.ap_trough.r[1],
+            16, 16, x + 80, y);
+          const num = String(budget);
+          hudDigits(num, x + 95 - num.length * 8, y + 2);
+        }
+        blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
         if (frac > 0) {
           blit(0, p.gauge_fill.pal, p.gauge_fill.r[0], p.gauge_fill.r[1],
             p.gauge_fill.r[2], p.gauge_fill.r[3], x + 28, y + 5, 48 * frac, 6);
         }
-        const num = String(budget);
-        hudDigits(num, x + 96 - num.length * 8 + 6, y + 3);
         return;
       }
       plate(190, 188, 112, 12, 'blue', true);
@@ -1242,15 +1251,16 @@ window.MgMuscle = (function () {
       text(mp + '/' + mp, 230, 222, 8, '#f2f4fa');
     }
 
-    /* Defender name chip (retail shows it during playback at the element
-     * table's arrived endpoint (200, 162); enemy HP is never drawn). */
+    /* Defender name chip (playback): right-aligned blue chip. Capture (the
+     * HYPER ARTS!! moment): body ends at x=304, plate at y=188 with the
+     * status plate hidden; outside the banner it sits one row above the
+     * plate (fitted seat between two captured states). */
     function drawFoeChip(state) {
       const name = state.names[1] || '';
       if (!name) return;
       if (hudOk()) {
-        const e = hudMeta.elements[0x29];
-        rChip(name, e ? e.b[0] : 200, (e ? e.b[1] : 162) - 6, 'blue',
-          e ? e.w : undefined);
+        const y = artsBanner ? 188 : 168;
+        rChip(name, 304 - hudTextW(name), y, 'blue');
         return;
       }
       const w = Math.max(44, name.length * 7 + 12);
@@ -1347,9 +1357,9 @@ window.MgMuscle = (function () {
         g.textBaseline = 'middle';
         g.lineWidth = 3;
         g.strokeStyle = '#4a1404';
-        g.strokeText(b.name, HUD_W, 200 * 2);
+        g.strokeText(b.name, HUD_W, 132 * 2);
         g.fillStyle = '#ffe9a8';
-        g.fillText(b.name, HUD_W, 200 * 2);
+        g.fillText(b.name, HUD_W, 132 * 2);
       }
       g.restore();
       b.t++;
@@ -1419,12 +1429,12 @@ window.MgMuscle = (function () {
         const num = round[1];
         const total = 144 + 10 + num.length * 24;
         const x0 = (320 - total) / 2;
-        hubSprite(0, x0, 92);
+        hubSprite(0, x0, 56);
         const d1 = hudMeta.hub[1];
         for (let i = 0; i < num.length; i++) {
           const dgt = num.charCodeAt(i) - 48;
           blit(d1.sheet, d1.pal, dgt * 24, d1.uv[1], 24, 32,
-            x0 + 154 + i * 24, 92);
+            x0 + 154 + i * 24, 56);
         }
       } else {
         const col = banner.cls === 'good' ? '#2dcca7'
@@ -1554,8 +1564,9 @@ window.MgMuscle = (function () {
       } else if (mode === 'playback') {
         drawAttackerChip(state.names[tally ? tally.attacker : 0] || state.names[0]);
         drawFoeChip(state);
-        drawApPlate(state);
-        drawStatusPlate(state);
+        /* Retail hides the AP plate during playback and the status plate
+         * while the arts banner is up (both captured states). */
+        if (!artsBanner) drawStatusPlate(state);
         drawTally();
         drawArtsBanner();
       } else if (mode === 'interval') {
