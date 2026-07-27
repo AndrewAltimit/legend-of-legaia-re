@@ -33,11 +33,15 @@
  *
  * Traced vs fitted, stated plainly: the deal, budget gate, action queue,
  * score readout, damage rolls, spirit accrual, the arena backdrop + ground
- * grid texture address, the time-meter ramp and the cue id set are the
- * disc's own tables + traced constants; the CAMERA, fighter spacing/facing,
- * the HUD text layout and the per-event cue assignment are fitted, and the
- * panel's note says so. The card->animation pairing is an approximation
- * over the battle-form bank's attack records.
+ * grid texture address, the arena's additive (ABE) dust/lamp prims, the
+ * time-meter ramp, the idle-phase camera spin rate and the cue id set are
+ * the disc's own tables + traced constants; the "AP" bar label, the
+ * "INTERVAL" heading, the "ROUND n" banner and the play-out "TOTAL"
+ * numerals are the retail match HUD's own text (capture-verified). The
+ * base CAMERA seat, fighter spacing/facing, the rest of the HUD layout
+ * and the per-event cue assignment are fitted, and the panel's note says
+ * so. The card->animation pairing is an approximation over the
+ * battle-form bank's attack records.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  */
@@ -96,6 +100,7 @@ window.MgMuscle = (function () {
     let lastOpts = null;       /* {char, level, monster} for restart */
     let roster = null;         /* muscle_roster_json rows */
     let meter = 0;             /* round time meter 0..0xC (FUN_801d3444) */
+    let tally = null;          /* {attacker, total} - playback damage tally */
 
     /* ------------------------------------------------ roster + spell names */
 
@@ -338,6 +343,13 @@ window.MgMuscle = (function () {
       }
 
       const renderer = new window.TmdRenderer(glCanvas);
+      /* Two-pass PSX semi-transparency: the arena shell carries ABE prims
+       * (ABR mode 1, additive) - the wall-base dust decal and the lamp
+       * glows. The legacy single pass draws them OPAQUE, which reads as a
+       * solid dark "mist" band ringing the arena; retail blends them
+       * additively (faint) over the fence and wall. Same defect shape the
+       * dance hall's smoke columns had - see webgl-tmd.js semiTwoPass. */
+      renderer.semiTwoPass = true;
       renderer.uploadVram(api.muscle_vram(monsterId));
       renderer.uploadMesh(pos, uvs, ct, new Uint32Array(idx), flat);
 
@@ -384,6 +396,7 @@ window.MgMuscle = (function () {
     function attachOrbit(s) {
       const c = glCanvas;
       let drag = false, lx = 0, ly = 0;
+      s.dragging = () => drag;
       c.addEventListener('pointerdown', (e) => {
         drag = true; lx = e.clientX; ly = e.clientY;
         c.setPointerCapture(e.pointerId);
@@ -576,6 +589,7 @@ window.MgMuscle = (function () {
         playQueue = JSON.parse(api.muscle_round_log_json());
         playT = 0;
         banner = null;
+        tally = null;
         mode = 'playback';
       } else if (mode === 'playback') {
         /* Skip: settle every pending event instantly. */
@@ -610,6 +624,14 @@ window.MgMuscle = (function () {
         }
       }
       hpShow[defender] = ev.hp[defender];
+      /* The running damage tally of the current attacker's sequence -
+       * retail draws it as yellow numerals ("TOTAL n") in the lower-right
+       * while the queued cards play out; it resets when the other fighter
+       * takes over. */
+      if (!tally || tally.attacker !== ev.attacker) {
+        tally = { attacker: ev.attacker, total: 0 };
+      }
+      tally.total += ev.damage;
       if (!instant) {
         const x = defender === 0 ? 88 : 232;
         popups.push({
@@ -709,7 +731,9 @@ window.MgMuscle = (function () {
     function drawSelectHud(state) {
       const budget = state.budget[0];
       const pool = state.stats ? state.stats[0].budget_pool : budget;
-      text('BUDGET', 8, 206, 7, '#aeb6c4');
+      /* Retail labels the round point bar "AP" (the yellow gauge in the
+       * live match HUD; the pool is the actor +0x154 AP/spirit seed). */
+      text('AP', 8, 206, 7, '#ffd166');
       bar(48, 203, 120, 6, pool ? budget / pool : 0, '#ffd166');
       text(budget + ' / ' + pool, 172, 206, 7, '#e8ecf2');
       /* Committed queue pips (the actor +0x1df action queue). */
@@ -725,7 +749,10 @@ window.MgMuscle = (function () {
       g.fillRect(30 * 2, 52 * 2, 260 * 2, 136 * 2);
       g.strokeStyle = 'rgba(255,255,255,0.25)';
       g.strokeRect(30 * 2 + 0.5, 52 * 2 + 0.5, 260 * 2, 136 * 2);
-      text('ROUND ' + (state.round + 1) + ' SETTLED', 160, 66, 10, '#ffd166', 'center');
+      /* "INTERVAL" is retail's own between-round heading (its glyph texture
+       * sits in the muscle-state VRAM alongside the ROUND digits). */
+      text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
+      text('round ' + (state.round + 1) + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
       /* The retail score readout: hp * 0x6c / max (FUN_801d0748 phase 0x6e),
        * rendered per fighter out of 108. */
       text('score  ' + state.names[0] + ' ' + state.score[0] + '/108' +
@@ -758,6 +785,13 @@ window.MgMuscle = (function () {
       if (banner.sub) text(banner.sub, 160, 126, 7, '#e8ecf2', 'center', '');
       g.restore();
       banner.t++;
+    }
+
+    /* The retail play-out damage tally: yellow numerals lower-right while
+     * the committed cards resolve ("TOTAL n" in the live match HUD). */
+    function drawTally() {
+      if (!tally || !tally.total) return;
+      text('TOTAL ' + tally.total, 296, 186, 9, '#ffd166', 'right');
     }
 
     function drawPopups() {
@@ -818,6 +852,15 @@ window.MgMuscle = (function () {
         hpShow[1] += (state.hp[1] - hpShow[1]) * 0.3;
       }
 
+      /* The rotating dome camera: retail's idle/terminal phases tick a spin
+       * azimuth global +2/frame (FUN_801d0748, phases 0x1e/0x32/0x6e/0xfe -
+       * 2 PSX angle units = 2*2pi/4096 rad). Mirrored during the idle
+       * presentation modes; a user drag pauses it. */
+      if (scene && (mode === 'interval' || mode === 'decided') &&
+          !(scene.dragging && scene.dragging())) {
+        scene.cam.yaw += 2 * A2R;
+      }
+
       /* 3D under, HUD over. */
       if (scene) {
         renderScene();
@@ -837,6 +880,7 @@ window.MgMuscle = (function () {
       drawFighterPlates(state);
       if (meter > 0) drawTimeMeter();
       if (mode === 'select') drawSelectHud(state);
+      if (mode === 'playback') drawTally();
       if (mode === 'interval') drawInterval(state);
       drawPopups();
       drawBanner();
