@@ -24,13 +24,14 @@
 //! assert something false about that item and it cannot be narrowed in place.
 //! Each genuinely inert item therefore carries its own `NOT WIRED:` line.
 //!
-//! The recurring blocker those lines name is one thing: `crate::fishing`
-//! models the minigame as *rules* (cast power, reel tug-of-war, catch scoring)
-//! with no actors, no camera and no ordering table, whereas the actor-side
-//! kernels drive the retail overlay's per-frame actor structs
-//! (`+0x14/+0x16/+0x18` position, `+0x22` phase, `+0x26` facing) and the scene
-//! camera globals. What closes them is a fishing *scene* host, an actor pool
-//! plus the venue geometry, the same prerequisite the venue mesh work carries.
+//! `crate::fishing` models the minigame as *rules* (cast power, reel
+//! tug-of-war, catch scoring); the actor-side kernels drive the retail
+//! overlay's per-frame actor structs (`+0x14/+0x16/+0x18` position, `+0x22`
+//! phase, `+0x26` facing) and the scene camera globals. [`FishWander`] and
+//! [`LineActorSim`] carry those actors as advancing objects, hosted by the
+//! play window's fishing frame (`window/minigames.rs`); the items still
+//! inert (the line-draw pair, the walk-grid probes) name their own remaining
+//! blocker in place.
 
 use crate::dev_menu::{PACK_LEFT, PACK_RIGHT};
 
@@ -185,11 +186,10 @@ pub struct WanderTarget {
 /// pick. `rolls` must supply them in that order.
 ///
 /// PORT: FUN_801d2278 (re-target roll)
-// NOT WIRED: this re-targets a *free-swimming fish actor* between dwells, and
-// the engine has no such actor. `crate::fishing::PondSession` picks a species
-// from the locked cast power and never gives it a position, so there is nothing
-// holding the `(x, z)` this rolls a new target around. Needs the fishing scene
-// host's actor pool, per the module docs.
+// Wired: [`FishWander::tick`] re-rolls through this on dwell expiry, and the
+// play window hosts a wander actor while the cast is idle
+// (`window/minigames.rs`), spawning the rolled `ripple_variant`'s ripple into
+// its effect pool.
 pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> WanderTarget {
     let _rotation = rolls() & 0xFFF;
     let dwell = (rolls() as i32) % RETARGET_SPAN + RETARGET_MIN;
@@ -212,11 +212,9 @@ pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> Wa
 /// pad moved, so an out-of-range facing is pulled in on the first frame.
 ///
 /// PORT: FUN_801d2278 (facing arm)
-// NOT WIRED: the state it steps is the fish actor's `+0x26` facing word, which
-// no engine struct owns (see `roll_wander_target` above). It also wants the raw
-// packed held mask `_DAT_8007B850`; the engine's fishing input is the
-// abstracted `ReelInput` / `edge_bonus` pair, so even the argument would have
-// to be re-plumbed from the pad layer.
+// Wired: [`FishWander`] owns the `+0x26` facing word and steps it here each
+// idle/cast frame; the play window feeds it the packed held mask built from
+// its own pad state (`window/minigames.rs`).
 pub fn step_facing(facing: i16, pad_held: u16) -> i16 {
     let mut f = facing;
     if pad_held & PACK_LEFT != 0 {
@@ -243,17 +241,79 @@ pub struct FishCamera {
 /// Publish the camera for a fish at `(x, y, z)` facing `facing`.
 ///
 /// PORT: FUN_801d2278 (camera publish)
-// NOT WIRED: it publishes into the retail scene-camera globals
-// (`_DAT_80089118`.. and `_DAT_800840BC`), and the engine's fishing session
-// owns no camera at all - the browser venue drives its own view matrix and the
-// native window has no fishing scene. Wiring means the fishing scene host
-// taking a `CameraController` feed, not a call at this site.
+// Wired: [`FishWander::camera`] publishes this each idle/cast frame, and the
+// play window folds it into the engine camera's retail global trios
+// (`Camera::globals` axes 1 / 4 / 6..8 - the same `_DAT_8007B792` /
+// `_DAT_800840BC` / `_DAT_80089118..20` words retail writes).
 pub fn fish_camera(x: i16, y: i16, z: i16, facing: i16) -> FishCamera {
     let yaw = ((facing as i32).wrapping_add(0x800) & 0xFFF).wrapping_neg() as i16;
     FishCamera {
         yaw,
         translation: (-(x as i32), 0, -(z as i32)),
         pitch_term: 0x400 - 6 * (y as i32),
+    }
+}
+
+/// The free-swimming fish actor as one advancing object: the `+0x14/+0x18`
+/// world pair, the `+0x26` facing word, the dwell counter and the rolled
+/// destination, stepped one call per idle/cast frame through the ported
+/// kernels ([`step_facing`], [`roll_wander_target`], [`fish_camera`]).
+///
+/// The per-frame drift *rate* toward the rolled destination is host glue (the
+/// retail chase constant is not pinned here); the roll, the facing step and
+/// the camera publish are the ported arithmetic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FishWander {
+    /// World position (`+0x14` / `+0x16` / `+0x18`).
+    pub x: i16,
+    pub y: i16,
+    pub z: i16,
+    /// Facing word (`+0x26`).
+    pub facing: i16,
+    /// Frames left on the current dwell.
+    dwell: i32,
+    /// The rolled destination the actor drifts toward.
+    target: (i32, i32),
+}
+
+impl FishWander {
+    /// A fish parked at `(x, y, z)`, facing the middle of the steerable arc,
+    /// due for a re-target on its first tick.
+    pub fn new(x: i16, y: i16, z: i16) -> Self {
+        FishWander {
+            x,
+            y,
+            z,
+            facing: 0x800,
+            dwell: 0,
+            target: (x as i32, z as i32),
+        }
+    }
+
+    /// One idle/cast frame: step + clamp the facing off the held pad, count
+    /// the dwell down, and re-roll the destination when it expires. Returns
+    /// the roll when one happened - its `ripple_variant` picks the ripple
+    /// descriptor the host spawns at the retarget.
+    pub fn tick<F: FnMut() -> u32>(&mut self, pad_held: u16, rand: F) -> Option<WanderTarget> {
+        self.facing = step_facing(self.facing, pad_held);
+        self.dwell -= 1;
+        let mut rolled = None;
+        if self.dwell <= 0 {
+            let t = roll_wander_target(self.x as i32, self.z as i32, rand);
+            self.dwell = t.dwell;
+            self.target = (t.x, t.z);
+            rolled = Some(t);
+        }
+        // Host glue: drift toward the rolled destination a few units a frame.
+        let step = |v: i16, t: i32| -> i16 { v + (t - v as i32).clamp(-4, 4) as i16 };
+        self.x = step(self.x, self.target.0);
+        self.z = step(self.z, self.target.1);
+        rolled
+    }
+
+    /// This frame's camera publish for the actor's live pose.
+    pub fn camera(&self) -> FishCamera {
+        fish_camera(self.x, self.y, self.z, self.facing)
     }
 }
 
@@ -283,10 +343,9 @@ pub const PACK_DEBUG_MODIFIER: u16 = 0x0002;
 /// the division truncates toward zero rather than toward negative infinity.
 ///
 /// PORT: FUN_801d2050 (debug readout)
-// NOT WIRED: the consumer is the fishing overlay's on-screen developer
-// readout, and the engine ships no fishing debug overlay to print a tile index
-// on. The prerequisite is that screen (plus the `_DAT_8007B9B0` print flag
-// `debug_readout_visible` below gates it on), not a call site here.
+// Wired: the play window's fishing HUD prints the wander actor's tile pair
+// through this when the developer readout is up (`window/hud.rs`, gated by
+// `debug_readout_visible` off the dev-menu print flag).
 #[inline]
 pub fn debug_tile(v: i16) -> i32 {
     let v = v as i32;
@@ -301,10 +360,10 @@ pub fn debug_tile(v: i16) -> i32 {
 /// (see [`bite_interval`]).
 ///
 /// PORT: FUN_801d2050 (readout gate)
-// NOT WIRED: same missing developer readout as `debug_tile` above. Note the
-// engine does reach the *other* half of this gate - `bite_interval`'s `debug`
-// arm is on the live path - but it is passed `false` unconditionally, because
-// nothing owns the `_DAT_8007B9B0` print flag this would compute it from.
+// Wired: the play window's fishing HUD computes this from the dev-menu
+// session's presence (the engine's `_DAT_8007B9B0` stand-in) and the held pad
+// modifier, and shows the `debug_tile` readout when it holds
+// (`window/hud.rs`).
 #[inline]
 pub fn debug_readout_visible(print_flag: bool, pad_held: u16) -> bool {
     print_flag && pad_held & PACK_DEBUG_MODIFIER != 0
@@ -481,11 +540,9 @@ impl LinePhase {
     /// Decode the raw sub-state word.
     ///
     /// PORT: FUN_801d4948 (sub-state decode)
-    // NOT WIRED: the word it decodes is `DAT_801D91C8`, the *reeling-line
-    // actor's* sub-state. The engine's fight phase lives on
-    // `crate::fishing::PondSession`'s own phase enum and there is no line actor
-    // to carry a second one; the arms also reference `actor[+0x48]`, which
-    // presupposes the actor pool the module docs name.
+    // Wired: [`LineActorSim`] owns the engine's `DAT_801D91C8` stand-in and
+    // decodes it here every tick; the play window drives the sim across the
+    // hook -> fight -> celebration phases (`window/minigames.rs`).
     pub fn from_raw(v: u32) -> LinePhase {
         match v {
             0 => LinePhase::Arm,
@@ -550,11 +607,10 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
 /// The bursts a catch score unlocks.
 ///
 /// PORT: FUN_801d4948 (celebration gate)
-// NOT WIRED: each burst is a scene-space *effect spawn* - an offset from the
-// catch position plus an SFX cue - and the engine's catch path awards the score
-// without staging anything at a position. Wiring needs the fishing scene host
-// (for the origin) and an effect-spawn sink for the `cue` field; the score
-// threshold arithmetic itself has nothing missing.
+// Wired: [`LineActorSim::tick`]'s celebrate arm resolves the unlocked tiers
+// at the first stage frame, and the play window spawns them into its effect
+// pool (offset from the wander actor's catch position) and fires each `cue`
+// through the SFX scheduler (`window/minigames.rs`).
 pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static CelebrationBurst> {
     CELEBRATION_BURSTS.iter().filter(move |b| score > b.above)
 }
@@ -563,6 +619,83 @@ pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static Celebrati
 /// celebration advances stage: `(fire the bursts, fire the two flashes,
 /// hand the actor back)`.
 pub const CELEBRATION_STAGE_FRAMES: (i16, i16, i16) = (0x72, 0x87, 0xD2);
+
+/// What one [`LineActorSim::tick`] asks the host to do.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LineActorFrame {
+    /// SFX cue to raise this frame ([`HOOK_CUE`] on the arm phase,
+    /// [`CELEBRATE_CUE`] at the celebration's first stage).
+    pub cue: Option<u8>,
+    /// Celebration bursts unlocked this frame (the first stage's
+    /// [`celebration_bursts`] resolution) - the host spawns each at its
+    /// offset from the catch position and fires its own `cue`.
+    pub bursts: Vec<CelebrationBurst>,
+    /// The celebration ran its `+0x22` timer out - the actor hands back.
+    pub done: bool,
+}
+
+/// The reeling-line actor as one advancing object: the engine's stand-in for
+/// the `DAT_801D91C8` sub-state word plus the celebration's `+0x22` timer,
+/// decoded through [`LinePhase::from_raw`] every tick exactly as the retail
+/// handler switches on the raw word.
+///
+/// A host arms it on the hook, ticks it while the fight runs, calls
+/// [`LineActorSim::land`] with the catch score, and keeps ticking until
+/// [`LineActorFrame::done`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LineActorSim {
+    /// The raw sub-state word (`DAT_801D91C8`).
+    pub raw: u32,
+    /// The celebration timer (`actor + 0x22`).
+    pub timer: i16,
+    /// The landed catch score (`DAT_801D91B8`), set by [`LineActorSim::land`].
+    pub score: i32,
+}
+
+impl LineActorSim {
+    /// A line actor at the arm phase (the hook just set).
+    pub fn hooked() -> Self {
+        LineActorSim::default()
+    }
+
+    /// The catch landed for `score` points: enter the celebration arm.
+    pub fn land(&mut self, score: i32) {
+        self.raw = 4;
+        self.timer = 0;
+        self.score = score;
+    }
+
+    /// One frame of the line actor's handler.
+    pub fn tick(&mut self, frame_step: i16) -> LineActorFrame {
+        let mut out = LineActorFrame::default();
+        match LinePhase::from_raw(self.raw) {
+            LinePhase::Arm => {
+                out.cue = Some(HOOK_CUE);
+                self.raw = 1;
+            }
+            LinePhase::Attach => {
+                // The host copies the hooked fish's position; the sim only
+                // steps the sub-state.
+                self.raw = 2;
+            }
+            LinePhase::Track => {}
+            LinePhase::Celebrate => {
+                let before = self.timer;
+                self.timer = self.timer.saturating_add(frame_step);
+                let crossed = |at: i16| before < at && at <= self.timer;
+                if crossed(CELEBRATION_STAGE_FRAMES.0) {
+                    out.cue = Some(CELEBRATE_CUE);
+                    out.bursts = celebration_bursts(self.score).copied().collect();
+                }
+                if crossed(CELEBRATION_STAGE_FRAMES.2) {
+                    out.done = true;
+                }
+            }
+            LinePhase::Idle(_) => {}
+        }
+        out
+    }
+}
 
 // --- 2-D segment clip (FUN_801D56E4) ---------------------------------------
 
@@ -1045,6 +1178,60 @@ mod tests {
         );
         // A negative normalise result clamps to zero rather than wrapping.
         assert_eq!(tracked_point_separation((0, 0), (100, 100), |_| -1), 0);
+    }
+
+    #[test]
+    fn the_wander_actor_rolls_on_dwell_expiry_and_drifts() {
+        let mut w = FishWander::new(0x400, 0, 0x400);
+        // First tick: the dwell is due, so the roll happens immediately.
+        let draws = [0u32, 50, 0, 6, 1];
+        let mut i = 0;
+        let rolled = w
+            .tick(0, || {
+                let v = draws[i % draws.len()];
+                i += 1;
+                v
+            })
+            .expect("first tick re-rolls");
+        assert_eq!(rolled.ripple_variant, 1);
+        // The dwell now holds; no re-roll, and the actor drifts toward the
+        // target (z gains its 0x400 bias, so it moves +4 a frame).
+        let z0 = w.z;
+        assert!(w.tick(0, || 0).is_none());
+        assert_eq!(w.z, z0 + 4);
+        // The facing steps + clamps off the held packed pad.
+        let f0 = w.facing;
+        w.tick(PACK_RIGHT, || 0);
+        assert_eq!(w.facing, f0 + FACING_STEP);
+    }
+
+    #[test]
+    fn the_line_actor_arms_tracks_and_celebrates() {
+        let mut line = LineActorSim::hooked();
+        // Arm fires the hook cue and steps to Attach.
+        let f = line.tick(1);
+        assert_eq!(f.cue, Some(HOOK_CUE));
+        assert_eq!(line.raw, 1);
+        // Attach copies (host-side) and steps to Track; Track holds.
+        line.tick(1);
+        assert_eq!(line.raw, 2);
+        assert_eq!(line.tick(1), LineActorFrame::default());
+        // Landing enters the celebrate arm; the first stage frame fires the
+        // celebrate cue + every unlocked burst, and the last hands back.
+        line.land(700);
+        let mut fired = None;
+        let mut done = false;
+        for _ in 0..CELEBRATION_STAGE_FRAMES.2 + 2 {
+            let f = line.tick(1);
+            if f.cue.is_some() {
+                assert!(fired.is_none(), "the stage cue fires once");
+                fired = Some(f.bursts.len());
+            }
+            done |= f.done;
+        }
+        // Score 700 clears the 200 + 600 tiers only.
+        assert_eq!(fired, Some(2));
+        assert!(done);
     }
 
     #[test]

@@ -95,11 +95,10 @@ pub const HEIGHT_RAMP_STEP: i16 = 0x20;
 pub const HEIGHT_RAMP_LEN: usize = 16;
 
 // PORT: FUN_801d2a10 (the scratchpad height-ramp install, `0x1F80035C`)
-// NOT WIRED: the ramp is the scratchpad table `DAT_1F80035C` the *retail*
-// solver indexes; the port's [`ground_height`] takes the ramp as a slice so a
-// caller can pass the scene's own table when a scene carries one. Nothing in
-// the engine models the PSX scratchpad, so no host installs it - this is the
-// value the dance overlay installs, kept so a floor host can start from it.
+// Wired: the play window's fishing floor host builds this table at venue
+// entry and passes it to every [`ground_height`] solve (through
+// [`crate::fishing_chrome::float_actor_tick`]) - the host-side stand-in for
+// the scratchpad install.
 /// The 16-entry height ramp `FUN_801D2A10` writes into scratchpad before it
 /// walks the floor rect: `ramp[i] = i * 0x20`.
 ///
@@ -284,11 +283,10 @@ pub struct GroundSample {
 /// non-negative one clears it and re-raises it when the cell lacks
 /// [`CELL_ON_FLOOR`].
 // PORT: FUN_801d6028
-// NOT WIRED: the engine has no scene floor buffer. `engine-core::field_env`
-// assembles a scene's meshes, not the `_DAT_1F8003EC` grid the solver reads,
-// and the port settles actors from mesh geometry instead. Wiring it needs the
-// per-scene floor block decoded into a [`FloorGrid`] at scene load, which is a
-// field-scene concern rather than a minigame one.
+// Wired: the play window builds a [`FloorGrid`] over the venue scene's `.MAP`
+// extended footprint at fishing entry (the same bytes retail installs behind
+// `_DAT_1F8003EC`) and solves the wander actor's ground height through
+// [`crate::fishing_chrome::float_actor_tick`] each frame.
 pub fn ground_height(
     grid: FloorGrid<'_>,
     world_x: i16,

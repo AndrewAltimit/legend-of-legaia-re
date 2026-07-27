@@ -34,10 +34,11 @@ pub struct SwayVector {
     pub z: i16,
 }
 
-// NOT WIRED: the block it writes is the PSX scratchpad render struct at
-// `0x1F800314`, which the clean-room renderer does not model - the engine
-// carries no `0x1F80035C` sway triple for a camera to read. The kernel is
-// pure, so a host can call it once that block has an equivalent.
+// Wired: the play window's fishing sub-screen (the point-exchange list) runs
+// the sway each frame and offsets its panel by the triple's x/y - the host's
+// equivalent of the `0x1F80035C` render-block consumer. The sine table is the
+// host's own synthesized 4096-step table (the shared `*_DAT_8007B81C` table
+// is runtime data the port does not read).
 /// PORT: FUN_801D03B0 - the sub-screen idle sway.
 ///
 /// `sine` is the shared 4096-step table the overlay reads through
@@ -109,9 +110,10 @@ pub struct VenueCameraReset {
 /// Camera distance the venue reset installs (`TR.z`).
 pub const VENUE_CAMERA_TR_Z: i32 = 0x974;
 
-// NOT WIRED: `engine-core::camera` drives the field camera from a scene
-// controller, not from the retail global trios; a fishing host would apply
-// this through that controller instead of writing the globals.
+// Wired: the play window applies this on fishing entry through the engine
+// camera's retail global trios (`Camera::globals` - the same
+// `_DAT_8007B790..94` / `_DAT_800840B8/C0` axes retail writes), leaving
+// axis 4 (`TR.y`) alone exactly as the routine does.
 /// PORT: FUN_801D78C0 - the venue camera reset.
 ///
 /// Zeroes the whole rotation trio and `TR.x`, and parks `TR.z` at
@@ -141,12 +143,9 @@ pub const PANEL_WIDGET_KIND: u8 = 0x44;
 /// Screen-y past which the panel is suppressed entirely.
 pub const PANEL_Y_CUTOFF: i16 = 0xF1;
 
-// NOT WIRED: nothing in the port draws a fishing panel frame at all.
-// `engine-ui::ui_fishing` builds the HUD rows, the two gauge bars and the five
-// banners, and draws no box frames - the retail sub-screens this frames (the
-// rod / lure picker, the prize list) have no port UI. `engine-ui` also cannot
-// depend on `engine-core`, so wiring wants this kernel moved into
-// `ui_fishing` alongside a sub-screen builder that emits it.
+// Wired: the play window's point-exchange sub-screen resolves its panel
+// frame through this each frame and draws it with the system-UI window
+// chrome when the atlas is resident (`window/hud.rs`).
 /// PORT: FUN_801D74B0 - the centred panel frame.
 ///
 /// `(cx, y, w, h)`: stages widget kind [`PANEL_WIDGET_KIND`] and emits the
@@ -196,9 +195,9 @@ pub const SPLASH_SUB_BLOCK_BIT: i32 = 0x1000;
 /// Mask that carries the spread in the low bits of the same argument.
 pub const SPLASH_SPREAD_MASK: i32 = 0xFFF;
 
-// NOT WIRED: the engine has no minigame effect-part pool (the same gap
-// `baka_fighter::EffectSpawnSpec` and `dance::step_mark_effect_spawn`
-// document); this resolves the three spawn specs a host would submit.
+// Wired: the play window's minigame effect pool hosts the burst - the hook
+// edge spawns the three parts at the strike point and the pool ages / draws
+// them (`window/minigame_fx.rs`).
 /// PORT: FUN_801D7A5C - the three-part splash burst.
 ///
 /// `(x, y, sprite_id, packed)` spawns the same part three times at one point
@@ -281,11 +280,11 @@ pub struct FloatActorTick {
     pub flags: u32,
 }
 
-// NOT WIRED: the solver it wraps is ported ([`crate::minigame_floor`]), but
-// its input is not: the engine decodes no per-scene floor buffer, so nothing
-// can build the [`FloorGrid`] this needs. The engine also models the float as
-// `fishing::FishingRun` state rather than as an actor record, so there is no
-// `+0x16` to store into. The remaining blocker is entirely the floor buffer.
+// Wired: the play window builds a [`FloorGrid`] over the venue scene's
+// `.MAP` extended footprint at fishing entry and settles the wander actor's
+// `y` through this each frame (`window/minigames.rs`) - the same
+// `_DAT_1F8003EC` buffer retail's solver reads, sourced from the scene's
+// field-map entry.
 //
 // [`FloorGrid`]: crate::minigame_floor::FloorGrid
 /// PORT: FUN_801D70EC - the fishing float's per-frame actor wrapper.
@@ -332,7 +331,8 @@ pub struct RippleSpawn {
     pub scale: i32,
 }
 
-// NOT WIRED: no minigame effect-part pool exists to spawn into.
+// Wired: the play window spawns the wander actor's retarget ripple through
+// this into its minigame effect pool (`window/minigames.rs`).
 /// PORT: FUN_801D7C30 - the ripple spawn wrapper.
 ///
 /// `(actor, mode)`: a non-zero `mode` does nothing at all. Mode zero spawns
