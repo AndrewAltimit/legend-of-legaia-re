@@ -39,6 +39,11 @@ pub struct FieldScenePack {
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
     pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    /// Cross-draw coplanar lifts (`legaia_engine_core::coplanar_draws`) for
+    /// the combined terrain + placement lists, applied by the position
+    /// exporters so overlapping same-plane tiles resolve deterministically
+    /// instead of z-fighting (mirrors the native play-window).
+    pub coplanar_offsets: std::collections::HashMap<EnvDraw, [f32; 3]>,
     /// Currently-selected env-pack slot + its built mesh + the parallel
     /// per-vertex flat-colour array (see [`build_hybrid_env_mesh`]), cached
     /// so the positions/uvs/cba_tsb/indices accessors don't rebuild per call.
@@ -89,7 +94,13 @@ pub fn build_hybrid_env_mesh(
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     let mesh = rtmd.build_filtered_vram_mesh(vram);
     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`, mirrors the
+    // native play-window): flag double-sided pairs for the shader's facing
+    // discard, nudge distinct coplanar decal layers toward their visible side.
+    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
+    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
+    (mesh, flat)
 }
 
 /// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
@@ -105,7 +116,10 @@ pub fn build_hybrid_env_mesh_posed(
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    merge_hybrid_halves(mesh, &cmesh)
+    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
+    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
+    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
+    (mesh, flat)
 }
 
 /// Merge the untextured vertex-colour half into the textured half's vertex
@@ -235,6 +249,15 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         .flatten()
         .filter(|h| !h.indices.is_empty());
 
+    // Cross-draw coplanar lifts over the combined layers (terrain first,
+    // then placements - the same concatenation the native shell ranks).
+    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    combined.extend_from_slice(&terrain);
+    combined.extend_from_slice(&placements);
+    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&combined, &res);
+    let coplanar_offsets =
+        legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
+
     Ok(FieldScenePack {
         name: name.to_string(),
         res,
@@ -242,6 +265,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         placements,
         terrain,
         ground,
+        coplanar_offsets,
         cur: None,
         anim: None,
     })
@@ -616,9 +640,10 @@ impl LegaiaViewer {
         };
         let mut out = Vec::with_capacity(f.placements.len() * 3);
         for d in &f.placements {
-            out.push(d.world_x as f32);
-            out.push(d.world_y as f32);
-            out.push(d.world_z as f32);
+            let off = f.coplanar_offsets.get(d).copied().unwrap_or([0.0; 3]);
+            out.push(d.world_x as f32 + off[0]);
+            out.push(d.world_y as f32 + off[1]);
+            out.push(d.world_z as f32 + off[2]);
         }
         out
     }
@@ -648,9 +673,10 @@ impl LegaiaViewer {
         };
         let mut out = Vec::with_capacity(f.terrain.len() * 3);
         for d in &f.terrain {
-            out.push(d.world_x as f32);
-            out.push(d.world_y as f32);
-            out.push(d.world_z as f32);
+            let off = f.coplanar_offsets.get(d).copied().unwrap_or([0.0; 3]);
+            out.push(d.world_x as f32 + off[0]);
+            out.push(d.world_y as f32 + off[1]);
+            out.push(d.world_z as f32 + off[2]);
         }
         out
     }

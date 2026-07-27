@@ -420,6 +420,14 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// Cross-draw coplanar-surface offsets for the current scene's resolved
+    /// [`legaia_engine_core::field_env::EnvDraw`] lists (terrain + placed
+    /// layers combined), from `legaia_engine_core::coplanar_draws`. Applied to
+    /// each matching draw's world translation so overlapping same-plane tiles
+    /// resolve to a stable winner instead of z-fighting (retail painter-orders
+    /// them through the ordering table). Rebuilt per scene in `upload_assets`.
+    coplanar_env_offsets:
+        std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]>,
     /// Terrain tiles whose mesh is untextured (`F*`/`G*` vertex-colour prims
     /// only): `(index into `color_meshes`, world model)`, resolved through the
     /// colour-mesh bridge the same way `field_placement_color_draws` is. The

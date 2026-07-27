@@ -767,6 +767,7 @@ pub(super) fn cmd_play_window_with_record(
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_terrain_draws: Vec::new(),
+        coplanar_env_offsets: std::collections::HashMap::new(),
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         ground_heightfield: None,

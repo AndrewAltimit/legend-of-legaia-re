@@ -157,6 +157,22 @@ impl PlayWindowApp {
                         }
                     }
                 }
+                // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`):
+                // flag double-sided prim pairs for the shader's per-prim
+                // facing discard (retail NCLIP keeps only the camera-facing
+                // copy), then nudge distinct coplanar decal layers half a
+                // unit toward their visible side so the depth buffer resolves
+                // them deterministically instead of per-pixel fighting.
+                {
+                    let ds = legaia_tmd::mesh::mark_double_sided_pairs(&mut vmesh);
+                    let nudged = legaia_tmd::mesh::separate_coplanar_prims(&mut vmesh);
+                    if ds + nudged > 0 {
+                        log::debug!(
+                            "play-window: mesh res {src_i}: {ds} double-sided pairs flagged, \
+                             {nudged} coplanar prims nudged"
+                        );
+                    }
+                }
                 if vmesh.indices.is_empty() {
                     if std::env::var_os("LEGAIA_DIAG_PLACE").is_some() {
                         let (_, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
@@ -457,6 +473,11 @@ impl PlayWindowApp {
         // Posed placed props (house doors, cupboards, the windmill): one draw
         // per placement + its live clip state, so each keeps its own cursor.
         // Resolved before the placement lists, which hand these props over.
+        // Cross-draw coplanar offsets: computed over the combined terrain +
+        // placed EnvDraw lists BEFORE the resolvers run, so every resolver
+        // below (textured / colour / posed bridges) finds its draw's offset
+        // by identity lookup and the layers stay mutually consistent.
+        self.coplanar_env_offsets = self.compute_coplanar_env_offsets(&res);
         let posed_props =
             self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
         let field_placement_draws =

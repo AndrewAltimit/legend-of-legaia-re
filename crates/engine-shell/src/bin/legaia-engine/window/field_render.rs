@@ -97,10 +97,18 @@ impl PlayWindowApp {
             let Some(&baked) = posed.get(&(d.res_tmd, d.anim_id)) else {
                 continue; // no baked pose - the unposed fallback draws it
             };
+            // Same coplanar lift as the static placement pass (see
+            // `resolve_placement_draws`), so a posed prop stays consistent
+            // with the tile it rests on.
+            let off = self
+                .coplanar_env_offsets
+                .get(d)
+                .copied()
+                .unwrap_or([0.0; 3]);
             let t = Mat4::from_translation(Vec3::new(
-                d.world_x as f32,
-                d.world_y as f32,
-                d.world_z as f32,
+                d.world_x as f32 + off[0],
+                d.world_y as f32 + off[1],
+                d.world_z as f32 + off[2],
             ));
             let rot = Mat4::from_rotation_y(
                 f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0),
@@ -118,6 +126,76 @@ impl PlayWindowApp {
             bank.props.values().filter(|p| p.program.animates()).count(),
         );
         props
+    }
+
+    /// Rebuild the cross-draw coplanar-offset map for the current scene: the
+    /// combined terrain + placed [`legaia_engine_core::field_env::EnvDraw`]
+    /// lists (field scenes) or the walk landmark + decoration lists (world
+    /// map), run through `legaia_engine_core::coplanar_draws`. Overlapping
+    /// same-plane draws otherwise z-fight - retail painter-orders them
+    /// through the ordering table, the port's depth buffer ties per pixel.
+    ///
+    /// Resolves the layers with the same inputs the draw resolvers use so
+    /// the map's `EnvDraw` keys match theirs by identity.
+    pub(super) fn compute_coplanar_env_offsets(
+        &self,
+        res: &SceneResources,
+    ) -> std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]> {
+        use legaia_engine_core::{coplanar_draws, field_env};
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Default::default();
+        };
+        let index = &self.session.host.index;
+        let env_tmds = field_env::env_pack_tmd_indices(scene, res);
+        if env_tmds.is_empty() {
+            return Default::default();
+        }
+        let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
+        let mut draws: Vec<field_env::EnvDraw> = Vec::new();
+        if legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+            let mut tiles = scene
+                .walk_object_placements(index)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
+                tiles.extend(deco);
+            }
+            let (d, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
+            draws.extend(d);
+        } else {
+            if let Ok(Some(tiles)) = scene.field_terrain_tiles(index) {
+                let tiles: Vec<_> = tiles
+                    .into_iter()
+                    .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                    .collect();
+                let (d, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
+                draws.extend(d);
+            }
+            if let Ok(Some(placements)) = scene.field_object_placements(index) {
+                let binds = scene.field_object_binds(index).ok().flatten();
+                let (d, _) = field_env::resolve_placed_env_draws(
+                    &env_tmds,
+                    &placements,
+                    floor_lut,
+                    binds.as_ref(),
+                );
+                draws.extend(d);
+            }
+        }
+        if draws.is_empty() {
+            return Default::default();
+        }
+        let planes = coplanar_draws::draw_plane_summaries(&draws, res);
+        let offs = coplanar_draws::coplanar_draw_offsets(&draws, &planes);
+        if !offs.is_empty() {
+            log::info!(
+                "play-window: {} coplanar draw lifts (of {} env draws)",
+                offs.len(),
+                draws.len()
+            );
+        }
+        offs
     }
 
     /// Shim kept for the redraw loop: prop clips + touch/interact dispatch
@@ -790,10 +868,20 @@ impl PlayWindowApp {
             // the per-model flip; the FIELD frame draws raw vertices and the
             // camera's FIELD_WORLD_FLIP provides the single net negation
             // (elevation renders retail-correct).
+            //
+            // `coplanar_env_offsets` lifts draws whose surfaces coincide with
+            // a larger/earlier draw's plane (sub-2-unit, toward the visible
+            // side) so overlapping tiles resolve deterministically instead of
+            // z-fighting.
+            let off = self
+                .coplanar_env_offsets
+                .get(d)
+                .copied()
+                .unwrap_or([0.0; 3]);
             let t = Mat4::from_translation(Vec3::new(
-                d.world_x as f32,
-                d.world_y as f32,
-                d.world_z as f32,
+                d.world_x as f32 + off[0],
+                d.world_y as f32 + off[1],
+                d.world_z as f32 + off[2],
             ));
             // Authored yaw from the object record's `+0x0A` (PSX 4096-per-rev;
             // bridge quarter-turns, tree variety). `Mat4::from_rotation_y`
