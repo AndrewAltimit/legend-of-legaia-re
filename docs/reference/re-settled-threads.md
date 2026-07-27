@@ -96,6 +96,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
+| `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
@@ -202,10 +203,11 @@ units/vsync, driven from the staged Move clip's playback, not the SM); in the
 caught parks the drive dies ~12 vsyncs in (anim pair back to `0/0`, frozen
 beyond reach), so the fight waits forever on an attack that can never
 connect. The trigger is reproduced - a summon immediately followed by the
-boss's melee (scenario `battle_gaza2_park_0x19_summon_melee`); which
-anim-driver field the staging round-trip leaves stale is the remaining open
-sub-question (tracked in open-rev-eng-threads.md). The fix below is
-indifferent to it. Full anatomy + fix + engine-port note:
+boss's melee (scenario `battle_gaza2_park_0x19_summon_melee`) - and the
+anim-driver field the staging round-trip leaves stale is pinned: actor
+`+0x1DC` bit 2, the exit-to-idle anim event flag ([details
+↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2)).
+The fix is indifferent to it. Full anatomy + fix + engine-port note:
 [battle-action.md](../subsystems/battle-action.md#the-0x19-attack-approach-park---a-second-distinct-softlock-class).
 
 Sub-answers settled along the way: the wedged-looking `+0x1DD == 8` targets on
@@ -218,6 +220,44 @@ its candidate generators
 `0x19` class explains the community exhibits without any HP desync. Stated
 limit: whether any retail sequence can still produce a `0x51` park is unproven
 either way; nothing observed requires it.
+
+### The summon-then-melee park trigger - the stale field is `+0x1DC` bit 2
+
+*Status:* resolved - the "frame cursor / clip-length latch" hypotheses are both
+wrong; the field the summon staging leaves stale is the battle actor's anim
+event-flag byte `+0x1DC`, bit 2 (mask `0x4`), the **stage-idle-at-clip-end**
+flag.
+
+*Evidence:* `disassembly` (the driver pair `FUN_80047430`/`FUN_8004AD80`
+in `ghidra/scripts/funcs/80047430.txt`/`8004ad80.txt`; the damage primitive's
+flinch staging at `0x80042124..0x80042170` in `800402f4.txt`; the SM's `0x14`
+fallback stores at `0x801E32B0`/`0x801E32D4` in
+`overlay_battle_action_801e295c.txt`) + `capture` (causal control/experiment
+replay on the parked save `battle_gaza2_park_0x19_summon_melee`, probe
+`scripts/pcsx-redux/autorun_gaza2_stale_flag_repro.lua` with write-watchpoints
+on `+0x1DA`/`+0x1D9`/`+0x1DC` logging writer PCs).
+
+The chain: the summon's hit stages Gaza's light flinch with `+0x1DC |= 4|1`
+(exit-to-idle + commit-now, `FUN_800402F4`); the flag is normally consumed at
+the flinch's own natural end. When the boss's melee follows the summon
+immediately, state `0x14`'s walk-less fallback stages the Move clip with
+`|= 1` before that happens, and the tick's **event-path** commit - which
+clears only bits 0-1 (`andi 0xFC`) where the natural-end path clears bits 0-2
+(`andi 0xF8`) - installs the Move clip with bit 2 still set. The Move cycle
+(5 frames, rate 2, speed scale 8 → ~12 vsyncs) then hits its first natural
+end, where the tick sees bit 2 and stages idle over the queued clip
+(`sb zero,0x1da` at `0x80047B44`) instead of re-looping - pair `0/0`, the
+idle entry's per-tick speed is 0, state `0x19` re-polls forever. The live
+replay shows both halves: the control bounce (state → `0x14`, flag clear)
+loops the clip across its natural end (pair stays `1/1`) and arrives ~21
+vsyncs later; re-arming bit 2 first reproduces the kill write from
+`0x80047B44` at exactly the first natural end, 12 vsyncs after engage, with
+the position frozen thereafter. The park save reads `+0x1DC == 0` because the
+killing commit consumed the flag - it is only visible in flight, which is
+why the parked-state reads never caught it. Full mechanism:
+[battle-action.md](../subsystems/battle-action.md#the-stale-field-0x1dc-bit-2-the-exit-to-idle-anim-event-flag);
+driver + flag-byte reference:
+[monster-animation.md](../formats/monster-animation.md#playback).
 
 ### Super / Miracle Arts trigger chain
 

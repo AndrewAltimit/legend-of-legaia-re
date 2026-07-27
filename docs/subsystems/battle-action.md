@@ -710,10 +710,9 @@ vsyncs later** (pair drops to `0/0`, position frozen ~236 units in, still
 beyond reach). Healthy contrast in the same capture: when any other action
 sits between the summon and the melee, the same clip runs 28-67 vsyncs and
 arrives (e.g. 64 vsyncs / 1,260 units). So the drive engages and terminates
-early, and nothing re-stages it - the staging round-trip plausibly leaves an
-anim-driver field (a frame cursor / clip-length latch) stale so the fresh
-Move clip hits its "end" almost immediately. Which field is the remaining
-open sub-question ([open threads](../reference/open-rev-eng-threads.md)).
+early, and nothing re-stages it. The field the staging round-trip leaves
+stale is pinned below - it is not a frame cursor or clip-length latch but
+the actor's anim event-flag byte.
 
 The trigger is **CPU-core-independent in emulation**: the same recipe parks
 under both PCSX-Redux cores (recompiler and interpreter, via `run_probe.sh
@@ -724,6 +723,72 @@ cycle accounting. Emulators whose CD latency model differs substantially
 (e.g. image preload / async readahead) may schedule the summon's streamed
 staging restore differently relative to the melee and rarely or never land
 in the window.
+
+### The stale field: `+0x1DC` bit 2, the exit-to-idle anim event flag
+
+The clip that engages and dies is played by the per-frame anim-node tick
+`FUN_80047430` / commit `FUN_8004AD80` pair (the driver documented in
+[monster-animation.md § Playback](../formats/monster-animation.md#playback)).
+Three of its properties, read from the SCUS disassembly
+(`ghidra/scripts/funcs/80047430.txt`, `8004ad80.txt`), assemble the park:
+
+- **The approach drive is the tick's root-motion term**, not the SM: while a
+  clip plays, `0x80047D20..0x80047E18` adds `facing sin/cos ×
+  entry[+0xC] × frame_dt × actor[+0x21D] >> 0xF` to the actor's position,
+  gated on `+0x1DC & 8` clear and the range poll still failing. Gaza's Move
+  entry has `+0xC = +20` and his speed scale `+0x21D = 8` - the measured
+  ~19-20 units/vsync. The idle entry's `+0xC` is `0`, which is why a
+  clip death freezes him.
+- **A looping clip has no loop counter - it loops by re-committing at every
+  natural end.** When the cursor `node+0x68` passes the stream's frame
+  count, the tick calls the commit, which re-installs the still-queued
+  `+0x1DA` and zeroes the cursor. Gaza's Move stream is 5 frames at rate 2
+  with speed scale 8 → one cycle ≈ 12 vsyncs; the healthy 28-67-vsync
+  approaches are that cycle repeating seamlessly (pair stays `1/1`) until
+  arrival.
+- **The two commit sites treat the event-flag byte `+0x1DC` differently.**
+  The natural-end path first tests bit 2 (`& 0x4`): if set, it **stages
+  idle over whatever is queued** (`sb zero,0x1da` at `0x80047B44`), then
+  clears bits 0-2 (`andi 0xF8`, `0x80047B50`) and commits. The mid-clip
+  event path (bit 0 = commit now, bit 1 = commit at event frame,
+  `0x80047A38`) clears only bits 0-1 (`andi 0xFC`) - **it preserves bit 2**.
+
+Bit 2 is the *exit-to-idle-at-clip-end* flag, and its writer is the damage
+primitive `FUN_800402F4`: a surviving target's light flinch is staged as
+`+0x1DA = +0x1EF`, `+0x1DC |= 4` and `|= 1` (`0x80042124..0x80042170`) -
+exactly what the summon's hit on Gaza does, which is the damage-reaction
+clip `2/2` observed during staging. Normally the flinch's own natural end
+consumes the bit (stage idle, clear, commit - the actor tweens back to
+idle). The park is the race that breaks that round-trip: Gaza's melee
+begins while the flinch is still playing, and state `0x14`'s walk-less
+fallback stages the Move clip (`sb v0,0x1da(s3)` at `0x801E32B0`) with
+`+0x1DC |= 1` (`0x801E32D4`/`0x801E35C4`). Bit 1 routes the Move install
+through the **event-path** commit - the one that preserves bit 2. The Move
+clip therefore engages carrying the stale exit-to-idle flag, and its first
+natural end (~12 vsyncs in) stages idle instead of re-looping: pair `0/0`,
+drive dead, and state `0x19` re-polls forever. Any interposed action gives
+the flinch time to end and consume the bit, which is why only the
+directly-following melee parks.
+
+Causally verified on the parked save (probe
+`scripts/pcsx-redux/autorun_gaza2_stale_flag_repro.lua`, write-watchpoints
+on `+0x1DA`/`+0x1D9`/`+0x1DC` logging writer PCs). Control: bounce the
+state byte to `0x14` - the SM re-stages Move (`0x801E3270` stores the
+`0xFF` tag-`0x20` miss, `0x801E32B0` the fallback index), the event-path
+commit engages it the same vsync, the first natural end 12 vsyncs later
+re-commits with the pair still `1/1` (`0x80047B58` + `0x8004BDE0`), and the
+boss walks in and strikes. Experiment: the identical bounce with
+`+0x1DC |= 4` re-armed first reproduces the park signature - the same
+re-staged clip dies at its first natural end via the `0x80047B44` idle
+write, position frozen beyond reach, state parked in `0x19`. The park save
+itself reads `+0x1DC == 0` because the killing end-path commit consumed the
+bit (`andi 0xF8`); the flag's staleness is only visible in flight.
+
+The shipped fix below is complete against this mechanism: by the time the
+guard sees the dead clip the stale bit has already been consumed by the
+very commit that killed the clip, so the `0x14` re-stage it forces runs
+with bit 2 clear and loops clean - which is what the fix-verify replay
+shows.
 
 Confirmed against the parked save itself (RAM read via `legaia-pcsxr`,
 example `gaza2_walk_tag`): Gaza's seat-3 record holds 12 actions with tags
