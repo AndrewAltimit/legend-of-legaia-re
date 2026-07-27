@@ -31,9 +31,9 @@
     {
       "key": "wiring",
       "label": "Port wiring",
-      "pct": 74.0,
-      "headline": "599 of 809 ported functions reachable",
-      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 210 are implemented but not yet hosted, and each one says so in its source.",
+      "pct": 77.6,
+      "headline": "628 of 809 ported functions reachable",
+      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 181 are implemented but not yet hosted, and each one says so in its source.",
       "denominator": "ported functions",
       "href": "subsystems/engine.html"
     }
