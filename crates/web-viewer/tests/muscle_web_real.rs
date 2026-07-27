@@ -357,3 +357,82 @@ fn muscle_sfx_cues_decode() {
     assert!(hit_l1.is_empty() || hit_l1.len() > 100);
     assert!(mg.muscle_sfx_pcm(0x20, 4).is_empty());
 }
+
+#[test]
+fn muscle_hud_chrome_decodes_from_the_disc() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let hud: serde_json::Value = serde_json::from_str(&mg.muscle_hud_json()).unwrap();
+    assert_eq!(hud["ok"], true, "hud: {hud}");
+
+    // Sheet dimensions: the boot-gap chrome TIMs + the etim banner page +
+    // the dome-hub pages, exactly as the capture pinned them in VRAM.
+    assert_eq!(hud["sheets"]["widget"][0], 256);
+    assert_eq!(hud["sheets"]["widget"][1], 192);
+    assert_eq!(hud["sheets"]["font"][0], 256);
+    assert_eq!(hud["sheets"]["atlas"][1], 256);
+    assert_eq!(hud["sheets"]["banner"][0], 256);
+    assert_eq!(hud["sheets"]["hub0"][0], 256, "hub pages from 1220: {hud}");
+    assert_eq!(hud["sheets"]["hub1"][0], 256);
+
+    // The SCUS element table: capture-verified anchors. Element 8 is the
+    // Item chip gliding to (204, 34); element 9 the Attack chip to
+    // (160, 66); element 7 the 288-wide status plate at (16, 236->194).
+    let elems = hud["elements"].as_array().unwrap();
+    assert_eq!(elems.len(), 80);
+    assert_eq!(elems[8]["b"][0], 204);
+    assert_eq!(elems[8]["b"][1], 34);
+    assert_eq!(elems[9]["b"][0], 160);
+    assert_eq!(elems[9]["b"][1], 66);
+    assert_eq!(elems[7]["w"], 288);
+    assert_eq!(elems[7]["a"][1], 236);
+    assert_eq!(elems[7]["b"][1], 194);
+
+    // The PROT 0977 hub sprite table: record 3 is the 240x18 "Welcome to
+    // the Muscle Dome!" strip on hub page 0; record 16 the 192x32 INTERVAL
+    // heading; record 0 the 144x32 ROUND word.
+    let hub = hud["hub"].as_array().unwrap();
+    assert_eq!(hub.len(), 17);
+    assert_eq!(hub[3]["wh"][0], 240);
+    assert_eq!(hub[3]["wh"][1], 18);
+    assert_eq!(hub[3]["sheet"], 4);
+    assert_eq!(hub[16]["uv"][1], 192);
+    assert_eq!(hub[16]["wh"][0], 192);
+    assert_eq!(hub[0]["wh"][0], 144);
+
+    // Font advances reproduce the captured chip-label pen positions:
+    // "Begin" drew B->e at +7, e->g at +6, g->i at +6, i->n at +4.
+    let adv = hud["advance"].as_array().unwrap();
+    assert_eq!(adv.len(), 96);
+    let a = |c: char| adv[c as usize - 0x20].as_u64().unwrap() as i32;
+    assert_eq!(a('B'), 7);
+    assert_eq!(a('e'), 6);
+    assert_eq!(a('g'), 6);
+    assert_eq!(a('i'), 4);
+
+    // Every sheet the page fetches decodes to RGBA with real opaque
+    // coverage (the chrome art is opaque-on-transparent).
+    for (source, pal, name) in [
+        (0u32, 4u32, "widget/blue"),
+        (0, 12, "widget/gold"),
+        (0, 7, "widget/dpad"),
+        (0, 1, "widget/gauge"),
+        (0, 5, "widget/slash"),
+        (1, 13, "font"),
+        (2, 13, "atlas"),
+        (3, 3, "banner words"),
+        (3, 4, "red X"),
+        (4, 6, "hub0"),
+        (5, 0, "hub1"),
+    ] {
+        let rgba = mg.muscle_hud_sheet_rgba(source, pal);
+        assert!(!rgba.is_empty(), "{name} decodes");
+        let opaque = rgba.chunks_exact(4).filter(|p| p[3] != 0).count();
+        assert!(
+            opaque * 50 > rgba.len() / 4,
+            "{name} has real opaque coverage: {opaque}"
+        );
+    }
+}

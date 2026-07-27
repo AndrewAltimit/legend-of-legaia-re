@@ -27,18 +27,40 @@
 //! `..._801d08ec.txt`, `..._801d1308.txt`; ported from the disassembly, not
 //! the decompiled C.
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
-//! Nothing in the engine hosts the 0977 arena HUD. The overlay is the mode-24
-//! sub-id-5 door/init slot for the Muscle Dome arena, whose match state
-//! machine lives in the battle overlay; the engine's `muscle_dome` session has
-//! no HUD surface and never loads 0977's sprite table, so there is no source
-//! for the [`HudSprite`] records these builders consume. Wiring needs the
-//! arena HUD screen plus a parser for the overlay-resident descriptor table -
-//! in that order.
+//! The descriptor table is disc data: PROT entry 0977 is a slot-A overlay
+//! (base `0x801CE818`), so the table at VA `0x801D170C` sits at file offset
+//! [`SPRITE_TABLE_FILE_OFFSET`] of the raw entry, and
+//! [`parse_sprite_table`] decodes it straight off a `PROT.DAT` image. The
+//! records name the Muscle Dome hub's texture pages - `tpage 0x0005` /
+//! `0x0015` are the 4bpp pages at `(320, 0)` / `(320, 256)` the dome's own
+//! data file uploads (extraction 1220, `other6.lzs` slot 0: an LZS
+//! container whose section 0 carries the two page TIMs + CLUT rows
+//! 502/503), capture-verified against a live course-menu VRAM snapshot.
+//! Record 3 is the "Welcome to the Muscle Dome!" cursive strip, record 16
+//! the INTERVAL heading, records 0/1 the ROUND word + hub digit strip.
+//! The site's Muscle Dome page consumes the parsed records as the geometry
+//! source for its intro card and interval heading
+//! (`legaia-web-viewer::minigames_muscle::muscle_hud_json`).
 
 /// Byte stride of one sprite descriptor in the table at `0x801D170C`.
 pub const HUD_SPRITE_STRIDE: usize = 0x14;
+
+/// Load base of the PROT 0977 slot-A overlay image.
+pub const OVERLAY_BASE_VA: u32 = 0x801C_E818;
+
+/// Overlay VA of the sprite descriptor table.
+pub const SPRITE_TABLE_VA: u32 = 0x801D_170C;
+
+/// File offset of the sprite table inside the raw PROT 0977 entry
+/// (`SPRITE_TABLE_VA - OVERLAY_BASE_VA`).
+pub const SPRITE_TABLE_FILE_OFFSET: usize = (SPRITE_TABLE_VA - OVERLAY_BASE_VA) as usize;
+
+/// Populated record count. Records `0..=16` carry real sprite descriptors
+/// (tpage `0x0005` / `0x0015`, CLUT words in rows 502/503); from record 17
+/// on, the bytes are unrelated overlay data, not descriptors.
+pub const SPRITE_TABLE_LEN: usize = 17;
 
 /// Low-bit width of the emitter's `sel` argument that selects a table row.
 /// The remaining high bits are the *variant* (`sel >> 10`, truncating).
@@ -120,6 +142,45 @@ pub struct HudQuad {
 
 /// GP0 command byte of an opaque Gouraud-textured quad.
 pub const GP0_POLY_GT4: u8 = 0x3C;
+
+impl HudSprite {
+    /// Decode one `0x14`-byte descriptor record (little-endian, retail
+    /// field layout - see the struct's per-field offsets).
+    pub fn parse(rec: &[u8]) -> Option<HudSprite> {
+        if rec.len() < HUD_SPRITE_STRIDE {
+            return None;
+        }
+        Some(HudSprite {
+            size: i32::from_le_bytes(rec[0..4].try_into().ok()?),
+            tpage: u16::from_le_bytes(rec[4..6].try_into().ok()?),
+            clut: u16::from_le_bytes(rec[6..8].try_into().ok()?),
+            u0: rec[8],
+            v0: rec[9],
+            w: rec[10],
+            h: rec[11],
+            rgb_top: [rec[12], rec[13], rec[14]],
+            semi_transparent: rec[15],
+            rgb_bottom: [rec[16], rec[17], rec[18]],
+            page: rec[19],
+        })
+    }
+}
+
+/// Parse the [`SPRITE_TABLE_LEN`] populated descriptor records out of a raw
+/// PROT 0977 entry image (the bytes exactly as they sit in `PROT.DAT`).
+///
+/// Returns an empty vec when the entry is too short to hold the table.
+pub fn parse_sprite_table(overlay_0977: &[u8]) -> Vec<HudSprite> {
+    let Some(table) = overlay_0977.get(
+        SPRITE_TABLE_FILE_OFFSET..SPRITE_TABLE_FILE_OFFSET + SPRITE_TABLE_LEN * HUD_SPRITE_STRIDE,
+    ) else {
+        return Vec::new();
+    };
+    table
+        .chunks_exact(HUD_SPRITE_STRIDE)
+        .filter_map(HudSprite::parse)
+        .collect()
+}
 
 /// Split an emitter `sel` argument into `(table index, variant)`.
 ///
@@ -346,6 +407,41 @@ mod tests {
             rgb_bottom: [0x40, 0x20, 0x10],
             page: 0,
         }
+    }
+
+    #[test]
+    fn sprite_record_parses_the_retail_field_layout() {
+        let mut rec = [0u8; HUD_SPRITE_STRIDE];
+        rec[0..4].copy_from_slice(&0x1000i32.to_le_bytes());
+        rec[4..6].copy_from_slice(&0x0005u16.to_le_bytes());
+        rec[6..8].copy_from_slice(&0x7D86u16.to_le_bytes());
+        rec[8] = 0; // u0
+        rec[9] = 224; // v0
+        rec[10] = 240; // w
+        rec[11] = 18; // h
+        rec[12..15].copy_from_slice(&[0xFF, 0xFF, 0xFF]);
+        rec[15] = 1;
+        rec[16..19].copy_from_slice(&[0xFF, 0xFF, 0xFF]);
+        rec[19] = 1;
+        let s = HudSprite::parse(&rec).unwrap();
+        assert_eq!(s.tpage, 0x0005);
+        assert_eq!(s.clut, 0x7D86);
+        assert_eq!((s.u0, s.v0, s.w, s.h), (0, 224, 240, 18));
+        assert_eq!(s.semi_transparent, 1);
+        assert_eq!(s.page, 1);
+    }
+
+    #[test]
+    fn sprite_table_parses_from_a_raw_overlay_image() {
+        // Synthetic overlay: zeros with one recognisable record at the
+        // table offset.
+        let mut img = vec![0u8; SPRITE_TABLE_FILE_OFFSET + SPRITE_TABLE_LEN * HUD_SPRITE_STRIDE];
+        img[SPRITE_TABLE_FILE_OFFSET + 4..SPRITE_TABLE_FILE_OFFSET + 6]
+            .copy_from_slice(&0x0015u16.to_le_bytes());
+        let t = parse_sprite_table(&img);
+        assert_eq!(t.len(), SPRITE_TABLE_LEN);
+        assert_eq!(t[0].tpage, 0x0015);
+        assert!(parse_sprite_table(&[0u8; 16]).is_empty(), "short image");
     }
 
     #[test]

@@ -1505,3 +1505,315 @@ impl LegaiaMinigames {
             .unwrap_or(0)
     }
 }
+
+// ------------------------------------------------------------- retail HUD
+//
+// The dome presents as a standard battle, and its whole on-screen chrome is
+// disc data reachable without a save: the chip/plate art + D-pad live in a
+// boot-time TIM in the unindexed pre-`init_data` gap of PROT.DAT (pixels at
+// VRAM (896, 256), CLUT bank packed into row 511 as 16 sub-palettes), the
+// chip-label font is the gap's 256x256 ASCII TIM at (896, 0) (drawn through
+// the menu-glyph atlas's CLUT bank on row 510, sub-palette 13), the small
+// digits are the menu-glyph atlas itself at (960, 256), and the arts-banner
+// words / big damage numerals / red cross-out X are the third TIM of the
+// battle-effect bank `etim` (extraction 0870) at (448, 0) with CLUT row 476.
+// The dome-hub art (the "Welcome to the Muscle Dome!" cursive, INTERVAL /
+// ROUND headings, hub digit strip) is the two-TIM LZS payload of the dome's
+// own data file (extraction 1220, `other6.lzs` slot 0), whose on-screen
+// geometry is the PROT 0977 overlay's sprite descriptor table
+// (`legaia_engine_ui::other_game_hud::parse_sprite_table`).
+//
+// Every piece rect below is capture-pinned: a live PCSX-Redux Muscle Dome
+// battle (the `minigame_muscle_dome_pcsx` scenario driven into the match)
+// was snapshotted at the command cluster, an enemy art, and a player HYPER
+// ARTS!! playback, and the GP0 packet stream + VRAM were read out of the
+// savestates (`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`). The
+// sprite geometry (screen anchors, glide endpoints, widths) additionally
+// lives in the SCUS-static battle HUD element table at `0x80076C10`
+// (24-byte stride, 80 records), exported raw below.
+
+/// `PROT.DAT` file offset of the battle-chrome widget TIM (plates, D-pad,
+/// AP-plate art, HP/MP badges) in the unindexed pre-`init_data` gap.
+/// Uploads to VRAM (896, 256) 256x192; CLUT bank -> row 511.
+const HUD_WIDGET_TIM_OFFSET: usize = 0x18E0;
+
+/// `PROT.DAT` gap offset of the 256x256 ASCII battle font TIM -> (896, 0).
+const HUD_FONT_TIM_OFFSET: usize = 0x7F40;
+
+/// `PROT.DAT` gap offset of the menu-glyph atlas TIM -> (960, 256); its
+/// CLUT bank packs into VRAM row 510 (16 sub-palettes).
+const HUD_MENU_ATLAS_TIM_OFFSET: usize = 0x11218;
+
+/// PROT entry of the battle-effect TIM bank (`etim`, `befect_data`).
+const HUD_ETIM_PROT_INDEX: u32 = 870;
+
+/// Offset of `etim`'s third TIM - the arts-banner / damage-numeral / red-X
+/// page -> VRAM (448, 0), CLUT row 476.
+const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
+
+/// PROT entry (extraction space) of the dome data container
+/// (`other6.lzs` slot 0): LZS section 0 carries the two hub-page TIMs.
+const HUD_HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+
+/// SCUS VA of the battle HUD element layout table (24-byte stride).
+const HUD_ELEMENT_TABLE_VA: u32 = 0x8007_6C10;
+
+/// Element records in the table.
+const HUD_ELEMENT_COUNT: usize = 80;
+
+/// Sub-palette (of the menu-glyph atlas CLUT bank) the battle font and the
+/// small digits draw through (capture: SPRT clut word `0x7F8D` = row 510,
+/// x 208 = bank sub-palette 13).
+const HUD_TEXT_SUB_PALETTE: usize = 13;
+
+impl LegaiaMinigames {
+    /// Parse a plain TIM out of the raw `PROT.DAT` image at `offset`
+    /// (the boot-gap system TIMs are not PROT entries).
+    fn hud_gap_tim(&self, offset: usize) -> Option<legaia_tim::Tim> {
+        legaia_tim::parse(self.prot.get(offset..)?).ok()
+    }
+
+    /// The `etim` banner TIM (third TIM of PROT 0870).
+    fn hud_banner_tim(&self) -> Option<legaia_tim::Tim> {
+        let entry = entry_bytes(&self.prot, &self.entries, HUD_ETIM_PROT_INDEX)?;
+        legaia_tim::parse(entry.get(HUD_BANNER_TIM_OFFSET..)?).ok()
+    }
+
+    /// The two dome-hub page TIMs out of the extraction-1220 LZS container
+    /// (section 0 = `[u32 tag][u32 count][u32 size]` + TIM at `0xC` + TIM
+    /// immediately after).
+    fn hud_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+        let entry = entry_bytes(&self.prot, &self.entries, HUD_HUB_CONTAINER_PROT_INDEX)?;
+        let sections = legaia_lzs::decompress_container(entry).ok()?;
+        let blob = sections.first()?;
+        let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
+        let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
+        Some((t0, t1))
+    }
+
+    /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8
+    /// (texel index 0 = transparent, everything else opaque).
+    fn hud_tim_rgba(tim: &legaia_tim::Tim, pal: &[u16]) -> Vec<u8> {
+        let w = tim.pixel_width();
+        let h = tim.pixel_height();
+        let mut out = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let byte = tim.image.data[y * (w / 2) + x / 2];
+                let idx = if x % 2 == 0 { byte & 0xF } else { byte >> 4 } as usize;
+                if idx == 0 {
+                    continue;
+                }
+                let c = legaia_tim::bgr555_to_rgba8(*pal.get(idx).unwrap_or(&0));
+                let o = (y * w + x) * 4;
+                out[o..o + 3].copy_from_slice(&c[..3]);
+                out[o + 3] = 255;
+            }
+        }
+        out
+    }
+
+    /// The SCUS battle HUD element table rows, or empty without a SCUS.
+    fn hud_elements_json(&self) -> Vec<serde_json::Value> {
+        let Some(scus) = self.scus.as_deref() else {
+            return Vec::new();
+        };
+        if scus.len() < 0x20 || &scus[0..8] != b"PS-X EXE" {
+            return Vec::new();
+        }
+        let t_addr = u32::from_le_bytes(scus[0x18..0x1C].try_into().unwrap());
+        let Some(off) = (HUD_ELEMENT_TABLE_VA.checked_sub(t_addr))
+            .map(|d| d as usize + 0x800)
+            .filter(|o| o + HUD_ELEMENT_COUNT * 24 <= scus.len())
+        else {
+            return Vec::new();
+        };
+        let i16_at = |p: usize| i16::from_le_bytes(scus[p..p + 2].try_into().unwrap());
+        (0..HUD_ELEMENT_COUNT)
+            .map(|i| {
+                let r = off + i * 24;
+                serde_json::json!({
+                    "id": i,
+                    "spr": [scus[r], scus[r + 1]],
+                    "a": [i16_at(r + 2), i16_at(r + 4)],
+                    "w": i16_at(r + 6), "h": i16_at(r + 8),
+                    "b": [i16_at(r + 10), i16_at(r + 12)],
+                    "style": [scus[r + 0xE], scus[r + 0xF]],
+                    "kind": scus[r + 0x10],
+                })
+            })
+            .collect()
+    }
+
+    /// Per-character advance widths of the ASCII battle font. The pen
+    /// advance retail uses equals the glyph's occupied texel width for every
+    /// character measured in the captured chip-label runs (`Begin`, `Carl`,
+    /// `Attack`, `Item`, `Spirit`, `Meta`, `Run`, `Ironman`, `Fire Blow`,
+    /// `Auto`, `Command`) except three - `i`, `m`, `M` advance one texel
+    /// wider - and the space advances 5. A retail width *table* was not
+    /// found statically (SCUS + battle overlay byte-scanned), so this is
+    /// texel-derived with the capture-measured exceptions baked in.
+    fn hud_font_advances(&self) -> Vec<u8> {
+        let Some(tim) = self.hud_gap_tim(HUD_FONT_TIM_OFFSET) else {
+            return Vec::new();
+        };
+        let w = tim.pixel_width();
+        let mut out = Vec::with_capacity(96);
+        for ch in 0..96usize {
+            let (cx, cy) = ((ch % 16) * 16, (ch / 16) * 16);
+            let mut maxc = 0usize;
+            for y in 0..16 {
+                for x in 0..16 {
+                    let (px, py) = (cx + x, cy + y);
+                    let byte = tim.image.data[py * (w / 2) + px / 2];
+                    let idx = if px % 2 == 0 { byte & 0xF } else { byte >> 4 };
+                    if idx != 0 && x + 1 > maxc {
+                        maxc = x + 1;
+                    }
+                }
+            }
+            let adv = match (ch + 0x20) as u8 {
+                b' ' => 5,
+                b'i' | b'm' | b'M' => (maxc + 1).min(16),
+                _ if maxc == 0 => 5,
+                _ => maxc.min(16),
+            };
+            out.push(adv as u8);
+        }
+        out
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// One HUD sprite sheet decoded to RGBA8 (row-major, texel index 0
+    /// transparent). `source`: 0 = battle-chrome widget page (own CLUT-bank
+    /// sub-palette `palette`), 1 = ASCII battle font (through the
+    /// menu-glyph atlas bank sub-palette `palette`), 2 = menu-glyph atlas,
+    /// 3 = `etim` banner page (CLUT-row sub-palette), 4/5 = dome hub pages
+    /// (320,0)/(320,256). Empty when the source doesn't decode on this
+    /// image. Sheet dimensions ride in [`Self::muscle_hud_json`].
+    pub fn muscle_hud_sheet_rgba(&self, source: u32, palette: u32) -> Vec<u8> {
+        let pal_idx = palette as usize;
+        let (tim, pal_tim) = match source {
+            0 => {
+                let t = self.hud_gap_tim(HUD_WIDGET_TIM_OFFSET);
+                (t.clone(), t)
+            }
+            1 => (
+                self.hud_gap_tim(HUD_FONT_TIM_OFFSET),
+                self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET),
+            ),
+            2 => {
+                let t = self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET);
+                (t.clone(), t)
+            }
+            3 => {
+                let t = self.hud_banner_tim();
+                (t.clone(), t)
+            }
+            4 => {
+                let t = self.hud_hub_tims().map(|(a, _)| a);
+                (t.clone(), t)
+            }
+            5 => {
+                let t = self.hud_hub_tims().map(|(_, b)| b);
+                (t.clone(), t)
+            }
+            _ => (None, None),
+        };
+        let (Some(tim), Some(pal_tim)) = (tim, pal_tim) else {
+            return Vec::new();
+        };
+        let Some(pal) = pal_tim
+            .clut
+            .as_ref()
+            .and_then(|c| c.entries.get(pal_idx * 16..pal_idx * 16 + 16))
+        else {
+            return Vec::new();
+        };
+        Self::hud_tim_rgba(&tim, pal)
+    }
+
+    /// The retail-HUD description the page renders from: sheet dimensions,
+    /// the capture-pinned piece rects (chips, plates, D-pad, red X, AP
+    /// plate, HP/MP badges, arts-banner strips, damage numerals), the
+    /// SCUS element-table rows (screen anchors + glide endpoints), the
+    /// PROT 0977 hub sprite records, and the font advance table. `ok` is
+    /// false when the chrome TIMs don't decode on this image.
+    pub fn muscle_hud_json(&self) -> String {
+        let widget = self.hud_gap_tim(HUD_WIDGET_TIM_OFFSET);
+        let font = self.hud_gap_tim(HUD_FONT_TIM_OFFSET);
+        let atlas = self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET);
+        let banner = self.hud_banner_tim();
+        if widget.is_none() || font.is_none() || atlas.is_none() {
+            return r#"{"ok":false}"#.to_string();
+        }
+        let dims = |t: &Option<legaia_tim::Tim>| {
+            t.as_ref()
+                .map(|t| serde_json::json!([t.pixel_width(), t.pixel_height()]))
+                .unwrap_or(serde_json::Value::Null)
+        };
+        let hub = self.hud_hub_tims();
+        let hub_sprites: Vec<serde_json::Value> = entry_bytes(&self.prot, &self.entries, 977)
+            .map(legaia_engine_ui::other_game_hud::parse_sprite_table)
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                serde_json::json!({
+                    "i": i,
+                    // tpage 0x0005 -> hub page 0 (VRAM (320,0)),
+                    // 0x0015 -> hub page 1 ((320,256)).
+                    "sheet": if s.tpage & 0x10 != 0 { 5 } else { 4 },
+                    // CLUT word: bits 0..5 = x/16 (the row sub-palette).
+                    "pal": s.clut & 0x3F,
+                    "uv": [s.u0, s.v0], "wh": [s.w, s.h],
+                    "semi": s.semi_transparent,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "ok": true,
+            "sheets": {
+                "widget": dims(&widget), "font": dims(&font),
+                "atlas": dims(&atlas), "banner": dims(&banner),
+                "hub0": dims(&hub.as_ref().map(|(a, _)| a.clone())),
+                "hub1": dims(&hub.as_ref().map(|(_, b)| b.clone())),
+            },
+            // Capture-pinned piece rects: [u, v, w, h] on the named sheet,
+            // "pal" = the sub-palette observed in the live packets.
+            "pieces": {
+                "plate_blue": {"cap_l": [208,0,8,20], "body": [192,0,16,20],
+                                "cap_r": [216,0,8,20], "pal": 4},
+                "plate_gold": {"cap_l": [208,64,8,20], "body": [192,64,16,20],
+                                "cap_r": [216,64,8,20], "pal": 12},
+                "dpad": {"r": [0,112,16,16], "pal": 7},
+                "slash": {"r": [96,64,8,16], "pal": 5},
+                "hp_badge": {"r": [208,86,16,10], "pal": 1},
+                "mp_badge": {"r": [224,86,16,10], "pal": 1},
+                "ap_label": {"r": [128,64,24,16], "pal": 4},
+                "ap_trough": {"r": [128,80,56,16], "pal": 4},
+                "ap_end": {"r": [176,64,16,16], "pal": 4},
+                "ap_cap": {"r": [184,80,8,16], "pal": 4},
+                "gauge_fill": {"r": [64,136,16,6], "pal": 1},
+                "red_x": {"r": [0,96,64,16], "pal": 4},
+                "digit24_v": 64,
+                "word_super": {"r": [3,152,105,24], "pal": 3},
+                "word_hyper": {"r": [3,176,105,24], "pal": 3},
+                "word_arts": {"r": [115,176,97,24], "pal": 3},
+                "word_miracle": {"r": [0,200,127,24], "pal": 3},
+                "word_new": {"r": [132,200,64,24], "pal": 3},
+                "word_damage": {"r": [0,224,52,14], "pal": 3},
+                "word_hit": {"r": [0,240,32,16], "pal": 3},
+                "word_total": {"r": [32,240,48,16], "pal": 3},
+                "atlas_digits": {"v": 208, "x0": 0, "cell": 8, "h": 12, "pal": HUD_TEXT_SUB_PALETTE},
+                "font_pal": HUD_TEXT_SUB_PALETTE,
+            },
+            "elements": self.hud_elements_json(),
+            "hub": hub_sprites,
+            "advance": self.hud_font_advances(),
+        })
+        .to_string()
+    }
+}
