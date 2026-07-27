@@ -21,47 +21,16 @@
 #   "web_missing" - native calls it, the browser play page does not
 #   "orphan"      - neither host calls it
 
-[[waiver]]
-builder = "battle_hud_draws_for"
-kind = "web_missing"
-reason = """
-Native draws it: `engine-shell/.../window/hud.rs` calls this for every
-`SceneMode::Battle` frame, fed by `window/battle.rs::sync_battle_hud_rows`,
-which folds the live actor table into the `BattleHud` model each tick. The
-window's own hand-rolled HP rows are gone, so this is the only battle HUD the
-native host has - and the retail HP / MP colour law (`hp_bar_color_index` /
-`mp_bar_color_index`, FUN_800349EC / FUN_80035EA8) reaches a surface.
-
-The browser play page has no battle host to draw into. It never arms
-encounters - none of `tick_encounter`, `arm_scripted_encounter`,
-`install_encounter_*` or `drain_encounter_formation` is referenced anywhere in
-`crates/web-viewer/src`, and no code path there sets `SceneMode::Battle` - and
-it exports no battle render, camera or command-menu path. There is also no
-battle HUD in the page's JS: `site/js/play-app.js` mentions battle only in a
-comment about Start being inert. Wiring the HUD would draw a readout of state
-the page never produces.
-
-Stated plainly, because the honest label matters when the rest of this file
-does describe capability gaps: this one is **undone work**, not something the
-browser cannot do. Nothing about a battle host needs a process, a filesystem
-or a native window - `engine-core` drives the whole encounter path on both
-targets. The waiver stands because closing it is a battle-host port, an order
-of magnitude past a draw call, and drawing an HP readout over a mode the page
-never enters would be worse than the gap.
-"""
-
-[[waiver]]
-builder = "encounter_banner_draws_for"
-kind = "web_missing"
-reason = """
-Same root cause as the battle HUD: the browser page does not step encounters,
-so no formation is ever drawn - an ENCOUNTER! banner with no battle behind it
-would report a transition the page cannot perform. The native window draws it:
-`sync_battle_render` arms the banner on every `Field -> Battle` mode edge with
-the formation's catalog names, and `build_hud` renders it centred for the
-battle's opening frames. Closing the web side is the same battle-host port the
-`battle_hud_draws_for` waiver describes.
-"""
+# `battle_hud_draws_for` / `encounter_banner_draws_for` were waived here as
+# "undone work" - the browser page had no battle host to draw into. The
+# battle host is done: `web-viewer/src/play_battle.rs` arms the live gameplay
+# loop on `enter_field` (`arm_live_battles`, the browser twin of
+# `BootSession::enter_field_live`), `tick_battle_presentation` folds battle
+# events + refreshes the HUD through the shared
+# `engine_core::battle_hud::sync_battle_hud_rows`, and
+# `play_overlay_draws_json` composites the HUD rows, the ENCOUNTER! banner
+# and the player-driven command menus over the running scene. Both builders
+# now paint on both hosts.
 
 # `dialog_box_draws_for` / `dialog_panel_draws_for` were waived here as
 # orphans whose "honest resolution is deletion". They are deleted: no host
@@ -90,6 +59,12 @@ over is not a menu at all - PROT 0902 carries one string and one unconditional
 exit - so this builder's Continue/Retry/Quit rows are an engine invention.
 Wiring either host would commit the port to behaviour nobody has observed.
 Close it with a runtime probe, not by picking a trigger.
+
+Both hosts now run live battles (the browser via `play_battle.rs`), so the
+wipe path is exercised on both: `World::finish_battle` raises the
+`World::game_over` flag on `BattleEndCause::PartyWipe` and returns to the
+field, and both hosts leave that flag unconsumed - deliberately, and
+symmetrically, for the reason above. The gap is host-identical, not drift.
 """
 
 [[waiver]]
@@ -118,15 +93,20 @@ rebind entry that opens this screen.
 builder = "records_screen_draws_for"
 kind = "web_missing"
 reason = """
-The retail world-map Records screen renderer (`FUN_801ED710`). The native
-window draws it from the developer-menu host (`window/dev_menu.rs`), gated on
-the `LEGAIA_DEV_MENU` **process environment variable** - the capability the web
-host lacks. A browser tab has no process environment, so the gate that keeps
-this surface off a player's screen has no equivalent there; a URL parameter or
-a build flag would put a debug menu one shared link away from every visitor,
-which is a different security posture, not the same screen ported. The engine
-also reaches it through the world-map controller, which the play page does not
-host at all.
+The retail world-map Records screen renderer (`FUN_801ED710`). The state
+behind it is host-agnostic (`engine-core::dev_menu_host` + the
+`RecordCounters` rebase), so the missing piece is not a model - it is the
+**gate**. The records page is a row of the retail developer menu, and the
+native window mounts that whole surface behind the `LEGAIA_DEV_MENU` process
+environment variable (`window/dev_menu.rs`), an opt-in that cannot travel
+with a link. A browser tab has no equivalent: a URL parameter or localStorage
+flag is one shared link away from every visitor, so porting the screen means
+shipping a state-editing debug surface to the public page - a different
+security posture, not the same screen ported. The play page does host the
+overworld walk (`enter_world_map_scene`); what it deliberately does not host
+is the dev-menu surface this page is a row of. Close it, if ever, with a
+player-facing Records screen (retail shows these counters outside the dev
+menu too), not by porting the dev gate.
 """
 
 [[waiver]]
@@ -136,9 +116,12 @@ reason = """
 The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
 list sibling of `records_screen_draws_for` above and behind the same
 `LEGAIA_DEV_MENU` process-environment gate in `window/dev_menu.rs`. Same
-capability gap, same reasoning: the web host has no process environment to
-gate a debug surface on, so shipping the screen there means shipping it to
-every visitor.
+deliberate gap, and sharper for this one: the list's rows *edit* live state
+(map id, encounter rate, character parameters, event flags -
+`engine-core::dev_menu_host`), so a browser mount without a
+non-link-shareable opt-in hands every visitor a cheat console. The engine
+model exists on both targets; the developer-only gate does not exist in a
+browser tab.
 """
 
 
@@ -178,12 +161,17 @@ kind = "orphan"
 reason = """
 Window id 31 (`FUN_801DCE20`): heading, wide number field in the accent pen,
 trailing unit label, corner cursor. Dispatch-resolved; what is missing is the
-number. The renderer prints `_DAT_800845B4`, the **Point Card** counter the
-retail buy handler credits before the gold debit (see
-`docs/subsystems/shop.md`), and the engine models no Point Card at all -
-`World` has `money` and `casino_coins` and nothing else this window could be
-printing. Wiring it first means adding that counter to the shop session, an
-`engine-core` change.
+number and its beat. The renderer prints `_DAT_800845B4`, the **Point Card**
+counter the retail buy handler credits before the gold debit (see
+`docs/subsystems/shop.md`). The engine has the *kernels* - `shop.rs` carries
+`point_card_credit` / `apply_point_card` / `POINT_CARD_ITEM_ID`, and
+`BuyQuantitySession`'s `ToastWait` phase is the beat that shows this window -
+but both are disclosed NOT WIRED: `World` keeps no live Point Card counter
+(`money` and `casino_coins` are its only purses) and the hosts' quantity flow
+is `menu_runtime`'s `ShopQuantity` -> `World::buy_from_shop`, which has no
+toast beat. Wiring window 31 means landing the counter on `World` plus the
+retail-shaped quantity session in `menu_runtime`, on both hosts - a shop-flow
+re-plumb, not a draw call.
 """
 
 [[waiver]]
@@ -238,12 +226,17 @@ kind = "orphan"
 reason = """
 Window id 36 (`FUN_801D56FC`): the equip-target list, whose rows grey out via
 the character mask at `0x80074F68 + id*8 + 6`. Dispatch-resolved. The screen
-is the blocker: `docs/reference/functions/menus.md` puts window 36 under the
-party-target panel driver `FUN_801D8308`, and neither host ports that panel -
-the equip screen they do draw picks its target from the party window. Wiring
-it into the shop's buy flow instead would invent a screen; retail's shop
-open script does not list window 36. The mask rule (`equip_row_enabled`) is
-unit-tested independently.
+is the blocker. `docs/reference/functions/menus.md` puts window 36 under the
+party-target panel driver `FUN_801D8308`; that driver IS ported now - as the
+pause Items screen's single-target apply SM (`engine-core::pause_screens`) -
+but that flow draws the party-target panel (`target_panel_draws_for`, on both
+hosts), not this window. The flow that opens window 36 is the shop's
+equipment-buy recipient picker (`FUN_801DB380`, `shop.rs`'s
+`BuyRecipientSession` - itself disclosed NOT WIRED): `menu_runtime` routes
+every confirmed buy row to `ShopQuantity`, so no host ever reaches a
+recipient pick. Wiring it into the current buy flow without that session
+would invent a screen; retail's shop open script does not list window 36.
+The mask rule (`equip_row_enabled`) is unit-tested independently.
 """
 
 [[waiver]]
@@ -261,6 +254,8 @@ and `EquipSession` produces no party-wide preview at all (single-character by
 construction), which is exactly what window 41 prints. Both renderers sit in
 the shop-family VA band and read the same staged-id word `DAT_801E46B0` the
 shop panels use, so the screen that opens them is most likely the
-equipment-purchase path - which is not ported. Wiring needs that flow plus a
-party-wide preview in `engine-core`, not a draw call.
+equipment-purchase path - `shop.rs`'s `BuyRecipientSession`
+(`FUN_801DB380`), disclosed NOT WIRED, which no host's buy flow reaches.
+Wiring needs that flow plus a party-wide preview in `engine-core`, not a
+draw call.
 """

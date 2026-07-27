@@ -112,6 +112,22 @@ pub struct LegaiaRuntime {
     /// when a fishing session starts. `None` until then (or if they don't
     /// decode).
     pub(crate) fishing_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
+    /// Whether [`Self::enter_field`] arms the live gameplay loop (step-driven
+    /// random encounters, Field -> Battle -> Field with loot). Defaults on -
+    /// the page is the playable host - and is the browser twin of the native
+    /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
+    /// turns it off for walk-only sessions.
+    pub(crate) live_battles: bool,
+    /// Battle HUD model (per-slot HP / MP / AP rows, damage popups), refreshed
+    /// each battle tick by the shared `engine-core` fold and projected into
+    /// the shared `battle_hud_draws_for` builder ([`crate::play_battle`]).
+    pub(crate) battle_hud: legaia_engine_core::battle_hud::BattleHud,
+    /// Encounter-transition banner: `(frames_remaining, formation_label)`,
+    /// armed once per `Field -> Battle` mode edge.
+    pub(crate) encounter_banner: Option<(u16, String)>,
+    /// Last observed scene mode, so battle enter / exit presentation runs on
+    /// mode *edges* (the browser twin of the native `sync_battle_render` latch).
+    pub(crate) prev_scene_mode: Option<SceneMode>,
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
@@ -176,6 +192,10 @@ impl LegaiaRuntime {
             fishing_banner_draws: Vec::new(),
             fishing_prev_phase: None,
             fishing_venues: None,
+            live_battles: true,
+            battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
+            encounter_banner: None,
+            prev_scene_mode: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
             sfx_vabs: Default::default(),
@@ -371,6 +391,9 @@ impl LegaiaRuntime {
             host.enter_field_scene(name, 0)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
         }
+        if self.live_battles {
+            self.arm_live_battles(name);
+        }
         self.rebuild_render_state()?;
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
@@ -466,6 +489,10 @@ impl LegaiaRuntime {
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
         self.tick_sfx();
+        // Battle presentation: encounter-banner arming on the Field -> Battle
+        // edge, battle-event fold, HUD row refresh, popup aging
+        // ([`crate::play_battle`]). Cheap no-op outside battle.
+        self.tick_battle_presentation();
         // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
         // the scene's music, started/queued/paused/stopped by the same events
         // the native `AudioBgmDirector` consumes. The `host` borrow above is

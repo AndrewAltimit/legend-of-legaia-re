@@ -205,6 +205,23 @@ page clocks `play_menu_input` on its own fixed step rather than once per
 animation frame. Parity is asserted by the disc-gated `tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
+## Live battles (`play_battle`)
+
+`enter_field` arms the engine's live gameplay loop - the browser twin of the
+native `--live-loop --player-battle` flags (`set_live_battles(false)` opts
+out). Walking rolls the scene MAN's own step-driven encounter table, the world
+flips `Field -> Battle`, and the whole fight runs in `engine-core` (turn SM,
+player-driven command / arts / magic / item menus, damage formulas, loot).
+This module is presentation only: it folds battle events and strike FX into
+the shared `BattleHud` model via `engine_core::battle_hud::sync_battle_hud_rows`
+(the same fold the native window uses), arms the ENCOUNTER! banner on the mode
+edge, and mirrors the native window's battle HUD block - `battle_hud_draws_for`
+rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
+text - into `play_overlay_draws_json`, in surface pixels. The battle's 3D
+layer (monster / party battle meshes, stage dome) remains native-only; the
+field scene keeps rendering behind the overlay. Disc-gated oracle:
+`tests/battle_overlay_parity.rs`.
+
 ## Field merchant + banners (`play_shop`)
 
 A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the

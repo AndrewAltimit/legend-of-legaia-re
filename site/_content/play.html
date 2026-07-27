@@ -388,12 +388,21 @@
       op-0x35 events the native window routes drive a WebAudio output here, off your disc's own VAB
       and SEQ. Browsers require a click first (autoplay policy); picking a scene or clicking the
       canvas enables it.</li>
+    <li><strong>Battles - as an overlay.</strong> Walking a wilderness scene rolls the disc's own
+      step-driven encounters, and the fight that opens is the ported
+      <a href="subsystems/battle.html">battle</a> engine: real formations off the scene's data,
+      real <a href="subsystems/battle-formulas.html">damage formulas</a>, and player-driven turns -
+      pick a command, a target, an art, a spell or an item from the same menus the native window
+      draws, over an HP/MP/AP readout with damage popups. What you will not see yet is the
+      battle's 3D layer (monster and party battle models, the arena backdrop): the field scene
+      keeps rendering behind the overlay. Win and you are back on the field with XP, gold and
+      drops; scenes with no encounter table (towns) stay peaceful.</li>
   </ul>
   <p>What does <em>not</em> run here yet:</p>
   <ul>
-    <li><strong>Battles.</strong> The <a href="subsystems/battle.html">battle</a> state machine and
-      formulas are ported and tested, but the battle render path lives in the native window;
-      encounters are disarmed here rather than dropping you into a black screen.</li>
+    <li><strong>The battle's 3D render.</strong> Monster meshes, the assembled per-equipment party
+      battle forms, and the stage dome live in the native window's render path; the browser fight
+      is the overlay described above.</li>
     <li><strong>The pre-title FMV movies.</strong> The title card, the prologue
       <a href="subsystems/cutscene.html">cutscene</a> chain, its narration crawl, and the sepia +
       depth-cue grade all render here off your disc; STR movie playback (MDEC video) runs only in
