@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(out[0], 0x8000 & out[0], "fully darkened");
         // And a positive V-add brightens.
         let bright = apply_hsv_cell(&[grey], &fx(0, 0, 100, 0, 0))[0];
-        assert!((bright & 0x1F) > (grey as u16 & 0x1F));
+        assert!((bright & 0x1F) > (grey & 0x1F));
     }
 
     #[test]
@@ -201,7 +201,7 @@ mod tests {
         // Not armed: integrates but never emits.
         st.tween_scale_z = -0x100;
         assert!(mode3_integrate(&mut st, 2).is_none());
-        assert_eq!(st.tween_src_z, -(0x100 * 2 * 0x10 >> 6) as i16);
+        assert_eq!(st.tween_src_z, -((0x100 * 2 * 0x10) >> 6) as i16);
         // Arm the gate the way op 0x2C does.
         st.field_9c = 1;
         st.keyframe_desc = [0x70, 0x1F8, 0x10, 1];

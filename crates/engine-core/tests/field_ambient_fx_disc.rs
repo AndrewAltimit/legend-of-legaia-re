@@ -56,8 +56,10 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     let installs = ambient_effect_installs(&man_file, &man_bytes);
     assert_eq!(installs, vec![0], "jou ambient install census");
 
-    let mut world = World::default();
-    world.frame_step = 2; // town cadence
+    let mut world = World {
+        frame_step: 2, // town cadence
+        ..Default::default()
+    };
     world.install_field_stagers(&stager_bytes);
     assert!(
         world.field_stagers.len() >= 47,
