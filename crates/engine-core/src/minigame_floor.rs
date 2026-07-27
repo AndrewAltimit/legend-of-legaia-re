@@ -395,13 +395,15 @@ pub struct FloorTileSpawn {
 // PORT: FUN_801d6bbc (the same pass in the shared overlay band; identical
 // bytes in the fishing and dance images, differing only in which overlay-local
 // globals it writes and in the `x0/z0/x1/z1` debug print it opens with)
-// NOT WIRED: the pass spawns world actors into the shared actor list
-// (`FUN_80024C88` against `*_DAT_8007C36C`) off a scene floor buffer the
-// engine does not decode - the same missing [`FloorGrid`] source
-// [`ground_height`] needs. `World::refresh_tile_board_draw_list` is the
-// engine's only floor-shaped draw pass and it walks the *field-VM* tile board
-// (a `width x height` byte cell array), which is a different grid with a
-// different cell encoding.
+// NOT WIRED: the [`FloorGrid`] input now exists (the play window's fishing
+// host reads the venue `.MAP` for [`ground_height`]), but the pass's OUTPUT
+// has no sink: it spawns one tile actor per drawn cell into the shared actor
+// list (`FUN_80024C88` against `*_DAT_8007C36C`), and the engine has no
+// minigame tile-actor pool or per-cell floor render pass to hold them.
+// `World::refresh_tile_board_draw_list` walks the *field-VM* tile board (a
+// `width x height` byte cell array), a different grid with a different cell
+// encoding. Wiring needs a floor-tile draw pass that consumes
+// [`FloorTileSpawn`] records.
 pub fn floor_tile_spawns(
     grid: FloorGrid<'_>,
     ramp: &[i16],
@@ -480,10 +482,11 @@ pub enum MarkerTemplate {
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
 // NOT WIRED: the two templates are overlay-resident actor prototypes
 // (`DAT_801D42FC` / `DAT_801D4314`) copied by the shared spawn API, and the
-// clip index comes from `FUN_801D3EC0`'s step-layer record lookup. Neither the
-// prototypes nor the step layers are decoded by the engine - the same missing
-// scene floor buffer [`floor_tile_spawns`] needs, plus a dance floor renderer
-// to spawn into.
+// clip index comes from `FUN_801D3EC0`'s step-layer record lookup, which is
+// not ported - the `.MAP`'s `+0x10000` / `+0x12000` step layers are decoded
+// only as trigger tables (`crate::field_regions`), not as the per-cell marker
+// records this reads. Wiring needs that record lookup ported plus the same
+// tile-actor sink [`floor_tile_spawns`] names.
 pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
     match marker {
         0 => None,

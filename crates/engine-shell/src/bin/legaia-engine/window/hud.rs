@@ -402,11 +402,20 @@ impl PlayWindowApp {
             // stand-in) is up AND the held pad carries the modifier bit -
             // the same two-sided gate retail applies.
             if let Some(wd) = &self.fish_wander {
-                use legaia_engine_core::fishing_actors::{debug_readout_visible, debug_tile};
+                use legaia_engine_core::fishing_actors::{
+                    debug_readout_visible, debug_tile, tracked_point_separation,
+                };
                 let held = self.pad.rotate_right(8);
                 if debug_readout_visible(self.dev_menu.is_some(), held) {
+                    // Separation of the actor from the venue anchor it
+                    // spawned at, in sub-cells (the overlay's tracked-point
+                    // pair, with an integer sqrt for the SCUS normalise
+                    // helper).
+                    let sep = tracked_point_separation((0x400, 0x400), (wd.x, wd.z), |v| {
+                        (v.max(0) as f64).sqrt() as i32
+                    });
                     let line = format!(
-                        "tile ({}, {})  y {}  facing {:#x}",
+                        "tile ({}, {})  y {}  facing {:#x}  sep {sep}",
                         debug_tile(wd.x),
                         debug_tile(wd.z),
                         wd.y,

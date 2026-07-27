@@ -843,12 +843,12 @@ pub const WALK_GRID_ROWS: usize = 0x80;
 /// **z**; the sub-cell bit is `1 << ((x_cell & 1) + 2 * (z_cell & 1))`.
 ///
 /// PORT: FUN_801d7030
-// NOT WIRED: the engine's fishing model ([`crate::fishing::PondSession`]) is
-// venue *rules* - cast, band, strike, fight - and carries no per-scene grid at
-// all, so there is no `*(_DAT_1F8003EC) + 0x4000` block to probe. The browser
-// fishing venue does decode one (`legaia_asset::field_objects::WalkHeightfield`
-// in `crates/web-viewer/src/minigames_fishing_scene.rs`), so the missing piece
-// is a grid handle on the session rather than a decoder.
+// NOT WIRED: the grid now exists at the play window's fishing host (the venue
+// `.MAP` bytes it settles the wander actor on), but the retail *probe site*
+// does not: `FUN_801D26CC` probes the tile under the **lure** during the bite
+// tick, and the engine's bite path ([`crate::fishing::BandCheck::tick`])
+// models the cast as a scalar metric with no lure position to probe under.
+// Wiring needs a lure point on the bite path, not another grid decode.
 pub fn walk_grid_overhead(grid: &[u8], x: i32, z: i32) -> bool {
     let zc = (if z < 0 { z + 0x3F } else { z } >> 6) + 2;
     let xc = ((x + 0x3F) >> 6) - 1;
@@ -888,12 +888,11 @@ pub const SUBCELL_SHIFT: u32 = 6;
 /// the 128-unit tile: the same shift `FUN_801D7030` uses to index the grid.
 ///
 /// PORT: FUN_801d765c
-// NOT WIRED: both operands are *scene* positions - the angler and the lure -
-// and the port's fishing session models the cast as a scalar power / line
-// record, never as two points on a pond. The blocker is the same missing
-// fishing scene host [`walk_grid_overhead`] names, plus a binding for the SCUS
-// normalise helper `FUN_8005AF0C`, which the port takes as a closure rather
-// than owning.
+// Wired: the play window's fishing developer readout computes the wander
+// actor's separation from the venue anchor through this (with an integer
+// square root standing in for the SCUS normalise helper `FUN_8005AF0C`,
+// which the port takes as a closure rather than owning) - see
+// `window/hud.rs`.
 pub fn tracked_point_separation(
     a: (i16, i16),
     b: (i16, i16),
