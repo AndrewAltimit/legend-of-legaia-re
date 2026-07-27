@@ -293,7 +293,7 @@ and that word is the consumer surface - statically pinned at `FUN_8001822C` plus
 resident field-overlay gates. Poking `_DAT_8007B98F = 1` brings up the debug menu on
 SELECT+triangle in the NA retail build, which is the direct refutation of "no
 references remain". See
-[`open-rev-eng-threads.md`](open-rev-eng-threads.md#debug-flags-0x8007b8c2--0x8007b98f).
+[`re-settled-threads.md`](re-settled-threads.md#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c).
 None of the 557 catalogued GameShark / Pro-Action-Replay codes in
 [`legaia-cheats`](cheats.md) target `0x8007B8C2` or `0x8007B98F`.
 

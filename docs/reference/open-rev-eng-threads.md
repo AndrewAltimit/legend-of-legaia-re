@@ -141,16 +141,6 @@ a residency capture. (The old "STR overlay replicated across 0967/0968/0969/0970
 reading was the over-read: the corrected 4 KB entry cannot contain the STR
 dispatch code at its `+0x225C` offsets.)
 
-### Debug flags `0x8007B8C2` / `0x8007B98F`
-
-Both halves are settled; this heading remains because the RAM map
-([`memory-map.md`](memory-map.md)) links to it. `_DAT_8007B8C2` (the
-dev/retail asset-load selector - corrected polarity, gp-relative cold-boot
-writer): [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b8c2-polarity-and-its-writer).
-`_DAT_8007B98F` (byte +3 of the debug-mode word `_DAT_8007B98C`, whose 32-bit
-word is the real consumer surface):
-[`re-settled-threads.md`](re-settled-threads.md#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c).
-
 ## Adding a thread
 
 A thread belongs here when:
