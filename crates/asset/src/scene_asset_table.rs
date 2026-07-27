@@ -303,6 +303,75 @@ pub fn resolve(buf: &[u8]) -> Option<ResolvedAssetTable> {
     })
 }
 
+/// LZS-decode the first slot whose descriptor carries `type_byte` out of a
+/// scene bundle PROT entry. `None` when the entry has no resolvable asset
+/// table or no slot of that type; `Some(Err)` when the slot exists but its
+/// payload fails to decode (truncated stream / bad declared size).
+///
+/// This is the shared "give me the bundle's ANM-walker / VDF / TIM_LIST
+/// slot" primitive: the runtime dispatcher keys each slot's handler on the
+/// descriptor's type byte, not on its position, so consumers that want one
+/// asset class should too (the count-6 early-town variants shift positions).
+pub fn decode_slot_by_type(entry: &[u8], type_byte: u8) -> Option<Result<Vec<u8>, String>> {
+    let (base, descriptors) = match resolve(entry) {
+        Some(r) => {
+            let ds: Vec<DescriptorRecord> = r.table.used().to_vec();
+            (r.table_base, ds)
+        }
+        // The strict detector anchors on the corpus counts 6/7; the
+        // MAN-less count-4 variant (`[1, 2, 6, 0x14]` - the v12-family
+        // dungeon bundles, several of which carry a walker table) walks the
+        // same way. Mirror the runtime `FUN_80020224`, which reads the
+        // count and loops with no count constraint.
+        None => (0, lenient_descriptor_walk(entry)?),
+    };
+    let d = descriptors.iter().find(|d| d.type_byte == type_byte)?;
+    let size = d.size as usize;
+    if size == 0 {
+        return Some(Err(format!("type-{type_byte:#04x} slot has size 0")));
+    }
+    let start = base + d.data_offset as usize;
+    let Some(stream) = entry.get(start..) else {
+        return Some(Err(format!(
+            "type-{type_byte:#04x} slot data_offset {start:#x} out of range"
+        )));
+    };
+    Some(legaia_lzs::decompress(stream, size).map_err(|e| format!("lzs: {e}")))
+}
+
+/// Lenient count-prefixed descriptor walk for the table variants the strict
+/// [`detect`] anchor excludes (retail: the count-4 MAN-less form). Accepts
+/// counts `2..=7` with every type byte known, sizes plausible, and the first
+/// descriptor anchored at the header end - the same anchor law the strict
+/// detector applies to counts 6/7.
+fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
+    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    if !(2..=7).contains(&count) {
+        return None;
+    }
+    let header_end = 8 + count * 8;
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let p = 8 + i * 8;
+        let type_size = legaia_bytes::u32_le(entry, p)?;
+        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_byte = ((type_size >> 24) & 0xFF) as u8;
+        let size = type_size & 0x00FF_FFFF;
+        if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
+            return None;
+        }
+        if i == 0 && data_offset as usize != header_end {
+            return None;
+        }
+        out.push(DescriptorRecord {
+            type_byte,
+            size,
+            data_offset,
+        });
+    }
+    Some(out)
+}
+
 /// Encode a descriptor `(type<<24)|size` word from its parts. Companion to the
 /// decode in [`detect`]; used to rewrite a descriptor's decompressed size after
 /// a variable-length asset edit (`size` is masked to 24 bits).

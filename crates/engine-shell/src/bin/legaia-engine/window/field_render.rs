@@ -355,6 +355,24 @@ impl PlayWindowApp {
     pub(super) fn resolve_ocean_anim(&mut self) -> Option<WaterAnim> {
         let scene = self.session.host.scene.as_ref()?;
         if !legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+            // The walker table is not kingdom-only: nine field scenes carry
+            // one in their bundle's type-6 slot (garmel / dohaty water,
+            // the geremi / rayman / tunnel / son / edson waterfall family).
+            // Same table format, same walker actor, resolved by type byte.
+            for entry in &scene.entries {
+                let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+                    continue;
+                };
+                let strips = legaia_asset::clut_walk::scene_park_strips(&entry.bytes);
+                self.park_clut_walk_strips(&table, strips);
+                let state =
+                    vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+                return Some(WaterAnim::Walk(ClutWalkAnim {
+                    table,
+                    state,
+                    vsyncs_to_game_tick: 0,
+                }));
+            }
             return None;
         }
         let mut walk: Option<legaia_asset::clut_walk::ClutWalkTable> = None;
@@ -616,6 +634,7 @@ impl PlayWindowApp {
         }
         if self.session.host.world.clut_fx.is_empty()
             && self.session.host.world.script_vram_moves.is_empty()
+            && self.session.host.world.ambient_fx.is_empty()
         {
             return;
         }
@@ -623,7 +642,10 @@ impl PlayWindowApp {
             return;
         };
         let moved = self.session.host.world.apply_script_vram_moves(base);
-        if !self.session.host.world.step_clut_fx(base) && !moved {
+        // The ambient move-VM effect parts (jou's flesh-palette cyclers /
+        // lightning) run on the same game-tick bank and write the same VRAM.
+        let ambient = self.session.host.world.step_ambient_fx(base);
+        if !self.session.host.world.step_clut_fx(base) && !moved && !ambient {
             return;
         }
         if let Some(r) = self.win.renderer.as_ref() {

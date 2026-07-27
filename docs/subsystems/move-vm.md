@@ -304,11 +304,18 @@ carrying structure are called out below the table.
 | `0x46` | 4 | tween-delta seed: `+0x94/+0x96 = +0x92`, `+0x98 = v1 - +0x94`, `+0x9A = v2 - +0x92`, `+0xBC/+0xC0 = v3`, `+0xB8 = 1` |
 
 **The loop pair (`0x18`/`0x19`, `0x1A`/`0x1B`).** `0x18` latches the current PC
-into `+0x88` and a repeat count into `+0x8C`; `0x19` decrements `+0x8C` and, while
-the count has not underflowed (`& 0x4000` clear) and stays `<= 40000`, rewrites the
-PC back to `+0x88` (size 1, re-runs the body). When the count retires it advances
-past itself (size 2). `0x1A`/`0x1B` are the identical mechanism on the second
-register pair `+0x8A`/`+0x8E`, so a move program can nest two counted loops.
+(its own opcode's index) into `+0x88` and a repeat count into `+0x8C`. `0x19`,
+with the count's `0x4000` bit clear, decrements `+0x8C` and **loops while the
+decremented count has not underflowed** (`uVar8 <= 40000` in the raw arm at
+`0x800235DC`): the loop-back stores `+0x88` into the PC and the shared epilogue
+(`0x80024150`, `pc += a2` with `a2 = 2`) lands execution at **saved + 2** - the
+body start, past the `0x18` and its operand, so the counter is not re-seeded.
+The retire path is the underflow past zero (`uVar8 > 40000`), advancing 1 word;
+a counter of `N` therefore runs the body `N + 1` times. A count with the
+`0x4000` bit set never decrements and always jumps back - the authored
+infinite-loop marker the ambient effect records idle on. `0x1A`/`0x1B` are the
+identical mechanism on the second register pair `+0x8A`/`+0x8E`, so a move
+program can nest two counted loops.
 
 **`0x25` spawn from the prescript stager.** Calls
 `FUN_80021B04(actor+0x14, actor+0x24, _DAT_8007B8D0 + offsets[v1], 0x1000)` - it

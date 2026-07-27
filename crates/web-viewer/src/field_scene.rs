@@ -43,6 +43,33 @@ pub struct FieldScenePack {
     /// per-vertex flat-colour array (see [`build_hybrid_env_mesh`]), cached
     /// so the positions/uvs/cba_tsb/indices accessors don't rebuild per call.
     pub cur: Option<(usize, legaia_tmd::mesh::VramMesh, Vec<u8>)>,
+    /// Live VRAM animation state ([`LegaiaViewer::field_scene_anim_init`]):
+    /// the bundle's type-6 CLUT-walk table + the scene-entry ambient move-VM
+    /// tree. `None` until initialised (or when the scene has neither).
+    pub anim: Option<FieldSceneAnim>,
+}
+
+/// Per-scene VRAM animation runner for the browser viewer - the two field
+/// mechanisms that mutate VRAM frame-over-frame (see
+/// `docs/subsystems/field-ambient-fx.md`):
+///
+/// 1. the bundle type-6 **CLUT-walk table** (`legaia_asset::clut_walk`,
+///    `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers), and
+/// 2. the **ambient move-VM effect tree** (`World::spawn_ambient_record` -
+///    jou's pulsating-flesh palette cyclers + lightning).
+///
+/// Both run on the retail game-tick clock: a game tick every
+/// [`Self::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
+/// overworld).
+pub struct FieldSceneAnim {
+    /// Parsed walker table + per-entry `(accumulator, frame_index)` state.
+    walker: Option<(legaia_asset::clut_walk::ClutWalkTable, Vec<(u32, usize)>)>,
+    /// Ambient move-VM world (only the effect subsystem is used).
+    ambient: Option<Box<legaia_engine_core::world::World>>,
+    /// Vsyncs per game tick (retail `DAT_1F800393`).
+    frame_step: u8,
+    /// Vsyncs banked toward the next game tick.
+    vsync_accum: u8,
 }
 
 /// Build one env-pack mesh the way the native play-window renders it: the
@@ -216,7 +243,138 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         terrain,
         ground,
         cur: None,
+        anim: None,
     })
+}
+
+/// Build the VRAM animation state for a loaded field scene: parse the
+/// bundle's type-6 walker table (parking its source strips into the pack's
+/// VRAM) and stage the scene's ambient move-VM effect tree. Returns `None`
+/// when the scene has neither animation source.
+pub fn build_field_scene_anim(
+    index: &ProtIndex,
+    pack: &mut FieldScenePack,
+) -> Option<FieldSceneAnim> {
+    let scene = Scene::load(index, &pack.name).ok()?;
+    let is_world_map = legaia_engine_core::scene::is_world_map_scene(&pack.name);
+    let frame_step: u8 = if is_world_map { 3 } else { 2 };
+
+    // Walker table (any scene bundle; kingdom bundles resolve through the
+    // same by-type path).
+    let mut walker = None;
+    for entry in &scene.entries {
+        let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+            continue;
+        };
+        for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
+            pack.res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+        }
+        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+        walker = Some((table, state));
+        break;
+    }
+
+    // Ambient move-VM tree: prescript stagers + the MAN P1 effect-script
+    // installs (field scenes only; the overworld has no ambient tree).
+    let mut ambient: Option<Box<legaia_engine_core::world::World>> = None;
+    if !is_world_map && let Some(scripts) = scene.find_event_scripts() {
+        let stager_bytes = scripts.bytes.to_vec();
+        if let Ok(Some(man_bytes)) = scene.field_man_payload(index)
+            && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
+        {
+            let installs = legaia_engine_core::man_field_scripts::ambient_effect_installs(
+                &man_file, &man_bytes,
+            );
+            if !installs.is_empty() {
+                let mut world = Box::new(legaia_engine_core::world::World::default());
+                world.frame_step = frame_step;
+                world.install_field_stagers(&stager_bytes);
+                for arg in installs {
+                    world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
+                }
+                if !world.ambient_fx.is_empty() {
+                    ambient = Some(world);
+                }
+            }
+        }
+    }
+
+    if walker.is_none() && ambient.is_none() {
+        return None;
+    }
+    Some(FieldSceneAnim {
+        walker,
+        ambient,
+        frame_step,
+        vsync_accum: 0,
+    })
+}
+
+impl FieldSceneAnim {
+    /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
+    /// `vram`. Returns `true` when texels changed.
+    pub fn tick(&mut self, vsyncs: u32, vram: &mut legaia_tim::Vram) -> bool {
+        let dt = u32::from(self.frame_step.max(1));
+        let mut game_ticks = 0u32;
+        for _ in 0..vsyncs.min(64) {
+            self.vsync_accum += 1;
+            if u32::from(self.vsync_accum) >= dt {
+                self.vsync_accum = 0;
+                game_ticks += 1;
+            }
+        }
+        if game_ticks == 0 {
+            return false;
+        }
+        let mut wrote = false;
+        // Walker entries: acc += dt per game tick; on crossing the frame's
+        // hold, MoveImage the 16x1 source cell in and reset (the retail
+        // FUN_8001ada4 case-0xB law, same as the play-window animator).
+        if let Some((table, state)) = self.walker.as_mut() {
+            for _ in 0..game_ticks {
+                for (entry, (acc, idx)) in table.entries.iter().zip(state.iter_mut()) {
+                    *acc += dt;
+                    let frame = &entry.frames[*idx];
+                    if *acc < u32::from(frame.hold_vsyncs) {
+                        continue;
+                    }
+                    *acc = 0;
+                    vram.move_image(
+                        frame.src_x,
+                        frame.src_y,
+                        legaia_asset::clut_walk::COPY_WIDTH,
+                        1,
+                        entry.dest_x,
+                        entry.dest_y,
+                    );
+                    *idx = (*idx + 1) % entry.frames.len();
+                    wrote = true;
+                }
+            }
+        }
+        // Ambient move-VM tree: bank the game ticks and drain against VRAM.
+        if let Some(world) = self.ambient.as_mut() {
+            world.ambient_pending_game_ticks += game_ticks;
+            if world.step_ambient_fx(vram) {
+                wrote = true;
+            }
+        }
+        wrote
+    }
+
+    /// One-line status for the UI: walker entry count + live ambient parts.
+    pub fn status(&self) -> (usize, usize) {
+        (
+            self.walker
+                .as_ref()
+                .map(|(t, _)| t.entries.len())
+                .unwrap_or(0),
+            self.ambient
+                .as_ref()
+                .map(|w| w.ambient_fx.len())
+                .unwrap_or(0),
+        )
+    }
 }
 
 impl LegaiaViewer {
@@ -386,6 +544,40 @@ impl LegaiaViewer {
             .as_ref()
             .map(|f| f.res.vram.as_bytes().to_vec())
             .unwrap_or_default()
+    }
+
+    /// Initialise the loaded field scene's VRAM animation: the bundle's
+    /// type-6 CLUT-walk table (water / waterfall shimmer) + the scene-entry
+    /// ambient move-VM effect tree (jou's pulsating flesh / lightning).
+    /// Returns a JSON status `{"walker_entries", "ambient_parts"}`; both
+    /// zero when the scene has no animation sources. Call once after
+    /// `set_scene_field`; then drive [`Self::field_scene_anim_tick`] per
+    /// rendered frame and re-upload the VRAM texture when it returns `true`.
+    pub fn field_scene_anim_init(&mut self) -> Result<String, JsValue> {
+        let index = self
+            .ensure_prot_index()
+            .map_err(|e| JsValue::from_str(&format!("field_scene_anim_init: {e}")))?;
+        let Some(pack) = self.field_scene.as_mut() else {
+            return Err(JsValue::from_str("field_scene_anim_init: no field scene"));
+        };
+        pack.anim = build_field_scene_anim(&index, pack);
+        let (walker, ambient) = pack.anim.as_ref().map(|a| a.status()).unwrap_or((0, 0));
+        Ok(format!(
+            r#"{{"walker_entries":{walker},"ambient_parts":{ambient}}}"#
+        ))
+    }
+
+    /// Advance the field scene's VRAM animation by `vsyncs` retail vsyncs
+    /// (pass 1 per 60 Hz rendered frame). Returns `true` when VRAM texels
+    /// changed - re-upload [`Self::field_scene_vram_bytes`] to the GPU then.
+    pub fn field_scene_anim_tick(&mut self, vsyncs: u32) -> bool {
+        let Some(pack) = self.field_scene.as_mut() else {
+            return false;
+        };
+        let Some(anim) = pack.anim.as_mut() else {
+            return false;
+        };
+        anim.tick(vsyncs, &mut pack.res.vram)
     }
 
     /// Per-placement env-pack slot, one `u32` per placed object. Feed each

@@ -249,19 +249,23 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_8c = read(1);
             size = 2;
         }
-        // 0x19 - counter-decrement loop (for 0x18 setup).
+        // 0x19 - counter-decrement loop (for 0x18 setup). Retail: with the
+        // 0x4000 bit clear, decrement and LOOP while the new count has not
+        // underflowed (`uVar8 <= 40000`); an underflow past zero retires
+        // with size 1. The 0x4000 bit marks an infinite loop (never
+        // decrements, always jumps back) - the ambient effect records'
+        // `0x18 0x4000` idle loops. A counter of N runs the body N+1 times.
         0x19 => {
-            let next = state.field_8c.wrapping_sub(1);
             if (state.field_8c & 0x4000) == 0 {
+                let next = state.field_8c.wrapping_sub(1);
                 state.field_8c = next;
                 size = 1;
-                if next > 40000 {
-                    // Branch out: continue iterating, jump back.
-                    state.pc = state.field_88 as i16;
+                if next <= 40000 {
+                    state.pc = (state.field_88 as i16).wrapping_add(2);
                     return StepResult::Advance;
                 }
             } else {
-                state.pc = state.field_88 as i16;
+                state.pc = (state.field_88 as i16).wrapping_add(2);
                 return StepResult::Advance;
             }
         }
@@ -271,17 +275,19 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_8e = read(1);
             size = 2;
         }
+        // 0x1B - mirror of 0x19 on the second register pair (see above for
+        // the retail loop/retire law).
         0x1B => {
-            let next = state.field_8e.wrapping_sub(1);
             if (state.field_8e & 0x4000) == 0 {
+                let next = state.field_8e.wrapping_sub(1);
                 state.field_8e = next;
                 size = 1;
-                if next > 40000 {
-                    state.pc = state.field_8a as i16;
+                if next <= 40000 {
+                    state.pc = (state.field_8a as i16).wrapping_add(2);
                     return StepResult::Advance;
                 }
             } else {
-                state.pc = state.field_8a as i16;
+                state.pc = (state.field_8a as i16).wrapping_add(2);
                 return StepResult::Advance;
             }
         }

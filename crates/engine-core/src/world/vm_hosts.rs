@@ -119,6 +119,17 @@ pub(super) struct MoveVmHostImpl<'a> {
     /// step (e.g. 0x1B copy loop reading from a freshly-mutated word) sees
     /// the latest value.
     pub(super) deferred_writes: std::collections::BTreeMap<usize, u16>,
+    /// When set, this host is ticking an **ambient field-fx part** whose
+    /// bytecode is a window of the shared prescript stager bundle
+    /// (`world.field_stager_bytes`) starting at this u16-word offset.
+    /// Routes `move_bytecode_read_u16` to the shared bundle (retail's
+    /// `_DAT_8007B8D0`-resident copy, which the self-modifying ext ops
+    /// 0x04/0x1B/0x1E patch in place) and arms `spawn_child` collection.
+    pub(super) field_record_words: Option<usize>,
+    /// Child spawns collected from op `0x25` while ticking an ambient part
+    /// (`FUN_80021B04(actor+0x14, ..., _DAT_8007B8D0 + offsets[v1], ...)`):
+    /// the prescript record id + the spawning part's world position.
+    pub(super) child_spawns: Vec<(i16, [i16; 3])>,
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
@@ -179,6 +190,18 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         if let Some(&v) = self.deferred_writes.get(&word_off) {
             return v;
         }
+        // Ambient field-fx parts read the shared prescript bundle in place
+        // (retail `_DAT_8007B8D0`): the word offset is PC-space relative to
+        // the part's record base.
+        if let Some(base) = self.field_record_words {
+            let byte = (base + word_off) * 2;
+            return self
+                .world
+                .field_stager_bytes
+                .get(byte..byte + 2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .unwrap_or(0);
+        }
         let Some(slot) = self.current_slot else {
             return 0;
         };
@@ -191,6 +214,19 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     }
     fn move_bytecode_write_u16(&mut self, word_off: usize, value: u16) {
         self.deferred_writes.insert(word_off, value);
+    }
+
+    // --- op 0x25 child spawn ------------------------------------------
+
+    fn spawn_child(&mut self, state: &mut MoveActorState, slot: i16) {
+        // Only the ambient field-fx path spawns children in the engine (the
+        // summon stand-in keeps its scenes single-record). Retail seats the
+        // child at the parent's world position (`FUN_80021B04(actor+0x14,
+        // actor+0x24, _DAT_8007B8D0 + offsets[v1], 0x1000)`).
+        if self.field_record_words.is_some() {
+            self.child_spawns
+                .push((slot, [state.world_x, state.world_y, state.world_z]));
+        }
     }
 
     // --- player / map-origin queries ----------------------------------

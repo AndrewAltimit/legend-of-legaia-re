@@ -318,12 +318,20 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // 0x1E - in-place add: `buffer[state.pc + op[2] + 4] += op[3]`.
         // Read-modify-write of a single u16 inside the move bytecode.
         // Wrapping i16 add per the original `*(short *)(...) + *(short *)(...)`.
+        //
+        // Size 4 per the raw arm at `overlay_0897_801d362c` `0x801D3E18..`:
+        // `li s2, 0x4` before the joint `j 0x801D4A3C` return (the decompiled
+        // C renders the return as a `func_0x801d4a3c()` label-call, hiding
+        // the size). The instruction therefore skips its own operand words -
+        // jou's ambient CLUT-cycler record relies on this to step the
+        // *following* op-`0x2C` capture cell per spawned instance without
+        // re-executing the patched word as an opcode.
         0x1E => {
             let off = state.pc as usize + op_w(2) as usize + 4;
             let cur = host.move_bytecode_read_u16(off) as i16;
             let new = cur.wrapping_add(op_w(3) as i16);
             host.move_bytecode_write_u16(off, new as u16);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(4)
         }
 
         // 0x1F / 0x20 - HSV-space color ramp on `actor[+0xa0]` (sub-op 0x1F)

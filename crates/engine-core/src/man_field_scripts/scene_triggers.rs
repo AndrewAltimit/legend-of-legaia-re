@@ -562,6 +562,59 @@ pub fn scene_stager_installs(man_file: &ManFile, man: &[u8]) -> Vec<SceneStagerI
     out
 }
 
+/// The stager ids a scene's **ambient effect-actor scripts** install at
+/// entry - the MAN partition-1 records that are pure effect scripts
+/// (`install id N` + infinite loop, the Shift-JIS-named "effect" actors of
+/// the consumer census). Returns the raw `AnimTrigger` operands, in record
+/// order.
+///
+/// Discrimination is by script shape, not name: a record qualifies when it
+/// contains at least one op-`0x34` sub-3 install and every decodable
+/// instruction in its body is from the effect-script allowlist (no-ops, the
+/// install itself, the self-loop `JmpRel`, and local/context flag writes).
+/// Interaction scripts that *also* carry an install (fired on talk, not on
+/// entry) always carry dialog / menu ops and are excluded; record 0 (the
+/// scene-entry system script) runs live through the field VM and is skipped.
+///
+/// REF: FUN_800252EC (the installer the op chains into; engine consumer
+/// `crate::world::World::spawn_ambient_record`)
+pub fn ambient_effect_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let count = man_file
+        .header
+        .partition_counts
+        .get(1)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    for record in 1..count {
+        let Some((start, pc0, len)) = partition_record_span(man_file, man, 1, record) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        let mut args: Vec<u8> = Vec::new();
+        let mut pure = true;
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            match &insn.info {
+                InsnInfo::Nop | InsnInfo::JmpRel { .. } => {}
+                InsnInfo::LFlag { .. } | InsnInfo::CFlag { .. } => {}
+                InsnInfo::Effect {
+                    kind: EffectKind::AnimTrigger { arg },
+                    ..
+                } => args.push(*arg),
+                _ => {
+                    pure = false;
+                    break;
+                }
+            }
+        }
+        if pure {
+            out.extend(args);
+        }
+    }
+    out
+}
+
 /// One partition-1 **boss-stager placement**: a placed actor whose own
 /// interaction record carries the field-VM scripted-battle op `3E FF <row>`
 /// (see `docs/subsystems/battle.md` § "Scripted-battle entry").

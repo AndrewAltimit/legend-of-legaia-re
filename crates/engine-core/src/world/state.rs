@@ -1452,6 +1452,24 @@ pub struct World {
     /// through [`World::active_field_fx_render_nodes`]. A `Vec` because several
     /// can be live at once (the prescript triggers them independently).
     pub active_field_fx: Vec<crate::summon::SummonScene>,
+    /// Live **ambient** move-VM effect parts - the scene-entry effect tree
+    /// the MAN partition-1 effect-actor scripts install (jou's pulsating
+    /// flesh / lightning director). Unlike [`Self::active_field_fx`] these
+    /// parts read + self-modify the shared prescript bundle in place
+    /// (retail `_DAT_8007B8D0`) and spawn op-`0x25` children. Spawned by
+    /// [`World::spawn_ambient_record`] at scene entry, ticked on the retail
+    /// game-tick clock by [`World::step_ambient_fx`].
+    pub ambient_fx: Vec<crate::world::ambient::AmbientPart>,
+    /// Retail game ticks banked for the ambient effect parts (the sibling
+    /// of [`Self::clut_pending_game_ticks`], same clock law).
+    pub ambient_pending_game_ticks: u32,
+    /// Vsync sub-accumulator for the ambient game-tick bank.
+    pub ambient_vsync_accum: u8,
+    /// Per-rect VRAM capture cache for the ambient CLUT-cell cyclers: the
+    /// texels op `0x2C` stored (`FUN_8005842C` StoreImage) keyed by the
+    /// captured rect. Filled lazily by [`World::step_ambient_fx`] from the
+    /// host's VRAM the first time a cell fires; cleared on scene entry.
+    pub ambient_cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
 
     /// Adaptive frame-step factor `dt` - the retail scratchpad byte
     /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
@@ -2420,6 +2438,10 @@ impl World {
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),
+            ambient_fx: Vec::new(),
+            ambient_pending_game_ticks: 0,
+            ambient_vsync_accum: 0,
+            ambient_cell_captures: std::collections::HashMap::new(),
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,

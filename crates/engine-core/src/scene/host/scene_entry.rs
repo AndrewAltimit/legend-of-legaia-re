@@ -195,6 +195,12 @@ impl SceneHost {
         self.world.clut_fx.clear();
         self.world.clut_vsync_accum = 0;
         self.world.clut_pending_game_ticks = 0;
+        // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are
+        // per-scene; the auto-spawn below re-seeds the new scene's tree.
+        self.world.ambient_fx.clear();
+        self.world.ambient_vsync_accum = 0;
+        self.world.ambient_pending_game_ticks = 0;
+        self.world.ambient_cell_captures.clear();
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.script_vram_moves.clear();
@@ -563,6 +569,18 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
+                    // Ambient effect stagers: each P1 effect-actor script
+                    // (pure `install id N` + loop) fires its op-0x34 sub-3
+                    // install at scene entry; spawn the installed records
+                    // now (`FUN_800252EC(arg + 1)` id convention - see
+                    // `World::spawn_field_stager`). jou: one install (arg 0
+                    // → record 1) fans out into the lightning director +
+                    // fifteen CLUT-row cyclers + the ambient SFX loop.
+                    for arg in
+                        crate::man_field_scripts::ambient_effect_installs(&man_file, &man_bytes)
+                    {
+                        self.world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
+                    }
                     // Initial NPC POSITIONS: the same retail pre-run also
                     // executes each record's story-flag-tested opening ops -
                     // the `0x23 MoveTo` park to the off-map sentinel for

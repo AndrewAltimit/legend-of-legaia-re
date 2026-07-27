@@ -100,6 +100,35 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
+| Field ambient animation residuals (mode-4 scroller, record-0 rows, VDF render substitution) | partial - the CLUT-cell cycler chain is settled and ported | [details ↓](#field-ambient-animation-residuals) |
+
+### Field ambient animation residuals
+
+*Status:* the main mechanisms are settled
+([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)): the bundle
+type-6 walker table (12 carriers), the ambient move-VM tree, and the mode-3
+CLUT-cell HSV cycler (`FUN_80019D50`) all run in the engine and the site
+field-scene viewer. Three residuals:
+
+1. **Render-mode 4** (the VRAM-rect cyclic scroller seated by outer op
+   `0x1E`, decoded at `80021df4.txt` `0x80022CC0..`) is documented from the
+   disassembly but not yet ported - jou's record 23 and any scrolling-texel
+   ambience stay static in the engine. Port = the strip-rotate arm applied
+   in `step_ambient_fx`.
+2. **Master ambient record 0** - the 8-byte spawn-row shape has no pinned
+   consumer (its body does not walk as move-VM bytecode). A write-watch on
+   an installed record-0 buffer in a live town would close it.
+3. **VDF morph render substitution** - the scene type-7 packs parse
+   (`legaia_asset::scene_vdf`) and the morph kernels are ported
+   (`engine-vm::vdf_morph`), but no renderer yet swaps a staged vertex
+   buffer in for a drawn group, and the P2 story-beat records that arm
+   jou's morph lanes (ops `0x13`/`0x1F`) only run under cutscene installs
+   the engine does not auto-fire. Wiring both would make the flesh-growth
+   set pieces move.
+
+The engine's snapshot-at-spawn divergence (each self-modifying cycler
+instance captures one 16-halfword step behind retail) is a recorded
+divergence, not an open question.
 
 ### Region story-flag gate families
 

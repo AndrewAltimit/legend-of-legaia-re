@@ -388,6 +388,20 @@
         <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
       </tr>
       <tr>
+        <td>Field ambient animation - what makes jou's ground pulse and the water shimmer</td>
+        <td><span class="tag tag-done">resolved</span> (residuals on the open page)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field water/waterfall scenes), the ambient move-VM tree the MAN P1 effect scripts install at scene entry (<code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> spawn-time first run + op-<code>0x25</code> fan-out), and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler: op <code>0x2C</code> captures a palette rect and <code>FUN_80019D50</code> rewrites it per frame with integrated H/S/V adds (lightning = flag <code>0x364</code> brightness spikes + screen flash + thunder cues). Runs in the engine and the site field-scene viewer.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>Scene bundle type-7 slot content (VDF)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries of ground-vertex deltas), installed at <code>DAT_8007B7DC</code> via <code>FUN_8001FBCC</code> and consumed by the morph stager <code>FUN_8001C604</code> through move-VM morph lanes. Parser <code>legaia_asset::scene_vdf</code>.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
         <td>Field collision-map source</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-partial">decompiled-C</span></td>

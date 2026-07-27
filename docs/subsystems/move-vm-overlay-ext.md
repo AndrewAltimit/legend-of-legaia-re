@@ -86,6 +86,15 @@ Three sub-ops mutate the move bytecode buffer in place - these are "self-modifyi
 
 - `0x04` writes `actor[+0x14..+0x18]` (world XYZ) into `buffer[state.pc + op[2] + 3..+6]` (3 u16 stores); subsequent ops that read those slots see the captured world snapshot.
 - `0x1E` is read-modify-write on a single u16 - `buffer[state.pc + op[2] + 4] += op[3]`.
+  Its size is **4** (it skips its own operand words): the raw arm at
+  `overlay_0897_801d362c` `0x801D3E18..` ends `li s2, 0x4` before the shared
+  `j 0x801D4A3C` size-return, which the decompiled C renders as a
+  `func_0x801d4a3c()` label-call with the size dropped. The default-arm
+  reading made a `0x2F 0x1E` instruction re-execute its own operands as
+  opcodes - jou's ambient CLUT-cycler record (which patches its *following*
+  op-`0x2C` operand, then falls through to execute that `0x2C`) is the disc
+  witness for the size-4 decode. See
+  [`field-ambient-fx.md`](field-ambient-fx.md#the-self-modifying-spawn-stepper).
 - `0x1B` is an in-bytecode copy loop - for `i in 0..op[4]`, `buffer[state.pc + op[3] + i + 5] = buffer[state.pc + op[2] + i + 5]`.
 
 The base offset of 5 (versus 3 for `0x04`, 4 for `0x1E`) targets the operand region past the count word, so the bytes following `0x1B`'s instruction header are effectively an inline scratch buffer indexed by op[2]/op[3]. The `MoveHost::move_bytecode_{read,write}_u16` callbacks expose the actor's move buffer to these ops; the engine layer wires them to `actor[+0x48][word_off]`.

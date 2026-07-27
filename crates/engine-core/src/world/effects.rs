@@ -191,6 +191,8 @@ impl World {
             world: self,
             current_slot: Some(slot),
             deferred_writes: std::collections::BTreeMap::new(),
+            field_record_words: None,
+            child_spawns: Vec::new(),
         };
         let actor_state = unsafe {
             // SAFETY: the host borrows `world.actors[slot]` only through
@@ -486,6 +488,8 @@ impl World {
                 world: self,
                 current_slot: None,
                 deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
             };
             scene.tick(&mut host, frame_delta);
         }
@@ -569,6 +573,8 @@ impl World {
                 world: self,
                 current_slot: None,
                 deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
             };
             scene.tick(&mut host, frame_delta);
         }
@@ -725,6 +731,8 @@ impl World {
                 world: self,
                 current_slot: None,
                 deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
             };
             scene.tick(&mut host, frame_delta);
         }

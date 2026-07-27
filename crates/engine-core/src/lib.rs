@@ -32,6 +32,7 @@ pub mod card_flow;
 pub mod cd_dma;
 pub mod cheat_applier;
 pub mod chunk_install;
+pub mod clut_cell_fx;
 pub mod clut_fx;
 pub mod cutscene;
 pub mod cutscene_caption;

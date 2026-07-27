@@ -579,6 +579,8 @@ impl World {
             world: self,
             current_slot: Some(slot),
             deferred_writes: std::collections::BTreeMap::new(),
+            field_record_words: None,
+            child_spawns: Vec::new(),
         };
         let actor_state = unsafe {
             // SAFETY: same disjoint-field justification as `step_move_vm`.
