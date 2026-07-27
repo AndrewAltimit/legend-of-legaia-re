@@ -1905,4 +1905,8 @@ re-aggregate. A staged id that is not equipment skips all of that and
 draws the current values with no arrows.
 
 Ports: `engine-ui::equip_compare_panel_fields` /
-`party_compare_panel_fields`.
+`party_compare_panel_fields`. The screen that opens both windows is the
+shop's equipment-buy recipient flow (`FUN_801DB380`; see
+[shop.md](shop.md)) - the browser play page draws them beside the
+recipient list (window 36), with the candidate blocks derived from the
+equipment modifier table rather than the inline trial-equip swap.
