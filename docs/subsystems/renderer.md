@@ -735,8 +735,9 @@ rather than to frame the current view:
   every camera. A field map is `256 x 256` tiles of 128 units (~23 k units on
   the diagonal), and the **overworld walk camera composes a 6x world scale**
   onto `psx_camera_mvp`, so eye-space depth there runs to ~140 k. Raising the
-  far plane costs no depth precision - projected depth is `1 - near/z` to
-  within `O(near/far)`, i.e. the *near* plane sets the resolution.
+  far plane costs no depth precision: the renderer runs **reversed-Z** (see
+  the coplanar-surfaces section below), where resolution is proportional to
+  view depth at every distance.
 - `window::scene_clip_planes(distance)` gives the orbit-family cameras
   (`orbit_camera_mvp`, `world_map_camera_mvp`, `walk_view_camera_mvp`,
   `cutscene_camera_mvp`) a near plane of `distance * 0.005` clamped into
@@ -759,6 +760,74 @@ the placement boxes are axis-aligned over whole terrain tiles, walls, and
 buildings, so as the camera orbited or the player walked, the lens-to-player
 segment swept through a *neighbour's* box and blinked it out. The cull code is
 kept for reference but the branch is never taken.
+
+## Coplanar surfaces: retail's ordering model, the port's depth policy
+
+Retail has **no depth buffer**. Every primitive is inserted into the ordering
+table by its mean GTE Z and the table is drawn back-to-front, so coplanar
+surfaces - which the assets use freely - resolve painter-style:
+
+- a small decal prim on a large base surface usually lands in a **nearer OT
+  bucket** than the base (its mean Z is its own local Z; the base's mean Z
+  averages a span that reaches deeper), so the decal paints after the base
+  and wins;
+- prims in the **same** bucket resolve by insertion order (`AddPrim` is a
+  head insertion, so the earliest-emitted prim draws last, on top);
+- **double-sided prims** - the same triangle authored once per visible side,
+  with opposite winding - never conflict at all, because the per-prim NCLIP
+  test rasterises only the camera-facing copy.
+
+A depth-tested port turns each of those into per-pixel z-fighting: the two
+surfaces interpolate to depths that differ only by float rounding, and the
+winner flickers per fragment as the camera moves. The scene data is full of
+them - a disc census over `town01` / `rikuroa` / `jou` finds ~200 double-sided
+pairs per cave/town environment pack (about half differing per side in UVs,
+i.e. visibly), dozens of exactly-coplanar decal prims inside single meshes,
+and hundreds of cross-draw pairs where terrain tiles overlap each other or a
+placed slab on an identical world plane.
+
+The port resolves each class at the level it occurs, shared by the native
+renderer and the site's WebGL viewers:
+
+- **Double-sided pairs** - `legaia_tmd::mesh::mark_double_sided_pairs` (an
+  opt-in post-pass the scene-assembly consumers run; preservation/export
+  builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
+  CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
+  discard the away-facing copy of *flagged* prims only - retail's per-prim
+  NCLIP, without the unsafe global cull (winding is not globally consistent
+  across the corpus). Which facing is "away" depends on the view chain's
+  reflection parity: the native field frame and the site's `buildMvp` carry
+  one net reflection, the site's assembled views add the retail screen-X
+  mirror on top; the WebGL shader takes the parity as the `u_pair_front`
+  uniform, the native shader's parity is fixed by its field frame.
+- **Intra-mesh coplanar decals** - `legaia_tmd::mesh::separate_coplanar_prims`
+  nudges each successive overlapping layer half a unit toward its visible
+  side (the negative cross-product side of the emitted winding), ranks
+  assigned by greedy graph colouring so chains of edge-adjacent prims
+  alternate 0/1 instead of accumulating. Retail art itself authors ~1-unit
+  offsets for the decals it separates explicitly, so the nudge stays inside
+  authored practice and far below visibility against 128-unit tiles.
+- **Cross-draw overlaps** - `legaia_engine_core::coplanar_draws` detects the
+  coplanar overlap clusters across a scene's resolved `EnvDraw` list (terrain
+  + placed layers combined) and returns a per-draw world offset: the largest
+  surface in a cluster stays put, each overlapping smaller/later draw lifts
+  one unit per rank toward the surface's visible side - the same "small decal
+  wins" outcome retail's mean-Z bucketing produces. The native play-window
+  applies the offsets in its placement/posed-prop resolvers; the web viewer
+  applies them in the placement/terrain position exporters, so the two stay
+  consistent.
+- **Depth precision** - the native renderer runs **reversed-Z**
+  (`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
+  compares mirrored to Greater/GreaterEqual, applied centrally at the two MVP
+  upload sites so every camera inherits it). With the `Depth32Float` target
+  this keeps depth resolution proportional to view depth (`~z * 2^-23`), so
+  the sub-unit nudges above - and the assets' own ~1-unit authored offsets -
+  resolve at every camera distance up to `SCENE_FAR`. The clip `w` row is
+  untouched, so CPU blend-order keys and the shaders' `clip_pos.w` depth-cue
+  reads are unaffected. The WebGL side keeps a fixed-function 24-bit buffer
+  (no clip-control on WebGL2), so its single-mesh projection instead scales
+  the near plane with the framing distance (`buildMvp`), which restores the
+  same sub-unit resolution at real mesh scale.
 
 ## Rendering knobs: what is faithful, what is a choice
 
