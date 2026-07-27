@@ -85,11 +85,12 @@ impl PlayWindowApp {
                 },
             )
             .unwrap_or_default();
-        // Dynamic-lighting enhancement state (opt-in, non-retail; `I` toggles).
-        let light_str = if self.dynamic_lighting {
-            "  light ON (I)"
-        } else {
-            ""
+        // Dynamic-lighting enhancement state (opt-in, non-retail; `I`
+        // toggles; `Y` toggles the point-light/shadow sub-layer).
+        let light_str = match (self.dynamic_lighting, self.dyn_shadows) {
+            (true, true) => "  light+shadows ON (I/Y)",
+            (true, false) => "  light ON (I) shadows off (Y)",
+            (false, _) => "",
         };
         // Camera-distance preset (`T` cycles) + precise-movement toggle
         // (`R`) - the compass/zoom state, appended to the status line.
