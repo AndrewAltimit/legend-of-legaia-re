@@ -38,7 +38,7 @@ The function is not a bytecode VM. There is no opcode table, no PC stride. It is
 | `0x50`–`0x52`, `0x5A` | Done / cleanup / end-of-action | (any) |
 | `0x64`–`0x6B` | Run / Defend / capture-fail | Flee (`+0x1DE == 5`) |
 | `0x6E`–`0x71` | Capture sequence | Magic with capture flag |
-| `0xFD`, `0xFF` | Idle hold / battle-end | (any) |
+| `0xFD`, `0xFF` | Idle hold / round boundary | (any) |
 
 ### State table
 
@@ -84,7 +84,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` if shake, `+0x26 != 0`). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
 | `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `actor[+0x26]`, `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
-| `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps `actor[+0x1A]++`; if `+0x1A < (party_count + monster_count - +0x25)`, advances to `0x0A` (next action); else → `0xFF` (battle complete). | `0x0A` (next actor) / `0xFF` (battle ends). |
+| `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps `actor[+0x1A]++`; if `+0x1A < (party_count + monster_count - +0x25)`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
 | `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Iterates monster slots: if monster has rotation trigger (`+0x16C != 0`) and isn't immune (`(&DAT_8007BD10)[i] != 4`), bumps `actor[+0x1A]++`. If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - a downed or petrified member leaves the battle alive, the mechanism behind "escape restores a Stoned member". Ported: `engine-vm::battle_action` `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
 | `0x65` | Run - wait | If the run failed (`_DAT_8007726C == ctx + 0x189`) → screen-shake `_DAT_8007B792` rotates. Decrements `ctx[+0x6D8]`. When < 0: **failed run** → `0x50` (Done band - the action is consumed, the battle continues); **successful escape** → `0x66`. | `0x50` (failed) or `0x66` (escaped). |
 | `0x66` | Run - **successful-escape teardown** | Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white white-out, ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_core::fade` kernel. | `0x67` (terminal hold; no case body - falls through to default no-op). |
@@ -115,13 +115,21 @@ over", not "the battle is over".
 Read the two rows together and the table already said so: the `0x5A` row routes wipes to
 the signal and only the everyone-has-acted path to `0xFF`.
 
-**Port consequence, open.** `engine_vm::battle_action` maps `0xFF` to
-`ActionState::BattleComplete`, whose handler calls `battle_end(BattleEndCause::MonsterWipe)`
-- asserting a wipe that has not happened - and the live loop turns that into
-`finish_battle`. Whether a real battle reaches that path depends on how
-`action_queue_counter` accumulates across a round, which is not settled here; the failure
-mode if it does is a spurious victory, with loot and XP granted after one round. Tracked in
-[`reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+**Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose
+handler clears every actor's acted counter and hands control back through the
+`EndOfAction` state - the state the arming driver keys the next turn on; the retail
+`0xFF` body itself (`ctx[+0x28A]` round bump, `FUN_801F45A4` settle) runs host-side in
+`engine-core`'s live loop at its round boundary. `battle_end(..)` is raised only by the
+paths that raise `DAT_8007BD71 = 0xFE` in retail: the `0x5A` wipe arms and the escape
+teardown. The earlier port mapped `0xFF` to a `battle_end(MonsterWipe)` terminal, and a
+live battle *did* reach it: `Begin` stamps `actor[+0x1A]` from `ctx.queued_action` (the
+engine arms with `3`), the end-of-action bump pushes it to `4 >= alive_total` in any
+battle with four or fewer living combatants, and a driver that parks the SM at
+`EndOfAction` (the tick after a folded monster cast, or a Sleep/Stone skipped turn)
+re-dispatches the `0x5A` gate into that arm - a spurious victory, with loot and XP
+granted after one round. Regressions:
+`engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`,
+`engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 

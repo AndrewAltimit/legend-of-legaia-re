@@ -117,6 +117,7 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | Battle-stage overlay band (`+0x47`) | resolved | `disassembly` | `FUN_800520F0` pages a per-stage slot-B overlay via `FUN_8003EC70(_DAT_8007B64A + 0x47)`, skipped when the id is `0` (which every catalogued battle but the Tetsu tutorial reads). Engine `engine-core::overlay_loader::battle_stage_overlay_entry`. [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
 | Battle-intro tutorial boxes (Tetsu sparring fight) | resolved (machine pinned, ported and wired) | `disassembly` (exclusivity `inference`) | The prompts are resident in stage overlay 967, so porting the battle SM alone could never emit them - though "**only** in 967" is corpus-exhaustiveness, not an instruction claim, and is graded separately. `FUN_801F6B70` is a 91-entry jump-table hook on the flow-state byte `ctx[+0x06]` with just **nine** live slots; each switches on `ctx[+0x28A]` - the battle-mode counter, read here as a lesson index - making the script a `(state × lesson)` cross-product. Port `engine-core::battle_tutorial` reads the prompt text off the user's disc. [details ↓](../subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967) |
 | Battle command-flow byte `ctx[+0x06]` | resolved | `disassembly` | The *other* battle SM - `FUN_801D0748`, the menu half, distinct from the action SM's `ctx[+0x07]` and overlapping its value space. Its selection band is regular decimal tens `30..120` (turn prompt / category menu / escape / item / magic / arts entry / target / target confirm / commit / attack-mode), which is what identifies it as the tutorial hook table's key: the nine live hook slots are that band minus the magic window. Engine mirror `engine-core::battle_flow`. [details ↓](../subsystems/battle.md#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) |
+| Action-SM state `0xFF` treated as battle end by the port | resolved (path was live-reachable; port fixed) | `disassembly` | [details ↓](#action-sm-state-0xff-treated-as-battle-end-by-the-port) |
 | Spine flag `0x142` (Caruban beat / dolk-dolk2 switch) writer | resolved (disc writers + engine port + oracle) | `capture` | [details ↓](#spine-flag-0x142-caruban-beat--dolk-dolk2-switch-writer) |
 | Spine flag `0x482` (Drake mist-wall) writer | resolved (writer-less; "direct code path" presumption falsified) | `capture` | [details ↓](#spine-flag-0x482-drake-mist-wall-writer) |
 | CDNAME scene-window frame (`raw = extraction + 2`) in `Scene::load` | resolved (engine converts; misattributions corrected) | `capture` | Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the `.MAP` is the retail block's FIRST entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = [18,70,20]" were next-block sidecars under the wrong label; "urudre1 tests 0x15E" and "0x63A has no writer" are falsified; "0x1BE = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See [cdname.md](../formats/cdname.md#numbering-space). |
@@ -132,6 +133,45 @@ The per-prim dispatcher `FUN_80043390` owns four `NCCS`/`NCCT` **light** handler
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Action-SM state `0xFF` treated as battle end by the port
+
+*Status:* resolved - the retail half was already graded `disassembly`; the
+port-side reachability question is settled (the path **was** reachable in a
+live battle) and the port is fixed.
+
+Retail `0xFF` is the **round boundary**: its only writer is the non-wipe arm
+of the `0x5A` end-of-action gate, and wipes signal through
+`DAT_8007BD71 = 0xFE` without writing a state byte
+([battle-action.md](../subsystems/battle-action.md#0xff-is-the-round-boundary-not-the-battles-end)).
+The engine port mapped `0xFF` to a `battle_end(BattleEndCause::MonsterWipe)`
+terminal instead, and the open question was whether a live battle reaches it.
+
+It does, by concrete trace through `engine-vm`'s own accumulation logic:
+
+- `Begin` stamps the acting actor's counter (`actor[+0x1A]`,
+  `BattleActor::action_queue_counter`) from `ctx.queued_action`, which the
+  engine's arming paths set to `3`;
+- the `0x5A` gate's non-wipe arm bumps it and compares against
+  `party_alive + monsters_alive`, so `3 + 1 = 4 >= alive_total` in any battle
+  with four or fewer living combatants (3 party + 1 monster, or later rounds
+  of a larger fight);
+- the gate is dispatched whenever a driver leaves the SM parked at
+  `EndOfAction` across a tick - which the live loop does after a folded
+  monster spell cast and after a Sleep/Stone skipped turn (a repeatedly
+  casting monster's never-restamped counter also walks `1, 2, 3, ...` up to
+  the same threshold).
+
+Symptom: a spurious victory - loot and XP granted - after one round with both
+sides standing. The fix renames the state to `ActionState::RoundEnd`, whose
+handler clears every actor's acted counter and hands control back through
+`EndOfAction` (the state the arming driver keys the next turn on); the retail
+`0xFF` body (`ctx[+0x28A]` round bump, `FUN_801F45A4` settle) already runs
+host-side in `engine-core`'s live loop. `battle_end(..)` now fires only from
+the paths that raise retail's `0xFE` signal: the `0x5A` wipe arms and the
+escape teardown `0x66`. Regressions: engine-vm
+`full_round_with_both_sides_alive_does_not_end_the_battle`, engine-core
+`round_boundary_state_is_not_a_spurious_victory`.
 
 ### Endless camera orbit - the `0x19` attack-approach park
 

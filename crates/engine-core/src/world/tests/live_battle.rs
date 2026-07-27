@@ -178,6 +178,33 @@ fn successful_run_escapes_the_battle_without_loot() {
 }
 
 #[test]
+fn round_boundary_state_is_not_a_spurious_victory() {
+    use legaia_engine_vm::battle_action::{ActionState, StepOutcome};
+    let mut world = live_battle_world_3v2();
+    // The SM reaches state 0xFF through the 0x5A gate's non-wipe arm - e.g.
+    // the tick after a folded monster cast leaves the SM parked at
+    // EndOfAction, whose bump pushes the acted counter past alive_total.
+    // Park the SM there directly: with both sides alive this is a ROUND
+    // boundary (retail semantics), never a battle end. Pre-fix this tick
+    // ran battle_end(MonsterWipe) -> finish_battle - a spurious victory
+    // with loot granted after one round.
+    world.battle_ctx.action_state = ActionState::RoundEnd.as_byte();
+    for _ in 0..0x40 {
+        let out = world.live_battle_tick();
+        assert!(
+            !matches!(out, Some(StepOutcome::BattleComplete)),
+            "both sides alive: the round boundary must not complete the battle"
+        );
+        if world.battle_command.is_some() {
+            break; // the loop armed the next turn - the battle continues
+        }
+    }
+    assert!(world.battle_end.is_none(), "no battle-end cause staged");
+    assert!(world.last_battle_rewards.is_none(), "no spurious loot");
+    assert_eq!(world.mode, SceneMode::Battle, "still in battle");
+}
+
+#[test]
 fn failed_run_consumes_the_turn_and_the_battle_continues() {
     use legaia_engine_vm::battle_action::ActionState;
     let mut world = live_battle_world_3v2();
