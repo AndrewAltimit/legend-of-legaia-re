@@ -604,15 +604,19 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
       <!-- ---------------- muscle dome ---------------- -->
       <section class="mg-panel" data-game="muscle">
-        <h3>Muscle Dome &mdash; the arena card battle</h3>
+        <h3>Muscle Dome &mdash; the arena battle</h3>
         <p class="mg-blurb">
-          A real 3D turn fight: your battle-form fighter against one of the game's monsters, both
-          drawn and animated from your disc. Each round you commit a <b>four-card hand</b> of swing
-          commands under a <b>point budget seeded from your fighter's AGL</b>; confirm, and the
-          queued cards play out through the game's <em>actual battle engine</em> &mdash; the
-          per-move power table, the arts damage roll, the element-affinity matrix and the damage
-          finisher, all read off your image. The round banner, the between-round interval tally
-          and the spirit gauges track the fight exactly as the arena's own bookkeeping does.
+          Retail presents the Muscle Dome as a <b>standard battle</b> &mdash; the normal Legaia
+          battle chrome with the <b>Item command crossed out</b> &mdash; and so does this panel:
+          the black <em>&ldquo;Welcome to the Muscle Dome!&rdquo;</em> intro card, the command
+          cluster (Attack / Ra-Seru / Spirit), the name/HP/MP plate and the AP gauge. Your
+          fighter is the character's <b>assembled battle form</b> (the normal fighter form retail
+          fields here) against one of the game's monsters, both drawn and animated from your
+          disc. Choose <b>Attack</b> and enter directions under an <b>AP budget seeded from your
+          fighter's AGL</b>; a sequence that performs a Tactical Art raises the retail
+          <b>&ldquo;HYPER ARTS!!&rdquo;</b> banner, and every command resolves through the game's
+          <em>actual battle engine</em> &mdash; the per-move power table, the arts damage roll,
+          the element-affinity matrix and the damage finisher, all read off your image.
         </p>
         <div class="mg-row">
           <label for="muscle-char"><strong>Fight as:</strong></label>
@@ -634,11 +638,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-verdict" id="muscle-verdict"></div>
         <p class="mg-controls">
-          <b>Commit cards, then fight.</b> Click a card (or press <kbd>1</kbd>&ndash;<kbd>4</kbd>)
-          to queue it while your budget covers its cost; <kbd>Space</kbd> closes the selection and
-          the round <b>plays out in 3D</b> (Space again skips ahead). Between rounds the
-          <b>interval tally</b> shows the score readout and the spirit recovered &mdash;
-          <kbd>Space</kbd> starts the next round. Drag the arena to orbit, wheel to zoom.
+          <b>Enter commands, then Begin.</b> <kbd>Space</kbd> skips the intro card. In the
+          command menu <kbd>&larr;</kbd> is <b>Attack</b> (directional input), <kbd>&darr;</kbd>
+          is <b>Spirit</b> (end selection and fight); Item is crossed out and the Ra-Seru chip
+          is disabled (see the note). During Attack input the <b>arrow keys</b> (or the buttons /
+          <kbd>1</kbd>&ndash;<kbd>4</kbd>) commit directions while the AP gauge covers their
+          cost &mdash; a sequence that spells a Tactical Art raises the arts banner when it plays
+          out &mdash; then <kbd>Space</kbd> begins the round in 3D (Space again skips ahead;
+          <kbd>Esc</kbd> backs out to the menu). Between rounds <kbd>Space</kbd> advances the
+          interval tally. Drag the arena to orbit, wheel to zoom.
         </p>
         <div class="mg-row" id="muscle-cards"></div>
         <div class="mg-row">
@@ -653,21 +661,28 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-note" id="muscle-note">
           <p>
-            <b>The fight is your disc's.</b> The four-card deal, the budget gate and the action
-            queue are the arena's own rules; each card resolves through the ported battle engine
-            &mdash; its power from the battle overlay's move-power table, the damage roll and
-            finisher from the shared battle formulas, the elemental nudge from the 8&times;8
-            affinity matrix. Your fighter's stats are the new-game template leveled through the
-            game's own growth curves (pick the level above), the card costs are your character's
-            own swing records, and the opponent fights with its monster record's boosted battle
-            stats &mdash; every number decoded from the image you loaded, in your browser.
+            <b>The fight is your disc's.</b> The four-command deal, the budget gate and the
+            action queue are the arena's own rules; each command resolves through the ported
+            battle engine &mdash; its power from the battle overlay's move-power table, the
+            damage roll and finisher from the shared battle formulas, the elemental nudge from
+            the 8&times;8 affinity matrix. Your fighter's <b>body is the assembled battle
+            form</b> &mdash; the player battle file's equipment-id sections spliced and posed
+            from its own action streams, with each direction playing <em>that command's own
+            swing record</em> (the card ids <code>0xC..0xF</code> are the swing slots, so the
+            pairing is the disc's, not a guess) &mdash; and your stats are the new-game template
+            leveled through the game's own growth curves (pick the level above). The command
+            costs are your character's own swing records, the opponent fights with its monster
+            record's boosted battle stats, and a committed sequence is resolved against the
+            <b>SCUS arts-name table's own combo strings</b> to raise the retail arts banner
+            &mdash; every number decoded from the image you loaded, in your browser.
           </p>
           <p>
             <b>The arena is the game's own too.</b> The fenced dirt ring behind the fighters is
             the Sol Muscle Dome's real battle backdrop &mdash; PROT&nbsp;1225, the tail slot of
             the dome's own <code>other6.lzs</code> file &mdash; drawn world-fixed with its own
-            texture pages and with its semi-transparent prims (the wall-base dust decal, the
-            lamp glows) blended additively the PSX way, and the ground underfoot is the retail battle ground grid (the flat
+            texture pages and with its lamp-glow prims blended additively the PSX way (the
+            stream's separate dust-decal object is omitted &mdash; the retail match shows a
+            mist-free arena), and the ground underfoot is the retail battle ground grid (the flat
             tiled plane the battle overlay emits, sampling the backdrop's own dirt tile at its
             traced VRAM address). The <b>sound</b> is the dome's own cue set: the match SM's UI
             blips (PROT&nbsp;0868) and the shared battle impact cue (PROT&nbsp;0869), decoded
@@ -675,17 +690,22 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           </p>
           <p>
             <b>Fitted rather than traced:</b> the base camera seat, fighter spacing and facing
-            (the slow spin between rounds is the traced idle-phase camera tick); the HUD
-            text layout, the time-meter placement and the interval-panel framing (the meter's
-            ramp is the traced <code>FUN_801d3444</code> shape, and the <b>AP</b> bar label,
-            <b>ROUND</b>/<b>INTERVAL</b> headings and the play-out <b>TOTAL</b> numerals are the
-            retail match HUD's own wording, capture-verified); which of the three traced
-            UI blips fires on which page event; the card&rarr;swing-animation pairing (the true
-            swing clips live in a side archive this page doesn't decode); the opponent's greedy
-            card AI (retail has no dome-specific AI table); the jitter-free level growth (retail
-            adds a zero-mean random spread); and the awarded Seru. When the 3D bodies don't
-            decode, the fight falls back to the text HUD and says so; when the backdrop entry
-            doesn't decode, the floor falls back to plain tiles.
+            (the slow spin between rounds is the traced idle-phase camera tick); the exact chip
+            and plate pixel geometry + colours (canvas approximations of the retail chrome
+            captures &mdash; the wording, the crossed-out Item, the intro card's script text and
+            the <b>ARTS!!</b> banner look are the captures' own); the time-meter placement (its
+            ramp is the traced <code>FUN_801d3444</code> shape) and the interval-panel framing;
+            which of the three traced UI blips fires on which page event; the KO clip pick
+            (slot&nbsp;4 of the pinned party hit-reaction family &mdash; the flinch, slot 2, is
+            traced); the opponent's greedy command AI (retail has no dome-specific AI table);
+            the jitter-free level growth (retail adds a zero-mean random spread); and the
+            awarded Seru. <b>Two honest gaps:</b> the rules engine resolves each command as a
+            basic strike &mdash; retail expands a recognized art through its art records for
+            more damage, so the arts banner here is presentation over the real recognition, not
+            an arts damage model &mdash; and the Ra-Seru (magic) chip renders disabled because
+            the port has no cast path, though retail's Beginner/Expert courses allow magic.
+            When the 3D bodies don't decode, the fight falls back to the text HUD and says so;
+            when the backdrop entry doesn't decode, the floor falls back to plain tiles.
           </p>
         </div>
         <div class="see-also">
@@ -2750,8 +2770,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         if (!e.repeat) fishEdges++;   /* bait twitch: a fresh D-pad edge */
       }
     } else if (active === 'muscle') {
+      /* Retail pad map: D-pad drives the command menu (Left=Attack,
+       * Down=Spirit) and, inside Attack input, commits directions; 1-4
+       * stay as hand-slot aliases; Esc backs out of Attack input. */
       const c = { 1: 0, 2: 1, 3: 2, 4: 3 }[k];
+      const dir = { arrowleft: 'left', arrowright: 'right',
+                    arrowup: 'up', arrowdown: 'down' }[k];
       if (c !== undefined) { e.preventDefault(); muscleCommit(c); }
+      else if (dir) { e.preventDefault(); muscleKey(dir); }
+      else if (k === 'escape' || k === 'backspace') { e.preventDefault(); muscleKey('back'); }
       else if (k === ' ' || k === 'enter') { e.preventDefault(); muscleConfirm(); }
     }
   });
@@ -3139,6 +3166,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     muscleSync();
   }
 
+  /* Pad-shaped input (arrows / Esc) into the battle-menu presentation. */
+  function muscleKey(name) {
+    if (!api || !muscleR) return;
+    muscleR.key(name);
+    muscleSync();
+  }
+
   /* Space / Confirm: fight, skip the playback, advance the interval, rematch. */
   function muscleConfirm() {
     if (!api || !muscleR) return;
@@ -3165,7 +3199,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     $('muscle-reward').textContent =
       rn || ('spell 0x' + st.reward_spell.toString(16).toUpperCase());
 
-    /* Cards commit only during selection, and only while affordable. */
+    /* Directions commit only during selection, and only while affordable. */
     const inSelect = muscleR.mode() === 'select' && st.phase === 'select';
     $('muscle-cards').querySelectorAll('[data-card]').forEach((b, i) => {
       const c = st.hand[i];
@@ -3176,7 +3210,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * the accessible text mirror). */
     if (st.phase !== muscleLastPhase) {
       if (st.phase === 'select') verdict($('muscle-verdict'),
-        'Commit cards you can afford, then Space to fight.', '');
+        'Left = Attack (arrows enter directions), Down = Spirit, Space begins the round.', '');
       else if (st.phase === 'round_over') verdict($('muscle-verdict'),
         `Round settled — you took ${st.last_damage[0]}, ` +
         `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}.`, '');

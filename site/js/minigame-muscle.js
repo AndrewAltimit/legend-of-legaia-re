@@ -1,4 +1,11 @@
-/* Muscle Dome - the 3D card-battle arena, drawn from the visitor's disc.
+/* Muscle Dome - the arena contest, drawn from the visitor's disc.
+ *
+ * Retail presents the Muscle Dome as a STANDARD BATTLE - the normal Legaia
+ * battle chrome with three course restrictions (no equipment, no items;
+ * magic allowed on Beginner/Expert) - and that is what this panel draws
+ * (capture-verified against retail: the black "Welcome to the Muscle Dome!"
+ * intro card, the command cluster with the Item chip crossed out, the
+ * name/HP/MP plate + AP gauge plate, and the "HYPER ARTS!!" banner).
  *
  * Two layers over one <div> (the same template as the dance / Baka panels):
  *   - a WebGL canvas (the shared TmdRenderer R16UI paletted-VRAM pipeline)
@@ -7,15 +14,20 @@
  *     fenced dirt ring the retail contest is fought in) plus the retail
  *     battle ground grid (the func_0x801d02c0 flat tiled plane, sampling
  *     the backdrop's own (832,0) page window through CLUT (0,479)); over
- *     it the player's battle-form party mesh (PROT 1204, posed from the
- *     PROT 1203 battle-form anim bank) versus a monster of the PROT 867
- *     archive - its own embedded TMD, texture pool relocated to battle
- *     texture slot 0 exactly as the retail battle loader does
- *     (FUN_80055468 via `battle_render_mesh`), posed from its own
- *     rigid-part keyframe animations (docs/formats/monster-animation.md);
- *   - a 2D canvas carrying the HUD text overlays: the round banner, HP +
- *     Spirit bars, damage numbers, the round time meter, the between-round
- *     interval panel and the verdict banners.
+ *     it the player's ASSEMBLED BATTLE FORM - retail fields the party's
+ *     normal fighter forms here, not the Baka pack: the player battle
+ *     file's equipment-id sections assembled + band-0 relocated
+ *     (legaia_asset::battle_char_assembly, `muscle_fighter_*`), posed from
+ *     the file's own record[0] action streams and per-command swing
+ *     records - versus a monster of the PROT 867 archive, its texture pool
+ *     relocated to battle texture slot 0 exactly as the retail battle
+ *     loader does (FUN_80055468 via `battle_render_mesh`), posed from its
+ *     own rigid-part keyframes (docs/formats/monster-animation.md);
+ *   - a 2D canvas carrying the battle chrome: the intro card, the command
+ *     cluster (Begin + name chips, Item crossed out, Attack / D-pad /
+ *     Ra-Seru / Spirit), the name/HP/MP plate, the AP plate, the arts
+ *     banner with its speed-lines, damage numbers, the round time meter,
+ *     the between-round interval panel and the verdict banners.
  *
  * SOUND: the dome's own cue set, decoded from the disc's SFX banks - the
  * match SM's UI blips (static rows 0x20..0x22, PROT 0868) and the shared
@@ -24,24 +36,40 @@
  *
  * The RULES are `legaia-engine-core::muscle_dome` + the ported battle
  * formulas, reached through `LegaiaMinigames` (crates/web-viewer/src/
- * minigames_muscle.rs): every committed card resolves through the real
+ * minigames_muscle.rs): every committed command resolves through the real
  * arts/physical damage roll (FUN_801dd0ac), the element-affinity scale
  * (FUN_801dd864) and the damage finisher (FUN_801ddb30), against fighter
  * stats read off the disc's own records - the monster's PROT 867 stat block
  * and the player's SCUS new-game template leveled through the growth curves.
  * This file is presentation only; it never computes a damage number itself.
  *
- * Traced vs fitted, stated plainly: the deal, budget gate, action queue,
- * score readout, damage rolls, spirit accrual, the arena backdrop + ground
- * grid texture address, the arena's additive (ABE) dust/lamp prims, the
- * time-meter ramp, the idle-phase camera spin rate and the cue id set are
- * the disc's own tables + traced constants; the "AP" bar label, the
- * "INTERVAL" heading, the "ROUND n" banner and the play-out "TOTAL"
- * numerals are the retail match HUD's own text (capture-verified). The
- * base CAMERA seat, fighter spacing/facing, the rest of the HUD layout
- * and the per-event cue assignment are fitted, and the panel's note says
- * so. The card->animation pairing is an approximation over the
- * battle-form bank's attack records.
+ * Traced vs fitted, stated plainly. TRACED (disc tables + captures): the
+ * deal, budget gate, action queue, damage rolls, spirit accrual, the arena
+ * backdrop + ground grid texture address, the ABE additive lamp glows (the
+ * object-1 dust decal is omitted - the retail match capture shows a
+ * mist-free interior; see docs/subsystems/minigame-muscle-dome.md), the
+ * time-meter ramp, the idle-phase camera spin rate, the cue id set, the
+ * command -> swing-clip pairing (the four card ids 0xC..0xF ARE the swing
+ * record slots of the player battle file - the disc's own pairing), the
+ * flinch clip (slot 2, the head of the party hit-reaction map FUN_80053CB8
+ * writes), and the queue -> art resolution (the SCUS arts-name table's own
+ * combo strings through the recognizer's greedy walk; kind labels joined
+ * from the curated gamedata table). CAPTURE-VERIFIED WORDING/LOOK: the
+ * "Welcome to the Muscle Dome!" intro, the Begin/name/Item/Attack/Ra-Seru/
+ * Spirit command chips with Item crossed out, the AP plate + name/HP/MP
+ * plate, the "... ARTS!!" banner + speed-lines + attacker/defender chips,
+ * and the "ROUND"/"INTERVAL"/"TOTAL" texts. FITTED: the base camera seat,
+ * fighter spacing/facing, exact chip/plate pixel geometry + colours (canvas
+ * approximations of the retail chrome), which traced blip fires on which
+ * page event, the KO clip pick (slot 4 of the pinned reaction family), and
+ * the small art-name caption under the banner (a page aid).
+ *
+ * HONEST GAPS: the rules engine resolves each committed command as a basic
+ * strike - retail expands a recognized art sequence through the art records
+ * (more damage), so here the arts banner is presentation over the real
+ * recognition, not an arts damage model; and the port has no cast path, so
+ * the Ra-Seru (magic) chip renders disabled even though retail's Beginner/
+ * Expert courses allow magic.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  */
@@ -51,21 +79,27 @@ window.MgMuscle = (function () {
   const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
   const HUD_W = 320, HUD_H = 240;     /* retail frame; canvas is 2x */
 
-  /* The four swing-card command ids and their directions - the runtime
+  /* The four swing-command ids and their directions - the runtime
    * action-constant space (crates/art queue.rs: 0x0C Left, 0x0D Right,
    * 0x0E Down, 0x0F Up). */
   const CMD = {
-    12: { name: 'Left',  glyph: '←' },
-    13: { name: 'Right', glyph: '→' },
-    14: { name: 'Down',  glyph: '↓' },
-    15: { name: 'Up',    glyph: '↑' },
+    12: { name: 'Left',  glyph: '←', dir: 'left' },
+    13: { name: 'Right', glyph: '→', dir: 'right' },
+    14: { name: 'Down',  glyph: '↓', dir: 'down' },
+    15: { name: 'Up',    glyph: '↑', dir: 'up' },
   };
 
-  /* Player battle-form anim bank slots (PROT 1203, 9 records/char: 0 idle,
-   * 1..3 attacks, 4 special, 5 hit - see minigame-baka.js). The card ->
-   * record pairing is an APPROXIMATION: the true swing clips live in the
-   * player battle files' ME archives, which this page does not decode. */
-  const P_ANIM = { IDLE: 0, HIT: 5, BY_CMD: { 12: 1, 13: 2, 14: 3, 15: 1 } };
+  /* Player battle-form clip slots (player battle file record[0] + swing
+   * records; crates/web-viewer muscle_fighter_* APIs). Slot 0 = idle; the
+   * four swings live AT the card ids 0xC..0xF (the disc's own pairing);
+   * slot 2 = the light flinch (head of the party hit-reaction map
+   * [2,3,4,5,0xB] FUN_80053CB8 writes to +0x1EF..); slot 4 = the
+   * knockdown-family pick for the KO hold (fitted within that pinned map). */
+  const P_ANIM = { IDLE: 0, HIT: 2, KO: 4 };
+
+  /* Ra-Seru names - the retail magic-command chip label per character
+   * (capture: Vahn's chip reads "Meta"). */
+  const RA_SERU = ['Meta', 'Terra', 'Ozma'];
 
   /* Monster action tags (docs/formats/monster-animation.md): 0 idle, 2/3
    * light hit reactions, 4 knockdown, 0x20 pre-approach / 0x21 close-in
@@ -90,12 +124,17 @@ window.MgMuscle = (function () {
 
     let scene = null;          /* 3D scene (null = text fallback) */
     let sceneMonster = -1;     /* monster the scene was built for */
-    let mode = 'idle';         /* idle|select|playback|interval|decided */
+    let mode = 'idle';         /* idle|intro|select|playback|interval|decided */
+    let selectSub = 'menu';    /* select submode: menu | attack */
+    let introT = 0;            /* ticks into the intro card */
     let tick = 0;
     let banner = null;         /* {text, sub, t, life, cls} */
     let popups = [];           /* {text, x, y, t, life, color} */
     let playQueue = [];        /* remaining round-log events */
     let playT = 0;             /* ticks into the current event */
+    let pIdx = 0;              /* player events landed this playback */
+    let artsSpans = [];        /* muscle_round_arts_json rows */
+    let artsBanner = null;     /* {text, name, t, life} */
     let hpShow = [0, 0];       /* eased HP bar values */
     let lastOpts = null;       /* {char, level, monster} for restart */
     let roster = null;         /* muscle_roster_json rows */
@@ -254,16 +293,18 @@ window.MgMuscle = (function () {
      * body doesn't decode - the panel then keeps its text presentation. */
     function buildScene(charSlot, monsterId) {
       if (!glCanvas || !window.TmdRenderer) return null;
-      if (!api.muscle_scene_ready || !api.muscle_scene_ready(monsterId)) return null;
+      if (!api.muscle_scene_ready || !api.muscle_scene_ready(monsterId, charSlot)) return null;
 
+      /* The player's assembled battle form (fighter form - the retail dome
+       * roster), not the Baka pack. */
       const P = {
-        pos: api.baka_fighter_positions(0, charSlot),
-        uvs: api.baka_fighter_uvs(0, charSlot),
-        ct: api.baka_fighter_cba_tsb(0, charSlot),
-        idx: api.baka_fighter_indices(0, charSlot),
-        oid: api.baka_fighter_object_ids(0, charSlot),
-        flat: api.baka_fighter_flat_rgba(0, charSlot),
-        parts: api.baka_fighter_part_count(0, charSlot),
+        pos: api.muscle_fighter_positions(charSlot),
+        uvs: api.muscle_fighter_uvs(charSlot),
+        ct: api.muscle_fighter_cba_tsb(charSlot),
+        idx: api.muscle_fighter_indices(charSlot),
+        oid: api.muscle_fighter_object_ids(charSlot),
+        flat: api.muscle_fighter_flat_rgba(charSlot),
+        parts: api.muscle_fighter_part_count(charSlot),
       };
       const M = {
         pos: api.muscle_monster_positions(monsterId),
@@ -276,13 +317,23 @@ window.MgMuscle = (function () {
       };
       if (!P.pos.length || !M.pos.length) return null;
 
-      /* Player clips out of the battle-form bank. */
-      const pClip = (action) => {
-        const dims = api.baka_anim_dims(0, charSlot, action);
-        if (!dims[0] || !dims[1]) return null;
-        const frames = api.baka_anim_pose_frames(0, charSlot, action, P.parts);
+      /* Player clips out of the battle form's own action streams: idle
+       * (record[0] slot 0), flinch (slot 2), KO family (slot 4), and the
+       * four per-command swings AT the card ids 0xC..0xF - the disc's own
+       * card -> clip pairing. Rates follow the entry's +0x78 byte through
+       * the same rate/8-per-tick scale as the monster clips. */
+      let pAnims = [];
+      try { pAnims = JSON.parse(api.muscle_fighter_anims_json(charSlot)); }
+      catch (e) { pAnims = []; }
+      const pClip = (slot) => {
+        const row = pAnims.find(a => a.slot === slot);
+        if (!row || !row.frame_count) return null;
+        const frames = api.muscle_fighter_pose_frames(charSlot, slot, P.parts);
         if (!frames.length) return null;
-        return { frames, frameCount: dims[1], parts: P.parts, rate: 4 };
+        return {
+          frames, frameCount: row.frame_count, parts: P.parts,
+          rate: Math.max(1, (row.rate || 1) * 2),
+        };
       };
       /* Monster clips out of its own action set (rate is the retail cursor
        * byte: rate/8 keyframes per tick with the normal x4 scale). */
@@ -298,10 +349,13 @@ window.MgMuscle = (function () {
           rate: Math.max(1, (a.rate || 1) * 2),
         };
       };
+      const pIdle = pClip(P_ANIM.IDLE);
+      const pHit = pClip(P_ANIM.HIT);
       const clips = [
-        { idle: pClip(P_ANIM.IDLE), hit: pClip(P_ANIM.HIT),
-          byCmd: Object.fromEntries(Object.entries(P_ANIM.BY_CMD)
-            .map(([c, r]) => [c, pClip(r)])) },
+        { idle: pIdle, hit: pHit || pIdle,
+          ko: pClip(P_ANIM.KO) || pHit || pIdle,
+          byCmd: Object.fromEntries([12, 13, 14, 15]
+            .map(c => [c, pClip(c)])) },
         { idle: mClip(mPick.idle), hit: mClip(mPick.hit),
           attack: mClip(mPick.attack), ko: mClip(mPick.ko) },
       ];
@@ -343,14 +397,15 @@ window.MgMuscle = (function () {
       }
 
       const renderer = new window.TmdRenderer(glCanvas);
-      /* Two-pass PSX semi-transparency: the arena shell carries ABE prims
-       * (ABR mode 1, additive) - the wall-base dust decal and the lamp
-       * glows. The legacy single pass draws them OPAQUE, which reads as a
-       * solid dark "mist" band ringing the arena; retail blends them
-       * additively (faint) over the fence and wall. Same defect shape the
-       * dance hall's smoke columns had - see webgl-tmd.js semiTwoPass. */
+      /* Two-pass PSX semi-transparency for the shell's ABE lamp-glow prims
+       * (ABR mode 1, additive) - the legacy single pass draws them opaque
+       * (the dance-hall smoke defect shape; see webgl-tmd.js semiTwoPass).
+       * The stream's OTHER additive set - the object-1 wall-base dust
+       * decal - is omitted on the Rust side (muscle_arena_hybrid): its
+       * texels are genuinely bright, so any draw of it reads as a cloud
+       * band, and the retail match capture shows a mist-free interior. */
       renderer.semiTwoPass = true;
-      renderer.uploadVram(api.muscle_vram(monsterId));
+      renderer.uploadVram(api.muscle_vram(monsterId, charSlot));
       renderer.uploadMesh(pos, uvs, ct, new Uint32Array(idx), flat);
 
       /* With the real arena up, the shell is authored at X >= 0 with the
@@ -429,10 +484,12 @@ window.MgMuscle = (function () {
      *     the PROT 0868 system bank;
      *   - the melee impact: the shared battle/duel bank's row 0x09
      *     (category 2 -> PROT 0869), the hit cue of the shared battle
-     *     path the dome resolves its card plays through.
+     *     path the dome resolves its command plays through.
      * The id set is traced; WHICH blip fires on which page event is a
      * fitted assignment (the 34 sites spread across phase arms this page
-     * does not reproduce one-to-one), and the note says so. */
+     * does not reproduce one-to-one), and the note says so - that covers
+     * the menu-cursor blip, the commit/confirm blip and the disabled-chip
+     * buzz alike. */
     let sfx = null;      /* { ctx, confirm, cursor, blip, hit[] } */
     let sfxMeta;         /* parsed muscle_sfx_json (undefined until asked) */
 
@@ -565,42 +622,105 @@ window.MgMuscle = (function () {
       hpShow = [state.hp[0], state.hp[1]];
       popups = [];
       playQueue = [];
-      mode = 'select';
-      setBanner('ROUND 1', 'commit cards, SPACE to fight', 90);
+      artsSpans = [];
+      artsBanner = null;
+      banner = null;
+      /* Retail contest entry: the black "Welcome to the Muscle Dome!" card,
+       * then straight into round 1's command menu. Skippable. */
+      mode = 'intro';
+      introT = 0;
+      selectSub = 'menu';
       return true;
+    }
+
+    /* Leave the intro card for round 1's command menu. */
+    function beginSelect() {
+      mode = 'select';
+      selectSub = 'menu';
+      setBanner('ROUND 1', null, 70);
     }
 
     function commit(slot) {
       if (mode !== 'select') return false;
+      selectSub = 'attack';   /* a commit is directional input */
       const ok = api.muscle_commit(slot);
-      /* Confirm blip on a committed card; cursor blip on a rejected one
+      /* Confirm blip on a committed command; cursor blip on a rejected one
        * (overspend / queue full) - fitted assignment over the traced ids. */
       playCue(ok ? 'confirm' : 'cursor', ok ? 0.5 : 0.35);
       return ok;
+    }
+
+    /* Commit the hand card matching a pad direction (the retail attack
+     * input: directions go straight onto the AP gauge). */
+    function commitDir(dir) {
+      const state = st();
+      if (!state.live) return false;
+      const hand = state.hand || [];
+      const i = hand.findIndex(c => (CMD[c.cmd] || {}).dir === dir);
+      return i >= 0 ? commit(i) : false;
+    }
+
+    /* Close selection and play the round out. */
+    function fight() {
+      api.muscle_end_selection();
+      api.muscle_resolve();
+      playQueue = JSON.parse(api.muscle_round_log_json());
+      /* The committed queue resolved through the character's real arts
+       * tables (SCUS combo strings + curated kind labels) - the spans the
+       * retail arts banner covers during playback. */
+      try { artsSpans = JSON.parse(api.muscle_round_arts_json()); }
+      catch (e) { artsSpans = []; }
+      playT = 0;
+      pIdx = 0;
+      banner = null;
+      artsBanner = null;
+      tally = null;
+      mode = 'playback';
+    }
+
+    /* Pad-shaped input from the page: left/right/up/down/back. */
+    function key(name) {
+      if (mode === 'intro') { beginSelect(); return; }
+      if (mode !== 'select') return;
+      if (selectSub === 'menu') {
+        if (name === 'left') {            /* Attack: directional input */
+          selectSub = 'attack';
+          playCue('cursor', 0.4);
+        } else if (name === 'down') {     /* Spirit: end selection, fight */
+          playCue('confirm', 0.5);
+          fight();
+        } else if (name === 'up' || name === 'right') {
+          /* Item (crossed out) / Ra-Seru: disabled here - Item by the
+           * course rules, magic by the port's missing cast path. */
+          playCue('blip', 0.3);
+        }
+      } else {
+        if (name === 'back') { selectSub = 'menu'; playCue('cursor', 0.4); }
+        else if (name === 'left' || name === 'right' ||
+                 name === 'up' || name === 'down') commitDir(name);
+      }
     }
 
     /* SPACE / Confirm: advances whatever the current presentation mode is. */
     function confirm() {
       const state = st();
       if (!state.live) { if (lastOpts) start(lastOpts); return; }
-      if (mode === 'select') {
-        api.muscle_end_selection();
-        api.muscle_resolve();
-        playQueue = JSON.parse(api.muscle_round_log_json());
-        playT = 0;
-        banner = null;
-        tally = null;
-        mode = 'playback';
+      if (mode === 'intro') {
+        beginSelect();
+      } else if (mode === 'select') {
+        fight();
       } else if (mode === 'playback') {
         /* Skip: settle every pending event instantly. */
         while (playQueue.length) applyEvent(playQueue.shift(), true);
+        artsBanner = null;
         finishPlayback();
       } else if (mode === 'interval') {
         api.muscle_next_round();
         const s2 = st();
         if (s2.phase === 'select') {
           mode = 'select';
-          setBanner('ROUND ' + (s2.round + 1), 'commit cards, SPACE to fight', 90);
+          selectSub = 'menu';
+          setBanner('ROUND ' + (s2.round + 1), null, 70);
         }
       } else if (mode === 'decided') {
         if (lastOpts) start(lastOpts);
@@ -618,16 +738,29 @@ window.MgMuscle = (function () {
       const defender = ev.attacker ^ 1;
       if (!instant && scene) {
         if (ev.attacker === 0) {
-          play(0, scene.clips[0].byCmd[ev.cmd] || scene.clips[0].byCmd[12]);
+          play(0, scene.clips[0].byCmd[ev.cmd] || scene.clips[0].idle);
         } else {
           play(1, scene.clips[1].attack);
         }
       }
+      /* Retail arts banner: when this player event starts a recognized art
+       * sequence, raise the class banner over the whole span. */
+      if (ev.attacker === 0) {
+        if (!instant) {
+          const span = artsSpans.find(a => a.start === pIdx);
+          if (span) {
+            const kind = String(span.kind || 'regular');
+            const text = (kind === 'regular' ? '' : kind.toUpperCase() + ' ') + 'ARTS!!';
+            artsBanner = { text, name: span.name || '', t: 0, life: span.len * 34 };
+          }
+        }
+        pIdx++;
+      }
       hpShow[defender] = ev.hp[defender];
       /* The running damage tally of the current attacker's sequence -
        * retail draws it as yellow numerals ("TOTAL n") in the lower-right
-       * while the queued cards play out; it resets when the other fighter
-       * takes over. */
+       * while the queued commands play out; it resets when the other
+       * fighter takes over. */
       if (!tally || tally.attacker !== ev.attacker) {
         tally = { attacker: ev.attacker, total: 0 };
       }
@@ -649,7 +782,7 @@ window.MgMuscle = (function () {
         mode = 'decided';
         if (scene) {
           const loser = state.phase === 'won' ? 1 : 0;
-          play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].hit, true);
+          play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].ko, true);
         }
         if (state.phase === 'won') {
           /* Retail victory banner wording (FUN_801d8de8 case 0x59 composes
@@ -664,10 +797,16 @@ window.MgMuscle = (function () {
         }
       } else {
         mode = 'select';
+        selectSub = 'menu';
       }
     }
 
-    /* ------------------------------------------------------------ HUD draw */
+    /* ------------------------------------------------------------ HUD draw
+     *
+     * Canvas approximations of the retail battle chrome (blue-marble plates
+     * with gold borders, bevelled gold chips, the crossed-out Item chip, the
+     * pointed AP / status plates). Geometry + colours are FITTED to the
+     * retail captures; the wording is the captures' own. */
 
     function bar(x, y, w, h, frac, col, back) {
       g.fillStyle = back || 'rgba(0,0,0,0.55)';
@@ -688,26 +827,256 @@ window.MgMuscle = (function () {
       g.fillText(s, x * 2, y * 2);
     }
 
-    function drawFighterPlates(state) {
-      const plates = [
-        { x: 8, name: state.names[0], hp: hpShow[0], max: state.hp_max[0],
-          spirit: state.spirit[0], col: '#2dcca7' },
-        { x: 168, name: state.names[1], hp: hpShow[1], max: state.hp_max[1],
-          spirit: state.spirit[1], col: '#d84b4b' },
-      ];
-      for (const p of plates) {
-        g.fillStyle = 'rgba(6,8,12,0.62)';
-        g.fillRect(p.x * 2, 8 * 2, 144 * 2, 34 * 2);
-        text(p.name, p.x + 4, 15, 8, '#e8ecf2');
-        bar(p.x + 4, 21, 136, 5, p.max ? p.hp / p.max : 0, p.col);
-        text('HP ' + Math.max(0, Math.round(p.hp)) + '/' + p.max,
-          p.x + 4, 31, 6, '#aeb6c4', 'left', '');
-        /* The per-fighter Spirit gauge (actor+0x170) - the value the dome
-         * HUD's own bar elements display (FUN_801d8de8 elems 0x52/0x53),
-         * headed by the retail "Spirit" string (elem 0x0B). */
-        bar(p.x + 74, 29, 66, 4, p.spirit / 100, '#7798d4');
-        text('Spirit', p.x + 71, 31, 6, '#7798d4', 'right', '');
+    /* One chrome plate. style: 'blue' marble / 'gold' bevel / 'grey'
+     * (disabled). pointed: extend hexagonal points on both ends. */
+    function plate(x, y, w, h, style, pointed) {
+      const X = x * 2, Y = y * 2, W = w * 2, H = h * 2, P = pointed ? H / 2 : 0;
+      g.save();
+      /* Outline as a Path2D so the border strokes stay on the plate even
+       * after the mottling loop replaces the context's current path. */
+      const outline = new Path2D();
+      if (pointed) {
+        outline.moveTo(X - P, Y + H / 2);
+        outline.lineTo(X, Y); outline.lineTo(X + W, Y);
+        outline.lineTo(X + W + P, Y + H / 2);
+        outline.lineTo(X + W, Y + H); outline.lineTo(X, Y + H);
+      } else {
+        const r = Math.min(7, H / 2);
+        outline.moveTo(X + r, Y);
+        outline.lineTo(X + W - r, Y); outline.quadraticCurveTo(X + W, Y, X + W, Y + r);
+        outline.lineTo(X + W, Y + H - r);
+        outline.quadraticCurveTo(X + W, Y + H, X + W - r, Y + H);
+        outline.lineTo(X + r, Y + H); outline.quadraticCurveTo(X, Y + H, X, Y + H - r);
+        outline.lineTo(X, Y + r); outline.quadraticCurveTo(X, Y, X + r, Y);
       }
+      outline.closePath();
+      const grad = g.createLinearGradient(0, Y, 0, Y + H);
+      if (style === 'gold') {
+        grad.addColorStop(0, '#d8b268'); grad.addColorStop(0.45, '#b98f3e');
+        grad.addColorStop(1, '#8a6526');
+      } else if (style === 'grey') {
+        grad.addColorStop(0, '#6b6f7e'); grad.addColorStop(1, '#494c58');
+      } else {
+        grad.addColorStop(0, '#7d82c8'); grad.addColorStop(0.5, '#565b9e');
+        grad.addColorStop(1, '#3c4084');
+      }
+      g.fillStyle = grad;
+      g.fill(outline);
+      /* Marble mottling on the blue plates (cheap, deterministic). */
+      if (style === 'blue') {
+        g.save(); g.clip(outline);
+        g.fillStyle = 'rgba(255,255,255,0.10)';
+        for (let i = 0; i < Math.max(2, (w / 18) | 0); i++) {
+          const mx = X + ((i * 73 + x * 31 + y * 17) % Math.max(1, W));
+          const my = Y + ((i * 41 + x * 13) % Math.max(1, H));
+          g.beginPath(); g.ellipse(mx, my, 9, 4, 0.6, 0, Math.PI * 2); g.fill();
+        }
+        g.restore();
+      }
+      g.lineWidth = 2.5;
+      g.strokeStyle = style === 'gold' ? '#5d431a'
+        : style === 'grey' ? '#2e3038' : '#c8a24a';
+      g.stroke(outline);
+      g.lineWidth = 1;
+      g.strokeStyle = 'rgba(255,244,200,0.5)';
+      g.stroke(outline);
+      g.restore();
+    }
+
+    /* A command chip: plate + centred label. */
+    function chip(x, y, w, h, style, label, labelCol) {
+      plate(x, y, w, h, style);
+      const col = labelCol || (style === 'gold' ? '#2e1f06'
+        : style === 'grey' ? '#b9bcc6' : '#f2f4fa');
+      text(label, x + w / 2, y + h / 2 + 0.5, Math.min(8, h - 6), col, 'center');
+    }
+
+    /* The retail Item chip's red cross-out. */
+    function crossOut(x, y, w, h) {
+      g.save();
+      g.strokeStyle = '#c41f1f';
+      g.lineWidth = 7;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo((x - 2) * 2, (y - 1) * 2); g.lineTo((x + w + 2) * 2, (y + h + 1) * 2);
+      g.moveTo((x + w + 2) * 2, (y - 1) * 2); g.lineTo((x - 2) * 2, (y + h + 1) * 2);
+      g.stroke();
+      g.restore();
+    }
+
+    /* The grey D-pad glyph between Attack and the Ra-Seru chip. */
+    function dpadGlyph(cx, cy, r) {
+      const X = cx * 2, Y = cy * 2, R = r * 2, a = R * 0.38;
+      g.save();
+      g.fillStyle = '#cfd2da';
+      g.strokeStyle = '#5a5d68';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(X - a, Y - R); g.lineTo(X + a, Y - R); g.lineTo(X + a, Y - a);
+      g.lineTo(X + R, Y - a); g.lineTo(X + R, Y + a); g.lineTo(X + a, Y + a);
+      g.lineTo(X + a, Y + R); g.lineTo(X - a, Y + R); g.lineTo(X - a, Y + a);
+      g.lineTo(X - R, Y + a); g.lineTo(X - R, Y - a); g.lineTo(X - a, Y - a);
+      g.closePath();
+      g.fill(); g.stroke();
+      g.fillStyle = '#9a9daa';
+      g.beginPath(); g.arc(X, Y, a * 0.7, 0, Math.PI * 2); g.fill();
+      g.restore();
+    }
+
+    /* Retail intro card: pure black, centred white cursive script with a
+     * soft blue-white glow - "Welcome to the Muscle Dome!". */
+    function drawIntro() {
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+      const a = Math.min(1, introT / 25);
+      g.save();
+      g.globalAlpha = a;
+      g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.shadowColor = 'rgba(176,186,255,0.95)';
+      g.shadowBlur = 16;
+      g.fillStyle = '#f4f6ff';
+      g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
+      g.shadowBlur = 6;
+      g.fillText('Welcome to the Muscle Dome!', HUD_W, HUD_H - 14);
+      g.restore();
+      if (introT > 90) {
+        text('SPACE', 306, 230, 6, 'rgba(174,182,196,0.7)', 'right', '');
+      }
+    }
+
+    /* Top-left Begin + fighter-name chips (retail command-input header). */
+    function drawHeaderChips(state) {
+      chip(6, 6, 40, 13, 'gold', 'Begin');
+      chip(52, 6, Math.max(36, state.names[0].length * 7 + 10), 13, 'gold', state.names[0]);
+    }
+
+    /* The retail command cluster: Item (crossed out) on top; Attack +
+     * D-pad + Ra-Seru; Spirit below. Gold marks the live pick. */
+    function drawCommandCluster(state) {
+      const raSeru = RA_SERU[state.char] || 'Meta';
+      const inAttack = selectSub === 'attack';
+      /* Item - crossed out, non-interactive (the course rules). */
+      chip(196, 20, 60, 13, 'blue', 'Item');
+      crossOut(196, 20, 60, 13);
+      /* Attack (left) - gold when the directional input is live. */
+      chip(150, 48, 54, 14, inAttack ? 'gold' : 'blue', 'Attack');
+      dpadGlyph(216, 55, 7);
+      /* Ra-Seru (magic) - rendered disabled: the port has no cast path
+       * (retail Beginner/Expert allow it; honest gap, see header). */
+      chip(228, 48, 50, 14, 'grey', raSeru);
+      /* Spirit - ends selection (the rules' spirit path). */
+      chip(178, 76, 60, 14, 'blue', 'Spirit');
+      if (!inAttack && !banner) {
+        text('←Attack  ↓Spirit  SPACE Begin', 214, 100, 6, '#aeb6c4', 'center', '');
+      }
+    }
+
+    /* Committed directional input (the retail arts strip: arrows appear as
+     * you enter them), drawn over the AP plate while selecting. */
+    function drawQueueStrip(state) {
+      const q = state.queue[0];
+      if (!q.length && selectSub !== 'attack') return;
+      let s = '';
+      for (const cmd of q) s += (CMD[cmd] ? CMD[cmd].glyph : '?') + ' ';
+      plate(180, 172, 126, 12, 'blue', false);
+      text(s || '· · ·', 243, 178, 8, '#ffe9a8', 'center');
+      if (selectSub === 'attack') {
+        text('arrows commit · SPACE fight · ESC back', 306, 166, 6, '#aeb6c4', 'right', '');
+      }
+    }
+
+    /* The retail AP plate: pointed blue plate, red "AP" label, orange
+     * gauge, remaining-points numeral. */
+    function drawApPlate(state) {
+      const budget = state.budget[0];
+      const pool = state.stats ? state.stats[0].budget_pool : budget;
+      plate(190, 188, 112, 12, 'blue', true);
+      text('AP', 196, 194, 7, '#e2453a');
+      bar(210, 191, 64, 6, pool ? budget / pool : 0, '#f0a428', 'rgba(20,16,40,0.8)');
+      text(String(budget), 298, 194, 7, '#ffd166', 'right');
+    }
+
+    /* The retail bottom status plate: fighter name, gold HP, teal MP. */
+    function drawStatusPlate(state) {
+      plate(8, 214, 304, 16, 'blue', true);
+      text(state.names[0], 16, 222, 8, '#f2f4fa');
+      text('HP', 96, 222, 8, '#ffd23e');
+      text(Math.max(0, Math.round(hpShow[0])) + '/' + state.hp_max[0], 118, 222, 8, '#f2f4fa');
+      const mp = (state.mp_max && state.mp_max[0]) || 0;
+      text('MP', 208, 222, 8, '#37d3b1');
+      text(mp + '/' + mp, 230, 222, 8, '#f2f4fa');
+    }
+
+    /* Defender name chip, bottom-right (retail shows it during playback;
+     * enemy HP is never drawn - the retail battle UI hides it). */
+    function drawFoeChip(state) {
+      const name = state.names[1] || '';
+      if (!name) return;
+      const w = Math.max(44, name.length * 7 + 12);
+      chip(310 - w, 196, w, 13, 'blue', name);
+    }
+
+    /* Attacker name chip, top-left gold (retail arts-playback header). */
+    function drawAttackerChip(name) {
+      chip(6, 6, Math.max(40, name.length * 7 + 12), 13, 'gold', name);
+    }
+
+    /* The retail arts banner: orange-gradient block capitals with a dark
+     * outline over white radial speed-lines. */
+    function drawArtsBanner() {
+      const b = artsBanner;
+      if (!b) return;
+      if (b.t > b.life) { artsBanner = null; return; }
+      const a = b.t < 6 ? b.t / 6 : b.t > b.life - 10 ? (b.life - b.t) / 10 : 1;
+      g.save();
+      g.globalAlpha = Math.max(0, Math.min(1, a));
+      /* White radial speed-line rays. */
+      const cx = HUD_W, cy = HUD_H;
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(b.t * 0.004);
+      g.fillStyle = 'rgba(255,255,255,0.30)';
+      const R = 460;
+      for (let i = 0; i < 18; i++) {
+        const ang = (i / 18) * Math.PI * 2;
+        const halfW = 0.045;
+        g.beginPath();
+        g.moveTo(0, 0);
+        g.lineTo(Math.cos(ang - halfW) * R, Math.sin(ang - halfW) * R);
+        g.lineTo(Math.cos(ang + halfW) * R, Math.sin(ang + halfW) * R);
+        g.closePath();
+        g.fill();
+      }
+      g.restore();
+      /* Block-capital gradient text with dark outline. */
+      const pop = b.t < 6 ? 0.7 + 0.3 * (b.t / 6) : 1;
+      g.translate(cx, cy + 24);
+      g.scale(pop, pop);
+      g.font = 'bold ' + (26 * 2) + 'px "Arial Black", ui-sans-serif, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const grad = g.createLinearGradient(0, -30, 0, 30);
+      grad.addColorStop(0, '#ffe98a');
+      grad.addColorStop(0.55, '#ffab2e');
+      grad.addColorStop(1, '#f2600f');
+      g.lineWidth = 8;
+      g.strokeStyle = '#4a1404';
+      g.strokeText(b.text, 0, 0);
+      g.fillStyle = grad;
+      g.fillText(b.text, 0, 0);
+      /* Small art-name caption - a page aid (retail names the move on the
+       * Spirit panel instead). */
+      if (b.name) {
+        g.font = 'bold ' + (8 * 2) + 'px ui-monospace, monospace';
+        g.lineWidth = 3;
+        g.strokeText(b.name, 0, 40);
+        g.fillStyle = '#ffe9a8';
+        g.fillText(b.name, 0, 40);
+      }
+      g.restore();
+      b.t++;
     }
 
     /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
@@ -726,22 +1095,6 @@ window.MgMuscle = (function () {
       g.strokeStyle = 'rgba(255,255,255,0.35)';
       g.strokeRect(x * 2 + 0.5, (yBot - hFull) * 2 + 0.5, 6 * 2, hFull * 2);
       text('TIME', x + 3, yBot + 7, 6, '#aeb6c4', 'center', '');
-    }
-
-    function drawSelectHud(state) {
-      const budget = state.budget[0];
-      const pool = state.stats ? state.stats[0].budget_pool : budget;
-      /* Retail labels the round point bar "AP" (the yellow gauge in the
-       * live match HUD; the pool is the actor +0x154 AP/spirit seed). */
-      text('AP', 8, 206, 7, '#ffd166');
-      bar(48, 203, 120, 6, pool ? budget / pool : 0, '#ffd166');
-      text(budget + ' / ' + pool, 172, 206, 7, '#e8ecf2');
-      /* Committed queue pips (the actor +0x1df action queue). */
-      const q = state.queue[0];
-      let s = '';
-      for (const cmd of q) s += (CMD[cmd] ? CMD[cmd].glyph : '?') + ' ';
-      text('QUEUE ' + (s || '—'), 8, 220, 7, '#e8ecf2');
-      text('1-4 commit · SPACE fight', 312, 220, 6, '#aeb6c4', 'right', '');
     }
 
     function drawInterval(state) {
@@ -765,7 +1118,7 @@ window.MgMuscle = (function () {
       text('spirit gauge   you ' + state.spirit[0] + '/100' +
         '  ·  foe ' + state.spirit[1] + '/100', 160, 116, 7, '#7798d4', 'center', '');
       const q0 = state.queue[0].length, q1 = state.queue[1].length;
-      text('cards played   you ' + q0 + '  ·  foe ' + q1,
+      text('commands played   you ' + q0 + '  ·  foe ' + q1,
         160, 132, 7, '#aeb6c4', 'center', '');
       text('budget reseeds from your AGL pool next round',
         160, 152, 6, '#aeb6c4', 'center', '');
@@ -788,7 +1141,7 @@ window.MgMuscle = (function () {
     }
 
     /* The retail play-out damage tally: yellow numerals lower-right while
-     * the committed cards resolve ("TOTAL n" in the live match HUD). */
+     * the committed commands resolve ("TOTAL n" in the live match HUD). */
     function drawTally() {
       if (!tally || !tally.total) return;
       text('TOTAL ' + tally.total, 296, 186, 9, '#ffd166', 'right');
@@ -810,6 +1163,11 @@ window.MgMuscle = (function () {
 
     function frame() {
       tick++;
+      if (mode === 'intro') {
+        introT++;
+        drawIntro();
+        return;
+      }
       const state = st();
 
       /* Playback: land one event every 34 ticks (attacker swing, then the
@@ -877,11 +1235,26 @@ window.MgMuscle = (function () {
       }
       if (!state.live) { drawBanner(); return; }
 
-      drawFighterPlates(state);
-      if (meter > 0) drawTimeMeter();
-      if (mode === 'select') drawSelectHud(state);
-      if (mode === 'playback') drawTally();
-      if (mode === 'interval') drawInterval(state);
+      if (mode === 'select') {
+        drawHeaderChips(state);
+        drawCommandCluster(state);
+        drawQueueStrip(state);
+        drawApPlate(state);
+        drawStatusPlate(state);
+      } else if (mode === 'playback') {
+        drawAttackerChip(state.names[tally ? tally.attacker : 0] || state.names[0]);
+        drawFoeChip(state);
+        drawApPlate(state);
+        drawStatusPlate(state);
+        drawTally();
+        drawArtsBanner();
+      } else if (mode === 'interval') {
+        drawStatusPlate(state);
+        drawInterval(state);
+      } else if (mode === 'decided') {
+        drawStatusPlate(state);
+      }
+      if (meter > 0 && mode === 'playback') drawTimeMeter();
       drawPopups();
       drawBanner();
     }
@@ -896,9 +1269,10 @@ window.MgMuscle = (function () {
     }
 
     return {
-      loadRoster, start, commit, confirm, frame,
+      loadRoster, start, commit, confirm, frame, key,
       state: st,
       mode: () => mode,
+      selectSub: () => selectSub,
       sceneOk: () => !!scene,
       arenaOk: () => {
         try { return !!JSON.parse(api.muscle_arena_json()).ok; }
