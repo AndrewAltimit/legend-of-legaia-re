@@ -622,6 +622,21 @@ The `v` (voice index) channel differs whenever either of the above does:
 allocation order is a function of the note stream, so it is an effect, not
 an independent finding.
 
+## CD-XA cue capture
+
+`scripts/recomp/xa_cue_capture.py` applies the same snapshot-ring machinery to
+the **CD-XA voice-cue layer**: every `FUN_8003D53C(clip_slot, channel, dur)`
+fire (arts shouts, grunts, streamed BGM, fanfares) stages its parameters in a
+cluster of SCUS globals before arming the CdlSetfilter state machine, and the
+tool records those globals per frame, detects cue edges on the
+`play_state == 2` write, and resolves each staged `CdlLOC` against the
+`0x801C6ED8` clip table to name the `XA<n>.XA` file. The full address map and
+the end-of-playback artifact the detector must gate out are in the module
+docstring; `test_xa_cue_capture.py` locks the edge semantics on synthetic
+fixtures. This is the instrument behind the arts-voice channel pins in
+`legaia_art::arts_voice::CAPTURED_ART_CHANNELS`
+(see [`battle-action.md`](../subsystems/battle-action.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout)).
+
 ## See also
 
 - [`determinism-replay.md`](determinism-replay.md) - the engine-vs-itself
