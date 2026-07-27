@@ -189,6 +189,19 @@ the BGM slot 1 and its alias 5. The gaps are the retail allocation, not a
 hardware cap: a bank larger than the gap to the next base simply overruns it,
 which is legal exactly while the neighbour slot is closed.
 
+The catalogued save states show the partition directly. The per-bank open-state
+array `_DAT_801CE368` (`0` free, `1` open) takes exactly two shapes across them:
+
+| Game mode | Slots open |
+|---|---|
+| `1` / `2` / `3` / `0x11` (field family) | `0`, `1`, `3`, `6` (+ `5`) |
+| `0x0F` (battle) | `0`, `1`, `2`, `7` (+ `5`, `8`) |
+
+Slot 2 is never open in the field and slot 6 never in battle, in any state - the
+mutual exclusion the shared base predicts. Slot 11 is open in none of them,
+which fits a bank the battle-end reward path loads after the point these states
+were taken.
+
 ### What a single-bank port gets wrong, and why it is silent
 
 A port that stages **one** resident SFX bank resolves only one category

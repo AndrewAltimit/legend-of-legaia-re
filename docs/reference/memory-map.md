@@ -153,7 +153,8 @@ patching an instruction. Useful Ghidra anchors.
 | `0x801C6460` | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
 | `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). Installed by `FUN_8003C5F0`, walked by `FUN_80036D80`. |
 | `0x8007BB20` | Timed sound-source auto-release **armed flag** (`gp+0x808`); set by `FUN_800267A8`, cleared on expiry by `FUN_800267FC`. |
-| `0x8007BB24` | Level latched at arm time (`gp+0x80C`) - the value of `_DAT_8007B910` when `FUN_800267A8` ran. |
+| `0x8007BB24` | Audio level latched at arm time (`gp+0x80C`) - the value of `_DAT_8007B910` when `FUN_800267A8` ran. |
+| `0x8007B910` | **Live audio level** (`0..255`), halved into libsnd's `0..0x7F` by every reader; persistent reference at `0x8008457C`. Not screen brightness - that is `0x8007B440`. See [`battle-action.md`](../subsystems/battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck). |
 | `0x8007BB28` | Caller tag stored at arm time (`gp+0x810`). |
 | `0x8007BB2C` | Auto-release **deadline** in vsyncs (`gp+0x814`). |
 | `0x8007BB34` | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |

@@ -81,7 +81,7 @@ pub(super) fn summon_sustain<H: BattleActionHost + ?Sized>(
         let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
         // Ramp brightness - 75% for spells < 0x99, else 50%.
         let pct = if param0 < 0x99 { 75 } else { 50 };
-        host.ramp_brightness(pct);
+        host.duck_audio_level(pct);
         return stay(ctx);
     }
     if ctx.menu_open != 0 {

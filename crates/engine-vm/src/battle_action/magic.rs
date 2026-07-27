@@ -194,7 +194,7 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     if ctx.counter_attack_a != 0 {
-        host.ramp_brightness(75);
+        host.duck_audio_level(75);
     }
     if !host.previous_action_cleared(1) {
         return stay(ctx);
@@ -206,7 +206,7 @@ pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    host.ramp_brightness(75);
+    host.duck_audio_level(75);
     transition(ctx, ActionState::MagicCaptureFinalize)
 }
 

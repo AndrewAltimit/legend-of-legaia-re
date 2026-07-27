@@ -445,8 +445,12 @@ pub struct PanelActorHost {
     pub brightness: i32,
     /// `_DAT_8007B43C` - the flash counter.
     pub flash_counter: i32,
-    /// `_DAT_8007B910` - the brightness scale the sub-list halves and doubles.
-    pub brightness_scale: i32,
+    /// `_DAT_8007B910` - the live **audio** level the sub-list halves and
+    /// doubles. Seeded `0xD7` beside its persistent reference `_DAT_8008457C`
+    /// by the cold reset `FUN_8001FFA4`, and halved into libsnd's `0..0x7F`
+    /// range by every reader. Not screen brightness - that is `brightness`
+    /// above.
+    pub audio_level: i32,
     /// `_DAT_8007BB88` - the shared list cursor / picker selection.
     pub cursor: i32,
     /// `_DAT_8007BB9C` - the row the flag scan remembered on entry.
@@ -498,7 +502,7 @@ impl Default for PanelActorHost {
             handler_id: 0,
             brightness: 0,
             flash_counter: 0,
-            brightness_scale: 0x1000,
+            audio_level: 0xD7,
             cursor: 0,
             remembered_row: 0,
             input_locked: false,
@@ -709,11 +713,11 @@ impl PanelActorHost {
                 SubListEffect::RunPanelScript(va) => {
                     self.windows.run_script(va);
                 }
-                SubListEffect::ScaleBrightness { shift_right } => {
-                    self.brightness_scale = if shift_right {
-                        self.brightness_scale >> 1
+                SubListEffect::ScaleAudioLevel { shift_right } => {
+                    self.audio_level = if shift_right {
+                        self.audio_level >> 1
                     } else {
-                        self.brightness_scale << 1
+                        self.audio_level << 1
                     };
                 }
                 SubListEffect::PlaySfx(s) => frame.sfx.push(s),

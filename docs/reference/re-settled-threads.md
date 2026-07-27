@@ -1251,6 +1251,7 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | SFX cue bank routing - the category byte selects the VAB slot | resolved (mechanism + the two pinned banks; ported) | `capture` | [details ↓](#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot) |
 | Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11 | resolved (slot 6 = 0876, slot 11 = 0889; 1 / 3 are variable banks) | `disassembly` | [details ↓](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11) |
 | The `FUN_8006EF18` trio is a BIOS kernel-patch sequence, not an SPU init | resolved-negative | `disassembly` | [details ↓](#the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init) |
+| `_DAT_8007B910` is the live audio level, not screen brightness | resolved (both hosts' labels corrected) | `disassembly` | [details ↓](#_dat_8007b910-is-the-live-audio-level-not-screen-brightness) |
 
 ### SFX cue bank routing - the category byte selects the VAB slot
 
@@ -1333,6 +1334,9 @@ assigns four pairs of records one shared header buffer, which `FUN_800265E8`
 matches with one shared SPU base. Slot 6 and slot 2 are consequently **the same
 physical bank in two modes** - which is why retail needs no extra SPU room for
 the field cues, and why a host that stages once at boot cannot simply add them.
+The save-state catalogue confirms the partition without ambiguity: the open-state
+array `_DAT_801CE368` holds slots `0,1,3,6` in every field-family state and
+`0,1,2,7` in every battle state, and never 2 and 6 together.
 Map, budget arithmetic and the port surface:
 [`sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
@@ -1367,6 +1371,45 @@ Both are bracketed by `EnterCriticalSection` (`syscall(1)`) and `FlushCache`
 its teardown mirror, which is exactly why the caller `FUN_8002035C` runs it after
 closing eight kernel event handles. Table + citations:
 [`functions/runtime-libs.md`](functions/runtime-libs.md#the-bios-kernel-patch-cluster-8006ee8c--8006ef18).
+
+### `_DAT_8007B910` is the live audio level, not screen brightness
+
+*Status:* resolved - the cell is a **volume**, `_DAT_8008457C` is its persistent
+reference, and the two labels the corpus carried were never in tension: one of
+them had no instruction behind it. Grade `disassembly`.
+
+The discriminator the open thread named was `FUN_80062004`'s libsnd entry, and
+it settles cleanly: `FUN_80062004(a, b, c)` tail-calls `FUN_80061EDC(a, 0, b,
+c)` = `SsSeqSetVol(slot, channel 0, vol, …)`. So the halved cell
+(`(v << 15) >> 16`) that `FUN_800267A8` passes lands in the **volume**
+argument. The second reader is the same answer from a different direction:
+`FUN_80026478` hands `v >> 1` to `FUN_8002657C`, which writes it as *both*
+channels of `FUN_80064890(slot, vol_l, vol_r)` - a symmetric level, so not the
+directional pan that function was labelled with either.
+
+A full sweep of the dumped corpus finds **26 read sites** of the cell. They
+resolve to `SsSeqSetVol` (six), `SpuSetCommonAttr` (`FUN_8006BCB4`, four - each
+building an `SpuCommonAttr` on the stack with the cell in the CD-volume pair),
+the audio-context volume re-apply `FUN_8002614C`, `FUN_8002657C`, and
+arithmetic / tween plumbing. **None reaches a draw primitive.** The cold reset
+`FUN_8001FFA4` seeds `0xD7` into both the persistent `_DAT_8008457C` and the
+live `_DAT_8007B910` and then calls `FUN_8002614C(0)` - the volume re-apply.
+The range agrees too: a `0..255` cell halved is exactly libsnd's `0..0x7F`.
+
+What the ramps become. The battle-action states `0x35` / `0x6F` / `0x70` duck
+the mix to 75% of the configured level (50% for spell ids `>= 0x99`) and `0x51`
+restores it; the world-map sub-list halves it on open and doubles it on close;
+the field VM's `MENU_CTRL` sub-`0xD` sets it to `(input * _DAT_8008457C) >> 12`,
+a percentage of the player's setting.
+
+Why the brightness reading looked right anyway: a summon really does dim the
+screen, and it ramps in step - but that is a **different scalar**,
+`_DAT_8007B440`, ramped by `FUN_801ED308` and drawn by the wipe/curtain emitter
+`FUN_8003479C` (clamped `0xF2`). Ports renamed with the fact:
+`BattleActionHost::duck_audio_level`, `BattleEvent::DuckAudioLevel`,
+`SubListEffect::ScaleAudioLevel`, `PanelActorHost::audio_level` (seeded `0xD7`
+like retail). Detail:
+[`battle-action.md`](../subsystems/battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck).
 
 ### Key-on pitch: unity on centre
 

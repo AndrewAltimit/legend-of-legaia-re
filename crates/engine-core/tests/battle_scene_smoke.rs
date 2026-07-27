@@ -120,7 +120,7 @@ fn battle_turn_emits_events_into_pending_queue() {
                 BattleEvent::ApplyDamage { .. } => "ApplyDamage",
                 BattleEvent::ApplyArtStrike { .. } => "ApplyArtStrike",
                 BattleEvent::ScreenShake { .. } => "ScreenShake",
-                BattleEvent::RampBrightness { .. } => "RampBrightness",
+                BattleEvent::DuckAudioLevel { .. } => "DuckAudioLevel",
                 BattleEvent::BattleEnd { .. } => "BattleEnd",
                 BattleEvent::TacticalArtLearned { .. } => "TacticalArtLearned",
                 BattleEvent::LevelUp { .. } => "LevelUp",

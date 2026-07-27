@@ -214,10 +214,15 @@ pub trait BattleActionHost {
     /// `_DAT_8007B630` and whose only writer is a field-VM opcode.
     fn screen_shake(&mut self, _magnitude: u16) {}
 
-    /// Equivalent of the brightness ramp at states `SummonSustain` /
-    /// `MagicCaptureFade` - clamps `_DAT_8007B910` toward a target.
+    /// The ramp at states `SummonSustain` / `MagicCaptureFade` - clamps
+    /// `_DAT_8007B910` toward a percentage of the configured level
+    /// `_DAT_8008457C`. That cell is the **live audio level**, not screen
+    /// brightness: its readers are `SsSeqSetVol` (`FUN_80062004`),
+    /// `SpuSetCommonAttr` and the per-slot vol pair, and none of the 26
+    /// dumped read sites reaches a draw primitive. So a summon ducks the
+    /// music to 75% (50% for spell ids `>= 0x99`) and `Done` restores it.
     /// Default no-op.
-    fn ramp_brightness(&mut self, _target_pct: u8) {}
+    fn duck_audio_level(&mut self, _target_pct: u8) {}
 
     /// Notify the host the battle is ending. The state machine sets the
     /// retail `DAT_8007BD71 = 0xFE`; engines wire this to "unload battle

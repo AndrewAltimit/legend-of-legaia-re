@@ -150,7 +150,7 @@ impl BattleActionHost for RecHost {
     fn screen_shake(&mut self, m: u16) {
         self.record(Event::ScreenShake(m));
     }
-    fn ramp_brightness(&mut self, p: u8) {
+    fn duck_audio_level(&mut self, p: u8) {
         self.record(Event::Brightness(p));
     }
     fn battle_end(&mut self, c: BattleEndCause) {

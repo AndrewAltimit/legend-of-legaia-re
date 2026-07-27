@@ -70,9 +70,14 @@ pub enum BattleEvent {
     },
     /// `BattleActionHost::screen_shake` - kick the camera.
     ScreenShake { magnitude: u16 },
-    /// `BattleActionHost::ramp_brightness` - ramp brightness toward a
-    /// target percentage (used by SummonSustain / MagicCaptureFade).
-    RampBrightness { target_pct: u8 },
+    /// `BattleActionHost::duck_audio_level` - ramp the live audio level
+    /// `_DAT_8007B910` toward a percentage of the player's configured level
+    /// `_DAT_8008457C` (used by SummonSustain / MagicCaptureFade). Every
+    /// traced reader of that cell is a volume setter - `SsSeqSetVol`,
+    /// `SpuSetCommonAttr`, the per-slot vol pair - so this is a music duck,
+    /// not the screen fade the corpus used to call it. The screen fade is the
+    /// separate accumulator `_DAT_8007B440` (drawn by `FUN_8003479C`).
+    DuckAudioLevel { target_pct: u8 },
     /// `BattleActionHost::battle_end` - battle is ending; engines unload
     /// the battle overlay.
     BattleEnd { cause: BattleEndCause },
@@ -207,7 +212,7 @@ impl BattleEvent {
                 )
             }
             BattleEvent::ScreenShake { magnitude } => format!("ScreenShake({magnitude})"),
-            BattleEvent::RampBrightness { target_pct } => format!("RampBrightness({target_pct}%)"),
+            BattleEvent::DuckAudioLevel { target_pct } => format!("DuckAudioLevel({target_pct}%)"),
             BattleEvent::BattleEnd { cause } => format!("BattleEnd({cause:?})"),
             BattleEvent::TacticalArtLearned { char_id, art_id } => {
                 format!("TacticalArtLearned(char={char_id}, art={art_id})")
@@ -305,7 +310,7 @@ mod tests {
                 party_slot: 0,
             },
             BattleEvent::ScreenShake { magnitude: 0 },
-            BattleEvent::RampBrightness { target_pct: 0 },
+            BattleEvent::DuckAudioLevel { target_pct: 0 },
             BattleEvent::BattleEnd {
                 cause: BattleEndCause::PartyWipe,
             },

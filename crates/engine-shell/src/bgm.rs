@@ -62,7 +62,7 @@ pub struct AudioBgmDirector {
     /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]): a cue's `+4`
     /// category selects the mixer record whose `+8` is the slot its voices key.
     /// Empty until [`Self::set_sfx_cue_slots`]; an absent id routes to
-    /// [`FALLBACK_VAB_SLOT`] exactly like an unpinned slot does.
+    /// [`FALLBACK_VAB_SLOT`] exactly like an unstaged slot does.
     sfx_cue_slots: BTreeMap<u8, u8>,
     /// Resident SFX program banks keyed by that slot. Slot `0` is the system
     /// bank (extraction PROT 0868) the 16 shared UI cues key; slot `2` is the

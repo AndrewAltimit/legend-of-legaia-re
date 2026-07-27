@@ -17,7 +17,7 @@
 //!    present whether or not the visitor has enabled sound.
 //! 2. **Programs** - a cue names its own bank. The descriptor's `+4` category
 //!    selects a VAB slot (`legaia_asset::sfx_table::slot_for_category`), and
-//!    the two slots retail's descriptors reach that are pinned to PROT entries
+//!    the two of the four such slots this page can fit in its SPU region
 //!    (slot 0 = PROT 0868, slot 2 = PROT 0869) are both uploaded into one
 //!    dedicated region at the **top** of SPU RAM the first time a cue needs
 //!    them, out of a single `SpuAllocator` so they pack rather than overlap.
@@ -192,7 +192,7 @@ struct PlayCue {
     /// What this host enqueues. `None` = pinned but deliberately silent.
     fires: Option<u8>,
     /// `"disc"` = traced to a retail ring write; `"site"` = a port pick where
-    /// retail plays nothing (or its id is unpinned). Same convention as
+    /// retail plays nothing (or its id is unmapped). Same convention as
     /// [`crate::sfx_view`], deliberately.
     source: &'static str,
     /// Why this row's id is what it is, and why it does or does not sound.
@@ -287,7 +287,7 @@ pub struct PlaySfx {
     pub bank: SfxBank,
     /// Cue id -> VAB slot, the routing half of the same descriptor table
     /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]). Empty until
-    /// `load_disc`; a cue with no entry falls back exactly like an unpinned
+    /// `load_disc`; a cue with no entry falls back exactly like an unstaged
     /// slot does.
     pub cue_slots: BTreeMap<u8, u8>,
     /// Raw program-bank bytes per **VAB slot**, for the pinned slots only
@@ -684,7 +684,7 @@ impl LegaiaRuntime {
     /// SPU took; the two differing is the readout that separates "no source
     /// fired" from "fired but inaudible". `banks` is the staged slot -> PROT
     /// map; `bank_prot` stays the class-2 entry specifically, because that is
-    /// the bank an unpinned category still falls back to.
+    /// the bank an unstaged category still falls back to.
     pub fn play_sfx_state_json(&self) -> String {
         #[cfg(target_arch = "wasm32")]
         let idle = self
@@ -786,7 +786,7 @@ impl LegaiaRuntime {
     }
 
     /// The PROT entry a cue **actually** sounds out of on this host, i.e. its
-    /// slot after the unpinned-slot fallback ([`PlaySfx::resolve_slot`]). `0`
+    /// slot after the unstaged-slot fallback ([`PlaySfx::resolve_slot`]). `0`
     /// when no bank could be read (a `PROT.DAT`-only load, or no scene staged).
     ///
     /// This is the observable the routing is measured by: two cues in different
@@ -943,12 +943,12 @@ mod tests {
         }
     }
 
-    /// The fallback for an unpinned slot is the *previous* behaviour, and it
+    /// The fallback for an unstaged slot is the *previous* behaviour, and it
     /// has to stay that: categories 6 and 11 have no traced PROT entry, and
     /// routing them anywhere but the class-2 bank would change 31 descriptors'
     /// sound on a guess. See the bank-routing thread.
     #[test]
-    fn unpinned_and_unknown_cues_fall_back_to_the_class2_bank() {
+    fn unstaged_and_unknown_cues_fall_back_to_the_class2_bank() {
         let mut sfx = PlaySfx {
             cue_slots: BTreeMap::from([(0x21, 0), (0x09, 2), (0x2E, 6), (0x4D, 11)]),
             ..Default::default()
@@ -969,11 +969,15 @@ mod tests {
         }
         assert_eq!(sfx.resolve_slot(0x21), 0, "category 0 -> slot 0");
         assert_eq!(sfx.resolve_slot(0x09), 2, "category 2 -> slot 2");
-        assert_eq!(sfx.resolve_slot(0x2E), FALLBACK_VAB_SLOT, "slot 6 unpinned");
+        assert_eq!(
+            sfx.resolve_slot(0x2E),
+            FALLBACK_VAB_SLOT,
+            "slot 6 not staged"
+        );
         assert_eq!(
             sfx.resolve_slot(0x4D),
             FALLBACK_VAB_SLOT,
-            "slot 11 unpinned"
+            "slot 11 not staged"
         );
         assert_eq!(
             sfx.resolve_slot(0xFE),
