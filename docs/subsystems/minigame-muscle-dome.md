@@ -126,9 +126,13 @@ Confidence: the load chain, carrier shape and texture address are **Confirmed**
 `_DAT_8007B864` holds this stream is **Inferred** - the dome runs as a battle
 with the battle overlay resident and 1225 is the only backdrop-shaped stream in
 the file its init loads, but no dome-battle save-state byte-match has been
-taken. The file's other slots: 1220 = the LZS data container the door/init
-strings reference (roster/course data), 1221/1222 = two 160 KB blobs
-(undecoded), 1223/1224 = pochi fillers ([`pochi.md`](../formats/pochi.md)).
+taken. The file's other slots: 1220 = an LZS container whose section 0 is
+the dome's **hub UI art** - two plain TIMs uploading the pages at
+`(320, 0)` / `(320, 256)` with CLUT rows 502/503 (the Welcome / INTERVAL /
+ROUND / course-name strips; see
+[HUD chrome](#hud-chrome-texture-sources-capture-pinned)), 1221/1222 = two
+160 KB blobs (undecoded), 1223/1224 = pochi fillers
+([`pochi.md`](../formats/pochi.md)).
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
@@ -176,12 +180,70 @@ an art playing out.
 Site consumer: the minigames page's dome panel mirrors this presentation -
 the intro card, the command cluster with Item crossed out, the AP/status
 plates and the arts banner - with the fighter body from the assembled
-battle form (`muscle_fighter_*`) and the queue -> art resolution done
-against the SCUS arts-name table's combo strings (`muscle_round_arts_json`,
-kind labels joined from the curated gamedata arts table). Two disclosed
-gaps: the ported rules resolve each queued command as a basic strike (no
-art-record damage expansion), and the Ra-Seru chip renders disabled (the
-port has no cast path).
+battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
+below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
+resolution done against the SCUS arts-name table's combo strings
+(`muscle_round_arts_json`, kind labels joined from the curated gamedata
+arts table). Two disclosed gaps: the ported rules resolve each queued
+command as a basic strike (no art-record damage expansion), and the
+Ra-Seru chip renders disabled (the port has no cast path).
+
+## HUD chrome texture sources (capture-pinned)
+
+The dome match's entire on-screen chrome resolves to five disc sources, and
+its screen geometry to one SCUS-static table. Provenance: a live PCSX-Redux
+dome battle (the `minigame_muscle_dome_pcsx` scenario driven forward with a
+scripted pad, capture tool
+`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`) snapshotted at the
+command cluster, an enemy art, and a player HYPER ARTS!! playback; the GP0
+packet stream was read out of the live prim arena and every texture page was
+byte-matched between the snapshot VRAM and the disc bytes.
+
+**Layout.** The element layout table at SCUS `0x80076C10` (24-byte stride,
+80 records, initialised data in `SCUS_942.54` at file `0x67410`) carries per
+element: two sprite/style selector bytes (`+0`/`+1`), two screen anchors
+`(x, y)` at `+2`/`+4` and `+0xA`/`+0xC` (the glide endpoints the
+`FUN_801db7b0` slide moves between), width/height at `+6`/`+8`, per-variant
+style bytes at `+0xE`/`+0xF`, a kind byte at `+0x10` and a text pointer at
+`+0x14` (rewired at runtime - `FUN_801d8de8`'s labelled cases write it).
+Confirmed anchors: element 8 = the Item chip arriving at `(204, 34)`,
+9 = Attack at `(160, 66)`, `0xA` = the Ra-Seru chip at `(248, 66)`,
+`0xB` = Spirit at `(204, 98)`, 0..5 = the Begin / Run centre-menu chips,
+7 / `0x34` = the 288-wide status plate at `(16, 236 -> 194)`,
+`0x29`/`0x2A` = the opponent name chip at `(200, 162)`. Sprites emit
+through the SCUS text-actor pipeline (`FUN_8003541C`), not the battle
+overlay.
+
+**Textures.** Per element family, `(page, uv)` from the captured packets,
+byte-matched to its disc source:
+
+| Chrome | Page / CLUT | Piece rects (texels) | Disc source |
+|---|---|---|---|
+| Chip / plate 3-slice art | `(896,256)`; CLUT row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)`/`(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
+| D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 between Attack and the Ra-Seru chip | same TIM |
+| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end `(176,64)` 16×16, cap `(184,80)` 8×16, orange fill tile `(64,136)` 16×6; drawn at `(208..312, 172)` | same TIM |
+| Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |
+| Chip / caption text | `(896,0)`; menu-atlas bank sub-pal 13 = CLUT `(208,510)` | 16×16 cells drawn 14×15; cell = ASCII − 0x20, column-major 16/row; pen advance = glyph texel width (`i`/`m`/`M` +1, space 5 - capture-measured) | boot-gap ASCII font TIM `PROT.DAT 0x7F40` |
+| Small digits | `(960,256)`; sub-pal 13 | `u = digit*8`, `v=208`, 8×12 | menu-glyph atlas `PROT.DAT 0x11218` |
+| Red cross-out X | `(448,0)`; CLUT row 476 sub-pal 4 | `(0,96)` 64×16 drawn over the forbidden chip (`(196,30)` for Item) | `etim` (extraction 0870) third TIM at file `+0x10450` |
+| Arts banner words | `(448,0)`; sub-pal 3 | SUPER `(3,152)` 105×24, HYPER ARTS!! full row `(0,176)` 216×24, MIRACLE `(0,200)` 127×24, NEW `(132,200)` 64×24; the pinned draw: two FT4s covering `(52,144)-(268,178)` - 1:1 wide, 24 texels stretched to 34 px | same `etim` TIM |
+| Damage numerals + words | `(448,0)`; sub-pal 3 | digits 24×24 cells at `v=64`, `u=(d−1)*24`, `0` at `u=216`; DAMAGE `(0,224)` 52×14, HIT `(0,240)` 32×16, TOTAL `(32,240)` 48×16; hit numbers drawn 24×23, tally row 16×15 | same `etim` TIM |
+| "Welcome to the Muscle Dome!" / INTERVAL / ROUND / hub digits | `(320,0)` + `(320,256)`; CLUT rows 502/503 | geometry = the PROT 0977 sprite descriptor table at VA `0x801D170C` (file `+0x2EF4`, 17 × `0x14`-byte records; parser `legaia_engine_ui::other_game_hud::parse_sprite_table`): record 3 = the Welcome strip `(0,224)` 240×18, 16 = INTERVAL `(0,192)` 192×32, 0 = ROUND `(0,0)` 144×32, 1 = the 24×32 hub digit strip | extraction **1220** (`other6.lzs` slot 0): LZS section 0 = `[12-byte header][TIM -> (320,0), CLUT row 502][TIM -> (320,256), CLUT row 503]`, byte-identical to the live course-menu VRAM |
+
+The CLUT-bank packing rule the capture pinned: a gap TIM's 16-row CLUT
+block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes
+(widget bank -> row 511, menu-atlas bank -> row 510), which is what the
+packets' CLUT words (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`,
+`0x7F8D` = `(208,510)`, ...) address.
+
+Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
+`muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the
+dome panel draws the chrome from them; the disc-gated oracle is
+`crates/web-viewer/tests/muscle_web_real.rs`
+(`muscle_hud_chrome_decodes_from_the_disc`). Still fitted on the page: the
+banner's speed-line rays (retail draws untextured polys), the SUPER/MIRACLE
+word composition (atlas layout; only the HYPER strip's draw is
+packet-pinned), and the chips' glide-in motion.
 
 ## Sound
 

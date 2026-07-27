@@ -343,9 +343,9 @@ The gap is a packed bundle of system-UI TIMs (boot-time cursors, the menu-glyph 
 | PROT.DAT offset | TIM dims | VRAM target          | Purpose                                                      |
 |-----------------|----------|----------------------|--------------------------------------------------------------|
 | `0x01858`       | tiny     | `(896,256)` 1×4      | boot cursor variant                                          |
-| `0x018E0`       | 256×192  | `(896,256)` 64×192   | large UI sprite sheet                                        |
+| `0x018E0`       | 256×192  | `(896,256)` 64×192   | **battle-chrome widget page**: the blue/gold chip + plate 3-slice art, D-pad glyph, AP-plate pieces, HP/MP badges, status words. CLUT bank packs into VRAM row 511 as 16 sub-palettes (capture: live dome-battle packets sample sub-pals 1/4/5/7/12). See [`minigame-muscle-dome.md`](minigame-muscle-dome.md#hud-chrome-texture-sources-capture-pinned) |
 | `0x07B00`       | 32×32    | `(928,352)` 16×32    | UI element                                                   |
-| `0x07F40`       | 256×256  | `(896,0)`   64×256   | dialog-font / large bitmap sheet                             |
+| `0x07F40`       | 256×256  | `(896,0)`   64×256   | **ASCII battle font** (16×16 cells, drawn as 14×15 sprites through the menu-glyph atlas CLUT bank's sub-palette 13 at `(208,510)`; chip labels, battle captions) |
 | `0x0FF80`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
 | `0x10028`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
 | `0x100D0`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
