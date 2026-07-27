@@ -379,4 +379,24 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     let mut want = DANCE_SCORE_BOX_X.to_vec();
     want.sort_unstable();
     assert_eq!(xs, want);
+
+    // The full HUD quad frame (the play window's per-frame list) carries the
+    // box frames plus the gauge readout pair; a zero score draws no digit
+    // quads (the number renderer's -1 sentinel suppresses every slot).
+    let frame = game.hud_draw_quads(false);
+    assert_eq!(
+        frame.len(),
+        3 + 2,
+        "three box frames + the Lv. label + level digit"
+    );
+    // A non-zero score adds its style-A digit run with the glyph-U patched
+    // per digit.
+    let digits = game.number_quads(false, 123, 0x40, 0x14);
+    assert_eq!(digits.len(), 3);
+    for (q, d) in digits.iter().zip([1u8, 2, 3]) {
+        assert_eq!(q.uv[0].0, d * 0x10, "style-A glyph-U = digit * 16");
+    }
+    let narrow = game.number_quads(true, 7, 0, 0);
+    assert_eq!(narrow.len(), 1);
+    assert_eq!(narrow[0].uv[0].0, 7 * 8 + 0x40, "style-B glyph-U");
 }

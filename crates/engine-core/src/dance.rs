@@ -472,20 +472,13 @@ impl DanceGame {
         self.mode
     }
 
-    // NOT WIRED: the missing input is a **screen-space dance HUD surface**, and
-    // neither host has one. Both hosts that own a `DanceGame` (the play window's
-    // `window/hud.rs`, the browser page's `minigames.rs`) draw a *single-dancer*
-    // readout through the proportional font atlas at their own pens - the play
-    // window's are `(8, 62)` / `(8, 80)` / `(8, 98)` with its own
-    // `TRACK_BASE_X = 60`. They read `score()` / `gauge()` / `lane()` and never
-    // touch `dancer_score(1..2)` or `dancer_gauge(1..2)` at all, so there is no
-    // second or third dancer on screen for the box permutation to permute and
-    // no row for the rival gate to gate. `_DAT_8007B6D0` likewise has no engine
-    // counterpart - nothing sets or reads a rival-HUD flag. Wiring this needs a
-    // host that lays the dance HUD out in retail framebuffer coordinates
-    // (`DanceHudDraw` carries 320x240 positions, not pen offsets) and a
-    // rival-HUD toggle to stand in for that flag.
-    //
+    /// Wired: the play window's dance block (`window/hud.rs`) lays the HUD out
+    /// from this list in retail 320x240 framebuffer coordinates each frame,
+    /// upscaled through the same stage transform the menu chrome uses. The
+    /// `rival_hud` gate stands in for `_DAT_8007B6D0`: the host raises it in
+    /// the two versus modes ([`DanceMode::Qualifier`] / [`DanceMode::Finals`]),
+    /// which is when retail's dance-hall script sets the flag.
+    ///
     /// PORT: FUN_801d231c - one frame of the HUD driver, laid out off this
     /// run's own live state.
     ///
@@ -493,8 +486,7 @@ impl DanceGame {
     /// gauges and beat tracks are not drawn at all, even in the versus modes.
     ///
     /// The output is pinned non-vacuous against a real overlay by
-    /// `engine-core/tests/dance_minigame_real.rs` - the kernel is inert for want
-    /// of a consumer, not because it produces nothing.
+    /// `engine-core/tests/dance_minigame_real.rs`.
     pub fn hud_draws(&self, rival_hud: bool) -> Vec<DanceHudDraw> {
         dance_hud_draws(
             self.mode.value(),
@@ -538,6 +530,112 @@ impl DanceGame {
                 _ => None,
             })
             .collect()
+    }
+
+    /// One number readout as widget quads, mirroring the multi-digit number
+    /// renderer's emit loop (`FUN_801d32f8`): per **drawn** slot of
+    /// [`dance_number_digits`] the digit's glyph-U is patched into the style's
+    /// widget record and the widget is emitted at the style's fixed x step.
+    ///
+    /// Style A (`style_b == false`) is widget `1` - 16-texel glyphs at a 16-px
+    /// step, glyph-U from [`dance_score_digit_u`]. Style B is widget `0x21`,
+    /// the narrow counter - 8-texel glyphs at an 8-px step, glyph-U from
+    /// [`dance_level_digit_u`]. Empty when the run has no widget table (a
+    /// chart-only run not started from a real overlay image).
+    pub fn number_quads(&self, style_b: bool, value: u32, x: i16, y: i16) -> Vec<DanceHudQuad> {
+        let (widget_id, step, glyph_u): (usize, i16, fn(u8) -> u8) = if style_b {
+            (0x21, 8, dance_level_digit_u)
+        } else {
+            (1, 16, dance_score_digit_u)
+        };
+        let Some((widget, abr)) = self.widgets.get(widget_id).map(|(w, a)| (*w, *a)) else {
+            return Vec::new();
+        };
+        dance_number_digits(value)
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.map(|d| (i, d)))
+            .map(|(i, d)| {
+                let mut w = widget;
+                w.u = glyph_u(d);
+                dance_hud_widget_quad(
+                    &w,
+                    abr,
+                    x + step * i as i16,
+                    y,
+                    widget_id as u32,
+                    DANCE_HUD_BRIGHTNESS,
+                    0x1000,
+                )
+            })
+            .collect()
+    }
+
+    /// The `Lv.` gauge readout as widget quads (`FUN_801d3e28`'s emit pair):
+    /// the label widget `6` at `(x, y)` and the digit widget `7` eight pixels
+    /// on, its glyph-U patched through [`score_thousands_glyph_u`] from the
+    /// dancer's raw `gauge` (the `value / 1000` level digit), both at
+    /// [`DANCE_HUD_BRIGHTNESS`] and scale `0x1000`. Empty without a widget
+    /// table.
+    pub fn gauge_readout_quads(&self, gauge: u32, x: i16, y: i16) -> Vec<DanceHudQuad> {
+        let mut out = Vec::new();
+        if let Some((w, a)) = self.widgets.get(6) {
+            out.push(dance_hud_widget_quad(
+                w,
+                *a,
+                x,
+                y,
+                6,
+                DANCE_HUD_BRIGHTNESS,
+                0x1000,
+            ));
+        }
+        if let Some((w, a)) = self.widgets.get(7).map(|(w, a)| (*w, *a)) {
+            let mut w2 = w;
+            w2.u = score_thousands_glyph_u(gauge as i32) as u8;
+            out.push(dance_hud_widget_quad(
+                &w2,
+                a,
+                x + 8,
+                y,
+                7,
+                DANCE_HUD_BRIGHTNESS,
+                0x1000,
+            ));
+        }
+        out
+    }
+
+    /// The full per-frame HUD **quad** list: the score-box frames
+    /// ([`DanceGame::hud_quads`]) plus, per [`DanceGame::hud_draws`] element,
+    /// the style-A digit run for each score readout and the `Lv.` label +
+    /// digit pair (with the style-B narrow gauge counter beside it) for each
+    /// gauge readout. This is the textured-quad half of the HUD driver frame;
+    /// which glyph each quad samples is carried in its patched `uv`, so a host
+    /// without the dance sprite page resident still receives the retail
+    /// geometry + gouraud colours.
+    pub fn hud_draw_quads(&self, rival_hud: bool) -> Vec<DanceHudQuad> {
+        let mut out = self.hud_quads(rival_hud);
+        for d in self.hud_draws(rival_hud) {
+            match d {
+                DanceHudDraw::Score { x, y, value, .. } => {
+                    out.extend(self.number_quads(false, value, x, y));
+                }
+                DanceHudDraw::Gauge { x, y, value, .. } => {
+                    out.extend(self.gauge_readout_quads(value, x, y));
+                    out.extend(self.number_quads(true, value, x + 0x18, y));
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The triangle feedback window's remaining frames (`DAT_801d5144`) - the
+    /// raw counter behind [`DanceGame::triangle_feedback`], which the tutorial
+    /// actor's practice step reads directly.
+    pub fn feedback_frames(&self) -> u32 {
+        self.feedback
     }
 
     // ---------------------------------------------------------------- clock
@@ -952,12 +1050,12 @@ impl DanceGame {
     }
 }
 
-// NOT WIRED: the dance floor has no effect-part host. The engine's only
-// sprite-part pool is the effect-VM bundle pool, whose ids index effect
-// bundles; nothing maps the dance overlay's own sprite ids into it, and there
-// is no dance render pass to anchor a part at a floor-grid cell. Wiring this
-// needs a dance presentation layer that owns a part pool and the overlay's
-// sprite page.
+// Wired: [`good_banner_spawn`] composes three of these records, and the play
+// window's minigame effect pool (`window/minigame_fx.rs`) hosts the spawns -
+// the sequence-clear banner + stars are spawned into it on the human's scoring
+// judge and aged / drawn per frame. The overlay's own sprite page is still not
+// uploaded, so the pool draws each part through its placeholder glyph rather
+// than the `sprite_id` cell.
 /// PORT: FUN_801d3fd0 - the dance overlay's cell-placed effect spawn (the
 /// step-mark flash): retail zero-fills a spawn record, spawns through the
 /// shared part-spawn API `FUN_80021B04` at scale `0x1000`, stamps
@@ -978,12 +1076,9 @@ pub fn step_mark_effect_spawn(
     }
 }
 
-// NOT WIRED: this is a texture-U byte patched into a HUD widget descriptor
-// before the widget is emitted. The engine draws the dance HUD from the
-// proportional font atlas and uploads no dance sprite page, so there is no
-// widget descriptor to patch and no glyph row for the U to index. Wiring it
-// needs the overlay's HUD sprite page in VRAM plus a widget-quad emitter for
-// the dance overlay, neither of which exists.
+// Wired: [`DanceGame::gauge_readout_quads`] patches this into widget `7`'s
+// texture-U before emitting the pair, on the live HUD path
+// ([`DanceGame::hud_draw_quads`] -> the play window's dance block).
 /// PORT: FUN_801d3e28 - the score-banner thousands-digit glyph selector:
 /// retail stores `(score / 1000) * 8 - 0x30` into the banner widget's
 /// texture-U byte (`DAT_801d4760`) - each digit glyph is 8 texels wide and
@@ -1029,18 +1124,18 @@ pub fn dance_number_digits(value: u32) -> [Option<u8>; 8] {
     out
 }
 
-// NOT WIRED: same prerequisite as [`score_thousands_glyph_u`] - a texture-U
-// column into a HUD widget descriptor, with no dance sprite page uploaded and
-// no widget-quad emitter to feed. The *value* split those glyphs draw is
-// [`dance_number_digits`], which is wired.
+// Wired: [`DanceGame::number_quads`] (style A) patches this into widget `1`'s
+// texture-U per drawn digit slot, on the live HUD path
+// ([`DanceGame::hud_draw_quads`] -> the play window's dance block).
 /// PORT: FUN_801d32f8 style-A digit glyph-U (the score boxes, widget `1`):
 /// `digit * 0x10` - each score glyph is 16 texels wide, drawn at a 16-px x step.
 pub fn dance_score_digit_u(digit: u8) -> u8 {
     digit * 0x10
 }
 
-// NOT WIRED: same prerequisite as [`dance_score_digit_u`] - a widget-descriptor
-// texture-U with no dance sprite page and no widget-quad emitter behind it.
+// Wired: [`DanceGame::number_quads`] (style B) patches this into widget
+// `0x21`'s texture-U per drawn digit slot, on the same live HUD path as
+// [`dance_score_digit_u`].
 /// PORT: FUN_801d32f8 style-B digit glyph-U (widget `0x21`, the narrow counter):
 /// `digit * 8 + 0x40` - 8-texel glyphs offset `0x40` into the page, 8-px x step.
 pub fn dance_level_digit_u(digit: u8) -> u8 {
@@ -1143,10 +1238,11 @@ pub struct GoodBannerSpawns {
     pub weight: u16,
 }
 
-// NOT WIRED: it composes three [`step_mark_effect_spawn`] records, and that
-// spawn has no effect-part host (see its own note). The banner also needs the
-// dance overlay's sprite ids `0xb` / `0x16` resident, which no engine pass
-// uploads.
+// Wired: the play window spawns this on the human's scoring judge
+// (`Judge::Sequence`) into its minigame effect pool
+// (`window/minigame_fx.rs`), which ages and draws the three parts. The dance
+// overlay's sprite ids `0xb` / `0x16` are still not resident, so the pool's
+// placeholder glyphs stand in for the banner art.
 /// PORT: FUN_801d40dc - spawn the sequence-clear banner + two stars. Retail
 /// issues three `FUN_801d3fd0` spawns - `(0xa0, 0x90, sprite 0xb)` for the banner
 /// and `(0x68, 0x90, sprite 0x16)` / `(0xd8, 0x90, sprite 0x16)` for the stars
@@ -1185,10 +1281,11 @@ pub struct CountInBanner {
     pub hold: bool,
 }
 
-// NOT WIRED: [`DanceGame`] starts on the beat clock - the port has no pre-song
-// count-in phase, so no host owns the banner's own frame counter or its
-// once-only cue latch. Wiring it needs the overlay's pre-song states
-// (`FUN_801cf470` states below 10) modelled as session phases first.
+// Wired: the play window runs a pre-song count-in phase (the shell holds the
+// parsed [`DanceGame`] pending while the banner's own frame counter runs,
+// entering the dance only when the envelope finishes - the `FUN_801cf470`
+// below-10 states as a host phase). The host owns the counter and the
+// once-only [`COUNTIN_INTRO_CUE`] latch; this returns the envelope.
 /// PORT: FUN_801d2d98 - the count-in banner animator (`1 2 3 READY... GO!`).
 ///
 /// Three segments keyed on the banner's own frame counter `frame`:
@@ -1477,15 +1574,14 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-// NOT WIRED: the missing input is the dance overlay's **HUD sprite page in
-// VRAM**, and nothing uploads it. The widget records name the 4bpp page at
-// `(512, 0)` with its CLUT strip on row 500, but the dance overlay itself
-// issues no texture load at all (its art is staged by the entry path, PROT
-// 1230), and no host resident-VRAM path uploads that page. Without it a quad is
-// a rect sampling nothing, so both hosts draw the dance HUD as font text
-// instead and there is no textured-quad sink to emit into - the same blocker
-// already disclosed on [`score_thousands_glyph_u`] / [`dance_score_digit_u`].
-// Wiring this needs that page resident plus a quad sink in the sprite pass.
+// Wired: [`DanceGame::hud_quads`] / [`DanceGame::number_quads`] /
+// [`DanceGame::gauge_readout_quads`] all emit through this, and the play
+// window's dance block builds the full quad list per frame
+// ([`DanceGame::hud_draw_quads`]). The dance overlay's 4bpp page at `(512, 0)`
+// is still not uploaded (its art is staged by the entry path, PROT 1230), so
+// the host's quad sink materialises the rects only against a solid atlas
+// source - the geometry, gouraud colours and patched `uv` are live every
+// frame regardless.
 //
 // A second, narrower gap is already closed here: the record's `+0x13` ABR byte
 // is not decoded by `legaia_asset::dance_art::parse_widgets`, so
@@ -1562,11 +1658,9 @@ pub fn dance_hud_widget_quad(
 
 /// Which score slot each of the three on-screen score boxes shows, for a mode.
 ///
-// NOT WIRED: same missing input as [`DanceGame::hud_draws`], and this is the
-// sharpest statement of it - the permutation only means anything on a screen
-// with three score boxes, and neither host draws more than the human's own
-// score. Nothing in the engine reads `dancer_score(1)` or `dancer_score(2)` for
-// display at all.
+/// Wired: [`dance_hud_draws`] permutes its three score readouts through this,
+/// and the play window's dance block draws all three boxes (the rivals'
+/// scores included) from that list.
 /// PORT: FUN_801d231c (`0x801D2320`..`0x801D23AC`) - the HUD driver's slot
 /// permutation. The screen's three boxes are fixed; which dancer's score each
 /// carries is chosen per mode so the **human** dancer always lands in the
@@ -1629,10 +1723,9 @@ pub enum DanceHudDraw {
     BeatTrack { slot: usize, x: i16, y: i16 },
 }
 
-// NOT WIRED: the free-function half of [`DanceGame::hud_draws`], and inert for
-// the same missing input - no host lays the dance HUD out in retail
-// framebuffer coordinates, and `_DAT_8007B6D0` (the `rival_hud` gate) has no
-// engine counterpart to drive it from.
+// Wired: the free-function half of [`DanceGame::hud_draws`], reached through
+// it from the play window's dance block every frame (see the note there for
+// how the host stands in for `_DAT_8007B6D0`).
 /// PORT: FUN_801d231c - the dance HUD render driver.
 ///
 /// Per frame it draws the three score readouts and their box frames, then the
