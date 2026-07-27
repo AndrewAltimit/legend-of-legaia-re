@@ -899,7 +899,19 @@ Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.r
 
 ## Battle arts-voice shout path (engine)
 
-The Tactical-Arts **shout** - each character's voice clip when an art executes - is CD-XA audio, not a VAB one-shot. Retail: the staged-animation materialiser (`FUN_8004AD80`) calls the cue selector `FUN_8004C140(char_id, action_constant, flag)`, which picks a channel from the art's candidate-channel pool (random, avoiding an immediate repeat) and fires the CD-XA clip player `FUN_8003D53C(clip_slot, channel, dur)`. Clip files are per character: Vahn=`XA2.XA`, Noa=`XA4.XA`, Gala=`XA6.XA` (16-channel short-mono banks). The SCUS cue tables are parsed by `legaia_art::arts_voice` (`ArtsVoiceTable`); the mapping is capture-verified (Vahn's Somersault → XA2 channels 0/6).
+The Tactical-Arts **shout** - each character's voice clip when an art executes - is CD-XA audio,
+not a VAB one-shot. Retail: the staged-animation materialiser (`FUN_8004AD80`) calls the cue
+selector `FUN_8004C140(char_id, action_constant, flag)`, which picks a channel from the art's
+candidate-channel pool (random, avoiding an immediate repeat) and fires the CD-XA clip player
+`FUN_8003D53C(clip_slot, channel, dur)`. Clip files are per character: Vahn=`XA2.XA`,
+Noa=`XA4.XA`, Gala=`XA6.XA` (16-channel short-mono banks). The SCUS cue tables are parsed by
+`legaia_art::arts_voice` (`ArtsVoiceTable`); the mapping is capture-verified two ways -
+PCSX-Redux call-site traces (Vahn's Somersault → XA2 channels 0/6), and recomp-runtime battle
+rounds instrumented by `scripts/recomp/xa_cue_capture.py` (frame-tagged reads of the
+`FUN_8003D53C` cue globals), whose per-art witnessed picks are committed as
+`arts_voice::CAPTURED_ART_CHANNELS`. The captures also pin *which* first-half table variant a
+live battle uses - see
+[battle-action.md](battle-action.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout).
 
 The engine wires this end-to-end:
 

@@ -58,10 +58,14 @@ const PLAYER_FILE_BASE: u32 = 863;
 ///
 /// The per-art **channel** is not fixed: retail picks a random member of the
 /// art's candidate pool (keyed by the art's action constant) from the SCUS
-/// tables parsed by [`legaia_art::arts_voice`]. This page maps each art to a
-/// stable member of its real pool. `XA30.XA` is the ordinary directional-attack
-/// grunt (different cue); `XA3`/`XA5` are the stereo Miracle/summon fanfares
-/// (the `FUN_8004FCC8` jingle path), not the per-art shout. See
+/// tables parsed by [`legaia_art::arts_voice`]. This page plays the
+/// **capture-witnessed** channel where one is pinned
+/// (`arts_voice::CAPTURED_ART_CHANNELS` - live recomp-runtime battle fires
+/// captured off the `FUN_8003D53C` cue globals), and a stable member of the
+/// art's decoded pool otherwise - both via `ArtsVoiceTable::pick_channel`.
+/// `XA30.XA` is the ordinary directional-attack grunt (different cue);
+/// `XA3`/`XA5` are the stereo Miracle/summon fanfares (the `FUN_8004FCC8`
+/// jingle path), not the per-art shout. See
 /// `docs/subsystems/battle-action.md`.
 const VOICE_XA_FILE: [Option<&str>; 4] = [Some("XA2.XA"), Some("XA4.XA"), Some("XA6.XA"), None];
 /// `readef.DAT` (extraction PROT 894) - the battle side-band file carrying
@@ -81,10 +85,12 @@ struct ArtSlot {
     anim: Option<MonsterAnimation>,
     /// Present when the record's stream failed to resolve/decode.
     why: Option<String>,
-    /// The arts-voice XA channel this art plays (a stable member of the art's
-    /// real `FUN_8004C140` candidate pool, keyed on the record's `anim_id` =
-    /// action constant). `None` when the disc has no voice bank or the art has
-    /// no arts-voice entry (retail plays it silent).
+    /// The arts-voice XA channel this art plays: the capture-witnessed pick
+    /// where one is pinned, else a stable member of the art's real
+    /// `FUN_8004C140` candidate pool (keyed on the record's `anim_id` =
+    /// action constant; `ArtsVoiceTable::pick_channel`). `None` when the disc
+    /// has no voice bank or the art has no arts-voice entry (retail plays it
+    /// silent).
     voice_channel: Option<u8>,
 }
 
