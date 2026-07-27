@@ -2056,6 +2056,33 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors.** `OVERLAY_PROT_BASE` carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 
+### Battle arts-input UI decomposition (dome = standard battle input)
+
+*Status:* resolved (capture) - the input screen's full piece decomposition +
+flow are packet-pinned in
+[`minigame-muscle-dome.md § Arts command input`](../subsystems/minigame-muscle-dome.md#arts-command-input-packet-pinned)
+
+What the arts command input (the `FUN_801D0748` state-`0x50` arm) actually
+draws, and from where, was unread - the earlier HUD capture pinned the
+command cluster but not the input screen or its Triangle list. A live dome
+match in the static recomp (slot-5 savestate + scripted pad), read through
+the runtime's `gpu_frame_dump` GP0 ring plus a same-moment full-VRAM dump,
+decides it byte-for-byte: the High/Left/Right/Low chips are widget-page
+hexagon pieces + baked label strips + diamond ends; the input bar is the
+tiled maroon widget bar filling with command pennants at cost-wide pitch;
+the AP plate on the right reads the Spirit gauge (the entry budget's only
+visible form is the bar); Triangle cycles a 5-row-per-page learned-arts
+window (system-UI interior tiles under a `0x40..0x88` gouraud) whose
+name/arrows/AP columns are the SCUS arts-name table's own, drawn through
+orange sub-palette 15; the green Triangle circle is its own 64x32 gap TIM
+at `PROT.DAT 0x7B00`. Behaviour pinned live: per-press `ctx+0x6dc` debit +
+`actor+0x1df` append, auto-end on exhaustion (`0x50 -> 0x5a`), the
+`0x5a -> 0x6e` Begin|Reselect chain, and Triangle inert at learned-art
+constant 0. Ports: `engine-core::muscle_dome`
+(`selection_exhausted` / `reset_selection`),
+`web-viewer::minigames_muscle` (`arts_input` pieces +
+`muscle_arts_list_json`).
+
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
 *Status:* resolved for every entry except **0968**, whose identity hunt stays on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#title--boot--overlays)

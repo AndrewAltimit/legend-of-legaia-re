@@ -420,12 +420,17 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
         (0, 7, "widget/dpad"),
         (0, 1, "widget/gauge"),
         (0, 5, "widget/slash"),
+        (0, 6, "widget/chip+bar (arts input)"),
+        (0, 2, "widget/list window"),
         (1, 13, "font"),
+        (1, 15, "font/orange (arts list)"),
         (2, 13, "atlas"),
+        (2, 15, "atlas/orange arrows"),
         (3, 3, "banner words"),
         (3, 4, "red X"),
         (4, 6, "hub0"),
         (5, 0, "hub1"),
+        (6, 0, "button glyphs"),
     ] {
         let rgba = mg.muscle_hud_sheet_rgba(source, pal);
         assert!(!rgba.is_empty(), "{name} decodes");
@@ -435,4 +440,61 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
             "{name} has real opaque coverage: {opaque}"
         );
     }
+
+    // The arts-input piece block (recomp GP0 packet capture) rides in the
+    // hud JSON, and the button-glyph gap TIM at PROT.DAT 0x7B00 decodes at
+    // its captured shape (64x32 texels, own 16-entry CLUT).
+    let ai = &hud["arts_input"];
+    assert_eq!(ai["cmd_chip"]["body"][0], 215);
+    assert_eq!(ai["cmd_label"]["v"]["high"], 104);
+    assert_eq!(ai["arts_arrows"]["u"]["left"], 244);
+    assert_eq!(ai["tri_button"]["r"][2], 16);
+    assert_eq!(hud["sheets"]["button"][0], 64, "button TIM: {hud}");
+    assert_eq!(hud["sheets"]["button"][1], 32);
+}
+
+#[test]
+fn muscle_arts_list_rows_come_from_the_scus_table() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+    assert!(mg.muscle_start_vs(0, 30, monster, 7));
+    let rows: serde_json::Value = serde_json::from_str(&mg.muscle_arts_list_json()).unwrap();
+    let rows = rows.as_array().unwrap();
+    assert!(!rows.is_empty(), "Vahn's arts resolve from the SCUS table");
+    for row in rows {
+        assert!(!row["name"].as_str().unwrap().is_empty());
+        let dirs = row["dirs"].as_array().unwrap();
+        assert!(!dirs.is_empty());
+        assert!(dirs.iter().all(|d| (1..=4).contains(&d.as_u64().unwrap())));
+        // Every SCUS-backed row carries the retail AP byte (the menu
+        // minimum is 18).
+        assert!(row["ap"].as_u64().unwrap() >= 18, "row: {row}");
+    }
+
+    // The retail input flow: committing until exhaustion trips the
+    // auto-end, and reselect refunds the budget.
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    let pool = state["budget"][0].as_u64().unwrap();
+    let mut committed = 0u64;
+    while !mg.muscle_selection_exhausted() {
+        assert!(
+            (0..4).any(|slot| mg.muscle_commit(slot)),
+            "some card commits until exhausted"
+        );
+        committed += 1;
+        assert!(committed < 32);
+    }
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert!(state["budget"][0].as_u64().unwrap() < pool);
+    mg.muscle_reset_selection();
+    let state: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    assert_eq!(
+        state["budget"][0].as_u64().unwrap(),
+        pool,
+        "reselect refunds"
+    );
+    assert_eq!(state["queue"][0].as_array().unwrap().len(), 0);
 }

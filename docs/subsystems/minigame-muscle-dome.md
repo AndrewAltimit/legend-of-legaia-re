@@ -236,9 +236,80 @@ block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes
 packets' CLUT words (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`,
 `0x7F8D` = `(208,510)`, ...) address.
 
+## Arts command input (packet-pinned)
+
+The dome's Attack command runs the **standard battle arts input** verbatim -
+the same `FUN_801D0748` state `0x50` gauge-input arm and `FUN_801D388C`
+case-`9`/`0xB` accounting [`arts-command-gauge.md`](arts-command-gauge.md)
+documents. This section pins the *presentation*: what the input screen and
+its Triangle arts list draw, from where. Provenance: a live dome match in
+the static recomp (savestate + scripted pad over the debug TCP server,
+[`recomp-differential.md`](../tooling/recomp-differential.md)), read out
+with the runtime's `gpu_frame_dump` per-frame GP0 packet ring - every rect,
+palette and screen seat below is byte-read from captured SPRT / FT4 /
+shaded-quad words, cross-checked against a full-VRAM dump of the same
+moment.
+
+**Flow** (phase byte `ctx+6`, captured transitions): command cluster
+(`0x28`) -> Attack opens an **Auto | Command** pick (`0x78`, chips at the
+Attack / Ra-Seru element anchors) -> Command opens the input screen
+(`0x50`). Directions append commands (each press debits `ctx+0x6dc` by the
+command's `+0x74` cost and appends to `actor+0x1df` - RAM-verified per
+press); entry **ends by itself** the moment no command is affordable
+(`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
+committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`);
+Begin plays the round out, Reselect returns to a clean input. The previous
+round's pennants persist in the bar when the input reopens and clear on
+the first fresh press. **Triangle** cycles the learned-arts list: closed ->
+page 1 -> ... -> last page -> closed; it is inert when the character's
+learned-art constant ([`art-data.md`](../formats/art-data.md#learned-art-constant))
+names no art. The right-hand AP plate reads the **Spirit gauge**
+(`actor+0x170`) and never moves during entry - the input budget's visible
+form is the bar itself filling with pennants.
+
+**Input screen pieces.** All from the boot-gap widget TIM's page
+(`(896,256)`; sub-palette = row-511 CLUT x/16) unless noted:
+
+| Piece | Sub-pal | Rects (texels) | Screen seats |
+|---|---|---|---|
+| Direction chip | 6 | body `(215,96)` 24x26, caps `(200,96)`/`(239,96)` 15x26 | body anchors: High `(216,26)`, Left `(176,58)`, Right `(256,58)`, Low `(216,90)`; caps at body -15 / +24 |
+| Chip label strip | 5 | `u=104` 24x18; `v`: Left 20, Low 40, Right 84, High 104 (Arms 0, RaSeru 64 sheet-read) | FT4 at body `+ (0,4)` |
+| Diamond ends | 5 | `(192,24)` / `(204,24)` 9x18 | body -9 / +24, `y+4` |
+| D-pad glyph | 7 | `(0,112)` 16x16 | FT4 `(220,62)`-`(235,77)` |
+| Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
+| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 7 + spent-AP-before (pitch 30 at cost 30) |
+| AP plate | 4 | the pinned label/trough/end/cap pieces | `(208,172)`; fill = two 3-px **gouraud strips** x `235..285`, y `177..183`, RGB `(128,32,16)` dark <-> `(192,160,64)` orange (dark-orange-dark sheen) |
+| Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(162,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at `(179, y+2)` |
+
+The status plate is parked off-screen during input (its draws move to
+`y=230`, below the 228-line display window).
+
+**Arts list window** (Triangle): rect `(6,28)`-`(160,188)`. Interior =
+the system-UI panel tile `(128,0)` 32x32 (sub-pal **2** - the same
+`OVERLAY_SYSTEM_UI_PANEL_INTERIOR` region the pause menu tiles,
+[`field-menu.md`](field-menu.md)), tiled 32x32 as shaded-textured quads
+under a per-window vertical gouraud, `0x40` top -> `0x88` bottom. Borders
+(sub-pal 2): edge strips `(164,0)`/`(164,28)` 24x4 and `(160,4)`/`(188,4)`
+4x24, corners at `(160,0)`/`(188,0)`/`(160,28)`/`(188,28)` 4x4. Five rows
+per page at `y = 36 + 30n`: art name (battle font, 14x15 glyphs) and AP
+cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
+**orange sub-palette 15** of CLUT row 510, and the art's command string at
+`(44 + 12k, y+14)` as 12x12 menu-atlas arrow glyphs at `v=208`,
+`u`: Up 208, Down 220, Right 232, Left 244. Name / AP / command string are
+the SCUS arts-name table's own columns
+([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
+
+Still unpinned here: the Auto arm's command picker, the pennant geometry
+for non-30-cost commands (only the favored-class pitch is captured), the
+exact pennant spawn anchor (it spawns at the fighter and glides in via
+`FUN_801d9bbc`), and the review / Begin-Reselect screens' piece
+decomposition (screenshot-read only).
+
 Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
 `muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the
-dome panel draws the chrome from them; the disc-gated oracle is
+dome panel draws the chrome from them - including the whole
+[arts command input](#arts-command-input-packet-pinned) (`arts_input`
+pieces + `muscle_arts_list_json`); the disc-gated oracle is
 `crates/web-viewer/tests/muscle_web_real.rs`
 (`muscle_hud_chrome_decodes_from_the_disc`). Still fitted on the page: the
 banner's speed-line rays (retail draws untextured polys), the SUPER/MIRACLE
@@ -454,7 +525,8 @@ real swing costs drive a decided contest through the world tick).
 
 ## Open
 
-- The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
+- The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
+- The Auto arm's command picker, and the pennant/bar geometry for off-class (non-30) costs - see [Arts command input](#arts-command-input-packet-pinned).
 - The per-arm assignment of the three UI cue ids (`0x21`/`0x22`/`0x23` across the 34 `FUN_8004fcc8` sites in `FUN_801d0748`) - the id set is pinned, which blip belongs to pick / commit / deny is not.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.

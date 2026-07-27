@@ -68,6 +68,13 @@
     <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
+        <td>Arts command-input UI decomposition (the Muscle Dome runs the standard battle input)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">capture</span></td>
+        <td>A live dome match in the static recomp, read through the runtime's <code>gpu_frame_dump</code> GP0 packet ring + a same-moment full-VRAM dump, pins the input screen piece by piece: the High/Left/Right/Low chips are boot-gap widget-page hexagon pieces + baked label strips + gold diamond ends; the input bar is the tiled maroon widget bar filling with committed-command pennants at cost-wide pitch; the right-hand AP plate reads the <em>Spirit</em> gauge (the entry budget's only visible form is the bar); Triangle cycles a five-row-per-page learned-arts window (system-UI interior tiles under a <code>0x40..0x88</code> gouraud) whose name / arrow-string / AP columns are the SCUS arts-name table's own, in orange sub-palette 15; the green Triangle circle is its own tiny gap TIM at <code>PROT.DAT 0x7B00</code>. Flow pinned live: per-press budget debit + queue append, auto-end on exhaustion (<code>0x50 &rarr; 0x5a</code>), the Begin|Reselect chain (<code>0x6e</code>), Triangle inert with no learned arts.</td>
+        <td><a href="../minigames.html#muscle-dome">muscle dome</a> &middot; <a href="../subsystems/arts-command-gauge.html">arts gauge</a></td>
+      </tr>
+      <tr>
         <td>Encounter MAN sub-section layout</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-partial">decompiled-C</span></td>

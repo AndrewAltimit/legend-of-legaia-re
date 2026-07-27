@@ -1145,6 +1145,67 @@ impl LegaiaMinigames {
         format!("[{}]", out.join(","))
     }
 
+    /// The retail Triangle-list rows for the contest fighter: the character's
+    /// arts out of the disc's own SCUS arts-name table (`DAT_80075EC4` -
+    /// name, `+2` AP byte, directional command string), the exact source the
+    /// retail battle input's "Hyper Arts list" overlay draws its
+    /// name / arrow-string / AP columns from. Rows:
+    ///
+    /// ```json
+    /// [ { "name": "Slash Kick", "ap": 40, "dirs": [4,3,2], "kind": "hyper" } ]
+    /// ```
+    ///
+    /// `dirs` are the art-table direction bytes (1 Left, 2 Right, 3 Down,
+    /// 4 Up). Miracle rows (marker-only command strings) are skipped, as the
+    /// retail list skips them. The curated gamedata table is the fallback on
+    /// a raw `PROT.DAT` load (no AP column there - `ap` reads 0) and the
+    /// source of the `kind` label in both cases. The page does not model
+    /// arts *learning*, so every table row lists (disclosed on the page);
+    /// retail gates rows on the character's learned-art constant.
+    pub fn muscle_arts_list_json(&self) -> String {
+        let Some(c) = self.muscle.as_ref() else {
+            return "[]".to_string();
+        };
+        let ap_by_name: std::collections::HashMap<String, u8> = self
+            .scus
+            .as_deref()
+            .and_then(legaia_art::arts_table::parse_from_scus)
+            .map(|entries| entries.into_iter().map(|e| (e.name, e.ap)).collect())
+            .unwrap_or_default();
+        let rows: Vec<String> = self
+            .muscle_art_catalog(c.char_slot)
+            .into_iter()
+            .filter(|(name, _, _)| !name.is_empty())
+            .map(|(name, kind, cmds)| {
+                let dirs: Vec<String> = cmds.iter().map(|c| c.as_byte().to_string()).collect();
+                format!(
+                    r#"{{"name":{},"ap":{},"dirs":[{}],"kind":{}}}"#,
+                    jstr(&name),
+                    ap_by_name.get(&name).copied().unwrap_or(0),
+                    dirs.join(","),
+                    jstr(kind)
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// Whether the player's selection is exhausted (no hand card affordable):
+    /// the retail auto-end of the command input.
+    pub fn muscle_selection_exhausted(&self) -> bool {
+        self.muscle
+            .as_ref()
+            .is_some_and(|c| c.session.selection_exhausted(0))
+    }
+
+    /// The retail confirm menu's "Reselect" arm: throw the player's committed
+    /// queue away and restore the round budget.
+    pub fn muscle_reset_selection(&mut self) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.reset_selection(0);
+        }
+    }
+
     fn muscle_monster_render_mesh(&self, monster_id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
         let entry = self.monster_archive_entry()?;
         let mesh = monster_archive::mesh(entry, monster_id).ok()??;
@@ -1555,6 +1616,50 @@ const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
 /// (`other6.lzs` slot 0): LZS section 0 carries the two hub-page TIMs.
 const HUD_HUB_CONTAINER_PROT_INDEX: u32 = 1220;
 
+/// `PROT.DAT` gap offset of the small pad-button-glyph TIM (the four
+/// button circles + the R1/R2/L1/L2 labels): image -> VRAM (928, 352)
+/// (page (896,256) local texels (128,96)..(192,128)), own 16-entry CLUT ->
+/// (304, 511). The arts-input caption's green Triangle circle is its local
+/// rect (48, 0, 16, 16) - the recomp GP0 capture of the input screen draws
+/// it as `uv (176,96) clut (304,511)` on the widget page.
+const HUD_BUTTON_TIM_OFFSET: usize = 0x7B00;
+
+/// The arts command-input piece rects (recomp GP0 packet capture of a live
+/// dome input screen + Triangle arts list; every rect and palette index is
+/// byte-read out of the captured SPRT/FT4/shaded-quad words -
+/// `docs/subsystems/minigame-muscle-dome.md` "Arts command input"). Split
+/// out of [`LegaiaMinigames::muscle_hud_json`]'s `json!` so the macro stays
+/// under the recursion limit.
+fn arts_input_pieces() -> serde_json::Value {
+    serde_json::json!({
+        "cmd_chip": {"body": [215,96,24,26], "cap_l": [200,96,15,26],
+                      "cap_r": [239,96,15,26], "pal": 6},
+        "cmd_label": {"u": 104, "w": 24, "h": 18, "pal": 5,
+                       "v": {"high": 104, "left": 20, "right": 84,
+                             "low": 40, "arms": 0, "raseru": 64}},
+        "chip_diamond_l": {"r": [192,24,9,18], "pal": 5},
+        "chip_diamond_r": {"r": [204,24,9,18], "pal": 5},
+        "pennant_cap_l": {"r": [192,24,9,18], "pal": 5},
+        "pennant_cap_r": {"r": [216,24,9,18], "pal": 5},
+        "bar_end_l": {"r": [240,0,16,18], "pal": 6},
+        "bar_body": {"r": [224,0,16,18], "pal": 6},
+        "bar_arrow": {"r": [192,44,18,18], "pal": 6},
+        "list_win": {"interior": [128,0,32,32], "edge_top": [164,0,24,4],
+                      "edge_bottom": [164,28,24,4], "edge_l": [160,4,4,24],
+                      "edge_r": [188,4,4,24], "corner_tl": [160,0,4,4],
+                      "corner_tr": [188,0,4,4], "corner_bl": [160,28,4,4],
+                      "corner_br": [188,28,4,4], "pal": 2,
+                      "grad": [0x40, 0x88]},
+        "arts_arrows": {"v": 208, "w": 12, "h": 12, "pal": 15,
+                         "u": {"up": 208, "down": 220, "right": 232,
+                               "left": 244}},
+        "arts_text_pal": 15,
+        "tri_button": {"r": [48,0,16,16]},
+        "ap_input_fill": {"rect": [235,177,50,6],
+                           "rgb": [[192,160,64],[128,32,16]]},
+    })
+}
+
 /// SCUS VA of the battle HUD element layout table (24-byte stride).
 const HUD_ELEMENT_TABLE_VA: u32 = 0x8007_6C10;
 
@@ -1691,8 +1796,9 @@ impl LegaiaMinigames {
     /// sub-palette `palette`), 1 = ASCII battle font (through the
     /// menu-glyph atlas bank sub-palette `palette`), 2 = menu-glyph atlas,
     /// 3 = `etim` banner page (CLUT-row sub-palette), 4/5 = dome hub pages
-    /// (320,0)/(320,256). Empty when the source doesn't decode on this
-    /// image. Sheet dimensions ride in [`Self::muscle_hud_json`].
+    /// (320,0)/(320,256), 6 = the pad-button-glyph TIM (own CLUT). Empty
+    /// when the source doesn't decode on this image. Sheet dimensions ride
+    /// in [`Self::muscle_hud_json`].
     pub fn muscle_hud_sheet_rgba(&self, source: u32, palette: u32) -> Vec<u8> {
         let pal_idx = palette as usize;
         let (tim, pal_tim) = match source {
@@ -1718,6 +1824,10 @@ impl LegaiaMinigames {
             }
             5 => {
                 let t = self.hud_hub_tims().map(|(_, b)| b);
+                (t.clone(), t)
+            }
+            6 => {
+                let t = self.hud_gap_tim(HUD_BUTTON_TIM_OFFSET);
                 (t.clone(), t)
             }
             _ => (None, None),
@@ -1746,6 +1856,7 @@ impl LegaiaMinigames {
         let font = self.hud_gap_tim(HUD_FONT_TIM_OFFSET);
         let atlas = self.hud_gap_tim(HUD_MENU_ATLAS_TIM_OFFSET);
         let banner = self.hud_banner_tim();
+        let button = self.hud_gap_tim(HUD_BUTTON_TIM_OFFSET);
         if widget.is_none() || font.is_none() || atlas.is_none() {
             return r#"{"ok":false}"#.to_string();
         }
@@ -1780,6 +1891,7 @@ impl LegaiaMinigames {
                 "atlas": dims(&atlas), "banner": dims(&banner),
                 "hub0": dims(&hub.as_ref().map(|(a, _)| a.clone())),
                 "hub1": dims(&hub.as_ref().map(|(_, b)| b.clone())),
+                "button": dims(&button),
             },
             // Capture-pinned piece rects: [u, v, w, h] on the named sheet,
             // "pal" = the sub-palette observed in the live packets.
@@ -1810,6 +1922,7 @@ impl LegaiaMinigames {
                 "atlas_digits": {"v": 208, "x0": 0, "cell": 8, "h": 12, "pal": HUD_TEXT_SUB_PALETTE},
                 "font_pal": HUD_TEXT_SUB_PALETTE,
             },
+            "arts_input": arts_input_pieces(),
             "elements": self.hud_elements_json(),
             "hub": hub_sprites,
             "advance": self.hud_font_advances(),

@@ -70,16 +70,33 @@
  * battle HUD element table (0x80076C10) plus a live PCSX-Redux packet
  * capture of a dome match (command cluster, enemy art, player HYPER ARTS!!
  * playback - scripts/pcsx-redux/autorun_muscle_hud_capture.lua).
+ * The ARTS COMMAND INPUT is packet-pinned end to end (a recomp
+ * `gpu_frame_dump` GP0 capture of a live dome input screen + Triangle
+ * list; docs/subsystems/minigame-muscle-dome.md "Arts command input"):
+ * the High/Left/Right/Low hexagon chips + baked label strips + diamond
+ * ends, the maroon input bar with its committed-command pennants, the
+ * input-phase AP plate with its gouraud sheen fill, the Triangle-button
+ * caption (its green circle is the gap TIM at PROT.DAT 0x7B00), and the
+ * Hyper Arts list window (system-UI interior tiles under the retail
+ * per-window gouraud, orange sub-palette-15 text/arrows, five rows a
+ * page). The flow is capture-pinned too: Attack -> Auto|Command ->
+ * direction entry that auto-ends when no command is affordable ->
+ * queue review -> Begin|Reselect.
  * STILL FITTED: the base camera seat, fighter spacing/facing, which traced
  * blip fires on which page event, the KO clip pick (slot 4 of the pinned
  * reaction family), the small art-name caption + hint lines (page aids),
  * the banner speed-line rays (polygonal in retail, procedural here), the
  * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
  * strip's draw is packet-pinned), the interval panel's info layout (only
- * its INTERVAL/ROUND headings are the retail art), and the glide-in motion
+ * its INTERVAL/ROUND headings are the retail art), the glide-in motion
  * (retail slides chips between the element table's two endpoints; the page
- * draws them parked at the arrived endpoint). Without a disc image the
- * chrome falls back to the old canvas approximation.
+ * draws them parked at the arrived endpoint), the pennant spawn anchor +
+ * pennant width off the captured 30-cost pitch, the Auto picker (greedy
+ * here, unpinned in retail), and the review/confirm screens' geometry
+ * (screenshot-read, not packet-pinned). The arts LIST rows show every
+ * table art - the page does not model arts learning; retail gates rows on
+ * the learned-art constant. Without a disc image the chrome falls back to
+ * the old canvas approximation.
  *
  * HONEST GAPS: the rules engine resolves each committed command as a basic
  * strike - retail expands a recognized art sequence through the art records
@@ -142,7 +159,15 @@ window.MgMuscle = (function () {
     let scene = null;          /* 3D scene (null = text fallback) */
     let sceneMonster = -1;     /* monster the scene was built for */
     let mode = 'idle';         /* idle|intro|select|playback|interval|decided */
-    let selectSub = 'menu';    /* select submode: menu | attack */
+    /* select submode - the retail command flow (recomp phase captures):
+     *   menu (0x28 cluster) -> attackmenu (0x78 Auto|Command) ->
+     *   input (0x50 direction entry) -> review (0x5a queue shown) ->
+     *   confirm (0x6e Begin|Reselect). */
+    let selectSub = 'menu';
+    let artsPage = -1;         /* Triangle arts list: -1 closed, else page */
+    let artsRows = null;       /* muscle_arts_list_json rows (lazy) */
+    let confirmSel = 0;        /* confirm menu cursor: 0 Begin, 1 Reselect */
+    let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let introT = 0;            /* ticks into the intro card */
     let tick = 0;
     let banner = null;         /* {text, sub, t, life, cls} */
@@ -182,7 +207,7 @@ window.MgMuscle = (function () {
      * note for the per-sheet disc sources. */
     let hudMeta;               /* undefined until asked; null = unavailable */
     const hudSheets = {};      /* "src:pal" -> canvas (null = failed) */
-    const SHEET_NAMES = ['widget', 'font', 'atlas', 'banner', 'hub0', 'hub1'];
+    const SHEET_NAMES = ['widget', 'font', 'atlas', 'banner', 'hub0', 'hub1', 'button'];
 
     function hudOk() {
       if (hudMeta === undefined) {
@@ -232,9 +257,10 @@ window.MgMuscle = (function () {
       return w;
     }
     /* The retail ASCII battle font: 16x16 cells drawn as 14x15 sprites,
-     * pen stepped by the per-glyph advance (capture-matched). */
-    function hudText(s, x, y) {
-      const pal = hudMeta.pieces.font_pal;
+     * pen stepped by the per-glyph advance (capture-matched). `palOver`
+     * selects another CLUT-bank sub-palette (15 = the arts-list orange). */
+    function hudText(s, x, y, palOver) {
+      const pal = palOver != null ? palOver : hudMeta.pieces.font_pal;
       let pen = x;
       for (const c of s) {
         const i = c.charCodeAt(0) - 0x20;
@@ -246,7 +272,7 @@ window.MgMuscle = (function () {
       return pen - x;
     }
     /* Menu-atlas small digits (8x12, u = digit*8) + the widget '/'. */
-    function hudDigits(str, x, y) {
+    function hudDigits(str, x, y, palOver) {
       const d = hudMeta.pieces.atlas_digits;
       const sl = hudMeta.pieces.slash;
       let pen = x;
@@ -255,7 +281,8 @@ window.MgMuscle = (function () {
           blit(0, sl.pal, sl.r[0], sl.r[1], sl.r[2], sl.r[3], pen, y - 2);
           pen += 8;
         } else if (c >= '0' && c <= '9') {
-          blit(2, d.pal, d.x0 + (c.charCodeAt(0) - 48) * d.cell, d.v, 8, d.h, pen, y);
+          blit(2, palOver != null ? palOver : d.pal,
+            d.x0 + (c.charCodeAt(0) - 48) * d.cell, d.v, 8, d.h, pen, y);
           pen += 8;
         } else {
           pen += 8;
@@ -784,6 +811,10 @@ window.MgMuscle = (function () {
       mode = 'intro';
       introT = 0;
       selectSub = 'menu';
+      artsPage = -1;
+      artsRows = null;      /* re-read: the fighter may have changed */
+      pennantFx = [];
+      confirmSel = 0;
       return true;
     }
 
@@ -796,11 +827,26 @@ window.MgMuscle = (function () {
 
     function commit(slot) {
       if (mode !== 'select') return false;
-      selectSub = 'attack';   /* a commit is directional input */
+      if (selectSub === 'menu' || selectSub === 'attackmenu') {
+        selectSub = 'input';  /* a commit is directional input */
+      }
+      if (selectSub !== 'input') return false;
+      const before = st();
       const ok = api.muscle_commit(slot);
       /* Confirm blip on a committed command; cursor blip on a rejected one
        * (overspend / queue full) - fitted assignment over the traced ids. */
       playCue(ok ? 'confirm' : 'cursor', ok ? 0.5 : 0.35);
+      if (ok) {
+        const state = st();
+        const cmd = (before.hand[slot] || {}).cmd;
+        spawnPennant(cmd, state.queue[0].length - 1, state);
+        /* Retail auto-end: the input phase closes on its own the moment no
+         * command is affordable (recomp capture: ctx+6 0x50 -> 0x5a on the
+         * exhausting press). */
+        if (api.muscle_selection_exhausted && api.muscle_selection_exhausted()) {
+          selectSub = 'review';
+        }
+      }
       return ok;
     }
 
@@ -812,6 +858,27 @@ window.MgMuscle = (function () {
       const hand = state.hand || [];
       const i = hand.findIndex(c => (CMD[c.cmd] || {}).dir === dir);
       return i >= 0 ? commit(i) : false;
+    }
+
+    /* The learned-arts rows the Triangle list pages through (SCUS
+     * arts-name table: name / arrow string / AP). */
+    function artsList() {
+      if (artsRows === null) {
+        try { artsRows = JSON.parse(api.muscle_arts_list_json()); }
+        catch (e) { artsRows = []; }
+      }
+      return artsRows;
+    }
+
+    /* Triangle: open the arts list / next page / close past the last page
+     * (retail: the caption cycles "View Hyper Arts list" -> "View Next
+     * page"; inert when the fighter knows no arts). */
+    function artsListKey() {
+      const rows = artsList();
+      if (!rows.length) return;
+      const pages = Math.ceil(rows.length / 5);
+      artsPage = artsPage + 1 >= pages ? -1 : artsPage + 1;
+      playCue('cursor', 0.4);
     }
 
     /* Close selection and play the round out. */
@@ -829,16 +896,18 @@ window.MgMuscle = (function () {
       banner = null;
       artsBanner = null;
       tally = null;
+      artsPage = -1;
+      pennantFx = [];
       mode = 'playback';
     }
 
-    /* Pad-shaped input from the page: left/right/up/down/back. */
+    /* Pad-shaped input from the page: left/right/up/down/back/triangle. */
     function key(name) {
       if (mode === 'intro') { beginSelect(); return; }
       if (mode !== 'select') return;
       if (selectSub === 'menu') {
-        if (name === 'left') {            /* Attack: directional input */
-          selectSub = 'attack';
+        if (name === 'left') {            /* Attack -> Auto | Command */
+          selectSub = 'attackmenu';
           playCue('cursor', 0.4);
         } else if (name === 'down') {     /* Spirit: end selection, fight */
           playCue('confirm', 0.5);
@@ -848,10 +917,41 @@ window.MgMuscle = (function () {
            * course rules, magic by the port's missing cast path. */
           playCue('blip', 0.3);
         }
-      } else {
-        if (name === 'back') { selectSub = 'menu'; playCue('cursor', 0.4); }
-        else if (name === 'left' || name === 'right' ||
+      } else if (selectSub === 'attackmenu') {
+        if (name === 'left') {
+          /* Auto: commit commands automatically while the budget lasts
+           * (greedy in hand order - the retail Auto picker itself is
+           * unpinned), then go straight to the review. */
+          playCue('confirm', 0.5);
+          let guard = 0;
+          while (guard++ < 32) {
+            if (!api.muscle_commit(0) && !api.muscle_commit(1) &&
+                !api.muscle_commit(2) && !api.muscle_commit(3)) break;
+          }
+          pennantFx = [];
+          selectSub = 'review';
+        } else if (name === 'right') {    /* Command: manual input */
+          selectSub = 'input';
+          playCue('cursor', 0.4);
+        } else if (name === 'back') { selectSub = 'menu'; playCue('cursor', 0.4); }
+      } else if (selectSub === 'input') {
+        if (name === 'back') {
+          artsPage = -1;
+          selectSub = 'menu';
+          playCue('cursor', 0.4);
+        } else if (name === 'triangle') {
+          artsListKey();
+        } else if (name === 'left' || name === 'right' ||
                  name === 'up' || name === 'down') commitDir(name);
+      } else if (selectSub === 'review') {
+        /* any input advances to the Begin | Reselect confirm */
+        selectSub = 'confirm';
+        confirmSel = 0;
+        playCue('cursor', 0.4);
+      } else if (selectSub === 'confirm') {
+        if (name === 'left') { confirmSel = 0; playCue('cursor', 0.35); }
+        else if (name === 'right') { confirmSel = 1; playCue('cursor', 0.35); }
+        else if (name === 'back') { selectSub = 'review'; }
       }
     }
 
@@ -862,6 +962,28 @@ window.MgMuscle = (function () {
       if (mode === 'intro') {
         beginSelect();
       } else if (mode === 'select') {
+        if (selectSub === 'input') {
+          /* End the input early: to the queue review. */
+          artsPage = -1;
+          selectSub = state.queue[0].length ? 'review' : 'input';
+          if (state.queue[0].length) playCue('confirm', 0.5);
+          return;
+        }
+        if (selectSub === 'review') { selectSub = 'confirm'; confirmSel = 0; playCue('cursor', 0.4); return; }
+        if (selectSub === 'confirm') {
+          if (confirmSel === 1 && api.muscle_reset_selection) {
+            /* Reselect: retail throws the queue away and restores the
+             * budget, back to a clean input. */
+            api.muscle_reset_selection();
+            pennantFx = [];
+            selectSub = 'input';
+            playCue('cursor', 0.4);
+            return;
+          }
+          playCue('confirm', 0.5);
+          fight();
+          return;
+        }
         fight();
       } else if (mode === 'playback') {
         /* Skip: settle every pending event instantly. */
@@ -1107,15 +1229,19 @@ window.MgMuscle = (function () {
     }
 
     /* Top-left Begin + fighter-name chips (retail command-input header;
-     * capture: gold body starts at x=16 / x=68, plates 20 tall at y=8). */
-    function drawHeaderChips(state) {
+     * capture: gold body starts at x=16 / x=68, plates 20 tall at y=8).
+     * `withAttack` adds the third "Attack" chip the attack-input phases
+     * carry (packet capture: gold plates at x=8/60/103, y=8). */
+    function drawHeaderChips(state, withAttack) {
       if (hudOk()) {
         const w = rChip('Begin', 16, 8, 'gold');
-        rChip(state.names[0], 24 + w + 8, 8, 'gold');
+        const w2 = rChip(state.names[0], 24 + w + 8, 8, 'gold');
+        if (withAttack) rChip('Attack', 24 + w + 8 + w2 + 16, 8, 'gold');
         return;
       }
       chip(6, 6, 40, 13, 'gold', 'Begin');
       chip(52, 6, Math.max(36, state.names[0].length * 7 + 10), 13, 'gold', state.names[0]);
+      if (withAttack) chip(104, 6, 46, 13, 'gold', 'Attack');
     }
 
     /* The retail command cluster: Item (crossed out) on top; Attack +
@@ -1124,7 +1250,7 @@ window.MgMuscle = (function () {
      * plate/label offsets and the D-pad seat the captured packets. */
     function drawCommandCluster(state) {
       const raSeru = RA_SERU[state.char] || 'Meta';
-      const inAttack = selectSub === 'attack';
+      const inAttack = selectSub !== 'menu';
       if (hudOk()) {
         const el = (i, dx, dy) => {
           const e = hudMeta.elements[i];
@@ -1164,17 +1290,273 @@ window.MgMuscle = (function () {
       }
     }
 
-    /* Committed directional input (the retail arts strip: arrows appear as
-     * you enter them), drawn over the AP plate while selecting. The strip
-     * itself is a page aid (retail consumes the AP gauge instead). */
+    /* ---- The retail arts command input (recomp GP0 packet capture) ----
+     *
+     * Every piece rect / palette / screen seat below is byte-read out of a
+     * live dome input screen's captured packet stream (docs/subsystems/
+     * minigame-muscle-dome.md "Arts command input"). The direction chips
+     * sit at the same screen anchors the status-limb-gating table in
+     * arts-command-gauge.md documents. Command id -> label strip. */
+    const CMD_CHIP_SEATS = {
+      15: { bx: 216, by: 26, label: 'high' },    /* Up */
+      12: { bx: 176, by: 58, label: 'left' },
+      13: { bx: 256, by: 58, label: 'right' },
+      14: { bx: 216, by: 90, label: 'low' },     /* Down */
+    };
+
+    function ai() { return hudMeta && hudMeta.arts_input; }
+
+    /* One direction chip: 15-wide gold hexagon caps + 24-wide body, the
+     * baked label strip (an FT4 in retail), and the two 9x18 diamond
+     * arrows at the pointed ends. */
+    function drawCmdChip(cmd) {
+      const p = ai();
+      const s = CMD_CHIP_SEATS[cmd];
+      if (!p || !s) return;
+      const c = p.cmd_chip;
+      blit(0, c.pal, ...c.cap_l, s.bx - 15, s.by);
+      blit(0, c.pal, ...c.body, s.bx, s.by);
+      blit(0, c.pal, ...c.cap_r, s.bx + 24, s.by);
+      const L = p.cmd_label;
+      blit(0, L.pal, L.u, L.v[s.label], L.w, L.h, s.bx, s.by + 4);
+      blit(0, p.chip_diamond_l.pal, ...p.chip_diamond_l.r, s.bx - 9, s.by + 4);
+      blit(0, p.chip_diamond_r.pal, ...p.chip_diamond_r.r, s.bx + 24, s.by + 4);
+    }
+
+    /* The High / Left / Right / Low chip cross + the D-pad glyph (packet:
+     * FT4 (220,62)-(235,77) of the pinned 16x16 dpad piece). */
+    function drawInputChips() {
+      if (!ai()) return;
+      for (const cmd of [15, 12, 13, 14]) drawCmdChip(cmd);
+      const d = hudMeta.pieces.dpad;
+      blit(0, d.pal, d.r[0], d.r[1], 16, 16, 220, 62, 15, 15);
+    }
+
+    /* The input bar (the visible AP gauge): pointed left end + tiled body +
+     * arrow right end at y=188, maroon sub-palette. Captured at 128 px for
+     * a 100-AP pool; other pools scale proportionally (fitted). */
+    function drawInputBar(state) {
+      const p = ai();
+      if (!p) return;
+      const pool = state.stats ? state.stats[0].budget_pool : 100;
+      const len = Math.max(48, Math.round(128 * pool / 100));
+      blit(0, p.bar_end_l.pal, ...p.bar_end_l.r, 0, 188);
+      for (let x = 16; x < len - 16; x += 16) {
+        const w = Math.min(16, len - 16 - x);
+        blit(0, p.bar_body.pal, p.bar_body.r[0], p.bar_body.r[1], w, 18, x, 188);
+      }
+      blit(0, p.bar_arrow.pal, ...p.bar_arrow.r, len - 18, 188);
+    }
+
+    /* One committed-command pennant: 9x18 caps + the 24x18 label strip.
+     * Slot x = 7 + the AP cost of everything before it (capture: pitch 30
+     * for the 30-cost commands; the cap seat extrapolates for other
+     * costs). */
+    function drawPennant(cmd, x, y) {
+      const p = ai();
+      const s = CMD_CHIP_SEATS[cmd];
+      if (!p || !s) return;
+      blit(0, p.pennant_cap_l.pal, ...p.pennant_cap_l.r, x, y);
+      const L = p.cmd_label;
+      blit(0, L.pal, L.u, L.v[s.label], L.w, L.h, x + 9, y);
+      blit(0, p.pennant_cap_r.pal, ...p.pennant_cap_r.r, x + 33, y);
+    }
+
+    /* Bar x seat of committed queue slot `i` (cost-weighted). */
+    function pennantSeat(state, i) {
+      const hand = state.hand || [];
+      const costOf = (cmd) => {
+        const h = hand.find(c => c.cmd === cmd);
+        return h ? h.cost : 30;
+      };
+      let x = 7;
+      for (let k = 0; k < i; k++) x += costOf(state.queue[0][k]);
+      return x;
+    }
+
+    /* Spawn the committed pennant near the fighter and glide it into its
+     * bar slot (retail spawns it at the fighter's projected position and
+     * FUN_801d9bbc glides it in; the spawn anchor here is fitted). */
+    function spawnPennant(cmd, slot, state) {
+      pennantFx.push({ cmd, slot, t: 0, life: 14, sx: 110, sy: 148 });
+    }
+
+    /* Committed pennants: settled ones in the bar, in-flight ones gliding. */
+    function drawPennants(state) {
+      if (!ai()) return;
+      const flying = {};
+      pennantFx = pennantFx.filter(f => f.t <= f.life);
+      for (const f of pennantFx) flying[f.slot] = f;
+      for (let i = 0; i < state.queue[0].length; i++) {
+        const cmd = state.queue[0][i];
+        const f = flying[i];
+        if (f) {
+          const k = f.t / f.life;
+          const tx = pennantSeat(state, i);
+          drawPennant(cmd, Math.round(f.sx + (tx - f.sx) * k),
+            Math.round(f.sy + (188 - f.sy) * k));
+          f.t++;
+        } else {
+          drawPennant(cmd, pennantSeat(state, i), 188);
+        }
+      }
+    }
+
+    /* The input-phase AP plate at (208,172): the same label / trough / end
+     * pieces as the command menu, but the fill is retail's two 3-px
+     * gouraud strips (dark-orange-dark sheen, x 235..285 at full) reading
+     * the SPIRIT gauge - the input budget is the bar on the left, the
+     * plate on the right never drains during entry (packet + RAM
+     * capture). */
+    function drawInputApPlate(state) {
+      const p = hudMeta.pieces, a = ai();
+      const x = 208, y = 172;
+      blit(0, p.ap_label.pal, ...p.ap_label.r, x, y);
+      blit(0, p.ap_trough.pal, ...p.ap_trough.r, x + 24, y);
+      const spirit = state.spirit ? state.spirit[0] : 100;
+      if (spirit >= 100) {
+        blit(0, p.ap_end.pal, ...p.ap_end.r, x + 80, y);
+      } else {
+        blit(0, p.ap_trough.pal, p.ap_trough.r[0] + 16, p.ap_trough.r[1], 16, 16, x + 80, y);
+        const num = String(spirit);
+        hudDigits(num, x + 95 - num.length * 8, y + 2);
+      }
+      blit(0, p.ap_cap.pal, ...p.ap_cap.r, x + 96, y);
+      const f = a.ap_input_fill;
+      const w = Math.round(f.rect[2] * Math.max(0, Math.min(100, spirit)) / 100);
+      if (w > 0) {
+        const [lite, dark] = f.rgb;
+        const gr = g.createLinearGradient(0, f.rect[1] * 2, 0, (f.rect[1] + f.rect[3]) * 2);
+        gr.addColorStop(0, `rgb(${dark[0]},${dark[1]},${dark[2]})`);
+        gr.addColorStop(0.5, `rgb(${lite[0]},${lite[1]},${lite[2]})`);
+        gr.addColorStop(1, `rgb(${dark[0]},${dark[1]},${dark[2]})`);
+        g.fillStyle = gr;
+        g.fillRect(f.rect[0] * 2, f.rect[1] * 2, w * 2, f.rect[3] * 2);
+      }
+    }
+
+    /* The Triangle caption: the green Triangle button circle (its own gap
+     * TIM at PROT.DAT 0x7B00) + the white battle-font line. Open-list seat
+     * (162,154)/(179,156); closed (162,170)/(179,172) - both packet-read. */
+    function drawTriCaption(open) {
+      const a = ai();
+      if (!a || !artsList().length) return;
+      const y = open ? 154 : 170;
+      blit(6, 0, ...a.tri_button.r, 162, y);
+      hudText(open ? 'Button: View Next page' : 'Button: View Hyper Arts list',
+        179, y + 2);
+    }
+
+    /* The Triangle arts-list window at (6,28)-(160,188): system-UI
+     * interior tiles under the retail per-window vertical gouraud (0x40
+     * top -> 0x88 bottom), gold border strips + corners, five rows per
+     * page - art name + AP (orange battle font / atlas digits through
+     * sub-palette 15) over the art's arrow string (12x12 atlas glyphs). */
+    function drawArtsList(state) {
+      const a = ai();
+      if (!a || artsPage < 0) return;
+      const W0 = 6, Y0 = 28, W1 = 160, Y1 = 188;
+      const win = a.list_win;
+      /* interior tiles */
+      for (let ty = Y0; ty < Y1 - 4; ty += 32) {
+        for (let tx = W0; tx < W1; tx += 32) {
+          const w = Math.min(32, W1 - tx), h = Math.min(32, Y1 - 4 - ty);
+          blit(0, win.pal, win.interior[0], win.interior[1], w, h, tx, ty);
+        }
+      }
+      /* the per-window gouraud modulation (0x40/128 top -> 0x88/128
+       * bottom): approximated by a fading black overlay */
+      const gr = g.createLinearGradient(0, Y0 * 2, 0, Y1 * 2);
+      gr.addColorStop(0, `rgba(0,0,0,${1 - win.grad[0] / 128})`);
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.fillRect(W0 * 2, Y0 * 2, (W1 - W0) * 2, (Y1 - Y0) * 2);
+      /* borders */
+      for (let tx = W0 + 4; tx < W1 - 4; tx += 24) {
+        const w = Math.min(24, W1 - 4 - tx);
+        blit(0, win.pal, win.edge_top[0], win.edge_top[1], w, 4, tx, Y0);
+        blit(0, win.pal, win.edge_bottom[0], win.edge_bottom[1], w, 4, tx, Y1 - 4);
+      }
+      for (let ty = Y0 + 4; ty < Y1 - 4; ty += 24) {
+        const h = Math.min(24, Y1 - 4 - ty);
+        blit(0, win.pal, win.edge_l[0], win.edge_l[1], 4, h, W0, ty);
+        blit(0, win.pal, win.edge_r[0], win.edge_r[1], 4, h, W1 - 4, ty);
+      }
+      blit(0, win.pal, ...win.corner_tl, W0, Y0);
+      blit(0, win.pal, ...win.corner_tr, W1 - 4, Y0);
+      blit(0, win.pal, ...win.corner_bl, W0, Y1 - 4);
+      blit(0, win.pal, ...win.corner_br, W1 - 4, Y1 - 4);
+      /* rows */
+      const rows = artsList().slice(artsPage * 5, artsPage * 5 + 5);
+      const orange = a.arts_text_pal;
+      const AR = a.arts_arrows;
+      const dirGlyph = { 1: 'left', 2: 'right', 3: 'down', 4: 'up' };
+      rows.forEach((row, i) => {
+        const y = 36 + 30 * i;
+        hudText(row.name, 14, y, orange);
+        if (row.ap > 0) {
+          const num = String(row.ap);
+          hudDigits(num, 152 - num.length * 8, y, orange);
+        }
+        (row.dirs || []).slice(0, 9).forEach((d, k) => {
+          const u = AR.u[dirGlyph[d]];
+          if (u != null) blit(2, AR.pal, u, AR.v, AR.w, AR.h, 44 + 12 * k, y + 14);
+        });
+      });
+    }
+
+    /* The Attack sub-menu (phase 0x78): Auto | Command chips around the
+     * D-pad glyph at the Attack / Ra-Seru element anchors. */
+    function drawAttackMenu() {
+      if (!hudOk()) {
+        chip(150, 48, 54, 14, 'blue', 'Auto');
+        dpadGlyph(216, 55, 7);
+        chip(228, 48, 62, 14, 'blue', 'Command');
+        return;
+      }
+      const e9 = hudMeta.elements[9], eA = hudMeta.elements[0xA];
+      const atk = e9 ? { x: e9.b[0], y: e9.b[1], w: e9.w } : { x: 160, y: 66, w: 48 };
+      const ras = eA ? { x: eA.b[0], y: eA.b[1], w: eA.w } : { x: 248, y: 66, w: 48 };
+      rChip('Auto', atk.x, atk.y - 6, 'blue', atk.w);
+      blit(0, hudMeta.pieces.dpad.pal,
+        hudMeta.pieces.dpad.r[0], hudMeta.pieces.dpad.r[1], 16, 16,
+        (atk.x + atk.w + ras.x - 8) / 2 - 8, atk.y - 4);
+      rChip('Command', ras.x, ras.y - 6, 'blue', ras.w);
+      if (!banner) {
+        text('←Auto  →Command  ESC back', 214, 116, 6, '#aeb6c4', 'center', '');
+      }
+    }
+
+    /* The queue-review / Begin|Reselect confirm (phases 0x5a / 0x6e;
+     * screenshot-read geometry - these two screens are not packet-pinned). */
+    function drawConfirmMenu(state) {
+      if (selectSub === 'confirm') {
+        if (hudOk()) {
+          rChip('Begin', 96, 84, confirmSel === 0 ? 'gold' : 'blue', 40);
+          rChip('Reselect', 176, 84, confirmSel === 1 ? 'gold' : 'blue', 56);
+          const w0 = rChip(state.names[0], 16, 164, 'gold');
+          rChip('Attack', 24 + w0 + 8, 164, 'gold');
+          const fname = state.names[1] || '';
+          if (fname) rChip(fname, 304 - hudTextW(fname), 164, 'blue');
+        } else {
+          chip(88, 78, 48, 14, confirmSel === 0 ? 'gold' : 'blue', 'Begin');
+          chip(168, 78, 62, 14, confirmSel === 1 ? 'gold' : 'blue', 'Reselect');
+        }
+        text('←→ pick · SPACE confirm', 160, 108, 6, '#aeb6c4', 'center', '');
+      } else {
+        text('SPACE: continue', 240, 160, 6, '#aeb6c4', 'center', '');
+      }
+    }
+
+    /* Legacy fallback strip (no disc chrome): entered arrows as text. */
     function drawQueueStrip(state) {
       const q = state.queue[0];
-      if (!q.length && selectSub !== 'attack') return;
+      if (!q.length && selectSub === 'menu') return;
       let s = '';
       for (const cmd of q) s += (CMD[cmd] ? CMD[cmd].glyph : '?') + ' ';
       plate(180, 160, 126, 12, 'blue', false);
       text(s || '· · ·', 243, 166, 8, '#ffe9a8', 'center');
-      if (selectSub === 'attack') {
+      if (selectSub === 'input') {
         text('arrows commit · SPACE fight · ESC back', 306, 152, 6, '#aeb6c4', 'right', '');
       }
     }
@@ -1556,11 +1938,46 @@ window.MgMuscle = (function () {
       if (!state.live) { drawBanner(); return; }
 
       if (mode === 'select') {
-        drawHeaderChips(state);
-        drawCommandCluster(state);
-        drawQueueStrip(state);
-        drawApPlate(state);
-        drawStatusPlate(state);
+        if (!hudOk()) {
+          /* No disc chrome: the legacy approximation. */
+          drawHeaderChips(state, selectSub !== 'menu');
+          if (selectSub === 'attackmenu') drawAttackMenu();
+          else if (selectSub === 'menu') drawCommandCluster(state);
+          drawQueueStrip(state);
+          drawApPlate(state);
+          drawStatusPlate(state);
+          if (selectSub === 'confirm') drawConfirmMenu(state);
+        } else if (selectSub === 'menu') {
+          drawHeaderChips(state);
+          drawCommandCluster(state);
+          drawApPlate(state);
+          drawStatusPlate(state);
+        } else if (selectSub === 'attackmenu') {
+          drawHeaderChips(state, true);
+          drawAttackMenu();
+          drawApPlate(state);
+          drawStatusPlate(state);
+        } else if (selectSub === 'input') {
+          /* Retail parks the status plate off-screen here (packet: its
+           * draws move to y=230). */
+          drawHeaderChips(state, true);
+          drawInputChips();
+          drawInputBar(state);
+          drawPennants(state);
+          drawInputApPlate(state);
+          drawTriCaption(artsPage >= 0);
+          drawArtsList(state);
+          if (artsPage < 0 && !banner) {
+            text('arrows enter · T arts list · SPACE done · ESC back',
+              160, 216, 6, '#aeb6c4', 'center', '');
+          }
+        } else if (selectSub === 'review' || selectSub === 'confirm') {
+          drawHeaderChips(state, selectSub === 'review');
+          drawInputBar(state);
+          drawPennants(state);
+          if (selectSub === 'review') drawFoeChip(state);
+          drawConfirmMenu(state);
+        }
       } else if (mode === 'playback') {
         drawAttackerChip(state.names[tally ? tally.attacker : 0] || state.names[0]);
         drawFoeChip(state);

@@ -639,14 +639,19 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-verdict" id="muscle-verdict"></div>
         <p class="mg-controls">
           <b>Enter commands, then Begin.</b> <kbd>Space</kbd> skips the intro card. In the
-          command menu <kbd>&larr;</kbd> is <b>Attack</b> (directional input), <kbd>&darr;</kbd>
+          command menu <kbd>&larr;</kbd> is <b>Attack</b>, <kbd>&darr;</kbd>
           is <b>Spirit</b> (end selection and fight); Item is crossed out and the Ra-Seru chip
-          is disabled (see the note). During Attack input the <b>arrow keys</b> (or the buttons /
-          <kbd>1</kbd>&ndash;<kbd>4</kbd>) commit directions while the AP gauge covers their
-          cost &mdash; a sequence that spells a Tactical Art raises the arts banner when it plays
-          out &mdash; then <kbd>Space</kbd> begins the round in 3D (Space again skips ahead;
-          <kbd>Esc</kbd> backs out to the menu). Between rounds <kbd>Space</kbd> advances the
-          interval tally. Drag the arena to orbit, wheel to zoom.
+          is disabled (see the note). Attack opens the retail <b>Auto&nbsp;/&nbsp;Command</b>
+          pick (<kbd>&larr;</kbd>/<kbd>&rarr;</kbd>); Command is the real input screen &mdash;
+          the <b>arrow keys</b> (or the buttons / <kbd>1</kbd>&ndash;<kbd>4</kbd>) enter
+          directions onto the input bar as command pennants while the AP budget covers their
+          cost (entry ends by itself when nothing is affordable, exactly as retail does),
+          <kbd>T</kbd> is the <b>Triangle</b> button &mdash; the learned-arts list overlay,
+          paging on each press &mdash; and a sequence that spells a Tactical Art raises the
+          arts banner when it plays out. <kbd>Space</kbd> reviews the queue, then
+          <b>Begin&nbsp;/&nbsp;Reselect</b> confirms or redoes it (<kbd>Esc</kbd> backs out).
+          Between rounds <kbd>Space</kbd> advances the interval tally. Drag the arena to
+          orbit, wheel to zoom.
         </p>
         <div class="mg-row" id="muscle-cards"></div>
         <div class="mg-row">
@@ -701,7 +706,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
             (extraction&nbsp;1220), placed by the PROT&nbsp;0977 overlay's sprite table. Screen
             positions come from the SCUS-static battle HUD element table plus a live PCSX-Redux
             packet capture of a real dome match (command cluster, enemy art, player
-            <b>HYPER&nbsp;ARTS!!</b>).
+            <b>HYPER&nbsp;ARTS!!</b>). The <b>arts command input</b> is packet-pinned piece by
+            piece from a GP0 capture of a live retail input screen: the High/Left/Right/Low
+            hexagon chips with their baked label strips and gold diamond ends, the maroon
+            input bar and its committed-command pennants, the input-phase AP plate's gouraud
+            sheen, the green Triangle-button circle (its own tiny system TIM), and the
+            <b>Hyper Arts list</b> window &mdash; system-UI interior tiles under the retail
+            per-window gradient, with each art's name, arrow string and AP cost in the orange
+            sub-palette, straight from the SCUS arts-name table.
           </p>
           <p>
             <b>Fitted rather than traced:</b> the base camera seat, fighter spacing and facing
@@ -715,8 +727,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
             three traced UI blips fires on which page event; the KO clip pick (slot&nbsp;4 of
             the pinned party hit-reaction family &mdash; the flinch, slot 2, is traced); the
             opponent's greedy command AI (retail has no dome-specific AI table); the
-            jitter-free level growth (retail adds a zero-mean random spread); and the awarded
-            Seru. <b>Two honest gaps:</b> the rules engine resolves each command as a basic
+            jitter-free level growth (retail adds a zero-mean random spread); the awarded
+            Seru; the pennant spawn anchor and non-30-cost pennant widths (the capture holds
+            the 30-cost pitch); the <b>Auto</b> picker (greedy here &mdash; retail's picker is
+            unpinned); the review / Begin-Reselect screens' geometry (screenshot-read); and
+            the arts list showing every table art &mdash; the page does not model arts
+            <em>learning</em>, which retail gates the list on. <b>Two honest gaps:</b> the rules engine resolves each command as a basic
             strike &mdash; retail expands a recognized art through its art records for more
             damage, so the arts banner here is presentation over the real recognition, not an
             arts damage model &mdash; and the Ra-Seru (magic) chip renders crossed out because
@@ -2790,13 +2806,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       }
     } else if (active === 'muscle') {
       /* Retail pad map: D-pad drives the command menu (Left=Attack,
-       * Down=Spirit) and, inside Attack input, commits directions; 1-4
-       * stay as hand-slot aliases; Esc backs out of Attack input. */
+       * Down=Spirit), the Attack sub-menu (Left=Auto, Right=Command) and,
+       * inside Command input, commits directions; T = Triangle (the
+       * retail learned-arts list); 1-4 stay as hand-slot aliases; Esc
+       * backs out of Attack input. */
       const c = { 1: 0, 2: 1, 3: 2, 4: 3 }[k];
       const dir = { arrowleft: 'left', arrowright: 'right',
                     arrowup: 'up', arrowdown: 'down' }[k];
       if (c !== undefined) { e.preventDefault(); muscleCommit(c); }
       else if (dir) { e.preventDefault(); muscleKey(dir); }
+      else if (k === 't') { e.preventDefault(); muscleKey('triangle'); }
       else if (k === 'escape' || k === 'backspace') { e.preventDefault(); muscleKey('back'); }
       else if (k === ' ' || k === 'enter') { e.preventDefault(); muscleConfirm(); }
     }
@@ -3374,6 +3393,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                          roster: () => api && JSON.parse(api.muscle_roster_json()),
                          renderer: () => muscleR,
                          mode: () => muscleR && muscleR.mode(),
+                         selectSub: () => muscleR && muscleR.selectSub(),
+                         key: muscleKey,
+                         artsList: () => (api && api.muscle_arts_list_json
+                           ? JSON.parse(api.muscle_arts_list_json()) : null),
+                         hud: () => (api && api.muscle_hud_json
+                           ? JSON.parse(api.muscle_hud_json()) : null),
                          sceneOk: () => !!(muscleR && muscleR.sceneOk()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });
