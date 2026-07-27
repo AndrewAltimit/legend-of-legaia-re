@@ -1552,6 +1552,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | "world-map / save / shop" overlay PROT entries | resolved (not separate entries) | `disassembly` | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. |
 | PROT 0977 / 0978 extraction + the dump re-key | resolved | `disassembly` | [details ↓](#prot-0977--0978-extraction--the-dump-re-key) |
 | Slot-B capture-module band `0935..0966` per-entry identity | resolved (statically derived, capture-corroborated) | `disassembly` | [details ↓](#slot-b-capture-module-band-09350966-per-entry-identity) |
+| Phantom-VA sweep of the PROT 0897 imports | resolved | `disassembly` | [details ↓](#phantom-va-sweep-of-the-prot-0897-imports) |
 
 ### PROT 0977 / 0978 extraction + the dump re-key
 
@@ -1982,6 +1983,51 @@ live ids) could still force the exit with an attacker-influenced byte - outside
 `MAX_DISTINCT_ITEM_IDS`, `OobReachability`). Provenance:
 `ghidra/scripts/funcs/{800421d4,8004313c,8004e568,8003ce64}.txt`,
 `overlay_0971_801c36b0.txt`.
+
+### Phantom-VA sweep of the PROT 0897 imports
+
+*Status:* resolved - the three residues the delta arithmetic left open are
+byte-decided; standing results in
+[`overlay-va-aliases.md § the byte-level sweep`](overlay-va-aliases.md#the-byte-level-sweep)
+
+The two measured deltas (`0xE818` base error, `0x25000` over-read) re-keyed
+most of the 0897-import prints but could not decide three residues: the
+`0x801E5000` boundary band, the "doubly-aliased" `0x8020D05C`, and whether
+PROT 0896's imports obey a law of their own. All three yield to a word-level
+comparison
+([`resolve-phantom-va.py`](../../scripts/ghidra-analysis/resolve-phantom-va.py)):
+compare the dump against each candidate (image, base) reading at the printed
+VA, re-encoding Ghidra's data-as-instruction renderings (`nop`,
+`<load> rt,imm(zero)`) into exact 32-bit words so that *data* regions - which
+defeat any stream match - decide at full strength.
+
+- **Boundary band**: every dump printed in `0x801E4000..0x801E6000` resolves
+  to exactly one reading, and the strata switch exactly at `0x801E5000`. The
+  two open addresses are 0897 own-content **data** (pointer tables at true
+  VAs `0x801F3308` / `0x801F3450`, 14/14 and 13/13 words; the rival 0898
+  reading scores 0). `0x801E5134` is printed by two programs with two
+  different owners - one print correct, one a phantom of 0898 `0x801CE94C`.
+- **`0x8020D05C`**: 0898 rodata at true VA `0x801F6874` (a
+  `(pointer, count)` table into 0898's `0x801CF9xx` band). Its words include
+  values with no R3000 decoding, matching the dump's zero-instruction
+  `halt_baddata`; every rival reading maps the VA to code that would have
+  decoded. Not a function under any reading.
+- **PROT 0896**: the `overlay_0896_*` prefix covers **two** imports of the
+  over-read footprint - untagged at `0x801C0000` (three strata: own content
+  `< 0x9000`; field `+ 0x5818`; battle `- 0x1F7E8`) and tagged
+  `base=0x801C5818` (the phantom jal-recovered base; prints are 0896's own
+  bytes at `printed - 0x801C5818`). Every addressed dump in the family
+  resolves under exactly one program, zero exceptions; the header-tag
+  partition and the byte partition agree dump-for-dump. Same function
+  printed by both programs pins the pair (file `+0x5C90` at `0x801C5C90` /
+  `0x801CB4A8`; file `+0xD1C` at `0x801C0D1C` / `0x801C6534`).
+- **`0x801FD4C0`** (bonus residue): its dump starts at printed `0x801FD150`
+  and is the battle image's `FUN_801E6968`; the printed VA is that body's
+  interior at 0898 VA `0x801E6CD8`, not the field image's `FUN_801E6B34`.
+
+Grade `disassembly`: every verdict is a word- or token-exact comparison
+against the corrected-extent extracted images, with each rival reading
+excluded by the same comparison rather than by arithmetic.
 
 ## Related pages
 
