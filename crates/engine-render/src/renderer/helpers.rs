@@ -14,6 +14,34 @@ pub(super) const SHADOW_MAP_DIM: u32 = 512;
 /// pipeline's rasterizer depth bias); staged into `SceneLightsU.params.z`.
 pub(super) const SHADOW_COMPARE_BIAS: f32 = 0.0015;
 
+/// The reversed-Z clear value: depth 0.0 is the far plane under the
+/// `Greater` / `GreaterEqual` compares every 3D pipeline uses.
+pub(super) const DEPTH_CLEAR: f32 = 0.0;
+
+/// Post-multiply a projection (or full MVP) into the **reversed-Z**
+/// convention: clip `z' = w - z`, so NDC depth runs 1.0 (near) -> 0.0 (far).
+///
+/// With a float depth buffer this spends the format's exponent range across
+/// the whole view volume - resolution stays proportional to view depth
+/// (`~z * 2^-23`) instead of collapsing quadratically toward the far plane,
+/// which is what lets the sub-unit coplanar-separation nudges
+/// (`legaia_tmd::mesh::coplanar`, `legaia_engine_core::coplanar_draws`)
+/// resolve at every camera distance up to the engine-wide `SCENE_FAR`.
+/// Callers never build reversed projections themselves - the renderer's two
+/// MVP upload sites apply this centrally, so every camera (orbit, field
+/// follow, world map, cutscene, VR fork) inherits it. The clip `w` row is
+/// untouched, so CPU-side view-depth keys (`psx_blend::prim_depth_key`) and
+/// the shaders' `clip_pos.w` reads are unaffected.
+pub(super) fn reverse_z(mvp: glam::Mat4) -> glam::Mat4 {
+    // Rows: x, y unchanged; z' = -z + w; w' = w.  (glam is column-major.)
+    glam::Mat4::from_cols(
+        glam::Vec4::new(1.0, 0.0, 0.0, 0.0),
+        glam::Vec4::new(0.0, 1.0, 0.0, 0.0),
+        glam::Vec4::new(0.0, 0.0, -1.0, 0.0),
+        glam::Vec4::new(0.0, 0.0, 1.0, 1.0),
+    ) * mvp
+}
+
 pub(super) fn create_depth_view(
     device: &wgpu::Device,
     width: u32,
@@ -45,5 +73,32 @@ pub(crate) fn letterbox_scale(win_w: u32, win_h: u32, tex_w: u32, tex_h: u32) ->
     } else {
         // Window taller than texture - letterbox
         (1.0, win_aspect / tex_aspect)
+    }
+}
+
+#[cfg(test)]
+mod reverse_z_tests {
+    use super::*;
+
+    #[test]
+    fn near_maps_to_one_far_to_zero_and_w_is_preserved() {
+        let near = 4.0f32;
+        let far = 1_000_000.0f32;
+        let proj = glam::Mat4::perspective_rh(1.0, 1.0, near, far);
+        let rz = reverse_z(proj);
+        for (z_eye, expect) in [(near, 1.0f32), (far, 0.0f32)] {
+            let clip = rz * glam::Vec4::new(0.0, 0.0, -z_eye, 1.0);
+            let ndc = clip.z / clip.w;
+            assert!(
+                (ndc - expect).abs() < 1e-3,
+                "z_eye {z_eye}: ndc {ndc} != {expect}"
+            );
+            // w row untouched: still the view depth.
+            assert!((clip.w - z_eye).abs() < 1e-2);
+        }
+        // Nearer geometry must now test GREATER than farther geometry.
+        let near_pt = rz * glam::Vec4::new(0.0, 0.0, -10.0, 1.0);
+        let far_pt = rz * glam::Vec4::new(0.0, 0.0, -1000.0, 1.0);
+        assert!(near_pt.z / near_pt.w > far_pt.z / far_pt.w);
     }
 }

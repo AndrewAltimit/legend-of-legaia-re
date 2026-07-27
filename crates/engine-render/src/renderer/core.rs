@@ -231,6 +231,15 @@ impl Renderer {
             ..Default::default()
         });
 
+        // Depth convention: **reversed-Z** across every 3D pipeline. The MVP
+        // upload sites post-multiply [`reverse_z`] (clip z' = w - z), the pass
+        // clears depth to 0.0, and the compare functions below are the
+        // mirrored Greater / GreaterEqual. With the Depth32Float attachment
+        // this makes depth resolution proportional to view depth (~z * 2^-23)
+        // instead of collapsing quadratically toward the far plane, which is
+        // what lets sub-unit coplanar-separation nudges (see
+        // `legaia_tmd::mesh::coplanar`) hold at every camera distance.
+
         // Mesh pipeline: 3D triangle list, depth-tested, single directional light.
         let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia mesh shader"),
@@ -305,7 +314,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -372,7 +381,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -471,7 +480,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -534,7 +543,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -826,7 +835,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -843,8 +852,8 @@ impl Renderer {
         // equation (mode 3 pre-scales F by 0.25 via its own entry point).
         // Depth: test against the opaque pass but don't write (the PSX has
         // no depth buffer and blended fragments must not occlude later
-        // draws); LessEqual so decal prims coplanar with already-drawn
-        // geometry aren't z-rejected.
+        // draws); GreaterEqual (reversed-Z LessEqual) so decal prims coplanar
+        // with already-drawn geometry aren't z-rejected.
         let make_blend_pipeline = |label: &'static str,
                                    layout: &wgpu::PipelineLayout,
                                    module: &wgpu::ShaderModule,
@@ -883,7 +892,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -957,7 +966,7 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Greater,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -1036,7 +1045,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: wgpu::CompareFunction::Greater,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
@@ -1179,9 +1188,10 @@ impl Renderer {
         // POLY_FT4 textured quads + flat quads in NDC, sampling the shared
         // VRAM (group 0 = `vram_bgl`) through the same CBA/TSB CLUT decode as
         // the 3D VRAM-mesh path. Opaque pipeline (replace) + four per-ABR
-        // blend pipelines. Depth: LessEqual, no write - clip z is fixed at
-        // 0.0 so every overlay quad passes the test and composites on top,
-        // without occluding later draws (matches the text overlay's role).
+        // blend pipelines. Depth: GreaterEqual, no write - clip z is fixed at
+        // 1.0 (the reversed-Z near plane) so every overlay quad passes the
+        // test and composites on top, without occluding later draws (matches
+        // the text overlay's role).
         let screen_overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("legaia screen overlay shader"),
             source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
@@ -1255,7 +1265,7 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),

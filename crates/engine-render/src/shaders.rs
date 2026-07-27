@@ -800,6 +800,17 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
+    // Double-sided prim pairs (CBA bit 15, set by
+    // `legaia_tmd::mesh::mark_double_sided_pairs`): draw only the
+    // camera-facing copy - the per-prim NCLIP retail applies, which the
+    // both-sided pipelines otherwise lose, leaving the two coincident copies
+    // to z-fight. The field frame draws retail vertices under one net
+    // reflection (camera-side Y flip), so retail's visible faces arrive CW
+    // in framebuffer space = NOT front_facing under the pipelines' default
+    // Ccw front-face (same parity as the cutscene NCLIP mode 2 above).
+    if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
+        discard;
+    }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
     var word = fetch_vram_word(in.uv_affine, cba, tsb);
@@ -885,7 +896,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // shading-arithmetic results (gouraud / texture blending), never raw
 // texels, and the 5-bit blend math itself is not dithered (PSX-SPX
 // "GPU - Dithering/Color-Depth").
-fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
+fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    // Double-sided pair copies: blend only the camera-facing one (see
+    // fs_main - same rule so a flagged semi prim can't double-blend).
+    if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
+        discard;
+    }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
     var word = fetch_vram_word(in.uv_affine, cba, tsb);
@@ -931,13 +947,13 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
 }
 
 @fragment
-fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, 1.0);
+fn fs_blend(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 1.0);
 }
 
 @fragment
-fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, 0.25);
+fn fs_blend_quarter(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 0.25);
 }
 "#;
 
@@ -1248,7 +1264,9 @@ fn vs_main(
     @location(4) flags: u32,
 ) -> VsOut {
     var out: VsOut;
-    out.clip_pos = vec4<f32>(pos, 0.0, 1.0);
+    // z = 1.0 is the reversed-Z near plane: overlay quads pass the
+    // GreaterEqual test against any scene depth and composite on top.
+    out.clip_pos = vec4<f32>(pos, 1.0, 1.0);
     out.uv = uv;
     out.cba_tsb = cba_tsb;
     out.color = color;

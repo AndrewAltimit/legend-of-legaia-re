@@ -68,7 +68,8 @@ impl Renderer {
                     &self.mesh_uniforms_buf,
                     0,
                     bytemuck::cast_slice(&[MeshUniforms {
-                        mvp: mvp.to_cols_array_2d(),
+                        // Reversed-Z applied centrally (see `reverse_z`).
+                        mvp: reverse_z(*mvp).to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
                         depth_cue: self.depth_cue.get(),
                         psx_params: [
@@ -149,7 +150,8 @@ impl Renderer {
             .then(|| wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    // Reversed-Z: 0.0 is the far plane (see `reverse_z`).
+                    load: wgpu::LoadOp::Clear(DEPTH_CLEAR),
                     store: wgpu::StoreOp::Discard,
                 }),
                 stencil_ops: None,
@@ -788,7 +790,8 @@ impl Renderer {
                 None => MODEL_ROWS_IDENTITY,
             };
             let u = MeshUniforms {
-                mvp: mvp.to_cols_array_2d(),
+                // Reversed-Z applied centrally (see `reverse_z`).
+                mvp: reverse_z(mvp).to_cols_array_2d(),
                 depth_cue: self.depth_cue.get(),
                 psx_params,
                 tex_window,
