@@ -104,15 +104,22 @@ resident in the dome's own data file:
   `(192..255)^2` window is the dome's plain dirt tile; the rest of the two
   pages is the arena furniture (chain-link fence, dirt/stone flooring, the
   tiered ring wall).
-- The shell TMD carries two **semi-transparent prim groups** (ABE set, ABR
-  mode 1 = additive): a cloudy dust decal (page `(832, 0)` window
-  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base, and
-  the lamp-glow quads (page `(768, 0)` window `(48..109, 161..251)`, CLUT
-  x 112 of row 473). Retail blends both additively; a renderer that draws
-  ABE prims opaque turns the dust decal into a solid dark "mist" band the
-  retail arena does not have (the arena interior is mist-free - fence,
-  wooden wall, light-grey floor; capture: the `minigame_muscle_dome_pcsx`
-  scenario run forward into the live match).
+- The stream carries two **semi-transparent prim sets** (ABE set, ABR mode
+  1 = additive), in two different TMD objects. The shell (object 0) owns
+  the lamp-glow quads (mode `0x3F`, page `(768, 0)` window
+  `(48..109, 161..251)`, CLUT x 112 of row 473). **Object 1 is a separate
+  12-quad dust-decal object** (mode `0x2F`, page `(832, 0)` window
+  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base.
+- **The dust decal is not part of the live match's visible backdrop.** Its
+  texels are genuinely bright - the CLUT ramp at `(16, 479)` climbs to
+  whitish `(208, 208, 248)`, window average luminance ~70/255 - so *any*
+  draw of it is conspicuous: opaque it reads as a solid dark "mist" band,
+  and even a correct ABR-1 additive draw reads as a white cloud band. The
+  retail match capture shows a mist-free interior (fence, wooden wall,
+  light-grey floor; capture: the `minigame_muscle_dome_pcsx` scenario run
+  forward into the live match), so the retail backdrop path evidently does
+  not draw object 1 as static geometry. Which runtime path (if any) does
+  draw it is open. The lamp glows stay with the shell and blend additively.
 
 Confidence: the load chain, carrier shape and texture address are **Confirmed**
 (disassembly + structural decode of the entry); that a live contest's
@@ -125,8 +132,56 @@ strings reference (roster/course data), 1221/1222 = two 160 KB blobs
 
 Site consumer: the minigames page's dome panel draws the shell + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
-with the shell's ABE prims routed through the renderer's two-pass PSX blend
-(`site/js/minigame-muscle.js`, `semiTwoPass`).
+with the shell's ABE lamp glows routed through the renderer's two-pass PSX
+blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust
+decal omitted per the capture above (`muscle_arena_hybrid` filters it).
+
+## Retail presentation
+
+Retail presents the contest as a **standard battle** - the normal Legaia
+battle chrome with the course restrictions applied - not a bespoke card UI.
+Capture evidence: retail captures of the contest entry, the command menu and
+an art playing out.
+
+- **Intro card.** Contest entry opens on a pure black frame with a single
+  centred line of white cursive script, soft blue-white glow:
+  "Welcome to the Muscle Dome!". Then the fight begins.
+- **Fighter roster.** The player fields Vahn, Noa or Gala in their normal
+  **assembled battle form** (fighter form, [`character-mesh.md`](../formats/character-mesh.md)) -
+  not the PROT 1204 Baka form.
+- **Command menu.** The standard battle command cluster: two bevelled gold
+  chips top-left ("Begin" and the fighter's name); on the right the **Item**
+  chip **crossed out with a red X** (the course forbids items), below it
+  "Attack" (left) + a grey D-pad glyph + the character's **Ra-Seru name**
+  ("Meta" for Vahn - the magic command) + "Spirit"; chips are blue-marble
+  plates with gold borders. Bottom: the pointed blue status plate (fighter
+  name, gold "HP" `cur/max`, teal "MP" `cur/max`) with the pointed **AP**
+  plate above-right (red "AP" label, orange gauge, remaining-points
+  numeral). Course gating (curated, `data/gamedata/casino.toml`): no
+  equipment, no items on every course; magic allowed on Beginner/Expert,
+  forbidden on Master - which is why Item is crossed out while the Ra-Seru
+  chip is not.
+- **Arts banner.** A committed directional sequence that performs a
+  Tactical Art raises the art-class banner during playback - block-capital
+  orange-gradient text with a dark outline ("HYPER ARTS!!") over white
+  radial speed-line rays, the attacker's gold name chip top-left and the
+  defender's blue name chip bottom-right. The commit path appends raw
+  direction ids `0xC..=0xF` into `actor+0x1df`, so the recognition happens
+  on the battle-action side as it does for a normal battle's input string.
+- **No enemy HP display, no mist.** The enemy's HP is never drawn (standard
+  Legaia battle rule), and the arena interior is mist-free (see
+  [Arena backdrop](#arena-backdrop-extraction-1225) for the ABE-prim defect
+  that fakes a mist band).
+
+Site consumer: the minigames page's dome panel mirrors this presentation -
+the intro card, the command cluster with Item crossed out, the AP/status
+plates and the arts banner - with the fighter body from the assembled
+battle form (`muscle_fighter_*`) and the queue -> art resolution done
+against the SCUS arts-name table's combo strings (`muscle_round_arts_json`,
+kind labels joined from the curated gamedata arts table). Two disclosed
+gaps: the ported rules resolve each queued command as a basic strike (no
+art-record damage expansion), and the Ra-Seru chip renders disabled (the
+port has no cast path).
 
 ## Sound
 
@@ -341,6 +396,10 @@ real swing costs drive a decided contest through the world tick).
 - The per-arm assignment of the three UI cue ids (`0x21`/`0x22`/`0x23` across the 34 `FUN_8004fcc8` sites in `FUN_801d0748`) - the id set is pinned, which blip belongs to pick / commit / deny is not.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - The two 160 KB blobs at extraction 1221/1222 (the `other6` file's middle slots) - undecoded.
+- Which runtime path (if any) draws the backdrop stream's **object-1 dust
+  decal** - the live-match capture shows it absent from the static backdrop
+  (see [Arena backdrop](#arena-backdrop-extraction-1225)); a candidate is a
+  phase-gated effect draw, unpinned.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 
