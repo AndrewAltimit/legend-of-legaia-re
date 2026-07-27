@@ -9,7 +9,7 @@ VRAM and mesh pool, all disc-authored, all per-scene.
 |---|---|---|---|
 | [Walker table](#mechanism-1---the-scene-walker-table-bundle-type-6-slot) | Scene bundle type-6 slot | `FUN_8001ADA4` case 0xB | CLUT-cell `MoveImage` cycling: water / waterfall shimmer |
 | [Ambient move-VM tree](#mechanism-2---the-ambient-move-vm-effect-tree) | Prescript stager bundle + MAN P1 effect scripts | Move VM + `FUN_80021DF4` render tail | Palette pulses (HSV cycling), lightning, ambient SFX, particles |
-| [Texture strips / morphs](#mechanism-3---strip-cycling-and-vertex-morphs) | Move records (op `0x40`) / bundle type-7 VDF | Move VM / morph stager `FUN_8001C604` | Texel strip frames; vertex deformation |
+| [Texture strips / morphs](#mechanism-3---strip-cycling-and-vertex-morphs) | Move records (op `0x40`) / bundle type-7 VDF | Move VM / morph stager `FUN_8001C604` + envelope `FUN_80020740` | Texel strip frames; vertex deformation (render substitution) |
 
 Confidence: **Confirmed** (disassembly) for the walker-table chain, the
 ambient install chain, the mode-3 CLUT-cell cycler, and the VDF pack format;
@@ -137,14 +137,14 @@ Record 1 clears system flag `0x364`, then spawns:
 
 | Child | Parts | Role |
 |---|---|---|
-| record 20 | 1 | Lightning **director**: mode-3 cell `(0, 502)`, player-bbox gates (ext `0x06`), sets flag `0x364`, screen flash (ext `0x3C` fade toward grey), thunder cue (op `0x1D` → `DAT_8007B6DE = 0x20B`) |
+| record 20 | 1 | Lightning **director**: mode-3 cell `(0, 502)`, strike cadence randomised by ext `0x05` `RAND_ADD` (writes `min + rand % range` into the next wait's operand), player-bbox gates (ext `0x06`), sets flag `0x364`, screen flash (ext `0x3C` fade toward grey), thunder cue (op `0x1D` → `DAT_8007B6DE = 0x20B`) |
 | record 21 | **15** (loop `0x18 0x0E` + `0x19`) | The flesh-palette cyclers: mode-3 cells tiling CLUT **row 502**, idle at zero adds, 4-step bright/desaturate decay on flag `0x364` |
 | record 22 | 1 | Mode-3 cell `(0x70, 504)` - the lightning palette: idles at `V-add = -255` (dark), jumps bright on flag `0x364`, decays |
 | record 23 | 1 | Render-mode-4 setup (op `0x1E` - the VRAM-rect scroller; **Inferred**: rotates a texel strip, see mode-4 note below) |
 | record 45 | 1 | Ambient SFX loop: infinite `0x18 0x4000` loop of op `0x1D` cues `0x20E..0x211` with `0x09` waits |
 
 Partition-2 cutscene timelines install args 1..9 (records 2..10) - the
-story-beat effects (op `0x13` keyframe-mesh children, op `0x1F` morph
+story-beat effects (op `0x13` effect-descriptor children, op `0x1F` morph
 installs, op `0x14` colour ramps at absolute world positions). These are
 cutscene-driven, not entry-ambient.
 
@@ -172,19 +172,71 @@ open.
 - **Texture strip cycling** (op `0x40` `MOVE_IMAGE`): a move program stamps
   authored VRAM frames over the displayed texel rect - the field 4-frame
   strip cycles live-traced in [`move-vm.md`](move-vm.md#0x40---move_image-size-7).
-- **Vertex morphs**: every scene bundle reserves a type-7 **VDF pack**
-  (`[u32 count][u32 offsets[count]]` + sub-entries of
-  `[u32 record_count]` × `[u32 group][u32 dst_index][u32 count][count × 8-byte
-  deltas]`); 61 bundles populate it (jou: 17 sub-entries of ground-vertex
-  deltas; the `jouina`/`jouind`/`jouine` interiors carry the largest packs).
-  Dispatcher case 7 installs it at `DAT_8007B7DC`, `FUN_8001FBCC` builds the
-  sub-entry pointer table at `0x80083E58`, move-VM ops `0x0A`/`0x1F` arm
-  per-actor morph lanes, and the morph stager `FUN_8001C604` applies the
-  weighted deltas per frame (`engine-vm::vdf_morph`). Parser:
-  `legaia_asset::scene_vdf`; disc-gated coverage in
-  `crates/asset/tests/field_anim_tables_real.rs`. The morph *render*
-  substitution (staged vertices replacing a drawn group's rest pose) is not
-  yet wired - see the open threads.
+- **Vertex morphs** - the type-7 **VDF pack** chain, next section.
+
+### The VDF vertex-morph chain
+
+Every scene bundle reserves a type-7 **VDF pack**
+(`[u32 count][u32 offsets[count]]` + sub-entries of
+`[u32 record_count]` × `[u32 group][u32 dst_index][u32 count][count × 8-byte
+deltas]`); 61 bundles populate it (jou: 17 sub-entries of ground-vertex
+deltas; the `jouina`/`jouind`/`jouine` interiors carry the largest packs;
+`rikuroa` carries its pack as a streaming `DATA_FIELD` VDF chunk instead of
+the bundle slot). Dispatcher case 7 installs the decoded pack at
+`DAT_8007B7DC` and `FUN_8001FBCC` builds the sub-entry pointer table at
+`0x80083E58`. Parser: `legaia_asset::scene_vdf`; disc-gated coverage in
+`crates/asset/tests/field_anim_tables_real.rs`.
+
+**Arming** is the ambient move-VM tree itself: a stager part **with a
+mesh** - `model_sel` binds scene-pack TMD `model_sel - 5` (the retail
+global-TMD table `DAT_8007C018` keeps the five character meshes ahead of
+the pack, `DAT_8007B6F8 = 5`) - runs op `0x0A`
+`[reset][count][(vdf_idx, up, down) × count]`, which writes the lane
+sub-entry indices (`+0xB0 + i`, bytes), the per-lane ramp velocities
+(`+0xB8`/`+0xC8`), and sets the actor flag bit `0x1000`. The ramp envelope
+`FUN_80020740` then moves each lane's weight (`+0xA0 + i*2`) per frame,
+steered by the `+0x62` envelope flags the record sets with op `0x32`
+(rikuroa `0x0400` = hold at peak; town0e `0x1000` = recycle the pulse).
+Op `0x1F` is the direct-install sibling (writes the index bytes + four
+weights outright). Corpus census of op-`0x0A` carriers: `rikuroa`/
+`rikuroa2` records 69/70 (spawned from the entry install behind system
+flags `0x281`/`0x282` - the generator sacs swell only in that story
+state), `town0e` records 10/11 (spawned ×3+1 from its record-1 tree; the
+tree's own installer is not a pure P1 effect script and remains unpinned),
+`jagaroom` records 20/21 (not referenced by any op-`0x25` in the table -
+non-entry installs). **jou arms nothing at plain entry**: no `0x0A`
+anywhere in its 47 stager records; its flesh-growth morphs ride the P2
+cutscene chains (op `0x1F` in record 13).
+
+**Render substitution** (`FUN_8001ADA4` `0x8001B424..`, per drawn group):
+when the part's flags carry bit `0x1000`, `FUN_8001C604(actor, group)`
+copies the group's rest-pose GTE vertices into scratch at the top of the
+`_DAT_8007B85C` buffer, applies every armed lane's matching records
+scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
+12`, GPF saturation), retargets the group-table vertex pointer at the
+scratch for that draw, and the caller restores the authored pointer
+afterwards - the rest pose is never mutated.
+
+Engine: kernels in `engine-vm::vdf_morph` (record walk, GPF blend,
+ActorState envelope bridge), envelope on armed ambient parts in
+`World::tick_ambient_part`, morph surface
+`World::{ambient_morph_parts, current_morph_deltas, take_morph_dirty_slots}`.
+Consumers rebuild just the dirty pack meshes with the deltas staged onto a
+cloned TMD (`ResolvedTmd::with_group_deltas`) - the substitution as data:
+native play-window (`field_morph_live` draw substitution), site
+field-scene viewer (`field_scene_morph_slots`/`_positions`), web play
+runtime (`field_morph_slots`/`_positions`).
+
+**Scene-entry VDF pulse** (enhancement, `engine-core::vdf_pulse`): for a
+scene whose pack is populated but whose stager table never arms morph
+lanes in any story state (jou), the host installs a rolling envelope over
+the pack at entry - one lane per sub-entry, cascading up and back down
+forever, each sub-entry targeting the pack meshes its records fit exactly
+(`dst + count == n_vert`). The delta arithmetic is the retail kernel
+chain; the arming (lanes, velocities, entry trigger) is the engine's own -
+jou's fused-Juggernaut ground throbs at plain entry instead of only
+during its cutscene set pieces. Scenes with retail arming are untouched
+(the installer self-guards on any op-`0x0A` stager record).
 
 ## Engine + viewer wiring
 
@@ -196,6 +248,10 @@ open.
   parts, and applies the live `ClutCellFx` writes with a per-rect capture
   cache; the play-window calls it beside `step_clut_fx` and re-uploads on
   change.
+- All three render surfaces drain the world's VDF-morph dirty set beside
+  the palette fx (see the mechanism-3 section): the play-window
+  substitutes rebuilt meshes into its draw lists, the two web surfaces
+  re-upload just the dirty meshes' position streams.
 - The site field-scene viewer runs both mechanisms in the browser:
   `field_scene_anim_init` / `field_scene_anim_tick` on the WASM viewer,
   with `site/js/field-scene-view.js` re-uploading the VRAM texture on

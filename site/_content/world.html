@@ -315,8 +315,10 @@ canvas.world-canvas {
       fsView.load(label);
       mapStatus.innerHTML = `<b>${label}</b> · ${fsView.summary()} · drag pan / right-drag pivot / wheel zoom`;
       glbBtn.disabled = false;
-      /* Headless-verification hook: the assembled state of the last load. */
+      /* Headless-verification hooks: the assembled state of the last load
+       * and the view itself (canvas + WASM viewer poking). */
       window.__worldState = fsView.state;
+      window.__fsView = fsView;
     } catch (err) {
       mapStatus.textContent = `${label}: ${err.message || err}`;
       window.__worldState = null;

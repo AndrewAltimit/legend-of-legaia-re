@@ -100,15 +100,18 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
-| Field ambient animation residuals (mode-4 scroller, record-0 rows, VDF render substitution) | partial - the CLUT-cell cycler chain is settled and ported | [details ↓](#field-ambient-animation-residuals) |
+| Field ambient animation residuals (mode-4 scroller, record-0 rows, town0e's morph installer) | partial - the CLUT-cell cycler chain and the VDF morph render substitution are settled and ported | [details ↓](#field-ambient-animation-residuals) |
 
 ### Field ambient animation residuals
 
 *Status:* the main mechanisms are settled
 ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)): the bundle
-type-6 walker table (12 carriers), the ambient move-VM tree, and the mode-3
-CLUT-cell HSV cycler (`FUN_80019D50`) all run in the engine and the site
-field-scene viewer. Three residuals:
+type-6 walker table (12 carriers), the ambient move-VM tree, the mode-3
+CLUT-cell HSV cycler (`FUN_80019D50`), and the VDF morph render
+substitution (`FUN_8001ADA4` + `FUN_8001C604` + the `FUN_80020740`
+envelope - armed by op-`0x0A` mesh stager parts, drawn with staged
+vertices on every surface) all run in the engine and the site viewers.
+Three residuals:
 
 1. **Render-mode 4** (the VRAM-rect cyclic scroller seated by outer op
    `0x1E`, decoded at `80021df4.txt` `0x80022CC0..`) is documented from the
@@ -118,13 +121,14 @@ field-scene viewer. Three residuals:
 2. **Master ambient record 0** - the 8-byte spawn-row shape has no pinned
    consumer (its body does not walk as move-VM bytecode). A write-watch on
    an installed record-0 buffer in a live town would close it.
-3. **VDF morph render substitution** - the scene type-7 packs parse
-   (`legaia_asset::scene_vdf`) and the morph kernels are ported
-   (`engine-vm::vdf_morph`), but no renderer yet swaps a staged vertex
-   buffer in for a drawn group, and the P2 story-beat records that arm
-   jou's morph lanes (ops `0x13`/`0x1F`) only run under cutscene installs
-   the engine does not auto-fire. Wiring both would make the flesh-growth
-   set pieces move.
+3. **town0e's morph-record installer** - its op-`0x0A` records 10/11 hang
+   off stager record 1's fan-out, but no pure P1 effect script installs
+   that root (the `ambient_effect_installs` census finds nothing), so
+   which retail path spawns town0e's entry tree is unpinned. A live
+   capture in town0e watching `FUN_800252EC`'s argument would close it.
+   (jou's own morph arming is settled: none at entry - its 17 sub-entries
+   are cutscene-armed via op `0x1F`; the engine's plain-entry throb is the
+   documented `vdf_pulse` enhancement.)
 
 The engine's snapshot-at-spawn divergence (each self-modifying cycler
 instance captures one 16-halfword step behind retail) is a recorded

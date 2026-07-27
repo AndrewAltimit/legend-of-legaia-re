@@ -409,6 +409,13 @@
         <td><code>docs/subsystems/field-ambient-fx.md</code></td>
       </tr>
       <tr>
+        <td>VDF morph render substitution - what draws the staged vertices, and what arms the lanes</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>Per drawn group of a part whose flags carry op-<code>0x0A</code>'s bit <code>0x1000</code>, <code>FUN_8001ADA4</code> calls <code>FUN_8001C604</code> (rest-pose scratch copy + weighted-delta blend <code>FUN_8005B038</code> + group vertex-pointer retarget) and restores the pointer after the draw. Arming = op-<code>0x0A</code> <em>mesh</em> stager parts in the ambient tree (pack slot = <code>model_sel - 5</code>; rikuroa's flag-gated records 69/70, town0e 10/11, jagaroom 20/21), weights ramped by the <code>FUN_80020740</code> envelope under op-<code>0x32</code> flags. jou arms nothing at plain entry (cutscene op <code>0x1F</code> only) - its entry throb in the engine is the documented <code>vdf_pulse</code> enhancement. Ported to the play-window, the field-scene viewer, and the web play runtime.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
         <td>Field collision-map source</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-partial">decompiled-C</span></td>
