@@ -1437,14 +1437,14 @@ window.MgMuscle = (function () {
 
     /* The Triangle caption: the green Triangle button circle (its own gap
      * TIM at PROT.DAT 0x7B00) + the white battle-font line. Open-list seat
-     * (162,154)/(179,156); closed (162,170)/(179,172) - both packet-read. */
+     * (162,154)/(178,156); closed (12,170)/(28,172) - both packet-read. */
     function drawTriCaption(open) {
       const a = ai();
       if (!a || !artsList().length) return;
-      const y = open ? 154 : 170;
-      blit(6, 0, ...a.tri_button.r, 162, y);
+      const x = open ? 162 : 12, y = open ? 154 : 170;
+      blit(6, 0, ...a.tri_button.r, x, y);
       hudText(open ? 'Button: View Next page' : 'Button: View Hyper Arts list',
-        179, y + 2);
+        x + 16, y + 2);
     }
 
     /* The Triangle arts-list window at (6,28)-(160,188): system-UI
@@ -1972,10 +1972,16 @@ window.MgMuscle = (function () {
               160, 216, 6, '#aeb6c4', 'center', '');
           }
         } else if (selectSub === 'review' || selectSub === 'confirm') {
-          drawHeaderChips(state, selectSub === 'review');
+          if (selectSub === 'review') {
+            drawHeaderChips(state, true);
+            drawFoeChip(state);
+          } else {
+            /* Retail's 0x6e screen keeps a lone Begin chip top-left. */
+            if (hudOk()) rChip('Begin', 16, 8, 'gold');
+            else chip(6, 6, 40, 13, 'gold', 'Begin');
+          }
           drawInputBar(state);
           drawPennants(state);
-          if (selectSub === 'review') drawFoeChip(state);
           drawConfirmMenu(state);
         }
       } else if (mode === 'playback') {

@@ -279,7 +279,7 @@ form is the bar itself filling with pennants.
 | Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
 | Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 7 + spent-AP-before (pitch 30 at cost 30) |
 | AP plate | 4 | the pinned label/trough/end/cap pieces | `(208,172)`; fill = two 3-px **gouraud strips** x `235..285`, y `177..183`, RGB `(128,32,16)` dark <-> `(192,160,64)` orange (dark-orange-dark sheen) |
-| Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(162,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at `(179, y+2)` |
+| Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(12,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at glyph `+ (16, 2)` |
 
 The status plate is parked off-screen during input (its draws move to
 `y=230`, below the 228-line display window).
