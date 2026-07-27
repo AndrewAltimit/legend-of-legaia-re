@@ -75,16 +75,18 @@ pub struct CardMessageRow {
 /// NOT WIRED: this is the row stack of retail's memory-**card** message
 /// screen - the two-choice prompt the save flow raises when the card itself
 /// needs an answer (no card present, unformatted card, retry after a failed
-/// write). The engine's saves are LGSF files on disk and nothing mounts a raw
-/// PSX card image, so that screen has no state to be raised from; its sibling
-/// card-directory ports in `legaia_engine_core::save_select` are unreached for
-/// the same reason. The second prerequisite is the string table: `msg_slot`
-/// indexes the slot argument retail's drawer (`FUN_801E2EE4`) resolves against
-/// the menu overlay's message pointers, and no engine caller carries that
-/// table, so even a wired host would have five rows and no text. A real card
-/// backend behind the save-slot session has to exist before either gap closes.
-/// The rest of this module - the "Now checking" panel and the confirm dialog -
-/// is wired and drawn by both hosts; only this row model is inert.
+/// write). The browser card rack (`web-viewer::cards`) mounts real card
+/// images now, but none of the retail prompts has a state to be raised
+/// from: the rack rejects an unparseable card at insert (so "unformatted"
+/// never reaches the save screen), an empty port is an unconfirmable pill
+/// rather than a prompt, and its writes are synchronous byte patches with
+/// no retry beat. The other prerequisite is the string table: `msg_slot`
+/// indexes the slot argument retail's drawer (`FUN_801E2EE4`) resolves
+/// against the menu overlay's message pointers, and no engine caller
+/// carries that table, so even a wired host would have five rows and no
+/// text. The rest of this module - the "Now checking" panel and the
+/// confirm dialog - is wired and drawn by both hosts; only this row model
+/// is inert.
 ///
 /// PORT: FUN_801e0418 (see
 /// `ghidra/scripts/funcs/overlay_menu_801e0418.txt`)

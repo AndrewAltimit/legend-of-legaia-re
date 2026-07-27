@@ -862,11 +862,13 @@ impl CardIoMachine {
 /// REF: FUN_801E380C (the remaining sibling call, unported)
 ///
 /// NOT WIRED: nothing owns the state this ticker advances. No engine host
-/// keeps a [`CardIoMachine`], and the rebuild arm needs a card directory
-/// enumeration that only a memory-card backend can produce (see
-/// [`classify_card_directory`]). [`SaveSelectSession`] runs its own
-/// `NowChecking` beat off [`card_status_poll`] alone, so the two-op I/O
-/// machine has no frame to be advanced on.
+/// keeps a [`CardIoMachine`] - the browser card rack
+/// (`web-viewer::cards`), which does enumerate a real card directory into
+/// the tables the rebuild arm consumes, patches its container bytes
+/// synchronously with no asynchronous I/O beat to tick.
+/// [`SaveSelectSession`] runs its own `NowChecking` beat off
+/// [`card_status_poll`] alone, so the two-op I/O machine has no frame to
+/// be advanced on.
 #[allow(clippy::too_many_arguments)]
 pub fn card_frame_tick(
     io: &mut CardIoMachine,
