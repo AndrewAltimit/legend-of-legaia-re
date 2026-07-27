@@ -37,7 +37,9 @@ Three patching families share that machinery:
   battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)); `--damage-ap AP`
   sets how much AP taking damage charges, per 100% of max HP lost (retail 100 -
   [`damage_ap`](src/damage_ap.rs)). Both accept negative values, which invert
-  the knob into an AP *drain*.
+  the knob into an AP *drain*. The `tim-list` / `tim-export` / `tim-replace`
+  subcommands replace any texture on the disc with a user-authored PNG
+  ([`texture`](#texture-replacement-texture-module)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -86,6 +88,7 @@ full design.
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
+- [Texture replacement](#texture-replacement-texture-module)
 - [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
 - [Door coupling](#door-coupling)
@@ -1044,6 +1047,33 @@ gap flanked by rodata constants proven preserved file→RAM; **not** the data-se
 zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
 always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 `name_ptr_slot`, leaving the other empty-name ids blank.
+
+## Texture replacement (`texture` module)
+
+Replaces a TIM on the disc with a user-authored PNG, in both tiers the TIM
+catalogs know:
+
+- **raw** (`tim_catalog` coordinates: `(entry, offset)`, or a flat `PROT.DAT`
+  offset for the unindexed gap before entry 0) - always a same-size in-place
+  write, since the `legaia_tim::encode` encoder copies the original's mode /
+  dimensions / CLUT layout / VRAM placement.
+- **lzs** (`tim_deep_catalog` coordinates: `(entry, section, offset in the
+  decoded section)`) - the encoded TIM is spliced into the decoded section and
+  the whole section recompressed with `legaia_lzs::compress_optimal`; the
+  write happens only when the new stream fits the retail stream's byte
+  footprint (`decompress_tracked`'s consumed count), else a clear size error
+  and nothing is written.
+
+`read_texture` resolves + strict-parses the target, `replace_texture` encodes
+and writes (with a `dry_run` mode the site's preview uses), and
+`texture_catalogs` joins the raw + deep catalogs for `tim-list` / the
+browser's texture browser. The CLI loop is `tim-list` -> `tim-export`
+(decode to PNG) -> edit -> `tim-replace` (`--quantize` folds palette
+overflow; `--dry-run` validates only; `--output`/`--patch` as everywhere
+else). Full reference:
+[`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
+encoder rules (alpha -> STP, palette reuse, byte-exact round trips):
+[`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
 
 ## Translation packs
 

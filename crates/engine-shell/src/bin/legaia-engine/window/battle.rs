@@ -116,6 +116,39 @@ pub(super) fn sync_battle_hud_rows(
     }
 }
 
+/// Formation label for the encounter-transition banner, reusing the battle
+/// HUD's monster naming: the live catalog name when the formation resolved
+/// one, `M<n>` otherwise. Slots with `max_hp == 0` (unseeded / cleared) are
+/// skipped, so a formation that has not resolved HP yet yields an empty label
+/// and the banner shows only its "ENCOUNTER!" head line. A free function so
+/// it can be exercised against a bare `World`, like [`sync_battle_hud_rows`].
+pub(super) fn encounter_banner_label(world: &legaia_engine_core::world::World) -> String {
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    // `World::actors` is the fixed 64-slot table, not a battle-sized list;
+    // a formation seats at most 5 monsters directly after the party
+    // (`World::enter_battle`), so only those slots can be formation members.
+    const MAX_FORMATION_MONSTERS: usize = 5;
+    let mut names: Vec<String> = Vec::new();
+    for (i, a) in world
+        .actors
+        .iter()
+        .enumerate()
+        .skip(pc)
+        .take(MAX_FORMATION_MONSTERS)
+    {
+        if a.battle.max_hp == 0 {
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", i - pc + 1));
+        names.push(name);
+    }
+    names.join("  ")
+}
+
 impl PlayWindowApp {
     /// Drain world battle events, fold each into HP / status state, and
     /// append a one-line summary to the HUD ring. Called once per simulation
@@ -214,6 +247,14 @@ impl PlayWindowApp {
             }
         }
         self.battle_hud.tick();
+
+        // Age the encounter-transition banner one frame; drop it at zero.
+        if let Some((frames, _)) = &mut self.encounter_banner {
+            *frames = frames.saturating_sub(1);
+            if *frames == 0 {
+                self.encounter_banner = None;
+            }
+        }
     }
 
     /// Fold the live battle-actor table into [`Self::battle_hud`]'s per-slot
@@ -265,10 +306,26 @@ impl PlayWindowApp {
             return;
         }
         match (prev, mode) {
-            (_, SceneMode::Battle) => self.enter_battle_render(),
-            (Some(SceneMode::Battle), _) => self.exit_battle_render(),
+            (_, SceneMode::Battle) => {
+                self.arm_encounter_banner();
+                self.enter_battle_render();
+            }
+            (Some(SceneMode::Battle), _) => {
+                self.encounter_banner = None;
+                self.exit_battle_render();
+            }
             _ => {}
         }
+    }
+
+    /// Frames the encounter-transition banner stays on screen after a
+    /// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick).
+    const ENCOUNTER_BANNER_FRAMES: u16 = 90;
+
+    /// Arm the HUD's "ENCOUNTER!" banner for the battle just entered.
+    fn arm_encounter_banner(&mut self) {
+        let label = encounter_banner_label(&self.session.host.world);
+        self.encounter_banner = Some((Self::ENCOUNTER_BANNER_FRAMES, label));
     }
 
     /// Bridge the decoded monster meshes for the current battle into the draw
@@ -1443,5 +1500,32 @@ impl PlayWindowApp {
                 Err(e) => log::error!("play-window: battle VRAM re-upload (heal): {e:#}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod encounter_banner_tests {
+    use super::encounter_banner_label;
+    use legaia_engine_core::world::World;
+
+    #[test]
+    fn label_names_unresolved_monsters_positionally() {
+        let mut world = World::new();
+        world.enter_battle(1, 2);
+        // `enter_battle` seats actors but leaves monster HP unseeded; seed it
+        // so the label counts the slots as live formation members. With no
+        // catalog resolution the label falls back to positional M<n> names.
+        for a in world.actors.iter_mut().skip(1).take(2) {
+            a.battle.max_hp = 10;
+            a.battle.hp = 10;
+        }
+        assert_eq!(encounter_banner_label(&world), "M1  M2");
+    }
+
+    #[test]
+    fn unseeded_formation_yields_empty_label() {
+        let mut world = World::new();
+        world.enter_battle(1, 2);
+        assert_eq!(encounter_banner_label(&world), "");
     }
 }

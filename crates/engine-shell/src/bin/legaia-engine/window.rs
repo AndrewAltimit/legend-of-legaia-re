@@ -14,7 +14,8 @@ use legaia_engine_render::{
     CaptureImage, ColorSceneDraw, HudPopupView, HudSlotMeta, HudSlotView, RenderTarget,
     Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay, UploadedColorMesh,
     UploadedFontAtlas, UploadedVram, UploadedVramMesh, battle_hud_draws_for,
-    capture_banner_draws_for, level_up_draws_for, shop_draws_for, text_draws_for,
+    capture_banner_draws_for, encounter_banner_draws_for, level_up_draws_for, shop_draws_for,
+    text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::BootSession;
@@ -628,6 +629,13 @@ struct PlayWindowApp {
     /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
     /// log is empty until a battle SM actually fires.
     battle_event_log: std::collections::VecDeque<String>,
+    /// Encounter-transition banner: `(frames_remaining, formation_label)`.
+    /// Armed once per `Field -> Battle` mode change by `sync_battle_render`
+    /// (the same single-shot transition edge that stages the battle render),
+    /// aged one frame per simulation tick in `drain_and_log_battle_events`,
+    /// and drawn by `build_hud` through the shared
+    /// `encounter_banner_draws_for` builder while frames remain.
+    encounter_banner: Option<(u16, String)>,
     /// Damage-popup / status model for the battle HUD. Fed each frame from
     /// `World::drain_battle_hit_fx` (floating numbers) + the live status
     /// tracker (per-slot icons); aged by `BattleHud::tick`. Popups + status

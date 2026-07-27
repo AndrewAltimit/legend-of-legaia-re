@@ -271,6 +271,41 @@ impl SpellNameTable {
     }
 }
 
+/// Class byte (`stats +0`) marking a **capture-class** spell: ASCII `'c'`.
+/// The battle-action SM's `0x63` arm pages the cast's own overlay module
+/// through the slot-B loader (`FUN_8003EC70(record[+1] + 0x28)`) instead of
+/// running the plain-cast path. REF: FUN_801E295C.
+pub const CAPTURE_CLASS: u8 = 0x63;
+
+/// Extraction PROT entry of capture-class module sub-id 0: the loader call is
+/// `FUN_8003EC70(k + 0x28)` and the loader resolves extraction `param + 0x37F`,
+/// so sub-id `k`'s module is extraction entry `935 + k`
+/// (`0x28 + 0x37F = 0x3A7 = 935`). See `docs/formats/spell-table.md`.
+pub const CAPTURE_MODULE_PROT_BASE: u32 = 935;
+
+/// Extraction PROT entry hosting capture-class sub-id `k`'s cast module.
+pub fn capture_module_prot(k: u8) -> u32 {
+    CAPTURE_MODULE_PROT_BASE + k as u32
+}
+
+/// Enumerate every capture-class spell record in a `SCUS_942.54` image:
+/// `(spell_id, module_sub_id)` for each record whose class byte (`stats +0`)
+/// is [`CAPTURE_CLASS`]. The sub-id (`stats +1`) names the module the cast
+/// pages - extraction PROT entry [`capture_module_prot`]`(sub_id)` - so this
+/// is the static per-entry identity map of the enemy/capture module band.
+/// `None` when the image isn't a parseable PSX-EXE.
+pub fn capture_class_records(scus: &[u8]) -> Option<Vec<(u8, u8)>> {
+    let map = ExeMap::parse(scus)?;
+    let mut out = Vec::new();
+    for id in 0..SPELL_COUNT {
+        let stat = map.off(STATS_VA + (id * RECORD_STRIDE) as u32)?;
+        if *scus.get(stat)? == CAPTURE_CLASS {
+            out.push((id as u8, *scus.get(stat + 1)?));
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

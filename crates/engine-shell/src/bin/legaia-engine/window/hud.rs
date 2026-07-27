@@ -726,6 +726,16 @@ impl PlayWindowApp {
                 BATTLE_HUD_PEN,
             ));
 
+            // Encounter-transition banner: centred "ENCOUNTER!" over the
+            // formation label, shown for the opening frames of the battle.
+            // Armed once per Field -> Battle edge by `sync_battle_render`,
+            // aged in `drain_and_log_battle_events`.
+            if let Some((_, label)) = &self.encounter_banner {
+                let head_w = self.font.layout_ascii("ENCOUNTER!").advance_x as i32;
+                let pen = ((w as i32 - head_w) / 2, h as i32 / 4);
+                out.extend(encounter_banner_draws_for(&self.font, label, pen));
+            }
+
             // Player-driven submenus (opened from the Arts / Magic / Item
             // commands). Each parks both the SM and the command session while
             // open, so it takes priority over the command menu.

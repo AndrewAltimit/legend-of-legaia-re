@@ -204,7 +204,7 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
-| D | `_DAT_8007B910` | Same shape but value is `(input * _DAT_8008457C) >> 12` (fixed-point scale; host owns the transform). |
+| D | `_DAT_8007B910` | Same shape, value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). |
 | E / F | - | Inner switch's `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()` - halts at PC. |
 
 Sub-9's tristate dispatch:

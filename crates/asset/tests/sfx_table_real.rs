@@ -4,15 +4,42 @@
 //! doesn't need Sony bytes.
 
 use legaia_asset::sfx_table::{
-    PINNED_SLOT_BANKS, SFX_TABLE_ENTRIES, SfxTable, prot_index_for_slot,
+    PINNED_SLOT_BANKS, SFX_TABLE_ENTRIES, SLOT_BANKS, SfxTable, prot_index_for_slot,
 };
 use std::path::PathBuf;
 
-fn scus_path() -> Option<PathBuf> {
+fn extracted() -> Option<PathBuf> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest.parent()?.parent()?;
-    let p = workspace.join("extracted").join("SCUS_942.54");
+    Some(manifest.parent()?.parent()?.join("extracted"))
+}
+
+fn scus_path() -> Option<PathBuf> {
+    let p = extracted()?.join("SCUS_942.54");
     p.is_file().then_some(p)
+}
+
+/// Read one PROT entry's bytes out of `extracted/PROT.DAT`.
+fn prot_entry(index: u32) -> Option<Vec<u8>> {
+    let p = extracted()?.join("PROT.DAT");
+    let mut archive = legaia_prot::archive::Archive::open(&p).ok()?;
+    let entry = archive.entries.get(index as usize)?.clone();
+    let mut out = Vec::new();
+    archive.read_entry(&entry, &mut out).ok()?;
+    Some(out)
+}
+
+/// The `ProgAtr` slots a VAB populates (`+0` of a 16-byte record is its tone
+/// count; a zero there is an empty slot). The bank sits at `+4` behind the
+/// streaming chunk header.
+fn program_slots(entry: &[u8]) -> Vec<(u8, u8)> {
+    assert_eq!(&entry[4..8], b"pBAV", "entry is a VAB stream");
+    let base = 4 + 0x20;
+    (0u8..128)
+        .filter_map(|s| {
+            let n = entry[base + s as usize * 16];
+            (n != 0).then_some((s, n))
+        })
+        .collect()
 }
 
 #[test]
@@ -103,11 +130,63 @@ fn category_histogram_and_slot_set_are_the_disc_ones_or_skips() {
     // The Baka duel hit is the contrasting case.
     assert_eq!(table.slot_for_cue(0x09), Some(2));
 
-    // Exactly two slots are pinned to PROT entries; the other two the table
-    // reaches are the open unknowns.
+    // Every slot the descriptors reach resolves to a fixed PROT entry.
     for slot in table.slots_used() {
-        let pinned = PINNED_SLOT_BANKS.iter().any(|(s, _)| *s == slot);
-        assert_eq!(pinned, prot_index_for_slot(slot).is_some());
+        assert!(
+            prot_index_for_slot(slot).is_some(),
+            "slot {slot} is named by a descriptor, so it must have an entry"
+        );
     }
+    assert_eq!(
+        table.slots_used(),
+        SLOT_BANKS.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        "the fixed-entry slots are exactly the ones descriptors name"
+    );
+    // The boot-resident subset is smaller than the map - a budget, not a gap.
     assert_eq!(PINNED_SLOT_BANKS.len(), 2);
+}
+
+/// The structural half of the slot-6 / slot-11 pins: each bank's populated
+/// program slots have to cover the programs its own category's descriptors
+/// name. A bank swapped for the wrong entry fails this immediately - PROT 0889
+/// populates exactly one `ProgAtr` slot, and it is the one descriptor `0x50`
+/// asks for.
+#[test]
+fn the_field_and_reward_banks_carry_their_categories_programs_or_skips() {
+    let (Some(path), Some(field), Some(reward)) = (scus_path(), prot_entry(876), prot_entry(889))
+    else {
+        eprintln!("extracted/SCUS_942.54 + PROT.DAT not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let table = SfxTable::from_scus(&bytes).expect("parse SFX table");
+
+    // Slot 11: one program, and it is descriptor 0x50's.
+    let reward_slots = program_slots(&reward);
+    assert_eq!(reward_slots, vec![(10, 2)], "PROT 0889 program slots");
+    let d50 = table.get(0x50).expect("cue 0x50");
+    assert_eq!(d50.category, 11);
+    assert_eq!(d50.program, 10, "cue 0x50 keys the bank's only program");
+    assert!(
+        (d50.tone as usize + d50.voice_count() as usize) <= reward_slots[0].1 as usize,
+        "cue 0x50's tone range fits the program"
+    );
+
+    // Slot 6: the field bank's programs cover the category-6 descriptors, and
+    // it holds one VAG per descriptor.
+    let field_slots: Vec<u8> = program_slots(&field).iter().map(|(s, _)| *s).collect();
+    assert_eq!(field_slots, vec![1, 2, 3, 4, 5, 6, 7], "PROT 0876 programs");
+    let cat6: Vec<u8> = table
+        .active()
+        .filter(|(_, d)| d.category == 6)
+        .map(|(_, d)| d.program)
+        .collect();
+    assert_eq!(cat6.len(), 30);
+    let covered = cat6.iter().filter(|p| field_slots.contains(p)).count();
+    assert_eq!(
+        covered, 29,
+        "29 of the 30 category-6 programs are populated"
+    );
+    let vs = u16::from_le_bytes([field[4 + 0x16], field[4 + 0x17]]);
+    assert_eq!(vs, 30, "PROT 0876 holds one VAG per category-6 descriptor");
 }

@@ -37,7 +37,56 @@ The class byte selects which battle-action band executes the cast
 |---|---|---|
 | `0x32` (`'2'`) | Player summon | Summon band `0x32..0x38`; pages the per-summon overlay `FUN_8003EC70(id - 0x79)` (PROT 903..); damage attributed to the slot-7 cast body ([battle-formulas.md](../subsystems/battle-formulas.md)). |
 | `0x14` | Plain cast | Ordinary magic band `0x28..0x2E`, caster-anim playout (Tail Fire `0x27`, Astral Wave `0x6A`, ...). |
-| `0x63` (`'c'`) | Capture-class | Routes `0x28 → 0x6E..0x71`; pages the per-spell module `FUN_8003EC70(record[+1] + 0x28)` (→ PROT `944..966`) and starts the XA cue `FUN_8003EAE4(0, record[+1])`. Covers Seru capture, the item-capture Amulet, **and the boss cinematic casts** - Guilty Cross `0x37` (`+1 = 0x09` → 944), Call Wave `0x55` (`0x0B` → 946), **Bloody Horns `0x5C`** (`0x11` → 952), **Terio Punch `0x5D`** (`0x12` → 953), enemy Evil Seru Magic `0xAD` (`0x1F` → 966). The module carries its own baked damage constants and picks the guard-respecting or guard-bypassing finisher wrapper ([battle-formulas.md](../subsystems/battle-formulas.md)). |
+| `0x63` (`'c'`) | Capture-class | Routes `0x28 → 0x6E..0x71`; pages the per-spell module `FUN_8003EC70(record[+1] + 0x28)` (→ PROT `935..966`) and starts the XA cue `FUN_8003EAE4(0, record[+1])`. Covers Seru capture, the item-capture Amulet, **and the boss cinematic casts**. The `+1` sub-id names the module - the full sub-id → PROT-entry → spells map is [below](#capture-class-module-index-prot-09350966). The module carries its own baked damage constants and picks the guard-respecting or guard-bypassing finisher wrapper ([battle-formulas.md](../subsystems/battle-formulas.md)). |
+
+### Capture-class module index (PROT `0935..0966`)
+
+The `+1` sub-id of a capture-class record is a module index: the cast pages
+extraction PROT entry `935 + sub_id` into the slot-B overlay buffer
+(`FUN_8003EC70(sub_id + 0x28)`, loader arithmetic `extraction = param + 0x37F`).
+Because the sub-id is static spell-table data, the per-entry identity of the
+whole module band is a disc fact readable straight out of `SCUS_942.54` -
+enumerate every `'c'`-class record and group by sub-id
+(`legaia_asset::spell_names::capture_class_records` /
+`capture_module_prot`; disc-gated test `spell_names_real`). Modules are
+shared: a multi-spell cell dispatches per spell id at the module-head switch
+([battle-formulas.md](../subsystems/battle-formulas.md#the-bypass-wrappers-heavy-defence-fold-does-not-mitigate-more)).
+
+| PROT | Spells (id, name) | PROT | Spells (id, name) |
+|---|---|---|---|
+| 935 | `0x4A` Earthquake | 951 | `0x36` Chaos Flare; `0x5B` Scythe Wind |
+| 936 | `0x4B` Hyper Crush | 952 | `0x5C` Bloody Horns; `0xB8` Astral Slash |
+| 937 | `0x4C` Hyper Lightning | 953 | `0x5D` Terio Punch; `0x5E` Bull Charge |
+| 938 | `0x4E` Chaos Breath; `0xB7` Mystic Circle | 954 | `0x5F` Fatal Decision |
+| 939 | `0x4F` Spore Gas | 955 | `0x60` White Shield; `0x6E` Kiss of Death; `0x6F` Melt Spray; `0x70` Terror Scream; `0x72` Power Charge; `0x73` Void Accessories |
+| 940 | `0x3C` Glare; `0x50` Divide; `0xAC` Mystic Shield; `0xAE` Clone | 956 | `0x71` Water Hazard; `0x75` Paralyzing Wave |
+| 941 | `0x51` Steal; `0xB9` Stone Circle | 957 | `0x76` Death Game; `0x77` Thunder Storm |
+| 942 | `0x52` Power Up; `0xAA` Dark Typhoon | 958 | `0x79` Blazing Slash |
+| 943 | `0x40` Curse; `0xB5` Lapis Wave | 959 | `0x7A` Megaton Press |
+| 944 | `0x37` Guilty Cross; `0x53` Curse All | 960 | `0x7B` Plasma Strike; `0xA6` Neo Star Slash |
+| 945 | `0x54` Water Column; `0xBA` Jugger Power | 961 | `0xA1` Dead End Crisis; `0xB4` Final Crisis |
+| 946 | `0x55` Call Wave; `0x56` Big Wave | 962 | `0xA2` Blade Breath; `0xA3` Thunder Needle; `0xA4` Gigaton Press; `0xA5` Ultra Charge |
+| 947 | `0x57` V-Windhash; `0xA7` Neo Windhash | 963 | `0xB3` Genocidal Cannon |
+| 948 | `0x58` Cross Beam | 964 | `0xAF` Element Change; `0xB0` Rogue Wind; `0xB1` Rogue Thunder; `0xB2` Rogue Flame |
+| 949 | `0x59` Water Crystals | 965 | `0xB6` Doomsday |
+| 950 | `0x5A` Rolling Flare; `0xAB` Shadow Break | 966 | `0xAD` Evil Seru Magic |
+
+The sub-id space covers the band `0935..=0966` exactly - every entry is some
+cast's module, so the band holds no orphan slots. The map agrees with every
+independently pinned leg: the six capture-pinned boss stagers (938 / 940 /
+944 / 961 / 962 / 966, mid-cast slot-B residency -
+[battle-action.md](../subsystems/battle-action.md#enemy-boss-stagers--the-record-table-trim)),
+the playtest-pinned Delilas trio (958 / 959 / 960) and Xain pair (952 / 953),
+and the per-module damage-wrapper census
+([battle-formulas.md](../subsystems/battle-formulas.md)) - the status-only
+modules it found (940 Glare / Divide / Mystic Shield / Clone, 954 Fatal
+Decision, 955 the White Shield band) are exactly the cells above with no
+damage spells. Two identities this map settles: **0957** heads with the
+string table `Dies / Puera / Both / Damage / Recover` - Death Game's roulette
+outcome labels, not a summon-effect descriptor - and **0965** is the Doomsday
+module (its earlier "shifted sibling of the battle-tutorial overlay 0967"
+reading was an entry-size over-read artifact; the corrected entries share no
+content).
 
 ### Description index (`+4`) and the `0x80075DB0` pointer table
 

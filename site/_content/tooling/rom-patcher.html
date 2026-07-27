@@ -506,6 +506,44 @@
 
     </details>
 
+    <!-- ---- Texture replacement ---- -->
+    <details class="rom-group" id="rom-texture-group" open>
+      <summary>Texture replacement <span class="rom-summary-note">swap any texture for your own PNG</span></summary>
+      <div class="rom-group-body">
+        <p class="rom-art-intro">Replace any texture on the disc with your own image. Scan your disc to browse every texture (with thumbnails), pick one, download it as a PNG to edit, then upload your edit. The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Everything runs in this tab; the disc never leaves your browser.</p>
+        <div class="rom-row">
+          <button type="button" id="rom-tex-scan" class="rom-button rom-button-ghost">Scan my disc for textures</button>
+          <span id="rom-tex-scan-note" class="rom-hint"></span>
+        </div>
+        <div id="rom-tex-browser" hidden>
+          <input type="text" id="rom-tex-filter" placeholder="Filter: entry number, 256x256, 4bpp, raw / lzs, or a label like &quot;title&quot; ..." spellcheck="false" autocomplete="off">
+          <div id="rom-tex-grid" class="rom-tex-grid"></div>
+          <button type="button" id="rom-tex-more" class="rom-button rom-button-ghost">Show more</button>
+        </div>
+        <div id="rom-tex-editor" class="rom-tex-editor" hidden>
+          <div class="rom-tex-target" id="rom-tex-target-desc"></div>
+          <div class="rom-row rom-tex-controls">
+            <button type="button" id="rom-tex-export" class="rom-button rom-button-ghost">Download this texture as PNG</button>
+            <label class="rom-tex-file">Your edited PNG <input type="file" id="rom-tex-png" accept=".png,image/png"></label>
+          </div>
+          <label class="rom-check-row">
+            <input type="checkbox" id="rom-tex-quantize">
+            <span>Fold extra colors to the nearest palette color instead of failing (when the image has more colors than the texture's palette allows)</span>
+          </label>
+          <div class="rom-tex-preview">
+            <figure><canvas id="rom-tex-orig"></canvas><figcaption>Original</figcaption></figure>
+            <figure><canvas id="rom-tex-new"></canvas><figcaption>Your replacement, as the game will display it</figcaption></figure>
+          </div>
+          <div id="rom-tex-verdict" class="rom-status"></div>
+          <div class="rom-row">
+            <button type="button" id="rom-tex-add" class="rom-button" disabled>Add to patch</button>
+            <button type="button" id="rom-tex-cancel" class="rom-button rom-button-ghost">Close</button>
+          </div>
+        </div>
+        <div id="rom-tex-queue" class="rom-tex-queue"></div>
+      </div>
+    </details>
+
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
     </div>
@@ -543,6 +581,7 @@
     <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables, sharing the seed's slot capacity with the convenience toggles.</li>
     <li><strong>Starting level</strong> - starts the party at the chosen level (up to 14) with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel.</li>
     <li><strong>Tactical-Art overrides</strong> - pick any art by name and change what it does: set what it costs in AP, make it <em>give</em> AP back instead (your amount, 1..100, up to the native 100 cap), set its per-hit damage tier, or turn its damage off. AP changes are per character and update the pause-menu arts list too; damage is keyed by the button combo, so another character with the same combo changes with it - each row's note lists exactly which.</li>
+    <li><strong>Texture replacement</strong> - scan the disc for every texture (the flat TIM catalog plus the ones inside LZS-compressed sections), download any as a PNG, and patch an edited PNG back: same size / bit depth / palette layout enforced, VRAM placement preserved, alpha mapped to PSX transparency, and compressed textures applied only when the edit re-compresses into the retail footprint. Same coordinates and rules as the CLI's <code>tim-list</code> / <code>tim-export</code> / <code>tim-replace</code>.</li>
     <li><strong>Unused enemies</strong> - brings back two monsters the shipped game never places, &ldquo;Comm&rdquo; and the Evil Bat; needs <em>Randomize</em> encounters.</li>
     <li><strong>Unused items</strong> - adds &ldquo;Something Good&rdquo; and the no-name accessory the randomizer calls &ldquo;Seru Bell&rdquo; to <em>Randomize</em> fills.</li>
   </ul>
@@ -666,6 +705,25 @@
   .art-remove:hover { color: var(--open); border-color: var(--open); }
   .art-row-note { margin-top: 0.45rem; font-size: 0.85em; color: var(--text-dim); }
   .rom-art-add { margin: 0.2rem 0 0.4rem; }
+
+  /* Texture replacement */
+  .rom-tex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.5rem; margin: 0.6rem 0; }
+  .rom-tex-cell { display: flex; flex-direction: column; gap: 0.25rem; align-items: center; padding: 0.45rem; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; color: var(--text-dim); font-size: 0.72em; text-align: center; }
+  .rom-tex-cell:hover { border-color: var(--border-hi); background: var(--bg-card-hi); }
+  .rom-tex-cell.is-active { border-color: var(--accent); }
+  .rom-tex-cell canvas { width: 64px; height: 64px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(rgba(128,128,128,0.18) 0% 25%, transparent 0% 50%) 0 0 / 12px 12px; border-radius: 3px; }
+  .rom-tex-cell .rom-tex-label { color: var(--text-muted); font-weight: 600; }
+  .rom-tex-editor { border: 1px solid var(--border); border-radius: 6px; padding: 0.7rem 0.85rem; margin: 0.6rem 0; background: var(--bg-raised); }
+  .rom-tex-target { font-family: var(--font-mono, monospace); font-size: 0.85em; color: var(--text-muted); margin-bottom: 0.4rem; }
+  .rom-tex-file { display: inline-flex; flex-direction: column; gap: 0.2rem; font-size: 0.85em; color: var(--text-dim); }
+  .rom-tex-preview { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.6rem 0; }
+  .rom-tex-preview figure { margin: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .rom-tex-preview canvas { max-width: 16rem; image-rendering: pixelated; background: repeating-conic-gradient(rgba(128,128,128,0.18) 0% 25%, transparent 0% 50%) 0 0 / 12px 12px; border: 1px solid var(--border); border-radius: 4px; }
+  .rom-tex-preview figcaption { font-size: 0.78em; color: var(--text-dim); }
+  .rom-tex-queue { margin-top: 0.5rem; }
+  .rom-tex-queue-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.4rem; font-family: var(--font-mono, monospace); font-size: 0.82em; color: var(--text-muted); }
+  .rom-tex-queue-row .art-remove { margin-left: auto; }
+  #rom-tex-more { margin: 0.2rem 0 0.4rem; }
   .rom-art-advanced { margin-top: 0.6rem; border-top: 1px dashed var(--border); }
   .rom-art-advanced > summary { cursor: pointer; color: var(--text-dim); font-size: 0.88em; padding: 0.5rem 0; user-select: none; }
   .rom-art-advanced .rom-opt { border-top: none; padding-left: 0; padding-right: 0; }

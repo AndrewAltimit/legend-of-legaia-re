@@ -17,8 +17,9 @@
 //! 3. **The bank, which the cue names itself.** The descriptor's program/tone
 //!    index a loaded VAB, and its `+4` **category** picks *which* VAB: the
 //!    category selects a 12-byte mixer record whose `+8` is a VAB slot id
-//!    (`legaia_asset::sfx_table::slot_for_category`). Two of the four slots
-//!    retail's descriptors reach are pinned to PROT entries - slot `0` = the
+//!    (`legaia_asset::sfx_table::slot_for_category`). All four slots retail's
+//!    descriptors reach name PROT entries; this page stages two of them,
+//!    which is an SPU-region budget rather than a gap in the map - slot `0` = the
 //!    system bank PROT [`SFX_SYSTEM_BANK_PROT_INDEX`] behind the shared UI
 //!    cues, slot `2` = the **class-2 sound bank at PROT
 //!    [`SFX_BANK_PROT_INDEX`]** (raw `0x367`) that both the battle scene loader
@@ -138,7 +139,7 @@ struct RenderedCue {
     /// Peak absolute sample - the page uses it for clip-safe gain staging.
     peak: i16,
     /// PROT entry this cue was rendered from - the bank its own `+4` category
-    /// names, after the unpinned-slot fallback in [`bank_for_cue`].
+    /// names, after the unstaged-slot fallback in [`bank_for_cue`].
     bank: u32,
 }
 
@@ -270,14 +271,14 @@ fn read_slot_banks(prot: &[u8], entries: &[disc::EntryMeta]) -> BTreeMap<u8, Slo
 }
 
 /// The staged bank a cue must render out of: the slot its `+4` category names,
-/// falling back to the class-2 bank ([`FALLBACK_VAB_SLOT`]) when that slot has
-/// no traced PROT entry (categories `6` and `11`) or its bank didn't decode.
+/// falling back to the class-2 bank ([`FALLBACK_VAB_SLOT`]) when this page has
+/// not staged that slot (categories `6` and `11`) or its bank didn't decode.
 ///
 /// The fallback is deliberately the behaviour this page had before the routing
-/// existed, so an unpinned category keeps sounding exactly as it did rather
-/// than going silent on a guess. The remaining slot-to-PROT hunt is the "Which
-/// PROT entries fill SFX VAB slots 1 / 3 / 6 / 11" row in
-/// `docs/reference/open-rev-eng-threads.md`.
+/// existed, so such a category keeps sounding exactly as it did. Retail keeps
+/// slot 6 in slot 2's own SPU region and refills it per game mode, so staging
+/// it here means reloading that region rather than reserving more - see
+/// `docs/formats/sfx-table.md`.
 fn bank_for_cue<'a>(
     banks: &'a BTreeMap<u8, SlotBank>,
     table: &SfxTable,
@@ -293,7 +294,7 @@ fn bank_for_cue<'a>(
 pub struct LegaiaSfx {
     cues: Vec<RenderedCue>,
     /// The class-2 PROT entry - the bank a category-`2` cue renders from and
-    /// the fallback for an unpinned category. Each cue carries the entry it
+    /// the fallback for a category whose slot this page has not staged. Each cue carries the entry it
     /// was really rendered from in [`RenderedCue::bank`].
     bank_index: u32,
 }
@@ -362,7 +363,7 @@ impl LegaiaSfx {
     /// ```
     ///
     /// `bank` at the top level stays the class-2 entry - it is the fallback a
-    /// cue in an unpinned category still renders from - while each cue reports
+    /// cue in an unstaged category still renders from - while each cue reports
     /// the entry it was actually rendered from.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         let scus = disc::extract_scus(&bytes)
@@ -433,7 +434,7 @@ impl LegaiaSfx {
     }
 
     /// The PROT entry one cue was rendered from - the bank its `+4` category
-    /// names, after the unpinned-slot fallback. `0` when the id didn't render.
+    /// names, after the unstaged-slot fallback. `0` when the id didn't render.
     pub fn cue_bank_prot_index(&self, id: u32) -> u32 {
         self.cues
             .iter()

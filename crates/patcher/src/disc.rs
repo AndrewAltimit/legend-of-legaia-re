@@ -96,6 +96,25 @@ impl DiscPatcher {
         self.entries.len()
     }
 
+    /// `(byte_offset, size_bytes, index)` for every PROT entry, in the same
+    /// index space [`Self::patch_prot_entry`] takes - the span shape
+    /// `legaia_asset::tim_catalog::build_from_spans` and its deep sibling
+    /// consume, so a caller can catalog the flat `PROT.DAT` payload without
+    /// re-parsing the TOC.
+    pub fn entry_spans(&self) -> Vec<(u64, u64, u32)> {
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                (
+                    e.start_lba as u64 * USER_DATA_SIZE as u64,
+                    e.size_bytes,
+                    i as u32,
+                )
+            })
+            .collect()
+    }
+
     /// Absolute disc sector (LBA) where PROT entry `index`'s content begins -
     /// `prot_lba + start_lba[index]`. This is the value the game's CD reader
     /// (`FUN_8005E4D4`) takes, so an injected loader stub can be given this LBA
@@ -298,6 +317,24 @@ impl DiscPatcher {
         Ok(entry[start..end].to_vec())
     }
 
+    /// Read `len` bytes at `logical_off` bytes into `PROT.DAT` from the
+    /// current (possibly patched) image, clamped to the file's end. Lets a
+    /// caller with a **flat PROT.DAT coordinate** (e.g. a TIM in the unindexed
+    /// system-UI gap before entry 0, which no [`Self::read_entry`] covers)
+    /// read a window without copying the whole multi-hundred-MB payload.
+    pub fn read_prot_bytes(&self, logical_off: u64, len: usize) -> Result<Vec<u8>> {
+        let total = self.prot_sectors as u64 * USER_DATA_SIZE as u64;
+        if logical_off >= total {
+            bail!("offset {logical_off} past end of PROT.DAT ({total} bytes)");
+        }
+        let end = (logical_off + len as u64).min(total);
+        let first = (logical_off / USER_DATA_SIZE as u64) as u32;
+        let last = end.div_ceil(USER_DATA_SIZE as u64) as u32;
+        let raw = read_user_data(&self.image, self.prot_lba + first, (last - first) as usize)?;
+        let skip = (logical_off - first as u64 * USER_DATA_SIZE as u64) as usize;
+        Ok(raw[skip..skip + (end - logical_off) as usize].to_vec())
+    }
+
     /// Read an arbitrary ISO 9660 file by name from the current (possibly
     /// patched) image. Used for static tables that live outside `PROT.DAT` -
     /// e.g. the steal table in `SCUS_942.54`.
@@ -343,14 +380,16 @@ impl DiscPatcher {
     }
 }
 
+/// Synthetic-disc builders shared by this module's tests and the texture
+/// module's disc-free replacement tests.
 #[cfg(test)]
-mod tests {
+pub(crate) mod synth {
     use super::*;
 
     /// Build a tiny but real Mode 2 Form 1 disc whose ISO 9660 root holds a
     /// single file, "PROT.DAT", with the given logical payload. Enough structure
     /// for find_file_in_image + the read/write paths.
-    fn synth_disc(prot_payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn synth_disc(prot_payload: &[u8]) -> Vec<u8> {
         const PVD_LBA: u32 = 16;
         const ROOT_LBA: u32 = 17;
         const PROT_LBA: u32 = 18;
@@ -434,7 +473,7 @@ mod tests {
     ///   rather than 0..3;
     /// - an entry whose `start*2048 + size` runs past the file is dropped, so
     ///   the payload is 8 sectors, comfortably past the highest LBA used.
-    fn synth_prot(entry1_data: &[u8]) -> Vec<u8> {
+    pub(crate) fn synth_prot(entry1_data: &[u8]) -> Vec<u8> {
         let sec = USER_DATA_SIZE;
         let mut prot = vec![0u8; 8 * sec];
         let put = |p: &mut [u8], off: usize, v: u32| {
@@ -459,6 +498,12 @@ mod tests {
         prot[entry1_off..entry1_off + entry1_data.len()].copy_from_slice(entry1_data);
         prot
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::synth::{synth_disc, synth_prot};
+    use super::*;
 
     #[test]
     fn patch_prot_entry_round_trips_through_the_disc() {

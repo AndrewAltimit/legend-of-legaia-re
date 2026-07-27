@@ -26,7 +26,8 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8006B844` | `WaitEvent` BIOS thunk - `jr 0xB0` with `t1=0x0A`. Blocks on a kernel event handle. |
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
 | `8006D7A4` | BIOS C0 thunk - `li t2,0xC0; jr t2; li t1,0x3`. Dispatches to C0 vector 0x03 (`ChangeThreadSubFunction`). Called from `FUN_8006D2AC` (audio subsystem init). |
-| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | SPU voice-state init sequence. `FUN_8006EF18` calls all three in order. `_EF68` = B0 0x4C (`InitCd`-adjacent). `_F088` = B0 0x57 then swaps 5 dwords between `DAT_8006F058..F06C` (static table) and `iVar1 + 0x9C8` (SPU voice block) + `FlushCache`. `_F118` = B0 0x56 + symmetric swap at `iVar1 + 0x18 / -0xE80`. |
+| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | **Card teardown + BIOS kernel un-patch**, not an SPU init - [details below](#the-bios-kernel-patch-cluster-8006ee8c--8006ef18). |
+| `8006EE8C` / `8006EEE0` / `8006EFD0` | The install half of the same cluster - [details below](#the-bios-kernel-patch-cluster-8006ee8c--8006ef18). |
 | `800567B8` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. Body spans `0x800567B8..0x8005700F`, so the `0x80056B18` this row used to list beside it is **interior** to it, not a second entry - the dump named `80056b18.txt` holds this same routine from its real start. |
 | `80057024` | `memmove` - overlap-safe direction-aware copy. |
 | `8005ACAC` | `memset`. |
@@ -44,7 +45,28 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80058170` | libgpu debug rectangle validator. Reads the library debug-level byte `_DAT_80078D56`; at level 1 it bounds-checks the four `RECT` halfwords at `a1+0x0/2/4/6` against the framebuffer limits `_DAT_80078D58` / `_DAT_80078D5A` and rejects non-positive extents, at level 2 it reports unconditionally, and either way it reports through the installed printf hook `*_DAT_80078D50` with a caller-name argument. Pure diagnostics - the retail path leaves the level byte at 0 and the whole body falls through. `see ghidra/scripts/funcs/80058170.txt`. |
 | `8005860C` | Sibling of the validator above on the primitive-submission path: same `_DAT_80078D56` debug gate and `*_DAT_80078D50` hook, then dispatch through slot `+0x2C` of the GPU module function table `*_DAT_80078D4C`, then a 24-bit-masked pointer store into the primitive's first word - the OT/tag link every libgpu submit ends with. `see ghidra/scripts/funcs/8005860c.txt`. |
 | `8005F9C8` | Raw DMA-channel start - spins for the channel idle, enables it in DPCR, programs MADR/BCR/CHCR at `0x1F801080 + chan*0x10` and the DICR bit; the low-level transfer kick under libgpu/libspu. `see ghidra/scripts/funcs/8005f9c8.txt`. |
-| `8002035C` | Kernel-event teardown + SPU re-init - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then re-runs the SPU voice-state init `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
+| `8002035C` | Kernel-event teardown - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then runs the card-teardown / un-patch trio `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
+
+### The BIOS kernel-patch cluster (`8006EE8C` / `8006EF18`)
+
+Six functions in one address bank patch **kernel code**, bracketed by
+`EnterCriticalSection` and `FlushCache`. Nothing in them touches an SPU
+register, a voice block or a libspu global; the "SPU voice-state init sequence"
+label the trio used to carry was read off vector numbers alone.
+
+| Address | What the disassembly does |
+|---|---|
+| `8006EF48` / `8006EF58` / `8006EF68` | Bare BIOS stubs (`li t2,0xb0; jr t2; li t1,N`): B0 `0x4A` `InitCARD`, `0x4B` `StartCARD`, `0x4C` `StopCARD`. |
+| `8006EFD0` | B0 `0x56` `GetC0Table`, reads `C0table[6]` (`ExceptionHandler`), rebuilds a kernel address from the `lui`/`ori`-style immediate pair at `+0x70` / `+0x74`, and copies a 5-word block from `0x8006EF78` to that address `+0x28`. The block is `lui/addiu` + `jr` to `0x8006EF8C` - a jump out into SCUS code. |
+| `8006F088` | B0 `0x57` `GetB0Table`, takes `B0table[0x5B]` (the `ChangeClearPAD` entry - an anchor whose *relative* offsets are BIOS-version-stable) and **swaps** 5 words between `+0x9C8` there and the static block at `0x8006F058`. The shipped block is a `jalr` trampoline to `0x8006F058` itself, so after the swap the kernel calls a buffer holding its own displaced instructions, which fall through into a `0xC8`-iteration busy-wait at `0x8006F070` and `jr ra`. A swap is its own inverse, which is why install and teardown both call it. |
+| `8006F118` | B0 `0x56` again, then copies 3 words from `0x8006F180` (zero in the shipped image) over `ExceptionHandler + 0x70..+0x78` - blanking the immediate pair `8006EFD0` reads. |
+
+`FUN_8006EE8C(pad_enable)` is the install veneer (`ChangeClearPAD(0)`,
+`InitCARD`, then `_EFD0` + `_F088`), `FUN_8006EEE0` the `StartCARD` sibling, and
+`FUN_8006EF18` the teardown trio (`StopCARD`, `_F088` swapping the delay back
+out, `_F118` clearing the address pair). `see
+ghidra/scripts/funcs/8006ee8c.txt`, `8006ef18.txt`, `8006efd0.txt`,
+`8006f088.txt`, `8006f118.txt`.
 
 ### libgte primitives
 
@@ -230,7 +252,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `80019788` | Global-buffer base accessor. `() -> ptr`. Two-instruction `lui v0,0x8009` + `jr ra` thunk returning the fixed address `0x80088758` (a game-side char/data buffer). Callers (the world-map-walk, fishing, slot-machine, debug-menu and cutscene overlays, plus `FUN_801EE328`) store the result at `actor[+0x94]` and walk it as a `char*`, scanning for `'_'` separators. A pointer getter, not transform or floor math (its address proximity to the floor sampler `FUN_80019278` is incidental). `see ghidra/scripts/funcs/80019788.txt`. |
 | `800196A4` | World-map-entry **fade-up tick**. Re-derives the kingdom index `gp+0x658` from the scene PROT base `_DAT_80084540` (`0x55`/`0xF4`/`0x187` → `0..=2`, else `-1`), then, while the ramp global `0x8007BAF4` is non-zero, advances it by `DAT_1F800393 << 5`, draws the full-screen grey quad via `FUN_80024EE4(1, 2, grey*0x010101)` (grey clamps at `0xFF`; the stored value does not), and on reaching `0x100` parks the ramp at `0xFF` + stores mode `_DAT_8007B83C = 0xC` (12 = MAPDSIP INIT). Port: `engine-core::world_map::WorldMapEntryFade`. `see ghidra/scripts/funcs/800196a4.txt`. |
 | `80019898` | Field-BGM re-attach + volume re-apply - the body of field-VM op `0x35` sub-op `8`. Re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`), then applies level `(DAT_8007B6EC << 15) >> 16` to both channels of the slot's voice (`lh 0xA(0x8007057C)`) via the `SsSeqSetVol`-shaped `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume` + `BgmDirector::reattach_volume`. `see ghidra/scripts/funcs/80019898.txt`. |
-| `8001FFA4` | Game-state cold-reset. Zero-fills the `0x1A18`-byte live game-state block at `0x80084140`, seeds boot defaults (`_DAT_80084574 = 1`, brightness reference `_DAT_8008457C = 0xD7`, voice volume `_DAT_80084580 = 200`, live brightness `_DAT_8007B910 = 0xD7`, BGM volume `DAT_8007B6EC = -1`, `DAT_8007B750 = _DAT_8007BAD0 = 0`), then chains `FUN_80034A6C` (new-game data-init) + `FUN_8002614C(0)`. Port: `engine-core::new_game::GAME_STATE_COLD_RESET`. `see ghidra/scripts/funcs/8001ffa4.txt`. |
+| `8001FFA4` | Game-state cold-reset. Zero-fills the `0x1A18`-byte live game-state block at `0x80084140`, seeds boot defaults (`_DAT_80084574 = 1`, configured audio level `_DAT_8008457C = 0xD7`, voice volume `_DAT_80084580 = 200`, its live copy `_DAT_8007B910 = 0xD7`, BGM volume `DAT_8007B6EC = -1`, `DAT_8007B750 = _DAT_8007BAD0 = 0`), then chains `FUN_80034A6C` (new-game data-init) + `FUN_8002614C(0)` - the audio-context volume re-apply, which is one of the reasons the `0x8007B910` pair reads as audio rather than brightness ([battle-action.md](../../subsystems/battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). Port: `engine-core::new_game::GAME_STATE_COLD_RESET`. `see ghidra/scripts/funcs/8001ffa4.txt`. |
 | `8003C5F0` | Generic ramp scheduler. 64-slot pool at `0x801C66A0` (stride 0x20). Used for sound + render-bank ramps. |
 | `80036D80` | **Ramp-scheduler tick** - the per-frame walk of the `0x801C66A0` pool `8003C5F0` installs. Full record layout and the lerp law are on [`motion-vm.md`](../../subsystems/motion-vm.md#the-generic-ramp-scheduler). |
 | `0x80036DE8` (instruction) | Interior of `FUN_80036D80`: the `blez` that takes the "remaining `<= 0`" arm after the frame delta `DAT_1F800393` is subtracted from the slot's countdown at `+0x14`. Not an entry - it has no prologue and consumes `$t1`/`$t2` from the enclosing loop. |

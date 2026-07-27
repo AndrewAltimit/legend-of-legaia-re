@@ -1896,9 +1896,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::ScreenShake { magnitude });
     }
-    fn ramp_brightness(&mut self, target_pct: u8) {
+    fn duck_audio_level(&mut self, target_pct: u8) {
         self.world
             .pending_battle_events
-            .push(BattleEvent::RampBrightness { target_pct });
+            .push(BattleEvent::DuckAudioLevel { target_pct });
     }
 }

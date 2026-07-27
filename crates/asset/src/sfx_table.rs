@@ -37,6 +37,14 @@
 //! **data**. The engine's `legaia_engine_audio::SfxBank` consumes the decoded
 //! descriptors (`program` -> program index, `note` -> key).
 //!
+//! A bank reaches a slot through one call pair, which is what names each
+//! `(PROT entry, slot)` binding: `FUN_8001FC00(raw_toc_index, category, ...)`
+//! streams the entry in and `FUN_8001E54C(category, ...)` installs it through
+//! the same mixer record the descriptors index, opening the bank at the SPU
+//! address the per-slot table at `0x800917B0` holds ([`spu_base_for_slot`]).
+//! The record initialiser `FUN_8001D424` writes `+8 = record index` for all 16
+//! records, so [`slot_for_category`]'s identity is the initialiser's own.
+//!
 //! Parser: `legaia_asset::sfx_table`.
 
 /// Virtual address of the table base (`DAT_8006F198`).
@@ -85,7 +93,31 @@ pub const SLOT2_CLASS2_BANK_PROT_INDEX: u32 = 869;
 
 /// The alternate class-2 bank `FUN_800520F0` swaps in when
 /// `DAT_8007BD11 == 4` (raw `0x36D` = extraction 0875).
+///
+/// Its own structural tell: category-`2` descriptors `0x40` / `0x41` name
+/// program 10, a `ProgAtr` slot PROT 0869 leaves empty and PROT 0875 populates.
 pub const SLOT2_CLASS2_BANK_ALT_PROT_INDEX: u32 = 875;
+
+/// Slot 6 - the field bank behind the 30 category-`6` cues (the field script
+/// cues `0x2E` / `0x2F` and the rest of the field / player set). Extraction
+/// PROT **0876**, loaded by the field init `FUN_801D6704` as raw index `0x36E`.
+///
+/// Structurally corroborated as well as traced: the bank holds exactly 30 VAGs
+/// for the 30 descriptors, its populated program slots are `1..=7`, and 29 of
+/// the 30 name a program in that set. A catalogued field state's live slot-6
+/// header buffer matches this entry's VAB (at `+4`) byte for byte across the
+/// disc's 218 VABs, once the runtime-written `ProgAtr +8..0xF` words are
+/// excluded.
+pub const SLOT6_FIELD_BANK_PROT_INDEX: u32 = 876;
+
+/// Slot 11 - the single-cue bank behind category `11`. Extraction PROT
+/// **0889**, loaded as raw index `0x37B` by the battle-end reward resolution
+/// `FUN_8004E568` - the same function that fires the one category-`11` cue
+/// (`0x50`).
+///
+/// One program, and its only populated `ProgAtr` slot is **10**, which is
+/// exactly the program descriptor `0x50` names (2 voices against 2 tones).
+pub const SLOT11_REWARD_BANK_PROT_INDEX: u32 = 889;
 
 /// The slot a cue's `+4` category selects.
 ///
@@ -102,40 +134,86 @@ pub fn slot_for_category(category: u8) -> u8 {
     category
 }
 
-/// The PROT extraction index that fills a VAB slot, or `None` when the slot's
-/// filler is **not pinned**.
+/// The PROT extraction index that fills a VAB slot, or `None` when the slot
+/// carries no **fixed** entry.
 ///
-/// Only slots `0` and `2` are traced. Slots `1`, `3`, `6` and `11` are open in
-/// retail (a field state has `0, 1, 3, 6` open at once) but nothing names the
-/// PROT entry behind them: slot 6 carries the field script cues `0x2E` / `0x2F`
-/// so it is field-resident, slot 1 held the scene music VAB in the state
-/// examined, and slots 3 / 11 have no traced loader at all. Returning `None`
-/// rather than guessing is deliberate - a host is expected to fall back to a
-/// bank it *has* rather than to invent a mapping. See
+/// Every slot a descriptor can name (`0`, `2`, `6`, `11`) resolves. `None`
+/// means the slot's bank is *variable*, not untraced: slot `1` is the scene's
+/// current BGM bank and slot `3` a script-selected side-band bank, both
+/// re-filled per selection by the poller `FUN_800243F0`, and slots `7` / `8`
+/// hold the battle's two `monster.snd` banks. No descriptor keys any of those,
+/// so a host never has to resolve one to fire a cue. See
 /// `docs/formats/sfx-table.md`.
 pub fn prot_index_for_slot(slot: u8) -> Option<u32> {
-    match slot {
-        0 => Some(SLOT0_SYSTEM_BANK_PROT_INDEX),
-        2 => Some(SLOT2_CLASS2_BANK_PROT_INDEX),
-        _ => None,
-    }
+    SLOT_BANKS
+        .iter()
+        .find(|(s, _)| *s == slot)
+        .map(|(_, prot)| *prot)
 }
+
+/// Every `(slot, PROT index)` pair whose bank is a **fixed disc entry**, in
+/// slot order. The slots not listed hold variable banks (see
+/// [`prot_index_for_slot`]).
+pub const SLOT_BANKS: &[(u8, u32)] = &[
+    (0, SLOT0_SYSTEM_BANK_PROT_INDEX),
+    (2, SLOT2_CLASS2_BANK_PROT_INDEX),
+    (6, SLOT6_FIELD_BANK_PROT_INDEX),
+    (11, SLOT11_REWARD_BANK_PROT_INDEX),
+];
+
+/// Retail's per-slot SPU RAM base, installed by `FUN_800265E8` into the table
+/// at `0x800917B0` that `FUN_8002630C` hands to `SsVabOpenHead`. `None` for a
+/// slot retail leaves at zero.
+///
+/// These are allocation, not enforcement: a bank larger than the gap to the
+/// next base overruns it, which is legal exactly while that neighbour is
+/// closed. PROT 0869 does overrun slot 3's base by 3 808 bytes.
+pub fn spu_base_for_slot(slot: u8) -> Option<u32> {
+    Some(match slot {
+        0 | 10 => 0x0000_1010,
+        1 | 5 => 0x0001_0010,
+        2 | 6 => 0x0003_3010,
+        3 => 0x0006_0010,
+        4 | 7 => 0x0006_5010,
+        8 => 0x0006_C810,
+        11 => 0x0006_F010,
+        _ => return None,
+    })
+}
+
+/// Slot pairs that share **both** a mixer-record header buffer (assigned by
+/// `FUN_8001D424`) and an SPU base ([`spu_base_for_slot`]) - i.e. pairs that
+/// are one physical bank used by two categories, and so can never be resident
+/// together.
+///
+/// The consequential one is `(2, 6)`: the class-2 battle bank and the field
+/// bank alternate per game mode, which is why retail needs no extra SPU room
+/// for the field cues and a boot-time-only host does.
+pub const SLOT_ALIASES: &[(u8, u8)] = &[(0, 10), (1, 5), (2, 6), (4, 7)];
 
 /// [`prot_index_for_slot`] composed with [`slot_for_category`].
 pub fn prot_index_for_category(category: u8) -> Option<u32> {
     prot_index_for_slot(slot_for_category(category))
 }
 
-/// Every `(slot, PROT index)` pair that *is* pinned, in slot order. A host
-/// stages exactly these and routes everything else to a fallback.
+/// The `(slot, PROT index)` pairs a host with **one** reserved SPU region
+/// stages at boot, in slot order.
+///
+/// This is a residency budget, not the extent of the map - [`SLOT_BANKS`] has
+/// all four fixed-entry slots. Slot 6's bank (174 192 bytes of VAGs) does not
+/// fit beside slots 0 and 2 in the reserved region, and growing the region
+/// starts silencing the largest BGM banks. Retail escapes the arithmetic
+/// because slot 6 *is* slot 2's region ([`SLOT_ALIASES`]), refilled on the
+/// field/battle transition; a host that wants the category-`6` cues on their
+/// own bank has to reload that shared region per mode rather than reserve more.
 pub const PINNED_SLOT_BANKS: &[(u8, u32)] = &[
     (0, SLOT0_SYSTEM_BANK_PROT_INDEX),
     (2, SLOT2_CLASS2_BANK_PROT_INDEX),
 ];
 
-/// The slot a host falls back to for a category whose own slot is unpinned
-/// (`6` = 30 descriptors, `11` = 1). Slot 2 is that fallback because it is the
-/// bank both hosts already staged before the routing existed, so an unpinned
+/// The slot a host falls back to for a category whose own slot it has not
+/// staged (`6` = 30 descriptors, `11` = 1). Slot 2 is that fallback because it
+/// is the bank both hosts already staged before the routing existed, so such a
 /// category keeps sounding exactly as it did rather than going silent.
 pub const FALLBACK_VAB_SLOT: u8 = 2;
 
@@ -375,11 +453,11 @@ mod tests {
         assert!(SfxTable::from_scus(b"not an exe").is_none());
     }
 
-    /// The category -> slot -> PROT chain, and the deliberate holes in it.
-    /// A future "helpfully" filling slot 6 in without tracing its loader is
-    /// exactly what this pins against.
+    /// The category -> slot -> PROT chain. Every slot a descriptor names has a
+    /// fixed entry; the slots that resolve to `None` do so because their bank
+    /// is *variable*, and no descriptor keys them.
     #[test]
-    fn category_selects_a_slot_and_only_two_slots_are_pinned() {
+    fn category_selects_a_slot_and_every_descriptor_slot_has_an_entry() {
         assert_eq!(slot_for_category(0), 0);
         assert_eq!(slot_for_category(2), 2);
         assert_eq!(slot_for_category(6), 6);
@@ -387,21 +465,57 @@ mod tests {
 
         assert_eq!(prot_index_for_category(0), Some(868));
         assert_eq!(prot_index_for_category(2), Some(869));
-        for unpinned in [1u8, 3, 6, 11] {
+        assert_eq!(prot_index_for_category(6), Some(876));
+        assert_eq!(prot_index_for_category(11), Some(889));
+        for variable in [1u8, 3, 7, 8] {
             assert_eq!(
-                prot_index_for_slot(unpinned),
+                prot_index_for_slot(variable),
                 None,
-                "slot {unpinned}'s filler is not traced - see sfx-table.md"
+                "slot {variable}'s bank is variable, not a fixed entry"
             );
         }
+        assert_eq!(SLOT_BANKS, &[(0, 868), (2, 869), (6, 876), (11, 889)]);
+        // The boot-resident subset is a budget, so it is a strict subset of
+        // the map rather than a second, disagreeing list.
         assert_eq!(PINNED_SLOT_BANKS, &[(0, 868), (2, 869)]);
-        // The fallback must itself be a pinned slot, or an unpinned category
-        // would route to nothing.
+        for pair in PINNED_SLOT_BANKS {
+            assert!(SLOT_BANKS.contains(pair), "{pair:?} not in SLOT_BANKS");
+        }
+        // The fallback must itself be resident, or a non-staged category would
+        // route to nothing.
         assert!(
             PINNED_SLOT_BANKS
                 .iter()
                 .any(|(s, _)| *s == FALLBACK_VAB_SLOT)
         );
+    }
+
+    /// Retail's SPU map, and the alias law that makes the class-2 bank and the
+    /// field bank one physical region.
+    #[test]
+    fn aliased_slots_share_an_spu_base() {
+        for (a, b) in SLOT_ALIASES.iter().copied() {
+            assert_eq!(
+                spu_base_for_slot(a),
+                spu_base_for_slot(b),
+                "slots {a}/{b} are aliases, so their SPU bases must agree"
+            );
+        }
+        assert_eq!(spu_base_for_slot(2), Some(0x0003_3010));
+        assert_eq!(spu_base_for_slot(11), Some(0x0006_F010));
+        assert_eq!(spu_base_for_slot(9), None, "retail leaves slot 9 at zero");
+        // Distinct regions stay distinct: an alias pair is the only way two
+        // slots share a base.
+        for a in 0u8..16 {
+            for b in (a + 1)..16 {
+                if spu_base_for_slot(a).is_some() && spu_base_for_slot(a) == spu_base_for_slot(b) {
+                    assert!(
+                        SLOT_ALIASES.contains(&(a, b)),
+                        "slots {a}/{b} share a base but are not listed as aliases"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

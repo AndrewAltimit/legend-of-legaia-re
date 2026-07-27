@@ -663,14 +663,25 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
             stats &mdash; every number decoded from the image you loaded, in your browser.
           </p>
           <p>
-            <b>Fitted rather than traced:</b> the camera, fighter spacing and facing; the
-            plain-tile arena floor (the dome's battle-scene backdrop entry is not pinned, so no
-            backdrop art is invented); the HUD text layout and the interval-panel framing; the
-            card&rarr;swing-animation pairing (the true swing clips live in a side archive this
-            page doesn't decode); the opponent's greedy card AI (retail has no dome-specific AI
-            table); the jitter-free level growth (retail adds a zero-mean random spread); and the
-            awarded Seru. When the 3D bodies don't decode, the fight falls back to the text HUD
-            and says so.
+            <b>The arena is the game's own too.</b> The fenced dirt ring behind the fighters is
+            the Sol Muscle Dome's real battle backdrop &mdash; PROT&nbsp;1225, the tail slot of
+            the dome's own <code>other6.lzs</code> file &mdash; drawn world-fixed with its own
+            texture pages, and the ground underfoot is the retail battle ground grid (the flat
+            tiled plane the battle overlay emits, sampling the backdrop's own dirt tile at its
+            traced VRAM address). The <b>sound</b> is the dome's own cue set: the match SM's UI
+            blips (PROT&nbsp;0868) and the shared battle impact cue (PROT&nbsp;0869), decoded
+            from your image, with the battle theme the arena inherits as BGM.
+          </p>
+          <p>
+            <b>Fitted rather than traced:</b> the camera, fighter spacing and facing; the HUD
+            text layout, the time-meter placement and the interval-panel framing (the meter's
+            ramp itself is the traced <code>FUN_801d3444</code> shape); which of the three traced
+            UI blips fires on which page event; the card&rarr;swing-animation pairing (the true
+            swing clips live in a side archive this page doesn't decode); the opponent's greedy
+            card AI (retail has no dome-specific AI table); the jitter-free level growth (retail
+            adds a zero-mean random spread); and the awarded Seru. When the 3D bodies don't
+            decode, the fight falls back to the text HUD and says so; when the backdrop entry
+            doesn't decode, the floor falls back to plain tiles.
           </p>
         </div>
         <div class="see-also">
@@ -3290,6 +3301,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                          sceneInfo: () => api && JSON.parse(api.fishing_scene_info_json()),
                          species: () => api && JSON.parse(api.fishing_species_json()) };
   window.__mgMuscle  = { reset: muscleReset, commit: muscleCommit, confirm: muscleConfirm,
+                         sceneOk: () => !!(muscleR && muscleR.sceneOk()),
+                         arenaOk: () => !!(muscleR && muscleR.arenaOk()),
+                         arenaJson: () => (api && api.muscle_arena_json
+                           ? JSON.parse(api.muscle_arena_json()) : null),
+                         sfxJson: () => (api && api.muscle_sfx_json
+                           ? JSON.parse(api.muscle_sfx_json()) : null),
                          start: () => api && api.muscle_start(),
                          startVs: (c, l, m, s) => api && api.muscle_start_vs(c, l, m, s),
                          endSelection: () => api && api.muscle_end_selection(),

@@ -277,8 +277,11 @@ pub enum SubListEffect {
     /// `FUN_801E9B3C(script)`.
     RunPanelScript(u32),
     /// `_DAT_8007B910 >>= 1` (open) or `<<= 1` (close/handoff). Retail uses an
-    /// arithmetic shift both ways.
-    ScaleBrightness { shift_right: bool },
+    /// arithmetic shift both ways. The cell is the **live audio level** (every
+    /// traced reader is a volume setter), so this is the sub-window ducking
+    /// the mix by half and restoring it - not a screen dim, which rides the
+    /// separate accumulator `_DAT_8007B440`.
+    ScaleAudioLevel { shift_right: bool },
     /// `FUN_80035BD0(0x20)`.
     PlaySfx(u32),
     /// `_DAT_8007B450 = 0` - drops the op-`0x49` descriptor the picker used.
@@ -322,7 +325,7 @@ pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListE
     let mut out = Vec::new();
     match phase {
         0 => {
-            out.push(SubListEffect::ScaleBrightness { shift_right: true });
+            out.push(SubListEffect::ScaleAudioLevel { shift_right: true });
             cursor = 0;
             out.push(SubListEffect::RunPanelScript(SUBLIST_OPEN_SCRIPT));
             phase += 1;
@@ -343,7 +346,7 @@ pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListE
         2 => {
             out.push(SubListEffect::RunPanelScript(SUBLIST_CLOSE_SCRIPT));
             out.push(SubListEffect::ClearWindowDescriptor);
-            out.push(SubListEffect::ScaleBrightness { shift_right: false });
+            out.push(SubListEffect::ScaleAudioLevel { shift_right: false });
             out.push(SubListEffect::Exit(ActorExit {
                 saved_handler: input.handler_id,
                 next_handler: SUBLIST_NEXT_HANDLER,
@@ -351,7 +354,7 @@ pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListE
             phase = 0;
         }
         3 => {
-            out.push(SubListEffect::ScaleBrightness { shift_right: false });
+            out.push(SubListEffect::ScaleAudioLevel { shift_right: false });
             out.push(SubListEffect::HandOff);
         }
         _ => {}
@@ -1253,7 +1256,7 @@ mod tests {
             },
         );
         assert_eq!((phase, cursor), (1, 0));
-        assert_eq!(out[0], SubListEffect::ScaleBrightness { shift_right: true });
+        assert_eq!(out[0], SubListEffect::ScaleAudioLevel { shift_right: true });
         assert_eq!(out[1], SubListEffect::RunPanelScript(SUBLIST_OPEN_SCRIPT));
         assert_eq!(*out.last().unwrap(), SubListEffect::TickTextActors);
     }

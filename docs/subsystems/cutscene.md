@@ -716,7 +716,10 @@ matching any `lb/lh/lw/lbu/lhu/sb/sh/sw` whose effective address resolves throug
 `SCUS_942.54` itself never touches it. Two apparent extra hits are duplicate
 on-disc copies, not new sites: PROT 0896 carries the same field overlay as 0897
 shifted by `0x9000` (a 0x46800-byte identical span straddles the store), and the
-STR overlay is replicated across PROT 0967/0968/0969/0970. This is what rules out
+pre-correction over-read footprints of PROT 0967/0968/0969 each carried the
+head of the STR overlay 0970 (their corrected entries are 6/4/2 KB - the
+battle-tutorial overlay, a slot-B module, and the STR-path table - and hold
+none of the STR code). This is what rules out
 a per-FMV event table: nothing but the trigger op and the attract tick can set the
 id, so an FMV cannot carry teleport or story-flag side-effects of its own.
 

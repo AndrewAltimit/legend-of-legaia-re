@@ -250,6 +250,89 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         allow_region_mismatch: bool,
     },
+    /// Read-only: catalog every texture (TIM) on the disc with its
+    /// replacement coordinates - the raw tier (uncompressed, always
+    /// replaceable in place) and the LZS tier (inside a compressed section,
+    /// replaceable when the edited section recompresses into its footprint).
+    TimList {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+        /// Only list textures owned by this PROT entry.
+        #[arg(long)]
+        entry: Option<u32>,
+        /// Which tier to list.
+        #[arg(long, value_enum, default_value_t = TimTierArg::All)]
+        tier: TimTierArg,
+    },
+    /// Decode one texture to a PNG for editing (the `tim-replace` on-ramp).
+    /// Coordinates come from `tim-list`.
+    TimExport {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+        /// Owning PROT entry. Omit for a `gap`-owned texture (then --offset
+        /// is the flat PROT.DAT byte offset `tim-list` shows).
+        #[arg(long)]
+        entry: Option<u32>,
+        /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
+        /// within the decoded section with --lzs-section.
+        #[arg(long, value_parser = parse_u64_flexible)]
+        offset: u64,
+        /// LZS section index for a compressed-tier texture.
+        #[arg(long)]
+        lzs_section: Option<u32>,
+        /// Palette index to decode with (multi-palette textures only).
+        #[arg(long, default_value_t = 0)]
+        clut: usize,
+        /// Where to write the PNG.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Replace a texture with an edited PNG: same dimensions / bpp / CLUT
+    /// layout enforced, VRAM placement preserved, same-size in-place write
+    /// with every touched sector's EDC/ECC re-encoded. Alpha maps to the PSX
+    /// STP bit (0 = transparent, 1..254 = semi-transparent, 255 = opaque).
+    TimReplace {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// Owning PROT entry. Omit for a `gap`-owned texture (then --offset
+        /// is the flat PROT.DAT byte offset `tim-list` shows).
+        #[arg(long)]
+        entry: Option<u32>,
+        /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
+        /// within the decoded section with --lzs-section.
+        #[arg(long, value_parser = parse_u64_flexible)]
+        offset: u64,
+        /// LZS section index for a compressed-tier texture.
+        #[arg(long)]
+        lzs_section: Option<u32>,
+        /// The replacement image (PNG, any color type; must match the
+        /// original texture's pixel dimensions exactly).
+        #[arg(long)]
+        png: PathBuf,
+        /// Fold excess colors to their nearest palette color instead of
+        /// failing when the image holds more distinct colors than the
+        /// texture's palette (4/8 bpp only).
+        #[arg(long, default_value_t = false)]
+        quantize: bool,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+        /// Validate the replacement (dimensions, colors, LZS fit) without
+        /// writing anything.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// Translation / language-pack tools: export the disc's text to an
     /// editable YAML pack, generate per-language skeletons, check coverage,
     /// and import a filled pack back onto a disc copy.
@@ -257,6 +340,27 @@ pub(crate) enum Cmd {
         #[command(subcommand)]
         cmd: TranslateCmd,
     },
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+pub(crate) enum TimTierArg {
+    /// Uncompressed TIMs (always replaceable in place).
+    Raw,
+    /// TIMs inside LZS-compressed sections (replaceable when they re-fit).
+    Lzs,
+    /// Both tiers.
+    All,
+}
+
+/// Parse a decimal or `0x`-prefixed hexadecimal u64 (for byte offsets).
+pub(crate) fn parse_u64_flexible(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    let parsed = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16)
+    } else {
+        s.parse::<u64>()
+    };
+    parsed.map_err(|_| format!("not a number (decimal or 0xHEX): {s:?}"))
 }
 
 #[derive(Subcommand)]

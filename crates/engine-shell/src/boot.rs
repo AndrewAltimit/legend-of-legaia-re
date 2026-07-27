@@ -1092,16 +1092,19 @@ fn stage_scene_vab(
     Ok(())
 }
 
-/// Read every **pinned** SFX program bank, parse its VAB, upload the samples
-/// into the dedicated top region of SPU RAM, and stash the resulting
+/// Read every boot-**resident** SFX program bank, parse its VAB, upload the
+/// samples into the dedicated top region of SPU RAM, and stash the resulting
 /// [`VabBank`] in the director under its VAB slot.
 ///
-/// The pinned slots are slot `0` = PROT 0868 (the system bank the 16
+/// The resident slots are slot `0` = PROT 0868 (the system bank the 16
 /// category-`0` shared UI cues key) and slot `2` = PROT 0869 (the class-2 bank
 /// the battle scene loader `FUN_800520F0` loads with `a1 = 2`, with the
 /// `DAT_8007BD11 == 4` alternate 0875 as its fallback). Slots `6` and `11`,
-/// which retail's descriptors also reach, have no traced PROT entry - their
-/// cues fall back to slot 2 rather than to a guess.
+/// which retail's descriptors also reach, name PROT 0876 / 0889 but do not fit
+/// beside these two in the region - retail keeps slot 6 in slot 2's own SPU
+/// region and refills it per game mode, so staging them here means reloading
+/// that region on the field/battle transition rather than reserving more. Their
+/// cues fall back to slot 2 meanwhile.
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank). Both come out

@@ -180,6 +180,53 @@ data and stay local - only the resulting fingerprint→label table is committed.
 > conflated floors / walls / terrain with NPC colour tables. Labels are now
 > content-keyed observations, not a CLUT heuristic.
 
+## Encoding: PNG -> TIM (texture replacement)
+
+`legaia_tim::encode` is the write side of the parser: it builds a TIM whose
+**structure is copied verbatim from an original** - pixel mode, image and CLUT
+dimensions, and every `fb_x`/`fb_y` VRAM placement field (image *and* CLUT
+blocks; the game depends on those coordinates, e.g. the
+[row-479 CLUT sharing](npc-palette.md)) - and whose pixels come from
+caller-supplied RGBA (typically a decoded PNG). Same dimensions + bpp + CLUT
+layout means the output is byte-for-byte the same *size* as the original,
+which is what same-size in-place disc patching requires. This is the encoder
+behind `legaia-patcher tim-replace` and the ROM-patcher page's texture panel
+(see [`tooling/randomizer.md`](../tooling/randomizer.md#texture-replacement)).
+
+### Alpha -> STP mapping
+
+PSX texels carry a 1-bit STP (semi-transparency) flag, not an alpha channel.
+The encoder maps 8-bit alpha as:
+
+| Alpha | Encoded texel |
+|---|---|
+| `0` | `0x0000` - transparent black (the GPU skips it; RGB is ignored) |
+| `1..=254` | STP set + RGB truncated to 5 bits/channel (semi-transparent when the primitive blends) |
+| `255` | STP clear + RGB truncated - **except opaque pure black**, which becomes `0x8000` (STP-only black; plain `0x0000` would read back transparent) |
+
+### Original-color reuse (byte-exact round trips)
+
+Before the alpha rule applies, the encoder reuses the original wherever the
+new image asks for a color the original already displays (compared in
+decoded-RGBA space): a pixel whose position held the same color keeps its
+original index / texel verbatim, and other palette hits reuse the first entry
+that decodes to the color. This preserves the original's STP choices for
+untouched regions, and makes `encode(decode(tim))` reproduce the original TIM
+**byte-for-byte** - a disc-gated regression pins that identity across the
+entire raw catalog.
+
+### Palette fitting
+
+Indexed modes must fit the palette (16 / 256 distinct 15-bit colors). Colors
+already in the original palette are free; new colors overwrite slots the new
+image no longer references. Overflow is a hard error listing the offending
+pixel coordinates + colors, or - behind an explicit quantize opt-in - the
+least-frequent extras fold to their nearest palette color. When any palette
+slot changes, the rebuilt palette is **replicated into every CLUT row**
+(multi-palette variants would otherwise recolor the new indices with stale
+rows); an untouched palette keeps the whole original CLUT block
+byte-identical.
+
 ## See also
 
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.
