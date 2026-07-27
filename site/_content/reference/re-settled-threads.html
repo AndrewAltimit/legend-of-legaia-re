@@ -672,6 +672,13 @@
         <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files). The filler is <strong><code>FUN_801CFA78</code></strong> in PROT 0895 <code>init.pak</code> (base <code>0x801CE818</code>): it sprintf-generates <code>\XA\XA%d.XA;1</code> per slot and fills <code>[BCD-MSF][size]</code> via the ISO9660 lookup <code>FUN_8005DBB4</code>, called once from the init boot tick <code>0x801CF500</code>. The earlier "untraceable DMA/computed write" framing was the SCUS-only sweep's blind spot - the two <code>lui 0x801c</code> sites in SCUS (<code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code>) are the <strong>readers</strong>; the writer is overlay-resident. Cue census (callers of those readers): menu voice <code>FUN_8004FCC8</code>; the normal-move grunt (<code>XA30</code> chan 0/4/6, overlay <code>0x801EEB44</code>); the arts shout (<code>FUN_8004C140</code> &rarr; <code>XA2</code>/<code>XA4</code>/<code>XA6</code> per character); SM state-<code>0x6E</code> (<code>XA9</code>); slot machine <code>XA1</code>. Full deduped census in <a href="../subsystems/audio.html">audio</a>; dedupe by true entry extent - PROT over-read aliases callsites into neighbouring overlays.</td>
         <td><a href="../subsystems/audio.html">audio</a></td>
       </tr>
+      <tr>
+        <td>Hyper Arts fanfare selector - what audio fires when a Hyper executes</td>
+        <td><span class="tag tag-done">resolved</span> (per-(char, art) coin flip over a fixed channel pair)</td>
+        <td><span class="tag tag-done">disassembly</span> <span class="tag tag-done">capture</span></td>
+        <td>A Hyper art fires <strong>no pool shout</strong> (its action constant sits below the shout table's <code>lo</code> bound). The staged-animation materialiser <code>FUN_8004AD80</code>, on the Hyper class byte <code>0x1A</code>, fires the jingle queue with <code>jingle_id = rand()%2*3 + base</code> - a per-(character, art) coin flip between the fixed channel pair <code>{base, base+3}</code> of the character's stereo fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>). Super/Miracle expansions take fixed ids = the bank's generic channel 1; a Miracle's finisher adds its anim cue track. No avoid-repeat memory, unlike the shout pool. All nine Hyper rows capture-witnessed; durations reproduce the <code>0x800788B8</code> table. Engine table <code>legaia_art::hyper_fanfare::CAPTURED_FANFARES</code>; the arts page plays the pinned cue per card.</td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
+      </tr>
     </tbody>
   </table>
 </section>

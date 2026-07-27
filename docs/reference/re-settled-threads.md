@@ -1524,6 +1524,28 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | The `FUN_8006EF18` trio is a BIOS kernel-patch sequence, not an SPU init | resolved-negative | `disassembly` | [details ↓](#the-fun_8006ef18-trio-is-a-bios-kernel-patch-sequence-not-an-spu-init) |
 | `_DAT_8007B910` is the live audio level, not screen brightness | resolved (both hosts' labels corrected) | `disassembly` | [details ↓](#_dat_8007b910-is-the-live-audio-level-not-screen-brightness) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved (writer pinned statically; census in `audio.md`) | `disassembly` | [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
+| Hyper Arts fanfare selector - what audio fires when a Hyper executes | resolved (per-(char, art) coin flip over a fixed channel pair of the even-slot fanfare bank) | `disassembly` | [details ↓](#hyper-arts-fanfare-selector) |
+
+### Hyper Arts fanfare selector
+
+*Status:* resolved - selector pinned in code and capture
+
+A Hyper art fires **no pool shout** (its action constant sits below the shout table's `lo`
+bound). Instead the staged-animation materialiser `FUN_8004AD80`, on the Hyper class byte
+`0x1A` at `actor+0x1DA`, reads the queued art constant and fires the jingle queue
+(`FUN_8004FCC8` → `FUN_8003D53C`) with `jingle_id = rand()%2*3 + base` - a per-(character,
+art) coin flip between the fixed channel pair `{base, base+3}` of the character's stereo
+fanfare bank (the even clip slots: Vahn `XA1.XA`, Noa `XA3.XA`, Gala `XA5.XA`). Super and
+Miracle expansions take a sibling branch to fixed ids `0x101`/`0x111`/`0x121` = the same
+bank's generic channel 1; a Miracle's finisher additionally fires its anim cue track
+(`FUN_800508DC`, ids `0xC8..0xFF` rebased `+0x38`). No avoid-repeat memory, unlike the
+shout pool. All nine per-art Hyper rows are capture-witnessed off the `FUN_8003D53C`
+staging globals, and every witnessed duration reproduces the `0x800788B8` table
+arithmetic against the real SCUS. Full selector + table:
+[`battle-action.md`](../subsystems/battle-action.md); engine table
+`legaia_art::hyper_fanfare::CAPTURED_FANFARES`. Residue (guarded, low priority): the
+second pair member for seven of nine arts is rule-derived rather than witnessed, and the
+Vahn/Noa Miracle finisher cue-track ids plus `XA1` channel 0 are unwitnessed.
 
 ### XA clip-table writer + `(clip_id, chan)` cue census
 
