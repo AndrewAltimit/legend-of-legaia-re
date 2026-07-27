@@ -72,6 +72,16 @@ pub struct LegaiaRuntime {
     /// The PROT 0874 §1 party locomotion bundle - the pose source for the
     /// global-pool specials (save point / party heads).
     pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// The scene's CLUT-walk (water / waterfall shimmer) animation state,
+    /// rebuilt at every scene entry with its source strips parked into the
+    /// host's VRAM. Only the walker half lives here - the ambient move-VM
+    /// tree (jou's palette cyclers / lightning) is spawned into the live
+    /// `World` by the scene host and drained by `step_field_vram_fx`.
+    pub(crate) field_vram_anim: Option<crate::field_scene::FieldSceneAnim>,
+    /// Set when a field VRAM effect (CLUT walker / ambient tree / scripted
+    /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
+    /// so the page re-uploads the VRAM texture only on real changes.
+    pub(crate) field_vram_dirty: bool,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -186,6 +196,8 @@ impl LegaiaRuntime {
             npc_clips: std::collections::HashMap::new(),
             scene_anm: None,
             locomotion_anm: None,
+            field_vram_anim: None,
+            field_vram_dirty: false,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -510,6 +522,10 @@ impl LegaiaRuntime {
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
         self.tick_sfx();
+        // Field VRAM effects: CLUT-walk shimmer + ambient palette cyclers +
+        // scripted CLUT fx, drained against the scene VRAM; the page re-reads
+        // `field_vram_bytes` when `field_vram_take_dirty` reports a change.
+        self.step_field_vram_fx();
         // Battle presentation: encounter-banner arming on the Field -> Battle
         // edge, battle-event fold, HUD row refresh, popup aging
         // ([`crate::play_battle`]). Cheap no-op outside battle.
@@ -829,6 +845,7 @@ impl LegaiaRuntime {
         self.npc_clips.clear();
         self.scene_anm = None;
         self.locomotion_anm = None;
+        self.field_vram_anim = None;
         let Some(host) = self.scene_host.as_ref() else {
             return Ok(());
         };
@@ -875,7 +892,59 @@ impl LegaiaRuntime {
         }
         self.build_npc_clips();
         self.build_player_rig();
+        // CLUT-walk shimmer (water / waterfall scenes): parse the bundle's
+        // type-6 walker table and park its source strips into the host's
+        // VRAM - this must land before the page's post-entry
+        // `field_vram_bytes` upload, which is why it lives in the rebuild.
+        // The ambient move-VM tree needs no sibling here: the scene host
+        // spawned it into the live world at scene entry, and
+        // `step_field_vram_fx` drains it against the same VRAM.
+        if let Some(host) = self.scene_host.as_mut()
+            && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_mut())
+        {
+            for entry in &scene.entries {
+                let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+                    continue;
+                };
+                for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
+                    res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                }
+                self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
+                    table,
+                    host.world.frame_step.max(1),
+                ));
+                break;
+            }
+        }
         Ok(())
+    }
+
+    /// Drain this sim tick's VRAM-mutating field effects against the host's
+    /// scene VRAM - the browser twin of the native play-window's
+    /// `apply_world_clut_fx` + water-CLUT animator: the type-6 CLUT-walk
+    /// shimmer, the scripted `MoveImage` stamps, the ambient move-VM tree
+    /// (jou's pulsating-flesh palette cyclers + lightning), and the CLUT-cell
+    /// one-shots. Battle-guarded like the native path: while a battle is up
+    /// the page's GPU texture holds the battle VRAM and a field re-upload
+    /// would clobber it.
+    fn step_field_vram_fx(&mut self) {
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        if host.world.mode == SceneMode::Battle {
+            return;
+        }
+        let Some(res) = host.resources.as_mut() else {
+            return;
+        };
+        let mut dirty = false;
+        if let Some(anim) = self.field_vram_anim.as_mut() {
+            dirty |= anim.tick(1, &mut res.vram);
+        }
+        dirty |= host.world.apply_script_vram_moves(&mut res.vram);
+        dirty |= host.world.step_ambient_fx(&mut res.vram);
+        dirty |= host.world.step_clut_fx(&mut res.vram);
+        self.field_vram_dirty |= dirty;
     }
 
     /// Build one [`NpcClip`] per catalogued placement that names a clip - the

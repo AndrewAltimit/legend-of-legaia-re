@@ -1381,6 +1381,14 @@
        * uncaught and freeze the loop without ever reaching recovery. Guard the
        * whole draw-build so any engine trap routes through `onError`. */
       try {
+      /* Live VRAM effects - water CLUT-walk shimmer, jou's ambient palette
+       * cyclers + lightning, scripted CLUT fx. The engine mutated the scene
+       * VRAM during the ticks above; re-upload the texture only when texels
+       * really changed (the take call clears the engine-side flag). Guarded
+       * so a cached wasm bundle predating the export still runs statically. */
+      if (typeof rt.field_vram_take_dirty === 'function' && rt.field_vram_take_dirty()) {
+        this.renderer.uploadVram(rt.field_vram_bytes());
+      }
       /* Occluder cull, DISABLED (`OCCLUDER_CULL = false`; see the note at its
        * definition). Even the exact segment-vs-world-AABB form culled legit
        * bodies: the boxes are axis-aligned over whole terrain tiles / walls /

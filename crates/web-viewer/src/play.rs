@@ -308,6 +308,14 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// True when a field VRAM effect (water CLUT-walk shimmer, jou's ambient
+    /// palette cyclers / lightning, scripted CLUT fx) changed texels since
+    /// the last call - the page then re-uploads [`Self::field_vram_bytes`].
+    /// Reading clears the flag.
+    pub fn field_vram_take_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.field_vram_dirty)
+    }
+
     /// `{"pack_count", "placements", "terrain", "ground_quads"}` for the status
     /// line; `null` before a scene is entered.
     pub fn field_status_json(&self) -> String {

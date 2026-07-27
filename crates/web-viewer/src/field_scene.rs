@@ -311,6 +311,23 @@ pub fn build_field_scene_anim(
 }
 
 impl FieldSceneAnim {
+    /// Walker-only animation state for the **play** runtime
+    /// ([`crate::runtime::LegaiaRuntime`]): there the live scene host's own
+    /// `World` carries the ambient move-VM tree (spawned at scene entry and
+    /// drained per sim tick), so only the CLUT-walk half runs here.
+    pub(crate) fn walker_only(
+        table: legaia_asset::clut_walk::ClutWalkTable,
+        frame_step: u8,
+    ) -> FieldSceneAnim {
+        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+        FieldSceneAnim {
+            walker: Some((table, state)),
+            ambient: None,
+            frame_step,
+            vsync_accum: 0,
+        }
+    }
+
     /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
     /// `vram`. Returns `true` when texels changed.
     pub fn tick(&mut self, vsyncs: u32, vram: &mut legaia_tim::Vram) -> bool {

@@ -200,6 +200,14 @@ open.
   `field_scene_anim_init` / `field_scene_anim_tick` on the WASM viewer,
   with `site/js/field-scene-view.js` re-uploading the VRAM texture on
   change - jou's ground palette pulses and flashes in the assembled view.
+- The site **play** page runs them through the live engine instead: the
+  scene host spawns the ambient tree at scene entry, and
+  `LegaiaRuntime::tick_frame` drains it (plus the scripted CLUT fx and a
+  walker-only `FieldSceneAnim` whose park strips land in the host VRAM at
+  scene rebuild) each sim tick - the browser twin of the play-window's
+  `apply_world_clut_fx`. `site/js/play-app.js` polls
+  `field_vram_take_dirty` per frame and re-uploads `field_vram_bytes` only
+  on real texel changes; the drain is battle-guarded like the native path.
 
 ## Related
 
