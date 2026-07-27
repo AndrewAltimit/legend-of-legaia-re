@@ -8,17 +8,19 @@
   <h2>Patch a disc</h2>
   <div class="rom-form">
 
-    <label class="rom-row">
-      <span class="rom-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
-      <input type="file" id="rom-file" accept=".bin,application/octet-stream">
-    </label>
-    <label class="rom-row">
-      <span class="rom-label">Seed <span class="rom-hint">- same seed always makes the same disc</span></span>
-      <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
-    </label>
+    <div class="rom-top">
+      <label class="rom-row">
+        <span class="rom-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+        <input type="file" id="rom-file" accept=".bin,application/octet-stream">
+      </label>
+      <label class="rom-row">
+        <span class="rom-label">Seed <span class="rom-hint">- same seed always makes the same disc</span></span>
+        <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
+      </label>
+    </div>
 
-    <!-- ---- Language patch (opt-in; default None) ---- -->
-    <details class="rom-group" id="rom-lang-group" open>
+    <!-- ---- Language patch (opt-in; default None; collapsed - rarely needed) ---- -->
+    <details class="rom-group" id="rom-lang-group">
       <summary>Language <span class="rom-summary-note">translation patch (optional)</span></summary>
       <div class="rom-group-body">
         <p class="rom-legend-item" style="margin:0 0 .6rem">
@@ -103,7 +105,13 @@
     <p class="rom-legend">
       <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> - redistributes what's already there (same set, new places - keeps the game's balance).</span>
       <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> - draws fresh from the whole pool (anything can land anywhere - less predictable).</span>
+      <span class="rom-legend-item"><span class="rom-tip-cue">?</span> hover or tap for the fine print on any option.</span>
     </p>
+
+    <!-- Two fixed columns so groups don't jump around as they open/close;
+         collapses to one column on narrow screens. -->
+    <div class="rom-groups">
+    <div class="rom-col">
 
     <!-- ---- Items & rewards ---- -->
     <details class="rom-group" open>
@@ -155,209 +163,6 @@
       </div>
     </details>
 
-    <!-- ---- Battles ---- -->
-    <details class="rom-group" open>
-      <summary>Gameplay</summary>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Random encounters</span>
-        <div class="seg" role="group" aria-label="Random encounters">
-          <input type="radio" name="encounters" id="enc-none" value="none" checked><label for="enc-none">Off</label>
-          <input type="radio" name="encounters" id="enc-shuffle" value="shuffle"><label for="enc-shuffle">Shuffle</label>
-          <input type="radio" name="encounters" id="enc-random" value="random"><label for="enc-random">Randomize</label>
-        </div>
-      </div>
-      <div class="rom-opt rom-sub" id="rom-scope-row">
-        <span class="rom-opt-label">&#8627; Monster pool <span class="rom-opt-note">how far afield enemies are drawn from</span></span>
-        <div class="seg" role="group" aria-label="Encounter monster pool">
-          <input type="radio" name="encounter_scope" id="scope-scene" value="scene" checked><label for="scope-scene" title="Each area's own monsters">Scene</label>
-          <input type="radio" name="encounter_scope" id="scope-kingdom" value="kingdom"><label for="scope-kingdom" title="Any monster from the same kingdom (Drake / Sebucus / Karisto)">Kingdom</label>
-          <input type="radio" name="encounter_scope" id="scope-world" value="world"><label for="scope-world" title="Any monster on the disc - late-game monsters can appear at the start">World</label>
-        </div>
-      </div>
-      <label class="rom-check-row rom-sub" id="rom-solo-strong-row">
-        <input type="checkbox" id="rom-solo-strong">
-        <span>&#8627; Solo strong fights - when a randomized encounter would field a monster much stronger than the area's natives, make it a lone enemy instead of a pack of 2+</span>
-      </label>
-      <label class="rom-check-row" id="rom-flee-exp-row">
-        <input type="checkbox" id="rom-flee-exp">
-        <span>Experience on the run - successfully running away banks 5% of the fight's experience into the party (vanilla gives nothing for fleeing)</span>
-      </label>
-      <label class="rom-check-row" id="rom-enemy-ally-row">
-        <input type="checkbox" id="rom-enemy-ally">
-        <span>Enemy ally - a 20% chance per battle that one enemy starts the fight in a charmed state and turns on its own side <span class="rom-opt-note">(an existing enemy flipped to help you for that battle, not an added or controllable party member; multi-enemy fights only - single-enemy tutorials and solo bosses are skipped)</span></span>
-      </label>
-
-      <label class="rom-check-row" id="rom-shiny-seru-row">
-        <input type="checkbox" id="rom-shiny-seru">
-        <span>Shiny Seru - a 2% chance per battle that a capturable enemy spawns as a rare shiny variant with +35% stats; the Seru you capture from it keeps a +35% damage boost on every future cast <span class="rom-opt-note">(in addition to its normal abilities; the flag persists in the save and the Seru still levels up normally)</span></span>
-      </label>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span></span>
-        <div class="seg" role="group" aria-label="Arts button combos">
-          <input type="radio" name="arts" id="arts-none" value="none" checked><label for="arts-none">Off</label>
-          <input type="radio" name="arts" id="arts-shuffle" value="shuffle"><label for="arts-shuffle">Shuffle</label>
-          <input type="radio" name="arts" id="arts-random" value="random"><label for="arts-random">Randomize</label>
-        </div>
-      </div>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / INT / SPD</span></span>
-        <div class="seg" role="group" aria-label="Monster stats">
-          <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
-          <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
-          <input type="radio" name="monster_stats" id="mstats-random" value="random"><label for="mstats-random">Randomize</label>
-        </div>
-      </div>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">- enemy specials &amp; Seru magic (not party Arts)</span></span>
-        <div class="seg" role="group" aria-label="Special-attack power">
-          <input type="radio" name="move_power" id="mpow-none" value="none" checked><label for="mpow-none">Off</label>
-          <input type="radio" name="move_power" id="mpow-shuffle" value="shuffle"><label for="mpow-shuffle">Shuffle</label>
-          <input type="radio" name="move_power" id="mpow-random" value="random"><label for="mpow-random">Randomize</label>
-        </div>
-      </div>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">- which element beats which</span></span>
-        <div class="seg" role="group" aria-label="Element affinity">
-          <input type="radio" name="element_affinity" id="eaff-none" value="none" checked><label for="eaff-none">Off</label>
-          <input type="radio" name="element_affinity" id="eaff-shuffle" value="shuffle"><label for="eaff-shuffle">Shuffle</label>
-          <input type="radio" name="element_affinity" id="eaff-random" value="random"><label for="eaff-random">Randomize</label>
-        </div>
-      </div>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">- named, costed spells</span></span>
-        <div class="seg" role="group" aria-label="Spell MP costs">
-          <input type="radio" name="spell_cost" id="scost-none" value="none" checked><label for="scost-none">Off</label>
-          <input type="radio" name="spell_cost" id="scost-shuffle" value="shuffle"><label for="scost-shuffle">Shuffle</label>
-          <input type="radio" name="spell_cost" id="scost-random" value="random"><label for="scost-random">Randomize</label>
-        </div>
-      </div>
-
-      <div class="rom-opt">
-        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">- gear stats, redistributed within each slot type</span></span>
-        <div class="seg" role="group" aria-label="Equipment stat bonuses">
-          <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
-          <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
-          <input type="radio" name="equip_bonus" id="ebonus-random" value="random"><label for="ebonus-random">Randomize</label>
-        </div>
-      </div>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-equipment-drops">
-        <span>Equipment drops - a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook)</span></span>
-      </label>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-seru-trade">
-        <span>Seru trading - a vendor in shops offers to trade a party member's learned Seru-magic for a different one at a set level; the offer rotates over play time <span class="rom-opt-note">(in-shop menu, deterministic from the seed)</span></span>
-      </label>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-weapon-specialty">
-        <span>Weapon specialty - reassign which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default); an off-class weapon widens the Arms command in an arts combo <span class="rom-opt-note">(the Astral Sword stays always-wide)</span></span>
-      </label>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-jewel-fix">
-        <span>Jewel fix - make the boss cinematic casts respect elemental guards, like every ordinary attack. In retail, Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, and the Delilas trio's signature moves skip the defense check entirely, so Jewels and All Guard do nothing against them <span class="rom-opt-note">(a bug fix, not a randomization - unaffected by the seed)</span></span>
-      </label>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-approach-fix">
-        <span>Approach-softlock fix - stop the "endless camera orbit": when a boss's approach animation dies mid-walk (a summon right before its attack), the battle waits forever while the camera circles the party. With the fix the animation is re-staged and the boss simply resumes walking - healthy fights are untouched <span class="rom-opt-note">(a bug fix, not a randomization - unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>)</span></span>
-      </label>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-spirit-ap-on">
-        <span>Spirit AP - change how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge. <strong>Negative values invert it</strong>: Spirit then <em>spends</em> AP, floored at an empty gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync, and a negative setting makes AP-Boost accessories inert)</span></span>
-      </label>
-      <div class="rom-opt rom-sub" id="rom-spirit-ap-row">
-        <label class="rom-opt-label" for="rom-spirit-ap">&#8627; AP per Spirit: <output id="rom-spirit-ap-val">32</output></label>
-        <input type="range" id="rom-spirit-ap" min="-100" max="100" step="1" value="32">
-      </div>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-damage-ap-on">
-        <span>AP from taking damage - change how much AP a hit charges into the battle gauge, measured per <strong>100% of max HP lost</strong> (retail <code>100</code>: a hit that would empty your HP bar fills the whole gauge, and every hit grants at least 1). At <code>0</code> being hit never feeds the gauge; at <code>200</code> it fills twice as fast. <strong>Negative values invert it</strong>: taking damage then <em>drains</em> AP, floored at an empty gauge <span class="rom-opt-note">(a manual tuning, unaffected by the seed; a negative setting makes AP-Boost accessories inert)</span></span>
-      </label>
-      <div class="rom-opt rom-sub" id="rom-damage-ap-row">
-        <label class="rom-opt-label" for="rom-damage-ap">&#8627; AP per 100% max-HP damage: <output id="rom-damage-ap-val">100</output></label>
-        <input type="range" id="rom-damage-ap" min="-200" max="200" step="5" value="100">
-      </div>
-
-      <label class="rom-check-row">
-        <input type="checkbox" id="rom-enemy-scale-on">
-        <span>Enemy difficulty scale - multiply <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and its group shifts together. <strong>Random encounters and bosses get their own sliders</strong>, so you can take the grind down and the set-pieces up in the same run. EXP, gold and drops are untouched, so a hard run is harder, not richer. <em>Simple</em> scales every stat of a group by one number; <em>Advanced</em> gives each stat of each group its own slider, so you can shape a fight instead of just hardening it <span class="rom-opt-note">(a manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped)</span></span>
-      </label>
-      <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
-        <div class="rom-scale-mode">
-          <span class="rom-opt-label">&#8627; Control</span>
-          <div class="seg" role="group" aria-label="Difficulty scale detail">
-            <input type="radio" name="enemy_scale_mode" id="enemy-scale-simple" value="simple" checked><label for="enemy-scale-simple">Simple</label>
-            <input type="radio" name="enemy_scale_mode" id="enemy-scale-advanced" value="advanced"><label for="enemy-scale-advanced">Advanced</label>
-          </div>
-        </div>
-
-        <p class="rom-opt-note rom-scale-hint">Which enemies count as <strong>bosses</strong> is read off your disc's own encounter tables, not a hard-coded list: a fight the field script starts by name, that no random-encounter roll can produce. Everything the game can throw at you on a step is a <strong>random encounter</strong> - including the opening Rim Elm fights, which stay out of the boss group on purpose.</p>
-
-        <div id="rom-enemy-scale-simple-pane">
-          <div class="rom-scale-grid">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular">Random encounters <output id="rom-enemy-scale-regular-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss">Bosses <output id="rom-enemy-scale-boss-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss" min="0.1" max="5" step="0.1" value="1">
-          </div>
-        </div>
-
-        <div id="rom-enemy-scale-advanced-pane" hidden>
-          <p class="rom-opt-note rom-scale-hint">One multiplier per stat, per group. Anything left at <code>1.0x</code> keeps its disc value exactly, so <code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</p>
-
-          <p class="rom-scale-group-title">Random encounters</p>
-          <div class="rom-scale-grid">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-hp">HP <output id="rom-enemy-scale-regular-hp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-hp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-mp">MP <output id="rom-enemy-scale-regular-mp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-mp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-attack">Attack <output id="rom-enemy-scale-regular-attack-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-attack" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_high">Defense, upper <output id="rom-enemy-scale-regular-defense_high-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-defense_high" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_low">Defense, lower <output id="rom-enemy-scale-regular-defense_low-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-defense_low" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-intelligence">Intelligence <output id="rom-enemy-scale-regular-intelligence-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-intelligence" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-regular-speed">Speed <output id="rom-enemy-scale-regular-speed-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-regular-speed" min="0.1" max="5" step="0.1" value="1">
-          </div>
-
-          <p class="rom-scale-group-title">Bosses</p>
-          <div class="rom-scale-grid">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-hp">HP <output id="rom-enemy-scale-boss-hp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-hp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-mp">MP <output id="rom-enemy-scale-boss-mp-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-mp" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-attack">Attack <output id="rom-enemy-scale-boss-attack-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-attack" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_high">Defense, upper <output id="rom-enemy-scale-boss-defense_high-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-defense_high" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_low">Defense, lower <output id="rom-enemy-scale-boss-defense_low-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-defense_low" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-intelligence">Intelligence <output id="rom-enemy-scale-boss-intelligence-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-intelligence" min="0.1" max="5" step="0.1" value="1">
-            <label class="rom-opt-label" for="rom-enemy-scale-boss-speed">Speed <output id="rom-enemy-scale-boss-speed-val">1.0x</output></label>
-            <input type="range" id="rom-enemy-scale-boss-speed" min="0.1" max="5" step="0.1" value="1">
-          </div>
-
-          <button type="button" class="rom-scale-reset" id="rom-enemy-scale-reset">Reset every stat to 1.0x</button>
-        </div>
-      </div>
-    </details>
-
     <!-- ---- Exploration ---- -->
     <details class="rom-group" open>
       <summary>Exploration <span class="rom-summary-note">doors &amp; warps</span></summary>
@@ -380,7 +185,8 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-house-doors">
-        <span>House doors (experimental) - shuffle intra-town interior/exit door targets <span class="rom-opt-note">(also scrambles some actor positions)</span></span>
+        <span>House doors (experimental) <span class="rom-opt-note">- shuffle intra-town interior doors</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Shuffles intra-town interior/exit door targets. The script op is shared with NPC movement, so some actor positions scramble too.</span></span></span>
       </label>
     </details>
 
@@ -458,11 +264,276 @@
       </label>
     </details>
 
+    <!-- ---- Prices & names (structured editors over the disc's own tables) ---- -->
+    <details class="rom-group" id="rom-values-group" open>
+      <summary>Prices &amp; names <span class="rom-summary-note">fishing prizes, location names, Earth Egg</span></summary>
+      <div class="rom-group-body">
+        <p class="rom-edit-note" id="rom-tables-status">Choose your disc image above and the current prices and names appear here, read from your own disc. Leave a box empty to keep the disc's value.</p>
+
+        <div class="rom-edit-block">
+          <h4 class="rom-edit-title">Fishing prize prices
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The fishing exchanges at Buma and Vidna sell these prizes for fishing points. Set a new point price in any row; the price is also the &ldquo;appears once you can afford it&rdquo; gate, so a cheaper prize also shows up sooner. The prize list itself is fixed on the disc (which items, and how many rows) - the patcher can only reprice a row, not add, remove or swap prizes. A prize sold at both venues is one row here: the new price applies to both.</span></span>
+          </h4>
+          <div id="rom-fish-rows" class="rom-edit-rows"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
+        </div>
+
+        <div class="rom-edit-block">
+          <h4 class="rom-edit-title">Location names
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Renames the 16 world-map location names shown on the quick-travel menu and the save / load / pause display. Type a new name next to any current one (plain ASCII, up to 31 characters). Handy for matching dungeon names to a re-elemented party - e.g. rename the Ancient Wind Cave to &ldquo;Ancient Fire Cave&rdquo;.</span></span>
+          </h4>
+          <div id="rom-loc-rows" class="rom-edit-rows rom-loc-grid"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
+        </div>
+
+        <div class="rom-edit-block">
+          <h4 class="rom-edit-title">Earth Egg coin threshold
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The Sol Tower &ldquo;Prize Counter&rdquo; offers the Earth Ra-Seru Egg once you hold this many casino coins (retail <code>100000</code>), and debits exactly that many on purchase. It is a hidden scripted exchange, not a row in the casino prize table, so the casino editors can't reach it. Range 1 - 8388608.</span></span>
+          </h4>
+          <div class="rom-earth-row">
+            <label class="rom-opt-label" for="rom-earth-egg-price">Casino coins required</label>
+            <input type="number" id="rom-earth-egg-price" min="1" max="8388608" placeholder="retail 100000">
+          </div>
+        </div>
+
+        <details class="rom-art-advanced">
+          <summary>Advanced: raw <code>id=value</code> lists (CLI syntax)</summary>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices</label>
+            <span class="rom-opt-note">One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code> (e.g. <code>0x6F=500</code>). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists. Merged with the rows above.</span>
+            <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="rom-opt">
+            <label class="rom-opt-label" for="rom-rename-location">Location names</label>
+            <span class="rom-opt-note">One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code>. The CLI <code>legaia-patcher locations</code> lists all 16 slots. Merged with the rows above.</span>
+            <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    </div><!-- /rom-col -->
+    <div class="rom-col">
+
+    <!-- ---- Battles ---- -->
+    <details class="rom-group" open>
+      <summary>Gameplay</summary>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Random encounters</span>
+        <div class="seg" role="group" aria-label="Random encounters">
+          <input type="radio" name="encounters" id="enc-none" value="none" checked><label for="enc-none">Off</label>
+          <input type="radio" name="encounters" id="enc-shuffle" value="shuffle"><label for="enc-shuffle">Shuffle</label>
+          <input type="radio" name="encounters" id="enc-random" value="random"><label for="enc-random">Randomize</label>
+        </div>
+      </div>
+      <div class="rom-opt rom-sub" id="rom-scope-row">
+        <span class="rom-opt-label">&#8627; Monster pool <span class="rom-opt-note">how far afield enemies are drawn from</span></span>
+        <div class="seg" role="group" aria-label="Encounter monster pool">
+          <input type="radio" name="encounter_scope" id="scope-scene" value="scene" checked><label for="scope-scene" title="Each area's own monsters">Scene</label>
+          <input type="radio" name="encounter_scope" id="scope-kingdom" value="kingdom"><label for="scope-kingdom" title="Any monster from the same kingdom (Drake / Sebucus / Karisto)">Kingdom</label>
+          <input type="radio" name="encounter_scope" id="scope-world" value="world"><label for="scope-world" title="Any monster on the disc - late-game monsters can appear at the start">World</label>
+        </div>
+      </div>
+      <label class="rom-check-row rom-sub" id="rom-solo-strong-row">
+        <input type="checkbox" id="rom-solo-strong">
+        <span>&#8627; Solo strong fights <span class="rom-opt-note">- a too-strong enemy arrives alone</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a randomized encounter would field a monster much stronger than the area's natives, it becomes a lone enemy instead of a pack of 2+.</span></span></span>
+      </label>
+      <label class="rom-check-row" id="rom-flee-exp-row">
+        <input type="checkbox" id="rom-flee-exp">
+        <span>Experience on the run <span class="rom-opt-note">- fleeing banks 5% of the fight's XP</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Successfully running away banks 5% of the fight's experience into the party. Vanilla gives nothing for fleeing.</span></span></span>
+      </label>
+      <label class="rom-check-row" id="rom-enemy-ally-row">
+        <input type="checkbox" id="rom-enemy-ally">
+        <span>Enemy ally <span class="rom-opt-note">- 20% chance one enemy fights for you</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 20% chance per battle that one enemy starts the fight in a charmed state and turns on its own side. It is an existing enemy flipped to help you for that battle, not an added or controllable party member. Multi-enemy fights only - single-enemy tutorials and solo bosses are skipped.</span></span></span>
+      </label>
+
+      <label class="rom-check-row" id="rom-shiny-seru-row">
+        <input type="checkbox" id="rom-shiny-seru">
+        <span>Shiny Seru <span class="rom-opt-note">- 2% chance of a +35% shiny; its Seru keeps the boost</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 2% chance per battle that a capturable enemy spawns as a rare shiny variant with +35% stats. The Seru you capture from it keeps a +35% damage boost on every future cast, in addition to its normal abilities; the flag persists in the save and the Seru still levels up normally.</span></span></span>
+      </label>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span></span>
+        <div class="seg" role="group" aria-label="Arts button combos">
+          <input type="radio" name="arts" id="arts-none" value="none" checked><label for="arts-none">Off</label>
+          <input type="radio" name="arts" id="arts-shuffle" value="shuffle"><label for="arts-shuffle">Shuffle</label>
+          <input type="radio" name="arts" id="arts-random" value="random"><label for="arts-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / INT / SPD</span></span>
+        <div class="seg" role="group" aria-label="Monster stats">
+          <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
+          <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
+          <input type="radio" name="monster_stats" id="mstats-random" value="random"><label for="mstats-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">- enemy specials &amp; Seru magic (not party Arts)</span></span>
+        <div class="seg" role="group" aria-label="Special-attack power">
+          <input type="radio" name="move_power" id="mpow-none" value="none" checked><label for="mpow-none">Off</label>
+          <input type="radio" name="move_power" id="mpow-shuffle" value="shuffle"><label for="mpow-shuffle">Shuffle</label>
+          <input type="radio" name="move_power" id="mpow-random" value="random"><label for="mpow-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">- which element beats which</span></span>
+        <div class="seg" role="group" aria-label="Element affinity">
+          <input type="radio" name="element_affinity" id="eaff-none" value="none" checked><label for="eaff-none">Off</label>
+          <input type="radio" name="element_affinity" id="eaff-shuffle" value="shuffle"><label for="eaff-shuffle">Shuffle</label>
+          <input type="radio" name="element_affinity" id="eaff-random" value="random"><label for="eaff-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">- named, costed spells</span></span>
+        <div class="seg" role="group" aria-label="Spell MP costs">
+          <input type="radio" name="spell_cost" id="scost-none" value="none" checked><label for="scost-none">Off</label>
+          <input type="radio" name="spell_cost" id="scost-shuffle" value="shuffle"><label for="scost-shuffle">Shuffle</label>
+          <input type="radio" name="spell_cost" id="scost-random" value="random"><label for="scost-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">- redistributed within each slot type</span></span>
+        <div class="seg" role="group" aria-label="Equipment stat bonuses">
+          <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
+          <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
+          <input type="radio" name="equip_bonus" id="ebonus-random" value="random"><label for="ebonus-random">Randomize</label>
+        </div>
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-equipment-drops">
+        <span>Equipment drops <span class="rom-opt-note">- a low chance of one extra random gear drop</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, via an additive code hook, on top of the untouched normal drop.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-seru-trade">
+        <span>Seru trading <span class="rom-opt-note">- a shop vendor swaps learned Seru-magic</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A vendor in shops offers to trade a party member's learned Seru-magic for a different one at a set level. The offer rotates over play time, deterministic from the seed.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-weapon-specialty">
+        <span>Weapon specialty <span class="rom-opt-note">- reassign each character's favored weapon class</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default). An off-class weapon widens the Arms command in an arts combo; the Astral Sword stays always-wide.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-jewel-fix">
+        <span>Jewel fix <span class="rom-opt-note">- boss cinematic casts respect elemental guards (bug fix)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">In retail, Xain's Bloody Horns / Terio Punch, Cort's Guilty Cross, and the Delilas trio's signature moves skip the defense check entirely, so Jewels and All Guard do nothing against them. This makes those casts respect elemental guards like every ordinary attack. A bug fix, not a randomization - unaffected by the seed.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-approach-fix">
+        <span>Approach-softlock fix <span class="rom-opt-note">- stop the endless camera orbit (bug fix)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a boss's approach animation dies mid-walk (a summon right before its attack), the battle waits forever while the camera circles the party. With the fix the animation is re-staged and the boss simply resumes walking - healthy fights are untouched. A bug fix, not a randomization - unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-spirit-ap-on">
+        <span>Spirit AP <span class="rom-opt-note">- how much AP the Spirit command charges (retail 32)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Changes how much AP the Spirit command charges into the battle gauge (retail <code>32</code>). At <code>0</code> Spirit becomes a pure defensive stance - the guard boost stays but no AP is gained; at <code>100</code> one press fills the whole gauge. <strong>Negative values invert it</strong>: Spirit then <em>spends</em> AP, floored at an empty gauge. A manual tuning, unaffected by the seed; the on-screen gauge animation is kept in sync, and a negative setting makes AP-Boost accessories inert.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-spirit-ap-row">
+        <label class="rom-opt-label" for="rom-spirit-ap">&#8627; AP per Spirit: <output id="rom-spirit-ap-val">32</output></label>
+        <input type="range" id="rom-spirit-ap" min="-100" max="100" step="1" value="32">
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-damage-ap-on">
+        <span>AP from taking damage <span class="rom-opt-note">- gauge gain per hit taken (retail 100)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Changes how much AP a hit charges into the battle gauge, measured per <strong>100% of max HP lost</strong> (retail <code>100</code>: a hit that would empty your HP bar fills the whole gauge, and every hit grants at least 1). At <code>0</code> being hit never feeds the gauge; at <code>200</code> it fills twice as fast. <strong>Negative values invert it</strong>: taking damage then <em>drains</em> AP, floored at an empty gauge. A manual tuning, unaffected by the seed; a negative setting makes AP-Boost accessories inert.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-damage-ap-row">
+        <label class="rom-opt-label" for="rom-damage-ap">&#8627; AP per 100% max-HP damage: <output id="rom-damage-ap-val">100</output></label>
+        <input type="range" id="rom-damage-ap" min="-200" max="200" step="5" value="100">
+      </div>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-enemy-scale-on">
+        <span>Enemy difficulty scale <span class="rom-opt-note">- multiply enemy stats 0.1x-5x; bosses get their own sliders</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Multiplies <strong>every enemy's combat stats</strong> (HP, MP, attack, both defenses, INT and speed) by a factor from <code>0.1x</code> to <code>5x</code>. Nothing moves between monsters, so each keeps its own profile and its group shifts together. Random encounters and bosses get their own sliders, so you can take the grind down and the set-pieces up in the same run. EXP, gold and drops are untouched, so a hard run is harder, not richer. <em>Simple</em> scales every stat of a group by one number; <em>Advanced</em> gives each stat of each group its own slider. A manual tuning, unaffected by the seed; the enemy action gauge is left alone, and the unwinnable Rim Elm sparring match stays as shipped.</span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-enemy-scale-row">
+        <div class="rom-scale-mode">
+          <span class="rom-opt-label">&#8627; Control
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="What counts as a boss">?<span class="tip-pop" role="tooltip">Which enemies count as <strong>bosses</strong> is read off your disc's own encounter tables, not a hard-coded list: a fight the field script starts by name, that no random-encounter roll can produce. Everything the game can throw at you on a step is a <strong>random encounter</strong> - including the opening Rim Elm fights, which stay out of the boss group on purpose.</span></span></span>
+          <div class="seg" role="group" aria-label="Difficulty scale detail">
+            <input type="radio" name="enemy_scale_mode" id="enemy-scale-simple" value="simple" checked><label for="enemy-scale-simple">Simple</label>
+            <input type="radio" name="enemy_scale_mode" id="enemy-scale-advanced" value="advanced"><label for="enemy-scale-advanced">Advanced</label>
+          </div>
+        </div>
+
+        <div id="rom-enemy-scale-simple-pane">
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular">Random encounters <output id="rom-enemy-scale-regular-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss">Bosses <output id="rom-enemy-scale-boss-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss" min="0.1" max="5" step="0.1" value="1">
+          </div>
+        </div>
+
+        <div id="rom-enemy-scale-advanced-pane" hidden>
+          <p class="rom-opt-note rom-scale-hint">One multiplier per stat, per group; anything left at <code>1.0x</code> keeps its disc value exactly.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>HP 3.0x</code> on its own makes enemies spongy without making them lethal, and a high attack against a low defense makes them glass cannons. Legaia splits defense by attack height - <em>upper</em> resists high attacks, <em>lower</em> resists low ones.</span></span></p>
+
+          <p class="rom-scale-group-title">Random encounters</p>
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-hp">HP <output id="rom-enemy-scale-regular-hp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-hp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-mp">MP <output id="rom-enemy-scale-regular-mp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-mp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-attack">Attack <output id="rom-enemy-scale-regular-attack-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-attack" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_high">Defense, upper <output id="rom-enemy-scale-regular-defense_high-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-defense_high" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-defense_low">Defense, lower <output id="rom-enemy-scale-regular-defense_low-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-defense_low" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-intelligence">Intelligence <output id="rom-enemy-scale-regular-intelligence-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-intelligence" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-regular-speed">Speed <output id="rom-enemy-scale-regular-speed-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-regular-speed" min="0.1" max="5" step="0.1" value="1">
+          </div>
+
+          <p class="rom-scale-group-title">Bosses</p>
+          <div class="rom-scale-grid">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-hp">HP <output id="rom-enemy-scale-boss-hp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-hp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-mp">MP <output id="rom-enemy-scale-boss-mp-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-mp" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-attack">Attack <output id="rom-enemy-scale-boss-attack-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-attack" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_high">Defense, upper <output id="rom-enemy-scale-boss-defense_high-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-defense_high" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-defense_low">Defense, lower <output id="rom-enemy-scale-boss-defense_low-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-defense_low" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-intelligence">Intelligence <output id="rom-enemy-scale-boss-intelligence-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-intelligence" min="0.1" max="5" step="0.1" value="1">
+            <label class="rom-opt-label" for="rom-enemy-scale-boss-speed">Speed <output id="rom-enemy-scale-boss-speed-val">1.0x</output></label>
+            <input type="range" id="rom-enemy-scale-boss-speed" min="0.1" max="5" step="0.1" value="1">
+          </div>
+
+          <button type="button" class="rom-scale-reset" id="rom-enemy-scale-reset">Reset every stat to 1.0x</button>
+        </div>
+      </div>
+    </details>
+
     <!-- ---- Tactical-Art overrides (per-art picker; rows built by JS) ---- -->
     <details class="rom-group" id="rom-art-overrides" open>
-      <summary>Tactical-Art overrides <span class="rom-summary-note">set what an art costs in AP, make it give AP back, or change its damage</span></summary>
+      <summary>Tactical-Art overrides <span class="rom-summary-note">AP cost, AP refund, damage per art</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Pick any Tactical Art and change what it does. <strong>AP</strong>: set what it <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo. Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its "leave alone" value, so a completely free art is not offered - use 1. AP changes are <strong>per character</strong>: Vahn's art moves and nobody else's does. The pause-menu arts list is rewritten to match, and a giving art shows as <strong>0 AP</strong> there - that is the in-game marker for "this one pays you". <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which). AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</p>
+        <p class="rom-art-intro">Pick any Tactical Art and change what it costs in AP, make it <em>give</em> AP back, or change its damage.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><strong>AP</strong>: set what an art <em>costs</em> in AP (Spirit), or flip it to <em>give AP back</em> - a giving art becomes usable at any AP level and adds the amount you choose, up to the 100 cap, every time it lands in a combo. Either way the amount is 1..100: the injected setting is one signed byte per art and <code>0</code> is its &ldquo;leave alone&rdquo; value, so a completely free art is not offered - use 1. AP changes are <strong>per character</strong>, and the pause-menu arts list is rewritten to match; a giving art shows as <strong>0 AP</strong> there - the in-game marker for &ldquo;this one pays you&rdquo;. <strong>Damage</strong>: pick a per-hit damage tier, or turn its damage off; damage is keyed by the button combo rather than by character, so another character with the same combo changes too (each row's note says which). AP overrides are <strong>mutually exclusive with Shiny Seru</strong> (both use the same injected-code arena).</span></span></p>
         <div id="rom-art-rows"></div>
         <button type="button" id="rom-art-add" class="rom-button rom-button-ghost rom-art-add">+ Add an art</button>
 
@@ -482,35 +553,12 @@
       </div>
     </details>
 
-    <!-- ---- Manual value edits (advanced) ---- -->
-    <details class="rom-group" open>
-      <summary>Manual value edits <span class="rom-summary-note">advanced - type exact numbers</span></summary>
-
-      <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-fishing-price">Fishing prize prices</label>
-        <span class="rom-opt-note">Set the fishing-point cost of a fishing-exchange prize. One or more <code>item=points</code> pairs, comma-separated - item id in decimal or <code>0xHH</code>. Example: <code>0x6F=500</code> makes the Buma Water Egg cost 500 points (it also appears sooner, since the price is the "once you can afford it" gate). The <a href="../reference/gamedata.html">item ids</a> and current prices are what the CLI <code>legaia-patcher fishing</code> lists.</span>
-        <input type="text" id="rom-fishing-price" placeholder="e.g. 0x6F=500, 0xCD=10000" spellcheck="false" autocomplete="off">
-      </div>
-
-      <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-earth-egg-price">Earth Egg coin threshold</label>
-        <span class="rom-opt-note">Set the casino-coin count the Sol Tower "Prize Counter" requires before it offers the Earth Ra-Seru Egg (retail <code>100000</code>). This is a hidden scripted exchange, <em>not</em> a row in the casino prize table, so the shop / casino editors can't reach it. The value is the coins required; the game debits exactly that many on purchase. Range <code>1</code>&ndash;<code>8388608</code>. The CLI <code>legaia-patcher earth-egg</code> shows the current value.</span>
-        <input type="text" id="rom-earth-egg-price" inputmode="numeric" placeholder="e.g. 25000" spellcheck="false" autocomplete="off">
-      </div>
-
-      <div class="rom-opt">
-        <label class="rom-opt-label" for="rom-rename-location">Location names</label>
-        <span class="rom-opt-note">Rename the world-map location names shown on the quick-travel menu and the save / load / pause display. One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code> renames the Ancient Wind Cave. Slots: 3 = Ancient Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram (the CLI <code>legaia-patcher locations</code> lists all 16). Handy for matching dungeon names to a re-elemented party.</span>
-        <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
-      </div>
-
-    </details>
-
     <!-- ---- Texture replacement ---- -->
     <details class="rom-group" id="rom-texture-group" open>
       <summary>Texture replacement <span class="rom-summary-note">swap any texture for your own PNG</span></summary>
       <div class="rom-group-body">
-        <p class="rom-art-intro">Replace any texture on the disc with your own image. Scan your disc to browse every texture (with thumbnails), pick one, download it as a PNG to edit, then upload your edit. The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Everything runs in this tab; the disc never leaves your browser.</p>
+        <p class="rom-art-intro">Replace any texture on the disc with your own image: scan your disc to browse every texture, download one as a PNG, edit it, and upload your edit.
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Everything runs in this tab; the disc never leaves your browser.</span></span></p>
         <div class="rom-row">
           <button type="button" id="rom-tex-scan" class="rom-button rom-button-ghost">Scan my disc for textures</button>
           <span id="rom-tex-scan-note" class="rom-hint"></span>
@@ -543,6 +591,9 @@
         <div id="rom-tex-queue" class="rom-tex-queue"></div>
       </div>
     </details>
+
+    </div><!-- /rom-col -->
+    </div><!-- /rom-groups -->
 
     <div class="rom-row rom-actions">
       <button id="rom-run" class="rom-button">Patch &amp; download</button>
@@ -581,6 +632,7 @@
     <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables, sharing the seed's slot capacity with the convenience toggles.</li>
     <li><strong>Starting level</strong> - starts the party at the chosen level (up to 14) with stats and XP thresholds recomputed from the disc's own growth curves - real level-N stats, not a relabel.</li>
     <li><strong>Tactical-Art overrides</strong> - pick any art by name and change what it does: set what it costs in AP, make it <em>give</em> AP back instead (your amount, 1..100, up to the native 100 cap), set its per-hit damage tier, or turn its damage off. AP changes are per character and update the pause-menu arts list too; damage is keyed by the button combo, so another character with the same combo changes with it - each row's note lists exactly which.</li>
+    <li><strong>Fishing prize prices / location names / Earth Egg threshold</strong> - structured value edits over the disc's own tables: reprice any fishing-exchange prize (the prize list itself is fixed on the disc), rename any of the 16 world-map location slots (31-char ASCII), and set the Sol Tower Earth-Egg coin threshold. Current values are read from your disc, in the browser.</li>
     <li><strong>Texture replacement</strong> - scan the disc for every texture (the flat TIM catalog plus the ones inside LZS-compressed sections), download any as a PNG, and patch an edited PNG back: same size / bit depth / palette layout enforced, VRAM placement preserved, alpha mapped to PSX transparency, and compressed textures applied only when the edit re-compresses into the retail footprint. Same coordinates and rules as the CLI's <code>tim-list</code> / <code>tim-export</code> / <code>tim-replace</code>.</li>
     <li><strong>Unused enemies</strong> - brings back two monsters the shipped game never places, &ldquo;Comm&rdquo; and the Evil Bat; needs <em>Randomize</em> encounters.</li>
     <li><strong>Unused items</strong> - adds &ldquo;Something Good&rdquo; and the no-name accessory the randomizer calls &ldquo;Seru Bell&rdquo; to <em>Randomize</em> fills.</li>
@@ -600,12 +652,17 @@
 </section>
 
 <style>
-  .rom-form { max-width: 48rem; }
+  /* The page is on the wide-page template: the form fills the width and the
+     option groups split into two fixed columns (below). */
+  .rom-form { max-width: none; }
   .rom-row { display: block; margin: 0.7rem 0; }
   .rom-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
   .rom-hint { font-weight: 400; color: var(--text-dim); font-size: 0.85em; }
   .rom-form input[type=text], .rom-form select, .rom-form textarea { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; resize: vertical; }
   .rom-form input[type=file] { color: var(--text-muted); }
+
+  /* Disc + seed side by side where there is room. */
+  .rom-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 0 1.4rem; }
 
   /* Presets */
   .rom-presets { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch; }
@@ -623,14 +680,35 @@
   .rom-chip { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 4px; font-size: 0.82em; font-weight: 700; border: 1px solid; margin-right: 0.2rem; }
   .rom-chip-shuffle { color: var(--accent); border-color: var(--accent); }
   .rom-chip-random { color: var(--partial); border-color: var(--partial); }
+  /* Non-interactive "?" specimen in the legend line. */
+  .rom-tip-cue { display: inline-flex; align-items: center; justify-content: center; width: 1.2em; height: 1.2em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.82em; font-weight: 700; margin-right: 0.2rem; }
 
-  /* Collapsible groups */
-  .rom-group { margin: 0.7rem 0; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); overflow: hidden; }
-  .rom-group > summary { cursor: pointer; padding: 0.6rem 0.85rem; font-weight: 600; list-style: none; background: var(--bg-raised); user-select: none; }
+  /* Two fixed columns for the option groups; one column on narrow screens.
+     Fixed assignment (not CSS masonry) so groups never jump between columns
+     as they open and close. */
+  .rom-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.1rem; align-items: start; }
+  .rom-col { min-width: 0; }
+  @media (max-width: 68rem) { .rom-groups { grid-template-columns: 1fr; } }
+
+  /* Collapsible groups. No overflow:hidden - the info-tip popovers must be
+     able to escape the card; the summary carries its own top radius instead. */
+  .rom-group { margin: 0.7rem 0; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); }
+  .rom-group > summary { cursor: pointer; padding: 0.6rem 0.85rem; font-weight: 600; list-style: none; background: var(--bg-raised); user-select: none; border-radius: 6px 6px 0 0; box-shadow: inset 3px 0 0 var(--accent); }
+  .rom-group:not([open]) > summary { border-radius: 6px; }
   .rom-group > summary::-webkit-details-marker { display: none; }
   .rom-group > summary::before { content: '\25B8'; display: inline-block; width: 1.1em; color: var(--text-dim); transition: transform var(--transition); }
   .rom-group[open] > summary::before { transform: rotate(90deg); }
   .rom-summary-note { font-weight: 400; color: var(--text-dim); font-size: 0.85em; margin-left: 0.3rem; }
+
+  /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
+     or tap (tap toggles; Escape and tapping elsewhere close). */
+  .info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.8em; font-weight: 700; cursor: help; user-select: none; margin-left: 0.35em; vertical-align: 0.1em; flex: none; }
+  .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open { color: var(--accent-hi); border-color: var(--accent); }
+  .info-tip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tip-pop { display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(24rem, 78vw); padding: 0.6rem 0.8rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.5; text-align: left; cursor: auto; white-space: normal; }
+  .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
+  .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
+  .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
 
   /* One randomizable option: label on the left, segmented control on the right */
   .rom-opt { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.4rem 1rem; padding: 0.55rem 0.85rem; border-top: 1px solid var(--border); }
@@ -687,6 +765,28 @@
   .rom-status-ok { color: var(--done); }
   .rom-status-err { color: var(--open); }
   .rom-summary { white-space: pre-wrap; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.88em; }
+
+  /* Structured value editors (fishing prizes / location names / Earth Egg):
+     rows of current-value-from-the-disc + one input for the new value. */
+  .rom-edit-note { margin: 0 0 0.7rem; color: var(--text-dim); font-size: 0.85em; }
+  .rom-edit-block { margin: 0 0 1rem; }
+  .rom-edit-title { margin: 0 0 0.4rem; font-size: 0.9em; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent-hi); }
+  .rom-edit-empty { margin: 0; color: var(--text-dim); font-size: 0.85em; font-style: italic; }
+  .rom-edit-rows { display: flex; flex-direction: column; gap: 0.3rem; }
+  .rom-edit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); font-size: 0.9em; margin: 0; }
+  .rom-edit-name { font-weight: 600; min-width: 9.5rem; }
+  .rom-edit-name code { font-size: 0.85em; color: var(--text-dim); }
+  .rom-edit-cur { color: var(--text-dim); font-size: 0.88em; margin-right: auto; }
+  .rom-edit-row.is-edited { border-color: var(--accent); }
+  .rom-form .rom-edit-row input[type=number] { width: 6.5em; padding: 0.25rem 0.4rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+  .rom-edit-unit { color: var(--text-dim); font-size: 0.85em; }
+  /* Location renames: two-up grid of current-name / new-name pairs. */
+  .rom-loc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.3rem 0.6rem; }
+  .rom-loc-grid .rom-edit-row { flex-direction: column; align-items: stretch; gap: 0.15rem; }
+  .rom-loc-grid .rom-edit-name { min-width: 0; }
+  .rom-form .rom-loc-grid input[type=text] { max-width: none; padding: 0.3rem 0.45rem; font-size: 0.95em; }
+  .rom-earth-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+  .rom-form .rom-earth-row input[type=number] { width: 10em; padding: 0.3rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 
   /* Tactical-Art override rows */
   .rom-art-intro { margin: 0 0 0.7rem; color: var(--text-muted); font-size: 0.9em; }

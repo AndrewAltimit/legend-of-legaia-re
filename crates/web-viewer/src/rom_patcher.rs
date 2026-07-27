@@ -1100,6 +1100,71 @@ pub fn patch_rom(
     Ok(out.into())
 }
 
+/// Read the disc-resident tables behind the ROM-patcher page's structured
+/// value editors, so those controls can show the disc's own current values
+/// instead of asking the user to type raw ids: the 16 world-map location-name
+/// slots (the SCUS table [`legaia_patcher::location_name`] renames in place)
+/// and the fishing point-exchange prize rows (PROT 972, the table
+/// [`legaia_patcher::fishing_price`] reprices), each prize's item id resolved
+/// to its display name through the SCUS item-name table.
+///
+/// Returns `{ max_name_len, locations: [name; 16], fishing: [{ page, row,
+/// item, name, price, one_time }] }`. Everything is decoded from the image the
+/// user supplied, in this call, in this tab - the site ships no game text and
+/// nothing is uploaded. The patcher itself can only *reprice* a fishing prize
+/// (the 12 rows and their item ids are fixed on the disc) and only *rename* a
+/// location slot, which is exactly the shape this listing exposes.
+#[wasm_bindgen]
+pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
+    let scus = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54")
+        .ok_or_else(|| err("SCUS_942.54 not found in disc image"))?;
+    let locations = legaia_patcher::location_name::list_names(&scus)
+        .map_err(|e| err(format!("location-name table: {e}")))?;
+    let item_names = legaia_asset::item_names::ItemNameTable::from_scus(&scus);
+    drop(scus);
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("open disc image: {e}")))?;
+    let overlay = patcher
+        .read_entry(legaia_patcher::fishing_price::OVERLAY_PROT_INDEX)
+        .map_err(|e| err(format!("read fishing overlay: {e}")))?;
+    let prizes = legaia_patcher::fishing_price::list_prizes(&overlay)
+        .map_err(|e| err(format!("fishing prize table: {e}")))?;
+    drop(patcher);
+
+    let num = JsValue::from_f64;
+    let out = Object::new();
+    Reflect::set(
+        &out,
+        &"max_name_len".into(),
+        &num(legaia_patcher::location_name::MAX_NAME_LEN as f64),
+    )?;
+    let locs = js_sys::Array::new();
+    for (_idx, name) in &locations {
+        locs.push(&JsValue::from_str(name));
+    }
+    Reflect::set(&out, &"locations".into(), &locs)?;
+    let fish = js_sys::Array::new();
+    for p in &prizes {
+        // All-zero rows are structural padding in the 6-row page, not prizes.
+        if p.item_id == 0 && p.price == 0 {
+            continue;
+        }
+        let o = Object::new();
+        Reflect::set(&o, &"page".into(), &num(p.page as f64))?;
+        Reflect::set(&o, &"row".into(), &num(p.row as f64))?;
+        Reflect::set(&o, &"item".into(), &num(p.item_id as f64))?;
+        let name = u8::try_from(p.item_id)
+            .ok()
+            .and_then(|id| item_names.as_ref().and_then(|t| t.name(id)))
+            .unwrap_or("");
+        Reflect::set(&o, &"name".into(), &name.into())?;
+        Reflect::set(&o, &"price".into(), &num(p.price as f64))?;
+        Reflect::set(&o, &"one_time".into(), &JsValue::from_bool(p.one_time))?;
+        fish.push(&o.into());
+    }
+    Reflect::set(&out, &"fishing".into(), &fish)?;
+    Ok(out.into())
+}
+
 /// Short human label for a skip diagnostic, for the per-reason breakdown the
 /// page shows ("over budget", "does not recompress", ...).
 fn issue_reason(msg: &str) -> &'static str {
