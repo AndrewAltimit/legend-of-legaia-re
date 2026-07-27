@@ -420,6 +420,10 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(0xb6);
     world.rng_state = 1;
+    // Spend the once-per-pass flee checkpoint: this test drives the scripted
+    // phase table, and the synthetic world's preallocated empty monster slots
+    // dilute the flee roll's monster-side average enough for seed 1 to flee.
+    world.battle_monster_flee_attempted = true;
 
     assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
     world.take_monster_turn(1);
@@ -430,4 +434,95 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     assert_eq!(world.battle_mode(), 1);
     world.take_monster_turn(1);
     assert_eq!(world.actors[1].battle.params[0], 0xa3, "phase 1 cast");
+}
+
+/// The picker's once-per-pass flee checkpoint (`FUN_801E9FD4` loop bottom ->
+/// `FUN_801EC0DC`): a wounded, outmatched monster can roll a flee, the roll
+/// happens at most once per round, and a success arms the Run band
+/// (category 5). Stats are shaped so the score compare can pass (strong
+/// healthy party, weak wounded monster); the 1-in-8 gate means only some
+/// seeds flee, so the test scans seeds for one and then re-runs that seed
+/// with the latch already spent to prove the once-per-pass gate.
+#[test]
+fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
+    let build = || {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 2000;
+        world.actors[0].battle.hp = 2000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_attack[0] = 800;
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 1;
+        world.actors[1].battle.liveness = 1;
+        world.battle_attack[1] = 0;
+        world
+    };
+
+    let mut flee_seed = None;
+    for seed in 0..20_000u32 {
+        let mut world = build();
+        world.rng_state = seed;
+        if matches!(world.pick_monster_action(1), MonsterAction::Flee) {
+            flee_seed = Some(seed);
+            break;
+        }
+    }
+    let seed = flee_seed.expect("some seed in 0..20000 rolls a monster flee");
+
+    // The fleeing pick armed category 5 (the Run band's monster arm).
+    let mut world = build();
+    world.rng_state = seed;
+    assert!(matches!(world.pick_monster_action(1), MonsterAction::Flee));
+    assert_eq!(world.actors[1].battle.action_category, 5);
+    assert!(
+        world.battle_monster_flee_attempted,
+        "the pass latch is spent"
+    );
+
+    // Same seed, latch already spent: the checkpoint is skipped entirely.
+    let mut world = build();
+    world.rng_state = seed;
+    world.battle_monster_flee_attempted = true;
+    assert!(
+        !matches!(world.pick_monster_action(1), MonsterAction::Flee),
+        "a spent latch skips the flee roll until the round boundary re-arms it"
+    );
+
+    // The round boundary re-arms the latch (retail re-enters the picker with
+    // its balance counter cleared each round).
+    let mut world = build();
+    world.battle_monster_flee_attempted = true;
+    crate::battle_round::BattleRound::boundary(&mut world);
+    assert!(!world.battle_monster_flee_attempted);
+}
+
+/// The scripted no-escape flag (`ctx+0x287`) blocks the monster flee roll
+/// unconditionally - `FUN_801EC0DC` opens on the same gate the party roll's
+/// failure arm tests.
+#[test]
+fn no_escape_flag_blocks_monster_flee() {
+    for seed in 0..2_000u32 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 2000;
+        world.actors[0].battle.hp = 2000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_attack[0] = 800;
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 1;
+        world.actors[1].battle.liveness = 1;
+        world.battle_no_escape = true;
+        world.rng_state = seed;
+        assert!(
+            !matches!(world.pick_monster_action(1), MonsterAction::Flee),
+            "no-escape battle must never roll a monster flee (seed {seed})"
+        );
+    }
 }

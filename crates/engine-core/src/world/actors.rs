@@ -668,6 +668,7 @@ impl World {
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
+        self.battle_monster_flee_attempted = false;
         self.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
         let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);

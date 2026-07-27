@@ -45,6 +45,15 @@ impl World {
                 }
                 self.maybe_confuse_retarget(slot);
             }
+            MonsterAction::Flee => {
+                // The picker's flee checkpoint fired: arm the Run band
+                // (category 5). The action SM's seed routes a monster-slot
+                // category-5 actor to the state-0x68 leave-battle arm
+                // (`ActionState::CaptureStart` and siblings), which plays the
+                // break-off and removes the monster from the pool.
+                self.battle_ctx.queued_action = 5;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            }
         }
     }
 
@@ -352,6 +361,24 @@ impl World {
                 &mut || self.next_rng(),
             );
             self.monster_ai_state = ai;
+        }
+
+        // --- the once-per-pass flee checkpoint (`FUN_801E9FD4` loop bottom,
+        // `jal 0x801ec0dc` at 801ea980) ---
+        // Retail attempts the enemy escape roll exactly once per picker pass,
+        // after the current monster's pick (including the scripted switch) has
+        // consumed its draws, and a success OVERRIDES the picked category with
+        // 5 (`sb 5, 0x1de(s4)`). The `lw` gate on the battle-flag word
+        // `0x8007BAC0` (roll only when it is zero) passes as unset here, the
+        // same reading `roll_battle_escape` documents for its `forced` bit.
+        if !self.battle_monster_flee_attempted {
+            self.battle_monster_flee_attempted = true;
+            if self.monster_flee_roll(slot) {
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 5;
+                }
+                return MonsterAction::Flee;
+            }
         }
 
         // Optional, gated, NON-FAITHFUL: smarter single-target selection. By

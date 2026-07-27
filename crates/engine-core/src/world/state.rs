@@ -1778,6 +1778,15 @@ pub struct World {
     /// spawn unearned). Cleared by [`World::finish_battle`].
     pub battle_no_escape: bool,
 
+    /// One-per-pass latch for the monster flee roll (`FUN_801EC0DC`). Retail's
+    /// action picker `FUN_801E9FD4` keeps a balance counter (`s8`, cleared at
+    /// entry) and attempts the flee roll exactly once per picker pass, at the
+    /// first monster iteration that reaches the loop-bottom checkpoint with the
+    /// counter still zero. The engine picks per-slot, so the latch lives here
+    /// and [`crate::battle_round::BattleRound::boundary`] re-arms it each round
+    /// (retail re-enters the picker per round from `FUN_801DABA4`).
+    pub battle_monster_flee_attempted: bool,
+
     /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
     /// setup. Live only until the first battle-action pass latches it; the
     /// initiative seeder is the one consumer that reads *this* copy, to zero
@@ -2391,6 +2400,7 @@ impl World {
             magic_level_ups: Vec::new(),
             battle_escaped: false,
             battle_no_escape: false,
+            battle_monster_flee_attempted: false,
             battle_formation: vm::battle_formulas::FormationAdvantage::None,
             battle_formation_latched: vm::battle_formulas::FormationAdvantage::None,
             character_max_mp: Vec::new(),
