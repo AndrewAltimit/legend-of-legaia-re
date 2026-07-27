@@ -42,10 +42,14 @@
 //!
 //! Each record is a channel list: the first byte is always a member (channel 0
 //! is legal), and if the second byte is non-zero the list continues to the
-//! next `0` terminator (`FUN_8004C140` counting quirk). The retail selector has
-//! non-combat and combat-mode / special-flag table variants; this parser reads
-//! the non-combat variant (`mode == 0, flag == 0`), the one relevant to a
-//! showcase.
+//! next `0` terminator (`FUN_8004C140` counting quirk). The retail selector
+//! keys three first-half table variants off a context byte (`ctx+0x243`,
+//! `ctx` = pointer at `0x8007BD24`) and its `flag` argument; this parser
+//! reads the `(0, 0)` variant - which is the path a **live battle art**
+//! takes: a recomp-runtime capture of an in-battle Spin Combo observed
+//! channel 14, a member only this variant's pool carries (the `ctx+0x243
+//! != 0` variant's pools stop at channel 13). The second-half (Hyper/Super
+//! constants `>= second_lo`) has a single un-varianted table.
 //!
 //! ## Duration
 //!
@@ -58,10 +62,21 @@ use std::collections::BTreeMap;
 
 /// Range table: `[lo, hi, second_lo]` per character (Vahn/Noa/Gala), stride 3.
 pub const RANGE_TABLE_VA: u32 = 0x8007_81A4;
-/// Per-character first-half candidate-table base (`lo..=hi`), non-combat path.
+/// Per-character first-half candidate-table base (`lo..=hi`) for the
+/// `ctx+0x243 == 0, flag == 0` selector path - the path a live battle art
+/// goes through (recomp-capture-verified: an in-battle Spin Combo fired
+/// channel 14, a member only this variant's pool carries).
 pub const FIRST_HALF_BASE: [u32; 3] = [0x8007_7B64, 0x8007_7D5C, 0x8007_7F54];
 /// Per-character second-half candidate-table base (`>= second_lo`).
 pub const SECOND_HALF_BASE: [u32; 3] = [0x8007_80A4, 0x8007_8104, 0x8007_8154];
+/// Real record count of each second-half table. The three tables are packed
+/// back-to-back (`0x800780A4 + 6*0x10 = 0x80078104` = Noa's base,
+/// `+ 5*0x10 = 0x80078154` = Gala's), and each character's art constants end
+/// exactly at the last packed record (Vahn `0x2B..=0x30`, Noa `0x2E..=0x32`,
+/// Gala `0x2B..=0x2F`). Walking further reads the *next character's* table -
+/// the retail selector never does (no art constant reaches that far), so the
+/// parser must not either.
+pub const SECOND_HALF_RECORDS: [u8; 3] = [6, 5, 5];
 /// Per-channel duration base table (stride `0x10` per character).
 pub const DUR_TABLE_VA: u32 = 0x8007_7A8C;
 
@@ -236,6 +251,78 @@ pub const STATIC_XA_CUES: &[StaticXaCue] = &[
     },
 ];
 
+/// One capture-verified arts-voice fire: in a live recomp-runtime battle,
+/// running the art with this action constant produced this XA channel (and a
+/// `dur` matching the [`DUR_TABLE_VA`] arithmetic for that channel, pinning
+/// the fire to the `FUN_8004C140` pool path rather than a literal-operand
+/// cue site).
+///
+/// Retail picks a **random** member of the art's candidate pool per fire
+/// (avoiding an immediate repeat via the last-pick byte at `0x8007BD62`), so
+/// a captured channel is one witnessed member, not "the" channel - its value
+/// is (a) proving the decoded pool is the live table (every captured channel
+/// must be a member) and (b) giving deterministic consumers a pick that
+/// retail verifiably plays for that art.
+///
+/// Capture instrument: `scripts/recomp/xa_cue_capture.py` - frame-tagged
+/// ring snapshots of the `FUN_8003D53C` cue globals (staged `CdlLOC`
+/// `0x8007BBF0` resolved against the `0x801C6ED8` clip table, channel
+/// `0x8007BC6C`, dur `0x8007BC30`) over scripted battle rounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapturedArtCue {
+    /// 0-based character slot (0 Vahn / 1 Noa / 2 Gala).
+    pub cslot: u8,
+    /// The art's action constant (`0x1B..=0x32`).
+    pub action_constant: u8,
+    /// The XA channel the fire selected (within the per-character clip file).
+    pub channel: u8,
+}
+
+/// Capture-verified per-art channel picks (see [`CapturedArtCue`]): each row
+/// is one art fired in a live recomp-runtime battle (slot-resumed `jou ene`
+/// encounter, arts driven through the committed action queue), with the cue's
+/// `(file, channel, dur)` read frame-tagged off the `FUN_8003D53C` globals.
+/// Every row's channel is a member of the art's decoded `(0, 0)`-variant pool
+/// and every row's `dur` matched the [`DUR_TABLE_VA`] arithmetic.
+pub const CAPTURED_ART_CHANNELS: &[CapturedArtCue] = &[
+    // Vahn - Spin Combo, on-screen banner + pool-membership + dur-arithmetic
+    // witness (channel 14 is a member only the live-battle table variant
+    // carries, which is what pins the variant). A second fire of the same art
+    // observed channel 9 - the pool pick really is per-fire random.
+    CapturedArtCue {
+        cslot: 0,
+        action_constant: 0x22,
+        channel: 14,
+    },
+    // Noa - Swan Driver: the round's action queue read `19 24` (Starter +
+    // Swan Driver) at the cue frame, the only pooled art in her string
+    // (the trailing `1A 20` Frost Breath sits below her table's `lo` and
+    // fired no XA4 shout - a stereo XA3 fanfare cue fired at its execution
+    // instead).
+    CapturedArtCue {
+        cslot: 1,
+        action_constant: 0x24,
+        channel: 12,
+    },
+    // Gala - Guillotine: queue read `19 25` at the cue frame; the trailing
+    // `1A 1C` Explosive Fist (below `lo`) was likewise shout-silent with an
+    // XA5 fanfare cue at its execution.
+    CapturedArtCue {
+        cslot: 2,
+        action_constant: 0x25,
+        channel: 8,
+    },
+];
+
+/// The capture-witnessed channel for `(cslot, action_constant)`, when one of
+/// the [`CAPTURED_ART_CHANNELS`] rows covers the art.
+pub fn captured_channel(cslot: usize, action_constant: u8) -> Option<u8> {
+    CAPTURED_ART_CHANNELS
+        .iter()
+        .find(|c| c.cslot as usize == cslot && c.action_constant == action_constant)
+        .map(|c| c.channel)
+}
+
 /// Arts-voice clip file per 0-based character slot (Vahn/Noa/Gala). `None`
 /// for Terra (slot 3) or out of range.
 pub fn clip_file(cslot: usize) -> Option<&'static str> {
@@ -316,10 +403,13 @@ impl ArtsVoiceTable {
                 }
             }
             // Second-half: ac >= second_lo, record base + (ac - second_lo)*0x10.
-            // No hard upper bound in the selector; stop at the first record that
-            // fails the channel-validity guard (bounds against adjacent data).
+            // The selector has no upper bound, but no art constant indexes past
+            // the character's packed record span ([`SECOND_HALF_RECORDS`]) -
+            // walking further decodes the NEXT character's table as phantom
+            // pools. The channel-validity guard still bounds the final table
+            // against adjacent non-table data.
             let base2 = scus_off(scus, SECOND_HALF_BASE[c])?;
-            for i in 0..16u8 {
+            for i in 0..SECOND_HALF_RECORDS[c] {
                 let ac = second_lo.saturating_add(i);
                 let ro = base2 + i as usize * 0x10;
                 match scus.get(ro..ro + 0x10).and_then(record_members) {
@@ -360,11 +450,23 @@ impl ArtsVoiceTable {
     }
 
     /// A deterministic member of the art's candidate pool - the site's stable
-    /// per-art pick (retail chooses a random member each fire). Keyed on the
-    /// action constant so distinct arts get distinct channels within the pool.
+    /// per-art pick (retail chooses a random member each fire). Prefers the
+    /// capture-witnessed channel ([`CAPTURED_ART_CHANNELS`]) when the art has
+    /// one and it is a member of the decoded pool (the membership check keeps
+    /// a capture row honest against the table decode); otherwise falls back
+    /// to a pick keyed on the action constant, so distinct arts get distinct
+    /// channels within the pool.
     pub fn pick_channel(&self, cslot: usize, action_constant: u8) -> Option<u8> {
         let pool = self.channels(cslot, action_constant)?;
-        (!pool.is_empty()).then(|| pool[action_constant as usize % pool.len()])
+        if pool.is_empty() {
+            return None;
+        }
+        if let Some(ch) = captured_channel(cslot, action_constant)
+            && pool.contains(&ch)
+        {
+            return Some(ch);
+        }
+        Some(pool[action_constant as usize % pool.len()])
     }
 
     /// The `FUN_8003D53C` `dur` argument for `(character, channel)`:
@@ -409,6 +511,98 @@ mod tests {
         );
         // Any member > 15 is not a valid channel -> reject (bounds the tail).
         assert_eq!(record_members(&[31, 41, 43, 0]), None);
+    }
+
+    /// Synthetic PS-X EXE blob covering the arts-voice table VAs.
+    fn synthetic_scus() -> Vec<u8> {
+        let t_addr: u32 = 0x8007_7000;
+        let t_size: u32 = 0x2000;
+        let mut scus = vec![0u8; 0x800 + t_size as usize];
+        scus[0..8].copy_from_slice(b"PS-X EXE");
+        scus[0x18..0x1C].copy_from_slice(&t_addr.to_le_bytes());
+        scus[0x1C..0x20].copy_from_slice(&t_size.to_le_bytes());
+        scus
+    }
+
+    fn poke(scus: &mut [u8], va: u32, bytes: &[u8]) {
+        let off = (va - 0x8007_7000) as usize + 0x800;
+        scus[off..off + bytes.len()].copy_from_slice(bytes);
+    }
+
+    #[test]
+    fn second_half_walk_stops_at_the_packed_record_span() {
+        let mut scus = synthetic_scus();
+        // Vahn: empty first half (hi < lo), second_lo = 0x2B.
+        // Noa/Gala: empty first half, far second_lo so their walks read their
+        // own bases.
+        poke(
+            &mut scus,
+            RANGE_TABLE_VA,
+            &[1, 0, 0x2B, 1, 0, 0x2E, 1, 0, 0x2B],
+        );
+        // Seven valid-looking records from Vahn's second-half base: records
+        // 0..=5 are Vahn's real span (0x2B..=0x30); record 6 IS Noa's base
+        // row (the tables are packed), so it must NOT appear as Vahn 0x31.
+        for i in 0..7u32 {
+            poke(
+                &mut scus,
+                SECOND_HALF_BASE[0] + i * 0x10,
+                &[(i + 1) as u8, 0, 0, 0],
+            );
+        }
+        let t = ArtsVoiceTable::parse_from_scus(&scus).expect("synthetic parses");
+        for ac in 0x2B..=0x30u8 {
+            assert!(
+                t.channels(0, ac).is_some(),
+                "Vahn 0x{ac:02X} within the packed span decodes"
+            );
+        }
+        assert_eq!(
+            t.channels(0, 0x31),
+            None,
+            "Vahn 0x31 is past the packed span - that row is Noa's base record"
+        );
+        // The same bytes DO decode as Noa's own first record (0x2E).
+        assert_eq!(t.channels(1, 0x2E), Some(&[7u8][..]));
+    }
+
+    #[test]
+    fn pick_channel_prefers_the_captured_member() {
+        let mut t = ArtsVoiceTable::default();
+        let &CapturedArtCue {
+            cslot,
+            action_constant,
+            channel,
+        } = &CAPTURED_ART_CHANNELS[0];
+        // Pool where the captured channel is NOT the fallback pick.
+        let pool: Vec<u8> = vec![1, 2, channel];
+        assert_ne!(pool[action_constant as usize % pool.len()], channel);
+        t.pools[cslot as usize].insert(action_constant, pool);
+        assert_eq!(
+            t.pick_channel(cslot as usize, action_constant),
+            Some(channel),
+            "captured member wins over the deterministic fallback"
+        );
+        // An art with no captured row keeps the keyed fallback.
+        t.pools[cslot as usize].insert(action_constant + 1, vec![4, 5]);
+        assert_eq!(
+            t.pick_channel(cslot as usize, action_constant + 1),
+            Some([4, 5][(action_constant + 1) as usize % 2])
+        );
+    }
+
+    #[test]
+    fn captured_channels_are_looked_up_by_slot_and_constant() {
+        for cue in CAPTURED_ART_CHANNELS {
+            assert_eq!(
+                captured_channel(cue.cslot as usize, cue.action_constant),
+                Some(cue.channel)
+            );
+            assert!(cue.channel <= 15, "XA channels are 0..=15");
+            assert!((0x1B..=0x32).contains(&cue.action_constant));
+            assert!(cue.cslot <= 2, "only Vahn/Noa/Gala have voice banks");
+        }
+        assert_eq!(captured_channel(3, 0x27), None, "Terra has no bank");
     }
 
     #[test]
