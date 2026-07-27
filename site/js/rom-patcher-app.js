@@ -24,6 +24,12 @@
  * already_applied, skipped, untranslated, sections: [{name, total, filled,
  * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
  * when no language pack was chosen).
+ * Texture replacement rides three more exports: `scan_textures(image,
+ * thumbMax) -> { raw_count, lzs_count, textures }` (every TIM on the disc,
+ * with thumbnails), `preview_texture_replace(image, entry, section, offset,
+ * png, quantize)` (validation + original/as-encoded preview), and
+ * `apply_texture_replacements(image, specs) -> { data, summary }` (chained
+ * after patch_rom's output, or run alone).
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`. Shipped language packs are static assets under
  * site/lang/<lang>.yaml, fetched on demand (nothing is bundled into the WASM).
@@ -430,6 +436,263 @@ function setupArtBuilder(container, addBtn, onEdit) {
   };
 }
 
+// --- Texture replacement ----------------------------------------------------
+// Client-side texture swap over the WASM API: `scan_textures(image, thumbMax)`
+// catalogs every TIM on the disc (raw tier + inside LZS sections) with
+// thumbnails, `preview_texture_replace(image, entry, section, offset, png,
+// quantize)` validates one swap and returns the original + as-encoded preview,
+// and `apply_texture_replacements(image, specs)` applies the queued swaps.
+// Coordinates: entry -1 = the unindexed PROT.DAT gap, section -1 = raw tier.
+
+// Paint a `{ w, h, rgba }` image onto a canvas at its native size.
+function drawRgba(canvas, img) {
+  canvas.width = img.w;
+  canvas.height = img.h;
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.w, img.h), 0, 0);
+}
+
+// Human-readable coordinate string for a scan row / queue item.
+function texDesc(t) {
+  const off = '0x' + t.offset.toString(16).toUpperCase();
+  const where = t.entry < 0 ? `gap +${off}`
+    : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
+      : `entry ${t.entry} +${off}`;
+  return `${t.tier} ${where}`;
+}
+
+// Wire the texture-replacement panel. `wasm()` resolves the module,
+// `discBytes()` the current disc file's bytes. Returns { specs() } - the
+// queued replacement specs for `apply_texture_replacements` ([] when idle).
+function setupTextureReplacer(wasm, discBytes) {
+  const scanBtn = $('rom-tex-scan');
+  if (!scanBtn) return { specs() { return []; } };
+  const scanNote = $('rom-tex-scan-note');
+  const browser = $('rom-tex-browser');
+  const filterInput = $('rom-tex-filter');
+  const grid = $('rom-tex-grid');
+  const moreBtn = $('rom-tex-more');
+  const editor = $('rom-tex-editor');
+  const targetDesc = $('rom-tex-target-desc');
+  const exportBtn = $('rom-tex-export');
+  const pngInput = $('rom-tex-png');
+  const quantizeChk = $('rom-tex-quantize');
+  const origCanvas = $('rom-tex-orig');
+  const newCanvas = $('rom-tex-new');
+  const verdict = $('rom-tex-verdict');
+  const addBtn = $('rom-tex-add');
+  const cancelBtn = $('rom-tex-cancel');
+  const queueEl = $('rom-tex-queue');
+
+  const PAGE = 60;
+  let rows = null; // scan result rows
+  let shown = 0;
+  let sel = null; // { row, cell, origImg, pngBytes, previewOk }
+  const queue = []; // { desc, entry, section, offset, png, quantize }
+
+  const setNote = (msg, kind) => {
+    scanNote.textContent = msg;
+    scanNote.className = 'rom-hint' + (kind === 'err' ? ' rom-status-err' : '');
+  };
+  const setVerdict = (msg, kind) => {
+    verdict.textContent = msg;
+    verdict.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
+  };
+
+  function matches() {
+    const q = (filterInput.value || '').trim().toLowerCase();
+    if (!q) return rows;
+    const toks = q.split(/\s+/);
+    return rows.filter((t) => {
+      const hay = `${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label}`.toLowerCase();
+      return toks.every((tok) => hay.includes(tok));
+    });
+  }
+
+  function renderGrid(reset) {
+    if (reset) {
+      grid.textContent = '';
+      shown = 0;
+    }
+    const m = matches();
+    const upto = Math.min(m.length, shown + PAGE);
+    for (; shown < upto; shown++) {
+      const t = m[shown];
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'rom-tex-cell';
+      if (t.thumb) {
+        const c = document.createElement('canvas');
+        drawRgba(c, t.thumb);
+        cell.appendChild(c);
+      }
+      const label = document.createElement('span');
+      label.className = 'rom-tex-label';
+      label.textContent = t.label || `${t.width}×${t.height}`;
+      const sub = document.createElement('span');
+      sub.textContent = `${texDesc(t)} · ${t.width}×${t.height} ${t.bpp}bpp`;
+      cell.appendChild(label);
+      cell.appendChild(sub);
+      cell.addEventListener('click', () => select(t, cell));
+      grid.appendChild(cell);
+    }
+    moreBtn.hidden = shown >= m.length;
+    moreBtn.textContent = `Show more (${m.length - shown} left)`;
+  }
+
+  scanBtn.addEventListener('click', async () => {
+    scanBtn.disabled = true;
+    try {
+      setNote('Reading disc image ...');
+      const mod = await wasm();
+      const buf = await discBytes();
+      setNote('Scanning every texture (decompresses the whole disc - takes a moment) ...');
+      await new Promise((r) => setTimeout(r, 30));
+      const r = mod.scan_textures(buf, 48);
+      rows = r.textures;
+      browser.hidden = false;
+      setNote(`${r.raw_count} raw + ${r.lzs_count} compressed textures found. Click one to edit it.`);
+      renderGrid(true);
+    } catch (e) {
+      setNote('Error: ' + (e && e.message ? e.message : e), 'err');
+    } finally {
+      scanBtn.disabled = false;
+    }
+  });
+  filterInput.addEventListener('input', () => renderGrid(true));
+  moreBtn.addEventListener('click', () => renderGrid(false));
+
+  async function select(t, cell) {
+    grid.querySelectorAll('.rom-tex-cell').forEach((c) => c.classList.remove('is-active'));
+    if (cell) cell.classList.add('is-active');
+    sel = { row: t, origImg: null, pngBytes: null };
+    editor.hidden = false;
+    targetDesc.textContent =
+      `${texDesc(t)} · ${t.width}×${t.height} pixels · ${t.bpp} bpp · ` +
+      `${t.cluts} palette(s)` + (t.label ? ` · ${t.label}` : '');
+    pngInput.value = '';
+    newCanvas.width = newCanvas.height = 0;
+    addBtn.disabled = true;
+    setVerdict('Loading the full-size original ...');
+    editor.scrollIntoView({ block: 'nearest' });
+    await refresh();
+  }
+
+  // Validate + preview: with no PNG chosen the call still returns the
+  // original's full-size decode (the PNG error is expected and ignored).
+  async function refresh() {
+    if (!sel) return;
+    const t = sel.row;
+    try {
+      const mod = await wasm();
+      const buf = await discBytes();
+      const png = sel.pngBytes || new Uint8Array(0);
+      const r = mod.preview_texture_replace(buf, t.entry, t.section, t.offset, png, quantizeChk.checked);
+      sel.origImg = r.original;
+      drawRgba(origCanvas, r.original);
+      if (!sel.pngBytes) {
+        setVerdict('Download the original, edit it (keep the size!), then choose your PNG above.');
+        return;
+      }
+      if (r.preview) drawRgba(newCanvas, r.preview);
+      if (r.ok) {
+        const bits = ['Valid - ready to add.'];
+        if (r.new_palette_entries) bits.push(`${r.new_palette_entries} new palette color(s).`);
+        if (r.quantized_pixels) bits.push(`${r.quantized_pixels} pixel(s) folded to a nearest color.`);
+        if (r.fit) bits.push(`Re-compresses to ${r.fit.recompressed} of the ${r.fit.capacity} available bytes.`);
+        setVerdict(bits.join(' '), 'ok');
+        addBtn.disabled = false;
+      } else {
+        setVerdict(r.error, 'err');
+        addBtn.disabled = true;
+      }
+    } catch (e) {
+      setVerdict('Error: ' + (e && e.message ? e.message : e), 'err');
+      addBtn.disabled = true;
+    }
+  }
+
+  pngInput.addEventListener('change', async () => {
+    const f = pngInput.files && pngInput.files[0];
+    sel.pngBytes = f ? new Uint8Array(await f.arrayBuffer()) : null;
+    setVerdict('Checking your image ...');
+    await refresh();
+  });
+  quantizeChk.addEventListener('change', refresh);
+
+  // Download the selected texture's full-size decode as an editable PNG.
+  exportBtn.addEventListener('click', () => {
+    if (!sel || !sel.origImg) return;
+    const c = document.createElement('canvas');
+    drawRgba(c, sel.origImg);
+    const t = sel.row;
+    const name = `legaia-tex-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
+      `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}.png`;
+    c.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }, 'image/png');
+  });
+
+  function renderQueue() {
+    queueEl.textContent = '';
+    queue.forEach((q, i) => {
+      const row = document.createElement('div');
+      row.className = 'rom-tex-queue-row';
+      const label = document.createElement('span');
+      label.textContent = `will replace: ${q.desc}${q.quantize ? ' (quantized)' : ''}`;
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'art-remove';
+      rm.textContent = '✕ Remove';
+      rm.addEventListener('click', () => {
+        queue.splice(i, 1);
+        renderQueue();
+      });
+      row.appendChild(label);
+      row.appendChild(rm);
+      queueEl.appendChild(row);
+    });
+  }
+
+  addBtn.addEventListener('click', () => {
+    if (!sel || !sel.pngBytes) return;
+    const t = sel.row;
+    // One queued edit per texture: re-adding replaces the earlier one.
+    const key = (q) => `${q.entry}/${q.section}/${q.offset}`;
+    const spec = {
+      desc: `${texDesc(t)} (${t.width}×${t.height}${t.label ? ', ' + t.label : ''})`,
+      entry: t.entry, section: t.section, offset: t.offset,
+      png: sel.pngBytes, quantize: quantizeChk.checked,
+    };
+    const existing = queue.findIndex((q) => key(q) === key(spec));
+    if (existing >= 0) queue[existing] = spec; else queue.push(spec);
+    renderQueue();
+    editor.hidden = true;
+    sel = null;
+  });
+  cancelBtn.addEventListener('click', () => {
+    editor.hidden = true;
+    sel = null;
+  });
+
+  return {
+    specs() {
+      return queue.map((q) => ({
+        entry: q.entry, section: q.section, offset: q.offset,
+        png: q.png, quantize: q.quantize,
+      }));
+    },
+  };
+}
+
 // --- Segmented (radio-group) helpers ---------------------------------------
 
 // The checked value of a radio group, or `dflt` if none is set.
@@ -698,6 +961,10 @@ function init() {
     return new Uint8Array(await file.arrayBuffer());
   }
 
+  // Texture replacement panel (its queue is orthogonal to the presets, like
+  // the language choice).
+  const texture = setupTextureReplacer(() => ensureWasm(setStatus), discBytes);
+
   // "Check pack against my disc": the same disc-measured dry run the CLI does.
   langValidateBtn.addEventListener('click', async () => {
     try {
@@ -928,10 +1195,12 @@ function init() {
   // sets values programmatically (which never fires `change`), so this only runs
   // on genuine user edits.
   formEl.addEventListener('change', (e) => {
-    // Seed, disc-file and the language selection are orthogonal to the
-    // randomization config, so editing them must not flip the preset to "Custom".
-    if (e.target && ['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file',
-      'rom-lang-pal-file', 'rom-lang-fold'].includes(e.target.id)) return;
+    // Seed, disc-file, the language selection and the texture panel are
+    // orthogonal to the randomization config, so editing them must not flip
+    // the preset to "Custom".
+    if (e.target && (['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file',
+      'rom-lang-pal-file', 'rom-lang-fold'].includes(e.target.id)
+      || (e.target.id || '').startsWith('rom-tex-'))) return;
     markCustom();
     syncDependents();
   });
@@ -1043,7 +1312,10 @@ function init() {
     const weaponSpecialty = weaponSpecialtyChk.checked;
 
     const langActive = langSel.value !== '';
-    if (
+    const texSpecs = texture.specs();
+    // Whether any randomizer / language option is active (textures aside) -
+    // when false the patch_rom pass is skipped entirely.
+    const baseActive = !(
       !langActive &&
       drops === 'none' && !equipmentDrops && encounters === 'none' &&
       chests === 'none' && shops === 'none' && casino === 'none' &&
@@ -1055,8 +1327,9 @@ function init() {
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !jewelFix && !approachFix &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale
-    ) {
-      setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
+    );
+    if (!baseActive && texSpecs.length === 0) {
+      setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
       return;
     }
     if (shinySeru && (artsApGrant || artsApCost)) {
@@ -1079,10 +1352,25 @@ function init() {
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
-      const data = result.data;
-      const usedSeed = result.seed;
-      const name = patchedName(file.name, usedSeed);
+      let data = buf;
+      let usedSeed = null;
+      let summaryText = '';
+      let langReport = null;
+      if (baseActive) {
+        const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale);
+        data = result.data;
+        usedSeed = result.seed;
+        summaryText = result.summary || '';
+        langReport = result.lang;
+      }
+      if (texSpecs.length) {
+        setStatus('Applying texture replacement' + (texSpecs.length > 1 ? 's' : '') + ' ...');
+        await new Promise((r) => setTimeout(r, 30));
+        const texResult = mod.apply_texture_replacements(data, texSpecs);
+        data = texResult.data;
+        summaryText += texResult.summary || '';
+      }
+      const name = patchedName(file.name, usedSeed || 'textures');
       triggerDownload(data, name);
       // Also emit a matching .cue (same base name) so the patched .bin loads in
       // emulators that expect a cue sheet. Sequenced after a tick because some
@@ -1092,8 +1380,8 @@ function init() {
       setTimeout(() => triggerDownload(cueBytes, cueName), 500);
       setStatus('Done. Downloaded ' + name + ' + ' + cueName, 'ok');
       summaryEl.textContent =
-        'seed: ' + usedSeed + '\n' + (result.summary || '') +
-        langCoverageText(result.lang) +
+        (usedSeed ? 'seed: ' + usedSeed + '\n' : '') + summaryText +
+        langCoverageText(langReport) +
         '\nLoad the .cue in your emulator (it points at the .bin); keep both files together.';
     } catch (e) {
       setStatus('Error: ' + (e && e.message ? e.message : e), 'err');

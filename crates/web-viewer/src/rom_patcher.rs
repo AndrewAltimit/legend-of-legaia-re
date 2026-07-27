@@ -1357,3 +1357,362 @@ pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValu
     };
     pack.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))
 }
+
+// --- Texture replacement --------------------------------------------------
+//
+// The same client-side model as the randomizer: the user's disc bytes are
+// scanned in WASM memory, the edited PNG is validated + encoded here, and the
+// patched image is downloaded locally. Nothing is uploaded.
+
+use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture};
+use legaia_tim::encode::{EncodeOptions, decode_png_rgba, encode_replacement};
+
+/// Nearest-neighbour downscale of an RGBA8 image to fit in `max` on the long
+/// side (thumbnails for the texture browser).
+fn downscale_rgba(rgba: &[u8], w: usize, h: usize, max: usize) -> (usize, usize, Vec<u8>) {
+    if w <= max && h <= max {
+        return (w, h, rgba.to_vec());
+    }
+    let step = w.max(h).div_ceil(max).max(1);
+    let tw = (w / step).max(1);
+    let th = (h / step).max(1);
+    let mut out = Vec::with_capacity(tw * th * 4);
+    for y in 0..th {
+        for x in 0..tw {
+            let i = (y * step * w + x * step) * 4;
+            out.extend_from_slice(&rgba[i..i + 4]);
+        }
+    }
+    (tw, th, out)
+}
+
+/// `{ w, h, rgba: Uint8Array }` for a decoded image.
+fn rgba_js(w: usize, h: usize, rgba: &[u8]) -> Result<JsValue, JsValue> {
+    let o = Object::new();
+    Reflect::set(&o, &"w".into(), &JsValue::from_f64(w as f64))?;
+    Reflect::set(&o, &"h".into(), &JsValue::from_f64(h as f64))?;
+    let arr = Uint8Array::new_with_length(rgba.len() as u32);
+    arr.copy_from(rgba);
+    Reflect::set(&o, &"rgba".into(), &arr)?;
+    Ok(o.into())
+}
+
+/// A `TextureTarget` from the page's `(entry, lzs_section, offset)` triple:
+/// `entry < 0` = the unindexed PROT.DAT gap, `lzs_section < 0` = raw tier.
+fn texture_target(entry: i32, lzs_section: i32, offset: f64) -> TextureTarget {
+    TextureTarget {
+        entry: (entry >= 0).then_some(entry as u32),
+        lzs_section: (lzs_section >= 0).then_some(lzs_section as u32),
+        offset: offset as u64,
+    }
+}
+
+/// Scan a user-supplied disc image for every replaceable texture (TIM), with
+/// thumbnails. Returns `{ raw_count, lzs_count, textures: [{ tier, entry,
+/// section, offset, width, height, bpp, cluts, bytes, label, thumb: { w, h,
+/// rgba } | null }] }`. `entry` is `-1` for the unindexed gap before entry 0;
+/// `section` is `-1` on the raw tier. `thumb_max` caps the thumbnail's long
+/// side (0 = no thumbnails).
+///
+/// Raw-tier textures are always replaceable in place; `lzs`-tier ones live in
+/// a compressed section and apply only when the edit recompresses into the
+/// retail footprint (checked at preview/apply time).
+#[wasm_bindgen]
+pub fn scan_textures(image: Vec<u8>, thumb_max: u32) -> Result<JsValue, JsValue> {
+    // Peak-memory discipline: assemble the PROT.DAT payload, then drop the
+    // disc image before scanning - the catalogs + thumbnails only need the
+    // payload, and a full image + payload + scan state would not fit
+    // comfortably in 32-bit WASM memory.
+    let prot = legaia_iso::iso9660::read_file_in_image(&image, "PROT.DAT")
+        .ok_or_else(|| err("PROT.DAT not found in disc image"))?;
+    drop(image);
+    let archive = legaia_prot::archive::Archive::from_bytes(prot.clone())
+        .map_err(|e| err(format!("parse PROT.DAT TOC: {e}")))?;
+    let spans: Vec<(u64, u64, u32)> = archive
+        .entries
+        .iter()
+        .map(|e| (e.byte_offset, e.size_bytes, e.index))
+        .collect();
+    drop(archive);
+    let raw = legaia_asset::tim_catalog::build_from_spans(&prot, &spans);
+    let deep = legaia_asset::tim_deep_catalog::build_from_spans(&prot, &spans);
+
+    let textures = js_sys::Array::new();
+    let push_row = |tier: &str,
+                    entry: i64,
+                    section: i64,
+                    offset: u64,
+                    width: u32,
+                    height: u32,
+                    bpp: u32,
+                    cluts: usize,
+                    bytes: usize,
+                    label: Option<&str>,
+                    thumb: JsValue|
+     -> Result<JsValue, JsValue> {
+        let o = Object::new();
+        let num = JsValue::from_f64;
+        Reflect::set(&o, &"tier".into(), &tier.into())?;
+        Reflect::set(&o, &"entry".into(), &num(entry as f64))?;
+        Reflect::set(&o, &"section".into(), &num(section as f64))?;
+        Reflect::set(&o, &"offset".into(), &num(offset as f64))?;
+        Reflect::set(&o, &"width".into(), &num(width as f64))?;
+        Reflect::set(&o, &"height".into(), &num(height as f64))?;
+        Reflect::set(&o, &"bpp".into(), &num(bpp as f64))?;
+        Reflect::set(&o, &"cluts".into(), &num(cluts as f64))?;
+        Reflect::set(&o, &"bytes".into(), &num(bytes as f64))?;
+        Reflect::set(&o, &"label".into(), &label.unwrap_or("").into())?;
+        Reflect::set(&o, &"thumb".into(), &thumb)?;
+        Ok(o.into())
+    };
+    let thumb_of = |tim: &legaia_tim::Tim| -> JsValue {
+        if thumb_max == 0 {
+            return JsValue::NULL;
+        }
+        match legaia_tim::decode_rgba8(tim, 0) {
+            Ok(rgba) => {
+                let (tw, th, small) = downscale_rgba(
+                    &rgba,
+                    tim.pixel_width(),
+                    tim.pixel_height(),
+                    thumb_max as usize,
+                );
+                rgba_js(tw, th, &small).unwrap_or(JsValue::NULL)
+            }
+            Err(_) => JsValue::NULL,
+        }
+    };
+
+    for t in &raw {
+        let Ok(tim) = legaia_tim::parse_strict(&prot[t.abs_offset as usize..]) else {
+            continue;
+        };
+        let row = push_row(
+            "raw",
+            t.entry_index.map(|e| e as i64).unwrap_or(-1),
+            -1,
+            t.offset_in_entry,
+            t.width,
+            t.height,
+            t.bpp,
+            t.clut_count,
+            t.byte_len,
+            t.label,
+            thumb_of(&tim),
+        )?;
+        textures.push(&row);
+    }
+
+    // Deep tier: decompress each hosting entry once, decode its rows.
+    let mut i = 0usize;
+    while i < deep.len() {
+        let entry = deep[i].entry_index;
+        let end = deep[i..]
+            .iter()
+            .position(|t| t.entry_index != entry)
+            .map(|p| i + p)
+            .unwrap_or(deep.len());
+        let span = spans.iter().find(|&&(_, _, idx)| idx == entry);
+        let sections = span.and_then(|&(off, size, _)| {
+            let start = off as usize;
+            let stop = (off + size).min(prot.len() as u64) as usize;
+            legaia_lzs::decompress_container(&prot[start..stop]).ok()
+        });
+        for t in &deep[i..end] {
+            let tim = sections.as_ref().and_then(|s| {
+                s.get(t.lzs_section as usize).and_then(|sec| {
+                    legaia_tim::parse_strict(&sec[t.offset_in_section as usize..]).ok()
+                })
+            });
+            let row = push_row(
+                "lzs",
+                t.entry_index as i64,
+                t.lzs_section as i64,
+                t.offset_in_section,
+                t.width,
+                t.height,
+                t.bpp,
+                t.clut_count,
+                t.byte_len,
+                t.label,
+                tim.as_ref().map(thumb_of).unwrap_or(JsValue::NULL),
+            )?;
+            textures.push(&row);
+        }
+        i = end;
+    }
+
+    let out = Object::new();
+    Reflect::set(
+        &out,
+        &"raw_count".into(),
+        &JsValue::from_f64(raw.len() as f64),
+    )?;
+    Reflect::set(
+        &out,
+        &"lzs_count".into(),
+        &JsValue::from_f64(deep.len() as f64),
+    )?;
+    Reflect::set(&out, &"textures".into(), &textures)?;
+    Ok(out.into())
+}
+
+/// Validate one texture replacement against the user's disc and build the
+/// side-by-side preview. Never writes. Returns `{ ok, error, original: { w,
+/// h, rgba }, preview: { w, h, rgba } | null, width, height, bpp, cluts,
+/// new_palette_entries, quantized_pixels, fit: { capacity, recompressed } |
+/// null }`. `preview` is the replacement as it will *display* on disc (15-bit
+/// rounding + any quantization applied), so what the user sees is what the
+/// game gets. `entry = -1` targets the unindexed gap; `lzs_section = -1` a
+/// raw texture.
+#[wasm_bindgen]
+pub fn preview_texture_replace(
+    image: Vec<u8>,
+    entry: i32,
+    lzs_section: i32,
+    offset: f64,
+    png: &[u8],
+    quantize: bool,
+) -> Result<JsValue, JsValue> {
+    let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let target = texture_target(entry, lzs_section, offset);
+    let orig = read_texture(&patcher, &target).map_err(|e| err(format!("read texture: {e:#}")))?;
+    let (ow, oh) = (orig.tim.pixel_width(), orig.tim.pixel_height());
+    let orig_rgba =
+        legaia_tim::decode_rgba8(&orig.tim, 0).map_err(|e| err(format!("decode original: {e}")))?;
+
+    let out = Object::new();
+    Reflect::set(&out, &"original".into(), &rgba_js(ow, oh, &orig_rgba)?)?;
+    let num = JsValue::from_f64;
+    Reflect::set(&out, &"width".into(), &num(ow as f64))?;
+    Reflect::set(&out, &"height".into(), &num(oh as f64))?;
+    Reflect::set(&out, &"cluts".into(), &num(orig.tim.palette_count() as f64))?;
+
+    let (pw, ph, rgba) = match decode_png_rgba(png) {
+        Ok(v) => v,
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &format!("read PNG: {e}").into())?;
+            return Ok(out.into());
+        }
+    };
+    let opts = EncodeOptions { quantize };
+    // Encode first (for the preview), then dry-run the full replacement so
+    // the LZS fit is measured exactly as apply would.
+    match encode_replacement(&orig.tim, &rgba, pw, ph, &opts) {
+        Ok(enc) => {
+            Reflect::set(
+                &out,
+                &"new_palette_entries".into(),
+                &num(enc.new_palette_entries as f64),
+            )?;
+            Reflect::set(
+                &out,
+                &"quantized_pixels".into(),
+                &num(enc.quantized_pixels as f64),
+            )?;
+            let ptim = legaia_tim::parse(&enc.bytes)
+                .map_err(|e| err(format!("re-parse encoded TIM: {e}")))?;
+            let prgba = legaia_tim::decode_rgba8(&ptim, 0)
+                .map_err(|e| err(format!("decode encoded TIM: {e}")))?;
+            Reflect::set(&out, &"preview".into(), &rgba_js(pw, ph, &prgba)?)?;
+        }
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &e.to_string().into())?;
+            return Ok(out.into());
+        }
+    }
+    match replace_texture(&mut patcher, &target, &rgba, pw, ph, &opts, true) {
+        Ok(outcome) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+            Reflect::set(&out, &"error".into(), &"".into())?;
+            Reflect::set(&out, &"bpp".into(), &num(outcome.bpp as f64))?;
+            if let Some(fit) = outcome.lzs {
+                let f = Object::new();
+                Reflect::set(&f, &"capacity".into(), &num(fit.capacity as f64))?;
+                Reflect::set(&f, &"recompressed".into(), &num(fit.recompressed as f64))?;
+                Reflect::set(&out, &"fit".into(), &f)?;
+            }
+        }
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &format!("{e:#}").into())?;
+        }
+    }
+    Ok(out.into())
+}
+
+/// Apply a queue of validated texture replacements to a disc image. `specs`
+/// is an array of `{ entry, section, offset, png: Uint8Array, quantize }`
+/// (same coordinate conventions as [`preview_texture_replace`]). Applied in
+/// order; a failing spec aborts with its error (nothing partial is returned).
+/// Returns `{ data, summary }` - the same shape the page consumes from
+/// [`patch_rom`], so texture patches chain after a randomizer run.
+#[wasm_bindgen]
+pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsValue, JsValue> {
+    let list = js_sys::Array::from(&specs);
+    let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let mut summary = String::new();
+    let get_num = |o: &JsValue, k: &str| -> Result<f64, JsValue> {
+        Reflect::get(o, &k.into())?
+            .as_f64()
+            .ok_or_else(|| err(format!("texture spec missing numeric {k}")))
+    };
+    for (i, spec) in list.iter().enumerate() {
+        let entry = get_num(&spec, "entry")? as i32;
+        let section = get_num(&spec, "section")? as i32;
+        let offset = get_num(&spec, "offset")?;
+        let quantize = Reflect::get(&spec, &"quantize".into())?
+            .as_bool()
+            .unwrap_or(false);
+        let png = Uint8Array::from(Reflect::get(&spec, &"png".into())?).to_vec();
+        let target = texture_target(entry, section, offset);
+        let (w, h, rgba) =
+            decode_png_rgba(&png).map_err(|e| err(format!("texture {i} ({target}): {e}")))?;
+        let outcome = replace_texture(
+            &mut patcher,
+            &target,
+            &rgba,
+            w,
+            h,
+            &EncodeOptions { quantize },
+            false,
+        )
+        .map_err(|e| err(format!("texture {i} ({target}): {e:#}")))?;
+        summary.push_str(&format!(
+            "texture: {target} replaced ({}x{} {} bpp{}{}{})\n",
+            outcome.width,
+            outcome.height,
+            outcome.bpp,
+            if outcome.new_palette_entries > 0 {
+                format!(", {} new palette color(s)", outcome.new_palette_entries)
+            } else {
+                String::new()
+            },
+            if outcome.quantized_pixels > 0 {
+                format!(", {} pixel(s) quantized", outcome.quantized_pixels)
+            } else {
+                String::new()
+            },
+            match outcome.lzs {
+                Some(f) => format!(
+                    ", recompressed {}B into the {}B stream",
+                    f.recompressed, f.capacity
+                ),
+                None => String::new(),
+            },
+        ));
+    }
+    if list.length() == 0 {
+        summary.push_str("textures: untouched\n");
+    }
+
+    let patched = patcher.into_image();
+    let data = Uint8Array::new_with_length(patched.len() as u32);
+    data.copy_from(&patched);
+    let out = Object::new();
+    Reflect::set(&out, &"data".into(), &data)?;
+    Reflect::set(&out, &"summary".into(), &summary.into())?;
+    Ok(out.into())
+}

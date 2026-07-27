@@ -1,7 +1,8 @@
 # legaia-tim
 
-PSX TIM (texture image) parser and PNG exporter, plus a software model of
-the PSX VRAM frame the renderer reads from.
+PSX TIM (texture image) parser, PNG exporter, and PNG->TIM encoder (for
+same-size texture replacement), plus a software model of the PSX VRAM frame
+the renderer reads from.
 
 TIM is Sony's PSX texture format. It's not Legaia-specific - this crate
 follows the canonical PsyQ docs.
@@ -53,6 +54,16 @@ Pixel widths in real pixels:
 - `vram::Vram` - software model of PSX VRAM (1024×512 R16 framebuffer).
   Used by `legaia-engine-render` for per-primitive texture-page +
   CLUT-row decode in the fragment shader.
+- `encode` - the write side: `encode_replacement(original, rgba, w, h, opts)`
+  builds a TIM that keeps the original's pixel mode, dimensions, CLUT layout
+  and VRAM placement (so output size == input size, the same-size in-place
+  patching invariant) with the new pixels; `serialize` is the exact inverse of
+  `parse_strict`; `decode_png_rgba` reads any PNG color type. Original
+  indices/texels are reused wherever colors match, so `encode(decode(tim))`
+  is byte-identical; palette overflow errors list offending pixels, or folds
+  behind an explicit quantize opt-in. Alpha -> STP rule + the palette rules:
+  [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
+  Consumed by `legaia-patcher tim-replace` and the site ROM-patcher page.
 
 ## CLI
 

@@ -1510,6 +1510,7 @@ dependencies = [
  "legaia-iso",
  "legaia-lzs",
  "legaia-prot",
+ "legaia-tim",
  "libc",
  "serde",
  "serde_yaml",

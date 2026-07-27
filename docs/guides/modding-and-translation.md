@@ -100,6 +100,32 @@ Full record layout: [battle.md](../subsystems/battle.md); the equivalent flags
 on the extracted tree are `asset monster-archive --dump-block` /
 `--write-block` ([extracting-assets.md](extracting-assets.md)).
 
+## 4b. Replace a texture
+
+Any texture on the disc can be swapped for your own PNG - same loop, three
+subcommands:
+
+```bash
+# 1. Find it (coordinates + dimensions + curated labels; try grepping "title").
+./legaia-patcher tim-list --input "/path/to/disc.bin"
+
+# 2. Export it as an editable PNG.
+./legaia-patcher tim-export --input "/path/to/disc.bin" --entry 890 --offset 0x14228 -o title.png
+
+# 3. Edit it (keep the exact pixel size), then patch it back.
+./legaia-patcher tim-replace --input "/path/to/disc.bin" --entry 890 --offset 0x14228 \
+    --png title.png --output edited.bin --patch title.ppf
+```
+
+The replacement must keep the original's dimensions and fit its palette (the
+error names the offending pixels; `--quantize` folds extras to the nearest
+color), alpha becomes PSX transparency, and compressed (`lzs`-tier) textures
+apply only when the edit recompresses into the retail footprint. The same
+flow runs entirely in the browser on the site's ROM-patcher page (scan /
+thumbnails / preview). Full reference:
+[randomizer.md](../tooling/randomizer.md#texture-replacement); encoder rules:
+[tim.md](../formats/tim.md#encoding-png---tim-texture-replacement).
+
 ## 5. Translate the game
 
 The `translate` family exports the disc's text as an editable YAML **language

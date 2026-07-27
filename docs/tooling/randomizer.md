@@ -43,6 +43,8 @@ disc-gated, so CI runs without a disc. There is also a
 - **Additions retail has no table for**, added as machine-code hooks: experience
   for running away, charming an enemy onto your side, shiny Seru, and Seru
   trading.
+- **Textures** - replace any TIM on the disc with a user-authored PNG
+  ([texture replacement](#texture-replacement)).
 
 ## Contents
 
@@ -89,6 +91,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
   - [Starting level](#starting-level)
   - [Unused content](#unused-content)
+  - [Texture replacement](#texture-replacement)
   - [Re-pack slack](#re-pack-slack)
 - [The patch chain](#the-patch-chain)
 - [EDC/ECC: not game-specific](#edcecc-not-game-specific)
@@ -177,6 +180,10 @@ legaia-patcher equip-bonuses --input DISC.bin                   # read-only: equ
 legaia-patcher monster-block --input DISC.bin --id 10 --dump m10.bin      # dump one monster's decoded block
 legaia-patcher monster-block --input DISC.bin --id 10 --write m10.bin \
     --output edited.bin --patch m10.ppf                       # re-pack an edited block onto a copy
+legaia-patcher tim-list    --input DISC.bin                   # read-only: catalog every texture + its coordinates
+legaia-patcher tim-export  --input DISC.bin --entry 890 --offset 0x14228 -o title.png   # decode one to a PNG
+legaia-patcher tim-replace --input DISC.bin --entry 890 --offset 0x14228 \
+    --png edited.png --patch title.ppf                        # patch an edited PNG back (same-size in place)
 legaia-patcher randomize --input DISC.bin --seed myrun --drops shuffle
 legaia-patcher randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
@@ -330,7 +337,9 @@ decode the randomizable populations off the user's disc and print them, with ite
 ids and names resolved from the disc's own SCUS table, and chests and doors
 grouped by scene via CDNAME.
 
-`monster-block` is the one manual-edit subcommand: `--dump` LZS-decodes a
+`monster-block` and the `tim-*` family ([texture
+replacement](#texture-replacement)) are the manual-edit subcommands.
+`monster-block`: `--dump` LZS-decodes a
 single monster's `battle_data` block (PROT 867) to a file for hex editing, and
 `--write` re-packs the edited block into its fixed `0x14000`-byte slot on a
 copy of the disc (`--output` / `--patch`), through the same
@@ -2105,6 +2114,54 @@ drop / chest / steal modes:
   The accessory's documented effect is to make only Seru-class enemies appear in
   random encounters. Because it is unobtainable in retail that effect is never
   exercised by the shipped game, so treat it as experimental.
+
+### Texture replacement
+
+Swap any texture (TIM) on the disc for a user-authored image. Three
+subcommands (`crates/patcher` `texture` module + the `legaia_tim::encode`
+encoder; format rules in [`formats/tim.md`](../formats/tim.md#encoding-png---tim-texture-replacement)):
+
+```bash
+legaia-patcher tim-list    --input DISC.bin [--entry N] [--tier raw|lzs|all]
+legaia-patcher tim-export  --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] [--clut K] -o out.png
+legaia-patcher tim-replace --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] \
+    --png edited.png [--quantize] [--dry-run] [--output patched.bin] [--patch out.ppf]
+```
+
+`tim-list` prints both TIM catalogs with the coordinates the other two take:
+the **raw** tier (the flat-scan `tim_catalog` population - standalone
+entries, `timpack` members, and the unindexed system-UI gap before entry 0,
+addressed by omitting `--entry` and passing the flat `PROT.DAT` offset) and
+the **lzs** tier (`tim_deep_catalog` - TIMs inside LZS-compressed sections,
+addressed as `(entry, section, offset in the decoded section)`). Curated
+labels from `tim_labels` ride along, so `tim-list --input DISC.bin | grep
+title` finds the main-title sheet.
+
+The loop is export -> edit -> replace. The replacement must keep the
+original's exact pixel dimensions, and its colors must fit the texture's
+palette (a hard error listing the offending pixel coordinates, or `--quantize`
+to fold the least-frequent extras to their nearest palette color). The
+encoder copies the original's pixel mode, CLUT layout, and every VRAM
+placement field, so the write is same-size in place through
+`DiscPatcher::patch_prot_entry` (or `patch_named_file` for gap TIMs) with
+each touched sector's EDC/ECC re-encoded - the standard
+[patch chain](#the-patch-chain). Alpha maps to the PSX STP bit
+([the exact rule](../formats/tim.md#alpha---stp-mapping)).
+
+**LZS-tier fits.** A compressed texture is replaced by splicing the encoded
+TIM into the decoded section and recompressing the whole section with
+`legaia_lzs::compress_optimal`. The write happens only when the new stream
+fits the retail stream's byte footprint; otherwise the command fails with the
+exact byte counts and writes nothing. In practice there is headroom - the
+optimal re-packer beats the retail compressor on every section measured - but
+a low-redundancy replacement image can still exceed it.
+
+After a non-dry-run replacement the command re-reads the patched texture and
+verifies it decodes pixel-exactly to the input (skipped when `--quantize`
+folded pixels). The same pipeline runs client-side on the site's
+[ROM-patcher page](#in-the-browser): scan the disc for every texture (with
+thumbnails), preview original vs replacement as the game will display it, and
+queue swaps alongside the randomizer options - nothing is uploaded.
 
 ### Re-pack slack
 
