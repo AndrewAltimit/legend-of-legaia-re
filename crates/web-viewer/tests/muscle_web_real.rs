@@ -152,7 +152,7 @@ fn muscle_scene_accessors_are_parallel() {
         return;
     };
     let monster = first_roster_id(&mg);
-    assert!(mg.muscle_scene_ready(monster), "3D scene decodes");
+    assert!(mg.muscle_scene_ready(monster, 0), "3D scene decodes");
 
     let pos = mg.muscle_monster_positions(monster);
     let n = pos.len() / 3;
@@ -182,7 +182,7 @@ fn muscle_scene_accessors_are_parallel() {
 
     // One VRAM serves both bodies: 1 MB, with the monster page injected at
     // battle slot 0 (some non-zero bytes in the (320,256) page region).
-    let vram = mg.muscle_vram(monster);
+    let vram = mg.muscle_vram(monster, 0);
     assert_eq!(vram.len(), 1024 * 512 * 2);
     let row = 300usize; // inside the 256..512 page rows
     let off = (row * 1024 + 320) * 2;
@@ -194,6 +194,89 @@ fn muscle_scene_accessors_are_parallel() {
     // The reward names through the SCUS spell table (player Seru block).
     let name = mg.muscle_spell_name(0x81);
     assert!(!name.is_empty(), "reward spell names from the disc");
+}
+
+#[test]
+fn muscle_fighter_battle_form_accessors_are_parallel() {
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Every dome fighter slot (Vahn / Noa / Gala) assembles its battle form
+    // from its player battle file, with parallel accessor buffers.
+    for ch in 0..3u32 {
+        let pos = mg.muscle_fighter_positions(ch);
+        let n = pos.len() / 3;
+        assert!(n > 0, "char {ch} battle form assembles");
+        assert_eq!(mg.muscle_fighter_uvs(ch).len(), n * 2);
+        assert_eq!(mg.muscle_fighter_cba_tsb(ch).len(), n * 2);
+        assert_eq!(mg.muscle_fighter_flat_rgba(ch).len(), n * 4);
+        assert_eq!(mg.muscle_fighter_object_ids(ch).len(), n);
+        let idx = mg.muscle_fighter_indices(ch);
+        assert!(!idx.is_empty() && idx.len() % 3 == 0);
+        assert!(idx.iter().all(|&i| (i as usize) < n), "indices in range");
+
+        let parts = mg.muscle_fighter_part_count(ch);
+        assert!(parts > 0);
+        let anims: serde_json::Value =
+            serde_json::from_str(&mg.muscle_fighter_anims_json(ch)).unwrap();
+        let anims = anims.as_array().unwrap();
+        // Idle (slot 0) and all four per-command swings (0xC..=0xF - the
+        // card ids themselves) must be present; the flinch (slot 2) too.
+        for want in [0u64, 2, 0xC, 0xD, 0xE, 0xF] {
+            let row = anims
+                .iter()
+                .find(|a| a["slot"].as_u64() == Some(want))
+                .unwrap_or_else(|| panic!("char {ch} slot {want:#x} clip decodes"));
+            let frames = row["frame_count"].as_u64().unwrap() as usize;
+            assert!(frames > 0);
+            let stream = mg.muscle_fighter_pose_frames(ch, want as u32, parts);
+            assert_eq!(
+                stream.len(),
+                frames * parts as usize * 6,
+                "char {ch} slot {want:#x} pose stream padded to the rig"
+            );
+        }
+    }
+}
+
+#[test]
+fn muscle_queue_resolves_arts_through_the_real_tables() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+    // Level 50 Vahn: enough AGL budget for a three-swing sequence.
+    assert!(mg.muscle_start_vs(0, 50, monster, 0x2A));
+    let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+    let hand = st["hand"].as_array().unwrap();
+    let slot_for = |cmd: u64| {
+        hand.iter()
+            .position(|c| c["cmd"].as_u64() == Some(cmd))
+            .expect("hand carries all four directions")
+    };
+    // Vahn's Tornado Flame (Hyper): Ra-Seru Ra-Seru Arms = R R L =
+    // command ids 0xD 0xD 0xC (curated arts table, cross-checked against
+    // the SCUS arts-name table's own combo string).
+    for cmd in [0xDu64, 0xD, 0xC] {
+        assert!(mg.muscle_commit(slot_for(cmd)), "commit {cmd:#x}");
+    }
+    let arts: serde_json::Value = serde_json::from_str(&mg.muscle_round_arts_json()).unwrap();
+    let arts = arts.as_array().unwrap();
+    assert!(!arts.is_empty(), "queue R R L performs an art");
+    assert_eq!(arts[0]["start"], 0);
+    assert_eq!(arts[0]["len"], 3);
+    assert_eq!(arts[0]["kind"], "hyper", "Tornado Flame is a Hyper Art");
+    assert!(
+        arts[0]["name"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("tornado"),
+        "named off the disc's arts table: {}",
+        arts[0]["name"]
+    );
 }
 
 #[test]
@@ -232,7 +315,7 @@ fn muscle_arena_backdrop_decodes() {
     // The backdrop's texture pages ride in the dome VRAM: the (832, 0) page
     // band (the ground-grid sampling address) is non-zero after the merge.
     let monster = first_roster_id(&mg);
-    let vram = mg.muscle_vram(monster);
+    let vram = mg.muscle_vram(monster, 0);
     let row = 64usize; // inside the 0..256 page rows
     let off = (row * 1024 + 832) * 2;
     assert!(

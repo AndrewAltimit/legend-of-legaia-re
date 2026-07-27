@@ -16,6 +16,7 @@ legaia-iso = { path = "../iso" }
 legaia-patcher = { path = "../patcher" }
 legaia-tmd = { path = "../tmd" }
 legaia-art = { path = "../art" }
+legaia-gamedata = { path = "../gamedata" }
 legaia-mes = { path = "../mes" }
 legaia-seq = { path = "../seq" }
 legaia-vab = { path = "../vab" }

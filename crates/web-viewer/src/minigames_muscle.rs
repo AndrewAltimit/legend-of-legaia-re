@@ -42,6 +42,8 @@
 
 use super::*;
 
+use legaia_art::queue::{Character as ArtCharacter, Command as ArtCommand};
+use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::element_affinity::ElementAffinity;
 use legaia_asset::monster_archive;
 use legaia_asset::move_power;
@@ -98,12 +100,24 @@ const WEB_REWARD_SERU: u8 = 1;
 /// Non-elemental element id (`element_affinity` id space).
 const ELEMENT_NEUTRAL: u8 = 7;
 
+/// The curated gamedata tables (baked-in TOML), parsed once per session -
+/// the arts **kind** labels (regular / hyper / super / miracle) the banner
+/// classifier joins onto the disc's own arts rows.
+fn gamedata_db() -> &'static legaia_gamedata::Database {
+    static DB: std::sync::OnceLock<legaia_gamedata::Database> = std::sync::OnceLock::new();
+    DB.get_or_init(legaia_gamedata::Database::load)
+}
+
 /// One fighter's battle-formula inputs, resolved from disc records at contest
 /// start. Field names follow the battle-actor offsets the damage kernel reads.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MuscleFighter {
     /// Max HP (`+0x14e`); current HP lives in the rules session.
     hp_max: u16,
+    /// Max MP (`+0x152`) - displayed on the retail battle status plate. The
+    /// dome rules never spend it (the port has no cast path); `0` for a
+    /// monster opponent, whose plate retail does not draw.
+    mp_max: u16,
     /// AGL (`+0x154`) - the round-budget pool the dome seeds `ctx+0x6dc` from.
     budget_pool: u16,
     /// INT working value (`+0x168`) - the damage kernel's roll stat.
@@ -297,6 +311,7 @@ impl LegaiaMinigames {
         Some((
             MuscleFighter {
                 hp_max: actor.hp_max,
+                mp_max: actor.mp_max,
                 budget_pool: actor.agl,
                 int: actor.int,
                 udf: actor.udf,
@@ -322,13 +337,187 @@ impl LegaiaMinigames {
         let stream = scene_tmd_stream::detect(buf)?;
         let tmd_bytes = buf.get(stream.tmd_range())?;
         let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
-        let (mesh, _oids, shading) =
+        let (mesh, oids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
         let mut flat = Vec::with_capacity(shading.colors.len() * 4);
         for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
             flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
         }
+        // Drop TMD object 1 - the wall-base dust-decal object (12 ABE ABR-1
+        // quads over the (128..190, 192..253) window of the (832, 0) page,
+        // CLUT (16, 479)). Its texels are genuinely BRIGHT (whitish wisps up
+        // to ~(208, 208, 248)), so even a correct additive draw reads as a
+        // white cloud band ringing the arena - and the retail match capture
+        // shows a mist-free interior, i.e. the retail backdrop path does not
+        // draw this object as static geometry. The shell (object 0) keeps
+        // its own ABE lamp-glow prims. See
+        // docs/subsystems/minigame-muscle-dome.md (Arena backdrop).
+        if oids.iter().any(|&o| o != 0) {
+            let mut mesh2 = mesh.clone();
+            mesh2.positions.clear();
+            mesh2.uvs.clear();
+            mesh2.cba_tsb.clear();
+            mesh2.normals.clear();
+            mesh2.colors.clear();
+            mesh2.indices.clear();
+            let mut remap = vec![u32::MAX; oids.len()];
+            let mut flat2 = Vec::new();
+            for (i, &o) in oids.iter().enumerate() {
+                if o != 0 {
+                    continue;
+                }
+                remap[i] = mesh2.positions.len() as u32;
+                mesh2.positions.push(mesh.positions[i]);
+                mesh2.uvs.push(mesh.uvs[i]);
+                mesh2.cba_tsb.push(mesh.cba_tsb[i]);
+                mesh2.normals.push(mesh.normals[i]);
+                mesh2.colors.push(mesh.colors[i]);
+                flat2.extend_from_slice(&flat[i * 4..i * 4 + 4]);
+            }
+            for t in mesh.indices.chunks_exact(3) {
+                let (a, b, c) = (
+                    remap[t[0] as usize],
+                    remap[t[1] as usize],
+                    remap[t[2] as usize],
+                );
+                if a != u32::MAX && b != u32::MAX && c != u32::MAX {
+                    mesh2.indices.extend_from_slice(&[a, b, c]);
+                }
+            }
+            return Some((mesh2, flat2));
+        }
         Some((mesh, flat))
+    }
+
+    /// The player battle file (`data\battle\PLAYER1..3`) for a dome fighter
+    /// slot (0 = Vahn, 1 = Noa, 2 = Gala).
+    fn muscle_player_file(&self, char_slot: u32) -> Option<&[u8]> {
+        entry_bytes(
+            &self.prot,
+            &self.entries,
+            PLAYER_BATTLE_FILE_BASE + char_slot.min(2),
+        )
+    }
+
+    /// Assemble the character's **battle form** (fighter form) - the same
+    /// retail chain the arts viewer / native battles use: equipment-id
+    /// sections spliced (`assemble_character`, all-default sections - the
+    /// dome forbids equipment), TSB/CBA relocated to runtime band 0
+    /// (`FUN_800513F0` registration pass). Returns the assembly (for
+    /// `anm_bones`), the VRAM mesh and the per-vertex object ids.
+    fn muscle_fighter_build(
+        &self,
+        char_slot: u32,
+    ) -> Option<(
+        bca::AssembledCharacter,
+        legaia_tmd::mesh::VramMesh,
+        Vec<u32>,
+    )> {
+        let raw = self.muscle_player_file(char_slot)?;
+        let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+        let mut asm = bca::assemble_character(raw, &pack, &[0u8; 5]).ok()?;
+        bca::relocate_tsb_cba(&mut asm.tmd, 0).ok()?;
+        let tmd = legaia_tmd::parse(&asm.tmd).ok()?;
+        let (mesh, oids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &asm.tmd);
+        (!mesh.indices.is_empty()).then_some((asm, mesh, oids))
+    }
+
+    /// One battle-form action clip by **runtime action slot**, expanded per
+    /// assembled TMD object so channel `i` drives object `i`:
+    ///
+    /// - slot `0` - the record[0] idle loop (`idle_battle_animation`);
+    /// - slots `0xC..=0xF` - the per-command **swing records** of the
+    ///   equipment sections (`swing_battle_animations`, section defaults) -
+    ///   the same entries the dome's card ids `0xC..=0xF` name, so the
+    ///   card -> clip pairing is the disc's own, not a fit;
+    /// - other slots - the record[0] action table by index (the party
+    ///   hit-reaction family: `FUN_80053CB8` writes the constant map
+    ///   `[2, 3, 4, 5, 0xB]` to `+0x1EF..`, and the damage primitive
+    ///   `FUN_800402F4` stages the light flinch from `+0x1EF` = slot 2).
+    fn muscle_fighter_clip(
+        &self,
+        char_slot: u32,
+        slot: u32,
+    ) -> Option<monster_archive::MonsterAnimation> {
+        let raw = self.muscle_player_file(char_slot)?;
+        let (asm, _, _) = self.muscle_fighter_build(char_slot)?;
+        let anim = if (0xC..=0xF).contains(&slot) {
+            let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+            bca::swing_battle_animations(raw, &pack, &[0u8; 5])
+                .ok()?
+                .into_iter()
+                .find(|s| s.slot as u32 == slot)?
+                .anim
+        } else if slot == 0 {
+            bca::idle_battle_animation(raw).ok()??
+        } else {
+            bca::battle_animations(raw)
+                .ok()?
+                .into_iter()
+                .find(|a| a.action_id as u32 == slot)?
+        };
+        Some(bca::expand_animation_for_objects(&anim, &asm.anm_bones))
+    }
+
+    /// The character's Tactical-Arts catalog for the queue -> art resolver:
+    /// `(display name, kind, command string)` rows. Directions + names come
+    /// from the disc's own SCUS arts-name table when an executable was
+    /// loaded ([`legaia_art::arts_table`]); the curated
+    /// [`legaia_gamedata`] arts table is the fallback catalog on a raw
+    /// `PROT.DAT` load and, in both cases, the source of the **kind** label
+    /// (regular / hyper / super / miracle - ground-truth walkthrough
+    /// labels), joined by exact direction sequence.
+    fn muscle_art_catalog(&self, char_slot: usize) -> Vec<(String, &'static str, Vec<ArtCommand>)> {
+        let art_char = match char_slot {
+            1 => ArtCharacter::Noa,
+            2 => ArtCharacter::Gala,
+            _ => ArtCharacter::Vahn,
+        };
+        let gd_char = match char_slot {
+            1 => legaia_gamedata::Character::Noa,
+            2 => legaia_gamedata::Character::Gala,
+            _ => legaia_gamedata::Character::Vahn,
+        };
+        let db = gamedata_db();
+        let kind_str = |k: legaia_gamedata::ArtKind| match k {
+            legaia_gamedata::ArtKind::Regular => "regular",
+            legaia_gamedata::ArtKind::Hyper => "hyper",
+            legaia_gamedata::ArtKind::Super => "super",
+            legaia_gamedata::ArtKind::Miracle => "miracle",
+        };
+        let disc_rows: Vec<(String, &'static str, Vec<ArtCommand>)> = self
+            .scus
+            .as_deref()
+            .and_then(legaia_art::arts_table::parse_from_scus)
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .filter(|e| e.character == art_char && !e.commands.is_empty())
+                    .map(|e| {
+                        let dirs: Vec<u8> = e.commands.iter().map(|c| c.as_byte()).collect();
+                        let kind = db
+                            .find_art_by_directions(gd_char, &dirs)
+                            .map(|a| kind_str(a.kind))
+                            .unwrap_or("regular");
+                        (e.name, kind, e.commands)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !disc_rows.is_empty() {
+            return disc_rows;
+        }
+        db.arts_for(gd_char)
+            .filter(|a| !a.directions.is_empty())
+            .filter_map(|a| {
+                let cmds: Option<Vec<ArtCommand>> = a
+                    .directions
+                    .iter()
+                    .map(|&b| ArtCommand::from_byte(b))
+                    .collect();
+                Some((a.name.clone(), kind_str(a.kind), cmds?))
+            })
+            .collect()
     }
 
     /// Decode one static-table cue's voice layer to `(pcm, rate)`: descriptor
@@ -373,6 +562,7 @@ impl LegaiaMinigames {
         Some((
             MuscleFighter {
                 hp_max: rec.hp,
+                mp_max: 0,
                 budget_pool: bs[0],
                 int: bs[4],
                 udf: bs[2],
@@ -443,6 +633,7 @@ impl LegaiaMinigames {
                 // constants, surfaced as "fallback" in the state JSON.
                 MuscleFighter {
                     hp_max: 500,
+                    mp_max: 50,
                     budget_pool: 120,
                     int: 60,
                     udf: 40,
@@ -676,6 +867,7 @@ impl LegaiaMinigames {
             "round": s.round(),
             "hp": [s.hp(0), s.hp(1)],
             "hp_max": [c.fighters[0].hp_max, c.fighters[1].hp_max],
+            "mp_max": [c.fighters[0].mp_max, c.fighters[1].mp_max],
             "budget": [s.budget(0), s.budget(1)],
             "spent": [s.spent(0), s.spent(1)],
             "score": [s.score_percent(0), s.score_percent(1)],
@@ -747,20 +939,210 @@ impl LegaiaMinigames {
     // The opponent is the monster archive's own mesh + rigid-part animation
     // set (PROT 867), relocated to battle texture slot 0 exactly as the
     // battle loader does (`battle_render_mesh`, FUN_80055468); the player
-    // fighter reuses the Baka surface's battle-form party accessors
-    // (`baka_fighter_*` side 0 - the same PROT 1204 pack + PROT 1203 anim
-    // bank the turn-based battles draw). `muscle_vram` merges the party
-    // atlases with the monster's texture pool so one TmdRenderer VRAM serves
-    // both bodies.
+    // fighter is the character's **assembled battle form** - retail fields
+    // the party's normal fighter forms in the dome, not the Baka pack - the
+    // same `battle_char_assembly` chain the arts viewer and the native
+    // battles use: player battle file (PROT 863+char) equipment-id sections
+    // assembled + TSB/CBA-relocated to band 0, posed from the file's own
+    // record[0] action streams and per-command swing records. `muscle_vram`
+    // merges the character's band-0 texture pool + battle palette with the
+    // monster's texture pool so one TmdRenderer VRAM serves both bodies.
 
-    /// Whether the dome's 3D scene decodes for `monster_id`: the battle-form
-    /// party pack plus the monster's mesh + idle animation.
-    pub fn muscle_scene_ready(&self, monster_id: u16) -> bool {
+    /// Whether the dome's 3D scene decodes for `(monster_id, char_slot)`:
+    /// the character's assembled battle form plus the monster's mesh + idle
+    /// animation.
+    pub fn muscle_scene_ready(&self, monster_id: u16, char_slot: u32) -> bool {
         let monster_ok = self.monster_archive_entry().is_some_and(|e| {
             matches!(monster_archive::mesh(e, monster_id), Ok(Some(_)))
                 && matches!(monster_archive::idle_animation(e, monster_id), Ok(Some(_)))
         });
-        monster_ok && !self.baka_fighter_positions(0, 0).is_empty()
+        monster_ok && self.muscle_fighter_build(char_slot).is_some()
+    }
+
+    /// Per-vertex positions of the character's assembled battle-form mesh
+    /// (flat `f32`, 3 per vertex). Empty when the player file doesn't
+    /// assemble on this image.
+    pub fn muscle_fighter_positions(&self, char_slot: u32) -> Vec<f32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex `[u, v]` texel coords, parallel to the positions.
+    pub fn muscle_fighter_uvs(&self, char_slot: u32) -> Vec<i32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]` (band-0 relocated), parallel to the positions.
+    pub fn muscle_fighter_cba_tsb(&self, char_slot: u32) -> Vec<u32> {
+        let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Triangle indices of the assembled battle-form mesh.
+    pub fn muscle_fighter_indices(&self, char_slot: u32) -> Vec<u32> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, m, _)| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex TMD object index (the rigid part a vertex hangs from).
+    pub fn muscle_fighter_object_ids(&self, char_slot: u32) -> Vec<u32> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, _, oids)| oids)
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured_flag]` - the assembled form draws
+    /// fully textured (kept for parity with the monster API).
+    pub fn muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
+        self.muscle_fighter_build(char_slot)
+            .map(|(_, m, _)| vec![255u8; m.positions.len() * 4])
+            .unwrap_or_default()
+    }
+
+    /// Assembled TMD object count (pose rig width).
+    pub fn muscle_fighter_part_count(&self, char_slot: u32) -> u32 {
+        self.muscle_fighter_build(char_slot)
+            .map(|(asm, _, _)| asm.anm_bones.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// Every battle-form clip the dome page plays, in runtime action-slot
+    /// order: `[{"slot":0,"rate":r,"frame_count":f}, ...]` for the idle
+    /// (slot 0), the light flinch (slot 2, the head of the party
+    /// hit-reaction map `[2,3,4,5,0xB]` `FUN_80053CB8` writes to
+    /// `+0x1EF..`), the knockdown-family entry (slot 4) and the four
+    /// per-command swings (slots `0xC..=0xF` - the card ids themselves).
+    /// A slot whose stream doesn't decode is omitted.
+    pub fn muscle_fighter_anims_json(&self, char_slot: u32) -> String {
+        let rows: Vec<String> = [0u32, 2, 4, 0xC, 0xD, 0xE, 0xF]
+            .iter()
+            .filter_map(|&slot| {
+                let a = self.muscle_fighter_clip(char_slot, slot)?;
+                Some(format!(
+                    r#"{{"slot":{},"rate":{},"frame_count":{}}}"#,
+                    slot, a.rate, a.frame_count
+                ))
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// Battle-form clip `slot`'s pose frames: per (frame, part) absolute
+    /// `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), expanded per
+    /// assembled object and padded to `target_part_count` - the same pose
+    /// layout every other site animator consumes.
+    pub fn muscle_fighter_pose_frames(
+        &self,
+        char_slot: u32,
+        slot: u32,
+        target_part_count: u32,
+    ) -> Vec<i32> {
+        let Some(anim) = self.muscle_fighter_clip(char_slot, slot) else {
+            return Vec::new();
+        };
+        let parts = (target_part_count as usize).max(anim.part_count);
+        let mut out = Vec::with_capacity(anim.frame_count * parts * 6);
+        for frame in &anim.frames {
+            for p in 0..parts {
+                match frame.get(p) {
+                    Some(t) => out.extend_from_slice(&[
+                        t.tx as i32,
+                        t.ty as i32,
+                        t.tz as i32,
+                        t.rx as i32,
+                        t.ry as i32,
+                        t.rz as i32,
+                    ]),
+                    None => out.extend_from_slice(&[0; 6]),
+                }
+            }
+        }
+        out
+    }
+
+    /// Resolve the player's **committed card queue** through the character's
+    /// real Tactical-Arts tables: the greedy longest-match walk of the
+    /// runtime art recognizer (`legaia_art::recognize`), with the span each
+    /// matched art covers so the page can time the retail arts banner over
+    /// the playback:
+    ///
+    /// ```json
+    /// [ { "name": "Tornado Flame", "kind": "hyper", "start": 0, "len": 3 } ]
+    /// ```
+    ///
+    /// `start`/`len` index the player's committed queue (= the player's
+    /// playback events in order). Directions + names come from the disc's
+    /// own SCUS arts-name table (curated-table fallback on a raw `PROT.DAT`
+    /// load); the kind label joins the curated arts table by exact direction
+    /// sequence. Empty when no contest is live or nothing in the queue
+    /// performs an art.
+    pub fn muscle_round_arts_json(&self) -> String {
+        let Some(c) = self.muscle.as_ref() else {
+            return "[]".to_string();
+        };
+        // Card ids 0xC..=0xF are the direction-command ids; the art tables'
+        // direction bytes are 1..=4 in the same L/R/D/U order.
+        let input: Vec<ArtCommand> = c
+            .session
+            .queue(0)
+            .iter()
+            .filter_map(|&cmd| ArtCommand::from_byte(cmd.wrapping_sub(0xB)))
+            .collect();
+        if input.is_empty() {
+            return "[]".to_string();
+        }
+        let catalog = self.muscle_art_catalog(c.char_slot);
+        // Greedy longest-match, left to right, connectors skipped - the
+        // recognizer's documented walk (REF: legaia_art::recognize::
+        // recognize_art_sequence), tracked here with span positions.
+        let mut out: Vec<String> = Vec::new();
+        let mut i = 0usize;
+        while i < input.len() {
+            let mut best: Option<(usize, usize)> = None;
+            for (idx, (_, _, cmds)) in catalog.iter().enumerate() {
+                if cmds.is_empty() || !input[i..].starts_with(cmds) {
+                    continue;
+                }
+                if best.is_none_or(|(_, len)| len < cmds.len()) {
+                    best = Some((idx, cmds.len()));
+                }
+            }
+            match best {
+                Some((idx, len)) => {
+                    let (name, kind, _) = &catalog[idx];
+                    out.push(format!(
+                        r#"{{"name":{},"kind":{},"start":{},"len":{}}}"#,
+                        jstr(name),
+                        jstr(kind),
+                        i,
+                        len
+                    ));
+                    i += len;
+                }
+                None => i += 1,
+            }
+        }
+        format!("[{}]", out.join(","))
     }
 
     fn muscle_monster_render_mesh(&self, monster_id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
@@ -920,24 +1302,56 @@ impl LegaiaMinigames {
         out
     }
 
-    /// The dome duel's 1 MB PSX VRAM: the battle-form party atlases (PROT
-    /// 1205, their bundled CLUT strips) plus monster `monster_id`'s texture
-    /// pool injected at battle slot 0's coordinates (CLUT row 484, 4bpp page
-    /// at `(320, 256)`) - the same layout the retail battle loader builds -
-    /// plus the arena backdrop's own TIM pages (PROT 1225 tail chunks: 4bpp
-    /// pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479; disjoint from
-    /// the fighter bands, so upload order doesn't matter).
-    pub fn muscle_vram(&self, monster_id: u16) -> Vec<u8> {
+    /// The dome duel's 1 MB PSX VRAM: the character's **battle-form texture
+    /// pool** at the pinned band-0 placement (`FUN_80052FA0` uploads +
+    /// the decoded battle palette overlaid on the CLUT rows the assembled
+    /// mesh samples - the arts viewer's chain), plus monster `monster_id`'s
+    /// texture pool injected at battle slot 0's coordinates (CLUT row 484,
+    /// 4bpp page at `(320, 256)`) - the layout the retail battle loader
+    /// builds - plus the arena backdrop's own TIM pages (PROT 1225 tail
+    /// chunks: 4bpp pages at `(768, 0)` / `(832, 0)`, CLUT rows 473 / 479;
+    /// all three bands are disjoint, so upload order doesn't matter).
+    pub fn muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
         let mut vram = legaia_tim::Vram::new();
-        if let Some(raw) = entry_bytes(
-            &self.prot,
-            &self.entries,
-            legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX,
-        ) && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw)
+        if let Some(raw) = self.muscle_player_file(char_slot)
+            && let Ok(pack) = legaia_asset::battle_data_pack::parse(raw)
         {
-            for atlas in &atlases {
-                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
-                    vram.upload_tim(&tim);
+            if let Ok(uploads) = bca::character_texture_uploads(raw, &pack, &[0u8; 5], 0) {
+                for u in &uploads {
+                    vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
+                    if !u.clut.is_empty() {
+                        vram.write_clut_row(u.clut_x, u.clut_row(), &u.clut_bytes());
+                    }
+                }
+            }
+            // Battle palette on the CLUT rows/columns the relocated mesh
+            // samples (Vahn = the byte-exact fixed-stride record parse; the
+            // others = the equipment-robust collector).
+            if let Some((_, mesh, _)) = self.muscle_fighter_build(char_slot) {
+                let mut rows: Vec<u16> = mesh.cba_tsb.iter().map(|c| (c[0] >> 6) & 0x1FF).collect();
+                rows.sort_unstable();
+                rows.dedup();
+                let mut cols: Vec<u16> = mesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
+                cols.sort_unstable();
+                cols.dedup();
+                let pal = if char_slot == 0 {
+                    legaia_asset::battle_char_palette::find_record0(raw).and_then(|rec0| {
+                        legaia_asset::battle_char_palette::parse_record(raw, rec0).ok()
+                    })
+                } else {
+                    legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok()
+                };
+                if let Some(pal) = pal {
+                    for &row in &rows {
+                        for band in &pal.bands {
+                            let bytes: Vec<u8> = band
+                                .vram_words()
+                                .iter()
+                                .flat_map(|w| w.to_le_bytes())
+                                .collect();
+                            vram.write_clut_row(band.base, row, &bytes);
+                        }
+                    }
                 }
             }
         }

@@ -1607,6 +1607,7 @@ dependencies = [
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",
  "legaia-mdec",
