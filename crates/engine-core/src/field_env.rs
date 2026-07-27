@@ -25,6 +25,7 @@
 //!
 //! REF: FUN_8003A55C (object-grid walk), FUN_801D7B50 (window rebuild),
 //! REF: FUN_8003AEB0 (floor-LUT install)
+//! REF: FUN_801F69D8, FUN_801F7088 (per-cell terrain emitters: corner-average Y)
 
 use crate::field_regions::{self, TileTrigger};
 use crate::scene::Scene;
@@ -45,7 +46,11 @@ pub struct EnvDraw {
     pub res_tmd: usize,
     /// World X (`col*0x80 + x_off + 0x40`).
     pub world_x: i32,
-    /// World Y (`-lut[floor_nibble] + y_off`, or `0` without a LUT/nibble).
+    /// World Y. Placed objects: `-lut[floor_nibble] + y_off` (`FUN_8003A55C`).
+    /// Terrain / decoration cells (`floor_corner_nibbles` present): the
+    /// round-toward-zero average of the four corner tiles' `-lut[nibble]`
+    /// heights plus `y_off` (`FUN_801F69D8` / `FUN_801F7088`). `0` without a
+    /// LUT / nibble.
     pub world_y: i32,
     /// World Z (`row*0x80 - (z_off - 0x40)`).
     pub world_z: i32,
@@ -253,9 +258,14 @@ pub fn env_pack_tmd_indices(scene: &Scene, res: &SceneResources) -> Vec<usize> {
 /// [`legaia_asset::field_objects::Placement`] list) into environment draws.
 ///
 /// `env_tmds` is the [`env_pack_tmd_indices`] subset; `floor_lut` is the
-/// scene's MAN floor-height LUT (`Scene::field_floor_height_lut`). World Y is
-/// `-lut[nibble & 0xF] + y_off` when both are available, else the ground
-/// plane - exactly the retail placement math.
+/// scene's MAN floor-height LUT (`Scene::field_floor_height_lut`). World Y
+/// follows the retail sweep the placement list came from: a terrain /
+/// decoration cell (its [`Placement::floor_corner_nibbles`] is `Some`)
+/// averages the four corner tiles' `-lut[nibble]` heights (round toward
+/// zero) before adding `y_off` - the `FUN_801F69D8` / `FUN_801F7088` per-cell
+/// emitter math - while a placed object uses the single placement-tile
+/// nibble, `-lut[nibble & 0xF] + y_off` (`FUN_8003A55C`). Without a LUT or
+/// nibble the draw lands on the ground plane.
 ///
 /// This is the **bind-less** resolver: every draw comes back with
 /// [`EnvDraw::anim_id`] `0`. It is what the terrain / decoration cell sweeps
@@ -345,8 +355,27 @@ pub fn resolve_placed_env_draws(
                 }
             },
         };
-        let world_y = match (floor_lut, p.floor_nibble) {
-            (Some(lut), Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
+        let world_y = match (floor_lut, p.floor_corner_nibbles, p.floor_nibble) {
+            // Terrain / decoration cell: retail's per-cell emitters
+            // (`FUN_801F69D8` in PROT 0901 / `FUN_801F7088` in PROT 0900,
+            // identical bodies) sum the *runtime* (negated) LUT heights of the
+            // cell's 2x2 corner-tile block and divide by 4 rounding toward
+            // zero (`if (sum < 0) sum += 3; sum >>= 2`), then add the
+            // record's `y_off`. An edge cell between floor tiers lands
+            // mid-slope, where its mesh's baked ramp expects it; the
+            // single-nibble sample below snaps it a whole tier instead
+            // (Vidna's terraces shear apart by 64..128 units).
+            (Some(lut), Some(corners), _) => {
+                let sum: i32 = corners
+                    .iter()
+                    .map(|&n| -(lut[(n & 0x0F) as usize] as i32))
+                    .sum();
+                let avg = if sum < 0 { (sum + 3) >> 2 } else { sum >> 2 };
+                avg + p.y_off as i32
+            }
+            // Placed object: `FUN_8003A55C` reads the single placement-tile
+            // nibble.
+            (Some(lut), None, Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
             _ => 0,
         };
         draws.push(EnvDraw {
@@ -1157,6 +1186,7 @@ mod tests {
             world_z: 3 * 0x80 + 0x40,
             y_off,
             floor_nibble: nibble,
+            floor_corner_nibbles: None,
             pack_index,
             flags: 0x4,
             rot_x: 0,
@@ -1291,6 +1321,52 @@ mod tests {
             drops[1],
             EnvDrawDrop::SlotOutOfRange { pack_index: 5, .. }
         ));
+    }
+
+    /// A terrain / decoration cell (corner block present) resolves world Y
+    /// through retail's per-cell emitter math (`FUN_801F69D8` /
+    /// `FUN_801F7088`): the flat mean of the four corner tiles' `-lut[nibble]`
+    /// heights, rounded toward zero, plus `y_off` - NOT the single-nibble
+    /// placement formula. A tier-edge ramp cell (`[0, 4, 0, 4]`) must land
+    /// mid-slope; snapping it to either tier is the Vidna stair-step defect.
+    #[test]
+    fn terrain_corner_block_resolves_to_the_corner_average() {
+        let env_tmds = vec![10];
+        // The retail LUT shape: `lut[n] = n * 32` (the balden ramp).
+        let mut lut = [0i16; 16];
+        for (i, v) in lut.iter_mut().enumerate() {
+            *v = (i as i16) * 32;
+        }
+        // balden (61, 2): corners [0, 4, 0, 4], y_off 64 -> mean of
+        // (0, -128, 0, -128) = -256/4 = -64 (exact), +64 = 0.
+        let mut ramp = placement(Some(0), Some(0), 64);
+        ramp.floor_corner_nibbles = Some([0, 4, 0, 4]);
+        let (draws, _) = resolve_env_draws(&env_tmds, &[ramp], Some(lut));
+        assert_eq!(draws[0].world_y, 0, "mid-slope, not either tier");
+
+        // balden (62, 2): corners [4, 8, 4, 8], y_off 64 -> mean of
+        // (-128, -256, -128, -256) = -192, +64 = -128.
+        let mut ramp2 = placement(Some(0), Some(4), 64);
+        ramp2.floor_corner_nibbles = Some([4, 8, 4, 8]);
+        let (draws, _) = resolve_env_draws(&env_tmds, &[ramp2], Some(lut));
+        assert_eq!(draws[0].world_y, -128);
+
+        // Round toward zero on an inexact negative sum, retail's
+        // `if (sum < 0) sum += 3; sum >>= 2`: corners [1, 0, 0, 0] with
+        // lut[1] = 34 -> sum -34 -> trunc(-8.5) = -8 (a plain `>> 2` floors
+        // to -9).
+        let mut lut2 = [0i16; 16];
+        lut2[1] = 34;
+        let mut odd = placement(Some(0), Some(1), 0);
+        odd.floor_corner_nibbles = Some([1, 0, 0, 0]);
+        let (draws, _) = resolve_env_draws(&env_tmds, &[odd], Some(lut2));
+        assert_eq!(draws[0].world_y, -8, "negative sum rounds toward zero");
+
+        // Without the corner block (a placed object) the single-nibble
+        // placement formula still applies: -lut[nib] + y_off.
+        let placed = placement(Some(0), Some(4), 64);
+        let (draws, _) = resolve_env_draws(&env_tmds, &[placed], Some(lut));
+        assert_eq!(draws[0].world_y, -128 + 64);
     }
 
     #[test]

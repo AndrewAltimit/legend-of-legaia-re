@@ -354,9 +354,25 @@ pub struct Placement {
     pub world_z: i32,
     /// Record Y offset (added to the floor height by the consumer).
     pub y_off: i16,
-    /// Low nibble of the collision/floor grid byte at the anchor tile (the
-    /// floor-height tier), or `None` when the grid region is absent.
+    /// Low nibble of the collision/floor grid byte at the placement tile
+    /// (`(col, row)` - the tile whose object-index-grid cell selected this
+    /// record; `FUN_8003A55C` reads exactly that byte), or `None` when the
+    /// grid region is absent. The floor-height tier the **placed-object**
+    /// sweep resolves world Y through (`-lut[nibble] + y_off`).
     pub floor_nibble: Option<u8>,
+    /// The floor nibbles of the cell's **2 x 2 corner-tile block**
+    /// (`(col, row)`, `(col+1, row)`, `(col, row+1)`, `(col+1, row+1)` - the
+    /// flat `+0x4000` grid bytes at `+0`, `+1`, `+0x80`, `+0x81`), carried by
+    /// the **terrain / decoration** sweeps only (`None` on the placed-object
+    /// sweep). Retail's per-cell terrain emitters (`FUN_801F69D8` in PROT 0901
+    /// and its field sibling `FUN_801F7088` in PROT 0900, same body) resolve a
+    /// visible cell's world Y from the *average* of these four corners'
+    /// LUT heights, not from the single cell nibble - the consumer-side math
+    /// lives in `legaia_engine_core::field_env`. A cell on a floor-tier edge
+    /// therefore lands mid-slope, matching the ramp its mesh bakes; sampling
+    /// only `(col, row)` snaps every edge cell a full tier up or down, which
+    /// breaks terraced towns (Vidna) into stair-stepped plateaus.
+    pub floor_corner_nibbles: Option<[u8; 4]>,
     /// scene_asset_table TMD pack index for this object's mesh (see
     /// [`pack_mesh_index`]), or `None` for protagonist / NPC ids whose mesh is
     /// not in the scene pack.
@@ -452,6 +468,10 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
                 floor_nibble,
+                // The placed-object sweep (`FUN_8003A55C`) resolves Y from the
+                // single placement-tile nibble; the corner block is the
+                // terrain sweeps' input.
+                floor_corner_nibbles: None,
                 pack_index: pack_mesh_index(obj_idx, &rec),
                 flags: rec.flags,
                 rot_x: rec.rot_x,
@@ -530,6 +550,18 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
             let floor_nibble = field_map
                 .get(0x4000 + row * GRID_DIM + col)
                 .map(|b| b & 0x0F);
+            // The 2x2 corner-tile block retail's terrain emitters average the
+            // cell's Y from: the flat `+0x4000` grid bytes at `+0`, `+1`,
+            // `+0x80`, `+0x81` (`FUN_801F69D8` / `FUN_801F7088`, both read the
+            // raw neighbour bytes with no bounds clamp - the flat-offset read
+            // is the retail behaviour at the grid edge too).
+            let corner = |d: usize| field_map.get(0x4000 + row * GRID_DIM + col + d).copied();
+            let floor_corner_nibbles = match (corner(0), corner(1), corner(0x80), corner(0x81)) {
+                (Some(a), Some(b), Some(c), Some(d)) => {
+                    Some([a & 0x0F, b & 0x0F, c & 0x0F, d & 0x0F])
+                }
+                _ => None,
+            };
             let acol = (col as i32 + rec.col_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8;
             let arow = (row as i32 + rec.row_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8;
             out.push(Placement {
@@ -543,6 +575,7 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
                 floor_nibble,
+                floor_corner_nibbles,
                 pack_index: if walk_mesh {
                     Some(rec.pack_index_field)
                 } else {
@@ -858,6 +891,13 @@ mod tests {
         let cell2 = OBJECT_GRID_OFFSET + (11 * GRID_DIM + 20) * 2;
         map[cell2..cell2 + 2].copy_from_slice(&5u16.to_le_bytes());
 
+        // Floor grid: the cell tile at tier 4, its +X / +Z / +XZ corner
+        // neighbours at tiers 8 / 4 / 8 - a tier-edge ramp cell.
+        map[0x4000 + 10 * GRID_DIM + 20] = 0x14; // wall bits in the high nibble
+        map[0x4000 + 10 * GRID_DIM + 21] = 0x08;
+        map[0x4000 + 11 * GRID_DIM + 20] = 0x04;
+        map[0x4000 + 11 * GRID_DIM + 21] = 0x28;
+
         // parse_placements drops the unplaced record entirely.
         assert!(parse_placements(&map).is_empty());
         // parse_terrain_tiles emits the visible cell (and only it).
@@ -866,6 +906,30 @@ mod tests {
         assert_eq!(t[0].obj_idx, 5);
         assert_eq!((t[0].col, t[0].row), (20, 10));
         assert_eq!(t[0].pack_index, Some(12));
+        // The terrain sweep carries the 2x2 corner-tile floor-nibble block
+        // (flat `+0x4000` offsets +0/+1/+0x80/+0x81, wall nibbles masked off)
+        // for the retail per-cell emitters' corner-average Y (`FUN_801F69D8`
+        // / `FUN_801F7088`).
+        assert_eq!(t[0].floor_nibble, Some(4));
+        assert_eq!(t[0].floor_corner_nibbles, Some([4, 8, 4, 8]));
+    }
+
+    /// The placed-object sweep resolves world Y from the single placement-tile
+    /// nibble (`FUN_8003A55C`), so it must NOT carry the terrain sweeps'
+    /// corner block - `field_env` keys the two retail Y formulas on it.
+    #[test]
+    fn parse_placements_carries_no_corner_block() {
+        let mut map = vec![0u8; 0x12000];
+        let r = &mut map[OBJECT_RECORD_STRIDE * 7..OBJECT_RECORD_STRIDE * 8];
+        r[0x10..0x12].copy_from_slice(&3u16.to_le_bytes());
+        r[0x12..0x14].copy_from_slice(&FLAG_PLACED.to_le_bytes());
+        let cell = OBJECT_GRID_OFFSET + (10 * GRID_DIM + 20) * 2;
+        map[cell..cell + 2].copy_from_slice(&7u16.to_le_bytes());
+        map[0x4000 + 10 * GRID_DIM + 20] = 0x06;
+        let p = parse_placements(&map);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].floor_nibble, Some(6));
+        assert_eq!(p[0].floor_corner_nibbles, None);
     }
 
     #[test]

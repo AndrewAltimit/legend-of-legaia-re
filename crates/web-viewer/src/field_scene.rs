@@ -185,11 +185,19 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
                 .ok()
                 .flatten()
                 .unwrap_or_default(),
+            // Retail's per-cell terrain emitters (`FUN_801F69D8` /
+            // `FUN_801F7088`) skip records carrying the *placed* flag - those
+            // are the placement sweep's actors, drawn (and posed) above. The
+            // two layers also resolve Y differently (corner average vs single
+            // nibble), so a duplicate here would land at a different height.
             scene
                 .field_terrain_tiles(index)
                 .ok()
                 .flatten()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                .collect(),
         )
     };
     let (placements, _) = field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
