@@ -228,15 +228,21 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(8)
         }
 
-        // 0x13 / 0x14 - flag-bank predicate tests against the fourth flag
-        // bank `DAT_80085758` (via `func_0x8003CE64`). op_w(2) = flag index.
-        // Both jump to the shared `LAB_801D4830` epilogue: returns 1 when
-        // `predicate != 0`, else 4. 0x13 falls through unconditionally
-        // (`goto LAB_801D4830`); 0x14 inverts (returns 4 when predicate is
-        // set, default-arm when clear).
+        // 0x13 / 0x14 - flag-bank **conditional branches** on the fourth
+        // flag bank `DAT_80085758` (via `func_0x8003CE64`). Encoding
+        // `[2F][13|14][flag][delta]`: op_w(2) = flag index, op_w(3) =
+        // signed u16-word displacement. The shared `LAB_801D4830` epilogue
+        // returns size 4 (fall through past the 4-word op) on the
+        // untaken side and `4 + delta` on the taken side (`lhu v0,0x6(s3);
+        // addiu s2,v0,4` at `0x801D4838` - the delta may be negative,
+        // forming a spin-wait back onto a preceding wait op). 0x13 takes
+        // the branch when the flag is SET; 0x14 when it is CLEAR - jou's
+        // ambient lightning cyclers idle on `0x14 [0x364, -6]` until the
+        // director raises the flag, and exit their strobe loop through
+        // `0x14 [0x364, +1]` when it drops.
         0x13 => {
             if host.ext_query_flag_bank(op_w(2) as i16) != 0 {
-                MoveExtResult::default_arm()
+                MoveExtResult::with_size(4i16.wrapping_add(op_w(3) as i16))
             } else {
                 MoveExtResult::with_size(4)
             }
@@ -245,7 +251,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             if host.ext_query_flag_bank(op_w(2) as i16) != 0 {
                 MoveExtResult::with_size(4)
             } else {
-                MoveExtResult::default_arm()
+                MoveExtResult::with_size(4i16.wrapping_add(op_w(3) as i16))
             }
         }
 

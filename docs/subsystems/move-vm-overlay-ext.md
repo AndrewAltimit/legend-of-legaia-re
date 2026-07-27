@@ -78,7 +78,7 @@ Other player-relative predicates:
 - Sub-ops `0x36`/`0x37` are axis predicates against `0x8E - DAT_8007C348`: pass → continue (size 1), fail → skip 3-u16 follow-up (size 4).
 - Sub-ops `0x38`/`0x39` are squared-distance gates between the move actor and the player (`_DAT_8007C364`); `0x38` continues when *outside* radius `op[2]`, `0x39` continues when *inside*.
 - Sub-op `0x23` is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at `_DAT_1F800393` over `op[5]`, with the divide guarded against `op[5] == 0`.
-- Sub-ops `0x13`/`0x14` query the fourth flag bank (`DAT_80085758`) and gate on the result with the same size-1-or-4 shape; `0x14` inverts the predicate.
+- Sub-ops `0x13`/`0x14` are **conditional branches** on the fourth flag bank (`DAT_80085758`): encoding `[2F][13|14][flag][delta]`, where the taken side returns size `4 + delta` (`lhu v0,0x6(s3); addiu s2,v0,4` at `0x801D4838`) and the untaken side returns 4. `0x13` branches when the flag is set, `0x14` when it is clear; `delta` is signed, and a negative delta onto a preceding `0x09` wait forms the spin-wait-until-flag idiom jou's ambient lightning cyclers idle on (`2F 14 0364 FFFA`).
 
 ### Self-modifying bytecode ops (`0x04` / `0x1B` / `0x1E`)
 

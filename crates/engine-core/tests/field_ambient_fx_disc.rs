@@ -135,3 +135,59 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     let wrote = world.step_ambient_fx(&mut vram);
     assert!(wrote, "ambient CLUT-cell step rewrites VRAM texels");
 }
+
+/// The tree runs FOREVER: the director re-fires flag `0x364` on its own
+/// cadence and the cyclers spin-wait on the ext-`0x14 [0x364, -6]` gate,
+/// strobe while it holds, and decay back to zero adds - they never retire.
+///
+/// Regression for the ext `0x13`/`0x14` conditional-branch semantics
+/// (`pc += 4 + delta` on the taken side): the previous size-1-or-4 port fell
+/// straight through every gate, so all fifteen cyclers ran to HALT within
+/// ~30 game ticks and the palette froze saturated - the "jou stops pulsing
+/// after a second" defect the headless site check caught.
+#[test]
+fn jou_ambient_cyclers_pulse_forever_or_skip() {
+    let Some(root) = extracted_root() else { return };
+    let index = ProtIndex::open_extracted(&root).expect("prot index");
+    let scene = Scene::load(&index, "jou").expect("load jou");
+    let scripts = scene.find_event_scripts().expect("jou event scripts");
+    let mut world = World {
+        frame_step: 2,
+        ..Default::default()
+    };
+    world.install_field_stagers(scripts.bytes);
+    assert!(world.spawn_ambient_record(1, [0, 0, 0]));
+
+    // One row-502 cycler cell, tracked across ~10s of game ticks.
+    let mut saw_deep_ramp = false;
+    let mut zero_returns = 0u32;
+    let mut was_nonzero = false;
+    for _ in 0..300 {
+        world.tick_ambient_fx();
+        let s = world
+            .active_ambient_cell_fx()
+            .iter()
+            .find(|f| f.rect == (0x10, 0x1F6, 16, 1))
+            .map(|f| f.s_add)
+            .unwrap_or(0);
+        if s <= -90 {
+            saw_deep_ramp = true;
+        }
+        if s != 0 {
+            was_nonzero = true;
+        } else if was_nonzero {
+            zero_returns += 1;
+            was_nonzero = false;
+        }
+    }
+    assert!(saw_deep_ramp, "the strobe ramp reaches its deep keyframes");
+    assert!(
+        zero_returns >= 2,
+        "the pulse recycles (adds decayed back to zero {zero_returns} time(s) - a run-to-halt script freezes after one)"
+    );
+    let finished = world.ambient_fx.iter().filter(|p| p.finished).count();
+    assert!(
+        finished <= 1,
+        "only the installer may retire; {finished} parts finished"
+    );
+}
