@@ -34,6 +34,7 @@ pub mod cheat_applier;
 pub mod chunk_install;
 pub mod clut_cell_fx;
 pub mod clut_fx;
+pub mod coplanar_draws;
 pub mod cutscene;
 pub mod cutscene_caption;
 pub mod cutscene_narration;

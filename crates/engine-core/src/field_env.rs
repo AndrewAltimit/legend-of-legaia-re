@@ -37,7 +37,7 @@ use std::collections::{HashMap, HashSet};
 /// One resolved environment draw: a scene-pack mesh instanced at a world
 /// position. `world_*` are PSX field-frame coordinates (retail Y-down); the
 /// caller applies its own render-frame flip.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EnvDraw {
     /// Index into the environment-pack subset (the [`env_pack_tmd_indices`]
     /// order) - i.e. the placement's resolved pack index.
