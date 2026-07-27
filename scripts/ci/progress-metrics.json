@@ -23,7 +23,7 @@
       "key": "port",
       "label": "Engine port",
       "pct": 100.0,
-      "headline": "809 functions ported",
+      "headline": "810 functions ported",
       "detail": "Of the retail functions identified as port sites, the share carrying a clean-room Rust implementation. 0 remain on the worklist. Measured against what the project has identified, not against the whole game.",
       "denominator": "identified port sites",
       "href": "subsystems/engine.html"
@@ -31,8 +31,8 @@
     {
       "key": "wiring",
       "label": "Port wiring",
-      "pct": 77.6,
-      "headline": "628 of 809 ported functions reachable",
+      "pct": 77.7,
+      "headline": "629 of 810 ported functions reachable",
       "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 181 are implemented but not yet hosted, and each one says so in its source.",
       "denominator": "ported functions",
       "href": "subsystems/engine.html"
