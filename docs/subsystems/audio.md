@@ -1069,15 +1069,21 @@ rule):
 | caller | clip_id | chan | note |
 |---|---|---|---|
 | `FUN_8004C140` arts shout | char `*2-1` = `1`/`3`/`5` | per-art pool pick | XA2/XA4/XA6; sites `0x8004C45C`/`0x8004C5B4`; parsed by `arts_voice` |
-| `FUN_8004FCC8` / `FUN_8004FE5C` jingle | `(id-0x100)>>3`, remapped to `0x1A`/`0x1B`/`0x1C` | `(id-0x100)&7` | Miracle / summon fanfare queue; sites `0x8004FD74`/`0x8004FF18` |
+| `FUN_8004FCC8` / `FUN_8004FE5C` jingle | `(id-0x100)>>3` (odd slots 1/3/5 remap to `0x1A`/`0x1B`/`0x1C`) | `(id-0x100)&7` | dur `(u16[0x800788B8+n*2]*0x3C+99)/100`; sites `0x8004FD74`/`0x8004FF18` |
+| `FUN_8004AD80` Hyper fanfare | char `*2` = `0`/`2`/`4` (XA1/XA3/XA5) | per-art pair, `rand()%2` flip | anim-`0x1A` block via the jingle queue; pinned in [battle-action.md](battle-action.md); mirror `legaia_art::hyper_fanfare` |
+| `FUN_8004AD80` Super/Miracle fanfare | char `*2` (same banks) | `1` (generic, ids `0x101`/`0x111`/`0x121`) | Super-mark / scratch-word branch of the same block |
+| anim cue track (`FUN_800508DC`) | `(cue+0x38-0x100)>>3` | `(cue+0x38)&7` | party cue ids `0xC8..=0xFF`; Miracle finisher witnessed at `0x12D` = XA29 ch 5 |
 | field-VM XA opcode, `dur != 0` | `op>>3` | `op&7` | site `0x801E0420`; operands are per-scene MAN script literals |
 | per-character voice | `char_byte + 0x19` = `0x1A`..`0x1C` (XA27..29) | `0` | dur `0x5A`; battle 0898 `0x801F3A7C` |
 | debug sound-test | menu variable | menu variable | site `0x801CEF48` (overlay 0971) |
 
 The field-VM opcode operands (`op>>3`, `op&7`) live in the per-scene MAN
 scripts, which are disc-sourced and outside the committed dump corpus, so those
-cues stay named by their decode rule. The arts-shout and jingle channels are
-runtime pool / event-id picks; only their `clip_id` space is fixed.
+cues stay named by their decode rule. The arts-shout channel is a runtime pool
+pick; the Hyper-fanfare channel pair and the Super/Miracle generic ids are
+compile-time immediates of `FUN_8004AD80` (Confirmed - disassembly + recomp cue
+captures; the full per-art table lives in
+[battle-action.md](battle-action.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout)).
 
 #### Streamed cue census (`FUN_8003EAE4` / `FUN_80019794`)
 

@@ -1396,22 +1396,53 @@ capture-witnessed per-art picks are `arts_voice::CAPTURED_ART_CHANNELS`.
 
 Note the arts shout is **not** in the art record ([art-data](../formats/art-data.md)); its Hit
 Effect Cue `0x1A` low half is an SPU SFX-descriptor id ([sfx-table](../formats/sfx-table.md)),
-a separate subsystem. The stereo long-clip banks `XA3` / `XA5` are Noa/Gala Miracle & summon
-**fanfares** fired from the `FUN_8004FCC8` jingle path (`ra = 0x8004FD7C`), not the per-art
-shout - an easy mis-ID by ear. An art whose action constant sits **below the range table's
-`lo`** (the `1A`-class Hyper constants - Vahn `0x1E` Tornado Flame, Noa `0x20` Frost Breath,
-Gala `0x1C` Explosive Fist) has no pool row and plays **no** XA2/XA4/XA6 shout at all; the
-recomp cue captures show an `XA3`/`XA5` fanfare cue firing at exactly those arts' execution
-instead - the Hyper "voice" is the stereo fanfare, not a pool shout. Sibling cue in the battle overlay: SM state `0x6E` of
+a separate subsystem.
+
+An art whose action constant sits **below the range table's `lo`** (the `1A`-class Hyper
+constants) has no pool row and plays **no** XA2/XA4/XA6 shout at all. Its cue is the
+per-character stereo **fanfare** bank - the *even* clip slots `XA1`/`XA3`/`XA5` - fired from
+the staged-animation materialiser `FUN_8004AD80`'s anim-id-`0x1A` block through the
+`FUN_8004FCC8` jingle queue (Confirmed - disassembly `ghidra/scripts/funcs/8004ad80.txt` +
+frame-tagged recomp cue captures of every art below). The selector, per queued Hyper constant
+(`actor[0x1DF + cursor]`, cursor = `ctx+0x15`), is `jingle_id = rand() % 2 * 3 + base` - a
+coin flip between a fixed pair of channels `{base_ch, base_ch+3}` (no avoid-repeat memory,
+unlike the shout pool; a Frost Breath double-fire landed the same member twice). Base ids are
+immediates in three per-character switch blocks (`0x8004B8D4` / `0x8004B9A0` / `0x8004BA6C`,
+fire at `0x8004BB34`); the jingle decode is `n = id - 0x100`, clip `n>>3`, channel `n&7`,
+`dur = (u16[0x800788B8 + n*2]*0x3C + 99)/100` (every captured cue's `dur` reproduces this).
+The pairs, all capture-witnessed (witnessed members in parentheses):
+
+| character | bank | art (constant) | channel pair |
+|---|---|---|---|
+| Vahn | `XA1.XA` | Burning Flare `0x1C` | 4 / 7 (4) |
+| Vahn | `XA1.XA` | Fire Blow `0x1D` | 3 / 6 (6) |
+| Vahn | `XA1.XA` | Tornado Flame `0x1E` | 2 / 5 (both) |
+| Noa | `XA3.XA` | Hurricane Kick `0x1D` (stages `1A 1D 1E`) | 4 / 7 (4) |
+| Noa | `XA3.XA` | Vulture Blade `0x1F` | 3 / 6 (3) |
+| Noa | `XA3.XA` | Frost Breath `0x20` | 2 / 5 (2, twice) |
+| Gala | `XA5.XA` | Explosive Fist `0x1C` | 4 / 7 (both) |
+| Gala | `XA5.XA` | Lightning Storm `0x1D` | 3 / 6 (3) |
+| Gala | `XA5.XA` | Thunder Punch `0x1E` | 2 / 5 (5) |
+
+A **Super or Miracle** expansion takes the generic branch of the same block instead: when the
+queue-builder's per-seat Super mark (`ctx[0x28D + seat]`, set by `FUN_801EED1C`) or its
+16-word scratch `0x801F6990[cursor-1]` is non-zero, the id is the fixed per-character
+`0x101`/`0x111`/`0x121` = **channel 1** of the same bank (sites `0x8004B7D0` and
+`0x8004B840..68`; one-shot latch `ctx+0x28B`). Capture-witnessed on all three characters
+(Vahn Tri-Somersault, Noa Super Tempest, Gala Miracle). A Miracle's **finisher** additionally
+fires its animation cue track (`FUN_800508DC`, ids `0xC8..=0xFF` re-based `+0x38`) - witnessed:
+Gala's Biron Rage ended on id `0x12D` = `XA29.XA` channel 5. Table + decode mirrored at
+`legaia_art::hyper_fanfare`. Sibling cue in the battle overlay: SM state `0x6E` of
 `FUN_801E295C` plays a whole-file XA stream via `FUN_8003EAE4(0, slot)` with the slot from the
 SCUS byte table at `0x800787AF` (heroes → slot `0x08` = `XA9.XA`, no channel filter).
 
-The site's arts page reproduces cue 2 faithfully: `crates/web-viewer/src/arts_view.rs` parses
-`legaia_art::arts_voice` off the visitor's `SCUS_942.54`, demuxes the character's `XA2`/`XA4`/`XA6`
-channels, and maps each art (by its record `anim_id` = action constant) to the
-capture-witnessed channel where one is pinned, else to a stable member of its real candidate
-pool (`ArtsVoiceTable::pick_channel`); `site/js/arts-viewer.js` plays that channel as the art
-starts.
+The site's arts page reproduces both cues faithfully: `crates/web-viewer/src/arts_view.rs`
+parses `legaia_art::arts_voice` off the visitor's `SCUS_942.54`, demuxes the character's
+`XA2`/`XA4`/`XA6` channels, and maps each art (by its record `anim_id` = action constant) to
+the capture-witnessed channel where one is pinned, else to a stable member of its real
+candidate pool (`ArtsVoiceTable::pick_channel`); Hyper/Super/Miracle records resolve their
+fanfare channel through `legaia_art::hyper_fanfare` and demux `XA1`/`XA3`/`XA5` the same way;
+`site/js/arts-viewer.js` plays the resolved clip as the art starts.
 
 ### Battle helper functions
 
