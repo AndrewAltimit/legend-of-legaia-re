@@ -764,6 +764,8 @@ pub(super) fn cmd_play_window_with_record(
         field_posed_props: Vec::new(),
         field_posed_tmds: Vec::new(),
         field_stager_tmds: Vec::new(),
+        field_pack_mesh_idx: Vec::new(),
+        field_morph_live: std::collections::HashMap::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_terrain_draws: Vec::new(),

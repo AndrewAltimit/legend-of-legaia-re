@@ -50,8 +50,21 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x05 - opaque func56798().
-        0x05 => host.ext_func56798(state),
+        // 0x05 - RAND_ADD self-modify: write `op_w(2) + rand() % op_w(3)`
+        // into the bytecode word at `pc + op_w(4) + 5` (the raw arm at
+        // `overlay_0897_801d362c.txt` 0x801D3704.. computes
+        // `s0 = operands + op_w(4)*2 + 0xA`, calls the BIOS `A(2Fh) rand`
+        // thunk `FUN_80056798`, takes the modulo and stores; `li s2, 5`).
+        // jou's lightning director points it one word past this op - the
+        // following `0x09` wait's operand - which is what randomises the
+        // strike cadence.
+        0x05 => {
+            let div = op_w(3);
+            let r = if div == 0 { 0 } else { host.ext_rand16() % div };
+            let dst = state.pc as usize + op_w(4) as usize + 5;
+            host.move_bytecode_write_u16(dst, op_w(2).wrapping_add(r));
+            MoveExtResult::with_size(5)
+        }
 
         // 0x06 / 0x07 - bbox-vs-player test. The original canonicalises the
         // box in-place by swapping `op_w(2)/(4)` if `op_w(4) < op_w(2)`, then
@@ -642,8 +655,20 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x30 - opaque func56798 (same as 0x05).
-        0x30 => host.ext_func56798(state),
+        // 0x30 - RAND_PICK self-modify: write `op_w(2)` or `op_w(3)`
+        // (coin-flip on `rand() & 1`) into the bytecode word at
+        // `pc + op_w(4) + 5` - same destination law as 0x05
+        // (`overlay_0897_801d362c.txt` 0x801D45E8..; `li s2, 5`).
+        0x30 => {
+            let pick = if host.ext_rand16() & 1 != 0 {
+                op_w(2)
+            } else {
+                op_w(3)
+            };
+            let dst = state.pc as usize + op_w(4) as usize + 5;
+            host.move_bytecode_write_u16(dst, pick);
+            MoveExtResult::with_size(5)
+        }
 
         // 0x33 - `actor[+0xC0..+0xC8] += op_w(2..6)` (4 i16 anim-block slots
         // at byte-off 20/22/24/26 = `+0xC0/C2/C4/C6`). Wrapping add per the

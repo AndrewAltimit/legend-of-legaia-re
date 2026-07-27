@@ -1470,6 +1470,17 @@ pub struct World {
     /// captured rect. Filled lazily by [`World::step_ambient_fx`] from the
     /// host's VRAM the first time a cell fires; cleared on scene entry.
     pub ambient_cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// Scene-entry **VDF pulse** (enhancement): a rolling ramp envelope over
+    /// the scene's populated VDF pack for scenes whose entry-ambient tree
+    /// arms no morph lanes of its own (jou). Installed by
+    /// [`World::install_entry_vdf_pulse`], ticked with the ambient bank,
+    /// surfaced through [`World::current_morph_deltas`]. `None` = retail
+    /// behaviour (see `docs/subsystems/field-ambient-fx.md`).
+    pub entry_vdf_pulse: Option<crate::vdf_pulse::EntryVdfPulse>,
+    /// `(pack_slot, group)` pairs whose morph deltas changed during the last
+    /// ambient drain - the renderer-facing dirty set
+    /// ([`World::take_morph_dirty_slots`]).
+    pub morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
 
     /// Adaptive frame-step factor `dt` - the retail scratchpad byte
     /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
@@ -2442,6 +2453,8 @@ impl World {
             ambient_pending_game_ticks: 0,
             ambient_vsync_accum: 0,
             ambient_cell_captures: std::collections::HashMap::new(),
+            entry_vdf_pulse: None,
+            morph_dirty_slots: std::collections::BTreeSet::new(),
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,

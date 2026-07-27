@@ -307,6 +307,16 @@
       if (v.field_scene_anim_tick(1)) {
         this.renderer.uploadVram(v.field_scene_vram_bytes());
       }
+      /* VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
+       * sacs): the ambient world reports which env-pack meshes' deltas
+       * moved this tick; re-upload just those meshes' positions. */
+      if (typeof v.field_scene_morph_slots === 'function') {
+        const slots = v.field_scene_morph_slots();
+        for (let i = 0; i < slots.length; i++) {
+          const pos = v.field_scene_morph_positions(slots[i]);
+          if (pos.length) this.renderer.updateSceneMeshPositions(slots[i], pos);
+        }
+      }
     }
 
     /* One-line summary of the loaded scene, for a status bar. */

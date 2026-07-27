@@ -625,6 +625,16 @@ pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
             }
         }
     }
+    // Field scenes carry their VDF as the scene bundle's **type-7 slot**
+    // instead of a streaming chunk (the retail dispatcher case-7 install
+    // decodes the slot into `DAT_8007B7DC`; 61 populated packs in the
+    // corpus - jou's 17 flesh-ground sub-entries among them). Same decoded
+    // layout, so `World::vdf_record_bytes` indexes it unchanged.
+    for entry in &scene.entries {
+        if let Some(Ok(vdf)) = legaia_asset::scene_vdf::from_scene_bundle(&entry.bytes) {
+            return Some(vdf.bytes);
+        }
+    }
     None
 }
 

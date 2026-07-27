@@ -392,6 +392,62 @@ impl LegaiaRuntime {
         m.positions.iter().flatten().copied().collect()
     }
 
+    /// Drain the env-pack slots whose VDF morph deltas changed since the
+    /// last call (the engine world's ambient morph parts + the scene-entry
+    /// pulse, ticked by the sim's ambient drain). The page re-uploads each
+    /// slot's positions from [`Self::field_morph_positions`] - the play
+    /// page's side of the `FUN_8001C604` render substitution.
+    pub fn field_morph_slots(&mut self) -> Vec<u32> {
+        let Some(host) = self.scene_host.as_mut() else {
+            return Vec::new();
+        };
+        let mut slots: Vec<u32> = host
+            .world
+            .take_morph_dirty_slots()
+            .into_iter()
+            .map(|(s, _)| s as u32)
+            .collect();
+        slots.sort_unstable();
+        slots.dedup();
+        slots
+    }
+
+    /// Morphed vertex positions for env-pack slot `slot`: the plain
+    /// (`anim 0`) hybrid mesh build with the live VDF deltas staged onto
+    /// the TMD group vertices. Stream order matches the uploaded rest-pose
+    /// mesh (the prim walk is position-independent); empty when no morph
+    /// targets the slot.
+    pub fn field_morph_positions(&mut self, slot: u32) -> Vec<f32> {
+        let s = slot as usize;
+        let Some(res_idx) = self.field.as_ref().and_then(|f| f.env_tmds.get(s).copied()) else {
+            return Vec::new();
+        };
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let Some(res) = host.resources.as_ref() else {
+            return Vec::new();
+        };
+        let Some(rtmd) = res.tmds.get(res_idx) else {
+            return Vec::new();
+        };
+        let mut morphed: Option<legaia_engine_core::scene_resources::ResolvedTmd> = None;
+        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
+            if let Some(deltas) =
+                host.world
+                    .current_morph_deltas(s, group as u32, obj.vertices.len())
+            {
+                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
+                morphed = Some(base.with_group_deltas(group as u32, &deltas));
+            }
+        }
+        let Some(m) = morphed else {
+            return Vec::new();
+        };
+        let (mesh, _) = crate::field_scene::build_hybrid_env_mesh(&m, &res.vram);
+        mesh.positions.iter().flatten().copied().collect()
+    }
+
     pub fn field_mesh_uvs(&self) -> Vec<u8> {
         let Some((_, m, _)) = self.field_cur() else {
             return Vec::new();

@@ -854,6 +854,33 @@ impl SceneHost {
                     eprintln!("[scene] effect-texture VRAM upload skipped: {err:#}");
                 }
                 self.world.init_scene_animations(&res);
+                // Scene-entry VDF pulse (enhancement): when the scene's VDF
+                // pack is populated but the entry-ambient tree armed no
+                // retail morph lanes (jou's flesh-ground deltas are
+                // cutscene-armed), install the rolling pulse so the morphs
+                // move at plain entry. `install_entry_vdf_pulse` self-guards
+                // on retail-armed parts (town0e / rikuroa keep the faithful
+                // envelope). See `crate::vdf_pulse`.
+                if let Some(scene) = self.scene.as_ref() {
+                    let env = crate::field_env::env_pack_tmd_indices(scene, &res);
+                    let pack_objects: Vec<Vec<usize>> = env
+                        .iter()
+                        .map(|&ti| {
+                            res.tmds[ti]
+                                .tmd
+                                .objects
+                                .iter()
+                                .map(|o| o.vertices.len())
+                                .collect()
+                        })
+                        .collect();
+                    if self.world.install_entry_vdf_pulse(&pack_objects) {
+                        log::info!(
+                            "scene '{name}': entry VDF pulse armed over {} pack meshes",
+                            pack_objects.len()
+                        );
+                    }
+                }
                 self.resources = Some(res);
             }
         }

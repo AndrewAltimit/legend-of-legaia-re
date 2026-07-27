@@ -443,6 +443,10 @@ impl PlayWindowApp {
             self.pending_camera_snaps.clear();
             None
         };
+        // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
+        // sacs): rebuild the pack meshes whose morph deltas moved this frame
+        // (collected outside the renderer borrow; uploaded inside it below).
+        let field_morph_rebuilds = self.take_field_morph_rebuilds();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -672,6 +676,21 @@ impl PlayWindowApp {
             let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
                 self.posed_prop_frame_draws(r);
             legaia_engine_render::profile::mark("pose:prop");
+            // VDF vertex morphs: upload this frame's rebuilt morph meshes;
+            // the draw loops below substitute them for the static uploads
+            // (`field_morph_live` - the `FUN_8001C604` render substitution).
+            for (mesh_idx, vmesh) in &field_morph_rebuilds {
+                if let Ok(m) = r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    self.field_morph_live.insert(*mesh_idx, m);
+                }
+            }
 
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
@@ -1000,7 +1019,11 @@ impl PlayWindowApp {
                     // (stone plaza, paths, riverbank).
                     if layer_on("tiles") {
                         for (mesh_idx, model) in &self.field_terrain_draws {
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            let mesh = self
+                                .field_morph_live
+                                .get(mesh_idx)
+                                .or_else(|| self.meshes.get(*mesh_idx));
+                            if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
@@ -1041,7 +1064,11 @@ impl PlayWindowApp {
                             {
                                 continue;
                             }
-                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                            let mesh = self
+                                .field_morph_live
+                                .get(mesh_idx)
+                                .or_else(|| self.meshes.get(*mesh_idx));
+                            if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,

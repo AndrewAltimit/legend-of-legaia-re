@@ -143,6 +143,11 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         // Default mirrors retail's startup-time write of `DAT_1F80037D`.
         0x10
     }
+    fn ext_rand16(&mut self) -> u16 {
+        // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand`; the world RNG
+        // stands in.
+        self.world.next_rng() as u16
+    }
 
     // --- ext-VM globals -----------------------------------------------
 

@@ -553,6 +553,21 @@ impl PlayWindowApp {
             })
             .unwrap_or_default();
         self.field_stager_tmds = field_stager_tmds;
+        // Env-pack-slot -> uploaded-mesh bridge for the VDF morph
+        // substitution (`redraw`'s `refresh_field_morph_meshes`).
+        self.field_pack_mesh_idx = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .map(|scene| {
+                legaia_engine_core::field_env::env_pack_tmd_indices(scene, &res)
+                    .into_iter()
+                    .map(|ti| tmd_src_index.iter().position(|&x| x == ti))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.field_morph_live.clear();
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
         self.cpu_vram_base = Some(res.vram.clone());

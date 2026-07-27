@@ -198,6 +198,67 @@ impl PlayWindowApp {
         offs
     }
 
+    /// Rebuild + re-upload the env-pack meshes whose VDF morph deltas moved
+    /// this frame (the world's dirty set: retail op-`0x0A` ambient morph
+    /// parts + the scene-entry pulse). The rebuilt mesh replaces the static
+    /// upload in every draw of that mesh (`field_morph_live` substitution
+    /// in the redraw loops) - the native side of the `FUN_8001C604` render
+    /// substitution: staged vertices for the draw, authored rest pose
+    /// untouched.
+    ///
+    /// REF: FUN_8001C604
+    pub(super) fn take_field_morph_rebuilds(&mut self) -> Vec<(usize, legaia_tmd::mesh::VramMesh)> {
+        let dirty = self.session.host.world.take_morph_dirty_slots();
+        if dirty.is_empty() {
+            return Vec::new();
+        }
+        let mut slots: Vec<usize> = dirty.iter().map(|&(s, _)| s).collect();
+        slots.sort_unstable();
+        slots.dedup();
+        let Some(vram) = self.cpu_vram_base.as_ref() else {
+            return Vec::new();
+        };
+        let mut rebuilds = Vec::new();
+        for slot in slots {
+            let Some(Some(mesh_idx)) = self.field_pack_mesh_idx.get(slot).copied() else {
+                continue;
+            };
+            let Some((tmd, raw)) = self.field_stager_tmds.get(slot) else {
+                continue;
+            };
+            // Stage the deltas onto a cloned TMD (rest pose untouched).
+            let mut morphed = tmd.clone();
+            let mut any = false;
+            for (group, obj) in morphed.objects.iter_mut().enumerate() {
+                let Some(deltas) = self.session.host.world.current_morph_deltas(
+                    slot,
+                    group as u32,
+                    obj.vertices.len(),
+                ) else {
+                    continue;
+                };
+                for (v, d) in obj.vertices.iter_mut().zip(deltas.iter()) {
+                    v.x = v.x.wrapping_add(d[0]);
+                    v.y = v.y.wrapping_add(d[1]);
+                    v.z = v.z.wrapping_add(d[2]);
+                }
+                any = true;
+            }
+            if !any {
+                continue;
+            }
+            let vmesh =
+                legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&morphed, raw, |cba, tsb, uvs| {
+                    vram.prim_has_texture_data(cba, tsb, uvs)
+                });
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            rebuilds.push((mesh_idx, vmesh));
+        }
+        rebuilds
+    }
+
     /// Shim kept for the redraw loop: prop clips + touch/interact dispatch
     /// are stepped by the world itself (`World::tick_prop_interactions`,
     /// which runs inside `World::tick`'s field arm - collision drops and the

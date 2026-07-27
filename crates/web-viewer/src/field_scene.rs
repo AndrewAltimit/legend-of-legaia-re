@@ -313,9 +313,29 @@ pub fn build_field_scene_anim(
                 let mut world = Box::new(legaia_engine_core::world::World::default());
                 world.frame_step = frame_step;
                 world.install_field_stagers(&stager_bytes);
+                // VDF buffer before the spawn: flag-gated installer records
+                // resolve morph lanes at spawn-run.
+                world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
                 for arg in installs {
                     world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
                 }
+                // Scene-entry VDF pulse (enhancement, `engine-core::vdf_pulse`):
+                // jou's flesh-ground morph pack moves at plain entry; scenes
+                // whose stager table arms morphs itself keep retail behaviour
+                // (the installer self-guards).
+                let pack_objects: Vec<Vec<usize>> = pack
+                    .env_tmds
+                    .iter()
+                    .map(|&ti| {
+                        pack.res.tmds[ti]
+                            .tmd
+                            .objects
+                            .iter()
+                            .map(|o| o.vertices.len())
+                            .collect()
+                    })
+                    .collect();
+                world.install_entry_vdf_pulse(&pack_objects);
                 if !world.ambient_fx.is_empty() {
                     ambient = Some(world);
                 }
@@ -619,6 +639,63 @@ impl LegaiaViewer {
             return false;
         };
         anim.tick(vsyncs, &mut pack.res.vram)
+    }
+
+    /// Drain the environment-pack slots whose VDF morph deltas changed
+    /// since the last call (retail-armed ambient morph parts + the
+    /// scene-entry pulse). For each returned slot the page re-uploads that
+    /// mesh's positions from [`Self::field_scene_morph_positions`] - the
+    /// browser side of the `FUN_8001C604` render substitution.
+    pub fn field_scene_morph_slots(&mut self) -> Vec<u32> {
+        let Some(world) = self
+            .field_scene
+            .as_mut()
+            .and_then(|p| p.anim.as_mut())
+            .and_then(|a| a.ambient.as_mut())
+        else {
+            return Vec::new();
+        };
+        let mut slots: Vec<u32> = world
+            .take_morph_dirty_slots()
+            .into_iter()
+            .map(|(s, _)| s as u32)
+            .collect();
+        slots.sort_unstable();
+        slots.dedup();
+        slots
+    }
+
+    /// The morphed vertex-position stream for environment-pack slot `slot`:
+    /// the same hybrid mesh build as [`Self::field_scene_mesh`] with the
+    /// live VDF deltas staged onto the TMD's group vertices
+    /// (`ResolvedTmd::with_group_deltas` - the rest pose is never
+    /// mutated). The prim walk is position-independent, so the stream
+    /// aligns 1:1 with the uploaded mesh; the page swaps positions only.
+    /// Empty when no morph targets the slot.
+    pub fn field_scene_morph_positions(&mut self, slot: u32) -> Vec<f32> {
+        let Some(pack) = self.field_scene.as_mut() else {
+            return Vec::new();
+        };
+        let Some(world) = pack.anim.as_mut().and_then(|a| a.ambient.as_mut()) else {
+            return Vec::new();
+        };
+        let s = slot as usize;
+        let Some(&res_idx) = pack.env_tmds.get(s) else {
+            return Vec::new();
+        };
+        let rtmd = &pack.res.tmds[res_idx];
+        let mut morphed: Option<legaia_engine_core::scene_resources::ResolvedTmd> = None;
+        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
+            if let Some(deltas) = world.current_morph_deltas(s, group as u32, obj.vertices.len()) {
+                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
+                morphed = Some(base.with_group_deltas(group as u32, &deltas));
+            }
+        }
+        let Some(m) = morphed else {
+            return Vec::new();
+        };
+        let (mesh, _) = build_hybrid_env_mesh(&m, &pack.res.vram);
+        mesh.positions.iter().flatten().copied().collect()
     }
 
     /// Per-placement env-pack slot, one `u32` per placed object. Feed each

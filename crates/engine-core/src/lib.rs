@@ -134,6 +134,7 @@ pub mod text_balloon;
 pub mod tile_board;
 pub mod title;
 pub mod title_screen_atlas;
+pub mod vdf_pulse;
 pub mod walk_regen;
 pub mod world;
 pub mod world_map;

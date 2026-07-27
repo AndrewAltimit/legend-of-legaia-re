@@ -405,6 +405,18 @@ struct PlayWindowApp {
     /// to draw op-0x34-sub-3 field effects against the SCENE meshes, not the
     /// battle `global_tmd_pool`.
     field_stager_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
+    /// Per env-pack-slot uploaded-mesh index (`meshes`), for the VDF morph
+    /// substitution: `field_pack_mesh_idx[pack_slot]` names the static mesh
+    /// a live morph rebuild stands in for. `None` for pack TMDs with no
+    /// uploaded textured mesh. Rebuilt per scene in `upload_assets`.
+    field_pack_mesh_idx: Vec<Option<usize>>,
+    /// Live VDF-morphed replacements keyed by uploaded-mesh index: when the
+    /// world's morph deltas move (`World::take_morph_dirty_slots`), the
+    /// affected pack mesh is rebuilt with the staged vertices
+    /// (`ResolvedTmd::with_group_deltas` arithmetic) and every draw of that
+    /// mesh substitutes this upload - the native side of the
+    /// `FUN_8001C604` render substitution.
+    field_morph_live: std::collections::HashMap<usize, UploadedVramMesh>,
     /// Untextured (`F*`/`G*`) vertex-colour meshes for field props whose prims
     /// carry per-vertex colours instead of UVs (the textured VRAM-mesh path
     /// drops them). Parallel render list to `meshes`.
