@@ -600,6 +600,33 @@ so the browser page's per-venue anchors are fitted and marked as such.
 
 Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Square is reel B (retail: `0x80`), and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
 
+The same host also runs the overlay's **actor-side frame**
+(`window/minigames.rs`, `tick_fishing_actors`):
+
+- a free-swimming fish (`fishing_actors::FishWander` - the `FUN_801d2278`
+  facing step / wander re-roll / camera publish as one advancing object),
+  steered by the held D-pad while the cast is idle and spawning its
+  retarget ripple (`fishing_chrome::ripple_spawn`) into the window's
+  minigame effect pool;
+- the venue floor solve: the scene's `.MAP` extended footprint is read at
+  entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each
+  frame through `fishing_chrome::float_actor_tick` ->
+  `minigame_floor::ground_height` with the `height_ramp` table;
+- the camera: `venue_camera_reset` on entry and the per-frame `fish_camera`
+  publish, both folded into the engine camera's retail global trios
+  (`Camera::globals` - the same `_DAT_8007B790..` / `_DAT_800840B8..` /
+  `_DAT_80089118..` axes retail writes);
+- the reeling-line actor (`fishing_actors::LineActorSim`): armed on the
+  hook (the `HOOK_CUE` arm phase), tracked through the fight, and run
+  through the staged catch celebration on a landed fish - the
+  `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every
+  unlocked `celebration_bursts` tier into the effect pool + SFX scheduler;
+- the strike splash (`fishing_chrome::splash_burst`) on the hook edge, the
+  point-exchange panel framed by `fishing_chrome::centred_panel` and swayed
+  by `fishing_chrome::sway_vector`, and the overlay's developer readout
+  (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up
+  and the pad modifier is held.
+
 ## Point exchange (prize shop)
 
 The shop branch of the mode SM (states `0x64`..`0x7a`) is a **point exchange**: it spends the persistent fishing-point pool `_DAT_8008444C` on in-game items. The screens are:

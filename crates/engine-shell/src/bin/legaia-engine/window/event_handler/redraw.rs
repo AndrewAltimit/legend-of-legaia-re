@@ -182,6 +182,13 @@ impl PlayWindowApp {
             // (the per-frame `tick_sfx_frame` below fires it against the
             // resident class-2 sound bank).
             self.drain_baka_sfx_cues();
+            // Minigame side-channels: the dance count-in + tutorial + effect
+            // spawns, the fishing venue actors (wander / line / floor solve /
+            // camera publish / sway), the Baka round chrome, and the shared
+            // effect pool. Runs BEFORE tick_fishing_banners so
+            // `fishing_prev_phase` still holds last frame's phase for its own
+            // edge detection.
+            self.tick_minigame_extras();
             // Fishing: advance the HUD's one-shot banner animations (hook /
             // reel-in / miss / auxiliary / strike splash) and cache their
             // draws - the retail driver tail's own per-frame timer loop.

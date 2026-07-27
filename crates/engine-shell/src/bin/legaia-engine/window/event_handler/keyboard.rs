@@ -318,7 +318,12 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            if self.session.host.world.mode == SceneMode::Dance {
+            if self.dance_countin.is_some() {
+                // Abort during the pre-song count-in: nothing entered yet.
+                self.dance_countin = None;
+                self.dance_countin_draw = None;
+                log::info!("dance: count-in aborted");
+            } else if self.session.host.world.mode == SceneMode::Dance {
                 if let Some(g) = self.session.host.world.exit_dance() {
                     log::info!(
                         "dance: aborted at score {} (pass={})",
@@ -328,7 +333,24 @@ impl PlayWindowApp {
                     self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
-                log::info!("dance: started - Square/Circle/Triangle are the arrows, K to quit");
+                log::info!("dance: count-in - Square/Circle/Triangle are the arrows, K to quit");
+            }
+            return;
+        }
+        // `U`: the how-to dance (retail's setumei mode) with the Disco King
+        // tutorial actor running beside the session - the opening prompt,
+        // the caption steps and the two practice gates, with placeholder
+        // caption text (the overlay's strings are Sony rodata).
+        if matches!(code, KeyCode::KeyU)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+            && self.dance_countin.is_none()
+            && self.session.host.world.mode != SceneMode::Dance
+        {
+            if self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::HowTo, false) {
+                self.dance_tutorial =
+                    Some(legaia_engine_core::dance_tutorial::DanceTutorial::new());
+                log::info!("dance: how-to started - face buttons advance the tutorial");
             }
             return;
         }
