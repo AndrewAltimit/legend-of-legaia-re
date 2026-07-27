@@ -73,9 +73,20 @@ Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
 2`) - the retail item shop carries no per-shop gold price, which is
 why the sell-side proceeds derive from the same table the buy list
 shows. (The casino prize exchange's coin table at `0x801E4518` is a
-separate system with its own stock records.) The sessions are not yet
-wired into the hosts' menu flow (the `ShopQuantity` screen still
-drives `ShopSession::set_quantity`).
+separate system with its own stock records.)
+
+Wiring: the **recipient picker is live**. `MenuRuntime`'s buy-list
+commit runs the retail state-2 dispatch
+(`engine-core::shop::buy_list_confirm_route`, `FUN_801DB21C` - the
+affordability refusal beat plus the item-record `+0` kind switch), and
+an equipment row opens `BuyRecipientSession` behind the
+`MenuRuntime::retail_equipment_buy` opt-in - the browser play page
+enables it and draws windows 36 / 25 / 41 over the parked buy list.
+The two quantity **sessions** are not yet the hosts' quantity screen
+(the `ShopQuantity` list still drives `ShopSession::set_quantity`),
+and the engine's `buy_from_shop` kernel still applies no Point Card
+accrual - `World` carries no Point Card counter, so the recipient
+flow runs with the accrual gate closed.
 
 ### State-machine routing
 
@@ -181,7 +192,9 @@ line at y+34 (`0x22`) from the panel top. The running total's digit-field
 width is chosen from the magnitude of the **unit price**, not of the total
 (cascading compares against `99` / `999` / `9999` giving 4..7 columns), which
 is what keeps the number right-aligned as the quantity climbs. Ported as
-`engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`.
+`engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`; the
+browser play page lays the pens out beside its quantity list
+(`web-viewer::play_shop`).
 
 ### Item detail / sell panel (`FUN_801D5AE8`)
 
@@ -206,7 +219,8 @@ The whole body is gated on the staged id word `DAT_801E46B0` being
 **positive**, with one exception: the `0x90 x 0x28` shade box at
 `(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
 rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
-item_passive_index}`.
+item_passive_index}`; the browser play page draws it for the sell list in
+place of the buy-side info window 34 (`web-viewer::play_shop`).
 
 `engine-render::shop_draws_for` implements the above layout using these
 confirmed constants. The cost prompt and Yes/No cursor are rendered in

@@ -432,14 +432,14 @@ pub enum BuyListRoute {
 /// `slt gold, price` + buzz at `0x801db314..0x801db328`, the kind
 /// dispatch at `0x801db334..0x801db364`)
 ///
-/// NOT WIRED: two of the three routes have no screen to reach.
-/// `crate::menu_runtime` sends every confirmed buy row to `ShopQuantity`;
-/// there is no equipment recipient picker ([`BuyRecipientSession`] is
-/// itself disclosed unwired below) and no list-level refusal beat - the
-/// affordability test happens later, in `World::buy_from_shop`. The kind
-/// byte is also absent from the row: [`ShopItem`] carries `item_id` and
-/// `price` only, so the dispatch has nothing to switch on. Wiring needs
-/// the recipient picker plus the item record's `+0` kind on the shop row.
+/// Wired: `crate::menu_runtime`'s `ShopBuy` commit + route override run
+/// this dispatch on every confirmed buy row (kind byte off the on-disc
+/// item-effect tables, `World::item_effects`). `Refused` is the retail
+/// list-level refusal beat (the hand stays on the row); `RecipientPicker`
+/// opens [`BuyRecipientSession`] while the host opted into
+/// `MenuRuntime::retail_equipment_buy`; `ModeSelect` returns to the
+/// Buy/Sell/Quit picker; `QuantityPicker` keeps the quantity route. A
+/// PROT.DAT-only load has no kind byte and falls back to the stackable arm.
 pub fn buy_list_confirm_route(kind: u8, gold: i32, price: u16) -> BuyListRoute {
     if gold < price as i32 {
         return BuyListRoute::Refused;
@@ -677,8 +677,12 @@ enum BuyRecipientPhase {
 /// and - only when the accrual ran - hold a toast for a button press
 /// (SFX `0x20`) before returning to the buy list.
 ///
-/// NOT WIRED: the hosts' shop flow buys into the bag only; equip-now
-/// needs the equip-session bridge.
+/// Wired: `crate::menu_runtime::MenuRuntime` opens this session from the
+/// buy list's `RecipientPicker` route and drives it in `tick` (the browser
+/// play page enables the flow via `retail_equipment_buy` and draws windows
+/// 36 / 25 / 41 over the parked list). The Point Card gate stays closed -
+/// `World` keeps no Point Card counter, so the session runs with
+/// `point_card_held = false` and the toast beat never arms.
 #[derive(Debug, Clone)]
 pub struct BuyRecipientSession {
     pub item_id: u8,
@@ -927,9 +931,6 @@ pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
 /// the number stays right-aligned in the box as the quantity climbs.
 ///
 /// PORT: FUN_801d5510 (total digit-field width, `0x801D5654..0x801D56A4`)
-///
-/// NOT WIRED: consumed only by [`shop_buy_quantity_panel`], whose window
-/// (35) no host lays out yet - see that builder's tag.
 pub fn shop_total_digit_field(price: u16) -> u8 {
     let mut n: u8 = if price > 9999 { 5 } else { 4 };
     if price > 999 {
@@ -978,15 +979,13 @@ pub struct BuyQuantityPanel {
 ///
 /// PORT: FUN_801d5510 (menu-overlay buy-quantity prompt window content renderer)
 ///
-/// NOT WIRED: this is **window 35** of the menu-overlay descriptor table
-/// (rect `(138, 100, 168, 50)`; the record at PROT 0899 file `0x15F20 +
-/// 35*0x10` carries `renderer_va = 0x801D5510`), and the native host does
-/// have a descriptor draw path - `window/shop_windows.rs` already paints
-/// windows 32 / 33 / 34 / 37 at their disc-parsed rects. What is missing is
-/// the buy-side block in it: the sell flow's window 37 is painted by an
-/// `engine-ui` builder, whereas this panel's port lives here and returns
-/// pens rather than draws, so a host has to lay the fields out itself.
-/// Wiring is that block plus its mirror on the web shop.
+/// This is **window 35** of the menu-overlay descriptor table (rect
+/// `(138, 100, 168, 50)`; the record at PROT 0899 file `0x15F20 + 35*0x10`
+/// carries `renderer_va = 0x801D5510`). The browser play page lays the
+/// pens out during the buy-quantity phase
+/// (`web-viewer::play_shop::buy_quantity_panel_draws`); the native
+/// window's descriptor draw path (`window/shop_windows.rs`, windows
+/// 32 / 33 / 34 / 37) still lacks the buy-side block.
 pub fn shop_buy_quantity_panel(
     window: (i16, i16),
     held: Option<u8>,
@@ -1030,15 +1029,15 @@ pub const PASSIVE_NONE: u8 = 0x40;
 /// chain **twice**, once for the passive's name and again for its
 /// description, rather than caching the index)
 ///
-/// NOT WIRED: only [`shop_sell_detail_panel`] would consume it, and that
-/// panel has no host draw path (see its tag). The live engine path that
-/// needs the same answer - the Items screen's passive lines
-/// ([`crate::pause_screens::MenuTextTables::item_passive_lines`]) - reads
-/// `legaia_asset::accessory_passive::AccessoryPassiveTable::passive_index`
-/// instead, which owns the parsed tables. NB the two differ on the
-/// non-equipment arm: this port follows `FUN_801d5ae8` in sending **any**
-/// non-`1` kind to the item-effect table, while the asset-crate resolver
-/// (derived from `FUN_80042558`) accepts kind `2` only.
+/// Consumed by the web shop's window-39 draw
+/// (`web-viewer::play_shop::sell_detail_window_draws`, closures off the
+/// item-effect descriptors + equip-bonus records). NB this chain differs
+/// from the Items screen's
+/// ([`crate::pause_screens::MenuTextTables::item_passive_lines`], which
+/// reads `legaia_asset::accessory_passive::AccessoryPassiveTable::passive_index`)
+/// on the non-equipment arm: this port follows `FUN_801d5ae8` in sending
+/// **any** non-`1` kind to the item-effect table, while the asset-crate
+/// resolver (derived from `FUN_80042558`) accepts kind `2` only.
 pub fn item_passive_index(
     kind: u8,
     subtype: u8,
@@ -1103,13 +1102,12 @@ pub struct SellDetailPanel {
 ///
 /// PORT: FUN_801d5ae8 (menu-overlay item detail / sell panel content renderer)
 ///
-/// NOT WIRED: this is **window 39** (rect `(14, 95, 144, 53)`, descriptor
-/// `renderer_va = 0x801D5AE8`), and the gap is the same shape as
-/// [`shop_buy_quantity_panel`]'s: the host resolves descriptor rects
-/// already, but nothing lays these pens out. The engine's shop draws the
-/// hovered item through window **34** (`item_description_draws_for`)
-/// instead, which is a different window with no price row and no passive
-/// lines, so adopting 39 is an addition rather than a swap.
+/// This is **window 39** (rect `(14, 95, 144, 53)`, descriptor
+/// `renderer_va = 0x801D5AE8`). The browser play page lays the pens out
+/// for the sell list (`web-viewer::play_shop::sell_detail_window_draws`),
+/// where it replaces window **34** (`item_description_draws_for`) - the
+/// buy-side info window with no price row and no passive lines. The native
+/// window still draws 34 for both lists.
 pub fn shop_sell_detail_panel(
     window: (i16, i16),
     staged: i32,

@@ -145,6 +145,12 @@ pub struct LegaiaRuntime {
     /// BGM sequencer feeds - one mixer, as on hardware.
     #[cfg(target_arch = "wasm32")]
     pub(crate) audio_out: Option<WebAudioOut>,
+    /// The parsed `SCUS_942.54` equipment stat-bonus table
+    /// (`DAT_80074F68`), kept for the shop's retail descriptor windows:
+    /// the sell-detail panel's passive chain reads the equip record's `+5`
+    /// byte and the stat-compare windows read the bonus columns. `None` on
+    /// a PROT.DAT-only load.
+    pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -192,6 +198,7 @@ impl LegaiaRuntime {
             fishing_banner_draws: Vec::new(),
             fishing_prev_phase: None,
             fishing_venues: None,
+            equip_stats: None,
             live_battles: true,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -302,14 +309,28 @@ impl LegaiaRuntime {
         // they persist across scene entry (`enter_field_scene` never clears
         // them). Without them the sub-sessions build from empty catalogs and the
         // menu falls back to a generic frame.
+        self.equip_stats = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s));
         host.world.set_equipment_table(
-            scus.as_ref()
-                .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s))
-                .map(|t| legaia_engine_core::equipment::equip_modifier_table_from_disc(&t))
+            self.equip_stats
+                .as_ref()
+                .map(legaia_engine_core::equipment::equip_modifier_table_from_disc)
                 .unwrap_or_else(|| {
                     legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
                 }),
         );
+        // Retail-shaped equipment buy: this page draws the recipient picker
+        // (window 36) and the stat-compare windows (25 / 41) over the parked
+        // buy list ([`crate::play_shop`]), so opt into the flow and install
+        // the disc restrictions the buy-list kind dispatch reads.
+        if let Some(table) = self.equip_stats.as_ref() {
+            self.menu
+                .install_equip_info(legaia_engine_core::equipment::DiscEquipInfo::from_disc(
+                    table,
+                ));
+            self.menu.retail_equipment_buy = true;
+        }
         host.world.set_spell_catalog(
             scus.as_ref()
                 .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))

@@ -57,20 +57,20 @@
 //! Source: `ghidra/scripts/funcs/overlay_menu_801d1290.txt`,
 //! `ghidra/scripts/funcs/overlay_menu_801d4c28.txt`.
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
 //! `crate::ui_menu_window_dispatch` resolves both descriptors to these
-//! painters, so the dispatch half is no longer what is missing. What is
-//! missing is a host screen that **opens** windows 25 / 41. The engine's
-//! equip flow (`legaia_engine_core::equip_session`) draws the capture-pinned
-//! pause equip window set (ids 2 / 21 / 22 / 23), which does not include
-//! either of these - window 25's rect `(14, 40, 144, 52)` overlaps the party
-//! window 21 it would have to replace - and `EquipSession` exposes no
-//! party-wide preview at all (it is single-character by construction), which
-//! is what window 41 prints. Both renderers sit in the shop-family band and
-//! read the same staged-id word `DAT_801E46B0` the shop panels use, so the
-//! screen that opens them is most likely the equipment-purchase path; that
-//! flow is not ported.
+//! painters, and the screen that opens them is the shop's **equipment-buy
+//! recipient flow** (retail sub-screen `0x1C`, `FUN_801DB380`): the buy
+//! list's kind dispatch (`engine-core`'s `shop::buy_list_confirm_route`)
+//! routes an equipment row into `shop::BuyRecipientSession`, and the browser
+//! play page paints windows 25 / 41 beside the recipient list
+//! (`web-viewer::play_shop::recipient_window_draws`). The pause equip flow
+//! (`legaia_engine_core::equip_session`) still draws its capture-pinned
+//! window set (ids 2 / 21 / 22 / 23) and never opens these - window 25's
+//! rect `(14, 40, 144, 52)` overlaps the party window 21 it would have to
+//! replace. The native window has not grown the shop-side surface yet, so
+//! the host-drift gate reads both painters as web-ahead.
 
 use crate::{TextDraw, text_draws_for};
 
@@ -117,8 +117,6 @@ impl EquipStatBlock {
     /// `None` when the slice is too short to hold the last field.
     ///
     /// PORT: FUN_801cf5d0
-    /// NOT WIRED: the block's only consumers are the two stat-compare
-    /// NOT WIRED: painters below, and no host opens windows 25 / 41
     pub fn from_character_record(record: &[u8]) -> Option<Self> {
         let field = |off: usize| -> Option<i32> {
             let b = record.get(off..off + 2)?;
