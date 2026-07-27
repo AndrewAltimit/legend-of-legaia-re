@@ -232,6 +232,16 @@ uniform vec4 u_grade;
  * * max_ir0 over the perspective view depth. REF: FUN_8002735C */
 uniform vec4 u_cue;
 uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
+/* Double-sided prim pairs (CBA bit 15, set by the Rust mesh post-pass
+ * legaia_tmd::mesh::mark_double_sided_pairs): two coincident copies of one
+ * surface with opposite winding. Retail's NCLIP rasterises only the
+ * camera-facing copy; with culling off both copies draw and z-fight. Flagged
+ * fragments keep exactly one copy per view: the front-facing one when
+ * u_pair_front != 0, the back-facing one otherwise. The value encodes the
+ * view chain's reflection parity - buildMvp's single Y-flip projections keep
+ * front (1); the assembled views add the retail screen-X mirror on top (two
+ * reflections), which inverts gl_FrontFacing, so they keep back (0). */
+uniform int u_pair_front;
 
 in vec3 v_world;
 in vec2 v_uv;
@@ -275,6 +285,10 @@ vec3 grade_near(vec3 c) {
 void main() {
   uint cba = v_cba_tsb.x;
   uint tsb = v_cba_tsb.y;
+  /* Double-sided pair copies: draw only the copy facing the camera under
+   * this view's parity (see u_pair_front). The CLUT decode below masks the
+   * flag bit out ((cba >> 6) & 511 covers CBA bits 6..14 only). */
+  if ((cba & 0x8000u) != 0u && gl_FrontFacing != (u_pair_front != 0)) discard;
   uint u_pix = uint(v_uv.x) & 255u;
   uint v_pix = uint(v_uv.y) & 255u;
 
