@@ -257,3 +257,65 @@ fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
         );
     }
 }
+
+/// The shop's **seru-trade** screens must draw on the browser host.
+///
+/// Seru trading is a patcher feature (`--seru-trade`): retail's config blob
+/// ships disabled, so the shop root hides the row and neither screen is
+/// reachable on a vanilla disc. On a patched one both are - and the page used
+/// to draw nothing at all for `ShopTrade` / `ShopTradeConfirm` while the
+/// session held the pad, because its row table only covered the `'static`-label
+/// states and fell through to an empty list. The native window has drawn both
+/// all along (`window/menu_draws.rs::draw_shop_trade`), so this was platform
+/// drift the UI host-drift gate cannot see: both hosts call the same
+/// `shop_draws_for` builder and differ only in what they feed it.
+#[test]
+fn the_seru_trade_screens_draw_on_the_browser_host() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Arm the feature first: the root's row list is rebuilt from
+    // `World::seru_trade_enabled` every frame, so the shop must open with it
+    // already on.
+    assert!(rt.debug_enable_seru_trade(0x5EED_5EED));
+    if !rt.debug_open_test_shop() {
+        eprintln!("[skip] no priced merchant record available on this disc build");
+        return;
+    }
+    // Root rows are Buy / Sell / Trade Seru / Exit - drop two rows onto Trade
+    // and confirm.
+    for _ in 0..2 {
+        rt.play_shop_input(DOWN);
+        rt.play_shop_input(0);
+    }
+    rt.play_shop_input(CROSS);
+    rt.play_shop_input(0);
+
+    let trade = legaia_engine_core::menu_runtime::MenuState::ShopTrade.as_byte();
+    assert_eq!(
+        rt.debug_menu_state_byte(),
+        trade,
+        "picking the third shop-root row must enter ShopTrade; \
+         seru_trade_enabled gates the row into the list"
+    );
+    // Assert on the engine shop panel's own pen (`SHOP_PEN`, stage y 140):
+    // the retail descriptor windows keep painting either way at their disc
+    // rects, so "the overlay emitted quads" would pass with the trade screen
+    // still blank. The panel's title row lands on y 140 exactly.
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");
+    let title_row = v["texts"]
+        .as_array()
+        .map(|t| {
+            t.iter()
+                .filter(|d| d["dst"][1].as_i64() == Some(140))
+                .count()
+        })
+        .unwrap_or(0);
+    assert!(
+        title_row > 0,
+        "the seru-trade offer list must paint at the shop panel pen - an \
+         empty panel is the blank screen this test exists to catch"
+    );
+}

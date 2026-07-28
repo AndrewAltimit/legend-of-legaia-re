@@ -161,6 +161,11 @@ pub struct LegaiaRuntime {
     /// byte and the stat-compare windows read the bonus columns. `None` on
     /// a PROT.DAT-only load.
     pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    /// Spell / seru display names from the same executable, used to label the
+    /// shop's seru-trade offers ("give (owner) -> receive"). `None` on a
+    /// PROT.DAT-only load, where offers fall back to `Seru NN` exactly as the
+    /// native window's do.
+    pub(crate) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -211,6 +216,7 @@ impl LegaiaRuntime {
             fishing_prev_phase: None,
             fishing_venues: None,
             equip_stats: None,
+            seru_names: None,
             live_battles: true,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -270,6 +276,16 @@ impl LegaiaRuntime {
         // pause screens' info windows print. Executable-only, like above.
         if let Some(s) = scus.as_ref() {
             host.world.install_menu_text(s);
+            // The randomizer's seru-trade config (the `--seru-trade` blob in
+            // preserved rodata) plus the display-name table the offers are
+            // labelled with. Vanilla ships the config disabled, so this is a
+            // no-op on an unpatched disc; on a patched one it is what makes
+            // the shop's "Trade Seru" row appear. The native boot installs
+            // the same pair (`BootSession::open_with_source` +
+            // `ensure_seru_names`), and without it the browser page silently
+            // dropped the whole feature - a shop root row short.
+            host.world.install_seru_trade_config(s);
+            self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads

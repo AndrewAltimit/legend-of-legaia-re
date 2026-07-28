@@ -31,9 +31,10 @@
 //!   The browser page feeds **edges**, matching its own pause-menu
 //!   convention ([`crate::play_menu::play_menu_input`]) and retail's
 //!   behaviour.
-//! * **Real item names.** The native shop rows are placeholder `"Item"`
-//!   labels; the page resolves the SCUS item table it already parses at
-//!   `load_disc`. Same draw builder, populated row labels.
+//!
+//! And one that is **not** a divergence, though it once was: both hosts now
+//! resolve their row labels from the disc item table (`World::menu_text`), so
+//! a name that appears on one appears on the other.
 //!
 //! Row inks come from the retail kernels
 //! `legaia_engine_core::shop::{shop_root_command_rows, shop_stock_row_ink}`
@@ -61,6 +62,12 @@
 //! the real descriptor table parsed: these windows exist at their disc rects
 //! or not at all, and [`crate::play_menu`]'s pinned-rect fallback cannot
 //! invent a `renderer_va`.
+//!
+//! Two further screens ride over the parked list, each drawn by the shared
+//! builder its native twin uses: the equipment-buy **recipient picker**
+//! (windows 36 / 25 / 41, `ui::recipient_picker_draws_for`) and the
+//! **seru-trade** offer list + confirm ([`LegaiaRuntime::shop_trade_draws`],
+//! the twin of `window/menu_draws.rs::draw_shop_trade`).
 //!
 //! REF: FUN_801d5de0
 //! REF: FUN_801d4868
@@ -110,6 +117,11 @@ const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
 /// engine-authored line so the translation layer owns the text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+/// Title of the seru-trade offer list. Engine-authored (the feature is the
+/// patcher's, so retail has no string for it); matches the native window's.
+const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
+/// The offer list's single row when this vendor has nothing to trade.
+const TRADE_EMPTY_ROW: &str = "(no trades offered)";
 /// Stage-pixel pen for the level-up banner (native `(8, 60)`).
 const LEVEL_UP_PEN: (i32, i32) = (8, 60);
 /// Stage-pixel pen for the Seru-capture banner (native `(8, 40)`).
@@ -173,6 +185,16 @@ impl LegaiaRuntime {
                 .map(|(_, q)| *q as i16)
                 .unwrap_or(0)
         };
+        // The seru-trade screens carry dynamic, owned labels and their own
+        // title, so they short-circuit the `(rows, gold)` table below - the
+        // same split the native window makes in `draw_shop_trade`.
+        if matches!(
+            state,
+            Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+        ) {
+            return Some(self.shop_trade_draws(font, state, cursor));
+        }
+
         let (rows_spec, show_gold): (Vec<ShopRowSpec>, Option<i32>) = match state {
             // Top picker: Buy / Sell / (Trade) / Exit, matching the runtime's
             // dynamic row layout. The Sell row's ink follows retail's bag scan
@@ -259,6 +281,77 @@ impl LegaiaRuntime {
         Some(ui::shop_draws_for(
             font, title, &rows, cursor, show_gold, SHOP_PEN,
         ))
+    }
+
+    /// The shop menu's **seru-trade** screens: the offer list (`ShopTrade`)
+    /// or the yes/no confirm (`ShopTradeConfirm`).
+    ///
+    /// The twin of the native window's `draw_shop_trade`. Both screens carry
+    /// owned labels ("give (owner) -> receive", the confirm's question) built
+    /// from the boot executable's spell/seru name table, so they cannot ride
+    /// the `'static`-label row table the rest of the shop uses.
+    ///
+    /// Seru trading is a patcher feature - retail's config ships disabled, so
+    /// `shop_menu_rows` hides the row and neither screen is reachable on a
+    /// vanilla disc. On a patched one they are, and the page drew nothing at
+    /// all for both states while the session held the pad.
+    fn shop_trade_draws(
+        &self,
+        font: &legaia_font::Font,
+        state: Option<MenuState>,
+        cursor: usize,
+    ) -> Vec<TextDraw> {
+        let name_of = |id: u8| -> String {
+            self.seru_names
+                .as_ref()
+                .and_then(|t| t.name(id))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("Seru {id:02X}"))
+        };
+        let owner_of = |slot: u8| -> String {
+            self.scene_host
+                .as_ref()
+                .and_then(|h| h.world.roster.members.get(slot as usize))
+                .map(|m| m.name())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("P{slot}"))
+        };
+        match state {
+            Some(MenuState::ShopTradeConfirm) => {
+                let title = match self.menu.pending_trade_offer() {
+                    Some(o) => format!(
+                        "Trade {} for {}?",
+                        name_of(o.give.seru_id),
+                        name_of(o.receive_seru_id),
+                    ),
+                    None => "Trade?".to_string(),
+                };
+                let rows = [ShopRow::new("Yes", None), ShopRow::new("No", None)];
+                ui::shop_draws_for(font, &title, &rows, cursor, None, SHOP_PEN)
+            }
+            _ => {
+                let labels: Vec<String> = match self.menu.trade_session.as_ref() {
+                    Some(t) if !t.offers.is_empty() => t
+                        .offers
+                        .iter()
+                        .map(|o| {
+                            format!(
+                                "{} ({}) -> {}",
+                                name_of(o.give.seru_id),
+                                owner_of(o.give.owner_slot),
+                                name_of(o.receive_seru_id),
+                            )
+                        })
+                        .collect(),
+                    _ => vec![TRADE_EMPTY_ROW.to_string()],
+                };
+                let rows: Vec<ShopRow<'_>> = labels
+                    .iter()
+                    .map(|l| ShopRow::new(l.as_str(), None))
+                    .collect();
+                ui::shop_draws_for(font, TRADE_LIST_TITLE, &rows, cursor, None, SHOP_PEN)
+            }
+        }
     }
 
     /// The live shop's vendor name, recovered the way the native host does.
@@ -939,6 +1032,27 @@ impl LegaiaRuntime {
     /// currently the screen that owns the pad?
     pub fn debug_recipient_picker_open(&self) -> bool {
         self.menu.recipient_session.is_some()
+    }
+
+    /// Raw menu-VM state byte, for asserting which shop screen owns the pad.
+    pub fn debug_menu_state_byte(&self) -> u8 {
+        self.menu.ctx_state()
+    }
+
+    /// Install an **enabled** seru-trade config, the way a `--seru-trade`
+    /// patched disc's rodata blob does at `load_disc`. Retail ships the
+    /// config disabled, so this is the only way a test reaches the shop's
+    /// Trade Seru row without a patched image. `false` with no scene host.
+    pub fn debug_enable_seru_trade(&mut self, seed: u64) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+            enabled: true,
+            seed,
+            ..Default::default()
+        });
+        true
     }
 }
 
