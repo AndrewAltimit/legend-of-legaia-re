@@ -547,6 +547,15 @@ struct PlayWindowApp {
     /// Scene-mode from the previous frame, used to detect Field<->Battle
     /// transitions so monster meshes are uploaded / dropped exactly once.
     prev_scene_mode: Option<SceneMode>,
+    /// The field-to-battle intro transition's per-frame emitter, live only
+    /// while the encounter session sits in its `Transition` phase.
+    ///
+    /// Owns the selected style's working set between frames and turns it into
+    /// screen-space primitives; the transition *state machine* it rides is
+    /// `World::battle_intro`, driven by `World::tick_encounter`. Armed by
+    /// `take_battle_intro_prims` on the first transition frame and dropped when
+    /// the phase ends. See `legaia_engine_render::battle_intro`.
+    battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
     /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
     /// reused for every battle so each transition doesn't re-decompress 16 MB.
     monster_archive: Option<std::sync::Arc<Vec<u8>>>,
