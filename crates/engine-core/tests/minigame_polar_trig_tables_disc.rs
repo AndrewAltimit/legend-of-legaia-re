@@ -17,13 +17,17 @@
 //!    `polar_offset`'s `table_a` is sine and `table_b` cosine.
 //! 2. The two are `0x800` bytes apart - one quarter turn - so they overlap:
 //!    the pair is *one* table read at two phases.
-//! 3. Entries are `trunc(0x1000 * sin)`, truncating toward zero. The analytic
-//!    reproduction in `legaia_asset::minigame_slot_scene` rounds instead, which
-//!    differs on about half the table by one LSB.
+//! 3. Entries are `trunc(0x1000 * sin)`, truncating toward zero - and the
+//!    analytic reproduction in `legaia_asset::minigame_slot_scene` reproduces
+//!    them entry for entry. Rounding instead differs on about half the table by
+//!    one LSB, and the reel renderer multiplies that error by a radius, so the
+//!    reproduction is checked against the disc rather than assumed.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::minigame_slot_scene::{ANGLE_FULL, COS_TABLE_VA, SIN_TABLE_VA};
+use legaia_asset::minigame_slot_scene::{
+    ANGLE_FULL, COS_TABLE_VA, SIN_TABLE_VA, cos_4096, sin_4096,
+};
 use legaia_engine_core::Vfs;
 use legaia_engine_core::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
 use std::path::PathBuf;
@@ -102,6 +106,31 @@ fn the_polar_helpers_tables_are_static_scus_rodata() {
         "rounding is a materially different table ({round_mismatches} entries differ), \
          so an analytic stand-in has to truncate"
     );
+}
+
+#[test]
+fn the_ported_trig_reproduces_the_disc_tables_entry_for_entry() {
+    let Some(scus) = scus() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let sin = read_table(&scus, SIN_TABLE_VA);
+    let cos = read_table(&scus, COS_TABLE_VA);
+
+    // `legaia_asset::minigame_slot_scene`'s analytic stand-in is what the reel
+    // renderer's `reel_y` / `reel_z` and the effect VM's planar leg rotation
+    // read instead of the table, so it has to *be* the table, not approximate
+    // it. Every entry, both phases.
+    for a in 0..ANGLE_FULL {
+        assert_eq!(sin_4096(a), sin[a as usize] as i32, "sin[{a}]");
+        assert_eq!(cos_4096(a), cos[a as usize] as i32, "cos[{a}]");
+    }
+
+    // Retail masks the angle to 12 bits, so the port has to wrap the same way
+    // rather than saturate or panic - both directions.
+    assert_eq!(sin_4096(ANGLE_FULL + 5), sin[5] as i32);
+    assert_eq!(sin_4096(-1), sin[(ANGLE_FULL - 1) as usize] as i32);
+    assert_eq!(cos_4096(-1), cos[(ANGLE_FULL - 1) as usize] as i32);
 }
 
 #[test]
