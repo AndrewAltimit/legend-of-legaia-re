@@ -19,17 +19,39 @@ Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 
 ## Where the gates run
 
-All of them run in the `gates` job of
-[`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml), and the
-same set runs from [`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit)
-as a fast local mirror. CI is the authority: a gate that lives only in a hook
-is one `LEGAIA_SKIP_PRECOMMIT=1`, or one clone that never ran
+The four host-drift tiers below all run in the `gates` job of
+[`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) and from
+[`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) as a fast
+local mirror. CI is the authority: a gate that lives only in a hook is one
+`LEGAIA_SKIP_PRECOMMIT=1`, or one clone that never ran
 `scripts/ci/install-hooks.sh`, away from being fiction, and neither leaves a
 trace in the repository.
 
-The job is disc-independent by construction - every gate reads the repo's own
-sources, docs and site fragments - so it stays green on a runner that has no
-`extracted/`.
+That job is disc-independent by construction - every gate in it reads the
+repo's own sources, docs and site fragments - so it stays green on a runner
+that has no `extracted/`.
+
+### The one class of gate allowed to be hook-only
+
+"Every gate runs in both places" is the rule, not a description of the whole
+gate corpus, and the exception has to be stated or it becomes an excuse. A
+gate may be hook-only when **its input is gitignored** - the Ghidra dump
+corpus under `ghidra/scripts/funcs/`, or `extracted/`. Such a gate cannot
+measure anything on a runner, and the hook is the only place the bytes exist,
+so "it cannot run in CI" argues for wiring it into the hook rather than for
+wiring it nowhere.
+
+Two obligations come with that exemption. The gate must **self-skip** where
+its inputs are absent, so a clone without disc data passes rather than fails.
+And where skipping is free it should appear in CI anyway - a step that reports
+`SKIPPED` is a step whose deletion someone would notice, which a hook-only
+gate is not. The disc-coverage ratchet is wired that way.
+
+Currently hook-only under this exemption: the three dump-corpus integrity
+checks (`check-dump-stat-drift.py`, `check-dump-base-integrity.py`,
+`check-jal-target-integrity.py`) - see
+[`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
+[`call-target-integrity.md`](call-target-integrity.md).
 
 ## Tier 1 - reachability: does a screen reach both hosts?
 

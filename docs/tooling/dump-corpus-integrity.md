@@ -839,7 +839,23 @@ scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
 scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 4
 scripts/ghidra-analysis/check-dump-base-integrity.py --emit-base-csv /tmp/b.csv
 scripts/ghidra-analysis/check-dump-base-integrity.py --audit-dumpers
+scripts/ghidra-analysis/check-dump-base-integrity.py --check
+scripts/ghidra-analysis/check-dump-base-integrity.py --update-baseline
 ```
+
+`--check` is the gateable form the pre-commit hook runs. A bare sweep exits
+non-zero whenever any dump is SHIFTED, and the corpus has a standing
+population of those - catalogued on this page - so it reports a fact, not a
+regression, and could gate nothing. `--check` compares against the SHIFTED
+**set** recorded in `scripts/ghidra-analysis/dump-base-baseline.json` and fails
+only on a dump that is newly mis-based.
+
+A set and not a count, deliberately. The corpus grows every time an overlay is
+imported, so a count ratchet would fire on healthy growth and stay silent when
+a mis-based dump replaced a sound one. `NOT_FOUND` stays outside the ratchet
+for the reason given above - it grades UNVERIFIABLE, not known-bad, and gating
+on it would fail every capture-derived dump. Both inputs are gitignored, so
+the check reports `SKIPPED` and passes where they are absent.
 
 `--emit-base-csv` is the form a re-dump pass needs: per dump, the printed VA,
 the VA the bytes resolve to, the delta, and the image. **A re-dump has to be
@@ -897,6 +913,7 @@ current disassembly and say what you now see.
 ```bash
 scripts/ghidra-analysis/check-dump-stat-drift.py
 scripts/ghidra-analysis/check-dump-stat-drift.py --uncited
+scripts/ghidra-analysis/check-dump-stat-drift.py --list-skipped
 ```
 
 It scans committed prose (`docs/`, crate READMEs, top-level `*.md`, and
@@ -917,12 +934,31 @@ separator, and a bare `\d+` clips the leading group and reports a formatting
 difference as drift; the counts are parsed with strict thousands grouping.
 
 The gate cannot run in CI: the corpus is gitignored and disc-derived, so CI has
-nothing to compare against. It belongs in the local pre-commit set beside
-`check-shell-observer-traps.py`, or as a hand-run pass after any re-dump.
+nothing to compare against. It runs from the local pre-commit set beside
+`check-shell-observer-traps.py`, under the hook-only exemption stated in
+[`host-drift.md`](host-drift.md#the-one-class-of-gate-allowed-to-be-hook-only).
 
 **A claim that quotes a count without citing its dump is not checkable by any
 tool.** `--uncited` lists those; they are prose to fix by hand, and the durable
 fix is to cite the dump whenever a statistic is quoted.
+
+### Every skipped line is accounted for
+
+`checked N; 0 drifted` is the same sentence whether the lines it could not
+check were three or three hundred, so the summary carries a count for each of
+the three ways a line drops out, and none of them lands in no bucket:
+
+| Skip | What it means | Named by default |
+|---|---|---|
+| ambiguous | the line names two or more dumps, so which one the statistic belongs to is undecidable from the text | no - `--list-skipped` |
+| absent dump | committed prose cites a dump this clone does not have | yes |
+| headerless dump | the dump is here and carries no `size=` line to check against | yes |
+| uncited | a statistic with no dump named at all | no - `--uncited` |
+
+Absent and headerless are named unconditionally because each is a defect
+somebody can act on. Ambiguity mostly is not: most ambiguous lines are
+phantom-VA findings that compare two dumps on purpose, and printing an
+unfixable list on every run is how a gate teaches people to skip its output.
 
 ## See also
 

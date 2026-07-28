@@ -130,11 +130,87 @@ fi
 if command -v python3 >/dev/null 2>&1 \
     && [[ -f "scripts/ci/disc-coverage.py" ]]; then
     printf '[pre-commit] disc coverage ratchet\n'
-    if ! python3 scripts/ci/disc-coverage.py --check >/dev/null; then
-        python3 scripts/ci/disc-coverage.py --check >&2 || true
+    # --quiet, not >/dev/null. The redirect swallowed the "NOT MEASURED THIS
+    # RUN" / "NOT RATCHETED" lines along with the rollup, and those are exactly
+    # the lines that distinguish a pass from a comparison that never happened.
+    if ! python3 scripts/ci/disc-coverage.py --check --quiet; then
         printf '[pre-commit] disc coverage regressed -- if a dump was legitimately removed, re-run with --update-baseline and say why in the commit message (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi
+fi
+
+# Ghidra dump-corpus integrity. Three axes of one failure: a dump that reads
+# as authoritative and is wrong about where its bytes live, or a committed
+# sentence that is wrong about the dump.
+#
+#   stat drift      committed prose quotes a `size=` / instruction count the
+#                   dump no longer reports. Worst when the stale sentence is a
+#                   caveat: "the dump is empty, do not port this" suppresses
+#                   work silently and leaves no trace that it did.
+#   base integrity  a dump whose printed addresses are a constant delta off
+#                   because Ghidra was given the wrong load base. Ratchets the
+#                   SHIFTED set, so a new mis-based dump fails and importing
+#                   another copy of an already-catalogued window does not.
+#   jal targets     a decoded call target landing on no function entry, which
+#                   localises a byte window whose link base is unrecovered.
+#                   Ratchets the set of already-known targets.
+#
+# These live here and NOT in .github/workflows/main-ci.yml for the same reason
+# the disc-coverage ratchet above does: their input is ghidra/scripts/funcs/,
+# which is gitignored and absent on the runner. The hook is the only place the
+# corpus exists, so "it cannot run in CI" is the argument for wiring it here,
+# not an excuse for wiring it nowhere. Each self-skips when its inputs are
+# missing, so a clone without dumps passes.
+#
+# Cost: together they read the whole corpus and index the extracted images, so
+# budget a handful of seconds on top of the ratchet above.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-dump-stat-drift.py" ]]; then
+    printf '[pre-commit] dump-statistic drift check (committed prose vs the dumps)\n'
+    if ! python3 scripts/ghidra-analysis/check-dump-stat-drift.py --quiet; then
+        printf '[pre-commit] committed prose quotes a dump statistic that dump no longer reports -- update the sentence, and re-read whatever it concluded (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-dump-base-integrity.py" ]]; then
+    printf '[pre-commit] dump base-integrity ratchet\n'
+    if ! python3 scripts/ghidra-analysis/check-dump-base-integrity.py --check; then
+        printf '[pre-commit] a dump prints addresses its bytes do not occupy -- re-dump at the resolved base, or --update-baseline and say why (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-jal-target-integrity.py" ]]; then
+    printf '[pre-commit] call-target integrity ratchet\n'
+    if ! python3 scripts/ghidra-analysis/check-jal-target-integrity.py --check; then
+        printf '[pre-commit] a new call target resolves to no function entry -- see docs/tooling/call-target-integrity.md (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+# Shipped-bundle freshness (warn-only, and only when the commit could have
+# invalidated the bundle). site/wasm/ is untracked build output that CI rebuilds
+# at deploy, so a stale local bundle is not a repository defect and must not
+# block a commit - but the whole point of the checker is that mtime and
+# `git log` both answer "in sync" for a bundle built from other sources, so the
+# moment to say so is right after the edit that staled it. Its 27-crate source
+# closure means an engine-only commit is exactly the case that looks safe and
+# is not. Skips silently with no bundle built. CI runs the same script,
+# likewise advisory.
+BUNDLE_SOURCE_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        crates/*|site/*|Cargo.toml|Cargo.lock) BUNDLE_SOURCE_TOUCHED=1; break ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+if [[ "$BUNDLE_SOURCE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-wasm-freshness.py" ]] \
+    && [[ -f "site/wasm/legaia_web_viewer_bg.wasm" ]]; then
+    printf '[pre-commit] shipped wasm bundle freshness (advisory)\n'
+    python3 scripts/ci/check-wasm-freshness.py --quiet || true
 fi
 
 # If the commit only touches files outside the Rust workspace (e.g. docs,

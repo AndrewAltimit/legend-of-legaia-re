@@ -688,6 +688,9 @@ def main():
     ap.add_argument("--update-baseline", action="store_true")
     ap.add_argument("--tolerance", type=float, default=0.5,
                     help="percentage points a figure may drop before --check fails")
+    ap.add_argument("--quiet", action="store_true",
+                    help="drop the per-image rollup and print only the ratchet "
+                         "verdict (for the pre-commit hook)")
     args = ap.parse_args()
 
     # Disc-gated, exactly like the LEGAIA_DISC_BIN tests: both inputs are
@@ -722,22 +725,26 @@ def main():
     if args.md:
         sys.stdout.write(report)
 
-    if scus:
-        print("[disc-coverage] SCUS_942.54 code: %.1f%% (%d/%d bytes)" % (
-            scus["pct"], scus["covered"], scus["code_denominator"]))
-    for r in overlays:
-        amb = r.get("ambiguous_pct", 0.0)
-        if amb >= 50.0:
-            print("[disc-coverage] overlay %-22s not meaningful "
-                  "(%.1f%% of its extents are VA-ambiguous)" % (r["name"], amb))
-        else:
-            print("[disc-coverage] overlay %-22s %.1f%%%s" % (
-                r["name"], r["pct"],
-                "" if amb == 0 else " (<=, %.1f%% VA-ambiguous)" % amb))
-    if data:
-        print("[disc-coverage] PROT data parsed to a named format: %.1f%% "
-              "(unexplained %.1f%%)" % (data["pct_parsed"], data["pct_unexplained"]))
-    print("[disc-coverage] wrote %s" % md_path)
+    # Informational rollup. --quiet drops it so the hook shows only the
+    # ratchet verdict - including the NOT MEASURED / NOT RATCHETED lines,
+    # which are the ones a redirect used to swallow.
+    if not args.quiet:
+        if scus:
+            print("[disc-coverage] SCUS_942.54 code: %.1f%% (%d/%d bytes)" % (
+                scus["pct"], scus["covered"], scus["code_denominator"]))
+        for r in overlays:
+            amb = r.get("ambiguous_pct", 0.0)
+            if amb >= 50.0:
+                print("[disc-coverage] overlay %-22s not meaningful "
+                      "(%.1f%% of its extents are VA-ambiguous)" % (r["name"], amb))
+            else:
+                print("[disc-coverage] overlay %-22s %.1f%%%s" % (
+                    r["name"], r["pct"],
+                    "" if amb == 0 else " (<=, %.1f%% VA-ambiguous)" % amb))
+        if data:
+            print("[disc-coverage] PROT data parsed to a named format: %.1f%% "
+                  "(unexplained %.1f%%)" % (data["pct_parsed"], data["pct_unexplained"]))
+        print("[disc-coverage] wrote %s" % md_path)
 
     current = snapshot(scus, overlays, data)
     if args.update_baseline:
@@ -749,18 +756,32 @@ def main():
 
     if args.check:
         if not os.path.exists(BASELINE):
-            print("[disc-coverage] no baseline yet; run --update-baseline once.")
+            # Not a pass. The ratchet has no reference, so it measured nothing
+            # this run, and a bare "OK" here would be the exact shape this file
+            # exists to prevent: a green line standing in for an absent
+            # comparison.
+            print("[disc-coverage] NOT RATCHETED - no baseline at %s. Nothing "
+                  "was compared. Run --update-baseline once." % BASELINE)
             return 0
         base = json.load(open(BASELINE))
         bad = []
+        absent = []
         for section in ("code", "data"):
             for key, was in base.get(section, {}).items():
                 now = current.get(section, {}).get(key)
                 if now is None:
-                    # A missing image is a local extraction gap, not a regression.
+                    # A missing image is a local extraction gap, not a
+                    # regression - but it is also not a pass for that key, and
+                    # an image dropping out of the corpus entirely would
+                    # otherwise read identically to a clean run. Name it.
+                    absent.append("%s/%s (baselined at %.2f%%)"
+                                  % (section, key, was))
                     continue
                 if now < was - args.tolerance:
                     bad.append("%s/%s: %.2f%% -> %.2f%%" % (section, key, was, now))
+        for a in absent:
+            print("[disc-coverage] NOT MEASURED THIS RUN: %s - the image is "
+                  "absent from this tree, so the ratchet skipped it" % a)
         if bad:
             print("[disc-coverage] REGRESSION:")
             for b in bad:
@@ -769,7 +790,11 @@ def main():
                   "legitimately removed, re-run with --update-baseline and say "
                   "why in the commit message.")
             return 1
-        print("[disc-coverage] OK - no figure regressed beyond %.2f pp." % args.tolerance)
+        print("[disc-coverage] OK - %d/%d baselined figure(s) compared, none "
+              "regressed beyond %.2f pp."
+              % (sum(len(base.get(s, {})) for s in ("code", "data")) - len(absent),
+                 sum(len(base.get(s, {})) for s in ("code", "data")),
+                 args.tolerance))
     return 0
 
 

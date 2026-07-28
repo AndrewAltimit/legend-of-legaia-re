@@ -136,6 +136,31 @@ Run it after adding overlay dumps at a base recovered from call targets rather
 than from a documented anchor - that is the case where the base can be
 self-consistently wrong, as it is here.
 
+### The gateable form
+
+A bare run exits non-zero, because the window above is a standing condition of
+the corpus rather than a regression - so as written it could gate nothing.
+`--check` is the form the pre-commit hook runs:
+
+```bash
+scripts/ghidra-analysis/check-jal-target-integrity.py --check
+scripts/ghidra-analysis/check-jal-target-integrity.py --update-baseline
+```
+
+It fails only on an unresolved target absent from
+`scripts/ghidra-analysis/jal-target-baseline.json`. The baseline keys on
+**targets, not on dump filenames**, and that choice is what makes the ratchet
+stable: importing another copy of an already-catalogued byte window adds dumps
+but contributes no new target, while a genuinely mis-attributed window
+contributes addresses nothing in the corpus has ever pointed at. It also means
+a partial corpus can only produce a subset of the baseline, so a clone with
+fewer dumps never fails spuriously - and with no corpus at all the check
+reports `SKIPPED` and passes, the same contract
+[`disc-coverage.py`](disc-coverage.md) works under.
+
+A baselined target that stops appearing is named on every run, so a baseline
+that has outlived its corpus says so instead of quietly widening the gate.
+
 See [`ghidra.md`](ghidra.md) for the dump scripts themselves and
 [`static-overlay-pipeline.md`](static-overlay-pipeline.md) for how an overlay's
 base gets recovered and what makes a recovery load-bearing.

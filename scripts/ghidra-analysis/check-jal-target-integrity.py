@@ -22,16 +22,35 @@
 # So: a per-dump collapse in resolve rate localizes a mis-attributed byte
 # window. It does not, on its own, say what the window is.
 #
+# The corpus has a standing, documented population of unresolved targets (see
+# docs/tooling/call-target-integrity.md), so a bare run exits 1 by design and
+# cannot gate anything. `--check` is the gateable form: it ratchets against a
+# committed baseline of the targets already known not to resolve, and fails
+# only on a target that is not in it. Keying on targets rather than on dump
+# filenames is what makes the ratchet stable - importing another copy of an
+# already-catalogued byte window adds dumps but no new target, while a genuinely
+# mis-attributed window contributes addresses nothing has ever pointed at.
+#
+# The dump corpus is gitignored, so `--check` self-skips where it is absent,
+# exactly as scripts/ci/disc-coverage.py does. A subset corpus can only produce
+# a subset of the baseline's targets, so a partial clone never fails spuriously.
+#
 # Usage:
 #   scripts/ghidra-analysis/check-jal-target-integrity.py [--funcs DIR]
 #                                                         [--threshold PCT]
+#   scripts/ghidra-analysis/check-jal-target-integrity.py --check
+#   scripts/ghidra-analysis/check-jal-target-integrity.py --update-baseline
 
 import argparse
 import collections
 import glob
+import json
 import os
 import re
 import sys
+
+BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "jal-target-baseline.json")
 
 HEADER_RE = re.compile(r"^==\s+\S*\s*([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)")
 INSN_RE = re.compile(r"^([0-9a-f]{8})  (_?)(\S+)(.*)$")
@@ -110,15 +129,34 @@ def main():
         default=5,
         help="ignore dumps with fewer than this many checkable call sites",
     )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="gate mode: fail only on an unresolved target absent from the "
+             "committed baseline; skip cleanly where the corpus is absent",
+    )
+    ap.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="rewrite the baseline from this corpus (say why in the commit)",
+    )
     args = ap.parse_args()
 
     funcs_dir = os.path.normpath(args.funcs)
     if not os.path.isdir(funcs_dir):
+        if args.check:
+            print("[jal-targets] SKIPPED - no dump corpus (it is gitignored; "
+                  "this gate only measures locally).")
+            return 0
         sys.stderr.write("no such dump directory: %s\n" % funcs_dir)
         return 2
 
     entries, insns, delay = load_corpus(funcs_dir)
     if not insns:
+        if args.check:
+            print("[jal-targets] SKIPPED - dump corpus present but carries no "
+                  "disassembly.")
+            return 0
         sys.stderr.write("no disassembly found under %s\n" % funcs_dir)
         return 2
 
@@ -150,6 +188,44 @@ def main():
         rate = 100.0 * resolved / sites
         if sites >= args.min_sites and rate < args.threshold:
             flagged.append((rate, os.path.basename(path), sites, resolved, misses))
+
+    if args.update_baseline:
+        with open(BASELINE, "w") as fh:
+            json.dump({"unresolved": sorted("0x%08x" % t for t, _ in bad_targets)},
+                      fh, indent=2)
+            fh.write("\n")
+        print("[jal-targets] baseline updated: %s (%d target(s))"
+              % (BASELINE, len(bad_targets)))
+        return 0
+
+    if args.check:
+        if not os.path.exists(BASELINE):
+            print("[jal-targets] no baseline yet; run --update-baseline once.")
+            return 0
+        with open(BASELINE) as fh:
+            known = set(json.load(fh).get("unresolved", []))
+        seen = {"0x%08x" % t for t, _ in bad_targets}
+        new = sorted(seen - known)
+        # Named, not counted: a baseline that has outlived the corpus it was
+        # taken from is the failure mode a bare "OK" hides.
+        for t in sorted(known - seen):
+            print("[jal-targets] baselined target %s no longer unresolved - "
+                  "re-run --update-baseline to tighten the ratchet" % t)
+        if new:
+            print("[jal-targets] %d call target(s) resolve to no function entry "
+                  "and are not in the baseline:" % len(new))
+            for t in new:
+                kind = next(k for (tt, k) in bad_targets if "0x%08x" % tt == t)
+                print("   %s  %-11s %s" % (t, kind,
+                                           insns.get(int(t, 16), "?")))
+            print("[jal-targets] a decoded jal target is a property of the "
+                  "bytes, so this localises a byte window whose link base is "
+                  "unrecovered. See docs/tooling/call-target-integrity.md; if "
+                  "the window is understood, --update-baseline and say why.")
+            return 1
+        print("[jal-targets] OK - %d/%d sites resolve; %d known-unresolved "
+              "target(s), no new ones." % (good, total, len(seen)))
+        return 0
 
     print("corpus: %d dumps' SCUS-range call sites checked" % total)
     print("resolve rate overall: %.1f%% (%d/%d)" % (100.0 * good / max(total, 1), good, total))

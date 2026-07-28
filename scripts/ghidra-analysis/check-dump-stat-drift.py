@@ -124,6 +124,17 @@ def main() -> int:
         action="store_true",
         help="also list lines quoting a statistic that cite no dump file (advisory, never a failure)",
     )
+    ap.add_argument(
+        "--list-skipped",
+        action="store_true",
+        help="name the lines that quote a statistic against 2+ dumps at once "
+        "(counted in the summary either way)",
+    )
+    ap.add_argument(
+        "--quiet",
+        action="store_true",
+        help="suppress the summary when nothing drifted (for the pre-commit hook)",
+    )
     args = ap.parse_args()
 
     if not FUNCS.is_dir():
@@ -131,18 +142,29 @@ def main() -> int:
         return 0
 
     drifted, checked, uncited = [], 0, []
+    ambiguous: list[tuple[Path, int, list[str], str]] = []
+    unreadable: list[tuple[Path, int, str, str]] = []
     for path, n, line in scan_lines():
         refs = set(DUMP_REF.findall(line))
         sizes = SIZE_RE.findall(line)
         insns = INSN_RE.findall(line)
         if not (sizes or insns):
             continue
-        if len(refs) != 1:
-            if args.uncited and not refs:
-                uncited.append((path, n, line.strip()))
+        if not refs:
+            uncited.append((path, n, line.strip()))
             continue
-        header = dump_header(next(iter(refs)))
-        if header is None:
+        if len(refs) > 1:
+            # Named two or more dumps on one line, so which file the statistic
+            # belongs to is genuinely undecidable from the text - see the
+            # module docstring. Not checkable, but it must not vanish: it used
+            # to fall through into no bucket at all, invisible to both the
+            # summary and --uncited.
+            ambiguous.append((path, n, sorted(refs), line.strip()))
+            continue
+        name = next(iter(refs))
+        header = dump_header(name)
+        if isinstance(header, str):
+            unreadable.append((path, n, name, header))
             continue
         checked += 1
         size, insn = header
@@ -154,12 +176,46 @@ def main() -> int:
     for path, n, name, bad, line in drifted:
         print(f"{path.relative_to(REPO)}:{n}: quotes {'; '.join(bad)}  [{name}]")
         print(f"    {line[:200]}")
+
+    # Account for every skip. `checked N; 0 drifted` is the same sentence
+    # whether the unchecked lines are three or three hundred, and the three
+    # skip classes are three different pieces of work: an ambiguous line needs
+    # its claim split per dump, an absent dump means committed prose cites
+    # evidence this clone does not have, and a headerless dump needs a re-dump
+    # before its claim can be checked at all. A gate that drops them silently
+    # reports a clean corpus for prose it never read.
+    #
+    # Absent and headerless are named unconditionally: each is a defect
+    # somebody can fix, and today there are none, so the naming costs nothing
+    # and its appearing at all is the signal. Ambiguity is named on request,
+    # because most of the ambiguous lines are phantom-VA findings that compare
+    # two dumps *on purpose* - printing an unfixable list on every run is how a
+    # gate teaches people to skip its output.
+    for path, n, name, why in unreadable:
+        print(f"{path.relative_to(REPO)}:{n}: SKIPPED ({why} dump {name})")
+    if args.list_skipped:
+        for path, n, names, line in ambiguous:
+            print(f"{path.relative_to(REPO)}:{n}: SKIPPED (names {len(names)} dumps: "
+                  f"{', '.join(names)}) - split the claim to make it checkable")
+            print(f"    {line[:200]}")
+
     if args.uncited:
         print(f"\n# {len(uncited)} line(s) quote a statistic with no dump cited (advisory):")
         for path, n, line in uncited:
             print(f"{path.relative_to(REPO)}:{n}: {line[:160]}")
 
-    print(f"\n# checked {checked} cited claim(s); {len(drifted)} drifted", file=sys.stderr)
+    absent = sum(1 for _, _, _, why in unreadable if why == "absent")
+    headerless = len(unreadable) - absent
+    if drifted or not args.quiet:
+        print(
+            f"\n# checked {checked} cited claim(s); {len(drifted)} drifted"
+            f"\n# skipped {len(ambiguous)} ambiguous (2+ dumps on one line, "
+            f"--list-skipped names them), {absent} citing an absent dump, "
+            f"{headerless} citing a headerless dump"
+            f"\n# {len(uncited)} further line(s) quote a statistic citing no "
+            f"dump at all (--uncited lists them)",
+            file=sys.stderr,
+        )
     return 1 if drifted else 0
 
 

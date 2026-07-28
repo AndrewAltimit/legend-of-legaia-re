@@ -82,6 +82,23 @@ jobs:
       - name: Trait-override symmetry
         run: python3 scripts/ci/check-trait-override-symmetry.py
 
+      # Hand-editing the generated register files is a build error, so the
+      # drift check belongs wherever the generated files can be committed. The
+      # hook runs it only when the staged set touches scripts/vrc-diorama/;
+      # here it is unconditional, because a checkout has no staging area to
+      # condition on and the check costs milliseconds.
+      - name: VRChat-diorama register codegen drift
+        run: python3 scripts/vrc-diorama/codegen.py --check
+
+      # Disc-denominated coverage ratchet. Both its inputs are gitignored, so
+      # this step reports SKIPPED on the runner and can only fail where the
+      # bytes are - which is precisely why it must still appear here. It was
+      # hook-only, and a hard gate that exists in one hook is one
+      # LEGAIA_SKIP_PRECOMMIT=1 away from being fiction; a step that says
+      # SKIPPED is at least a step whose absence would be noticed.
+      - name: Disc coverage ratchet (skips without disc data)
+        run: python3 scripts/ci/disc-coverage.py --check
+
       # site/wasm/ is build output that the deploy job rebuilds, so a stale
       # bundle on the runner is not a repository defect. Reported, never fatal.
       - name: Shipped wasm bundle freshness (advisory)
