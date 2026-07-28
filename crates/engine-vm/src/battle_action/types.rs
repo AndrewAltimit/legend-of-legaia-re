@@ -624,6 +624,22 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E791C
     pub formation_latched: u8,
+    /// Port-only: has the state-`0x00` formation arm
+    /// ([`crate::battle_action::begin_formation_arm`]) already run for this
+    /// battle?
+    ///
+    /// Retail needs no such flag because it enters state `0x00` **once per
+    /// battle**: `ctx[7]` has exactly one zero-writer in the corpus, the
+    /// battle flow SM's `0xFE` arm (`FUN_801D0748`, `0x801D3224`), and the
+    /// end-of-action gate hands the next actor `0x0A`, never `0x00`. The port
+    /// re-arms [`ActionState::Begin`] per action instead, and an unguarded
+    /// re-entry would rewind the turn cursor mid-round and - worse - copy the
+    /// already-cleared `+0x290` over `+0x291`, silently disabling
+    /// pre-emptive-strike escapes (`+0x291` has one writer, `0x801E2B38`, and
+    /// one reader, the escape roll at `0x801E7AD8`).
+    ///
+    /// Reset with the rest of the context at battle entry.
+    pub formation_armed: bool,
     /// `[+0x269]` - multi-cast queue gate read at `DoneFadeDown`. Non-zero
     /// routes to `DoneMultiCast`; zero routes to `EndOfAction`.
     pub multi_cast_gate: u8,

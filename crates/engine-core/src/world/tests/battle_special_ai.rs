@@ -432,7 +432,7 @@ fn latched_preemptive_strike_makes_the_escape_compare_unfailable() {
 
         let mut w = escape_world(1, 1000, None);
         w.rng_state = seed;
-        w.battle_formation_latched = FormationAdvantage::Preemptive;
+        w.set_battle_formation_latched(FormationAdvantage::Preemptive);
         escaped_with += u32::from(w.roll_battle_escape());
     }
     assert!(
@@ -460,7 +460,7 @@ fn latched_back_attack_does_not_touch_the_escape_roll() {
 
         let mut backed = escape_world(30, 45, None);
         backed.rng_state = seed;
-        backed.battle_formation_latched = FormationAdvantage::BackAttack;
+        backed.set_battle_formation_latched(FormationAdvantage::BackAttack);
         let b = backed.roll_battle_escape();
 
         assert_eq!(a, b, "seed {seed}: back attack must not change the roll");
@@ -478,7 +478,7 @@ fn latched_preemptive_strike_still_loses_to_the_no_escape_flag() {
     for seed in 0..25u32 {
         let mut w = escape_world(1000, 1, None);
         w.rng_state = seed;
-        w.battle_formation_latched = FormationAdvantage::Preemptive;
+        w.set_battle_formation_latched(FormationAdvantage::Preemptive);
         w.battle_no_escape = true;
         assert!(
             !w.roll_battle_escape(),
@@ -505,7 +505,7 @@ fn seed_then_latch_feeds_both_formation_consumers() {
         w.actors[slot].battle.max_hp = 100;
         w.battle_speed[slot] = 40;
     }
-    w.battle_formation = FormationAdvantage::Preemptive;
+    w.set_battle_formation(FormationAdvantage::Preemptive);
 
     w.seed_battle_initiative();
     // Lockout consumer: monster slots 3..=6 sat out round one.
@@ -521,12 +521,12 @@ fn seed_then_latch_feeds_both_formation_consumers() {
 
     w.latch_battle_formation();
     assert_eq!(
-        w.battle_formation_latched,
+        w.battle_formation_latched(),
         FormationAdvantage::Preemptive,
         "the advantage must survive into +0x291"
     );
     assert_eq!(
-        w.battle_formation,
+        w.battle_formation(),
         FormationAdvantage::None,
         "+0x290 is cleared by the latch"
     );
@@ -558,7 +558,7 @@ fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
             w.actors[slot].battle.max_hp = 100;
             w.battle_speed[slot] = 40;
         }
-        w.battle_formation = advantage;
+        w.set_battle_formation(advantage);
         w.rng_state = 3;
         w.reseed_initiative();
 
@@ -600,7 +600,7 @@ fn initiative_keys_carry_the_wounded_bonus_from_the_kernel() {
         }
         w.actors[0].battle.hp = 1; // near death
         w.actors[1].battle.hp = 1000; // untouched
-        w.battle_formation = legaia_engine_vm::battle_formulas::FormationAdvantage::None;
+        w.set_battle_formation(legaia_engine_vm::battle_formulas::FormationAdvantage::None);
 
         w.reseed_initiative();
 

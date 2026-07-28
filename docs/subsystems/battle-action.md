@@ -1757,9 +1757,19 @@ they are documented here rather than lifted whole into `engine-vm`.
   a terminator it installs the **move-power record** (`0x801F4F5C +
   map[actor+0x1DF]*0x1A`, map at `0x801F4E64`, `0x1A`-byte stride) at
   `ctx[+0x1014]` and seeds per-target homing state (`+0x1144` position, `+0x252`
-  target, `+0x1166` bearing). GTE + effect-spawn; not ported. See
+  target, `+0x1166` bearing). Kernels ported as
+  `engine-core::action_effect_script`; the spawns come back as requests. See
   `overlay_battle_action_801dea50.txt` and
   [move-power.md](../formats/move-power.md).
+
+  **`FUN_801E295C` does not call it.** A five-form reference scan
+  (`scripts/ghidra-analysis/find-address-word-refs.py 801dea50`) finds the
+  address referenced exactly twice in the whole corpus, both `jal`s in
+  `SCUS_942.54` at `0x800478B8` and `0x80047C08` - inside `FUN_80047430`, the
+  per-frame anim-node tick. There is **no** reference of any form to it inside
+  the battle-action overlay image. So the effect-script walk is driven from the
+  anim path, not from the action SM, and a port that waits for the action SM to
+  reach it waits forever.
 - **`FUN_801E09F8` - cast-effect census + projectile flight/impact.** Runs two
   jobs each frame. **(1) Census**: it recomputes, from scratch, the outstanding
   effect-count fields the magic/summon exit states poll - `ctx[+0x249]` (actors

@@ -5,6 +5,48 @@
 use super::*;
 
 impl World {
+    /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
+    /// setup, read straight off the battle context the action SM owns.
+    ///
+    /// There is exactly one of these in retail and exactly one here. The
+    /// initiative seeder is the only consumer of the *unlatched* copy (it
+    /// zeroes the disadvantaged side's keys, `0x801DAA40`); the action SM's
+    /// state `0x00` consumes it and clears it
+    /// ([`vm::battle_action::begin_formation_arm`]).
+    ///
+    /// REF: FUN_80051D84
+    pub fn battle_formation(&self) -> vm::battle_formulas::FormationAdvantage {
+        vm::battle_formulas::FormationAdvantage::from_byte(self.battle_ctx.formation_advantage)
+    }
+
+    /// Write `ctx+0x290`. The roll ([`Self::roll_battle_formation`]) is its
+    /// only production writer; tests use it to stage an advantage.
+    pub fn set_battle_formation(&mut self, advantage: vm::battle_formulas::FormationAdvantage) {
+        self.battle_ctx.formation_advantage = advantage.to_byte();
+    }
+
+    /// `ctx+0x291` - the latched copy of [`Self::battle_formation`]. Retail's
+    /// `FUN_801E295C` state `0x00` copies `+0x290` here (`0x801E2B38`, the
+    /// byte's only writer) and then clears the original; this is the copy that
+    /// survives the battle and the one [`World::roll_battle_escape`] reads
+    /// (`0x801E7AD8`; `== 2` -> the escape compare cannot fail). Latching is
+    /// what makes a pre-emptive strike affect escapes at all - clearing
+    /// `+0x290` without copying it silently disables them.
+    ///
+    /// REF: FUN_801E791C
+    pub fn battle_formation_latched(&self) -> vm::battle_formulas::FormationAdvantage {
+        vm::battle_formulas::FormationAdvantage::from_byte(self.battle_ctx.formation_latched)
+    }
+
+    /// Write `ctx+0x291` directly, bypassing the latch. Tests only - production
+    /// reaches it through [`Self::latch_battle_formation`].
+    pub fn set_battle_formation_latched(
+        &mut self,
+        advantage: vm::battle_formulas::FormationAdvantage,
+    ) {
+        self.battle_ctx.formation_latched = advantage.to_byte();
+    }
+
     /// First living actor on the side opposing `attacker`. Party slots
     /// (`< party_count`) oppose the monster band (`party_count..`); monster
     /// slots oppose the party. `None` if that side is wiped.
@@ -121,7 +163,7 @@ impl World {
         // smaller than three, so the side test is taken from `party_count`.
         // The kernel stays the retail-layout reference; this is the engine's
         // seating adapter, not a different rule.
-        let lockout = self.battle_formation;
+        let lockout = self.battle_formation();
         let party_count = self.party_count as usize;
         for slot in 0..BATTLE_SLOTS {
             let locked = match lockout {
@@ -220,27 +262,38 @@ impl World {
         // The score inputs are owned locals, so the RNG closure can hold the
         // only borrow of `self` - draws stay on the shared determinism stream.
         let mut rand = || self.next_rng();
-        self.battle_formation =
-            roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
+        let rolled = roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
+        self.set_battle_formation(rolled);
     }
 
-    /// Latch the formation advantage, the port of `FUN_801E295C` state `0x00`:
+    /// Run the action SM's state-`0x00` **formation arm** on the live battle
+    /// context - [`vm::battle_action::begin_formation_arm`], which seeds the
+    /// turn cursor `ctx[+0x1A]` from `ctx[+0x290]` and then latches `+0x290`
+    /// into `+0x291` and clears it.
     ///
-    /// ```text
-    /// 801e2b30  lbu v0,0x290(v1)
-    /// 801e2b38  sb  v0,0x291(v1)
-    /// 801e2b48  sb  zero,0x290(v0)
-    /// ```
+    /// The engine calls it at battle open because that is where retail runs
+    /// it: the flow SM's `0xFE` arm is the corpus' only writer of `ctx[7] = 0`
+    /// (`FUN_801D0748`, `0x801D3224`), so `FUN_801E295C` reaches `0x00` on the
+    /// first battle frame and then holds in `0x0B` while the command menu is
+    /// up. The port parks its whole SM while a command session is open, so the
+    /// arm has to be driven here or a first-turn Run would roll its escape
+    /// against an unlatched `+0x291`.
     ///
-    /// Runs once, after [`Self::seed_battle_initiative`] - the seeder is the
-    /// only reader of the unlatched `+0x290`, so latching before it would
-    /// silently disable the side lockout, and never latching at all silently
-    /// disables pre-emptive-strike escapes ([`Self::roll_battle_escape`]).
+    /// Must run **after** [`Self::seed_battle_initiative`]: the seeder is the
+    /// only reader of the unlatched `+0x290` (`0x801DAA40`), so arming before
+    /// it would silently disable the side lockout, and never arming at all
+    /// silently disables pre-emptive-strike escapes
+    /// ([`Self::roll_battle_escape`]).
     ///
-    /// PORT: FUN_801E295C (state 0x00, the `+0x290` -> `+0x291` latch)
+    /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
     pub(in crate::world) fn latch_battle_formation(&mut self) {
-        self.battle_formation_latched = self.battle_formation;
-        self.battle_formation = vm::battle_formulas::FormationAdvantage::None;
+        let party = self.party_count;
+        // `ctx[+0x01]` is the seated monster count, not the width of the
+        // 8-slot table - the tail of it is empty in most formations.
+        let monsters = ((party as usize)..self.actors.len())
+            .filter(|&slot| self.actors[slot].battle.liveness != 0)
+            .count() as u8;
+        vm::battle_action::begin_formation_arm(party, monsters, &mut self.battle_ctx);
     }
 
     /// Next combatant by SPD-seeded initiative - the port of
