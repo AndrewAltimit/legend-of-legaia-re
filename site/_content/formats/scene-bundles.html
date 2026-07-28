@@ -17,7 +17,7 @@
 
 <section class="doc-section" id="scene-tmd-stream-bare-tmd-prefix">
   <h2>scene_tmd_stream - bare-TMD prefix</h2>
-  <p>The dominant scene-asset layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's 3D-model format (Legaia uses a custom variant, magic <code>0x80000002</code> - see <a href="tmd.html">tmd</a>); TIM is the PSX image/texture format. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. ~12% of all PROT entries match. Walked by <code>FUN_8001FE70</code> (the battle-init custom walker; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions, labelled by RAM address) - <strong>not</strong> by <code>FUN_8002541C</code> / <code>FUN_8001F05C</code> despite the chunk-header packing matching the standard format.</p>
+  <p>The dominant scene-asset layout: a 3D mesh up front, textures behind it. TMD is the PlayStation's 3D-model format (Legaia uses a custom variant, magic <code>0x80000002</code> - see <a href="tmd.html">tmd</a>); TIM is the PSX image/texture format. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. 182 of the disc's 1233 PROT entries carry it. Walked by <code>FUN_8001FE70</code> (the battle-init custom walker; <code>FUN_80xxxxxx</code> names are Ghidra-traced functions, labelled by RAM address) - <strong>not</strong> by <code>FUN_8002541C</code> / <code>FUN_8001F05C</code> despite the chunk-header packing matching the standard format.</p>
 <pre><code>+0x00          u32 chunk0_header   ; (type=0x00 &lt;&lt; 24) | size
 +0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
 +0x04 + size   streaming chunks    ; FUN_8001FE70-style tail until

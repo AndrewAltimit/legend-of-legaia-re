@@ -29,6 +29,10 @@ use legaia_asset::scene_tmd_stream::{self, WalkSource};
 /// mislabelled as "sub-stream 1" - it is where entry 0007 begins.
 const ENTRY_0006_LEN: usize = 0x14000;
 
+/// Number of `scene_tmd_stream` PROT entries on the retail disc - a stable
+/// invariant of the image, and the denominator of the half-shell sweep below.
+const SCENE_TMD_STREAM_ENTRIES: usize = 182;
+
 fn extracted_prot_dir() -> Option<PathBuf> {
     let cands = [
         PathBuf::from("extracted/PROT"),
@@ -224,4 +228,96 @@ fn town01_scene_tmd_stream_entries_hold_exactly_one_substream() {
         let magic = u32::from_le_bytes(raw[tmd_abs..tmd_abs + 4].try_into().unwrap());
         assert_eq!(magic, 0x8000_0002, "{label} opens with a Legaia TMD");
     }
+}
+
+/// Corpus sweep: **every** `scene_tmd_stream` backdrop is authored as a half
+/// shell.
+///
+/// This is the measurement behind the falsified "the backdrop is half, so
+/// mirror it to complete the circle" row in
+/// `docs/reference/re-do-not-re-walk.md`. The half shape is not damage and it
+/// is not a parser artifact - it is what the disc holds, uniformly, across the
+/// whole class. Pinning it here means an engine or viewer change that starts
+/// synthesising the missing side has to argue with the disc.
+///
+/// Measured over object 0, the shell retail actually links as the background
+/// actor; the trailing objects are near props / ground ribbons that stay
+/// off-camera and several of them do straddle the plane.
+#[test]
+fn every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell() {
+    use legaia_asset::categorize::{Class, classify};
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+    paths.sort();
+
+    let mut total = 0usize;
+    let mut classified = 0usize;
+    let mut worst: Option<(f32, String)> = None;
+    let mut open_sides = std::collections::BTreeMap::<&'static str, usize>::new();
+    let mut full_surround = Vec::new();
+
+    for path in paths {
+        let raw = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        if classify(&raw).class != Class::SceneTmdStream {
+            continue;
+        }
+        total += 1;
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let stream = scene_tmd_stream::detect(&raw)
+            .unwrap_or_else(|| panic!("{name}: classified SceneTmdStream but detect() failed"));
+        let tmd = legaia_tmd::parse(&raw[stream.tmd_range()])
+            .unwrap_or_else(|e| panic!("{name}: leading TMD must parse: {e}"));
+        let Some(shape) = scene_tmd_stream::shell_shape(&tmd) else {
+            continue;
+        };
+        classified += 1;
+        *open_sides.entry(shape.open.label()).or_default() += 1;
+        if !shape.is_half_shell() {
+            full_surround.push(format!("{name} ({:.3})", shape.open_fraction));
+        }
+        if worst.as_ref().is_none_or(|(f, _)| shape.open_fraction > *f) {
+            worst = Some((
+                shape.open_fraction,
+                format!(
+                    "{name} X[{},{}] Z[{},{}] open->{}",
+                    shape.min[0],
+                    shape.max[0],
+                    shape.min[2],
+                    shape.max[2],
+                    shape.open.label()
+                ),
+            ));
+        }
+    }
+
+    assert_eq!(
+        total, SCENE_TMD_STREAM_ENTRIES,
+        "scene_tmd_stream entry count is a disc invariant"
+    );
+    assert_eq!(classified, total, "every entry's object 0 carries vertices");
+    assert!(
+        full_surround.is_empty(),
+        "these backdrops are not half-authored, which would break the \
+         draw-once rule the engine relies on: {full_surround:?}"
+    );
+    // No backdrop opens toward +Z: retail seats the party on the +Z side and
+    // points the camera down it, so the open side is never behind the seats.
+    assert_eq!(open_sides.get("+Z"), None, "open sides: {open_sides:?}");
+
+    let (worst_fraction, worst_entry) = worst.expect("at least one backdrop");
+    eprintln!(
+        "{total} scene_tmd_stream backdrops, all half shells; open sides \
+         {open_sides:?}; widest overhang {worst_fraction:.4} ({worst_entry})"
+    );
 }

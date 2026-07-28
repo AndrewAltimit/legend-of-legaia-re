@@ -110,6 +110,11 @@ enum TmdSource {
     /// Bare TMD at offset 0 of the entry.
     Direct { offset: usize },
     /// scene_tmd_stream wrapper: 4-byte chunk0 header + bare TMD.
+    ///
+    /// These are battle-stage backdrop shells, and every one is authored as
+    /// **half** a bowl (see `docs/reference/re-do-not-re-walk.md`) - which is
+    /// why this variant is the one `LegaiaViewer::tmd_note` labels, so the
+    /// shape does not read as a broken parse.
     SceneTmdStream { offset: usize, len: usize },
     /// TMD packed inside one of the entry's LZS-decompressed sections.
     /// Field/town scene_asset_table entries store their environment-geometry

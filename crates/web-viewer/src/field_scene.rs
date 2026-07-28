@@ -32,6 +32,10 @@ pub struct FieldScenePack {
     /// space the placement records select from.
     pub env_tmds: Vec<usize>,
     /// Placed-object draws (`flags & 0x4`; buildings / props / landmarks).
+    /// For world-map scenes this is the whole sparse mesh layer: the walk
+    /// `.MAP`'s placed landmarks followed by its decoration cells (trees /
+    /// mountain groups / props), concatenated in that order to match the
+    /// native play-window's `resolve_world_map_terrain_draws`.
     pub placements: Vec<EnvDraw>,
     /// Bulk terrain-tile draws (`CELL_VISIBLE`; ground / decor tiles).
     /// Empty for world-map scenes (their ground is the heightfield).
@@ -206,19 +210,29 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
 
     let env_tmds = field_env::env_pack_tmd_indices(&scene, &res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
-    // World-map scenes draw the sparse walk-frame landmarks; field/town
-    // scenes draw the placed objects + the bulk terrain-tile layer
-    // (mirrors the play-window's resolve_field_* / resolve_world_map_*
-    // split in `engine-shell`).
+    // World-map scenes draw two sparse walk-frame layers over the continent
+    // heightfield; field/town scenes draw the placed objects + the bulk
+    // terrain-tile layer (mirrors the play-window's resolve_field_* /
+    // resolve_world_map_* split in `engine-shell`).
     let (placement_records, terrain_records) = if is_world_map {
-        (
-            scene
-                .walk_object_placements(index)
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            Vec::new(),
-        )
+        // The walk `.MAP` carries the placed-flag landmarks (`FUN_8003A55C`,
+        // flags & 0x4) AND a **decoration** layer - walk-visible cells with a
+        // nonzero record `+0x10` and no placed flag: the crossed-quad trees,
+        // mountain groups and props (~300 cells on Drake alone). Both are one
+        // un-posed layer, concatenated landmarks-then-decorations exactly as
+        // `resolve_world_map_terrain_draws` in `engine-shell` does; dropping
+        // the second half here left the browser's assembled world maps bare
+        // next to the native window. The continent ground itself is NOT this
+        // layer - it is the heightfield below.
+        let mut tiles = scene
+            .walk_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
+            tiles.extend(deco);
+        }
+        (tiles, Vec::new())
     } else {
         (
             scene

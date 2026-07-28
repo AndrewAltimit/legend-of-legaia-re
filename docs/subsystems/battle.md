@@ -413,6 +413,16 @@ the retail Tetsu close-up. Only **object 0** (the arena shell) is on screen
 in the retail captures; object 1 (a small ground-level ribbon of near
 props / ground mist) never is.
 
+It holds for the whole class, not just these two. Measured over object 0, all
+**182** `scene_tmd_stream` entries put at most 8 % of the shell's X or Z
+extent past `X = 0` / `Z = 0`; the open side is `-X` in 129, `-Z` in 49 and
+`+X` in 4, and never `+Z` - the hole is always where the camera is. Classifier
+`legaia_asset::scene_tmd_stream::shell_shape`; sweep in
+`crates/asset/tests/scene_tmd_stream_real.rs`. **The half shape is authored,
+so "complete the circle" is a regression, not a fix** - the falsified reading
+and what the mirror broke are recorded in
+[`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it).
+
 **Engine status.** `legaia-engine play-window` renders stage battles as a
 faithful scene: the phase-scripted camera (below), the stage TMD's object 0
 drawn **once** at raw coords (an earlier build added a `Ry(180°)` mirror

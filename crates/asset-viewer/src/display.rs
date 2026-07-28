@@ -155,18 +155,29 @@ pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display
     }
 
     // 4. Scene-TMD-prefixed stream: leading bare TMD at offset 4 is the
-    // dominant scene-asset shape (148 PROT entries). Render flat-shaded -
+    // dominant scene-asset shape (182 PROT entries). Render flat-shaded -
     // no sibling TIM dir means no texturing, but the geometry is the
     // distinctive visual signal.
+    //
+    // The mesh will look like *half* a bowl, and that is retail-correct: the
+    // entry is a battle-stage backdrop shell whose object 0 is authored
+    // entirely on one side of X=0 or Z=0, drawn once, with the open side
+    // facing the camera. `shell_shape` measures which side from the vertex
+    // pool so the status line says so - an unlabelled half dome reads as a
+    // broken parse, and has been mistaken for one (see
+    // docs/reference/re-do-not-re-walk.md).
     if report.class == legaia_asset::categorize::Class::SceneTmdStream
         && let Some(s) = legaia_asset::scene_tmd_stream::detect(bytes)
         && let Ok(tmd) = legaia_tmd::parse(&bytes[s.tmd_range()])
     {
         let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &bytes[s.tmd_range()]);
         if !mesh.indices.is_empty() {
+            let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd)
+                .map(|sh| format!(" - {}", sh.describe()))
+                .unwrap_or_default();
             return Some(Display {
                 title: format!(
-                    "{} [scene_tmd_stream: {} obj, {} verts, {} tris{}]",
+                    "{} [scene_tmd_stream: {} obj, {} verts, {} tris{}{}]",
                     title,
                     tmd.objects.len(),
                     mesh.positions.len(),
@@ -176,6 +187,7 @@ pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display
                     } else {
                         format!(", +{} tail chunks", s.tail_chunks.len())
                     },
+                    shape,
                 ),
                 image: None,
                 audio: None,
@@ -186,7 +198,7 @@ pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display
         }
     }
 
-    // 5. Scene-VAB-prefixed stream: leading VAB at offset 4 (217 PROT
+    // 5. Scene-VAB-prefixed stream: leading VAB at offset 4 (218 PROT
     // entries - the dominant distributed-VAB carrier). Play sample 0 of
     // the embedded bank.
     if report.class == legaia_asset::categorize::Class::SceneVabStream

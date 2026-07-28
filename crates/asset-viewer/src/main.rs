@@ -16,9 +16,12 @@
 //!   - `tim_pack` → display first sub-TIM that decodes
 //!   - `data_field_streaming` → display first TIM_LIST sub-pack TIM
 //!   - `scene_tmd_stream` → render the leading TMD as flat-shaded mesh
-//!     (148 PROT entries, 2026-05-04)
+//!     (182 PROT entries). These are battle-stage backdrop shells and every
+//!     one is authored as a **half** shell - the status line names the open
+//!     side, measured from the vertex pool, so the shape does not read as a
+//!     broken parse.
 //!   - `scene_vab_stream` → play sample 0 of the leading VAB bank
-//!     (217 PROT entries, 2026-05-04)
+//!     (218 PROT entries)
 //!   - VAB byte-search fallback for any class - finds VAB headers anywhere
 //!     in the buffer (covers `unknown_*` entries with embedded banks)
 //!

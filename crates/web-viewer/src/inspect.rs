@@ -588,8 +588,12 @@ impl LegaiaViewer {
             Some(_) => self.tmd_stats(e),
             None => (0, 0),
         };
+        // What the mesh *is*, when the shape alone would mislead - currently
+        // the half-authored battle-stage backdrop shells. Empty otherwise.
+        // Escaped: this is the only free-form string in the status object.
+        let tmd_note = self.tmd_note(e).replace('\\', r"\\").replace('"', "\\\"");
         format!(
-            "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"width\":{},\"height\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_tris\":{},\"tmd_verts\":{},\"tmd_pack_count\":{}}}",
+            "{{\"slot\":{},\"prot_index\":{},\"class\":\"{}\",\"width\":{},\"height\":{},\"bpp\":{},\"tim_count\":{},\"has_tmd\":{},\"tmd_tris\":{},\"tmd_verts\":{},\"tmd_pack_count\":{},\"tmd_note\":\"{}\"}}",
             self.current,
             e.meta.index,
             e.class.name(),
@@ -601,6 +605,7 @@ impl LegaiaViewer {
             tmd_tris,
             tmd_verts,
             e.tmd_pack_count,
+            tmd_note,
         )
     }
 

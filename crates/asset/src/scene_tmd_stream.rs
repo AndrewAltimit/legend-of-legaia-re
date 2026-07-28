@@ -1,7 +1,7 @@
 //! "TMD-prefixed scene-stream" detector - a streaming-format variant
 //! that opens with a bare Legaia TMD instead of a typed chunk header.
 //!
-//! ### Layout (empirically verified across 148 PROT entries, 2026-05)
+//! ### Layout (empirically verified across all 182 matching PROT entries)
 //!
 //! ```text
 //! +0x00          u32 chunk0_header   ; (type=0x00 << 24) | size
@@ -430,6 +430,147 @@ fn round_up_4(v: usize) -> usize {
     (v + 3) & !3
 }
 
+// ---------------------------------------------------------------------------
+// Backdrop shell shape
+// ---------------------------------------------------------------------------
+
+/// Which way a battle-stage backdrop shell faces open.
+///
+/// A `scene_tmd_stream` entry's object 0 is the stage shell - sky dome +
+/// distant mountain ring + far ground ring - and retail authors it as a
+/// **half** shell hugging one side of the `X = 0` or `Z = 0` plane, drawn
+/// once. The missing side is where the camera looks *from*; retail never
+/// mirrors or completes it. See `docs/subsystems/battle.md` and the falsified
+/// "mirror it to complete the circle" row in
+/// `docs/reference/re-do-not-re-walk.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum OpenSide {
+    NegX,
+    PosX,
+    NegZ,
+    PosZ,
+}
+
+impl OpenSide {
+    /// Axis-and-sign label, e.g. `"-X"`.
+    pub fn label(self) -> &'static str {
+        match self {
+            OpenSide::NegX => "-X",
+            OpenSide::PosX => "+X",
+            OpenSide::NegZ => "-Z",
+            OpenSide::PosZ => "+Z",
+        }
+    }
+}
+
+/// The measured shape of a backdrop shell's vertex pool.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ShellShape {
+    /// Inclusive min corner of the measured vertex pool, `[x, y, z]`.
+    pub min: [i32; 3],
+    /// Inclusive max corner of the measured vertex pool, `[x, y, z]`.
+    pub max: [i32; 3],
+    /// The thin side: the direction the shell is open toward.
+    pub open: OpenSide,
+    /// Share of that axis's extent lying on the open side of the plane.
+    /// `0.0` = the pool never crosses the plane at all; `0.5` = perfectly
+    /// symmetric (i.e. not a half shell).
+    pub open_fraction: f32,
+}
+
+/// Upper bound on [`ShellShape::open_fraction`] for a pool to read as
+/// half-authored rather than as a full surround.
+///
+/// Retail leaves this test unambiguous: measured over object 0 of all 182
+/// `scene_tmd_stream` entries the largest observed value is `0.079`, and the
+/// nearest thing to a counterexample is still under a twelfth of the extent.
+/// The threshold sits well above the observed maximum and well below the
+/// `0.5` a symmetric pool would score.
+pub const HALF_SHELL_MAX_OPEN_FRACTION: f32 = 0.10;
+
+impl ShellShape {
+    /// Whether the pool is authored against one side of `X = 0` / `Z = 0`.
+    pub fn is_half_shell(&self) -> bool {
+        self.open_fraction <= HALF_SHELL_MAX_OPEN_FRACTION
+    }
+
+    /// One-line human description for a viewer status line.
+    pub fn describe(&self) -> String {
+        if self.is_half_shell() {
+            format!(
+                "battle-stage backdrop (half shell, open toward {})",
+                self.open.label()
+            )
+        } else {
+            "battle-stage backdrop (full surround)".to_string()
+        }
+    }
+}
+
+/// Share of an axis extent lying on the thinner side of the `0` plane.
+/// `0.0` when the span never crosses it, `0.5` when it straddles evenly.
+fn open_fraction(lo: i32, hi: i32) -> f32 {
+    let extent = (hi - lo) as f32;
+    if extent <= 0.0 {
+        return 0.5;
+    }
+    let below = (-lo).max(0) as f32;
+    let above = hi.max(0) as f32;
+    below.min(above) / extent
+}
+
+/// Classify a backdrop TMD's shell shape from its **object 0** vertex pool -
+/// the shell retail actually draws (`FUN_800513F0` registers the TMD and
+/// links one background actor; the trailing objects are near props / ground
+/// ribbons that stay off-camera).
+///
+/// Returns `None` when the TMD has no object 0 or object 0 has no vertices.
+pub fn shell_shape(tmd: &legaia_tmd::Tmd) -> Option<ShellShape> {
+    shell_shape_of(tmd.objects.first()?.vertices.iter())
+}
+
+/// [`shell_shape`] over the TMD's **whole** vertex pool (every object), for
+/// callers that want the entry-wide extent rather than the drawn shell's.
+pub fn shell_shape_all_objects(tmd: &legaia_tmd::Tmd) -> Option<ShellShape> {
+    shell_shape_of(tmd.objects.iter().flat_map(|o| o.vertices.iter()))
+}
+
+fn shell_shape_of<'a>(verts: impl Iterator<Item = &'a legaia_tmd::Vector>) -> Option<ShellShape> {
+    let (mut min, mut max) = ([i32::MAX; 3], [i32::MIN; 3]);
+    let mut any = false;
+    for v in verts {
+        any = true;
+        for (i, c) in [v.x as i32, v.y as i32, v.z as i32].into_iter().enumerate() {
+            min[i] = min[i].min(c);
+            max[i] = max[i].max(c);
+        }
+    }
+    if !any {
+        return None;
+    }
+    let fx = open_fraction(min[0], max[0]);
+    let fz = open_fraction(min[2], max[2]);
+    // Pick the thinner axis; on that axis the open side is whichever end of
+    // the span sits nearer the plane.
+    let open = if fx <= fz {
+        if (-min[0]).max(0) <= max[0].max(0) {
+            OpenSide::NegX
+        } else {
+            OpenSide::PosX
+        }
+    } else if (-min[2]).max(0) <= max[2].max(0) {
+        OpenSide::NegZ
+    } else {
+        OpenSide::PosZ
+    };
+    Some(ShellShape {
+        min,
+        max,
+        open,
+        open_fraction: fx.min(fz),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -729,5 +870,102 @@ mod tests {
             1,
             "post-terminator chunk surfaces in continuation"
         );
+    }
+
+    /// Build a one-object TMD whose object 0 holds the given vertices, plus a
+    /// second object with a deliberately different extent (so the object-0 vs
+    /// whole-pool split is observable).
+    fn shape_of(obj0: &[(i16, i16, i16)], rest: &[(i16, i16, i16)]) -> legaia_tmd::Tmd {
+        fn obj(verts: &[(i16, i16, i16)]) -> legaia_tmd::Object {
+            legaia_tmd::Object {
+                header: legaia_tmd::ObjectHeader {
+                    vert_top: 0,
+                    n_vert: verts.len() as u32,
+                    normal_top: 0,
+                    n_normal: 0,
+                    prim_top: 0,
+                    n_primitive: 0,
+                    scale: 0,
+                },
+                vertices: verts
+                    .iter()
+                    .map(|&(x, y, z)| legaia_tmd::Vector { x, y, z, _pad: 0 })
+                    .collect(),
+                normals: Vec::new(),
+                primitives_byte_offset: 0,
+                primitives_byte_size: 0,
+                claimed_n_primitive: 0,
+                primitives_psx_walk: None,
+            }
+        }
+        let mut objects = vec![obj(obj0)];
+        if !rest.is_empty() {
+            objects.push(obj(rest));
+        }
+        legaia_tmd::Tmd {
+            header: legaia_tmd::Header {
+                id: 0x8000_0002,
+                flags: 0,
+                nobj: objects.len() as u32,
+                flist_bit_set: false,
+            },
+            objects,
+        }
+    }
+
+    #[test]
+    fn shell_shape_reads_a_strictly_one_sided_pool_as_open_toward_neg_x() {
+        // town01's stage shell shape: everything at X >= 0, Z symmetric.
+        let tmd = shape_of(&[(0, 0, -10751), (10751, -4000, 10751)], &[]);
+        let s = shell_shape(&tmd).expect("shell shape");
+        assert_eq!(s.open, OpenSide::NegX);
+        assert_eq!(s.open_fraction, 0.0);
+        assert!(s.is_half_shell());
+        assert_eq!(
+            s.describe(),
+            "battle-stage backdrop (half shell, open toward -X)"
+        );
+    }
+
+    #[test]
+    fn shell_shape_tolerates_a_small_overhang_past_the_plane() {
+        // The map-kingdom dome shape: X symmetric, Z barely crosses 0.
+        let tmd = shape_of(&[(-12155, 0, -1260), (12155, -10522, 12155)], &[]);
+        let s = shell_shape(&tmd).expect("shell shape");
+        assert_eq!(s.open, OpenSide::NegZ);
+        assert!(s.open_fraction > 0.0 && s.open_fraction < HALF_SHELL_MAX_OPEN_FRACTION);
+        assert!(s.is_half_shell());
+    }
+
+    #[test]
+    fn shell_shape_rejects_a_symmetric_pool() {
+        let tmd = shape_of(&[(-1000, 0, -1000), (1000, -500, 1000)], &[]);
+        let s = shell_shape(&tmd).expect("shell shape");
+        assert_eq!(s.open_fraction, 0.5);
+        assert!(!s.is_half_shell());
+        assert_eq!(s.describe(), "battle-stage backdrop (full surround)");
+    }
+
+    #[test]
+    fn shell_shape_measures_object_0_while_the_all_objects_form_sees_the_props() {
+        // Object 0 is one-sided; the trailing near-prop object straddles the
+        // plane. Retail draws only object 0, so the two forms disagree - which
+        // is exactly why `shell_shape` is the object-0 one.
+        let tmd = shape_of(
+            &[(0, 0, -9535), (9535, -3000, 9535)],
+            &[(-2574, 0, -500), (2574, -100, 500)],
+        );
+        let s0 = shell_shape(&tmd).expect("object 0 shape");
+        assert_eq!(s0.open, OpenSide::NegX);
+        assert!(s0.is_half_shell());
+
+        let all = shell_shape_all_objects(&tmd).expect("whole-pool shape");
+        assert_eq!(all.min[0], -2574);
+        assert!(!all.is_half_shell());
+    }
+
+    #[test]
+    fn shell_shape_is_none_without_vertices() {
+        assert!(shell_shape(&shape_of(&[], &[])).is_none());
     }
 }

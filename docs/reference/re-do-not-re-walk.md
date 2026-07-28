@@ -148,6 +148,7 @@ re-derived by accident.
 | The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | `scene_tmd_stream` entries can hold two or more concatenated sub-streams (the "two-list" shape) | falsified (one stream per entry; 0 of 182 hold a second) | [details ↓](#concatenated-sub-streams-in-a-scene_tmd_stream-entry) |
+| The stage backdrop renders as half a bowl, so something drops the other half - mirror it to complete the circle | falsified (the half shell is the authored shape; 182 of 182 backdrops are half) | [details ↓](#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it) |
 
 ### Assets named by the entry the over-read window started in
 
@@ -263,6 +264,76 @@ detectors for exactly this, with disc-gated coverage in
 
 See [`scene-bundles.md`](../formats/scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape)
 for the corrected layout.
+
+### The half-authored backdrop shell, and the mirror that was supposed to complete it
+
+*Status:* falsified - the half shape is what the disc holds; the "completion"
+is the regression
+
+Open any `scene_tmd_stream` PROT entry in a mesh viewer and you get half a
+bowl: a sky dome, a distant mountain ring and a far ground ring, all sheared
+off along a plane through the origin. The reading that follows is almost
+irresistible - *a whole map got halved, so find the logic that makes it
+whole* - and it has been reached independently more than once, from the
+viewers and from the engine. The obvious repair is equally natural: draw the
+shell a second time under `Ry(180deg)` and close the circle.
+
+**The half shape is authored.** Measured over object 0 - the shell retail
+actually links as the background actor - all **182** `scene_tmd_stream`
+entries put at most **8%** of the shell's X or Z extent on the far side of
+`X = 0` / `Z = 0`; the widest overhang in the whole corpus is `0.079`
+(`0048_vell`, `Z` in `[-877, 10254]` against a symmetric `X`). The open side
+is `-X` in 129 entries, `-Z` in 49 and `+X` in 4. **None** opens toward `+Z`,
+which is the side retail seats the party on - the hole is always where the
+camera is, never behind it. `0007_town01` is the plain case: `X` in
+`[0, 10751]`, `Z` symmetric at `+-10751`, open toward the sea.
+
+**Nothing is being dropped**, which is the part a "halved" reading needs and
+does not have. Every one of the 378 objects across those entries has
+`vert_top + n_vert * 8 == normal_top` exactly, and the parsed body accounts
+for the whole declared chunk0 size. There is no unread vertex block, no
+second primitive list, and (per the row above) no second sub-stream: the
+missing half was never in the file.
+
+**What the mirror broke.** `legaia-engine play-window` shipped the
+`Ry(180deg)` duplicate for a while. For `town01` that planted a second copy
+of the village wall straight across the open `-X` side - the side that in
+retail is open sea. The mirror is a plausible fix only while the shell is
+believed to be radially symmetric, and it is not: these are *scenes*, with a
+sea on one side and a village on the other. Removed; the engine draws object
+0 once, at raw coordinates
+([`battle.md`](../subsystems/battle.md#backdrop-dome---sky--distant-mountains-prot-88-for-map01)).
+
+**The retail captures agree**, and they are what makes this terminal rather
+than an inference from the bytes. Across a four-angle stage-battle capture
+set the distant mountains cover **44-81%** of the horizon columns depending
+on camera angle - peaking when the orbit camera looks into the arc, troughing
+along its edge. A ring would hold roughly constant. The remaining horizon is
+open sky and grass, drawn by the flat procedural ground grid, exactly as the
+half shell predicts.
+
+Two things this is *not*. It is not the `+0x10` mesh puzzle - the
+walk-visible `.MAP` cells that name a pack mesh no layer draws, and so look
+like a candidate missing half until you read the flags. That family is
+`0x0011`, i.e. `FLAG_MESH_DRAWN` **clear**, and stamping it was separately
+falsified against retail: it draws a wall down every river
+(`FLAG_MESH_DRAWN` in `crates/asset/src/field_objects.rs`). And it is not the
+site's assembled map view or the engine's field renderer - those exclude
+`scene_tmd_stream` entries entirely and build the scene from the environment
+mesh pack plus the `.MAP` placements, whose draws resolve in range
+(`crates/web-viewer/tests/field_scene_assembly.rs`).
+
+**The durable lesson is about presentation, not bytes.** Every measurement
+here was already available, and the correct behaviour was already
+documented - the reading kept reopening because the *viewer* offered no way
+to tell an authored half shell from a truncated parse. A format whose correct
+output looks broken needs the tool to say so at the point of viewing, or the
+falsification has to be re-derived by whoever looks next. Both viewers now
+label these entries from the vertex pool
+(`scene_tmd_stream::shell_shape` / `ShellShape::describe`, e.g. "battle-stage
+backdrop (half shell, open toward -X)"), and the corpus sweep is pinned by
+`every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in
+`crates/asset/tests/scene_tmd_stream_real.rs`.
 
 ## Field / locomotion
 
