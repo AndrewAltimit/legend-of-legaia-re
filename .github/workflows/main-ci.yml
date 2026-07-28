@@ -89,8 +89,20 @@ jobs:
 
       # Warn-only by design, matching the hook: the port catalog is kept in
       # sync incrementally rather than blocking unrelated changes.
+      #
+      # `--scan-all`, not the hook's default `--staged`: a CI checkout has an
+      # empty staging area, so the staged mode would report "0 warnings across
+      # 0 files" forever - a green line that measured nothing.
+      #
+      # Only the summary line is echoed. The corpus carries ~1.4k untagged
+      # citations from before the tag convention existed, and a step that
+      # prints all of them every run teaches people to skip the whole job.
+      # The number is the signal; drill in locally with --scan-all.
       - name: Port-tag drift (advisory)
-        run: python3 scripts/ci/check-port-tags.py --quiet || true
+        run: |
+          python3 scripts/ci/check-port-tags.py --scan-all > port-tags.log 2>&1 || true
+          tail -1 port-tags.log
+          rm -f port-tags.log
 
   # -- Cargo CI ---------------------------------------------------------------
   ci:

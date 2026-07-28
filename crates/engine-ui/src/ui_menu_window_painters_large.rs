@@ -53,6 +53,12 @@
 //! PORT: FUN_801d4c28 - window 41, per-party-member stat compare
 //! PORT: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`]
 //! REF: FUN_801cf650 - the equipment-bonus summer over the same block
+//! REF: FUN_801d21c0 - window 22's own Best-Equipment stat-compare pass. The
+//!      port draws the Equip screen's compare block from THIS, not from
+//!      window 25, which is why window 25's chain below is unreached.
+//! REF: FUN_801d9c14 - sub-screen `0x13`, the Equip screen. Its open script
+//!      `0x801E4DC8` is the only command in the menu overlay that names
+//!      window `0x19`, beside windows 2 and `0x18`.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_menu_801d1290.txt`,
 //! `ghidra/scripts/funcs/overlay_menu_801d4c28.txt`.
