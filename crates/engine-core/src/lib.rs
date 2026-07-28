@@ -53,6 +53,7 @@ pub mod encounter_registry;
 pub mod equip_session;
 pub mod equipment;
 pub mod fade;
+pub mod fade_ramp;
 pub mod field_anim;
 pub mod field_audio_release;
 pub mod field_channels;

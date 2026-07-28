@@ -29,6 +29,9 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `80042558` | **Per-frame stat aggregator + accessory-passive assembler.** Walks the 3 party members' equip ids `char +0x196..0x19D`: each item's passive index (`kind==1`→equip `+5`, `kind==2`→descriptor `+3`; `<0x40`) sets a bit in the ability bitfield `+0xF4..0x103`; boosts rebuild the effective-stat block `+0x104..0x11B` from base `+0x11C..0x12D`, bitfields OR into the global mask; a separate arm grants Talisman + Ra-Seru spells (`+0x13D` list). **All fields are in the character record `+0xF4..+0x13D`, NOT the battle-actor runtime struct** (`+0x14C`/`+0x150`/`+0x176` are in the `DAT_801C9370` pool). Full field map + correction: [battle-action § aggregator](../../subsystems/battle-action.md#fun_80042558---per-frame-stat-aggregator). `see ghidra/scripts/funcs/80042558.txt`. |
 | `80034250` | Goods description resolver (static): item id → descriptor `+3` passive index → `0x8007625C` record `+8` description pointer; the menu overlay's detail panel `FUN_801D0F1C` reads the same table's `+4` name pointer. |
 | `8004CE2C` | **Per-frame battle actor maintenance pass** (3 KB, 757 instructions). Four passes over the `DAT_801C9370` actor table; the last is a **CLUT status recolour** latched once per affliction, not a per-frame damage flash. Not a mode dispatcher. Pass-by-pass walk: [`subsystems/battle.md` § Per-frame actor maintenance](../../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c). `0x8004CE30` is the **second instruction** (`addiu sp,sp,-0x38`), not an entry. `see ghidra/scripts/funcs/8004ce2c.txt`. |
+| `8004DA00` | **Battle XA voice-stream selector** - a static actor template's `+0x0C` tick (its address is the template word at `0x800767FC`), which always ends by running the maintenance pass `FUN_8004CE2C` above. Arms one whole-clip stream per action, latched at `_DAT_8007BDB0` - [details ↓](#8004da00). Docs previously named this body `FUN_8004DA08`, which is its third instruction. `see ghidra/scripts/funcs/8004da00.txt`. |
+| `8005126C` | **Battle actor on-screen test.** `(actor) -> bool`. Copies the 8 bytes at `+0x3C..+0x43` of the actor record the `0x801D9370` table holds for `actor[+0x5A]` into `actor[+0x14..+0x1B]`, projects that point through the billboard projector `FUN_800195A8` with `actor[+0x58]`, and rejects the result only when the projected `x` and `y` are **both** past `0x140` or **both** negative - so a point off one edge alone still passes. `see ghidra/scripts/funcs/8005126c.txt`. |
+| `80050D40` | **12-bit angle tween.** `(from, to, weight, slot)`. Wraps both angles into `0..0xFFF`, adds `0x1000` to whichever side makes the arc the short way round, accumulates the swept magnitude into `gp[0xA10]`, records the adjusted endpoint pair as two halfwords at `0x801D9060 + (slot & 0xFF) * 4`, and returns `(to' + ((from' - to') * weight >> 4)) & 0xFFF`. `see ghidra/scripts/funcs/80050d40.txt`. |
 | `0x8007625C` (data) | Passive-effect name/description table: 64 × 12-byte `[u32 scope][u32 name_ptr][u32 desc_ptr]`, indexed by the passive-effect index. Scope `1` = party-wide. |
 | `80043048` | **Inventory consume-by-slot:** `(slot: i16, amount, prev) -> remaining`. The stride-2 array at `_DAT_80085958` (= `0x80084140 + 0x1818` = SC `+0x1818`) is the **item inventory**: byte 0 = item id, byte 1 = stack count. Bounds-checked (`slot < gp[+0x2D4]`); subtracts `amount` from the count, clamps at 0, zeroes the id when the count reaches 0. (Previously mis-documented as a "status-effect timer decrementer" - the `0x80085958` table is the item bag the `Have 99 Items` / `Item Modifier` GameShark codes target, not a timer table, and its sibling helpers id-match + cap stacks at 99.) |
 | `80042310` | **Inventory consume-by-id:** `(id, amount) -> slot`. Scans the active window `gp[+0x2D2]..gp[+0x2D4]` of `_DAT_80085958` for `id`, then decrements that slot's count (same clamp-at-0 / zero-id-at-0 as `FUN_80043048`). Bounds-checked. |
@@ -225,6 +228,37 @@ The [S6 trace](../../tooling/playthrough-coverage.md) captured the **field->batt
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `8004DA00`
+
+The SCUS half of the battle voice-stream census in
+[`audio.md`](../../subsystems/audio.md#streamed-cue-census-fun_8003eae4--fun_80019794).
+It is a per-frame tick, not a call: its address is the `+0x0C` word of the
+static actor template at `0x800767F0`, and every path through it ends in the
+actor-maintenance pass `FUN_8004CE2C`.
+
+A stream is armed only when all four gates pass:
+
+- the CD is free (`_DAT_8007BC20 == 0`);
+- `_DAT_8007BD71 == 0xFF`;
+- the battle context `gp[0xA0C]` has `+0x26B == 0`, `+0x276 != 0` and `+0x7 != 0x5A`;
+- nothing is latched yet (`_DAT_8007BDB0 == -1`).
+
+The acting seat comes from `ctx[+0x274]`, which indexes both the party-order
+byte table `DAT_8007BD10` and, for seats `0..2`, the three-entry actor-pointer
+table at `0x801D9370`. The clip id then follows the action class at
+`actor[+0x1DE]`:
+
+| Class | Clip id | Files |
+|---|---|---|
+| `1` | `party_slot + 0x19` | `XA27`..`XA29` |
+| `2` | `party_slot + 0x19` when the [spell record](../../formats/spell-table.md) `DAT_800754C8[actor[+0x1DF]]`'s first byte is `< 0x14`, else `7` | `XA27`..`XA29`, else `XA8` |
+| `3`, `4` | `(party_slot - 1) * 2` | `XA1` / `XA3` / `XA5` |
+| seat `>= 3` | `0x800787AF[DAT_8007BD09[seat]]` | the monster-side table |
+
+`FUN_8003EAE4(0, clip)` starts it and the id is written to `_DAT_8007BDB0`, so
+the latch both records what is playing and blocks a second arm until something
+resets it to `-1`. `see ghidra/scripts/funcs/8004da00.txt`.
 
 ### `80052FA0`
 

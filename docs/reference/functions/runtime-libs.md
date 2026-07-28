@@ -46,6 +46,35 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8005860C` | Sibling of the validator above on the primitive-submission path: same `_DAT_80078D56` debug gate and `*_DAT_80078D50` hook, then dispatch through slot `+0x2C` of the GPU module function table `*_DAT_80078D4C`, then a 24-bit-masked pointer store into the primitive's first word - the OT/tag link every libgpu submit ends with. `see ghidra/scripts/funcs/8005860c.txt`. |
 | `8005F9C8` | Raw DMA-channel start - spins for the channel idle, enables it in DPCR, programs MADR/BCR/CHCR at `0x1F801080 + chan*0x10` and the DICR bit; the low-level transfer kick under libgpu/libspu. `see ghidra/scripts/funcs/8005f9c8.txt`. |
 | `8002035C` | Kernel-event teardown - closes the 8 event handles at `gp+0x6D8..0x6F8` (via the `CloseEvent`-class thunk `FUN_80056648`) inside a critical section, then runs the card-teardown / un-patch trio `FUN_8006EF18`. Inverse of the audio-event setup `FUN_8001D230`. `see ghidra/scripts/funcs/8002035c.txt`. |
+| `80026C28` | **The PS-X EXE entry stub** - the address the header's `pc0` field carries, so this is `crt0` and nothing calls it. Word-zeroes `0x8007B6C0..0x801CE818`, loads `sp` from the table at `0x80026CD4` OR'd with `0x80000000`, sets `gp = 0x8007B318`, calls `InitHeap` (`FUN_800565F8`) over the region from `0x801CE81C` up toward the stack, then calls `main` (`FUN_80015E90`) and traps on `break 0, 1` if it ever returns. [Details below](#the-entry-stub-80026c28). `see ghidra/scripts/funcs/80026c28.txt`. |
+| `800565F8` | `InitHeap` BIOS A-vector veneer (`li t2,0xA0; jr t2; li t1,0x39`). Its one caller is the entry stub above. `see ghidra/scripts/funcs/800565f8.txt`. |
+| `8002A880` | Heap bucket drain with coalescing. For bucket index `a0` (bounds-checked against the count at `heap[+0x4]`) it walks the 12-byte-header list at `heap[0] - a0*12` and, per block, unlinks it from its bucket, re-inserts it into the address-ordered free list at `heap[0][+0xC]`, and merges it with whichever neighbour begins at `block + size + 0xC` in either direction. Same `[next, prev, size]` header and same `gp+0x840` descriptor as the allocator `FUN_8002B468` and the free `FUN_8002B584`. `see ghidra/scripts/funcs/8002a880.txt`. |
+| `8002B6C4` | Heap dump diagnostic - three dev-string prints through the on-screen formatter `FUN_8001A068` (headers at `0x80010BE0` / `0x80010C00`, per-block row at `0x80010BEC`) reporting `[start, end-1, size]` for every block on the `gp+0x840` heap's bucket chain (`+0xC`) and then on its address-ordered chain (`+0x0`). Reads the same headers as the three routines above and writes nothing. `see ghidra/scripts/funcs/8002b6c4.txt`. |
+| `80025344` | Actor-flag clear leaf - five instructions clearing bit `0x2` of the actor flags word at `actor[+0x10]`. Called from the actor-template tick `FUN_80025054`. `see ghidra/scripts/funcs/80025344.txt`. |
+
+### The entry stub (`80026C28`)
+
+The `PS-X EXE` header's `pc0` field is literally `0x80026C28`, so this body is
+the program's first instruction and has no caller anywhere. Reading it settles
+two things the rest of the docs depend on.
+
+- **`gp` is set here**, by `lui gp, 0x8008; addiu gp, gp, -0x4CE8` = `0x8007B318`.
+  The header's own `gp0` field is `0`, so the stub is the only place the value
+  comes from. Any sweep that wants to see gp-relative accesses has to resolve it
+  from here first - see [`ghidra.md`](../../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
+- **The BSS clear is the stub's, not the BIOS's.** The header carries
+  `b_size = 0`, so the loader zeroes nothing; the stub word-zeroes
+  `0x8007B6C0..0x801CE818` itself before anything else runs. Both statements are
+  true at once, and only the second one licenses assuming a global in that range
+  starts at zero.
+
+The remainder is ordinary `crt0`: `sp = 0x00200000 | 0x80000000` = `0x80200000`,
+read from the word at `0x80026CD8` (the table at `0x80026CD4` holds the same
+value in each of its slots); `ra` is parked at `0x8007BB40`; `fp = sp`; and
+`InitHeap` (`FUN_800565F8`, BIOS A0 `0x39`) is handed base `0x801CE81C` - four
+bytes past the end of the clear - with size `sp - *0x8007A8C8 - 0x1CE818`. Then
+`jal FUN_80015E90` - `main` - and a `break 0, 1` that only executes if it
+returns.
 
 ### The BIOS kernel-patch cluster (`8006EE8C` / `8006EF18`)
 
@@ -184,6 +213,9 @@ the width and height limits every clamp on this page reads.
 | `8005763C` / `80057664` | `SetSemiTrans(p, abe)` and `SetShadeTex(p, tge)`: each branches on its second argument to set or clear bit `0x2` / bit `0x1` of the code byte at `prim+0x7` - the semi-transparency and raw-texture flags. `see ghidra/scripts/funcs/8005763c.txt`, `80057664.txt`. |
 | `8005768C..80057840` (21 leaves) | The per-primitive-type initialisers - seventeen 20-byte leaves at a `0x14` stride from `8005768C` to `800577CC`, then four 32-byte ones at `800577E0` / `80057800` / `80057820` / `80057840`. Each stores the packet word length at `prim+0x3` and the GP0 code at `prim+0x7`; the longer forms add a `0x55555555` terminator in the packet's tail word (`+0x14` at `800577E0`, `+0x24` at `80057840`). One leaf per `(length, code)` pair the library ships. `see ghidra/scripts/funcs/8005768c.txt` and siblings. |
 | `80057860` | `SetDrawMode(p, dfe, dtd, tpage)` GP0 `0xE1` word builder. Writes length `1` at `prim+0x3` and the command word at `prim+0x4`: on the newer GPU `0xE1000000 \| (tpage & 0x9FF)` with **`dtd`** → bit `0x200` and **`dfe`** → bit `0x400`; on version `1`/`2` the same fields sit two bits higher (`dtd` → `0x800`, `dfe` → `0x1000`, mask `0x27FF`). Bit `0x200` is the hardware dither the port's `set_psx_mode` gates - it is the *third* argument that carries it. `see ghidra/scripts/funcs/80057860.txt`. |
+| `80057090` | `LoadTPage(pix, tp, abr, x, y, w, h)` - builds a `RECT` from the four coordinates with the width divided by 4 / 2 / 1 for `tp` 0 / 1 / 2 (4bpp / 8bpp / 16bpp), calls `LoadImage` (`FUN_800583C8`) and returns the tpage word from `FUN_80057358`. `see ghidra/scripts/funcs/80057090.txt`. |
+| `8005717C` / `800571E4` | `LoadClut` / `LoadClut2` - the 256-entry and 16-entry forms of the flat-strip CLUT upload. Identical bodies apart from the `RECT` width immediate (`0x100` vs `0x10`): height `1`, `LoadImage` (`FUN_800583C8`), then the CBA word from `GetClut` (`FUN_80057428`). The flat-strip shape is what [`tim-pack.md`](../../formats/tim-pack.md) describes for the boot upload. `see ghidra/scripts/funcs/8005717c.txt`, `800571e4.txt`. |
+| `80057DC8` | `SetVideoMode(mode)` - latches the new mode byte at `0x80078D57`, takes the default display word from module-table slot `+0x28`, issues GP1 `0x08` with bit `0x80` set for the PAL value through slot `+0x10`, and on `0x80078D54 == 2` follows with GP1 `0x20000504` / `0x20000501`. Returns the previous mode. `see ghidra/scripts/funcs/80057dc8.txt`. |
 
 ### libgpu GP0 / GP1 register layer (`0x80059878..0x8005A1C0`)
 
@@ -213,6 +245,9 @@ up, not one, and mistaking the second set for "the DPCR-side pair" is what hid
 | `80059978` | **`ClearImage`** - a VRAM rectangle fill, *not* a CPU↔VRAM transfer. Clamps the `RECT` extents `+0x4` / `+0x6` against the framebuffer limits `0x80078D58` / `0x80078D5A` (negative extent → zero), then assembles a GP0 packet at `0x801C9448` and kicks it through the linked-list DMA `FUN_8005A120`. When `rect.x` and `rect.w` are both 64-aligned it emits the five-word fast form (GP0 `0x02` VRAM fill plus `0xE6`, `0xE1`); otherwise the eight-word form (GP0 `0x60` monochrome rectangle wrapped in `0xE1`, `0xE3`, `0xE4FFFFFF`, `0xE5`, `0xE6`). The second argument carries the fill colour in its low 24 bits and `dfe` in bit 31. `see ghidra/scripts/funcs/80059978.txt`. |
 | `80059E10` | **`StoreImage`** - VRAM → CPU. Arms the timeout (`FUN_8005AA30`), clamps the same two extents against the same two limits, converts `w*h` pixels to `(w*h + 1) / 2` words split into 16-word blocks plus a remainder, issues GP0 `0x01` then GP0 `0xC0` with the two rect words, drains the remainder word-by-word from GPUREAD, and moves the blocks by DMA channel 2 (GP1 `0x04000003`, `BCR = blocks<<16 \| 0x10`, `CHCR = 0x01000200`). Returns `-1` on a zero-word rect or a timeout. The `LoadImage` twin is `80059BD4` (GP0 `0xA0`), with `80059C00` / `80059DE4` interior to it. `see ghidra/scripts/funcs/80059e10.txt`. |
 | `8005A19C` | Three-argument shim: forwards `(a0, a1, 0, a2)` to `FUN_8005A1C0`. `see ghidra/scripts/funcs/8005a19c.txt`. |
+| `80059068` | **`SetDrawEnv` packet builder** - reads a `DRAWENV` (clip rect `+0x0..+0x6`, offset `+0x8` / `+0xA`, texture window `+0xC`, tpage fields `+0x14` / `+0x16` / `+0x17`, `isbg` `+0x18`, background RGB `+0x19..+0x1B`) and fills a GP0 word list through the composers `FUN_80059568` (`0xE3`), `FUN_80059634` (`0xE4`), `FUN_80059700` (`0xE5`), `FUN_80059510` (`0xE1`) and `FUN_80059744` (`0xE2`), then `0xE6000000`. With `isbg` set it appends a GP0 `0x60` fill-rect whose extents are clamped against `0x80078D58` / `0x80078D5A`. The packet's word count lands in the tag byte at `+0x3`. `see ghidra/scripts/funcs/80059068.txt`. |
+| `80058554` | **`ClearOTag`** - the forward-linking OT clear, the twin of `ClearOTagR` (`FUN_80059890`). Zeroes each entry's length byte at `+0x3` and writes the 24-bit address of the following word into it, terminating the last entry with the masked sentinel address `0x80078E10`. Same debug-level gate and printf hook as its neighbours. `see ghidra/scripts/funcs/80058554.txt`. |
+| `8005A8E8` | **`DrawSync(mode)`** - with `mode == 0` it arms the timeout `FUN_8005AA30` and spins, draining the command queue through `FUN_8005A4A0` whenever the head / tail pair `0x80078E58` / `0x80078E5C` differ, until channel-2 CHCR bit `0x01000000` clears and GPUSTAT bit `0x04000000` is set; `-1` on timeout. Any other mode returns the pending-entry count `(head - tail) & 0x3F` without waiting. `see ghidra/scripts/funcs/8005a8e8.txt`. |
 
 ### libcd primitives
 
@@ -225,6 +260,7 @@ up, not one, and mistaking the second set for "the DPCR-side pair" is what hid
 | `8005BCB8` / `8005BCE0` / `8005BD08` | The three callbacks that install names. Each is a 10-instruction wrapper calling the `DeliverEvent` BIOS thunk `FUN_8005BD30` (B-vector `0x07`) with event class `0xF0000003` and spec `0x20` (`8005BCB8`) or `0x40` (the other two) - i.e. they raise the kernel CD-ROM event so a `TestEvent` / `WaitEvent` poller elsewhere unblocks. Not game logic; do not port. `see ghidra/scripts/funcs/8005bcb8.txt`, `8005bce0.txt`, `8005bd08.txt`. |
 | `8005BD80` | CD state-probe dispatcher - `(mode)`: mode 2 -> `FUN_8005D5F8`, else `FUN_8005D648` (and mode 1 also `FUN_8005D504`); returns a readiness bool. Called by the init/reset `FUN_8005BC28`. `see ghidra/scripts/funcs/8005bd80.txt`. |
 | `8005D424` | Low-level CDROM controller poke (thunked through `FUN_8005BDEC`) - writes index/command bytes to the CD MMIO register pointers `_DAT_80079670/9678/967C/9680`, spins on status bit `0x7`, commits `0x1325`. `see ghidra/scripts/funcs/8005d424.txt`. |
+| `8005D834` | CD transfer-completion wait with watchdog, the body under `CdDiskReady` (`FUN_8005C2C4`). Clocks off `VSync(-1)` (`FUN_8005FB84`), gives up `0x3C0` vsync ticks after entry and `0x3C0000` poll rounds after that, and on expiry prints the last command / result / status names out of the three name-pointer tables `0x800793D0` / `0x80079450` / `0x80079688` before re-resetting the registers through `FUN_8005D424`. Otherwise it spins on DMA channel-3 CHCR (`*0x800796B4`) bit `0x01000000` while its argument is zero. `see ghidra/scripts/funcs/8005d834.txt`. |
 
 ## CD / file-system (libcd-style)
 
