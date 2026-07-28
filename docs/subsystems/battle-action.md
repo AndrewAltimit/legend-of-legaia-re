@@ -6,7 +6,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
-- [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
+- [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [the turn cursor](#the-turn-cursor-ctx0x1a) · [the cast-begin facing store](#the-cast-begin-facing-store) · [per-actor sub-state surface](#per-actor-sub-state-surface)
 - [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
@@ -46,7 +46,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 
 | `ctx[7]` | Phase | What runs | Next state |
 |---|---|---|---|
-| `0x00` | Action begin | Resets ctx counters at `+0x6DA..+0x6DB`; copies `ctx[+0x274]` (the active-actor index set by `recompute_battle_order`) → `actor[+0x1A]`; **latches** `ctx[+0x290]` → `ctx[+0x291]` and *then* clears `ctx[+0x290]` (`0x801E2B30`). The latch is what the escape roll reads all battle - see [the escape roll](#the-escape-roll-fun_801e791c). | `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu). |
+| `0x00` | Action begin | Resets ctx counters at `+0x6DA..+0x6DB`; seeds the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]` from the formation-advantage byte `ctx[+0x290]`; **latches** `ctx[+0x290]` → `ctx[+0x291]` and *then* clears `ctx[+0x290]` (`0x801E2B30`). The latch is what the escape roll reads all battle - see [the escape roll](#the-escape-roll-fun_801e791c). It also faces the actor at its target, [below](#the-cast-begin-facing-store). | `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu). |
 | `0x0A` | Pre-action wait | Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). | `0x0C` when ready, else stays. |
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
@@ -84,8 +84,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` if shake, `+0x26 != 0`). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
 | `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `actor[+0x26]`, `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
-| `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps `actor[+0x1A]++`; if `+0x1A < (party_count + monster_count - +0x25)`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
-| `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Iterates monster slots: if monster has rotation trigger (`+0x16C != 0`) and isn't immune (`(&DAT_8007BD10)[i] != 4`), bumps `actor[+0x1A]++`. If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - a downed or petrified member leaves the battle alive, the mechanism behind "escape restores a Stoned member". Ported: `engine-vm::battle_action` `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
+| `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
+| `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
 | `0x65` | Run - wait | If the run failed (`_DAT_8007726C == ctx + 0x189`) → screen-shake `_DAT_8007B792` rotates. Decrements `ctx[+0x6D8]`. When < 0: **failed run** → `0x50` (Done band - the action is consumed, the battle continues); **successful escape** → `0x66`. | `0x50` (failed) or `0x66` (escaped). |
 | `0x66` | Run - **successful-escape teardown** | Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white white-out, ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_core::fade` kernel. | `0x67` (terminal hold; no case body - falls through to default no-op). |
 | `0x68` | **Capture - start** | RNG via `func_0x80056798`. Adjusts `ctx[+0x6DA] += 0x780 + (rand%2)*0x80`. `FUN_801D5854(actor, 6)`, `FUN_801E7824(actor)` (?), `FUN_801DABA4`. Sets `ctx[+0x6D8] = 0x1E`. | `0x69`. |
@@ -116,14 +116,17 @@ Read the two rows together and the table already said so: the `0x5A` row routes 
 the signal and only the everyone-has-acted path to `0xFF`.
 
 **Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose
-handler clears every actor's acted counter and hands control back through the
+handler rewinds the turn cursor and hands control back through the
 `EndOfAction` state - the state the arming driver keys the next turn on; the retail
 `0xFF` body itself (`ctx[+0x28A]` round bump, `FUN_801F45A4` settle) runs host-side in
-`engine-core`'s live loop at its round boundary. `battle_end(..)` is raised only by the
+`engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail
+reseeds by re-entering `0x00`, which the battle flow SM arms, and its `0xFF` body does
+not touch `+0x1A`. `battle_end(..)` is raised only by the
 paths that raise `DAT_8007BD71 = 0xFE` in retail: the `0x5A` wipe arms and the escape
 teardown. The earlier port mapped `0xFF` to a `battle_end(MonsterWipe)` terminal, and a
-live battle *did* reach it: `Begin` stamps `actor[+0x1A]` from `ctx.queued_action` (the
-engine arms with `3`), the end-of-action bump pushes it to `4 >= alive_total` in any
+live battle *did* reach it: the superseded reading stamped a per-actor counter from
+`ctx.queued_action` (the engine arms with `3`), the end-of-action bump pushed it to
+`4 >= alive_total` in any
 battle with four or fewer living combatants, and a driver that parks the SM at
 `EndOfAction` (the tick after a folded monster cast, or a Sleep/Stone skipped turn)
 re-dispatches the `0x5A` gate into that arm - a spurious victory, with loot and XP
@@ -161,8 +164,17 @@ animations](../formats/battle-data-pack.md#battle-animations-record0)).
 
 The full step body for state `0x28`:
 
-- If `+0x1DE == 9` (item-target re-route), reseats `actor[+0x1DD]` to `ctx[+0x24B]` (item-target). If `+0x1DE == 8`, similar reroute via `ctx[+0x24A] - 1`.
-- Then resolves bearing to target and writes facing. Sets `ctx[+0x6D8] = 0x14` (frame timer).
+- **Item-target re-route**, keyed on the **target** byte `actor[+0x1DD]` and not
+  on the category (`lw t2, 0x20(sp)` at `0x801E4298` reloads the byte the
+  prologue read out of `+0x1DD`): a target of `9` takes `ctx[+0x24B]`, a target
+  of `8` takes `ctx[+0x24A] - 1`, each only when that ctx byte is non-zero. The
+  two checks run in sequence on the rewritten value (`0x801E42E8`), so a `9`
+  that resolves to `8` falls into the second arm. Those ctx bytes are the cast
+  census's sole-survivor latches - `+0x24A` the lone living party slot
+  (1-based), `+0x24B` the lone living monster - so this is a group code
+  degenerating onto its last target.
+- Then [faces the target](#the-cast-begin-facing-store) and writes
+  `actor[+0x46]`. Sets `ctx[+0x6D8] = 0x14` (frame timer).
 - For party (`actor_id < 3`), looks up the spell-name string via `&DAT_800754D0 + actor[+0x1DF]*0xC`, computes centered X for HUD, writes `_DAT_80077332/+0x33A/+0x344/+0x352/+0x35C` (HUD label slots), fires UI element `FUN_801D8DE8(0x4C, 0)` (spell label).
 - If the spell's first table byte is `'c'` (capture-class spell) → `ctx[7] = 0x6E` (capture path) + queues capture archive load via `func_0x8003EC70`.
 - Reads MP cost from `&DAT_800754D0 + spell_id*0xC + 3` (entry +3); reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E3D0C`). Subtracts from `actor[+0x150]` (MP).
@@ -180,6 +192,72 @@ Read once at `ctx[7] == 0x0C`, the byte `actor[+0x1DE]` selects the action categ
 | `4` | **Spirit (Originals)** | `0x46` | Sets `_DAT_80076D7E = actor[+0x154] - 6` (or `((actor[+0x156] * 7) / 5) + 8` capped at 0x120 if `actor[+0x1F9] != 0`). Fires `FUN_801D8DE8(0xF, 0)` + `0x52` (damage popup), bumps `actor[+0x19]++`. |
 | `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (defeat pose). Monster run hits the capture path at `0x68`. Either path resets `_DAT_801F69D0 = 0` (counter-attack flag). |
 
+## The turn cursor `ctx[+0x1A]`
+
+`+0x1A` is a **context** field, not a per-actor one. Every access in
+`FUN_801E295C` reaches it through `s5`, the register the prologue sets to
+`ctx + 0x11` (`0x801E2994`), as `0x9(s5)`; the dispatcher's 4099 instructions
+hold no read or write of `+0x1A` through an actor pointer at all. It counts how
+many entries of this round's battle order have been consumed.
+
+Four sites touch it:
+
+| Site | What it does |
+|---|---|
+| `0x801E2AC0..0x801E2B24` | State `0x00` seeds it from the formation-advantage byte. |
+| `0x801E36D0` | The counter-attack swap advances it past the counterer. |
+| `0x801E5870` | The run arm advances it once per combatant it removes from the round. |
+| `0x801E679C` | The end-of-action gate advances it and tests the round bound. |
+
+The seed is a four-arm switch on `ctx[+0x290]`, and only three arms store:
+`0` puts the cursor at the head of the order, `1` at `ctx[+0x00]` (the party
+count) and `2` at `ctx[+0x01]` (the monster count), so an ambushed side starts
+its round partway down. Any other byte value jumps clear of all three stores
+and leaves the cursor where it was.
+
+The end-of-action bound is what settles the reading. `0x801E67B4..0x801E67C8`
+loads `ctx[+0x00]` and `ctx[+0x01]`, adds them, subtracts `ctx[+0x25]` and
+compares the freshly bumped `+0x1A` against the result - a seated-combatant
+count less a skipped tail. The quantity being compared is a position in an
+ordering, which no per-actor counter could be.
+
+**Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
+port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`
+from `ctx[+0x274]`; both halves were wrong, and the consequence was visible -
+per-actor counters that each reach `1` per round never cross the end-of-action
+bound, so a round ended only after as many rounds as there were combatants.
+`ctx[+0x00]` / `ctx[+0x01]` are not modelled on the port's context; the host's
+party count and the slots above it stand in.
+
+## The cast-begin facing store
+
+The tail of the cast-begin arm (`0x801E4334..0x801E43A4`) turns the acting
+actor to face whatever its target byte `+0x1DD` names, and it is the only
+consumer of `FUN_801DCEAC` in this dispatcher. Two arms:
+
+- **`+0x1DD < 8`** - a slot. The bearing is taken from the target actor's own
+  seat, and the whole store is skipped when the actor is its own target
+  (`0x801E4350`).
+- **`+0x1DD >= 8`** - a target-group code. `FUN_801DCEAC` folds the group's
+  live seats into a centroid, and the two components are negated
+  (`0x801E438C`) back into a world position first.
+
+Both arms end at `FUN_80019B28(p1z, p1x, p2z, p2x)`, which differences
+`p2 - p1`: the target goes in as `p1`, so the raw bearing measures target →
+actor and the `+ 0x800` half-turn at `0x801E439C` is what turns it back around.
+The result is masked to 12 bits and stored at `actor[+0x46]`.
+
+The group codes come from the monster-AI target resolver `FUN_801E7320`, whose
+class-`8` arm writes `9` (the enemy row) and class-`7` arm writes `8` (the
+party) - so the group arm is the ordinary all-target cast, not an edge case.
+
+**Port.** `magic_cast_begin` in `legaia_engine_vm::battle_action`, over the
+`BattleActionHost::actor_position` accessor (`+0x34` / `+0x38`);
+`engine-core`'s `BattleHostImpl` answers it from the seat
+`World::enter_battle` stamps out of the retail stage tables. Covered by
+`crates/engine-vm/tests/battle_cast_facing.rs` and
+`crates/engine-core/tests/battle_cast_facing_chain.rs`.
+
 ## Per-actor sub-state surface
 
 Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by `FUN_801E295C`:
@@ -191,7 +269,6 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x10` | i32 | **Pending HP-bar delta** - how much `+0x172` still has to move. Ramped into the bar a quarter at a time by `FUN_80047430`, and only while it is non-zero. |
 | `+0x172`/`+0x174` | u16 | **Displayed** HP / MP - the values the HUD bars draw, lagging live HP `+0x14C` and live MP `+0x150`. `FUN_80047430` ramps `+0x172` by the `+0x10` accumulator and `+0x174` by `+0x178`, in the same quarter-step shape. |
 | `+0x178` | u16 | Last-action MP cost (used to display `-N MP` on screen). |
-| `+0x1A` | u8 | Party-action queue counter. Incremented by `0x0` (action-begin), `0x1E` (counter-attack swap), `0x64` (run advance), `0x5A` (next-actor). |
 | `+0x1D9` | u8 | **Current** anim ID (read-only here; written by the animation system). |
 | `+0x1DA` | u8 | **Queued** next anim ID. The state machine writes this; the animation system reads `+0x1D9` toward `+0x1DA`. |
 | `+0x1DC` | u8 | Per-actor flag bits. `0x01` = "windup done", `0x02` = "advance done", `0x04` = "exit". Set by the strike/spell loops. |

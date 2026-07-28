@@ -217,16 +217,39 @@ pub(super) fn tick_frame_timer<H: BattleActionHost + ?Sized>(
 
 // --- state handlers ---------------------------------------------------------
 
+/// Seed the turn cursor `ctx[+0x1A]` from the formation-advantage byte
+/// `ctx[+0x290]` - retail's `0x801E2AC0..0x801E2B24`.
+///
+/// The switch has four arms and only three of them store: `0` seeds the cursor
+/// at the head of the order, `1` seeds it at `ctx[+0x00]` (the party count) and
+/// `2` at `ctx[+0x01]` (the monster count) - so an ambushed side starts its
+/// round partway down the order. Any other byte leaves the cursor alone
+/// (`0x801E2AEC` jumps clear of all three stores).
+///
+/// `ctx[+0x00]` / `ctx[+0x01]` are not modelled on [`BattleActionCtx`]; the
+/// host's [`BattleActionHost::party_count`] and the slots above it are the
+/// engine's stand-ins.
+///
+/// PORT: FUN_801E295C (`0x801E2AC0..0x801E2B24`)
+fn seed_turn_cursor<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut BattleActionCtx) {
+    let party_count = host.party_count();
+    match ctx.formation_advantage {
+        0 => ctx.turn_cursor = 0,
+        1 => ctx.turn_cursor = party_count,
+        2 => ctx.turn_cursor = host.slot_count().saturating_sub(party_count),
+        _ => {}
+    }
+}
+
 pub(super) fn begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     // Reset ctx counters at +0x6DA..+0x6DB.
     ctx.combo_timer = 0;
-    // Copy ctx[+0x274] (queued action) → actor[+0x1A].
-    if let Some(actor) = host.actor_mut(ctx.active_actor) {
-        actor.action_queue_counter = ctx.queued_action;
-    }
+    // Seed the turn cursor from the formation advantage. Retail reads the
+    // advantage byte here, BEFORE the latch below clears it.
+    seed_turn_cursor(host, ctx);
     // Latch ctx[+0x290] into ctx[+0x291], then clear the original. The latched
     // copy is what the escape roll reads as "escape assured" (value 2 = the
     // party opened with a pre-emptive strike), so the copy must happen before

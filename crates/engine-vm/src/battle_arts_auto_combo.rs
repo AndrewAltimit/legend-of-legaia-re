@@ -35,14 +35,32 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine caller. The retail caller chain is the battle **flow** SM
-//! `FUN_801D388C` region, unported, and the pool arm needs two disc-side inputs
-//! the engine does not model: the per-(character, weapon) arts-command records
-//! at `DAT_801C9360[slot][cmd]` with their `+0x74` AP costs (see
-//! [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md))
-//! and the four-entry status-guard mask table at `0x801F672C`. `engine-core`
-//! drives auto-fighting party members through its own stand-in physical action
-//! instead. Wiring means those two tables reaching `engine-core`'s battle setup.
+//! No engine caller - but **the call site is not the missing piece**, and an
+//! earlier note here naming the unported battle flow SM `FUN_801D388C` as the
+//! caller was wrong. The retail caller is the action SM itself: `jal
+//! 0x801f0450` at `0x801E2AB8` in `overlay_battle_action_801e295c.txt`, the
+//! first call of the `ctx[+0x07] == 0x00` arm that begins at `0x801E2AB4` -
+//! the arm that latches `ctx[+0x290]` into `+0x291` and stamps state `0x0A` /
+//! `0x0B`, which is ported and live as
+//! [`battle_action`](crate::battle_action)'s `Begin`. The wire has a home;
+//! what it has no arguments for is the pool arm's two disc-side inputs:
+//!
+//! * the per-(character, weapon) arts-command records at
+//!   `DAT_801C9360[slot][cmd]` with their `+0x74` AP costs (see
+//!   [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md)),
+//!   which reach the disc only as far as the equipped-swing decode and never
+//!   into a battle-setup table, and
+//! * the four-entry status-guard mask table at `0x801F672C`, which no parser
+//!   extracts at all.
+//!
+//! The auto-fill arm needs less - the ability bit is already
+//! `BattleActionHost::character_ability_bits` and the status word is on the
+//! actor - but its learned-arts list (`record[+0x185]` count, `+0x186..`
+//! bytes) has no host accessor either. Calling the module from `Begin` with
+//! empty tables would be a call that does nothing in production, so the
+//! honest order is tables first, call site second. `engine-core` drives
+//! auto-fighting party members through its own stand-in physical action until
+//! then.
 
 use crate::battle_formulas::FleeActor;
 

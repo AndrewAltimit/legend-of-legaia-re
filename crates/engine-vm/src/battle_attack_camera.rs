@@ -38,13 +38,17 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine caller, and the missing prerequisite is the table above: the
-//! engine frames battles with a phase-scripted snap
-//! (`BattleActionHost::camera_bounds` into `engine-shell`'s
-//! `retail_battle_mvp`), not a per-art script, so there is nothing holding a
-//! `ctx[+0x26D]` phase cursor or the `0x801F4E10` tracks for the arms to read.
-//! Wiring means a disc parser for that table plus a per-art camera channel on
-//! the engine's battle camera, both outside this crate.
+//! No engine caller, and the missing prerequisite is the table above. The
+//! engine's battle camera is `engine-shell`'s `BattleCamera`
+//! (`window/battle_cam.rs`): a **battle-phase** glide between three traced
+//! framings - dialogue, menu, per-character submenu close-up - whose only
+//! per-action input is the height snap `BattleActionHost::camera_bounds`.
+//! (`retail_battle_mvp`, which an earlier note named here, is the projection
+//! matrix that framing is fed into, not the framing itself.) Nothing in it
+//! holds a `ctx[+0x26D]` phase cursor or the `0x801F4E10` tracks for these
+//! arms to read, and its phase space is the menu's, not the swing's. Wiring
+//! means a disc parser for that table plus a per-art channel on that camera,
+//! both outside this crate.
 
 /// Action category the gate demands (`actor[+0x1DE] == 3`, Attack).
 pub const CATEGORY_ATTACK: u8 = 3;

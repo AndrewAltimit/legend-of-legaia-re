@@ -47,13 +47,23 @@
 //!
 //! # NOT WIRED
 //!
-//! The colour index this selects is written into the four gauge-primitive
-//! slots at `DAT_801C8FA0`, and the engine has no such array: its battle HUD
-//! bars are `engine-ui` draw-list rectangles sized directly from the actor's
-//! `hp` / `max_hp`, with the fill colour a constant of the widget rather than
-//! a per-frame index. Wiring this needs the retail gauge primitive - a
-//! four-slot descriptor array whose colour word the HUD builder reads - to
-//! exist on the presentation side first.
+//! **The engine's HUD colour is already a per-frame index**, and an earlier
+//! note here that called it "a constant of the widget" was wrong. What it is
+//! not is *this* index: `engine-ui`'s battle HUD tints its HP and MP readouts
+//! through `hp_bar_color_index` / `mp_bar_color_index`, the ports of the
+//! **readout-tint** pair `FUN_800349EC` / `FUN_80035EA8`. Those share this
+//! routine's code space (`2` empty, `6` caution, `7` normal, `9` danger) and
+//! its floored `max >> 1` / `max >> 2` thresholds, but they are a different
+//! retail pair with different arms - `FUN_800349EC` folds an active status
+//! into the caution tier and has no `3`, where `FUN_80046A20` overrides the
+//! whole gauge to `3`.
+//!
+//! So the gap is the **surface**, not the selection. `FUN_80046A20` writes
+//! four gauge-primitive slots at `DAT_801C8FA0` - the drawn bar - while the
+//! engine draws a numeric `HP cur/max` string and has no bar primitive for a
+//! fill colour to land on. Wiring needs that four-slot descriptor array on
+//! the presentation side; until a bar exists, the `3` arm in particular has
+//! nothing that can show it.
 
 /// Gauge fill-colour index: actor is dead (`cur_hp == 0`).
 pub const GAUGE_DEAD: u8 = 2;

@@ -231,6 +231,7 @@ fn begin_with_menu_open_routes_to_queued_from_menu() {
     ctx.action_state = ActionState::Begin.as_byte();
     ctx.queued_action = 5;
     ctx.menu_open = 1;
+    ctx.turn_cursor = 9;
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -239,7 +240,28 @@ fn begin_with_menu_open_routes_to_queued_from_menu() {
             ..
         } if to == ActionState::QueuedFromMenu.as_byte()
     ));
-    assert_eq!(host.actors[0].action_queue_counter, 5);
+    // `Begin` seeds the turn cursor from the formation advantage, which is
+    // `0` here - it does NOT copy `queued_action` anywhere.
+    assert_eq!(ctx.turn_cursor, 0);
+}
+
+/// The three storing arms of `Begin`'s `ctx[+0x290]` switch, plus the fourth
+/// that stores nothing (`0x801E2AC0..0x801E2B24`).
+#[test]
+fn begin_seeds_the_turn_cursor_from_the_formation_advantage() {
+    let seed = |advantage: u8, was: u8| {
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+        ctx.action_state = ActionState::Begin.as_byte();
+        ctx.formation_advantage = advantage;
+        ctx.turn_cursor = was;
+        step(&mut host, &mut ctx);
+        ctx.turn_cursor
+    };
+    // The default host seats 3 party slots of 8.
+    assert_eq!(seed(0, 9), 0, "no advantage: head of the order");
+    assert_eq!(seed(1, 9), 3, "party count");
+    assert_eq!(seed(2, 9), 5, "monster count");
+    assert_eq!(seed(3, 9), 9, "unmapped advantage stores nothing");
 }
 
 #[test]
@@ -566,8 +588,8 @@ fn attack_return_with_counter_attack_loops_back_to_chain() {
             ..
         } if to == ActionState::AttackChain.as_byte()
     ));
-    // Bumped queue counter (the "swap" signal).
-    assert_eq!(host.actors[1].action_queue_counter, 1);
+    // Bumped turn cursor (the "swap" signal, retail `0x801E36D0`).
+    assert_eq!(ctx.turn_cursor, 1);
 }
 
 #[test]
@@ -953,9 +975,9 @@ fn end_of_action_captured_monster_counts_as_down_under_retail_mask() {
 fn end_of_action_continues_when_both_sides_alive() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
     ctx.action_state = ActionState::EndOfAction.as_byte();
-    host.actors[0].action_queue_counter = 0;
+    ctx.turn_cursor = 0;
     let out = step(&mut host, &mut ctx);
-    // 8 alive total → bumped counter (1) < 8 → restart at PreActionWait.
+    // 8 alive total → bumped cursor (1) < 8 → restart at PreActionWait.
     assert!(matches!(
         out,
         StepOutcome::Transition {
@@ -1468,8 +1490,8 @@ fn round_end_is_a_round_boundary_not_a_battle_end() {
     // therefore never end the battle - the earlier port mapped it to
     // battle_end(MonsterWipe), a spurious victory.
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
-    // Give an actor a stale acted counter; the boundary clears it.
-    host.actors[3].action_queue_counter = 7;
+    // Leave a stale turn cursor; the boundary rewinds it.
+    ctx.turn_cursor = 7;
     ctx.action_state = ActionState::RoundEnd.as_byte();
     let out = step(&mut host, &mut ctx);
     assert!(
@@ -1484,17 +1506,17 @@ fn round_end_is_a_round_boundary_not_a_battle_end() {
         "the round boundary must not signal battle end"
     );
     assert_eq!(
-        host.actors[3].action_queue_counter, 0,
-        "acted counters reset for the new round"
+        ctx.turn_cursor, 0,
+        "the turn cursor rewinds for the new round"
     );
 }
 
 /// Regression for the spurious-victory defect: drive a full attack action to
 /// its end with BOTH sides alive and keep stepping without re-arming, the way
 /// a driver that parks the SM at `EndOfAction` (e.g. a folded monster cast)
-/// does. The acted counter - stamped from `ctx.queued_action = 3` at `Begin`,
-/// exactly like `engine-core`'s arming - reaches `alive_total` and routes the
-/// `0x5A` gate to `0xFF`. Pre-fix that produced
+/// does. The turn cursor - seeded at `0` by `Begin` and bumped once per
+/// end-of-action pass - reaches `alive_total` and routes the `0x5A` gate to
+/// `0xFF`. Pre-fix that produced
 /// `battle_end(BattleEndCause::MonsterWipe)` + `StepOutcome::BattleComplete`
 /// after one round; post-fix it is a round boundary and the battle continues.
 #[test]

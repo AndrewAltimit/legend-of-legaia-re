@@ -26,12 +26,16 @@ pub enum ActionCategory {
     Spirit = 4,
     /// Run / Defend.
     Run = 5,
-    /// Item-target re-route (state `0x28` reseats `actor.active_target` to
-    /// `ctx.item_target_b`). Not a true category - it's an intermediate
+    /// Item-target re-route. Not a true category - it's an intermediate
     /// signal that the item-arm of the magic flow uses.
+    ///
+    /// NB the re-route itself is **not** keyed on this byte: state `0x28`
+    /// reads the *target* byte `+0x1DD` (see
+    /// `battle_action::magic`'s `retarget_item_codes`). These two variants
+    /// name the same values in the category space, and what the category
+    /// dispatch does with them is open.
     ItemRetargetB = 8,
-    /// Item-target re-route (state `0x28` reseats `actor.active_target` to
-    /// `ctx.item_target_a - 1`). Same caveat as `ItemRetargetB`.
+    /// Item-target re-route. Same caveat as [`ActionCategory::ItemRetargetB`].
     ItemRetargetA = 9,
 }
 
@@ -395,9 +399,6 @@ pub struct BattleActor {
     pub hp_bar_pending: i32,
     /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
     pub last_mp_cost: u16,
-    /// `+0x1A` - party-action queue counter. Incremented by `Begin`,
-    /// counter-attack swap, run advance, end-of-action.
-    pub action_queue_counter: u8,
     /// `+0x21D` - impact-step magnitude - multiplied into the per-frame X/Z
     /// drift during attacks.
     pub impact_step: u8,
@@ -567,8 +568,35 @@ pub struct BattleActionCtx {
     /// `[+0x13]` - active actor slot index (drives the
     /// `(&DAT_801C9370)[ctx[0x13]]` lookup). Range `0..=7`.
     pub active_actor: u8,
-    /// `[+0x274]` - queued action (copied to `actor.field_1A` at `Begin`).
+    /// `[+0x274]` - the action category the battle UI staged for this turn.
+    /// `recompute_battle_order` (`FUN_801DABA4`) is its retail writer
+    /// (`lbu v0,0x11(v1); sb v0,0x274`).
     pub queued_action: u8,
+    /// `[+0x1A]` - the **turn cursor**: how many entries of this round's
+    /// battle order have been consumed.
+    ///
+    /// It is a context field, not an actor one. Every access in
+    /// `FUN_801E295C` goes through `s5 = ctx + 0x11` as `0x9(s5)`, and there
+    /// are exactly four across the dispatcher's 4099 instructions:
+    ///
+    /// * `Begin` seeds it from the formation-advantage byte `+0x290` -
+    ///   `0` when the byte is `0`, `ctx[+0x00]` (the party count) when it is
+    ///   `1`, `ctx[+0x01]` (the monster count) when it is `2`, and left alone
+    ///   for anything else (`0x801E2AC0..0x801E2B24`).
+    /// * the counter-attack swap bumps it (`0x801E36D0`),
+    /// * the run arm bumps it once per combatant it removes from the round
+    ///   (`0x801E5870`),
+    /// * the end-of-action gate bumps it and compares the result against
+    ///   `ctx[+0x00] + ctx[+0x01] - ctx[+0x25]` to decide "next actor" versus
+    ///   "round over" (`0x801E679C..0x801E67C8`).
+    ///
+    /// That last compare is what pins the reading: the bound is the seated
+    /// combatant count less the skipped tail, so the thing being compared is a
+    /// position in the order, not anything per-actor.
+    ///
+    /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
+    /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
+    pub turn_cursor: u8,
     /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
     /// transition). Non-zero while a menu is still drawing.
     pub menu_open: u8,

@@ -16,6 +16,10 @@
 
 /// Byte stride of one record in the cue-group table at `0x801F6470`.
 /// Layout is `[count: u8][id: u8; 4]`, so a group holds at most four cues.
+///
+/// The disc-side parser states the same stride as
+/// `legaia_asset::move_power::CUE_GROUP_STRIDE`; the two are pinned equal by
+/// `constants_agree_with_the_disc_parser` below.
 pub const CUE_GROUP_STRIDE: usize = 5;
 
 /// Maximum cues one group can name.
@@ -103,15 +107,34 @@ pub struct CueTables<'a> {
 /// A group whose count byte is zero produces no spawns; the two actor writes
 /// still happen.
 ///
-/// NOT WIRED: the expansion names cue ids out of two battle-overlay tables
-/// (`0x801F6470` groups, `0x801F6418` SFX map) that no parser extracts, so a
-/// caller has no `CueTables` to pass. The engine's per-action presentation
-/// comes from the art record's own effect / hit cues instead
-/// (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), which is a different source
-/// for the same frames; routing through this one needs those two tables
-/// parsed first.
+/// NOT WIRED. **Both tables are disc-parsed now**, and two earlier notes here
+/// were wrong about that: the first said no parser extracted either, the second
+/// said the group table was "the whole prerequisite". Neither holds.
+/// `legaia_asset::move_power::EffectAuxTables` reads all three regions
+/// (`0x801F6324` prototypes, `0x801F6418` SFX map, `0x801F6470` groups) off
+/// PROT 0898 behind the move-power table's structural guard, so both
+/// [`CueTables`] fields have a live source and the pair composes - see
+/// `crates/engine-vm/tests/battle_cue_group_real.rs`.
+///
+/// What is missing is the **caller**, and it is bigger than a table. Retail's
+/// only caller is `FUN_800402F4`, the damage-application primitive, which
+/// reaches `jal 0x801e22c8` from eleven different branches and picks the group
+/// id per branch: eight pass a literal (`5`..`0xC`), two compute one
+/// (`s5 + 1` at `0x80040D74`, `a3 + 3` at `0x80040E38`), and exactly one
+/// forwards its own `param_2` (`0x800408D4`). The port models
+/// `FUN_800402F4` as the host hook
+/// [`BattleActionHost::apply_damage`](crate::battle_action::BattleActionHost),
+/// whose four bytes are the primitive's arguments, not its per-branch choices -
+/// so a host that expanded group `page` on every call would be right for one of
+/// the eleven sites and wrong for the rest. Wiring this needs the damage
+/// primitive's own dispatch ported first.
+///
+/// Meanwhile the engine's per-action presentation comes from the art record's
+/// own effect / hit cues (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), a
+/// different source for the same frames.
 ///
 /// PORT: FUN_801E22C8
+/// REF: FUN_800402F4 (the damage primitive that picks the group id),
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
 /// REF: FUN_80058490 (sound packet submit)
 pub fn expand_cue_group(
@@ -383,6 +406,15 @@ pub fn plan_target_banner(inputs: &BannerInputs, target_anim_width: i16) -> Bann
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kernel and the disc-side parser each state the record shape; a
+    /// silent disagreement would put the parser's records out of phase with the
+    /// expander's indexing.
+    #[test]
+    fn constants_agree_with_the_disc_parser() {
+        assert_eq!(CUE_GROUP_STRIDE, legaia_asset::move_power::CUE_GROUP_STRIDE);
+        assert_eq!(CUE_ACTOR_FLAG, legaia_asset::move_power::CUE_ACTOR_FLAG);
+    }
 
     fn tables() -> (Vec<u8>, Vec<u8>) {
         // Group 0: empty. Group 1: two effect cues (ids 4, 5).

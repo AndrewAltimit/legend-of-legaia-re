@@ -208,10 +208,15 @@ pub fn apply_super_tail_replace(
 /// PORT: FUN_801DA34C - the round driver's arts-queue preseed (leaf; called
 /// from `FUN_801D0748` at `0x801D15C8` / `0x801D1734`).
 ///
-/// NOT WIRED: retail's caller `FUN_801D0748` (the battle command / menu SM) is
-/// not ported, and the engine has no per-character saved arts-input string to
+/// NOT WIRED: the engine has no per-character saved arts-input string to
 /// preseed from - `legaia_save`'s record model carries no `+0x76F` / `+0x77F`
-/// chain slot. Wiring needs both.
+/// chain slot, so there is nothing to copy and nothing for the
+/// `u16[+0x156] < u16[+0x154]` predicate to choose between. That single
+/// missing field is the whole prerequisite: retail's caller
+/// `FUN_801D0748` is **not** unported (an earlier note here said so) - its
+/// state space is `engine-core::battle_flow` and its arts-entry state `0x50`
+/// is the one `engine-core::battle_input` recomposes - it simply has no
+/// per-state body to hang the copy on until the record field exists.
 ///
 /// Copies one of the character's two saved 16-byte arts-input strings
 /// (char record `+0x76F` = first slot, `+0x77F` = second slot, off

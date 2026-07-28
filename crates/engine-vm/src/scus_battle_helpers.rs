@@ -32,13 +32,33 @@
 //!
 //! # NOT WIRED
 //!
-//! None of these is called by the engine yet. They are ported because each is
-//! a faithful, testable computation whose retail edge cases (the do-while
-//! floor, the pre-multiply saturation, the luminance clamp, the min-4 dim
-//! floor) are observable, and because the engine's battle path is expected to
-//! grow a consumer for each - the record copier stages a nested
-//! animation/keyframe table, the colour maths feed screen-flash / status /
-//! depth-cue submits.
+//! "The battle path is expected to grow a consumer" is a forecast, not a
+//! reason, and it is not the one that holds. Each kernel is the arithmetic
+//! core of a routine whose *body* the clean-room port deliberately stops
+//! short of, so what has to exist first is that body's engine equivalent -
+//! and each is a different missing thing:
+//!
+//! * [`copy_nested_records`] stages a nested record block between two raw
+//!   `u32` buffers. The engine has no such buffer: animation and keyframe
+//!   data arrive as parsed `legaia_asset` types and are handed to the
+//!   renderer as typed clips, never staged word-wise, so no caller holds a
+//!   `&mut [u32]` destination for it to advance.
+//! * [`scale_rgb24`] is gated in retail on the trigger word `gp[0x9D4]` and
+//!   reads its colour from `gp[0x9D0]` and its scale from the scratchpad byte
+//!   `0x1F800393`. None of the three is modelled, and the result goes to
+//!   `FUN_80024EE4`, a primitive submit with no engine channel.
+//! * [`bgr555_to_grey`] desaturates a **captured framebuffer** strip. The
+//!   engine presents through a swapchain and has no re-readable frame to walk
+//!   - the same prerequisite the battle-intro swirl waits on.
+//! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
+//!   colour/OTZ setup, whose depth term comes from the GTE transform
+//!   `FUN_8003D344` per actor per frame. `engine-render` computes its own
+//!   depth cue in the shader from the transformed Z, so nothing on the CPU
+//!   side holds a `(num, den)` pair to scale with.
+//!
+//! They are ported because each edge case (the do-while floor, the
+//! pre-multiply saturation, the luminance clamp, the min-4 dim floor) is
+//! observable and testable on its own.
 
 // ---------------------------------------------------------------------------
 // FUN_80055854 - two-level nested word-record copy

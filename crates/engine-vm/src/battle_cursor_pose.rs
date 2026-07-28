@@ -9,12 +9,18 @@
 //!
 //! NOT WIRED, with a concrete prerequisite each:
 //!
-//! * `FUN_801D32BC` rewrites four context cursor bytes (`+0x13`/`+0x1F`/
-//!   `+0x20`/`+0x21`). The engine's round boundary
-//!   (`engine-core::battle_round::BattleRound::boundary`) owns actor order and
-//!   keeps only `battle_ctx.active_actor` - there is no `+0x1F` step counter or
-//!   `+0x20`/`+0x21` history pair to write, so a call would drop three of its
-//!   four effects.
+//! * `FUN_801D32BC` is where retail's round reset picks whose turn it is:
+//!   `FUN_801D88CC` seeds `ctx[+0x13]` and `ctx[+0x1F]` to `0xFF` and calls it
+//!   forward (`0x801D88CC..0x801D8914`), so the wrap lands the cursor on the
+//!   lowest selectable slot. The engine's round boundary
+//!   (`engine-core::battle_round::BattleRound::boundary`) picks by a different
+//!   model - `World::next_combatant_by_initiative` - and its port of
+//!   `FUN_801D88CC` (`battle_formulas::round::round_reset_agility`) covers the
+//!   AGL arm only, deliberately leaving the ctx header writes with retail's
+//!   caller. Wiring is therefore a choice, not a gap-fill: it means
+//!   `BattleActionCtx` gaining the `+0x1F` step counter and the `+0x20`/`+0x21`
+//!   history pair, *and* the boundary adopting retail's cursor order over the
+//!   initiative one.
 //! * `FUN_801D57E8` / `FUN_801D5778` copy between **pose slots** - the
 //!   per-actor animation-pose array the battle renderer double-buffers. The
 //!   engine animates from decoded ANM frames per actor and allocates no such

@@ -93,7 +93,11 @@ pub struct FormationPos {
 ///    every included slot and add it back onto the focus accumulators.
 ///
 /// NOT WIRED: this is case `0` of the battle **flow** SM `FUN_801D388C`
-/// (`jal` at `0x801D3908`, jump table `0x801CE880`), which is not ported. It
+/// (`jal` at `0x801D3908`, jump table `0x801CE880`), which is not ported for
+/// the battle image. (The port catalog reports `801d388c` as ported and live;
+/// that row is the Muscle Dome overlay's *different* routine at the same VA -
+/// `engine-core::muscle_dome` cases 9 / `0xb`. An address-keyed catalog cannot
+/// separate the two, so read the crate before reading the flag.) It
 /// also shifts the camera-focus accumulators `_DAT_80089118` /
 /// `_DAT_80089120` to compensate for the squash, and the engine frames the
 /// battle camera by a per-action snap (`camera_height_for_frame` through
@@ -468,11 +472,17 @@ pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
 /// (`+0x16E & 0xF84 == 0`). Returns `actor_count` when none qualifies, and `0`
 /// when `actor_count == 0` (retail's `uVar1` seed).
 ///
-/// NOT WIRED: a leaf of the battle **command / menu** SM `FUN_801D0748`,
-/// which is not ported. The engine drives target selection through
-/// `engine-core::target_picker`, whose rows carry occupancy + a validator
-/// bit and no `action_state[i] != 4` array or `+0x16E` ailment word for these
-/// three predicates to read.
+/// NOT WIRED: a leaf of the battle **command / menu** SM `FUN_801D0748`. That
+/// SM is not "unported" - an earlier note here said so and was wrong: its
+/// state space is `engine-core::battle_flow::BattleFlowState` (the
+/// `ctx[+0x06]` cursor, target select = `0x5A`) and its menu half is split
+/// across `battle_input` / `battle_arts` / `battle_magic` / `target_picker`.
+/// What the split does not carry is any per-state *body* - `battle_flow` is a
+/// state model with no leaf calls - and the picker rows it recomposes hold
+/// occupancy plus a validator bit and no `action_state[i] != 4` array or
+/// `+0x16E` ailment word, which is what these three predicates read. The
+/// prerequisite is those two per-slot arrays on the picker's slot state, not
+/// a new port.
 ///
 /// PORT: FUN_801DBA04
 pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_count: u8) -> u8 {
@@ -500,7 +510,8 @@ pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_co
 /// returns the first qualifying slot, or `actor_count` when none qualifies.
 ///
 /// NOT WIRED: same prerequisite as [`first_selectable_target`] - both are
-/// leaves of the unported command / menu SM `FUN_801D0748` and index state
+/// leaves of the command / menu SM `FUN_801D0748`, whose engine port is a
+/// state model without per-state bodies, and both index per-slot state
 /// (`action_state[]`, `+0x16E`) the engine's picker rows do not carry.
 ///
 /// PORT: FUN_801DB81C

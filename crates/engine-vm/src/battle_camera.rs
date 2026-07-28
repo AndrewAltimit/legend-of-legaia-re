@@ -15,15 +15,15 @@
 //! cutscene* camera ease (`FUN_801DB510`) with float lerps toward op-`0x45`
 //! keyframe targets. The retail battle tween here is a different mechanism:
 //! table-driven fixed-point stepping - `FUN_801D829C` precomputes a 9-record
-//! `{step_count, endpoint}` table (at battle-context `+0x118C` off
-//! `_DAT_8007BD24`) that a per-frame walker (`FUN_80021248` arms it) then
-//! advances by a constant per-frame increment, with 12-bit wrapped angles.
+//! `{step, endpoint}` table (at battle-context `+0x118C` off `_DAT_8007BD24`)
+//! that `FUN_80021248` signs per component and a per-frame walker then adds
+//! until each component reaches its endpoint, with 12-bit wrapped angles.
 //! No float easing is involved in retail.
 //!
-//! # NOT WIRED
-//!
-//! Both kernels sit between a producer and a consumer that live outside this
-//! crate's reach, and the engine has neither end:
+//! The two have different wiring status. [`build_camera_angle_tween`] is
+//! live: `engine-shell`'s battle camera builds every arrive-together glide's
+//! rate table through it. [`apply_shake`] is not, and cannot be until the
+//! field VM models one global:
 //!
 //! * [`apply_shake`]'s amplitude input is the global `_DAT_8007B630`, and its
 //!   only retail writer is a **field-VM opcode**: `FUN_801DE840` stores the
@@ -36,8 +36,6 @@
 //!   translation pair, read by the camera pose - which in the port lives in
 //!   `engine-shell`'s battle camera. Nothing in `engine-core` or `engine-vm`
 //!   reads a shake offset back.
-//! * [`build_camera_angle_tween`]'s only product is a step table for a
-//!   per-frame walker the port does not have - see its own note.
 //!
 //! ## `BattleActionHost::screen_shake` is not this routine's caller
 //!
@@ -62,6 +60,8 @@
 //! a field-VM opcode. Feeding one to the other is a category error, so
 //! routing the `ScreenShake` host event through this kernel would not wire it.
 
+// REF: FUN_80021248 (the arming routine that signs this builder's records
+// and hands them to the per-frame walker)
 use crate::battle_formulas::psyq_rand_step;
 
 /// The camera rotation/shake/focus trios `FUN_801D829C` tweens. Mirrors the
@@ -82,60 +82,77 @@ pub struct CameraAngles {
     pub focus: [i16; 3],
 }
 
-/// One record of the interpolation step table at battle-context `+0x118C`:
-/// `{u16 step_count, u16 endpoint}` per tweened value.
+/// One record of the interpolation table at battle-context `+0x118C`:
+/// `{u16 step, u16 endpoint}` per tweened value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TweenSlot {
-    /// `ceil(|current - target| / speed)` - number of per-frame steps the
-    /// walker takes to reach the endpoint. Zero when the value is already at
-    /// its target (no steps emitted).
-    pub steps: u16,
+    /// `ceil(|current - target| / duration)` - the **per-frame increment**
+    /// magnitude the walker adds until it reaches the endpoint. Zero when the
+    /// value is already at its target.
+    ///
+    /// The direction is not in this field: the arming routine `FUN_80021248`
+    /// signs it per component after the fact, negating it when the endpoint
+    /// lies below the live global (`0x800213D8..0x800213E4` for the
+    /// translation trio, `0x80021378..0x8002138C` for the rotation trio, where
+    /// the shortest-arc flip rides along). A signed count would be meaningless;
+    /// a signed increment is exactly what a per-frame `+=` walker wants, which
+    /// is what fixes [`build_camera_angle_tween`]'s fourth argument as a
+    /// *duration* rather than a speed.
+    pub step: u16,
     /// Raw 16 bits of the (possibly wrap-adjusted) target value the walker
     /// converges on.
     pub target: u16,
 }
 
-/// Number of `{steps, endpoint}` records the builder emits - one per
+/// Number of `{step, endpoint}` records the builder emits - one per
 /// (current, target) pair. NB the retail loop counter runs to `0x12` (18) in
 /// increments of 2 over the interleaved 18-pointer list, so this is **9
 /// slots**, not 18 (an earlier triage note miscounted the pointer list as the
 /// slot count).
 pub const TWEEN_SLOTS: usize = 9;
 
-/// PORT: FUN_801D829C - build the per-frame camera angle-tween step table.
+/// PORT: FUN_801D829C - build the camera angle-tween increment table.
 ///
 /// Faithful to the dump, in order:
 ///
 /// 1. `target.shake[2]` (retail `param_2 + 4`) is pre-scaled **in place** by
 ///    `(value << 8) / 0xA0` (signed, truncating toward zero) - the `0xA0`
-///    divide applies to this one field only, not the whole table.
+///    divide applies to this one field only, not the whole table. It converts
+///    a world distance into GTE projection units (`0xA0` = the PSX screen
+///    half-width, `<< 8` = `H = 256`), which is why the caller hands the
+///    translation-Z target in raw world units and the live global is already
+///    converted.
 /// 2. The **rotation trio only** (first 3 pairs) is normalized to 12 bits
 ///    (`& 0xFFF` on both current and target, written back in place) with
 ///    shortest-arc correction: when `current - target > 0x800` the target
 ///    gains `+0x1000`; when `target - current > 0x800` the current side
 ///    gains `+0x1000`. Shake and focus pairs are tweened linearly, unwrapped.
 /// 3. For all [`TWEEN_SLOTS`] pairs (rotation, shake, focus - in that order)
-///    the step count is the ceiling division
-///    `(|current - target| + speed - 1) / speed` (retail `divu`), with
-///    `speed == 0` coerced to `1`, and the endpoint is the target's raw
+///    the per-frame increment is the ceiling division
+///    `(|current - target| + duration - 1) / duration` (retail `divu`), with
+///    `duration == 0` coerced to `1`, and the endpoint is the target's raw
 ///    16 bits.
 ///
-/// Retail mutates both the globals and the caller's target buffer (masking,
-/// wrap adjust, the `0xA0` pre-scale), hence `&mut` on both sides here. The
-/// retail tail then arms the step-table walker (`FUN_80021248`) on the
-/// freshly written table; that walker is out of scope for this kernel.
+/// **`duration` is a frame count, not a speed**, and the difference is
+/// invisible in this routine alone - `delta / param_4` reads either way. The
+/// arming routine `FUN_80021248` settles it: it signs each record's first
+/// halfword by comparing the endpoint against the live global, which is only
+/// meaningful for an increment. So every component shares one duration and
+/// they arrive together, each moving at its own rate.
 ///
-/// NOT WIRED: the builder's only product is a 9-record `{step_count,
-/// endpoint}` table for a per-frame walker to advance, and the engine has no
-/// walker to hand it to - the battle camera is framed by a per-action snap
-/// (`battle_formulas::camera_height_for_frame` through
-/// `BattleActionHost::camera_bounds`), not by stepping angles toward a
-/// target. The routine that arms retail's walker, `FUN_80021248`, is
-/// documented but unported, so nothing exists to consume a step table.
+/// Retail mutates both the globals and the caller's target buffer (masking,
+/// wrap adjust, the `0xA0` pre-scale), hence `&mut` on both sides here.
+///
+/// The consumer is `engine-shell`'s `window/battle_cam.rs`: `Glide::linear`
+/// builds its per-component rate table here, so the native battle camera's
+/// arrive-together glides step on retail's own integer increments. What is
+/// still absent is the *producer* - retail's `FUN_80021248` sources the
+/// endpoints from the arming path, and the engine's come from the traced phase
+/// framings instead.
 pub fn build_camera_angle_tween(
     current: &mut CameraAngles,
     target: &mut CameraAngles,
-    speed: u16,
+    duration: u16,
 ) -> [TweenSlot; TWEEN_SLOTS] {
     // Step 1: pre-scale the third shake target by 256/160 (signed, trunc).
     target.shake[2] = (((target.shake[2] as i32) << 8) / 0xA0) as i16;
@@ -154,8 +171,8 @@ pub fn build_camera_angle_tween(
         target.rotation[k] = tgt;
     }
 
-    // Step 3: ceil-divide step counts + endpoints for all nine pairs.
-    let speed = u32::from(speed).max(1);
+    // Step 3: ceil-divide per-frame increments + endpoints for all nine pairs.
+    let duration = u32::from(duration).max(1);
     let pairs: [(i16, i16); TWEEN_SLOTS] = [
         (current.rotation[0], target.rotation[0]),
         (current.rotation[1], target.rotation[1]),
@@ -170,9 +187,9 @@ pub fn build_camera_angle_tween(
     let mut table = [TweenSlot::default(); TWEEN_SLOTS];
     for (slot, &(cur, tgt)) in table.iter_mut().zip(pairs.iter()) {
         let delta = ((cur as i32) - (tgt as i32)).unsigned_abs();
-        // Retail form: `(delta + speed - 1) divu speed` - identical to
-        // `div_ceil` for speed >= 1.
-        slot.steps = delta.div_ceil(speed) as u16;
+        // Retail form: `(delta + duration - 1) divu duration` - identical to
+        // `div_ceil` for duration >= 1.
+        slot.step = delta.div_ceil(duration) as u16;
         slot.target = tgt as u16;
     }
     table
@@ -248,7 +265,7 @@ mod tests {
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 1);
         assert_eq!(tgt.rotation[0], 0x1010);
         assert_eq!(cur.rotation[0], 0xF80);
-        assert_eq!(table[0].steps, 0x90);
+        assert_eq!(table[0].step, 0x90);
         assert_eq!(table[0].target, 0x1010);
     }
 
@@ -261,7 +278,7 @@ mod tests {
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 1);
         assert_eq!(cur.rotation[0], 0x1010);
         assert_eq!(tgt.rotation[0], 0xF80);
-        assert_eq!(table[0].steps, 0x90);
+        assert_eq!(table[0].step, 0x90);
         assert_eq!(table[0].target, 0xF80);
     }
 
@@ -275,8 +292,8 @@ mod tests {
         assert_eq!(cur.rotation[1], 0xFFF);
         assert_eq!(tgt.rotation[1], 0xFFF);
         // Equal after masking: zero-delta slots emit no steps.
-        assert_eq!(table[0].steps, 0);
-        assert_eq!(table[1].steps, 0);
+        assert_eq!(table[0].step, 0);
+        assert_eq!(table[1].step, 0);
     }
 
     #[test]
@@ -285,8 +302,8 @@ mod tests {
         let mut tgt = angles([0; 3], [0, 0, 0], [0; 3]);
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 0x20);
         // 0x90 / 0x20 = 4.5 -> 5 steps; 0x80 / 0x20 = exact 4.
-        assert_eq!(table[3].steps, 5);
-        assert_eq!(table[4].steps, 4);
+        assert_eq!(table[3].step, 5);
+        assert_eq!(table[4].step, 4);
     }
 
     #[test]
@@ -294,7 +311,7 @@ mod tests {
         let mut cur = angles([0; 3], [0; 3], [7, 0, 0]);
         let mut tgt = angles([0; 3], [0; 3], [0, 0, 0]);
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 0);
-        assert_eq!(table[6].steps, 7);
+        assert_eq!(table[6].step, 7);
     }
 
     #[test]
@@ -304,7 +321,7 @@ mod tests {
         // shake[2] pre-scale keeps 0 at 0, so every pair stays equal.
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 8);
         for slot in &table {
-            assert_eq!(slot.steps, 0);
+            assert_eq!(slot.step, 0);
         }
     }
 
@@ -316,7 +333,7 @@ mod tests {
         let mut tgt = angles([0; 3], [0, 0, 0xA0], [0; 3]);
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 1);
         assert_eq!(tgt.shake[2], 0x100);
-        assert_eq!(table[5].steps, 0x100);
+        assert_eq!(table[5].step, 0x100);
         assert_eq!(table[5].target, 0x100);
 
         let mut tgt_neg = angles([0; 3], [0, 0, -1], [0; 3]);
@@ -329,7 +346,7 @@ mod tests {
         let mut cur = angles([0; 3], [0; 3], [-0x40, 0, 0]);
         let mut tgt = angles([0; 3], [0; 3], [0x40, 0, 0]);
         let table = build_camera_angle_tween(&mut cur, &mut tgt, 0x10);
-        assert_eq!(table[6].steps, 8); // |(-0x40) - 0x40| = 0x80 -> /0x10
+        assert_eq!(table[6].step, 8); // |(-0x40) - 0x40| = 0x80 -> /0x10
         assert_eq!(table[6].target, 0x40);
     }
 
