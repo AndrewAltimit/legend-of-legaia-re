@@ -74,6 +74,14 @@
 //! Chain: retail `FUN_801d0748` (match SM, `ctx+6` phases) → `FUN_801d388c`
 //! (deal / commit) → the battle-action path (queued-command playback).
 
+// The leg-end chain the module docs above cite. None of it is ported here -
+// the arena's handoff and the battle's own end scans live in the battle
+// world, and this module only records that they, not a turn budget, decide
+// a leg.
+// REF: FUN_801d1510 (arena opponent installer: formation slot 0 + game mode 0x14)
+// REF: FUN_801e295c (state 0x5A end-of-action KO scans set the battle-end signal)
+// REF: FUN_80046a20 (battle-exit mode selector: mode 0x18 returns to the arena)
+
 use legaia_asset::element_affinity::ElementAffinity;
 use legaia_asset::move_power::{self, MoveRecord};
 use legaia_engine_vm::battle_formulas::{
