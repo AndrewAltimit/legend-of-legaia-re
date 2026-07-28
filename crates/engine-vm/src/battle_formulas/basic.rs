@@ -46,7 +46,7 @@ impl MpCostModifier {
     /// and testing `0x20` (Half) before `0x10` (Quarter).
     ///
     /// PRIORITY (dump-confirmed): when both bits are set, **Half (`0x20`) wins**.
-    /// The retail state-`0x28` block (`FUN_801E295C` at `0x801E3D0C`) is
+    /// The retail state-`0x3C` block (`FUN_801E295C` at `0x801E3D0C`) is
     /// `andi 0x20; bne <half>` then `andi 0x10; beq <none>` - i.e.
     /// `if (bits & 0x20) { half } else if (bits & 0x10) { quarter }`, with Half
     /// short-circuiting the `0x10` test. This `Half`-first order matches the
@@ -64,7 +64,7 @@ impl MpCostModifier {
 }
 
 /// Apply the [`MpCostModifier`] to a base spell MP cost. Mirrors the
-/// state-`0x28` body of `FUN_801E295C` (`0x801E3D0C`): the modifier subtracts a
+/// state-`0x3C` body of `FUN_801E295C` (`0x801E3D0C`): the modifier subtracts a
 /// right-shifted copy of the cost (`cost -= cost >> 1` for Half, `cost -= cost
 /// >> 2` for Quarter), NOT a floor-divide - so Half rounds *up* on odd costs
 /// (`7 -> 4`, not `3`) and Quarter shaves only 25% off (`40 -> 30`, not `10`).
@@ -93,8 +93,15 @@ impl MpCostModifier {
 /// shifts are `sra` (signed); a spell cost is never negative, so the port's
 /// unsigned shifts agree over the whole reachable domain.
 ///
+/// The same fold is inlined twice in the overlay, one copy per state that
+/// charges MP: `0x801E3D0C` (state `0x3C`) and `0x801E4568` (state `0x28`,
+/// immediately after that state's capture-archive `jal` at `0x801E44EC`).
+/// Both are the identical `andi 0x20 / bne / andi 0x10 / beq` sequence, which
+/// is why an earlier note reached for the wrong one - the behaviour claim held
+/// either way, so nothing contradicted it.
+///
 /// PORT: FUN_80035394
-/// REF: FUN_801E295C (state `0x28` at `0x801E3D0C` - the inlined copy)
+/// REF: FUN_801E295C (state `0x3C` at `0x801E3D0C` - the inlined copy)
 pub fn mp_cost_after_ability_bits(base_cost: u16, modifier: MpCostModifier) -> u16 {
     match modifier {
         MpCostModifier::Full => base_cost,
