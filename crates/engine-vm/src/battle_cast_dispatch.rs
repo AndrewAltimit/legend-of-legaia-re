@@ -4,18 +4,42 @@
 //! PORT: FUN_801F1ED4
 //! PORT: FUN_801F2160
 //! PORT: FUN_801DBA90
+//! REF: FUN_801E295C (the action SM that calls the two dispatchers),
+//! REF: FUN_801F2410 (the shared tail both dispatchers gate on),
+//! REF: FUN_801D8DE8 (the HUD case the banner is drawn by),
+//! REF: FUN_801DCEAC (a control for the reference scan below),
+//! REF: FUN_801F1CC8, FUN_801F20DC (the field image's twins at the same VAs)
 //!
-//! NOT WIRED: all three resolve to something the engine has no channel for.
-//! The two dispatchers return a **retail VA** - the emitter is overlay code in
-//! the battle image, unported, so there is nothing callable at the other end;
-//! turning them into a wire needs an engine-side cast-effect pool keyed by
-//! spell id / effect class first. `FUN_801F2160` additionally needs the spell
-//! record's `+0x01` effect-class byte, which the engine's spell catalog
-//! (`crate::retail_magic`) does not decode - it carries name / MP / target
-//! only, so [`spell_effect_class`] has no live source of bytes. The banner
-//! composer writes the battle context text buffer at `ctx+0x1F9`, which the
-//! engine does not model (its battle HUD builds draw lists, not a text
-//! buffer).
+//! NOT WIRED, for two different reasons - and they should not be read as one.
+//!
+//! **The two dispatchers** resolve to something the engine has no channel for.
+//! Both return a **retail VA**: the emitter is overlay code in the battle
+//! image, unported, so there is nothing callable at the other end; turning them
+//! into a wire needs an engine-side cast-effect pool keyed by spell id / effect
+//! class first. `FUN_801F2160` additionally needs the spell record's `+0x01`
+//! effect-class byte, which the engine's spell catalog (`crate::retail_magic`)
+//! does not decode - it carries name / MP / target only, so
+//! [`spell_effect_class`] has no live source of bytes. Both really are reached
+//! in retail (`jal 0x801f1ed4` at `0x801E4B1C` / `0x801E4C7C` / `0x801E4CA8`),
+//! so a host that grew that pool would have somewhere to put them.
+//!
+//! **`FUN_801DBA90` is different: retail reaches it from nowhere.** It is a
+//! genuine function entry - `27bdffe8 afb00010` at `0x801DBA90` in the
+//! battle-action image, 39 instructions - and *no* image references it in any
+//! form. A scan of `SCUS_942.54` plus all 31 base-mapped overlay images for the
+//! literal little-endian word at every alignment, the `lui`+`addiu` / `lui`+`ori`
+//! materialisation pair, and `jal` / `j` returns zero hits; the same scan
+//! recovers all three `FUN_801F1ED4` call sites and all six `FUN_801DCEAC` ones
+//! as controls. So it is not a dispatch-table entry either - a static table
+//! holding it would show as the literal word.
+//!
+//! No engine-side channel can therefore fix this row, and the earlier reason
+//! here - "the engine does not model the `ctx+0x1F9` text buffer" - implied one
+//! could. The port stays because the routine is decoded and its three-part
+//! banner is the same assembly `FUN_801D8DE8`'s HUD case `0x59` shows; what it
+//! is not is unfinished wiring. One residual: an address assembled in more than
+//! two instructions, or reached as `table_base + index` where the base is
+//! computed, would not be caught.
 //!
 //! ## The two dispatchers
 //!
