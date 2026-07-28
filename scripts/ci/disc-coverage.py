@@ -184,6 +184,49 @@ def merge(intervals):
     return merged
 
 
+MIPS_JR_RA = 0x03E00008
+# `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
+# vector into before `jr $t2`.
+_ADDIU_T2_ZERO = 0x240A0000
+BIOS_VECTORS = (0xA0, 0xB0, 0xC0)
+
+
+def gap_shape(image, base_va, a, b):
+    """Why a code gap is a gap. Four shapes, and only one of them is work.
+
+    A gap is not automatically an un-analysed routine, and reporting the total
+    as if it were makes the last percent read as a dump worklist when most of it
+    can never be closed by dumping:
+
+    | shape | what it is |
+    |---|---|
+    | `padding` | every word is `nop`. Inter-function alignment; no function body will ever contain it. |
+    | `return_tail` | `jr ra` (+ `nop`): a routine's exit that its analysed body stops short of. |
+    | `bios_thunk_slot` | the delay slot of a `jr $t2` BIOS-call thunk. The body ends at the `jr` because the target is a register, so the slot falls outside it. |
+    | `code` | genuinely un-dumped instructions. |
+
+    The three non-`code` shapes are properties of where a function *body* ends,
+    not of what has been analysed, so they persist however much is dumped.
+    """
+    n = (b - a) // 4
+    start = a - base_va
+    if n <= 0 or start < 0 or start + n * 4 > len(image):
+        return "code"
+    words = struct.unpack_from("<%dI" % n, image, start)
+    if all(w == 0 for w in words):
+        return "padding"
+    if words[0] == MIPS_JR_RA and all(w == 0 for w in words[1:]):
+        return "return_tail"
+    if start >= 8:
+        pre = struct.unpack_from("<2I", image, start - 8)
+        # `addiu $t2, $zero, 0xA0|B0|C0` then `jr $t2`
+        if ((pre[0] & 0xFFFF0000) == _ADDIU_T2_ZERO
+                and (pre[0] & 0xFFFF) in BIOS_VECTORS
+                and (pre[1] & 0xFC1FFFFF) == 0x00000008):
+            return "bios_thunk_slot"
+    return "code"
+
+
 def classify_gap(image, base_va, a, b):
     """True when the bytes in [a, b) look like code rather than data."""
     n = (b - a) // 4
@@ -229,10 +272,15 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
 
     code_gap = data_gap = 0
     code_gaps = []
+    shapes = {}
     for a, b in gaps:
         if classify_gap(image, base_va, a, b):
             code_gap += b - a
-            code_gaps.append((a, b))
+            shape = gap_shape(image, base_va, a, b)
+            n, nb = shapes.get(shape, (0, 0))
+            shapes[shape] = (n + 1, nb + b - a)
+            if shape == "code":
+                code_gaps.append((a, b))
         else:
             data_gap += b - a
 
@@ -248,6 +296,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
         "data_gap": data_gap,
         "code_denominator": denom,
         "pct": (100.0 * covered / denom) if denom else 0.0,
+        "gap_shapes": shapes,
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }
 
@@ -371,6 +420,16 @@ def data_report(extracted):
     }
 
 
+GAP_SHAPE_TEXT = {
+    "code": "genuinely un-dumped instructions - the only shape that is work",
+    "padding": "every word is `nop`: inter-function alignment, which no function "
+               "body will ever contain",
+    "return_tail": "`jr ra` (+ `nop`) that the preceding routine's analysed body "
+                   "stops short of",
+    "bios_thunk_slot": "the delay slot of a `jr $t2` PSX BIOS-call thunk; the "
+                       "body ends at the `jr` because its target is a register",
+}
+
 REJECT_TEXT = {
     "pointer_stub": ("answer", "recorded interior citation naming its enclosing "
                      "dump - the corpus's correct handling of a mid-function "
@@ -466,6 +525,24 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         add("`SCUS_942.54` is the only image here with an unambiguous answer: it "
             "is a single load image at a fixed base with no VA aliasing.")
         add("")
+        shapes = scus.get("gap_shapes") or {}
+        if shapes:
+            add("### What the `SCUS_942.54` code gap is")
+            add("")
+            add("Not every gap is an un-analysed routine, and reading the total "
+                "as a worklist overstates what dumping can close. Three of the "
+                "four shapes are properties of where a function *body* ends "
+                "rather than of what has been analysed, so they persist however "
+                "much is dumped.")
+            add("")
+            add("| shape | gaps | bytes | what it is |")
+            add("|---|---:|---:|---|")
+            for key in ("code", "padding", "return_tail", "bios_thunk_slot"):
+                if key not in shapes:
+                    continue
+                n, nb = shapes[key]
+                add("| `%s` | %d | %d | %s |" % (key, n, nb, GAP_SHAPE_TEXT[key]))
+            add("")
         if scus["top_code_gaps"]:
             add("Largest un-dumped **code** runs in `SCUS_942.54` - this is a dump "
                 "worklist, not a defect list:")
