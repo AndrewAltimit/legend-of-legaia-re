@@ -32,16 +32,19 @@
  * text. The editors serialize back to the exact `fishing_prices` /
  * `location_renames` strings the raw (advanced) inputs feed, so the wire
  * format into patch_rom is unchanged.
- * Save-slot portraits ride the same panel on a fourth export,
- * `preview_save_icon_replace(image, slot, png, quantize)`; their rows carry
- * `tier: 'save-icon'` and `apply_texture_replacements` routes them by tier.
  *
- * Texture replacement rides three more exports: `scan_textures(image,
- * thumbMax) -> { raw_count, lzs_count, textures }` (every TIM on the disc,
- * with thumbnails), `preview_texture_replace(image, entry, section, offset,
- * png, quantize)` (validation + original/as-encoded preview), and
- * `apply_texture_replacements(image, specs) -> { data, summary }` (chained
- * after patch_rom's output, or run alone).
+ * Texture replacement rides its own exports, all of them family-agnostic -
+ * which texture families exist is decided by the registry on the Rust side
+ * (`crate::texture_registry`), and this file only ever passes a `tier` string
+ * back. `scan_textures(image, thumbMax) -> { tiers, textures }` catalogs every
+ * texture the registry can reach; `decode_texture(image, tier, entry, section,
+ * offset)` decodes one full-size (the path a view-only family takes);
+ * `preview_texture_replace(image, tier, entry, section, offset, png, quantize)`
+ * validates one swap and returns the original plus the as-encoded preview;
+ * `apply_texture_replacements(image, specs) -> { data, summary }` applies the
+ * queue (chained after patch_rom's output, or run alone). Change packs use
+ * `export_texture_pack(specs, name, author, note) -> String` and
+ * `import_texture_pack(image, json, acceptHashMismatch)`.
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`. Shipped language packs are static assets under
  * site/lang/<lang>.yaml, fetched on demand (nothing is bundled into the WASM).
@@ -700,18 +703,20 @@ function setupArtBuilder(container, addBtn, onEdit) {
 }
 
 // --- Texture replacement ----------------------------------------------------
-// Rows whose `tier` is this are save-slot portraits: tiles of one shared TIM
-// with a palette each, addressed by slot (`section`) rather than byte offset,
-// and written by their own patcher path. Fifteen exist - tile 15 of the strip
-// is blank padding nothing in game selects, so it is never offered.
-const SAVE_ICON_TIER = 'save-icon';
+//
+// Client-side texture swap over the WASM texture API. Everything family-shaped
+// lives on the Rust side: `scan_textures` returns both the rows and a `tiers`
+// list describing each family (id, title, what it is, whether it can be
+// written), so this file has no hardcoded knowledge of which texture families
+// exist. A new family appears in the grid and in the presets on its own.
+//
+// Coordinates are the quad `(tier, entry, section, offset)`: entry -1 is the
+// unindexed PROT.DAT gap, and `section` means whatever its family says it does
+// (an LZS section index, a save slot, a side-band slot) or -1.
 
-// Client-side texture swap over the WASM API: `scan_textures(image, thumbMax)`
-// catalogs every TIM on the disc (raw tier + inside LZS sections) with
-// thumbnails, `preview_texture_replace(image, entry, section, offset, png,
-// quantize)` validates one swap and returns the original + as-encoded preview,
-// and `apply_texture_replacements(image, specs)` applies the queued swaps.
-// Coordinates: entry -1 = the unindexed PROT.DAT gap, section -1 = raw tier.
+// Where the queue is kept between reloads. Versioned with the pack format it
+// stores, so a future format change cannot half-read an old blob.
+const TEX_QUEUE_KEY = 'legaia-rom-patcher.texture-queue.v1';
 
 // Paint a `{ w, h, rgba }` image onto a canvas at its native size.
 function drawRgba(canvas, img) {
@@ -721,16 +726,30 @@ function drawRgba(canvas, img) {
   ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.w, img.h), 0, 0);
 }
 
-// Human-readable coordinate string for a scan row / queue item. Save-slot
-// portraits are addressed by slot, not by byte offset, so they name the save
-// number a player would actually see.
+// Human-readable coordinate for a scan row / queue item. A family that
+// addresses its rows by slot says so; everything else names a byte offset.
 function texDesc(t) {
-  if (t.tier === SAVE_ICON_TIER) return `save icon · slot ${t.section} (save ${t.section + 1})`;
   const off = '0x' + t.offset.toString(16).toUpperCase();
+  if (t.tier === 'save-icon') return `save icon · slot ${t.section} (save ${t.section + 1})`;
   const where = t.entry < 0 ? `gap +${off}`
     : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
       : `entry ${t.entry} +${off}`;
   return `${t.tier} ${where}`;
+}
+
+// The string a filter query is matched against. This IS the search
+// vocabulary, so anything a person might reasonably type has to be in here -
+// which is why the tier id, the CDNAME block and the curated label are all
+// folded in even though only some of them are displayed on the cell.
+function texHaystack(t) {
+  return `${t.tier} ${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label || ''} ` +
+    `${t.block || ''} ${t.replaceable ? 'replaceable' : 'read-only'}`.toLowerCase();
+}
+
+// Stable identity of one queued edit. One edit per texture: re-adding one
+// replaces the earlier edit rather than stacking a second write on it.
+function texKey(q) {
+  return `${q.tier}/${q.entry}/${q.section}/${q.offset}`;
 }
 
 // Wire the texture-replacement panel. `wasm()` resolves the module,
@@ -742,10 +761,13 @@ function setupTextureReplacer(wasm, discBytes) {
   const scanNote = $('rom-tex-scan-note');
   const browser = $('rom-tex-browser');
   const filterInput = $('rom-tex-filter');
+  const presetsEl = $('rom-tex-presets');
+  const countEl = $('rom-tex-count');
   const grid = $('rom-tex-grid');
   const moreBtn = $('rom-tex-more');
   const editor = $('rom-tex-editor');
   const targetDesc = $('rom-tex-target-desc');
+  const factsEl = $('rom-tex-facts');
   const exportBtn = $('rom-tex-export');
   const pngInput = $('rom-tex-png');
   const quantizeChk = $('rom-tex-quantize');
@@ -755,12 +777,21 @@ function setupTextureReplacer(wasm, discBytes) {
   const addBtn = $('rom-tex-add');
   const cancelBtn = $('rom-tex-cancel');
   const queueEl = $('rom-tex-queue');
+  const packName = $('rom-tex-pack-name');
+  const packAuthor = $('rom-tex-pack-author');
+  const packNote = $('rom-tex-pack-note');
+  const packExportBtn = $('rom-tex-pack-export');
+  const packImportInput = $('rom-tex-pack-import');
+  const packForceChk = $('rom-tex-pack-force');
+  const packStatus = $('rom-tex-pack-status');
+  const packReport = $('rom-tex-pack-report');
 
   const PAGE = 60;
   let rows = null; // scan result rows
+  let tiers = []; // family descriptors from the registry
   let shown = 0;
-  let sel = null; // { row, cell, origImg, pngBytes, previewOk }
-  const queue = []; // { desc, entry, section, offset, png, quantize }
+  let sel = null; // { row, origImg, pngBytes }
+  const queue = []; // { desc, tier, entry, section, offset, png, quantize, ... }
 
   const setNote = (msg, kind) => {
     scanNote.textContent = msg;
@@ -770,14 +801,59 @@ function setupTextureReplacer(wasm, discBytes) {
     verdict.textContent = msg;
     verdict.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
   };
+  const setPackStatus = (msg, kind) => {
+    if (!packStatus) return;
+    packStatus.textContent = msg;
+    packStatus.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
+  };
+  const tierOf = (id) => tiers.find((t) => t.id === id) || null;
 
   function matches() {
     const q = (filterInput.value || '').trim().toLowerCase();
     if (!q) return rows;
     const toks = q.split(/\s+/);
     return rows.filter((t) => {
-      const hay = `${texDesc(t)} ${t.width}x${t.height} ${t.bpp}bpp ${t.label}`.toLowerCase();
+      const hay = texHaystack(t);
       return toks.every((tok) => hay.includes(tok));
+    });
+  }
+
+  // Filter presets, built from what the scan actually returned rather than
+  // from a guessed vocabulary: one chip per texture family, then one per
+  // curated label present in this disc's rows, largest first. Every chip is
+  // just filter text, so a person can see what it did and edit it.
+  function renderPresets() {
+    if (!presetsEl) return;
+    presetsEl.textContent = '';
+    const chips = [{ text: 'Everything', q: '', n: rows.length }];
+    tiers.forEach((t) => {
+      if (t.count > 0) chips.push({ text: t.title, q: t.id, n: t.count, tip: t.about });
+    });
+    const byLabel = new Map();
+    rows.forEach((r) => {
+      if (r.label) byLabel.set(r.label, (byLabel.get(r.label) || 0) + 1);
+    });
+    [...byLabel.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([label, n]) => chips.push({ text: label, q: label, n }));
+
+    const current = (filterInput.value || '').trim().toLowerCase();
+    chips.forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rom-tex-preset' + (current === c.q.toLowerCase() ? ' is-active' : '');
+      if (c.tip) b.title = c.tip;
+      b.appendChild(document.createTextNode(c.text));
+      const n = document.createElement('span');
+      n.className = 'rom-tex-preset-n';
+      n.textContent = c.n;
+      b.appendChild(n);
+      b.addEventListener('click', () => {
+        filterInput.value = c.q;
+        renderGrid(true);
+        renderPresets();
+      });
+      presetsEl.appendChild(b);
     });
   }
 
@@ -787,12 +863,17 @@ function setupTextureReplacer(wasm, discBytes) {
       shown = 0;
     }
     const m = matches();
+    if (countEl) {
+      countEl.textContent = m.length === rows.length
+        ? `${rows.length} textures.`
+        : `${m.length} of ${rows.length} textures match.`;
+    }
     const upto = Math.min(m.length, shown + PAGE);
     for (; shown < upto; shown++) {
       const t = m[shown];
       const cell = document.createElement('button');
       cell.type = 'button';
-      cell.className = 'rom-tex-cell';
+      cell.className = 'rom-tex-cell' + (t.replaceable ? '' : ' is-readonly');
       if (t.thumb) {
         const c = document.createElement('canvas');
         drawRgba(c, t.thumb);
@@ -802,7 +883,8 @@ function setupTextureReplacer(wasm, discBytes) {
       label.className = 'rom-tex-label';
       label.textContent = t.label || `${t.width}×${t.height}`;
       const sub = document.createElement('span');
-      sub.textContent = `${texDesc(t)} · ${t.width}×${t.height} ${t.bpp}bpp`;
+      sub.textContent = `${texDesc(t)} · ${t.width}×${t.height} ${t.bpp}bpp` +
+        (t.replaceable ? '' : ' · view only');
       cell.appendChild(label);
       cell.appendChild(sub);
       cell.addEventListener('click', () => select(t, cell));
@@ -822,20 +904,60 @@ function setupTextureReplacer(wasm, discBytes) {
       await new Promise((r) => setTimeout(r, 30));
       const r = mod.scan_textures(buf, 48);
       rows = r.textures;
+      tiers = r.tiers || [];
       browser.hidden = false;
-      const icons = r.save_icon_count
-        ? ` + ${r.save_icon_count} save-slot portraits`
-        : '';
-      setNote(`${r.raw_count} raw + ${r.lzs_count} compressed textures${icons} found. Click one to edit it.`);
+      const families = tiers.filter((t) => t.count > 0)
+        .map((t) => `${t.count} ${t.title.toLowerCase()}`)
+        .join(', ');
+      setNote(`${rows.length} textures found (${families}). Click one to edit it.`);
       renderGrid(true);
+      renderPresets();
+      offerStoredQueue();
     } catch (e) {
       setNote('Error: ' + (e && e.message ? e.message : e), 'err');
     } finally {
       scanBtn.disabled = false;
     }
   });
-  filterInput.addEventListener('input', () => renderGrid(true));
+  filterInput.addEventListener('input', () => { renderGrid(true); renderPresets(); });
   moreBtn.addEventListener('click', () => renderGrid(false));
+
+  // The facts a person needs to decide "is this the one, and can I change
+  // it". Derived values only - nothing here is a guess about what a texture
+  // depicts beyond the curated label the catalogs already carry.
+  function renderFacts(t) {
+    if (!factsEl) return;
+    factsEl.textContent = '';
+    const fam = tierOf(t.tier);
+    const add = (k, v) => {
+      if (v === null || v === undefined || v === '') return;
+      const dt = document.createElement('dt');
+      dt.textContent = k;
+      const dd = document.createElement('dd');
+      dd.textContent = v;
+      factsEl.appendChild(dt);
+      factsEl.appendChild(dd);
+    };
+    add('Family', fam ? fam.title : t.tier);
+    add('Where', texDesc(t));
+    add('PROT entry', t.entry < 0
+      ? 'none - the unindexed gap before entry 0'
+      : `${t.entry}${t.block ? ` (${t.block})` : ''}`);
+    add('Pixels', `${t.width} × ${t.height}, ${t.bpp} bpp`);
+    add('Palettes', t.cluts > 0 ? `${t.cluts}` : 'none (direct colour)');
+    add('Size on disc', `${t.bytes} bytes`);
+    if (t.vram) add('VRAM', `(${t.vram.x}, ${t.vram.y}), ${t.vram.w} × ${t.vram.h}`);
+    if (t.clut_vram) add('Palette in VRAM', `(${t.clut_vram.x}, ${t.clut_vram.y})`);
+    add('Fingerprint', t.fnv1a);
+    if (!t.replaceable) {
+      add('Replaceable', `no - ${fam ? fam.about : 'view and export only'}`);
+    } else if (t.tier === 'lzs') {
+      add('Replaceable', 'yes, if your edit re-compresses into the retail stream ' +
+        '(the preview measures it exactly)');
+    } else {
+      add('Replaceable', `yes - written in place, same ${t.bytes} bytes`);
+    }
+  }
 
   async function select(t, cell) {
     grid.querySelectorAll('.rom-tex-cell').forEach((c) => c.classList.remove('is-active'));
@@ -845,26 +967,40 @@ function setupTextureReplacer(wasm, discBytes) {
     targetDesc.textContent =
       `${texDesc(t)} · ${t.width}×${t.height} pixels · ${t.bpp} bpp · ` +
       `${t.cluts} palette(s)` + (t.label ? ` · ${t.label}` : '');
+    renderFacts(t);
     pngInput.value = '';
     newCanvas.width = newCanvas.height = 0;
     addBtn.disabled = true;
+    // A view-only family still shows and exports its texture; only the write
+    // half is withheld, and it says why rather than silently doing nothing.
+    pngInput.disabled = !t.replaceable;
+    quantizeChk.disabled = !t.replaceable;
     setVerdict('Loading the full-size original ...');
     editor.scrollIntoView({ block: 'nearest' });
     await refresh();
   }
 
-  // Validate + preview: with no PNG chosen the call still returns the
-  // original's full-size decode (the PNG error is expected and ignored).
+  // Validate + preview. With no PNG chosen the call still returns the
+  // original's full-size decode (the PNG error is expected and ignored). A
+  // view-only family never reaches the writer at all - it decodes straight
+  // off the disc.
   async function refresh() {
     if (!sel) return;
     const t = sel.row;
     try {
       const mod = await wasm();
       const buf = await discBytes();
+      if (!t.replaceable) {
+        sel.origImg = mod.decode_texture(buf, t.tier, t.entry, t.section, t.offset);
+        drawRgba(origCanvas, sel.origImg);
+        const fam = tierOf(t.tier);
+        setVerdict('View and export only. ' + (fam ? fam.about : ''), 'warn');
+        addBtn.disabled = true;
+        return;
+      }
       const png = sel.pngBytes || new Uint8Array(0);
-      const r = t.tier === SAVE_ICON_TIER
-        ? mod.preview_save_icon_replace(buf, t.section, png, quantizeChk.checked)
-        : mod.preview_texture_replace(buf, t.entry, t.section, t.offset, png, quantizeChk.checked);
+      const r = mod.preview_texture_replace(
+        buf, t.tier, t.entry, t.section, t.offset, png, quantizeChk.checked);
       sel.origImg = r.original;
       drawRgba(origCanvas, r.original);
       if (!sel.pngBytes) {
@@ -903,22 +1039,26 @@ function setupTextureReplacer(wasm, discBytes) {
     const c = document.createElement('canvas');
     drawRgba(c, sel.origImg);
     const t = sel.row;
-    const name = t.tier === SAVE_ICON_TIER
+    const name = t.tier === 'save-icon'
       ? `legaia-save-icon-slot${t.section}.png`
-      : `legaia-tex-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
+      : `legaia-tex-${t.tier}-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
         `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}.png`;
     c.toBlob((blob) => {
       if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      downloadBlob(blob, name);
     }, 'image/png');
   });
+
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
 
   function renderQueue() {
     queueEl.textContent = '';
@@ -939,22 +1079,19 @@ function setupTextureReplacer(wasm, discBytes) {
       row.appendChild(rm);
       queueEl.appendChild(row);
     });
+    storeQueue();
   }
 
   addBtn.addEventListener('click', () => {
     if (!sel || !sel.pngBytes) return;
     const t = sel.row;
-    // One queued edit per texture: re-adding replaces the earlier one.
-    const key = (q) => `${q.tier}/${q.entry}/${q.section}/${q.offset}`;
-    const spec = {
+    enqueue({
       desc: `${texDesc(t)} (${t.width}×${t.height}${t.label ? ', ' + t.label : ''})`,
-      tier: t.tier,
-      entry: t.entry, section: t.section, offset: t.offset,
+      tier: t.tier, entry: t.entry, section: t.section, offset: t.offset,
+      width: t.width, height: t.height, bpp: t.bpp, label: t.label || '',
+      fnv1a: t.fnv1a,
       png: sel.pngBytes, quantize: quantizeChk.checked,
-    };
-    const existing = queue.findIndex((q) => key(q) === key(spec));
-    if (existing >= 0) queue[existing] = spec; else queue.push(spec);
-    renderQueue();
+    });
     editor.hidden = true;
     sel = null;
   });
@@ -962,6 +1099,129 @@ function setupTextureReplacer(wasm, discBytes) {
     editor.hidden = true;
     sel = null;
   });
+
+  function enqueue(spec) {
+    const existing = queue.findIndex((q) => texKey(q) === texKey(spec));
+    if (existing >= 0) queue[existing] = spec; else queue.push(spec);
+    renderQueue();
+  }
+
+  // --- Change packs ---------------------------------------------------------
+
+  // The pack is also the persistence format: one serializer, one parser, one
+  // set of coordinates. Anything that can be shared can be restored, and a
+  // restore runs the same verification a stranger's pack does.
+  function packJson() {
+    return wasm().then((mod) => mod.export_texture_pack(
+      queue.map((q) => ({
+        tier: q.tier, entry: q.entry, section: q.section, offset: q.offset,
+        png: q.png, quantize: q.quantize,
+        fnv1a: q.fnv1a, width: q.width, height: q.height, bpp: q.bpp, label: q.label,
+      })),
+      (packName && packName.value) || '',
+      (packAuthor && packAuthor.value) || '',
+      (packNote && packNote.value) || '',
+    ));
+  }
+
+  async function storeQueue() {
+    try {
+      if (!window.localStorage) return;
+      if (!queue.length) {
+        localStorage.removeItem(TEX_QUEUE_KEY);
+        return;
+      }
+      localStorage.setItem(TEX_QUEUE_KEY, await packJson());
+    } catch (e) {
+      // A full or disabled localStorage must never break the editor - the
+      // queue in memory is the real one.
+    }
+  }
+
+  // Offer, never auto-apply: a stored edit was authored against whatever disc
+  // was loaded last time, so it goes through the same verification an
+  // imported pack does.
+  function offerStoredQueue() {
+    let stored = null;
+    try {
+      stored = window.localStorage && localStorage.getItem(TEX_QUEUE_KEY);
+    } catch (e) { stored = null; }
+    if (!stored || queue.length) return;
+    setPackStatus('You have saved texture edits in this browser.');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rom-button rom-button-ghost';
+    b.textContent = 'Restore my saved edits';
+    b.addEventListener('click', () => { b.remove(); importPackText(stored); });
+    packReport.textContent = '';
+    packReport.appendChild(b);
+  }
+
+  if (packExportBtn) {
+    packExportBtn.addEventListener('click', async () => {
+      if (!queue.length) {
+        setPackStatus('Queue up at least one texture edit first.', 'err');
+        return;
+      }
+      try {
+        const json = await packJson();
+        const slug = ((packName && packName.value) || 'legaia-textures')
+          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'legaia-textures';
+        downloadBlob(new Blob([json], { type: 'application/json' }), `${slug}.pack.json`);
+        setPackStatus(`Exported ${queue.length} texture edit(s). The pack holds your images and a fingerprint of each original - no game pixels.`, 'ok');
+      } catch (e) {
+        setPackStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+      }
+    });
+  }
+
+  if (packImportInput) {
+    packImportInput.addEventListener('change', async () => {
+      const f = packImportInput.files && packImportInput.files[0];
+      packImportInput.value = '';
+      if (!f) return;
+      importPackText(await f.text());
+    });
+  }
+
+  async function importPackText(json) {
+    packReport.textContent = '';
+    try {
+      setPackStatus('Checking the pack against your disc ...');
+      const mod = await wasm();
+      const buf = await discBytes();
+      const r = mod.import_texture_pack(buf, json, packForceChk ? packForceChk.checked : false);
+      if (packName && r.name) packName.value = r.name;
+      if (packAuthor && r.author) packAuthor.value = r.author;
+      if (packNote && r.note) packNote.value = r.note;
+      let added = 0;
+      r.entries.forEach((e) => {
+        const row = document.createElement('div');
+        row.className = 'rom-tex-pack-row ' + (e.usable ? 'is-ok' : 'is-bad');
+        const where = document.createElement('code');
+        where.textContent = texDesc(e);
+        row.appendChild(where);
+        row.appendChild(document.createTextNode(
+          ` ${e.width}×${e.height}${e.label ? ', ' + e.label : ''} - ${e.detail}`));
+        packReport.appendChild(row);
+        if (!e.usable) return;
+        enqueue({
+          desc: `${texDesc(e)} (${e.width}×${e.height}${e.label ? ', ' + e.label : ''})`,
+          tier: e.tier, entry: e.entry, section: e.section, offset: e.offset,
+          width: e.width, height: e.height, bpp: e.bpp, label: e.label,
+          fnv1a: e.fnv1a, png: e.png, quantize: e.quantize,
+        });
+        added++;
+      });
+      const skipped = r.entries.length - added;
+      setPackStatus(
+        `${added} of ${r.entries.length} texture(s) queued` +
+        (skipped ? `; ${skipped} did not match this disc (see below).` : '.'),
+        skipped ? 'warn' : 'ok');
+    } catch (e) {
+      setPackStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+    }
+  }
 
   return {
     specs() {

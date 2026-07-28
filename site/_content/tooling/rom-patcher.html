@@ -558,18 +558,21 @@
       <summary>Texture replacement <span class="rom-summary-note">swap any texture for your own PNG</span></summary>
       <div class="rom-group-body">
         <p class="rom-art-intro">Replace any texture on the disc with your own image: scan your disc to browse every texture, download one as a PNG, edit it, and upload your edit.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Everything runs in this tab; the disc never leaves your browser.</span></span></p>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">The replacement must keep the texture's exact pixel size; its color count must fit the texture's palette (or check the fold-colors box); alpha becomes PSX transparency (fully transparent, semi-transparent, opaque). <strong>raw</strong> textures always apply; <strong>lzs</strong> ones live inside compressed data and apply only when your edit re-compresses into the original's footprint - the preview tells you before anything is written. Some families can be viewed and exported but not written, and say so when you select one. Everything runs in this tab; the disc never leaves your browser.</span></span></p>
         <div class="rom-row">
           <button type="button" id="rom-tex-scan" class="rom-button rom-button-ghost">Scan my disc for textures</button>
           <span id="rom-tex-scan-note" class="rom-hint"></span>
         </div>
         <div id="rom-tex-browser" hidden>
-          <input type="text" id="rom-tex-filter" placeholder="Filter: entry number, 256x256, 4bpp, raw / lzs, or a label like &quot;title&quot; ..." spellcheck="false" autocomplete="off">
+          <input type="text" id="rom-tex-filter" placeholder="Filter: entry number, scene name, 256x256, 4bpp, a family, or a label - or use a button below ..." spellcheck="false" autocomplete="off">
+          <div id="rom-tex-presets" class="rom-tex-presets"></div>
+          <div id="rom-tex-count" class="rom-hint"></div>
           <div id="rom-tex-grid" class="rom-tex-grid"></div>
           <button type="button" id="rom-tex-more" class="rom-button rom-button-ghost">Show more</button>
         </div>
         <div id="rom-tex-editor" class="rom-tex-editor" hidden>
           <div class="rom-tex-target" id="rom-tex-target-desc"></div>
+          <dl id="rom-tex-facts" class="rom-tex-facts"></dl>
           <div class="rom-row rom-tex-controls">
             <button type="button" id="rom-tex-export" class="rom-button rom-button-ghost">Download this texture as PNG</button>
             <label class="rom-tex-file">Your edited PNG <input type="file" id="rom-tex-png" accept=".png,image/png"></label>
@@ -589,6 +592,26 @@
           </div>
         </div>
         <div id="rom-tex-queue" class="rom-tex-queue"></div>
+        <div class="rom-tex-pack">
+          <h4>Change packs</h4>
+          <p class="rom-art-intro">Share your edits, or keep them. A pack is a single JSON file holding <em>your</em> images plus a fingerprint of each retail texture they replace - never any of the game's own pixels, so a pack is safe to publish. Importing one checks every entry against your disc and tells you which ones match.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Each entry records the texture's coordinates and a 64-bit hash of the original. On import, an entry whose hash does not match your disc is reported rather than applied - that happens on a different disc revision, or when you have already patched that texture. Your queue is also saved in this browser, so a reload does not lose it. Nothing is uploaded.</span></span></p>
+          <div class="rom-row rom-tex-pack-meta">
+            <label class="rom-tex-file">Pack name <input type="text" id="rom-tex-pack-name" placeholder="My retexture" spellcheck="false" autocomplete="off"></label>
+            <label class="rom-tex-file">Author <input type="text" id="rom-tex-pack-author" placeholder="you" spellcheck="false" autocomplete="off"></label>
+          </div>
+          <label class="rom-tex-file">Note <input type="text" id="rom-tex-pack-note" placeholder="what this pack changes" spellcheck="false" autocomplete="off"></label>
+          <div class="rom-row">
+            <button type="button" id="rom-tex-pack-export" class="rom-button rom-button-ghost">Export queue as a pack</button>
+            <label class="rom-tex-file">Import a pack <input type="file" id="rom-tex-pack-import" accept=".json,application/json"></label>
+          </div>
+          <label class="rom-check-row">
+            <input type="checkbox" id="rom-tex-pack-force">
+            <span>Import entries whose fingerprint does not match my disc (use when you have already patched that texture yourself)</span>
+          </label>
+          <div id="rom-tex-pack-status" class="rom-status"></div>
+          <div id="rom-tex-pack-report" class="rom-tex-pack-report"></div>
+        </div>
       </div>
     </details>
 
@@ -824,6 +847,24 @@
   .rom-tex-queue-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.4rem; font-family: var(--font-mono, monospace); font-size: 0.82em; color: var(--text-muted); }
   .rom-tex-queue-row .art-remove { margin-left: auto; }
   #rom-tex-more { margin: 0.2rem 0 0.4rem; }
+  .rom-tex-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.45rem 0 0.3rem; }
+  .rom-tex-preset { padding: 0.2rem 0.55rem; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.75em; color: var(--text-dim); }
+  .rom-tex-preset:hover { border-color: var(--border-hi); color: var(--text-muted); }
+  .rom-tex-preset.is-active { border-color: var(--accent); color: var(--text); }
+  .rom-tex-preset .rom-tex-preset-n { color: var(--text-dim); opacity: 0.75; margin-left: 0.3rem; }
+  .rom-tex-facts { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.7rem; margin: 0 0 0.6rem; font-size: 0.8em; }
+  .rom-tex-facts dt { color: var(--text-dim); }
+  .rom-tex-facts dd { margin: 0; color: var(--text-muted); font-family: var(--font-mono, monospace); }
+  .rom-tex-cell.is-readonly { border-style: dashed; }
+  .rom-tex-pack { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--border); }
+  .rom-tex-pack h4 { margin: 0 0 0.3rem; font-size: 0.95em; }
+  .rom-tex-pack-meta { gap: 0.8rem; }
+  .rom-tex-pack input[type="text"] { min-width: 11rem; }
+  .rom-tex-pack-report { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .rom-tex-pack-row { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-left-width: 3px; border-radius: 4px; font-size: 0.78em; color: var(--text-dim); }
+  .rom-tex-pack-row.is-ok { border-left-color: var(--ok, #4c8); }
+  .rom-tex-pack-row.is-bad { border-left-color: var(--err, #c55); }
+  .rom-tex-pack-row code { font-family: var(--font-mono, monospace); color: var(--text-muted); }
   .rom-art-advanced { margin-top: 0.6rem; border-top: 1px dashed var(--border); }
   .rom-art-advanced > summary { cursor: pointer; color: var(--text-dim); font-size: 0.88em; padding: 0.5rem 0; user-select: none; }
   .rom-art-advanced .rom-opt { border-top: none; padding-left: 0; padding-right: 0; }
