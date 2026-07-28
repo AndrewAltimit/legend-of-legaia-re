@@ -1,12 +1,17 @@
 # Inn Subsystem
 
 Covers the HP / MP restore flow used at in-game inns. Retail has **no inn
-overlay and no inn cost table**: each inn is an ordinary field-VM dialogue in
-its scene's MAN, and the price is a script literal (see *Retail cost source*
-below). The clean-room port (`engine-core::inn`) supplies the session state
-machine; the scene host scans the scripted cost from the MAN at load
-(`SceneHost::scene_inn_cost`) and `MenuRuntime::open_scene_inn` opens the
-prompt with it (`open_inn(cost)` is the direct entry for tests and tooling).
+overlay, no inn opcode and no inn cost table**: each inn is an ordinary
+field-VM interaction record in its scene's MAN, the price is a script literal
+(see *Retail cost source* below), and the whole stay - offer, choice, gate,
+debit, fade, restore - runs as one pass of that record through the field VM.
+The port executes it the same way, so the reachable in-game inn is the retail
+script, not an engine routine (see *The trigger* below).
+
+`engine-core::inn` additionally carries an engine-side `InnSession` prompt
+(`MenuRuntime::open_inn` / `open_scene_inn` over the scanned
+`SceneHost::scene_inn_cost`). That is a presentation the retail path does not
+use and no host reaches - see *Open items*.
 
 ## Retail cost source (field-VM script literals)
 
@@ -40,6 +45,69 @@ and a `0x3F` transition whose destination name is `DREAM@@` - the inn dream
 sequences. So cost prompt, gate, debit, restore, and dream hand-off are all
 one field-VM dialogue; no menu-overlay sub-screen is involved in retail.
 
+## The trigger: the picker's own jump table
+
+There is no "this dialogue is an inn" test anywhere - no opcode, no flag, no
+carrier table. The hand-off from the innkeeper's offer to the restore is the
+**option picker's per-option relative jump**, and the innkeeper's record is
+laid out so that the Yes entry points at the gate.
+
+The shape, read off `retock`'s innkeeper record (partition-1, the record
+containing the scene's one scanned charge):
+
+```text
+1F <greeting> 00  1F <price line> 00  1F <offer question> 00
+2A <rel16 yes> <rel16 no> 24        ; 2-option picker + post-page continue
+1F <"yes" label> 00  1F <"no" label> 00
+  ; yes-jump target:
+A2 F8 <clip>  AC F8 08  AD F8 08    ; play a player clip, clear its end
+                                    ;   latch, spin until it re-latches
+... 26 <rel16>                      ; -> the gate
+4E <pp> 30 <cost u16> <skip u16>    ; if gold < cost, skip to the refusal line
+3A <sext24(-cost)>                  ; take the money
+1F <thank-you> 00 1F <good night> 00
+35 / 34 / 4A / 36                   ; BGM release, fade, waits, cue
+4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot
+```
+
+The **no**-jump target runs its own clip beat and lands on the decline line;
+the gate's skip target lands on the can't-afford line. Both are inside the
+same record, so a stay never leaves the field VM.
+
+Two details of that layout are easy to get wrong, and each one alone is enough
+to make the inn unreachable in a port:
+
+- **The open byte is `0x2A`, not `0x27`.** `FUN_80038050` - the inline-script
+  control handler that applies the chosen option's jump - treats `0x27`,
+  `0x28`, `0x29` and `0x2A` identically (one `switch` arm, `new_pc = (O + 1 +
+  index*2) + i16_LE(entry[index])`). On the pager side `0x2A` selects state
+  `0x11` where `0x27` selects `0x13`, and the shared cursor handler at
+  `0x801D941C` reads the option count off the *active* state: `0x18` = 4,
+  `0x16` = 3, anything else = 2. So `0x2A` is a **2-option** menu that
+  animates the box geometry first, and its cursor does not wrap (the
+  `state == 0x12` carve-out at `0x801D9474` clamps at both ends instead). See
+  [`formats/mes.md`](../formats/mes.md#post-page-dispatch-state-0x19).
+- **`AD F8 08` is a spin, not an end.** `0x2D` tests a bit of the clip-control
+  word `actor+0x62`, and bit 8 (`0x0100`) is the "end" flag the actor tick
+  `FUN_800204F8` latches when a clip cursor reaches an end - so the
+  `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` triple is "play it, clear the
+  latch, wait for it". Retail's dialog SM `FUN_80039B7C` returns and re-enters
+  per frame until the latch lands. A runner that treats the halt as the end of
+  the conversation stops one instruction into the Yes branch, before the gate.
+
+Engine port of the whole path: `World::trigger_field_interact` →
+`World::drive_inline_dialogue` → `World::step_inline_dialogue`
+([`crate::inline_dialogue`](../../crates/engine-core/src/inline_dialogue.rs)) →
+`legaia_engine_vm::field::step`. The runner parks on the clip-end spin and
+latches the tested bit once the cued player clip finishes (the port's stand-in
+for the anim tick's write, since the record's context is not bound to the poked
+actor); the gate reads the live purse through `FieldHost::party_bank_value`,
+the debit is the record's own `ADD_MONEY`, and the restore is its own
+`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Disc-gated
+oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the
+real record from the interact call and asserts the gold delta and the pools on
+the Yes, No and can't-afford branches.
+
 The shared scanner is [`legaia_asset::inn_costs`]: a byte scan (robust to the
 dialogue-picker jump tables that desync a linear walk) for a gold compare
 whose literal reappears as the magnitude of a negative `ADD_MONEY` within a
@@ -52,10 +120,11 @@ casino gold-to-coin counters (`koin*`; `koin4` carries the only sub-10 u32
 sites, 8,500..90,000 G). Free rests (Rim Elm's bed, Biron) simply have no
 gate + debit pair in their scripts.
 
-## Flow overview
+## Flow overview (the engine-side `InnSession` prompt)
 
-The engine port models the prompt as a menu session (retail runs it as plain
-field-VM dialogue - see above). The port handles:
+This section describes the port's **alternative** presentation - a menu
+session with its own cost window - which nothing on the reachable path opens
+(see *Open items*). The in-game stay is the field-VM record above.
 
 | Phase | Sub-screen | Description |
 |---|---|---|
@@ -107,12 +176,28 @@ installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
   scanned cost - `open_inn(cost)` stays as the direct test / tooling entry.
   Disc-gated oracle: `crates/engine-core/tests/inn_cost_scene_disc.rs`
   (`retock`'s 240 G stay resolves; free-rest `town01` opens nothing).
-- **Render layout + trigger.** Retail renders the prompt as ordinary field
-  dialogue (MES text + option picker), not a dedicated cost window; the port's
-  `InnConfirm` panel is an engine-side presentation choice, and the innkeeper
-  dialogue does not yet hand off into it automatically (hosts call
-  `open_scene_inn` themselves). The scripted restore (`0x4C` records) and the
-  `DREAM@@` hand-off are not yet mirrored.
+- **Trigger - RESOLVED, wired.** The stay runs as the innkeeper's own field-VM
+  record, reached by walking up and talking (*The trigger* above), and the
+  charge and restore are the record's own ops. The port had the ops and the
+  cost scan but not the path: the `0x2A` menu open byte decoded as nothing, the
+  gold gate read an empty purse because `FieldHost::party_bank_value` had no
+  engine implementation, and the clip-end spin ended the conversation one
+  instruction into the Yes branch. All three are closed and pinned by
+  `inn_stay_field_vm_disc`.
+- **`InnSession` has no production caller - disclosed, not wired.**
+  `MenuRuntime::open_inn` / `open_scene_inn` and the `InnConfirm` / `InnSleep`
+  sub-screens are an engine-side prompt with its own cost window and its own
+  commit kernel. Retail has no such screen and the reachable path does not pass
+  through one, so wiring a host into it would *replace* faithful innkeeper
+  dialogue with an invented panel rather than fill a gap. It stays as the
+  direct entry for tests and tooling; the native window's `InnConfirm` /
+  `InnSleep` draws are reachable only from there, and the browser play page
+  deliberately mirrors that by not drawing them either. Deleting it is a
+  legitimate future call; inventing a caller for it is not.
+- **The `DREAM` hand-off is not mirrored.** Some inns append a story-flag-gated
+  tail that warps to a `DREAM` scene after the restore. The restore runs first
+  and unconditionally, so a stay is complete without it, but the dream scenes
+  themselves are not yet reached.
 
 ## Relationship to `legaia_save`
 

@@ -283,6 +283,30 @@ The three banks line up with conventional event-script roles:
 - **`_DAT_1F800394`** - global story flags (persistent across script runs; PSX scratchpad means cheap to access).
 - **`ctx[+0x10]`** - script context flags (halt state, move-chain state, render-gate state).
 
+**`0x2D` is a spin, not an end.** `ctx[+0x62]` is also the **clip-control
+word** the actor tick `FUN_800204F8` reads (hold / clamp / reverse / end /
+restart - the bit table is in
+[`field-locomotion.md`](field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip)),
+and bit `8` (`0x0100`) is the "end" flag that tick *latches* when a clip cursor
+reaches an end. So the recurring triple
+
+```text
+A2 <target> <clip>   ; SET_ANIM on the target actor
+AC <target> 08       ; clear the end latch
+AD <target> 08       ; spin here until the tick sets it again
+```
+
+is "play it, and wait for it". The dispatcher returns at that PC every frame
+and the caller re-enters (`FUN_80039B7C` for a dialog record,
+`FUN_80021DF4`'s list walk for a live actor) until the latch lands - the
+return is a yield, and a host that reads it as "this script is finished"
+truncates every scripted gesture beat at its first wait. Doors and cupboards
+reach the latch through the prop's own `PropAnim` tick; an NPC conversation
+poking the **player** channel (`0xF8`) needs the player's clip player to be
+the one that latches (`engine-core::inline_dialogue`, and see
+[`inn.md`](inn.md#the-trigger-the-pickers-own-jump-table) for the flow this
+gates).
+
 ### 0x34-0x36 (effects, music, scene transitions)
 
 These are sub-dispatchers - the operand byte selects a sub-command.
