@@ -123,13 +123,31 @@ fn battle_complete_propagates_through_world() {
         world.actors[i].battle.liveness = 0;
     }
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-    let mut last = None;
+    // Read the raised cause off the bare SM step first - `World::tick`
+    // resolves the battle in the same frame it completes, which consumes
+    // `battle_end` (see `finish_battle`).
+    assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
+    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+
+    // And through `tick`: the same wipe must reach a terminal state rather
+    // than sitting in `SceneMode::Battle` forever.
+    let mut world = build_world();
+    for i in 0..3 {
+        world.actors[i].battle.liveness = 0;
+    }
+    world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+    let mut completed = false;
     for _ in 0..100 {
-        let outcome = world.tick();
-        if matches!(outcome, Some(StepOutcome::BattleComplete)) {
-            last = world.battle_end;
+        if matches!(world.tick(), Some(StepOutcome::BattleComplete)) {
+            completed = true;
             break;
         }
     }
-    assert_eq!(last, Some(BattleEndCause::PartyWipe));
+    assert!(completed, "the SM must report BattleComplete through tick");
+    assert!(world.game_over, "a party wipe raises game over");
+    assert_ne!(
+        world.mode,
+        SceneMode::Battle,
+        "battle mode is left on resolve"
+    );
 }

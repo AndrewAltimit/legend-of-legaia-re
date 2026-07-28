@@ -26,6 +26,77 @@ pub fn encounter_banner_draws_for(
     out
 }
 
+/// Plain-data projection of `legaia_engine_core::world::BattleRewards` for
+/// [`battle_spoils_draws_for`]. The shell builds one of these after a victory;
+/// this crate stays free of an engine-core dependency.
+pub struct BattleSpoilsView<'a> {
+    pub xp: u32,
+    pub gold: u32,
+    /// One line per character that crossed a level threshold, already
+    /// formatted by the shell (it owns the name table).
+    pub level_ups: &'a [String],
+    /// Item names the loot roll surfaced, resolved by the shell against the
+    /// item catalog.
+    pub drops: &'a [String],
+}
+
+/// Row pitch of the post-battle spoils panel.
+pub const SPOILS_LINE_H: i32 = 14;
+
+/// Build [`TextDraw`]s for the post-battle spoils panel: the XP / gold the
+/// victory credited, then a line per drop and per level-up.
+///
+/// The panel is an **engine presentation**, not a traced retail window.
+/// Retail's victory report is drawn by the battle-result overlay, which is
+/// not in the dumped corpus; what *is* pinned is the arithmetic behind every
+/// number here (`World::apply_battle_loot` / `apply_battle_xp` and
+/// `docs/subsystems/level-up.md`). Until the retail window is traced this
+/// surfaces the same values in the port's own chrome - the alternative,
+/// which is what shipped before, is applying XP, gold and drops with no
+/// on-screen acknowledgement at all.
+pub fn battle_spoils_draws_for(
+    font: &legaia_font::Font,
+    view: &BattleSpoilsView<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let gold_ink: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let green: [f32; 4] = [0.5, 1.0, 0.6, 1.0];
+
+    let mut out = Vec::new();
+    let mut y = pen.1;
+    out.extend(text_draws_for(
+        &font.layout_ascii("VICTORY"),
+        (pen.0, y),
+        gold_ink,
+    ));
+    y += SPOILS_LINE_H;
+    out.extend(text_draws_for(
+        &font.layout_ascii(&format!("{} EXP", view.xp)),
+        (pen.0, y),
+        white,
+    ));
+    y += SPOILS_LINE_H;
+    out.extend(text_draws_for(
+        &font.layout_ascii(&format!("{} Gold", view.gold)),
+        (pen.0, y),
+        white,
+    ));
+    for drop in view.drops {
+        y += SPOILS_LINE_H;
+        out.extend(text_draws_for(
+            &font.layout_ascii(&format!("Got {drop}")),
+            (pen.0, y),
+            white,
+        ));
+    }
+    for line in view.level_ups {
+        y += SPOILS_LINE_H;
+        out.extend(text_draws_for(&font.layout_ascii(line), (pen.0, y), green));
+    }
+    out
+}
+
 /// Plain-data row for the field-menu draw. Engines build these from
 /// `engine_core::field_menu::FieldMenuView::rows` so this crate doesn't
 /// depend on engine-core.

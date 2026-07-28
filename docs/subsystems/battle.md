@@ -275,7 +275,7 @@ early), which is the port of retail returning before it reads the flow state
 while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
 rewind exit discards the action and reopens the command menu. Hosts arm the
 machine with `World::prime_battle_tutorial`, the stand-in for retail's stage-id
-dispatch; `legaia-engine play-window --player-battle` primes it in `town01`
+dispatch; `legaia-engine play-window` primes it in `town01`
 (`LEGAIA_BATTLE_TUTORIAL=1`/`0` forces it either way for hand-testing).
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
@@ -677,9 +677,13 @@ wipe captures close the register-indirect remainder: a real party wipe
 routes through the CARD gate above and mode 18 never fires. That 0902
 exits to mode 0 - the **debug menu** - fits the same reading: the 18/19
 pair is a dev harness around dev art. Relatedly, retail's game over is
-**not a menu**: 0902's only readable string is `GAME OVER`, and the
-port's three-row `engine-core::game_over::GameOverSession` is an
-**engine invention**, deliberately left unreachable.
+**not a menu**: 0902's only readable string is `GAME OVER`, so the port's
+three-row `engine-core::game_over::GameOverSession` is an **engine
+invention** - and it is what both hosts now show on a wipe, because the
+alternative in place while retail's destination stayed unpinned was a
+`World::game_over` flag nothing read, i.e. losing a fight returned the
+player to the field as if they had won. The retail question is still open;
+what is settled is that the port does not pretend a wipe did not happen.
 
 Mode numbers are decimal in these docs and hex in the dumps, which is a
 standing trap here: `_DAT_8007B83C = 0x18` is mode **24** (OTHER /
@@ -916,8 +920,8 @@ overlap, so up to five monster slots coexist in one VRAM.
 `World::battle_monster_slots()` reports the active enemies as
 `(actor_index, monster_id, battle_slot)`; the engine itself never loads the
 archive, so the host resolves each id to a `MonsterMesh`, injects it, and binds
-the relocated mesh to the actor. `play-window --live-loop` / `--player-battle`
-does this on each `Field → Battle` transition (against a throwaway clone of the
+the relocated mesh to the actor. `play-window` does this on each
+`Field → Battle` transition (against a throwaway clone of the
 field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
 
 ### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
@@ -1998,12 +2002,40 @@ Capturing a monster (magic capture roll or a capture item) downs it and logs its
 - Capture-point progress (including sub-threshold totals) persists through `World::save_full` / `load_full` as `(seru_id, points)` pairs in each `CharSaveExt::seru_captures`; reload restores the points and, with the registry installed, re-marks any over-threshold Seru as learned.
 - The `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are clean-room approximations (`SeruRegistry::vanilla`); pinning the real per-monster Seru attachments and capture arithmetic is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
 
-The `legaia-engine play-window` host exposes both as flags:
+### What the loop flag does and does not gate
 
-- `--live-loop` walks-and-fights through the round trip.
-- `--player-battle` (which implies `--live-loop`) makes battles player-driven and renders the party/monster HP plus the live command menu / target cursor / arts + spell + item submenus in the HUD (it installs the vanilla spell + item catalogs and, when the boot save has none, seeds a couple of demo saved chains plus a few demo items - Healing Leaf + Bomb - so the ally-heal and offensive item paths are both exercisable).
-- `--battle-bgm <id>` enables the Battle↔Field music swap: the live loop cross-fades to `<id>` on encounter and resumes the field track on battle end (the id is routed through the same director as field op-`0x35` starts, so it must resolve in the current scene's BGM table - the live loop doesn't load a separate battle audio bundle).
-- Without a flag, play-window keeps the legacy "explore but never fight" behaviour.
+`World::live_gameplay_loop` gates the **field side only** - the step-driven random-encounter roll. Once the world is in `SceneMode::Battle`, `World::tick` always drives the full `World::live_battle_tick`, regardless of the flag, because a battle that cannot resolve is a soft-lock. Retail has no "loop enabled" concept either: `FUN_801E295C` drives the battle it is in.
+
+That asymmetry is not cosmetic. Battle **entry** was never gated - a field carrier's scripted `3E FF` fight and a world-map region encounter both flip the mode on their own - so gating battle **driving** left the ungated entry paths able to strand a session in `SceneMode::Battle` with no damage applied, no turn armed and no `finish_battle`. Regression: `crates/engine-core/tests/battle_always_resolves.rs`.
+
+### Host-simulated animation edges
+
+Two action-SM gates are driven in retail by the render / animation systems and by nothing in the port, so `World::live_battle_tick` retires each on the frame its state is reached:
+
+- `ADVANCE_DONE` at `AttackRecovery` - retail clears it when the recovery animation finishes.
+- The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only ever *sets* this byte; retail's cast-animation system counts it down. Without the edge, `magic_sustain`'s `stay` held forever, so **any battle in which a monster or party member cast a spell stopped dead** - which is most real encounters, and is a large part of what "battles don't work" looked like from the outside. Regression: `a_spell_cast_does_not_park_the_action_sm` in `crates/engine-core/tests/battle_always_resolves.rs`; the real-data version is `crates/engine-shell/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table through to a resolved battle.
+
+Both hosts arm the loop through one shared kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` and the browser's `LegaiaRuntime::arm_live_battles` are callers of it, not copies of it.
+
+### Host flags
+
+The `legaia-engine play-window` host ships the loop **on**, matching the browser play page and the project's enhancement-forward default; retail-shaped inspection is one flag away:
+
+- `--no-live-loop` turns the encounter roll off (field VM + locomotion only - the scene-inspection mode). A battle the engine is already in still resolves.
+- `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the vanilla spell + item catalogs and, when the boot save has none, seeds a couple of demo saved chains plus a few demo items - Healing Leaf + Bomb - so the ally-heal and offensive item paths are both exercisable).
+- `--battle-bgm <id>` enables the Battle↔Field music swap: the live loop cross-fades to `<id>` on encounter and resumes the field track on battle end (the id is routed through the same director as field op-`0x35` starts, so it must resolve in the current scene's BGM table - the live loop doesn't load a separate battle audio bundle). The browser twin is `LegaiaRuntime::set_battle_bgm`.
+
+### Battle end, both hosts
+
+`World::finish_battle` is what a resolved battle runs, and three of its results are now read:
+
+- **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
+- **A wipe raises `World::game_over`**, which both hosts read: native pushes `BootUiState::GameOver`, the browser draws the same `game_over_draws_for` panel. The panel's Continue / Retry / Quit rows remain an **engine invention** - retail's destination on a wipe is still unpinned (see § party wipe) - and Retry runs `World::revive_party_full`, because a wiped party dropped back into the field would now simply re-wipe.
+- **A victory arms the spoils panel** (`World::battle_spoils_banner`, `World::SPOILS_BANNER_FRAMES`), drawn by the shared `engine-ui` builder `battle_spoils_draws_for` on both hosts. The XP / gold / drops were always applied; nothing showed them.
+
+### Scenes that cannot roll
+
+`World::scene_can_roll_encounters` (cached as `World::scene_encounters_rollable`) answers whether the installed scene can produce a random encounter at all. Region lookup stops at the **first** containing region (`RegionEncounterTable::region_at_tile`, matching retail's walk), so a rollable region whose every tile is covered by an earlier rate-0 row is unreachable - which is the case for `town01`, the scene the binary boots into. That is retail scene data and the port keeps it; both hosts surface a hint line instead, so a town's designed silence does not read as a broken engine.
 
 The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The damage path for art-driven strikes flows through `apply_art_strike` → `fold_battle_event` in the SM-driven `battle_session` runner, and the player-driven Arts submenu reuses the same `apply_art_strike` kernel directly. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
 

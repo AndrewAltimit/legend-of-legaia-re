@@ -1437,6 +1437,22 @@
               break;
             }
           }
+          /* Party wipe: the engine raises game over and the overlay draws the
+           * panel; a confirm press stands the party back up and returns to
+           * the field. Retail's destination on a wipe is unpinned, so the
+           * panel is an engine presentation - see docs/subsystems/battle.md.
+           * Handled before the pad is fed in so the same press does not also
+           * walk the player. */
+          if (typeof rt.is_game_over === 'function' && rt.is_game_over()) {
+            const confirmed = this.pulse.has('KeyZ') || this.pulse.has('Enter')
+              || this.pulse.has('Space');
+            this.pulse.clear();
+            this._repack();
+            if (confirmed && typeof rt.game_over_retry === 'function') {
+              try { rt.game_over_retry(); } catch (e) {}
+            }
+            break;
+          }
           /* VR first-person owns the azimuth (the gaze) and merges its stick
            * pad word over the keyboard's; otherwise the follow camera rules. */
           const lockedPad = this._cut && this._cut.locked;

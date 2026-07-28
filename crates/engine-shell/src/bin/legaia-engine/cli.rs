@@ -794,20 +794,23 @@ pub(crate) enum Cmd {
         /// etc. style cheats).
         #[arg(long, default_value_t = false)]
         cheat_strict: bool,
-        /// Enable the live gameplay loop: walking a field scene rolls
-        /// step-driven random encounters, transitions Field -> Battle,
+        /// Turn OFF the live gameplay loop: the scene then runs the field
+        /// VM + locomotion only and never rolls a random encounter (the
+        /// old "explore but never fight" mode, useful for scene / asset
+        /// inspection). The loop is on by default - walking a field scene
+        /// rolls step-driven encounters, transitions Field -> Battle,
         /// resolves the battle, and returns to the field with loot on
-        /// victory. Without this the scene only runs the field VM +
-        /// locomotion (the legacy "explore but never fight" behaviour).
+        /// victory. NB a battle the engine is *in* is always driven to
+        /// resolution; this flag only gates the encounter roll.
         #[arg(long, default_value_t = false)]
-        live_loop: bool,
-        /// Make battles player-driven (implies `--live-loop`): each party
-        /// turn opens a battle command menu - select Attack (Up/Down) and a
-        /// target (Left/Right), confirm with Cross - before the strike
-        /// commits, instead of the loop auto-attacking. v0.1 enables only
-        /// the Attack command.
+        no_live_loop: bool,
+        /// Turn OFF player-driven battles: each party turn then
+        /// auto-attacks the first living monster instead of opening the
+        /// battle command menu (Up/Down picks a command, Left/Right a
+        /// target, Cross confirms). Player-driven is the default, matching
+        /// the browser play page.
         #[arg(long, default_value_t = false)]
-        player_battle: bool,
+        no_player_battle: bool,
         /// Present-party composition: comma-separated character names
         /// (vahn/noa/gala/terra) or 0-based roster indices, in battle
         /// order - e.g. `--party noa,terra`. Battle ordinal i renders in

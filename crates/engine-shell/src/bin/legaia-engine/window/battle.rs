@@ -10,15 +10,15 @@ use super::*;
 pub(super) use legaia_engine_core::battle_hud::{encounter_banner_label, sync_battle_hud_rows};
 
 impl PlayWindowApp {
-    /// Drain world battle events, fold each into HP / status state, and
-    /// append a one-line summary to the HUD ring. Called once per simulation
-    /// tick from the redraw handler.
+    /// Drain world battle events and append a one-line summary to the HUD
+    /// ring. Called once per simulation tick from the redraw handler.
+    ///
+    /// **Observation only - do not fold here.** `World::live_battle_tick`
+    /// owns the gameplay fold and re-publishes the stream afterwards, so a
+    /// second `fold_battle_event` would apply an art strike's HP twice.
     pub(super) fn drain_and_log_battle_events(&mut self) {
         let events = self.session.host.world.drain_battle_events();
         for ev in events {
-            // Apply the gameplay-state side (currently only `ApplyArtStrike`
-            // mutates HP / status; other events are visual-only here).
-            self.session.host.world.fold_battle_event(&ev);
             // Surface in the HUD ring.
             if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
                 self.battle_event_log.pop_front();
@@ -1360,6 +1360,50 @@ impl PlayWindowApp {
                 Err(e) => log::error!("play-window: battle VRAM re-upload (heal): {e:#}"),
             }
         }
+    }
+}
+
+impl PlayWindowApp {
+    /// Post-battle spoils panel draws, or empty when the panel is not up.
+    ///
+    /// Reads [`legaia_engine_core::world::World::battle_spoils_banner`] (the
+    /// timer + the name resolution both live in engine-core) and feeds the
+    /// shared `engine-ui` builder, so the browser play page draws the exact
+    /// same panel from the exact same model.
+    pub(super) fn battle_spoils_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
+        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
+            return Vec::new();
+        };
+        let view = legaia_engine_render::BattleSpoilsView {
+            xp: banner.xp,
+            gold: banner.gold,
+            level_ups: &banner.level_ups,
+            drops: &banner.drops,
+        };
+        let pen = (surface_w as i32 / 2 - 60, surface_h as i32 / 3);
+        legaia_engine_render::battle_spoils_draws_for(&self.font, &view, pen)
+    }
+
+    /// One dim HUD line while the live loop is armed on a scene that cannot
+    /// roll a random encounter.
+    ///
+    /// Several retail scenes - `town01`, the scene the binary boots into,
+    /// among them - have every rollable encounter region shadowed by an
+    /// earlier rate-0 row, so walking them forever produces nothing. That is
+    /// scene data the port keeps faithfully; without a hint it reads as the
+    /// engine being broken, which is exactly how it was reported.
+    pub(super) fn encounter_hint_draws(&self, _w: u32, surface_h: u32) -> Vec<TextDraw> {
+        if !self.session.host.world.show_encounter_hint() {
+            return Vec::new();
+        }
+        let dim = [0.7f32, 0.7, 0.7, 1.0];
+        text_draws_for(
+            &self
+                .font
+                .layout_ascii("no random encounters in this scene (retail)"),
+            (8, surface_h as i32 - 20),
+            dim,
+        )
     }
 }
 

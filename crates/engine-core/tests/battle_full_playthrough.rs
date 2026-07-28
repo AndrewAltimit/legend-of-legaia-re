@@ -190,13 +190,29 @@ fn battle_party_wipe_resolves_to_party_wipe_cause() {
     }
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
 
+    // The cause byte, read at the step that raises it.
+    assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
+    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+
+    // And the same wipe through `tick`, which resolves the battle in the
+    // frame it completes (consuming `battle_end` and latching `game_over`) -
+    // a battle the engine entered must always reach a terminal state.
+    let mut world = build_world();
+    for i in 0..3 {
+        world.actors[i].battle.liveness = 0;
+        world.actors[i].battle.hp = 0;
+    }
+    world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+    let mut completed = false;
     for _ in 0..2_000 {
         let outcome = world.tick();
         if matches!(outcome, Some(StepOutcome::BattleComplete)) {
+            completed = true;
             break;
         }
     }
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert!(completed, "the wipe must resolve into BattleComplete");
+    assert!(world.game_over, "a party wipe raises game over");
 }
 
 /// Drain helper: every battle event variant the SM can emit should pass

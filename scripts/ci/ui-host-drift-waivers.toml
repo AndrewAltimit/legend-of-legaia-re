@@ -39,33 +39,15 @@
 # in `engine-render/src/tests/`. The `DialogBoxLayout` / `DialogGlyphView` /
 # `dialog_clut_color` support types went with them.
 
-[[waiver]]
-builder = "game_over_draws_for"
-kind = "web_missing"
-reason = """
-Unreachable on BOTH hosts, and deliberately so - so read the `web_missing`
-bucket as an artifact of the instrument, not a claim: the checker classifies on
-whether a host's source *names* the builder, and the native window names it in
-a `match` arm over a variant nothing constructs. Referenced is not reached, and
-no textual gate can tell them apart.
-
-The native window declares `BootUiState::GameOver` but never constructs it
-(`window/boot_cutscene.rs` matches it at two sites; no `BootUiState::GameOver(`
-constructor exists outside tests), because retail's trigger is
-not pinned: the action-SM `0x5A` gate detects the wipe, but the battle-exit
-selector never reads the wipe cause, and no static mode-0x12 writer exists on
-the disc (see docs/subsystems/battle.md § party wipe). Worse, retail's game
-over is not a menu at all - PROT 0902 carries one string and one unconditional
-exit - so this builder's Continue/Retry/Quit rows are an engine invention.
-Wiring either host would commit the port to behaviour nobody has observed.
-Close it with a runtime probe, not by picking a trigger.
-
-Both hosts now run live battles (the browser via `play_battle.rs`), so the
-wipe path is exercised on both: `World::finish_battle` raises the
-`World::game_over` flag on `BattleEndCause::PartyWipe` and returns to the
-field, and both hosts leave that flag unconsumed - deliberately, and
-symmetrically, for the reason above. The gap is host-identical, not drift.
-"""
+# `game_over_draws_for` was waived here as unreachable on both hosts,
+# because retail's party-wipe destination is unpinned and this panel's
+# Continue / Retry / Quit rows are an engine invention. The waiver is
+# removed: both hosts now construct the panel off `World::game_over`
+# (native `BootUiState::GameOver` from the redraw loop, the browser from
+# `post_battle_overlay_draws`), which is a presentation the port owns. The
+# retail question the waiver raised is still open and still recorded in
+# `docs/subsystems/battle.md` - what changed is that a wiped party is no
+# longer a silent no-op that hands the player back a full-HP field.
 
 [[waiver]]
 builder = "key_rebind_draws_for"

@@ -1,23 +1,31 @@
 //! Game-over screen.
 //!
-//! **This screen is an engine invention, and it is currently unreachable
-//! on purpose.** Retail's game over is not a menu: the content lives in
-//! PROT 0902, whose only readable string is `GAME OVER` and whose single
-//! unconditional exit writes `game_mode = 0`. There is no Continue /
-//! Retry / Quit vocabulary anywhere in it, and one exit store cannot
-//! express three outcomes - so the rows below are ours, not the game's.
+//! **This screen is an engine invention.** Retail's game over is not a
+//! menu: the content lives in PROT 0902, whose only readable string is
+//! `GAME OVER` and whose single unconditional exit writes `game_mode = 0`.
+//! There is no Continue / Retry / Quit vocabulary anywhere in it, and one
+//! exit store cannot express three outcomes - so the rows below are ours,
+//! not the game's.
 //!
-//! The trigger is unpinned too. The battle action SM's `0x5A` gate does
-//! detect a party wipe (`DAT_8007BD71 = 0xFE`, cause `_DAT_8007BD2C = 5`),
-//! but the battle-exit mode selector never reads that cause, and no
-//! static writer of the game-over mode exists anywhere on the disc. Until
-//! a runtime probe settles where retail actually goes on a wipe, nothing
-//! constructs [`GameOverSession`] outside tests - wiring it would commit
-//! the port to behaviour nobody has observed. See
-//! `docs/subsystems/battle.md` § party wipe + the game-over overlay.
+//! Retail's **trigger** is unpinned too. The battle action SM's `0x5A`
+//! gate does detect a party wipe (`DAT_8007BD71 = 0xFE`, cause
+//! `_DAT_8007BD2C = 5`), but the battle-exit mode selector never reads that
+//! cause, and no static writer of the game-over mode exists anywhere on the
+//! disc. See `docs/subsystems/battle.md` § party wipe + the game-over
+//! overlay; closing that question needs a runtime probe.
 //!
-//! Nominally: the player is offered Continue (drop into save-select),
-//! Retry (re-roll the same encounter), or Quit (return to title).
+//! What the port does in the meantime is show this panel. Both hosts
+//! construct a [`GameOverSession`] off [`crate::world::World::game_over`]
+//! (native `BootUiState::GameOver`, the browser's post-battle overlay).
+//! The alternative shipped for a long time and was worse: a wipe raised a
+//! flag nothing read, so losing every fight silently returned the player to
+//! the field - and, once post-battle HP started persisting, returned them
+//! there with a dead party. An owned presentation over an observed retail
+//! one is the trade being made here, and it is confined to this module.
+//!
+//! The rows: Continue drops into save-select, Retry stands the party back
+//! up ([`crate::world::World::revive_party_full`]) and returns to the
+//! scene, Quit returns to the title.
 //!
 //! Renderer-agnostic state machine. Engines drive [`GameOverSession::tick`]
 //! each frame and react to the [`GameOverEvent`] stream.

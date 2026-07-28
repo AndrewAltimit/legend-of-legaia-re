@@ -18,3 +18,5 @@ mod stats;
 mod teardown;
 mod tutorial;
 mod validator_host;
+
+pub use teardown::BattleSpoilsBanner;

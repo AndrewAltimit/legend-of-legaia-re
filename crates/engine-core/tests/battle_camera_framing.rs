@@ -39,16 +39,29 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
     world.battle_ctx.queued_action = 3; // Attack
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
 
-    let mut saw_event = false;
+    // Read the height off the FIRST framing event - the one this attacker's
+    // action seed raised. `World::tick` drives the whole battle, so later
+    // turns seed their own (size-class-less) targets and re-frame the camera
+    // back down to the floor; the last value on the world is a property of
+    // whoever acted last, not of the chain under test.
+    let mut framed = None;
     for _ in 0..500 {
         let _ = world.tick();
         for ev in world.drain_battle_events() {
-            if matches!(ev, BattleEvent::CameraFrameHeight { .. }) {
-                saw_event = true;
+            if let BattleEvent::CameraFrameHeight { height } = ev
+                && framed.is_none()
+            {
+                framed = Some(height);
+                // The event and the world field are written together by the
+                // host hook, so they must agree at this instant.
+                assert_eq!(height, world.battle_camera_frame_height);
             }
         }
     }
-    (world.battle_camera_frame_height, saw_event)
+    (
+        framed.unwrap_or(world.battle_camera_frame_height),
+        framed.is_some(),
+    )
 }
 
 /// A bulky monster pulls the camera back; the framing must reach the world

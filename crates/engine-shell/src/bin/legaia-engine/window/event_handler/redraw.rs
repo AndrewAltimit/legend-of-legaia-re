@@ -46,6 +46,27 @@ impl PlayWindowApp {
             if let Some(pad) = scripted_pad {
                 self.pad = pad;
             }
+            // Party wipe: the world raises `game_over` when a battle
+            // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
+            // push the game-over panel, which owns the frame from here (the
+            // arm below skips the scene tick while any boot UI is active).
+            // Before this the flag had no reader at all, so losing every
+            // fight silently dropped the player back into the field.
+            if self.session.host.world.game_over && !self.boot_ui.is_active() {
+                self.session.host.world.game_over = false;
+                let has_saves = scan_save_dir(&self.save_dir).iter().any(|s| {
+                    matches!(
+                        s.content,
+                        legaia_engine_core::save_select::SlotContent::LegaiaSave
+                    )
+                });
+                self.boot_ui = BootUiState::GameOver(if has_saves {
+                    legaia_engine_core::game_over::GameOverSession::new()
+                } else {
+                    legaia_engine_core::game_over::GameOverSession::with_no_save()
+                });
+                log::info!("play-window: party wipe -> game over");
+            }
             // When the boot UI is active, route input there and skip
             // the scene tick - the player hasn't entered the world
             // yet (or has paused into save-select).
@@ -1316,7 +1337,16 @@ impl PlayWindowApp {
                     }
                 }
             }
-            let hud = self.build_hud(w, h);
+            let mut hud = self.build_hud(w, h);
+            // Post-battle spoils panel. The XP / gold / drops a victory
+            // credits used to land with no on-screen acknowledgement at all
+            // (`World::last_battle_rewards` had no reader outside its own
+            // declaration); this is the shared `engine-ui` builder both hosts
+            // draw. Suppressed while a boot-UI panel owns the frame.
+            if !self.boot_ui.is_active() {
+                hud.extend(self.battle_spoils_draws(w, h));
+                hud.extend(self.encounter_hint_draws(w, h));
+            }
             let overlay = TextOverlay { atlas, draws: &hud };
 
             // Boot-phase sprite overlay: alternates between the

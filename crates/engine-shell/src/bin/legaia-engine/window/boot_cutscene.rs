@@ -382,7 +382,14 @@ impl PlayWindowApp {
                                 GameOverOutcome::Quit => BootUiState::Title(
                                     legaia_engine_core::title::TitleSession::new(),
                                 ),
-                                _ => BootUiState::Inactive,
+                                _ => {
+                                    // Post-battle HP now survives the fight,
+                                    // so a wiped party dropped back into the
+                                    // field would re-wipe on the next
+                                    // encounter. Stand it back up first.
+                                    self.session.host.world.revive_party_full();
+                                    BootUiState::Inactive
+                                }
                             };
                         }
                     }

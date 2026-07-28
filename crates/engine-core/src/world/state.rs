@@ -1651,18 +1651,22 @@ pub struct World {
     pub pending_move_fx_cue: Option<u8>,
 
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
-    /// Master opt-in for the in-`tick` Field <-> Battle round trip.
+    /// Master opt-in for the **field side** of the in-`tick` Field <-> Battle
+    /// round trip: the step-driven random-encounter roll.
     ///
-    /// When `false` (the default) [`World::tick`] keeps its historical
-    /// behaviour: the Field branch runs the field VM + locomotion but never
-    /// rolls encounters, and the Battle branch runs a single
-    /// [`World::step_battle`] without applying damage or re-arming the SM
-    /// (engines / tests drive those externally). When `true`, [`World::tick`]
-    /// drives the whole loop itself - step-driven encounter roll, automatic
-    /// `Field -> Battle` transition resolving a real formation, an in-engine
-    /// physical-attack battle resolver, and the `Battle -> Field` return with
-    /// loot applied. Hosts that want a playable slice (`legaia-engine
-    /// play-window`, the v0.1 playthrough oracle) set this once after boot.
+    /// When `false` the Field branch of [`World::tick`] runs the field VM +
+    /// locomotion but never rolls an encounter. When `true` it also drives
+    /// [`World::live_field_tick`] - per-step roll, transition countdown, and
+    /// the automatic `Field -> Battle` flip resolving a real formation.
+    ///
+    /// The **battle side is not gated by this flag.** Once the world is in
+    /// [`SceneMode::Battle`] - however it got there: this roll, a field
+    /// carrier's scripted `3E FF` fight, a world-map region encounter, or a
+    /// direct [`World::enter_battle`] - [`World::tick`] always drives
+    /// [`World::live_battle_tick`], because a battle that cannot resolve is a
+    /// soft-lock. Retail has no "loop enabled" concept either
+    /// (`FUN_801E295C`). Hosts that want a driven-battle-only slice can
+    /// simply leave this flag off and enter battle themselves.
     pub live_gameplay_loop: bool,
 
     /// Opt-in, NON-FAITHFUL gameplay tweak: when a monster picks a single
@@ -1873,10 +1877,33 @@ pub struct World {
     /// post-battle banner / HUD. `None` until the first battle resolves.
     pub last_battle_rewards: Option<BattleRewards>,
 
-    /// Set when the live loop resolves a battle to
-    /// [`BattleEndCause::PartyWipe`]. v0.1 has no game-over screen, so the
-    /// loop returns to the field with this flag raised; hosts read it to
-    /// surface a defeat state.
+    /// Cached answer to [`World::scene_can_roll_encounters`] for the scene
+    /// currently installed, refreshed by
+    /// [`World::refresh_encounter_rollable`] whenever the encounter tables
+    /// change. Hosts read it per frame (the underlying scan walks region
+    /// AABBs, so it is not a per-frame query) to tell the player that a
+    /// scene has no random encounters *by design* - several retail scenes,
+    /// `town01` among them, have every rollable region shadowed by an
+    /// earlier rate-0 row.
+    pub scene_encounters_rollable: bool,
+
+    /// Frames left on the "no random encounters in this scene" hint, armed by
+    /// [`World::arm_live_loop`] when the loop lands on such a scene and aged
+    /// by [`World::tick`]. Read through [`World::show_encounter_hint`].
+    pub scene_encounter_hint_frames: u16,
+
+    /// Frames left on the post-battle spoils panel. [`World::finish_battle`]
+    /// arms it on a monster wipe ([`World::SPOILS_BANNER_FRAMES`]) and
+    /// [`World::tick`] counts it down; a host draws
+    /// [`World::battle_spoils_banner`] while it is non-zero. Without this the
+    /// XP / gold / drops in [`Self::last_battle_rewards`] were applied with no
+    /// on-screen acknowledgement at all.
+    pub battle_spoils_frames: u16,
+
+    /// Set when a battle resolves to [`BattleEndCause::PartyWipe`]. Hosts
+    /// read it to raise their defeat state (native
+    /// `BootUiState::GameOver`, the browser's game-over overlay) and clear it
+    /// when the player picks an outcome.
     pub game_over: bool,
 
     /// Field state captured at the `Field -> Battle` transition so the live
@@ -2531,6 +2558,9 @@ impl World {
             active_formation: None,
             field_boss_stagers: std::collections::HashMap::new(),
             last_battle_rewards: None,
+            scene_encounters_rollable: false,
+            scene_encounter_hint_frames: 0,
+            battle_spoils_frames: 0,
             game_over: false,
             field_return: None,
             field_last_tile: None,

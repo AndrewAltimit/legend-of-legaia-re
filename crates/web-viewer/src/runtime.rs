@@ -132,6 +132,20 @@ pub struct LegaiaRuntime {
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
+    /// Battle<->Field BGM swap track id, the browser twin of the native
+    /// window's `--battle-bgm <id>`. Routed through the same director as
+    /// field op-`0x35` starts, so the id must resolve in the current scene's
+    /// asset table; `None` leaves the field track playing through the fight.
+    /// Before this the browser never called `World::set_battle_bgm` at all,
+    /// so a battle could not swap music no matter what the page wanted.
+    pub(crate) battle_bgm: Option<u16>,
+    /// Track queued by op-`0x35` sub-op 9, pending the next scene entry:
+    /// `(bgm_id, pre-resolved bytes, carries_own_vab)`. A queue is a
+    /// *deferred* start - the browser director used to start it immediately,
+    /// which is the opposite of the native host's bug (native deferred it and
+    /// then never flushed). Drained by `flush_bgm_queue` on scene entry.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) bgm_pending: Option<(u16, Vec<u8>, bool)>,
     /// Battle HUD model (per-slot HP / MP / AP rows, damage popups), refreshed
     /// each battle tick by the shared `engine-core` fold and projected into
     /// the shared `battle_hud_draws_for` builder ([`crate::play_battle`]).
@@ -236,6 +250,9 @@ impl LegaiaRuntime {
             seru_names: None,
             options_state: legaia_engine_core::options::OptionsState::default(),
             live_battles: true,
+            battle_bgm: None,
+            #[cfg(target_arch = "wasm32")]
+            bgm_pending: None,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
             prev_scene_mode: None,
@@ -481,6 +498,9 @@ impl LegaiaRuntime {
         {
             self.bgm_last_started = None;
             self.stage_scene_bgm_bank();
+            // A track queued by op-`0x35` sub-op 9 was queued FOR this scene
+            // entry; start it now that the bank is staged.
+            self.flush_bgm_queue();
         }
         Ok(self.state_json())
     }
@@ -1318,9 +1338,35 @@ impl LegaiaRuntime {
             out,
             bank: &mut self.bgm_bank,
             last_started: &mut self.bgm_last_started,
+            pending: &mut self.bgm_pending,
         };
         if let Err(e) = host.route_bgm_events(&mut director) {
             crate::console_log(&format!("play BGM: route failed: {e:#}"));
+        }
+    }
+
+    /// Start whatever op-`0x35` sub-op 9 queued, if anything. Called on scene
+    /// entry, after the new scene's VAB bank is staged - the moment the queued
+    /// track was queued *for*.
+    #[cfg(target_arch = "wasm32")]
+    fn flush_bgm_queue(&mut self) {
+        let Some((id, bytes, owned_vab)) = self.bgm_pending.take() else {
+            return;
+        };
+        let Some(out) = self.audio_out.as_ref() else {
+            return;
+        };
+        let mut director = WebBgmDirector {
+            out,
+            bank: &mut self.bgm_bank,
+            last_started: &mut self.bgm_last_started,
+            pending: &mut None,
+        };
+        use legaia_engine_core::scene::BgmDirector;
+        if owned_vab {
+            director.start_owned_vab(id, &bytes);
+        } else {
+            director.start(id, &bytes);
         }
     }
 
@@ -1382,6 +1428,8 @@ struct WebBgmDirector<'a> {
     out: &'a WebAudioOut,
     bank: &'a mut Option<legaia_engine_audio::VabBank>,
     last_started: &'a mut Option<u16>,
+    /// Sub-op 9's deferred slot - see [`LegaiaRuntime::bgm_pending`].
+    pending: &'a mut Option<(u16, Vec<u8>, bool)>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1447,9 +1495,11 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
     }
 
     fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        // No deferred-flush plumbing on the play page (no scene-transition
-        // flush hook); a queued track starts immediately.
-        self.start(bgm_id, seq_bytes);
+        // Sub-op 9 is a DEFERRED start: stash the pre-resolved bytes and let
+        // the next scene entry flush them (`LegaiaRuntime::flush_bgm_queue`).
+        // Starting here - which is what this used to do - made the queue and
+        // the plain start indistinguishable.
+        *self.pending = Some((bgm_id, seq_bytes.to_vec(), false));
     }
 
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
@@ -1463,7 +1513,9 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
     }
 
     fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
-        self.start_owned_vab(bgm_id, entry_bytes);
+        // Deferred, same as `queue` - the `true` marks that these bytes carry
+        // their own VAB, so the flush routes them through `start_owned_vab`.
+        *self.pending = Some((bgm_id, entry_bytes.to_vec(), true));
     }
 
     fn pause(&mut self) {

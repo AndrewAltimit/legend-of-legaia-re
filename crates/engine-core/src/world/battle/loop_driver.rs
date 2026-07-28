@@ -289,6 +289,13 @@ impl World {
             }
             self.fold_battle_event(e);
         }
+        // Re-publish the folded stream so hosts can still *observe* it. The
+        // loop owns the gameplay fold (folding twice would apply an art
+        // strike's HP twice), but the same stream also carries
+        // presentation-only members - `CameraFrameHeight`, anim / cast
+        // triggers - and taking it here used to drop those on the floor for
+        // every host running the live loop. Hosts drain, they do not fold.
+        self.pending_battle_events.splice(0..0, events);
 
         // Generic physical attack: deal damage on the strike-landed edge when
         // no art strike already did.
@@ -326,6 +333,23 @@ impl World {
                 .battle
                 .flag_bits
                 .clear(ActorFlags::ADVANCE_DONE);
+        }
+
+        // Cast-animation completion edge, the sibling of the clear above.
+        //
+        // `MagicSustain` (`0x2B`) holds while the caster's `spell_iter`
+        // (`actor+0x1FA`) is non-zero, and the SM itself only ever *sets* it -
+        // retail's cast-animation system is what counts it back down. The
+        // port has no such driver, so a cast parked the action SM forever:
+        // any battle in which a monster (or a party member) cast a spell
+        // stopped dead, which is most real encounters. Retire it on the frame
+        // the state is reached, exactly as the recovery edge above retires
+        // `ADVANCE_DONE`.
+        if self.battle_ctx.action_state == ActionState::MagicSustain.as_byte() {
+            let caster = self.battle_ctx.active_actor as usize;
+            if let Some(a) = self.actors.get_mut(caster) {
+                a.battle.spell_iter = 0;
+            }
         }
 
         // Re-arm the next combatant when the SM idles at EndOfAction, cycling

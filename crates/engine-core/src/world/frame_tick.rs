@@ -253,6 +253,10 @@ impl World {
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Age the post-battle spoils panel (armed by `finish_battle`) and the
+        // no-encounters-here hint (armed by `arm_live_loop`).
+        self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
+        self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
         // Retail-frame sub-clock for the narration crawl roller. The sim ticks
         // at 100 Hz, but the roller's scroll is authored in retail's ~60 fps
         // field frames; advance a fixed-point accumulator by RETAIL_FPS each
@@ -496,10 +500,23 @@ impl World {
                             .push(crate::field_events::FieldEvent::DialogDismissed);
                     }
                     None
-                } else if self.live_gameplay_loop {
-                    self.live_battle_tick()
                 } else {
-                    Some(self.step_battle())
+                    // A battle that was ENTERED must be DRIVEN. Retail's
+                    // action SM (`FUN_801E295C`) has no "loop enabled"
+                    // concept - once the battle scene is up it always runs
+                    // the full per-frame driver until a wipe resolves it.
+                    // This arm used to be gated on
+                    // [`Self::live_gameplay_loop`], falling back to a bare
+                    // [`Self::step_battle`] that applies no damage, arms no
+                    // turn and never calls [`Self::finish_battle`] - while
+                    // battle *entry* (a field carrier's `3E FF` scripted
+                    // fight, a world-map region encounter) was never gated
+                    // at all. The result was an unresolvable battle: the
+                    // ungated entry paths could strand a default session in
+                    // `SceneMode::Battle` forever. The Field arm's random
+                    // encounter *roll* stays opt-in below; driving a battle
+                    // the engine is already in does not.
+                    self.live_battle_tick()
                 }
             }
             SceneMode::Field => {

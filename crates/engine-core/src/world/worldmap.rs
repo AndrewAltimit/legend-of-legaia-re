@@ -281,6 +281,7 @@ impl World {
         self.world_map_region_tracker =
             Some(crate::region_encounter::RegionEncounterTracker::new(table));
         self.world_map_last_tile = None;
+        self.refresh_encounter_rollable();
     }
 
     /// Route the current FIELD scene's region-keyed encounter table so
@@ -301,6 +302,7 @@ impl World {
         table: Option<crate::region_encounter::RegionEncounterTable>,
     ) {
         self.field_region_tracker = table.map(crate::region_encounter::RegionEncounterTracker::new);
+        self.refresh_encounter_rollable();
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so
