@@ -310,7 +310,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `801cf0d8` | `cash_out` | `crates/engine-core/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
 | `801d06c8` | `buy` | `crates/engine-core/src/fishing.rs:656` | FALSE INERT |
-| `801d0748` | `score_percent` | `crates/engine-core/src/muscle_dome.rs:193` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-core/src/fishing.rs:627` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
 | `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing.rs:602` | FALSE INERT |
@@ -368,8 +368,8 @@ callback in `crates/engine-shell/src/bin/legaia-engine/window/`:
 - `cash_out` - from `World::exit_slot_machine`, itself from `handle_keyboard`.
 - `buy`, `first_visible` - from `World::fishing_exchange_buy` /
   `World::open_fishing_exchange`, both from `handle_keyboard`.
-- `is_available`, `select_owned_rod`, `score_percent` - from `build_hud` in
-  `window/hud.rs`, itself from `handle_redraw`.
+- `is_available`, `select_owned_rod`, `hp_left` / `turns_left` - from
+  `build_hud` in `window/hud.rs`, itself from `handle_redraw`.
 - `max_qty` - from `PrizeExchange::buy`, wired above.
 - `step_clut_fx` - from `apply_world_clut_fx` in `window/field_render.rs`,
   itself from `handle_redraw`.

@@ -535,7 +535,7 @@ browser for `site/minigames.html`. It is a thin JSON shell over the
 clean-room rules engines in `legaia-engine-core` - the beat clock + judge
 (`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
 machine + payout eval (`slot_machine`), the cast/tension/catch loop
-(`fishing`), and the card-battle deal/commit/resolve (`muscle_dome`). It
+(`fishing`), and the dome's four-turn deal/commit/resolve (`muscle_dome`). It
 carries no rules of its own.
 
 Every table each game plays with is decoded from the visitor's own disc via
@@ -549,7 +549,7 @@ Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
 `slot_collect` / `fishing_advance_cast` + `fishing_lock_cast` +
 `fishing_reel` + `fishing_recast` / `muscle_commit` +
-`muscle_end_selection` + `muscle_resolve` + `muscle_next_round`) /
+`muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. `load_disc` returns a status object naming which games'
 overlays resolved, so a disc that can't feed one game still plays the
 others. `dance_state_json` deliberately surfaces **both** halves of retail's

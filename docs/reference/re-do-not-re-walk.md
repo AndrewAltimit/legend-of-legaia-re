@@ -36,6 +36,21 @@ below.
 | Charm battle softlock = unbounded reroll in `FUN_801E7320` | falsified (cannot spin from any reachable state) | The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler `FUN_801DABA4` never seeds a dead actor (predicate `+0x14C != 0 && !(+0x16E & 0x4)`), the acting `0x380` monster is itself an in-band self-pick exit (`0x801E73E8` clears `+0x1DE`), and a band with zero living members means the previous `0x5A` already fired the wipe. The real defect is downstream in the `0x5A` victory arm's roster indexing ([battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)). Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first. |
 | Gaza 2 `0x51` park: clamp asymmetry as a standalone retail generator | falsified (amplifier only; its exhibit was a phased mid-action state) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
+| Muscle Dome as a **card battle** with a per-fighter "score out of 108" | falsified (it is a 4-turn battle; the readout is the opponent's HP percentage) | [details ↓](#muscle-dome-was-never-a-card-battle) |
+
+### Muscle Dome was never a card battle
+
+Three claims fell together, and each is instructive about a different reading habit.
+
+**"A hand of four cards."** `FUN_801d388c` case `9` builds four slots in a `do { } while (< 4)` loop, which reads like a deal. The four slots are the four **d-pad directions**, always the same command ids `0xC..=0xF`, each carrying that fighter's own AP cost. Nothing is drawn, discarded or reshuffled; the arena is an ordinary battle whose command string is bounded by AP instead of by a fixed length. The retail presentation was already captured as the standard battle command cluster - the "card" reading survived the capture because the code's own loop shape kept suggesting it.
+
+**"A score of `hp * 0x6C / max`."** The compiler renders `× 100` as a shift-add chain: `sll 1` (2x), `addu` (3x), `sll 3` (24x), `addu` (25x), `sll 2` (**100x**), at `0x801d0f38..0x801d0f4c`. Stopping at the fourth instruction yields 25, and folding the wrong pair yields `0x6C` (108). The lesson generalises past this arm: **a multiplier read off a shift-add chain is only correct if you consume the whole chain**, and the check is free - Ghidra's own C prints `* 100`, and a second dump of the same code at a different load base (`overlay_0896_801f04b0.txt`) reproduces it.
+
+**"Rendered in phase `0x6e`, per fighter."** The computation lives in the phase-`0x14` arm; `0x6e` only re-stamps the two globals `0x14` already wrote. And the record it reads is `DAT_801c937c` - actor-table index 3, the first **enemy** slot - so there is one number on screen, the opponent's, not one per fighter. The whole match SM contains exactly two ratio computations and both are that one `× 100`.
+
+What the arm actually draws is the `Turns Left / HP Left` strip, whose format string is on the disc at PROT 0898 file offset `0x0`: `4 - ctx[+0x28a]` (the shared battle turn counter, bumped by `FUN_801e295c` case `0xff`) and the opponent's HP percentage. Four turns is the whole leg. See [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#turns-left--hp-left-strip).
+
+A separate widget must not be folded into this one: `FUN_801d8de8` is the **shared battle status plate** (dumped under ten overlays), drawing each fighter's own HP/MP `cur`/`max` numerals from `+0x172`/`+0x14e` and `+0x174`/`+0x152`. It computes no percentage and is not dome-specific.
 
 ### Op-0x4E sub-op family - every sub-op 0..9 is a compare
 

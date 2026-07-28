@@ -1,6 +1,6 @@
 //! Muscle Dome minigame - **resident in the battle-action overlay (PROT 0898)**.
 //!
-//! The Muscle Dome card-battle arena is *not* a separate overlay. Its match
+//! The Muscle Dome arena is *not* a separate overlay. Its match
 //! state machine [`FUN_801d0748`] and all its data (the deck/hand tables at
 //! `0x801f4b8c`/`0x801f4b94`, the per-step sub-draw script-record table
 //! `PTR_DAT_801f4d34`, the victory-message string table `0x801f4dfc`) are

@@ -345,8 +345,10 @@ presentation left to the host:
 - `dance` - Noa's dance rhythm minigame, driven by the parsed step chart.
 - `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
   action tables.
-- `muscle_dome` - the Muscle Dome card battle: deck command ids +
-  swing-record costs, with a budget-gated queue commit.
+- `muscle_dome` - the Muscle Dome: a four-turn battle in battle type
+  `0xB6`. Direction-command ids + swing-record AP costs, a budget-gated
+  queue commit, the `Turns Left / HP Left` readouts, and `DomeDamageModel`
+  - the one retail damage kernel both hosts resolve turns through.
 
 ## Smaller modules worth knowing
 

@@ -1487,7 +1487,9 @@ impl World {
     }
 
     /// Leave the Muscle Dome and restore the interrupted mode. On a won
-    /// contest, the reward Seru is credited through the capture kernel
+    /// contest - a KO inside the four-turn limit, not a
+    /// [`TimeUp`](crate::muscle_dome::MusclePhase::TimeUp) leg - the reward
+    /// Seru is credited through the capture kernel
     /// ([`crate::seru_learning::record_capture`] against the installed
     /// registry, resolved by the reward spell id) - the engine's stand-in
     /// for the retail outright award message. Returns the session so the
@@ -1519,31 +1521,29 @@ impl World {
     ///
     /// - **Select**: [`Left`](input::PadButton::Left) /
     ///   [`Right`](input::PadButton::Right) / [`Up`](input::PadButton::Up) /
-    ///   [`Down`](input::PadButton::Down) commit hand cards 0..3 (the retail
-    ///   four card-selection direction bits, in the `ctx+0x1114..+0x1120`
-    ///   slot order); [`Cross`](input::PadButton::Cross) confirms the queue.
-    ///   The opponent commits through the shared selection logic when the
-    ///   player confirms.
-    /// - **Resolve**: the queues play out. Per-card damage here is a dev
-    ///   stand-in for the retail battle-action playback (see the constants) -
-    ///   the session's [`resolve_round`] is damage-model-agnostic.
-    /// - **RoundOver / decided**: [`Cross`] continues to the next round, or
-    ///   leaves a decided contest (via [`World::exit_muscle_dome`], crediting
-    ///   the reward Seru capture on a win).
+    ///   [`Down`](input::PadButton::Down) commit the four dealt directions
+    ///   (the retail direction bits, in the `ctx+0x1114..+0x1120` slot
+    ///   order); [`Cross`](input::PadButton::Cross) confirms the queue. The
+    ///   opponent commits through the shared selection logic when the player
+    ///   confirms.
+    /// - **Resolve**: each side's whole queued string plays out through the
+    ///   session's installed [`DomeDamageModel`] - the *shared* retail damage
+    ///   kernel (move-power record → predamage roll → element affinity →
+    ///   finisher, on the contest's PsyQ `rand()` stream), the same one the
+    ///   browser host resolves with. A session with no model installed
+    ///   resolves to no damage rather than to invented constants.
+    /// - **TurnOver / decided**: [`Cross`] takes the next turn, or leaves a
+    ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
+    ///   Seru capture on a win). The leg finishes on a KO either way or once
+    ///   the four-turn limit expires
+    ///   ([`TimeUp`](crate::muscle_dome::MusclePhase::TimeUp), no reward).
     ///
-    /// [`resolve_round`]: crate::muscle_dome::MuscleDomeSession::resolve_round
+    /// [`DomeDamageModel`]: crate::muscle_dome::DomeDamageModel
     ///
     /// PORT: FUN_801d0748 (match SM phase loop: pick / commit / resolve /
-    /// score), with the card playback simplified per above.
+    /// Turns-Left readout), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
-        // Dev stand-in stats for the card playback (retail resolves each
-        // queued command through the battle-action path against the actor
-        // records).
-        const PLAYER_ATK: i32 = 60;
-        const OPPONENT_ATK: i32 = 50;
-        const PLAYER_DEF: i32 = 20;
-        const OPPONENT_DEF: i32 = 15;
         let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
             self.mode = self.muscle_return_mode;
             return;
@@ -1573,22 +1573,20 @@ impl World {
                 }
             }
             MusclePhase::Resolve => {
-                if let Some(s) = self.muscle_dome.as_mut() {
-                    s.resolve_round(|attacker, _cmd| {
-                        if attacker == 0 {
-                            (PLAYER_ATK - OPPONENT_DEF).max(1)
-                        } else {
-                            (OPPONENT_ATK - PLAYER_DEF).max(1)
-                        }
-                    });
+                if let Some(s) = self.muscle_dome.as_mut()
+                    && !s.resolve_turn_retail()
+                {
+                    // No disc tables staged: close the turn without damage
+                    // rather than substitute invented numbers for them.
+                    s.resolve_turn(|_, _| 0);
                 }
             }
-            MusclePhase::RoundOver => {
+            MusclePhase::TurnOver => {
                 if confirm && let Some(s) = self.muscle_dome.as_mut() {
-                    s.next_round();
+                    s.next_turn();
                 }
             }
-            MusclePhase::Won | MusclePhase::Lost => {
+            MusclePhase::Won | MusclePhase::Lost | MusclePhase::TimeUp => {
                 if confirm {
                     self.exit_muscle_dome();
                 }

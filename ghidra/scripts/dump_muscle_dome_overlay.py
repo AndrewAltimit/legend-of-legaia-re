@@ -2,9 +2,9 @@
 # @runtime Jython
 #
 # Dumps functions from the muscle dome overlay (overlay_muscle_dome.bin).
-# Captured from Duckstation save state save 5 (Muscle Dome / Baka card battle) via extract-duckstation-overlay.py.
+# Captured from Duckstation save state save 5 (Muscle Dome) via extract-duckstation-overlay.py.
 #
-# Muscle Dome / Baka card battle system. FUN_801d8de8 (77 callers, 3028 bytes) is the top-level round dispatcher; FUN_801d5854 (47 callers, 6500 bytes) is the main game state machine; FUN_801d388c (39 callers, 7820 bytes) handles card resolution logic. Completely distinct from the other-game cluster (only 17 shared prologues with any other overlay).
+# Muscle Dome (a four-turn battle in battle type 0xB6, not a card game). FUN_801d8de8 (77 callers, 3028 bytes) is the shared battle status-plate composer; FUN_801d5854 (47 callers, 6500 bytes) is the camera director; FUN_801d388c (39 callers, 7820 bytes) is the deal/commit presentation driver. Completely distinct from the other-game cluster (only 17 shared prologues with any other overlay).
 #
 # Run against the named overlay program:
 #   docker compose exec -T ghidra /ghidra/support/analyzeHeadless \

@@ -1,18 +1,20 @@
-//! Muscle Dome card-battle methods of [`LegaiaMinigames`] - the browser twin
-//! of the play-window's `start_muscle_minigame` (`window/minigames.rs`).
+//! Muscle Dome methods of [`LegaiaMinigames`] - the browser twin of the
+//! play-window's `start_muscle_minigame` (`window/minigames.rs`).
+//!
+//! The dome is not a card battle: it is an ordinary battle in battle type
+//! `0xB6` under a four-turn limit, with the persistent
+//! `"Turns Left: N   HP Left: P%"` strip across the top.
 //!
 //! The rules are the ported [`legaia_engine_core::muscle_dome`] engine (the
-//! four-slot hand deal, the point-budget card commit into the fighter's action
-//! queue, the HP-ratio score readout and the win/lose bookkeeping), and the
-//! round now **resolves through the ported battle formulas** rather than a
-//! stand-in: each committed card is a battle action id (`0xC..=0xF`) that
-//! resolves exactly as retail plays it - the move-power record via the
-//! `0x801F4E63` id → index map ([`legaia_asset::move_power`]), the
-//! arts/physical damage roll ([`legaia_engine_vm::battle_formulas`]:
-//! `arts_physical_predamage_lazy`, `FUN_801dd0ac`), the element-affinity scale
-//! ([`legaia_asset::element_affinity`], `FUN_801dd864`) and the damage
-//! finisher (`damage_finish_lazy`, `FUN_801ddb30`), on a PsyQ `rand()` stream
-//! with retail draw order.
+//! four-direction deal, the AP-budget commit into the fighter's action queue,
+//! the turn counter and its limit, the opponent-HP-left readout and the
+//! win/lose bookkeeping). Damage resolves through the **shared retail
+//! kernel** [`legaia_engine_core::muscle_dome::DomeDamageModel`], which the
+//! native play-window host installs on its session too - the move-power
+//! record via the `0x801F4E63` id → index map, the arts/physical damage roll
+//! (`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the
+//! damage finisher (`FUN_801ddb30`), on a PsyQ `rand()` stream with retail
+//! draw order. This module holds no damage rule of its own.
 //!
 //! Fighter stats come from the visitor's own disc records:
 //!
@@ -50,11 +52,10 @@ use legaia_asset::move_power;
 use legaia_asset::muscle_dome as md;
 use legaia_asset::scene_tmd_stream;
 use legaia_asset::sfx_table;
-use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession, MusclePhase};
-use legaia_engine_vm::battle_formulas::{
-    DamageFinish, DefenderResist, RecordStats, SummonRollActor, arts_physical_predamage_lazy,
-    damage_finish_lazy, init_party_battle_stats, psyq_rand_step, spirit_gauge_fill,
+use legaia_engine_core::muscle_dome::{
+    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase,
 };
+use legaia_engine_vm::battle_formulas::{RecordStats, init_party_battle_stats};
 
 /// PROT entry of the monster stat archive (`0867_battle_data`).
 const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
@@ -130,14 +131,17 @@ pub(crate) struct MuscleFighter {
     element: u8,
 }
 
-/// One resolved card play of the last round, for the page's 3D playback.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct MusclePlay {
-    attacker: usize,
-    cmd: u8,
-    power: i32,
-    damage: i32,
-    hp_after: [i32; 2],
+impl MuscleFighter {
+    /// The subset the shared retail damage kernel reads.
+    fn combatant(&self) -> DomeCombatant {
+        DomeCombatant {
+            hp_max: self.hp_max,
+            int: self.int,
+            udf: self.udf,
+            ldf: self.ldf,
+            element: self.element,
+        }
+    }
 }
 
 /// The cached PROT 0898 battle tables the dome plays with.
@@ -159,14 +163,6 @@ pub(crate) struct MuscleContest {
     session: MuscleDomeSession,
     fighters: [MuscleFighter; 2],
     names: [String; 2],
-    /// Per-fighter spirit gauge (`actor+0x170`, 0..=100) - the value the
-    /// dome HUD's per-fighter bars display (`FUN_801d8de8` elems 0x52/0x53),
-    /// accrued from damage taken by the ported `spirit_gauge_fill`.
-    spirit: [u16; 2],
-    /// PsyQ `rand()` cursor for the whole contest.
-    rng_seed: u32,
-    /// Play-by-play of the last resolved round.
-    log: Vec<MusclePlay>,
     /// `"disc"` when the player record came from the SCUS template + growth
     /// tables, `"fallback"` when no executable was available.
     stats_source: &'static str,
@@ -657,20 +653,29 @@ impl LegaiaMinigames {
             command_id: hand[i],
             cost: FAVORED_COST,
         });
-        let session = MuscleDomeSession::new(
+        let hp = [player.hp_max as i32, opponent.hp_max as i32];
+        let mut session = MuscleDomeSession::new(
             player_hand,
             opp_hand,
             [player.budget_pool, opponent.budget_pool],
-            [player.hp_max as i32, opponent.hp_max as i32],
+            hp,
             WEB_REWARD_SERU,
         );
+        // Damage resolves through the shared retail kernel - the same
+        // `DomeDamageModel` the native play-window host installs, so neither
+        // host carries a damage rule of its own.
+        session.install_damage_model(DomeDamageModel::new(
+            tables.move_power.clone(),
+            tables.move_map,
+            tables.affinity.clone(),
+            [player.combatant(), opponent.combatant()],
+            hp,
+            seed,
+        ));
         self.muscle = Some(MuscleContest {
             session,
             fighters: [player, opponent],
             names: [player_name, opp_name],
-            spirit: [0, 0],
-            rng_seed: seed,
-            log: Vec::new(),
             stats_source,
             monster_id,
             char_slot,
@@ -697,112 +702,28 @@ impl LegaiaMinigames {
         }
     }
 
-    /// Play the round out through the ported battle formulas. Each queued
-    /// card resolves exactly as a retail battle action: move-power record via
-    /// the id map, the arts/physical predamage roll (`FUN_801dd0ac`), the
-    /// element-affinity scale (`FUN_801dd864`) and the damage finisher
-    /// (`FUN_801ddb30`), drawing from the contest's PsyQ `rand()` stream in
-    /// retail call order (3 draws, +2 when the bonus arm fires, +1 when
-    /// mitigation floors the hit). The defender's spirit gauge accrues from
-    /// each hit (`spirit_gauge_fill`). No-op unless the round is in the
-    /// resolve phase.
+    /// Play the turn out through the shared retail damage kernel
+    /// ([`legaia_engine_core::muscle_dome::DomeDamageModel`], installed at
+    /// [`Self::muscle_start_vs`]) - the player's whole queued command string,
+    /// then the opponent's, not interleaved. The native play-window host
+    /// resolves through the same kernel; this method holds no damage rule of
+    /// its own. No-op unless the turn is in the resolve phase.
     pub fn muscle_resolve(&mut self) {
-        let Some(tables) = self.muscle_tables.as_ref() else {
-            return;
-        };
-        let Some(c) = self.muscle.as_mut() else {
-            return;
-        };
-        if c.session.phase() != MusclePhase::Resolve {
-            return;
-        }
-        let MuscleContest {
-            session,
-            fighters,
-            spirit,
-            rng_seed,
-            log,
-            ..
-        } = c;
-        log.clear();
-        // Shadow HP mirror: the kernel reads the defender's live +0x14c,
-        // which drops mid-round; the session applies the same damage in the
-        // same order, so the mirror stays in sync with it.
-        let mut hp = [session.hp(0), session.hp(1)];
-        session.resolve_round(|attacker, cmd| {
-            let defender = attacker ^ 1;
-            let power = move_power::record_for_move_id(&tables.move_power, &tables.move_map, cmd)
-                .map(|r| r.power())
-                .unwrap_or(0);
-            let actor = |slot: usize| SummonRollActor {
-                hp: hp[slot].clamp(0, u16::MAX as i32) as u16,
-                agl: fighters[slot].int,
-                stat_a: fighters[slot].udf,
-                stat_b: fighters[slot].ldf,
-                status: 0,
-                guard: 0,
-            };
-            let affinity_pct = tables
-                .affinity
-                .as_ref()
-                .and_then(|a| {
-                    a.affinity_pct(fighters[attacker].element, fighters[defender].element)
-                })
-                .unwrap_or(100);
-            let rng3 = [
-                psyq_rand_step(rng_seed),
-                psyq_rand_step(rng_seed),
-                psyq_rand_step(rng_seed),
-            ];
-            let (att_roll, def_roll) = arts_physical_predamage_lazy(
-                power,
-                &actor(attacker),
-                &actor(defender),
-                affinity_pct,
-                rng3,
-                || [psyq_rand_step(rng_seed), psyq_rand_step(rng_seed)],
-            );
-            let finish = DamageFinish {
-                predamage: att_roll.saturating_sub(def_roll),
-                attacker_slot: if attacker == 0 { 0 } else { 3 },
-                defender_slot: if defender == 0 { 0 } else { 3 },
-                attacker_element: fighters[attacker].element,
-                defender_resist: DefenderResist::default(),
-                defender_guarding: false,
-                enemy_defender_halve: false,
-                bypass_party_resist: false,
-                summon_power_pct: 100,
-                floor_rand: 0,
-            };
-            let damage = damage_finish_lazy(&finish, || psyq_rand_step(rng_seed)) as i32;
-            hp[defender] = (hp[defender] - damage).max(0);
-            spirit[defender] = spirit_gauge_fill(
-                damage as u32,
-                fighters[defender].hp_max,
-                spirit[defender],
-                DefenderResist::default(),
-                defender == 0,
-            );
-            log.push(MusclePlay {
-                attacker,
-                cmd,
-                power,
-                damage,
-                hp_after: hp,
-            });
-            damage
-        });
-    }
-
-    /// Start the next round after a non-terminal resolution: reseed budgets,
-    /// clear queues. No-op unless the contest is at a round break.
-    pub fn muscle_next_round(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
-            c.session.next_round();
+            c.session.resolve_turn_retail();
         }
     }
 
-    /// The last resolved round's play-by-play, for the page's 3D playback:
+    /// Take the next turn after a non-terminal resolution: reseed budgets,
+    /// clear queues. No-op unless the contest is at a turn break - a KO or
+    /// the expired four-turn limit closes the leg for good.
+    pub fn muscle_next_turn(&mut self) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.next_turn();
+        }
+    }
+
+    /// The last resolved turn's play-by-play, for the page's 3D playback:
     ///
     /// ```json
     /// [ { "attacker": 0, "cmd": 12, "power": 10, "damage": 55,
@@ -813,7 +734,8 @@ impl LegaiaMinigames {
             return "[]".to_string();
         };
         let plays: Vec<serde_json::Value> = c
-            .log
+            .session
+            .last_turn_plays()
             .iter()
             .map(|p| {
                 serde_json::json!({
@@ -828,12 +750,18 @@ impl LegaiaMinigames {
         serde_json::Value::Array(plays).to_string()
     }
 
-    /// Live contest state (superset of the older shape - `live`, `phase`,
-    /// `round`, `hp`, `hp_max`, `budget`, `spent`, `score`, `queue`,
-    /// `last_damage`, `hand`, `reward_spell` keep their meaning). New keys:
+    /// Live contest state: `live`, `phase` (`select` / `resolve` /
+    /// `turn_over` / `won` / `lost` / `time_up`), `hp`, `hp_max`, `mp_max`,
+    /// `budget`, `spent`, `queue`, `last_damage`, `hand`, `reward_spell`,
     /// `names`, `spirit` (the `+0x170` gauges the dome HUD bars display),
     /// `stats` (per-fighter INT/UDF/LDF/element the formulas used), `source`
     /// (`"disc"` / `"fallback"` player record), `char`, `level`, `monster`.
+    ///
+    /// The dome's own HUD strip reads off `turn` / `turns_left` /
+    /// `turn_limit` and `hp_left` (the **opponent's** HP percentage - the
+    /// number retail stamps at x=`0xd2`); `hp_left_pct` carries both
+    /// fighters' percentages for the page's bars, and `time_meter` /
+    /// `time_meter_max` mirror the `FUN_801d3444` ramp.
     pub fn muscle_state_json(&self) -> String {
         let Some(c) = self.muscle.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -842,9 +770,10 @@ impl LegaiaMinigames {
         let phase = match s.phase() {
             MusclePhase::Select => "select",
             MusclePhase::Resolve => "resolve",
-            MusclePhase::RoundOver => "round_over",
+            MusclePhase::TurnOver => "turn_over",
             MusclePhase::Won => "won",
             MusclePhase::Lost => "lost",
+            MusclePhase::TimeUp => "time_up",
         };
         let hand: Vec<serde_json::Value> = s
             .hand(0)
@@ -864,19 +793,24 @@ impl LegaiaMinigames {
         serde_json::json!({
             "live": true,
             "phase": phase,
-            "round": s.round(),
+            "turn": s.turn(),
+            "turns_left": s.turns_left(),
+            "turn_limit": legaia_engine_core::muscle_dome::TURN_LIMIT,
             "hp": [s.hp(0), s.hp(1)],
             "hp_max": [c.fighters[0].hp_max, c.fighters[1].hp_max],
             "mp_max": [c.fighters[0].mp_max, c.fighters[1].mp_max],
             "budget": [s.budget(0), s.budget(1)],
             "spent": [s.spent(0), s.spent(1)],
-            "score": [s.score_percent(0), s.score_percent(1)],
+            "hp_left": s.hp_left(),
+            "hp_left_pct": [s.hp_left_percent(0), s.hp_left_percent(1)],
+            "time_meter": s.time_meter(),
+            "time_meter_max": legaia_engine_core::muscle_dome::TIME_METER_MAX,
             "queue": [s.queue(0), s.queue(1)],
-            "last_damage": s.last_round_damage(),
+            "last_damage": s.last_turn_damage(),
             "hand": hand,
             "reward_spell": s.reward_spell_id(),
             "names": c.names,
-            "spirit": c.spirit,
+            "spirit": [s.spirit(0), s.spirit(1)],
             "stats": stats,
             "source": c.stats_source,
             "char": c.char_slot,
@@ -1190,8 +1124,8 @@ impl LegaiaMinigames {
         format!("[{}]", rows.join(","))
     }
 
-    /// Whether the player's selection is exhausted (no hand card affordable):
-    /// the retail auto-end of the command input.
+    /// Whether the player's selection is exhausted (no dealt direction is
+    /// affordable): the retail auto-end of the command input.
     pub fn muscle_selection_exhausted(&self) -> bool {
         self.muscle
             .as_ref()
@@ -1199,11 +1133,26 @@ impl LegaiaMinigames {
     }
 
     /// The retail confirm menu's "Reselect" arm: throw the player's committed
-    /// queue away and restore the round budget.
+    /// queue away and restore the turn budget.
     pub fn muscle_reset_selection(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
             c.session.reset_selection(0);
         }
+    }
+
+    /// Advance the round **time meter** one frame by the frame delta `dt`,
+    /// returning the bar sprite's new Y offset (`-0x92` empty, `+0xE` full).
+    /// The counter climbs while the direction-entry phase runs and drains
+    /// otherwise - retail gates the ramp on `ctx+6 == 0x50`, the entry phase,
+    /// **not** on the playback. Returns `0` with no contest up.
+    ///
+    /// PORT: FUN_801d3444, through
+    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_core::muscle_dome::MuscleDomeSession::tick_time_meter)
+    pub fn muscle_tick_time_meter(&mut self, dt: u8) -> i32 {
+        self.muscle
+            .as_mut()
+            .map(|c| c.session.tick_time_meter(dt) as i32)
+            .unwrap_or(0)
     }
 
     fn muscle_monster_render_mesh(&self, monster_id: u16) -> Option<legaia_tmd::mesh::VramMesh> {

@@ -2209,9 +2209,35 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    specials" guess is refuted, and **0926** is the unused-`0x98` one-sector `jr ra` stub.
    SummonFlute items (effect classes 126/127) enqueue the spell id directly, so the
    flutes ride the same stager mechanism as Seru magic.
-2. **The 0977 sub-id-5 minigame.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, cards resolve through the battle-action path).
+2. **The 0977 sub-id-5 minigame.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, entered directions resolve through the battle-action path).
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors.** `OVERLAY_PROT_BASE` carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
+
+### Muscle Dome match shape: a four-turn battle, not a card battle
+
+*Status:* resolved (disassembly) -
+[`minigame-muscle-dome.md § Turns Left / HP Left strip`](../subsystems/minigame-muscle-dome.md#turns-left--hp-left-strip)
+
+The arena's match rules read as a card battle scored on a per-fighter HP
+ratio "out of 108". All three parts of that are wrong, and the disassembly
+settles each. The contest is an ordinary battle in **battle type `0xB6`**
+under a hard **four-turn limit**, with a persistent `Turns Left / HP Left`
+strip whose format string sits on the disc at PROT 0898 file offset `0x0`
+(VA `0x801CE818`). The phase-**`0x14`** arm of `FUN_801D0748` computes both
+numbers behind the `DAT_8007bd0c == 0xB6` gate: `4 - ctx[+0x28a]` (the
+shared battle turn counter, bumped by `FUN_801E295C` case `0xff`, which also
+parks the phase byte on this arm) and `hp * 100 / max_hp` of
+**`DAT_801C937C`** - actor-table index 3, the first *enemy* slot. Phase
+`0x6e` only re-stamps those two globals; the whole match SM contains exactly
+two ratio computations and both are that one `× 100`. The `0x6C` came from
+consuming only part of the compiler's `× 100` shift-add chain at
+`0x801d0f38..0x801d0f4c`. The four "cards" are the four d-pad **direction
+commands** `0xC..=0xF`, each carrying that fighter's own AP cost - the same
+input a normal battle command screen takes, bounded by AP. Falsification
+trail: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#muscle-dome-was-never-a-card-battle).
+Ports: `engine-core::muscle_dome` (`turns_left` / `hp_left` /
+`resolve_turn` playing whole strings per actor / `DomeDamageModel`, the one
+retail damage kernel both hosts resolve through).
 
 ### Battle arts-input UI decomposition (dome = standard battle input)
 

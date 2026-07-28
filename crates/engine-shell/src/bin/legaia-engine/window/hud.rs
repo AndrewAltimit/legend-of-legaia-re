@@ -672,21 +672,22 @@ impl PlayWindowApp {
                 out.extend(cd);
             }
         }
-        // Muscle Dome HUD: HP + score readouts, the hand with costs, the
-        // budget line, and the phase prompt.
+        // Muscle Dome HUD. Line 1 is the retail strip - the dome's own
+        // persistent "Turns Left / HP Left" banner, whose format string is on
+        // the disc at PROT 0898 file offset 0x0 and whose two numbers the
+        // phase-0x14 arm of FUN_801d0748 stamps at x=0x68 (1 digit) and
+        // x=0xd2 (3 digits). Line 2 is the host's own prompt line.
+        //
+        // PORT: FUN_801d0748 phase 0x14 (Turns Left = 4 - ctx[+0x28a],
+        // HP Left = opponent hp * 100 / max_hp)
         if self.session.host.world.mode == SceneMode::MuscleDome
             && let Some(s) = &self.session.host.world.muscle_dome
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
             let ml1 = format!(
-                "MUSCLE DOME  you {}hp ({}%)  vs  foe {}hp ({}%)  round {}  time {}/{}",
-                s.hp(0),
-                s.score_percent(0),
-                s.hp(1),
-                s.score_percent(1),
-                s.round() + 1,
-                s.time_meter(),
-                legaia_engine_core::muscle_dome::TIME_METER_MAX,
+                "      Turns Left: {}         HP Left: {}",
+                s.turns_left(),
+                s.hp_left()
             );
             let ly1 = self.font.layout_ascii(&ml1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
@@ -694,7 +695,7 @@ impl PlayWindowApp {
                 MusclePhase::Select => {
                     let h = s.hand(0);
                     format!(
-                        "cards L:{} R:{} U:{} D:{}  budget {}  queued {}  (Cross = fight)",
+                        "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight)",
                         h[0].cost,
                         h[1].cost,
                         h[2].cost,
@@ -704,17 +705,27 @@ impl PlayWindowApp {
                     )
                 }
                 MusclePhase::Resolve => "resolving...".to_string(),
-                MusclePhase::RoundOver => {
-                    let [taken, dealt] = s.last_round_damage();
-                    format!("round: dealt {dealt}, took {taken}  (Cross = next round)")
+                MusclePhase::TurnOver => {
+                    let [taken, dealt] = s.last_turn_damage();
+                    format!("turn: dealt {dealt}, took {taken}  (Cross = next turn)")
                 }
                 MusclePhase::Won => format!(
                     "YOU WIN! Seru spell {:#x} awarded  (Cross/M = leave)",
                     s.reward_spell_id()
                 ),
                 MusclePhase::Lost => "you lose the contest  (Cross/M = leave)".to_string(),
+                MusclePhase::TimeUp => format!(
+                    "TIME UP - the opponent survived on {}% HP  (Cross/M = leave)",
+                    s.hp_left()
+                ),
             };
-            let ml2 = format!("{status}   (M = quit)");
+            let ml2 = format!(
+                "{status}   you {}hp  foe {}hp  time {}/{}   (M = quit)",
+                s.hp(0),
+                s.hp(1),
+                s.time_meter(),
+                legaia_engine_core::muscle_dome::TIME_METER_MAX,
+            );
             let ly2 = self.font.layout_ascii(&ml2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }

@@ -1,56 +1,300 @@
-//! Clean-room **Muscle Dome card-battle** rules engine.
+//! Clean-room **Muscle Dome** match rules engine.
 //!
-//! A port of the arena logic resident in the battle-action overlay (PROT
-//! 0898): the four-slot hand deal, the point-budget card commit into the
-//! fighter's action queue, the HP-ratio score readout, and the win/lose /
-//! Seru-reward bookkeeping - driven by the parsed hand tables
-//! ([`legaia_asset::muscle_dome`]) and per-command costs (the equipment
-//! sections' swing-record `+0x74` bytes,
-//! [`legaia_asset::battle_char_assembly::SwingAnimation::cost`]). This is
-//! the *rules* layer: the card/sprite presentation, dome camera, and the
-//! full battle-action playback are host concerns.
+//! The dome is **not a card battle**. It is an ordinary Legaia battle fought
+//! in battle type `0xB6` under a hard **four-turn limit**, with a persistent
+//! `"Turns Left: N   HP Left: P%"` strip across the top of the screen. Each
+//! turn the fighter enters a directional command string under an AP budget -
+//! the same input the normal battle command screen takes - and the string
+//! plays out through the shared battle-action path.
+//!
+//! This module is the *rules* layer: the four-direction deal, the
+//! budget-gated commit into the fighter's action queue, the turn counter and
+//! its limit, the HP-Left readout, and the win / lose / Seru-reward
+//! bookkeeping - driven by the parsed tables ([`legaia_asset::muscle_dome`])
+//! and per-command costs (the equipment sections' swing-record `+0x74`
+//! bytes, [`legaia_asset::battle_char_assembly::SwingAnimation::cost`]). The
+//! sprite presentation, dome camera and the full battle-action playback are
+//! host concerns.
 //!
 //! What is pinned (see
 //! [`docs/subsystems/minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md)):
 //!
-//! - The hand is four cards; each card's id comes from the deck table
+//! - The deal is four slots; each slot's id comes from the deck table
 //!   `DAT_801f4b8c` (the direction-command ids `0xC..=0xF`) and its cost
 //!   from the fighter's per-command record (`DAT_801c9360[char][cmd]+0x74`,
 //!   the same byte the Arts gauge reads). `FUN_801d388c` case 9.
-//! - The round budget `ctx+0x6dc` seeds from the fighter record `+0x154`;
-//!   commit (`case 0xb`) rejects an overspend, appends the card's command id
-//!   to the actor `+0x1df` queue (16 slots, zeroed on the round's first
-//!   commit), debits `ctx+0x6dc` and accrues `ctx+0x6d8`.
-//! - The score readout is `hp * 0x6c / max_hp` (the phase-`0x6e` arm of
-//!   `FUN_801d0748`); win/lose phases branch on the fighter HP fields.
+//! - The turn budget `ctx+0x6dc` seeds from the fighter record `+0x154`;
+//!   commit (`case 0xb`) rejects an overspend, appends the direction's
+//!   command id to the actor `+0x1df` queue (16 slots, zeroed on the turn's
+//!   first commit), debits `ctx+0x6dc` and accrues `ctx+0x6d8`.
+//! - The HUD strip is drawn by the phase-`0x14` arm of `FUN_801d0748`, gated
+//!   on `DAT_8007bd0c == 0xB6`: `DAT_801f6958 = 4 - ctx[+0x28a]` (Turns Left,
+//!   one digit) and `DAT_801f6959 = hp * 100 / max_hp` of the **opponent**
+//!   record `DAT_801c937c` (HP Left, three digits). The format string is on
+//!   the disc at PROT 0898 file offset `0x0` (VA `0x801CE818`).
+//! - `ctx+0x28a` is the battle turn counter the shared battle-action SM
+//!   bumps at the end of a turn (case `0xff`, which also parks the match
+//!   phase at `0x14`; see [`MuscleDomeSession::resolve_turn`]).
 //! - The reward message composes a spell name from the shared spell-name
 //!   table at id `ctx+0x269 + 0x80` (the player Seru-magic block).
 //!
 //! What is a documented host model: the opponent commits through the same
 //! selection logic (retail has no dome-specific AI table) - here greedily in
-//! hand order while its budget lasts; and per-card damage resolution goes
-//! through a host-supplied function (retail plays each queued action through
-//! the shared battle-action path; whether any dome-specific scaling applies
-//! is an open question on the doc).
+//! deal order while its budget lasts, out of the player's own direction deck
+//! rather than a monster action set; per-command damage resolution goes
+//! through a host-supplied function; and the outcome when the turn limit
+//! expires with both fighters standing is [`MusclePhase::TimeUp`], scored on
+//! the opponent's HP left (retail's own timeout arm is not yet pinned).
 //!
 //! Chain: retail `FUN_801d0748` (match SM, `ctx+6` phases) → `FUN_801d388c`
-//! (deal / commit) → the battle-action path (queued-card playback).
+//! (deal / commit) → the battle-action path (queued-command playback).
 
-/// Hand size (the retail deal loop builds exactly four slots).
+use legaia_asset::element_affinity::ElementAffinity;
+use legaia_asset::move_power::{self, MoveRecord};
+use legaia_engine_vm::battle_formulas::{
+    DamageFinish, DefenderResist, SummonRollActor, arts_physical_predamage_lazy,
+    damage_finish_lazy, psyq_rand_step, spirit_gauge_fill,
+};
+
+/// Deal size (the retail deal loop builds exactly four slots, one per
+/// direction).
 pub const HAND_SLOTS: usize = legaia_asset::muscle_dome::HAND_SLOTS;
 
-/// Queue capacity: the round's first commit zeroes `actor+0x1df..+0x1ee`
-/// (16 bytes), bounding the per-round queue.
+/// Queue capacity: the turn's first commit zeroes `actor+0x1df..+0x1ee`
+/// (16 bytes), bounding the per-turn queue.
 pub const QUEUE_CAP: usize = 0x10;
 
-/// The score readout's scale: `hp * 0x6c / max_hp` (the ratio × 108).
-pub const SCORE_SCALE: i32 = 0x6C;
+/// The dome's battle-type byte (`DAT_8007bd0c == -0x4a`) - the gate the match
+/// SM tests before drawing the Turns-Left / HP-Left strip.
+pub const DOME_BATTLE_TYPE: u8 = 0xB6;
+
+/// The hard turn limit. The HUD prints `4 - ctx[+0x28a]`, so the leg is over
+/// once four turns have played out.
+pub const TURN_LIMIT: u32 = 4;
+
+/// The HP-Left readout's scale: `hp * 100 / max_hp`, a plain percentage. The
+/// retail expression is the MIPS shift-add chain `((hp<<1 + hp)<<3 + hp)<<2`
+/// at `0x801d0f38..0x801d0f4c`.
+pub const HP_LEFT_SCALE: i32 = 100;
+
+/// The fighter slot the HUD's HP-Left readout reads: retail takes it off
+/// `DAT_801c937c`, actor-table index 3 - the first **enemy** slot (the party
+/// occupies 0..=2). Slot 1 is this port's opponent.
+pub const HP_LEFT_SLOT: usize = 1;
 
 /// Spell-name id base for the reward (`ctx+0x269 + 0x80`, the player
 /// Seru-magic block of the shared spell table).
 pub const REWARD_SPELL_ID_BASE: u8 = 0x80;
 
-/// One dealt card: a direction-command id + its per-fighter cost.
+/// One fighter's battle-actor stat profile, as the retail damage kernel
+/// reads it off the actor record.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DomeCombatant {
+    /// Max HP (`+0x14e`) - the spirit-gauge fill divides by it.
+    pub hp_max: u16,
+    /// INT working value (`+0x168`) - the damage roll's own stat.
+    pub int: u16,
+    /// UDF (`+0x15c`) - defender roll term A.
+    pub udf: u16,
+    /// LDF (`+0x160`) - defender roll term B.
+    pub ldf: u16,
+    /// Element id (`0..=7`) for the affinity scale.
+    pub element: u8,
+}
+
+/// One resolved command play of the last turn, for a host's playback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomePlay {
+    /// Fighter slot that acted.
+    pub attacker: usize,
+    /// The queued direction-command id (`0xC..=0xF`).
+    pub cmd: u8,
+    /// The move-power record's power for that command.
+    pub power: i32,
+    /// Damage the defender took.
+    pub damage: i32,
+    /// Both fighters' HP straight after the play.
+    pub hp_after: [i32; 2],
+}
+
+/// The **retail damage kernel** for a dome turn: the PROT 0898 battle tables
+/// plus both fighters' stat profiles and the contest's PsyQ `rand()` cursor.
+///
+/// A queued direction resolves exactly as retail plays a battle action - the
+/// move-power record via the `0x801F4E63` id → index map
+/// ([`legaia_asset::move_power`]), the arts/physical predamage roll
+/// (`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the
+/// damage finisher (`FUN_801ddb30`), drawing from the `rand()` stream in
+/// retail call order (3 draws, +2 when the bonus arm fires, +1 when
+/// mitigation floors the hit). The defender's spirit gauge accrues from each
+/// hit (`spirit_gauge_fill`).
+///
+/// Install it on a session with
+/// [`MuscleDomeSession::install_damage_model`] and drive it with
+/// [`MuscleDomeSession::resolve_turn_retail`]; both the native and browser
+/// hosts share this one kernel rather than each inventing a damage rule.
+///
+/// The model keeps its own HP mirror because the roll reads the defender's
+/// *live* `+0x14c`, which drops mid-turn: the session applies the same
+/// damage in the same order, so the mirror stays in step with it.
+///
+/// PORT: FUN_801dd0ac / FUN_801dd864 / FUN_801ddb30 (through
+/// [`legaia_engine_vm::battle_formulas`])
+#[derive(Debug, Clone)]
+pub struct DomeDamageModel {
+    move_power: Vec<MoveRecord>,
+    move_map: [u8; move_power::MOVE_ID_INDEX_MAP_LEN],
+    affinity: Option<ElementAffinity>,
+    combatants: [DomeCombatant; 2],
+    rng: u32,
+    hp: [i32; 2],
+    spirit: [u16; 2],
+    log: Vec<DomePlay>,
+}
+
+impl DomeDamageModel {
+    /// Build from already-parsed tables.
+    pub fn new(
+        move_power: Vec<MoveRecord>,
+        move_map: [u8; move_power::MOVE_ID_INDEX_MAP_LEN],
+        affinity: Option<ElementAffinity>,
+        combatants: [DomeCombatant; 2],
+        hp: [i32; 2],
+        rng_seed: u32,
+    ) -> Self {
+        Self {
+            move_power,
+            move_map,
+            affinity,
+            combatants,
+            rng: rng_seed,
+            hp,
+            spirit: [0, 0],
+            log: Vec::new(),
+        }
+    }
+
+    /// Parse the tables straight off the **raw** PROT 0898 entry (the
+    /// move-power table, its id → index map and the element-affinity matrix
+    /// are all pinned at raw-entry file offsets; the entry is stored
+    /// uncompressed, so the raw and as-loaded views agree). Returns `None`
+    /// when the move-power table does not decode.
+    pub fn from_battle_overlay(
+        raw: &[u8],
+        combatants: [DomeCombatant; 2],
+        hp: [i32; 2],
+        rng_seed: u32,
+    ) -> Option<Self> {
+        let table = move_power::parse(raw)?;
+        let map = move_power::parse_id_index_map(raw)?;
+        let affinity = legaia_asset::element_affinity::parse(raw);
+        Some(Self::new(table, map, affinity, combatants, hp, rng_seed))
+    }
+
+    /// Both fighters' stat profiles.
+    pub fn combatants(&self) -> &[DomeCombatant; 2] {
+        &self.combatants
+    }
+
+    /// A fighter's spirit gauge (`actor+0x170`, `0..=100`) - the value the
+    /// shared battle status plate displays.
+    ///
+    /// REF: FUN_801d8de8 elems 0x52/0x53 (stage `actor+0x170` into the
+    /// plate globals; the plate is shared battle chrome, not dome-specific)
+    pub fn spirit(&self, slot: usize) -> u16 {
+        self.spirit[slot]
+    }
+
+    /// The `rand()` cursor, so a host can persist or reseed the stream.
+    pub fn rng_seed(&self) -> u32 {
+        self.rng
+    }
+
+    /// The last resolved turn's play-by-play.
+    pub fn plays(&self) -> &[DomePlay] {
+        &self.log
+    }
+
+    /// Open a turn: clear the play log and re-sync the HP mirror to the
+    /// session's live values.
+    pub fn begin_turn(&mut self, hp: [i32; 2]) {
+        self.log.clear();
+        self.hp = hp;
+    }
+
+    /// Resolve one queued command - the function
+    /// [`MuscleDomeSession::resolve_turn`] takes as its damage closure.
+    pub fn damage(&mut self, attacker: usize, cmd: u8) -> i32 {
+        let defender = attacker ^ 1;
+        let power = move_power::record_for_move_id(&self.move_power, &self.move_map, cmd)
+            .map(|r| r.power())
+            .unwrap_or(0);
+        let hp = self.hp;
+        let combatants = self.combatants;
+        let actor = |slot: usize| SummonRollActor {
+            hp: hp[slot].clamp(0, u16::MAX as i32) as u16,
+            agl: combatants[slot].int,
+            stat_a: combatants[slot].udf,
+            stat_b: combatants[slot].ldf,
+            status: 0,
+            guard: 0,
+        };
+        let affinity_pct = self
+            .affinity
+            .as_ref()
+            .and_then(|a| {
+                a.affinity_pct(combatants[attacker].element, combatants[defender].element)
+            })
+            .unwrap_or(100);
+        let damage = {
+            let rng = &mut self.rng;
+            let rng3 = [
+                psyq_rand_step(rng),
+                psyq_rand_step(rng),
+                psyq_rand_step(rng),
+            ];
+            let (att_roll, def_roll) = arts_physical_predamage_lazy(
+                power,
+                &actor(attacker),
+                &actor(defender),
+                affinity_pct,
+                rng3,
+                || [psyq_rand_step(rng), psyq_rand_step(rng)],
+            );
+            let finish = DamageFinish {
+                predamage: att_roll.saturating_sub(def_roll),
+                attacker_slot: if attacker == 0 { 0 } else { 3 },
+                defender_slot: if defender == 0 { 0 } else { 3 },
+                attacker_element: combatants[attacker].element,
+                defender_resist: DefenderResist::default(),
+                defender_guarding: false,
+                enemy_defender_halve: false,
+                bypass_party_resist: false,
+                summon_power_pct: 100,
+                floor_rand: 0,
+            };
+            damage_finish_lazy(&finish, || psyq_rand_step(rng)) as i32
+        };
+        self.hp[defender] = (self.hp[defender] - damage).max(0);
+        self.spirit[defender] = spirit_gauge_fill(
+            damage as u32,
+            combatants[defender].hp_max,
+            self.spirit[defender],
+            DefenderResist::default(),
+            defender == 0,
+        );
+        self.log.push(DomePlay {
+            attacker,
+            cmd,
+            power,
+            damage,
+            hp_after: self.hp,
+        });
+        damage
+    }
+}
+
+/// One dealt slot: a direction-command id + its per-fighter AP cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MuscleCard {
     /// Command id (`0xC..=0xF`, from the deck table `DAT_801f4b8c`).
@@ -62,31 +306,35 @@ pub struct MuscleCard {
 /// Match phase, host view of the retail `ctx+6` loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MusclePhase {
-    /// Cards are being committed under the round budget.
+    /// Directions are being committed under the turn's AP budget.
     Select,
-    /// Both queues are built; the round is ready to play out.
+    /// Both queues are built; the turn is ready to play out.
     Resolve,
-    /// The round played out; HP / score updated, next round or a decision.
-    RoundOver,
+    /// The turn played out; HP updated, another turn or a decision.
+    TurnOver,
     /// The player's fighter won (reward available).
     Won,
     /// The player's fighter lost.
     Lost,
+    /// The [`TURN_LIMIT`] expired with both fighters standing: the leg is
+    /// over, scored on the opponent's [`MuscleDomeSession::hp_left`]. No
+    /// reward. Host model - retail's own timeout arm is not pinned.
+    TimeUp,
 }
 
 /// One fighter's dome state.
 #[derive(Debug, Clone)]
 struct DomeFighter {
     hand: [MuscleCard; HAND_SLOTS],
-    /// Remaining round budget (`ctx+0x6dc`), reseeded each round.
+    /// Remaining turn budget (`ctx+0x6dc`), reseeded each turn.
     budget: u16,
-    /// Points spent this round (`ctx+0x6d8`).
+    /// Points spent this turn (`ctx+0x6d8`).
     spent: u16,
-    /// The `+0x1df` action queue: committed command ids this round.
+    /// The `+0x1df` action queue: committed command ids this turn.
     queue: Vec<u8>,
     hp: i32,
     max_hp: i32,
-    /// The `+0x154` pool the budget reseeds from each round.
+    /// The `+0x154` pool the budget reseeds from each turn.
     budget_pool: u16,
 }
 
@@ -103,7 +351,7 @@ impl DomeFighter {
         }
     }
 
-    fn reset_round(&mut self) {
+    fn reset_turn(&mut self) {
         self.budget = self.budget_pool;
         self.spent = 0;
         self.queue.clear();
@@ -111,17 +359,22 @@ impl DomeFighter {
 }
 
 /// The running Muscle Dome contest. Slot 0 = the player's fighter, slot 1 =
-/// the opponent.
+/// the opponent ([`HP_LEFT_SLOT`], the record the HUD's percentage reads).
 #[derive(Debug, Clone)]
 pub struct MuscleDomeSession {
     f: [DomeFighter; 2],
     phase: MusclePhase,
-    round: u32,
+    /// Turns played out so far - the `ctx+0x28a` battle turn counter the
+    /// HUD subtracts from [`TURN_LIMIT`].
+    turn: u32,
     /// The awarded Seru index (`ctx+0x269`); the reward spell id is
     /// `REWARD_SPELL_ID_BASE + index`.
     reward_seru_index: u8,
     /// Damage applied to each fighter in the last resolution, for the HUD.
-    last_round_damage: [i32; 2],
+    last_turn_damage: [i32; 2],
+    /// The installed retail damage kernel, when the host has disc tables to
+    /// give it ([`MuscleDomeSession::install_damage_model`]).
+    damage: Option<DomeDamageModel>,
     /// The round time meter's `0..=`[`TIME_METER_MAX`] counter, advanced by
     /// [`Self::tick_time_meter`].
     time_meter: u8,
@@ -130,8 +383,8 @@ pub struct MuscleDomeSession {
 }
 
 impl MuscleDomeSession {
-    /// Start a contest: per-fighter hands (deck command ids + that fighter's
-    /// costs), round-budget pools (record `+0x154`), HP, and the Seru index
+    /// Start a contest: per-fighter deals (deck command ids + that fighter's
+    /// costs), turn-budget pools (record `+0x154`), HP, and the Seru index
     /// awarded on a win.
     pub fn new(
         player_hand: [MuscleCard; HAND_SLOTS],
@@ -146,9 +399,10 @@ impl MuscleDomeSession {
                 DomeFighter::new(opponent_hand, budget_pools[1], hp[1]),
             ],
             phase: MusclePhase::Select,
-            round: 0,
+            turn: 0,
             reward_seru_index,
-            last_round_damage: [0, 0],
+            last_turn_damage: [0, 0],
+            damage: None,
             time_meter: 0,
             time_meter_bar_y: time_meter_step(0, 0, false, false).1,
         }
@@ -187,9 +441,16 @@ impl MuscleDomeSession {
         self.phase
     }
 
-    /// Round index (0-based).
-    pub fn round(&self) -> u32 {
-        self.round
+    /// Turns played out so far (0-based) - the `ctx+0x28a` counter.
+    pub fn turn(&self) -> u32 {
+        self.turn
+    }
+
+    /// The HUD's **Turns Left** digit: `4 - ctx[+0x28a]`, floored at zero.
+    ///
+    /// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
+    pub fn turns_left(&self) -> u32 {
+        TURN_LIMIT.saturating_sub(self.turn)
     }
 
     /// A fighter's current HP.
@@ -197,17 +458,17 @@ impl MuscleDomeSession {
         self.f[slot].hp
     }
 
-    /// A fighter's hand.
+    /// A fighter's dealt directions.
     pub fn hand(&self, slot: usize) -> &[MuscleCard; HAND_SLOTS] {
         &self.f[slot].hand
     }
 
-    /// Remaining round budget (`ctx+0x6dc`).
+    /// Remaining turn budget (`ctx+0x6dc`).
     pub fn budget(&self, slot: usize) -> u16 {
         self.f[slot].budget
     }
 
-    /// Points spent this round (`ctx+0x6d8`).
+    /// Points spent this turn (`ctx+0x6d8`).
     pub fn spent(&self, slot: usize) -> u16 {
         self.f[slot].spent
     }
@@ -217,17 +478,26 @@ impl MuscleDomeSession {
         &self.f[slot].queue
     }
 
-    /// Damage each side took in the last resolved round.
-    pub fn last_round_damage(&self) -> [i32; 2] {
-        self.last_round_damage
+    /// Damage each side took in the last resolved turn.
+    pub fn last_turn_damage(&self) -> [i32; 2] {
+        self.last_turn_damage
     }
 
-    /// The score readout: `hp * 0x6c / max_hp` (retail renders this in the
-    /// phase-`0x6e` arm).
+    /// A fighter's HP as a plain percentage of its maximum:
+    /// `hp * 100 / max_hp`.
+    pub fn hp_left_percent(&self, slot: usize) -> i32 {
+        self.f[slot].hp * HP_LEFT_SCALE / self.f[slot].max_hp
+    }
+
+    /// The HUD's **HP Left** readout: the *opponent's* remaining HP as a
+    /// percentage ([`HP_LEFT_SLOT`]). This is the quantity the dome scores a
+    /// timed-out leg on - not a per-fighter score, and the scale is 100, not
+    /// the `0x6C` an earlier reading took off the shift-add chain.
     ///
-    /// PORT: FUN_801d0748 phase 0x6e (`actor[+0x14c]*0x6c/actor[+0x14e]`)
-    pub fn score_percent(&self, slot: usize) -> i32 {
-        self.f[slot].hp * SCORE_SCALE / self.f[slot].max_hp
+    /// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6959 =
+    /// DAT_801c937c[+0x14c] * 100 / DAT_801c937c[+0x14e]`)
+    pub fn hp_left(&self) -> i32 {
+        self.hp_left_percent(HP_LEFT_SLOT)
     }
 
     /// The reward spell id on a win (`REWARD_SPELL_ID_BASE + ctx+0x269`, an
@@ -236,13 +506,16 @@ impl MuscleDomeSession {
         REWARD_SPELL_ID_BASE.wrapping_add(self.reward_seru_index)
     }
 
-    /// Whether the contest is decided.
+    /// Whether the leg is over - a KO either way, or the turn limit expired.
     pub fn decided(&self) -> bool {
-        matches!(self.phase, MusclePhase::Won | MusclePhase::Lost)
+        matches!(
+            self.phase,
+            MusclePhase::Won | MusclePhase::Lost | MusclePhase::TimeUp
+        )
     }
 
-    /// Whether `slot` can commit hand card `card_slot` right now: selection
-    /// phase, queue space, and the budget covers the cost.
+    /// Whether `slot` can commit dealt direction `card_slot` right now:
+    /// selection phase, queue space, and the budget covers the cost.
     pub fn can_commit(&self, slot: usize, card_slot: usize) -> bool {
         self.phase == MusclePhase::Select
             && card_slot < HAND_SLOTS
@@ -250,9 +523,9 @@ impl MuscleDomeSession {
             && self.f[slot].budget >= self.f[slot].hand[card_slot].cost
     }
 
-    /// Commit one hand card: append its command id to the fighter's action
-    /// queue, debit the budget, accrue the spent total. Returns `false`
-    /// (rejected) on an overspend or outside the selection phase.
+    /// Commit one dealt direction: append its command id to the fighter's
+    /// action queue, debit the budget, accrue the spent total. Returns
+    /// `false` (rejected) on an overspend or outside the selection phase.
     ///
     /// PORT: FUN_801d388c case 0xb (budget gate, `actor+0x1df` append,
     /// `ctx+0x6d8`/`ctx+0x6dc` accounting)
@@ -267,10 +540,15 @@ impl MuscleDomeSession {
         true
     }
 
-    /// The opponent's selection: the same commit logic in hand order while
+    /// The opponent's selection: the same commit logic in deal order while
     /// the budget lasts (retail reuses the shared deal/commit paths keyed on
     /// `ctx+0x13`; there is no dome-specific AI table - the in-order greedy
     /// walk is the host model).
+    ///
+    /// Host model, disclosed: the opponent draws from the *player's* four
+    /// direction commands (`0xC..=0xF`), not from a monster action set. A
+    /// monster fights the dome through its own PROT 867 action stream, which
+    /// this session does not model.
     pub fn ai_commit_all(&mut self, slot: usize) {
         loop {
             let pick = (0..HAND_SLOTS).find(|&c| self.can_commit(slot, c));
@@ -290,8 +568,8 @@ impl MuscleDomeSession {
         }
     }
 
-    /// Whether `slot`'s selection is exhausted: no hand card is affordable
-    /// (or the queue is full). Retail ends the command input automatically
+    /// Whether `slot`'s selection is exhausted: no dealt direction is
+    /// affordable (or the queue is full). Retail ends the input automatically
     /// at this point - the phase byte advances off the input arm without a
     /// confirm press (recomp capture: three 30-cost commits on a 100 budget
     /// move `ctx+6` `0x50 -> 0x5a` on the third press).
@@ -302,7 +580,7 @@ impl MuscleDomeSession {
     }
 
     /// Reselect: throw the fighter's committed queue away and restore the
-    /// round budget (the retail confirm menu's "Reselect" arm returns to a
+    /// turn budget (the retail confirm menu's "Reselect" arm returns to a
     /// clean input state - queue re-zeroed, budget back at the pool seed).
     ///
     /// REF: FUN_801d0748 phase 0x6e
@@ -316,50 +594,95 @@ impl MuscleDomeSession {
         self.phase = MusclePhase::Select;
     }
 
-    /// Play the round out: both queues resolve through `damage(attacker_slot,
-    /// command_id) -> damage` (the host's battle-path stand-in), alternating
-    /// player-first, stopping at a KO. Retail resolves each queued action
-    /// through the shared battle-action machinery against the opposing
-    /// actor record.
+    /// Play the turn out: each fighter's **entire** queued command string
+    /// resolves as one turn - the player's first, then the opponent's -
+    /// through `damage(attacker_slot, command_id) -> damage` (the host's
+    /// battle-path stand-in), stopping at a KO. Retail plays a battle turn
+    /// the same way: one actor's queued `+0x1df` string runs to completion
+    /// through the shared battle-action machinery before the next actor
+    /// takes its turn. The strings are **not** interleaved command-by-command.
+    ///
+    /// Bumps the [`turn`](Self::turn) counter (the `ctx+0x28a` analogue) and
+    /// settles the phase: a KO decides the leg; otherwise the leg ends at
+    /// [`MusclePhase::TimeUp`] once [`turns_left`](Self::turns_left) hits
+    /// zero, and continues at [`MusclePhase::TurnOver`] before that.
     ///
     /// PORT: FUN_801d0748 commit phases 0x3c/0x46/0x50 (queue walk into
     /// `actor+0x1dd`/`+0x1de`, effect applied to the opposing record's HP)
-    pub fn resolve_round(&mut self, mut damage: impl FnMut(usize, u8) -> i32) {
+    ///
+    /// REF: FUN_801e295c case 0xff (`ctx[+0x28a] += 1`, phase back to 0x14 -
+    /// the shared battle-action SM owns the turn counter this bumps)
+    pub fn resolve_turn(&mut self, mut damage: impl FnMut(usize, u8) -> i32) {
         if self.phase != MusclePhase::Resolve {
             return;
         }
-        self.last_round_damage = [0, 0];
-        let max_len = self.f[0].queue.len().max(self.f[1].queue.len());
-        'play: for i in 0..max_len {
-            for attacker in 0..2usize {
-                let defender = attacker ^ 1;
-                let Some(&cmd) = self.f[attacker].queue.get(i) else {
-                    continue;
-                };
+        self.last_turn_damage = [0, 0];
+        'play: for attacker in 0..2usize {
+            let defender = attacker ^ 1;
+            for i in 0..self.f[attacker].queue.len() {
+                let cmd = self.f[attacker].queue[i];
                 let d = damage(attacker, cmd).max(0);
-                self.last_round_damage[defender] += d;
+                self.last_turn_damage[defender] += d;
                 self.f[defender].hp = (self.f[defender].hp - d).max(0);
                 if self.f[defender].hp == 0 {
                     break 'play;
                 }
             }
         }
+        self.turn += 1;
         self.phase = match (self.f[0].hp == 0, self.f[1].hp == 0) {
             (true, _) => MusclePhase::Lost,
             (false, true) => MusclePhase::Won,
-            (false, false) => MusclePhase::RoundOver,
+            (false, false) if self.turns_left() == 0 => MusclePhase::TimeUp,
+            (false, false) => MusclePhase::TurnOver,
         };
     }
 
-    /// Start the next round after a non-terminal resolution: reseed the
-    /// budgets from the pools, clear the queues.
-    pub fn next_round(&mut self) {
-        if self.phase != MusclePhase::RoundOver {
+    /// Install the shared [`DomeDamageModel`] so the turn can resolve through
+    /// the **retail** battle formulas instead of a host stand-in.
+    pub fn install_damage_model(&mut self, model: DomeDamageModel) {
+        self.damage = Some(model);
+    }
+
+    /// The installed retail damage kernel, if any.
+    pub fn damage_model(&self) -> Option<&DomeDamageModel> {
+        self.damage.as_ref()
+    }
+
+    /// A fighter's spirit gauge (`actor+0x170`), `0` with no damage model
+    /// installed.
+    pub fn spirit(&self, slot: usize) -> u16 {
+        self.damage.as_ref().map_or(0, |m| m.spirit(slot))
+    }
+
+    /// The last resolved turn's play-by-play, empty with no damage model
+    /// installed.
+    pub fn last_turn_plays(&self) -> &[DomePlay] {
+        self.damage.as_ref().map_or(&[], |m| m.plays())
+    }
+
+    /// Play the turn out through the installed retail damage kernel - the
+    /// path both hosts use. Returns `false` (and does nothing) when no
+    /// [`DomeDamageModel`] is installed.
+    pub fn resolve_turn_retail(&mut self) -> bool {
+        let Some(mut model) = self.damage.take() else {
+            return false;
+        };
+        model.begin_turn([self.f[0].hp, self.f[1].hp]);
+        self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
+        self.damage = Some(model);
+        true
+    }
+
+    /// Start the next turn after a non-terminal resolution: reseed the
+    /// budgets from the pools, clear the queues. No-op once the leg is over
+    /// (a KO or the expired [`TURN_LIMIT`]).
+    pub fn next_turn(&mut self) {
+        if self.phase != MusclePhase::TurnOver {
             return;
         }
-        self.round += 1;
-        self.f[0].reset_round();
-        self.f[1].reset_round();
+        self.f[0].reset_turn();
+        self.f[1].reset_turn();
         self.phase = MusclePhase::Select;
     }
 }
@@ -604,27 +927,144 @@ mod tests {
     }
 
     #[test]
-    fn resolution_alternates_and_scores_hp_ratio() {
+    fn resolution_plays_whole_strings_and_reads_hp_left() {
         let mut s = session();
         s.commit_card(0, 0);
         s.commit_card(0, 1);
         s.ai_commit_all(1);
         s.end_selection();
         assert_eq!(s.phase(), MusclePhase::Resolve);
-        s.resolve_round(|_, _| 50);
+        s.resolve_turn(|_, _| 50);
         // Player queued 2, opponent 2: both take 100.
         assert_eq!(s.hp(0), 400);
         assert_eq!(s.hp(1), 300);
-        assert_eq!(s.last_round_damage(), [100, 100]);
-        assert_eq!(s.phase(), MusclePhase::RoundOver);
-        // Score readout = hp * 0x6c / max.
-        assert_eq!(s.score_percent(0), 400 * 0x6C / 500);
-        assert_eq!(s.score_percent(1), 300 * 0x6C / 400);
-        // Next round reseeds budgets + clears queues.
-        s.next_round();
+        assert_eq!(s.last_turn_damage(), [100, 100]);
+        assert_eq!(s.phase(), MusclePhase::TurnOver);
+        // The readout is a plain percentage (scale 100, not 0x6C), and the
+        // HUD's own number is the OPPONENT's.
+        assert_eq!(s.hp_left_percent(0), 400 * 100 / 500);
+        assert_eq!(s.hp_left_percent(1), 300 * 100 / 400);
+        assert_eq!(s.hp_left(), 75, "HUD reads slot 1 = the opponent");
+        // One turn is gone off the four-turn limit.
+        assert_eq!(s.turn(), 1);
+        assert_eq!(s.turns_left(), 3);
+        // Next turn reseeds budgets + clears queues.
+        s.next_turn();
         assert_eq!(s.phase(), MusclePhase::Select);
         assert_eq!(s.budget(0), 100);
         assert!(s.queue(0).is_empty());
+    }
+
+    #[test]
+    fn a_turn_plays_each_string_whole_not_interleaved() {
+        // Player queues two commands, the opponent one. Interleaved play
+        // would order them p0, o0, p1; a real turn is p0, p1, o0.
+        let mut s = MuscleDomeSession::new(
+            hand([1, 1, 1, 1]),
+            hand([1, 0xFFFF, 0xFFFF, 0xFFFF]),
+            [2, 1],
+            [500, 500],
+            0,
+        );
+        s.commit_card(0, 0);
+        s.commit_card(0, 3);
+        s.ai_commit_all(1);
+        assert_eq!(s.queue(0), &[0x0C, 0x0D]);
+        assert_eq!(s.queue(1), &[0x0C]);
+        s.end_selection();
+        let mut order = Vec::new();
+        s.resolve_turn(|attacker, cmd| {
+            order.push((attacker, cmd));
+            1
+        });
+        assert_eq!(order, vec![(0, 0x0C), (0, 0x0D), (1, 0x0C)]);
+    }
+
+    #[test]
+    fn the_turn_limit_ends_the_leg_on_opponent_hp_left() {
+        let mut s = session();
+        // Four turns of chip damage: nobody drops, the leg times out.
+        for turn in 1..=TURN_LIMIT {
+            assert_eq!(s.phase(), MusclePhase::Select);
+            assert_eq!(s.turns_left(), TURN_LIMIT - turn + 1);
+            s.commit_card(0, 0);
+            s.end_selection();
+            s.resolve_turn(|attacker, _| if attacker == 0 { 40 } else { 0 });
+            assert_eq!(s.turn(), turn);
+            if turn < TURN_LIMIT {
+                assert_eq!(s.phase(), MusclePhase::TurnOver);
+                s.next_turn();
+            }
+        }
+        assert_eq!(s.turns_left(), 0);
+        assert_eq!(s.phase(), MusclePhase::TimeUp, "four turns is the limit");
+        assert!(s.decided(), "a timed-out leg is over");
+        // Scored on how much of the opponent is left: 400 - 4*40 = 240/400.
+        assert_eq!(s.hp(1), 240);
+        assert_eq!(s.hp_left(), 60);
+        // The leg is closed: no fifth turn.
+        s.next_turn();
+        assert_eq!(s.phase(), MusclePhase::TimeUp);
+    }
+
+    #[test]
+    fn retail_kernel_is_the_shared_resolution_path() {
+        // No model installed: the retail path declines rather than inventing
+        // a damage rule of its own.
+        let mut bare = session();
+        bare.commit_card(0, 0);
+        bare.end_selection();
+        assert!(!bare.resolve_turn_retail(), "no model, no resolution");
+        assert_eq!(bare.phase(), MusclePhase::Resolve, "phase untouched");
+
+        // With a model installed the same call drives the turn, logging each
+        // play in whole-string order and advancing the rand cursor.
+        let mut s = session();
+        s.install_damage_model(DomeDamageModel::new(
+            Vec::new(),
+            [0u8; move_power::MOVE_ID_INDEX_MAP_LEN],
+            None,
+            [
+                DomeCombatant {
+                    hp_max: 500,
+                    int: 60,
+                    udf: 20,
+                    ldf: 20,
+                    element: 0,
+                },
+                DomeCombatant {
+                    hp_max: 400,
+                    int: 50,
+                    udf: 15,
+                    ldf: 15,
+                    element: 0,
+                },
+            ],
+            [500, 400],
+            0x1234_5678,
+        ));
+        let seed_before = s.damage_model().unwrap().rng_seed();
+        s.commit_card(0, 0);
+        s.commit_card(0, 3);
+        s.ai_commit_all(1);
+        s.end_selection();
+        assert!(s.resolve_turn_retail());
+        let plays = s.last_turn_plays();
+        assert_eq!(plays.len(), s.queue(0).len() + s.queue(1).len());
+        let order: Vec<usize> = plays.iter().map(|p| p.attacker).collect();
+        assert_eq!(
+            order,
+            vec![0, 0, 1, 1],
+            "each string plays whole, player first"
+        );
+        assert_ne!(
+            s.damage_model().unwrap().rng_seed(),
+            seed_before,
+            "the PsyQ rand cursor advanced"
+        );
+        // The model's HP mirror tracks the session's own HP.
+        assert_eq!(plays.last().unwrap().hp_after, [s.hp(0), s.hp(1)]);
+        assert_eq!(s.turn(), 1);
     }
 
     #[test]
@@ -660,11 +1100,11 @@ mod tests {
         let mut s = session();
         s.commit_card(0, 0);
         s.end_selection();
-        s.resolve_round(|attacker, _| if attacker == 0 { 1000 } else { 0 });
+        s.resolve_turn(|attacker, _| if attacker == 0 { 1000 } else { 0 });
         assert_eq!(s.phase(), MusclePhase::Won);
         assert!(s.decided());
         assert_eq!(s.reward_spell_id(), 0x83);
-        assert_eq!(s.score_percent(1), 0);
+        assert_eq!(s.hp_left(), 0, "the opponent has nothing left");
     }
 
     #[test]
@@ -672,7 +1112,9 @@ mod tests {
         let mut s = session();
         s.ai_commit_all(1);
         s.end_selection();
-        s.resolve_round(|attacker, _| if attacker == 1 { 1000 } else { 0 });
+        // The opponent's string still runs whole after the player's, so a
+        // KO lands even though the player queued nothing this turn.
+        s.resolve_turn(|attacker, _| if attacker == 1 { 1000 } else { 0 });
         assert_eq!(s.phase(), MusclePhase::Lost);
     }
 

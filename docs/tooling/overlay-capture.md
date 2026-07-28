@@ -27,7 +27,7 @@ The dump count column reflects committed function dumps under `ghidra/scripts/fu
 | World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement). **Source: the overworld controller lives IN the field overlay PROT 0897** (`FUN_801E76D4` at base+0x18EBC; signature byte-matches 0897 via `asset overlay find-sig`) - these captures are the field overlay resident during overworld, not a separate "world-map overlay". |
 | Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | These two are the FIELD overlay resident during actor-scripted dialogue (op*/ed* labels), NOT the FMV decoder. The actual STR/MDEC FMV-decoder overlay is **PROT 0970** (`cutscene_str`, modes 26/27; pinned statically from the disc - see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). |
 | Minigame hub - fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | Five DISTINCT slot-A overlays that VA-alias the same window, not one binary. **Static sources: fishing 0972, slot machine 0975, baka fighter 0976, dance 0980** - mode-24 door-warp sub-ids 0/3/4/6 (op `0x3E`; each anchored by a documented function prologue; the old 0973 slot attribution was its image in 0973's over-read tail). See [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp). → [detail](#minigame-hub-overlay-controllers) |
-| Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Distinct from the minigame-hub family; per-frame match controller `FUN_801D0748`. → [detail](#muscle-dome-overlay-controllers) |
+| Muscle Dome | ✓ | `overlay_muscle_dome.bin` | Distinct from the minigame-hub family; per-frame match controller `FUN_801D0748`. The capture is the whole battle-action overlay - the dome is a battle mode, not a card game. → [detail](#muscle-dome-overlay-controllers) |
 
 #### Minigame-hub overlay controllers
 
@@ -242,9 +242,9 @@ Seven Duckstation saves cover the minigame overlays. Saves 1–4 and 6 are all v
 | 2 | Slot machine (Wild Card) | `overlay_slot_machine.bin` | 17 (vs fishing) |
 | 3 | Baka Fighter (fist fight) | `overlay_baka_fighter.bin` | 34 (vs fishing) |
 | 4 | Disco King (dance) | `overlay_dance.bin` | 32 (vs fishing) |
-| 5 | Muscle Dome / Baka card battle | `overlay_muscle_dome.bin` | distinct family |
+| 5 | Muscle Dome | `overlay_muscle_dome.bin` | distinct family |
 | 6 | Dev/debug menu | `overlay_debug_menu.bin` | 12 (superset of fishing) |
-| 7 | Baka card battle (alt state) | - | same code as save 5 |
+| 7 | Muscle Dome (alt state) | - | same code as save 5 |
 
 Saves 5 and 7 share identical code at the first prologue positions (100% match on first 32 KB of code); save 7 is not imported separately.
 

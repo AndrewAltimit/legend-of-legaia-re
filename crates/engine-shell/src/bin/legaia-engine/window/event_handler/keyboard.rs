@@ -464,10 +464,10 @@ impl PlayWindowApp {
             }
             return;
         }
-        // `M`: toggle the Muscle Dome card-battle contest. Loads the
+        // `M`: toggle the Muscle Dome contest (a four-turn battle). Loads the
         // hand tables from the battle overlay (PROT 0898), suspends
         // the current scene, and runs the select/commit/resolve loop;
-        // Left/Right/Up/Down commit the four cards, Cross confirms /
+        // Left/Right/Up/Down enter the four directions, Cross confirms /
         // continues. Pressing M again aborts (no reward on an abort).
         if matches!(code, KeyCode::KeyM)
             && state == ElementState::Pressed
@@ -482,13 +482,18 @@ impl PlayWindowApp {
                             s.reward_spell_id()
                         ),
                         MusclePhase::Lost => log::info!("muscle: contest lost"),
+                        MusclePhase::TimeUp => log::info!(
+                            "muscle: time up after {} turns - opponent left on {}% HP",
+                            s.turn(),
+                            s.hp_left()
+                        ),
                         _ => log::info!("muscle: contest aborted"),
                     }
                     self.session.restore_field_bgm();
                 }
             } else if self.start_muscle_minigame() {
                 log::info!(
-                    "muscle: started - Left/Right/Up/Down commit cards, Cross confirms, M to leave"
+                    "muscle: started - 4 turns, arrows enter directions, Cross confirms, M to leave"
                 );
             }
             return;

@@ -991,12 +991,12 @@ window.MgMuscle = (function () {
         artsBanner = null;
         finishPlayback();
       } else if (mode === 'interval') {
-        api.muscle_next_round();
+        api.muscle_next_turn();
         const s2 = st();
         if (s2.phase === 'select') {
           mode = 'select';
           selectSub = 'menu';
-          setBanner('ROUND ' + (s2.round + 1), null, 70);
+          setBanner('ROUND ' + (s2.turn + 1), null, 70);
         }
       } else if (mode === 'decided') {
         if (lastOpts) start(lastOpts);
@@ -1052,8 +1052,14 @@ window.MgMuscle = (function () {
 
     function finishPlayback() {
       const state = st();
-      if (state.phase === 'round_over') {
+      if (state.phase === 'turn_over') {
         mode = 'interval';
+      } else if (state.phase === 'time_up') {
+        /* The four-turn limit expired with both fighters standing: the leg
+         * is over, scored on how much of the opponent was left. */
+        mode = 'decided';
+        setBanner('TIME UP', state.names[1] + ' survived on ' + state.hp_left +
+          '% HP \u2014 SPACE for a rematch', 100000, 'bad');
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
         if (scene) {
@@ -1748,10 +1754,10 @@ window.MgMuscle = (function () {
     }
 
     /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
-     * the commit/playback phase (`ctx+6 == 0x50`) runs and drains otherwise,
-     * mapped to a 160-px bar (`counter * 160 / 12`). The ramp + mapping are
-     * traced (port `engine-core::muscle_dome::time_meter_step`); the screen
-     * placement is fitted. */
+     * the direction-ENTRY phase (`ctx+6 == 0x50`) runs and drains otherwise,
+     * mapped to a 160-px bar (`counter * 160 / 12`). The counter comes from
+     * the port (`engine-core::muscle_dome::time_meter_step`, through
+     * `muscle_tick_time_meter`); only the screen placement is fitted. */
     function drawTimeMeter() {
       const hFull = 160;
       const hh = Math.round(meter * hFull / 12);
@@ -1763,6 +1769,17 @@ window.MgMuscle = (function () {
       g.strokeStyle = 'rgba(255,255,255,0.35)';
       g.strokeRect(x * 2 + 0.5, (yBot - hFull) * 2 + 0.5, 6 * 2, hFull * 2);
       text('TIME', x + 3, yBot + 7, 6, '#aeb6c4', 'center', '');
+    }
+
+    /* Filled horizontal bar in 320x240 screen space (the canvas is 2x). */
+    function gaugeBar(x, y, w, h, frac, fill) {
+      const f = Math.max(0, Math.min(1, frac || 0));
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(x * 2, y * 2, w * 2, h * 2);
+      g.fillStyle = fill;
+      g.fillRect(x * 2, y * 2, Math.round(w * f) * 2, h * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
+      g.strokeRect(x * 2 + 0.5, y * 2 + 0.5, w * 2, h * 2);
     }
 
     function drawInterval(state) {
@@ -1777,24 +1794,29 @@ window.MgMuscle = (function () {
       if (!(hudOk() && hubSprite(16, (320 - 192) / 2, 56))) {
         text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
       }
-      text('round ' + (state.round + 1) + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
-      /* The retail score readout: hp * 0x6c / max (FUN_801d0748 phase 0x6e),
-       * rendered per fighter out of 108. */
-      text('score  ' + state.names[0] + ' ' + state.score[0] + '/108' +
-        '   ·   ' + state.names[1] + ' ' + state.score[1] + '/108',
-        160, 84, 7, '#e8ecf2', 'center', '');
+      text('turn ' + state.turn + ' of ' + state.turn_limit + ' settled',
+        160, 75, 6, '#aeb6c4', 'center', '');
+      /* The two numbers the retail strip carries all match long: the Turns
+       * Left digit (4 - ctx[+0x28a]) and the OPPONENT's HP percentage
+       * (hp * 100 / max), both from FUN_801d0748 phase 0x14. This is the
+       * score - the leg is won by emptying that bar inside the limit. */
+      text('Turns Left: ' + state.turns_left + '     HP Left: ' + state.hp_left + '%',
+        160, 86, 9, '#ffd166', 'center');
+      gaugeBar(80, 94, 160, 6, state.hp_left / 100, '#d84b4b');
       text('damage taken   you ' + state.last_damage[0] +
-        '  ·  foe ' + state.last_damage[1], 160, 100, 7, '#e8ecf2', 'center', '');
+        '  ·  foe ' + state.last_damage[1], 160, 110, 7, '#e8ecf2', 'center', '');
       /* Spirit recovered this contest - the +0x170 gauge each hit fills
        * (spirit_gauge_fill); the interval framing itself is approximated. */
       text('spirit gauge   you ' + state.spirit[0] + '/100' +
-        '  ·  foe ' + state.spirit[1] + '/100', 160, 116, 7, '#7798d4', 'center', '');
+        '  ·  foe ' + state.spirit[1] + '/100', 160, 124, 7, '#7798d4', 'center', '');
       const q0 = state.queue[0].length, q1 = state.queue[1].length;
       text('commands played   you ' + q0 + '  ·  foe ' + q1,
-        160, 132, 7, '#aeb6c4', 'center', '');
-      text('budget reseeds from your AGL pool next round',
-        160, 152, 6, '#aeb6c4', 'center', '');
-      text('SPACE: next round', 160, 172, 8, '#2dcca7', 'center');
+        160, 138, 7, '#aeb6c4', 'center', '');
+      text(state.turns_left === 1
+        ? 'last turn - AP reseeds from your AGL pool'
+        : 'AP reseeds from your AGL pool next turn',
+        160, 154, 6, '#aeb6c4', 'center', '');
+      text('SPACE: next turn', 160, 172, 8, '#2dcca7', 'center');
     }
 
     function drawBanner() {
@@ -1899,11 +1921,14 @@ window.MgMuscle = (function () {
       }
       runTickTimers();
 
-      /* Round time meter: ramp while the round is playing out, drain
-       * otherwise (the FUN_801d3444 shape, one step per tick). */
-      meter = mode === 'playback'
-        ? Math.min(12, meter + 1)
-        : Math.max(0, meter - 1);
+      /* Round time meter (FUN_801d3444): the ported ramp owns it - it climbs
+       * while the DIRECTION-ENTRY phase runs (retail gates on ctx+6 == 0x50)
+       * and drains otherwise. An earlier revision here ramped during
+       * PLAYBACK, which is the inverse of retail. */
+      if (api.muscle_tick_time_meter) {
+        api.muscle_tick_time_meter(1);
+        meter = st().time_meter | 0;
+      }
 
       /* Ease the HP bars toward their targets. */
       /* (targets are set per landed event; outside playback follow state) */
@@ -1998,7 +2023,7 @@ window.MgMuscle = (function () {
       } else if (mode === 'decided') {
         drawStatusPlate(state);
       }
-      if (meter > 0 && mode === 'playback') drawTimeMeter();
+      if (meter > 0) drawTimeMeter();
       drawPopups();
       drawBanner();
     }

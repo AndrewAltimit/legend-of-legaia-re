@@ -724,13 +724,16 @@ impl PlayWindowApp {
         true
     }
 
-    /// Load the Muscle Dome hand tables from the battle overlay (PROT 0898)
-    /// and enter a contest. The player's card costs come from their own
-    /// player battle file's equipped-section swing records (`+0x74`, the
-    /// same bytes the Arts gauge reads); the opponent plays a flat
-    /// favored-cost hand, and HP / budgets are dev constants (retail seeds
-    /// them from the arena's battle-actor records). Returns `false` (with a
-    /// log line) when the tables don't resolve.
+    /// Load the Muscle Dome direction tables from the battle overlay (PROT
+    /// 0898) and enter a four-turn contest. The player's per-direction AP
+    /// costs come from their own player battle file's equipped-section swing
+    /// records (`+0x74`, the same bytes the Arts gauge reads), and the
+    /// player's HP / budget pool come from the lead party record's live
+    /// fields (`+0x104` max HP, `+0x110` AGL - the `+0x14e` / `+0x154` battle
+    /// actor fields retail copies them into). The opponent has no actor
+    /// record here: it fights the same direction deck at the flat favored
+    /// cost, from documented stand-in HP / budget constants. Returns `false`
+    /// (with a log line) when the tables don't resolve.
     pub(super) fn start_muscle_minigame(&mut self) -> bool {
         use legaia_asset::muscle_dome as md;
         use legaia_asset::static_overlay;
@@ -780,11 +783,72 @@ impl PlayWindowApp {
         };
         let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
         let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
-        // Dev stand-ins for the arena actor records (budget pool +0x154, HP
-        // +0x14c/+0x14e) and the awarded Seru (ctx+0x269 = 1 → spell 0x81).
-        let session = MuscleDomeSession::new(player_hand, opp_hand, [120, 120], [500, 400], 1);
+        // Stand-ins for the opponent's arena actor record (budget pool
+        // +0x154, max HP +0x14e); the awarded Seru is ctx+0x269 = 1 → spell
+        // 0x81. The player's side comes off the live lead record instead.
+        const STANDIN_BUDGET: u16 = 120;
+        const STANDIN_HP: i32 = 400;
+        let lead = self.session.host.world.roster.members.first();
+        let player_hp = lead
+            .map(|r| r.hp_mp_sp().hp_max as i32)
+            .filter(|&hp| hp > 0)
+            .unwrap_or(500);
+        let player_budget = lead
+            .map(|r| r.live_stats().agl)
+            .filter(|&agl| agl > 0)
+            .unwrap_or(STANDIN_BUDGET);
+        let mut session = MuscleDomeSession::new(
+            player_hand,
+            opp_hand,
+            [player_budget, STANDIN_BUDGET],
+            [player_hp, STANDIN_HP],
+            1,
+        );
+        // Resolve through the *retail* damage kernel, the same one the
+        // browser host uses: the move-power table, its id -> index map and
+        // the element-affinity matrix all come off this raw PROT 0898 entry.
+        // The player's stat profile is the lead party record's live window
+        // (`+0x110..+0x11B`); the opponent has no arena actor record staged
+        // here, so its profile is a documented stand-in - the dome's own
+        // opponent monster id is not pinned to any table, and a fabricated
+        // pin would be worse than a disclosed constant.
+        const STANDIN_OPPONENT: legaia_engine_core::muscle_dome::DomeCombatant =
+            legaia_engine_core::muscle_dome::DomeCombatant {
+                hp_max: STANDIN_HP as u16,
+                int: 40,
+                udf: 30,
+                ldf: 30,
+                element: 0,
+            };
+        let player_profile = lead
+            .map(|r| {
+                let live = r.live_stats();
+                legaia_engine_core::muscle_dome::DomeCombatant {
+                    hp_max: player_hp.clamp(0, u16::MAX as i32) as u16,
+                    int: live.int,
+                    udf: live.udf,
+                    ldf: live.ldf,
+                    element: 0,
+                }
+            })
+            .unwrap_or(STANDIN_OPPONENT);
+        let seed = 0x4D55_5343 ^ self.session.host.world.frame as u32;
+        match legaia_engine_core::muscle_dome::DomeDamageModel::from_battle_overlay(
+            &raw,
+            [player_profile, STANDIN_OPPONENT],
+            [player_hp, STANDIN_HP],
+            seed,
+        ) {
+            Some(model) => session.install_damage_model(model),
+            None => log::warn!(
+                "muscle: PROT 0898 move-power table did not decode - the contest will \
+                 resolve without damage"
+            ),
+        }
         log::info!(
-            "muscle: contest started - hand commands {commands:02x?}, player costs {player_costs:?}"
+            "muscle: contest started - {} turns, deck {commands:02x?}, player costs \
+             {player_costs:?}, player {player_hp} HP on a {player_budget} AP pool",
+            legaia_engine_core::muscle_dome::TURN_LIMIT,
         );
         self.session.host.world.enter_muscle_dome(session);
         // The arena loads no track of its own - it reuses the battle engine,
