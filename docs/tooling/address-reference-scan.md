@@ -32,6 +32,10 @@ scripts/ghidra-analysis/find-address-word-refs.py 8005126c
 # Widen to every extracted PROT entry (raw bytes; no VA is claimed for them).
 scripts/ghidra-analysis/find-address-word-refs.py 8005126c --prot
 
+# Name the image that holds the routine, so branch hits from its slot
+# siblings are marked instead of counted (see "A branch cannot cross images").
+scripts/ghidra-analysis/find-address-word-refs.py 801e58a8 --home field
+
 # "Who references this table?" - expand a VA range to its word-aligned members.
 scripts/ghidra-analysis/find-address-word-refs.py --range 800705fc:80070760
 
@@ -57,6 +61,32 @@ same VA is a different word in each slot-A sibling: the *image* is as much of
 the answer as the offset is. The bottom row is why `--prot` hits carry no VA -
 a streamed entry has no load base, and inventing one would be the phantom-VA
 defect all over again.
+
+## A branch cannot cross images
+
+Of the five forms, four carry a copy of the address they reach and are
+therefore evidence wherever they are found: a `jal` in one overlay can call a
+routine in another, or in SCUS, whenever both are resident. A **branch is not
+like that**. It is PC-relative, so it can only reach code in its own image -
+which makes a `BR` hit evidence about *that image's* copy of the VA and about
+nothing else.
+
+Under a shared slot-A base every overlay has a byte at every VA, so this is not
+a corner case. Two of the addresses on this page's own worklist read as
+referenced for exactly that reason and are not: `0x801CFE20`, the FMV overlay's
+MDEC-in sync wrapper, collects a branch from the **field** overlay, whose bytes
+at that VA are the epilogue of an unrelated routine; `0x801E58A8`, a field
+overlay list-count seed, collects one from **battle_action**. Neither branch
+can reach the routine it appears to reference.
+
+`--home <image>` makes the check mechanical. Name the image that holds the
+routine - [`locate-entry-image.py`](../../scripts/ghidra-analysis/locate-entry-image.py)
+answers that from the prologue - and branch hits from any other overlay print as
+`br~` and tally under `branch_alias` instead of `branch`. When a target's only
+hits are aliased branches the tool says so outright. The flag exits non-zero on
+a name that matches no loaded overlay, so a typo cannot quietly mark every hit
+an alias. SCUS is never marked: its base is unique, so a hit there is never an
+aliasing artifact.
 
 ## Classification
 
@@ -107,6 +137,46 @@ against a known answer before trusting a "nothing found":
   table needs the table *base* scanned too before it means anything.
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
+- **Aliased branches.** A `BR` hit in an image that does not hold the routine
+  is not a reference to it; pass `--home` and read `branch_alias`
+  ([above](#a-branch-cannot-cross-images)).
+
+## The retail-unreachable set
+
+Sweeping every anchor the port catalog's audit lists as *disclosed inert* -
+ported, unreachable in the engine, and disclosed as such - answers a question
+the audit itself cannot: whether a row is waiting on wiring or on nothing.
+Almost all of them are waiting on wiring. These are the ones that are not, and
+the list is closed under the sweep - no other disclosed-inert anchor lacks a
+reference.
+
+| Address | Image | Routine | Write-up |
+|---|---|---|---|
+| `8005126C` | SCUS | battle actor on-screen test | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
+| `80035274` | SCUS | item / equipment passive-name draw | [`menus.md`](../reference/functions/menus.md#80035274) |
+| `80050D40` | SCUS | 12-bit angle tween | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
+| `80025054` | SCUS | actor-template tick; unreachable through its record `0x80070614` | [`game-modes.md`](../reference/functions/game-modes.md) |
+| `801CFE20` / `801CFE5C` | 0970 `cutscene_str` | MDEC in / out sync wrappers | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
+| `801D0230` | 0970 `cutscene_str` | MDEC status-word leaf; both call sites are inside the two wrappers above | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
+| `801D5780` | 0897 `field` | generic arc-hop spawn | [`runtime-libs.md`](../reference/functions/runtime-libs.md) |
+| `801D5C2C` | 0972 `fishing` | 3-D segment clip + projection | [`minigame-fishing.md`](../subsystems/minigame-fishing.md) |
+| `801DAD6C` | 0899 `menu` | five-step menu open sequence | [`menus.md`](../reference/functions/menus.md) |
+| `801DBA90` | 0898 `battle_action` | reward-banner composer | [`battle.md`](../reference/functions/battle.md) |
+| `801E5834` / `801E58A8` | 0897 `field` | pooled menu-actor spawn + list row-count seed | [`menus.md`](../reference/functions/menus.md) |
+
+Every row was checked with `locate-entry-image.py` first, so each is a routine
+that begins where it is said to begin. The last two groups needed `--home`: the
+only hit for `801CFE20` is a branch in the field overlay and the only hit for
+`801E58A8` is one in `battle_action`, neither of which can reach the routine it
+appears to name. `801D0230`'s negative is one step removed - it has real call
+sites, both inside routines from this same list.
+
+The scan settles reachability, not identity, so a row here still says nothing
+about whether the decoded behaviour is right. What it says is that the row is
+not wiring work: see
+[`worklist-classification.md`](worklist-classification.md#the-reachability-claim)
+for how such a row is recorded, and
+[`port-catalog.md`](port-catalog.md#ignore-list) for where.
 
 ## Relation to the in-container scripts
 

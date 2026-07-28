@@ -228,12 +228,19 @@ The [S6 trace](../../tooling/playthrough-coverage.md) captured the **field->batt
 ## Unreferenced SCUS entry points
 
 Three of the battle-band routines above are entry points that **nothing on the
-disc reaches**. Each opens a stack frame of its own and is preceded by a clean
-`jr ra` epilogue, so they are functions rather than interior labels - and a
-sweep of `SCUS_942.54`, every based overlay image and the raw bytes of every
-extracted `PROT.DAT` entry finds no literal address word, no `jal`, no `j`, no
-PC-relative branch and no `lui`+`addiu` materialisation for any of them
+disc reaches**. A sweep of `SCUS_942.54`, every based overlay image and the raw
+bytes of every extracted `PROT.DAT` entry finds no literal address word, no
+`jal`, no `j`, no PC-relative branch and no `lui`+`addiu` materialisation for
+any of them
 ([`address-reference-scan.md`](../../tooling/address-reference-scan.md)).
+
+They are functions rather than interior labels, but the evidence is the
+**preceding epilogue**, not a prologue of their own: each is immediately
+preceded by a `jr ra` whose delay slot closes the previous frame, so nothing
+falls through into it. Only `8005126C` and `80035274` then open frames
+(`addiu sp,sp,-0x38` and `-0x20`). `80050D40` opens none at all - it is a
+frameless leaf, and a missing prologue is not a missing function
+([`worklist-classification.md`](../../tooling/worklist-classification.md#the-three-kinds-of-ignore-claim)).
 
 | Address | What it is | The surviving path it duplicates |
 |---|---|---|
@@ -270,6 +277,19 @@ function: `FUN_80025054`'s
 *that record* is what nothing materialises. Its neighbours on the same grid are
 each named by a `lui`+`addiu` pair at a spawn site; `0x80070614` is not, so the
 tick is unreachable without any statement about the tick itself.
+
+That negative needs the **whole table** swept, not just the record - an address
+reached as `table_base + index` is not a materialisation pair, so a per-record
+result means nothing until the base is checked too. Sweeping `0x800705FC`
+onward settles it in the same pass. The table head is materialised exactly once,
+in the field overlay at `0x801D6D6C`, and the two instructions after it are
+`lw a1, 4(s0)` and `jal FUN_80020DE0` with `addiu a0, a0, 0x5fc` in the delay
+slot: the head is handed to the allocator as one record, not walked. No site
+indexes the grid, and `0x80070614` appears in no image in any form.
+
+All four addresses are filed under the ignore list's `unreferenced` section
+([`worklist-classification.md`](../../tooling/worklist-classification.md#the-reachability-claim)),
+except `8005126C`, which was ported before the sweep ran.
 
 ## Function details
 

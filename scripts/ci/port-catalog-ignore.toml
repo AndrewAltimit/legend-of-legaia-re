@@ -22,6 +22,12 @@
 # image-boundary test cannot refute a scope claim, so scope sections stay
 # unprefixed however they were arrived at. See
 # `docs/tooling/worklist-classification.md`.
+#
+# `[unreferenced]` is a third kind, and the only one whose evidence is a
+# negative over the disc rather than over one image or one crate: the routine is
+# real AND the port does not cover it another way - retail never reaches it at
+# all. Read that section's own header for what was scanned, and
+# `docs/tooling/address-reference-scan.md` for the tool and its limits.
 
 
 # PSX BIOS table dispatchers + syscall thunks. Statically linked PsyQ kernel
@@ -1728,3 +1734,34 @@
 [libsnd_seq_volume]
 "800648f0" = "SsSepSetVol(sep, seq, l, r): resolves DAT_801cd2c0[sep] + seq*0xB0, then either latches the pair into +0x58/+0x5A or - when the flag word is exactly 1, i.e. PLAY and nothing else - packs (sep | seq << 8) and dispatches _SsSeqNoteOn (80067e9c) to commit it live. Body-identical to the already-ignored 80064890 except for the seq*0xB0 stride, which is what makes it the SEP-indexed form. see ghidra/scripts/funcs/800648f0.txt"
 "8006497c" = "SsSepGetVol(sep, seq, &l, &r): 13 instructions, packs (sep | seq << 8) into an i16 and tail-calls the already-ignored getter 800683d8 (SsSeqGetVol). Pure argument marshalling - it touches no state of its own. see ghidra/scripts/funcs/8006497c.txt"
+
+
+# Retail-unreachable entry points - a REACHABILITY claim, not a scope one.
+#
+# Each row is a real function: Ghidra resolves the queried VA as the entry, and
+# the bytes agree - it either opens its own frame or sits immediately after a
+# clean `jr ra` epilogue, so control cannot fall into it and it is not an
+# interior label. What no row has is a way in. A sweep of `SCUS_942.54`, all 31
+# based overlay images and the raw bytes of every extracted `PROT.DAT` entry
+# finds NO reference in any of the five forms `find-address-word-refs.py`
+# covers: literal little-endian address word (the function-pointer table and
+# actor-template slot shapes), `lui`+`addiu`/`ori` materialisation, `jal`, `j`,
+# and PC-relative branch.
+#
+# The consequence is what puts them here rather than on the worklist. There is
+# nothing to wire a port of one of these to, in this engine or in retail, so
+# porting it can only manufacture an inert row no wiring pass can ever close.
+# The row is settled by documenting the negative instead - each address's
+# write-up lives under `docs/reference/functions/`, and the pattern they share
+# (a static routine an overlay-resident or differently-parameterised sibling
+# superseded, left linked because the linker keeps whole objects) is in
+# `docs/reference/functions/battle.md`.
+#
+# A reachability row is falsifiable and the scan says how: an address assembled
+# in more than two instructions, or reached as `table_base + index`, is not a
+# pair the scan can see. Re-run the address - and, for a row whose subject is a
+# table record, the table base too - before re-opening one.
+[unreferenced]
+"80025054" = "Actor-template tick, reachable only as the +0x08 word of the static template record at 0x80070614 (docs/reference/functions/runtime-libs.md). Each spawn site names its own record with its own lui+addiu pair - no dispatcher walks the 0x18 grid - so the whole table was swept, not just the record: 0x800705FC is materialised in the field overlay at 0x801D6D6C and passed straight to the allocator FUN_80020DE0, 0x8007062C at SCUS 0x80021B74, and 0x80070614 by nothing anywhere. The tick itself is a real entry (own `addiu sp,sp,-0x30` frame, `jr ra` + nop above it); it is unreachable one level up, because nothing spawns the actor that would run it. see ghidra/scripts/funcs/80025054.txt"
+"80035274" = "Item / equipment passive-NAME draw. Real entry - `addiu sp,sp,-0x20` frame under a clean `jr ra` / `addiu sp,sp,0x18` epilogue - with zero references of any form. The two routines that survive into retail menus, FUN_80034250 and the menu overlay's window-34 renderer FUN_801D4A80, walk the same item -> passive chain to the accessory-passive record's +0x08 description; only this one takes the +0x04 name. Worth reading rather than porting: it is the sole decoded witness to the item table's leading class / sub-index byte pair (docs/reference/functions/menus.md). see ghidra/scripts/funcs/80035274.txt"
+"80050d40" = "12-bit angle tween, (from, to, weight, slot), with zero references of any form. A frameless leaf - it opens no frame at all - and an entry rather than an interior label because the word above it is the `addiu sp,sp,0x20` delay slot of the previous function's `jr ra`, so nothing falls through into it. Its near-twin FUN_8001D088 is the ANM interpolator every live angle blend uses; the two differ in the short-arc comparison, `srl` vs `sra` on the scaled delta, and a stride-4 slot table at 0x801C9060 against a stride-8 one at 0x800891A8, so a port treating them as one function inherits the wrong sign behaviour on a negative delta. see ghidra/scripts/funcs/80050d40.txt"

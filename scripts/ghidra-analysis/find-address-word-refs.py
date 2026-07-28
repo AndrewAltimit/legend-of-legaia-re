@@ -19,6 +19,13 @@ any kind may not be an entry point at all - it may be an intra-function
 label, reached by a PC-relative **branch** that carries no copy of its
 target. That is the shape behind Ghidra's fake `FUN_xxxxxxxx` "label-calls".
 
+That third form comes with a trap the other two do not have. A branch is
+PC-relative, so it can only reach code in its **own** image - which means a
+`BR` hit is evidence about the branching image's copy of the VA and nothing
+else. Slot-A overlays share a load base, so a routine's VA is live in every
+sibling image, and a branch in a *different* overlay reads as a reference to
+a routine it cannot possibly reach. Pass `--home <image>` to mark those.
+
 This tool sweeps `SCUS_942.54`, every statically extracted overlay image, and
 (optionally) every extracted `PROT.DAT` entry for every form - literal word,
 materialisation pair, `jal`, `j`, and PC-relative branch - and classifies
@@ -326,7 +333,7 @@ def lui_pair_hits(image: Image, target: int) -> list[tuple[int, int, str]]:
 
 def report_target(target: int, images: list[Image], args) -> dict:
     print(f"\n=== 0x{target:08x} " + "=" * 46)
-    found = {"word": 0, "jal": 0, "j": 0, "branch": 0, "lui": 0}
+    found = {"word": 0, "jal": 0, "j": 0, "branch": 0, "branch_alias": 0, "lui": 0}
 
     for image in images:
         rows = []
@@ -351,9 +358,23 @@ def report_target(target: int, images: list[Image], args) -> dict:
             found["j"] += 1
             print(f"  J     {image.label(off)}")
         if not args.no_branches:
+            # Only overlays alias: SCUS has a unique base, so a hit in it is
+            # never an artifact of two images sharing an address.
+            alias = (
+                args.home is not None
+                and image.kind == "overlay"
+                and args.home.lower() not in image.name.lower()
+            )
             for off in image.branch_index().get(target, []):
-                found["branch"] += 1
-                print(f"  BR    {image.label(off)}")
+                if alias:
+                    # A branch is PC-relative, so it cannot leave its own
+                    # image. This one reaches THIS image's copy of the VA,
+                    # which under a shared load base is a different routine.
+                    found["branch_alias"] += 1
+                    print(f"  br~   {image.label(off)}  (other image - not your routine)")
+                else:
+                    found["branch"] += 1
+                    print(f"  BR    {image.label(off)}")
         for lui_off, partner, form in lui_pair_hits(image, target):
             found["lui"] += 1
             span = (partner - lui_off) // 4
@@ -363,6 +384,10 @@ def report_target(target: int, images: list[Image], args) -> dict:
         print("  (no word, no jump, no branch, no materialisation pair - in any image)")
     else:
         print("  totals: " + " ".join(f"{k}={v}" for k, v in found.items()))
+        if found["branch_alias"] and not (
+            found["word"] or found["jal"] or found["j"] or found["branch"] or found["lui"]
+        ):
+            print("  -> every hit is a branch from another image: nothing reaches this routine")
     return found
 
 
@@ -395,6 +420,13 @@ def main() -> int:
         help="skip the PC-relative branch index (slow to build over --prot)",
     )
     ap.add_argument("--tables-only", action="store_true", help="drop incidental word hits")
+    ap.add_argument(
+        "--home",
+        metavar="IMAGE",
+        help="substring of the image that HOLDS the target routine; branch hits "
+        "from any other image are marked `br~` and tallied separately, because "
+        "a PC-relative branch cannot leave its own image",
+    )
     ap.add_argument("--context", action="store_true", help="print neighbouring words")
     ap.add_argument(
         "--expect-scus",
@@ -425,6 +457,11 @@ def main() -> int:
         images.extend(load_prot_entries({im.name[:4] for im in overlays}))
     if not images:
         sys.exit("no images - extract the disc first (see docs/tooling/extraction.md)")
+
+    if args.home and not any(
+        args.home.lower() in im.name.lower() for im in images if im.kind == "overlay"
+    ):
+        sys.exit(f"--home {args.home!r} matches no loaded overlay image")
 
     total = sum(len(im.data) for im in images)
     print(f"# {len(images)} images, {total / 1e6:.1f} MB scanned")

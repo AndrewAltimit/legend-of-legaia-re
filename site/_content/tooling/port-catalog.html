@@ -122,6 +122,7 @@ max_depth = 2</code></pre>
     <li><code>--ignored-only</code> lists the ignore-list itself (useful for auditing).</li>
   </ul>
   <p>Adding an entry: copy the address into the appropriate category table with a one-line reason that names the PsyQ function and (where known) the BIOS vector. Keep the reason factual - it shows up in catalog drill-down output. Provenance citations belong in <code>docs/reference/functions.md</code>, not in the TOML reason field.</p>
+  <p>One category is not library code and asserts something different. <code>unreferenced</code> holds <strong>routines the retail game never reaches</strong>: real functions, not covered by the port some other way, that nothing on the disc points at in any form - linked in because the linker keeps whole object files, superseded by a sibling that shipped in their place. Reimplementing one cannot make anything work, so it would become a permanent entry on a to-do list nobody can complete; the row is settled as a documented negative instead. The evidence, and the limits that make such a row reopenable, are on the <a href="address-reference-scan.html">address-reference scan</a> page.</p>
 </section>
 
 <section class="doc-section" id="dashboard">

@@ -1,0 +1,73 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; address-reference scan</div>
+  <h1>Address-reference scan</h1>
+  <p class="lede">"Who calls this?" is the question that stalls a reverse-engineering thread most often, and the usual answer &mdash; "nothing does" &mdash; is usually wrong. This sweep looks for every way the game can reach an address, across every code image on the disc at once, so that answer becomes a measurement instead of a shrug.</p>
+</header>
+
+<section class="doc-section" id="why">
+  <h2>Why a call-graph is not enough</h2>
+  <p>A call-graph tool looks for <code>jal</code>, the MIPS call instruction. Legaia reaches a great deal of its code some other way, and each of those ways is invisible to that search:</p>
+  <ul class="bullets">
+    <li><strong>Through a table.</strong> A menu screen's content renderer, a sub-screen dispatcher, an actor template's per-frame tick &mdash; the address sits in memory as a plain 32-bit word and something loads and jumps through it. Nothing on the disc ever names it in an instruction.</li>
+    <li><strong>Through an address built in two halves.</strong> A 32-bit MIPS address does not fit in one instruction, so the assembler emits a pair: load the top half, add the bottom. Ghidra's cross-reference index does not join those pairs back together, so asking it "who uses this address" returns nothing even for one used everywhere.</li>
+  </ul>
+  <p>And the mirror question has its own trap. An address with no caller of any kind might not be a function at all: it can be a label <em>inside</em> somebody else's function, reached by a relative branch that carries no copy of its target. Ghidra invents a fake function entry at each of those, so a worklist can fill up with addresses that were never separate routines.</p>
+  <p>The sweep looks for all five forms in one pass &mdash; literal word, split-address pair, <code>jal</code>, <code>j</code>, and relative branch &mdash; over the main executable, all 31 recovered overlay images, and the raw bytes of all 1233 archive entries. That is what turns "I did not find a caller" into "no reference exists".</p>
+</section>
+
+<section class="doc-section" id="reading">
+  <h2>What a hit means, and where it is</h2>
+  <p>Reporting a hit as a memory address requires knowing where its containing file gets loaded, and the three cases are kept apart because conflating them has previously put an impossible address into this project's own notes.</p>
+  <table>
+    <thead><tr><th>Image</th><th>Where its load address comes from</th><th>A hit is reported as</th></tr></thead>
+    <tbody>
+      <tr><td>The executable</td><td>its own header</td><td>file offset and the one address it can be</td></tr>
+      <tr><td>Overlay images</td><td>a committed per-overlay map</td><td>file offset and address, <strong>named by image</strong></td></tr>
+      <tr><td>Every other archive entry</td><td>none &mdash; streamed data</td><td>file offset only</td></tr>
+    </tbody>
+  </table>
+  <p>The middle row is the one that bites, because many overlays load at the same address. The same address is a different word in each of them, so the <em>image</em> is as much of the answer as the offset is. The bottom row is why streamed entries carry no address at all: inventing one would be exactly the defect the first row exists to avoid.</p>
+  <p>Each word hit also carries a rough verdict &mdash; dispatch table, template field, or a word that merely happens to fall inside an instruction stream &mdash; drawn from what the surrounding bytes look like. The counts behind the verdict are printed alongside it, so it can be second-guessed rather than taken on faith.</p>
+</section>
+
+<section class="doc-section" id="branches">
+  <h2>A branch cannot cross images</h2>
+  <p>Four of the five forms carry a copy of the address they reach, so a hit is evidence wherever it turns up: a call in one overlay can reach a routine in another whenever both are loaded. A <strong>branch is different</strong>. It encodes a distance rather than a destination, so it can only reach code in its own image &mdash; which makes a branch hit evidence about <em>that image's</em> copy of the address and about nothing else.</p>
+  <p>Since overlays share load addresses, every one of them has a byte at every address, and this is not a corner case. Two routines on this project's own inert-code list read as referenced for exactly this reason and are not: an FMV-overlay synchronisation helper collects a branch from the <em>field</em> overlay, whose bytes at that address are the tail of an unrelated routine, and a field-overlay list helper collects one from the <em>battle</em> overlay. Neither branch can reach the routine it appears to point at.</p>
+  <p>Naming the image that holds the routine makes the check mechanical: branch hits from any other overlay are then marked and counted separately, and when they are all a target has, the tool says so outright.</p>
+</section>
+
+<section class="doc-section" id="outcomes">
+  <h2>The three outcomes, and what each one means for the work</h2>
+  <ul class="bullets">
+    <li><strong>A table or template word.</strong> The consumer is whatever dispatches through that record. The stalled thread now has a next step, and the format documentation gains a citation that points at real bytes.</li>
+    <li><strong>Branch sites but no call sites.</strong> The address is a label inside a larger function, not an entry point. The worklist row was never work.</li>
+    <li><strong>Nothing, anywhere.</strong> The routine is real but the game never reaches it &mdash; linked in because the linker keeps whole object files, superseded by a sibling that shipped in its place. This is the outcome worth naming, because it looks identical to unfinished work and is the opposite of it.</li>
+  </ul>
+  <p>That last outcome changes what should be done about a row. Reimplementing a routine the original game never runs cannot make anything work: there is nothing to connect it to, in the reimplementation or in the original, so it becomes a permanent entry on a to-do list nobody can ever complete. Those addresses are recorded as a documented negative instead, in their own category on the <a href="port-catalog.html">port catalog</a>'s exclusion list, with the scan's own limits stated so a later pass can reopen one if the evidence changes.</p>
+</section>
+
+<section class="doc-section" id="controls">
+  <h2>Controls</h2>
+  <p>A tool is only worth its negatives if its positives are checked, so it is run against known answers before a "nothing found" is believed: a routine reached solely through a template word, one reached by ordinary calls in six images, an address known to be an interior label, and a documented pointer table recovered from its single use site. The first of those doubles as a self-check with an exit status, so a broken run fails loudly rather than reporting silence.</p>
+</section>
+
+<section class="doc-section" id="limits">
+  <h2>Limits</h2>
+  <ul class="bullets">
+    <li><strong>Compressed entries.</strong> Archive entries are scanned as raw bytes, so a reference inside a compressed one is invisible. Overlay <em>code</em> is stored uncompressed, so this does not cover the images callers actually live in.</li>
+    <li><strong>Addresses built in more than two steps.</strong> The pair search wants one instruction for each half. An address assembled another way, or reached as "table base plus index", is not a pair &mdash; which is why a negative about one record needs the table's base address checked too before it means anything.</li>
+    <li><strong>The verdict is triage.</strong> Classifying a hit as a dispatch table says its neighbours look like function entries, not that the game indexes them. Reading the disassembly at the hit is still the last word.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="ghidra.html">Ghidra tooling</a>
+    <a href="../reference/re-settled-threads.html">Settled RE threads</a>
+  </div>
+</section>
