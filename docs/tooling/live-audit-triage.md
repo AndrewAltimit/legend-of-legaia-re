@@ -849,6 +849,28 @@ old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
 descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
 to exist first is a base-confirmed dump of the image that really owns that VA.
 
+### What still chooses which painter runs
+
+The painters' `WIRE` is about the dispatch, and the dispatch is real:
+`World::tick_submode_screen` calls `HubPainter::for_window` on whatever record
+index the open screen carries. What picks that index is a separate question,
+and the answer is narrower than the row above reads.
+
+Retail decides it through a panel **descriptor**: a state machine installs one
+(`FUN_801E9B3C`) and the descriptor names the record. The port records the
+install as `HubAction::InstallPanel(<descriptor VA>)` and
+`World::apply_submode_actions` ignores that action, so the index comes from the
+opener's argument instead. `World::open_coin_counter` passes record `1`; the
+field-VM op-`0x49` path (`op49_menu_request`) passes `None` for every sub-op it
+does not resolve elsewhere. So record `1` is the only index a production frame
+reaches, and the entry list's record `3` paints when a caller names it.
+
+The descriptors the ported state machines install (`0x801F3340`, `0x801F3360`,
+`0x801F3370`, `0x801F3294`, `0x801F3388`, `0x801F2A88`) sit outside the
+`0x801F2C0C` panel-window record table, so the descriptor -> record mapping is a
+second format, and it is unread. Reading it is what would let a screen select
+its own painter the way retail does.
+
 ## The field / motion / camera block
 
 Another *disclosed*-section cluster, and the one where the disclosures were
