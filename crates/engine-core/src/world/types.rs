@@ -53,8 +53,8 @@ pub struct FieldPropCollider {
 }
 
 /// A **live** ledge hop: the argument triple retail builds on the stack for
-/// `FUN_801d2404`, plus the two clip cursors the two helper actors that call
-/// spawns carry between frames.
+/// `FUN_801d2404`, plus the two clips the two helper actors that call spawns
+/// carry between frames.
 ///
 /// Retail keeps this state on a pair of pool actors - the arc helper
 /// (template `0x801F227C`, ticked by `FUN_801d5c08`, which evaluates the
