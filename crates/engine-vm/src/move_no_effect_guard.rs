@@ -1,11 +1,21 @@
-//! Battle **queued-magic guard** at `FUN_801F3C34` (PROT 0898, base
-//! `0x801CE818`).
+//! Battle **queued-magic follow-up guard** at `FUN_801F3C34` (PROT 0898, base
+//! `0x801CE818`, file `0x2541C`).
 //!
-//! A short pre-resolution pass over the acting battle actor's queued action
-//! byte `actor[+0x1DF]`. It fires a fixed message id `0x66` through the
-//! battle message printer `FUN_801D8DE8(0x66, 0)` and mirrors that id into
-//! the battle context byte `ctx[+0x18]`, gated on the caster's own spell
-//! list.
+//! A short pass over the acting battle actor's queued action byte
+//! `actor[+0x1DF]`. It fires a fixed message id `0x66` through the battle
+//! message printer `FUN_801D8DE8(0x66, 0)` and mirrors that id into the battle
+//! context byte `ctx[+0x18]`, gated on the caster's own spell list.
+//!
+//! ## Where it runs
+//!
+//! Its one caller is the battle-action SM itself: `FUN_801E295C` reaches
+//! `jal 0x801f3c34` at `0x801E4CB8`, at the head of **state `0x36`**
+//! (`Summon - return-from-fade`, ported as
+//! [`crate::battle_action`]'s `SummonReturn`). The same SM body then runs the
+//! 7-slot `+0x21C` / `+0x8` reset the port already carries, calls the
+//! summon spell-XP check `FUN_801E70BC`, and clamps the follow-up hold
+//! `0x801F6964` to `1`. So this is a **post-cast** pass on the summon /
+//! Seru-magic band, not a pre-resolution one.
 //!
 //! ## Body, read from the PROT 0898 image
 //!
@@ -43,7 +53,25 @@
 //! `0x96` up) are excluded before the party slot is even read, so a
 //! non-magic queued action never reaches the record.
 //!
-//! `see ghidra/scripts/funcs/overlay_muscle_dome_801f3c34.txt`
+//! ## Reading the dumps at this VA
+//!
+//! `0x801F3C34` is PROT 0898's own code (file `0x2541C`, the same base that
+//! puts the move-power table at `0x801F4F5C` / file `0x26744`), and the
+//! `jal` that proves it is in the battle overlay's SM dump. Every *dump file*
+//! at this VA is nevertheless named for some other image
+//! (`overlay_muscle_dome_801f3c34.txt`, `..._dance_...`, `..._fishing_...`,
+//! and three more): those overlays are short, so the extracted `.bin` window
+//! runs past their own content into the same physical bytes, and all six
+//! disassemble identically. `overlay_0897_801f3c34.txt` is a different trap
+//! again - it is a dump of `FUN_801F3894`, printed under the field overlay's
+//! base for bytes that are not the field overlay's. Only the absolute
+//! operands survive a wrong base, which is why every global and `jal` target
+//! quoted here is safe to read off those dumps and the *entry address* is not.
+//! See `docs/tooling/dump-corpus-integrity.md` and
+//! `docs/tooling/call-target-integrity.md`.
+//!
+//! `see ghidra/scripts/funcs/overlay_muscle_dome_801f3c34.txt` (body) and
+//! `overlay_battle_action_801e295c.txt` `0x801E4CB8` (the call site)
 
 /// Queued-action ids the guard skips outright.
 pub const SKIPPED_ACTIONS: [u8; 2] = [0x85, 0x8E];
@@ -69,9 +97,8 @@ pub const MESSAGE_ID: u8 = 0x66;
 /// PORT: FUN_801f3c34 (`0x801F3C9C..0x801F3CDC`)
 ///
 /// NOT WIRED: shared by [`queued_magic_message`] and
-/// [`follow_up_hook_install`], both of which are themselves inert - the
-/// engine's battle round resolves a queued action through
-/// [`crate::battle_action`] with no pre-pass, so nothing reaches this scan.
+/// [`follow_up_hook_install`], both of which are themselves inert - see
+/// [`queued_magic_message`] for the blocker, which is **not** the caller.
 pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
     for i in 0..SCAN_LIMIT {
         if spell_ids.get(i).copied() == Some(action) {
@@ -92,9 +119,21 @@ pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
 ///
 /// PORT: FUN_801f3c34
 ///
-/// NOT WIRED: the engine's battle round resolves a queued action through
-/// `crate::battle_action` without this pre-pass; there is no call site until
-/// the message-hook slot `0x800775B4` is modelled.
+/// NOT WIRED: **the caller is not the blocker.** An earlier note here said
+/// "the engine's battle round resolves a queued action through
+/// `crate::battle_action` without this pre-pass"; the pass *is* inside that
+/// SM, at state `0x36` (`SummonReturn`), which the port has and drives. What
+/// is missing is three inputs, none of which the SM's host trait exposes:
+///
+/// 1. the caster's record `+0x13D` / `+0x161` spell-id and spell-level arrays
+///    (`legaia_save::character::SpellList` holds both, but
+///    `BattleActionHost` has no accessor that reaches a character record);
+/// 2. the battle message channel `FUN_801D8DE8(id, mode)` - the port routes
+///    the SM's HUD calls through `BattleActionHost::ui_element`, which is the
+///    same printer, so this one is an argument away;
+/// 3. the pending latch `0x801F6960` that this reads and
+///    [`follow_up_hook_install`] writes, together with the hold `0x801F6964`
+///    the SM clamps in the same state.
 pub fn queued_magic_message(
     action: u8,
     spell_ids: &[u8],
@@ -137,32 +176,53 @@ pub struct FollowUpHook {
     pub hold: i32,
 }
 
-/// Runtime VA of the `[class][level band]` follow-up record table
-/// (`0x20` bytes per class = four 8-byte records).
+/// Runtime VA of the `[element][level band]` follow-up record table
+/// (`0x20` bytes per element = four 8-byte records; `sll v0,v0,0x5` at
+/// `0x801F4438`).
 pub const FOLLOW_UP_TABLE: u32 = 0x801F_6870;
-/// Runtime VA of the `[class][class]` pass-chance byte table, `8` per row.
-pub const CLASS_PAIR_TABLE: u32 = 0x801F_53E8;
+
+/// Runtime VA of the table the suppression roll indexes: **the battle
+/// element-affinity matrix**, 8 bytes per row (`sll v1,v1,0x3` at
+/// `0x801F3E64`).
+///
+/// An earlier reading here called this "the `[class][class]` pass-chance
+/// byte table". It is `0x801F53E8`, the same matrix
+/// `docs/subsystems/battle-formulas.md` pins as
+/// `affinity[attacker_element][defender_element]` and the engine already
+/// parses off PROT 0898 as `World::element_affinity` - and the `+0x1D` bytes
+/// it is indexed by are the two records' **element** bytes, not a class.
+pub const ELEMENT_AFFINITY_TABLE: u32 = 0x801F_53E8;
+
 /// Frames the installer seeds into `0x801F6964`.
 pub const FOLLOW_UP_HOLD: i32 = 0xB4;
-/// A class-pair byte at or above this passes the suppression test.
-pub const CLASS_PAIR_PASS: u8 = 0x65;
-/// The class value that skips the roll outright.
-pub const CLASS_SKIP: u8 = 5;
-/// Class values below this index the seven-entry jump table at `0x801CFA2C`;
-/// anything else falls through to the installer tail.
-pub const CLASS_JUMP_TABLE_LEN: u8 = 7;
+
+/// An affinity percent at or above this passes the suppression test, i.e.
+/// the follow-up needs the defender to be **weak** to the attacker's element
+/// (`0x65` = 101%). Below it, the roll suppresses - the sense is the opposite
+/// of the "high value = more likely to be blocked" reading the byte invites.
+pub const AFFINITY_WEAK_MIN: u8 = 0x65;
+
+/// The element value that skips the roll outright.
+pub const ELEMENT_SKIP: u8 = 5;
+
+/// Element values below this index the seven-entry jump table at
+/// `0x801CFA2C`; element `7` (non-elemental) falls through to the installer
+/// tail.
+pub const ELEMENT_JUMP_TABLE_LEN: u8 = 7;
 
 /// Everything the installer reads that is not the caster's spell record.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FollowUpInputs {
     /// `ctx[+0x287]` - when zero the suppression roll is skipped entirely.
     pub roll_enabled: u8,
-    /// `(*(0x801C9358))[+0x1D]` - the acting side's class byte.
-    pub actor_class: u8,
-    /// `(*(0x801C9348))[+0x1D]` - the opposing side's class byte.
-    pub other_class: u8,
-    /// The `[actor_class][other_class]` byte of [`CLASS_PAIR_TABLE`].
-    pub class_pair_byte: u8,
+    /// `(*(0x801C9358))[+0x1D]` - the acting side's **element** byte, off the
+    /// readef-installed actor record (`docs/formats/summon-readef.md`).
+    pub actor_element: u8,
+    /// `(*(0x801C9348))[+0x1D]` - the opposing side's element byte.
+    pub other_element: u8,
+    /// The `[actor_element][other_element]` byte of
+    /// [`ELEMENT_AFFINITY_TABLE`] - an affinity **percent**.
+    pub affinity_pct: u8,
     /// `FUN_80056798()` - this frame's BIOS `rand()` draw.
     pub rand: i32,
 }
@@ -172,10 +232,11 @@ pub struct FollowUpInputs {
 pub enum FollowUpOutcome {
     /// The spell level scan came back below [`MIN_LEVEL`].
     LevelTooLow,
-    /// The class-pair roll suppressed the follow-up.
+    /// The affinity roll suppressed the follow-up.
     Suppressed,
-    /// The class byte indexes the seven-entry jump table at `0x801CFA2C`;
-    /// those arms are separate bodies and are not dumped with this one.
+    /// The element byte (`< 7`) indexes the seven-entry jump table at
+    /// `0x801CFA2C` - one arm per element. Those arms are separate bodies and
+    /// are not dumped with this one.
     JumpTable(u8),
     /// The installer tail ran: the caller installs this hook.
     Installed { band: i32, hook: FollowUpHook },
@@ -183,7 +244,7 @@ pub enum FollowUpOutcome {
 
 /// The level band the tail folds a spell level into: `(level - 3) >> 1`, so
 /// levels `3..=4` share band `0`, `5..=6` band `1`, and so on. It is a byte
-/// stride of `8` into the class's `0x20`-byte row, which bounds the useful
+/// stride of `8` into the element's `0x20`-byte row, which bounds the useful
 /// range at four bands.
 ///
 /// PORT: FUN_801f3d3c (`0x801F4420..0x801F4434`)
@@ -194,30 +255,32 @@ pub fn follow_up_band(level: u8) -> i32 {
     (level as i32 - 3) >> 1
 }
 
-/// Whether the class-pair roll lets the follow-up through.
+/// Whether the element-affinity roll lets the follow-up through.
 ///
 /// The roll only runs when `ctx[+0x287]` is set. Inside it, two shapes pass
-/// without consulting the table at all: an actor class of [`CLASS_SKIP`], and
-/// a `rand()` divisible by five. Otherwise the `[actor][other]` byte decides,
-/// and a byte **below** [`CLASS_PAIR_PASS`] is what suppresses - the sense is
-/// the opposite of the "high value = more likely" reading the table shape
-/// invites.
+/// without consulting the matrix at all: an actor element of
+/// [`ELEMENT_SKIP`], and a `rand()` divisible by five (the
+/// `0x66666667` magic-multiply divide at `0x801F3E24`). Otherwise the
+/// `affinity[actor][other]` percent decides, and a value **below**
+/// [`AFFINITY_WEAK_MIN`] is what suppresses: the follow-up needs the opposing
+/// side to be elementally weak to the caster.
 ///
 /// PORT: FUN_801f3d3c (`0x801F3DEC..0x801F3E7C`)
 ///
 /// NOT WIRED: a helper of [`follow_up_hook_install`], which is itself inert -
-/// same blocker.
+/// same blocker. Its own input is *not* missing: the affinity matrix is
+/// disc-parsed and live as `World::element_affinity`.
 pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
     if inp.roll_enabled == 0 {
         return true;
     }
-    if inp.actor_class == CLASS_SKIP {
+    if inp.actor_element == ELEMENT_SKIP {
         return true;
     }
     if inp.rand % 5 == 0 {
         return true;
     }
-    inp.class_pair_byte >= CLASS_PAIR_PASS
+    inp.affinity_pct >= AFFINITY_WEAK_MIN
 }
 
 /// The sibling of [`queued_magic_message`]: the routine that **installs** the
@@ -226,18 +289,18 @@ pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
 /// It opens on the identical preamble - resolve the acting actor, take its
 /// queued action byte `+0x1DF`, find that action in the caster's spell-id
 /// array and read the parallel level byte, bail below [`MIN_LEVEL`] - and then
-/// runs the class-pair roll before selecting a record out of
-/// [`FOLLOW_UP_TABLE`] by `[actor_class][level band]`. The record's byte `0`
+/// runs the element-affinity roll before selecting a record out of
+/// [`FOLLOW_UP_TABLE`] by `[actor_element][level band]`. The record's byte `0`
 /// becomes the pending latch, its word `1` the routine pointer, and the hold
 /// is always [`FOLLOW_UP_HOLD`]; the same message id [`MESSAGE_ID`] is printed
 /// through `FUN_801D8DE8(0x66, 0)`.
 ///
 /// PORT: FUN_801f3d3c
 ///
-/// NOT WIRED: same blocker as [`queued_magic_message`] - nothing in the port's
-/// battle round runs a pre-resolution pass, and the follow-up slot
-/// `0x800775B4` is not modelled, so there is no caller and nowhere to install
-/// the returned hook.
+/// NOT WIRED: same blocker as [`queued_magic_message`] - the caster's record
+/// spell-id / spell-level arrays are not reachable from `BattleActionHost`,
+/// and the follow-up slot `0x800775B4` + latch `0x801F6960` are not modelled,
+/// so there is nowhere to install the returned hook.
 pub fn follow_up_hook_install(
     action: u8,
     spell_ids: &[u8],
@@ -253,8 +316,8 @@ pub fn follow_up_hook_install(
     if !follow_up_roll_passes(inp) {
         return FollowUpOutcome::Suppressed;
     }
-    if inp.actor_class < CLASS_JUMP_TABLE_LEN {
-        return FollowUpOutcome::JumpTable(inp.actor_class);
+    if inp.actor_element < ELEMENT_JUMP_TABLE_LEN {
+        return FollowUpOutcome::JumpTable(inp.actor_element);
     }
     FollowUpOutcome::Installed {
         band: follow_up_band(level),
@@ -267,7 +330,7 @@ pub fn follow_up_hook_install(
 }
 
 /// One 8-byte [`FOLLOW_UP_TABLE`] record, as the caller reads it out of the
-/// overlay image at `[actor_class][band]`.
+/// overlay image at `[actor_element][band]`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FollowUpHookRecord {
     /// Byte `0` - the pending id.
@@ -348,9 +411,9 @@ mod tests {
     fn inputs() -> FollowUpInputs {
         FollowUpInputs {
             roll_enabled: 1,
-            actor_class: 9,
-            other_class: 2,
-            class_pair_byte: 0x70,
+            actor_element: 9,
+            other_element: 2,
+            affinity_pct: 0x70,
             rand: 3,
         }
     }
@@ -365,27 +428,27 @@ mod tests {
     }
 
     #[test]
-    fn a_low_class_pair_byte_suppresses_the_follow_up() {
+    fn a_resistant_defender_suppresses_the_follow_up() {
         let mut inp = inputs();
-        inp.class_pair_byte = CLASS_PAIR_PASS - 1;
+        inp.affinity_pct = AFFINITY_WEAK_MIN - 1;
         assert!(!follow_up_roll_passes(&inp));
-        inp.class_pair_byte = CLASS_PAIR_PASS;
+        inp.affinity_pct = AFFINITY_WEAK_MIN;
         assert!(follow_up_roll_passes(&inp));
     }
 
     #[test]
     fn the_roll_is_skipped_three_ways() {
         let mut inp = inputs();
-        inp.class_pair_byte = 0;
+        inp.affinity_pct = 0;
         // ctx[+0x287] clear.
         inp.roll_enabled = 0;
         assert!(follow_up_roll_passes(&inp));
-        // The skip class.
+        // The skip element.
         inp.roll_enabled = 1;
-        inp.actor_class = CLASS_SKIP;
+        inp.actor_element = ELEMENT_SKIP;
         assert!(follow_up_roll_passes(&inp));
         // One draw in five.
-        inp.actor_class = 9;
+        inp.actor_element = 9;
         inp.rand = 10;
         assert!(follow_up_roll_passes(&inp));
         inp.rand = 11;
@@ -408,10 +471,10 @@ mod tests {
     }
 
     #[test]
-    fn a_low_class_reaches_the_jump_table_instead_of_the_tail() {
+    fn a_low_element_reaches_the_jump_table_instead_of_the_tail() {
         let (ids, levels) = lists(0x81, 5);
         let mut inp = inputs();
-        inp.actor_class = 2;
+        inp.actor_element = 2;
         assert_eq!(
             follow_up_hook_install(0x81, &ids, &levels, &inp, FollowUpHookRecord::default()),
             FollowUpOutcome::JumpTable(2)
