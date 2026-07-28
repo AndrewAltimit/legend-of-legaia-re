@@ -85,6 +85,16 @@ cheapest place to look for a claim that is still wrong.
   *subset* of them, not a twin.
 - **`FUN_8001EBEC`'s second pose-copy arm loads seven words**, so its range ends
   at `+0x15C`, not `+0x158`.
+- **A committed claim can quote a dump statistic the dump no longer reports.**
+  Re-extraction makes dumps longer, and a caveat written against the old one
+  keeps suppressing work - `0x8005BA38` was recorded "not a function, do not
+  open a port row" and is a complete `RotTransPers`. Checker:
+  `scripts/ghidra-analysis/check-dump-stat-drift.py`; the class is on
+  [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md#a-caveat-outlives-the-dump-it-was-written-against).
+- **A battle `0xB5` was read in the wrong id space.** Spell `0xB5` is Lapis
+  Wave; formation `0xB5` is Cort. The branch at `0x801E6D04` reads the
+  formation-id byte, and the wrong reading survived because Cort casts Lapis
+  Wave - the two spaces agreeing on the answer is what hid the error.
 
 Two rows a prior audit flagged as the highest-risk `decompiled-C` claims on the
 register - the narration-roller op's operand decode and the item-add OOB
@@ -128,9 +138,22 @@ actor's clip.
 *What would close it:* resolve the ext-target byte to the live actor the way
 `func_0x8003C83C` does, run the dispatcher against that actor's own
 `+0x62`/`+0x6A` words (the prop stepper already does exactly this for props),
-and let the existing clip players own the latch. A live capture of an
-innkeeper conversation reading back the player actor's `+0x62` across the
-spin would pin the expected cursor/latch sequence to check it against.
+and let the existing clip players own the latch.
+
+The capture that would pin the sequence to check it against is narrow and
+well-specified, so it is worth stating exactly rather than as "take a capture":
+
+| What | Value |
+|---|---|
+| Where | Any inn, at the innkeeper conversation - the `A2 <t> <clip>` / `AC <t> 08` / `AD <t> 08` triple with `t = 0xF8` (the player channel) |
+| Arm | A **write**-watch on the *player* context's `+0x62`, resolved through the same id→context path `func_0x8003C83C` uses, not on the NPC record's |
+| Log | `(pc, ra, value)` per write, plus `+0x6A`, across the whole spin |
+| Answers | Whether the actor tick `FUN_800204F8` is the only writer of bit 8, and what cursor values accompany the latch - i.e. what the port's clip players must reproduce instead of the stand-in write |
+
+The two ids `func_0x8003C83C` special-cases (`0xFB` = system, and the player
+channel) are the reason a naive watch on the dispatching record's context sees
+nothing: retail's spin is reading a **different struct** from the one the
+dispatcher is running.
 
 ### Region story-flag gate families
 
@@ -151,6 +174,23 @@ against a live capture. `ropeway`/`ropeway2`/`jiji` are the only spokes walked
 organically, and Nivora's `0x370` has one live organic SET confirming its
 play order. The generic C1/C2 seeder already drives every family, so one
 dungeon-walk capture per region would close the residual.
+
+*What this needs is capture time, not a new instrument.*
+[`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
+is already the right probe and already logs exactly what the residual asks
+for: an exec breakpoint on the flag SET / CLEAR entry points with the writer's
+`ra`, plus a per-VSync scene-name and game-mode poll, so a single play-forward
+through a region emits the region's own SET order with the scene each write
+happened in. It is designed for whole-playthrough runs, so the four unwalked
+regions can be covered in one session rather than four.
+
+Two operating notes that apply to any run of it, both already bitten:
+PCSX-Redux probes **do not exit on their own** - kill on a timeout or the
+process hangs indefinitely
+([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)) - and the
+process-matching helpers in
+[`shell-observer-traps.md`](../tooling/shell-observer-traps.md) exist because
+`pgrep -f` matches the caller's own command line.
 
 ## Title / boot / overlays
 
@@ -176,7 +216,11 @@ can ever produce it.
 *What would close it:* a save state taken inside the Cort fight showing
 entry 968's bytes resident in the slot-B buffer at `0x801F69D8`, and the
 loader-B current-id tracker `gp+0x934` (`0x8007BC4C`) reading `0x49` - the
-same pair of observations that pinned 0967 for the Tetsu tutorial.
+same pair of observations that pinned 0967 for the Tetsu tutorial. Note the
+formation-table watch in
+[`autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
+already logs `DAT_8007BD0C[4]`, so one run through that fight confirms the
+`0xB5` selector and the residency together.
 
 ## Rendering / camera
 
