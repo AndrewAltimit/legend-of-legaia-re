@@ -57,12 +57,24 @@ pub(crate) const FIELD_STEP_UNIT: i32 = 2;
 /// 64-unit collision sub-cells.
 pub(crate) const FIELD_PROBE_DELTA: i16 = 8;
 /// Retail's ledge-hop floor-height thresholds (`FUN_801d1878`, the
-/// `slti 0x61` / `slti -0x60` pair). A landing floor `>= +0x61` above the
-/// actor hops **up** (`kind 0x10`); one `< -0x60` below hops **down**
-/// (`kind 0x18`); anything between is flat ground and starts no hop.
-pub(crate) const FIELD_HOP_UP_THRESHOLD: i32 = 0x61;
-/// Downward companion of [`FIELD_HOP_UP_THRESHOLD`].
-pub(crate) const FIELD_HOP_DOWN_THRESHOLD: i32 = -0x60;
+/// `slti 0x61` / `slti -0x60` pair at `0x801D1B14` / `0x801D1B1C`), applied
+/// to `floor_ahead - actor_y`.
+///
+/// The names carry the **world** direction, not the sign of the difference,
+/// because world Y grows downward and the two disagree: a difference
+/// `>= +0x61` means the floor ahead sits at a numerically larger Y, i.e.
+/// lower, so it is the **drop** arm (`kind 0x10`, the shorter apex). One
+/// `< -0x60` is the floor ahead sitting above the actor - the **step up**
+/// (`kind 0x18`, the taller apex that clears the lip). Anything between is
+/// flat ground and starts no hop.
+pub(crate) const FIELD_HOP_DOWN_THRESHOLD_DOWNWARD: i32 = 0x61;
+/// Upward companion of [`FIELD_HOP_DOWN_THRESHOLD_DOWNWARD`].
+pub(crate) const FIELD_HOP_UP_THRESHOLD_DOWNWARD: i32 = -0x60;
+/// Clip length retail always passes as `FUN_801d2404`'s `a2`
+/// (`addiu a2, zero, 0x10` at `0x801D1B60`): 16 frames of arc, which the
+/// setup turns into the `0x1000 / 0x10` cursor step.
+// REF: FUN_801d2404
+pub(crate) const FIELD_HOP_CLIP_FRAMES: i16 = 0x10;
 /// Retail player speed multiplier installed by the scene-entry map-init
 /// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
 pub(crate) const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;

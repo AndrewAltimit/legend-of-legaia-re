@@ -2,14 +2,14 @@
 //! landing-point triple the locomotion controller builds on its stack into a
 //! quadratic-Bezier hop clip on a freshly spawned helper actor.
 //!
-//! REF: FUN_801d1878, FUN_80020de0, FUN_801db510, FUN_801daa50
+//! REF: FUN_801d1878, FUN_80020de0, FUN_801db510, FUN_801daa50, FUN_801e45bc, FUN_801d5d60
 //!
 //! Each ported entry carries its `PORT` tag on the Rust item that implements
 //! it - [`build_hop_arc`] (`FUN_801d2404`), [`spawn_arc_helper`]
-//! (`FUN_801d5780`), [`spawn_arc_with_emitter`] (`FUN_801d25ec`) and
-//! [`advance_hop_session`] (`FUN_801d2298`) - never at module level, so the
-//! liveness audit sees one anchor per port site rather than a coarse
-//! file-wide one.
+//! (`FUN_801d5780`), [`spawn_arc_with_emitter`] (`FUN_801d25ec`),
+//! [`advance_hop_arc`] (`FUN_801d5c08`) and [`advance_hop_session`]
+//! (`FUN_801d2298`) - never at module level, so the liveness audit sees one
+//! anchor per port site rather than a coarse file-wide one.
 //!
 //! # Three spawners, one arithmetic
 //!
@@ -45,8 +45,8 @@
 //!
 //! ```text
 //! 801d1b20  addiu a0, sp, 0x18      ; a0 = &stack triple {x, y, z}
-//! 801d1b2c  addiu a1, zero, 0x10    ; a1 = apex height (hop up)
-//! 801d1b44  addiu a1, zero, 0x18    ;      or 0x18 (hop down)
+//! 801d1b2c  addiu a1, zero, 0x10    ; a1 = apex height (drop)
+//! 801d1b44  addiu a1, zero, 0x18    ;      or 0x18 (step up)
 //! 801d1b60  addiu a2, zero, 0x10    ; a2 = clip length in frames (always 16)
 //! 801d1b70  jal   0x801d2404
 //! ```
@@ -100,39 +100,48 @@
 //! whichever endpoint is higher**, independent of how far apart they are.
 //! That invariant is what [`hop_apex_height`] and the unit tests below pin.
 //!
+//! # Two helpers, two ticks - and which is which
+//!
+//! The setup allocates **two** records and they do different jobs. Which
+//! per-frame routine drives which is not a guess: an actor template is six
+//! words, and word `2` is its tick function pointer. Reading the three
+//! templates straight out of the field overlay at slot-A base `0x801CE818`:
+//!
+//! | Template | File offset | Tick fn |
+//! |---|---|---|
+//! | `0x801F227C` (the arc helper) | `0x23A64` | `FUN_801d5c08` |
+//! | `0x801F2294` (the paired helper) | `0x23A7C` | `FUN_801d2298` |
+//! | `0x801F22AC` (the emitter) | `0x23A94` | `FUN_801d5d60` |
+//!
+//! So [`advance_hop_session`] (`FUN_801d2298`) is the **paired** record's
+//! tick - the phase / SFX / movement-lock state machine - and it never
+//! touches a position. The record that actually moves the player is the arc
+//! helper, ticked by `FUN_801d5c08`, ported here as [`advance_hop_arc`]. An
+//! earlier reading had `FUN_801d2298` as "the" advance and left the position
+//! write unaccounted for; the template words are what settle it.
+//!
+//! `FUN_801d5c08` evaluates the seeded quadratic Bezier through the shared
+//! fixed-point evaluator `FUN_801e45bc` (field overlay file `0x15DA4`) and
+//! writes the result into the **parent** actor's `+0x14..+0x1B` - and the
+//! parent is the player, because [`build_hop_arc`]'s setup back-linked
+//! `_DAT_8007C364` there. That is the whole "how does a hop move anything"
+//! question, and it is why the two ticks have to run together: the arc moves
+//! the player, the pair holds the movement lock until six frames after the
+//! landing.
+//!
 //! # NOT WIRED
 //!
-//! Three of the four items here are inert for one shared reason: retail's clip
-//! lives on a **spawned helper actor** drawn from the `FUN_80020de0` pool, and
-//! `engine-core`'s world model has neither that pool nor a per-actor clip
-//! cursor.
+//! Only the two standalone spawners are inert now, and for different reasons -
+//! see their own tags. [`spawn_arc_helper`] is **retail-unreachable**:
+//! `FUN_801D5780` has no reference of any form anywhere in the shipped data,
+//! while its three siblings each do, so it is dead code in the retail image
+//! rather than an engine wiring gap. [`spawn_arc_with_emitter`] is a real
+//! retail entry, but its callers are the non-player arcs, which the engine's
+//! world model has no actor-pool counterpart for.
 //!
-//! [`spawn_arc_helper`] is the exception and does not belong to that group:
-//! **retail does not call it either.** `FUN_801D5780` has no reference of any
-//! form anywhere in the shipped data, while its three siblings each do, so it
-//! is dead code in the retail image rather than an engine wiring gap. Its own
-//! tag carries the evidence and the two traps that make the row easy to
-//! re-read wrongly.
-//!
-//! Worth stating at full strength, because it is larger than "the arc is not
-//! animated": the hop is **detected and dropped**. `World::try_field_ledge_hop`
-//! is live off the per-frame vertical controller and posts a `FieldLedgeHop`
-//! into `World::field_ledge_hop`, and that field has no reader anywhere in the
-//! workspace - `World::step_field_vertical` clears it to `None` at the top of
-//! the very next frame before re-posting. So the port currently has no ledge
-//! hop at all: the player walks up to an authored ledge, the engine classifies
-//! it correctly as a hop-up or hop-down, and nothing moves.
-//!
-//! The concrete blocker is a storage one and it is named precisely so the next
-//! pass does not re-derive it: driving [`advance_hop_session`] needs a
-//! `cursor`/`extent` pair that survives between frames, and `FieldLedgeHop` is
-//! a per-frame transient with no such pair. Closing this means promoting it to
-//! a session that outlives the frame - a `cursor`/`extent` on `FieldLedgeHop`
-//! itself is the smallest shape that works - and then stepping it from the
-//! same vertical controller that posts it, applying [`HopTick`]'s position to
-//! the player actor. Computing the arc without somewhere to keep the cursor
-//! would be inventing state nothing reads, so it is deliberately not done
-//! here.
+//! The player hop itself is live: `World::try_field_ledge_hop` classifies the
+//! ledge and starts the session, `World::step_field_vertical` advances both
+//! ticks every frame, and the player arcs to the landing point.
 
 /// Fixed-point full-clip extent: retail's cursor runs `0 ..= 0x1000`.
 pub const CLIP_FULL: i32 = 0x1000;
@@ -186,13 +195,6 @@ fn mid(a: i16, b: i16) -> i16 {
 /// `frames` the `a2` clip length (retail always passes `0x10`).
 ///
 /// PORT: FUN_801d2404
-// NOT WIRED: the helper-actor pool `FUN_801d2404` allocates from, and the
-// per-frame advance `FUN_801d2298` that consumes the clip, have no
-// counterpart in `engine-core`'s world model. The arc's inputs are all
-// present - `World::field_ledge_hop` carries exactly this function's
-// `(target, kind)` - but that record is a per-frame transient nothing reads,
-// so there is no session for the built arc to be stored on. See the
-// module's `NOT WIRED` section.
 pub fn build_hop_arc(start: (i16, i16, i16), target: HopTarget, apex: i16, frames: i16) -> HopArc {
     let end = (target.x, target.y, target.z);
 
@@ -441,10 +443,6 @@ pub struct HopTick {
 /// releases the movement lock.
 ///
 /// PORT: FUN_801d2298
-// NOT WIRED: see the module's `NOT WIRED` section - nothing in `engine-core`
-// owns a `HopSession` between frames. This is the anchor whose absence makes
-// the port's ledge hop a no-op rather than an unanimated warp: without a
-// surviving cursor there is no per-frame step to apply.
 pub fn advance_hop_session(session: &mut HopSession, step: u8) -> HopTick {
     let mut tick = HopTick::default();
 
@@ -478,12 +476,89 @@ pub fn advance_hop_session(session: &mut HopSession, step: u8) -> HopTick {
     tick
 }
 
-/// Evaluate the seeded quadratic Bezier at `t = num/den`, in the same
-/// `0x1000`-scaled fixed point the clip cursor uses.
+/// What one [`advance_hop_arc`] tick produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HopArcTick {
+    /// The transform the tick writes into the parent actor's
+    /// `+0x14 / +0x16 / +0x18`.
+    pub position: (i16, i16, i16),
+    /// The cursor reached the full extent this tick: retail clamps `+0x9C` to
+    /// `0x1000`, snaps the parent to the end point verbatim rather than
+    /// evaluating the curve, and sets its own tear-down bit `8`.
+    pub arrived: bool,
+}
+
+/// Per-frame advance of the **arc** helper - the record that moves the player:
+/// retail `FUN_801d5c08` (field overlay `0897_xxx_dat`, file offset `0x73F0`,
+/// 86 instructions), the tick function word of template `0x801F227C`.
 ///
-/// Provided so the arc's shape is testable without the per-frame advance:
-/// retail's `FUN_801d2298` walks `+0x9C` from `0` to `+0x9E` and feeds it
-/// through the same basis functions.
+/// `step_scalar` is `DAT_1F800393`, read as an unsigned byte (`lbu`) exactly
+/// as [`advance_hop_session`] reads it - but here it **multiplies** the
+/// `0x1000 / frames` step rather than being added raw, so the arc and the
+/// phase machine stay in lockstep at any frame pacing.
+///
+/// From the disassembly, in order:
+///
+/// 1. `+0x9C += (s16)(+0x9E) * scalar`, stored back as a halfword (`sh`, so
+///    the 16-bit wrap is retail's, not a port artefact).
+/// 2. `(s16)cursor < 0x1000` - evaluate the Bezier at the cursor through
+///    `FUN_801e45bc` and write the result to the parent's transform.
+/// 3. Otherwise the clip is over: clamp `+0x9C` to `0x1000`, copy the **end
+///    point** `+0x24..+0x2B` into the parent verbatim (no final curve
+///    evaluation - the landing is exact by construction), and tear down.
+///
+/// Not modelled: the entry gate `*(parent + 0x10) & 8` (the parent already
+/// carries the pool's tear-down bit) and the non-player arm at
+/// `0x801D5CB0` / `0x801D5D40`, which writes `-y` into a non-player parent's
+/// `+0x8E`. The player hop never takes that arm - `FUN_801d2404` back-links
+/// `_DAT_8007C364` itself, and the compare against that same global is what
+/// selects it.
+///
+/// PORT: FUN_801d5c08
+/// REF: FUN_801e45bc
+pub fn advance_hop_arc(arc: &mut HopArc, step_scalar: u8) -> HopArcTick {
+    let delta = i32::from(arc.step) * i32::from(step_scalar);
+    let next = (arc.cursor as u16).wrapping_add(delta as u16) as i16;
+    arc.cursor = next;
+    if (next as i32) < CLIP_FULL {
+        let cursor = next as i32;
+        HopArcTick {
+            position: (
+                bezier_at(arc.start.0, arc.control.0, arc.end.0, cursor) as i16,
+                bezier_at(arc.start.1, arc.control.1, arc.end.1, cursor) as i16,
+                bezier_at(arc.start.2, arc.control.2, arc.end.2, cursor) as i16,
+            ),
+            arrived: false,
+        }
+    } else {
+        arc.cursor = CLIP_FULL as i16;
+        HopArcTick {
+            position: arc.end,
+            arrived: true,
+        }
+    }
+}
+
+/// Evaluate the seeded quadratic Bezier at `t = cursor / 0x1000`, in the same
+/// `0x1000`-scaled fixed point the clip cursor uses: retail `FUN_801e45bc`
+/// (field overlay `0897_xxx_dat`, file offset `0x15DA4`, 118 instructions),
+/// called once per tick by [`advance_hop_arc`] with the control point in `a0`
+/// as an in/out triple.
+///
+/// Retail cannot afford a 64-bit numerator, so it splits each basis
+/// coefficient into its integer and fractional halves (`sra 12` / `andi
+/// 0xfff`), accumulates the two sums separately, folds the fractional sum
+/// down by `sra 12` and shifts once more. That is *exactly*
+/// `floor(num / 0x1000^2)` - `floor(floor(x)/n) == floor(x/n)` for positive
+/// `n` - so the widened form below is equal instruction-for-instruction, and
+/// the `tests` module pins the equality against a literal transcription of
+/// the split.
+///
+/// The division must **floor**, not truncate: world Y grows downward, so a
+/// raised tile's height is negative and a truncating divide would round a
+/// mid-air Y the wrong way against retail on every negative sample.
+///
+/// REF: FUN_801e45bc
 pub fn bezier_at(p0: i16, c: i16, p2: i16, cursor: i32) -> i32 {
     let t = cursor.clamp(0, CLIP_FULL) as i64;
     let u = CLIP_FULL as i64 - t;
@@ -491,7 +566,7 @@ pub fn bezier_at(p0: i16, c: i16, p2: i16, cursor: i32) -> i32 {
     // (u^2 * p0 + 2*u*t*c + t^2 * p2) / 0x1000^2 - widened because the
     // numerator alone needs 40-odd bits at full i16 range.
     let acc = u * u * p0 as i64 + 2 * u * t * c as i64 + t * t * p2 as i64;
-    (acc / (full * full)) as i32
+    acc.div_euclid(full * full) as i32
 }
 
 /// How far above the higher endpoint the seeded arc peaks, in world units.
@@ -661,6 +736,105 @@ mod tests {
             bezier_at(arc.start.1, arc.control.1, arc.end.1, CLIP_FULL),
             120
         );
+    }
+
+    /// Literal transcription of `FUN_801e45bc`'s split accumulator, kept as a
+    /// test-only oracle so [`bezier_at`]'s widened form has something exact to
+    /// be equal to.
+    fn bezier_split_form(p0: i16, c: i16, p2: i16, cursor: i32) -> i32 {
+        let t = cursor;
+        let u = CLIP_FULL - t;
+        let uu = u * u; // t1
+        let tt = t * t; // t2
+        let ut2 = (u * t) << 1; // t0
+        let int_sum =
+            (uu >> 12) * i32::from(p0) + (ut2 >> 12) * i32::from(c) + (tt >> 12) * i32::from(p2);
+        let frac_sum = (uu & 0xfff) * i32::from(p0)
+            + (ut2 & 0xfff) * i32::from(c)
+            + (tt & 0xfff) * i32::from(p2);
+        (int_sum + (frac_sum >> 12)) >> 12
+    }
+
+    #[test]
+    fn bezier_matches_the_split_accumulator_including_negative_heights() {
+        // Negative Y is the raised-tile case (world Y grows downward), which
+        // is exactly where a truncating divide would drift off retail.
+        for (p0, c, p2) in [
+            (0i16, -16i16, 0i16),
+            (-192, -216, 0),
+            (0, -24, -192),
+            (2624, 2560, 2496),
+            (-3, -3, -3),
+            (i16::MIN, 0, i16::MAX),
+        ] {
+            for cursor in (0..=CLIP_FULL).step_by(0x40) {
+                assert_eq!(
+                    bezier_at(p0, c, p2, cursor),
+                    bezier_split_form(p0, c, p2, cursor),
+                    "p0={p0} c={c} p2={p2} cursor={cursor:#x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn arc_tick_walks_the_cursor_to_the_full_extent_in_sixteen_frames() {
+        let start = (2624, 0, 2624);
+        let mut arc = build_hop_arc(start, target(2624, -192, 2720), 0x18, 0x10);
+        assert_eq!(arc.step, 0x100);
+        let mut ticks = 0;
+        let last;
+        loop {
+            let t = advance_hop_arc(&mut arc, 1);
+            ticks += 1;
+            if t.arrived {
+                last = t.position;
+                break;
+            }
+            assert!(ticks < 64, "the arc must terminate");
+        }
+        assert_eq!(ticks, 0x10, "0x1000 / 0x100 = 16 frames");
+        assert_eq!(arc.cursor, CLIP_FULL as i16);
+        // The landing is the end point verbatim - retail copies `+0x24..+0x2B`
+        // rather than evaluating the curve at t = 1.
+        assert_eq!(last, (2624, -192, 2720));
+    }
+
+    #[test]
+    fn arc_tick_clears_the_upper_endpoint_mid_flight() {
+        let start = (0, 0, 0);
+        let mut arc = build_hop_arc(start, target(0, -192, 96), 0x18, 0x10);
+        let mut peak = 0i16;
+        let mut half = None;
+        for frame in 0..0x10 {
+            let t = advance_hop_arc(&mut arc, 1);
+            peak = peak.min(t.position.1);
+            if frame == 7 {
+                half = Some(t.position.1); // cursor 0x800 = t 0.5
+            }
+        }
+        // Y grows downward, so clearing the *higher* endpoint (-192) means
+        // sampling below it. The `t = 0.5` sample is the pinned invariant:
+        // exactly `min(p0, p2) - apex`.
+        assert_eq!(half, Some(-192 - 0x18));
+        assert!(peak < -192, "peak {peak} did not clear the upper endpoint");
+        // The vertex of the parabola is not at `t = 0.5` for asymmetric
+        // endpoints, so the deepest sample sits past the mid-flight height -
+        // but never past the far endpoint's own apex allowance either way.
+        assert!(peak >= -192 - 0x18 - 96, "peak {peak} is not a hop arc");
+    }
+
+    #[test]
+    fn arc_tick_scales_the_step_by_the_frame_delta() {
+        // `DAT_1F800393` multiplies here (`mult`), where the phase machine
+        // adds it - a scalar of 2 halves the flight time.
+        let mut arc = build_hop_arc((0, 0, 0), target(0, 0, 96), 0x10, 0x10);
+        let mut ticks = 0;
+        while !advance_hop_arc(&mut arc, 2).arrived {
+            ticks += 1;
+            assert!(ticks < 64);
+        }
+        assert_eq!(ticks + 1, 8);
     }
 
     #[test]

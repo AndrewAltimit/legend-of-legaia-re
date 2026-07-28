@@ -331,7 +331,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `800265E8` | **Boot-time table seeder** (SCUS). Sets three enable flags (`0x80070520` / `0x80070580` / `0x800705B0` = 1) and fills the ten-field struct at `0x800917B0` with a fixed set of ascending 32-bit offset constants (base word `0x1010`, remaining fields at `+0x4..+0x2C`). A one-time init of a layout / offset table; the consumer is not identified from this dump. `see ghidra/scripts/funcs/800265e8.txt`. |
 | `80026BE0` | **Double-buffer base-pointer install** (SCUS). Calls `FUN_8005B818(0xA0)`, then installs a paired base-pointer set 0x800 bytes apart - `DAT_8007B81C = &DAT_80070A2C`, `DAT_8007B7F8 = &DAT_8007122C` (= `&DAT_80070A2C + 0x800`) - the two banks of a double-buffered structure. The pair's consumer is not identified from this dump. `see ghidra/scripts/funcs/80026be0.txt`. |
 | `801CFE98` | **MDECin DMA-callback wrapper.** Nine instructions: forwards its single argument to the PsyQ `DMACallback` entry `FUN_8005FDE8` with the channel hard-coded to `0` (MDECin), via `move a1,a0; clear a0`. Byte-identical at the same VA in the `debug_menu` and `str_fmv` overlay captures. Sibling of the SPU registration `FUN_8006A0E0` (channel 4). |
-| `801D5780` | **Arc-hop actor spawner** (field overlay 0897). The four-argument standalone spawn half of `FUN_801D25EC`: allocates from template `0x801F227C` through `FUN_80020DE0(template, _DAT_8007C34C)`, copies the source position with an `lwl`/`lwr` pair from `src+0x14..0x1B`, stores the target at `+0x24`/`+0x26`/`+0x28`, and writes the quadratic-Bezier control point `+0x3E = 2*apex - mid` where `apex = min(start.y, target.y) - arc_height`. Per-frame step `+0x9E = 0x1000 / duration`. |
+| `801D5780` | **Arc-hop actor spawner** (field overlay 0897) - a complete routine that **retail never reaches**. The four-argument standalone spawn half of `FUN_801D25EC`: allocates from template `0x801F227C` through `FUN_80020DE0(template, _DAT_8007C34C)`, copies the source position with an `lwl`/`lwr` pair from `src+0x14..0x1B`, stores the target at `+0x24`/`+0x26`/`+0x28`, and writes the quadratic-Bezier control point `+0x3E = 2*apex - mid` where `apex = min(start.y, target.y) - arc_height`. Per-frame step `+0x9E = 0x1000 / duration`. See [the unreachability note](#801d5780-is-shipped-dead-code) below before treating its port's inertness as an engine gap. |
 | `801D7518` | **Scene-load actor re-hydration pass** (field overlay 0897). Called seven times from the per-scene field init `FUN_801D6704`. Walks an actor list allocating the runtime side buffers a freshly loaded record lacks - a `0x9C`-byte block into `+0x44` (plus `FUN_80024D78`), the `+0xA8` staging buffer via `StoreImage`, and a `0x18`-stride two-key interpolation table into `+0x4C` - and retires three handler classes by setting `+0x10 \| 8`. Dispatches on the handler pointer `actor[+0xC]`. |
 | `801D9C3C` | **Field-overlay MAN-load reset hook** (field overlay 0897). Called from the SCUS MAN decoder `FUN_8003AEB0` at `0x8003B444`. Reseeds the `0x801F2734..0x801F275C` and `0x801F3530..0x801F3538` globals (`0x801F2734 = 1`, `0x801F2740 = 3`, the rest zeroed), zeroes sixteen words ending at `0x801F357C`, then find-or-spawns a root actor (`FUN_8003CF04`, then `FUN_80020DE0` on template `0x801F2760`), clearing its `+0x50` / `+0x54`. |
 | `801DA390` | **Offset ease-toward-target** (field/world overlay). Skipped entirely when `_DAT_1f800394 & 0x1000000`. Eases the scalar `_DAT_8007bcac` toward the delta `cam[+0x4a] - player[+0x16]` (camera struct `DAT_801c6ea4`, player `_DAT_8007c364`) by a per-frame step: `0xc` when a d-pad direction is held (`_DAT_8007b850 & 0xf000`) under mode bit `0x20000`, otherwise `1`, and frozen while the player is stationary (`+0x16==+0x1e && +0x18==+0x20`); the step is also clamped to the remaining distance in `[1,0xc]`. `see ghidra/scripts/funcs/801da390.txt`. |
@@ -372,6 +372,45 @@ record nothing spawns from, and its tick never runs. That is a checkable
 property rather than an inference: the
 [address-reference scan](../../tooling/address-reference-scan.md) resolves the
 materialisation sites of a whole table with `--range`.
+
+### The ledge-hop templates (`0x801F227C` / `0x801F2294` / `0x801F22AC`)
+
+Three consecutive records in the field overlay's own table, and reading their
+`+0x08` words is what settles which routine drives which half of a
+[ledge hop](../../subsystems/field-locomotion.md#the-scripted-hop-arc-controller):
+
+| Template | File offset (base `0x801CE818`) | Tick |
+|---|---|---|
+| `0x801F227C` | `0x23A64` | `FUN_801D5C08` - the **arc** helper: steps the clip cursor, evaluates the seeded quadratic Bezier through `FUN_801E45BC`, writes the result into the parent actor's `+0x14 / +0x16 / +0x18`. |
+| `0x801F2294` | `0x23A7C` | `FUN_801D2298` - the **paired** helper: phase / SFX / movement-lock state machine only, no position write. |
+| `0x801F22AC` | `0x23A94` | `FUN_801D5D60` - the emitter `FUN_801D25EC` chains behind a non-player arc. |
+
+The setup `FUN_801D2404` allocates the first two together, so a hop is two
+pool actors, not one. Reading `FUN_801D2298` alone leaves the position write
+unaccounted for, which is exactly what happened while `FUN_801D5C08` was
+missing from this page.
+
+### `801D5780` is shipped dead code
+
+The section above is the reason a bare "no caller" proves nothing here - a
+tick's only disc reference is its template word. `FUN_801D5780` clears that
+bar too: it has **no reference of any form** - no `jal`, no `j`, no literal
+address word - in `SCUS_942.54`, in any base-mapped overlay image, or in any
+extracted PROT entry, and it is not the `+0x08` word of any template. Its
+three siblings are the positive controls that make the zero a real one rather
+than a scan artifact: `FUN_801D2404` and `FUN_801D25EC` are each found by
+`jal`, and `FUN_801D2298` as a template word at `0x801F229C`.
+
+The bytes are nonetheless a complete routine - field overlay `0897_xxx_dat` at
+file `0x6F68` opens `addiu sp, sp, -0x28`, and the null-`a0` bail sits at
+`0x801D57A4` - so this is a routine the linker kept, not a mis-read address.
+
+Two traps sit on any re-check, and between them they will talk a reader out of
+the right answer. `ghidra/scripts/funcs/801d5780.txt` is a **wrong-image
+import** whose header resolves `entry=801d56fc`, so it presents the address as
+interior to a menu-family function; and the VA is **aliased** - in the cutscene
+images `0x801D5780` really is an entry, of a different 92-instruction routine.
+Neither observation is about PROT 0897. Read the field-overlay bytes.
 
 ### The `+0x0C` framing error
 
