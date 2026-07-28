@@ -715,6 +715,17 @@ the static MAN decode - that arm is decoded but unported. A call added
 ahead of it would fill a mailbox nothing reads, so the arm is the
 prerequisite.
 
+**`0x8003882C` is one op with two halves, and the port has the other one.**
+The block is a *wait-until-touched-or-elapsed*: it opens on the mailbox
+(`lw v1, 0x3f1c(a1)`, the `0xFF` empty test, then the `+0x50` match and the
+`0x8C` class test), and only when that fails does it fall to `0x80038864`,
+where it decrements the op's own operand byte by the vsync delta
+`DAT_1F800393`. `AmbientMotion`'s `Wait` arm
+(`legaia_engine_vm::ambient_motion`) ports the countdown half and cites the
+block's head address, so both citations are of the same op - the ambient
+port simply has no mailbox to consult. That is the same gap stated from the
+consumer's side, not a second one.
+
 Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
 `0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.
 

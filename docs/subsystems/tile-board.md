@@ -248,6 +248,16 @@ Confirmed via offscreen screenshot diff (13 tile-actor meshes instanced per
 cell). Disc-gated coverage:
 `crates/engine-shell/tests/tile_board_draw_live.rs`.
 
+**The re-export is not a second port site.** The `PORT:` tag for the draw pass
+belongs on the `engine-core` function; the `engine-shell` module of the same
+name is four `pub use` names and carries a `REF:`. Tagging both left an anchor
+on a module nothing can call, which the live-reachability audit correctly read
+as an inert port - a leftover of moving the assembly down into `engine-core`,
+not a host that stopped drawing. The address those tags cite is itself a
+wrong-base print: see [the render tail](#the-render-tail-0x801efea0) for why
+`overlay_0897_801e0f3c.txt` is a second print of `0x801EFEA0`'s instructions
+and no function begins where the tag says.
+
 ## See also
 
 **Reference** -

@@ -381,6 +381,22 @@ pub struct TileActorDraw {
 /// actor is gone (despawned mid-frame) are skipped - unresolved templates
 /// degrade to "no draw", never a panic.
 ///
+/// This is the port site for the board's draw pass, and the only one: both
+/// hosts call it (`play-window`'s redraw and the browser play page's
+/// `play_tile_board`). The `engine-shell` module of the same name is a bare
+/// re-export kept for the native bin's import path.
+///
+/// Provenance caveat - the dump this cites is a **wrong-base print**. The
+/// board renderer is not a function: it is the tail block of the walk SM
+/// `FUN_801EF2B0` at `0x801EFEA0`, entered by nineteen in-body branches and
+/// running to that routine's epilogue, so there is no render entry to name
+/// (`overlay_0897_801efea0.txt`, and
+/// [`docs/subsystems/tile-board.md`](../../../docs/subsystems/tile-board.md)
+/// "The render tail"). `overlay_0897_801e0f3c.txt` is a second print of the
+/// same instructions under a different load base; it is cited here because
+/// it is the dump file the corpus carries for this pass, not because a
+/// function begins at that address.
+///
 /// PORT: overlay_0897_801e0f3c (per-cell tile-actor draw pass; the select +
 /// reposition halves live in `World::refresh_tile_board_draw_list`)
 pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw> {

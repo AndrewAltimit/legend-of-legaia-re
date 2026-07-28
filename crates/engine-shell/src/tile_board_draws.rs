@@ -14,8 +14,18 @@
 //! pass keeps its existing spelling, and so the two hosts demonstrably share
 //! one copy rather than two that can drift.
 //!
-//! PORT: overlay_0897_801e0f3c (per-cell tile-actor draw pass; the select +
-//! reposition halves live in `World::refresh_tile_board_draw_list`)
+//! **A re-export is not a port site.** The tag below is a `REF:`, not a
+//! `PORT:`: the ported pass is
+//! [`legaia_engine_core::tile_board::tile_board_actor_draws`], which is where
+//! the `PORT:` tag lives and which both hosts reach. A second `PORT:` here
+//! declared a port anchor on a module that is only four `pub use` names, so
+//! nothing could ever call *it* and the live-reachability audit read it as an
+//! inert port - a measurement artifact of the move down into `engine-core`,
+//! not a host that stopped drawing the board.
+//!
+//! REF: overlay_0897_801e0f3c (per-cell tile-actor draw pass - see the
+//! provenance caveat on the `engine-core` function: the renderer is the walk
+//! SM's tail block at `0x801EFEA0`, not an entry at this address)
 
 pub use legaia_engine_core::tile_board::{
     TileActorDraw, is_tile_actor_slot, tile_actor_slots_needing_mesh, tile_board_actor_draws,
