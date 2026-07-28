@@ -238,12 +238,31 @@ The last two rows are gated:
 Both blocked cases play the reject cue `0x23` and stay on the picker;
 both allowed cases play `0x20` first.
 
+The save-allow bit is what makes saving an **overworld** affordance rather
+than an anywhere one: across the disc's MAN-bearing scenes it is set on the
+three kingdom world maps (`map01` / `map02` / `map03`) and clear on every
+field scene, town and dungeon alike. A field save is reached the other way -
+through the entry-context byte `0x01`, which opens `0x19` directly from a
+script's save point without going through this row at all.
+
 Cancel leaves for sub-screen `0` (the terminal exit screen) - except
 under that same `0x0D` entry context, where it goes to `3`, the Yes/No
 confirm. So one context byte both hides Load and makes leaving ask
 first, which is the pair a parked field script wants: it must not be
 replaced by a loaded game, and it must not be abandoned silently. Engine port: `engine-core::pause_screens::{root_menu_confirm_route,
 root_menu_cancel_route}`.
+
+`root_menu_confirm_route` runs live under the engine's pause menu, once per
+row for the row's ink and once on confirm for advance-vs-buzz - the same
+double read that keeps retail's renderer and confirm arm from disagreeing.
+Its gate inputs are sampled off the world when the menu opens: the scene's
+save permission (`World::scene_save_allowed`, seeded at scene load by
+`World::install_scene_save_permission`) and the entry-context kind
+(`World::menu_entry_context_kind`). The save half is fully fed; the
+entry-context half cannot yet reach `0x0D`, because the port tags each
+op-`0x49` park with its owning context rather than keeping retail's single
+pointer and no path records the armed sub-op. See
+[field-menu.md](field-menu.md#top-level-pause-menu).
 
 ### Engine port of the sub-screen graph
 
