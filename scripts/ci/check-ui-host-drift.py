@@ -343,15 +343,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "what": "live-loop arming - the browser twin of `enter_field_live`. "
         "Every `World::set_*` one host installs before running the live "
         "gameplay loop and the other does not is a table the two simulations "
-        "disagree about (drops, prices, spells, battle BGM)",
+        "disagree about (drops, prices, spells, battle BGM). Both hosts now "
+        "delegate to the shared `World::arm_live_loop`, so the assertion is "
+        "that each still routes through it - scanning for `set_*` in the host "
+        "bodies would pass trivially once the calls moved into the kernel",
         "sites": {
             "native": (NATIVE_BOOT, "enter_field_live"),
             "web": (WEB_PLAY_BATTLE, "arm_live_battles"),
         },
-        "mode": "pattern_same",
-        "pattern": r"\.(set_[a-z0-9_]+)\s*\(",
-        "blocked_on": "a concurrent lane is closing the arming gap. Delete "
-        "this marker once both sites install the same table set.",
+        "mode": "symbols_all",
+        "symbols": ["arm_live_loop"],
     },
 ]
 
