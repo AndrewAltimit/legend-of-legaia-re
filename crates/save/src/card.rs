@@ -476,7 +476,23 @@ pub const SC_BLOCK_CHECKSUM_WORD: usize = SC_BLOCK_WORDS - 1;
 /// Byte offset of the additive block checksum inside an SC save block.
 pub const RETAIL_BLOCK_CHECKSUM_OFFSET: usize = SC_BLOCK_CHECKSUM_WORD * 4;
 
-/// The additive save-block checksum, over a block already read as words.
+/// The same sum over a block a caller already holds as words.
+///
+/// A convenience face, not a second model: `checksum_covers_every_word_but_the
+/// _last` asserts it agrees with [`sc_block_checksum`] byte for byte. Retail's
+/// `a0` is a byte pointer, so the byte form is the one that carries the
+/// `PORT:` and the one that runs.
+///
+/// REF: FUN_801E38D8
+pub fn sc_block_checksum_words(words: &[u32]) -> u32 {
+    words
+        .iter()
+        .take(SC_BLOCK_CHECKSUM_WORD)
+        .fold(0u32, |sum, &w| sum.wrapping_add(w))
+}
+
+/// The additive save-block checksum of an SC block. `None` when the block is
+/// too short to hold the checksum word.
 ///
 /// Retail walks `0x7FF` little-endian u32 words from the block base with a
 /// wrapping accumulator and returns the total, stopping one word short of
@@ -503,17 +519,6 @@ pub const RETAIL_BLOCK_CHECKSUM_OFFSET: usize = SC_BLOCK_CHECKSUM_WORD * 4;
 /// the BIOS. The load direction reads the block back whole and compares.
 ///
 /// PORT: FUN_801E38D8 (`ghidra/scripts/funcs/overlay_menu_801e38d8.txt`)
-pub fn sc_block_checksum_words(words: &[u32]) -> u32 {
-    words
-        .iter()
-        .take(SC_BLOCK_CHECKSUM_WORD)
-        .fold(0u32, |sum, &w| sum.wrapping_add(w))
-}
-
-/// The additive save-block checksum of a byte-addressed SC block.
-///
-/// `None` when the block is too short to hold the checksum word. See
-/// [`sc_block_checksum_words`] for the retail kernel this wraps.
 pub fn sc_block_checksum(sc_block: &[u8]) -> Option<u32> {
     if sc_block.len() < BLOCK_SIZE {
         return None;

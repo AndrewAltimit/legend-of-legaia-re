@@ -477,8 +477,9 @@ pub const SAVE_BLOCK_CHECKSUM_WORD: usize = legaia_save::SC_BLOCK_CHECKSUM_WORD;
 /// copy is how that stays true. This is the word-slice face of it for
 /// engine callers that already hold a block as `u32`s.
 ///
-/// REF: FUN_801E38D8 (the `PORT:` is on
-/// `legaia_save::card::sc_block_checksum_words`)
+/// REF: FUN_801E38D8 (the `PORT:` is on `legaia_save::card::sc_block_checksum`,
+/// the byte form - retail's argument is a byte pointer, and the byte form is
+/// the one a real card path runs)
 pub fn save_block_checksum(block: &[u32]) -> u32 {
     legaia_save::sc_block_checksum_words(block)
 }
