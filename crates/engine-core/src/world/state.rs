@@ -1667,6 +1667,8 @@ pub struct World {
     /// soft-lock. Retail has no "loop enabled" concept either
     /// (`FUN_801E295C`). Hosts that want a driven-battle-only slice can
     /// simply leave this flag off and enter battle themselves.
+    ///
+    // REF: FUN_801E295C (the retail action SM, which has no such gate)
     pub live_gameplay_loop: bool,
 
     /// Opt-in, NON-FAITHFUL gameplay tweak: when a monster picks a single

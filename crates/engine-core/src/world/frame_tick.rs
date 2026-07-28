@@ -516,6 +516,7 @@ impl World {
                     // `SceneMode::Battle` forever. The Field arm's random
                     // encounter *roll* stays opt-in below; driving a battle
                     // the engine is already in does not.
+                    // REF: FUN_801E295C (the retail action SM this drives)
                     self.live_battle_tick()
                 }
             }
