@@ -59,6 +59,16 @@ SCUS_HEADER = 0x800
 WINDOW = 24
 MIN_SIGNABLE = 8
 
+# Floor for the AT-VA test only (see `attribute_dump`), and it is set from its
+# own control (`--validate-short-floor`) rather than from judgement. Truncating
+# every extent the full window resolves and re-running the at-VA test gives, over
+# ~3000 trials: no wrong answer at ANY length down to one instruction, and a
+# precision that falls off only through the honest direction - the short window
+# names several images instead of one, which returns `identical` and credits all
+# of them. Agreement is 99.9% at three instructions and 98.9% at one. Three is
+# where the curve flattens, so it buys the reach without the extra imprecision.
+SHORT_VA_FLOOR = 3
+
 # A PROT entry's head, long enough that finding it inside another entry is the
 # over-read and not a coincidence. Same probe `classify-worklist.py` uses.
 OVER_READ_PROBE = 256
@@ -371,8 +381,40 @@ def attribute_dump(images, reloc, entry, insns):
                               "window matches no image as a contiguous run")
     toks = dump_tokens(insns)
     if len(toks) < MIN_SIGNABLE:
-        return ("short", [], "%d instructions, below the %d-instruction floor "
-                             "for naming an image" % (len(toks), MIN_SIGNABLE))
+        # A short window can still answer the AT-VA question, and that is a
+        # different question from the one the floor guards. `MIN_SIGNABLE` is
+        # calibrated for the relocation SEARCH - "do these bytes appear anywhere
+        # in any image" - where a short signature has millions of chances to
+        # match by accident. `holders()` asks only "does THIS image's own
+        # content reproduce this window at THIS VA", a two-way test at a fixed
+        # offset with no multiple-comparison problem. A short window that
+        # matches several images returns `identical`, which credits all of them
+        # and is honest; the only outcome it cannot support is a `misbased`
+        # verdict, so a short window that matches nothing stays `short` rather
+        # than falling through to the search.
+        if len(toks) >= SHORT_VA_FLOOR:
+            hits = holders(images, entry, toks)
+            if hits:
+                names = [h.name for h in hits]
+                kind = "unique" if len(hits) == 1 else "identical"
+                return (kind, names,
+                        "own content of %s reproduces the %d-instruction window "
+                        "at this VA (short window, at-VA test only)"
+                        % (", ".join(names), len(toks)))
+            # The at-VA test RAN and no image's own content reproduces the
+            # window. Say that, rather than repeating the floor message: the two
+            # are different findings and only one of them is about the window's
+            # length. These bytes most likely live at another VA, but a short
+            # window is exactly what the relocation search cannot be trusted
+            # with, so the extent stays residue rather than being called
+            # `misbased` on evidence that would not support it.
+            return ("short", [], "%d instructions: no image's own content "
+                                 "reproduces this window at this VA, and the "
+                                 "window is too short to search for it "
+                                 "elsewhere" % len(toks))
+        return ("short", [], "%d instructions, below the %d-instruction at-VA "
+                             "floor for naming an image"
+                             % (len(toks), SHORT_VA_FLOOR))
 
     hits = holders(images, entry, toks)
     if len(hits) == 1:
@@ -430,6 +472,68 @@ def combine(per_dump):
     return best
 
 
+def validate_short_floor(images, reloc, by_extent):
+    """Does the short at-VA test agree with the full-window verdict?
+
+    A relaxation of a confidence floor is a measurement change, and a
+    measurement change has no oracle - so it needs a control built from data the
+    relaxation did not choose. This one is available for free: every extent the
+    FULL window already resolves has a known answer, so truncating it to each
+    short length and re-running the same at-VA test measures the short test's
+    error rate directly.
+
+    Three outcomes per trial, and they are not equally bad. `agree` is the
+    short test reaching the same verdict. `weaker` is it returning several
+    images where the full window named one - honest, since `identical` credits
+    all of them, and the only cost is precision. `WRONG` is it naming a
+    different single image, which is the failure that would put a false
+    attribution in the CSV. Only the third invalidates the floor.
+    """
+    trials = collections.Counter()
+    wrong = []
+    for (entry, _nbytes), members in sorted(by_extent.items()):
+        for _stem, insns in members:
+            toks = dump_tokens(insns)
+            if len(toks) < MIN_SIGNABLE:
+                continue
+            full = holders(images, entry, toks)
+            if len(full) != 1:
+                continue
+            for n in range(SHORT_VA_FLOOR, MIN_SIGNABLE):
+                if len(toks) < n:
+                    break
+                short = holders(images, entry, toks[:n])
+                key = "n=%d" % n
+                if not short:
+                    trials[key + " none"] += 1
+                elif len(short) == 1 and short[0].name == full[0].name:
+                    trials[key + " agree"] += 1
+                elif full[0].name in [s.name for s in short]:
+                    trials[key + " weaker"] += 1
+                else:
+                    trials[key + " WRONG"] += 1
+                    wrong.append((entry, n, full[0].name,
+                                  [s.name for s in short]))
+    print("control: short at-VA test vs the full-window verdict it should match")
+    print("  agree = same single image · weaker = several, including the right "
+          "one · WRONG = a different single image")
+    for n in range(SHORT_VA_FLOOR, MIN_SIGNABLE):
+        row = {k.split()[-1]: v for k, v in trials.items()
+               if k.startswith("n=%d " % n)}
+        total = sum(row.values())
+        if not total:
+            continue
+        print("  %d insns: %5d trials  agree %5d (%.1f%%)  weaker %4d  "
+              "none %4d  WRONG %d"
+              % (n, total, row.get("agree", 0),
+                 100.0 * row.get("agree", 0) / total, row.get("weaker", 0),
+                 row.get("none", 0), row.get("WRONG", 0)))
+    for entry, n, right, got in wrong[:20]:
+        print("  WRONG 0x%08x at n=%d: full says %s, short says %s"
+              % (entry, n, right, "|".join(got)))
+    return 1 if wrong else 0
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -447,6 +551,12 @@ def main():
                          "program to run against. Printed, never committed: it "
                          "is keyed to filenames over a gitignored corpus and "
                          "rots as soon as a dump is added.")
+    ap.add_argument("--validate-short-floor", action="store_true",
+                    help="control run for the SHORT_VA_FLOOR relaxation: take "
+                         "every extent the full window resolves, truncate it to "
+                         "each short length, and report how often the short "
+                         "at-VA test gives the same answer. A relaxation that "
+                         "cannot pass its own control is guesswork.")
     ap.add_argument("--min-insns", type=int, default=None,
                     help="signature floor; lower values trade confidence for "
                          "reach and are a sensitivity check, not a default "
@@ -497,6 +607,9 @@ def main():
             print("  => %s" % (combine([attribute_dump(images, reloc, entry, i)
                                         for _, i in members]),))
         return 0
+
+    if args.validate_short_floor:
+        return validate_short_floor(images, reloc, by_extent)
 
     if args.per_dump:
         print("# dump\tentry\tbytes\timage\tclass")

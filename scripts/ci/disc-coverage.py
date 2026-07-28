@@ -562,17 +562,27 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             "extracted images "
             "(`scripts/ghidra-analysis/dump-extent-attribution.csv`); "
             f"**{residue}** remain unattributable and keep those rows an upper "
-            "bound. The residue is dominated by dump defects - windows too short "
-            "to sign, dumps carrying only decompiled C, gapped streams - so it is "
-            "repaired by re-dumping, not by extracting another overlay. See "
+            "bound. See "
             "[`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md) "
             "and [`phantom-print-index.md`](../../docs/tooling/phantom-print-index.md).")
         add("")
-        add("The inner of two nested spans cannot be repaired this way at all. "
-            "Every extent in it falls in both spans by construction, so most of "
-            "what it loses is loss to the outer image and the same residue is a "
-            "much larger share of what remains. That is structural, not a corpus "
-            "gap, and no amount of dumping moves it.")
+        add("What the residue is decides what closes it, and re-dumping is no "
+            "longer the answer for most of it. Three shapes remain, in "
+            "descending size: windows a few instructions long that no image's "
+            "own content reproduces at that VA - too short to search for "
+            "elsewhere without inviting a coincidence; extents whose bytes are "
+            "in no extracted image at any VA, which need an *extraction* rather "
+            "than a dump, most of them dumped from live RAM captures of "
+            "overlays that have never been extracted statically; and extents "
+            "where two dumps genuinely disagree, which is several routines "
+            "sharing a range and is a real answer rather than a gap.")
+        add("")
+        add("The inner of two nested spans starts at total ambiguity, because "
+            "every extent in it falls in both spans by construction. That much "
+            "is structural. It is **not** a reason the row cannot be measured: "
+            "the bytes place most of those extents in one image or the other, "
+            "and what is structural is only the starting point, not the "
+            "outcome.")
         add("")
     elif overlays:
         add("### Overlay caveat")
