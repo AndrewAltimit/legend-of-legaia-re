@@ -350,9 +350,17 @@ pub fn hud_quad_corner(
 /// non-zero. A slot whose stored quotient is negative is skipped at draw
 /// time, so a **negative `value` renders nothing at all**.
 ///
-/// PORT: FUN_801d1308 (slot fill)
+/// Wired: this is the *shared* fill. `FUN_801d1308` and the fishing
+/// overlay's digit field `FUN_801d76e0` open with the identical loop - same
+/// `-1` init, same pre-seeded units slot, same `!= 0` store gate, same eight
+/// `/10` steps, same negative-slot skip - so
+/// [`crate::number_digit_cells`] takes its slots from here, which puts this
+/// on the live fishing HUD path (native window and browser page both). The
+/// two retail routines diverge only after the fill: this overlay emits one
+/// widget id and passes the digit by patching a descriptor's texture column,
+/// while the fishing one selects between two emitters and two pen pitches.
 ///
-/// NOT WIRED: reached only through [`decimal_quads`] - see its note.
+/// PORT: FUN_801d1308 (slot fill)
 pub fn decimal_slots(value: i32) -> [Option<u8>; DECIMAL_SLOTS] {
     let mut raw = [-1i32; DECIMAL_SLOTS];
     raw[DECIMAL_SLOTS - 1] = 0;
