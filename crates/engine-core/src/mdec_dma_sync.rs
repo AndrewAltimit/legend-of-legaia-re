@@ -1,5 +1,9 @@
-//! The FMV overlay's **MDEC DMA sync** pair - the two entry points every
-//! decode step of the STR playback loop funnels its channel waits through.
+//! The FMV overlay's **MDEC DMA sync** pair - two entry points that select
+//! between a blocking wait and a non-blocking poll of an MDEC channel.
+//!
+//! Retail does not use them. The `mode` dispatch they exist to provide is
+//! reached by nothing on the disc, and the STR playback loop calls the
+//! blocking halves directly instead - see [NOT WIRED](#not-wired) below.
 //!
 //! Both live in the slot-A STR/FMV overlay and are byte-identical in PROT
 //! 0970 (`cutscene_str`) and PROT 0971 (`debug_menu`), the same co-residency
@@ -31,12 +35,37 @@
 //!
 //! # NOT WIRED
 //!
-//! The engine's MDEC path is a software decoder (`legaia_mdec`) driven
-//! frame-at-a-time by `crate::cutscene`; it has no DMA channels and no MDEC
-//! status register, so nothing produces the status words these helpers read.
-//! Wiring needs a hardware-shaped MDEC front end - which the clean-room port
+//! Two independent reasons, and they close differently.
+//!
+//! **The blocking halves have no host.** The engine's MDEC path is a software
+//! decoder (`legaia_mdec`) driven frame-at-a-time by `crate::cutscene`; it has
+//! no DMA channels and no MDEC status register, so nothing produces the status
+//! words `FUN_801D0100` / `FUN_801D0198` read. That one is a wiring gap: it
+//! closes with a hardware-shaped MDEC front end - which the clean-room port
 //! deliberately does not have - or a host that models the two busy bits as
 //! decoder back-pressure.
+//!
+//! **The wrappers are retail-unreachable, and that one never closes.** A
+//! five-form sweep of `SCUS_942.54`, all 31 based overlay images and the raw
+//! bytes of every extracted `PROT.DAT` entry finds no literal address word, no
+//! `jal`, no `j`, no in-image branch and no `lui`+`addiu` materialisation for
+//! either `FUN_801CFE20` or `FUN_801CFE5C`
+//! (`docs/tooling/address-reference-scan.md`). The blocking halves each carry
+//! two `jal` sites in PROT 0970: one inside the matching wrapper
+//! (`0x801CFE2C`, `0x801CFE68`), one outside it (`0x801CFFF0`, `0x801D0084`).
+//! So retail's decode steps call `FUN_801D0100` / `FUN_801D0198` directly and
+//! the `mode`-dispatching wrappers are dead code the linker kept. The shared
+//! status-word leaf `FUN_801D0230` inherits it: both of its call sites
+//! (`0x801CFE3C`, `0x801CFE78`) are inside the two wrappers, so nothing
+//! reaches it either.
+//!
+//! `FUN_801CFE20`'s single scan hit is a branch in the **field** overlay, which
+//! shares the slot-A load base but holds an unrelated routine's epilogue at
+//! that VA. A branch is PC-relative and cannot leave its image, so it is not a
+//! reference to this routine - `--home cutscene_str` marks it.
+//!
+//! No host can be written for the two wrappers, because retail has none to
+//! model. They stay as decoded provenance for the `mode` argument's meaning.
 
 /// Countdown the blocking waits start from (`0x100000` iterations).
 pub const SPIN_BUDGET: i32 = 0x0010_0000;
@@ -155,6 +184,11 @@ impl MdecSync {
 /// it per spin, the polling arm reads it once.
 ///
 /// PORT: FUN_801cfe20
+///
+/// NOT WIRED: retail-unreachable, so there is nothing to wire it to. Nothing
+/// on the disc references `FUN_801CFE20` in any form; its decode steps call
+/// the blocking half `FUN_801D0100` directly. See the module's NOT WIRED
+/// section and `docs/tooling/address-reference-scan.md`.
 pub fn mdec_in_sync<F: FnMut() -> u32>(mode: i32, mut in_status: F) -> MdecSync {
     if mode == 0 {
         MdecSync::Waited(wait_mdec_in_idle(in_status))
@@ -167,6 +201,12 @@ pub fn mdec_in_sync<F: FnMut() -> u32>(mode: i32, mut in_status: F) -> MdecSync 
 /// anything else polls bit [`OUT_POLL_BIT`] of the **in**-side word.
 ///
 /// PORT: FUN_801cfe5c
+///
+/// NOT WIRED: retail-unreachable, so there is nothing to wire it to. Nothing
+/// on the disc references `FUN_801CFE5C` in any form - not even an aliased
+/// branch - and its decode steps call the blocking half `FUN_801D0198`
+/// directly. See the module's NOT WIRED section and
+/// `docs/tooling/address-reference-scan.md`.
 pub fn mdec_out_sync<Fo: FnMut() -> u32, Fi: FnMut() -> u32>(
     mode: i32,
     out_status: Fo,
