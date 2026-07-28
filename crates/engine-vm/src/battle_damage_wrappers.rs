@@ -221,10 +221,11 @@ fn scale(
 /// PORT: FUN_801DD4B0 (live wiring in `engine-core`'s
 /// `World::capture_respect_predamage`)
 ///
-/// An earlier note here read `NOT WIRED`, on the grounds that "nothing in the
-/// engine can tell a capture-class cast from an ordinary move-power special:
-/// the class byte lives at `+0` of the `DAT_800754C8` spell record, which
-/// `legaia_asset::spell_names` does not decode". Both halves were wrong. That
+/// An earlier note here disclosed this entry point as inert, on the grounds
+/// that "nothing in the engine can tell a capture-class cast from an ordinary
+/// move-power special: the class byte lives at `+0` of the `DAT_800754C8`
+/// spell record, which `legaia_asset::spell_names` does not decode". Both
+/// halves were wrong. That
 /// parser has decoded the class byte all along - `capture_class_records`
 /// enumerates every `'c'` record with its module sub-id - and the engine
 /// installs the same table at boot, so `SpellEntry::is_capture_class` answers
