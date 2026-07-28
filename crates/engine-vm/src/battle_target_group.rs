@@ -72,6 +72,18 @@
 /// direction of retail's compare: see the module doc.
 pub const MIN_GROUP_EXTENT: i16 = 0x400;
 
+/// Target-group code for **the party** - `+0x1DD == 8`, decoded to slots
+/// `[0, 3)`. The whole of retail's group-code space that anything writes is
+/// this and [`TARGET_GROUP_ENEMIES`]: the command menu writes `8` at
+/// `0x801D1D6C` and `9` at `0x801D1D00`, the monster-AI resolver `FUN_801E7320`
+/// writes `8`/`9`, and the escape / capture arms write one each. `0xA` decodes
+/// but no writer in the corpus produces it.
+pub const TARGET_GROUP_PARTY: u8 = 8;
+
+/// Target-group code for **the enemy row** - `+0x1DD == 9`, decoded to slots
+/// `[3, 7)`. See [`TARGET_GROUP_PARTY`].
+pub const TARGET_GROUP_ENEMIES: u8 = 9;
+
 /// The `+0x21C` render flag the summon-fade sweep writes alongside zeroing the
 /// `+0x4` prim word (`0x801E4B50`/`0x801E4B5C`). A monster carrying it is not
 /// drawn, which is the state retail's `+0x4` gate rejects.

@@ -577,7 +577,7 @@ fn target_confirm_writes_active_target_into_actor_and_pushes_pending_command() {
 }
 
 #[test]
-fn target_sweep_writes_sentinel_and_admits_pending_command() {
+fn target_sweep_writes_the_retail_group_code_and_admits_pending_command() {
     use crate::target_picker::TargetKind;
     let mut s = fresh_session();
     let mut w = fresh_world_with_actors();
@@ -593,11 +593,12 @@ fn target_sweep_writes_sentinel_and_admits_pending_command() {
     s.transition(BattlePhase::CommandInput);
     let ok = s.push_command_with_target(&mut w, Command::Up, TargetKind::AllEnemies, 0);
     assert!(ok);
-    // Sweep-immediate path: actor active_target updated to sentinel
-    // and command auto-admitted.
+    // Sweep-immediate path: `active_target` carries retail's enemy-row
+    // group code `9` (`FUN_801DCEAC` decodes it to slots `[3, 7)`) and the
+    // command is auto-admitted.
     assert_eq!(
         w.actors[0].battle.active_target,
-        BattleSession::SWEEP_TARGET_SENTINEL
+        legaia_engine_vm::battle_target_group::TARGET_GROUP_ENEMIES
     );
     assert_eq!(s.runner.current_buffer(), &[Command::Up]);
 }
