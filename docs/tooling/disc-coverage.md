@@ -15,10 +15,12 @@ measurement entirely.
 
 `scripts/ci/disc-coverage.py` takes the denominator from the disc.
 
-The distinction is not academic. Against the citation graph the dump corpus
-reads as effectively closed - zero cited-but-not-dumped addresses. Against the
-executable's own bytes, a sixth of `SCUS_942.54`'s code is not inside any dumped
-function at all.
+The distinction is not academic, and it runs in both directions. A citation
+graph with no cited-but-not-dumped addresses left says nothing about the bytes
+nobody cited; and closing a byte-denominated gap *widens* the citation graph,
+because a newly dumped function that gets documented becomes a row on the port
+worklist. A rising port worklist after a dump pass is the measurement getting
+wider, not the work going backwards.
 
 ## The two halves measure different things
 
@@ -112,6 +114,12 @@ so the dumped functions are real intervals over an image's address space. The
 script merges them, subtracts them from the image's extent, and is left with the
 genuinely un-dumped remainder.
 
+The header is parsed by
+[`dump_header.py`](../../scripts/ghidra-analysis/dump_header.py), shared with the
+attribution sweep. That sharing is not tidiness - it is the fix for a defect that
+had made this page's own numbers wrong. See
+[an instrument's private header regex](#an-instruments-private-header-regex-is-a-claim-about-the-corpus).
+
 That remainder is then split into **code** and **data**, because a PS-X EXE's
 text segment carries its rodata inside the same span, and counting string tables
 and jump tables as "un-decompiled code" would understate coverage badly. Each
@@ -125,8 +133,77 @@ at ~94% plausible opcodes and ~0% pointer density, and the large gaps reported
 as code match that signature while the head of the segment (87% printable ASCII,
 48% plausible) does not.
 
-Dumps that report `0 instructions` and carry only decompiled C are **excluded**.
-Such a dump is not evidence that its bytes are understood.
+### A code gap is not automatically un-analysed code
+
+Subtracting the dumps leaves a remainder, and the obvious reading - "these are
+the routines nobody has looked at" - is right for most of the bytes and wrong for
+the tail. The report therefore classifies each code gap by *shape*, and only one
+of the four shapes is work:
+
+| Shape | What it is |
+|---|---|
+| `code` | genuinely un-dumped instructions |
+| `padding` | every word is `nop`: inter-function alignment |
+| `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of |
+| `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk |
+
+The last three are properties of **where a function body ends**, not of what has
+been analysed, so they persist however much is dumped. `bios_thunk_slot` is the
+clearest case: a BIOS-call thunk is `addiu $t2, $zero, 0xA0; jr $t2; addiu $t1,
+$zero, N`, and because the jump target is a register the analysed body ends at
+the `jr` with the delay slot outside it. The thunk is fully understood and its
+last instruction still shows up as a gap.
+
+Together they are why the figure asymptotes short of 100%, and saying so on the
+report is what stops the last fraction of a percent reading as a worklist. The
+shapes are **reported, not subtracted**: the denominator stays as it was so the
+ratcheted figure remains comparable across changes to this classifier.
+
+### An instrument's private header regex is a claim about the corpus
+
+Reading the header looks like the trivial part of this measurement. It was the
+part that was wrong, and the shape of the error generalises to any instrument
+over a corpus it did not write.
+
+The corpus spells every header field more than one way - it was written by a
+dozen dump scripts over a long period. The printed VA appears bare and
+`0x`-prefixed. The entry appears as `(entry=…)`, `(entry=0x…)`, `(entry=…,
+label=…)`, `(entry …)` after a `--` header, and not at all. The size line appears
+with an instruction count, without one, with a trailing parenthetical, and as a
+`min=`/`max=` pair instead. Each instrument grew its own regex for one subset of
+that, so each silently rejected a different set of **real dumps** as
+unparseable - and reported the rejects as a corpus deficiency.
+
+Two things went wrong at once, and the second is the instructive one:
+
+- Real dumps were dropped. Accepting only the bare-VA spelling lost 54 function
+  dumps; `(entry=…, label=…)` lost 20 more; a size line with no instruction count
+  lost 6. None of those files was defective in any way.
+- The count was **explained wrongly**, and the explanation was plausible enough
+  to survive review. The report described its rejects as "typically the ones that
+  report `0 instructions` and hold only decompiled C". Not one of them reported
+  `0 instructions` - the files that do report it were passing the regex and being
+  *credited*, one byte each - and three of several hundred were C-only.
+
+So the honest form is a census, not a count. The report now names each reject
+class and, more importantly, separates two populations that a single number
+merges:
+
+| Kind | Classes | Why it is excluded |
+|---|---|---|
+| **answer** | `pointer_stub`, `nofunc_record`, `data_window`, `not_a_dump` | the corpus recording a result, not a dump. Not defective, and not work. |
+| **defect** | `zero_insns`, `gapped_stream`, `no_extent`, `empty_dump` | a dump that cannot evidence its own extent. |
+
+Four fifths of the excluded files are answers. A pointer stub is the corpus doing
+the *right* thing with a mid-function address - the alternative is a file whose
+name asserts an entry point that does not exist - so counting it as a missing
+dump penalises exactly the handling that avoids the defect it is being counted
+as.
+
+`zero_insns` is the one class that moved the other way. A dump reading `size=1
+bytes, 0 instructions` is Ghidra's "bad instruction data": it decoded nothing, so
+the window is data being asked for as code. Those were being credited as covered
+bytes and are now excluded, which lowers coverage very slightly and is correct.
 
 ## The overlay caveat, and why rows can read "not meaningful"
 
@@ -173,18 +250,65 @@ whole story and the second one never goes away:
   overlays, the gameover overlay. Those extents now leave the row entirely
   rather than inflating it, which is what makes the outer of the two measured
   spans reportable.
-- **The inner of two nested spans cannot be repaired this way.** The menu
-  overlay's span lies wholly inside the battle overlay's, so every extent in it
-  falls in both by construction; most of what it loses is loss to the outer
-  image, and the same residue is a much larger share of what remains. That is
-  structural. No amount of dumping moves it, and forcing a figure would mean
-  asserting the residue belongs to the inner image when nothing in the bytes
-  says so.
+- The inner of two nested spans **starts** at total ambiguity. The menu overlay's
+  span lies wholly inside the battle overlay's, so every extent in it falls in
+  both by construction and no address arithmetic will ever separate them. That
+  much is structural, and it is the reason this row is the harder one.
 
-The residue itself is a **dump** defect rather than a corpus gap - windows too
-short to sign, dumps carrying only decompiled C, gapped streams - so it is
-repaired by re-dumping, not by extracting another overlay. See
-[`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
+That second point was previously written on this page as a conclusion - that the
+inner span could never be measured at all, and that no amount of dumping moved
+it. It is worth recording that as **falsified**, because the reasoning was
+seductive and the error is a general one: *the starting point of a measurement was
+mistaken for its limit*. Address ambiguity is total for the inner span; byte
+attribution then places most of those extents in one image or the other, and the
+row reports. What is structural is that the row can never be resolved *by
+address*, which is a statement about one method rather than about the image.
+
+### What the residue is decides what closes it
+
+The residue is not one thing, and it is mostly **not** repaired by re-dumping -
+another claim this page previously carried and that the numbers do not support.
+Three shapes remain, and each needs a different move:
+
+| Shape | What would close it |
+|---|---|
+| a few-instruction window that no image's own content reproduces at that VA | nothing cheap. Too short to search for elsewhere without inviting a coincidental hit, so it stays residue rather than being called `misbased` on evidence that cannot support the call. |
+| bytes in no extracted image at any VA | an **extraction**, not a dump. Most were dumped from live RAM captures of overlays never statically extracted, or from runtime-mutated memory. |
+| two dumps at one extent resolving to different images | already answered: several routines share the range. A real finding, not a gap. |
+
+The middle row is the one with a route forward, and it is the
+[static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
+page's.
+
+### The signature floor guards one question, not both
+
+The sweep asks two questions of a dump's opening window and they have opposite
+sensitivities to its length:
+
+- **at a VA**: does *this* image's own content reproduce this window at *this*
+  address? A fixed-offset test between a handful of candidates.
+- **anywhere**: do these bytes appear at any offset in any image? A search over
+  millions of positions, which is how a mis-based print is identified.
+
+One shared floor of eight instructions was applied to both, and for the first
+question that is far too strict - a short window at a fixed VA has no
+multiple-comparison problem to guard against. Relaxing the at-VA test to three
+instructions while leaving the search at eight resolves most of the `short`
+residue, and the relaxation is set from its own control rather than from
+judgement: `--validate-short-floor` truncates every extent the full window
+already resolves and re-runs the at-VA test at each short length. Over ~3000
+trials it produces **no wrong answer at any length down to one instruction**, and
+loses precision only in the honest direction - naming several images instead of
+one, which returns `identical` and credits all of them. Three instructions is
+where that curve flattens.
+
+The generalisable point: **a confidence floor belongs to a question, not to an
+instrument.** Sharing one across two questions makes it simultaneously too loose
+for the sensitive one and too strict for the robust one, and only the second
+failure is invisible, because it shows up as missing data rather than as a wrong
+answer.
+
+See [`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
 [`phantom-print-index.md`](phantom-print-index.md).
 
 Attribution is **optional**. Without the CSV (`--attribution` pointing nowhere)

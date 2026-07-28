@@ -507,17 +507,58 @@ used.
 
 ### The residue is the finding
 
-Roughly three fifths of ambiguous extents attribute to exactly one image, and a
+Roughly two thirds of ambiguous extents attribute to exactly one image, and a
 further fifth attribute to *no* image because the print is mis-based. What is
-left does not yield to more effort of the same kind, and the largest share of it
-is not a corpus gap but a **dump** gap: windows too short to sign, dumps that
-carry decompiled C and no instruction stream at all, and gapped streams. Those
-are repaired by re-dumping, not by extracting another overlay.
+left splits three ways, and only one of the three is anything like a dump defect:
 
-Lowering the signature floor does not help, and that is measured rather than
-assumed: going from eight instructions to five moves a handful of extents and
-changes the per-image ambiguity by well under a point, while making every
-verdict rest on less evidence. The floor is not the binding constraint.
+- a few-instruction window that no image's own content reproduces at that VA;
+- bytes that are in no extracted image at any VA, which needs an **extraction**
+  rather than a dump - most were taken from live RAM captures of overlays never
+  extracted statically;
+- two dumps at one extent resolving to different images, which is several
+  routines sharing a range and is an answer rather than a gap.
+
+That corrects a claim this page used to make - that the residue was dominated by
+dump defects and was "repaired by re-dumping". Re-dumping repairs almost none of
+it. The mistake is worth keeping visible because of how it was made: the residue
+had been *described* from the classes' names rather than counted from the CSV,
+and the names are suggestive enough that nobody re-derived them.
+
+**The floor was not the binding constraint; the header parser was.** Lowering the
+signature floor from eight instructions to five moves a handful of extents, which
+is what this page measured and reported. What it did not test was whether the
+instrument was seeing the whole corpus: a private, over-strict header regex was
+dropping real dumps before any of this ran, so their extents had no attribution
+row at all and read as unresolvable ambiguity. Repairing the parser moved several
+times what any floor change did.
+
+### One floor cannot serve two questions
+
+The sweep asks two things of an opening window, and their sensitivity to its
+length is opposite:
+
+| Question | Method | Effect of a short window |
+|---|---|---|
+| does *this* image's own content reproduce this window at *this* VA? | fixed-offset comparison against a handful of candidates | mild: a short window that matches several returns `identical`, which credits each and is honest |
+| do these bytes appear at *any* offset in *any* image? | a search over millions of positions - how a mis-based print is identified | severe: a short signature has millions of chances to match by accident |
+
+One floor was applied to both. For the search that is right; for the at-VA test
+it discards evidence for a risk that test does not run. Splitting them - three
+instructions at a VA, eight to search - resolves most of the `short` residue while
+leaving `misbased` (the only *positive* claim about where bytes live) on the
+stronger evidence it needs.
+
+The split is set from a control rather than from judgement, which is the part
+worth copying. `attribute-dump-extents.py --validate-short-floor` truncates every
+extent the full window already resolves and re-runs the at-VA test at each short
+length. Over ~3000 trials it produces **no wrong answer at any length down to one
+instruction**, and loses precision only by naming several images instead of one.
+Agreement is 99.9% at three instructions and 98.9% at one.
+
+**A confidence floor belongs to a question, not to an instrument.** Shared across
+two, it is simultaneously too loose for the sensitive question and too strict for
+the robust one - and only the second failure is invisible, because it surfaces as
+missing data rather than as a wrong answer.
 
 One image's row can therefore become meaningful while the other's does not, and
 that is a legitimate result rather than a half-finished one. The inner of two
@@ -597,10 +638,40 @@ the defect it is being counted as. Nearly a fifth of what a cited-only shape
 sweep once called defective was this - the instrument scoring the corpus's own
 good work against it.
 
-The same lesson applies to the header regex that finds those files: it accepted
-one spelling of `(entry=…)` while three exist in the corpus, so real dumps fell
-into the headerless classes. **A parser's strictness is a claim about the
-corpus, and an over-strict one manufactures a gap.**
+The same lesson applies to the header regex that finds those files. **A parser's
+strictness is a claim about the corpus, and an over-strict one manufactures a
+gap** - and this one was made independently by every instrument here, because
+each carried its own regex.
+
+The corpus spells all four header fields more than one way, having been written
+by a dozen dump scripts over a long period:
+
+| Field | Spellings in the corpus |
+|---|---|
+| printed VA | bare `801cf098`; `0x801CF098` |
+| entry | `(entry=…)`; `(entry=0x…)`; `(entry=…, label=…)`; `(entry …)` after a `--` header; absent |
+| label | one token (`FUN_801cf098`); several (`slot-4 handler FUN_80044434`) |
+| extent | `size=N bytes, M instructions`; the same with a trailing parenthetical or extra field; `size=N bytes` alone; `min=<VA> max=<VA>` instead |
+
+Accepting only the bare-VA spelling dropped 54 real function dumps; `(entry=…,
+label=…)` dropped 20 more; a size line with no instruction count dropped 6. Every
+one of those files was complete and correct.
+
+The number those rejects produced was then *explained* wrongly, and that is the
+part that survived review: the coverage report described them as "typically the
+ones that report `0 instructions` and hold only decompiled C". Not one of them
+reported `0 instructions` - the files that do were passing the regex and being
+credited - and three of several hundred were C-only. **A plausible explanation
+attached to a number nobody re-derived is how a measurement defect becomes a
+documented fact.**
+
+[`dump_header.py`](../../scripts/ghidra-analysis/dump_header.py) is now the one
+parser, imported by `disc-coverage.py` and `attribute-dump-extents.py`. Import
+it rather than writing a fifth regex. It also rejects with a **named class**
+rather than a bare failure, so a caller can separate the corpus storing an
+answer - pointer stubs, recorded negatives, data windows, analysis output, four
+fifths of what is excluded - from a dump that genuinely cannot evidence its own
+extent.
 
 ## Every instrument in this chain has had a defect that made a number look better
 
