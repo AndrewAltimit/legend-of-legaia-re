@@ -621,6 +621,33 @@ impl RetailInventory {
             written_id: id,
         }
     }
+
+    /// Raise slot `slot`'s count by `delta`, saturating at [`STACK_CAP`], and
+    /// return the new count. `None` is retail's two rejection paths: `slot`
+    /// outside the active window, or an empty slot (id byte zero), both of
+    /// which return 0 without storing.
+    ///
+    /// This is the cap in its **primitive** form, addressed by slot rather
+    /// than by id: it saturates rather than overflowing or refusing, and it is
+    /// the same clamp [`add`](Self::add)'s merge pass applies after finding a
+    /// slot itself. The two are separate retail entry points, not one function
+    /// reached two ways.
+    ///
+    /// PORT: FUN_80042FE8
+    /// NOT WIRED: no reference of any form reaches `FUN_80042FE8` in any image
+    /// on the disc - not a word, `jal`, `j`, branch, or `lui`/`addiu` pair - so
+    /// retail never calls it either. It is reproduced because it is where the
+    /// 99 cap is written most plainly, and because the byte-denominated
+    /// coverage sweep surfaced it; the engine grants items through
+    /// `legaia_engine_core`'s bounded list, which has no slot-addressed add.
+    pub fn add_to_slot(&mut self, slot: usize, delta: u8) -> Option<u8> {
+        let cell = self.slots.get_mut(slot)?;
+        if cell.0 == 0 {
+            return None;
+        }
+        cell.1 = cell.1.saturating_add(delta).min(STACK_CAP);
+        Some(cell.1)
+    }
 }
 
 #[cfg(test)]
@@ -651,6 +678,21 @@ mod tests {
             }
         );
         assert_eq!(inv.find_count(0x10), 99);
+    }
+
+    #[test]
+    fn add_to_slot_saturates_and_rejects_empty_or_out_of_window() {
+        let mut inv = default_inv();
+        assert_eq!(inv.add(0x10, 50), AddOutcome::Placed { slot: 0 });
+        assert_eq!(inv.add_to_slot(0, 10), Some(60));
+        // Saturates at the cap rather than wrapping the count byte.
+        assert_eq!(inv.add_to_slot(0, 200), Some(STACK_CAP));
+        // An empty slot returns 0 and stores nothing - retail's id-byte test.
+        assert_eq!(inv.add_to_slot(1, 5), None);
+        assert_eq!(inv.slots()[1], (0, 0));
+        // Past the active window: retail's bound check against `gp[+0x2D4]`.
+        let past = inv.slots().len();
+        assert_eq!(inv.add_to_slot(past, 5), None);
     }
 
     #[test]
