@@ -774,7 +774,8 @@ field-overlay (`0897`) bodies; the short mis-based standalone dumps at
 encoding, at `0x801D1B70` inside the **ledge-hop trigger** `FUN_801d1878`, and
 the argument set-up there pins the signature: `a0` is a pointer to the
 three-half-word landing triple the trigger built at `sp+0x18`, `a1` is the arc's
-peak height (`0x10` for a hop up, `0x18` for a hop down) and `a2` is the clip
+peak height (`0x10` for a drop, `0x18` for a step up - see the class table
+above; world Y grows downward) and `a2` is the clip
 length in frames (always `0x10`). It is the same triple
 `World::try_field_ledge_hop` posts as `FieldLedgeHop`. This is a **hop arc, not
 a hinge swing**; nothing in the body reads a door.
@@ -905,7 +906,9 @@ reference of any form - no `jal`, no `j`, no literal address word - in
 `SCUS_942.54`, in any base-mapped overlay image, or in any extracted PROT
 entry, while `FUN_801d2404` and `FUN_801d25ec` are each found by `jal` and
 `FUN_801d2298` as a table word at VA `0x801F229C`, which is what makes the zero
-a real one. The bytes are nonetheless a complete routine: field overlay
+a real one. Nor is it a pool-actor tick reached from a template instead of a
+call: the three templates this family allocates from name `FUN_801d5c08`,
+`FUN_801d2298` and `FUN_801d5d60`, and none of them names this one. The bytes are nonetheless a complete routine: field overlay
 `0897_xxx_dat` at file `0x6F68` opens `addiu sp, sp, -0x28` and bails on a null
 `a0` at `0x801D57A4`. So the arc family ships one entry point nothing reaches -
 worth knowing before treating its port's inertness as an engine gap.

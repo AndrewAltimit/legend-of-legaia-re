@@ -298,6 +298,12 @@ pub struct HopSpawn {
 // `FUN_801D25EC` are each found by `jal` in the field overlay, and
 // `FUN_801D2298` is found as a table word at VA `0x801F229C`.
 //
+// The obvious rescue - "it is a pool-actor tick, so no `jal` is expected" -
+// does not apply either: a tick's disc reference is its template's `+0x08`
+// word, and the three templates this family allocates from
+// (`0x801F227C` / `0x801F2294` / `0x801F22AC`) name `FUN_801D5C08`,
+// `FUN_801D2298` and `FUN_801D5D60`. None of them names this one.
+//
 // The bytes are a complete, well-formed routine - field overlay `0897_xxx_dat`
 // at file `0x6F68` opens `addiu sp, sp, -0x28` and the null-`a0` bail at
 // `0x801D57A4` is `bne s0, zero, +3`, exactly as ported - so this is dead code
