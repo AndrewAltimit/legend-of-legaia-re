@@ -133,22 +133,27 @@ fn move_player_world_xyz_reads_designated_player_slot() {
     // actor 0 at origin and player at (100, _, 300), dist_sq = 100²+300² =
     // 100000 - predicate fails for r=10 (r² = 100), passes for r=400
     // (r² = 160000).
+    //
+    // 0x39 is a 4-halfword conditional branch (`[2F][39][radius][delta]`,
+    // the 0x801D4830 tail): the predicate selects `4 + op[3]` over a plain
+    // 4, so the delta word has to be non-zero for the two outcomes to be
+    // distinguishable at all.
     world.actors[0].active = true;
-    // Predicate fail → PC += 4.
-    let bc = vec![0x002F, 0x0039, 10, 0, 0, 0];
+    // Predicate fail → fall through the 4-word op.
+    let bc = vec![0x002F, 0x0039, 10, 3, 0, 0];
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
     assert_eq!(
         world.actors[0].move_state.pc, 4,
         "small-radius 0x39 should fail"
     );
-    // Predicate pass → PC += 1.
+    // Predicate pass → PC += 4 + delta(3).
     world.actors[0].move_state.pc = 0;
-    let bc2 = vec![0x002F, 0x0039, 400, 0, 0, 0];
+    let bc2 = vec![0x002F, 0x0039, 400, 3, 0, 0];
     world.set_move_bytecode(0, Some(bc2.clone()));
     let _ = world.step_move_vm(0, &bc2);
     assert_eq!(
-        world.actors[0].move_state.pc, 1,
+        world.actors[0].move_state.pc, 7,
         "large-radius 0x39 should pass"
     );
 }

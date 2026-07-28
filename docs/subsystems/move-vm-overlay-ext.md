@@ -32,6 +32,52 @@ Since the SCUS opcode arm calls the **fixed VA** `0x801D362C`, op `0x2F` is only
 
 Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of the 0897 table.
 
+## Instruction widths
+
+Every arm leaves its instruction's width, in u16 halfwords, in `s2` before joining the shared epilogue at `0x801D4A3C` (`sll v0, s2, 0x10`, then the return shifts back, so the count is a sign-extended 16-bit value).
+
+**There is no size-1 arm.** The only `li s2, 0x1` in `FUN_801D362C` is at `0x801D365C`, in the branch delay slot of the `sltiu v1, 0x3D` bounds check - the resync width for a sub-opcode the jump table does not cover. Every in-range sub-opcode has a wider arm of its own.
+
+The width is invisible in the decompiled C: Ghidra renders each arm's `j 0x801D4A3C` exit as a `func_0x801d4a3c()` label-call and drops the `li s2, N` sitting in its delay slot, so a C-sourced reading of any arm reports the bounds-check default. This is the label-call artifact catalogued in [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims), and it is why the widths have to be read off the disassembly.
+
+Returning 1 from an in-range arm leaves the PC on the sub-opcode word, which the **outer** move-VM opcode space then decodes as an instruction - `0x25` there is `CHILD_SPAWN`, `0x1F`/`0x20` are anim-block ops, and so on. On a looping record that mis-decode re-fires every tick.
+
+### Fall-through width by sub-opcode
+
+| Width | Sub-opcodes |
+|---|---|
+| 2 | `0x01` `0x02` `0x03` `0x08` `0x09` `0x0F` `0x10` `0x11` `0x15` `0x16` |
+| 3 | `0x04` `0x0A` `0x0B` `0x0C` `0x0D` `0x1C` `0x1D` `0x25` `0x26` `0x27` `0x2F` `0x31` `0x32` `0x34` `0x35` `0x3A` |
+| 4 | `0x13` `0x14` `0x1E` `0x36` `0x37` `0x38` `0x39` `0x3B` |
+| 5 | `0x05` `0x18` `0x1B` `0x1F` `0x20` `0x21` `0x22` `0x28` `0x29` `0x30` |
+| 6 | `0x23` `0x2B` `0x2D` `0x33` `0x3C` |
+| 7 | `0x06` `0x07` `0x2C` |
+| 8 | `0x12` `0x17` `0x19` `0x1A` `0x24` `0x2A` |
+| 11 | `0x0E` |
+| 13 | `0x2E` |
+| 16 | `0x00` |
+
+For the ten branch arms listed below, the width above is the fall-through side; the taken side adds a displacement read from the instruction's last operand word.
+
+The mirror is `move_vm_overlay_ext::canonical_size`; `crates/engine-vm`'s unit tests dispatch every sub-opcode against it.
+
+Two members are easy to lump with a neighbour and are not the same width. `0x18` is 5 where `0x17` / `0x19` / `0x1A` are 8: it zeroes the world-struct record's first three u16s and seeds the last two from `actor.world_y + op[3]` and `+ op[4]`, so it reads two operand words, not five. `0x11` is 2 where `0x25` is 3: `0x11` takes its slot index from the cycle counter, `0x25` from the bytecode.
+
+### The ten conditional-branch arms
+
+Ten arms have a second, data-dependent exit. They are **branches**: the last operand word is a signed halfword displacement added to the fall-through width. All ten reach the same tail at `0x801D4830`, which returns the preset `s2` when the predicate is false and `lhu v0,0x6(s3); addiu s2,v0,0x4` when it is true. The `lhu` is zero-extending but the epilogue truncates to 16 bits and sign-extends, so a negative displacement walks the PC backwards - the spin-wait-until-condition idiom.
+
+| Sub-ops | Encoding | Branch taken when |
+|---|---|---|
+| `0x06` / `0x07` | `[2F][op][xa][za][xb][zb][delta]`, base 7 | player outside / inside the box |
+| `0x0A` / `0x0B` | `[2F][op][delta]`, base 3 | `DAT_801F22F4` set / clear |
+| `0x13` / `0x14` | `[2F][op][flag][delta]`, base 4 | flag set / clear |
+| `0x36`..`0x39` | `[2F][op][arg][delta]`, base 4 | the arm's own predicate holds |
+
+`0x06` / `0x07` add their delta through `0x801D3868` (`addu s2,s2,v0`) rather than the shared `addiu`, and take it from `op[6]`; `0x0A` / `0x0B` take it from `op[2]` through `0x801D38C8`. The rest read `op[3]`.
+
+Three arms look conditional and are not. `0x28`'s clamp cascade, `0x3B`'s party-lookup miss and `0x23`'s divide-by-zero guard each choose what the instruction *does*, not how wide it is - `li s2` is set before the branch in all three.
+
 ## Sub-op clusters
 
 ### Shared scratch table `&DAT_801F3498`
@@ -61,10 +107,9 @@ World-position lerp lives in sub-ops `0x24` / `0x2A`. Both share the per-axis fo
 - sub-op `0x24` uses the fixed map origin `(_DAT_80089118, _DAT_80089120)` (target = `-(base + origin)`);
 - sub-op `0x2A` uses the player position (target = player X / Z).
 
-Sub-ops `0x06` / `0x07` are the bbox-vs-player gate variants:
+Sub-ops `0x06` / `0x07` are the bbox-vs-player branch variants. Both are 7 halfwords wide and branch by `op[6]`: `0x06` when the player is **outside** the canonicalised box `[xa..xb]×[za..zb]` (each scaled by `0x80` with a `0x40` half-cell margin), `0x07` when **inside**.
 
-- `0x06` skips a 7-u16 follow-up payload when the player is **outside** the canonicalised box `[xa..xb]×[za..zb]` (each scaled by `0x80` with a `0x40` half-cell margin);
-- `0x07` skips when the player is **inside**.
+The canonicalisation is a bytecode write, not a local: `sh v1,0x4(s3)` / `sh a0,0x4(s0)` at `0x801D3784` swap `op[2]` with `op[4]` when `op[4] < op[2]`, and the sibling pair swaps `op[3]` with `op[5]`. That puts these two in the self-modifying family with `0x04` / `0x1B` / `0x1E`.
 
 ### Midpoint-to-actor (`0x0E` / `0x12`) + player-relative predicates
 
@@ -75,8 +120,7 @@ Sub-ops `0x0E` / `0x12` share a "midpoint to actor world" idiom backed by `FUN_8
 
 Other player-relative predicates:
 
-- Sub-ops `0x36`/`0x37` are axis predicates against `0x8E - DAT_8007C348`: pass → continue (size 1), fail → skip 3-u16 follow-up (size 4).
-- Sub-ops `0x38`/`0x39` are squared-distance gates between the move actor and the player (`_DAT_8007C364`); `0x38` continues when *outside* radius `op[2]`, `0x39` continues when *inside*.
+- Sub-ops `0x36`/`0x37` are axis predicates against `0x8E - DAT_8007C348`, and `0x38`/`0x39` are squared-distance gates between the move actor and the player (`_DAT_8007C364`); `0x38` fires when *outside* radius `op[2]`, `0x39` when *inside*. All four are 4-halfword branches on the shared `0x801D4830` tail - pass → `4 + op[3]`, fail → 4. The "pass → size 1" reading is falsified: each arm presets `li s2, 0x4` before jumping to that tail.
 - Sub-op `0x23` is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at `_DAT_1F800393` over `op[5]`, with the divide guarded against `op[5] == 0`.
 - Sub-ops `0x13`/`0x14` are **conditional branches** on the fourth flag bank (`DAT_80085758`): encoding `[2F][13|14][flag][delta]`, where the taken side returns size `4 + delta` (`lhu v0,0x6(s3); addiu s2,v0,4` at `0x801D4838`) and the untaken side returns 4. `0x13` branches when the flag is set, `0x14` when it is clear; `delta` is signed, and a negative delta onto a preceding `0x09` wait forms the spin-wait-until-flag idiom jou's ambient lightning cyclers idle on (`2F 14 0364 FFFA`).
 
@@ -103,7 +147,11 @@ The base offset of 5 (versus 3 for `0x04`, 4 for `0x1E`) targets the operand reg
 
 Sub-ops `0x1F` / `0x20` are HSV-space ramps on a packed 24-bit RGB color stored in `actor[+0xa0..+0xa3]` (`0x1F`) or `actor[+0xa4..+0xa7]` (`0x20`). The packed `(R, G, B)` is decomposed (R = byte 0, G = byte 1, B = byte 2), converted RGB→HSV via the SCUS helper at `FUN_8001a78c` (H ∈ 0..0x167, S ∈ 0..255, V ∈ 0..255), then `op[2..4]` are added per channel (H wraps mod `0x168`, S/V clamp to 0..255), then HSV→RGB via `FUN_8001a8dc` (clamped to 0..0xF8 by `FUN_8001a6c8`) and re-packed.
 
-The size-1 default-arm return is intentional - the operand stream `op[2..]` is also re-interpreted as outer opcode `0x1F` / `0x20` on the next dispatch (a bytecode-density trick: one HSV ramp instruction simultaneously seeds an `actor[+0x9E..+0xAE]` anim-block update). `crates/engine-vm` ships the clean-room `rgb_to_hsv` / `hsv_to_rgb` pair that mirrors the SCUS algorithms exactly.
+Both are ordinary **5-halfword** instructions: `[2F][1F|20][dH][dS][dV]`. The single arm serving them sets `li s2, 0x5` at `0x801D3F60`, after the HSV→RGB call and before the shared `j 0x801D4A3C` at `0x801D3F80`, and no other path through it writes `s2`.
+
+The earlier reading - that the size-1 return is intentional, and `op[2..]` is deliberately re-read as outer opcode `0x1F` / `0x20` to seed an anim-block update in the same instruction - is **falsified**. It came from the decompiled C, where the exit renders as a label-call and the delay-slot `li` disappears; the same artifact had already produced a wrong size for `0x1E`. There is no density trick here, and the three operand words are the H/S/V deltas rather than a second instruction.
+
+The re-pack is a full 32-bit `sw` (`sw v1,0x0(s0)` at `0x801D3F84`), so the packed word's top byte is cleared rather than preserved. `crates/engine-vm` ships the clean-room `rgb_to_hsv` / `hsv_to_rgb` pair that mirrors the SCUS algorithms exactly.
 
 ### Fourth flag bank (shared with the field VM)
 
