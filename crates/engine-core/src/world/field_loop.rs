@@ -240,8 +240,9 @@ impl World {
         // now that both sides' SPD is final. Retail skips the roll entirely for
         // a scripted no-escape battle, so the boss fights never open on a back
         // attack or a pre-emptive strike.
-        self.battle_formation = vm::battle_formulas::FormationAdvantage::None;
-        self.battle_formation_latched = vm::battle_formulas::FormationAdvantage::None;
+        // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
+        // `+0x291` (and the arm's one-shot flag) are already zero - there is
+        // one copy of each and it lives there.
         if !self.battle_no_escape {
             self.roll_battle_formation(formation);
         }
@@ -256,10 +257,11 @@ impl World {
         // turns order by initiative. A no-SPD battle leaves every key at 0 and
         // stays on the round-robin fallback.
         self.seed_battle_initiative();
-        // Latch `+0x290` into `+0x291` and clear the original - retail does
-        // this in battle-action state `0x00`, and it must run *after* the
-        // seeder, which is the only reader of the unlatched copy. The latched
-        // copy is what `roll_battle_escape` reads for the rest of the battle.
+        // Run the action SM's state-`0x00` formation arm: seed the turn cursor
+        // from `+0x290`, then latch it into `+0x291` and clear the original.
+        // It must run *after* the seeder, which is the only reader of the
+        // unlatched copy; the latched copy is what `roll_battle_escape` reads
+        // for the rest of the battle.
         self.latch_battle_formation();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.

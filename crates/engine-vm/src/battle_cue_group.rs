@@ -116,18 +116,45 @@ pub struct CueTables<'a> {
 /// [`CueTables`] fields have a live source and the pair composes - see
 /// `crates/engine-vm/tests/battle_cue_group_real.rs`.
 ///
-/// What is missing is the **caller**, and it is bigger than a table. Retail's
-/// only caller is `FUN_800402F4`, the damage-application primitive, which
-/// reaches `jal 0x801e22c8` from eleven different branches and picks the group
-/// id per branch: eight pass a literal (`5`..`0xC`), two compute one
-/// (`s5 + 1` at `0x80040D74`, `a3 + 3` at `0x80040E38`), and exactly one
-/// forwards its own `param_2` (`0x800408D4`). The port models
-/// `FUN_800402F4` as the host hook
-/// [`BattleActionHost::apply_damage`](crate::battle_action::BattleActionHost),
-/// whose four bytes are the primitive's arguments, not its per-branch choices -
-/// so a host that expanded group `page` on every call would be right for one of
-/// the eleven sites and wrong for the rest. Wiring this needs the damage
-/// primitive's own dispatch ported first.
+/// What is missing is the **caller**, and the per-branch dispatch is the
+/// smallest of three blockers, not the whole of it.
+///
+/// Retail's only caller is `FUN_800402F4`, the item / restore applier, which
+/// reaches `jal 0x801e22c8` from eleven branches of its 132-entry class jump
+/// table (`0x80014FA0`) and picks the group id per branch: eight literals
+/// `5`..`0xC`, two computed (`s5 + 1` at `0x80040D74`, `param_2 + 3` at
+/// `0x80040E38`) and one forwarding its own `param_2` (`0x800408D4`). That
+/// selection is tabulated site-by-site in
+/// `docs/subsystems/battle-action.md` § "`FUN_800402F4`'s cue-group sites",
+/// and it is a `(class, tier)` table plus one per-slot loop - mechanical work,
+/// **not** a port of the applier's 1976 instructions.
+///
+/// The three things that actually block the wire:
+///
+/// 1. **The port's hook does not carry the primitive's arguments.** Retail's
+///    one call site inside the action SM is `0x801E4134` (state `0x3F`, spirit
+///    fire-damage) and it passes `a0 = actor[+0x1E8]` (`0x801E4124`),
+///    `a1 = actor[+0x1E9]` (`0x801E4130`), `a2 = ` the stacked target byte
+///    `+0x1DD` (`0x801E4108`) and `a3 = DAT_8007BD10[ctx[+0x13]]`, the roster
+///    **character id** (`0x801E411C`..`0x801E412C`). The port's
+///    `spirit_fire_damage` passes `queued_anim_b` (`+0x1E7`) and `spell_iter`
+///    (`+0x1FA`) for the first two - neither is `+0x1E8` / `+0x1E9`, and
+///    [`BattleActor`](crate::battle_action::BattleActor) models neither field -
+///    and the slot index for the fourth. So the class and tier that *select*
+///    the branch never reach the hook.
+/// 2. **The port has a call site retail does not.** `attack_chain` calls
+///    `apply_damage(next_byte, 0, target, slot)` with an animation byte where
+///    the primitive expects an effect class. `jal 0x800402f4` occurs exactly
+///    once in `FUN_801E295C`, at `0x801E4134`; the strike loop resolves damage
+///    through `FUN_801EC3E4`, not through the applier.
+/// 3. **The expansion has no consumer.** This function returns a *plan*.
+///    Nothing routes a [`CueSpawn`] into an effect pool or the SFX mixer, and
+///    `engine-core`'s `MovePowerTables::aux_tables()` is the only production
+///    holder of the group table.
+///
+/// Wiring on top of (1) and (2) would produce a call that satisfies a
+/// call-graph audit while expanding the wrong group from the wrong bytes, and
+/// (3) would discard the result anyway.
 ///
 /// Meanwhile the engine's per-action presentation comes from the art record's
 /// own effect / hit cues (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), a
@@ -135,6 +162,8 @@ pub struct CueTables<'a> {
 ///
 /// PORT: FUN_801E22C8
 /// REF: FUN_800402F4 (the damage primitive that picks the group id),
+/// REF: FUN_801E295C (its one call site in the action SM, `0x801E4134`),
+/// REF: FUN_801EC3E4 (what the strike loop resolves damage through instead),
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
 /// REF: FUN_80058490 (sound packet submit)
 pub fn expand_cue_group(

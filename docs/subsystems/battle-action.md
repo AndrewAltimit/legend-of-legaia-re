@@ -221,6 +221,40 @@ compares the freshly bumped `+0x1A` against the result - a seated-combatant
 count less a skipped tail. The quantity being compared is a position in an
 ordering, which no per-actor counter could be.
 
+### The three bytes the bound is built from
+
+`ctx[+0x00]` is the **seated party count**: the `0x00` seed arm reads it for a
+back attack (`0x801E2B0C`), and the settle gate `FUN_801E7250`'s all-target arm
+scans slots `0 .. ctx[+0x00]` and nothing above, which is why an all-target
+cast inspects the party side only. `ctx[+0x01]` is its monster-side twin, read
+by the seed arm's pre-emptive-strike branch (`0x801E2B18`).
+
+`ctx[+0x25]` is the **round-skip count** - combatants dropped out of this
+round's order *without acting*. It has one writer of each kind:
+
+- **reset**, `0x801DAB84` - `sb zero,0x25(v0)`, in the delay slot of the
+  `jal 0x801DABA4` that ends the initiative seeder `FUN_801DA780`. So it clears
+  once per round, immediately before the order is recomputed.
+- **bump**, `0x801DAC2C..0x801DAC38`, inside `FUN_801DABA4`'s per-slot loop over
+  the seven actor-table entries. The loop reaches the bump only through two
+  guards: `lhu v0,0x14c(v1); bne v0,zero,<next>` (`0x801DABD8`) skips a **living**
+  actor, and `lhu v0,0x16c(v1); beq v0,zero,<next>` (`0x801DABE8`) skips one
+  whose initiative key is already spent. What is left is exactly a combatant
+  that **died while still holding an unspent turn**; the loop clears its key
+  (`0x801DABF8`) and bumps the byte.
+
+So the bound shortens the round by one entry per pre-emptively removed
+combatant, and by nothing at all for an actor that died *after* its turn - that
+one already consumed a cursor position.
+
+**Port.** The engine compares the bumped cursor against the count of *living*
+combatants instead. The two agree while nobody dies mid-round, and diverge in
+one direction: an actor that dies **after** acting shrinks the engine's bound
+but not retail's, so the engine can end a round one action early. `ctx[+0x00]`,
+`ctx[+0x01]` and `ctx[+0x25]` are not modelled on
+`BattleActionCtx`; closing the gap means carrying all three, because "seated"
+is not recoverable from the engine's actor table once an actor is dead.
+
 **Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
 port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`
 from `ctx[+0x274]`; both halves were wrong, and the consequence was visible -
@@ -291,6 +325,40 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x6E6 + i*2` (ctx) | u16 × 8 | Per-actor facing offsets (one per slot 0..7). Written by `0x14` for AI bookkeeping. |
 | `+0x890..+0x893` (ctx) | u8 × 4 | 4-byte fade-back sentinel `84 10 42 08`. Written by the summon `0x37` and capture `0x71` paths. |
 | `+0x102C`/`+0x1080`/`+0x1074` (ctx) | int* | Scratch pointers to live UI widgets (fade primitive, HP-bar, damage-popup). |
+
+### `+0x4` is a tint, not a flag - and it has a per-frame driver
+
+`+0x4` reads like a visibility bit everywhere it is tested, and five separate
+routines do test it that way, but the value itself is a **packed RGB tint**:
+`FUN_8004A908` loads it (`0x8004A998`), strips the mesh colour and bails when it
+is zero (`0x8004A9A0`), and otherwise OR-s it under `+0x8`'s top byte into the
+render node's `+0x74` (`0x8004ABA0`). `0x20080200` is neutral grey; `0` draws
+black.
+
+Two routines keep it meaningful, and the summon fade only makes sense read
+against them:
+
+- **Seating.** `FUN_800513F0` stamps `0x20080200` on each occupied party slot
+  (`0x800515F4`) and `0x10040100` on each occupied monster slot (`0x80051874`).
+  An unoccupied monster seat is never written, so it keeps the allocator's zero
+  - that is how `+0x4 == 0` also means "no monster here".
+- **A per-frame tint tween.** `FUN_80050120` walks all eight slots each frame,
+  skips any with no model (`+0x22C == 0`), holds `+0x4` frozen while
+  `+0x21C >= 0x0B` (`0x8005017C`) and otherwise lerps it back toward neutral
+  through `FUN_80050F30`, storing at `0x8005059C`.
+
+So the summon sweep's `+0x4 = 0` / `+0x21C = 0xFF` pair at `0x801E4B50` is a
+*hold*: the `0xFF` freezes the tween, and state `0x36`'s `+0x21C = 0`
+(`0x801E4CFC`) releases it, after which the tint walks back to neutral in about
+32 frames. The `+0x8 = 0x81000000` write beside it fires precisely because
+`+0x4` is still black at that moment.
+
+**Port.** The engine carries `+0x21C` and leaves `+0x4` at zero, so the target-
+group walk reads the twin. The two are **not** interchangeable - an empty seat
+reads `+0x21C == 0` where retail rejects it on `+0x4`, and a monster that dies
+mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
+`engine-vm`'s `battle_target_group` module doc carries the full comparison and
+why seeding `+0x4` without also porting the tween would be worse than the twin.
 
 ## The `0x51` exit gate and the HP-bar settle invariant
 
@@ -580,6 +648,46 @@ holds its own `0x51` open until every party readout settles, so **the drain a
 menu restore could interrupt has always finished before the menu can act** -
 the inter-action race is closed by the very wait this page documents. The
 intra-action Final Heal is the one crack, and it is measured tight above.
+
+#### `FUN_800402F4`'s cue-group sites
+
+The applier does one more thing on its way out of most arms: it asks the
+cue-group expander `FUN_801E22C8` to place the arm's visual effect. It reaches
+`jal 0x801e22c8` from **eleven** branches of its 132-entry class jump table at
+`0x80014FA0`, and the group id is chosen per branch rather than passed in.
+
+Arguments at every site are `(a0 = tint, a1 = actor-state word, a2 = actor
+slot, a3 = group id)`. `a2` is `param_3` everywhere except the class-1 loop,
+which passes its own loop index. Sites marked *gated* run only in battle mode
+(`*(s16 *)0x8007B83C == 0x15`).
+
+| `jal` | Class arm | Reached when | `a3` (group) | Gated |
+|---|---|---|---|---|
+| `0x800408F8` | 0 - HP restore, single | class 0 | `param_2` | yes |
+| `0x80040D70` | 1 - HP restore, loop | per live slot in range | `param_2 + 1` | yes |
+| `0x80040E54` | 2 - MP restore | class 2 | `param_2 + 3` | yes |
+| `0x80040F04` | 3 - status cure | class 3 | `5` | yes |
+| `0x800410B8` | 4 - revive | class 4 | `6` | yes |
+| `0x8004111C` | 5 - spirit shield | class 5 | `7` | no |
+| `0x8004157C` | 7 - stat buff | `param_2 == 1` | `8` | no |
+| `0x80041718` | 7 | `param_2 == 2` | `9` | no |
+| `0x800417FC` | 7 | `param_2 == 3` | `0xA` | no |
+| `0x80041BA0` | 7 | `param_2 == 4` | `0xB` | no |
+| `0x80041C60` | 8 - status clear | class 8 | `0xC` | yes |
+
+Classes `6`, `9`, `0xA`, `0xB`/`0xC`/`0xD`, `0xE` and `0x82` never reach the
+expander; class 6's own 7-entry inner table at `0x800151B0` only bumps
+counters. The class-1 loop is bounded by `param_3 == 9` (monster slots `3..7`)
+versus anything else (party slots `0..3`) and carries a second per-slot gate on
+the roster byte, so a party-wide restore fires the expander once per living
+member.
+
+So the selection is a `(class, param_2)` table plus one loop - small. What is
+**not** small is the input side: see
+`engine-vm`'s `battle_cue_group` module doc for the three things that block
+wiring it (the port's `apply_damage` hook does not carry `param_1` / `param_2`,
+it has an attack-band call site retail does not have, and the expansion has no
+consumer).
 
 ### The clamp asymmetry: two overkill guards against different references
 
@@ -1757,9 +1865,19 @@ they are documented here rather than lifted whole into `engine-vm`.
   a terminator it installs the **move-power record** (`0x801F4F5C +
   map[actor+0x1DF]*0x1A`, map at `0x801F4E64`, `0x1A`-byte stride) at
   `ctx[+0x1014]` and seeds per-target homing state (`+0x1144` position, `+0x252`
-  target, `+0x1166` bearing). GTE + effect-spawn; not ported. See
+  target, `+0x1166` bearing). Kernels ported as
+  `engine-core::action_effect_script`; the spawns come back as requests. See
   `overlay_battle_action_801dea50.txt` and
   [move-power.md](../formats/move-power.md).
+
+  **`FUN_801E295C` does not call it.** A five-form reference scan
+  (`scripts/ghidra-analysis/find-address-word-refs.py 801dea50`) finds the
+  address referenced exactly twice in the whole corpus, both `jal`s in
+  `SCUS_942.54` at `0x800478B8` and `0x80047C08` - inside `FUN_80047430`, the
+  per-frame anim-node tick. There is **no** reference of any form to it inside
+  the battle-action overlay image. So the effect-script walk is driven from the
+  anim path, not from the action SM, and a port that waits for the action SM to
+  reach it waits forever.
 - **`FUN_801E09F8` - cast-effect census + projectile flight/impact.** Runs two
   jobs each frame. **(1) Census**: it recomputes, from scratch, the outstanding
   effect-count fields the magic/summon exit states poll - `ctx[+0x249]` (actors

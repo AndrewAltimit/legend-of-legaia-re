@@ -80,7 +80,7 @@ impl World {
         // Note this is the *latched* copy: it is only non-`None` because
         // `World::latch_battle_formation` copied it out of `+0x290` at battle
         // start, before the seeder's lockout cleared it.
-        flags.fold_formation_latch(self.battle_formation_latched);
+        flags.fold_formation_latch(self.battle_formation_latched());
         for slot in 0..party_n {
             if self.actors[slot].battle.liveness == 0 {
                 continue;

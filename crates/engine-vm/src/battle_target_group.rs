@@ -58,19 +58,91 @@
 //!   member". The port's equivalent is seat occupancy: the actor table holds
 //!   exactly the seated combatants.
 //! * A **monster** slot is live when the actor record's `+0x4` word is
-//!   non-zero. That word is the per-actor prim state the renderer emits
-//!   through ([`BattleActor::render_color`](crate::battle_action::BattleActor)
-//!   in the port), and the only routine that zeroes it - the summon-fade sweep
-//!   at `0x801E4B50` - writes `+0x21C = 0xFF` in the next two instructions.
-//!   The port maintains `+0x21C` and leaves `+0x4` at its default, so
-//!   [`RENDER_FLAG_HIDDEN`] on `+0x21C` is the reachable half of the pair.
+//!   non-zero. The port reads its `+0x21C` twin
+//!   ([`RENDER_FLAG_HIDDEN`]) instead. Why, and what that costs, is the next
+//!   section - it is not a shortcut that can simply be undone.
 //!
 //! A range whose slots are all dead yields no answer at all - retail would
 //! divide by zero there, so this port returns `None`.
+//!
+//! # Why the monster gate reads `+0x21C` and not `+0x4`
+//!
+//! `+0x4` is **not a flag**. It is the packed RGB tint the per-actor draw
+//! unpacks into the mesh colour word: `FUN_8004A908` loads it at `0x8004A998`,
+//! bails to "strip the RGB, keep the prim code" when it is zero
+//! (`0x8004A9A0`), and otherwise OR-s it under `+0x8`'s top byte into the
+//! render node's `+0x74` (`0x8004ABA0`). `0x20080200` is neutral grey; `0` is
+//! black, i.e. not drawn.
+//!
+//! That makes `+0x4 != 0` mean "seated **and** currently drawn", and it holds
+//! only because two routines maintain it every battle and every frame:
+//!
+//! * **Seating** - `FUN_800513F0` writes `0x20080200` on each occupied party
+//!   slot (`0x800515F4`) and `0x10040100` on each occupied monster slot
+//!   (`0x80051874`), and never writes an unoccupied monster slot at all, so an
+//!   empty seat keeps the allocator's zero. *That* is the occupancy half of the
+//!   gate, and `+0x21C` cannot express it: an empty seat reads `+0x21C == 0`,
+//!   the visible value.
+//! * **A per-frame tween** - `FUN_80050120` walks all eight slots each frame,
+//!   skips any with no model (`+0x22C == 0`, `0x8005016C`), freezes `+0x4`
+//!   whole while `+0x21C >= 0x0B` (`0x8005017C`/`0x80050180`), and otherwise
+//!   lerps it toward neutral through `FUN_80050F30` at 16 per channel per
+//!   frame, storing it back at `0x8005059C`. So the summon fade's `+0x4 = 0`
+//!   (`0x801E4B50`) is temporary: once state `0x36` drops `+0x21C` back to `0`
+//!   (`0x801E4CFC`) the tween walks `+0x4` from black to neutral over ~32
+//!   frames. Opening target select re-stamps it outright
+//!   (`FUN_801DA6B4`, `0x801DA74C`).
+//!
+//! The port has **neither** maintainer: nothing seats
+//! [`BattleActor::render_color`](crate::battle_action::BattleActor) and nothing
+//! tweens it, so it sits at its `Default` zero unless the target cursor has run.
+//! Switching the gate without both would be strictly worse than the twin -
+//! every monster would fail it until the player opened target select, and the
+//! summon fade's zero would be **permanent** rather than a 32-frame dip.
+//!
+//! The twin is therefore kept, with two known divergences, both recorded rather
+//! than papered over:
+//!
+//! * **Empty seats are under-rejected.** A monster slot that was never seated
+//!   reads `+0x21C == 0` and joins the centroid at the origin, pulling the aim
+//!   toward the middle of the stage. Retail rejects it on `+0x4 == 0`.
+//! * **A monster that dies during a summon is over-rejected.** State `0x36`'s
+//!   `+0x21C` clear is gated on `+0x14C != 0` (`0x801E4CE4`), so a slot that
+//!   died mid-fade keeps `0xFF` for the rest of the battle, while retail's
+//!   `+0x4` recovers through the tween.
+//!
+//! `+0x4` is read as a visibility predicate in five other places -
+//! actor separation `FUN_80051078` (`0x800510BC`/`0x800510D4`), the draw
+//! `FUN_8004A908`, the cast census `FUN_801E09F8` (`0x801E0A60`, which the port
+//! *does* mirror through [`crate::battle_cast_census`]), camera framing
+//! `FUN_801D5854` (`0x801D682C`) and the mirror-node seat `FUN_8004CE2C`
+//! (`0x8004D564`) - so seeding it is a change to all of them at once, not a
+//! local fix. The cast census is the one that bites: its `ctx[+0x249]` output
+//! gates the magic band's exit state `0x2E`, and with no tween to clear a
+//! zeroed tint a seeded census could hold that exit open indefinitely.
+//!
+//! REF: FUN_8004A908 (the draw that unpacks `+0x4`)
+//! REF: FUN_800513F0 (battle seating - the writer that establishes it)
+//! REF: FUN_80050120 (the per-frame tint tween), FUN_80050F30 (its lerp)
+//! REF: FUN_801DA6B4 (the target cursor's outright re-stamp)
+//! REF: FUN_80051078 (actor separation), FUN_801E09F8 (cast census),
+//! REF: FUN_801D5854 (camera framing), FUN_8004CE2C (mirror-node seat)
 
 /// The value the extent output is **floored** at (`0x400`). Named for the
 /// direction of retail's compare: see the module doc.
 pub const MIN_GROUP_EXTENT: i16 = 0x400;
+
+/// Target-group code for **the party** - `+0x1DD == 8`, decoded to slots
+/// `[0, 3)`. The whole of retail's group-code space that anything writes is
+/// this and [`TARGET_GROUP_ENEMIES`]: the command menu writes `8` at
+/// `0x801D1D6C` and `9` at `0x801D1D00`, the monster-AI resolver `FUN_801E7320`
+/// writes `8`/`9`, and the escape / capture arms write one each. `0xA` decodes
+/// but no writer in the corpus produces it.
+pub const TARGET_GROUP_PARTY: u8 = 8;
+
+/// Target-group code for **the enemy row** - `+0x1DD == 9`, decoded to slots
+/// `[3, 7)`. See [`TARGET_GROUP_PARTY`].
+pub const TARGET_GROUP_ENEMIES: u8 = 9;
 
 /// The `+0x21C` render flag the summon-fade sweep writes alongside zeroing the
 /// `+0x4` prim word (`0x801E4B50`/`0x801E4B5C`). A monster carrying it is not
