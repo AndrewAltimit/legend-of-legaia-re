@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::ambient_effect_installs;
+use legaia_engine_core::man_field_scripts::scene_entry_ambient_installs;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 
@@ -233,8 +233,8 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
 
 /// Disc-gated census: which scenes' plain scene-entry ambient trees put a
 /// live mode-4 scroller on screen. Walked through the move VM (spawn the
-/// MAN's P1 effect installs, tick, read the seated parts back), which is the
-/// only decode that survives the records' jump ops.
+/// MAN's entry installs, tick, read the seated parts back), which is the only
+/// decode that survives the records' jump ops.
 #[test]
 fn mode4_scene_entry_carrier_census_or_skip() {
     let Some(root) = extracted_root() else { return };
@@ -255,7 +255,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
         let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
             continue;
         };
-        let installs = ambient_effect_installs(&man, &man_bytes);
+        let installs = scene_entry_ambient_installs(&man, &man_bytes);
         if installs.is_empty() {
             continue;
         }
@@ -280,17 +280,35 @@ fn mode4_scene_entry_carrier_census_or_skip() {
     assert_eq!(
         names,
         vec![
-            "korout", "koin3", "deroa", "jou", "jouinb", "jouine", "noaru", "other7"
+            "vell", "dolk", "dolk2", "keikoku", "jiji", "dohaty", "station", "tunnelc", "korout",
+            "koin3", "deroa", "jou", "jouinb", "jouind", "jouine", "noaru", "other7"
         ],
         "scene-entry mode-4 carriers"
     );
 
-    // Every authored carrier scrolls **vertically only**, upward, and every
-    // rect sits in the upper texture band (`x >= 0x200`) - these are the
-    // falling-water / energy-column texture strips, not CLUT rows.
+    // Shape: with one exception every authored carrier scrolls **vertically
+    // only**, upward, over a rect in the upper texture band (`x >= 0x200`) -
+    // falling water and energy columns, animated as texels.
+    //
+    // The exception is `tunnelc`'s second seat, `(0, 508, 256, 1)` stepping
+    // right by 16 halfwords: a full-width, one-row rect on a **CLUT row**.
+    // Mode 4 is not restricted to texture pages - the same rotate primitive
+    // walks a palette when the authored rect is a palette.
+    let mut clut_row_carriers = 0;
     for (name, rects) in &carriers {
-        for &((x, _, w, h), dx, dy) in rects {
-            assert_eq!(dx, 0, "{name}: no horizontal carrier at scene entry");
+        for &((x, y, w, h), dx, dy) in rects {
+            if h == 1 {
+                assert_eq!(
+                    (name.as_str(), x, y, w, dx, dy),
+                    ("tunnelc", 0, 508, 256, 16, 0)
+                );
+                clut_row_carriers += 1;
+                continue;
+            }
+            assert_eq!(
+                dx, 0,
+                "{name}: no horizontal texture carrier at scene entry"
+            );
             assert!(dy > 0, "{name}: upward step {dy}");
             assert!(x >= 0x200, "{name}: rect x {x:#x} in the texture band");
             // The authored steps always fit their rect at both frame steps -
@@ -301,6 +319,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
             );
         }
     }
+    assert_eq!(clut_row_carriers, 1, "one CLUT-row scroller on the disc");
     // jouinb carries the most (three separate falls).
     assert_eq!(carriers.iter().map(|(_, r)| r.len()).max(), Some(3));
 }

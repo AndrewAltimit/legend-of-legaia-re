@@ -569,16 +569,23 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
-                    // Ambient effect stagers: each P1 effect-actor script
-                    // (pure `install id N` + loop) fires its op-0x34 sub-3
-                    // install at scene entry; spawn the installed records
-                    // now (`FUN_800252EC(arg + 1)` id convention - see
-                    // `World::spawn_field_stager`). jou: one install (arg 0
-                    // → record 1) fans out into the lightning director +
-                    // fifteen CLUT-row cyclers + the ambient SFX loop.
-                    for arg in
-                        crate::man_field_scripts::ambient_effect_installs(&man_file, &man_bytes)
-                    {
+                    // Ambient effect stagers: retail's placement installer
+                    // pre-runs each P1 placement's spawn prologue for one
+                    // frame slice at scene load, and every op-0x34 sub-3 that
+                    // slice executes installs a prescript stager record
+                    // (`FUN_800252EC(arg + 1)` - see
+                    // `World::spawn_ambient_record`). The census is that
+                    // slice's unconditional prefix; note it must run BEFORE
+                    // `pre_run_field_channel_prologues` below, which is the
+                    // same retail pre-run seen from the actor-position side.
+                    // jou: one install (arg 0 → record 1) fans out into the
+                    // lightning director + fifteen CLUT-row cyclers + the
+                    // ambient SFX loop. town0e: the morph installer riding a
+                    // dialogue-bearing placement.
+                    // REF: FUN_8003A1E4
+                    for arg in crate::man_field_scripts::scene_entry_ambient_installs(
+                        &man_file, &man_bytes,
+                    ) {
                         self.world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
                     }
                     // Initial NPC POSITIONS: the same retail pre-run also
