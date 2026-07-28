@@ -309,6 +309,31 @@ fn every_row_can_be_read_back_by_its_own_coordinate() {
 }
 
 #[test]
+fn the_battle_equipment_entries_are_still_unreachable() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    drop(image);
+    let (rows, _) = registry_rows(&prot, &spans, false);
+
+    // The player battle files. Their equipment textures are not TIMs, so the
+    // grid reaches none of them and no filter string can - which is the
+    // whole reason the registry has a slot reserved for that family. When a
+    // parser for it lands and its tier goes in, this test is what should
+    // fail, and the fix is to delete it.
+    for entry in 863i64..=866 {
+        let n = rows.iter().filter(|r| r.entry == entry).count();
+        assert_eq!(
+            n, 0,
+            "PROT {entry} now yields {n} row(s) - if the battle-equipment \
+             family has been added, retire this test rather than weakening it"
+        );
+    }
+}
+
+#[test]
 fn the_summon_family_reaches_textures_no_tim_scan_can() {
     let Some(image) = disc() else {
         eprintln!("LEGAIA_DISC_BIN unset - skipping");
