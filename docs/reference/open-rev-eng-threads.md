@@ -95,6 +95,13 @@ cheapest place to look for a claim that is still wrong.
   Wave; formation `0xB5` is Cort. The branch at `0x801E6D04` reads the
   formation-id byte, and the wrong reading survived because Cort casts Lapis
   Wave - the two spaces agreeing on the answer is what hid the error.
+- **"Retail shots rarely roll the camera" was false, and so was the row that
+  replaced it.** Retail authors a non-zero op-`0x45` slot-2 roll in eight
+  scenes. The renderer's dropped `RotMatrixZ` factor was a real divergence,
+  and the two linear censuses that had measured it - one strict, one
+  byte-resuming, plus a raw byte scan quoting a "2 %" figure as fact - were
+  each measuring their own decode gate. Settled by execution; see
+  [`re-settled-threads.md`](re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll).
 
 Two rows a prior audit flagged as the highest-risk `decompiled-C` claims on the
 register - the narration-roller op's operand decode and the item-add OOB
@@ -221,46 +228,6 @@ formation-table watch in
 [`autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
 already logs `DAT_8007BD0C[4]`, so one run through that fight confirms the
 `0xB5` selector and the residency together.
-
-## Rendering / camera
-
-| Thread | Status | What would close it |
-|---|---|---|
-| Does any retail shot author a non-zero camera roll? | open - a static sweep provably cannot decide it | [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
-
-### Does any retail shot author a non-zero camera roll?
-
-*Status:* open. The port's cutscene camera composes pitch and yaw and drops
-roll, on the assumption that retail shots rarely roll. That assumption is
-load-bearing and had never been measured.
-
-Roll is slot `2` of the op-`0x45` CONFIGURE mask
-([`cutscene.md`](../subsystems/cutscene.md)), so it looks like a cheap static
-sweep of the scene MANs. It is not, and the census
-(`crates/asset/tests/thread_camera_roll_census.rs`) exists mainly to record
-why. A field-VM record's tail is not linearly decodable - data follows code -
-so the sweep must choose a mode, and **the two modes disagree by two orders of
-magnitude**: stopping at the first decode error reaches 21 CONFIGUREs
-corpus-wide, resuming a byte at a time reaches 2182. Every error gate between
-them moves the non-zero count monotonically, with no plateau, so a gated
-census is measuring its own threshold.
-
-The resuming mode is not merely suspect - it is **provably** decoding data:
-seven of its roll operands lie outside the 12-bit space `RotMatrixZ` masks its
-argument to, and an authored angle cannot be `26708`.
-
-Two things do survive every mode, and the test asserts them: roll is an
-**optional** slot (~29% of beats set it, against ~100% for pitch, yaw, the eye
-trio, focus X/Z and H), and the mask decode cross-checks against a fact
-established independently of this sweep - focus Y (slot 7) is rarer still,
-matching the `opdeene` reading already on `cutscene.md`.
-
-*What would close it:* execution, not decode. Run the candidate records
-through the ported field VM and read the roll each CONFIGURE commits. The
-candidates are the scenes whose resuming-sweep operands are in-range and
-repeat coherently: `deroa`, `chitei2`, `station3`, `town0b`, `retona`,
-`nilboa`, `edstati3`. A reachability (control-flow) walker over MAN records
-would settle it statically and retire the test's second assertion.
 
 ## Adding a thread
 

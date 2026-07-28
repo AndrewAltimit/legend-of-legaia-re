@@ -398,7 +398,7 @@ impl PlayWindowApp {
             && (self.session.host.world.mode != SceneMode::WorldMap
                 || !self.session.host.world.camera_state.params.is_empty())
         {
-            let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
+            let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
             // commits its camera targets IMMEDIATELY (snap cut), while
@@ -441,6 +441,7 @@ impl PlayWindowApp {
                 focus,
                 pitch,
                 yaw,
+                roll,
                 h,
                 tr_eye,
                 u32::from(apply),
@@ -451,9 +452,9 @@ impl PlayWindowApp {
                 let w = &self.session.host.world;
                 eprintln!(
                     "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
-                     yaw={yaw:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} pitch={:.3} \
-                     yaw={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, w.camera_state.params
+                     yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
+                     pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera_state.params
                 );
             }
             Some(out)

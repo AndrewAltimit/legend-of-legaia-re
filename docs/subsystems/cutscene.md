@@ -929,7 +929,7 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   |---|---|---|---|
   | 0 | `+0x02` | `_DAT_8007b790` | **pitch** (GTE `RotMatrixX` angle) |
   | 1 | `+0x06` | `_DAT_8007b792` | **yaw** (GTE `RotMatrixY` angle / heading) |
-  | 2 | `+0x0a` | `_DAT_8007b794` | **roll** (GTE `RotMatrixZ` angle; zeroed in the field-camera build path) |
+  | 2 | `+0x0a` | `_DAT_8007b794` | **roll** (GTE `RotMatrixZ` angle). Authored: eight scenes stage a non-zero one - see [Camera roll](#camera-roll-slot-2). |
   | 3 / 4 / 5 | `+0x0e/12/16` | `_DAT_800840b8/bc/c0` | **eye-space translation trio** (post-rotation `(dx, dy, depth)`; the analog of the battle camera's `(0, 1280, 7680)` - slot 5 is the eye-back depth) |
   | 6 / 7 / 8 | `+0x1a/1e/22` | `_DAT_80089118/1c/20` | **camera focus** = the GTE translation `(-X, +Y, -Z)` |
   | 9 | `+0x26` | `_DAT_8007b6f4` | **GTE H** projection register (focal length / zoom) via `func_0x8003d254` = `setCopControlWord(2, …)` |
@@ -985,6 +985,33 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
 
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
   The captured RAM is the interpolated tween between two op-`0x45` keyframes (`opdeene` beat 0 `tr_eye = (−740, 512, 16384)`, focus `(10816, ?, 12224)`; a later beat `tr_eye = (118, 2241, 20795)`, focus `(5824, ?, 1984)`) - every axis of the capture sits between them. Note (don't re-walk): the GTE rotation matrix read straight from a save state is the last-rendered object's composed transform (row norms ≈ 6.0 = the base-matrix world scale), so recover `R` from the angle globals - but that `6.0` **is** the camera world scale, folded into `R` via `DAT_8007BF10`.
+
+#### Camera roll (slot 2)
+
+Retail authors it, and the engine composes it. Slot `2` is the argument
+`FUN_8001CF50` hands to `RotMatrixZ` at `0x8004638C` - the third factor of
+`Rx * Ry * Rz`, applied unless the render node's `+0x52` bit `0x200` is set
+(`0x8001CFD0..0x8001CFE8`). Nothing in the field-camera build path zeroes it:
+`FUN_801DAB90`, `FUN_801DB8EC` and `FUN_801DBE9C` never touch `_DAT_8007B794`,
+and the only write that clears it is the scene-entry reset `FUN_80025C24`.
+(On the world map the same global is the top-view **azimuth**, which is the
+same Z rotation seen from a top-down camera - see
+[`world-map.md`](world-map.md).)
+
+Eight scenes stage a non-zero roll, from a `10`-unit (0.9 deg) lean to `-660`
+(-58 deg): `edstati3` (an ending cutscene), `station3`, `map03`, `nilboa`,
+`taiku`, `korout`, and the two Juggernaut interiors `juui1` / `juui2`, which
+carry the two steepest tilts. Each such beat carries the full nine-slot mask
+and holds the same tilt across the beats of its shot. Per-scene values, and why a linear
+decode of the corpus could not establish this, are on
+[`re-settled-threads.md`](../reference/re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll);
+the executing oracle is
+`crates/engine-core/tests/thread_camera_roll_execution.rs`.
+
+Engine side: `engine-core`'s `Camera::roll`, the play window's
+`cutscene_view` / `psx_camera_mvp`, `CutsceneCameraInterp`'s tenth packed
+component (so a roll glides on the beat's own curve like every other axis),
+and the browser play page's orbit `cam.roll`.
 
 ### Record pacing - the 60 Hz sub-clock
 

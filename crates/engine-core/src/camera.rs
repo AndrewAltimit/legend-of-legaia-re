@@ -204,6 +204,20 @@ pub struct Camera {
     pub yaw: f32,
     /// Pitch in radians.
     pub pitch: f32,
+    /// Roll in radians - op-`0x45` slot `2` (`_DAT_8007B794`, the
+    /// `RotMatrixZ` angle `FUN_8001CF50` composes third, after pitch and
+    /// yaw).
+    ///
+    /// Retail authors this. An executing census of every MAN record on the
+    /// disc (`crates/engine-core/tests/thread_camera_roll_execution.rs`)
+    /// finds control-flow-reachable Configure beats staging a non-zero roll
+    /// in eight scenes, from a `10`-unit (0.9 deg) tilt up to `-660`
+    /// (-58 deg) - all in-range 12-bit angles, each held across the beats of
+    /// one shot the way an authored Dutch angle is. A camera that composes
+    /// pitch and yaw only frames those shots wrong.
+    ///
+    /// REF: FUN_8001CF50
+    pub roll: f32,
     /// User-controlled orbit around the follow target (radians), in the
     /// **compass sense**: positive swings "screen up" from world `+Z`
     /// toward `+X`. Composed on top of the scripted [`Self::yaw`] by both
@@ -264,6 +278,7 @@ impl Default for Camera {
             look_at: [0.0; 3],
             yaw: 0.0,
             pitch: 0.0,
+            roll: 0.0,
             manual_orbit: 0.0,
             render_yaw_bias: 0.0,
             distance: CameraDistance::Retail,
@@ -318,6 +333,12 @@ impl Camera {
                     }
                     if let Some(v) = slot(1) {
                         self.yaw = ang(v);
+                    }
+                    // Slot 2 = roll (`_DAT_8007B794`, the `RotMatrixZ` angle).
+                    // Retail authors it: see [`Self::roll`] for the executing
+                    // census that found the eight scenes staging one.
+                    if let Some(v) = slot(2) {
+                        self.roll = ang(v);
                     }
                     // Focus slots 6/7/8 re-target the cinematic look-at, each
                     // applied INDEPENDENTLY on its own presence - the retail
@@ -559,6 +580,7 @@ impl Camera {
             self.mode = CameraMode::Follow;
             self.yaw = 0.0;
             self.pitch = 0.0;
+            self.roll = 0.0;
         }
     }
 }
@@ -899,6 +921,55 @@ mod tests {
         assert_eq!(c.globals.focus_world(), [8568, 0, 8944], "world focus");
         assert_eq!(c.globals.h(), 776);
         assert!(c.mover.is_none(), "a snap cancels any glide in flight");
+    }
+
+    /// Slot 2 is the roll angle, and retail authors it - `juui2`'s opening
+    /// beat stages `-660` units (-58 deg) alongside pitch, yaw, the eye trio,
+    /// focus X/Z and H. The controller surfaces it as [`Camera::roll`]
+    /// alongside pitch and yaw (the render hosts decode the staged slot
+    /// themselves, the same way they do for those two), and a camera that
+    /// drops the term frames that shot upright.
+    #[test]
+    fn camera_configure_slot_two_sets_the_roll() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World::default();
+        let p = |slot: u8, value: i16| CameraParam {
+            slot,
+            value: value as u16,
+        };
+        // The `juui2` P2[0] beat, verbatim (entry 597, pc 0x000A).
+        w.pending_field_events = vec![FieldEvent::CameraConfigure {
+            params: vec![
+                p(0, -643),
+                p(1, -1480),
+                p(2, -660),
+                p(3, -19),
+                p(4, 521),
+                p(5, 4537),
+                p(6, -3522),
+                p(8, -13904),
+                p(9, 280),
+            ],
+            apply_trigger: 0,
+            mode: 0,
+        }];
+        let mut c = Camera::default();
+        c.route_camera_events(&mut w);
+        assert_eq!(c.globals.angles(), [-643, -1480, -660], "all three angles");
+        let want = -660.0 * std::f32::consts::TAU / 4096.0;
+        assert!(
+            (c.roll - want).abs() < 1e-4,
+            "slot 2 -> Camera::roll: {} vs {want}",
+            c.roll
+        );
+        // Free-roam clears it with the rest of the scripted pose, so a rolled
+        // cutscene cannot leave the field camera tilted.
+        let field = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        c.reset_for_free_roam(&field);
+        assert_eq!(c.roll, 0.0);
     }
 
     /// A glide beat (`apply != 0`) arms the mover instead of snapping, and the

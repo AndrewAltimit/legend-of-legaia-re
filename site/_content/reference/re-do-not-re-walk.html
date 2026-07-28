@@ -49,6 +49,12 @@
         <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
       </tr>
       <tr>
+        <td>"About 2&nbsp;% of retail camera beats set a non-zero roll"</td>
+        <td><span class="tag tag-done">falsified</span> (the figure was the scan's own filter)</td>
+        <td>The number came from a <strong>byte scan</strong> - decode an op-<code>0x45</code> CONFIGURE at every offset of every scene MAN - which finds 4257 "sites" where control flow reaches 371. Junk sites set a junk roll almost every time, so the scan applied a post-hoc "credible" filter and then measured roll over the survivors: the ratio is a property of that filter. Its sibling strict linear sweep reported the opposite (zero non-zero rolls) by reaching 21 sites and none of the eight real ones. The answer - retail <em>does</em> roll, in eight scenes, up to &minus;58&deg; - came from <strong>executing</strong> the records, not decoding them. Generalises: a measurement instrument has no oracle, so check its explanation against the artifact rather than against its own plausibility.</td>
+        <td><a href="re-settled-threads.html#d-camera-roll">settled threads</a></td>
+      </tr>
+      <tr>
         <td>Navmesh / per-scene navigation data</td>
         <td><span class="tag tag-done">falsified</span></td>
         <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch. Real region / event data lives in the field-file preamble (count + <code>u16</code> offset table + records - <strong>not</strong> the field-pack schema slots, a global-constant template); collision is the <code>+0x4000</code> MAP grid.</td>

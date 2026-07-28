@@ -1,37 +1,49 @@
-//! Disc-gated census of the scene scripts' **camera roll** operand - and the
-//! record of why a static sweep cannot settle the question it was aimed at.
+//! Disc-gated census of the scene scripts' **camera roll** operand under two
+//! *linear* sweep modes - kept as the record of why neither can answer the
+//! question, now that the question is answered elsewhere.
 //!
-//! The port's cutscene camera composes pitch and yaw but drops roll, on the
-//! stated assumption that "roll is rarely non-zero in retail shots". Nothing
-//! had measured that against the disc's own camera operands, and "rarely" and
-//! "never" are different claims with different consequences for a renderer.
+//! **The answer.** Retail authors a non-zero camera roll: eight scenes stage
+//! a control-flow-reachable, executing op-`0x45` CONFIGURE that writes slot
+//! `2` (`_DAT_8007B794`, the GTE `RotMatrixZ` angle) to a non-zero in-range
+//! value, from a 0.9-degree lean to a 58-degree Dutch angle. That was settled
+//! by execution, in `crates/engine-core/tests/thread_camera_roll_execution.rs`,
+//! which steps every MAN record through the ported field VM and reads the roll
+//! each reached CONFIGURE commits. This file measures the two linear modes so
+//! the reason a *decode* cannot substitute stays testable.
 //!
-//! **What is measured.** Op `0x45` `CAMERA` sub-`0x00` (CONFIGURE) carries a
-//! big-endian 10-bit slot mask `(op0 << 8) | op1`, bit `(9 - slot)`, then a
-//! `u16` apply trigger and one signed 16-bit word per set slot in ascending
-//! slot order. Slot `2` is the roll angle (`_DAT_8007B794`, the GTE
-//! `RotMatrixZ` input); slot `7` is focus Y. See
+//! **What is measured here.** Op `0x45` `CAMERA` sub-`0x00` (CONFIGURE)
+//! carries a big-endian 10-bit slot mask `(op0 << 8) | op1`, bit `(9 - slot)`,
+//! then a `u16` apply trigger and one signed 16-bit word per set slot in
+//! ascending slot order. Slot `2` is the roll angle; slot `7` is focus Y. See
 //! `docs/subsystems/cutscene.md`. This walks every scene MAN's partition-1
 //! actor-script records and tallies slot occupancy and roll operands.
 //!
-//! **What it cannot decide, and why.** A field-VM record's tail is not
+//! **Why a linear sweep cannot decide it.** A field-VM record's tail is not
 //! linearly decodable - data follows code - so a sweep has to choose between
-//! stopping at the first decode error (reaching ~21 CONFIGUREs corpus-wide,
-//! far too few to conclude anything) and resuming a byte at a time (reaching
-//! ~2000, but re-synchronising inside data). The resuming form is not merely
-//! suspect, it is **provably** reading data: it reports roll operands outside
-//! the 12-bit angle space `RotMatrixZ` masks its input to, and an authored
-//! angle cannot be `26708`. Every intermediate error gate sits between those
-//! two, and the non-zero count moves monotonically with the threshold with no
-//! plateau - so a gated census measures the gate, not the disc.
+//! stopping at the first decode error and resuming a byte at a time, and the
+//! two disagree by two orders of magnitude. Both are wrong in opposite
+//! directions, which the executing census makes concrete:
 //!
-//! Deciding it needs **execution**, not linear decode: run each candidate
-//! record through the ported field VM and read the roll its CONFIGURE actually
-//! commits. The candidates are the scenes the resuming sweep flags with
-//! in-range, repeating operands - `deroa`, `chitei2`, `station3`, `town0b`,
-//! `retona`, `nilboa`, `edstati3`.
+//! - the **resuming** mode over-reads. It re-synchronises inside data and
+//!   reports roll operands outside the 12-bit space `RotMatrixZ` masks its
+//!   argument to - an authored angle cannot be `26708`. The control-flow walk
+//!   reaches none of those, so they are data.
+//! - the **strict** mode under-reads, and dangerously: it reaches a couple of
+//!   dozen CONFIGUREs corpus-wide and **not one** of the eight rolled shots.
+//!   Its silence on non-zero roll was blindness, not evidence.
 //!
-//! The assertions below are what survives regardless of that choice.
+//! Every error gate between the two moves the count monotonically with no
+//! plateau, so a gated linear census measures its own threshold. A raw byte
+//! scan (decode at every offset) is the same failure with no gate at all.
+//!
+//! **And a second blindness, structural rather than statistical:** this walk
+//! covers **partition 1** (actor placements), while every authored roll on
+//! the disc lives in **partition 2** - the cutscene-timeline / walk-on beat
+//! records. So the strict mode was not merely under-reading its own corpus,
+//! it was reading a different one. Scoping a census to the partition that is
+//! easy to enumerate, rather than to the partition the feature lives in, is
+//! the shape to watch for.
+//!
 //! Skips silently when `extracted/PROT/` is missing.
 
 use legaia_asset::field_disasm::{CameraKind, InsnInfo, decode};
@@ -219,13 +231,15 @@ fn roll_is_an_optional_slot_most_camera_beats_never_set() {
 /// The resuming sweep re-synchronises inside data, so its non-zero rolls are
 /// not evidence - and this *proves* that rather than asserting it, by finding
 /// roll operands outside the 12-bit space the GTE masks its angle argument to.
+/// The executing census reaches no such operand, which is what turns "these
+/// look wrong" into "these are data".
 ///
-/// Kept as a test so a future reachability walker has to retire the row: if a
-/// control-flow walk ever reaches these CONFIGUREs cleanly and no out-of-range
-/// operand survives, the question becomes statically decidable and the module
-/// doc above is what needs rewriting.
+/// The strict sweep is the opposite failure and the more dangerous one: it
+/// invents nothing, so everything it reaches is real - but it reaches so
+/// little that it misses **every** authored roll on the disc. Both halves are
+/// asserted here so neither mode can be quoted as an answer again.
 #[test]
-fn a_resuming_linear_sweep_reads_data_as_camera_operands() {
+fn neither_linear_sweep_mode_can_answer_the_roll_question() {
     let Some(resumed) = census(true) else {
         eprintln!("[skip] extracted/PROT/ missing or no scene MANs recovered");
         return;
@@ -251,14 +265,25 @@ fn a_resuming_linear_sweep_reads_data_as_camera_operands() {
     );
     assert!(
         !impossible.is_empty(),
-        "the resuming sweep was expected to decode data as camera operands; if it no longer \
-         does, a static census may now be able to settle the roll question"
+        "the resuming sweep decodes data as camera operands - an authored roll cannot lie \
+         outside the 12-bit angle space, and the control-flow walk reaches none of these"
     );
 
-    // The strict sweep invents nothing, and everything it reaches writes zero.
-    let non_zero: Vec<&(i16, String)> = strict.rolls.iter().filter(|(v, _)| *v != 0).collect();
+    // The strict sweep's blindness, stated as the two facts that make it one:
+    // it reaches a tiny fraction of the corpus's CONFIGUREs, and none of what
+    // it does reach is one of the authored rolls.
     assert!(
-        non_zero.is_empty(),
-        "a CONFIGURE reached without any error resume writes a non-zero roll: {non_zero:?}"
+        strict.configures * 10 < resumed.configures,
+        "the strict sweep should reach an order of magnitude fewer CONFIGUREs than the \
+         resuming one ({} vs {})",
+        strict.configures,
+        resumed.configures
+    );
+    let strict_non_zero: Vec<&(i16, String)> =
+        strict.rolls.iter().filter(|(v, _)| *v != 0).collect();
+    assert!(
+        strict_non_zero.is_empty(),
+        "the strict sweep is blind to every authored roll on the disc - it must not be the \
+         thing that reports one: {strict_non_zero:?}"
     );
 }

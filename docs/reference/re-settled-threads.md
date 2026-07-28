@@ -2897,6 +2897,93 @@ Grade `disassembly`: every verdict is a word- or token-exact comparison
 against the corrected-extent extracted images, with each rival reading
 excluded by the same comparison rather than by arithmetic.
 
+## Rendering / camera
+
+| Thread | Status | Evidence | Answer |
+|---|---|---|---|
+| Does any retail shot author a non-zero camera roll? | resolved (yes) | `capture` + `disassembly` | Eight scenes stage a reachable, executing op-`0x45` slot-2 roll, from `10` units (0.9 deg) to `-660` (-58 deg). [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
+
+### Does any retail shot author a non-zero camera roll?
+
+*Status:* resolved - **yes**.
+
+Slot `2` of the op-`0x45` CONFIGURE mask is the roll angle `_DAT_8007B794`,
+the argument `FUN_8001CF50` hands to `RotMatrixZ` (`0x8004638C`) as the third
+factor of `Rx * Ry * Rz`. The port used to compose pitch and yaw and drop it,
+on the stated assumption that retail shots rarely roll.
+
+**Eight scenes roll.** Every one of these beats carries the full nine-slot
+mask - pitch, yaw, roll, the eye trio, focus X and Z, `H`, and no focus Y,
+matching the `opdeene` reading on [`cutscene.md`](../subsystems/cutscene.md) -
+every operand is an in-range 12-bit angle, and the beats of one shot repeat
+the same tilt, which is what an authored Dutch angle looks like.
+
+| scene | what it is | PROT entry | record | roll (12-bit) | degrees |
+|---|---|---|---|---|---|
+| `edstati3` | Ending (station3) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
+| `station3` | Karisto Station (late) | 616 | P2[0] | `30` | 2.6 |
+| `map03` | World map (Karisto) | 392 | P2[10] | `60` | 5.3 |
+| `nilboa` | Nivora Ravine | 638 | P2[33] | `60` | 5.3 |
+| `taiku` | Muscle Dome | 373 | P2[27] | `-120` | -10.5 |
+| `korout` | Field (korout) | 534 | P2[3] | `240` | 21.1 |
+| `juui1` | Juggernaut interior 1 | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
+| `juui2` | Juggernaut interior 2 | 597 | P2[0] | `-660` | -58.0 |
+
+The two biggest tilts sit inside the Juggernaut, and the smallest opens an
+ending cutscene - which is where a canted camera is exactly what an author
+would reach for.
+
+Roll stays a **minority** term: of the 371 CONFIGUREs a control-flow walk
+reaches, 123 set the slot at all and 15 of those write a non-zero value -
+roughly a third, then about one in eight. That is why "rarely" survived as
+long as it did. Rare is not never.
+
+**Why it took execution.** A field-VM record's tail is not linearly decodable,
+so a *decode* of the corpus has to pick a resynchronisation policy, and the
+policy is what it ends up measuring. Three instruments disagreed:
+
+| Instrument | CONFIGUREs reached | Non-zero rolls | What it was really measuring |
+|---|---|---|---|
+| Strict linear (stop at first decode error) | 21 | 0 | its own blindness - it reaches none of the eight |
+| Resuming linear (advance one byte on error) | 2182 | 637 roll operands, 7 of them outside the 12-bit angle space | its resynchronisation into data |
+| Raw byte scan (decode at every offset) | 4257 | a "2 %" ratio | its own post-hoc credibility filter |
+
+The resuming sweep's own shortlist of "coherent" candidates - `deroa`,
+`chitei2`, `station3`, `town0b`, `retona`, `nilboa`, `edstati3` - scores three
+hits out of seven and misses five of the eight real ones. That is the sweep's
+signal-to-noise stated as a number: half its picks are data, and it cannot see
+most of what is there, because the authored rolls live in **partition 2**
+(cutscene-timeline / walk-on beat records) while the linear census walks
+partition 1.
+
+The decider is control flow. Stepping the ported field VM
+(`legaia_engine_vm::field::step`) from each record's real entry PC, under a
+probe host that answers every branch predicate both ways, gives the set of PCs
+control flow can arrive at; executing the same records in a real `World`
+gives the subset that runs. Both find the same eight scenes, and **neither
+reaches a roll operand outside the angle space** - which is what identifies
+the resuming sweep's impossible operands (`26708` is not an angle) as data.
+Oracle: `crates/engine-core/tests/thread_camera_roll_execution.rs`; the linear
+modes are kept as a negative record in
+`crates/asset/tests/thread_camera_roll_census.rs`.
+
+**Two corrections fall out.** The parenthetical "zeroed in the field-camera
+build path" on the slot-2 row was wrong: none of `FUN_801DAB90`,
+`FUN_801DB8EC` or `FUN_801DBE9C` writes `_DAT_8007B794`, and the only zeroing
+is the scene-entry reset `FUN_80025C24`. And `edstati3` is a real scene - the
+ending cutscene block whose bundle sits at extraction entry 826. Its CDNAME
+label inherits forward as far as the battle-data packs at 863/864, and that is
+what made it look like a decode artefact rather than a scene.
+
+The port now composes the third factor: `Camera::roll`, the shell's
+`psx_camera_mvp` / `cutscene_view`, the cutscene interp's tenth component, and
+the browser page's orbit `cam.roll`.
+
+Grade `capture` for the census (a disc-derived executing oracle) and
+`disassembly` for the factor itself - `0x8001CFD0..0x8001CFE8` loads
+`_DAT_8007B794` through `lui a0,0x8008; lh a0,-0x486c(a0)` and calls
+`0x8004638C` unless the render node's `+0x52` bit `0x200` is set.
+
 ## Measurement + corpus
 
 | Thread | Status | Evidence | Answer |

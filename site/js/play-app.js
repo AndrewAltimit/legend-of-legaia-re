@@ -1675,13 +1675,18 @@
             this.cam.centerZ = cc.focus[2];
             this.cam.yaw = -cc.yaw;
             this.cam.pitch = Math.max(0.12, Math.min(1.35, cc.pitch));
+            /* Roll (op-0x45 slot 2) tilts the frame about the view ray.
+             * Negated for the same reason the yaw above is: the orbit
+             * projection mirrors screen X (`buildWorldOrbitVp` negates P[0]),
+             * which reverses the on-screen sense of both angles. */
+            this.cam.roll = -(cc.roll || 0);
             const half = Math.abs(cc.tr[2]) * 120 / Math.max(cc.h, 1);
             this.cam.halfWidth = Math.max(220, Math.min(6000, half));
             this.cam.halfHeight = this.cam.halfWidth;
           }
         } catch (e) { /* keep the follow camera */ }
       }
-      if (!cutsceneCam) this._followCamera(pt);
+      if (!cutsceneCam) { this.cam.roll = 0; this._followCamera(pt); }
       /* Prologue colour grade + gold depth-cue ramp (the native window's
        * per-frame set_color_grade / set_depth_cue_ramp staging). No-ops on
        * a renderer without the uniforms (cached JS). */
