@@ -492,6 +492,8 @@ pub enum MarkerTemplate {
 ///
 /// [`TileTrigger::record`]: crate::field_regions::TileTrigger::record
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
+// REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
+// index comes out of)
 // NOT WIRED: the record *source* is not the blocker, and the earlier reason
 // here said it was. `FUN_801D3EC0`'s lookup is the kind-1 arm of the same
 // primary-then-fallback tile scan `crate::field_regions` ports, over the same
@@ -518,6 +520,11 @@ pub const POLAR_TABLE_LEN: usize = 0x1000;
 pub const POLAR_ANGLE_MASK: u32 = 0x0FFF;
 /// Fixed-point shift the helper folds the product down by.
 pub const POLAR_SHIFT: u32 = 12;
+
+// REF: FUN_80026be0 (installs the two table pointers from SCUS rodata)
+// REF: FUN_801cf3bc, FUN_801d26cc, FUN_801d4004, FUN_801d4948 (its retail
+// callers), FUN_801d0fa8 (the reel renderer, which reads the same tables
+// inline and is NOT a caller)
 
 // NOT WIRED: the earlier reason here - "nothing in the engine decodes either
 // table, so no caller can supply one" - does not hold, and neither does its

@@ -1187,6 +1187,7 @@ pub fn dance_beat_track_note_x(base_x: i32, i: u32, frac: u32) -> i32 {
     base_x + (i as i32) * 16 - ((frac * 16 / BEAT_PERIOD) as i32 + 5) - 4
 }
 
+// REF: FUN_80065034 (the voice-attr primitive both key-ons go through)
 /// Channel mixer level both sting voices are keyed at (`li a1,0x2`).
 pub const STING_LEVEL: i8 = 2;
 

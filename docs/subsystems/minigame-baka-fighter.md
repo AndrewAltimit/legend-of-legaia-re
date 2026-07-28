@@ -531,7 +531,19 @@ the coin strip through widget `0x2f`, `u = 0x58 + digit * 0x10`). The digit
 drawers' right-aligned decimal decomposition is ported as
 `engine-core::baka_fighter::right_aligned_number_cells` / `coin_digit_cells`
 / `single_digit_cell`. Parser
-[`legaia_asset::baka_opponents::parse_baka_hud`].
+[`legaia_asset::baka_opponents::parse_baka_hud`], which both hosts run - the
+play window stages the 51 records for the duel, the browser duel page decodes
+them alongside the PROT 1203 art pack the widgets sample.
+
+The engine splits `FUN_801d5ed0` in two, which is worth knowing when reading its
+wiring status: `BakaChrome` emits one `ChromeDraw` per call of the retail
+emitter, carrying the same `(widget, x, y, brightness, size)` tuple, and both
+hosts consume those - but each then draws them its own way (font text natively,
+page-composed quads in the browser), so the `POLY_GT4` assembly
+`engine-core::baka_fighter::hud_widget_quad` performs has no consumer. That is
+the same shape as the dome HUD's emitters in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md); a Rust-side quad sink is
+one gap across the minigames, not one per minigame.
 
 The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
 

@@ -60,6 +60,9 @@ pub fn step_scale(step: i32, boost: bool) -> i32 {
     }
 }
 
+// REF: FUN_80065034, FUN_80016b6c, FUN_8001ffa4 (the voice-attr primitive,
+// the SCUS cue drainer that pins its argument order, and the cold reset that
+// seeds the volume word this halves)
 /// Number of voice slots the cue trigger rotates through.
 pub const CUE_VOICE_SLOTS: u32 = 4;
 

@@ -412,9 +412,23 @@ clips against the depth bound at `0x1F800314 + 0x6A` with the same
 `<< 12` / `>> 12` lerp the 2-D clipper uses.
 
 Confidence: **Confirmed** for the arithmetic of all four (read from the
-disassembly of the extracted 0972 image). What the two clippers *draw* is
-**Inferred** - `FUN_801d26cc` is the fish / lure / line actor handler, so
-the fishing line is the natural reading, but no capture pins it.
+disassembly of the extracted 0972 image).
+
+What the 2-D clipper draws is now **Confirmed** too: its single retail caller
+sits at `0x801D3D00`, inside the per-frame tick `FUN_801d26cc`, and clips the
+two endpoint pairs of a GPU line packet in place before linking it into the
+ordering table - the fishing line.
+
+**`FUN_801d5c2c` has no caller at all.** A five-form reference sweep - literal
+LE word at every alignment, `lui`+`addiu` / `ori` materialisation, `jal`, `j`,
+PC-relative branch - over `SCUS_942.54`, every base-mapped overlay image and
+every raw PROT entry finds zero references to `0x801D5C2C`, and the fishing
+overlay holds exactly one literal pointer anywhere in the surrounding
+`0x801D5000..0x801D63FF` band, so it is not reached as `table_base + index`
+either. It is a genuine prologue entry point that retail never executes: dead
+code the linker kept. That matters for the port's wiring worklist - the routine
+is not waiting on a line primitive the way its 2-D sibling is, because no call
+site can exist for it.
 
 ### The shared polar-offset helper (`FUN_801d7bb8`)
 
@@ -431,24 +445,46 @@ evidence of a VA alias here.
 masks the angle to 12 bits (so a full turn is 4096 steps), reads the same index
 out of two quadrature tables whose pointers live at `_DAT_8007B81C` and
 `_DAT_8007B7F8`, and writes `table[angle] * radius * scale >> 12` through each
-of the two output pointers. Which table is sine and which cosine is a property
-of the table data, not of this code, so the port keeps them positional.
+of the two output pointers.
 
 The tables are not overlay-local and are not an open question: `FUN_80026BE0`
 installs the pointer pair at boot from the SCUS statics `0x80070A2C` and
 `0x8007122C` (4096 entries, amplitude `0x1000`;
-[`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)), which is
-the same pair the slot-machine reel cylinder reads
-([`minigame-slot-machine.md`](minigame-slot-machine.md)). A consumer of this
-helper can decode them off `SCUS_942.54` directly.
+[`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)). A
+consumer of this helper can decode them off `SCUS_942.54` directly.
+
+Which of the pair is sine is settled by those two addresses, so the port's
+`table_a` (the first output) is **sine** and `table_b` **cosine**. They are
+`0x800` bytes apart - one quarter turn of a 4096-entry `i16` table - so the pair
+is one 5120-entry run read at two phases, not two tables. Its entries are
+`trunc(0x1000 * sin)`, truncating toward zero: an analytic stand-in that
+*rounds* differs on about half the table by one LSB, and that error is then
+multiplied by `radius`. Oracle:
+`engine-core/tests/minigame_polar_trig_tables_disc.rs`.
 
 The shift matters: both products are formed at full 32-bit width and folded by a
 plain arithmetic `sra`, which rounds toward **minus infinity** - unlike the
 `bgez`-biased shifts the HUD emitters in these overlays use. Feeding a 12.12
 `scale` gives a 12.12 result back. Port:
-`engine-core::minigame_floor::polar_offset`. **Confirmed** arithmetic; which
-callers use it is **Inferred** (the hub overlays' circular-motion paths - the
-slot machine's reel cylinders, the float's drift).
+`engine-core::minigame_floor::polar_offset`. **Confirmed** arithmetic.
+
+The callers are enumerable rather than inferred, and the "slot machine's reel
+cylinders" reading is **falsified**: `FUN_801D0FA8` reads the same two table
+pointers inline and never calls this helper. Every `jal` to `0x801D7BB8` in the
+fishing image passes an actor's `+0x26` facing word as the angle and the frame
+delta (`0x1F800393`) as the scale, so the pair it returns is a facing-relative
+world offset for one frame:
+
+| Caller | What it offsets |
+|---|---|
+| `FUN_801CF3BC` case `0xD` | camera translation `_DAT_80089118` / `_DAT_80089120`, radius `0x14` |
+| `FUN_801CF3BC` case `0x14` | the cast **lure** spawn, `actor.xz - polar(facing, 200)` |
+| `FUN_801D26CC` | that lure's per-frame run along the rod facing |
+| `FUN_801D4004` / `FUN_801D4948` | the hooked-fish run and the line / celebration actors |
+
+Case `0x14` is where the lure point the walk-grid probe wants comes from: it
+writes `DAT_801D918C` / `DAT_801D9190` and their `<< 8` fixed-point copies
+`DAT_801D9174` / `DAT_801D917C`. **Confirmed.**
 
 ## VA aliasing in this band
 

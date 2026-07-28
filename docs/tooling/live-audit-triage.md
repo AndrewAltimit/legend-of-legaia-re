@@ -784,6 +784,81 @@ wants `PondInput` to carry the retail pressed-pad word instead of a
 pre-counted `edge_bonus`, which is a signature change its browser caller has
 to move with.
 
+## The minigame cluster's disclosures were mostly wrong about *what* blocked
+
+A pass over the whole minigame slice - `baka_fighter*`, `dance`, `fishing*`,
+`slot_machine`, `muscle_dome`, `minigame_floor`, `other_game_overlay` and
+`engine-ui`'s `other_game_hud` - produced **no** new `WIRE` and **no** new
+`FALSE INERT`. Every anchor really is unreached. What it did produce is six
+disclosures whose named prerequisite already existed somewhere in the tree, and
+two of those turned out to be port defects rather than wording. The corrected
+texts live on the anchors; what belongs here is the pattern, because it is the
+one a future audit will hit again.
+
+### The repeated blocker is a Rust-side quad sink, named six different ways
+
+Three subsystems each disclosed the *same* gap as a different missing artefact:
+
+| Anchor | What its reason claimed was missing | What actually exists |
+|---|---|---|
+| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
+| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_asset::dance_art` has both, run per frame by the browser dance page |
+| the `other_game_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
+
+The single real blocker under all three is that every host consumes the *parsed
+descriptor geometry* and composes its quads in JavaScript, so no Rust caller
+ever asks a ported emitter for a packet. One sink closes the block; three
+separately-worded reasons hid that.
+
+`dance_face_rig` has a second twist worth keeping: the browser resolves the rig
+from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
+already `0/2/3` - the exact output of the overlay's hard-coded slot -> rig
+remap. The two agree, so the selector is redundant rather than missing. A
+disclosure that says "no host" reads as work; "the host arrives at the same
+answer from disc data" reads as a closed question.
+
+### Two reasons were wrong about the *arithmetic*, not just the caller
+
+Both are the failure direction the preamble warns about - an unwired kernel's
+reading is never exercised, so a misreading survives:
+
+- **`other_game_overlay::cue_position`** decoded `_DAT_80084580` as a
+  party-block coordinate and returned a "positional pair". It is the
+  voice/SFX **volume** config, and the pair fills `vol_l` / `vol_r` of
+  `FUN_80065034(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - a
+  signature the SCUS cue drainer `FUN_80016B6C` pins by filling the same eight
+  slots from a cue descriptor. Now `cue_volume`, with the other six slots named.
+- **`dance_hit_sting_voices`** dropped two arguments of that same primitive
+  (`level = 2`, `program = 1`). The program is what makes the browser page's
+  `tones[1]` bank lookup correct rather than a guess - and
+  `minigame-dance.md` had recorded it correctly all along, which is the
+  reminder to grep `docs/` before re-deriving.
+
+### Three rows that looked like three gaps are one, and one is unwireable
+
+- **`polar_offset` / `walk_grid_overhead` / `water_tile_class`.** The polar
+  helper's reason said no engine code decodes its two quadrature tables. They
+  are static SCUS rodata that `FUN_80026be0` publishes at boot, `legaia_asset`
+  already names and synthesises them, and the play window materialises one. Its
+  reason was also wrong about the callers: the slot machine's reel renderer
+  reads the tables inline and never calls it, while every real caller is a
+  facing-relative offset in the fishing overlay - including the cast that
+  *creates* the lure point the other two rows wait on. One gap, three rows.
+- **`marker_template`.** Its reason said the step-layer record lookup is not
+  ported. `FUN_801D3EC0(1, x, z)` asks for sub-table kind **1** of the `.MAP`
+  region block - the same tile-trigger records `engine-core::field_regions`
+  decodes - so only the tile-actor sink is missing.
+- **`project_segment` (`801d5c2c`) cannot be wired at all.** A five-form
+  reference sweep finds zero references to it anywhere, and its band holds no
+  pointer table, so retail never executes it. Its old reason named a missing
+  line primitive, which implied a call site could exist; none can. Its 2-D
+  sibling `clip_segment_2d` *is* live retail code with one caller, so the pair
+  is asymmetric and had been disclosed as symmetric.
+
+The transferable rule: when a reason names an artefact, check the artefact
+before checking the caller. Four of these six named artefacts were already in
+the tree, two of them cited by name three files away.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the
