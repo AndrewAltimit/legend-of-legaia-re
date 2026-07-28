@@ -594,6 +594,17 @@ pub struct BattleActionCtx {
     /// combatant count less the skipped tail, so the thing being compared is a
     /// position in the order, not anything per-actor.
     ///
+    /// None of the three bytes the bound is built from is modelled here.
+    /// `ctx[+0x00]` / `ctx[+0x01]` are the **seated** party / monster counts
+    /// (`FUN_801E7250`'s all-target arm scans `0 .. ctx[+0x00]`, which is what
+    /// makes it a party-side scan). `ctx[+0x25]` is the **round-skip** count -
+    /// cleared once per round at `0x801DAB84` and bumped at `0x801DAC2C` for
+    /// each slot that is dead *and* still holds an unspent initiative key,
+    /// i.e. a combatant that died before its turn came up. The port compares
+    /// against the living count instead; see
+    /// `end_of_action`'s comment in `battle_action::done` for the one direction
+    /// in which that differs.
+    ///
     /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
     /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,

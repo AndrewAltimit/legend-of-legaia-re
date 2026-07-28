@@ -221,6 +221,40 @@ compares the freshly bumped `+0x1A` against the result - a seated-combatant
 count less a skipped tail. The quantity being compared is a position in an
 ordering, which no per-actor counter could be.
 
+### The three bytes the bound is built from
+
+`ctx[+0x00]` is the **seated party count**: the `0x00` seed arm reads it for a
+back attack (`0x801E2B0C`), and the settle gate `FUN_801E7250`'s all-target arm
+scans slots `0 .. ctx[+0x00]` and nothing above, which is why an all-target
+cast inspects the party side only. `ctx[+0x01]` is its monster-side twin, read
+by the seed arm's pre-emptive-strike branch (`0x801E2B18`).
+
+`ctx[+0x25]` is the **round-skip count** - combatants dropped out of this
+round's order *without acting*. It has one writer of each kind:
+
+- **reset**, `0x801DAB84` - `sb zero,0x25(v0)`, in the delay slot of the
+  `jal 0x801DABA4` that ends the initiative seeder `FUN_801DA780`. So it clears
+  once per round, immediately before the order is recomputed.
+- **bump**, `0x801DAC2C..0x801DAC38`, inside `FUN_801DABA4`'s per-slot loop over
+  the seven actor-table entries. The loop reaches the bump only through two
+  guards: `lhu v0,0x14c(v1); bne v0,zero,<next>` (`0x801DABD8`) skips a **living**
+  actor, and `lhu v0,0x16c(v1); beq v0,zero,<next>` (`0x801DABE8`) skips one
+  whose initiative key is already spent. What is left is exactly a combatant
+  that **died while still holding an unspent turn**; the loop clears its key
+  (`0x801DABF8`) and bumps the byte.
+
+So the bound shortens the round by one entry per pre-emptively removed
+combatant, and by nothing at all for an actor that died *after* its turn - that
+one already consumed a cursor position.
+
+**Port.** The engine compares the bumped cursor against the count of *living*
+combatants instead. The two agree while nobody dies mid-round, and diverge in
+one direction: an actor that dies **after** acting shrinks the engine's bound
+but not retail's, so the engine can end a round one action early. `ctx[+0x00]`,
+`ctx[+0x01]` and `ctx[+0x25]` are not modelled on
+`BattleActionCtx`; closing the gap means carrying all three, because "seated"
+is not recoverable from the engine's actor table once an actor is dead.
+
 **Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
 port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`
 from `ctx[+0x274]`; both halves were wrong, and the consequence was visible -
@@ -580,6 +614,46 @@ holds its own `0x51` open until every party readout settles, so **the drain a
 menu restore could interrupt has always finished before the menu can act** -
 the inter-action race is closed by the very wait this page documents. The
 intra-action Final Heal is the one crack, and it is measured tight above.
+
+#### `FUN_800402F4`'s cue-group sites
+
+The applier does one more thing on its way out of most arms: it asks the
+cue-group expander `FUN_801E22C8` to place the arm's visual effect. It reaches
+`jal 0x801e22c8` from **eleven** branches of its 132-entry class jump table at
+`0x80014FA0`, and the group id is chosen per branch rather than passed in.
+
+Arguments at every site are `(a0 = tint, a1 = actor-state word, a2 = actor
+slot, a3 = group id)`. `a2` is `param_3` everywhere except the class-1 loop,
+which passes its own loop index. Sites marked *gated* run only in battle mode
+(`*(s16 *)0x8007B83C == 0x15`).
+
+| `jal` | Class arm | Reached when | `a3` (group) | Gated |
+|---|---|---|---|---|
+| `0x800408F8` | 0 - HP restore, single | class 0 | `param_2` | yes |
+| `0x80040D70` | 1 - HP restore, loop | per live slot in range | `param_2 + 1` | yes |
+| `0x80040E54` | 2 - MP restore | class 2 | `param_2 + 3` | yes |
+| `0x80040F04` | 3 - status cure | class 3 | `5` | yes |
+| `0x800410B8` | 4 - revive | class 4 | `6` | yes |
+| `0x8004111C` | 5 - spirit shield | class 5 | `7` | no |
+| `0x8004157C` | 7 - stat buff | `param_2 == 1` | `8` | no |
+| `0x80041718` | 7 | `param_2 == 2` | `9` | no |
+| `0x800417FC` | 7 | `param_2 == 3` | `0xA` | no |
+| `0x80041BA0` | 7 | `param_2 == 4` | `0xB` | no |
+| `0x80041C60` | 8 - status clear | class 8 | `0xC` | yes |
+
+Classes `6`, `9`, `0xA`, `0xB`/`0xC`/`0xD`, `0xE` and `0x82` never reach the
+expander; class 6's own 7-entry inner table at `0x800151B0` only bumps
+counters. The class-1 loop is bounded by `param_3 == 9` (monster slots `3..7`)
+versus anything else (party slots `0..3`) and carries a second per-slot gate on
+the roster byte, so a party-wide restore fires the expander once per living
+member.
+
+So the selection is a `(class, param_2)` table plus one loop - small. What is
+**not** small is the input side: see
+`engine-vm`'s `battle_cue_group` module doc for the three things that block
+wiring it (the port's `apply_damage` hook does not carry `param_1` / `param_2`,
+it has an attack-band call site retail does not have, and the expansion has no
+consumer).
 
 ### The clamp asymmetry: two overkill guards against different references
 

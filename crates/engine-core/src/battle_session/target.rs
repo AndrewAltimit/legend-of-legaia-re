@@ -227,7 +227,9 @@ impl BattleSession {
     /// group at all, so it writes the actor's own slot - the value retail's
     /// `beq v0,t2` self-skip at `0x801E4350` expects.
     ///
-    /// REF: FUN_801DCEAC (the decode), FUN_801E295C (`0x801E433C` split)
+    /// REF: FUN_801DCEAC (the decode), FUN_801E295C (`0x801E433C` split),
+    /// FUN_801E7320 (the monster-AI resolver that writes the same codes),
+    /// FUN_801E7250 (the settle gate that reads them)
     fn sweep_target_code(
         kind: crate::target_picker::TargetKind,
         row: crate::target_picker::CursorRow,

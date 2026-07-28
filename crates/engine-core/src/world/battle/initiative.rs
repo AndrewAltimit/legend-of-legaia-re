@@ -285,7 +285,8 @@ impl World {
     /// silently disables pre-emptive-strike escapes
     /// ([`Self::roll_battle_escape`]).
     ///
-    /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
+    /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag),
+    /// FUN_801D0748 (the flow arm that writes `ctx[7] = 0` at battle open)
     pub(in crate::world) fn latch_battle_formation(&mut self) {
         let party = self.party_count;
         // `ctx[+0x01]` is the seated monster count, not the width of the
