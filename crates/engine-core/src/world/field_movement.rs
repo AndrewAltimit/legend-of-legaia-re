@@ -873,6 +873,51 @@ impl World {
         self.field_npc_dir_blocked(x, z, dir) || self.field_prop_dir_probe(x, z, dir).blocked
     }
 
+    /// The actor / prop sweep at **one exact world point** - retail
+    /// `FUN_801cfc40` invoked with a single offset pair, which is how the
+    /// ledge classifier calls it.
+    ///
+    /// PORT: FUN_801cfc40
+    /// REF: FUN_801d1878
+    ///
+    /// `FUN_801cfc40` takes no footprint. It stages **one** probe point into
+    /// scratchpad `0x1F800020` - `+0 = actor.x + a2`, `+2 = actor.y`,
+    /// `+4 = actor.z - a3` (`0x801CFCA0..0x801CFCCC`; the `a3` subtraction is
+    /// why callers pass the Z offset negated) - and box-tests every candidate
+    /// against that single point. The half-extent is `0x40` widened by the
+    /// caller's two stack words (`0x801CFD6C..0x801CFDD0`), and the ledge
+    /// classifier passes `0` for both at each of its two call sites
+    /// (`sw zero, 0x10(sp)` / `sw zero, 0x14(sp)` at
+    /// `0x801D1A88`+`0x801D1A90` and `0x801D1AAC`+`0x801D1AB4`, the second of
+    /// each pair in the `jal`'s delay slot) - the same zero-extent call the
+    /// walk controller makes, so the boxes are the established
+    /// [`FIELD_NPC_BOX_HALF`] / [`FIELD_PROP_BOX_HALF`].
+    ///
+    /// [`Self::field_actor_dir_blocked`] is the *walk controller's* shape of
+    /// the same routine - three points off a compass table, taken at the
+    /// actor's own position - and the two are not interchangeable.
+    pub(crate) fn field_actor_point_blocked(&self, px: i32, pz: i32) -> bool {
+        if self.solid_field_npcs
+            && self.field_npc_positions.values().any(|&(ax, az)| {
+                (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
+                    && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
+            })
+        {
+            return true;
+        }
+        self.field_prop_colliders.iter().any(|c| {
+            if !c.solid {
+                return false;
+            }
+            let ((cx, cz), half) = if c.moving_box {
+                (c.live, FIELD_NPC_BOX_HALF)
+            } else {
+                (c.center, FIELD_PROP_BOX_HALF)
+            };
+            (px - cx).abs() < half && (pz - cz).abs() < half
+        })
+    }
+
     /// The **moving-NPC arm** of the actor-collision direction test (retail
     /// result bit `1` for the village-NPC class): the three probe points
     /// against every live NPC position at ±[`FIELD_NPC_BOX_HALF`].
@@ -2035,6 +2080,43 @@ impl World {
         }
     }
 
+    /// The height retail's ledge classifier measures its rise **from**: the
+    /// actor's footing, i.e. what `param_1 + 0x16` holds by the time
+    /// `FUN_801d1878` reads it.
+    ///
+    /// REF: FUN_801d1ba0, FUN_80019278
+    ///
+    /// That value is not free-floating. `FUN_801d1ba0` glides `+0x16` toward
+    /// `FUN_80019278(actor)` - the floor under the actor's *current* position -
+    /// every field frame, clamped to `+-rate`
+    /// (`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, the two
+    /// `slt` clamps, `sh v0, 0x16(s1)`), and only *then* calls the classifier
+    /// (`0x801D1CB0`). So retail's `rise` is the **local step ahead**, never the
+    /// absolute floor elevation: a player standing on flat ground at any tier
+    /// has `+0x16` equal to that tier's height and classifies a rise of zero.
+    ///
+    /// Pinned by the wall-press captures: both park the player on `town0c`'s
+    /// `-192` floor and both carry `player + 0x16 == -192`, byte-equal to what
+    /// [`Self::sample_field_floor_height`] returns under them.
+    ///
+    /// The engine only maintains `world_y` as a footing when one of its two
+    /// height controllers is on - [`World::field_vertical_settle`] (retail's
+    /// glide, ported in [`Self::step_field_vertical`]) or
+    /// [`World::follow_terrain_height`] (the snap the walk path applies, and
+    /// the `play-window` default). With both off, `world_y` is left untouched
+    /// at whatever placed the actor - an invariant the locomotion oracles pin -
+    /// so it carries no footing at all and reading it here would make every
+    /// non-zero floor tier look like a ledge. In that configuration the footing
+    /// comes from the sampler retail's settle targets, which is the value the
+    /// glide converges to.
+    fn field_actor_footing(&self, slot: usize, x: i32, z: i32) -> i32 {
+        if self.field_vertical_settle || self.follow_terrain_height {
+            self.actors[slot].move_state.world_y as i32
+        } else {
+            self.sample_field_floor_height(x, z)
+        }
+    }
+
     /// Ledge-hop probe + post: retail `FUN_801d1878` (field overlay
     /// `overlay_0897`, 202 instructions at file offset `0x3060`).
     ///
@@ -2068,21 +2150,29 @@ impl World {
     /// So [`Self::field_tile_is_wall`] is reused rather than re-derived.
     ///
     /// With both points clear the near point's floor height decides the
-    /// class, against [`FIELD_HOP_UP_THRESHOLD`] /
-    /// [`FIELD_HOP_DOWN_THRESHOLD`]; a height inside that band is flat
-    /// ground and starts no hop.
+    /// class, against [`FIELD_HOP_UP_THRESHOLD_DOWNWARD`] /
+    /// [`FIELD_HOP_DOWN_THRESHOLD_DOWNWARD`]; a height inside that band is
+    /// flat ground and starts no hop.
     ///
-    /// **Not modelled:** retail additionally clears the two forward points
-    /// through the actor/prop sweep `FUN_801cfc40` before sampling the
-    /// floor. The engine's port of that routine
-    /// ([`Self::field_npc_dir_blocked`] / [`Self::field_prop_dir_probe`]) is
-    /// keyed by compass direction rather than by an arbitrary delta pair, so
-    /// this port reuses it at the *direction* granularity: an NPC or solid
-    /// prop standing in the hop lane blocks the hop, but the box is tested
-    /// along the quantised heading rather than at retail's two exact points.
-    /// The difference only shows when a collider sits inside the lane yet
-    /// outside the direction probes - a sub-tile discrepancy on a mechanic
-    /// that authored ledges keep clear.
+    /// **The two wall probes are not on their own what refuses a wall press.**
+    /// They refuse only once the actor is close enough for a probe to cross
+    /// into the wall's sub-cell, and the sub-cell grid is coarse: at the
+    /// `rimelm_wall_press_left` capture the wall is sub-cell column `27`, the
+    /// walk rests the player at `1838`, and both probes still read the open
+    /// column `28` from `1892` outward. An actor walking in from further out
+    /// gets frames where this gate says yes. What refuses the hop on those
+    /// frames is the height band: on approach the floor ahead is the floor
+    /// underfoot, so the rise is `0`, inside the dead band. That only holds
+    /// if the rise is measured from the actor's **footing** - see
+    /// [`Self::field_actor_footing`], which is where retail's floor-glued
+    /// `+0x16` comes from. Since the arc runs no collision, one frame that
+    /// passes both gates in error puts the player inside the wall.
+    ///
+    /// The same two points are then cleared through the actor/prop sweep
+    /// `FUN_801cfc40` ([`Self::field_actor_point_blocked`], `0x801D1A8C` /
+    /// `0x801D1AB0`) before the floor is sampled. That routine takes one
+    /// point per call, so the hop gets retail's exact points rather than the
+    /// walk controller's compass footprint.
     pub fn try_field_ledge_hop(&mut self, slot: usize) -> bool {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return false;
@@ -2107,12 +2197,11 @@ impl World {
                 return false;
             }
         }
-        // Actor / prop clearance along the hop lane (see the caveat above).
-        if let Some(dir) = Self::dir_index_for_delta(dx, dz) {
-            let (cx, cz) = (clamp(x), clamp(z));
-            if (self.solid_field_npcs && self.field_npc_dir_blocked(cx, cz, dir))
-                || self.field_prop_dir_probe(cx, cz, dir).blocked
-            {
+        // Actor / prop clearance at the SAME two points, in retail's order:
+        // `FUN_801cfc40` at `2 * s` (`0x801D1A8C`) then at `3 * s`
+        // (`0x801D1AB0`), each a bare non-zero refusing the hop.
+        for mul in [2, 3] {
+            if self.field_actor_point_blocked(x + mul * sx, z + mul * sz) {
                 return false;
             }
         }
@@ -2120,8 +2209,7 @@ impl World {
         // moving the actor, calling `FUN_80019278`, and restoring the
         // position; the engine's sampler takes the point directly.
         let probe_y = self.sample_field_floor_height(clamp(x + sx) as i32, clamp(z + sz) as i32);
-        let cur_y = self.actors[slot].move_state.world_y as i32;
-        let rise = probe_y - cur_y;
+        let rise = probe_y - self.field_actor_footing(slot, x, z);
         // World Y grows downward, so the *numerically* larger floor ahead is
         // the lower one: retail's `>= +0x61` arm is the drop (apex `0x10`),
         // its `< -0x60` arm the step up (apex `0x18`, the taller arc that
@@ -2248,24 +2336,6 @@ impl World {
         hop.finished = phase.finished;
         self.field_ledge_hop = Some(hop);
         true
-    }
-
-    /// Map a step-delta pair onto the engine's compass probe index
-    /// (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+), matching the row order
-    /// [`Self::field_dir_blocked`] indexes. The dominant axis wins; retail
-    /// probes both exact points instead, so this is only the granularity
-    /// reduction documented on [`Self::try_field_ledge_hop`].
-    fn dir_index_for_delta(dx: i16, dz: i16) -> Option<usize> {
-        if dx == 0 && dz == 0 {
-            return None;
-        }
-        Some(if (dz as i32).abs() >= (dx as i32).abs() {
-            if dz > 0 { 2 } else { 0 }
-        } else if dx > 0 {
-            3
-        } else {
-            1
-        })
     }
 
     /// Per-frame vertical settle + ledge-hop trigger: retail `FUN_801d1ba0`

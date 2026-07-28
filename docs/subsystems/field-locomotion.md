@@ -358,6 +358,17 @@ assignment.
 
 With the settle done and the step delta non-zero, it calls the hop probe.
 
+**The settle is a precondition of the probe, not a neighbour of it.** The glide
+(`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, the two `slt`
+clamps against `±rate`, `sh v0, 0x16(s1)`) stores into `+0x16` before the
+`jal 0x801d1878` at `0x801D1CB0` reads it back. So by the time the classifier
+runs, `+0x16` is the actor's **footing** - the height of the floor it is
+standing on - and the rise it measures is the local step ahead rather than an
+absolute elevation. Both wall-press captures confirm it directly: each parks
+the player on `town0c`'s `-192` floor, and each carries `player + 0x16 == -192`,
+byte-equal to what the floor sampler returns underneath. Anything reading
+`+0x16` as a free-floating height has misread the contract.
+
 ### `FUN_801d1878` - probe and post
 
 Scales the step delta by 4 (`s1 = dx << 2`) and tests two forward points
@@ -370,6 +381,19 @@ against the collision grid:
 
 **Both must be clear**; a wall at either returns `0` untouched. 64 units is
 exactly one collision sub-cell, 96 one and a half.
+
+**These two probes do not by themselves stop a hop into a wall.** They refuse
+only once the actor is close enough that a probe crosses into the wall's
+sub-cell, and the probe grid is coarse: at the `rimelm_wall_press_left`
+capture the wall occupies sub-cell column `27`, the walk rests the player at
+`1838`, and both forward probes still read the open column `28` from anywhere
+at `1892` or beyond. An actor walking in from further out therefore gets
+several frames in which this gate says yes. What refuses the hop on those
+frames is the height band below: on approach the floor ahead is the floor
+underfoot, so the rise is `0`, and `0` is flat ground. The wall probes catch
+the *other* case - a ledge whose landing is walled off - and the two refusals
+are not interchangeable. Since the arc runs no collision at all, one frame
+that passes both gates in error is enough to put the player inside the wall.
 
 The wall test here is not merely similar to `FUN_801cfe4c` - it is that
 routine inlined, instruction for instruction: the same `(z >> 6) + 2` and
@@ -423,20 +447,39 @@ Two deliberate divergences:
 - The **settle is opt-in** (`World::field_vertical_settle`, default off). The
   engine's default is that Y is left untouched unless
   `World::follow_terrain_height` snaps it, and the locomotion oracles pin that
-  flat-Y behaviour. The hop trigger is *not* gated on it.
-- Retail additionally clears the two forward points through the actor/prop
-  sweep `FUN_801cfc40` before sampling. The engine's port of that routine is
-  keyed by compass direction rather than by an arbitrary delta pair, so the
-  clearance test runs at direction granularity - a collider inside the hop
-  lane but outside the direction probes is a sub-tile discrepancy.
+  flat-Y behaviour. The hop trigger is *not* gated on it - which means the
+  classifier cannot read `World::world_y` as retail's `+0x16`, because in the
+  default configuration nothing is maintaining it as a footing and every
+  non-zero floor tier would read as a step. `World::field_actor_footing`
+  supplies the baseline instead: `world_y` whenever either height controller is
+  running (then it *is* `+0x16`, glide lag included), and the floor sampled
+  under the actor otherwise - the value retail's glide converges to.
+  `engine-core/tests/field_ledge_hop_footing.rs` pins both branches, and pins
+  a wall press on a non-zero-tier flat floor starting no hop. That last one
+  matters because **the hop arc runs no collision**: a hop started in error
+  carries the player straight through the wall to a landing 96 units inside it.
+- Not modelled: `FUN_801cfc40`'s own mutual `+0x98` partner-link bookkeeping
+  and the `_DAT_8007b6b8 == 0x20` delegation to `FUN_801cf9f4`, neither of
+  which the clearance test's return value depends on. The two forward points
+  themselves are cleared exactly - `World::field_actor_point_blocked` is the
+  single-point shape of the sweep the classifier calls (`0x801D1A8C` /
+  `0x801D1AB0`), not the walk controller's three-point compass footprint.
 
 Coverage: `engine-core/tests/field_ledge_hop_wired.rs` walks the whole flight
 against a synthetic grid (take-off, arc peak above both endpoints, exact
-landing, lock release, reap), and the disc-gated
+landing, lock release, reap); `engine-core/tests/field_ledge_hop_footing.rs`
+pins what the rise is measured from, in both directions (flat non-zero ground
+classifies nothing, an authored step still does); and the disc-gated
 `engine-core/tests/field_ledge_hop_disc.rs` finds an authored ledge in a real
 scene's own `.MAP` data and drives the player over it. Authored ledges are
 not rare: sweeping every scene's grid with retail's own predicate finds
 candidates in most field scenes, including Rim Elm.
+
+The wall-press half of the footing behaviour is also pinned against retail
+hardware, one crate up, by
+`engine-shell/tests/field_collision_discriminator.rs` - the full-scene press
+legs rest at the captured position only if the hop stays quiet, so a
+misclassifying hop shows up there as a 42-unit overshoot into the wall.
 
 ## Where the collision grid comes from
 
@@ -1367,6 +1410,18 @@ and it is the only per-frame angle ramp that is not opcode-driven:
 - otherwise **ramped** toward it, clamped to `±6 * _DAT_1F800393` per frame.
 
 The yaw an NPC faces is `+0x26`, always.
+
+**Open, and load-bearing for the ledge hop:** whether "angle" is the right word
+for this field. The [ledge classifier](#fun_801d1878---probe-and-post) subtracts
+`+0x16` from another `FUN_80019278` return and compares the difference against
+`±0x60` *world units*, then passes the sampled value on as the hop's landing
+**height**; the tile-placement op `FUN_801d03a4` writes `+0x14`, `+0x18` and
+`+0x16` together as one placement. Both wall-press captures read
+`player + 0x16 == -192`, equal to the floor sample under each - one value on a
+flat floor, so it does not separate the two readings on its own. The engine
+ports `+0x16` as the actor's Y either way, which is what the settle and the
+classifier need; what is unresolved is whether some *other* consumer reads the
+same half-word as a tilt.
 
 ### Live corroboration
 
