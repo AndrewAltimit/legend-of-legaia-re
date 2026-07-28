@@ -6,11 +6,19 @@
 //! converts through [`crate::screen_overlay::afterimage_screen_quad`] and
 //! would draw via [`crate::RenderTarget::ScreenOverlay`] - but that converter
 //! has no non-test caller either, so the pass is a road with nothing on it.
-//! Two concrete gaps sit between here and a visible trail:
+//! Two concrete gaps sit between here and a visible trail, and the first one
+//! has a **named** owner rather than a missing model:
 //!
-//! * **The half-width has no source.** [`streak_half_width`] reads the retail
-//!   move-FX state halfword at `+0x6c6`, and `legaia_engine_core`'s move-FX
-//!   scene-graph does not model that word - there is no value to pass.
+//! * **Both projection inputs come from one inert port.** Retail reads them
+//!   off the battle context `_DAT_8007BD24`: the centre point is the homing
+//!   launch position `ctx[+0x1144]` (`0x801E1AF8`) and the half-width is
+//!   `ctx[+0x6C6] - 0x200` (`0x801E1B44`, hence [`streak_half_width`]). Both
+//!   words are written by the action effect script `FUN_801DEA50`, which the
+//!   engine *has* ported as `legaia_engine_core::action_effect_script` - and
+//!   that module is itself NOT WIRED, because the battle-action path carries
+//!   no `ctx[+0x1014]` move-power slot and no per-target `+0x1144` homing
+//!   block. So the prerequisite is that module's caller, not new modelling
+//!   here.
 //! * **The host consumes the trail id as a log line.** engine-shell reads
 //!   [`legaia_engine_core::World::active_move_fx_trail_texpage`] and prints
 //!   it; nothing turns it into a per-frame streak pass over the move-FX part
@@ -71,9 +79,11 @@ pub const SCREEN_Y_OFFSET: i16 = 0x120;
 /// [`streak_half_width`].
 pub const PROJECTION_HALF_SIZE: i16 = 0x100;
 
-/// Derive the streak's billboard half-width from the move-FX state halfword
-/// at `+0x6c6` (retail passes `*(short*)(state + 0x6c6) - 0x200` as the
-/// projector's half-width argument, 16-bit wrapping).
+/// Derive the streak's billboard half-width from the battle-context halfword
+/// at `ctx[+0x6C6]` (retail passes `*(short*)(ctx + 0x6c6) - 0x200` as the
+/// projector's half-width argument, 16-bit wrapping). `ctx` is
+/// `_DAT_8007BD24`; the word is the active move-power record's `+0x04`,
+/// mirrored there by `FUN_801DEA50`.
 pub fn streak_half_width(state_word: i16) -> i16 {
     state_word.wrapping_sub(0x200)
 }

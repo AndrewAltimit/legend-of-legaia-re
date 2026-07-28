@@ -690,6 +690,33 @@ wants `PondInput` to carry the retail pressed-pad word instead of a
 pre-counted `edge_bonus`, which is a signature change its browser caller has
 to move with.
 
+## Not on this page either: the render / GTE cluster
+
+`engine-render`'s disclosed-inert rows - the billboard projector, the GTE
+axis-rotation builders and view-rotation build, the clip / packet-colour leaf
+kernels, and the actor-bind / actor-cull / afterimage / battle-tick /
+battle-sideband / mode-transition passes - were swept the same three ways as
+the rows above and came back **honest**: zero host-crate references for every
+anchor symbol, and no `FALSE INERT`. They are recorded here only for what the
+sweep found *inside* the disclosures, because both findings are shapes this
+page exists to name.
+
+**A disclosure can name the wrong level.** The three `GteMat3::rot_*` builders
+were disclosed as "GTE-oracle-only", i.e. as having no consumer but the tests.
+They have one: `camera_view_rotation`, the port of retail's own composition
+pass `FUN_8001CF50`, which sits three lines below them in the same file and is
+itself inert. Naming the tests as the blocker points a reader at coverage;
+naming the composition pass points at the camera that has to exist first.
+
+**"Has no source" can mean "has an inert producer".** The afterimage streak's
+half-width was disclosed as a word `engine-core` "does not model". It does:
+both of the streak's projection inputs are battle-context words
+(`ctx[+0x1144]`, `ctx[+0x6C6]`) written by `FUN_801DEA50`, which is ported as
+`engine-core::action_effect_script` and carries its own `NOT WIRED` note. The
+prerequisite is that module's caller, not new modelling. When a disclosure says
+a value has no source, check whether the retail *writer* is already ported and
+inert - that turns an open-ended reason into a named one.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the
