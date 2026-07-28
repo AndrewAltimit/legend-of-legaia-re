@@ -73,12 +73,12 @@ fn a_live_frame_loop_paints_the_per_entry_equipment_panel() {
 /// The rows the loop paints carry retail's own column geometry, which is what
 /// a marker-only sub-draw could not produce.
 ///
-/// The **values** are a host gap, not a decode gap: the records and the two
-/// static resolver tables reach the painter through `HubEnv::equip`, and
-/// nothing fills it yet, so every row prints its base stat plus a zero
-/// aggregate - retail's own no-candidate arm over an empty loadout. Filling it
-/// is one field in `field_submode_screen::submode_env`, beside the party
-/// roster and gold it already projects.
+/// This world has no roster and no static tables, so its rows print a base
+/// stat of zero plus a zero aggregate. That is the empty case, not a gap:
+/// `submode_env` fills `HubEnv::equip` from `World::roster`,
+/// `World::item_effects` and `World::equipment_table`, and
+/// `hub_entry_sub_panel_env` / `hub_entry_sub_panel_disc` assert the numbers a
+/// populated world prints.
 #[test]
 fn the_painted_rows_carry_retails_column_geometry() {
     use legaia_engine_vm::world_map_overlay::{
