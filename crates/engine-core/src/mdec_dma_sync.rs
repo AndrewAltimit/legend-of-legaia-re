@@ -26,6 +26,9 @@
 //! only in which bit they extract - bit [`IN_BUSY_BIT`] and bit
 //! [`OUT_POLL_BIT`] respectively.
 //!
+//! REF: FUN_801CFFDC, FUN_801D0070 - the DMA kick pair the decode loop
+//! reaches the blocking waits through.
+//!
 //! Provenance: `ghidra/scripts/funcs/overlay_str_fmv_0x801CFE20.txt`,
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,
 //! `..._0x801D0230.txt`. Ported from the disassembly.

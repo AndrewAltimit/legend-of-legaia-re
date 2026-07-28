@@ -28,6 +28,8 @@
 //!
 //! ## NOT WIRED
 //!
+//! REF: FUN_80025358 - the only caller, itself unported.
+//!
 //! The engine has no staged sub-overlay loader. `FUN_80025358`, the only
 //! caller, is itself unported, and the engine's own asset path resolves PROT
 //! entries synchronously rather than through a frame-sliced CD read - so there

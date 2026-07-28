@@ -56,9 +56,11 @@
 //!    homing block the walk writes into;
 //! 3. a [`RotationLut`] pair, which no `engine-core` host holds.
 //!
-//! REF: FUN_80050ED4, FUN_801DFDF0 (effect spawn), FUN_80047430 (the sole
-//! retail caller), FUN_801E295C (the action SM that stages the move),
-//! FUN_80019B28 (the bearing helper)
+//! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
+//! REF: FUN_80047430 - the sole retail caller, the battle render-node update.
+//! REF: FUN_801EC3E4 - the sibling call the caller pairs this with.
+//! REF: FUN_801E295C - the action SM that stages the move.
+//! REF: FUN_80019B28 - the bearing helper.
 
 /// Bytes per effect-script record.
 pub const RECORD_STRIDE: usize = 8;

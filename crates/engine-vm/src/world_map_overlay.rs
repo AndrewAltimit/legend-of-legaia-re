@@ -544,6 +544,7 @@ pub enum StatDelta {
 /// that one trial-equips into its own 8-slot array and re-runs
 /// `legaia_engine_core::battle_stats`'s aggregator.
 /// PORT: FUN_801E5B4C (aggregation loops)
+/// REF: FUN_801F16C0 - the hub entry list that calls this as a sub-draw.
 pub fn aggregate_slot_stats(
     slots: &[u8; 5],
     item_stat_index: impl Fn(u8) -> u8,

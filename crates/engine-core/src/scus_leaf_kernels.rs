@@ -43,6 +43,8 @@
 /// empty list is `-1` rather than `0`.
 ///
 /// PORT: FUN_8001FA00
+/// REF: FUN_801D6704 - MAIN_INIT, which seeds the list.
+/// REF: FUN_801D629C - the cutscene sprite emitter, which pops it.
 ///
 /// NOT WIRED: the two ends of this list sit in different functions, and only
 /// the far end is unported. Retail **seeds** the list from the field scene
@@ -168,6 +170,7 @@ impl StagedCharacterSelector {
     /// `FUN_80035C00(a, b)`.
     ///
     /// PORT: FUN_80035C00
+    /// REF: FUN_800402F4 - the battle action resolver, the only writer.
     ///
     /// NOT WIRED: the pair is read back by the pause-menu notify /
     /// message-box path as a character-record selector, but the **writer** is
@@ -293,6 +296,7 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// [`BOOT_ENABLE_FLAG_ADDRS`]; they are addresses, not part of this array.
 ///
 /// PORT: FUN_800265E8
+/// REF: FUN_8002630C - the VAB-open path that reads the seeded table.
 ///
 /// NOT WIRED: the reader is **identified** - `FUN_8002630C`, the libsnd VAB
 /// open path, materialises `0x800917B0` at `0x80026340` and indexes it by the

@@ -253,6 +253,7 @@ pub struct FlashElementSpawn {
 /// Build the spawn `FUN_801D841C` performs.
 ///
 /// PORT: FUN_801D841C
+/// REF: FUN_801ED308 - the panel fade/flash actor, the only caller.
 ///
 /// NOT WIRED - but **not for want of a caller**, which is what an earlier
 /// reading of this row said. The sole `jal` to `0x801D841C` in the corpus is

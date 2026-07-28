@@ -37,6 +37,9 @@
 //! wired caller would be a GP0-level host in `engine-render` that owns an
 //! ordering table and a back-buffer flag to pass in.
 //!
+//! REF: FUN_80021DF4 - the per-frame actor tick whose kind-7 arm is the
+//! other retail route into the enqueue.
+//!
 //! **The field-VM opcode is the minor route, not the whole of it.** No
 //! on-disc scene script uses sub-op `0x12`, so that arm never fires on retail
 //! data - but a reference scan finds `FUN_800468A4` reached from two other
