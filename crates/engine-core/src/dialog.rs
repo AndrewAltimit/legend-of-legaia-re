@@ -650,6 +650,10 @@ mod tests {
         inline.push(0x24); // continuation
         inline.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]);
         inline.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+        // Branch bodies both jumps land in: `legaia_mes::scan_pickers` only
+        // accepts a picker whose every option target is a byte of this
+        // script. Filler is field-VM `0x21` NOPs (no second picker).
+        inline.resize(48, 0x21);
 
         let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
         assert!(panel.picker().is_some(), "the following picker decodes");
