@@ -114,7 +114,7 @@
 [libgte]
 "8001b73c" = "GTE RTPT perspective transform (cop2 0x280030, lwc2/swc2) + on-screen bounds clip test"
 "8001c204" = "GTE matrix/rotation setup + object camera transform (RotMatrix-style helpers)"
-"8005ba38" = "libgte cop2 coordinate-transform wrapper (setCopReg(2)/copFunction(2,0x180001)/getCopReg; dump is C-only but cop2 op sequence is unambiguous)"
+"8005ba38" = "libgte RotTransPers: lwc2 VXY0/VZ0 from a0, cop2 0x0180001 (RTPS), swc2 SXY2 -> a1 and IR0 -> a2, cfc2 FLAG -> a3, returns SZ3>>2 (otz). Eleven instructions ending jr ra. Engine projects in the wgpu pipeline. see ghidra/scripts/funcs/8005ba38.txt"
 "8005b618" = "GTE rotation-matrix loader: five ctc2 of a 5-word block into COP2 control regs 0x0/0x800/0x1000/0x1800/0x2000 (the R11..R33 rotation-matrix region). Sibling of 8005b7c0 SetRotMatrix; engine emits rotation via glam Mat3/Mat4"
 "8005b7b4" = "GTE LZCS load - `mtc2 a0, cop2 reg 30; jr ra; nop`, the 3-instruction leaf that seeds the leading-zero-count register the sqrt / normalise pair 8005ba1c and 8005b0b8 read back out of LZCR. Immediate sibling of the 8005b7c0 / 8005b7cc setter leaves below; engine does bit counting with u32::leading_zeros. see ghidra/scripts/funcs/8005b7b4.txt"
 "8005b7c0" = "SetRotMatrix (setCopControlWord(2, 0xD800, x))"
@@ -685,7 +685,7 @@
 # there is no function body to port (the callers' intent - e.g. walking the
 # returned buffer as a CDNAME char* - is modelled where the caller is ported).
 "8003adcc" = "Interior +0x20 of FUN_8003ADAC: the dump resolves the entry to 8003adac, and 8003adcc is that function's `sw s1,0x34(sp)` prologue register-save promoted to a fake FUN_ entry. see ghidra/scripts/funcs/8003adcc.txt"
-"8003d38c" = "Ghidra split of the neighbouring GTE projector: the dump reports `size=1 bytes, 0 instructions` and the decompiled body is entirely `in_at`/`in_v0`/`in_v1` unaffected registers (an RTPT sequence belonging to the enclosing function). No body of its own to port. see ghidra/scripts/funcs/8003d38c.txt"
+"8003d38c" = "INTERIOR: one instruction past the real entry 0x8003D388 (libgte RotTransPers3). The dump opens on `lwc2 VZ0, 4(a0)` with the `lwc2 VXY0, 0(a0)` that the RTPT at 0x8003D3A0 needs already gone, which is exactly what the args-off-unaffected-registers C rendering was showing; 0x8003D384 is the delay-slot nop of the preceding function's `jr ra`, so 0x8003D388 is the entry. Not a portable entry of its own. see ghidra/scripts/funcs/8003d38c.txt"
 "8003ef68" = "Interior +0x54 of the field-buffer per-sector streaming poller (the dump header names `field_buffer_stream_poller` at entry 8003ef14); 8003EF68 is its `lw v0,0x968(gp)` remaining-sector countdown. see ghidra/scripts/funcs/8003ef68.txt"
 "8005a5fc" = "Interior +0x15C of FUN_8005A4A0, the libgpu DrawSync / command-queue drain (polls GPUSTAT bits 0x1000000 and 0x4000000, walks the 0x40-entry 0x60-byte command ring). The dump resolves the entry to 8005a4a0; not a call target. see ghidra/scripts/funcs/8005a5fc.txt"
 "8005b2a4" = "Interior +0x3C of FUN_8005B268 (libgte PushMatrix, already listed under [libgte]) - the `lui t7,0x8008` after the stack-overflow guard. The dump resolves the entry to 8005b268. see ghidra/scripts/funcs/8005b2a4.txt"

@@ -862,6 +862,68 @@ Run it after importing any program at a base recovered from call targets rather
 than a documented anchor, and after changing `static-overlays.toml` - the two
 cases where a base can be self-consistently wrong.
 
+## A caveat outlives the dump it was written against <a id="a-caveat-outlives-the-dump-it-was-written-against"></a>
+
+Everything above is about a dump's *addresses* being wrong. There is a second,
+quieter failure in the same family: a dump's **header changes under a claim
+already written about it**, and nothing re-reads the claim.
+
+The corpus is not immutable. Re-extract a dump with a better extent walker and
+it gets longer - which is progress everywhere except in the sentences that
+described the old one. Those keep asserting a truncation or an emptiness that
+is no longer there, while still reading as evidence-backed prose, because they
+quote a number.
+
+The failure only bites in one direction, and it is the expensive one. A dump
+that grows makes a *permissive* claim look stale but harmless; it makes a
+**restrictive** one actively suppressive. "The dump reports `size=1 bytes, 0
+instructions`, so this is data - do not open a port row for it" is a decision
+not to work on something, recorded once, never revisited, and invisible to
+every worklist afterwards. Three known instances:
+
+| Claim as written | What the dump reports now | Did the verdict survive? |
+|---|---|---|
+| A field-battle-intro dump is "truncated", `752 bytes, 188 instructions`, stopping on a branch delay slot | `1528 bytes, 382 instructions`, ending on a real `jr ra` | No - three things had been left unported on it, one of them a style selector another port needed. |
+| `0x8005BA38` is "**not a function**", `size=1 bytes, 0 instructions` | 44 bytes, 11 instructions - a complete `RotTransPers` | No. See [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#measurement-readings). |
+| `0x8003D38C` is a Ghidra split, evidenced by `size=1 bytes, 0 instructions` | 56 bytes, 14 instructions | **Yes** - it is one instruction past the real entry `0x8003D388`. Right verdict, evidence that had evaporated. |
+
+That third row is why the remedy is *restate*, not *reopen*. A verdict reached
+partly from the C, or from the shape of the surrounding code, can be perfectly
+correct while the statistic it cited stops being true. Re-derive it from the
+current disassembly and say what you now see.
+
+### Checking it
+
+```bash
+scripts/ghidra-analysis/check-dump-stat-drift.py
+scripts/ghidra-analysis/check-dump-stat-drift.py --uncited
+```
+
+It scans committed prose (`docs/`, crate READMEs, top-level `*.md`, and
+`scripts/ci/*.toml` - the ignore list's justifications quote these statistics
+too) for lines that quote `size=N bytes` or `M instructions`, and compares them
+against the cited dump's header. Exit status is non-zero on any mismatch; it
+returns 0 when `ghidra/scripts/funcs/` is absent, so it is a no-op for a clone
+without the corpus - the same skip-clean shape as the disc-gated tests.
+
+**It matches the cited filename, never the address.** Globbing the corpus for
+an address is the obvious implementation and its false-positive rate makes it
+unusable: one address has a dump per importing program, siblings at an aliased
+VA legitimately differ, and many of the sentences are *about* that aliasing, so
+"the siblings disagree" is the sentence being right. Requiring the line to name
+exactly one dump file removes that whole class. The other false-positive source
+is arithmetic, not addressing - prose writes `3 026 instructions` with a
+separator, and a bare `\d+` clips the leading group and reports a formatting
+difference as drift; the counts are parsed with strict thousands grouping.
+
+The gate cannot run in CI: the corpus is gitignored and disc-derived, so CI has
+nothing to compare against. It belongs in the local pre-commit set beside
+`check-shell-observer-traps.py`, or as a hand-run pass after any re-dump.
+
+**A claim that quotes a count without citing its dump is not checkable by any
+tool.** `--uncited` lists those; they are prose to fix by hand, and the durable
+fix is to cite the dump whenever a statistic is quoted.
+
 ## See also
 
 - [`phantom-print-index.md`](phantom-print-index.md) - this page's findings applied address-by-address to the `0x801C…` / `0x801D…` printed band.
