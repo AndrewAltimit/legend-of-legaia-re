@@ -596,22 +596,28 @@ records the collision it resolved through.
 
 ## The menu / save / memory-card cluster
 
-Forty-eight *disclosed* inert anchors across `card_bu_io.rs`, `card_flow.rs`,
+Forty-eight inert anchors across `card_bu_io.rs`, `card_flow.rs`,
 `save_select.rs`, `save_subscreen.rs`, `pause_screens.rs`,
 `menu_open_sequence.rs`, `menu_list_rows.rs`, `spell_menu.rs`,
 `spell_party_broadcast.rs`, `target_picker.rs`, `equipment.rs`,
-`panel_backread_loader.rs`, `menu_actor_seed.rs` and `title_prim.rs`. Every
-one settles `DISCLOSE`; none is `FALSE INERT` (a symbol-by-symbol sweep of
-the host crates returns zero non-doc references for all forty-eight), and
-none took a `WIRE`. That outcome is worth stating rather than leaving as an
-absence, because two of them look wireable and are not:
+`panel_backread_loader.rs`, `menu_actor_seed.rs` and `title_prim.rs`. None is
+`FALSE INERT` (a symbol-by-symbol sweep of the host crates returns zero
+non-doc references for all forty-eight). Exactly one took a `WIRE`; the rest
+settle `DISCLOSE`, and that outcome is worth stating rather than leaving as
+an absence, because one of them looks wireable and is not:
 
-- **`root_menu_confirm_route`** returns a retail sub-screen id the engine has
-  no space for, so a caller would keep only the buzz/advance bit and drop the
-  payload. Dropping the payload is the tell.
 - **`spell_targets_group`** would route a group spell past the target picker,
   and the applier on the other side heals exactly one roster member - so
   wiring it alone makes group spells heal nobody.
+
+**`root_menu_confirm_route` is the `WIRE`.** The first read of it stopped at
+"returns a retail sub-screen id the engine has no space for, so a caller
+keeps only the buzz/advance bit and drops the payload" - and dropping a
+payload *is* the usual tell. It was the wrong tell here: the seven ids are
+distinct, so a caller can resolve the confirmed row **through** the id rather
+than beside it, which is what `FieldMenuSession` now does. The gate inputs
+turned out to be the real question, and only one of the two was missing
+anything (below).
 
 The card cluster is the `world_map_panel_actors` shape again: ten anchors
 whose per-anchor lines were verbatim identical. They are one gap - an
@@ -644,7 +650,21 @@ The Save gate is the MAN header bit
 [`ManHeader::low_flag`](../formats/encounter.md), which `legaia-asset` already
 parses and the engine then drops - so "the engine has no analogue" was wrong
 and the real prerequisite is two named edits: carry the flag through scene
-load onto the world, then hand it to `FieldMenuSession` at open.
+load onto the world, then hand it to `FieldMenuSession` at open. Both are
+made, so the anchor is live; see
+[`field-menu.md`](../subsystems/field-menu.md#top-level-pause-menu).
+
+The two gate inputs did not turn out to be the same kind of gap, which is
+the transferable part. The save flag was a **carry** gap - the datum existed,
+parsed, and simply had no route to its consumer, so the fix was plumbing and
+the gate now fires on real scenes. The entry-context kind is a **model** gap:
+retail keeps one global pointer whose first byte is the armed op-`0x49`
+sub-op, and the port deliberately replaced that global with a per-context
+tagged park, so no single place holds the byte to read. Its consumer is live
+and honest (it reads what the world can answer) but cannot reach the blocking
+kind until the op-`0x49` arm records its sub-op. A disclosure that lumps the
+two together as "both inputs are missing" reads as one piece of work and is
+two.
 
 ### A latent duplicate-free-function-name landmine, defused
 
