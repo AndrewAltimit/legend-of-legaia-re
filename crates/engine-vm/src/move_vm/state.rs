@@ -429,8 +429,15 @@ pub struct MoveExtResult {
 }
 
 impl MoveExtResult {
-    /// Default-arm-equivalent: `param_3 = 1` (advance by one word, the
-    /// sub-opcode itself).
+    /// The dispatcher's out-of-range return: `param_3 = 1`.
+    ///
+    /// This is `li s2, 0x1` at `0x801D365C`, in the delay slot of the
+    /// `sltiu v1, 0x3D` bounds-check branch that skips the jump table
+    /// entirely. It is **not** a fall-through width for recognised
+    /// sub-opcodes - every arm `0x00..=0x3C` sets its own wider `s2`, and
+    /// returning 1 from one of them lands the PC on the sub-opcode word,
+    /// where the outer move-VM opcode space re-decodes it as an
+    /// instruction.
     pub const fn default_arm() -> Self {
         Self { size_u16: 1 }
     }

@@ -1,4 +1,47 @@
 //! Extension-VM (opcode 0x2F) default dispatcher, ported from `FUN_801D362C`.
+//!
+//! ## Where each arm's size comes from
+//!
+//! Every arm returns the width of its instruction in u16 halfwords - the
+//! value the dispatcher leaves in `s2` before joining the shared epilogue
+//! at `0x801D4A3C` (`sll v0, s2, 0x10` then `>> 0x10`, i.e. a sign-extended
+//! 16-bit count). There is **no size-1 arm** in the in-range switch: the
+//! only `li s2, 0x1` in the function is the bounds-check failure at
+//! `0x801D365C`, taken when the sub-opcode is `>= 0x3D`.
+//!
+//! The size is invisible in the decompiled C. Ghidra renders the shared
+//! `j 0x801D4A3C` exit as a `func_0x801d4a3c()` label-call and drops the
+//! `li s2, N` that sits in its branch delay slot, so a C-sourced reading of
+//! any arm reports the default. Each arm below therefore cites the raw
+//! instruction that sets `s2`, per
+//! `docs/tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims`.
+//!
+//! Ten arms have a second, data-dependent exit: they are conditional
+//! **branches** whose last operand word is a signed halfword displacement
+//! added to the fall-through width. All ten funnel through the same tail at
+//! `0x801D4830`:
+//!
+//! ```text
+//!   801d4830  beq  v0,zero,0x801d4a40   ; predicate false -> size = s2 (preset)
+//!   801d4834  _sll v0,s2,0x10
+//!   801d4838  lhu  v0,0x6(s3)           ; the delta word
+//!   801d483c  j    0x801d4a3c
+//!   801d4840  _addiu s2,v0,0x4          ; predicate true  -> size = delta + 4
+//! ```
+//!
+//! - `0x06` / `0x07` - base 7, delta at `op[6]` (`0x801D3868`).
+//! - `0x0A` / `0x0B` - base 3, delta at `op[2]` (`0x801D38C8`).
+//! - `0x13` / `0x14` - base 4, delta at `op[3]`.
+//! - `0x36`..`0x39` - base 4, delta at `op[3]`.
+//!
+//! The delta is read `lhu` but the result is truncated to 16 bits and
+//! sign-extended by the epilogue, so a negative displacement walks the PC
+//! backwards - the spin-wait-until-condition idiom.
+//!
+//! The full per-arm table with its `li s2` sites lives in
+//! [`crate::move_vm_overlay_ext::canonical_size`], which is the
+//! fall-through width for every sub-opcode; the unit tests cross-check
+//! every arm here against it.
 
 use super::*;
 
@@ -15,8 +58,11 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
     let op_w = |i: usize| -> u16 { operand.get(i).copied().unwrap_or(0) };
 
     match sub_opcode {
-        // 0x00 - falls into default arm (size 1).
-        0x00 => MoveExtResult::default_arm(),
+        // 0x00 - no side effect, but it skips 16 halfwords: the arm at
+        // `0x801D3680` is a bare `j 0x801d4a3c` with `li s2, 0x10` in the
+        // delay slot. It is the widest arm in the table and the only one
+        // whose whole body is the size.
+        0x00 => MoveExtResult::with_size(16),
 
         // 0x01 - `func_0x8001a068("EFC %d %d %d", x, y, z)` debug print.
         // Original sets `iVar16 = 0x20000` then breaks (size = 2).
@@ -25,29 +71,29 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(2)
         }
 
-        // 0x02 - clear face_rotation. Default-arm size.
+        // 0x02 - clear face_rotation. Size 2 (`li s2, 0x2` at 0x801D36B4).
         0x02 => {
             state.face_rotation = 0;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
-        // 0x03 - clear flags bit 0x1000.
+        // 0x03 - clear flags bit 0x1000. Size 2 (`li s2, 0x2` at 0x801D36B8).
         0x03 => {
             state.flags &= !0x1000;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
         // 0x04 - write actor world XYZ into the operand slot at u16-index
         // `op[2] + 3`. The "self-modifying" pattern stores a copy of the
         // current world coords into the move-bytecode itself; the absolute
         // word offset is `state.pc + op[2] + 3`. 3 consecutive writes for
-        // x/y/z. Default-arm size.
+        // x/y/z. Size 3 (`li s2, 0x3` at 0x801D36F8).
         0x04 => {
             let base = state.pc as usize + op_w(2) as usize + 3;
             host.move_bytecode_write_u16(base, state.world_x as u16);
             host.move_bytecode_write_u16(base + 1, state.world_y as u16);
             host.move_bytecode_write_u16(base + 2, state.world_z as u16);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x05 - RAND_ADD self-modify: write `op_w(2) + rand() % op_w(3)`
@@ -66,95 +112,101 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(5)
         }
 
-        // 0x06 / 0x07 - bbox-vs-player test. The original canonicalises the
-        // box in-place by swapping `op_w(2)/(4)` if `op_w(4) < op_w(2)`, then
-        // tests whether the player position falls inside `[(xa-0x40)/0x80,
-        // (xb+0x40)/0x80]` × `[(za-0x40)/0x80, (zb+0x40)/0x80]`. 0x06 means
-        // "default-arm if inside, size 7 if outside"; 0x07 means the opposite.
-        // The size-7 branch skips a 7-u16 follow-up payload. We can't mutate
-        // the operand stream from here (it's a read-only slice), so the port
-        // forwards the predicate to the host: `move_player_world_xyz` returns
-        // the player position. If the host reports the origin (the default
-        // impl), the test always reads "outside the box" - so we model 0x06
-        // as a skip (size 7) and 0x07 as a continue (default-arm). Hosts
-        // that surface real player coords get the right behavior.
+        // 0x06 / 0x07 - bbox-vs-player **conditional branch**, 7 halfwords
+        // wide: `[2F][06|07][xa][za][xb][zb][delta]`.
+        //
+        // The arm at `0x801D3764` first canonicalises the box *in the
+        // bytecode*: `sh v1,0x4(s3)` / `sh a0,0x4(s0)` swap `op[2]`/`op[4]`
+        // when `op[4] < op[2]`, and the sibling pair swaps `op[3]`/`op[5]`.
+        // Those are ordinary self-modifying writes like sub-ops
+        // 0x04 / 0x1B / 0x1E, so they go through the deferred bytecode
+        // callback; the predicate below uses the swapped values directly,
+        // which is what retail's re-reads see.
+        //
+        // The test then asks whether the player is inside
+        // `[xa*0x80+0x40 ..= xb*0x80+0x40] × [za*0x80+0x40 ..= zb*0x80+0x40]`
+        // (`a2 = 1` means **outside** at `0x801D3828`).
+        //
+        // Both sub-ops preset `s2 = 7` (`li s2, 0x7` at `0x801D3838`, in the
+        // delay slot of the `bne` that separates them) and take the branch
+        // through `0x801D3868` (`lhu v0,0xc(s3); addu s2,s2,v0`) - so the
+        // taken side is `7 + op[6]` and the untaken side is a plain 7.
+        // 0x06 branches when the player is OUTSIDE; 0x07 when INSIDE.
         0x06 | 0x07 => {
             let player = host.move_player_world_xyz();
-            // op_w(2)..op_w(5) are the four corner u16s. We do NOT swap in
-            // place because the operand is a read-only slice.
             let mut xa = op_w(2) as i16 as i32;
             let mut xb = op_w(4) as i16 as i32;
             let mut za = op_w(3) as i16 as i32;
             let mut zb = op_w(5) as i16 as i32;
             if xb < xa {
                 std::mem::swap(&mut xa, &mut xb);
+                host.move_bytecode_write_u16(state.pc as usize + 2, xa as u16);
+                host.move_bytecode_write_u16(state.pc as usize + 4, xb as u16);
             }
             if zb < za {
                 std::mem::swap(&mut za, &mut zb);
+                host.move_bytecode_write_u16(state.pc as usize + 3, za as u16);
+                host.move_bytecode_write_u16(state.pc as usize + 5, zb as u16);
             }
             // Original scales by 0x80 with a 0x40 half-cell margin.
             let outside = (player[0] as i32) < xa * 0x80 + 0x40
                 || (player[2] as i32) < za * 0x80 + 0x40
                 || xb * 0x80 + 0x40 < player[0] as i32
                 || zb * 0x80 + 0x40 < player[2] as i32;
-            // 0x06: outside is the skip path (size 7); 0x07: inside is.
-            let skip = if sub_opcode == 0x06 {
+            let branch = if sub_opcode == 0x06 {
                 outside
             } else {
                 !outside
             };
-            if skip {
-                MoveExtResult::with_size(7)
+            if branch {
+                MoveExtResult::with_size(7i16.wrapping_add(op_w(6) as i16))
             } else {
-                MoveExtResult::default_arm()
+                MoveExtResult::with_size(7)
             }
         }
 
         // 0x08 - `DAT_801F22F4 = 1` (set move-VM global predicate).
+        // Size 2 (`li s2, 0x2` at 0x801D3884).
         0x08 => {
             host.move_global_predicate_set(1);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
-        // 0x09 - `DAT_801F22F4 = 0` (clear).
+        // 0x09 - `DAT_801F22F4 = 0` (clear). Size 2 (`li s2, 0x2` at 0x801D3894).
         0x09 => {
             host.move_global_predicate_set(0);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
-        // 0x0A - predicate gate: if `DAT_801F22F4 != 0` falls into default
-        // (size 1, advance and continue); else returns size 3 (skip a 3-u16
-        // payload). Per the dump's `iVar16 = 3; if (DAT_801f22f4 != 0)
-        // goto LAB_801d38c8; ...; default:` shape - `LAB_801d38c8` is the
-        // default-arm label, and the fall-through hits `iVar16 << 0x10 break`
-        // with `iVar16 = 3`.
-        0x0A => {
-            if host.move_global_predicate_get() != 0 {
-                MoveExtResult::default_arm()
-            } else {
-                MoveExtResult::with_size(3)
-            }
-        }
-
-        // 0x0B - opposite predicate (skip when set).
-        0x0B => {
-            if host.move_global_predicate_get() == 0 {
-                MoveExtResult::default_arm()
+        // 0x0A / 0x0B - **conditional branch** on the move-VM global
+        // predicate `DAT_801F22F4`, 3 halfwords wide: `[2F][0A|0B][delta]`.
+        //
+        // `0x801D38A4` is `beq v0,zero,0x801d4a3c` with `li s2, 0x3` in the
+        // delay slot, so the untaken side is a plain 3; the taken side falls
+        // to the shared `0x801D38C8` tail (`lhu v0,0x4(s3); addiu s2,v0,0x3`)
+        // for `3 + op[2]`. 0x0A branches when the predicate is SET, 0x0B when
+        // it is CLEAR (`bne v0,zero,0x801d4a3c` at `0x801D38C0`).
+        0x0A | 0x0B => {
+            let set = host.move_global_predicate_get() != 0;
+            let branch = if sub_opcode == 0x0A { set } else { !set };
+            if branch {
+                MoveExtResult::with_size(3i16.wrapping_add(op_w(2) as i16))
             } else {
                 MoveExtResult::with_size(3)
             }
         }
 
         // 0x0C - `actor[+0x50] = op_w(2)` (set midpoint blend / sub-state).
+        // Size 3 (`li s2, 0x3` in the 0x801D38DC exit).
         0x0C => {
             state.field_50 = op_w(2);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
-        // 0x0D - `actor[+0x50] += op_w(2)` (additive variant).
+        // 0x0D - `actor[+0x50] += op_w(2)` (additive variant). Size 3.
         0x0D => {
             state.field_50 = state.field_50.wrapping_add(op_w(2));
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x0E - midpoint position calc + write to actor world.
@@ -178,9 +230,10 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         }
 
         // 0x0F - `DAT_801F22F6 = 0` (clear move-VM global counter).
+        // Size 2 (`li s2, 0x2` in the 0x801D39E4 exit).
         0x0F => {
             host.move_global_counter_set(0);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
         // 0x10 - wrap `DAT_801F22F6` mod 16, capture low byte into
@@ -198,7 +251,8 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let captured = counter & 0xFF;
             host.move_global_counter_set(counter.wrapping_add(1));
             state.field_86 = (state.field_86 & 0xFF00) | captured;
-            MoveExtResult::default_arm()
+            // Size 2 (`li s2, 0x2` in the 0x801D3A28 exit).
+            MoveExtResult::with_size(2)
         }
 
         // 0x11 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
@@ -211,7 +265,9 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
             host.move_slot_save_u32(slot, 0, lo);
             host.move_slot_save_u32(slot, 4, hi);
-            MoveExtResult::default_arm()
+            // Size 2 (`li s2, 0x2` in the 0x801D3A64 exit) - unlike 0x25,
+            // which takes its slot from the bytecode and is 3 wide.
+            MoveExtResult::with_size(2)
         }
 
         // 0x12 - slot-indexed midpoint variant of 0x0E. Reads
@@ -268,17 +324,20 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x15 / 0x16 - set a flag bit on actor.flags (mask 0x800000 / 0x200000).
+        // 0x15 / 0x16 - set a flag bit on actor.flags (mask 0x800000 /
+        // 0x200000). Both preset `li s2, 0x2` (0x801D3B8C / 0x801D3B9C) and
+        // share the 0x801D3BAC exit, so both are size 2.
         0x15 => {
             state.flags |= 0x800000;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
         0x16 => {
             state.flags |= 0x200000;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(2)
         }
 
         // 0x17 - world-struct init. op_w(2) = idx (param_2+4); op_w(3..7) = 5 vals.
+        // Size 8 (`li s2, 0x8` at 0x801D3C00).
         0x17 => {
             let idx = op_w(2) as i16;
             let vals = [
@@ -289,10 +348,31 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                 op_w(7) as i16,
             ];
             host.ext_world_struct_init(idx, vals);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(8)
         }
-        // 0x18/0x19/0x1A - world-struct write variants. Same op_w(2) = idx.
-        0x18..=0x1A => {
+        // 0x18 - world-struct **reset** variant, and the one member of the
+        // 0x17..0x1A family that is not 8 halfwords wide. The arm at
+        // `0x801D3C0C` zeroes the record's first three u16s outright and
+        // seeds only the last two, from `actor.world_y + op[3]` and
+        // `actor.world_y + op[4]` - so it reads two operand words, not five,
+        // and exits `li s2, 0x5` at `0x801D3C58`. Grouping it with 0x19 /
+        // 0x1A costs 3 halfwords of PC per execution.
+        0x18 => {
+            let idx = op_w(2) as i16;
+            let y = state.world_y;
+            let vals = [
+                0,
+                0,
+                0,
+                y.wrapping_add(op_w(3) as i16),
+                y.wrapping_add(op_w(4) as i16),
+            ];
+            host.ext_world_struct_write(idx, vals);
+            MoveExtResult::with_size(5)
+        }
+        // 0x19 / 0x1A - world-struct write variants. Same op_w(2) = idx.
+        // Size 8 (`li s2, 0x8` at 0x801D3CD0 / in the 0x801D3D7C exit).
+        0x19 | 0x1A => {
             let idx = op_w(2) as i16;
             let vals = [
                 op_w(3) as i16,
@@ -302,7 +382,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                 op_w(7) as i16,
             ];
             host.ext_world_struct_write(idx, vals);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(8)
         }
 
         // 0x1B - in-bytecode copy loop. For `i in 0..op[4]`:
@@ -310,7 +390,8 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // The base offset of 5 (= u16-index 5) targets the operand region
         // *past* the count word - the bytecode following this instruction
         // is treated as an inline scratch buffer indexed by op[2]/op[3].
-        // Falls into default-arm regardless of the count.
+        // Size 5 regardless of the count: both the `blez` early-out at
+        // `0x801D3D90` and the loop exit reach a `li s2, 0x5`.
         0x1B => {
             let count = op_w(4) as i16;
             if count > 0 {
@@ -321,7 +402,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                     host.move_bytecode_write_u16(dst_base + i, v);
                 }
             }
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(5)
         }
 
         // 0x1C / 0x1D - set / clear flag bank. op_w(2) = flag index.
@@ -363,11 +444,19 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         //   3. H += op[2]; wrap into [0, 0x167]. S += op[3], clamp 0..255.
         //      V += op[4], clamp 0..255.
         //   4. HSV→RGB via FUN_8001a6c8 (which clamps each output to 0..0xF8).
-        //   5. Re-pack `puVar14[0] = R | G<<8 | B<<16`.
+        //   5. Re-pack `puVar14[0] = R | G<<8 | B<<16` with a full 32-bit
+        //      `sw` (`sw v1,0x0(s0)` at 0x801D3F84), so the top byte of the
+        //      packed word is cleared, not preserved.
         //
-        // Returns default_arm() (size 1) - the bytecode operand stream is
-        // re-interpreted as outer opcode 0x1F / 0x20 on the next dispatch
-        // (intentional self-modifying layout - see also sub-ops 0x04/0x1B/0x1E).
+        // **Size 5**, not 1. The single arm serving both sub-ops sets
+        // `li s2, 0x5` at `0x801D3F60` - after the HSV→RGB call and before
+        // the shared `j 0x801d4a3c` at `0x801D3F80` - and there is no other
+        // `s2` write on any path through it. The "size-1 return is an
+        // intentional bytecode-density trick that re-reads `op[2..]` as a
+        // fresh outer opcode" reading came from the decompiled C, where the
+        // `j` renders as a label-call and the delay-slot-adjacent `li` is
+        // dropped; the instruction is an ordinary 5-halfword op whose three
+        // operand words are the H/S/V deltas.
         0x1F | 0x20 => {
             let kd_offset = if sub_opcode == 0x1F { 0 } else { 2 };
             let lo = state.keyframe_desc[kd_offset];
@@ -391,24 +480,25 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let ng = ng.min(0xF8) as u16;
             let nb = nb.min(0xF8) as u16;
             state.keyframe_desc[kd_offset] = nr | (ng << 8);
-            state.keyframe_desc[kd_offset + 1] = (hi & 0xFF00) | nb;
-            MoveExtResult::default_arm()
+            state.keyframe_desc[kd_offset + 1] = nb;
+            MoveExtResult::with_size(5)
         }
 
         // 0x21 - `actor.anim_3c..40 += op_w(2..4)`.
+        // Size 5 (`li s2, 0x5` at 0x801D3FBC).
         0x21 => {
             state.anim_3c = state.anim_3c.wrapping_add(op_w(2) as i16);
             state.anim_3e = state.anim_3e.wrapping_add(op_w(3) as i16);
             state.anim_40 = state.anim_40.wrapping_add(op_w(4) as i16);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(5)
         }
 
-        // 0x22 - `actor.world += op_w(2..4)`.
+        // 0x22 - `actor.world += op_w(2..4)`. Size 5 (`li s2, 0x5` at 0x801D3FF0).
         0x22 => {
             state.world_x = state.world_x.wrapping_add(op_w(2) as i16);
             state.world_y = state.world_y.wrapping_add(op_w(3) as i16);
             state.world_z = state.world_z.wrapping_add(op_w(4) as i16);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(5)
         }
 
         // 0x23 - animation lerp toward target world coords using the
@@ -441,7 +531,9 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                 state.anim_3e = state.anim_3e.wrapping_add(dy as i16);
                 state.anim_40 = state.anim_40.wrapping_add(dz as i16);
             }
-            MoveExtResult::default_arm()
+            // Size 6 (`li s2, 0x6` at 0x801D4100) - the trap-guard path does
+            // not change the width, only whether the update lands.
+            MoveExtResult::with_size(6)
         }
 
         // 0x24 / 0x2A - fixed-point lerp on actor world coords. Both share
@@ -480,24 +572,31 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                 (base_y + (((player[1] as i32 - base_y).wrapping_mul(t_y)) >> 12)) as i16;
             // Z axis.
             state.world_z = (base_z + (((target_z - base_z).wrapping_mul(t_z)) >> 12)) as i16;
-            MoveExtResult::default_arm()
+            // Size 8 for both sub-ops - the shared arm at 0x801D411C exits
+            // through 0x801D4208 with `li s2, 0x8`.
+            MoveExtResult::with_size(8)
         }
 
         // 0x25 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
         // the 16-slot scratch table at `&DAT_801F3498`. Each slot is 8 bytes:
         // `slot[0..4] = (world_x:u16, world_y:u16)`,
         // `slot[4..8] = (world_z:u16, world_y_mirror:u16)`.
+        //
+        // Size 3 (`li s2, 0x3` in the 0x801D4244 exit): opcode + sub-op +
+        // the slot operand. This is the arm whose under-advance re-enters
+        // the outer dispatcher on the `0x25` word, where the *outer* opcode
+        // space reads `0x25` as CHILD_SPAWN.
         0x25 => {
             let slot = op_w(2);
             let lo = (state.world_x as u16 as u32) | ((state.world_y as u16 as u32) << 16);
             let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
             host.move_slot_save_u32(slot, 0, lo);
             host.move_slot_save_u32(slot, 4, hi);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x26 - load 8 bytes from the scratch slot back into
-        // `actor[+0x14..+0x1C]`.
+        // `actor[+0x14..+0x1C]`. Size 3 (`li s2, 0x3` in the 0x801D4280 exit).
         0x26 => {
             let slot = op_w(2);
             let lo = host.move_slot_load_u32(slot, 0);
@@ -506,28 +605,30 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             state.world_y = ((lo >> 16) & 0xFFFF) as i16;
             state.world_z = (hi & 0xFFFF) as i16;
             state.world_y_mirror = ((hi >> 16) & 0xFFFF) as i16;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x27 - save the three tween-source u16s `actor[+0x90..+0x96]` into
         // the slot's first 6 bytes (slot[0/2/4] = tween_src_x/y/z).
+        // Size 3 (`li s2, 0x3` in the 0x801D42D0 exit).
         0x27 => {
             let slot = op_w(2);
             host.move_slot_save_u16(slot, 0, state.tween_src_x as u16);
             host.move_slot_save_u16(slot, 2, state.tween_src_y as u16);
             host.move_slot_save_u16(slot, 4, state.tween_src_z as u16);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x28 - load 3 × u16 from the slot, scale `+0x92/+0x94` by
         // `op_w(3)/op_w(4)` (with `>> 12` fixed-point shift), and clamp the
-        // scaled outputs to `[-0xFF, 0xFF]`. Returns size 5 when the third
-        // result needs the upper-bound branch (mirroring the original
-        // `iVar16 = 5` shortcut), default-arm size otherwise.
+        // scaled outputs to `[-0xFF, 0xFF]`.
         //
-        // The upper-z bound check has to stay as a separate `if` (rather
-        // than a `clamp` call) because the dump's "did we clamp z to the
-        // upper bound" flag is what selects the return size.
+        // **Size 5 on every path.** The clamp cascade ends
+        // `bne v0,zero,0x801d4a3c` with `li s2, 0x5` in the delay slot
+        // (`0x801D43A8`), and the fall-through stores the upper bound and
+        // exits at `0x801D43B4` with `s2` still 5 - the branch selects
+        // whether z is clamped, not how wide the instruction is. The earlier
+        // reading turned that branch into a size difference.
         #[allow(clippy::manual_clamp)]
         0x28 => {
             let slot = op_w(2);
@@ -547,32 +648,27 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             if z_scaled < -0xFF {
                 z_scaled = -0xFF;
             }
-            let upper_bound_branch = z_scaled > 0xFF;
-            if upper_bound_branch {
+            if z_scaled > 0xFF {
                 z_scaled = 0xFF;
             }
             state.tween_src_y = y_scaled;
             state.tween_src_z = z_scaled;
-            if upper_bound_branch {
-                MoveExtResult::default_arm()
-            } else {
-                MoveExtResult::with_size(5)
-            }
+            MoveExtResult::with_size(5)
         }
 
         // 0x31 - save `actor[+0x24..+0x2C]` (the three render banks +
-        // `+0x2A` Y mirror) into the slot.
+        // `+0x2A` Y mirror) into the slot. Size 3 (`li s2, 0x3` at 0x801D4664).
         0x31 => {
             let slot = op_w(2);
             let lo = (state.render_24 as u16 as u32) | ((state.render_26 as u16 as u32) << 16);
             let hi = (state.render_28 as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
             host.move_slot_save_u32(slot, 0, lo);
             host.move_slot_save_u32(slot, 4, hi);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x32 - load 8 bytes from the slot back into the render-bank
-        // section at `+0x24..+0x2C`.
+        // section at `+0x24..+0x2C`. Size 3 (`li s2, 0x3` at 0x801D46A0).
         0x32 => {
             let slot = op_w(2);
             let lo = host.move_slot_load_u32(slot, 0);
@@ -581,25 +677,29 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             state.render_26 = ((lo >> 16) & 0xFFFF) as i16;
             state.render_28 = (hi & 0xFFFF) as i16;
             state.world_y_mirror = ((hi >> 16) & 0xFFFF) as i16;
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x34 - save `actor[+0x72]` (`field_72`) into slot[0..2].
+        // Size 3 (`li s2, 0x3` at 0x801D46FC).
         0x34 => {
             let slot = op_w(2);
             host.move_slot_save_u16(slot, 0, state.field_72);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x35 - load slot[0..2] into `actor[+0x72]`.
+        // Size 3 (`li s2, 0x3` at 0x801D4738).
         0x35 => {
             let slot = op_w(2);
             state.field_72 = host.move_slot_load_u16(slot, 0);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x29 - scratchpad ramp or immediate write. op_w(2)=slot,
-        // op_w(3)=target, op_w(4)=ticks.
+        // op_w(3)=target, op_w(4)=ticks. Size 5 on both paths - the
+        // immediate arm jumps into the shared 0x801D4624 tail that 0x30
+        // also ends on (`li s2, 0x5` at 0x801D4628).
         0x29 => {
             let slot = op_w(2) as i16;
             let target = op_w(3) as i16;
@@ -609,50 +709,53 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             } else {
                 host.ext_scratchpad_write(slot, -target);
             }
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(5)
         }
 
         // 0x2B - `actor[+0xB4..+0xBC] = op_w(2..6)`. Writes 4 u16 anim-block
         // slots (`anim_block_u16` at byte-off 8/10/12/14 = `+0xB4/B6/B8/BA`).
-        // Per the dump, the dispatcher's default-arm closes the case after
-        // the writes; engines treating the sub-op as a 5-u16 instruction
-        // can override `ext_dispatch` if they need accurate PC math.
+        // Size 6 (`li s2, 0x6` at 0x801D4460) - opcode + sub-op + 4 operands.
         0x2B => {
             state.anim_block_u16_set(8, op_w(2));
             state.anim_block_u16_set(10, op_w(3));
             state.anim_block_u16_set(12, op_w(4));
             state.anim_block_u16_set(14, op_w(5));
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(6)
         }
 
-        // 0x2C - overlay sub-routine.
+        // 0x2C - overlay sub-routine (`jal 0x801d31b0`, the per-scanline
+        // POLY_FT4 strip emitter). Size 7 (`li s2, 0x7` at 0x801D44D4).
         0x2C => {
             host.ext_func801d31b0(state, operand);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(7)
         }
 
         // 0x2D - additive variant of 0x2B.
         // `actor[+0xB4..+0xBC] += op_w(2..6)`. Wrapping add per the
-        // `*(short *)` semantics in the original.
+        // `*(short *)` semantics in the original. Size 6 (`li s2, 0x6` at
+        // 0x801D44B4).
         0x2D => {
             for (slot, idx) in [(8, 2), (10, 3), (12, 4), (14, 5)] {
                 let cur = state.anim_block_u16(slot);
                 let add = op_w(idx);
                 state.anim_block_u16_set(slot, cur.wrapping_add(add));
             }
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(6)
         }
 
-        // 0x2E - emit OT packet.
+        // 0x2E - build the GP0 draw-mode packet and link it into the OT.
+        // The widest arm after 0x00: size 13 (the 0x801D45CC exit), covering
+        // opcode + sub-op + 11 operand words.
         0x2E => {
             host.ext_emit_ot_packet(operand);
-            MoveExtResult::with_size(2)
+            MoveExtResult::with_size(13)
         }
 
         // 0x2F - write `_DAT_8007B9D8`. op_w(2) = the i16 value.
+        // Size 3 (`li s2, 0x3` at 0x801D45D4, the arm's first instruction).
         0x2F => {
             host.ext_set_8007b9d8(op_w(2) as i16 as i32);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x30 - RAND_PICK self-modify: write `op_w(2)` or `op_w(3)`
@@ -672,20 +775,28 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
 
         // 0x33 - `actor[+0xC0..+0xC8] += op_w(2..6)` (4 i16 anim-block slots
         // at byte-off 20/22/24/26 = `+0xC0/C2/C4/C6`). Wrapping add per the
-        // `*(short *) +` semantics in the original.
+        // `*(short *) +` semantics in the original. Size 6 (`li s2, 0x6` at
+        // 0x801D46EC).
         0x33 => {
             for (slot, idx) in [(20, 2), (22, 3), (24, 4), (26, 5)] {
                 let cur = state.anim_block_u16(slot);
                 let add = op_w(idx);
                 state.anim_block_u16_set(slot, cur.wrapping_add(add));
             }
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(6)
         }
 
         // 0x36 / 0x37 - axis threshold against `0x8E - DAT_8007C348`.
         // 0x38 / 0x39 - squared-distance to the player.
-        // All four predicates funnel through `LAB_801D4830`: returns 1 when
-        // the predicate is true, else 4 (skip a 3-u16 follow-up payload).
+        //
+        // All four are **conditional branches** of the same shape as 0x13 /
+        // 0x14, 4 halfwords wide: `[2F][36..39][arg][delta]`. Each arm
+        // presets `li s2, 0x4` (0x801D4744 / 0x801D4764 / 0x801D47C8 /
+        // 0x801D4820) and jumps to the shared `0x801D4830` tail, whose
+        // predicate-true side is `lhu v0,0x6(s3); addiu s2,v0,0x4` - i.e.
+        // `4 + op[3]`, with the same signed-truncation rule that lets a
+        // negative delta walk the PC backwards. The "true -> size 1" reading
+        // dropped both the base and the branch.
         //
         //  - 0x36: op[2] < (0x8E - axis)            ; "outside lower bound"
         //  - 0x37: (0x8E - axis) < op[2]            ; "above upper bound"
@@ -715,7 +826,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                 }
             };
             if predicate {
-                MoveExtResult::default_arm()
+                MoveExtResult::with_size(4i16.wrapping_add(op_w(3) as i16))
             } else {
                 MoveExtResult::with_size(4)
             }
@@ -730,11 +841,13 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // off the current pc. We write through `move_bytecode_write_u16`
         // (deferred + flushed by the host) so the write survives to the
         // engine's bytecode buffer.
+        //
+        // Size 3 (`li s2, 0x3` at 0x801D4844, the arm's first instruction).
         0x3A => {
             let angle = host.ext_compute_angle(state);
             let dst = state.pc as usize + op_w(2) as usize + 3;
             host.move_bytecode_write_u16(dst, angle);
-            MoveExtResult::default_arm()
+            MoveExtResult::with_size(3)
         }
 
         // 0x3B - party-member position lookup. Original:
@@ -742,12 +855,17 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         //   *puVar15 = puVar15[1] = puVar15[2] = 0;
         //   func_0x8003D064(_DAT_8007B898 + 0x22, &local, ...);
         //   actor = func_0x8003C83C(local + op_w(2) + 1);
-        //   if (actor) { puVar15[0..2] = actor.world; default_arm; }
-        //   else { iVar16 = 4; goto skip; }
+        //   iVar16 = 4;
+        //   if (actor) { puVar15[0..2] = actor.world; }
         //
         // dst slot = `op_w(3) + 4` in u16 units off pc. Pre-clear the 3
         // slots before the lookup so a host that returns `None` still has
         // the zero-pre-clear behavior the original guarantees.
+        //
+        // **Size 4 on both paths.** `beq v1,zero,0x801d4a3c` at 0x801D48D0
+        // carries `li s2, 0x4` in its delay slot, so the success path exits
+        // at 0x801D48F4 with the same 4 - the branch chooses whether the
+        // triple is written, not the instruction width.
         0x3B => {
             let dst = state.pc as usize + op_w(3) as usize + 4;
             host.move_bytecode_write_u16(dst, 0);
@@ -759,7 +877,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
                     host.move_bytecode_write_u16(dst, x as u16);
                     host.move_bytecode_write_u16(dst + 1, y as u16);
                     host.move_bytecode_write_u16(dst + 2, z as u16);
-                    MoveExtResult::default_arm()
+                    MoveExtResult::with_size(4)
                 }
                 None => MoveExtResult::with_size(4),
             }
@@ -777,9 +895,11 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(6)
         }
 
-        // Anything `>= 0x3D` is reserved / unknown - treat as default arm
-        // since the original switch had no entries past 0x3C and would land
-        // in `default:` (size 1 + iVar16 << 16, treated as fall-through here).
+        // Anything `>= 0x3D` is reserved / unknown. This is the **only**
+        // size-1 path in the dispatcher: `li s2, 0x1` at `0x801D365C`, in
+        // the delay slot of the bounds-check branch that skips the whole
+        // jump table. Every in-range sub-opcode has its own arm and its own
+        // wider `li s2, N`.
         // FUN_801D362C guards the JT jump with `sltiu sub_op, 0x3D` (the
         // sub-opcode is loaded `lh` = sign-extended, so the *unsigned* compare
         // also rejects negative values), branching to its return on

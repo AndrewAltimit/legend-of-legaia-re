@@ -281,14 +281,16 @@ fn mode4_scene_entry_carrier_census_or_skip() {
         names,
         vec![
             "vell", "dolk", "dolk2", "keikoku", "jiji", "dohaty", "station", "tunnelc", "korout",
-            "koin3", "deroa", "jou", "jouinb", "jouind", "jouine", "noaru", "other7"
+            "koin3", "deroa", "jou", "jouinb", "jouind", "jouine", "noaru", "opdeene", "other7"
         ],
         "scene-entry mode-4 carriers"
     );
 
     // Shape: with one exception every authored carrier scrolls **vertically
-    // only**, upward, over a rect in the upper texture band (`x >= 0x200`) -
-    // falling water and energy columns, animated as texels.
+    // only**, upward, over a rect in the texture band (`x >= 0x1C0`) -
+    // falling water and energy columns, animated as texels. `opdeene` sets
+    // that floor with a 32x256 strip at `(0x1C0, 0x100)`; every other
+    // texture carrier sits at `x >= 0x200`.
     //
     // The exception is `tunnelc`'s second seat, `(0, 508, 256, 1)` stepping
     // right by 16 halfwords: a full-width, one-row rect on a **CLUT row**.
@@ -310,7 +312,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
                 "{name}: no horizontal texture carrier at scene entry"
             );
             assert!(dy > 0, "{name}: upward step {dy}");
-            assert!(x >= 0x200, "{name}: rect x {x:#x} in the texture band");
+            assert!(x >= 0x1C0, "{name}: rect x {x:#x} in the texture band");
             // The authored steps always fit their rect at both frame steps -
             // the case retail's `w - strip` descriptor store would wrap.
             assert!(

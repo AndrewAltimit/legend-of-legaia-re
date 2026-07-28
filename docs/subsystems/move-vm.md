@@ -183,7 +183,9 @@ param_3 = func_0x801d362c(actor, op);
 
 **Escape to overlay-defined extension opcodes.** `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes), bounds-checked so there is no out-of-bounds-jump path. **61/61 sub-ops are dispatched in `crates/engine-vm`.**
 
-The full sub-op reference - bounds check, the shared `&DAT_801F3498` scratch table, world-position lerps, bbox/distance gates, self-modifying bytecode ops, HSV color ramps, the `DAT_80085758` fourth flag bank, and per-sub-op coverage - is in **[move-vm-overlay-ext.md](move-vm-overlay-ext.md)**.
+The handler's return is the whole instruction's width in halfwords, and it is never 1 for a recognised sub-opcode - a size-1 return leaves the move-VM PC on the sub-opcode word, where this table's own opcode space decodes it again ([widths](move-vm-overlay-ext.md#instruction-widths)). Ten sub-ops are conditional branches whose taken side adds a signed displacement from their last operand word.
+
+The full sub-op reference - bounds check, the shared `&DAT_801F3498` scratch table, world-position lerps, bbox/distance branches, self-modifying bytecode ops, HSV color ramps, the `DAT_80085758` fourth flag bank, and per-sub-op coverage - is in **[move-vm-overlay-ext.md](move-vm-overlay-ext.md)**.
 
 ### 0x30 - `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 

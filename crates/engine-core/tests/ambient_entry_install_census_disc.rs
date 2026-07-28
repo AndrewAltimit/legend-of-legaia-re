@@ -88,12 +88,23 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     }
     assert_eq!(world.ambient_fx.len(), 7, "town0e's record-1 fan-out");
 
-    // The morph carrier: stager record 11's mesh part binds env-pack slot 113
-    // (`model_sel 118 - 5`) and its op-`0x0A` arms lanes 10 / 11.
+    // The morph carriers. Two mesh records arm an envelope: one binds
+    // env-pack slot 113 (`model_sel 118 - 5`) with op-`0x0A` lanes 10 / 11,
+    // and one is spawned three times by the fan-out and binds slot 112
+    // (`model_sel 117 - 5`) with lane 9 - three instances of the same record,
+    // so three identical carriers.
     let parts = world.ambient_morph_parts();
-    let morph = parts.first().expect("town0e arms a retail morph carrier");
-    assert_eq!(parts.len(), 1, "one armed morph carrier");
-    assert_eq!(morph.pack_slot, 113, "env-pack slot the mesh part binds");
+    let mut slots: Vec<usize> = parts.iter().map(|p| p.pack_slot).collect();
+    slots.sort_unstable();
+    assert_eq!(
+        slots,
+        vec![112, 112, 112, 113],
+        "armed morph carriers by env-pack slot"
+    );
+    let morph = parts
+        .iter()
+        .find(|p| p.pack_slot == 113)
+        .expect("town0e arms the slot-113 carrier");
     assert_eq!(
         morph.lanes.iter().map(|&(i, _)| i).collect::<Vec<_>>(),
         vec![10, 11],
@@ -124,7 +135,8 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
         }
         let w = world
             .ambient_morph_parts()
-            .first()
+            .iter()
+            .find(|p| p.pack_slot == 113)
             .and_then(|p| p.lanes.iter().map(|&(_, w)| w).max())
             .unwrap_or(0);
         if w == 0 {

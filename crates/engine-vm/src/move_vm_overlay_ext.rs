@@ -126,7 +126,21 @@ pub struct StepResult {
 /// by the original; advance by 1).
 ///
 /// Sourced from the `li s2, N` exit-slot in each handler in
-/// `FUN_801D362C`.
+/// `FUN_801D362C` - read off the disassembly, because Ghidra renders the
+/// shared `j 0x801D4A3C` exit as a label-call and drops the `li` in its
+/// delay slot.
+///
+/// **This is the fall-through width.** Ten sub-opcodes are conditional
+/// branches whose taken side adds a signed displacement read from the
+/// instruction's last operand word: `0x06` / `0x07` (`+op[6]`), `0x0A` /
+/// `0x0B` (`+op[2]`), `0x13` / `0x14` and `0x36`..`0x39` (`+op[3]`). A
+/// linear walker driven by this table is therefore an upper-bound decode,
+/// not an execution trace; the executing port is
+/// [`crate::move_vm::ext`], whose unit tests dispatch every sub-opcode
+/// against this table.
+///
+/// No entry is 1. A size-1 advance would leave the move-VM PC on the
+/// sub-opcode word, where the outer opcode space decodes it again.
 pub fn canonical_size(sub_op: u16) -> Option<u16> {
     Some(match sub_op {
         0x00 => 16, // explicit `li s2, 0x10` halt-skip
@@ -487,7 +501,11 @@ mod tests {
     #[test]
     fn canonical_size_covers_every_known_opcode() {
         for op in 0..MAX_SUB_OPCODE {
-            assert!(canonical_size(op).is_some(), "op 0x{op:02X} unmapped");
+            let size = canonical_size(op).unwrap_or_else(|| panic!("op 0x{op:02X} unmapped"));
+            // The bounds-check resync width is the only 1 in the function;
+            // an in-range arm that advanced by 1 would leave the PC on its
+            // own sub-opcode word.
+            assert!(size >= 2, "op 0x{op:02X} maps to width {size}");
         }
         assert!(canonical_size(MAX_SUB_OPCODE).is_none());
     }
