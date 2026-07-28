@@ -38,9 +38,20 @@
 //!    requests are queued per game tick and drained against the same VRAM
 //!    surface in tick order.
 //!
+//! Retail reaches this chain from exactly **one** site. The field VM's op
+//! `0x34` sub-3 arm is `0x801E00B0`'s `jal 0x800252EC`, and the scene-entry
+//! installer `FUN_8003A1E4` has no install code of its own - it calls
+//! `FUN_801DE840`, the same dispatcher, for one frame slice per just-spawned
+//! placement. Scene-entry and runtime installs are therefore the same thing
+//! seen at two moments, and both land here
+//! ([`World::spawn_ambient_record_at`]). The `SummonScene`-backed
+//! [`World::spawn_field_stager`] is an earlier, thinner port of the same
+//! `FUN_800252EC` chain that carries neither render tail; it survives only as
+//! the play-window's `J`-key debug exerciser and is not on any retail path.
+//!
 //! PORT: FUN_80021B04 (spawn-time first run + per-tick move-VM drive for
 //! the prescript-record parts)
-//! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50
+//! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
 
 pub mod vram_scroll;
 
@@ -56,9 +67,17 @@ const AMBIENT_PART_BUDGET: usize = 512;
 /// Recursion guard for op-`0x25` spawn chains within one tick.
 const MAX_SPAWN_DEPTH: usize = 16;
 
-/// Cap on simultaneously live ambient parts (retail's effect-actor pool is
-/// far smaller; this only bounds a runaway spawn loop).
-const MAX_AMBIENT_PARTS: usize = 128;
+/// Cap on simultaneously live ambient parts, taken from retail's own actor
+/// pool: `FUN_800203EC` seeds the free stack with `0x8E` down to `0`, i.e.
+/// **143 slots** of `0xD8` bytes, and `FUN_80020454` hands them out one at a
+/// time. That pool is shared with every other actor in the scene, so 143 is a
+/// ceiling the ambient tree alone never has, not a budget it is entitled to.
+///
+/// Exhausting it is an error path in retail too - `FUN_80020DE0` prints a
+/// diagnostic through `FUN_800567A8` and returns null - so
+/// [`World::push_ambient_part`] logs rather than dropping the spawn silently,
+/// and [`World::ambient_pool_exhausted`] makes the state queryable.
+pub const MAX_AMBIENT_PARTS: usize = 143;
 
 /// Cap on a mode-4 part's undrained strip rotations. Retail applies each
 /// one inside the tick that fired it; this only bounds a host that banks
@@ -117,17 +136,57 @@ impl World {
     /// own immediate first run). Returns `false` when the id is out of
     /// range or no stager table is installed.
     pub fn spawn_ambient_record(&mut self, id: usize, origin: [i16; 3]) -> bool {
+        self.spawn_ambient_record_at(id, origin, [0, 0, 0])
+    }
+
+    /// [`Self::spawn_ambient_record`] with the spawner's rotation banks as
+    /// well as its position - the full retail seat.
+    ///
+    /// `FUN_800252EC(id, ctx + 0x14, ctx + 0x24)` hands `FUN_80021B04` two
+    /// three-halfword windows off the **executing script's** context, and the
+    /// stager copies both verbatim: `ctx[+0x14..+0x1A]` into the part's
+    /// `+0x14/+0x16/+0x18` (world x / y / z, `0x80021B94..`) and
+    /// `ctx[+0x24..+0x2A]` into `+0x24/+0x26/+0x28` (the render banks,
+    /// `0x80021D8C..`). The scene-entry census passes zeroes for both because
+    /// its installs run before any actor has moved.
+    pub fn spawn_ambient_record_at(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> bool {
         let Some(idx) = self.push_ambient_part(id, origin) else {
             return false;
         };
+        {
+            let st = &mut self.ambient_fx[idx].state;
+            st.render_24 = rot[0];
+            st.render_26 = rot[1];
+            st.render_28 = rot[2];
+        }
         self.tick_ambient_part(idx, 0);
         true
+    }
+
+    /// `true` when the ambient pool is full, so the next spawn is refused.
+    /// The retail sibling is `FUN_80020454` returning null with the free
+    /// stack empty; retail's own caller treats that as an error rather than
+    /// as a quota, and so does this - see [`MAX_AMBIENT_PARTS`].
+    pub fn ambient_pool_exhausted(&self) -> bool {
+        self.ambient_fx.len() >= MAX_AMBIENT_PARTS
     }
 
     /// Seat record `id` as a new ambient part (no first run). Returns the
     /// part index.
     fn push_ambient_part(&mut self, id: usize, origin: [i16; 3]) -> Option<usize> {
         if self.ambient_fx.len() >= MAX_AMBIENT_PARTS {
+            // Not a silent truncation: an ambient tree that reaches the pool
+            // ceiling has stopped animating whatever it could not seat. No
+            // retail scene comes near it once halted parts are freed - the
+            // corpus peak is `uru2`'s emitter and everything else is a few
+            // dozen (disc-gated `ambient_part_pool_disc`) - so reaching it
+            // means something upstream is spawning what retail does not.
+            // Retail reports its own allocation failure per attempt too
+            // (`FUN_80020DE0` -> `FUN_800567A8`), so per-refusal is the
+            // faithful cadence.
+            log::warn!(
+                "ambient part pool exhausted ({MAX_AMBIENT_PARTS} live): stager record {id} not seated"
+            );
             return None;
         }
         let rec = self.field_stagers.get(id)?;
@@ -278,7 +337,25 @@ impl World {
         // retail chain runs the child's VM inside the parent's spawn op,
         // which is what sequences the self-modifying fan-outs).
         for (slot, origin) in spawns {
-            if slot < 0 {
+            // Table entry 0 is not a stager record - it is the per-scene SFX
+            // descriptor bank (`docs/formats/sfx-table.md`'s `>= 0x200` half;
+            // `FUN_800250D4` and `FUN_80016B6C` both read it as 8-byte rows
+            // through this same `offsets[0]` word). Walking it as move-VM
+            // bytecode reads a row's `0x0003` category word as
+            // `WORLD_ROTATE_ADD` and runs off into the next row, so a part
+            // seated on it is pure noise that occupies a pool slot.
+            //
+            // The install op cannot name it (`FUN_800252EC` is called with
+            // `arg + 1`), so only an op-`0x25` operand of 0 reaches it, and
+            // in this port that operand is manufactured rather than authored:
+            // `MoveExtResult::default_arm()` advances one word for several
+            // `0x2F` extension sub-ops whose retail arms are wider - `0x25`
+            // among them, size 3 per `move_vm_overlay_ext::canonical_size` -
+            // so `2F 25 <slot>` re-enters the outer dispatcher on its own
+            // sub-opcode word and decodes as a child spawn of record 0.
+            // Guarding here keeps the pool honest while that lives in
+            // `engine-vm`.
+            if slot <= 0 {
                 continue;
             }
             if let Some(child) = self.push_ambient_part(slot as usize, origin) {
@@ -287,8 +364,70 @@ impl World {
         }
     }
 
+    /// Free the parts that halted on an earlier tick - retail's actor-list
+    /// walk, not a housekeeping convenience.
+    ///
+    /// `FUN_8002519C` walks the live actor list once per frame and, **before**
+    /// dispatching an actor's tick function, tests `actor[+0x10] & 0x8` - the
+    /// bit move-VM op `0x08` HALT sets. When it is set the actor is torn down
+    /// (`FUN_80024DFC`), its heap buffers released - including the mode-3
+    /// capture at `+0xA8` when its tick word is the stager render tail
+    /// `FUN_80021DF4` and `+0x5A == 3` - and its pool slot pushed back with
+    /// `FUN_800204A4`; only the not-halted branch reaches the `jalr` that runs
+    /// the part at all. So a halted part renders once more on the tick it
+    /// halted and then stops existing: its CLUT-cell write stops, its strip
+    /// rotation stops, and its slot is available again.
+    ///
+    /// Without this a scene whose tree spawns on an infinite loop grows a
+    /// part per tick forever, because every child halts on its own first run
+    /// and nothing ever removes it - which is what drove the corpus into the
+    /// pool ceiling and made the ceiling look like an authored part count.
+    ///
+    /// A part still holding undrained mode-4 rotations is kept until they land
+    /// (retail applies each inside the tick that fired it; the engine queues
+    /// them for the next VRAM-bearing step, so retiring first would drop a
+    /// write retail performed).
+    ///
+    /// PORT: FUN_8002519C (the halt arm of the per-frame actor-list walk)
+    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC
+    fn retire_finished_ambient_parts(&mut self) {
+        if !self
+            .ambient_fx
+            .iter()
+            .any(|p| p.finished && p.scroll_fx.is_empty())
+        {
+            return;
+        }
+        let mut retired_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        self.ambient_fx.retain(|p| {
+            if p.finished && p.scroll_fx.is_empty() {
+                if let Some(fx) = p.cell_fx {
+                    retired_rects.push(fx.rect);
+                }
+                false
+            } else {
+                true
+            }
+        });
+        // The freed part's `+0xA8` capture buffer goes with it. Keep the
+        // engine's capture cache in step, but only for a rect no surviving
+        // part still cycles (retail's buffers are per-actor; the cache is
+        // keyed by rect and several parts may share one).
+        for rect in retired_rects {
+            if !self
+                .ambient_fx
+                .iter()
+                .any(|p| p.cell_fx.is_some_and(|f| f.rect == rect))
+            {
+                self.ambient_cell_captures.remove(&rect);
+            }
+        }
+    }
+
     /// Advance every live ambient part one retail game tick.
     pub fn tick_ambient_fx(&mut self) {
+        // Retail's walk frees the halted parts before ticking the rest.
+        self.retire_finished_ambient_parts();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
         // scalar) per tick.

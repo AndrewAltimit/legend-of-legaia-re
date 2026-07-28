@@ -12,9 +12,9 @@ VRAM and mesh pool, all disc-authored, all per-scene.
 | [Texture strips / morphs](#mechanism-3---strip-cycling-and-vertex-morphs) | Move records (op `0x40`) / bundle type-7 VDF | Move VM / morph stager `FUN_8001C604` + envelope `FUN_80020740` | Texel strip frames; vertex deformation (render substitution) |
 
 Confidence: **Confirmed** (disassembly) for the walker-table chain, the
-ambient install chain, both render-tail arms (the mode-3 CLUT-cell cycler
-and the mode-4 rect scroller), the record-0 SFX bank, and the VDF pack
-format; **Inferred** where marked.
+ambient install chain, the actor pool and its halted-part free, both
+render-tail arms (the mode-3 CLUT-cell cycler and the mode-4 rect scroller),
+the record-0 SFX bank, and the VDF pack format; **Inferred** where marked.
 
 ## Mechanism 1 - the scene walker table (bundle type-6 slot)
 
@@ -60,6 +60,24 @@ field VM op 0x34 sub-3 (arg)
                                        ; move-VM bytecode ONCE immediately
   → FUN_80023070 every game tick thereafter
 ```
+
+**Scene entry is not a second mechanism.** `FUN_8003A1E4` carries no install
+code of its own: it calls `FUN_801DE840` - the field VM - for one frame slice
+per just-spawned placement, and the install happens in that dispatcher's op
+`0x34` sub-3 arm at `0x801E00B0` like any other. So a load-slice install and
+a runtime install are the same instruction reached at two moments, and the
+same is true of the port: both go to `engine-core::World::spawn_ambient_record`
+(`vm_hosts::effect_anim_trigger` for the runtime arm). A second, thinner pool
+exists in the engine (`World::spawn_field_stager`, backed by the
+`SummonScene` stand-in) and carries neither render tail; it is the
+play-window's debug exerciser and is on no retail path.
+
+The arm also fixes the **seat**: `FUN_800252EC(bytecode[1] + 1, s5 + 0x14,
+s5 + 0x24)` where `s5` is the executing script's context, retargeted by the
+`0x80` cross-context prefix. `FUN_80021B04` copies `ctx[+0x14..+0x1A]` into
+the part's world position (`0x80021B94..`) and `ctx[+0x24..+0x2A]` into its
+render banks (`0x80021D8C..`), so a scripted install stages where its actor
+stands - not at the player.
 
 The carrier is **not** a distinguished kind of script. Most scenes do put the
 install on a dedicated effect-actor record (`install id N` + infinite loop - the
@@ -119,6 +137,54 @@ retire/loop conditions and the `+2` land point are raw-`jr`-table facts of
 `FUN_80023070` (`ghidra/scripts/funcs/80023070.txt`, `0x800235DC..` /
 `0x80024150` epilogue) - the decompiled C renders the loop-back as a dead
 `goto` chain.
+
+### The part pool and the halted-part free
+
+A stager part is an ordinary actor out of the scene's shared actor pool, and
+the pool is small and fixed. `FUN_800203EC` seeds the free stack with `0x8E`
+down to `0` - **143 slots**, `0xD8` bytes apart - `FUN_80020454` pops one per
+spawn (returning null when the stack is empty, which `FUN_80020DE0` treats as
+an error and reports through `FUN_800567A8`), and `FUN_800204A4` pushes it
+back. Every actor in the scene draws on that pool, not the ambient tree alone.
+
+What returns a slot is the per-frame actor-list walk `FUN_8002519C`. Per live
+actor it tests `actor[+0x10] & 0x8` - the bit move-VM op `0x08` HALT sets -
+**before** dispatching the actor's tick word, and only the not-halted branch
+reaches the `jalr`. When the bit is set the walk instead tears the actor down
+(`FUN_80024DFC`), releases its heap buffers - including the mode-3 capture at
+`+0xA8`, keyed on the tick word being the stager render tail `FUN_80021DF4`
+with `+0x5A == 3` - frees the slot, and marks the actor with bit `0x02000000`
+so it is torn down once. A part therefore renders one last time on the tick it
+halts and then stops existing: its CLUT-cell write stops, its strip rotation
+stops, its slot is available again.
+
+That free is what makes the counted-loop fan-outs above finite. Several scenes
+are **emitters**: an infinite `0x18 0x4000` loop around a wait and an op-`0x25`
+spawn, whose children halt within a few ticks. The live population is then
+spawn-rate times lifetime - single digits to a few dozen - while the number of
+parts *created* over a minute of standing still runs into the thousands. Read
+the pool without the free path and those scenes look like enormous authored
+trees; read it at a cap and they report the cap.
+
+Engine: `World::retire_finished_ambient_parts` (run at the top of
+`World::tick_ambient_fx`), cap `world::ambient::MAX_AMBIENT_PARTS` = the
+retail 143, exhaustion queryable through `World::ambient_pool_exhausted` and
+logged rather than dropped silently. Coverage:
+`crates/engine-core/tests/ambient_runtime_install.rs` (disc-free, with the
+never-halting contrast) and `ambient_part_pool_disc.rs` (the corpus census -
+every scene's population flat, none near the ceiling).
+
+Two engine-side notes belong with it. A part still holding undrained mode-4
+rotations is kept until they land, because the engine queues those for the
+next VRAM-bearing step where retail applies each inside the tick that fired
+it. And an op-`0x25` operand of **0** is refused: table entry 0 is the
+[SFX descriptor bank](#the-master-ambient-record-0---the-per-scene-sfx-descriptor-bank),
+not bytecode, and the install op cannot name it (`FUN_800252EC` is called with
+`arg + 1`) - so a spawn of record 0 is manufactured rather than authored. In
+this port it is manufactured by the move VM's `0x2F` extension arm returning
+the default-arm size 1 for sub-ops whose retail arms are wider (`0x25` is
+size 3), so `2F 25 <slot>` re-enters the outer dispatcher on its own
+sub-opcode word and decodes as a child spawn of record 0.
 
 ### The CLUT-cell HSV cycler (the "pulsating flesh")
 
@@ -426,7 +492,10 @@ during its cutscene set pieces. Scenes with retail arming are untouched
   placement, so a scene whose install rides a placed actor's script (town0e)
   auto-spawns like any other. Each install goes to
   `World::spawn_ambient_record` (PORT of the `FUN_80021B04` prescript path,
-  including the spawn-time first run and op-`0x25` recursion). The narrower
+  including the spawn-time first run and op-`0x25` recursion), and so does the
+  **runtime** install the live field VM reaches - `vm_hosts::effect_anim_trigger`,
+  seated at the executing context via `World::spawn_ambient_record_at`. One
+  retail chain, one port. The narrower
   `ambient_effect_installs` (pure effect scripts only) and the unfiltered
   three-partition `scene_stager_installs` remain as the two sub-censuses the
   format work uses; neither is the entry rule.
