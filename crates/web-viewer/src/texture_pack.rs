@@ -89,8 +89,9 @@ pub enum EntryStatus {
     Ok,
     /// The pack names a texture family this build does not have.
     UnknownFamily(String),
-    /// The coordinate does not resolve on this disc at all - a different
-    /// game, a different revision, or a corrupt pack.
+    /// The coordinate could not be resolved to a write: it names nothing on
+    /// this disc (a different game, a different revision, a corrupt pack), or
+    /// it names a family this build can read but not write.
     NotFound(String),
     /// The coordinate resolves but holds different bytes: a different disc
     /// revision, or a texture this disc has already had patched.
@@ -121,7 +122,10 @@ impl EntryStatus {
         match self {
             Self::Ok => "matches this disc".to_string(),
             Self::UnknownFamily(f) => format!("this build has no texture family {f:?}"),
-            Self::NotFound(why) => format!("not on this disc: {why}"),
+            // Deliberately not "not on this disc" - the same status covers a
+            // family this build can read but not write, and that one IS on
+            // the disc.
+            Self::NotFound(why) => format!("cannot be applied: {why}"),
             Self::HashMismatch { expected, found } => format!(
                 "this disc holds a different texture here (pack expected \
                  {expected:016x}, disc has {found:016x}) - a different disc \
