@@ -2877,7 +2877,7 @@ mod seat_tests {
             w.field_tile_is_wall(asked.0, asked.1),
             "the tile the caller names is a wall"
         );
-        w.seat_player_at_tile(20, 20);
+        w.seat_player_at_tile_rescued(20, 20);
         let seated = {
             let ms = &w.actors[0].move_state;
             (ms.world_x, ms.world_z)
@@ -2894,6 +2894,32 @@ mod seat_tests {
         assert!(
             d <= SEAT_RESCUE_RADIUS_SUBCELLS * 64 + 64,
             "the nudge is bounded, got {d} units"
+        );
+    }
+
+    /// The *authored* seat keeps the wall tile. A door is a gap in a wall, so
+    /// a real op-`0x3F` arrival tile routinely reads as closed - `jou`'s
+    /// castle door `(94, 97)` and two of `map01`'s four `suimon` portals do.
+    /// Rescuing those lands the player off the destination's own walk-on band
+    /// and the door goes dead, which is why the nudge is opt-in.
+    #[test]
+    fn an_authored_door_seat_keeps_its_wall_tile() {
+        let walls: Vec<(usize, usize)> = (19..=21)
+            .flat_map(|c| (20..=22).map(move |r| (c, r)))
+            .collect();
+        let mut w = scene(&walls);
+        let asked = (20i16 * 128 + 64, 20i16 * 128 + 64);
+        assert!(
+            w.field_tile_is_wall(asked.0, asked.1),
+            "the door tile is a wall"
+        );
+        w.seat_player_at_tile(20, 20);
+        let ms = &w.actors[0].move_state;
+        assert_eq!(
+            (ms.world_x, ms.world_z),
+            asked,
+            "an op-0x3F arrival lands byte-exactly on its operand even when \
+             the walkability grid marks that tile closed"
         );
     }
 

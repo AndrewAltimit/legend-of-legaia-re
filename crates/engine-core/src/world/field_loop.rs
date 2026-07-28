@@ -351,17 +351,34 @@ impl World {
     /// instead of the cold-boot spawn. The floor height is sampled so the
     /// player lands on the destination's terrain tier rather than `y = 0`.
     ///
-    /// The tile is taken as given whenever it is standable, so every
-    /// retail-authored door arrival lands byte-exactly where the op-`0x3F`
-    /// operand says. It is only when the caller names a tile the walkability
-    /// grid does not cover that the seat is nudged to the nearest open
-    /// sub-cell ([`World::nearest_standable_seat`]): callers that name a tile
-    /// *derived* rather than authored - the `LEGAIA_START_TILE` debug seat,
-    /// an encounter region's centre, a scripted stage mark - can otherwise
-    /// drop the player inside a wall, where every direction of
-    /// [`World::step_field_locomotion`] is blocked and the field is
-    /// unplayable with no visible cause.
+    /// The tile operand is taken **exactly** - retail writes the decoded
+    /// coordinate straight onto the player and never consults the collision
+    /// grid on arrival, and an authored door tile routinely *is* a closed
+    /// cell: a door is a gap in a wall, so its trigger pad sits on the wall
+    /// row. Nudging such a seat onto open floor lands the player off the
+    /// destination's walk-on band, which is a dead door rather than a
+    /// rescued one. Callers naming a *derived* tile - the
+    /// `LEGAIA_START_TILE` debug seat, an encounter region's AABB centre -
+    /// want [`World::seat_player_at_tile_rescued`] instead.
     pub fn seat_player_at_tile(&mut self, tile_x: u8, tile_z: u8) {
+        self.seat_player_at_tile_inner(tile_x, tile_z, false);
+    }
+
+    /// [`World::seat_player_at_tile`] with a bounded wall rescue: a tile the
+    /// walkability grid marks closed is nudged to the nearest open sub-cell
+    /// ([`World::nearest_standable_seat`]), and past that radius the
+    /// coordinate is returned unchanged.
+    ///
+    /// For callers whose tile is **derived rather than authored**, where
+    /// there is no walk-on band to miss and landing inside a wall blocks
+    /// every direction of [`World::step_field_locomotion`] with nothing on
+    /// screen to explain it. Never use it on an op-`0x3F` arrival: see
+    /// [`World::seat_player_at_tile`] for why a door tile reads as a wall.
+    pub fn seat_player_at_tile_rescued(&mut self, tile_x: u8, tile_z: u8) {
+        self.seat_player_at_tile_inner(tile_x, tile_z, true);
+    }
+
+    fn seat_player_at_tile_inner(&mut self, tile_x: u8, tile_z: u8, rescue: bool) {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
@@ -370,7 +387,12 @@ impl World {
         // (`(b & 0x7F) * 0x80 + 0x40`, `+0x80` when bit 7 is set).
         let half =
             |b: u8| -> i16 { i16::from(b & 0x7F) * 128 + if b & 0x80 != 0 { 0x80 } else { 0x40 } };
-        let (wx, wz) = self.nearest_standable_seat(half(tile_x), half(tile_z));
+        let (ax, az) = (half(tile_x), half(tile_z));
+        let (wx, wz) = if rescue {
+            self.nearest_standable_seat(ax, az)
+        } else {
+            (ax, az)
+        };
         let wy = self.sample_field_floor_height(wx as i32, wz as i32) as i16;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.world_x = wx;

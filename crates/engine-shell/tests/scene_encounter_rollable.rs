@@ -188,7 +188,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     let Some((cx, cz)) = seat else {
         panic!("map03 reported rollable but no unshadowed rate-bearing region centre");
     };
-    world.seat_player_at_tile(cx, cz);
+    world.seat_player_at_tile_rescued(cx, cz);
     world.live_gameplay_loop = true;
     // Auto-resolve the battle: this test is about the loop reaching a
     // terminal state, not about the command menu.

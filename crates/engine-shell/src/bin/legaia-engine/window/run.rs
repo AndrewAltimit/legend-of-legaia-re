@@ -398,7 +398,7 @@ pub(super) fn cmd_play_window_with_record(
             .collect();
         if let [tx, tz] = parts[..] {
             let (cx, cz) = (tx.clamp(0, 255) as u8, tz.clamp(0, 255) as u8);
-            session.host.world.seat_player_at_tile(cx, cz);
+            session.host.world.seat_player_at_tile_rescued(cx, cz);
             log::info!("play-window: LEGAIA_START_TILE seated player at tile ({cx},{cz})");
         } else {
             log::warn!("play-window: LEGAIA_START_TILE ignored (want \"X,Z\"): {spec:?}");

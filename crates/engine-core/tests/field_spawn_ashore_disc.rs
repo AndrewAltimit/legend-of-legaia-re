@@ -201,13 +201,18 @@ fn only_the_overworlds_are_reseated_and_town01_is_byte_identical() {
     );
 }
 
-/// `World::seat_player_at_tile` is region-aware: a caller that names a tile
-/// the walkability grid does not cover gets the nearest standable spot
+/// `World::seat_player_at_tile_rescued` is region-aware: a caller that names
+/// a tile the walkability grid does not cover gets the nearest standable spot
 /// instead of a player parked inside a wall.
 ///
 /// The concrete case is `map03`'s first encounter region: its AABB centre -
 /// the natural seat for "put the player somewhere this region rolls" - is a
 /// wall tile, and the player seated there could not take a single step.
+///
+/// The rescue is opt-in precisely because it is wrong for the *authored*
+/// seats on the plain [`legaia_engine_core::world::World::seat_player_at_tile`]:
+/// a door tile is a gap in a wall, so its walk-on band reads as closed and a
+/// nudge would land the arrival off its own trigger.
 #[test]
 fn a_seat_on_an_unwalkable_tile_is_rescued() {
     let Some(extracted) = extracted_dir() else {
@@ -242,7 +247,7 @@ fn a_seat_on_an_unwalkable_tile_is_rescued() {
         return;
     };
 
-    host.world.seat_player_at_tile(cx, cz);
+    host.world.seat_player_at_tile_rescued(cx, cz);
     let (sx, sz) = player_xz(&host);
     assert!(
         !host.world.field_tile_is_wall(sx, sz),
