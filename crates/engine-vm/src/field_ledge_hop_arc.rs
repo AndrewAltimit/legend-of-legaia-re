@@ -558,6 +558,17 @@ pub fn advance_hop_arc(arc: &mut HopArc, step_scalar: u8) -> HopArcTick {
 /// raised tile's height is negative and a truncating divide would round a
 /// mid-air Y the wrong way against retail on every negative sample.
 ///
+/// # Why this routine is elsewhere called a lerp
+///
+/// `FUN_801E45BC` is reached from three places, and the other two describe it
+/// as a **midpoint / linear blend** - the cutscene position tween and the
+/// move-VM's overlay ext sub-ops `0x0E` / `0x12`. Both readings are right,
+/// and they are the same routine's degenerate case: `a0` arrives holding the
+/// control point, so when the caller seeds it with the plain midpoint of the
+/// endpoints the quadratic collapses exactly to `(1-t)*P0 + t*P2`. The hop is
+/// the case that *overwrites* the Y midpoint with an apex-corrected control
+/// point, which is the only thing that bends the path into an arc.
+///
 /// REF: FUN_801e45bc
 pub fn bezier_at(p0: i16, c: i16, p2: i16, cursor: i32) -> i32 {
     let t = cursor.clamp(0, CLIP_FULL) as i64;

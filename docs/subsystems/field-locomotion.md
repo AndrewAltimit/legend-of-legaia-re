@@ -838,6 +838,15 @@ fractional sum down by `sra 12` and shifts once more. That is exactly
 `floor(numerator / 0x1000^2)` - **floor**, not truncate, which matters because
 world Y is routinely negative.
 
+That evaluator is shared, and elsewhere in these docs it is described as a
+**linear blend** - the [cutscene position tween](cutscene.md) and the move-VM's
+[ext sub-ops `0x0E` / `0x12`](move-vm-overlay-ext.md) both call it a midpoint
+helper. Both readings are correct and are the same routine's degenerate case:
+`a0` arrives holding the control point, so a caller that seeds it with the
+plain midpoint gets exactly `(1-t)*P0 + t*P2` back. The hop is the caller that
+**overwrites the Y midpoint** with the apex-corrected control point, and that
+single store is the whole difference between a slide and an arc.
+
 #### `FUN_801d2298` - the phase tick
 
 Called with the paired helper in `a0`. Each frame it re-transforms the control

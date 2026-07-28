@@ -2237,9 +2237,14 @@ impl World {
         }
         let phase = hop_arc::advance_hop_session(&mut hop.phase, scalar);
         hop.sfx = phase.sfx;
-        let flags = &mut self.actors[slot].move_state.flags;
-        *flags |= phase.player_flags_set;
-        *flags &= !phase.player_flags_clear;
+        let ms = &mut self.actors[slot].move_state;
+        ms.flags |= phase.player_flags_set;
+        ms.flags &= !phase.player_flags_clear;
+        // `+0x62` bit 8 - retail's anim-active marker, raised at take-off and
+        // at the crossing, cleared by the end arm. `local_flags` is that
+        // half-word.
+        ms.local_flags |= phase.player_anim_set;
+        ms.local_flags &= !phase.player_anim_clear;
         hop.finished = phase.finished;
         self.field_ledge_hop = Some(hop);
         true
