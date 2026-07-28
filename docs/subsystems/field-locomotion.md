@@ -1411,6 +1411,18 @@ and it is the only per-frame angle ramp that is not opcode-driven:
 
 The yaw an NPC faces is `+0x26`, always.
 
+**Open, and load-bearing for the ledge hop:** whether "angle" is the right word
+for this field. The [ledge classifier](#fun_801d1878---probe-and-post) subtracts
+`+0x16` from another `FUN_80019278` return and compares the difference against
+`±0x60` *world units*, then passes the sampled value on as the hop's landing
+**height**; the tile-placement op `FUN_801d03a4` writes `+0x14`, `+0x18` and
+`+0x16` together as one placement. Both wall-press captures read
+`player + 0x16 == -192`, equal to the floor sample under each - one value on a
+flat floor, so it does not separate the two readings on its own. The engine
+ports `+0x16` as the actor's Y either way, which is what the settle and the
+classifier need; what is unresolved is whether some *other* consumer reads the
+same half-word as a tilt.
+
 ### Live corroboration
 
 A cold-boot `town01` sample off the static recompilation reads every field

@@ -886,10 +886,12 @@ impl World {
     /// why callers pass the Z offset negated) - and box-tests every candidate
     /// against that single point. The half-extent is `0x40` widened by the
     /// caller's two stack words (`0x801CFD6C..0x801CFDD0`), and the ledge
-    /// classifier passes `0` for both (`sw zero, 0x10(sp)` /
-    /// `sw zero, 0x14(sp)` at `0x801D1A88` / `0x801D1AB0`) - the same
-    /// zero-extent call the walk controller makes, so the boxes are the
-    /// established [`FIELD_NPC_BOX_HALF`] / [`FIELD_PROP_BOX_HALF`].
+    /// classifier passes `0` for both at each of its two call sites
+    /// (`sw zero, 0x10(sp)` / `sw zero, 0x14(sp)` at
+    /// `0x801D1A88`+`0x801D1A90` and `0x801D1AAC`+`0x801D1AB4`, the second of
+    /// each pair in the `jal`'s delay slot) - the same zero-extent call the
+    /// walk controller makes, so the boxes are the established
+    /// [`FIELD_NPC_BOX_HALF`] / [`FIELD_PROP_BOX_HALF`].
     ///
     /// [`Self::field_actor_dir_blocked`] is the *walk controller's* shape of
     /// the same routine - three points off a compass table, taken at the
