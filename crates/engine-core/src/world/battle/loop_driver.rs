@@ -331,9 +331,13 @@ impl World {
         // happens to equal the actor's current anim id never gets there and
         // the chain parks at `AttackChain` (`0x1E`) for the rest of the
         // session. Retire the flag here whenever the id pair has converged and
-        // no clip is in flight (`battle_staged_anim == None` is the marker the
-        // commit sets when it installs a player), which is exactly the
-        // zero-length-swing case; a real clip still paces the chain.
+        // no *staged* clip is in flight, which is exactly the zero-length-swing
+        // case; a real strike clip still paces the chain, because the commit
+        // sets `battle_staged_anim` when it installs the player and only
+        // `tick_battle_animations` clears it at end of clip. The idle / pose
+        // player is deliberately not consulted - a pose is not a strike clip,
+        // and requiring it to be absent would leave the same park in place on
+        // the host that draws poses.
         let attacker = self.battle_ctx.active_actor as usize;
         if attacker < self.actors.len()
             && self.actors[attacker]
@@ -342,9 +346,8 @@ impl World {
                 .has(ActorFlags::ADVANCE_DONE)
         {
             let a = &self.actors[attacker];
-            let converged_idle = a.battle_staged_anim.is_none()
-                && a.battle.queued_anim == a.battle.current_anim
-                && a.battle_animation.is_none();
+            let converged_idle =
+                a.battle_staged_anim.is_none() && a.battle.queued_anim == a.battle.current_anim;
             if self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
                 || converged_idle
             {

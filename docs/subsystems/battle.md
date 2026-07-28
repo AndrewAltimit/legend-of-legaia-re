@@ -1909,7 +1909,7 @@ to `Battle`. If a battle track is configured (`World::battle_bgm`, set via
 `World::swap_to_battle_bgm`: it stashes the current field track and queues a
 `FieldEvent::Bgm{sub_op: 1}` for the battle id, which the host's BGM director
 cross-fades to exactly like a field op-`0x35` start.
-- **Battle tick** (`World::live_battle_tick`): wraps `step_battle` with the host-side glue the retail engine performs through its render + animation systems, so the battle resolves from `tick` alone. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP; applies a generic physical strike (`apply_basic_attack`, `damage = art_strike_damage_default(attack, defense, 16)`) on the `AttackChain → AttackRecovery` edge when no art strike did; marks zero-HP combatants dead so the SM's wipe scan resolves; clears `ADVANCE_DONE` at `AttackRecovery`; and re-arms the next party attacker at `EndOfAction`. On `StepOutcome::BattleComplete` it calls `World::finish_battle`.
+- **Battle tick** (`World::live_battle_tick`): wraps `step_battle` with the host-side glue the retail engine performs through its render + animation systems, so the battle resolves from `tick` alone. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP; applies a generic physical strike (`apply_basic_attack`, through the retail melee roll pair `battle_formulas::physical_predamage` - see [battle-formulas](battle-formulas.md#the-melee-roll-pair-and-the-underdog-rewrite)) on the `AttackChain → AttackRecovery` edge when no art strike did; marks zero-HP combatants dead so the SM's wipe scan resolves; clears `ADVANCE_DONE` at `AttackRecovery`; and re-arms the next party attacker at `EndOfAction`. On `StepOutcome::BattleComplete` it calls `World::finish_battle`.
 - **Return** (`World::finish_battle`): on `BattleEndCause::MonsterWipe` it credits loot via `World::apply_battle_loot` (recorded in `World::last_battle_rewards`); on `PartyWipe` it raises `World::game_over`. Either way it ends the encounter session's battle (post-battle grace + suppression), restores the `field_return` actor snapshot, and flips `mode` back to `Field`. When a battle-BGM swap was active it also calls `World::restore_field_bgm`, which queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track (or a stop, sub-op 4, if no field track was playing at encounter start) so the director cross-fades back.
 - **Post-battle script re-entry** (`SceneHost::tick`): retail reloads the field scene after every battle, re-running the scene-entry system script `P1[0]` (`FUN_8003ab2c`).
 The host mirrors that on the `Battle -> Field` mode edge by reloading the entry script (`Scene::field_man_entry_script` -> `World::load_field_script_at`).
@@ -2015,6 +2015,32 @@ Two action-SM gates are driven in retail by the render / animation systems and b
 
 - `ADVANCE_DONE` at `AttackRecovery` - retail clears it when the recovery animation finishes.
 - The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only ever *sets* this byte; retail's cast-animation system counts it down. Without the edge, `magic_sustain`'s `stay` held forever, so **any battle in which a monster or party member cast a spell stopped dead** - which is most real encounters, and is a large part of what "battles don't work" looked like from the outside. Regression: `a_spell_cast_does_not_park_the_action_sm` in `crates/engine-core/tests/battle_always_resolves.rs`; the real-data version is `crates/engine-shell/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table through to a resolved battle.
+
+#### The strike-pacing gate must always be able to retire
+
+`attack_chain` (retail `0x1E`) stages one strike-script byte per clip: it writes
+`queued_anim`, sets `ADVANCE_DONE`, and holds until the animation system retires
+the flag. The engine's anim commit `World::commit_staged_battle_anim` does retire
+it for a clip-less swing - but only in the branch it reaches *past* its
+`queued_anim == current_anim` early-out. A staged byte equal to the actor's
+current anim id therefore never reached the clear, and the SM parked at `0x1E`
+for the rest of the session.
+
+Two things had to line up, and an ordinary disc encounter lines them up on its
+own. The monster-AI picker writes the chosen spell id into the actor's
+action-parameter stream (`params[0]`, retail `+0x1DF`) *before*
+`take_monster_turn` discovers the cast cannot fold; the fallback physical strike
+then walked that spell id as a swing byte, and the swing committed it into
+`current_anim`. The monster's **next** physical turn re-staged the same stale
+byte into the converged pair and hung. Both halves are closed:
+`World::clear_action_stream` zeroes the stream when a physical action is armed
+(the per-action sibling of `FUN_801D88CC`'s round-boundary clear), and
+`live_battle_tick` retires `ADVANCE_DONE` whenever the id pair has converged with
+no clip in flight. Regressions:
+`crates/engine-core/tests/battle_attack_chain_stall.rs`, plus the real-data
+`a_starting_party_can_fell_a_real_early_enemy` in
+`crates/engine-core/tests/battle_physical_damage.rs` (the Green Slime row of
+which parked before the fix).
 
 Both hosts arm the loop through one shared kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` and the browser's `LegaiaRuntime::arm_live_battles` are callers of it, not copies of it.
 
