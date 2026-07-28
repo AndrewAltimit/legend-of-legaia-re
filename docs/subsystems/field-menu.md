@@ -1573,7 +1573,11 @@ What it settles for the windows whose painters had no screen:
 Two of those rows correct a reading this page used to carry. Window 25 is an
 **Equip** window - its id appears in exactly one `01` command in the whole
 overlay, the Equip screen's - so a shop screen does not open it; the shop's
-own stat compare is window 41. And windows 5 / 6 are not options-screen or
+own stat compare is window 41. Both hosts had been drawing window 25 over the
+shop's equipment-buy recipient picker, one panel more than retail shows;
+`RecipientWindowRects` no longer carries a rect for it, which is what made
+removing the draw a single change both hosts had to follow rather than one
+either could keep. And windows 5 / 6 are not options-screen or
 pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
 `FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
 and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).

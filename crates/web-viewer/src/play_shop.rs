@@ -102,8 +102,8 @@ const WIN_EQUIP_TARGET: usize = 36;
 const WIN_SELL_QUANTITY: usize = 37;
 /// Sell-list item detail (`0x27`): name / desc / price row / passive lines.
 const WIN_SELL_DETAIL: usize = 39;
-/// Active-character stat compare (`0x19`).
-const WIN_COMPARE_ACTIVE: usize = 25;
+// Window 25 (`0x19`, the active-character stat compare) is not a shop window:
+// its only opener in the whole menu overlay is the Equip screen's script.
 /// Party-wide stat compare (`0x29`).
 const WIN_COMPARE_PARTY: usize = 41;
 /// Window 31 (`FUN_801DCE20`) - the Point Card toast retail raises after a buy
@@ -910,12 +910,8 @@ impl LegaiaRuntime {
                 ui::MenuWindowPainter::EquipTargetList,
             )
             .map(|(d, _)| ui::painter_rect(d)),
-            active_compare: ui::painter_at(
-                table,
-                WIN_COMPARE_ACTIVE,
-                ui::MenuWindowPainter::ActiveStatCompare,
-            )
-            .map(|(d, _)| ui::painter_rect(d)),
+            // No window 25: retail's picker script opens only window 36, and
+            // the shop's stat compare is window 41 below.
             party_compare: ui::painter_at(
                 table,
                 WIN_COMPARE_PARTY,

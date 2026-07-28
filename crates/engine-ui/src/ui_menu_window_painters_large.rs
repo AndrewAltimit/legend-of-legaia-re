@@ -674,10 +674,14 @@ pub const COMPARE_LABELS_SPD: [&str; 3] = ["SPD", "INT", "AGL"];
 pub struct RecipientWindowRects {
     /// Window 36 (`FUN_801D56FC`) - the recipient row list.
     pub target_list: Option<PainterRect>,
-    /// Window 25 (`FUN_801D1290`) - the highlighted member's compare panel.
-    pub active_compare: Option<PainterRect>,
     /// Window 41 (`FUN_801D4C28`) - the party-wide compare column.
     pub party_compare: Option<PainterRect>,
+    // Window 25 was a third field here. It is gone: retail's picker never
+    // opens it (see this type's doc comment), so a rect for it only ever
+    // produced a panel too many. Dropping the *field* rather than passing
+    // `None` is deliberate - it is what made removing the draw a single
+    // change both hosts had to follow, instead of one either host could
+    // silently keep.
 }
 
 /// One party member as the recipient sub-screen sees them.
@@ -730,17 +734,15 @@ pub struct RecipientPickerView<'a> {
 /// ([`PainterSprite`]); the host draws them from its own cursor atlas (or an
 /// ASCII stand-in while that page is missing).
 ///
-/// **Window 25 is a known divergence.** Retail's picker adds exactly one
-/// window over the already-open shop set: its script `0x801E4E84` runs a
+/// **This picker draws two windows, not three.** Retail's picker adds exactly
+/// one window over the already-open shop set: its script `0x801E4E84` runs a
 /// single `01 24`, and the shop's own stat compare is window **41**, opened
 /// by the shop-entry script `0x801E4E64`. Window `0x19` is named by exactly
 /// one open command anywhere in the menu overlay - the Equip screen's
 /// `0x801E4DC8`, beside windows 2 and 24 - so no shop screen creates it and
-/// retail never draws its renderer here. Both hosts pass a rect for it and
-/// so paint one panel more than retail does. Closing that means dropping
-/// `RecipientWindowRects::active_compare` on both hosts at once; leaving the
-/// field is what keeps them symmetric until then. See
-/// `docs/subsystems/field-menu.md` ("Which screen opens a window").
+/// retail never draws its renderer here. Both hosts used to pass a rect for
+/// it and painted one panel more than retail; the field is gone, so neither
+/// can. See `docs/subsystems/field-menu.md` ("Which screen opens a window").
 ///
 /// PORT: FUN_801db380 (the sub-screen's draw half; the session state machine
 /// is `legaia_engine_core::shop::BuyRecipientSession`)
@@ -799,40 +801,11 @@ pub fn recipient_picker_draws_for(
         out.extend(compare_panel_draws_for(font, &fields));
     }
 
-    // Window 25 - the highlighted member's own compare panel. Row 0 of the
-    // picker is the bag, so only rows `1..` have a member to compare.
-    let row = (view.cursor & 0xFFF) as usize;
-    if let (Some(rect), Some(m)) = (
-        rects.active_compare,
-        row.checked_sub(1).and_then(|i| view.members.get(i)),
-    ) {
-        // The staged-item detail arm: the picker always has a staged
-        // equipment id, retail's `slot_row >= 4` case. `staged_id` is
-        // positive there, so the "nothing staged" fallback (which is the
-        // only consumer of the equipped item's category) cannot fire.
-        let category = active_compare_category(CompareCategoryInputs {
-            slot_row: 4,
-            staged_id: 1,
-            staged_category: view.staged_category,
-            equipped_id: 0,
-            equipped_category: CATEGORY_DEFAULT,
-        });
-        let rows = CompareRows::from_category(category);
-        let panel = EquipComparePanelView {
-            name: m.name,
-            current: m.current,
-            candidate: m.candidate,
-            hp_max: m.hp_max,
-            mp_max: m.mp_max,
-            rows,
-            labels: match rows {
-                CompareRows::SpdIntAgl => COMPARE_LABELS_SPD,
-                _ => COMPARE_LABELS_ATK,
-            },
-        };
-        let fields = equip_compare_panel_fields(&panel, (rect.x, rect.y));
-        out.extend(compare_panel_draws_for(font, &fields));
-    }
+    // No window 25 here. It used to draw the highlighted member's own compare
+    // panel over the picker; retail's script opens only window 36, so that was
+    // a panel retail does not show. `active_compare_category` stays exported -
+    // it is window 25's real category chain and the Equip screen, the one
+    // screen whose script does open window 25, still needs it.
 
     (out, sprites)
 }
@@ -1137,12 +1110,9 @@ mod tests {
         w: 168,
         h: 52,
     };
-    const W25: PainterRect = PainterRect {
-        x: 14,
-        y: 40,
-        w: 144,
-        h: 52,
-    };
+    // Window 25's rect used to live here for the picker tests. It is gone with
+    // the draw - the picker never opens that window, so a rect for it in this
+    // module's fixtures would only invite wiring it back.
     const W41: PainterRect = PainterRect {
         x: 14,
         y: 46,
@@ -1165,36 +1135,34 @@ mod tests {
     fn all_rects() -> RecipientWindowRects {
         RecipientWindowRects {
             target_list: Some(W36),
-            active_compare: Some(W25),
             party_compare: Some(W41),
         }
     }
 
-    /// Cursor row 0 is the bag, so window 25 has nothing to compare and
-    /// draws nothing - the one row-indexing slip that would put member 0's
-    /// panel under the bag row.
+    /// The picker draws windows 36 and 41 and nothing else. Retail's script
+    /// `0x801E4E84` runs a single `01 24`, so window 25 - whose only opener
+    /// anywhere in the overlay is the Equip screen's `0x801E4DC8` - must not
+    /// appear here at any cursor row. With both real windows unresolved the
+    /// call has nothing left to draw; when window 25 was wired in, row 1 drew
+    /// its compare panel and this returned non-empty.
     #[test]
-    fn the_bag_row_draws_no_active_compare_panel() {
+    fn the_picker_draws_no_window_25_panel_at_any_row() {
         let font = legaia_font::Font::placeholder();
         let members = [member("A", true, false), member("B", true, false)];
-        let view = RecipientPickerView {
-            heading: "h",
-            cursor: 0,
-            members: &members,
-            staged_category: CATEGORY_DEFAULT,
-        };
-        let bag_only = RecipientWindowRects {
+        let none = RecipientWindowRects {
             target_list: None,
-            active_compare: Some(W25),
             party_compare: None,
         };
-        let (draws, _) = recipient_picker_draws_for(&font, bag_only, &view);
-        assert!(draws.is_empty());
-
-        // Row 1 is member 0, and now the panel paints.
-        let view = RecipientPickerView { cursor: 1, ..view };
-        let (draws, _) = recipient_picker_draws_for(&font, bag_only, &view);
-        assert!(!draws.is_empty());
+        for cursor in 0..=2 {
+            let view = RecipientPickerView {
+                heading: "h",
+                cursor,
+                members: &members,
+                staged_category: CATEGORY_DEFAULT,
+            };
+            let (draws, _) = recipient_picker_draws_for(&font, none, &view);
+            assert!(draws.is_empty(), "row {cursor} drew an unopened window");
+        }
     }
 
     /// Every member row takes marker index `i + 1`, because window 36's
@@ -1235,7 +1203,6 @@ mod tests {
         let font = legaia_font::Font::placeholder();
         let rects = RecipientWindowRects {
             target_list: None,
-            active_compare: None,
             party_compare: Some(W41),
         };
         // Drawn text is font quads, so assert on the field list the same
@@ -1267,29 +1234,32 @@ mod tests {
     }
 
     /// Every retail equipment record's `+5` byte is the `0x40` sentinel, so
-    /// the recipient panel always shows the ATK / UDF / LDF triple. A host
-    /// that cannot resolve the byte may pass [`CATEGORY_DEFAULT`] and get
-    /// the identical screen; this pins that equivalence.
+    /// window 25 always shows the ATK / UDF / LDF triple. A host that cannot
+    /// resolve the byte may pass [`CATEGORY_DEFAULT`] and get the identical
+    /// screen; this pins that equivalence.
+    ///
+    /// Asserted on the category chain directly rather than through a picker
+    /// draw: window 25 belongs to the Equip screen, and driving it through
+    /// the shop's recipient picker - which never opens it - is what made the
+    /// over-draw look tested.
     #[test]
     fn the_equipment_category_sentinel_selects_the_atk_triple() {
-        let font = legaia_font::Font::placeholder();
-        let members = [member("A", true, false)];
-        let rects = RecipientWindowRects {
-            target_list: None,
-            active_compare: Some(W25),
-            party_compare: None,
+        // The staged-item detail arm: a staged equipment id is always present
+        // where window 25 opens, so `slot_row >= 4` with a positive
+        // `staged_id` is the reachable case.
+        let mk = |staged_category| CompareCategoryInputs {
+            slot_row: 4,
+            staged_id: 1,
+            staged_category,
+            equipped_id: 0,
+            equipped_category: CATEGORY_DEFAULT,
         };
-        let mk = |cat| RecipientPickerView {
-            heading: "h",
-            cursor: 1,
-            members: &members,
-            staged_category: cat,
-        };
-        let (a, _) = recipient_picker_draws_for(&font, rects, &mk(CATEGORY_DEFAULT));
-        let (b, _) = recipient_picker_draws_for(&font, rects, &mk(0x40));
-        assert_eq!(a.len(), b.len());
         assert_eq!(
-            CompareRows::from_category(CATEGORY_DEFAULT),
+            active_compare_category(mk(CATEGORY_DEFAULT)),
+            active_compare_category(mk(0x40))
+        );
+        assert_eq!(
+            CompareRows::from_category(active_compare_category(mk(0x40))),
             CompareRows::AtkUdfLdf
         );
     }

@@ -292,8 +292,8 @@ impl PlayWindowApp {
         };
         /// Equip-target recipient list (`0x24`).
         const WIN_EQUIP_TARGET: usize = 36;
-        /// Active-character stat compare (`0x19`).
-        const WIN_COMPARE_ACTIVE: usize = 25;
+        // Window 25 (`0x19`, the active-character stat compare) is not a shop
+        // window: its only opener in the menu overlay is the Equip screen's.
         /// Party-wide stat compare (`0x29`).
         const WIN_COMPARE_PARTY: usize = 41;
 
@@ -385,12 +385,8 @@ impl PlayWindowApp {
         let rects = RecipientWindowRects {
             target_list: painter_at(table, WIN_EQUIP_TARGET, MenuWindowPainter::EquipTargetList)
                 .map(|(d, _)| painter_rect(d)),
-            active_compare: painter_at(
-                table,
-                WIN_COMPARE_ACTIVE,
-                MenuWindowPainter::ActiveStatCompare,
-            )
-            .map(|(d, _)| painter_rect(d)),
+            // No window 25: retail's picker script opens only window 36, and
+            // the shop's stat compare is window 41 below.
             party_compare: painter_at(
                 table,
                 WIN_COMPARE_PARTY,
