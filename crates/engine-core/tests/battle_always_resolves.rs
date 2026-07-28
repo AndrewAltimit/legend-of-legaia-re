@@ -223,11 +223,16 @@ fn a_spell_cast_does_not_park_the_action_sm() {
     let mut w = World::new();
     w.mode = SceneMode::Battle;
     w.party_count = 3;
+    // A **priced** catalog, so the band's MP debit is a real subtraction and
+    // not the zero an unwired `spell_mp_cost` used to hand it. Gimard is 10 MP
+    // byte-exact from SCUS.
+    w.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
     for i in 0..8 {
         let a = w.spawn_actor(i);
         a.battle.liveness = 1;
         a.battle.hp = 500;
         a.battle.max_hp = 500;
+        a.battle.mp = 60;
     }
     // Party slot 0 casts a player Seru spell at monster slot 3.
     w.actors[0].battle.action_category = 2; // Magic
@@ -256,5 +261,13 @@ fn a_spell_cast_does_not_park_the_action_sm() {
         left_sustain,
         "MagicSustain must not hold forever - nothing else in the engine \
          ever clears the caster's spell_iter"
+    );
+    // ...and the cast was actually paid for. `MagicCastBegin` reads the price
+    // through `BattleActionHost::spell_mp_cost`, which the engine answers from
+    // the same catalog the live cast path charges from; a host wired to a
+    // table nothing fills makes this line read 60.
+    assert_eq!(
+        w.actors[0].battle.mp, 50,
+        "Gimard costs 10 MP - the Magic band must debit it, not cast for free"
     );
 }

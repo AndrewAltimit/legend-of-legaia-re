@@ -178,7 +178,8 @@ The full step body for state `0x28`:
   `actor[+0x46]`. Sets `ctx[+0x6D8] = 0x14` (frame timer).
 - For party (`actor_id < 3`), looks up the spell-name string via `&DAT_800754D0 + actor[+0x1DF]*0xC`, computes centered X for HUD, writes `_DAT_80077332/+0x33A/+0x344/+0x352/+0x35C` (HUD label slots), fires UI element `FUN_801D8DE8(0x4C, 0)` (spell label).
 - If the spell's first table byte is `'c'` (capture-class spell) → `ctx[7] = 0x6E` (capture path) + queues capture archive load via `func_0x8003EC70`.
-- Reads MP cost from `&DAT_800754D0 + spell_id*0xC + 3` (entry +3); reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E3D0C`). Subtracts from `actor[+0x150]` (MP).
+- Reads MP cost from the spell record's `+3` byte (`lbu s0,0x3(v1)` at `0x801E451C`, record base `DAT_800754C8 + spell_id*0xC`, loaded at `0x801E4464`; `DAT_800754D0` is the same table viewed `+8`, which is how the name lookup reaches the record's `name_ptr`). Reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E4568`). Stores the applied cost at `actor[+0x178]` and subtracts it from `actor[+0x150]` (MP).
+- **Which copy is which.** The identical fold is inlined twice, and the two are easy to swap: `0x801E4568` is *this* state, immediately after the capture-archive `jal 0x8003EC70` at `0x801E44EC`; `0x801E3D0C` is state `0x3C`'s copy, immediately after that state's Pomander (`+0x1DF == 0xFE`) special case at `0x801E3C4C`. Behaviour is the same either way - only the state label differs.
 
 ## Inner dispatch - actor action category
 
@@ -187,11 +188,102 @@ Read once at `ctx[7] == 0x0C`, the byte `actor[+0x1DE]` selects the action categ
 | `actor[+0x1DE]` | Action category | Initial `ctx[7]` | Notes |
 |---|---|---|---|
 | `0` | **Martial Arts (Tactical Arts)** | `0x50` (skip - UI inputs handle the chain) | Sets `ctx[+0x6D0/+0x6D1] = (0, 8)` (UI cursor anchor), `ctx[+0xD] = 0`. The tactical-arts directional input is run by a separate flow before this state machine; by the time `ctx[7]` reaches `0x0C`, the chain is recorded and the action is "done" for this driver. |
-| `1` | **Item** | `0x3C` (default) or `0x28` if RNG-conditional check (item byte at `+0x1DF + 0x68U < 2`) | Items branch into the same path Magic uses, except the lookup table pivots from spell-table to item-table. Item-class capture (Amulet) hits the `'c'` branch in `0x28` and routes to `0x6E` (capture path). |
-| `2` | **Magic** | `0x28` (default) or `0x3C` if low-tier magic | Discriminator: `*(byte *)(actor[+0x1DF] * 0xC + -0x7FF8AB38) > 0x13` OR `actor[+0x1DF] > 100` → fall through to attack-style (`0x3C` via `LAB_801E2F24`) for status spells. Standard offensive magic hits `0x28`. |
+| `1` | **Item** | `0x3C` (default), overridden to `0x28` for item id `0x98` / `0x99` | The override is `(actor[+0x1DF] + 0x68) & 0xFF < 2` and is **not** RNG-conditional - the arm's `rand()` draw feeds `ctx[+0xD]`, not the branch. See [the Item arm's summon override](#the-item-arms-summon-override). |
+| `2` | **Magic** | `0x28` (default), overridden to `0x3C` for a low-class, low-id record | The arm stores `0x28` first and overrides only when **both** class byte `< 0x14` **and** spell id `< 0x65` hold - see [the class-byte discriminator](#the-magic-arms-class-byte-discriminator). |
 | `3` | **Attack** | `0x14` | Sets `ctx[+0x6DA/+0x6DB] = (0, 2)` (combo timer). For party_id < 3, sets `actor[+0x20] = +0x1DE` and fires `FUN_801D8DE8(7, 0)` + `actor[+0x18] = 7` (UI weapon-slash element). |
 | `4` | **Spirit (Originals)** | `0x46` | Sets `_DAT_80076D7E = actor[+0x154] - 6` (or `((actor[+0x156] * 7) / 5) + 8` capped at 0x120 if `actor[+0x1F9] != 0`). Fires `FUN_801D8DE8(0xF, 0)` + `0x52` (damage popup), bumps `actor[+0x19]++`. |
 | `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (defeat pose). Monster run hits the capture path at `0x68`. Either path resets `_DAT_801F69D0 = 0` (counter-attack flag). |
+
+### The Magic arm's class-byte discriminator
+
+The category-`2` arm (`0x801E2EB0..0x801E2F08`) writes `ctx[7] = 0x28`
+**first**, then reads the spell's class byte off the static table
+(`DAT_800754C8 + actor[+0x1DF]*0xC`, `+0`) and overrides the store only when
+two tests both pass:
+
+```text
+801e2ebc  sb    v0,0x7(v1)         ; ctx[7] = 0x28   (the default store)
+801e2ee4  lbu   v0,0x0(v0)         ; class = DAT_800754C8[id].+0
+801e2eec  sltiu v0,v0,0x14         ; class < 0x14 ?
+801e2ef0  beq   v0,zero,801e2f24   ;   no  -> keep 0x28
+801e2ef4  sltiu v0,a0,0x65         ; id < 0x65 ?
+801e2ef8  beq   v0,zero,801e2f24   ;   no  -> keep 0x28
+801e2efc  li    v0,0x3c
+801e2f08  sb    v0,0x7(v1)         ; both  -> ctx[7] = 0x3C
+```
+
+So the override is `class < 0x14 && id < 0x65`, and `LAB_801E2F24` is the
+*keep-`0x28`* fall-through - the same label the Attack arm drops into, not the
+`0x3C` store. Both readings matter because the inverse one (`class > 0x13`
+**or** `id > 100` → `0x3C`) is what the branch structure says when the
+`beq`-to-zero senses are read the other way round, and it is the opposite
+routing.
+
+Consequences worth holding on to: the player Seru block `0x81..=0x8b` fails
+the `id < 0x65` test, so player summon magic always takes `0x28`; the low
+elemental tiers `0x00..=0x24` are the band that can take `0x3C`. Either way
+the cast is charged - `0x3C` runs the same ability-bit MP fold for a non-Item
+category - so the discriminator picks the animation/timing band, not the cost.
+
+**Port.** `magic_seed_band` in `legaia_engine_vm::battle_action::dispatch`,
+over `BattleActionHost::spell_class_byte`. A host with no spell table reports
+`None` and keeps `0x28`, which is retail's own non-override branch.
+
+### The Item arm's summon override
+
+The category-`1` arm (`0x801E2E30..0x801E2EAC`) has the same shape as the
+Magic one - default store, then a single override:
+
+```text
+801e2e3c  jal   0x80056798        ; rand()
+801e2e40  sb    v0,0x7(v1)        ; ctx[7] = 0x3C   (delay slot: the default)
+801e2e60  sb    v0,0xd(v1)        ; ctx[+0xD] = (rand % 2) * 2
+801e2e6c  addiu v0,v0,0x68        ; item id + 0x68
+801e2e74  sltiu v0,v0,0x2         ; ... < 2  ->  id == 0x98 or 0x99
+801e2e78  beq   v0,zero,801e3028  ;   no  -> keep 0x3C
+801e2e88  sb    v0,0x7(v1)        ;   yes -> ctx[7] = 0x28
+801e2ea0  sb    v1,0x1e0(s3)      ;          actor[+0x1E0] = 9 (summon sub-route)
+801e2eac  sb    v0,0x1df(s3)      ;          actor[+0x1DF] = id - 2
+```
+
+The `rand()` draw is unconditional and its result reaches `ctx[+0xD]` only -
+the branch tests the item id, so calling the override "RNG-conditional" reads
+a data dependency that is not there. Ids `0x98` / `0x99` are the two
+summon-invoking items: they enter the cast band already staged as a summon, so
+state `0x29`'s sub-route test sends them to `0x32`.
+
+**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`.
+The `ctx[+0xD]` store has no port field and no reader, but the **draw** does
+move the shared `rand()` cursor and the port does not make it - an RNG-stream
+divergence on every item action, recorded here rather than papered over.
+
+### Magic in the port: which half of the cast the SM owns
+
+States `0x28`–`0x2E` contain **no damage application**. The only
+`jal func_0x800402F4` (the damage primitive) in `FUN_801E295C` is at
+`0x801E4134`, in the attack band. What the magic band does is face the caster,
+stage the `0x14`-frame pre-cast timer, raise the `0x4C` spell-name HUD label,
+debit MP, and drive the animation chain; the *outcome* is produced by the
+per-spell streamed module that `FUN_801DBF9C` (`0x801E45E4`, state `0x29`)
+pages in, and by the effect-class dispatcher `func_0x801F2160` on the capture
+side.
+
+The port has the two halves in different places. `legaia_engine_vm`'s magic
+band is the presentation half, faithfully. The outcome half is
+`engine-core`'s live cast path - `World::apply_battle_spell` →
+`World::cast_spell_on_slots` - which the player's Magic submenu and the
+monster AI both call directly, parking the SM at `EndOfAction` afterwards.
+That shortcut is honest rather than lossy for simulation: it charges the same
+ability-bit-folded MP, rolls the same damage kernels, and runs the same
+capture / escape / heal folds. What it does not do is the presentation the
+band owns (facing, cast timing, the spell-name label, the capture cinematic).
+
+Routing the player cast through the band therefore needs the outcome producer
+wired at retail's own seam - `BattleActionHost::spell_anim_trigger`, the port
+of `FUN_801DBF9C` - and needs the MP debit to move with it: the band already
+debits at `MagicCastBegin`, so a cast that also runs `cast_spell_on_slots`
+pays twice. Until both are done together, half-routing costs more than the
+shortcut does.
 
 ## The turn cursor `ctx[+0x1A]`
 

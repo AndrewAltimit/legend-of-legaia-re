@@ -980,8 +980,8 @@ floor-divide. Two consequences: Half rounds *up* on odd costs (`7 → 4`), and
 "MP-quarter" (`0x10`) shaves only a **quarter off** (pay 3/4: `40 → 30`), it
 does not make the cost a quarter. When both bits are set, **`0x20` (Half) wins**
 - the `0x20` test (`andi 0x20; bne`) short-circuits before the `0x10` test is
-reached. Dump-confirmed at `FUN_801E295C` `0x801E3D0C` (state `0x28`); the same
-block recurs in state `0x3C` at `0x801E4568`. Ported verbatim in
+reached. Dump-confirmed at `FUN_801E295C` `0x801E4568` (state `0x28`); the same
+block recurs in state `0x3C` at `0x801E3D0C`. Ported verbatim in
 `battle_formulas::mp_cost_after_ability_bits` + `MpCostModifier::from_ability_flags`.
 
 `spell_table` is the static `SCUS_942.54` table at `DAT_800754C8` (stats) / `DAT_800754D0` (name pointers) - 12-byte stride, `+3` = MP cost. See [spell-table.md](../formats/spell-table.md) for the full record layout + the pinned player Seru-magic block (`0x81..=0x8b`).

@@ -297,9 +297,16 @@ pub struct World {
     /// Cos LUT - same shape as `sin_lut`.
     pub cos_lut: Vec<i16>,
 
-    /// Battle-action helper tables. Engines populate per scene.
-    pub spell_costs: std::collections::HashMap<u8, u8>,
-    pub capture_spells: std::collections::HashSet<u8>,
+    /// Battle-action helper tables.
+    ///
+    /// There is deliberately **no** spell-cost or capture-spell table here.
+    /// `BattleHostImpl` answers both questions from the models already loaded
+    /// at boot - [`World::spell_catalog`] for the price, and the disc spell
+    /// table's class byte (`World::spell_table_class`, off
+    /// [`World::menu_text`]) for the capture route - so the battle-action
+    /// state machine and the live cast path cannot price or classify the same
+    /// spell differently. A pair of `HashMap`s here that nothing filled is
+    /// exactly how they used to.
     pub character_ability_bits: [u32; 8],
     pub range_table: std::collections::HashMap<(u8, u8), u16>,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
@@ -2344,8 +2351,6 @@ impl World {
             pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
-            spell_costs: Default::default(),
-            capture_spells: Default::default(),
             character_ability_bits: [0; 8],
             range_table: Default::default(),
             battle_attack: [0; 8],

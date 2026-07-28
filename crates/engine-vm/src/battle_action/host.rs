@@ -188,15 +188,43 @@ pub trait BattleActionHost {
         [0; 5]
     }
 
-    /// Returns `true` if the spell at `spell_id` is a capture-class spell
-    /// (first byte of its table entry is `'c'`). Drives the
-    /// `MagicCastBegin → MagicCaptureBranch` route. Default returns `false`.
-    fn is_capture_spell(&self, _spell_id: u8) -> bool {
-        false
+    /// The **class byte** of the spell's static table record - `+0` of
+    /// `DAT_800754C8 + spell_id*0xC` (see
+    /// [`legaia_asset::spell_names`](legaia_asset::spell_names)).
+    ///
+    /// It is the one field the action SM keys two separate decisions on: the
+    /// action-seed band pick ([`action_seed`](super::dispatch)'s Magic arm,
+    /// retail `0x801E2EE4`) and the capture route
+    /// ([`BattleActionHost::is_capture_spell`], retail's `'c'` test). Hosts
+    /// therefore supply the byte once and both fall out of it.
+    ///
+    /// `None` = "this host has no spell table" - the SM then takes the branch
+    /// retail takes for a record it cannot classify, which for both consumers
+    /// is the non-override one (`MagicCastBegin`, not capture). Default is
+    /// `None`.
+    fn spell_class_byte(&self, _spell_id: u8) -> Option<u8> {
+        None
     }
 
-    /// Lookup the MP cost for a spell. Retail reads
-    /// `&DAT_800754D0 + spell_id*0xC + 3`. Default returns 0.
+    /// Returns `true` if the spell at `spell_id` is a capture-class spell
+    /// (first byte of its table entry is `'c'` = `0x63`). Drives the
+    /// `MagicCastBegin → MagicCaptureBranch` route.
+    ///
+    /// The default derives it from [`BattleActionHost::spell_class_byte`], so
+    /// a host that supplies the table gets the capture route for free and
+    /// cannot disagree with the band pick about what the same record says.
+    fn is_capture_spell(&self, spell_id: u8) -> bool {
+        self.spell_class_byte(spell_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS)
+    }
+
+    /// Lookup the MP cost for a spell. Retail reads the record's `+3` byte
+    /// (`DAT_800754C8 + spell_id*0xC + 3`; the SM reaches it through the
+    /// `+8`-shifted name-pointer base `DAT_800754D0`, same record).
+    ///
+    /// This must be **the same number the host's own cast path charges** -
+    /// the SM debits MP at [`ActionState::MagicCastBegin`] /
+    /// [`ActionState::SpiritPreArm`] and a host that prices a spell
+    /// differently anywhere else has two spell models. Default returns 0.
     fn spell_mp_cost(&self, _spell_id: u8) -> u8 {
         0
     }

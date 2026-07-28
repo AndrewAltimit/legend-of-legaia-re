@@ -1039,7 +1039,7 @@ It is **never in main RAM** in any captured save (checked every 32-byte sub-CLUT
 
 *Status:* resolved (dump-confirmed)
 
-Reading the state-`0x28` block in `overlay_battle_action_801e295c.txt` (`0x801E3D0C`; the same block recurs in state `0x3C` at `0x801E4568`) settles **both** open questions. (1)
+Reading the block in `overlay_battle_action_801e295c.txt` settles **both** open questions. It is inlined twice: `0x801E4568` in state `0x28` (right after that state's capture-archive `jal 0x8003EC70` at `0x801E44EC`) and `0x801E3D0C` in state `0x3C` (right after that state's Pomander `+0x1DF == 0xFE` case at `0x801E3C4C`). The two are byte-identical, so which state a citation names does not change the answer - but the pairing above is the one the dump supports. (1)
 
 **PRIORITY - Half (`0x20`) wins.** The code is `andi 0x20; bne <half>` then `andi 0x10; beq <none>`, i.e. `if (bits & 0x20) {half} else if (bits & 0x10) {quarter}` - the `0x20` test short-circuits the `0x10` test. This matches the docs / `MpCostModifier::from_ability_flags`; the engine SM port + live cast path that applied Quarter first were a guess and are now flipped. (2)
 
