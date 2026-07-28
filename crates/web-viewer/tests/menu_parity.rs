@@ -30,6 +30,7 @@ const CIRCLE: u16 = 0x2000;
 
 /// Row indices into the retail command list (Items / Magic / Equip / Status /
 /// Options / Load / Save).
+const ROW_OPTIONS: usize = 4;
 const ROW_LOAD: usize = 5;
 const ROW_SAVE: usize = 6;
 
@@ -457,4 +458,71 @@ fn triangle_on_status_opens_the_arts_editor_on_the_play_page() {
     // Circle backs out of the editor rather than leaving the page stranded.
     rt.play_menu_input(CIRCLE);
     assert!(rt.play_menu_is_open(), "backing out keeps the menu up");
+}
+
+/// The Options screen must **remember** an edit.
+///
+/// Drift the UI host-drift gate cannot see: both hosts call the same
+/// `options_draws_for` builder, but the browser host built every Options
+/// sub-session from `OptionsState::default()` and dropped the edited state on
+/// close, so the screen was a working control panel wired to nothing - open it
+/// twice and the second open had forgotten the first. The native window keeps
+/// the state on `PlayWindowApp` (and persists it to `legaia-options.toml`).
+///
+/// The assertion is the round trip, not a particular row: change a value
+/// through the session's own popup, close, reopen, and require the reopened
+/// session to be seeded from the runtime's state rather than defaults.
+#[test]
+fn the_options_screen_remembers_an_edit_across_opens() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let default_state =
+        serde_json::to_string(&legaia_engine_core::options::OptionsState::default()).unwrap();
+
+    rt.play_menu_open();
+    open_row(&mut rt, ROW_OPTIONS);
+    assert_eq!(
+        rt.debug_open_options_json().as_deref(),
+        Some(default_state.as_str()),
+        "a fresh session starts at the defaults"
+    );
+
+    // Cross opens the value popup on the cursor row, Down steps the choice,
+    // Cross commits it into the session state (retail writes the config word
+    // inside the popup and never reverts).
+    rt.play_menu_input(CROSS);
+    rt.play_menu_input(DOWN);
+    rt.play_menu_input(CROSS);
+    let edited = rt
+        .debug_open_options_json()
+        .expect("options session still open");
+    assert_ne!(
+        edited, default_state,
+        "committing a popup choice must change the session state - \
+         otherwise the rest of this test proves nothing"
+    );
+
+    // Circle closes the screen and drops back to the command list.
+    rt.play_menu_input(CIRCLE);
+    assert!(
+        rt.debug_open_options_json().is_none(),
+        "Circle closes the Options sub-screen"
+    );
+    assert_eq!(
+        rt.debug_options_json(),
+        edited,
+        "the closing session's state must be lifted onto the runtime"
+    );
+
+    // Reopen: the seed must be the lifted state, not a fresh default. The
+    // close already parked the cursor back on the row that opened the screen,
+    // so Cross alone re-enters it.
+    rt.play_menu_input(CROSS);
+    assert_eq!(
+        rt.debug_open_options_json().as_deref(),
+        Some(edited.as_str()),
+        "reopening Options must seed from the runtime's state"
+    );
 }

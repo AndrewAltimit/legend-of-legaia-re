@@ -166,6 +166,18 @@ pub struct LegaiaRuntime {
     /// PROT.DAT-only load, where offers fall back to `Seru NN` exactly as the
     /// native window's do.
     pub(crate) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// Live settings the pause menu's Options screen edits. The native window
+    /// keeps the same state on `PlayWindowApp` and persists it to
+    /// `legaia-options.toml`; this host keeps it for the session, which is
+    /// what makes the screen *remember* an edit. Without it every open
+    /// rebuilt from `OptionsState::default()` and every change was discarded
+    /// on close - the screen looked wired and did nothing.
+    ///
+    /// Persistence across page reloads is not wired: there is no filesystem
+    /// here and the page has no handle on this state, so a reload starts from
+    /// [`Default`]. The native window's TOML round-trip has no browser twin
+    /// yet.
+    pub(crate) options_state: legaia_engine_core::options::OptionsState,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -217,6 +229,7 @@ impl LegaiaRuntime {
             fishing_venues: None,
             equip_stats: None,
             seru_names: None,
+            options_state: legaia_engine_core::options::OptionsState::default(),
             live_battles: true,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
