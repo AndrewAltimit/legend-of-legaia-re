@@ -36,8 +36,9 @@
 //!   translation pair, read by the camera pose - which in the port lives in
 //!   `engine-shell`'s battle camera. Nothing in `engine-core` or `engine-vm`
 //!   reads a shake offset back.
-//! * [`build_camera_angle_tween`]'s only product is a step table for a
-//!   per-frame walker the port does not have - see its own note.
+//! * [`build_camera_angle_tween`]'s only product is a step table, and the
+//!   walker that would advance it lives in `engine-shell` with endpoints of
+//!   its own - see its own note.
 //!
 //! ## `BattleActionHost::screen_shake` is not this routine's caller
 //!
@@ -125,13 +126,23 @@ pub const TWEEN_SLOTS: usize = 9;
 /// retail tail then arms the step-table walker (`FUN_80021248`) on the
 /// freshly written table; that walker is out of scope for this kernel.
 ///
-/// NOT WIRED: the builder's only product is a 9-record `{step_count,
-/// endpoint}` table for a per-frame walker to advance, and the engine has no
-/// walker to hand it to - the battle camera is framed by a per-action snap
+/// NOT WIRED: **the engine does have a per-frame walker**, and an earlier note
+/// here that denied it was wrong. The native battle camera glides between its
+/// scripted framings through `BattleCamera` / `Glide` in `engine-shell`'s
+/// `window/battle_cam.rs`, which carries its own `REF: FUN_801D829C` and walks
+/// the same component order this builder emits, shortest-arc yaw included.
+///
+/// Two things stop that walker consuming this table. Its endpoints come from
+/// the traced phase framings rather than from retail's arming routine
+/// `FUN_80021248`, which is documented and unported - so what is missing is
+/// the *producer*, not the consumer. And it steps `f32` components at
+/// arrive-together rates
+/// rather than the integer `{step_count, endpoint}` records here, so adopting
+/// the table is a change to the walker's own arithmetic, in a crate this one
+/// cannot reach. The per-action height snap
 /// (`battle_formulas::camera_height_for_frame` through
-/// `BattleActionHost::camera_bounds`), not by stepping angles toward a
-/// target. The routine that arms retail's walker, `FUN_80021248`, is
-/// documented but unported, so nothing exists to consume a step table.
+/// `BattleActionHost::camera_bounds`) is a separate channel and does not
+/// substitute for either half.
 pub fn build_camera_angle_tween(
     current: &mut CameraAngles,
     target: &mut CameraAngles,

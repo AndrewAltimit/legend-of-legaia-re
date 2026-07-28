@@ -44,17 +44,33 @@
 //! `FUN_801DC0A0` `0x801DC39C` and `0x801DC51C` - and none of them reads the
 //! extent output back at all.
 //!
-//! Two prerequisites are missing, so the engine has nothing to hand the
-//! centroid to:
+//! The **bearing half is not the blocker**, and an earlier note here that said
+//! so was wrong: [`crate::battle_action::bearing_12bit`] (`FUN_80019B28`) is
+//! live. It runs on every enemy-cursor step through
+//! [`bearing_12bit_approx`](crate::battle_action::bearing_12bit_approx), which
+//! substitutes [`approx_arctan_lut`](crate::battle_action::approx_arctan_lut)
+//! for the `SCUS_942.54` table at `0x8006F4C8` - so "no engine boot path
+//! extracts the LUT" is true and irrelevant, because the port does not need it.
 //!
-//! * [`crate::battle_action::bearing_12bit`] (`FUN_80019B28`) is itself
-//!   unwired for want of the `SCUS_942.54` arctan LUT at `0x8006F4C8`, which
-//!   no engine boot path extracts.
+//! What is missing is the **geometry source**, on both ends of the call:
+//!
 //! * [`crate::battle_action::BattleActor`] carries the facing halfword
-//!   (`facing_angle`) but no `+0x34`/`+0x38` world position, so the port has
-//!   no source for the per-slot geometry [`GroupSlot`] describes; the battle
-//!   seat positions live on `engine-core`'s world actors instead, and nothing
-//!   there computes a facing.
+//!   (`facing_angle`) but no `+0x34`/`+0x38` world position, and
+//!   [`BattleActionHost`](crate::battle_action::BattleActionHost) exposes only
+//!   the scalar `range_check(actor, target)`. So the SM arm that would call
+//!   this cannot assemble the seven [`GroupSlot`]s, even though the numbers
+//!   exist one crate away - `engine-core`'s target-picker slot state already
+//!   carries each seat's `+0x34`/`+0x38` pair off the world actors.
+//! * Nothing writes `facing_angle` from a bearing. The one production writer
+//!   zeroes it (the capture takedown), so wiring the centroid also means the
+//!   pose path reading a facing back.
+//!
+//! A host accessor for the per-slot `(x, z)` pair is therefore the single
+//! prerequisite: with it, the `MagicCastBegin` arm can reproduce
+//! `0x801E4370..0x801E43A4` whole - group aim, negate, bearing, `+0x800`,
+//! mask, store. The composition itself is pinned by
+//! `cast_begin_composes_the_aim_with_the_live_bearing_kernel` below, so the
+//! wire has an oracle waiting for it.
 
 /// The maximum the extent output is clamped to (`0x400`).
 pub const MAX_GROUP_EXTENT: i16 = 0x400;
@@ -233,6 +249,37 @@ mod tests {
         assert!(target_group_aim(8, &slots).is_none());
         // Out-of-range slot indices are the same case, not a panic.
         assert!(target_group_aim(9, &slots).is_none());
+    }
+
+    /// The composition retail performs at `0x801E4370..0x801E43A4`, kept here
+    /// as the oracle a future wire has to reproduce - and as the standing
+    /// evidence that the bearing half of this pair is a live kernel, not a
+    /// missing one. Retail negates the already-negated centroid back into a
+    /// world position, takes the bearing from the actor to it, biases by a
+    /// half-turn and masks to 12 bits before storing into `+0x46`.
+    #[test]
+    fn cast_begin_composes_the_aim_with_the_live_bearing_kernel() {
+        use crate::battle_action::bearing_12bit_approx;
+
+        // A three-strong enemy row centred at (+400, 0) in world X/Z, and an
+        // actor sitting at the origin: the group is due +X of it.
+        let slots = [live(400, -100), live(400, 0), live(400, 100)];
+        let aim = target_group_aim(8, &slots).unwrap();
+        assert_eq!((aim.centroid_x, aim.centroid_z), (-400, 0));
+
+        // Retail's `subu a0,zero,a0` / `subu a1,zero,a1` on the two outputs.
+        let (group_z, group_x) = (-aim.centroid_z, -aim.centroid_x);
+        // `bearing_12bit(p1z, p1x, p2z, p2x)` with the **group** as `p1` and
+        // the actor as `p2` - the argument order at `0x801E4384..0x801E4394`,
+        // which measures group -> actor. The half-turn is what flips it back
+        // to actor -> group, and it is the same shape the single-target arm at
+        // `0x801E4358` uses with the target in place of the centroid.
+        let bearing = bearing_12bit_approx(group_z, group_x, 0, 0);
+        let facing = (bearing.wrapping_add(0x800)) & 0xFFF;
+        // The group is due +X of the actor, which is 0x400 of the 12-bit
+        // circle: the raw bearing is 0xC00 and the bias lands 0x400.
+        assert_eq!(bearing, 0xC00);
+        assert_eq!(facing, 0x400);
     }
 
     #[test]

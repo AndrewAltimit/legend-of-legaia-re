@@ -537,12 +537,22 @@ file is the whole of `FUN_801F0348`, is wired through
 inlines the `<< 7` + clamp rather than calling the helper. Deleting the helper
 loses no coverage and costs the address no anchor.
 
-**`build_camera_angle_tween`** (`801d829c`) is `DISCLOSE`. The builder emits a
-9-record `{step_count, endpoint}` step table that retail's per-frame walker then
-advances; the engine frames the battle camera by a per-action snap at action
-seed and has no per-frame angle walker, and the routine that arms retail's
-(`FUN_80021248`) is documented but unported. Nothing exists to consume a step
-table.
+**`build_camera_angle_tween`** (`801d829c`) is `DISCLOSE`, but **the reason
+recorded here was wrong and is corrected**: it read "the engine has no
+per-frame angle walker", and the engine has one. `engine-shell`'s
+`window/battle_cam.rs` glides the battle camera between its traced framings
+through `BattleCamera` / `Glide`, which carries its own `REF: FUN_801D829C`,
+walks the same component order this builder emits, and does the shortest-arc
+yaw. The per-action height snap is a separate channel, not a substitute for a
+walker.
+
+What is genuinely absent is the *producer*: retail's arming routine
+`FUN_80021248` is documented and unported, so the walker's endpoints come from
+the traced phase framings instead of from a built table. Its stepping is also
+`f32` at arrive-together rates rather than the integer `{step_count,
+endpoint}` records, so adopting the table changes the walker's arithmetic -
+an `engine-shell` edit, which is why this stays `DISCLOSE` rather than
+becoming a `WIRE` for the `engine-vm` lane.
 
 **`apply_shake`** (`801d9d30`) is `DISCLOSE`. It previously read `WIRE` on
 `BattleActionHost::screen_shake` as the half-built call site; that verdict is
@@ -566,6 +576,62 @@ accumulators. Wiring it means modelling that opcode first.
 
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.
+
+## The battle cluster: what a re-read of an already-disclosed block finds
+
+The `engine-vm` battle band (the `battle_action/` leaves, the intro styles,
+the camera and cursor kernels, the cast dispatchers) sits in the audit's
+*disclosed* section, so it never reached the table above. Re-reading it against
+the dumps settles the block as disclosure rather than wiring - and turns up
+six disclosures that named the wrong blocker. They are recorded because each
+is the failure the preamble warns about: a reason that reads correct, that the
+next audit agrees with, and that sends the reader looking for a port that
+already exists.
+
+| Anchor | The clause that was wrong | What holds instead |
+|---|---|---|
+| `801dceac` `target_group_aim` | `bearing_12bit` "is itself unwired for want of the arctan LUT" | It is live on every enemy-cursor step, over `approx_arctan_lut`. |
+| `80046a20` `gauge_colors` | the HUD's bar colour is "a constant of the widget" | It is a per-frame index, from the readout-tint siblings. |
+| `801d829c` `build_camera_angle_tween` | "the engine has no walker" | The native battle camera is one - see above. |
+| `801f0450` (arts auto-combo) | the caller is the unported flow SM `FUN_801D388C` | The caller is the action SM's own `Begin` arm. |
+| `801dba04` / `801db81c` / `801da34c` | "`FUN_801D0748` is not ported" | Its state space is `engine-core::battle_flow`, and it is live. |
+| `801e22c8` `expand_cue_group` | neither cue table "is extracted by a parser" | `0x801F6418` is, as `move_power::EffectAuxTables`; only the group table is not. |
+
+Three shapes produced all six, and each is worth recognising on sight. The
+cue-table row is a fourth, milder one: a reason that quantifies over *both*
+inputs when only one is absent. Naming the two separately is what turns it
+into a one-region parser extension rather than an open-ended data hunt.
+
+**A kernel with a substitute input reads as blocked by the input it does not
+use.** `bearing_12bit` takes its arctan table as a parameter precisely so a
+host without the disc table can pass a computed one, and `bearing_12bit_approx`
+is that host-facing form. A disclosure written from the retail data dependency
+rather than from the port's signature will miss it every time.
+
+**The engine can hold the same retail decision twice, under two addresses.**
+`FUN_80046A20` picks a gauge-primitive colour; `FUN_800349EC` picks the
+readout-text colour. They share a code space and a threshold shape, so the
+presence of one reads as the absence of the whole idea. The surviving gap was
+the drawn bar, not the selection - a much narrower thing than the old reason
+claimed.
+
+**An address-keyed catalog cannot separate VA-aliased twins.** `801d388c` is
+reported ported and live; that row is the Muscle Dome overlay's routine at the
+same VA, and the battle flow SM really is unported - so here the *disclosure*
+was right and the catalog is the trap. One address up, `801d0748` is the
+opposite: the battle command SM genuinely is ported, and three disclosures said
+it was not. Read the crate and the file, never the flag, before writing either
+sentence.
+
+The `WIRE` the block wants is one host accessor, and it is out of reach from
+the `engine-vm` side: `BattleActionHost` exposes the scalar
+`range_check(actor, target)` and no per-slot `(x, z)`, while
+`engine-core`'s target-picker slot state already carries each seat's
+`+0x34`/`+0x38` pair. Adding the accessor and implementing it on
+`BattleHostImpl` wires `target_group_aim` plus the facing store at
+`0x801E4370..0x801E43A4`, and puts `approach_distance` within reach of the
+same arm. The composition that wire has to reproduce is pinned as a test in
+`battle_target_group.rs`.
 
 ## Known false positives the correction introduces
 

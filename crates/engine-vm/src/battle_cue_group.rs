@@ -103,13 +103,21 @@ pub struct CueTables<'a> {
 /// A group whose count byte is zero produces no spawns; the two actor writes
 /// still happen.
 ///
-/// NOT WIRED: the expansion names cue ids out of two battle-overlay tables
-/// (`0x801F6470` groups, `0x801F6418` SFX map) that no parser extracts, so a
-/// caller has no `CueTables` to pass. The engine's per-action presentation
-/// comes from the art record's own effect / hit cues instead
-/// (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), which is a different source
-/// for the same frames; routing through this one needs those two tables
-/// parsed first.
+/// NOT WIRED: **one** of the two tables is missing, not both - an earlier note
+/// here said no parser extracted either. The SFX map is already disc-parsed:
+/// `legaia_asset::move_power::EffectAuxTables` reads `0x801F6418` (and its
+/// `0x801F6324` prototype sibling) straight off PROT 0898 and exposes it as
+/// `sfx()` / `effect_sfx(index)`, behind the move-power table's own structural
+/// guard. So [`CueTables::sfx_map`] has a live source today.
+///
+/// [`CueTables::groups`] does not: nothing parses the `[count][id;4]` group
+/// records at `0x801F6470`, and without them a caller has no group to expand -
+/// the id it is handed indexes that table and nothing else. Extending
+/// `EffectAuxTables` with a third region at the group table's file offset is
+/// the whole prerequisite. Until then the engine's per-action presentation
+/// comes from the art record's own effect / hit cues
+/// (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), a different source for the
+/// same frames.
 ///
 /// PORT: FUN_801E22C8
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
