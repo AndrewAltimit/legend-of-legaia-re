@@ -235,14 +235,24 @@ pub struct FieldBgmPlan {
 /// track `i`, and `0x7D0` is exactly `2000`, so "below 2000" *is* "not a
 /// global track id".
 ///
-/// NOT WIRED: the engine's BGM director selects a track from the scene's own
-/// `scene_vab_stream` SEQ entries ([`crate::scene_assets`]) rather than from a
-/// resident id, so it has neither of this kernel's two inputs: the pending-BGM
-/// word `_DAT_8007BAC8` and the per-scene sequence base `_DAT_80084540`. The
-/// slot arithmetic only means anything once a scene entry carries a retail BGM
-/// **id**; today it carries a decoded SEQ. Wiring this is the same change that
-/// would let [`crate::music_labels`] name the track a scene is about to start
-/// rather than the one already playing.
+/// NOT WIRED: only the **two-part arm** is unreached; the slot arithmetic is
+/// already live somewhere else, and an earlier reading of this tag ("the
+/// engine has neither of this kernel's two inputs") does not survive a look
+/// at the engine side. It has both. The `< 0x7D0 ? base + id + 6 : id` split
+/// is `SceneHost::bgm_seq_bytes` -> [`crate::scene_assets::SceneAssets`],
+/// which resolves the same id space over the same arithmetic in the
+/// extraction frame (`block_range.0 + 8 + id`, where the extra `2` is the
+/// define-to-extraction skew), and it is reached on every scripted BGM
+/// start. The `already_playing` latch is the director's `last_started`
+/// compare.
+///
+/// What has no engine analogue is [`FIELD_BGM_TWO_PART_ID`]: no scene entry
+/// path loads a second streaming asset for one track, and nothing carries
+/// the one-shot latch `_DAT_8007B9B8` that stops it re-loading. That is one
+/// arm of one id, so the honest read of this kernel is a near-duplicate of
+/// live logic in retail's slot frame rather than a missing step - which is
+/// also why wiring it wants a merge with the live resolver, not a new
+/// caller.
 pub fn field_bgm_plan(
     bgm_id: u32,
     seq_base: u32,
