@@ -65,10 +65,21 @@ pub enum SaveSubScreen {
     PartyPicker,
     /// `0x17` - generic picker wrapper over slots `0..=9`.
     GenericPicker,
-    /// `0x18` - save-card driver (RAM to card).
-    CardSave,
-    /// `0x19` - load-card driver (card to RAM).
+    /// `0x18` - load-card driver (card to RAM), `FUN_801DAE24`.
+    ///
+    /// The pair's direction is fixed by the root picker's row labels: row
+    /// `5` is `@Load` and routes here, row `6` is `@Save` and routes to
+    /// [`Self::CardSave`] - see
+    /// [`crate::pause_screens::ROOT_MENU_ROUTES`]. Retail's own op selector
+    /// agrees: this driver calls `FUN_801DD35C(1, 2)`, the arm that skips
+    /// the card-file erase.
     CardLoad,
+    /// `0x19` - save-card driver (RAM to card), `FUN_801DAEF4`.
+    ///
+    /// Calls `FUN_801DD35C(1, 1)`, the arm that looks the file up and
+    /// erases it before writing (`FUN_801E37CC`, ported as
+    /// [`crate::card_bu_io::erase_file`]).
+    CardSave,
     /// `0x1A` - save-slot confirm.
     SaveConfirm,
     /// `0x1E` - inventory spinner ahead of the quantity screen.
@@ -93,8 +104,8 @@ impl SaveSubScreen {
             Self::ConfirmExit => 0x0B,
             Self::PartyPicker => 0x12,
             Self::GenericPicker => 0x17,
-            Self::CardSave => 0x18,
-            Self::CardLoad => 0x19,
+            Self::CardLoad => 0x18,
+            Self::CardSave => 0x19,
             Self::SaveConfirm => 0x1A,
             Self::QuantitySpinner => 0x1E,
             Self::AutoSave => 0x20,
@@ -114,8 +125,8 @@ impl SaveSubScreen {
             0x0B => Self::ConfirmExit,
             0x12 => Self::PartyPicker,
             0x17 => Self::GenericPicker,
-            0x18 => Self::CardSave,
-            0x19 => Self::CardLoad,
+            0x18 => Self::CardLoad,
+            0x19 => Self::CardSave,
             0x1A => Self::SaveConfirm,
             0x1E => Self::QuantitySpinner,
             0x20 => Self::AutoSave,
@@ -138,11 +149,15 @@ impl SaveSubScreen {
 pub enum SaveEntryContext {
     /// The sentinel pointer - opened from the pause menu to save.
     MenuSave,
-    /// Context byte `0x01` - load a slot.
-    Load,
+    /// Context byte `0x01` - a field script's save point: retail opens
+    /// straight on the save-card driver `0x19`
+    /// (`0x801DC8AC..0x801DC8B4`), skipping the root picker entirely.
+    ScriptSave,
     /// Context byte `0x07` - auto-save.
     AutoSave,
-    /// Context byte `0x0D` - returning after a save completed.
+    /// Context byte `0x0D` - returning after a save completed. The same
+    /// kind byte hides the root picker's Load row and arms its
+    /// leave-confirm ([`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`]).
     PostSave,
     /// Context byte `0x00` - cancelled / backing out.
     Cancel,
@@ -153,7 +168,7 @@ impl SaveEntryContext {
     pub fn start_screen(self) -> SaveSubScreen {
         match self {
             Self::MenuSave => SaveSubScreen::SaveEntry,
-            Self::Load => SaveSubScreen::CardLoad,
+            Self::ScriptSave => SaveSubScreen::CardSave,
             Self::AutoSave => SaveSubScreen::AutoSave,
             Self::PostSave => SaveSubScreen::PostSaveReturn,
             // `0x1A` is the save-confirm screen, which this module does
@@ -564,17 +579,19 @@ impl SaveScreenMachine {
     ///
     /// The two are the same four-step machine; only the transfer
     /// direction differs - retail passes it as the card driver's second
-    /// argument (`2` save, `1` load) - which is why they share one
+    /// argument (`1` save, `2` load) - which is why they share one
     /// implementation. Both return to the slot selector when the
     /// transfer lands.
     ///
-    /// One retail asymmetry is not modelled: the load driver's final
-    /// step re-tests a status word and leaves for the terminal screen
-    /// instead of the selector when it is clear, where the save driver
-    /// has no such branch. Modelling it needs an input this struct does
-    /// not carry, so the shared machine always takes the selector exit.
+    /// One retail asymmetry is not modelled: the **save** driver's final
+    /// step re-tests the entry-context pointer and leaves for the terminal
+    /// screen instead of the selector when it is set - a save raised by a
+    /// field script hands control back to the script rather than to the
+    /// menu - where the load driver has no such branch. Modelling it needs
+    /// an input this struct does not carry, so the shared machine always
+    /// takes the selector exit.
     ///
-    /// PORT: FUN_801DAE24 (save), FUN_801DAEF4 (load)
+    /// PORT: FUN_801DAE24 (load), FUN_801DAEF4 (save)
     fn tick_card_driver(&mut self, input: SubScreenInput, op: CardOp) -> Vec<SubScreenEffect> {
         match self.step {
             0 => {
@@ -928,8 +945,8 @@ mod tests {
             SaveSubScreen::SaveEntry
         );
         assert_eq!(
-            SaveEntryContext::Load.start_screen(),
-            SaveSubScreen::CardLoad
+            SaveEntryContext::ScriptSave.start_screen(),
+            SaveSubScreen::CardSave
         );
         assert_eq!(
             SaveEntryContext::AutoSave.start_screen(),
@@ -1149,6 +1166,34 @@ mod tests {
         }
     }
 
+    /// Which table id is which direction. `0x18` is the **load** driver and
+    /// `0x19` the save one - the root picker's row `5` is `@Load` and routes
+    /// to `0x18`, row `6` is `@Save` and routes to `0x19`, and retail's own
+    /// op selector agrees (`0x19` takes the arm that erases the card file
+    /// before writing). Asserted so the pair cannot silently swap back.
+    #[test]
+    fn card_driver_ids_follow_the_root_picker_row_labels() {
+        use crate::pause_screens::{ROOT_MENU_ROUTES, RootMenuRoute, root_menu_confirm_route};
+
+        assert_eq!(SaveSubScreen::CardLoad.id(), 0x18);
+        assert_eq!(SaveSubScreen::CardSave.id(), 0x19);
+        assert_eq!(SaveSubScreen::from_id(0x18), SaveSubScreen::CardLoad);
+        assert_eq!(SaveSubScreen::from_id(0x19), SaveSubScreen::CardSave);
+
+        // Row 5 (Load) and row 6 (Save) of the pause root reach exactly
+        // those two screens.
+        assert_eq!(
+            root_menu_confirm_route(5, None, true),
+            RootMenuRoute::Sub(SaveSubScreen::CardLoad.id())
+        );
+        assert_eq!(
+            root_menu_confirm_route(6, None, true),
+            RootMenuRoute::Sub(SaveSubScreen::CardSave.id())
+        );
+        assert_eq!(ROOT_MENU_ROUTES[5], SaveSubScreen::CardLoad.id());
+        assert_eq!(ROOT_MENU_ROUTES[6], SaveSubScreen::CardSave.id());
+    }
+
     /// The save-confirm's three rows do not share an exit: only row 1
     /// can proceed, row 0 goes to the error screen, row 2 leaves.
     #[test]
@@ -1253,12 +1298,12 @@ mod tests {
         assert_eq!(m.screen(), SaveSubScreen::SaveConfirm);
     }
 
-    /// A full Load flow: the card driver runs, lands on the selector, and
-    /// the confirm's default row keeps the player there.
+    /// A full script-save flow: the card driver runs, lands on the
+    /// selector, and the confirm's default row keeps the player there.
     #[test]
-    fn load_flow_walks_card_driver_into_the_selector() {
-        let mut m = dispatching(SaveEntryContext::Load);
-        assert_eq!(m.screen(), SaveSubScreen::CardLoad);
+    fn script_save_flow_walks_card_driver_into_the_selector() {
+        let mut m = dispatching(SaveEntryContext::ScriptSave);
+        assert_eq!(m.screen(), SaveSubScreen::CardSave);
 
         m.tick(idle(), 0); // install + script
         m.tick(idle(), 0); // script idle

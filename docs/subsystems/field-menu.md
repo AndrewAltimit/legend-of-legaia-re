@@ -366,6 +366,14 @@ gray to CLUT 0 when blocked: Load when the dialog-context pointer
 `DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
 `DAT_8007b6a8` is clear.
 
+Those are the same two gates the confirm arm applies, in the same order,
+so no row can draw white and then buzz - see the [root command
+picker](save-screen.md#root-command-picker-fun_801d6b20), where Load
+routes to sub-screen `0x18` and Save to `0x19`. `DAT_8007b6a8` is
+per-scene: `legaia_asset::man_section::ManHeader::low_flag` is the MAN
+header bit (`[0x01] & 1`) that seeds it, which is what makes a no-save
+scene a property of the scene's own MAN rather than of the menu.
+
 The seven labels are **NUL-terminated C strings** in the menu overlay's
 leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
 `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /
