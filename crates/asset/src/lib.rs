@@ -77,6 +77,7 @@ pub mod ocean;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod player_anm;
+pub mod save_icon;
 pub mod scene_asset_table;
 pub mod scene_event_scripts;
 pub mod scene_gltf;

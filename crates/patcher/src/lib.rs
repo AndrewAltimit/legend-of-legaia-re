@@ -89,6 +89,7 @@ pub mod monster_stats;
 pub mod move_power;
 pub mod ppf;
 pub mod rng;
+pub mod save_icon;
 pub mod seru_overlay;
 pub mod seru_trade;
 pub mod shiny_seru;

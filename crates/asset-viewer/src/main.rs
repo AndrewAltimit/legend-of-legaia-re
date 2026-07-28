@@ -62,7 +62,9 @@ use crate::common::collect_tmds;
 use crate::dialog_app::run_dialog;
 use crate::display::Display;
 use crate::field_app::run_field;
-use crate::loaders::{load_tim_path, load_tim_path_at_offset, load_vab_sample};
+use crate::loaders::{
+    load_save_icon_sheet, load_tim_path, load_tim_path_at_offset, load_vab_sample,
+};
 use crate::seq_play::run_seq_playback;
 use crate::stage_view::{collect_stage_files, load_stage_for_view};
 use crate::tmd_view::{TmdViewData, load_tmd_for_view};
@@ -106,6 +108,23 @@ enum Cmd {
         /// known gap-resident TIMs in `PROT.DAT`.
         #[arg(long, value_parser = parse_hex_u64, default_value_t = 0)]
         offset: u64,
+    },
+    /// Display the save-slot portrait sheet from the menu overlay
+    /// (PROT entry 899). Sixteen 16x16 tiles are stored row-interleaved
+    /// across one 256x16 strip with one 16-colour palette each, so each
+    /// tile is painted through its own CLUT - which the plain `tim` mode
+    /// cannot do. Tile N is the memory-card icon for save number N+1;
+    /// tile 15 is blank width padding.
+    SaveIcons {
+        /// PROT entry 899 image (`extracted/PROT/0899_xxx_dat.BIN`) or the
+        /// equivalent overlay dump.
+        path: PathBuf,
+        /// Show a single tile instead of the whole strip.
+        #[arg(long)]
+        tile: Option<usize>,
+        /// Integer nearest-neighbour zoom.
+        #[arg(long, default_value_t = 8)]
+        scale: u32,
     },
     /// Play one VAG sample from a VAB bank.
     Vab {
@@ -417,6 +436,36 @@ fn main() -> Result<()> {
                 format!("TIM {} @ 0x{:X} (CLUT {})", path.display(), offset, clut)
             } else {
                 format!("TIM {}", path.display())
+            };
+            (
+                Some(Display {
+                    title,
+                    image: Some((rgba, w, h)),
+                    audio: None,
+                    mesh: None,
+                    vram_mesh: None,
+                    lines: None,
+                }),
+                None,
+                None,
+                None,
+            )
+        }
+        Cmd::SaveIcons { path, tile, scale } => {
+            let (rgba, w, h) = load_save_icon_sheet(&path, tile, scale)?;
+            log::info!(
+                "save-icon sheet {}x{} ({} bytes RGBA){}",
+                w,
+                h,
+                rgba.len(),
+                match tile {
+                    Some(t) => format!(" tile {t}"),
+                    None => String::new(),
+                }
+            );
+            let title = match tile {
+                Some(t) => format!("Save icon tile {t} (save number {})", t + 1),
+                None => "Save-slot portrait sheet (tile N = save N+1)".to_string(),
             };
             (
                 Some(Display {

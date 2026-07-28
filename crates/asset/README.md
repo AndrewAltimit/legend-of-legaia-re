@@ -31,7 +31,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
   - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
-  - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`, `menu_windows`
+  - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`, `menu_windows`, `save_icon`
   - [SCUS static tables](#scus-static-tables) - `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
   - [Cutscene / FMV / summon](#cutscene--fmv--summon) - `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
   - [Scene + MAN](#scene--man) - `man_section`, `man_edit`, scene tables
@@ -371,6 +371,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). `parse` doubles as the `categorize` detector for `Class::InitPak`. |
 | `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
 | `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
+| `save_icon` | The **save-slot portrait sheet**: one 4bpp TIM in PROT 899 (`0x1F908`, image `(960,224)` 64x16, CLUT `(0,1)` 256x1) holding sixteen 16x16 tiles row-interleaved across a 256-px strip, one 16-colour palette per tile. Owns the de-interleave to PSX save-block tile layout. Tile N is the memory-card icon for save number N+1; tile 15 is blank padding. See [`save-icon.md`](../../docs/formats/save-icon.md). |
 | `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F20`, VA `0x801E4738`): per-window content id / park edge / class + content rect + content-renderer VA - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
 
 ### SCUS static tables

@@ -15,6 +15,7 @@ mod cli;
 mod commands;
 mod monster_block;
 mod randomize;
+mod save_icon;
 mod texture;
 mod translate;
 mod util;
@@ -90,6 +91,29 @@ fn main() -> Result<()> {
             entry,
             offset,
             lzs_section,
+            &png,
+            quantize,
+            output.as_deref(),
+            patch.as_deref(),
+            dry_run,
+        ),
+        Cmd::SaveIconList { input } => save_icon::cmd_save_icon_list(&input),
+        Cmd::SaveIconExport {
+            input,
+            slot,
+            output,
+        } => save_icon::cmd_save_icon_export(&input, slot, &output),
+        Cmd::SaveIconReplace {
+            input,
+            slot,
+            png,
+            quantize,
+            output,
+            patch,
+            dry_run,
+        } => save_icon::cmd_save_icon_replace(
+            &input,
+            slot,
             &png,
             quantize,
             output.as_deref(),

@@ -333,6 +333,57 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
+    /// Read-only: list the save-slot portraits (the memory-card block icons
+    /// and the save UI's per-character faces) with their slot numbers.
+    SaveIconList {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Decode one save-slot portrait to a 16x16 PNG for editing.
+    SaveIconExport {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+        /// Slot to export, `0`-based. Save number `n` uses slot `n - 1`.
+        #[arg(long)]
+        slot: usize,
+        /// Where to write the PNG.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Replace one save-slot portrait with an edited 16x16 PNG. Only that
+    /// tile's 16 pixel runs and its own 16-colour palette change; the other
+    /// portraits stay byte-identical.
+    SaveIconReplace {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// Slot to replace, `0`-based. Save number `n` uses slot `n - 1`.
+        #[arg(long)]
+        slot: usize,
+        /// The replacement portrait (PNG, any color type, exactly 16x16).
+        #[arg(long)]
+        png: PathBuf,
+        /// Fold excess colors to their nearest kept color instead of failing
+        /// when the image holds more than 16 distinct 15-bit colors.
+        #[arg(long, default_value_t = false)]
+        quantize: bool,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+        /// Validate the replacement without writing anything.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// Translation / language-pack tools: export the disc's text to an
     /// editable YAML pack, generate per-language skeletons, check coverage,
     /// and import a filled pack back onto a disc copy.
