@@ -44,8 +44,8 @@ use super::*;
 use legaia_engine_core::shop::ShopSession;
 use legaia_engine_render::MenuWindowPainter;
 use legaia_engine_render::ui_menu_window_painters::{
-    amount_prompt_draws_for, counter_panel_draws_for, item_description_draws_for,
-    record_title_tab_draws_for, sell_quantity_draws_for,
+    POINT_CARD_HEADING, POINT_CARD_UNIT_LABEL, amount_prompt_draws_for, counter_panel_draws_for,
+    item_description_draws_for, record_title_tab_draws_for, sell_quantity_draws_for,
 };
 
 /// Vendor-name plate (`0x21`): the record-sourced title tab.
@@ -493,11 +493,7 @@ impl PlayWindowApp {
 /// text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
 
-/// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
-/// character-substitution token the dialog codec resolves at draw time; the
-/// port stages an engine-authored line in the same slot for the same reason
-/// as [`SELL_QUANTITY_HEADING`].
-const POINT_CARD_HEADING: &str = "Points earned";
-/// The unit label window 31 puts `0x40` right of its number field
-/// (`0x801CEA50`).
-const POINT_CARD_UNIT_LABEL: &str = "point(s).";
+// Window 31's heading + unit label are `engine-ui`'s
+// `POINT_CARD_HEADING` / `POINT_CARD_UNIT_LABEL` (imported above): both hosts
+// draw this window, so a host-local copy here would be exactly the kind of
+// silent divergence `check-ui-host-drift.py` has to pair constants to catch.

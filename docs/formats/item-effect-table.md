@@ -15,8 +15,12 @@ records `(class = heal-HP, tier = 0)`, and the `(class, tier) -> 200` mapping is
 a separate, **also static** [heal-amount table](#heal-amount-table-0x8007655c).
 
 The apply handler is the **static** `FUN_800402F4` (`ghidra/scripts/funcs/
-800402f4.txt`), reached through a 132-entry jump table at `0x80014FA0` indexed by
-the descriptor class byte. It handles both the field item menu and the battle
+800402f4.txt`), reached through a 132-entry jump table at `0x80014FA0`. **What
+indexes that table depends on the caller** - three callers index it with three
+different bytes: the descriptor class at `0x801d84b4` (the field item-use path,
+the only one the "indexed by the descriptor class byte" reading described), the
+item record's own `+0` kind byte at `0x801d9280`, and the battle actor's `+0x1E8`
+at `0x801e40dc`. It handles both the field item menu and the battle
 item path in one function (it branches on `game_mode == 0x15`, walking either the
 char records or the battle-actor table `0x801C9370`). The HP / MP heal arms size
 the restore by reading a tier-indexed `u16` table at `0x8007655C` (HP) /
@@ -45,9 +49,15 @@ overlay-resident apply handler, not in the dumped corpus" reading.)
 | Bit | Meaning |
 |---|---|
 | `0x80` | base / "has an effect" - set on every populated descriptor |
+| `0x40` | draws its own info-panel body instead of the passive block |
 | `0x20` | effect applies to the **whole party** (all-targets validator) |
 | `0x04` | usable from the **battle** item menu |
 | `0x02` | usable from the **field** item menu |
+
+`0x40` is set on exactly five subtypes: the Point Card and the two summon-flute
+pairs. Its consumer is the item-info panel `FUN_801D0F1C`, which branches past
+the accessory-passive block for these - the Point Card's arm prints the live
+`_DAT_800845B4` bank ([`shop.md`](../subsystems/shop.md)).
 
 Healers carry `0x04 | 0x02` (field + battle); permanent stat-ups and the
 field-utility items carry `0x02` only; status-cures and revive carry `0x04`
@@ -71,6 +81,7 @@ record `+8` pointer):
 | `7` | temporary stat buff (one battle) | Power Elixir - "Increase attacking power for one battle." |
 | `8` | cure single status | Antidote - "Cure Venom. Ally." |
 | `11`/`12`/`13` | arts book (Fire/Wind/Thunder; tier = book level) | Fire Book I - "Book of Hyper Arts. For Meta." |
+| `14` | Point Card strike - **no item on the disc reaches it** (see below) | - |
 | `126`/`127` | summon flute | Lippian Flute - "Flute that calls the Lippian monster." |
 | `128` | field escape (dungeon) | Door of Light - "Teleport out of dungeons." |
 | `129` | field warp (city) | Door of Wind - "Teleport to another city." |
@@ -79,6 +90,13 @@ record `+8` pointer):
 Note that the class byte is meaningful **only together with the usability
 flags**: many key items funnel to class `0` with no usability bit set, so
 "class 0" is not by itself "an HP potion" - gate on the field/battle bits.
+
+**Class 14 is reachable code with no reachable data.** Arm `14` (`0x8004209C`)
+takes `min(_DAT_800845B4, 9999)` off the Point Card bank and applies it as
+battle damage - a Point Card strike scaling with how much the player has shopped.
+Decoding all 256 item records against this table finds **no item carrying class
+14**, so retail never opens the arm; the `LEGAIA_POINT_CARD_MAX` probe knob
+reaches it only by forcing the bank. Unused content, not a missing item.
 
 ## Heal-amount table (`0x8007655C`)
 

@@ -106,6 +106,10 @@ const WIN_SELL_DETAIL: usize = 39;
 const WIN_COMPARE_ACTIVE: usize = 25;
 /// Party-wide stat compare (`0x29`).
 const WIN_COMPARE_PARTY: usize = 41;
+/// Window 31 (`FUN_801DCE20`) - the Point Card toast retail raises after a buy
+/// commit credits the counter. Both openers hand the widget VM a script whose
+/// whole body is `[open 0x1F]` + terminator, so the beat is the only gate.
+const WIN_POINT_CARD: usize = 31;
 /// Renderer VA of window 35 (`FUN_801D5510`) - its port
 /// (`engine_core::shop::shop_buy_quantity_panel`) returns pens rather than a
 /// draw list, so `painter_at` deliberately does not resolve it and the id is
@@ -581,6 +585,26 @@ impl LegaiaRuntime {
                 unit_price,
             );
             out.extend(self.buy_quantity_panel_draws(font, &panel));
+        }
+
+        // Window 31 - the Point Card toast, the browser twin of the native
+        // host's arm in `window/shop_windows.rs`. Same beat
+        // (`MenuRuntime::point_card_toast`), same disc-parsed rect, same
+        // shared labels, so the two hosts cannot drift on the content.
+        if self.menu.point_card_toast().is_some()
+            && let Some((d, _)) =
+                ui::painter_at(table, WIN_POINT_CARD, ui::MenuWindowPainter::AmountPrompt)
+        {
+            use ui::ui_menu_window_painters as painters;
+            let (text, cur) = painters::amount_prompt_draws_for(
+                font,
+                ui::painter_rect(d),
+                painters::POINT_CARD_HEADING,
+                world.point_card.max(0) as u64,
+                painters::POINT_CARD_UNIT_LABEL,
+            );
+            out.extend(text);
+            out.extend(self.painter_glyph_stand_in(font, ">", (cur.x, cur.y)));
         }
         out
     }

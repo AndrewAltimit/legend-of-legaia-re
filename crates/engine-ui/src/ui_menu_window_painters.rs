@@ -396,9 +396,23 @@ pub fn char_prompt_draws_for(
 /// PORT: FUN_801DCE20
 ///
 /// Wired: `engine-core::World::point_card` is the counter and
-/// `MenuRuntime::point_card_toast` the beat; the native shop host
-/// (`window/shop_windows.rs`) paints this window while the toast is up, off
-/// the same disc-parsed rect as the shop's other descriptor windows.
+/// `MenuRuntime::point_card_toast` the beat; both hosts paint this window
+/// while the toast is up, off the same disc-parsed rect as the shop's other
+/// descriptor windows, and both label it with [`POINT_CARD_HEADING`] /
+/// [`POINT_CARD_UNIT_LABEL`] below.
+/// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
+/// character-substitution token the dialog codec resolves at draw time; the
+/// port stages an engine-authored line in the same slot.
+///
+/// Both hosts draw this window, so the label lives beside the builder rather
+/// than once per host - two host-local copies would be a divergence the
+/// drift gate could only catch by pairing them.
+pub const POINT_CARD_HEADING: &str = "Points earned";
+
+/// The unit label window 31 puts `0x40` right of its number field
+/// (`0x801CEA50`). Shared for the same reason as [`POINT_CARD_HEADING`].
+pub const POINT_CARD_UNIT_LABEL: &str = "point(s).";
+
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

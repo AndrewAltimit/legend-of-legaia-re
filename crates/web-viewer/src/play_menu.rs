@@ -1555,6 +1555,22 @@ impl LegaiaRuntime {
             assets.pen(window_ids::ITEMS_LIST),
             assets.pen(window_ids::ITEMS_INFO),
         );
+        // The shared info panel's Point Card arm, the browser twin of the
+        // native host's (`window/menu_draws.rs`): retail branches on the staged
+        // id being `0xFE` and prints the live bank instead of the passive lines
+        // (`FUN_801D0F1C` at `0x801d0fd0`).
+        if model.info.as_ref().is_some_and(|i| i.is_point_card) {
+            let points = self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.point_card.max(0) as u32)
+                .unwrap_or(0);
+            d.extend(ui::item_points_panel_draws(
+                font,
+                assets.pen(window_ids::ITEMS_INFO),
+                points,
+            ));
+        }
         d.extend(ui::tab_label_draws(
             font,
             "Items",
