@@ -783,11 +783,29 @@ impl PlayWindowApp {
         };
         let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
         let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
-        // Stand-ins for the opponent's arena actor record (budget pool
-        // +0x154, max HP +0x14e); the awarded Seru is ctx+0x269 = 1 → spell
-        // 0x81. The player's side comes off the live lead record instead.
+        // The opponent is the *real* one: PROT 0977's course ladder names a
+        // monster id per (course, round) and `FUN_801D1510` stores it into
+        // formation slot 0, so the arena's foe is an ordinary battle monster
+        // with an ordinary PROT 867 record. The window has no course UI, so
+        // it walks course 0 one round per contest.
         const STANDIN_BUDGET: u16 = 120;
         const STANDIN_HP: i32 = 400;
+        let ladder = self
+            .session
+            .host
+            .index
+            .entry_bytes_extended(legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
+            .ok()
+            .and_then(|raw| legaia_engine_core::muscle_dome::parse_course_ladder(&raw));
+        let opponent_round = ladder.as_ref().and_then(|l| {
+            let rounds = &l.first()?.rounds;
+            let n = self.muscle_ladder_round as usize % rounds.len();
+            Some((n, rounds[n]))
+        });
+        let opponent_record = opponent_round.and_then(|(_, r)| {
+            let archive = self.monster_archive_bytes()?;
+            legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
+        });
         let lead = self.session.host.world.roster.members.first();
         let player_hp = lead
             .map(|r| r.hp_mp_sp().hp_max as i32)
@@ -797,21 +815,14 @@ impl PlayWindowApp {
             .map(|r| r.live_stats().agl)
             .filter(|&agl| agl > 0)
             .unwrap_or(STANDIN_BUDGET);
-        let mut session = MuscleDomeSession::new(
-            player_hand,
-            opp_hand,
-            [player_budget, STANDIN_BUDGET],
-            [player_hp, STANDIN_HP],
-            1,
-        );
         // Resolve through the *retail* damage kernel, the same one the
         // browser host uses: the move-power table, its id -> index map and
         // the element-affinity matrix all come off this raw PROT 0898 entry.
         // The player's stat profile is the lead party record's live window
-        // (`+0x110..+0x11B`); the opponent has no arena actor record staged
-        // here, so its profile is a documented stand-in - the dome's own
-        // opponent monster id is not pinned to any table, and a fabricated
-        // pin would be worse than a disclosed constant.
+        // (`+0x110..+0x11B`); the opponent's is its own monster record's
+        // battle-entry profile, the same `battle_stats()` the battle loader
+        // stages. The constants below survive only as the fallback for a
+        // disc whose ladder or archive does not decode.
         const STANDIN_OPPONENT: legaia_engine_core::muscle_dome::DomeCombatant =
             legaia_engine_core::muscle_dome::DomeCombatant {
                 hp_max: STANDIN_HP as u16,
@@ -820,6 +831,29 @@ impl PlayWindowApp {
                 ldf: 30,
                 element: 0,
             };
+        let opponent = opponent_record
+            .as_ref()
+            .map(|r| {
+                let bs = r.battle_stats();
+                legaia_engine_core::muscle_dome::DomeCombatant {
+                    hp_max: r.hp,
+                    int: bs[4],
+                    udf: bs[2],
+                    ldf: bs[3],
+                    element: r.element,
+                }
+            })
+            .unwrap_or(STANDIN_OPPONENT);
+        let opponent_hp = opponent_record
+            .as_ref()
+            .map(|r| r.hp as i32)
+            .filter(|&hp| hp > 0)
+            .unwrap_or(STANDIN_HP);
+        let opponent_budget = opponent_record
+            .as_ref()
+            .map(|r| r.battle_stats()[0])
+            .filter(|&agl| agl > 0)
+            .unwrap_or(STANDIN_BUDGET);
         let player_profile = lead
             .map(|r| {
                 let live = r.live_stats();
@@ -832,11 +866,18 @@ impl PlayWindowApp {
                 }
             })
             .unwrap_or(STANDIN_OPPONENT);
+        let mut session = MuscleDomeSession::new(
+            player_hand,
+            opp_hand,
+            [player_budget, opponent_budget],
+            [player_hp, opponent_hp],
+            1,
+        );
         let seed = 0x4D55_5343 ^ self.session.host.world.frame as u32;
         match legaia_engine_core::muscle_dome::DomeDamageModel::from_battle_overlay(
             &raw,
-            [player_profile, STANDIN_OPPONENT],
-            [player_hp, STANDIN_HP],
+            [player_profile, opponent],
+            [player_hp, opponent_hp],
             seed,
         ) {
             Some(model) => session.install_damage_model(model),
@@ -845,11 +886,21 @@ impl PlayWindowApp {
                  resolve without damage"
             ),
         }
-        log::info!(
-            "muscle: contest started - {} turns, deck {commands:02x?}, player costs \
-             {player_costs:?}, player {player_hp} HP on a {player_budget} AP pool",
-            legaia_engine_core::muscle_dome::TURN_LIMIT,
-        );
+        match opponent_round {
+            Some((n, r)) => log::info!(
+                "muscle: Beginner round {} vs monster {:#04x} ({} HP), deck {commands:02x?}, \
+                 player costs {player_costs:?}, player {player_hp} HP on a {player_budget} \
+                 AP pool",
+                n + 1,
+                r.monster_id,
+                opponent_hp,
+            ),
+            None => log::warn!(
+                "muscle: PROT 0977 course ladder did not decode - fighting the \
+                 disclosed stand-in opponent instead"
+            ),
+        }
+        self.muscle_ladder_round = self.muscle_ladder_round.wrapping_add(1);
         self.session.host.world.enter_muscle_dome(session);
         // The arena loads no track of its own - it reuses the battle engine,
         // so it plays a battle theme. Use the standard random-battle theme

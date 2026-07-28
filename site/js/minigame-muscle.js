@@ -312,11 +312,33 @@ window.MgMuscle = (function () {
       blit(3, p.pal, p.r[0], p.r[1], p.r[2], p.r[3], x, y, dw, dh);
       return dw || p.r[2];
     }
-    /* One dome-hub sprite (PROT 0977 descriptor record) at 1:1. */
-    function hubSprite(i, dx, dy, dw, dh) {
-      const r = hudMeta.hub && hudMeta.hub[i];
-      if (!r) return false;
-      return blit(r.sheet, r.pal, r.uv[0], r.uv[1], r.wh[0], r.wh[1], dx, dy, dw, dh);
+    /* A whole PROT 0977 hub screen, placed by retail rather than by us.
+     * The engine runs the overlay's own quad emitters (FUN_801D050C /
+     * FUN_801D08EC / FUN_801D1308) over the draw list recovered from that
+     * entry's call sites, so both the extent and the screen seat of every
+     * piece are disc-derived; the page only submits the resulting rects.
+     * `screen`: 0 intro card, 1 title art, 2 INTERVAL, 3 ROUND banner,
+     * 4 score tally. Returns the number of quads drawn (0 = unavailable,
+     * so the caller can fall back to its procedural text). */
+    const hubQuadCache = new Map();
+    function hubQuads(screen, arg, brightness) {
+      if (!api || !api.muscle_hub_quads_json) return 0;
+      const key = screen + ':' + (arg | 0) + ':' + (brightness | 0);
+      let m = hubQuadCache.get(key);
+      if (m === undefined) {
+        try {
+          m = JSON.parse(api.muscle_hub_quads_json(screen, arg | 0, brightness | 0));
+        } catch (e) {
+          m = { ok: false };
+        }
+        hubQuadCache.set(key, m);
+      }
+      if (!m.ok || !m.quads || !m.quads.length) return 0;
+      let n = 0;
+      for (const q of m.quads) {
+        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh)) n++;
+      }
+      return n;
     }
 
     /* Retail chip: 3-slice plate (8px caps + 16px body slices, 20 tall)
@@ -1215,8 +1237,8 @@ window.MgMuscle = (function () {
       const a = Math.min(1, introT / 25);
       g.save();
       g.globalAlpha = a;
-      if (hudOk() && hubSprite(3, (320 - 240) / 2, 112)) {
-        /* drawn */
+      if (hudOk() && hubQuads(0, 0, 0x100)) {
+        /* drawn - retail seats the strip centred on (160, 120) */
       } else {
         g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
         g.textAlign = 'center';
@@ -1791,7 +1813,7 @@ window.MgMuscle = (function () {
        * sprite (PROT 0977 record 16) off the dome data file. The panel's
        * info layout below is a page aid (the retail interval screen's own
        * layout is uncaptured). */
-      if (!(hudOk() && hubSprite(16, (320 - 192) / 2, 56))) {
+      if (!(hudOk() && hubQuads(2, 0, 0x100))) {
         text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
       }
       text('turn ' + state.turn + ' of ' + state.turn_limit + ' settled',
@@ -1828,18 +1850,15 @@ window.MgMuscle = (function () {
       g.globalAlpha = Math.max(0, Math.min(1, a));
       /* "ROUND n": the retail hub art - the 144x32 ROUND word (PROT 0977
        * record 0) + the hub 24x32 digit strip (record 1, u = digit*24). */
+      /* The retail banner is FUN_801D02F0: the ROUND word centred on
+       * (120, 120) and the round number's glyphs at x=240 (and x=264 for a
+       * second digit), every piece drawn twice - variant 1 then variant 2 -
+       * which is what gives the word its two-tone edge. The digit glyph is
+       * record 1, not the decimal readout's record 9, and its column is
+       * digit*24 (FUN_801D15C8). */
       const round = /^ROUND (\d+)$/.exec(banner.text);
-      if (round && hudOk() && hudMeta.hub && hudMeta.hub[1]) {
-        const num = round[1];
-        const total = 144 + 10 + num.length * 24;
-        const x0 = (320 - total) / 2;
-        hubSprite(0, x0, 56);
-        const d1 = hudMeta.hub[1];
-        for (let i = 0; i < num.length; i++) {
-          const dgt = num.charCodeAt(i) - 48;
-          blit(d1.sheet, d1.pal, dgt * 24, d1.uv[1], 24, 32,
-            x0 + 154 + i * 24, 56);
-        }
+      if (round && hudOk() && hubQuads(3, parseInt(round[1], 10), 0x100)) {
+        /* drawn */
       } else {
         const col = banner.cls === 'good' ? '#2dcca7'
           : banner.cls === 'bad' ? '#d84b4b' : '#ffd166';

@@ -1740,6 +1740,110 @@ impl LegaiaMinigames {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// The arena's **course ladder**, straight off the disc.
+    ///
+    /// PROT 0977 carries a 3-entry course descriptor table (`0x801D1A08`,
+    /// `{ i32 rounds; ptr first }`) over a run of 29
+    /// `{ u32 label_va; u32 monster_id }` round records (`0x801D1920`), and
+    /// `FUN_801D1510` stores the round's `monster_id` into formation slot 0
+    /// at `0x8007BD0C` - so the arena's opponent is an ordinary battle
+    /// monster with an ordinary PROT 867 record.
+    ///
+    /// Rows: `{ "course": c, "rounds": [{ "round": 1-based, "id": monster
+    /// id, "name": archive name, "hp": archive HP, "score": the score cell
+    /// clearing it adds }] }`. `name`/`hp` are null when the archive slot
+    /// does not decode.
+    pub fn muscle_course_ladder_json(&self) -> String {
+        use legaia_engine_core::muscle_dome as md;
+        let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
+            return "[]".to_string();
+        };
+        let Some(ladder) = md::parse_course_ladder(raw) else {
+            return "[]".to_string();
+        };
+        let archive = self.monster_archive_entry();
+        let rows: Vec<serde_json::Value> = ladder
+            .iter()
+            .enumerate()
+            .map(|(c, course)| {
+                let rounds: Vec<serde_json::Value> = course
+                    .rounds
+                    .iter()
+                    .enumerate()
+                    .map(|(r, round)| {
+                        let rec = archive.and_then(|a| {
+                            monster_archive::record(a, round.monster_id as u16)
+                                .ok()
+                                .flatten()
+                        });
+                        serde_json::json!({
+                            "round": r + 1,
+                            "id": round.monster_id,
+                            "name": rec.as_ref().map(|m| m.name.clone()),
+                            "hp": rec.as_ref().map(|m| m.hp),
+                            "score": md::course_score_cell(raw, c, r as u32 + 1),
+                        })
+                    })
+                    .collect();
+                serde_json::json!({ "course": c, "rounds": rounds })
+            })
+            .collect();
+        serde_json::Value::Array(rows).to_string()
+    }
+
+    /// One PROT 0977 **hub screen** as retail-placed quads.
+    ///
+    /// `screen`: 0 = intro card, 1 = course-title art, 2 = INTERVAL
+    /// heading, 3 = ROUND banner (`round` is the displayed number),
+    /// 4 = the six-row score tally. `brightness` is the emitter's colour
+    /// scale (`0x100` = the record's own colour).
+    ///
+    /// Every row's screen rect comes out of the retail emitters
+    /// ([`legaia_engine_ui::other_game_hud::hub_screen_quads`]) fed the draw
+    /// list recovered from that entry's own call sites, so the page places
+    /// nothing itself: `x`/`y`/`dw`/`dh` are the quad's, `u`/`v`/`w`/`h`
+    /// its texels, `sheet` 4/5 the hub page and `pal` the row sub-palette.
+    pub fn muscle_hub_quads_json(&self, screen: u32, round: i32, brightness: i32) -> String {
+        use legaia_engine_ui::other_game_hud as hud;
+        let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let mut table = hud::parse_sprite_table(raw);
+        if table.is_empty() {
+            return r#"{"ok":false}"#.to_string();
+        }
+        let quads = match screen {
+            0 => hud::hub_screen_quads(&mut table, hud::HUB_INTRO_CARD, brightness),
+            1 => hud::hub_screen_quads(&mut table, hud::HUB_TITLE_ART, hud::TITLE_ART_BRIGHTNESS),
+            2 => hud::hub_screen_quads(&mut table, hud::HUB_INTERVAL_HEADING, brightness),
+            3 => hud::hub_screen_quads(&mut table, &hud::round_banner_draws(round), brightness),
+            _ => hud::score_tally_quads(
+                &mut table,
+                [round, 0, 0, 0, 0, 0],
+                [brightness; hud::SCORE_TALLY_ROWS],
+            ),
+        };
+        let rows: Vec<serde_json::Value> = quads
+            .iter()
+            .map(|q| {
+                serde_json::json!({
+                    // tpage bit 4 is the VRAM Y base; the emitter's page
+                    // byte lands in the ABR field, so it never disturbs it.
+                    "sheet": if q.tpage & 0x10 != 0 { 5 } else { 4 },
+                    "pal": q.clut & 0x3F,
+                    "u": q.uv[0].0, "v": q.uv[0].1,
+                    "w": q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1,
+                    "h": q.uv[2].1 as i32 - q.uv[0].1 as i32 + 1,
+                    "x": q.xy[0].0, "y": q.xy[0].1,
+                    "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
+                    "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
+                    "semi": q.semi_transparent,
+                })
+            })
+            .collect();
+        serde_json::json!({ "ok": true, "quads": rows }).to_string()
+    }
+
     /// One HUD sprite sheet decoded to RGBA8 (row-major, texel index 0
     /// transparent). `source`: 0 = battle-chrome widget page (own CLUT-bank
     /// sub-palette `palette`), 1 = ASCII battle font (through the

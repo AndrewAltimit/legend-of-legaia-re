@@ -289,58 +289,12 @@ owns, so a host has neither the trigger nor the text.
 # one of those is still a screen, and leaving them off made two whole chains
 # (the fishing HUD, window 25's compare panel) invisible while every other
 # pause screen was covered. Thirteen builders arrived with the widening. Ten
-# were already reached on both hosts through methods the call graph now walks;
-# the four below are the real gaps.
-
-[[waiver]]
-builder = "hud_quad_centred"
-kind = "orphan"
-reason = """
-`FUN_801D050C`, the PROT 0977 arena-**hub** textured-Gouraud quad emitter (the
-intro card, the INTERVAL heading, the ROUND word and hub digit strip). Say hub
-precisely: the Muscle Dome's in-match Turns Left / HP Left strip is NOT this
-emitter's output - it is drawn from the battle-action overlay 0898 through
-`func_0x8003541C` (text-actor label register-and-draw) and `func_0x8003563C`
-(per-actor record-queue append). Two different overlays, two different
-primitive paths. Wiring these emitters to the match strip would tie unrelated
-HUDs and put a false provenance claim in the tree.
-
-The blocking capability, named exactly: a **`muscle_hud_quad_*` wasm export**
-and the JS rework behind it. The genuine consumer is the site's hub-sprite
-path - `hubSprite()` and the ROUND digit strip in `site/js/minigame-muscle.js`
-- which today takes the parsed sprite-table *geometry*
-(`other_game_hud::parse_sprite_table` via `minigames_muscle::muscle_hud_json`)
-and blits it in the page's own layer. Routing it through the engine emitter
-means exporting emitted quads and turning that blit into a quad draw; nothing
-smaller closes it, because the placement immediates live inside PROT 0977's
-own unported hub screens (`0x801CF2C0 .. 0x801D0324`) and every retail call
-site is in there.
-"""
-
-[[waiver]]
-builder = "hud_quad_corner"
-kind = "orphan"
-reason = """
-`FUN_801D08EC`, the corner-anchored sibling of `hud_quad_centred` above (same
-descriptor table, one shift less of extent, brightness clamped first). Same
-consumer, same blocking capability: the site's hub-sprite blit draws from
-parsed geometry, so the emit math has no non-test caller until a
-`muscle_hud_quad_*` export exists. Kept beside its sibling rather than merged
-into one waiver because they are two distinct retail routines with two
-distinct placement conventions, and a host adopting one need not adopt both.
-"""
-
-[[waiver]]
-builder = "decimal_quads"
-kind = "orphan"
-reason = """
-`FUN_801D1308`, the unsigned decimal readout built on `hud_quad_centred` -
-slot fill, per-digit texture-U column, pen advance including the blank slots.
-Blocked behind the emitter it is built on, and on the same export: the site's
-hub page renders the ROUND digit strip in its own layer from the parsed
-digit-record geometry. This is the hub strip; the dome's match numerals come
-from overlay 0898's record-queue path, as recorded above.
-"""
+# were already reached on both hosts through methods the call graph now walks.
+# Of the remaining three gaps, the PROT 0977 arena-hub quad emitters
+# (`hud_quad_centred` / `hud_quad_corner` / `decimal_quads`) are now wired -
+# `minigames_muscle::muscle_hub_quads_json` runs them over the draw lists
+# recovered from that entry's own call sites and the dome page submits the
+# resulting rects - so only the one below is left.
 
 [[waiver]]
 builder = "equip_compare_panel_fields"

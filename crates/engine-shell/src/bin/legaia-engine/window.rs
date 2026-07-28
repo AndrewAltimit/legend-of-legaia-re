@@ -559,6 +559,10 @@ struct PlayWindowApp {
     /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
     /// reused for every battle so each transition doesn't re-decompress 16 MB.
     monster_archive: Option<std::sync::Arc<Vec<u8>>>,
+    /// Which round of the arena's Beginner course the next Muscle Dome
+    /// contest fights. The window has no course-select screen, so each `M`
+    /// walks one round further down the disc's own ladder.
+    muscle_ladder_round: u32,
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,

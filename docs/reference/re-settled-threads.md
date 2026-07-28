@@ -2213,31 +2213,34 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors.** `OVERLAY_PROT_BASE` carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
 
-### Muscle Dome match shape: a four-turn battle, not a card battle
+### Muscle Dome match shape: an ordinary battle ladder, not a card battle
 
 *Status:* resolved (disassembly) -
-[`minigame-muscle-dome.md § Turns Left / HP Left strip`](../subsystems/minigame-muscle-dome.md#turns-left--hp-left-strip)
+[`minigame-muscle-dome.md § Course ladder`](../subsystems/minigame-muscle-dome.md#course-ladder-the-opponent-per-course-round)
 
 The arena's match rules read as a card battle scored on a per-fighter HP
-ratio "out of 108". All three parts of that are wrong, and the disassembly
-settles each. The contest is an ordinary battle in **battle type `0xB6`**
-under a hard **four-turn limit**, with a persistent `Turns Left / HP Left`
-strip whose format string sits on the disc at PROT 0898 file offset `0x0`
-(VA `0x801CE818`). The phase-**`0x14`** arm of `FUN_801D0748` computes both
-numbers behind the `DAT_8007bd0c == 0xB6` gate: `4 - ctx[+0x28a]` (the
-shared battle turn counter, bumped by `FUN_801E295C` case `0xff`, which also
-parks the phase byte on this arm) and `hp * 100 / max_hp` of
-**`DAT_801C937C`** - actor-table index 3, the first *enemy* slot. Phase
-`0x6e` only re-stamps those two globals; the whole match SM contains exactly
-two ratio computations and both are that one `× 100`. The `0x6C` came from
-consuming only part of the compiler's `× 100` shift-add chain at
-`0x801d0f38..0x801d0f4c`. The four "cards" are the four d-pad **direction
-commands** `0xC..=0xF`, each carrying that fighter's own AP cost - the same
-input a normal battle command screen takes, bounded by AP. Falsification
+ratio "out of 108". All three parts of that are wrong. The four "cards" are
+the four d-pad **direction commands** `0xC..=0xF`, each carrying that
+fighter's own AP cost - the same input a normal battle command screen takes,
+bounded by AP. The `0x6C` came from consuming only part of the compiler's
+`× 100` shift-add chain at `0x801d0f38..0x801d0f4c`.
+
+What the arena *is*: a ladder of ordinary battles. PROT 0977's course
+descriptor table (`0x801D1A08`, three `{ i32 rounds; ptr first }` records)
+walks 29 `{ u32 label; u32 monster_id }` round records at `0x801D1920`, and
+`FUN_801D1510` stores the round's id into formation slot 0 at `0x8007BD0C`.
+Courses are 8 / 8 / 13 rounds, matching the populated rows of the score
+table at `0x801D1860`, and the 29 ids resolve against PROT 867 to the
+curated `casino.toml` line-ups 29 of 29 in order.
+
+Superseded within this entry: "battle type `0xB6` under a four-turn limit".
+`0x8007BD0C` is the **formation cell**, not a battle-type byte, so the
+strip's gate reads "the first enemy is monster `0xB6`" - Koru, the game's one
+four-turn timed boss - and no dome round fields that id. Falsification
 trail: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#muscle-dome-was-never-a-card-battle).
-Ports: `engine-core::muscle_dome` (`turns_left` / `hp_left` /
-`resolve_turn` playing whole strings per actor / `DomeDamageModel`, the one
-retail damage kernel both hosts resolve through).
+Ports: `engine-core::muscle_dome` (`parse_course_ladder` /
+`course_score_cell` / `resolve_turn` playing whole strings per actor /
+`DomeDamageModel`, the one retail damage kernel both hosts resolve through).
 
 ### Battle arts-input UI decomposition (dome = standard battle input)
 

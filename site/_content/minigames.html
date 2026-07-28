@@ -3141,7 +3141,36 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     muscleR = MgMuscle.create(api, $('muscle-hud'), $('muscle-gl'));
     const roster = muscleR.loadRoster();
     const byName = new Map(roster.map(r => [String(r.name).toLowerCase(), r]));
+    const byId = new Map(roster.map(r => [r.id, r]));
     const opt = (r) => `<option value="${r.id}">${muscleEsc(r.name)} — HP ${r.hp}</option>`;
+    /* The arena's line-up is disc data: PROT 0977's course descriptor table
+     * names a monster id per (course, round), and FUN_801D1510 stores that
+     * id into the ordinary battle formation cell. Use it directly; the
+     * curated name-join below is only the fallback for a disc whose ladder
+     * does not decode. */
+    const fillFromDisc = () => {
+      let ladder = [];
+      try { ladder = JSON.parse(api.muscle_course_ladder_json()); }
+      catch (e) { ladder = []; }
+      if (!ladder.length) return false;
+      const COURSE = ['Beginner', 'Expert', 'Master'];
+      let html = '';
+      for (const c of ladder) {
+        const rows = c.rounds.map((rd) => {
+          const rec = byId.get(rd.id);
+          const name = rd.name || (rec && rec.name) || ('monster ' + rd.id);
+          const hp = rd.hp != null ? rd.hp : (rec ? rec.hp : '?');
+          return `<option value="${rd.id}">${rd.round}. ${muscleEsc(String(name))}`
+            + ` — HP ${hp}</option>`;
+        });
+        html += `<optgroup label="${COURSE[c.course] || ('course ' + c.course)}`
+          + ` course (${rows.length} rounds)">${rows.join('')}</optgroup>`;
+      }
+      html += `<optgroup label="Full archive">${roster.map(opt).join('')}</optgroup>`;
+      $('muscle-foe').innerHTML = html;
+      muscleReset();
+      return true;
+    };
     const fill = (courses) => {
       let html = '';
       const seen = new Set();
@@ -3160,6 +3189,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       $('muscle-foe').innerHTML = html;
       muscleReset();
     };
+    if (fillFromDisc()) return;
     fetch('minigames.json').then(r => r.json()).then(p => {
       const courses = (p.muscle_dome || []).map(c => Object.assign({ _bosses: p.bosses }, c));
       fill(courses);

@@ -48,7 +48,14 @@ Three claims fell together, and each is instructive about a different reading ha
 
 **"Rendered in phase `0x6e`, per fighter."** The computation lives in the phase-`0x14` arm; `0x6e` only re-stamps the two globals `0x14` already wrote. And the record it reads is `DAT_801c937c` - actor-table index 3, the first **enemy** slot - so there is one number on screen, the opponent's, not one per fighter. The whole match SM contains exactly two ratio computations and both are that one `× 100`.
 
-What the arm actually draws is the `Turns Left / HP Left` strip, whose format string is on the disc at PROT 0898 file offset `0x0`: `4 - ctx[+0x28a]` (the shared battle turn counter, bumped by `FUN_801e295c` case `0xff`) and the opponent's HP percentage. Four turns is the whole leg. See [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#turns-left--hp-left-strip).
+What the arm actually draws is the `Turns Left / HP Left` strip, whose format string is on the disc at PROT 0898 file offset `0x0`: `4 - ctx[+0x28a]` (the shared battle turn counter, bumped by `FUN_801e295c` case `0xff`) and the first enemy's HP percentage.
+
+**"…and four turns is the whole dome leg."** That last step is itself wrong, and it is the subtler trap.
+The arm is gated on `*(u8*)0x8007BD0C == 0xB6`, and `0x8007BD0C` is the four-slot **monster-id formation cell**, not a battle-type byte.
+The gate therefore names a *monster*, and the dome stages its own opponents into that same cell out of a 29-round table topping out at id `0xAA`, so no dome round can ever reach it.
+The strip belongs to monster `0xB6` - Koru, whose four-turn timed kill the curated boss table records independently.
+The general lesson: **a byte compared against a small constant is not a mode tag until you have found its writer**; this one had exactly one writer in the arena overlay and it writes a monster id.
+See [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome).
 
 A separate widget must not be folded into this one: `FUN_801d8de8` is the **shared battle status plate** (dumped under ten overlays), drawing each fighter's own HP/MP `cur`/`max` numerals from `+0x172`/`+0x14e` and `+0x174`/`+0x152`. It computes no percentage and is not dome-specific.
 
