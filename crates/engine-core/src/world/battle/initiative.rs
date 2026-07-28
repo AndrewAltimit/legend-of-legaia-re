@@ -192,21 +192,22 @@ impl World {
     }
 
     /// Seed the battle's initiative keys at setup: every living actor gets a
-    /// key, then slot 0's key is consumed so it leads round 1 and the selector
-    /// orders the rest by initiative. No-op (keys left at `0`) when no SPD is
-    /// present, leaving the battle on the round-robin fallback.
+    /// key and **none is consumed**, so round 1's first turn is picked by the
+    /// same max-key selector ([`Self::next_combatant_by_initiative`], the port
+    /// of `FUN_801DABA4`) that picks every later turn. No-op (keys left at `0`)
+    /// when no SPD is present, leaving the battle on the round-robin fallback.
     ///
-    /// Slot 0's key is *not* consumed when the formation locked the party out
-    /// (a back attack): its key is already `0` and the monsters open the
-    /// battle, which is the whole point of the lockout.
+    /// This used to zero slot 0's key here, which handed slot 0 the opening
+    /// turn of every battle in the game regardless of SPD: the party's fastest
+    /// member could not open ahead of Vahn, no monster could ever act first,
+    /// and a rolled **back attack** - whose entire effect is that the monsters
+    /// get the drop - still opened on the party, because the side lockout only
+    /// zeroed keys that slot 0's hand-arm had already bypassed.
     pub(in crate::world) fn seed_battle_initiative(&mut self) {
         if !self.any_battle_speed() {
             return;
         }
         self.reseed_initiative();
-        if let Some(a) = self.actors.get_mut(0) {
-            a.battle.init_key = 0;
-        }
     }
 
     /// Roll this battle's formation advantage into

@@ -400,10 +400,14 @@ fn initiative_falls_back_to_round_robin_without_speed() {
     assert_eq!(world.next_combatant_by_initiative(), Some(0));
 }
 
-/// Setup seeding consumes slot 0's key so the party lead opens round 1 and
-/// the rest order by initiative behind it.
+/// Setup seeding arms **every** living actor and consumes nothing, so round 1's
+/// opener is the max-key pick like every later turn (`FUN_801DABA4`).
+///
+/// The seeder used to zero slot 0's key here, which handed slot 0 the opening
+/// turn of every battle regardless of SPD. This setup is the case that exposed
+/// it: a monster ten times the party's speed still could not open.
 #[test]
-fn seed_battle_initiative_lets_slot0_lead_round_one() {
+fn seed_battle_initiative_arms_every_slot_and_the_fastest_opens() {
     let mut world = World {
         party_count: 1,
         ..World::default()
@@ -411,15 +415,21 @@ fn seed_battle_initiative_lets_slot0_lead_round_one() {
     for a in world.actors.iter_mut() {
         a.battle.liveness = 0;
     }
-    world.actors[0].battle.liveness = 1; // party, SPD 10
-    world.actors[1].battle.liveness = 1; // monster, SPD 50
-    world.battle_speed[0] = 10;
-    world.battle_speed[1] = 50;
+    world.actors[0].battle.liveness = 1; // party, SPD 5
+    world.actors[1].battle.liveness = 1; // monster, SPD 200
+    world.battle_speed[0] = 5;
+    world.battle_speed[1] = 200;
     world.seed_battle_initiative();
-    // Slot 0 consumed (leads round 1 separately); slot 1 still armed.
-    assert_eq!(world.actors[0].battle.init_key, 0);
+    // Nothing is consumed: both sides carry a live key into the first pick.
+    assert!(
+        world.actors[0].battle.init_key > 0,
+        "slot 0's key must survive setup - consuming it is what let slot 0 \
+         open every battle in the game"
+    );
     assert!(world.actors[1].battle.init_key > 0);
-    // The selector therefore picks slot 1 next, then slot 0 (after reseed).
+    // The spread is wide enough that the roll cannot close it, so the fast
+    // monster opens.
+    assert!(world.actors[1].battle.init_key > world.actors[0].battle.init_key);
     assert_eq!(world.next_combatant_by_initiative(), Some(1));
 }
 

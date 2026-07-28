@@ -179,8 +179,12 @@ impl World {
         // Fold the roster's live stats + equipped-gear bonuses onto the party
         // combatants' attack / defense (no-op for a zeroed roster).
         self.seed_party_battle_stats();
-        // Clear any monster-slot SPD / accuracy / evasion left over from a
-        // previous battle so this formation's values are the only ones seen.
+        // Clear any monster-slot SPD / accuracy / evasion / defence split left
+        // over from a previous battle so this formation's values are the only
+        // ones seen. The split matters here as much as the scalars: a slot that
+        // held a party member in the previous battle carries that member's
+        // (UDF, LDF) pair, and a formation whose monster id misses the catalog
+        // would otherwise keep defending with it.
         for s in self.battle_speed.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
@@ -189,6 +193,13 @@ impl World {
         }
         for s in self.battle_evasion.iter_mut().skip(party_count as usize) {
             *s = 0;
+        }
+        for s in self
+            .battle_defense_split
+            .iter_mut()
+            .skip(party_count as usize)
+        {
+            *s = None;
         }
         for (i, fslot) in formation.slots.iter().take(5).enumerate() {
             let mslot = party_count as usize + i;
@@ -215,7 +226,19 @@ impl World {
                 if let Some(s) = self.battle_attack.get_mut(mslot) {
                     *s = def.attack;
                 }
+                // Both defence facets, not one collapsed scalar. Retail's melee
+                // kernel picks UDF (`+0x15C`) or LDF (`+0x160`) by the swing's
+                // command parity (`FUN_801EC3E4` at `0x801ECE14`), and the same
+                // pair feeds the art-strike and summon-roll defenders. Seeding
+                // only `max(udf, ldf)` made every enemy defend with its better
+                // half against every swing and left the kernel's parity branch
+                // dead for the whole monster band.
+                if let Some(s) = self.battle_defense_split.get_mut(mslot) {
+                    *s = Some((def.udf, def.ldf));
+                }
                 if let Some(s) = self.battle_defense.get_mut(mslot) {
+                    // Kept as the scalar fallback (and the Defense-buff target);
+                    // the split above is what the physical path reads.
                     *s = def.udf.max(def.ldf);
                 }
                 if let Some(s) = self.battle_speed.get_mut(mslot) {
@@ -252,10 +275,9 @@ impl World {
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.monster_ai_state.reset();
         // Seed the turn-order initiative keys for this battle. When real SPD is
-        // present this lets the next-actor selector run the initiative scheme;
-        // slot 0 still opens round 1 (its key is consumed below) so subsequent
-        // turns order by initiative. A no-SPD battle leaves every key at 0 and
-        // stays on the round-robin fallback.
+        // present the next-actor selector runs the initiative scheme from the
+        // very first turn (see the opener pick below). A no-SPD battle leaves
+        // every key at 0 and stays on the round-robin fallback.
         self.seed_battle_initiative();
         // Run the action SM's state-`0x00` formation arm: seed the turn cursor
         // from `+0x290`, then latch it into `+0x291` and clear the original.
@@ -266,10 +288,33 @@ impl World {
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();
-        if self.battle_player_driven {
-            // Player-driven: don't pre-arm the first attack - open the command
-            // menu for party member 0 and let the SM idle until the player
-            // confirms (handled in `live_battle_tick`).
+        // Round 1's opener. Retail's next-actor selector `FUN_801DABA4` runs
+        // from the battle's first turn, so whoever holds the highest initiative
+        // key acts first - which is how a fast party member outruns Vahn, how a
+        // fast monster opens on the party, and how a back attack cashes in the
+        // side lockout the seeder just applied.
+        //
+        // Only the SPD path picks. A battle with no SPD anywhere (the synthetic
+        // catalog, the disc-free tests) has no keys to compare and stays on the
+        // round-robin fallback opening at slot 0, exactly as before - the pick
+        // below would otherwise fall through to `next_living_combatant(0)` and
+        // silently hand the opening turn to slot 1.
+        if self.any_battle_speed() {
+            let opener = self.next_combatant_by_initiative().unwrap_or(0);
+            self.battle_ctx.active_actor = opener;
+            if opener >= party_count {
+                // A monster won the opening turn: run the AI pick, which arms
+                // its cast or its swing budget for the SM to execute.
+                self.take_monster_turn(opener);
+            } else if self.battle_player_driven {
+                // Player-driven party opener: don't pre-arm the attack - open
+                // the command menu and let the SM idle until the player
+                // confirms (handled in `live_battle_tick`).
+                self.open_battle_command(opener);
+            } else {
+                self.arm_party_physical(opener);
+            }
+        } else if self.battle_player_driven {
             self.open_battle_command(0);
         }
     }
