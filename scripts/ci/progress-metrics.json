@@ -4,8 +4,8 @@
     {
       "key": "decompilation",
       "label": "Decompilation",
-      "pct": 95.4,
-      "headline": "95.4% of SCUS_942.54's code",
+      "pct": 99.8,
+      "headline": "99.8% of SCUS_942.54's code",
       "detail": "Share of the main executable's code bytes that sit inside a Ghidra-dumped function. Overlay images are excluded - they alias in address space, so address attribution alone cannot support a figure.",
       "denominator": "disc bytes",
       "href": "tooling/disc-coverage.html"
@@ -22,18 +22,18 @@
     {
       "key": "port",
       "label": "Engine port",
-      "pct": 100.0,
-      "headline": "810 functions ported",
-      "detail": "Of the retail functions identified as port sites, the share carrying a clean-room Rust implementation. 0 remain on the worklist. Measured against what the project has identified, not against the whole game.",
+      "pct": 99.9,
+      "headline": "825 functions ported",
+      "detail": "Of the retail functions identified as port sites, the share carrying a clean-room Rust implementation. 1 remain on the worklist. Measured against what the project has identified, not against the whole game.",
       "denominator": "identified port sites",
       "href": "subsystems/engine.html"
     },
     {
       "key": "wiring",
       "label": "Port wiring",
-      "pct": 77.8,
-      "headline": "630 of 810 ported functions reachable",
-      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 180 are implemented but not yet hosted, and each one says so in its source.",
+      "pct": 80.4,
+      "headline": "663 of 825 ported functions reachable",
+      "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; the remaining 162 are implemented but not yet hosted, and each one says so in its source.",
       "denominator": "ported functions",
       "href": "subsystems/engine.html"
     }
