@@ -135,7 +135,8 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
 /// report what a caller who passed only one of them is missing.
 fn battle_target(entry: Option<u32>, slot: BattleTextureSlot) -> Result<BattleTextureTarget> {
     let entry = entry.context(
-        "--battle-slot needs --entry: the slot selector is per player file. Retail's are          863 (Vahn) / 864 (Noa) / 865 (Gala) / 866. Run `tim-list --tier battle` to see them.",
+        "--battle-slot needs --entry: the slot selector is per player file. Retail's are \
+863 (Vahn) / 864 (Noa) / 865 (Gala) / 866. Run `tim-list --tier battle` to see them.",
     )?;
     Ok(BattleTextureTarget { entry, slot })
 }
