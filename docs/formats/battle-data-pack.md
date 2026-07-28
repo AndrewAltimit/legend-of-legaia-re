@@ -927,6 +927,17 @@ upload pixels only and sample a palette a sibling block put on the shared
 row, so decoding them needs the row the whole file assembles
 (`assemble_clut_row`).
 
+**The section index is not a fixed equipment kind.** Joining each section's
+ids to the [item-name table](item-table.md) shows Vahn and Gala carrying
+their generic weapons in section 2 and their Ra-Seru weapon tiers in
+section 3, while **Noa has those two the other way round** - her section 2
+is Ra-Seru Terra `$1..$8` and her section 3 is the Fangs / Feral / club /
+nail family. Sections 0 (body), 1 (head) and 4 (footwear) agree across all
+three. Since the section index picks the placement rect, Noa's Ra-Seru art
+tiles a different part of her band than Vahn's or Gala's does. What is
+measured here is the id-to-section grouping; *why* Noa's two differ is not
+traced, so do not read "section 3 is the Ra-Seru slot" as a rule.
+
 Rows carry the same fields a [`tim_deep_catalog`](tim.md) row does, so a
 generic texture consumer can hold both: coordinates, dimensions, bpp,
 palette count, a content fingerprint and a **label**. Because the
