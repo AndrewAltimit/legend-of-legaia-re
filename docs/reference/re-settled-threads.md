@@ -186,11 +186,16 @@ table and no actor template), no `jal`, no `j`, no PC-relative branch, and no
 `lui`+`addiu` materialisation
 ([`address-reference-scan.md`](../tooling/address-reference-scan.md)). The same
 sweep returns the same nothing for the passive-name draw `FUN_80035274` and
-the angle tween `FUN_80050D40`; all three open a stack frame and follow a
-clean `jr ra` epilogue, so they are entry points rather than interior labels.
+the angle tween `FUN_80050D40`; each follows a clean `jr ra` epilogue whose
+delay slot closes the previous frame, so they are entry points rather than
+interior labels. Two of the three then open frames of their own - `FUN_80050D40`
+is a frameless leaf, which is a shape rather than a counter-example.
 `FUN_80025054` is the same finding one level up - it is a template tick, and
 the template record `0x80070614` that would install it is what nothing
-materialises.
+materialises. Its table was swept whole, because a record reached as
+`base + index` would not be a materialisation pair: the head `0x800705FC` is
+named once, in the field overlay, and handed straight to the allocator as one
+record rather than indexed.
 
 The scan is only worth its negatives if its positives hold, so it was run
 against known answers first: the template word for `FUN_8004DA00` at
@@ -204,7 +209,10 @@ address assembled in more than two instructions is not a `lui`+`addiu` pair.
 Consequence for the port: `battle_on_screen` stays inert on purpose, and the
 three worklist rows are unreachable retail code rather than pending work - the
 write-ups are in
-[`battle.md` § Unreferenced SCUS entry points](functions/battle.md#unreferenced-scus-entry-points).
+[`battle.md` § Unreferenced SCUS entry points](functions/battle.md#unreferenced-scus-entry-points),
+and the rows themselves are settled under the ignore list's `unreferenced`
+section rather than by code
+([`worklist-classification.md`](../tooling/worklist-classification.md#the-reachability-claim)).
 The one row the same sweep *did* settle positively is `FUN_8004DA00`, whose
 spawner is the battle scene-loader `FUN_800513F0`.
 

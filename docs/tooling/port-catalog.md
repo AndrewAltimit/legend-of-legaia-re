@@ -379,6 +379,14 @@ tool treats every entry the same way. Provenance for each entry lives in
 [`docs/reference/functions.md`](../reference/functions.md) and the audio /
 save-screen subsystem docs.
 
+One section is not PsyQ infrastructure and asserts something else entirely.
+`unreferenced` holds **retail-unreachable entry points**: real routines that
+nothing on the disc reaches, in any reference form, so a port of one could only
+be inert. What was scanned and why the row is preferred over code is on
+[`address-reference-scan.md`](address-reference-scan.md); how it differs from
+the other two claim kinds a row can make is in
+[`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim).
+
 Default behaviour:
 
 - `--missing-ports` excludes ignored entries. The summary line breaks the
@@ -408,7 +416,8 @@ or shelving it. It has three useful outcomes:
 - **Nothing, anywhere.** The address is linked but unreached, and porting it
   can only add an inert row. Document the negative
   ([`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)
-  is the worked example) rather than closing the row with code.
+  is the worked example) and file the address under the ignore list's
+  `unreferenced` section, rather than closing the row with code.
 - **Branch sites but no call sites.** The address is an intra-function label,
   not an entry - a `classify-worklist.py` `INTERIOR` row that the scan
   confirms from the bytes.
