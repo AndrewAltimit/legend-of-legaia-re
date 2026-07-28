@@ -1,13 +1,16 @@
 //! Muscle Dome methods of [`LegaiaMinigames`] - the browser twin of the
 //! play-window's `start_muscle_minigame` (`window/minigames.rs`).
 //!
-//! The dome is not a card battle: it is an ordinary battle in battle type
-//! `0xB6` under a four-turn limit, with the persistent
-//! `"Turns Left: N   HP Left: P%"` strip across the top.
+//! The dome is not a card battle, and it is not turn-limited either: each
+//! round stages one real monster off the course ladder into the ordinary
+//! battle formation cell and is fought to a knockout. The
+//! `"Turns Left: N   HP Left: P%"` strip belongs to the one fight whose
+//! formation slot 0 is monster `0xB6` (Koru); the dome ladder tops out at
+//! `0xAA`, so no dome round raises it.
 //!
 //! The rules are the ported [`legaia_engine_core::muscle_dome`] engine (the
 //! four-direction deal, the AP-budget commit into the fighter's action queue,
-//! the turn counter and its limit, the opponent-HP-left readout and the
+//! the turn counter, the opponent-HP-left readout and the
 //! win/lose bookkeeping). Damage resolves through the **shared retail
 //! kernel** [`legaia_engine_core::muscle_dome::DomeDamageModel`], which the
 //! native play-window host installs on its session too - the move-power
@@ -739,8 +742,8 @@ impl LegaiaMinigames {
     }
 
     /// Take the next turn after a non-terminal resolution: reseed budgets,
-    /// clear queues. No-op unless the contest is at a turn break - a KO or
-    /// the expired four-turn limit closes the leg for good.
+    /// clear queues. No-op unless the contest is at a turn break - only a KO
+    /// closes the leg for good.
     pub fn muscle_next_turn(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
             c.session.next_turn();
@@ -775,17 +778,18 @@ impl LegaiaMinigames {
     }
 
     /// Live contest state: `live`, `phase` (`select` / `resolve` /
-    /// `turn_over` / `won` / `lost` / `time_up`), `hp`, `hp_max`, `mp_max`,
+    /// `turn_over` / `won` / `lost`), `hp`, `hp_max`, `mp_max`,
     /// `budget`, `spent`, `queue`, `last_damage`, `hand`, `reward_spell`,
     /// `names`, `spirit` (the `+0x170` gauges the dome HUD bars display),
     /// `stats` (per-fighter INT/UDF/LDF/element the formulas used), `source`
     /// (`"disc"` / `"fallback"` player record), `char`, `level`, `monster`.
     ///
-    /// The dome's own HUD strip reads off `turn` / `turns_left` /
-    /// `turn_limit` and `hp_left` (the **opponent's** HP percentage - the
-    /// number retail stamps at x=`0xd2`); `hp_left_pct` carries both
-    /// fighters' percentages for the page's bars, and `time_meter` /
-    /// `time_meter_max` mirror the `FUN_801d3444` ramp.
+    /// `turn` is the battle turn counter and is **not** accompanied by a
+    /// remaining-turns field: a dome leg is an ordinary battle and ends on a
+    /// KO. `hp_left` is the opponent's HP percentage (the number retail
+    /// stamps at x=`0xd2`), `hp_left_pct` carries both fighters' percentages
+    /// for the page's bars, and `time_meter` / `time_meter_max` mirror the
+    /// `FUN_801d3444` ramp.
     pub fn muscle_state_json(&self) -> String {
         let Some(c) = self.muscle.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -797,7 +801,6 @@ impl LegaiaMinigames {
             MusclePhase::TurnOver => "turn_over",
             MusclePhase::Won => "won",
             MusclePhase::Lost => "lost",
-            MusclePhase::TimeUp => "time_up",
         };
         let hand: Vec<serde_json::Value> = s
             .hand(0)
@@ -818,8 +821,6 @@ impl LegaiaMinigames {
             "live": true,
             "phase": phase,
             "turn": s.turn(),
-            "turns_left": s.turns_left(),
-            "turn_limit": legaia_engine_core::muscle_dome::TURN_LIMIT,
             "hp": [s.hp(0), s.hp(1)],
             "hp_max": [c.fighters[0].hp_max, c.fighters[1].hp_max],
             "mp_max": [c.fighters[0].mp_max, c.fighters[1].mp_max],

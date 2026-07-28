@@ -2,7 +2,7 @@
 
 The **Muscle Dome** is an arena contest fought as a ladder of **ordinary Legaia battles**. The player picks one of three courses and fights its fixed sequence of rounds - 8 / 8 / 13 - one real monster per round, each staged into the ordinary battle formation cell; between legs the arena settles a running score. The player fields one party character, and each turn the fighter enters a directional command string under an AP budget - the same input the normal battle command screen takes - which plays out through the shared battle-action path. It is **distinct from the fishing / slot / dance / Baka Fighter minigame-hub family** - it does not share their controller library.
 
-The course roster is disc data and is decoded below: see [Course ladder](#course-ladder-the-opponent-per-course-round). The `Turns Left / HP Left` strip is **not** the dome's - see [The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome).
+The course roster is disc data and is decoded below: see [Course ladder](#course-ladder-the-opponent-per-course-round). A round ends on a knockout and is **not** turn-limited - see [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else) - and the `Turns Left / HP Left` strip is **not** the dome's, see [The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome).
 
 It is **not a card battle**. The "hand of four cards" reading came from the deal loop building four slots; those four slots are the four *direction commands* `0xC..=0xF`, always the same four, each carrying that fighter's own AP cost. Nothing is drawn, discarded or reshuffled.
 
@@ -424,6 +424,51 @@ Three facts the earlier readings of the *arithmetic* got wrong, each corrected f
 
 `ctx+0x28a` is the shared **battle turn counter**: the battle-action SM's case `0xff` (`FUN_801e295c`) does `ctx[6] = 0x14; ctx[+0x28a] += 1`, i.e. it bumps the counter and parks the round driver on the strip arm. Enemy AI in the same overlay keys its behaviour off the same byte. That is shared battle machinery; only the `0xB6`-gated strip arm is Koru's.
 
+## What ends a leg: a knockout, and nothing else
+
+The arena has no battle loop of its own, so it has nothing to bound. It picks
+the opponent and hands the round to the ordinary battle, which ends the way
+every battle ends.
+
+`FUN_801D1510` (`0x801D1510`, arena overlay) is the whole handoff. It resolves
+the round through the course descriptor and the roster, stores the id into
+formation slot 0, clears slots 1..3, and sets the global game-mode word:
+
+```mips
+801d1564  lui   a1,0x8008
+801d1574  addiu a0,a0,0x1a08     ; a0 = course descriptor table
+801d158c  lw    v1,0x4(v1)       ; course_desc[course].first_round
+801d1598  lbu   a0,0x4(v0)       ; roster[round].monster_id
+801d159c  addiu v0,a1,-0x42f4    ; v0 = 0x8007BD0C, formation slot 0
+801d15a4  sb    zero,0x1(v0)     ; clear slots 1..3
+801d15b8  sh    v0,-0x47c4(v1)   ; game_mode = 0x14 (BATTLE INIT)
+801d15bc  sb    a0,-0x42f4(a1)   ; slot 0 = monster_id
+```
+
+That `sh` is the arena overlay's **only** write of `0x8007B83C`, and mode
+`0x14` is `BattleInit`, whose initializer `FUN_80055B6C` builds the battle
+scene from the very cell the line above filled.
+
+From there the round is an ordinary battle:
+
+| Step | Where |
+|---|---|
+| End detection | The `0x5A` end-of-action gate of `FUN_801E295C` walks the actor table; with no combatant standing on a side it sets the battle-end signal `DAT_8007BD71 = 0xFE` (party wipe: cause `5`; monster wipe: cause `0`). See [battle.md](battle.md#party-wipe--the-game-over-overlay). |
+| Exit routing | `FUN_80046A20` (SCUS) picks the next mode. With `_DAT_8007BAC0 & 0x100` set it stores `0x18` (mode 24 OTHER) at `0x80046E50` rather than the field's `0x2` at `0x80046E0C` - which is what returns a dome round to the arena. |
+
+**The turn counter is a counter, not a budget.** `ctx+0x28a` has exactly one
+writer in the battle overlay - the increment at `0x801E6800`/`0x801E6810` -
+and every one of its reads selects *scripted per-turn enemy behaviour* (turn
+`0` openers at `0x801DAAD4` / `0x801EB994`, parity alternation at
+`0x801EA0B8` / `0x801EB4C8`, a five-entry per-turn action table at
+`0x801EB538`, turn-`1`/`3` dispatch at `0x801EBE08` / `0x801EEDB0`) or draws
+Koru's countdown. No read of it reaches the battle-end signal.
+
+So the leg-end condition is the HP fields the win/lose phases already branch
+on, and there is nothing else. This is a negative result: it is not that the
+timeout arm has yet to be found, it is that the only two writers of the
+end signal are KO scans.
+
 ## Course ladder: the opponent per (course, round)
 
 The arena's opponent is **pinned to a real monster id** by two adjacent
@@ -545,7 +590,8 @@ Every other `elem_id` falls to the shared layout tail (sprite emit + optional ba
 - The fighters are battle actors in `&DAT_801c9370`; the active fighter index is `ctx+0x13`, the player party member id is `ctx+0x20`, and the opponent id is `ctx+0x21` (clamped to ≤ 2 in `FUN_801d8de8`). The character→record mapping uses `&DAT_8007bd10` (per-actor character id) to index the 0x414-byte party records.
 - The opponent's deal is built by the **same** deal/commit code paths (`FUN_801d388c` cases `9`/`0x2c`/`0xb`) keyed on the opponent's `ctx+0x13`; the AI simply commits commands from its own move set against the same budget rule. There is **no separate scripted AI table** in this overlay - the opponent uses the shared selection logic with its own record. **(Inferred from the symmetric use of `ctx+0x13` across both fighters; no dome-specific AI scorer was found.)**
 - The opponent itself is not chosen by the match code at all - it is a monster id staged into the ordinary formation cell before the battle starts, per (course, round); see [Course ladder](#course-ladder-the-opponent-per-course-round).
-- A leg ends on the fighter HP fields, which the win/lose phases (`0x64`/`0x65`/`0x66`/`0x67`) branch on. The `4 - ctx[+0x28a]` / opponent-HP-percentage strip is **not** part of that - it is the Koru fight's ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)). Separately, the shared status plate draws each fighter's own HP/MP `cur`/`max` from record fields `+0x172`/`+0x14e`/`+0x174`/`+0x152` (`FUN_801d8de8`) - unrelated numbers, no percentage. **(Superseded: an earlier revision of this line put the readout in phase `0x6e`, scaled it by `108`, sourced it from the fighter's own record, and glossed `func_0x8003563c` as "the bar/gauge primitive". All four are wrong; the strip section has the disassembly.)**
+- A leg ends on the fighter HP fields, which the win/lose phases (`0x64`/`0x65`/`0x66`/`0x67`) branch on, and on nothing else ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)). The `4 - ctx[+0x28a]` / opponent-HP-percentage strip is **not** part of that - it is the Koru fight's ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)).
+- Separately, the shared status plate draws each fighter's own HP/MP `cur`/`max` from record fields `+0x172`/`+0x14e`/`+0x174`/`+0x152` (`FUN_801d8de8`) - unrelated numbers, no percentage. **(Superseded: an earlier revision of this line put the readout in phase `0x6e`, scaled it by `108`, sourced it from the fighter's own record, and glossed `func_0x8003563c` as "the bar/gauge primitive". All four are wrong; the strip section has the disassembly.)**
 - **Reward:** `FUN_801d8de8` case `0x59` composes a victory message from a victory-message string-pointer table at `0x801f4dfc` plus a spell/seru name looked up in the static spell-name table `DAT_800754d0` (12-byte stride, indexed by `ctx+0x269 + 0x80`). This matches Muscle Dome awarding a Seru / magic on a win. **(Confirmed: the message pulls a name from the shared spell-name table at the player Seru-magic block `0x80+`.)**
 
 ## RAM state
@@ -675,19 +721,20 @@ Documented host models, each disclosed rather than presented as retail:
   order out of the player's own direction deck. Retail has no dome-specific
   AI table, and the monster's own action stream is not modelled - only its
   stats are.
-- The session still bounds a leg at four turns
-  (`TIMED_FIGHT_TURN_LIMIT`, `MusclePhase::TimeUp` scored on `hp_left()`).
-  **Retail does not**: a dome round is an ordinary unbounded battle, and the
-  four-turn readout belongs to the Koru fight. The bound stays only because
-  all three hosts and the world tick read `turns_left()` today; removing it
-  is a cross-host change, not a one-module one.
+The session bounds a leg by **nothing but a knockout**, which is what retail
+does - see [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
+`TIMED_FIGHT_TURN_LIMIT` survives as the numerator of Koru's own countdown
+(`timed_fight_turns_left`), reachable by no dome session.
 
 Disc-gated oracles: `engine-core/tests/muscle_dome_minigame_real.rs` (real
 deck + the lead's real swing costs drive a leg to a decision through the
-world tick) and `web-viewer/tests/dome_ladder_and_hub_real.rs` (the ladder
-decodes to 29 real monster records, its round counts agree with the score
-table, and every hub draw row's cited call site still holds a `jal` to the
-emitter it names).
+world tick), `engine-core/tests/dome_leg_ends_on_ko_real.rs` (the arena's
+sole game-mode write is `BattleInit`, the arena holds the only write of the
+formation cell and the battle overlay only reads it, and the ladder tops out
+below the timed fight's id) and `web-viewer/tests/dome_ladder_and_hub_real.rs`
+(the ladder decodes to 29 real monster records, its round counts agree with
+the score table, and every hub draw row's cited call site still holds a `jal`
+to the emitter it names).
 
 ## Open
 
@@ -702,7 +749,7 @@ emitter it names).
   phase-gated effect draw, unpinned.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived* - the `continuing` input `settle_contest` needs, and the last thing between the port and a real course run.
-- The retail *dome* leg-end condition, now that the four-turn readout is known to be another fight's. The win/lose phases branch on the HP fields; nothing else has been found bounding a round.
+- ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 
 ## See also

@@ -18,9 +18,22 @@
 //! no dome round can satisfy it. See
 //! [`docs/subsystems/minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md).
 //!
+//! **A leg ends on a KO and on nothing else.** The arena does not run a
+//! battle loop of its own: `FUN_801D1510` stores the round's monster id into
+//! formation slot 0, clears slots 1..3, and sets the global game-mode word
+//! `_DAT_8007B83C = 0x14` ([`crate::mode::GameMode::BattleInit`]) - its only
+//! game-mode write. From there the round is an ordinary battle, ended by the
+//! state-`0x5A` end-of-action gate of `FUN_801E295C` when one side has no
+//! standing combatant, and routed back to the arena (mode `0x18`) instead of
+//! the field by the exit selector `FUN_80046A20`. The battle turn counter
+//! `ctx+0x28a` is bumped in one place and never compared against a bound: its
+//! readers are per-turn *scripted enemy behaviour* selectors plus Koru's own
+//! countdown. So there is no timeout arm to port - see
+//! [`timed_fight_turns_left`].
+//!
 //! This module is the *rules* layer: the four-direction deal, the
-//! budget-gated commit into the fighter's action queue, the turn counter and
-//! its limit, the HP-Left readout, and the win / lose / Seru-reward
+//! budget-gated commit into the fighter's action queue, the turn counter,
+//! the HP-Left readout, and the win / lose / Seru-reward
 //! bookkeeping - driven by the parsed tables ([`legaia_asset::muscle_dome`])
 //! and per-command costs (the equipment sections' swing-record `+0x74`
 //! bytes, [`legaia_asset::battle_char_assembly::SwingAnimation::cost`]). The
@@ -55,10 +68,8 @@
 //! What is a documented host model: the opponent commits through the same
 //! selection logic (retail has no dome-specific AI table) - here greedily in
 //! deal order while its budget lasts, out of the player's own direction deck
-//! rather than a monster action set; per-command damage resolution goes
-//! through a host-supplied function; and the outcome when the turn limit
-//! expires with both fighters standing is [`MusclePhase::TimeUp`], scored on
-//! the opponent's HP left (retail's own timeout arm is not yet pinned).
+//! rather than a monster action set; and per-command damage resolution goes
+//! through a host-supplied function.
 //!
 //! Chain: retail `FUN_801d0748` (match SM, `ctx+6` phases) → `FUN_801d388c`
 //! (deal / commit) → the battle-action path (queued-command playback).
@@ -85,19 +96,24 @@ pub const QUEUE_CAP: usize = 0x10;
 /// `DOME_BATTLE_TYPE` and that was wrong.
 pub const TIMED_FIGHT_MONSTER_ID: u8 = 0xB6;
 
-/// The timed fight's hard turn limit - its HUD prints `4 - ctx[+0x28a]`.
+/// The numerator of the timed fight's `Turns Left` digit: its HUD prints
+/// `4 - ctx[+0x28a]` (`0x801d0f9c..0x801d0fa4`).
 ///
-/// **Disclosed host model:** [`MuscleDomeSession`] still bounds a dome leg
-/// by this number. Retail does not: a dome round is an ordinary unbounded
-/// battle. The bound is kept only because all three hosts and the world tick
-/// read `turns_left()` today; removing it is a cross-host change outside one
-/// module.
+/// This bounds **Koru's** fight, not a dome leg. [`MuscleDomeSession`] does
+/// not read it: a dome round is an ordinary battle and ends on a KO.
 pub const TIMED_FIGHT_TURN_LIMIT: u32 = 4;
 
-/// Deprecated alias kept so the hosts keep building while the bound is
-/// still in place; it is [`TIMED_FIGHT_TURN_LIMIT`], and it is not a retail
-/// dome rule.
-pub const TURN_LIMIT: u32 = TIMED_FIGHT_TURN_LIMIT;
+/// The timed fight's `Turns Left` digit for battle turn counter `turn`
+/// (`ctx+0x28a`), floored at zero.
+///
+/// Free-standing because the strip belongs to the one fight whose formation
+/// slot 0 is [`TIMED_FIGHT_MONSTER_ID`]. It is a decode of retail's
+/// arithmetic, not a rule any dome session is subject to.
+///
+/// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
+pub fn timed_fight_turns_left(turn: u32) -> u32 {
+    TIMED_FIGHT_TURN_LIMIT.saturating_sub(turn)
+}
 
 /// The HP-Left readout's scale: `hp * 100 / max_hp`, a plain percentage. The
 /// retail expression is the MIPS shift-add chain `((hp<<1 + hp)<<3 + hp)<<2`
@@ -343,10 +359,6 @@ pub enum MusclePhase {
     Won,
     /// The player's fighter lost.
     Lost,
-    /// The [`TURN_LIMIT`] expired with both fighters standing: the leg is
-    /// over, scored on the opponent's [`MuscleDomeSession::hp_left`]. No
-    /// reward. Host model - retail's own timeout arm is not pinned.
-    TimeUp,
 }
 
 /// One fighter's dome state.
@@ -391,8 +403,8 @@ impl DomeFighter {
 pub struct MuscleDomeSession {
     f: [DomeFighter; 2],
     phase: MusclePhase,
-    /// Turns played out so far - the `ctx+0x28a` battle turn counter the
-    /// HUD subtracts from [`TURN_LIMIT`].
+    /// Turns played out so far - the `ctx+0x28a` battle turn counter. It is
+    /// a counter, not a budget: nothing in retail bounds a battle by it.
     turn: u32,
     /// The awarded Seru index (`ctx+0x269`); the reward spell id is
     /// `REWARD_SPELL_ID_BASE + index`.
@@ -468,16 +480,10 @@ impl MuscleDomeSession {
         self.phase
     }
 
-    /// Turns played out so far (0-based) - the `ctx+0x28a` counter.
+    /// Turns played out so far (0-based) - the `ctx+0x28a` counter. Unbounded:
+    /// a leg runs until one fighter drops.
     pub fn turn(&self) -> u32 {
         self.turn
-    }
-
-    /// The HUD's **Turns Left** digit: `4 - ctx[+0x28a]`, floored at zero.
-    ///
-    /// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
-    pub fn turns_left(&self) -> u32 {
-        TURN_LIMIT.saturating_sub(self.turn)
     }
 
     /// A fighter's current HP.
@@ -557,12 +563,10 @@ impl MuscleDomeSession {
         legaia_engine_vm::battle_cast_dispatch::reward_banner(char_id, self.reward_seru_index)
     }
 
-    /// Whether the leg is over - a KO either way, or the turn limit expired.
+    /// Whether the leg is over. A KO either way - there is no other way for a
+    /// dome leg to end.
     pub fn decided(&self) -> bool {
-        matches!(
-            self.phase,
-            MusclePhase::Won | MusclePhase::Lost | MusclePhase::TimeUp
-        )
+        matches!(self.phase, MusclePhase::Won | MusclePhase::Lost)
     }
 
     /// Whether `slot` can commit dealt direction `card_slot` right now:
@@ -654,9 +658,10 @@ impl MuscleDomeSession {
     /// takes its turn. The strings are **not** interleaved command-by-command.
     ///
     /// Bumps the [`turn`](Self::turn) counter (the `ctx+0x28a` analogue) and
-    /// settles the phase: a KO decides the leg; otherwise the leg ends at
-    /// [`MusclePhase::TimeUp`] once [`turns_left`](Self::turns_left) hits
-    /// zero, and continues at [`MusclePhase::TurnOver`] before that.
+    /// settles the phase: a KO decides the leg, and anything else continues at
+    /// [`MusclePhase::TurnOver`]. Nothing else can end it - retail's only
+    /// battle-end signal (`DAT_8007BD71 = 0xFE`) comes from the `0x5A`
+    /// end-of-action KO scans, never from the turn counter.
     ///
     /// PORT: FUN_801d0748 commit phases 0x3c/0x46/0x50 (queue walk into
     /// `actor+0x1dd`/`+0x1de`, effect applied to the opposing record's HP)
@@ -684,7 +689,6 @@ impl MuscleDomeSession {
         self.phase = match (self.f[0].hp == 0, self.f[1].hp == 0) {
             (true, _) => MusclePhase::Lost,
             (false, true) => MusclePhase::Won,
-            (false, false) if self.turns_left() == 0 => MusclePhase::TimeUp,
             (false, false) => MusclePhase::TurnOver,
         };
     }
@@ -726,8 +730,8 @@ impl MuscleDomeSession {
     }
 
     /// Start the next turn after a non-terminal resolution: reseed the
-    /// budgets from the pools, clear the queues. No-op once the leg is over
-    /// (a KO or the expired [`TURN_LIMIT`]).
+    /// budgets from the pools, clear the queues. No-op once a KO has decided
+    /// the leg.
     pub fn next_turn(&mut self) {
         if self.phase != MusclePhase::TurnOver {
             return;
@@ -1117,9 +1121,8 @@ mod tests {
         assert_eq!(s.hp_left_percent(0), 400 * 100 / 500);
         assert_eq!(s.hp_left_percent(1), 300 * 100 / 400);
         assert_eq!(s.hp_left(), 75, "HUD reads slot 1 = the opponent");
-        // One turn is gone off the four-turn limit.
+        // The turn counter advanced; nothing is counting down against it.
         assert_eq!(s.turn(), 1);
-        assert_eq!(s.turns_left(), 3);
         // Next turn reseeds budgets + clears queues.
         s.next_turn();
         assert_eq!(s.phase(), MusclePhase::Select);
@@ -1153,30 +1156,44 @@ mod tests {
     }
 
     #[test]
-    fn the_turn_limit_ends_the_leg_on_opponent_hp_left() {
+    fn dome_leg_runs_past_four_turns_and_ends_only_on_a_ko() {
         let mut s = session();
-        // Four turns of chip damage: nobody drops, the leg times out.
-        for turn in 1..=TURN_LIMIT {
-            assert_eq!(s.phase(), MusclePhase::Select);
-            assert_eq!(s.turns_left(), TURN_LIMIT - turn + 1);
+        // The opponent has 400 HP; 40 a turn needs ten turns to drop it. A
+        // four-turn bound would have ended this leg at turn 4 with the
+        // opponent still standing on 240 HP.
+        for turn in 1..=10 {
+            assert_eq!(s.phase(), MusclePhase::Select, "turn {turn} is playable");
+            assert!(!s.decided(), "turn {turn}: nobody has dropped yet");
             s.commit_card(0, 0);
             s.end_selection();
             s.resolve_turn(|attacker, _| if attacker == 0 { 40 } else { 0 });
             assert_eq!(s.turn(), turn);
-            if turn < TURN_LIMIT {
-                assert_eq!(s.phase(), MusclePhase::TurnOver);
+            if turn < 10 {
+                assert_eq!(
+                    s.phase(),
+                    MusclePhase::TurnOver,
+                    "turn {turn}: the leg continues"
+                );
                 s.next_turn();
             }
         }
-        assert_eq!(s.turns_left(), 0);
-        assert_eq!(s.phase(), MusclePhase::TimeUp, "four turns is the limit");
-        assert!(s.decided(), "a timed-out leg is over");
-        // Scored on how much of the opponent is left: 400 - 4*40 = 240/400.
-        assert_eq!(s.hp(1), 240);
-        assert_eq!(s.hp_left(), 60);
-        // The leg is closed: no fifth turn.
-        s.next_turn();
-        assert_eq!(s.phase(), MusclePhase::TimeUp);
+        // Turn 10 lands the KO - the only thing that ends a leg.
+        assert_eq!(s.hp(1), 0);
+        assert_eq!(s.phase(), MusclePhase::Won);
+        assert!(s.decided());
+    }
+
+    #[test]
+    fn dome_turns_left_is_korus_hud_not_a_dome_rule() {
+        // The strip's arithmetic is still decoded - as a free function keyed
+        // on the battle turn counter, reachable only by the fight whose
+        // formation slot 0 is the timed-fight monster id.
+        assert_eq!(timed_fight_turns_left(0), 4);
+        assert_eq!(timed_fight_turns_left(3), 1);
+        assert_eq!(timed_fight_turns_left(4), 0);
+        assert_eq!(timed_fight_turns_left(99), 0, "floored, not wrapped");
+        // And the dome's own ladder can never reach that fight.
+        assert_eq!(TIMED_FIGHT_MONSTER_ID, 0xB6);
     }
 
     #[test]

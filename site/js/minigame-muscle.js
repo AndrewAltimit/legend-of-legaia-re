@@ -1076,12 +1076,6 @@ window.MgMuscle = (function () {
       const state = st();
       if (state.phase === 'turn_over') {
         mode = 'interval';
-      } else if (state.phase === 'time_up') {
-        /* The four-turn limit expired with both fighters standing: the leg
-         * is over, scored on how much of the opponent was left. */
-        mode = 'decided';
-        setBanner('TIME UP', state.names[1] + ' survived on ' + state.hp_left +
-          '% HP \u2014 SPACE for a rematch', 100000, 'bad');
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
         if (scene) {
@@ -1827,14 +1821,13 @@ window.MgMuscle = (function () {
       if (!(hudOk() && hubQuads(2, 0, 0x100))) {
         text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
       }
-      text('turn ' + state.turn + ' of ' + state.turn_limit + ' settled',
-        160, 75, 6, '#aeb6c4', 'center', '');
-      /* The two numbers the retail strip carries all match long: the Turns
-       * Left digit (4 - ctx[+0x28a]) and the OPPONENT's HP percentage
-       * (hp * 100 / max), both from FUN_801d0748 phase 0x14. This is the
-       * score - the leg is won by emptying that bar inside the limit. */
-      text('Turns Left: ' + state.turns_left + '     HP Left: ' + state.hp_left + '%',
-        160, 86, 9, '#ffd166', 'center');
+      text('turn ' + state.turn + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
+      /* The OPPONENT's HP percentage (hp * 100 / max). Retail pairs this
+       * number with a "Turns Left" digit, but only in the one fight whose
+       * formation slot 0 is monster 0xB6 (Koru) - the dome ladder tops out
+       * at 0xAA, so no dome round raises that strip. The leg is won by
+       * emptying this bar, with no turn limit to beat. */
+      text('HP Left: ' + state.hp_left + '%', 160, 86, 9, '#ffd166', 'center');
       gaugeBar(80, 94, 160, 6, state.hp_left / 100, '#d84b4b');
       text('damage taken   you ' + state.last_damage[0] +
         '  ·  foe ' + state.last_damage[1], 160, 110, 7, '#e8ecf2', 'center', '');
@@ -1845,9 +1838,7 @@ window.MgMuscle = (function () {
       const q0 = state.queue[0].length, q1 = state.queue[1].length;
       text('commands played   you ' + q0 + '  ·  foe ' + q1,
         160, 138, 7, '#aeb6c4', 'center', '');
-      text(state.turns_left === 1
-        ? 'last turn - AP reseeds from your AGL pool'
-        : 'AP reseeds from your AGL pool next turn',
+      text('AP reseeds from your AGL pool next turn',
         160, 154, 6, '#aeb6c4', 'center', '');
       text('SPACE: next turn', 160, 172, 8, '#2dcca7', 'center');
     }

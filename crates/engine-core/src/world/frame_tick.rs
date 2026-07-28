@@ -1505,9 +1505,8 @@ impl World {
     }
 
     /// Leave the Muscle Dome and restore the interrupted mode. On a won
-    /// contest - a KO inside the four-turn limit, not a
-    /// [`TimeUp`](crate::muscle_dome::MusclePhase::TimeUp) leg - the reward
-    /// Seru is credited through the capture kernel
+    /// contest - the opponent knocked out, the only way a leg ends - the
+    /// reward Seru is credited through the capture kernel
     /// ([`crate::seru_learning::record_capture`] against the installed
     /// registry, resolved by the reward spell id) - the engine's stand-in
     /// for the retail outright award message. Returns the session so the
@@ -1552,14 +1551,16 @@ impl World {
     ///   resolves to no damage rather than to invented constants.
     /// - **TurnOver / decided**: [`Cross`] takes the next turn, or leaves a
     ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
-    ///   Seru capture on a win). The leg finishes on a KO either way or once
-    ///   the four-turn limit expires
-    ///   ([`TimeUp`](crate::muscle_dome::MusclePhase::TimeUp), no reward).
+    ///   Seru capture on a win). A leg finishes on a KO and on nothing else:
+    ///   turns are counted, never budgeted. Retail agrees - the arena hands
+    ///   the round to an ordinary battle (`FUN_801D1510` sets game mode
+    ///   `0x14`), and the only battle-end signal comes from the `0x5A`
+    ///   end-of-action KO scans.
     ///
     /// [`DomeDamageModel`]: crate::muscle_dome::DomeDamageModel
     ///
-    /// PORT: FUN_801d0748 (match SM phase loop: pick / commit / resolve /
-    /// Turns-Left readout), with the presentation left to the host.
+    /// PORT: FUN_801d0748 (the shared battle round driver's phase loop: pick /
+    /// commit / resolve), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
         let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
@@ -1604,7 +1605,7 @@ impl World {
                     s.next_turn();
                 }
             }
-            MusclePhase::Won | MusclePhase::Lost | MusclePhase::TimeUp => {
+            MusclePhase::Won | MusclePhase::Lost => {
                 if confirm {
                     self.exit_muscle_dome();
                 }

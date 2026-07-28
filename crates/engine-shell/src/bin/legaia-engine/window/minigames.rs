@@ -725,7 +725,8 @@ impl PlayWindowApp {
     }
 
     /// Load the Muscle Dome direction tables from the battle overlay (PROT
-    /// 0898) and enter a four-turn contest. The player's per-direction AP
+    /// 0898) and enter a contest (fought to a KO - a dome round is an
+    /// ordinary battle and is not turn-limited). The player's per-direction AP
     /// costs come from their own player battle file's equipped-section swing
     /// records (`+0x74`, the same bytes the Arts gauge reads), and the
     /// player's HP / budget pool come from the lead party record's live

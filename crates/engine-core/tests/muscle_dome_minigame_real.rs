@@ -7,8 +7,8 @@
 //! the real deck (command ids `0xC..=0xF`) and the real per-command costs
 //! (the equipped-section swing records' `+0x74` bytes - the retail cost set
 //! is favored `0x1E` / off-class `0x2A` / far `0x36`), and a contest enters
-//! directions under the budget, resolves whole strings, and closes inside
-//! the four-turn limit through the world tick. No Sony bytes are asserted,
+//! directions under the budget, resolves whole strings, and closes on a
+//! knockout through the world tick. No Sony bytes are asserted,
 //! only structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
 use legaia_asset::battle_char_assembly;
@@ -16,7 +16,7 @@ use legaia_asset::muscle_dome as md;
 use legaia_asset::static_overlay;
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::muscle_dome::{
-    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase, TURN_LIMIT,
+    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase,
 };
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::{SceneMode, World};
@@ -164,10 +164,9 @@ fn real_hand_tables_drive_a_decided_contest() {
                     }
                 }
                 MusclePhase::Resolve => 0,
-                MusclePhase::TurnOver
-                | MusclePhase::Won
-                | MusclePhase::Lost
-                | MusclePhase::TimeUp => PadButton::Cross.mask(),
+                MusclePhase::TurnOver | MusclePhase::Won | MusclePhase::Lost => {
+                    PadButton::Cross.mask()
+                }
             }
         };
         world.set_pad(pad);
@@ -200,16 +199,20 @@ fn real_hand_tables_drive_a_decided_contest() {
         switches <= 1,
         "a turn is one whole string per fighter, saw {switches} handovers"
     );
-    // The leg closed inside the four-turn limit, and the HUD's readouts are
-    // the retail expressions: Turns Left = 4 - turns played (never negative),
+    // The leg closed on a KO - the only end condition a dome round has. One
+    // side is on zero HP and the turn count is whatever it took; nothing
+    // capped it.
+    assert!(
+        matches!(s.phase(), MusclePhase::Won | MusclePhase::Lost),
+        "a dome leg ends by knockout"
+    );
+    assert!(
+        s.hp(0) == 0 || s.hp(1) == 0,
+        "the decided leg has a fighter on zero HP"
+    );
+    assert!(s.turn() >= 1, "at least one turn played");
     // HP Left = the OPPONENT's HP as a plain percentage (scale 100, not the
     // 0x6C an earlier reading took off the x100 shift-add chain).
-    assert!(
-        s.turn() <= TURN_LIMIT,
-        "the four-turn limit bounds the leg: {} turns played",
-        s.turn()
-    );
-    assert_eq!(s.turns_left(), TURN_LIMIT - s.turn());
     assert_eq!(s.hp_left(), s.hp(1) * 100 / OPPONENT_HP);
     for (slot, max) in [PLAYER_HP, OPPONENT_HP].into_iter().enumerate() {
         assert_eq!(s.hp_left_percent(slot), s.hp(slot) * 100 / max);

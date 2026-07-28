@@ -637,9 +637,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-verdict" id="muscle-verdict"></div>
         <p class="mg-controls">
-          <b>You have four turns.</b> The strip above is the arena's own &mdash;
-          <em>Turns Left</em> counts down from 4 and <em>HP Left</em> is how much of your
-          <b>opponent</b> is still standing. Empty it inside the limit or the leg is over.
+          <b>Fight until someone drops.</b> A dome round is an ordinary battle with no
+          turn limit &mdash; <em>HP Left</em> is how much of your <b>opponent</b> is still
+          standing, and emptying it is the whole win condition.
           <kbd>Space</kbd> skips the intro card. In the
           command menu <kbd>&larr;</kbd> is <b>Attack</b>, <kbd>&darr;</kbd>
           is <b>Spirit</b> (end selection and fight); Item is crossed out and the Ra-Seru chip
@@ -659,7 +659,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Fight / Next<span class="mg-key">SPACE</span></button>
         </div>
         <div class="mg-hud">
-          <span>Turns Left <b id="muscle-turns-left">4</b></span>
+          <span>Turn <b id="muscle-turn">0</b></span>
           <span>HP Left <b id="muscle-hp-left">100</b>%</span>
           <span>Your AP <b id="muscle-budget">0</b></span>
           <span>Entered <b id="muscle-queue">0</b></span>
@@ -667,8 +667,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-note" id="muscle-note">
           <p>
-            <b>The fight is your disc's.</b> The four-direction deal, the AP gate, the
-            four-turn limit and the action queue are the arena's own rules; each command
+            <b>The fight is your disc's.</b> The four-direction deal, the AP gate and the
+            action queue are the arena's own rules; each command
             resolves through the ported
             battle engine &mdash; its power from the battle overlay's move-power table, the
             damage roll and finisher from the shared battle formulas, the elemental nudge from
@@ -861,7 +861,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     <li><strong>Slot machine</strong> - a reel state machine with two RNGs and a per-symbol payout table; the feature odds bracket on a hidden net-take counter, and the per-spin balance only commits to the shared coin bank at the cash-out counter.</li>
     <li><strong>Baka Fighter</strong> - rock-paper-scissors, best of 3, against 17 scripted opponents each with their own prize and attack pattern.</li>
     <li><strong>Dance</strong> - a beat clock with an accuracy-weighted timing judge, a baked step chart selected by difficulty, and per-tier score multipliers.</li>
-    <li><strong>Muscle Dome</strong> - not a card battle at all: an ordinary battle under a hard four-turn limit, with a persistent <em>Turns Left / HP Left</em> strip. Each turn you enter a directional command string under an AP budget, and it plays out through the game's regular battle engine.</li>
+    <li><strong>Muscle Dome</strong> - not a card battle at all, and not turn-limited either: a ladder of ordinary battles, three courses of 8 / 8 / 13 rounds, each staging one real monster into the ordinary battle formation cell. Each turn you enter a directional command string under an AP budget, it plays out through the game's regular battle engine, and the round ends when one side is knocked out.</li>
   </ul>
   <div class="see-also">
     <span class="see-also-label">Runtime write-ups (repo docs)</span>
@@ -3246,9 +3246,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function muscleSync() {
     const st = muscleR.state();
     if (!st.live) return;
-    /* The retail strip: "Turns Left: N   HP Left: P%" - 4 - ctx[+0x28a] and
-     * the OPPONENT's hp * 100 / max (FUN_801d0748 phase 0x14). */
-    $('muscle-turns-left').textContent = st.turns_left;
+    /* The battle turn counter (ctx+0x28a) and the OPPONENT's hp * 100 / max.
+     * Retail pairs the percentage with a "Turns Left" digit only in the fight
+     * whose formation slot 0 is monster 0xB6; the dome never raises it. */
+    $('muscle-turn').textContent = st.turn;
     $('muscle-hp-left').textContent = st.hp_left;
     $('muscle-budget').textContent = st.budget[0];
     $('muscle-queue').textContent = st.queue[0].length;
@@ -3261,15 +3262,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (st.phase !== muscleLastPhase) {
       if (st.phase === 'select') verdict($('muscle-verdict'),
         `Left = Attack (arrows enter directions), Down = Spirit, Space begins the turn. ` +
-        `${st.turns_left} of ${st.turn_limit} turns left.`, '');
+        `Fight until one side drops — there is no turn limit.`, '');
       else if (st.phase === 'turn_over') verdict($('muscle-verdict'),
-        `Turn settled — you took ${st.last_damage[0]}, ` +
+        `Turn ${st.turn} settled — you took ${st.last_damage[0]}, ` +
         `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}. ` +
-        `${st.turns_left} turns left.`, '');
-      else if (st.phase === 'time_up') verdict($('muscle-verdict'),
-        `Time up — ${st.turn_limit} turns gone and ` +
-        `${st.names ? st.names[1] : 'the opponent'} is still standing on ` +
-        `${st.hp_left}% HP. Space for a rematch.`, 'bad');
+        `${st.hp_left}% of the opponent is left.`, '');
       else if (st.phase === 'won') verdict($('muscle-verdict'),
         `You win!${rn ? ' The power of ' + rn + ' is yours.' : ''} ` +
         'Space for a rematch.', 'good');

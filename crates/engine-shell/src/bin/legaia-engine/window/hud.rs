@@ -672,23 +672,18 @@ impl PlayWindowApp {
                 out.extend(cd);
             }
         }
-        // Muscle Dome HUD. Line 1 is the retail strip - the dome's own
-        // persistent "Turns Left / HP Left" banner, whose format string is on
-        // the disc at PROT 0898 file offset 0x0 and whose two numbers the
-        // phase-0x14 arm of FUN_801d0748 stamps at x=0x68 (1 digit) and
-        // x=0xd2 (3 digits). Line 2 is the host's own prompt line.
+        // Muscle Dome HUD, both lines the host's own.
         //
-        // PORT: FUN_801d0748 phase 0x14 (Turns Left = 4 - ctx[+0x28a],
-        // HP Left = opponent hp * 100 / max_hp)
+        // The retail "Turns Left / HP Left" strip is deliberately NOT drawn
+        // here: its draw sites gate on formation slot 0 == 0xB6 (Koru), and
+        // the dome ladder tops out at 0xAA, so no dome round can ever raise
+        // it. A dome leg is an unbounded battle, so line 1 reports the turn
+        // reached rather than a countdown to a limit that does not exist.
         if self.session.host.world.mode == SceneMode::MuscleDome
             && let Some(s) = &self.session.host.world.muscle_dome
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
-            let ml1 = format!(
-                "      Turns Left: {}         HP Left: {}",
-                s.turns_left(),
-                s.hp_left()
-            );
+            let ml1 = format!("      Turn: {}         HP Left: {}", s.turn(), s.hp_left());
             let ly1 = self.font.layout_ascii(&ml1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
             let status = match s.phase() {
@@ -714,10 +709,6 @@ impl PlayWindowApp {
                     s.reward_spell_id()
                 ),
                 MusclePhase::Lost => "you lose the contest  (Cross/M = leave)".to_string(),
-                MusclePhase::TimeUp => format!(
-                    "TIME UP - the opponent survived on {}% HP  (Cross/M = leave)",
-                    s.hp_left()
-                ),
             };
             let ml2 = format!(
                 "{status}   you {}hp  foe {}hp  time {}/{}   (M = quit)",
