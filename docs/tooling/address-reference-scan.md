@@ -141,6 +141,43 @@ against a known answer before trusting a "nothing found":
   is not a reference to it; pass `--home` and read `branch_alias`
   ([above](#a-branch-cannot-cross-images)).
 
+## The retail-unreachable set
+
+Sweeping every anchor the port catalog's audit lists as *disclosed inert* -
+ported, unreachable in the engine, and disclosed as such - answers a question
+the audit itself cannot: whether a row is waiting on wiring or on nothing.
+Almost all of them are waiting on wiring. These are the ones that are not, and
+the list is closed under the sweep - no other disclosed-inert anchor lacks a
+reference.
+
+| Address | Image | Routine | Write-up |
+|---|---|---|---|
+| `8005126C` | SCUS | battle actor on-screen test | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
+| `80035274` | SCUS | item / equipment passive-name draw | [`menus.md`](../reference/functions/menus.md#80035274) |
+| `80050D40` | SCUS | 12-bit angle tween | [`battle.md`](../reference/functions/battle.md#unreferenced-scus-entry-points) |
+| `80025054` | SCUS | actor-template tick; unreachable through its record `0x80070614` | [`game-modes.md`](../reference/functions/game-modes.md) |
+| `801CFE20` / `801CFE5C` | 0970 `cutscene_str` | MDEC in / out sync wrappers | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
+| `801D0230` | 0970 `cutscene_str` | MDEC status-word leaf; both call sites are inside the two wrappers above | [`minigames-debug.md`](../reference/functions/minigames-debug.md) |
+| `801D5780` | 0897 `field` | generic arc-hop spawn | [`runtime-libs.md`](../reference/functions/runtime-libs.md) |
+| `801D5C2C` | 0972 `fishing` | 3-D segment clip + projection | [`minigame-fishing.md`](../subsystems/minigame-fishing.md) |
+| `801DAD6C` | 0899 `menu` | five-step menu open sequence | [`menus.md`](../reference/functions/menus.md) |
+| `801DBA90` | 0898 `battle_action` | reward-banner composer | [`battle.md`](../reference/functions/battle.md) |
+| `801E5834` / `801E58A8` | 0897 `field` | pooled menu-actor spawn + list row-count seed | [`menus.md`](../reference/functions/menus.md) |
+
+Every row was checked with `locate-entry-image.py` first, so each is a routine
+that begins where it is said to begin. The last two groups needed `--home`: the
+only hit for `801CFE20` is a branch in the field overlay and the only hit for
+`801E58A8` is one in `battle_action`, neither of which can reach the routine it
+appears to name. `801D0230`'s negative is one step removed - it has real call
+sites, both inside routines from this same list.
+
+The scan settles reachability, not identity, so a row here still says nothing
+about whether the decoded behaviour is right. What it says is that the row is
+not wiring work: see
+[`worklist-classification.md`](worklist-classification.md#the-reachability-claim)
+for how such a row is recorded, and
+[`port-catalog.md`](port-catalog.md#ignore-list) for where.
+
 ## Relation to the in-container scripts
 
 Three Ghidra-side scripts cover pieces of this from inside a loaded program -

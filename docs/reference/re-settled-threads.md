@@ -216,6 +216,12 @@ section rather than by code
 The one row the same sweep *did* settle positively is `FUN_8004DA00`, whose
 spawner is the battle scene-loader `FUN_800513F0`.
 
+The same sweep run over every *disclosed inert* port anchor - each one ported,
+unreachable in the engine, and disclosed as such - separates the rows waiting
+on wiring from the rows waiting on nothing. Almost all are waiting on wiring;
+the closed list of those that are not, SCUS and overlay alike, is on
+[`address-reference-scan.md`](../tooling/address-reference-scan.md#the-retail-unreachable-set).
+
 ### Action-SM state `0xFF` treated as battle end by the port
 
 *Status:* resolved - the retail half was already graded `disassembly`; the
