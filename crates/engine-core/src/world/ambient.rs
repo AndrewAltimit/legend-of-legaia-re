@@ -369,14 +369,22 @@ impl World {
     ///
     /// `FUN_8002519C` walks the live actor list once per frame and, **before**
     /// dispatching an actor's tick function, tests `actor[+0x10] & 0x8` - the
-    /// bit move-VM op `0x08` HALT sets. When it is set the actor is torn down
-    /// (`FUN_80024DFC`), its heap buffers released - including the mode-3
-    /// capture at `+0xA8` when its tick word is the stager render tail
-    /// `FUN_80021DF4` and `+0x5A == 3` - and its pool slot pushed back with
-    /// `FUN_800204A4`; only the not-halted branch reaches the `jalr` that runs
-    /// the part at all. So a halted part renders once more on the tick it
-    /// halted and then stops existing: its CLUT-cell write stops, its strip
-    /// rotation stops, and its slot is available again.
+    /// bit move-VM op `0x08` HALT sets (`0x800251E8`). Only the not-halted
+    /// branch reaches the `jalr` that runs the part at all, so a halted part
+    /// renders once more on the tick it halts - inside the call that halted
+    /// it - and never again: its CLUT-cell write stops and its strip rotation
+    /// stops there.
+    ///
+    /// The teardown is one walk later than that. The halted arm tests bit
+    /// `0x02000000` and, when it is **clear**, branches past the whole
+    /// teardown to set it (`0x800251F4` `and`/`beq` against `lui s3, 0x200`);
+    /// the next walk that still sees the actor halted runs `FUN_80024DFC`,
+    /// releases the heap buffers - including the mode-3 capture at `+0xA8`
+    /// when the tick word is the stager render tail `FUN_80021DF4` and
+    /// `+0x5A == 3` - and pushes the pool slot back with `FUN_800204A4`. This
+    /// port drops the part one tick earlier, which shifts nothing observable:
+    /// by then it has already stopped ticking and rendering, and the only
+    /// difference is how long its slot stays occupied.
     ///
     /// Without this a scene whose tree spawns on an infinite loop grows a
     /// part per tick forever, because every child halts on its own first run

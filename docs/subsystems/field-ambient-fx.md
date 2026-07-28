@@ -148,15 +148,20 @@ an error and reports through `FUN_800567A8`), and `FUN_800204A4` pushes it
 back. Every actor in the scene draws on that pool, not the ambient tree alone.
 
 What returns a slot is the per-frame actor-list walk `FUN_8002519C`. Per live
-actor it tests `actor[+0x10] & 0x8` - the bit move-VM op `0x08` HALT sets -
-**before** dispatching the actor's tick word, and only the not-halted branch
-reaches the `jalr`. When the bit is set the walk instead tears the actor down
-(`FUN_80024DFC`), releases its heap buffers - including the mode-3 capture at
-`+0xA8`, keyed on the tick word being the stager render tail `FUN_80021DF4`
-with `+0x5A == 3` - frees the slot, and marks the actor with bit `0x02000000`
-so it is torn down once. A part therefore renders one last time on the tick it
-halts and then stops existing: its CLUT-cell write stops, its strip rotation
-stops, its slot is available again.
+actor it tests `actor[+0x10] & 0x8` - the bit move-VM op `0x08` HALT sets
+(`0x800251E8`) - **before** dispatching the actor's tick word, and only the
+not-halted branch reaches the `jalr`. So a part renders one last time inside
+the call that halts it and never again: its CLUT-cell write stops there, its
+strip rotation stops there.
+
+Freeing is one walk later than stopping. The halted arm tests bit
+`0x02000000` and, while it is **clear**, branches past the entire teardown to
+set it (`0x800251F4` `and`/`beq` against `lui s3, 0x200`) - so the first walk
+that sees a halted actor only marks it. The next one runs `FUN_80024DFC`,
+releases the heap buffers (including the mode-3 capture at `+0xA8`, keyed on
+the tick word being the stager render tail `FUN_80021DF4` with `+0x5A == 3`,
+and firing the `+0x5A == 5` cue through `FUN_800250D4`), and pushes the slot
+back with `FUN_800204A4`.
 
 That free is what makes the counted-loop fan-outs above finite. Several scenes
 are **emitters**: an infinite `0x18 0x4000` loop around a wait and an op-`0x25`
@@ -167,9 +172,12 @@ the pool without the free path and those scenes look like enormous authored
 trees; read it at a cap and they report the cap.
 
 Engine: `World::retire_finished_ambient_parts` (run at the top of
-`World::tick_ambient_fx`), cap `world::ambient::MAX_AMBIENT_PARTS` = the
-retail 143, exhaustion queryable through `World::ambient_pool_exhausted` and
-logged rather than dropped silently. Coverage:
+`World::tick_ambient_fx`, so the port drops a part one tick earlier than the
+two-walk retail teardown - nothing observable rides on the difference, since
+the part has already stopped ticking and rendering), cap
+`world::ambient::MAX_AMBIENT_PARTS` = the retail 143, exhaustion queryable
+through `World::ambient_pool_exhausted` and logged rather than dropped
+silently. Coverage:
 `crates/engine-core/tests/ambient_runtime_install.rs` (disc-free, with the
 never-halting contrast) and `ambient_part_pool_disc.rs` (the corpus census -
 every scene's population flat, none near the ceiling).
