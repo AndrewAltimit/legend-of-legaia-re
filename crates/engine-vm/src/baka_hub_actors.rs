@@ -75,6 +75,10 @@
 //! Host: `legaia_engine_core::field_submode_screen` runs the dispatcher over
 //! the live `SubmodeDriver` pool actor every field frame.
 
+use crate::world_map_overlay::{
+    EquipPanelDraw, EquipPanelInput, EquipProps, ItemProps, equip_stat_panel,
+};
+
 /// One system actor as this family sees it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HubActor {
@@ -170,6 +174,54 @@ pub struct HubEnv {
     pub caption_item: i32,
     /// `_DAT_800845B4` - the amount the money pseudo-item prints.
     pub caption_amount: i32,
+    /// Everything the per-entry sub-panel `FUN_801E5B4C` reads that is not
+    /// already on this struct: the per-entry character records and the two
+    /// static resolver tables.
+    pub equip: HubEquipEnv,
+}
+
+/// The equipment context [`entry_list`]'s sub-draw resolves against.
+///
+/// Retail reads all of this out of RAM the sub-draw addresses directly - the
+/// save block at `0x80084140`, the item property table `DAT_80074368` and the
+/// equipment table `DAT_80074F68`. The port hands them in, because
+/// `engine-vm` owns neither the records nor the static tables.
+///
+/// The **default is a zero loadout with mode `0`**, on which
+/// [`equip_stat_panel`] takes retail's own no-candidate arm and prints three
+/// zero rows. That is a host gap, not a decode gap: every field below has a
+/// counterpart the engine already holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HubEquipEnv {
+    /// Per entry **code** (not per list position): the five equip slot ids at
+    /// record `+0x196` and the three base stats at `+0x112` / `+0x114` /
+    /// `+0x116`. An entry code with no row here draws the zero loadout.
+    pub records: Vec<HubEquipRecord>,
+    /// `DAT_80074368` rows, indexed by item id.
+    pub item_props: Vec<ItemProps>,
+    /// `DAT_80074F68` rows, indexed by an item row's `stat_index`.
+    pub equip_props: Vec<EquipProps>,
+    /// The word `FUN_801E5B4C` reads at `0x8007BB9C` to select its candidate
+    /// source. That cell is scratch shared with other consumers - this same
+    /// family reads it as the coin counter's digit cursor - so it is a host
+    /// input rather than something the hub state can be asked for.
+    pub mode: u32,
+    /// The inventory id list at `0x80084140 + 0x1818` the inventory modes
+    /// index with [`HubEnv::cursor_row`].
+    pub inventory: Vec<u8>,
+    /// `0x8007B42C` - the per-character weapon slot table.
+    pub weapon_slots: Vec<i16>,
+}
+
+/// One character's contribution to [`HubEquipEnv`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HubEquipRecord {
+    /// The entry code this row answers for.
+    pub code: u8,
+    /// Record `+0x196..+0x19B` - the five slots the aggregator walks.
+    pub slots: [u8; 5],
+    /// Record `+0x112` / `+0x114` / `+0x116` - ATK / UDF / LDF.
+    pub base_stats: [i32; 3],
 }
 
 /// A string slot in the family's rodata, named by the VA of the pointer the
@@ -224,8 +276,11 @@ pub enum HubDraw {
         x: i16,
         y: i16,
     },
-    /// `FUN_801E5B4C(actor)` - the per-entry sub-draw between labels.
-    EntrySubDraw,
+    /// One draw of `FUN_801E5B4C(actor)`, the per-entry equipment stat
+    /// sub-panel the list paints under each label. Retail's `jal 0x801F1778`
+    /// expands to a run of these; the inner enum keeps each draw's own retail
+    /// emitter.
+    EntrySubPanel(EquipPanelDraw),
     /// `FUN_80024EE4(3, 0, 0)` - the panel's screen effect push.
     Effect(i32),
 }
@@ -264,7 +319,8 @@ pub enum HubAction {
     ClearCursorRow,
     /// `DAT_801F2C86` / `DAT_801F2C82` - the start panel's height and top.
     SizePanel { height: i16, top: i16 },
-    /// `DAT_8007B469 = code` - the per-entry code the sub-draw reads.
+    /// `DAT_8007B469 = code` - the per-entry code the sub-draw reads, and the
+    /// only thing that tells `FUN_801E5B4C` which character it is drawing.
     SetEntryCode(u8),
 }
 
@@ -1005,6 +1061,12 @@ pub const STR_CAPTION: u32 = 0x801C_EA30;
 /// Each drawn entry prints its label at the running `y`, advances `y` by
 /// `0x0D` for the sub-draw and by a further `0x2A` afterwards; the actor's own
 /// `+0x0C` is restored at the end, as is the previous entry code.
+///
+/// The sub-draw is [`equip_stat_panel`], and the `jal 0x801F1778` that reaches
+/// it is that routine's only reference in the corpus - so the equipment
+/// stat panel exists for this list and nothing else. Its rows are spliced in
+/// as [`HubDraw::EntrySubPanel`] at the point the `jal` sits, between the
+/// `0x0D` and the `0x2A` pen advances.
 pub fn entry_list(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
     let mut out = HubFrame::default();
     let saved_y = actor.y;
@@ -1019,12 +1081,59 @@ pub fn entry_list(actor: &mut HubActor, env: &HubEnv) -> HubFrame {
                 palette: PALETTE_PANEL,
             });
             actor.y = actor.y.wrapping_add(0x0D);
-            out.draw(HubDraw::EntrySubDraw);
+            for d in entry_sub_panel(actor, env, code) {
+                out.draw(HubDraw::EntrySubPanel(d));
+            }
             actor.y = actor.y.wrapping_add(0x2A);
         }
     }
     actor.y = saved_y;
     out
+}
+
+/// Build the `FUN_801E5B4C` call [`entry_list`] makes for one entry.
+///
+/// Retail passes only the actor; everything else the sub-draw needs it reads
+/// out of globals - the entry code the caller just published to
+/// `DAT_8007B469`, the save block, the two static tables and the menu mode
+/// word. This assembles the same inputs out of [`HubEnv::equip`].
+fn entry_sub_panel(actor: &HubActor, env: &HubEnv, code: u8) -> Vec<EquipPanelDraw> {
+    let eq = &env.equip;
+    let record = eq
+        .records
+        .iter()
+        .find(|r| r.code == code)
+        .copied()
+        .unwrap_or_default();
+    let input = EquipPanelInput {
+        x: actor.x,
+        y: actor.y,
+        char_index: usize::from(code),
+        slots: record.slots,
+        base_stats: record.base_stats,
+        mode: eq.mode,
+        cursor: env.cursor_row,
+        inventory: eq.inventory.clone(),
+        weapon_slots: eq.weapon_slots.clone(),
+        // `_DAT_8007B450` is the same op-`0x49` descriptor cell `HubEnv`
+        // already carries as a truth value.
+        tight_rows: env.board_flag != 0,
+    };
+    equip_stat_panel(
+        &input,
+        |id| {
+            eq.item_props
+                .get(usize::from(id))
+                .copied()
+                .unwrap_or_default()
+        },
+        |idx| {
+            eq.equip_props
+                .get(usize::from(idx))
+                .copied()
+                .unwrap_or_default()
+        },
+    )
 }
 
 /// PORT: FUN_801f17d8 - the header string plus one sprite cell per grid column.
