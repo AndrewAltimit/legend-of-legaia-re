@@ -527,14 +527,24 @@ pub enum StatDelta {
 /// nothing but is still looked up in retail; callers pass a resolver that
 /// returns zeroes for id `0`.
 ///
-/// NOT WIRED: the engine's equip screen previews by trial-equipping into its
-/// own 8-slot array and re-running `legaia_engine_core::battle_stats`'s
-/// aggregator, so no caller wants a second aggregation - and this one needs
+/// NOT WIRED, and the consumer to reason about is **not** the pause-menu
+/// equip screen. `FUN_801E5B4C` has one `jal` in the corpus, `0x801F1778`,
+/// inside `FUN_801F16C0` - the hub panel's stacked per-entry label list, which
+/// draws a label and then calls this as the entry's **sub-draw**. That caller
+/// is ported and live, as [`crate::baka_hub_actors::entry_list`], and it
+/// already emits a `HubDraw::EntrySubDraw` marker at exactly this point.
+///
+/// So the blocker is that marker's handler: nothing in the tree matches on
+/// `EntrySubDraw`, so the sub-panel is never painted. Resolving it also needs
 /// the two static resolver tables (`DAT_80074368` stat index, `DAT_80074F68`
-/// bonuses) as closures, which no host assembles. The record window itself is
-/// **not** the blocker: `char[+0x75E]` rebases to record `+0x196`, which
-/// `crate::dev_equip_commit::commit_equip` already writes on live records.
+/// bonuses) as closures, which no host assembles. The record window is **not**
+/// a blocker: `char[+0x75E]` rebases to record `+0x196`, which
+/// `crate::dev_equip_commit::commit_equip` already writes on live records; nor
+/// is duplication with the pause-menu preview, which is a different screen -
+/// that one trial-equips into its own 8-slot array and re-runs
+/// `legaia_engine_core::battle_stats`'s aggregator.
 /// PORT: FUN_801E5B4C (aggregation loops)
+/// REF: FUN_801F16C0 - the hub entry list that calls this as a sub-draw.
 pub fn aggregate_slot_stats(
     slots: &[u8; 5],
     item_stat_index: impl Fn(u8) -> u8,
@@ -556,8 +566,9 @@ pub fn aggregate_slot_stats(
 /// `mask & (1 << char_idx)`; for any other character none of the guard arms
 /// match, so the item is treated as equippable.
 ///
-/// NOT WIRED: the engine's equip screen gates with
-/// `legaia_engine_core::equipment`'s own mask check.
+/// NOT WIRED: reached in retail from the same hub sub-draw as
+/// [`aggregate_slot_stats`]; the engine's equip screen is a different screen
+/// and gates with `legaia_engine_core::equipment`'s own mask check.
 /// PORT: FUN_801E5B4C (equippability guard)
 pub fn can_equip(mask: u8, char_idx: u32) -> bool {
     if char_idx < 3 {
@@ -591,8 +602,10 @@ pub fn resolve_equip_slot(slot_bits: u8, char_idx: usize, weapon_slot_table: &[i
 /// the current totals. Retail shows the arrow next to a stat when the
 /// candidate total differs (`candidate > current -> Up`, `< -> Down`).
 ///
-/// NOT WIRED: no host builds a candidate loadout to compare - see
-/// [`aggregate_slot_stats`].
+/// NOT WIRED: same sub-draw handler as [`aggregate_slot_stats`] - the arrows
+/// are drawn by the hub entry's sub-panel, and no host resolves the
+/// `HubDraw::EntrySubDraw` marker its live caller emits. No host builds a
+/// candidate loadout to compare either.
 /// PORT: FUN_801E5B4C (LAB_801E5FB0 comparison block)
 pub fn stat_deltas(current: &[i32; 5], candidate: &[i32; 5]) -> [StatDelta; 5] {
     let mut out = [StatDelta::Same; 5];

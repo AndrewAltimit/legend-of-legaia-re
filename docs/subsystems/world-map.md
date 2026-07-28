@@ -397,6 +397,16 @@ and each one changes behaviour:
   `ctx[+0x54] = _DAT_8007BB88 + 2`, so option 0 closes the window (state 2)
   and option 1 takes the `FUN_800266E0` / `FUN_801D84B4` hand-off (state 3);
   cancel goes straight to state 2.
+- **`FUN_801ED308`'s tint capture also spawns an actor.** The arm at
+  `0x801ED398..0x801ED3E0` saves the live tint triple `0x8007BF5D..5F` into
+  `0x8007B634..636`, zeroes the triple and its `+0xA1..A3` mirror, clears the
+  flash accumulator, and then calls `FUN_801D841C` - a thirteen-instruction
+  spawn of descriptor `0x800706BC` into pool `_DAT_8007C34C` with `+0x5C = 1`,
+  the screen-flash element. That `jal` at `0x801ED3DC` is the **only**
+  reference to `0x801D841C` in the corpus. The port models the arm as
+  `FadeFlashEffect::CaptureAndClearTint`, and the spawn is the part
+  `PanelActorHost` does not yet perform, so the flash currently reads as a
+  tint clear with no element behind it.
 - **`FUN_801EF014` works in an inverted row space.** The list draws bottom-up,
   so the picker converts the absolute selection to a screen row with
   `row = rows - (sel - first_visible) - 1`, hands *that* to `FUN_801E9DC8`
@@ -477,6 +487,20 @@ Three inputs it supplies are the **port's**, not retail's:
   window), R2 (text box) and Start (soft reset), walk mode only. The
   sub-list's own state-3 hand-off installs the Riremito travel art, and
   Square while an actor is up dismisses it.
+
+One painter has a **sub-draw** the port stops short of. `FUN_801F16C0`, the
+stacked per-entry label list, publishes each entry's code byte to
+`DAT_8007B469` and then calls `FUN_801E5B4C` for that entry, advancing the pen
+`0x0D` before and `0x2A` after - and `FUN_801E5B4C` is the equipment
+stat-comparison panel: it aggregates the five equip-slot bonuses through the
+static tables `DAT_80074368` and `DAT_80074F68` and paints the per-stat
+up/down arrows. The `jal` at `0x801F1778` is its only reference in the corpus,
+so the panel exists for this list and nothing else - in particular it is not
+the pause-menu equip preview, which is a separate flow with its own
+aggregator. `legaia_engine_vm::baka_hub_actors::entry_list` ports the list and
+emits a `HubDraw::EntrySubDraw` marker where the call goes; nothing matches on
+that marker yet, so the four `world_map_overlay` kernels that port
+`FUN_801E5B4C` are inert behind a live caller rather than behind no caller.
 
 **Several of these machines park rather than exit**, and that is the fact a
 host has to know before it installs one. `FUN_801EE90C` entered at phase 0

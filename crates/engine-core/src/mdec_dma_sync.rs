@@ -30,6 +30,8 @@
 //! [`OUT_POLL_BIT`] respectively.
 //!
 //! REF: FUN_801cfe98, FUN_801d0230  -- callees / co-resident, not ported here
+//! REF: FUN_801cffdc, FUN_801d0070  -- the DMA kick pair the decode loop
+//! reaches the blocking waits through, bypassing these wrappers.
 //!
 //! Provenance: `ghidra/scripts/funcs/overlay_str_fmv_0x801CFE20.txt`,
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,

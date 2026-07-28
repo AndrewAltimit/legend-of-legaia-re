@@ -28,10 +28,18 @@
 //!
 //! ## NOT WIRED
 //!
+//! REF: FUN_80025358 - the only caller, itself unported.
+//!
 //! The engine has no staged sub-overlay loader. `FUN_80025358`, the only
 //! caller, is itself unported, and the engine's own asset path resolves PROT
 //! entries synchronously rather than through a frame-sliced CD read - so there
 //! is no host that would call this and nothing that owns `_DAT_8007B6C8`.
+//!
+//! "The only caller" is measured, not assumed: a five-form reference scan
+//! ([`docs/tooling/address-reference-scan.md`](../../../docs/tooling/address-reference-scan.md))
+//! over `SCUS_942.54`, the based overlay images and the raw PROT entries finds
+//! exactly one reference to `0x801F6B24` - the `jal` at `0x80025404`, inside
+//! `FUN_80025358` - and no word, `j`, branch or `lui`+`addiu` form anywhere.
 
 /// Phase counter the loader indexes on (`_DAT_8007B6C8`).
 pub const BACKREAD_PHASE_GLOBAL: u32 = 0x8007_B6C8;

@@ -995,10 +995,89 @@ naming the composition pass points at the camera that has to exist first.
 half-width was disclosed as a word `engine-core` "does not model". It does:
 both of the streak's projection inputs are battle-context words
 (`ctx[+0x1144]`, `ctx[+0x6C6]`) written by `FUN_801DEA50`, which is ported as
-`engine-core::action_effect_script` and carries its own `NOT WIRED` note. The
-prerequisite is that module's caller, not new modelling. When a disclosure says
-a value has no source, check whether the retail *writer* is already ported and
-inert - that turns an open-ended reason into a named one.
+`engine-core::action_effect_script` and carries its own `NOT WIRED` note. When
+a disclosure says a value has no source, check whether the retail *writer* is
+already ported and inert - that turns an open-ended reason into a named one.
+
+That row said "the prerequisite is that module's caller". **It is not** - see
+[the infrastructure cluster](#the-infrastructure--leaf-kernel-cluster) below,
+which measured `FUN_801DEA50`'s references: the caller is `FUN_80047430`, it
+is ported, and it is live. What the streak is waiting on is the same thing
+`action_effect_script` is waiting on, which is the effect-script block and the
+actor cursor the stepper walks.
+
+## The infrastructure / leaf-kernel cluster
+
+Around forty-five disclosed-inert anchors spread over `engine-core`'s SCUS
+leaf kernels, overlay/CD/MDEC plumbing, mode entry, cutscene elements and
+effect ribbon; `engine-vm`'s SCUS helpers, VRAM rect copy, title primitives,
+panel backread and world-map overlay leaves; plus single anchors in `asset`,
+`mdec` and `engine-audio`. None is `FALSE INERT`. What the cluster produced
+instead is a **measurement**, because every anchor was put through the
+five-form reference scan
+([`address-reference-scan.md`](address-reference-scan.md)) before its
+disclosure was read, and the scan disagreed with the disclosure often enough
+to be the point of the exercise.
+
+### Two anchors are retail-unreachable
+
+`FUN_801CFE20` and `FUN_801CFE5C` - the FMV overlay's `DecDCTinSync` /
+`DecDCToutSync`-shaped wrappers, ported as `engine-core::mdec_dma_sync` - have
+**no reference of any form** across all 1234 images, including the raw bytes of
+every extracted PROT entry. The decode loop reaches the
+blocking waits through the DMA kick routines `FUN_801CFFDC` / `FUN_801D0070`
+instead, which call `FUN_801D0100` / `FUN_801D0198` directly. The module had
+described the wrappers as the entries "every decode step funnels its channel
+waits through"; that is now recorded the other way round, as code the game
+links and never calls. This is the bucket a wiring worklist has no slot for:
+the honest verdict is neither `WIRE` nor a prerequisite, but "no host call
+could correspond to anything".
+
+### Nine disclosures named a blocker that already exists
+
+Each of these read as a correct disclosure and would have survived another
+audit. They are listed with what the scan or a catalog lookup found instead.
+
+| Anchor | The reason said | The measurement says |
+|---|---|---|
+| `801dea50` `action_effect_script` | the caller is the battle-action SM `FUN_801E295C` | no reference of any form inside that overlay image; both `jal`s are in the anim-node tick `FUN_80047430`, ported and live |
+| `800265e8` `seed_boot_offset_table` | nothing in the corpus indexes `0x800917B0` | `FUN_8002630C` indexes it by VAB slot for `SsVabOpenHead`; the words are the per-slot SPU bases, already ported |
+| `80020224` `walk_descriptor_pairs` | MAIN_INIT is documented but not ported | MAIN_INIT is ported, as `engine-core::mode_entry_init` |
+| `80031ae4` `float_tween` | the label emitter `FUN_80032434` is not ported | it is ported; and the sibling draw pass `FUN_80031D00` named alongside it is ported **and live** |
+| `801d841c` `flash_element_spawn` | nothing wants a flash element at all | `FUN_801ED308` does, at `0x801ED3DC`; it is ported and live, and the arm is already modelled |
+| `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
+| `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw, whose live port emits an unhandled marker |
+| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live |
+| `8001fa00` `init_identity_index_list` | the emitter that pops the list is unported | true, but the *seeder* is MAIN_INIT, which is ported |
+| `80035c00` `set_pair` | writing it from the menu host would invent state | the writers are three sites in the battle action resolver, not a menu |
+
+The shape worth generalising: **a disclosure is most often wrong about the
+half of the chain it did not have to look at.** Seven of the ten got the
+engine side right and the retail side wrong, and the retail side is the one a
+scan can settle mechanically.
+
+### The rest measured honest
+
+`panel_backread_loader` (one reference, the unported `FUN_80025358`),
+`morph_weight_apply` (the template word at descriptor `0x8007068C + 8`, exactly
+as disclosed), `effect_ribbon` (`FUN_8001ADA4` case 4, as disclosed),
+`cutscene::sprite_stack_pop` (`FUN_801D629C` at `0x801D648C`), `gameover_banner`
+(caller live, mode 18 never entered), `title_prim`, `overlay_loader`,
+`chunk_install`, `cd_dma`, `input`, `scene_name_sync`, `mode_entry_init`,
+`move_no_effect_guard`, `spawn_move_actor`, `scus_core_helpers`,
+`monster_archive::animation`, `new_game`, `player_anm`, `strv2_decode` and
+`seq_events`. `mode::other_warp_init_stage` is honest with a sharper edge: it
+has **no `jal` anywhere**, and its one reference is the mode-table slot
+`mode_table[24] + 0x10` at `0x800709DC`, a table `legaia_asset::mode_table`
+already parses from the disc.
+
+### One `WIRE`, out of this lane's reach
+
+`flash_element_spawn`. The call site is `PanelActorHost`'s handler for
+`FadeFlashEffect::CaptureAndClearTint` in
+`crates/engine-core/src/world_map_panel_host.rs`, which saves and clears the
+tint triple and stops. Retail spawns the flash element in the same arm. One
+call, against a host that already exists.
 
 ## The minigame cluster's disclosures were mostly wrong about *what* blocked
 

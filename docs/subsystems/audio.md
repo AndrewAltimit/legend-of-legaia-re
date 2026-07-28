@@ -98,6 +98,14 @@ are therefore the same physical bank in two modes, which is why retail needs no
 extra SPU room for the field cues. Slot sizes, the SPU map and the structural
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
+The seeder and the reader are ported at opposite ends and never meet:
+`legaia_engine_core::scus_leaf_kernels::seed_boot_offset_table` writes the
+twelve-word image and `legaia_asset::sfx_table::spu_base_for_slot` answers the
+query the engine's audio host actually makes, returning the same values as
+literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two
+agree slot by slot, including the one slot the seeder skips and the four
+aliased pairs, so the duplication is guarded rather than silent.
+
 ## Monster sound bank - `h:\mpack\monster.snd`
 
 Battle-time monster sound banks live in a single packed `monster.snd` file. The loader is `FUN_8003E104(monster_idx, slot, dst_buf)` - called twice from the battle scene loader `FUN_800520F0` (slots 7 and 8, for the active battle's two monster sound banks). It reads the file's per-monster TOC at `0x801C8980 - 0x10` (4-byte stride, paired entries giving `[start_lba, end_lba+1]`), computes the LBA range, and dispatches:

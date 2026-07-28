@@ -35,9 +35,21 @@
 //! implements it, so no real host runs a `RectCopyCall` through
 //! [`enqueue`] - they are reachable only from this module's unit tests. A
 //! wired caller would be a GP0-level host in `engine-render` that owns an
-//! ordering table and a back-buffer flag to pass in. This costs nothing in
-//! practice: no on-disc scene script uses sub-op `0x12`, so the arm never
-//! fires on retail data.
+//! ordering table and a back-buffer flag to pass in.
+//!
+//! REF: FUN_80021DF4 - the per-frame actor tick whose kind-7 arm is the
+//! other retail route into the enqueue.
+//!
+//! **The field-VM opcode is the minor route, not the whole of it.** No
+//! on-disc scene script uses sub-op `0x12`, so that arm never fires on retail
+//! data - but a reference scan finds `FUN_800468A4` reached from two other
+//! places, and the busier one is not a script at all: the per-frame actor tick
+//! `FUN_80021DF4` calls it at `0x80022CB0` on its **kind-7** arm
+//! (`lh v1,0x5A(actor); li v0,7`), i.e. an actor whose draw *is* a VRAM
+//! rect copy, sourcing the rect from `actor[+0xCC..+0xD6]`. That tick is
+//! ported and live (`legaia_anm::player`, `crate::move_vm`), so the honest
+//! prerequisite is an actor kind that draws by rect copy, not only a renderer
+//! that implements the field-VM hook.
 
 /// A source rectangle for a VRAM-to-VRAM copy, in VRAM pixel coordinates.
 ///
@@ -204,7 +216,9 @@ pub enum EnqueueOutcome {
 /// PORT: FUN_800468a4
 /// NOT WIRED: `FieldHost::op43_vram_rect_copy` has a no-op default body and no
 /// renderer implements it, so no host ever runs a [`RectCopyCall`] through
-/// here - see the module doc's wiring-status section.
+/// here. That hook is only one of retail's routes into `FUN_800468A4`; the
+/// other is the actor tick's kind-7 draw arm, which the engine has no actor
+/// kind for. See the module doc's wiring-status section.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {
     if call.ot_slot <= 0 || call.ot_slot >= ot_len {
         return EnqueueOutcome::SlotOutOfRange;
