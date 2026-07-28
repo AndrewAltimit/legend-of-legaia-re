@@ -108,6 +108,7 @@ pub(crate) fn confirm_dialog_slide_y(
 pub(crate) fn save_select_phase_text_draws(
     font: &legaia_font::Font,
     session: &legaia_engine_core::save_select::SaveSelectSession,
+    flow: &legaia_engine_core::save_screen::SaveScreenFlow,
     stage_origin: (i32, i32),
     stage_scale: u32,
     chrome_present: bool,
@@ -133,8 +134,13 @@ pub(crate) fn save_select_phase_text_draws(
                 slide_offset,
             ));
         }
-        SelectPhase::SlotPreview { slot } => {
-            let info = build_slot_info_view(session.slots(), slot);
+        SelectPhase::SlotPreview { .. } => {
+            // The grid previews the picked PORT's blocks, not the pill row -
+            // the two are different lists in the two-stage rack, and reading
+            // the pills here captioned the info panel with the card instead
+            // of the save.
+            let (blocks, cell) = flow.preview(session);
+            let info = build_slot_info_view(blocks, cell);
             let view = info.as_ref().map(|i| i.as_view());
             let panel_y_offset = info_panel_slide_offset(session);
             out.extend(legaia_engine_render::slot_info_panel_text_draws_for(
@@ -148,7 +154,7 @@ pub(crate) fn save_select_phase_text_draws(
             // Nothing loadable here: retail captions the panel rather
             // than leaving it empty.
             if view.is_none()
-                && let Some(snap) = session.slots().get(slot as usize)
+                && let Some(snap) = blocks.get(cell as usize)
                 && let Some(caption) = SlotInfoMode::for_slot(snap).caption(session.mode())
             {
                 out.extend(legaia_engine_render::slot_info_caption_draws_for(
@@ -215,6 +221,51 @@ impl SlotInfoOwned {
             leader_mp: self.leader_mp,
             leader_char_id: self.leader_char_id,
         }
+    }
+}
+
+/// Memory-card ports the console has, and so the pill rows this shell draws.
+/// Retail's save screen is `SLOT 1` / `SLOT 2` and nothing else; the sprite
+/// chrome has always clamped to two, which is what made a 15-entry pill row
+/// draw fifteen text rows under two pills.
+pub(crate) const CARD_PORTS: u8 = 2;
+
+/// The native shell's save rack: retail's two console ports, with the
+/// engine's own save directory standing in for the card in **port 1**.
+///
+/// The shell's saves are LGSF files rather than SC blocks on a real card, but
+/// the screen around them is retail's: two pills, a card-read beat, then the
+/// 5x3 block grid of `slot_00 … slot_14`. Modelling the directory as the
+/// mounted card is what lets that screen be the same screen the browser
+/// draws - one [`SaveRack`] kind, one
+/// [`legaia_engine_core::save_screen::SaveScreenFlow`], no per-host flag.
+/// Port 2 is the empty port; a mounted card image is what would fill it.
+pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_core::save_select::SaveRack {
+    use legaia_engine_core::save_screen::card_port_snapshot;
+    let label = save_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("SAVE DATA");
+    legaia_engine_core::save_select::SaveRack::CardPorts(
+        (0..CARD_PORTS)
+            .map(|port| card_port_snapshot(port, (port == 0).then_some(label)))
+            .collect(),
+    )
+}
+
+/// The fifteen blocks behind a port of [`disk_save_rack`] - the answer to
+/// [`legaia_engine_core::save_screen::SaveScreenFlow::pending_read`]. Port 1
+/// is the save directory; every other port is unmounted and reads empty.
+pub(crate) fn disk_port_blocks(
+    save_dir: &Path,
+    port: u8,
+) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+    use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
+    use legaia_engine_core::save_select::SlotSnapshot;
+    if port == 0 {
+        scan_save_dir(save_dir)
+    } else {
+        (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect()
     }
 }
 
@@ -417,5 +468,141 @@ mod save_scan_tests {
         }
         assert_eq!(missing.caption(SaveSelectMode::Save), Some("Able to save."));
         assert_eq!(missing.caption(SaveSelectMode::Load), Some("No data"));
+    }
+}
+
+#[cfg(test)]
+mod save_rack_tests {
+    use super::{CARD_PORTS, disk_port_blocks, disk_save_rack, scan_save_dir};
+    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_core::save_screen::{
+        SLOT_GRID_CELLS, SaveCommit, SaveCommitKind, SaveScreenFlow,
+    };
+    use legaia_engine_core::save_select::{
+        SaveRack, SaveSelectMode, SaveSelectSession, SelectInput, SelectPhase,
+    };
+    use legaia_save::{CharacterRecord, Party, SaveFile};
+
+    fn seeded_dir(slots: &[u8]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ..SaveFile::default()
+        }
+        .write();
+        for &slot in slots {
+            std::fs::write(
+                dir.path().join(format!("slot_{slot:02}.{SAVE_EXT}")),
+                &bytes,
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    /// Retail's save screen is two pills. Feeding the pill row fifteen disk
+    /// slots drew fifteen text rows under two pill sprites - the sprite
+    /// chrome has always clamped to `min(2)`, so the mismatch was invisible
+    /// in the sprite pass and glaring in the text pass.
+    #[test]
+    fn the_rack_is_two_ports_with_the_save_dir_in_port_one() {
+        let dir = seeded_dir(&[0]);
+        let rack = disk_save_rack(dir.path());
+        assert!(
+            rack.is_card_ports(),
+            "the shell runs retail's two-stage flow"
+        );
+        assert_eq!(rack.slots().len(), CARD_PORTS as usize);
+        assert!(rack.slots()[0].present, "port 1 is the save directory");
+        assert!(!rack.slots()[1].present, "port 2 holds no card");
+    }
+
+    /// The grid behind port 1 is the save directory; every other port is
+    /// unmounted and previews as fifteen free cells rather than as port 1's.
+    #[test]
+    fn port_one_reads_the_save_dir_and_port_two_reads_empty() {
+        let dir = seeded_dir(&[2]);
+        let blocks = disk_port_blocks(dir.path(), 0);
+        assert_eq!(blocks, scan_save_dir(dir.path()));
+        assert!(blocks[2].present);
+        let empty = disk_port_blocks(dir.path(), 1);
+        assert_eq!(empty.len(), SLOT_GRID_CELLS as usize);
+        assert!(empty.iter().all(|b| !b.present));
+    }
+
+    /// The whole two-stage walk, end to end: pick the port off the pills,
+    /// cross the card-read beat, walk the block grid, confirm. What comes
+    /// out must name the block the player was pointing at - the pre-rack
+    /// code committed the *pill* slot, which in a two-port rack is only
+    /// ever 0 or 1.
+    #[test]
+    fn picking_a_grid_cell_commits_that_slot_not_the_port() {
+        let dir = seeded_dir(&[0, 3]);
+        let mut session =
+            SaveSelectSession::for_rack(SaveSelectMode::Load, &disk_save_rack(dir.path()));
+        let mut flow = SaveScreenFlow::new();
+        let step = |session: &mut SaveSelectSession, flow: &mut SaveScreenFlow, edge: u16| {
+            if let Some(port) = flow.pending_read(session) {
+                flow.install_blocks(port, disk_port_blocks(dir.path(), port));
+            }
+            let edge = flow.before_tick(session, edge);
+            session.tick(SelectInput::from_pad_edge(edge));
+        };
+        // Confirm port 1, then run the "Now checking" beat out.
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Cross.mask(),
+        );
+        for _ in 0..session.now_checking_frames() + 1 {
+            step(&mut session, &mut flow, 0);
+        }
+        assert!(matches!(session.phase(), SelectPhase::SlotPreview { .. }));
+        // Cell 0 holds a save, cell 1 does not: a Load confirm there is
+        // refused, so the walk to cell 3 has to be uninterrupted.
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Right.mask()
+                | legaia_engine_core::input::PadButton::Cross.mask(),
+        );
+        assert!(
+            matches!(session.phase(), SelectPhase::SlotPreview { .. }),
+            "cell 1 is empty - retail refuses the load rather than failing it"
+        );
+        for _ in 0..2 {
+            step(
+                &mut session,
+                &mut flow,
+                legaia_engine_core::input::PadButton::Right.mask(),
+            );
+        }
+        step(
+            &mut session,
+            &mut flow,
+            legaia_engine_core::input::PadButton::Cross.mask(),
+        );
+        assert_eq!(
+            flow.commit(&session),
+            Some(SaveCommit {
+                port: 0,
+                cell: 3,
+                kind: SaveCommitKind::Load,
+            })
+        );
+    }
+
+    /// A flat rack is what the shell used to build, and it is what the drift
+    /// gate now refuses: pin the difference so a revert is a red test and not
+    /// just a red gate.
+    #[test]
+    fn the_flat_rack_is_no_longer_what_the_shell_declares() {
+        let dir = seeded_dir(&[0]);
+        let flat = SaveRack::Blocks(scan_save_dir(dir.path()));
+        assert!(!flat.is_card_ports());
+        assert_eq!(flat.slots().len(), SLOT_GRID_CELLS as usize);
+        assert_ne!(disk_save_rack(dir.path()).slots().len(), flat.slots().len());
     }
 }

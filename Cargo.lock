@@ -1304,6 +1304,8 @@ dependencies = [
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-lzs",
+ "legaia-prot",
  "legaia-tim",
  "log",
  "pollster",

@@ -272,12 +272,20 @@ pub use crate::battle_intro_particles::ParticleEnv;
 /// PORT: FUN_801D081C
 /// REF: FUN_80019B28 (heading), FUN_8005AF0C (sqrt), FUN_80056798 (rand)
 ///
-/// NOT WIRED: `legaia_engine_core::World` models the transition as the phase
-/// counter alone (`World::battle_intro`, driven by
-/// `battle_intro_transition::tick_transition`); it carries no per-style working
-/// set, and `legaia-engine-render` has no transition pass to draw 256 textured
-/// quads into. Wiring needs both, plus the `0x801CE8BC` corner table off the
-/// disc - seeding a grid nothing draws would be an inert allocation.
+/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
+/// owns the [`TileGrid`] between frames and ticks it from the live transition
+/// clock, and [`select_intro_style`] makes this the style the **ordinary
+/// random encounter** takes - so this working set runs on most battles.
+///
+/// [`select_intro_style`]: crate::battle_intro_styles::select_intro_style
+///
+/// NOT DRAWN: two inputs are still missing, and neither is the ordering table.
+/// The `0x801CE8BC` corner table is overlay data nothing decodes (the host
+/// passes a shape-only stand-in), and the retail packet assembly that projects
+/// a tile's eight corners through the GTE is at the clean-room boundary. The
+/// tiles' own texture pages sample the captured field frame, which
+/// `vram_capture` does now produce - so the missing piece is the projection,
+/// not the source texels.
 pub fn seed_tile_grid(
     sub_style: TileSubStyle,
     allocated: bool,
@@ -492,8 +500,8 @@ pub struct TileTick {
 ///
 /// PORT: FUN_801D0D24
 ///
-/// NOT WIRED: same missing host as [`seed_tile_grid`] - nothing owns a
-/// [`TileGrid`] and nothing draws one.
+/// WIRED, without a draw - see [`seed_tile_grid`] for what the emitter does
+/// with this and what still has to exist before a tile reaches the screen.
 pub fn tick_tile_grid(grid: &mut TileGrid, elapsed: &mut i16, frame_step: u8) -> TileTick {
     let mut out = TileTick {
         not_first_frame: *elapsed != 0,

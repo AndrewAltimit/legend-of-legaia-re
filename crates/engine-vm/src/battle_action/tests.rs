@@ -30,6 +30,9 @@ struct RecHost {
     events: RefCell<Vec<Event>>,
     capture_spells: std::collections::HashSet<u8>,
     spell_costs: std::collections::HashMap<u8, u8>,
+    /// Spell-table `+0` class bytes. Absent = "no table for this id", which
+    /// is what a host without a disc image reports.
+    spell_classes: std::collections::HashMap<u8, u8>,
     ability_bits: std::collections::HashMap<u8, u32>,
     ranges: std::collections::HashMap<(u8, u8), u16>,
     prev_cleared: bool,
@@ -137,6 +140,9 @@ impl BattleActionHost for RecHost {
     ) -> Option<&legaia_art::ArtRecord> {
         self.art_records
             .get(&(character_byte(character), action.as_byte()))
+    }
+    fn spell_class_byte(&self, id: u8) -> Option<u8> {
+        self.spell_classes.get(&id).copied()
     }
     fn is_capture_spell(&self, id: u8) -> bool {
         self.capture_spells.contains(&id)
@@ -375,6 +381,112 @@ fn action_seed_magic_routes_to_magic_cast_begin() {
             ..
         } if to == ActionState::MagicCastBegin.as_byte()
     ));
+}
+
+/// The Magic arm's class-byte discriminator (`0x801E2EEC..0x801E2EF8`): the
+/// override to the Spirit band needs **both** `class < 0x14` *and* `id <
+/// 0x65`, so each test on its own must leave the default `0x28` store alone.
+#[test]
+fn action_seed_magic_class_discriminator_takes_both_tests() {
+    let band = |class: Option<u8>, spell_id: u8| -> u8 {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.actors[1].params[0] = spell_id;
+        if let Some(c) = class {
+            host.spell_classes.insert(spell_id, c);
+        }
+        step(&mut host, &mut ctx);
+        ctx.action_state
+    };
+    let cast_begin = ActionState::MagicCastBegin.as_byte();
+    let pre_arm = ActionState::SpiritPreArm.as_byte();
+
+    // Both tests pass -> 0x3C.
+    assert_eq!(band(Some(0x02), 0x10), pre_arm);
+    assert_eq!(band(Some(0x13), 0x64), pre_arm, "0x13 / 0x64 are inclusive");
+    // Class fails the `< 0x14` test -> the default 0x28 store stands.
+    assert_eq!(band(Some(0x14), 0x10), cast_begin);
+    assert_eq!(band(Some(0x32), 0x10), cast_begin);
+    // Id fails the `< 0x65` test -> likewise. The player Seru block is here.
+    assert_eq!(band(Some(0x02), 0x65), cast_begin);
+    assert_eq!(band(Some(0x02), 0x81), cast_begin);
+}
+
+/// A host that supplies no spell table cannot evaluate the class test, so it
+/// keeps retail's non-override branch for every id - which is what every
+/// disc-free battle in this engine does.
+#[test]
+fn action_seed_magic_without_a_spell_table_always_takes_the_magic_band() {
+    for spell_id in [0x00u8, 0x10, 0x64, 0x81, 0xFF] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.actors[1].params[0] = spell_id;
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicCastBegin.as_byte());
+    }
+}
+
+/// With no override, `is_capture_spell` falls out of the same class byte the
+/// band pick reads - one record, one answer.
+#[test]
+fn the_default_capture_predicate_derives_from_the_class_byte() {
+    struct ClassOnly(std::collections::HashMap<u8, u8>);
+    impl BattleActionHost for ClassOnly {
+        fn actor(&self, _: u8) -> Option<&BattleActor> {
+            None
+        }
+        fn actor_mut(&mut self, _: u8) -> Option<&mut BattleActor> {
+            None
+        }
+        fn spell_class_byte(&self, id: u8) -> Option<u8> {
+            self.0.get(&id).copied()
+        }
+    }
+    let mut classes = std::collections::HashMap::new();
+    classes.insert(0x37u8, legaia_asset::spell_names::CAPTURE_CLASS);
+    classes.insert(0x38u8, 0x32u8);
+    let host = ClassOnly(classes);
+    assert!(host.is_capture_spell(0x37));
+    assert!(
+        !host.is_capture_spell(0x38),
+        "a non-'c' record is not capture"
+    );
+    assert!(
+        !host.is_capture_spell(0x39),
+        "no record at all is not capture"
+    );
+}
+
+/// The Item arm's own override (`0x801E2E6C..0x801E2EAC`): item ids `0x98` /
+/// `0x99` leave the Spirit band for the cast band, staged as a summon.
+#[test]
+fn action_seed_item_summon_ids_take_the_cast_band_as_a_summon() {
+    for (item_id, staged) in [(0x98u8, 0x96u8), (0x99, 0x97)] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.actors[1].params[0] = item_id;
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicCastBegin.as_byte());
+        assert_eq!(host.actors[1].sub_route, 9, "staged as a summon");
+        assert_eq!(host.actors[1].params[0], staged, "id is rebased by -2");
+    }
+}
+
+/// Every other item id keeps the arm's default `0x3C` store, untouched.
+#[test]
+fn action_seed_ordinary_items_stay_on_the_spirit_band() {
+    for item_id in [0x00u8, 0x01, 0x97, 0x9A, 0xFF] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+        ctx.action_state = ActionState::ActionSeed.as_byte();
+        host.actors[1].params[0] = item_id;
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            ctx.action_state,
+            ActionState::SpiritPreArm.as_byte(),
+            "item {item_id:#04x}"
+        );
+        assert_eq!(host.actors[1].params[0], item_id, "and is not rewritten");
+    }
 }
 
 #[test]

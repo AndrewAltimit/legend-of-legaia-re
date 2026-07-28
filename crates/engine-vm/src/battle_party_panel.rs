@@ -60,7 +60,8 @@
 /// Battle-context byte offsets of the four label buffers `FUN_801D84C0` fills.
 pub const LABEL_BUFFERS: [usize; 4] = [0xA9, 0x129, 0x159, 0x189];
 
-/// Battle-context offsets `FUN_801D84C0` publishes into the pose-slot table.
+/// Battle-context offsets `FUN_801D84C0` publishes into the screen-element
+/// placement table.
 pub const PUBLISHED_BUFFERS: [(usize, usize); 4] = [
     (0x62C, 0xA9),
     (0x644, 0x129),
@@ -68,8 +69,11 @@ pub const PUBLISHED_BUFFERS: [(usize, usize); 4] = [
     (0x86C, 0x1F9),
 ];
 
-/// The pose-slot table base the panels are published into (`0x80076C10`).
-pub const POSE_SLOT_TABLE: u32 = 0x8007_6C10;
+/// The screen-element placement table the panels are published into
+/// (`0x80076C10`). Named "pose-slot table" here once, one of three readings
+/// of the same base; `docs/reference/memory-map.md` settles it - a record is a
+/// placement, and only the pose reading is contradicted by the layout.
+pub const ELEMENT_PLACEMENT_TABLE: u32 = 0x8007_6C10;
 /// The label-actor state block `FUN_801DBB8C` opens and `FUN_801D84C0` clears.
 pub const LABEL_STATE_BLOCK: u32 = 0x801F_4E08;
 /// Live character-record base (`0x80084708 + (id - 1) * 0x414`).
@@ -476,7 +480,7 @@ mod tests {
     #[test]
     fn published_buffers_point_into_the_context() {
         for (slot, buf) in PUBLISHED_BUFFERS {
-            assert!(slot > 0x600, "pose-slot offset {slot:#x}");
+            assert!(slot > 0x600, "placement-table offset {slot:#x}");
             assert!(buf < 0x200, "context offset {buf:#x}");
         }
     }

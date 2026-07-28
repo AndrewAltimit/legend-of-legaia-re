@@ -35,6 +35,30 @@
 //! per-ABR blend pipeline. Textured quads sample the shared PSX VRAM texture
 //! with the same 4/8/15-bpp + CLUT decode the 3D VRAM-mesh shader uses.
 //!
+//! ## Two things about how this reaches a frame
+//!
+//! **It composites over a scene.** [`crate::RenderTarget::ScreenOverlay`] is a
+//! whole-frame mode - clear, then quads and nothing else - so on its own it can
+//! never put a streak over a battle scene or a transition strip over a field
+//! scene, which is the only thing any consumer wants.
+//! [`crate::RenderTarget::SceneWithScreenPrims`] draws both in one frame.
+//! Retail draws no such distinction: 3D primitives and screen-space packets go
+//! into the *same* ordering table and one `DrawOTag` walks it.
+//!
+//! **The coordinate space is the PSX display, not the window.** Every retail
+//! emitter authors screen coordinates in 320x240 and clamps against it, so the
+//! renderer hands [`build_geometry`] that space and the overlay stretches over
+//! the whole surface - matching the `orthographic_rh(0, 320, 240, 0)` the
+//! native shell's `screen_fx` meshes already use.
+//!
+//! ## Wiring status
+//!
+//! Nothing outside this crate builds a [`ScreenPrim`] yet. The pass is
+//! substrate: the consumers (the afterimage streak, the five field-to-battle
+//! transition styles) are ported but blocked on their own inputs, each stated
+//! on its own module. It is also **native-only** - see
+//! `docs/tooling/host-drift.md` for what the browser hosts would need.
+//!
 //! ## Simplifications vs. hardware (documented, not hidden)
 //!
 //! A semi-transparent *textured* PSX prim honours the per-texel STP bit
@@ -50,12 +74,14 @@ use crate::afterimage::AfterimageQuad;
 
 /// One screen-space textured quad (PSX `POLY_FT4`) sampling PSX VRAM.
 ///
-/// `xy` are the four corners in **surface pixels** in the retail `POLY_FT4`
-/// vertex order (`v0..v3`); [`build_geometry`] converts them to NDC using the
-/// surface size. `uv`/`clut`/`tpage` drive the same VRAM CLUT decode as the
-/// 3D VRAM-mesh path; `color` is the 24-bit modulation colour
-/// (`0x00RRGGBB`); `ot_index` is the ordering-table bucket this quad links at
-/// (larger = farther = drawn earlier).
+/// `xy` are the four corners in **[PSX screen pixels]** in the retail
+/// `POLY_FT4` vertex order (`v0..v3`); [`build_geometry`] converts them to NDC
+/// against the space its caller names. `uv`/`clut`/`tpage` drive the same VRAM
+/// CLUT decode as the 3D VRAM-mesh path; `color` is the 24-bit modulation
+/// colour (`0x00RRGGBB`); `ot_index` is the ordering-table bucket this quad
+/// links at (larger = farther = drawn earlier).
+///
+/// [PSX screen pixels]: crate::vram_capture::PSX_SCREEN_WIDTH
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenQuad {
     pub xy: [(i16, i16); 4],
@@ -66,7 +92,17 @@ pub struct ScreenQuad {
     /// and (bits 5..=6) the ABR blend mode used when `semi_transparent`.
     pub tpage: u16,
     /// 24-bit modulation colour `0x00RRGGBB` (`0x808080` = passthrough).
+    /// Ignored when [`Self::gouraud`] is set.
     pub color: u32,
+    /// Per-vertex 24-bit modulation colours, in the same `v0..v3` order as
+    /// [`Self::xy`] - i.e. a `POLY_GT4` rather than a `POLY_FT4`.
+    ///
+    /// The transition styles need this: a
+    /// `legaia_engine_vm::battle_intro_transition::IntroQuad` carries a
+    /// separate top-edge and bottom-edge colour, and "top and bottom differing
+    /// is what makes the quad a gradient". The afterimage streak is the flat
+    /// case and leaves this `None`.
+    pub gouraud: Option<[u32; 4]>,
     pub semi_transparent: bool,
     pub ot_index: u32,
 }
@@ -144,6 +180,7 @@ pub fn afterimage_screen_quad(q: &AfterimageQuad, ot_index: u32) -> ScreenQuad {
         clut: q.clut,
         tpage: q.tpage,
         color: q.color,
+        gouraud: None,
         semi_transparent: q.semi_transparent,
         ot_index,
     }
@@ -169,8 +206,10 @@ pub fn order_primitives(prims: &[ScreenPrim]) -> Vec<usize> {
 /// A CPU-side vertex matching the screen-overlay pipeline's vertex layout.
 /// `pos` is NDC, `uv` texel coordinates (float, truncated in the shader),
 /// `cba_tsb` the CLUT/texpage words (flat-interpolated), `color` the
-/// per-quad modulation (textured: a `/128` factor; flat: a `/255` colour),
-/// and `flags` bit 0 = textured.
+/// **per-vertex** modulation (textured: a `/128` factor; flat: a `/255`
+/// colour), and `flags` bit 0 = textured. The shader interpolates `color`,
+/// which is what makes a `POLY_GT4` gradient work; a flat `POLY_FT4` writes
+/// the same value to all four corners.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ScreenVertex {
@@ -221,7 +260,9 @@ fn to_ndc(x: i16, y: i16, surf_w: f32, surf_h: f32) -> [f32; 2] {
 }
 
 /// Emit the four vertices of one quad (retail `v0..v3` order) into `verts`
-/// and its two triangles into `idx`.
+/// and its two triangles into `idx`. `color` is per-corner, so one flat
+/// `POLY_FT4` colour is passed as four copies and a `POLY_GT4` gradient as
+/// four distinct entries.
 #[allow(clippy::too_many_arguments)]
 fn push_quad(
     verts: &mut Vec<ScreenVertex>,
@@ -229,7 +270,7 @@ fn push_quad(
     xy: [(i16, i16); 4],
     uv: [(u8, u8); 4],
     cba_tsb: [u32; 2],
-    color: [f32; 4],
+    color: [[f32; 4]; 4],
     flags: u32,
     surf_w: f32,
     surf_h: f32,
@@ -240,7 +281,7 @@ fn push_quad(
             pos: to_ndc(xy[c].0, xy[c].1, surf_w, surf_h),
             uv: [uv[c].0 as f32, uv[c].1 as f32],
             cba_tsb,
-            color,
+            color: color[c],
             flags,
         });
     }
@@ -261,8 +302,18 @@ fn tex_mod_factor(color: u32) -> [f32; 4] {
 }
 
 /// Build one frame's screen-overlay geometry from a primitive list and the
-/// surface size. Primitives are drawn in [`order_primitives`] order and
-/// coalesced into [`DrawRun`]s of consecutive same-[`BlendClass`] quads.
+/// **coordinate space the primitives are authored in**. Primitives are drawn
+/// in [`order_primitives`] order and coalesced into [`DrawRun`]s of
+/// consecutive same-[`BlendClass`] quads.
+///
+/// `surf_w` / `surf_h` are what a corner of `(surf_w, surf_h)` maps to the
+/// bottom-right of the frame; they are *not* the window size. Every retail
+/// emitter authors in the 320x240 PSX display space and clamps against it, so
+/// the renderer passes [`crate::vram_capture::PSX_SCREEN_WIDTH`] /
+/// `PSX_SCREEN_HEIGHT` and the overlay stretches over the whole window - the
+/// same mapping `engine-shell`'s `screen_fx` meshes get from their
+/// `orthographic_rh(0, 320, 240, 0)`. Handing the window size instead would
+/// pin a 320x240 overlay into the top-left corner of a 960x720 frame.
 pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> OverlayGeometry {
     let sw = surf_w.max(1) as f32;
     let sh = surf_h.max(1) as f32;
@@ -282,7 +333,10 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                 q.xy,
                 q.uv,
                 [q.clut as u32, q.tpage as u32],
-                tex_mod_factor(q.color),
+                match q.gouraud {
+                    Some(c) => std::array::from_fn(|i| tex_mod_factor(c[i])),
+                    None => [tex_mod_factor(q.color); 4],
+                },
                 FLAG_TEXTURED,
                 sw,
                 sh,
@@ -293,12 +347,12 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                 q.xy,
                 [(0, 0); 4],
                 [0, 0],
-                [
+                [[
                     q.color[0] as f32 / 255.0,
                     q.color[1] as f32 / 255.0,
                     q.color[2] as f32 / 255.0,
                     q.color[3] as f32 / 255.0,
-                ],
+                ]; 4],
                 0,
                 sw,
                 sh,
@@ -359,6 +413,7 @@ mod tests {
                 clut: 0,
                 tpage: 0x27,
                 color: 0x808080,
+                gouraud: None,
                 semi_transparent: true,
                 ot_index: ot,
             })
@@ -451,5 +506,51 @@ mod tests {
         let geo = build_geometry(&[], 320, 240);
         assert!(geo.is_empty());
         assert!(geo.runs.is_empty());
+    }
+
+    #[test]
+    fn a_gouraud_quad_gives_each_corner_its_own_modulation() {
+        // The intro-transition shape: one colour on the top edge (v0/v1),
+        // another on the bottom (v2/v3). A flat quad cannot express it, which
+        // is why `gouraud` exists.
+        let top = 0x0080_8080u32;
+        let bottom = 0x0040_4040u32;
+        let q = ScreenPrim::Textured(ScreenQuad {
+            xy: [(0, 0), (32, 0), (0, 32), (32, 32)],
+            uv: [(0, 0); 4],
+            clut: 0,
+            tpage: 2 << 7,
+            color: 0x00FF_00FF, // must be ignored
+            gouraud: Some([top, top, bottom, bottom]),
+            semi_transparent: false,
+            ot_index: 1,
+        });
+        let geo = build_geometry(&[q], 320, 240);
+        assert_eq!(geo.vertices[0].color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(geo.vertices[1].color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(geo.vertices[2].color, [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(geo.vertices[3].color, [0.5, 0.5, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn the_geometry_space_is_the_argument_not_the_window() {
+        // The same 320x240-authored quad must fill the frame whatever the
+        // window is, which is only true if the caller passes the PSX display
+        // size. Passing 960x720 instead pins it into the top-left corner -
+        // that is the bug the renderer's staging pass has to avoid.
+        let full = ScreenPrim::Flat(FlatQuad {
+            xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
+            color: [255, 255, 255, 255],
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 1,
+        });
+        let psx = build_geometry(&[full], 320, 240);
+        assert_eq!(psx.vertices[0].pos, [-1.0, 1.0]);
+        assert_eq!(psx.vertices[3].pos, [1.0, -1.0]);
+
+        let windowed = build_geometry(&[full], 960, 720);
+        assert_eq!(windowed.vertices[0].pos, [-1.0, 1.0]);
+        assert!(windowed.vertices[3].pos[0] < -0.3);
     }
 }

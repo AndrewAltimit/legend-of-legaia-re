@@ -1,0 +1,44 @@
+# Waivers for scripts/ci/check-trait-override-symmetry.py.
+#
+# Each entry records a host implementation of an `engine-core` trait that
+# overrides FEWER defaulted methods than its peers, plus what would have to
+# exist for it to close. The checker validates every waiver against the real
+# source, in both directions:
+#
+#   * a waiver naming an impl that no longer exists  -> stale waiver, CI fails
+#   * a waiver for an impl that now matches its peers -> stale waiver, CI fails
+#   * an empty `reason`                               -> CI fails
+#
+# A waiver here is NOT an argument that the gap is harmless. Say what breaks
+# and say what must exist first; if the answer is "someone has to type the
+# method body", that is undone work and does not belong in this file.
+#
+# Keys are `trait` + `type`, both spelled exactly as the source writes them
+# (the type keeps its lifetime arguments, e.g. `WebBgmDirector<'_>`).
+
+[[waiver]]
+trait = "BgmDirector"
+type = "TraceBgmDirector"
+reason = """
+The `audio-trace` parity oracle's recording director
+(`crates/engine-shell/src/audio_trace_oracle.rs`), not a playback host. It
+overrides the five scene-local hooks and leaves `start_owned_vab` /
+`queue_owned_vab` defaulted, and the consequence is real rather than
+cosmetic: those two carry every **global-pool** track (`bgm_id >= 2000`),
+which is every field / battle / minigame music cue, so any scene whose
+prescript starts one traces a silent BGM channel.
+
+The blocking capability is **SPU ownership**, not a missing method body. The
+owned-VAB hooks have to upload the entry's own VAB before parsing its SEQ -
+`AudioBgmDirector::stage_owned_vab` does exactly that through
+`self.audio.with_spu(..)` plus an `SpuAllocator`. `TraceBgmDirector` holds no
+SPU: the trace loop in `build_engine_audio_trace` owns the private
+`legaia_engine_audio::Spu`, uploads the scene bank itself and hands the
+director the parsed `VabBank` through `set_bank`. Closing this means moving
+that upload behind the director (or giving it a bank-staging callback), which
+changes who owns the oracle's SPU - a restructure of the oracle, and one that
+belongs with whoever owns its parity numbers.
+
+Until then the oracle's coverage claim is: scene-local BGM only. That is the
+disclosure, and the gate re-derives it from source every run.
+"""

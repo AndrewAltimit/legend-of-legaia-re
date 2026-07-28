@@ -547,6 +547,25 @@ impl World {
         self.field_player_anim = anim;
     }
 
+    /// Frame count to size a **cross-context** clip cursor with when the scene
+    /// ANM bundle cannot name the poked clip
+    /// ([`crate::field_env::PropAnimBank::bind_actor_clip`]): the live
+    /// locomotion clip's length if a host has installed a player clip player,
+    /// else [`crate::field_env::PLAYER_CLIP_STANDIN_FRAMES`]. It sets how long
+    /// the script's end-latch spin waits, so it only has to be finite and of
+    /// the right order - the frames the player actually *sees* are the host
+    /// clip player's, which is a different object.
+    pub(crate) fn player_clip_frames_hint(&self) -> u16 {
+        self.field_player_anim
+            .as_ref()
+            .map(|a| {
+                let clip = if a.walking { &a.walk } else { &a.idle };
+                clip.frame_count() as u16
+            })
+            .filter(|n| *n > 0)
+            .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
+    }
+
     /// One field-frame advance of the player's locomotion animation: pick
     /// idle vs walk off the movement flag the locomotion step just set, emit
     /// the active clip's frame into the player actor's `pose_frame`. Called

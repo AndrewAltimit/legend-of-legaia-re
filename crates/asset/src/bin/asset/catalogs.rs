@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::RenderTier;
 use crate::common::*;
 use anyhow::Result;
-use legaia_asset::{tim_catalog, tim_deep_catalog, tim_scan, tmd_scan};
+use legaia_asset::{battle_texture_catalog, tim_catalog, tim_deep_catalog, tim_scan, tmd_scan};
 use legaia_prot::cdname;
 
 pub(crate) fn tmd_scan_cmd(
@@ -319,6 +319,83 @@ pub(crate) fn tim_deep_catalog_cmd(
 
     if rollup {
         let r = tim_deep_catalog::rollup(&catalog);
+        println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
+    }
+    Ok(())
+}
+
+/// `asset battle-texture-catalog <PROT.DAT>` - catalog the headerless
+/// 4bpp character-art blocks in the player battle files. Not a TIM tier:
+/// see [`legaia_asset::battle_texture_catalog`] for why no magic scan can
+/// reach these.
+pub(crate) fn battle_texture_catalog_cmd(
+    prot: &std::path::Path,
+    scus: Option<&std::path::Path>,
+    out: Option<&std::path::Path>,
+    rollup: bool,
+) -> Result<()> {
+    let names = match scus {
+        Some(p) => {
+            let bytes = std::fs::read(p)?;
+            legaia_asset::item_names::ItemNameTable::from_scus(&bytes)
+        }
+        None => None,
+    };
+    let archive = legaia_prot::archive::Archive::open(prot)?;
+    let prot_bytes = std::fs::read(prot)?;
+    let spans: Vec<(u64, u64, u32)> = archive
+        .entries
+        .iter()
+        .map(|e| (e.byte_offset, e.size_bytes, e.index))
+        .collect();
+    let catalog =
+        battle_texture_catalog::build_from_spans_with_names(&prot_bytes, &spans, names.as_ref());
+
+    if let Some(out) = out {
+        let body = if out.extension().and_then(|e| e.to_str()) == Some("tsv") {
+            battle_texture_catalog::to_tsv(&catalog)
+        } else {
+            serde_json::to_string_pretty(&catalog)?
+        };
+        std::fs::write(out, body)?;
+        println!(
+            "wrote {} battle-texture block(s) -> {}",
+            catalog.len(),
+            out.display()
+        );
+    } else {
+        println!(
+            "{:>5}  {:>5}  {:>7}  {:>4}  {:>3}  {:>9}  {:>9}  {:>4}  {:>9}  label",
+            "id", "entry", "record", "id", "sec", "pool", "size", "pal", "size"
+        );
+        println!("{}", "-".repeat(92));
+        for b in &catalog {
+            println!(
+                "{:>5}  {:>5}  {:>7}  0x{:02X}  {:>3}  0x{:07X}  {:>9}  {:>4}  {:>4}x{:<4}  {}",
+                b.id,
+                b.entry_index,
+                b.slot().to_string(),
+                b.record_id,
+                b.section,
+                b.pool_offset,
+                b.byte_len,
+                b.clut_count,
+                b.width,
+                b.height,
+                b.label,
+            );
+        }
+        let record0 = catalog.iter().filter(|b| b.is_record0()).count();
+        println!(
+            "\n{} block(s): {} in record[0], {} in flagged equipment sections.",
+            catalog.len(),
+            record0,
+            catalog.len() - record0
+        );
+    }
+
+    if rollup {
+        let r = battle_texture_catalog::rollup(&catalog);
         println!("rollup: count={} digest=0x{:016x}", r.count, r.digest);
     }
     Ok(())

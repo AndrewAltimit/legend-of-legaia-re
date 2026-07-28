@@ -345,8 +345,10 @@ presentation left to the host:
 - `dance` - Noa's dance rhythm minigame, driven by the parsed step chart.
 - `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
   action tables.
-- `muscle_dome` - the Muscle Dome card battle: deck command ids +
-  swing-record costs, with a budget-gated queue commit.
+- `muscle_dome` - the Muscle Dome: an ordinary battle fought to a KO, staged from
+  `0xB6`. Direction-command ids + swing-record AP costs, a budget-gated
+  queue commit, the `Turns Left / HP Left` readouts, and `DomeDamageModel`
+  - the one retail damage kernel both hosts resolve turns through.
 
 ## Smaller modules worth knowing
 
@@ -366,6 +368,13 @@ presentation left to the host:
   its one-time bitmask.
 - `region_encounter::EncounterRateModifiers` - statically pinned
   accessory / status encounter-rate shifts, refreshed per step.
+- `live_loop` - the single kernel both hosts arm the gameplay loop
+  through (`World::arm_live_loop`): scene label, encounter fallback,
+  loop / player-battle flags, battle BGM. Also
+  `World::scene_can_roll_encounters`, the answer to "can this scene
+  produce a random encounter at all" that lets a host say so instead of
+  looking broken in a town. See
+  [`docs/subsystems/battle.md`](../../docs/subsystems/battle.md).
 - `options` - the engine mirror of the retail options screen, plus the
   engine-only opt-in toggles (e.g. `precise_movement`, default off).
 - `dev_menu` - the debug-build dev-menu (overlay 0897) EVENT FLAG editor

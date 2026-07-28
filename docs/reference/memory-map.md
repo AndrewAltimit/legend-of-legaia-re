@@ -158,7 +158,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007BB28` | Caller tag stored at arm time (`gp+0x810`). |
 | `0x8007BB2C` | Auto-release **deadline** in vsyncs (`gp+0x814`). |
 | `0x8007BB34` | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |
-| `0x80076C10` | **Battle pose-slot array**, 24-byte stride, indexed by slot. `+0x14` holds a pointer to the acting actor's `+0x1BC` animation descriptor (stored by `FUN_801D5854` before the `FUN_80035F04` lookup); `+0x02` / `+0x04` / `+0x06` / `+0x0A` / `+0x0C` are the u16 fields the copy helpers `FUN_801D5778` / `FUN_801D57E8` move. Records 41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` copies inline. |
+| `0x80076C10` | **Screen-element placement table** - 200 initialised records of `0x18` bytes, running to `0x80077ED0`. Three subsystems index it and each named it after itself; they are one table. [Details ↓](#0x80076c10---one-table-three-names) |
 | `0x801F6950` | u32 - **battle-action overlay PRNG state** (`FUN_801D0290`). Overlay-resident, so it is not the SCUS `rand()` seed and its draws do not perturb that stream. |
 | `0x801D9184` / `0x801D918C` | Two tracked 2-D points in the **fishing** overlay (`i16` at `+0` = x, `+4` = y); `FUN_801D765C` returns their separation in 64-unit sub-cells, `FUN_80019B28` the bearing between them. |
 | `0x801E46B0` | i32 - menu-overlay **selected item id** for the window-34 description box (`FUN_801D4A80`); `<= 0` draws nothing. |
@@ -396,6 +396,42 @@ A settled **field-scene** snapshot (scene `dolk`, `game_mode 0x03`, scene id `0x
 `[5..142]` = 138 **scene-pack** TMDs - the scene's field-file TMD pack, installed as one contiguous 138-entry pack by the single descriptor-walk `FUN_80020224` → `FUN_8001f05c` case 2 → `FUN_80026B4C` (the 0x8011xxxx-region addresses formerly classified as "slot-4 body-aligned" are simply TMDs from that pack; type-`0x05` slot-4 does **not** install into `DAT_8007C018` - only cases `0x02`/`0x09` reach `FUN_80026B4C` - so the slot-4 outer-pack signature is absent from steady-state RAM). A mid-load snapshot (the `geremi` field scene, scene id `0xa5`, captured mid-load) shows fewer installed entries; reading past `DAT_8007BB38` returns stale pointers from the previous game state, **but no consumer ever does this**. Consumed by `FUN_801F69D8` (world-map top-view),
 
 `FUN_80021B04` / `FUN_80024D78` (SCUS actor allocators), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker), `FUN_8001E890` (per-pack count override), `FUN_8001EBEC` (per-party-member group-descriptor patch - equipment-conditional mesh swap for 3 party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`).
+
+### `0x80076C10` - one table, three names
+
+Three subsystems index this array, and each was documented after the consumer
+that found it: a battle **pose-slot array**, the party-panel **publish
+target**, and the Muscle Dome's **element layout table** / "battle HUD block
+base". All three cite the same base and the same `0x18` stride, so there was
+never a disagreement about the bytes - only three names for one table, none of
+which said what a record is.
+
+A record is a **screen-element placement**, and the disassembly settles it. The
+"pose-slot re-mapped copy" `FUN_801D5778` clones a record and writes
+`dst[+0xA] = src[+0xA] - 0x140`. `0x140` is 320 - the PSX display width - so
+the field it shifts is a **screen X**, and the operation is "place this element
+one screen to the left". Poses do not get offset by a display width; that is a
+slide-in / off-screen staging idiom. The initialised data agrees: `+0x08` reads
+`0x0C` in every record (a 12-pixel line height), `+0x0A`/`+0x0C` carry a second
+x/y that goes negative (e.g. `-44`) where `+0x02`/`+0x04` do not, and `+0x14`
+is either null or a pointer into the `0x8007B6xx` gp-pool band.
+
+| Offset | Field |
+|---|---|
+| `+0x00` | element id pair (two bytes, usually equal) |
+| `+0x02` / `+0x04` | x / y |
+| `+0x06` / `+0x08` | width / height (`+0x08` is `0x0C` throughout) |
+| `+0x0A` / `+0x0C` | staging x / y - the pair `FUN_801D5778` offsets by a screen width |
+| `+0x0E` | kind pair |
+| `+0x14` | payload pointer (content, or the acting actor's `+0x1BC` animation descriptor when the battle pose path owns the row) |
+
+The array holds **200 initialised records**, `0x80076C10..0x80077ED0`. Records
+41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` copies inline; the copy
+helpers are `FUN_801D5778` (re-mapped) and `FUN_801D57E8` (straight).
+
+Prefer "screen-element placement table" when naming it. "Pose-slot array" is
+the narrowest of the three names and the only one the record layout
+contradicts.
 
 ## See also
 

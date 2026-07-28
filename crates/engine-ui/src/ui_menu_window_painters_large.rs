@@ -53,6 +53,12 @@
 //! PORT: FUN_801d4c28 - window 41, per-party-member stat compare
 //! PORT: FUN_801cf5d0 - the seeder that fills [`EquipStatBlock`]
 //! REF: FUN_801cf650 - the equipment-bonus summer over the same block
+//! REF: FUN_801d21c0 - window 22's own Best-Equipment stat-compare pass. The
+//!      port draws the Equip screen's compare block from THIS, not from
+//!      window 25, which is why window 25's chain below is unreached.
+//! REF: FUN_801d9c14 - sub-screen `0x13`, the Equip screen. Its open script
+//!      `0x801E4DC8` is the only command in the menu overlay that names
+//!      window `0x19`, beside windows 2 and `0x18`.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_menu_801d1290.txt`,
 //! `ghidra/scripts/funcs/overlay_menu_801d4c28.txt`.
@@ -182,6 +188,11 @@ impl CompareRows {
     /// the second is a wrapping subtract.
     ///
     /// PORT: FUN_801d1290 (`0x801D1470..0x801D1648`)
+    ///
+    /// NOT WIRED: same chain as [`active_compare_category`] - the two feed
+    /// [`equip_compare_panel_fields`] and nothing else reaches them. Window
+    /// 41 has no such switch (it always shows the ATK / UDF / LDF triple),
+    /// so the recipient picker, which is wired on both hosts, never asks.
     pub fn from_category(category: u8) -> Self {
         if category < 6 {
             CompareRows::HpMp
@@ -238,6 +249,13 @@ pub struct CompareCategoryInputs {
 ///   is currently equipped in the slot.
 ///
 /// PORT: FUN_801d1290 (`0x801D137C..0x801D1474`)
+///
+/// NOT WIRED: reached only from [`equip_compare_panel_fields`], which no host
+/// draws - see that function's note for the covering path and the blocking
+/// capability. Retail's own consumer is window 25 and nothing else: this
+/// chain resolves which row set that panel shows, and the port's Equip screen
+/// prints a fixed ATK / UDF / LDF triple from `FUN_801D21C0` instead, so
+/// there is no caller that needs a category byte.
 pub fn active_compare_category(inp: CompareCategoryInputs) -> u8 {
     let mut category = CATEGORY_DEFAULT;
     if inp.slot_row >= 4 && inp.staged_id > 0 {
@@ -360,6 +378,21 @@ pub struct EquipComparePanelView<'a> {
 /// Build window 25's field list at content origin `pen`.
 ///
 /// PORT: FUN_801d1290
+///
+/// NOT WIRED: no host reaches this, and the covering path is
+/// [`crate::equip_screen_draws_for`]'s `stat_compare` rows - the port draws
+/// the Equip screen's compare block from `FUN_801D21C0` (window 22's own
+/// Best-Equipment pass) rather than from window 25's separate panel.
+///
+/// NOT WIRED: the blocking capability is the **equip window set**, the same
+/// one that blocks window 24 ([`crate::ui_menu_window_painters::count_panel_draws_for`]).
+/// Retail's Equip screen opens windows 2 / 24 / 25 from one script
+/// (`0x801E4DC8`, sub-screen `0x13` / `FUN_801D9C14`); the port's equip flow
+/// (`legaia_engine_core::equip_session`) is built on the capture-pinned set
+/// 2 / 21 / 22 / 23, and window 25's rect `(14, 40, 144, 52)` overlaps the
+/// party window 21 it would have to replace. Adopting this painter means
+/// moving the whole screen onto the descriptor-table layout, not adding a
+/// draw call. Waived in `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn equip_compare_panel_fields(
     view: &EquipComparePanelView<'_>,
     pen: (i32, i32),
@@ -803,9 +836,16 @@ pub fn recipient_picker_draws_for(
 
     // No window 25 here. It used to draw the highlighted member's own compare
     // panel over the picker; retail's script opens only window 36, so that was
-    // a panel retail does not show. `active_compare_category` stays exported -
-    // it is window 25's real category chain and the Equip screen, the one
-    // screen whose script does open window 25, still needs it.
+    // a panel retail does not show.
+    //
+    // Removing that draw left window 25's whole chain -
+    // `equip_compare_panel_fields`, `active_compare_category`,
+    // `CompareRows::from_category` - with no consumer on either host. They
+    // stay exported because they are the ported renderer of a real retail
+    // window, and each now carries a `NOT WIRED:` note naming the covering
+    // path and what would have to exist first. What they are NOT is "the
+    // Equip screen still needs them": the port's Equip screen draws its
+    // compare block from `FUN_801D21C0` and never asks for a category byte.
 
     (out, sprites)
 }

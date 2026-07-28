@@ -1807,11 +1807,29 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn sound_bank_ready(&self, _: u8) -> bool {
         self.world.sound_bank_ready
     }
-    fn is_capture_spell(&self, id: u8) -> bool {
-        self.world.capture_spells.contains(&id)
+    /// The disc spell table's class byte, read off the same
+    /// [`crate::pause_screens::MenuTextTables`] copy the live cast path
+    /// classifies capture-class moves from (`World::spell_table_class`).
+    ///
+    /// `is_capture_spell` is deliberately **not** overridden: the trait's
+    /// default derives it from this byte, so the SM's capture route and the
+    /// live path's kernel pick cannot disagree about the same record. Without
+    /// a disc image there is no table and both answer "not capture", which is
+    /// what the port did before this was wired.
+    fn spell_class_byte(&self, id: u8) -> Option<u8> {
+        self.world.spell_table_class(id)
     }
+    /// The MP the engine charges for `id` - **the catalog**, i.e. literally
+    /// the number [`World::cast_spell_on_slots`] deducts (`def.mp_cost`),
+    /// before the shared ability-bit fold the SM applies on top.
+    ///
+    /// `World::spell_catalog` is seeded from the user's `SCUS_942.54` at boot
+    /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
+    /// disc this *is* the retail `+3` byte; disc-free it is the clean-room
+    /// catalog. Either way there is one price per spell in this engine, and
+    /// this is where the state machine reads it.
     fn spell_mp_cost(&self, id: u8) -> u8 {
-        self.world.spell_costs.get(&id).copied().unwrap_or(0)
+        self.world.spell_catalog.mp_cost(id)
     }
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;

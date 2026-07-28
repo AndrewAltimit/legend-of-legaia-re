@@ -208,6 +208,19 @@ SCUS `rand()` stream the determinism oracles follow. Its final `addu` of the two
 shifted halves is exactly `rotate_left(16)`, which the module asserts over the
 halfword boundaries rather than claiming in prose.
 
+### The host's spell contract
+
+`BattleActionHost` asks the engine two questions about a spell, and both are
+deliberately narrow so a host cannot answer them from a second model.
+`spell_class_byte` returns the record's `+0` byte and *everything* class-shaped
+falls out of it - the capture route (`is_capture_spell`'s default) and the
+action-seed band pick (`dispatch::magic_seed_band`). `spell_mp_cost` returns
+the price, and it must be the same number the host's own cast path charges: the
+SM debits MP itself at `MagicCastBegin` / `SpiritPreArm`, so a host that prices
+a cast differently elsewhere is charging twice or charging nothing. See
+[`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md)
+§ Magic in the port for which half of a cast each side owns.
+
 ## Battle-overlay leaves outside the action SM
 
 Five more `0898` bodies whose kernels are ported here, each with its own

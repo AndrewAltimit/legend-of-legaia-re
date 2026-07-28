@@ -195,6 +195,7 @@ impl PlayWindowApp {
                 out.extend(save_select_phase_text_draws(
                     &self.font,
                     s,
+                    &self.save_flow,
                     stage_origin,
                     stage_scale,
                     self.save_menu.is_some(),

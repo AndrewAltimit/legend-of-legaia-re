@@ -46,6 +46,27 @@ impl PlayWindowApp {
             if let Some(pad) = scripted_pad {
                 self.pad = pad;
             }
+            // Party wipe: the world raises `game_over` when a battle
+            // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
+            // push the game-over panel, which owns the frame from here (the
+            // arm below skips the scene tick while any boot UI is active).
+            // Before this the flag had no reader at all, so losing every
+            // fight silently dropped the player back into the field.
+            if self.session.host.world.game_over && !self.boot_ui.is_active() {
+                self.session.host.world.game_over = false;
+                let has_saves = scan_save_dir(&self.save_dir).iter().any(|s| {
+                    matches!(
+                        s.content,
+                        legaia_engine_core::save_select::SlotContent::LegaiaSave
+                    )
+                });
+                self.boot_ui = BootUiState::GameOver(if has_saves {
+                    legaia_engine_core::game_over::GameOverSession::new()
+                } else {
+                    legaia_engine_core::game_over::GameOverSession::with_no_save()
+                });
+                log::info!("play-window: party wipe -> game over");
+            }
             // When the boot UI is active, route input there and skip
             // the scene tick - the player hasn't entered the world
             // yet (or has paused into save-select).
@@ -279,14 +300,12 @@ impl PlayWindowApp {
             // prescript stagers (`FUN_800252EC` → `FUN_80021DF4`). No-op
             // when none are live (off the field / no trigger fired).
             self.session.host.world.tick_field_fx(0x0400);
-            // In battle, advance each monster actor's per-object idle
-            // animation into its `pose_frame` (the render pass below
-            // deforms the mesh via the rigid `posed_rot` builder).
+            // In battle, re-stamp the party's eye/mouth face frames
+            // from the playing clips' facial tracks (the retail
+            // per-frame facial animator). The clips themselves are
+            // advanced by `World::tick`'s Battle arm, which every host
+            // reaches - ticking them again here would run them at 2x.
             if self.session.host.world.mode == SceneMode::Battle {
-                self.session.host.world.tick_battle_animations();
-                // ...and re-stamp the party's eye/mouth face frames
-                // from the playing clips' facial tracks (the retail
-                // per-frame facial animator).
                 self.tick_battle_face_stamps();
             }
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
@@ -379,7 +398,7 @@ impl PlayWindowApp {
             && (self.session.host.world.mode != SceneMode::WorldMap
                 || !self.session.host.world.camera_state.params.is_empty())
         {
-            let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
+            let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
             // commits its camera targets IMMEDIATELY (snap cut), while
@@ -422,6 +441,7 @@ impl PlayWindowApp {
                 focus,
                 pitch,
                 yaw,
+                roll,
                 h,
                 tr_eye,
                 u32::from(apply),
@@ -432,9 +452,9 @@ impl PlayWindowApp {
                 let w = &self.session.host.world;
                 eprintln!(
                     "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
-                     yaw={yaw:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} pitch={:.3} \
-                     yaw={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, w.camera_state.params
+                     yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
+                     pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera_state.params
                 );
             }
             Some(out)
@@ -447,6 +467,12 @@ impl PlayWindowApp {
         // sacs): rebuild the pack meshes whose morph deltas moved this frame
         // (collected outside the renderer borrow; uploaded inside it below).
         let field_morph_rebuilds = self.take_field_morph_rebuilds();
+        // Field-to-battle intro: advance the transition emitter and take both
+        // it and its screen-space primitives out of `self`, before the
+        // renderer borrow below - the same borrow-window pattern as the morph
+        // rebuilds above. Both are empty whenever no transition is running,
+        // and the emitter is put back after the render. See `window::battle`.
+        let (mut battle_intro, battle_intro_prims) = self.take_battle_intro_frame();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -1316,7 +1342,16 @@ impl PlayWindowApp {
                     }
                 }
             }
-            let hud = self.build_hud(w, h);
+            let mut hud = self.build_hud(w, h);
+            // Post-battle spoils panel. The XP / gold / drops a victory
+            // credits used to land with no on-screen acknowledgement at all
+            // (`World::last_battle_rewards` had no reader outside its own
+            // declaration); this is the shared `engine-ui` builder both hosts
+            // draw. Suppressed while a boot-UI panel owns the frame.
+            if !self.boot_ui.is_active() {
+                hud.extend(self.battle_spoils_draws(w, h));
+                hud.extend(self.encounter_hint_draws(w, h));
+            }
             let overlay = TextOverlay { atlas, draws: &hud };
 
             // Boot-phase sprite overlay: alternates between the
@@ -1639,10 +1674,40 @@ impl PlayWindowApp {
                 }
             }
             legaia_engine_render::profile::mark("drawlist");
-            if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+            // On the frame the transition arms, land the field frame in the
+            // software VRAM the intro strips texture themselves with, and draw
+            // the rest of this frame against that page. Retail gets it for
+            // free - on the console the framebuffer *is* VRAM - so the port
+            // re-renders this scene offscreen and blits the readback in.
+            let intro_vram = Self::capture_battle_intro_frame(
+                battle_intro.as_mut(),
+                r,
+                &scene,
+                self.cpu_vram_base.as_ref(),
+            );
+            let scene = match intro_vram.as_ref() {
+                Some(v) => RenderScene { vram: v, ..scene },
+                None => scene,
+            };
+            // The intro's primitives composite *over* the scene in one frame.
+            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
+            // mode which clears and draws nothing but quads, so it could never
+            // carry a transition strip over a field scene.
+            let target = if battle_intro_prims.is_empty() {
+                RenderTarget::Scene(&scene)
+            } else {
+                RenderTarget::SceneWithScreenPrims {
+                    scene: &scene,
+                    prims: &battle_intro_prims,
+                }
+            };
+            if let Err(e) = r.render(target) {
                 log::error!("render: {e:#}");
             }
         }
+        // The transition emitter was taken out of `self` for the render
+        // borrow; put it back so its working set survives to the next frame.
+        self.battle_intro = battle_intro;
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }

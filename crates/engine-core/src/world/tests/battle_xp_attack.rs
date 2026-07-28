@@ -108,55 +108,77 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
     assert!(world.drain_battle_hit_fx().is_empty());
 }
 
+/// One basic strike, run against a fixed RNG seed; returns
+/// `(damage, rng_advanced)`.
+fn one_basic_strike(attack: u16, defense: u16, gate: bool) -> (u16, bool) {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.rng_state = 0xABCD_1234;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.hp = 60_000;
+    world.actors[1].battle.max_hp = 60_000;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = attack;
+    world.battle_defense[1] = defense;
+    world.use_damage_finish = gate;
+    let rng_before = world.rng_state;
+    world.battle_ctx.active_actor = 0;
+    world.apply_basic_attack();
+    let dmg = world
+        .drain_battle_hit_fx()
+        .first()
+        .map(|f| f.amount)
+        .unwrap_or(0);
+    (dmg, world.rng_state != rng_before)
+}
+
+/// The melee roll pair (`FUN_801EC3E4`) is what a basic strike runs, and its
+/// **underdog rewrite** is the property a flat `attack - defense` model got
+/// wrong: an attacker whose ATK is under the defender's DEF does not chip for
+/// the old `min_floor` of 1, it lands a scaling hit.
+#[test]
+fn apply_basic_attack_runs_the_melee_roll_pair() {
+    // A comfortable attacker out-damages a hopeless one, and both roll.
+    let (strong, drew_strong) = one_basic_strike(400, 10, false);
+    let (weak, drew_weak) = one_basic_strike(10, 400, false);
+    assert!(drew_strong && drew_weak, "each strike rolls attack + guard");
+    assert!(strong > weak, "{strong} vs {weak}");
+
+    // The old model floored ATK <= DEF at exactly 1. Retail's rewrite floors
+    // the *plain-swing* case at `guard + rand%3 + 3 - guard`, so the weak hit
+    // is never the 1-damage chip that made real fights unwinnable.
+    assert!(
+        weak >= 3,
+        "underdog rewrite floors above the old 1, got {weak}"
+    );
+
+    // A strictly stronger attacker never does less; monotone in ATK.
+    let (a, _) = one_basic_strike(40, 20, false);
+    let (b, _) = one_basic_strike(200, 20, false);
+    assert!(b > a, "{b} !> {a}");
+}
+
+/// `use_damage_finish` adds the finisher's **post** stages on top of the melee
+/// roll (the 9999 cap being the observable one here); it no longer swaps in a
+/// different pre-damage model, and the melee kernel's own Spirit-guard term
+/// means the finisher's guard halve must not fire a second time.
 #[test]
 fn apply_basic_attack_damage_finish_gate() {
-    // One-on-one auto-hit setup (no accuracy seeded -> no accuracy RNG), so the
-    // only RNG the call can draw is the finisher's no-damage floor. Returns
-    // (damage, did_draw_rng).
-    let run = |attack: u16, defense: u16, gate: bool| -> (u16, bool) {
-        let mut world = World {
-            party_count: 1,
-            ..World::default()
-        };
-        world.rng_state = 0xABCD_1234;
-        world.actors[0].battle.hp = 100;
-        world.actors[0].battle.liveness = 1;
-        world.actors[1].battle.hp = 60_000;
-        world.actors[1].battle.max_hp = 60_000;
-        world.actors[1].battle.liveness = 1;
-        world.battle_attack[0] = attack;
-        world.battle_defense[1] = defense;
-        world.use_damage_finish = gate;
-        let rng_before = world.rng_state;
-        world.battle_ctx.active_actor = 0;
-        world.apply_basic_attack();
-        let dmg = world
-            .drain_battle_hit_fx()
-            .first()
-            .map(|f| f.amount)
-            .unwrap_or(0);
-        (dmg, world.rng_state != rng_before)
-    };
+    // The melee kernel carries retail's own `guard + 9999` clamp
+    // (`0x801EDA00`), so the cap holds with the gate either way.
+    assert_eq!(one_basic_strike(60_000, 0, false).0, 9999);
+    assert_eq!(one_basic_strike(60_000, 0, true).0, 9999);
 
-    // Gate off: flat path. 40 atk vs 10 def -> 30, no RNG.
-    assert_eq!(run(40, 10, false), (30, false));
-    // Gate on, normal hit: same raw damage (no mitigation modelled), and the
-    // finisher's rand fires only on a zeroed hit, so still no RNG.
-    assert_eq!(run(40, 10, true), (30, false));
-
-    // Zeroed hit (atk <= def). Gate on: no-damage floor (rand()%9 + 8 -> 8..=16)
-    // and exactly one RNG draw. Gate off: flat min-floor of 1, no RNG.
-    let (dmg_on, drew_on) = run(10, 40, true);
-    assert!(
-        (8..=16).contains(&dmg_on),
-        "zeroed hit floored, got {dmg_on}"
+    // And an ordinary hit is unchanged by the gate - the finisher's remaining
+    // stages are all no-ops without equipment resists, and the guard halve
+    // must NOT fire on top of the melee kernel's own guard-roll triple.
+    assert_eq!(
+        one_basic_strike(400, 10, false).0,
+        one_basic_strike(400, 10, true).0
     );
-    assert!(drew_on, "zeroed hit draws one RNG");
-    assert_eq!(run(10, 40, false), (1, false));
-
-    // Overflow: the finisher caps at 9999 (the flat path caps at 0xFFFF).
-    assert_eq!(run(50_000, 0, true), (9999, false));
-    assert_eq!(run(50_000, 0, false).0, 50_000);
 }
 
 #[test]
@@ -174,16 +196,20 @@ fn basic_attack_accrues_defender_spirit_gauge() {
     world.battle_defense[1] = 10;
     world.battle_ctx.active_actor = 0;
 
-    // 40 atk vs 10 def -> 30 damage; pct = 30*100/200 = 15.
+    // The gauge fills by `damage * 100 / max_hp` (at least 1 per landing hit).
     assert_eq!(world.spirit_gauge(1), 0);
     world.apply_basic_attack();
-    let _ = world.drain_battle_hit_fx();
-    assert_eq!(world.spirit_gauge(1), 15);
-    // A second identical hit accumulates.
+    let first = world.drain_battle_hit_fx()[0].amount;
+    let after_one = world.spirit_gauge(1);
+    assert_eq!(after_one, (u32::from(first) * 100 / 200).max(1) as u16);
+    // A second hit accumulates on top.
     world.actors[1].battle.liveness = 1;
     world.apply_basic_attack();
-    let _ = world.drain_battle_hit_fx();
-    assert_eq!(world.spirit_gauge(1), 30);
+    let second = world.drain_battle_hit_fx()[0].amount;
+    assert_eq!(
+        world.spirit_gauge(1),
+        after_one + (u32::from(second) * 100 / 200).max(1) as u16
+    );
     assert!(!world.spirit_gauge_full(1));
 }
 
@@ -236,47 +262,39 @@ fn spell_damage_accrues_spirit_gauge() {
     assert_eq!(world.spirit_gauge(250), 0);
 }
 
+/// A melee swing does **not** roll accuracy: `FUN_801EC3E4` never reads the
+/// `+0x168` accuracy / evasion halfword, and `FUN_800402F4`'s selector-9 roll
+/// (which the port used to gate this strike on) is the queued-action interrupt
+/// check, not a to-hit check.
+///
+/// Gating melee on it inverted the fight against real disc stats: a party
+/// slot's `+0x168` is seeded from AGL (~100 at level one), a monster's from
+/// its record INT (~12 for the opening bestiary), so `acc / (acc + eva)` gave
+/// the party an ~89% hit rate and the monsters ~11%.
 #[test]
-fn apply_basic_attack_rolls_accuracy_when_stats_are_seeded() {
-    // Count landed strikes over many calls of a seeded attacker (acc) against a
-    // high-evasion, can't-die target.
-    let run = |rng_seed: u32| -> usize {
-        let mut world = World {
-            party_count: 1,
-            ..World::default()
-        };
-        world.rng_state = rng_seed;
-        world.actors[0].battle.hp = 100;
-        world.actors[0].battle.liveness = 1;
-        world.actors[1].battle.hp = 60_000;
-        world.actors[1].battle.max_hp = 60_000;
-        world.actors[1].battle.liveness = 1;
-        world.battle_attack[0] = 40;
-        world.battle_defense[1] = 10;
-        // Seed an ~even accuracy/evasion matchup so the roll engages.
-        world.battle_accuracy[0] = 50;
-        world.battle_evasion[1] = 50;
-        let mut hits = 0;
-        for _ in 0..200 {
-            world.battle_ctx.active_actor = 0;
-            world.apply_basic_attack();
-            hits += world.drain_battle_hit_fx().len();
-        }
-        hits
+fn apply_basic_attack_does_not_roll_accuracy() {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
     };
-
-    let hits = run(0x1234_5678);
-    // The roll genuinely engages: some strikes land and some whiff.
-    assert!(
-        hits > 0 && hits < 200,
-        "seeded accuracy should produce a mix of hits and misses, got {hits}/200"
-    );
-    // Deterministic under a fixed RNG seed.
-    assert_eq!(
-        hits,
-        run(0x1234_5678),
-        "accuracy roll must be deterministic"
-    );
+    world.rng_state = 0x1234_5678;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.hp = 60_000;
+    world.actors[1].battle.max_hp = 60_000;
+    world.actors[1].battle.liveness = 1;
+    world.battle_attack[0] = 40;
+    world.battle_defense[1] = 10;
+    // A matchup the old roll would have whiffed most of the time.
+    world.battle_accuracy[0] = 1;
+    world.battle_evasion[1] = 500;
+    let mut hits = 0;
+    for _ in 0..200 {
+        world.battle_ctx.active_actor = 0;
+        world.apply_basic_attack();
+        hits += world.drain_battle_hit_fx().len();
+    }
+    assert_eq!(hits, 200, "every melee swing connects");
 }
 
 #[test]
@@ -382,10 +400,14 @@ fn initiative_falls_back_to_round_robin_without_speed() {
     assert_eq!(world.next_combatant_by_initiative(), Some(0));
 }
 
-/// Setup seeding consumes slot 0's key so the party lead opens round 1 and
-/// the rest order by initiative behind it.
+/// Setup seeding arms **every** living actor and consumes nothing, so round 1's
+/// opener is the max-key pick like every later turn (`FUN_801DABA4`).
+///
+/// The seeder used to zero slot 0's key here, which handed slot 0 the opening
+/// turn of every battle regardless of SPD. This setup is the case that exposed
+/// it: a monster ten times the party's speed still could not open.
 #[test]
-fn seed_battle_initiative_lets_slot0_lead_round_one() {
+fn seed_battle_initiative_arms_every_slot_and_the_fastest_opens() {
     let mut world = World {
         party_count: 1,
         ..World::default()
@@ -393,15 +415,21 @@ fn seed_battle_initiative_lets_slot0_lead_round_one() {
     for a in world.actors.iter_mut() {
         a.battle.liveness = 0;
     }
-    world.actors[0].battle.liveness = 1; // party, SPD 10
-    world.actors[1].battle.liveness = 1; // monster, SPD 50
-    world.battle_speed[0] = 10;
-    world.battle_speed[1] = 50;
+    world.actors[0].battle.liveness = 1; // party, SPD 5
+    world.actors[1].battle.liveness = 1; // monster, SPD 200
+    world.battle_speed[0] = 5;
+    world.battle_speed[1] = 200;
     world.seed_battle_initiative();
-    // Slot 0 consumed (leads round 1 separately); slot 1 still armed.
-    assert_eq!(world.actors[0].battle.init_key, 0);
+    // Nothing is consumed: both sides carry a live key into the first pick.
+    assert!(
+        world.actors[0].battle.init_key > 0,
+        "slot 0's key must survive setup - consuming it is what let slot 0 \
+         open every battle in the game"
+    );
     assert!(world.actors[1].battle.init_key > 0);
-    // The selector therefore picks slot 1 next, then slot 0 (after reseed).
+    // The spread is wide enough that the roll cannot close it, so the fast
+    // monster opens.
+    assert!(world.actors[1].battle.init_key > world.actors[0].battle.init_key);
     assert_eq!(world.next_combatant_by_initiative(), Some(1));
 }
 

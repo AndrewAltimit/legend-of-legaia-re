@@ -94,6 +94,7 @@ fn psx_texel_presents_at_its_retail_byte() {
             clut: 0,
             tpage: 2 << 7,      // 15bpp
             color: 0x0080_8080, // neutral /128 modulation: texel passes through
+            gouraud: None,
             semi_transparent: false,
             ot_index: 10,
         })

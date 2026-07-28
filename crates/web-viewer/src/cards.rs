@@ -48,11 +48,18 @@ pub const CARD_SLOTS: usize = 2;
 /// retail load screen lays these out as its 5x3 preview grid.
 pub const CARD_BLOCKS: u8 = 15;
 
-/// The product code retail stamps into a Legaia save's directory frame
-/// (USA, `SCUS-94254`). Written when a save claims a previously-free block
-/// so the emulator's card browser labels it like a real Legaia save.
-/// REF: FUN_801E1208 matches `BASCUS-94254PRO_` when enumerating slots.
-const LEGAIA_PRODUCT_CODE: &str = "BASCUS-94254PRO_00";
+/// The save-number suffix this rack gives a block it claims.
+///
+/// Retail's number comes from the save-select list position
+/// (`_DAT_801F0210`), which is independent of the block the BIOS happens to
+/// place the file in - a real card can hold `-01` in block 1 and `-00` in
+/// block 2. The rack has no such list, so it derives the number from the
+/// block instead. That keeps every filename on a card unique (which the card
+/// format requires) and gives each block its own portrait, which is the
+/// visible effect either rule produces.
+fn slot_for_block(block: u8) -> u32 {
+    u32::from(block.saturating_sub(1))
+}
 
 /// One inserted card.
 pub struct InsertedCard {
@@ -100,7 +107,7 @@ impl LegaiaRuntime {
     /// Per-**card-slot** snapshots: the pill row of the retail save screen.
     /// `present` means "a card is inserted here", not "this holds a save" -
     /// in card-slots mode that is what the session gates its confirm on
-    /// (see `SaveSelectSession::set_card_slots_mode`).
+    /// (see `SaveRack::CardPorts` and `save_screen::SaveScreenFlow`).
     ///
     /// The label carries the card's own name so the page can surface which
     /// image is in which port.
@@ -210,6 +217,28 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// The memory-card portrait for save slot `slot`, read off the disc's
+    /// portrait sheet through the live scene host's PROT index.
+    ///
+    /// `None` when no disc is loaded or the slot is one the sheet does not
+    /// cover - the block-identity write then leaves the icon region as found
+    /// rather than stamping a wrong one.
+    pub(crate) fn save_block_icon(&self, slot: u32) -> Option<card::RetailBlockIcon> {
+        let index = &self.scene_host.as_ref()?.index;
+        let entry = index
+            .entry_bytes(legaia_asset::save_icon::PROT_ENTRY as u32)
+            .ok()?;
+        let sheet = legaia_asset::save_icon::parse_entry(&entry).ok()?;
+        let tile = slot as usize;
+        if tile >= legaia_asset::save_icon::USABLE_TILE_COUNT {
+            return None;
+        }
+        Some(card::RetailBlockIcon {
+            clut: sheet.tile_clut_bytes(tile).ok()?,
+            pixels: sheet.tile_block_pixels(tile).ok()?,
+        })
+    }
+
     /// Write the live session into `block` of the card in rack slot `slot`.
     ///
     /// The SC payload is rebuilt from the world through
@@ -219,6 +248,11 @@ impl LegaiaRuntime {
     /// was free also gets its directory frame claimed.
     pub(crate) fn write_session_into_card(&mut self, slot: usize, block: u8) -> Result<(), String> {
         let sf = self.world_mut().save_full();
+        // Resolve the portrait before taking the mutable borrow on the rack:
+        // the icon read goes through the scene host, which lives on the same
+        // struct as the cards.
+        let save_slot = slot_for_block(block);
+        let icon = self.save_block_icon(save_slot);
         let card_slot = self
             .cards
             .get_mut(slot)
@@ -231,9 +265,19 @@ impl LegaiaRuntime {
             .ok_or_else(|| format!("card has no block {block}"))?;
         sf.write_into_retail_sc_block(sc)
             .map_err(|e| format!("save: {e}"))?;
+        // The payload writer cannot derive the block's *identity*: the save
+        // number in the title and the slot's portrait icon. Without this a
+        // previously-free block carries a correct payload behind a header the
+        // BIOS card browser cannot read.
+        card::write_retail_block_identity(sc, save_slot, icon.as_ref())
+            .map_err(|e| format!("save: {e}"))?;
         if !was_active {
-            view.claim_block(&mut card_slot.bytes, block, LEGAIA_PRODUCT_CODE)
-                .map_err(|e| format!("{e}"))?;
+            view.claim_block(
+                &mut card_slot.bytes,
+                block,
+                &card::legaia_save_filename(save_slot),
+            )
+            .map_err(|e| format!("{e}"))?;
         }
         card_slot.dirty = true;
         Ok(())

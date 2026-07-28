@@ -9,6 +9,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Where the cost lives](#where-the-cost-lives)
 - [Measured arm cost](#measured-arm-cost)
 - [How the gauge consumes it](#how-the-gauge-consumes-it)
+- [Where the gauge pool comes from](#where-the-gauge-pool-comes-from)
 - [Re-arming the gauge at art start](#re-arming-the-gauge-at-art-start)
 - [Status limb gating](#status-limb-gating)
 - [Weapon classes and favored mapping](#weapon-classes-and-favored-mapping)
@@ -199,6 +200,64 @@ Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru C
 **Inferred**: the identification of command `0x0C` as "the arm" (it is the only command whose cost tracks the weapon).
 
 The weapon-specialty mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty. The [randomizer](../tooling/randomizer.md)'s `--weapon-specialty` does exactly this - it permutes the three favored families among the characters by rewriting these bytes (decompressing / re-compressing each touched section in place).
+
+## Where the gauge pool comes from
+
+The pool the costs above are spent against, `ctx + 0x6DC`, is **the acting
+actor's AGL** - the same `actor + 0x154` gauge the enemy action budget spends.
+`FUN_801D388C` seeds it straight off the actor-pointer table:
+
+```text
+801d38c8  addiu s4,v1,0x11        ; s4 = ctx + 0x11, so 0x2(s4) is ctx[0x13]
+801d38e4  addiu s6,v1,0x6d6       ; s6 = ctx + 0x6D6, so 0x6(s6) is ctx + 0x6DC
+...
+801d4df8  lbu  v0,0x2(s4)         ; active actor index, ctx[0x13]
+801d4e00  sll  v0,v0,0x2
+801d4e04  addu v0,v0,v1           ; &DAT_801C9370[slot]
+801d4e08  lw   v0,0x0(v0)         ; the live battle actor
+801d4e10  lhu  v0,0x154(v0)       ; its AGL gauge
+801d4e18  sh   v0,0x6(s6)         ; -> ctx + 0x6DC, the command-gauge pool
+```
+
+So the party command gauge and the [enemy AGL action
+budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4) are **one
+mechanic, not two**: both fill a per-turn pool from `actor + 0x154` and both
+spend a per-action `+0x74` cost out of it. The party spends it on the direction
+commands of an Arts input; a monster spends it on swing records it rolls. The
+number of commands a turn admits is `AGL / cost` on either side, which is why a
+retail party turn runs to two-to-four commands at the base cost `0x1E` (30) and
+why a wider off-class arm (42) or the Astral Sword (54) buys fewer of them.
+
+The alternate seed in the same builder (`ctx + 0x6DC = _DAT_80076D7E`) is the
+[Muscle Dome](minigame-muscle-dome.md#hand-deck-decoded) hand's fixed budget,
+not a party battle path.
+
+### Units: what the port models instead
+
+`legaia_engine_core::ap_gauge` counts a different quantity in different units,
+and the two disagree in both directions:
+
+| | retail | `ap_gauge` |
+|---|---|---|
+| pool | actor AGL (`+0x154`), hundreds | `4 + level/10`, capped 10 |
+| direction command (`0x0C..=0x0F`) | costs the `+0x74` byte (30 / 42 / 54) | free |
+| art body / starter | paid from **Spirit** `+0x170` | costs 1 from the pool |
+
+The port therefore charges the arts and comps the swings, where retail charges
+the swings out of AGL and the arts out of Spirit - the two-gauge split this
+page's [next section](#what-an-art-costs-in-ap) exists to keep apart. `4 +
+level/10` reproduces roughly the right *command count* for a favored weapon
+(`AGL / 30`), which is why the queue behaves plausibly, but it is a fitted
+constant with no site behind it: it cannot vary with the weapon, so the whole
+weapon-specialty mechanic is invisible to it.
+
+Closing the gap needs the per-`(character, weapon)` `+0x74` byte, which is
+disc data rather than arithmetic: it lives at `section[+0x04] + 0x74` inside
+the equipped weapon's section of the [player battle
+file](../formats/battle-data-pack.md), keyed by equippable item id, and
+`legaia_asset::battle_data_pack` documents the field without parsing it. Until
+a reader exists, an engine-side "party swing budget" would have to invent the
+cost, which would silently pick a weapon-specialty policy.
 
 ## What an art costs in AP
 

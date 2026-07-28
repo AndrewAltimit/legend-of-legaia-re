@@ -529,10 +529,17 @@ impl SaveFile {
     /// shorter than [`crate::card::BLOCK_SIZE`] there is no checksum word to
     /// restamp and the regions are simply written.
     pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
-        if sc_block.len() < 2 {
-            bail!("sc_block too small to hold SC magic");
+        if sc_block.len() < crate::card::SAVE_BLOCK_HEADER.len() {
+            bail!("sc_block too small to hold the SC header");
         }
-        sc_block[..2].copy_from_slice(&crate::card::SAVE_BLOCK_MAGIC);
+        // The whole four-byte header, not just the two magic bytes. `+2` is
+        // the icon-frame descriptor and `+3` the block count; leaving them as
+        // found means a previously-free block gets a correct payload behind a
+        // header the BIOS reads as junk. The rest of the block identity (the
+        // save-number digits and the slot's portrait) needs a slot and the
+        // disc, so it lives in `card::write_retail_block_identity`.
+        sc_block[..crate::card::SAVE_BLOCK_HEADER.len()]
+            .copy_from_slice(&crate::card::SAVE_BLOCK_HEADER);
         let records: Vec<Vec<u8>> = self.party.members.iter().map(|m| m.raw.to_vec()).collect();
         crate::card::write_retail_char_records(sc_block, &records)?;
         crate::card::write_retail_story_flags(sc_block, &self.ext.story_flag_bits)?;

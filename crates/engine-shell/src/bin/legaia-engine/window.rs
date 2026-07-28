@@ -547,9 +547,22 @@ struct PlayWindowApp {
     /// Scene-mode from the previous frame, used to detect Field<->Battle
     /// transitions so monster meshes are uploaded / dropped exactly once.
     prev_scene_mode: Option<SceneMode>,
+    /// The field-to-battle intro transition's per-frame emitter, live only
+    /// while the encounter session sits in its `Transition` phase.
+    ///
+    /// Owns the selected style's working set between frames and turns it into
+    /// screen-space primitives; the transition *state machine* it rides is
+    /// `World::battle_intro`, driven by `World::tick_encounter`. Armed by
+    /// `take_battle_intro_prims` on the first transition frame and dropped when
+    /// the phase ends. See `legaia_engine_render::battle_intro`.
+    battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
     /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
     /// reused for every battle so each transition doesn't re-decompress 16 MB.
     monster_archive: Option<std::sync::Arc<Vec<u8>>>,
+    /// Which round of the arena's Beginner course the next Muscle Dome
+    /// contest fights. The window has no course-select screen, so each `M`
+    /// walks one round further down the disc's own ladder.
+    muscle_ladder_round: u32,
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
@@ -733,8 +746,13 @@ struct PlayWindowApp {
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     boot_ui: BootUiState,
-    /// Save directory the save-select session reads / writes against.
+    /// Save directory the save-select session reads / writes against - the
+    /// card mounted in port 1 of the shell's rack (`disk_save_rack`).
     save_dir: std::path::PathBuf,
+    /// The save screen's shared driver: block-grid cursor + the card read
+    /// behind it. Lives in `engine-core` so this window and the browser play
+    /// page step the same cursor and gate the same confirms.
+    save_flow: legaia_engine_core::save_screen::SaveScreenFlow,
     /// User-editable settings (BGM / SFX volume, message speed, …). Wired
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
@@ -921,8 +939,9 @@ pub(crate) use run::cmd_play_window;
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    build_slot_info_view, confirm_dialog_slide_y, info_panel_slide_offset,
-    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
+    build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks, disk_save_rack,
+    info_panel_slide_offset, save_select_phase_text_draws, save_select_title_word, scan_save_dir,
+    slot_leader_char_id,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 

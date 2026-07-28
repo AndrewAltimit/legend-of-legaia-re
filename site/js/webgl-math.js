@@ -358,7 +358,23 @@ function buildWorldOrbitVp(viewportW, viewportH, worldExtent, cam) {
   ];
   /* Up = the world +Y axis projected perpendicular to the view ray; at
    * pitch=0 this degenerates to +Z rotated by yaw (the top-down up). */
-  const up = [-cosP * sinY, sinP, cosP * cosY];
+  let up = [-cosP * sinY, sinP, cosP * cosY];
+  /* `roll` (optional, default 0) tilts the frame about the view ray - the
+   * retail op-0x45 slot-2 angle (`_DAT_8007B794`, the third factor
+   * `FUN_8001CF50` composes after pitch and yaw). Retail authors it, so the
+   * cutscene camera hands it through rather than dropping the term. `up` is
+   * perpendicular to the ray by construction, so Rodrigues collapses to
+   * `up*cos + (k x up)*sin`. */
+  const roll = cam.roll || 0;
+  if (roll) {
+    /* k = unit view ray (target - eye), i.e. the negated eye offset. */
+    const k = [-sinP * sinY, -cosP, sinP * cosY];
+    const c = Math.cos(roll), sn = Math.sin(roll);
+    const cx = k[1] * up[2] - k[2] * up[1];
+    const cy = k[2] * up[0] - k[0] * up[2];
+    const cz = k[0] * up[1] - k[1] * up[0];
+    up = [up[0] * c + cx * sn, up[1] * c + cy * sn, up[2] * c + cz * sn];
+  }
   const V = lookAt(eye, target, up);
 
   /* Near/far sized to the orbit distance + the world diagonal so tilted

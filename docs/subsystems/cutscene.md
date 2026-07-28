@@ -929,7 +929,7 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   |---|---|---|---|
   | 0 | `+0x02` | `_DAT_8007b790` | **pitch** (GTE `RotMatrixX` angle) |
   | 1 | `+0x06` | `_DAT_8007b792` | **yaw** (GTE `RotMatrixY` angle / heading) |
-  | 2 | `+0x0a` | `_DAT_8007b794` | **roll** (GTE `RotMatrixZ` angle; zeroed in the field-camera build path) |
+  | 2 | `+0x0a` | `_DAT_8007b794` | **roll** (GTE `RotMatrixZ` angle). Authored: eight scenes stage a non-zero one - see [Camera roll](#camera-roll-slot-2). |
   | 3 / 4 / 5 | `+0x0e/12/16` | `_DAT_800840b8/bc/c0` | **eye-space translation trio** (post-rotation `(dx, dy, depth)`; the analog of the battle camera's `(0, 1280, 7680)` - slot 5 is the eye-back depth) |
   | 6 / 7 / 8 | `+0x1a/1e/22` | `_DAT_80089118/1c/20` | **camera focus** = the GTE translation `(-X, +Y, -Z)` |
   | 9 | `+0x26` | `_DAT_8007b6f4` | **GTE H** projection register (focal length / zoom) via `func_0x8003d254` = `setCopControlWord(2, …)` |
@@ -985,6 +985,33 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
 
   Confirmed against the `new_game_cutscene_intro_a` save state: focus `(8640, 0, 10304)` (mode byte `0x10` = anchor-follow), pitch `180` (≈15.8°), yaw `-2967`, roll `0`, H `792`, `tr_eye = _DAT_800840B8 = (260, 1293, 17145)`; the focus projects to screen `(792·260/17145 + 160, 792·1293/17145 + 120) = (172, 180)`, matching the party position in that frame's framebuffer.
   The captured RAM is the interpolated tween between two op-`0x45` keyframes (`opdeene` beat 0 `tr_eye = (−740, 512, 16384)`, focus `(10816, ?, 12224)`; a later beat `tr_eye = (118, 2241, 20795)`, focus `(5824, ?, 1984)`) - every axis of the capture sits between them. Note (don't re-walk): the GTE rotation matrix read straight from a save state is the last-rendered object's composed transform (row norms ≈ 6.0 = the base-matrix world scale), so recover `R` from the angle globals - but that `6.0` **is** the camera world scale, folded into `R` via `DAT_8007BF10`.
+
+#### Camera roll (slot 2)
+
+Retail authors it, and the engine composes it. Slot `2` is the argument
+`FUN_8001CF50` hands to `RotMatrixZ` at `0x8004638C` - the third factor of
+`Rx * Ry * Rz`, applied unless the render node's `+0x52` bit `0x200` is set
+(`0x8001CFD0..0x8001CFE8`). Nothing in the field-camera build path zeroes it:
+`FUN_801DAB90`, `FUN_801DB8EC` and `FUN_801DBE9C` never touch `_DAT_8007B794`,
+and the only write that clears it is the scene-entry reset `FUN_80025C24`.
+(On the world map the same global is the top-view **azimuth**, which is the
+same Z rotation seen from a top-down camera - see
+[`world-map.md`](world-map.md).)
+
+Eight scenes stage a non-zero roll, from a `10`-unit (0.9 deg) lean to `-660`
+(-58 deg): `edstati3` (an ending cutscene), `station3`, `map03`, `nilboa`,
+`taiku`, `korout`, and the two Juggernaut interiors `juui1` / `juui2`, which
+carry the two steepest tilts. Each such beat carries the full nine-slot mask
+and holds the same tilt across the beats of its shot. Per-scene values, and why a linear
+decode of the corpus could not establish this, are on
+[`re-settled-threads.md`](../reference/re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll);
+the executing oracle is
+`crates/engine-core/tests/thread_camera_roll_execution.rs`.
+
+Engine side: `engine-core`'s `Camera::roll`, the play window's
+`cutscene_view` / `psx_camera_mvp`, `CutsceneCameraInterp`'s tenth packed
+component (so a roll glides on the beat's own curve like every other axis),
+and the browser play page's orbit `cam.roll`.
 
 ### Record pacing - the 60 Hz sub-clock
 
@@ -1334,13 +1361,22 @@ assembly, the bundle read, the load waits) are surfaced on `World::battle_intro_
 for a host that owns those reads.
 
 Two switches drive the visuals. A **style selector `DAT_801D2460` (0..=4)** dispatches to
-one of five per-frame transition emitters (below); a second switch then applies a per-style
-screen fade `func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
+one of five per-frame transition emitters (below) through the jump table at `0x801CE890`; a
+second switch, table at `0x801CE8A8`, then applies a per-style screen fade
+`func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
 `actor+0x1a`-vs-`DAT_801D2458` remaining-time delta (a different slope + threshold per
-style). **Dump caveat:** the classifier marks `801cf5bc` **UNCERTAIN** because its
-disassembly section stops at `0x801CF8A8` without a `jr ra`. That is a truncated *dump
-window*, not a short body - the decompiled C is complete (both switches, the fade and the
-`return`), so the function is real and the truncation is the only anomaly.
+style). Both run with `sp` swapped onto the scratchpad at `0x1F800310`. Ports:
+`engine-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
+
+**The old dump caveat here is retired.** It said `801cf5bc`'s "disassembly section stops at
+`0x801CF8A8` without a `jr ra`", making it a truncated *dump window*, and on that basis the
+two switches, the completion arm and the game-mode write were left unported as C-only. That
+was true of the dump it was written against; the dump has since been re-extracted by an
+extent walker that reports its own completeness, and now covers the whole 1528-byte body
+ending on a real `jr ra` at `0x801CFBAC`. Nothing about the function changed - the window
+onto it did, and the caveat kept asserting a truncation that had stopped existing. All four
+items are disassembly-grounded and ported. See
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
 ### Per-style emitters (render-track GTE/GPU)
 
@@ -1363,7 +1399,20 @@ Every style is a **(init, tick)** pair, and the allocation sizes are what pair t
 
 Ports: `battle_intro_particles` (the two seeders), `battle_intro_styles` (styles 0, 1, 3),
 `battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). Any allocation failure bumps
-the error counter `_DAT_8007B828` by ten. `FUN_801D1CD4` is an inert stub - it writes a
+the error counter `_DAT_8007B828` by ten.
+
+#### Which style a battle gets
+
+`DAT_801D2460` is **not** an input from outside the overlay: the transition's own init block
+(`0x801CE97C`..`0x801CEB38`) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
+the resolved formation cell's first monster id `DAT_8007BD0C`, and - for two arms - the
+current map/scene index `DAT_80084540`. The default is style 2, so the ordinary random
+encounter shatters; style 3 is reached by three formations and style 4 by one. Port:
+`engine-vm::battle_intro_styles::select_intro_style`, whose doc comment carries the full
+override table in retail's own evaluation order.
+
+Two of the eleven stores are delay-slot stores that land on both arms of their branch, which
+is why the flags-set path defaults to style 1 rather than to the initial style 2. `FUN_801D1CD4` is an inert stub - it writes a
 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
 

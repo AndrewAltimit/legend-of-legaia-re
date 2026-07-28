@@ -13,24 +13,46 @@
 //! BGM, scene bundle, the game-mode write) and drive one of five visual
 //! styles.
 //!
-//! ## Dump caveat - read this before extending the port
+//! ## The dump caveat this module used to carry is retired
 //!
-//! `overlay_field_battle_intro_801cf5bc.txt` reports `size=752 bytes, 188
-//! instructions` and its disassembly stops at `0x801CF8A8`, on a branch
-//! **delay slot** rather than a `jr ra`. The decompiled C in the same dump
-//! covers roughly a further 0x300 bytes (through `0x801CFB84`). So Ghidra's
-//! function body metadata is short and the printed disassembly is truncated -
-//! the classic `docs/tooling/dump-corpus-integrity.md` shape.
+//! An earlier note here said `overlay_field_battle_intro_801cf5bc.txt`
+//! "reports `size=752 bytes, 188 instructions`" and that its disassembly
+//! "stops at `0x801CF8A8`, on a branch **delay slot** rather than a `jr ra`",
+//! and on that basis three things were deliberately left unported as
+//! decompiled-C-only: the `ctx+0x2A == 3` completion arm's calls, the
+//! game-mode handoff write `_DAT_8007B83C = 0x14`, and the per-style fade
+//! ramp.
 //!
-//! Everything in [`TransitionEffect`] and [`tick_transition`] below is taken
-//! from the printed disassembly. The three things that are **not** - the
-//! `ctx+0x2A == 3` completion arm's calls, the game-mode handoff write
-//! `_DAT_8007B83C = 0x14`, and the per-style fade ramp - are deliberately
-//! left out of the port and flagged in [`TransitionEffect`]'s docs instead of
-//! being guessed from the C.
+//! That was true of the dump it was written against and is not true of the
+//! dump in the corpus. **The caveat went stale because the dump got longer.**
+//! It has since been re-extracted by an extent walker that reports its own
+//! completeness, and now reads `size=1528 bytes, 382 instructions` /
+//! `extent=walk with frontier + frame-boundary rule: complete, 0 return(s)
+//! crossed`, ending on a real `jr ra` at `0x801CFBAC` with the stack
+//! adjustment in its delay slot. Nothing about the function changed; the
+//! window onto it did, and the caveat kept asserting a truncation that had
+//! stopped existing.
+//!
+//! All three withheld items are therefore disassembly-grounded now and are
+//! ported: the completion arm and the mode write below, and both tail
+//! switches in [`crate::battle_intro_styles`] ([`IntroStyle`] and
+//! `intro_fade`). This is a general hazard rather than a one-off - see
+//! `docs/tooling/dump-corpus-integrity.md` § "A caveat outlives the dump it
+//! was written against".
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`
 //! and `overlay_field_battle_intro_801cf1b0.txt`.
+//!
+//! The handoff tail's four calls, and the routine that fills the formation
+//! cell it reads, are named where they are used and cited once here:
+//!
+//! REF: FUN_80026740 - actor sound-source pan-reset + voice-stop.
+//! REF: FUN_800266E0 - actor sound-source teardown.
+//! REF: FUN_8001E54C - the asset / SEQ installer.
+//! REF: FUN_80026478 - actor sound-source attach, i.e. the battle track's
+//! actual start.
+//! REF: FUN_8005567C - the battle-id to formation-cell expander that fills
+//! `DAT_8007BD0C`.
 
 // ---------------------------------------------------------------------------
 // FUN_801CF5BC - transition tick
@@ -85,6 +107,14 @@ pub struct TransitionGlobals {
     /// `_DAT_8007B910` - the word the phase-0 audio call narrows to its second
     /// argument with retail's own `<< 15` then arithmetic `>> 16`.
     pub audio_cue_arg_src: i32,
+    /// `DAT_8007BAAC` - the bundle handle phase 2 loads into and the
+    /// completion arm installs the battle sequence from. Read in the
+    /// post-switch block, not in the phase switch.
+    pub bundle_handle: u32,
+    /// `DAT_8007BD0C` - slot 0 of the resolved formation cell (the cell
+    /// `FUN_8005567C` fills). The completion arm compares it against
+    /// [`FORMATION_RESET_BATTLE_ID`].
+    pub formation_slot0: u8,
 }
 
 /// The `+0x1F` byte value phase 0 writes into `_DAT_8007B6D8` when it takes
@@ -131,6 +161,22 @@ pub enum TransitionEffect {
     /// Phases 3 and 6: `FUN_8003DE7C(1)`. The phase advances only when it
     /// returns zero, so the phase holds while this reports "busy".
     WaitForLoad,
+    /// Post-switch, `0x801CF8AC`: `FUN_80026740(0x8007052C)` - the field
+    /// BGM's sound source is pan-reset and its voice stopped, six frames
+    /// before the intro's end. Fires only once both ready bits are up and the
+    /// battle id is non-negative.
+    StopFieldBgmVoice,
+    /// Post-switch, `0x801CF904`: `FUN_800266E0(0x8007051C)` - teardown of the
+    /// sequencer slot the field track was playing on.
+    ReleaseFieldBgmSlot,
+    /// Post-switch, `0x801CF924`: `FUN_8001E54C(5, DAT_8007BAAC, 0)` - the
+    /// asset/SEQ installer, on the same bundle handle phase 2's
+    /// [`TransitionEffect::LoadBattleBundle`] read into. This is where the
+    /// battle track is *installed*, as against phase 2 where it is *loaded*.
+    InstallBattleSequence { bundle_handle: u32 },
+    /// Post-switch, `0x801CF92C`: `FUN_80026478(0x8007056C)` - attach the
+    /// sound source, i.e. the battle track actually starts here.
+    StartBattleBgmVoice,
 }
 
 /// What one tick of `FUN_801CF5BC` decided, apart from the entity writes it
@@ -141,8 +187,37 @@ pub struct TransitionTick {
     pub effects: Vec<TransitionEffect>,
     /// Whether the tick cleared `_DAT_8007B92C` / `_DAT_8007B930` a second
     /// time in the post-switch block (it always clears them on entry).
+    ///
+    /// Retail follows the clear with a **floor at zero** on each accumulator
+    /// (`0x801CF81C`..`0x801CF844`, `bgez` then `sw zero`). The port does not
+    /// model that because it does not own the two accumulators; the flag is
+    /// the whole of what this kernel exposes about them.
     pub cleared_spin_accumulators: bool,
+    /// The tick wrote the master game-mode handoff `_DAT_8007B83C = 0x14`
+    /// (enter battle) at `0x801CF8F8`.
+    ///
+    /// The store sits in the **delay slot** of the branch that tests the
+    /// battle id, so it lands whether or not the id is negative - only the
+    /// audio handoff behind it is skipped. Gated on the intro clock having
+    /// run past its full duration *and* [`TransitionEntity::ready`] being
+    /// exactly `3`.
+    pub entered_battle_mode: bool,
+    /// The tick reset the battle id `_DAT_8007B880` to zero because the
+    /// resolved formation cell's first slot `DAT_8007BD0C` reads
+    /// [`FORMATION_RESET_BATTLE_ID`] (`0x801CF934`..`0x801CF94C`).
+    pub cleared_battle_id: bool,
 }
+
+/// The master game-mode value the completion arm writes into `_DAT_8007B83C`.
+pub const MASTER_MODE_ENTER_BATTLE: u16 = 0x14;
+
+/// The formation-cell slot-0 monster id (`DAT_8007BD0C`) that makes the
+/// completion arm zero the battle id instead of leaving it set.
+pub const FORMATION_RESET_BATTLE_ID: u8 = 0xA6;
+
+/// Frames before the intro's end at which the field BGM's voice is stopped
+/// (`DAT_801D2458 - 6 < elapsed`).
+pub const FIELD_BGM_STOP_LEAD: i32 = 6;
 
 /// Answers the host must supply because the kernel cannot call into the
 /// overlay's load/wait routines itself.
@@ -189,6 +264,26 @@ fn shr_toward_zero_10(x: i32) -> i32 {
 /// The switch's phase-to-address mapping is the one Ghidra's switch recovery
 /// reports; the jump table itself is data at `0x801CE870` and is not in the
 /// dump. Each phase *body* is disassembly-grounded.
+///
+/// After the switch comes the **post-switch block**, which runs on every tick
+/// regardless of phase, and then the **handoff tail**:
+///
+/// | clock test | effect |
+/// |---|---|
+/// | `elapsed >= 4` | clears the two spin accumulators |
+/// | `total - 0x1E < elapsed` | raises ready bit `0` |
+/// | `total - 6 < elapsed`, `ready == 3`, id `>= 0` | stops the field BGM voice |
+/// | `total < elapsed`, `ready == 3` | writes the game-mode handoff, then swaps the BGM slot over to the battle track |
+///
+/// Both tail arms compare `ready` for **equality** with `3`, so the two ready
+/// bits gate the handoff jointly - which is why phase 7 resting without
+/// advancing (bit `1`) and the spin clock running out (bit `0`) both have to
+/// happen before a battle opens.
+///
+/// What this kernel does **not** carry is the pair of tail switches on the
+/// style selector; those are [`crate::battle_intro_styles::IntroStyle`] and
+/// [`crate::battle_intro_styles::intro_fade`], kept with the styles they
+/// dispatch to rather than here.
 ///
 /// PORT: FUN_801CF5BC
 pub fn tick_transition(
@@ -293,8 +388,35 @@ pub fn tick_transition(
     if entity.elapsed >= 4 {
         out.cleared_spin_accumulators = true;
     }
-    if (g.total_duration - 0x1E) < entity.elapsed as i32 {
+    let clock = i32::from(entity.elapsed);
+    if (g.total_duration - 0x1E) < clock {
         entity.ready |= 1;
+    }
+
+    // The handoff tail. Both arms test `ready == 3` for equality, not for the
+    // bits - a `ready` of 1 or 2 alone reaches neither.
+    let ready = entity.ready == 3;
+    if (g.total_duration - FIELD_BGM_STOP_LEAD) < clock && ready && g.battle_id >= 0 {
+        out.effects.push(TransitionEffect::StopFieldBgmVoice);
+    }
+    if g.total_duration < clock && ready {
+        // The mode write is in the delay slot of the battle-id test, so it
+        // lands on both arms; only the audio handoff is skipped.
+        out.entered_battle_mode = true;
+        if g.battle_id >= 0 {
+            out.effects.push(TransitionEffect::ReleaseFieldBgmSlot);
+            // Retail re-reads the battle id here rather than reusing the
+            // register it just branched on.
+            if g.battle_id >= 0 {
+                out.effects.push(TransitionEffect::InstallBattleSequence {
+                    bundle_handle: g.bundle_handle,
+                });
+                out.effects.push(TransitionEffect::StartBattleBgmVoice);
+            }
+        }
+        if g.formation_slot0 == FORMATION_RESET_BATTLE_ID {
+            out.cleared_battle_id = true;
+        }
     }
 
     out
@@ -747,6 +869,146 @@ mod tests {
         e.elapsed = 71;
         tick_transition(&mut e, &g, &TransitionResponses::default());
         assert_eq!(e.ready, 1);
+    }
+
+    /// The entity state the handoff tail needs: rested at phase 7 (ready bit
+    /// 1) with the clock past the duration (ready bit 0).
+    fn at_completion(total: i32, elapsed: i16) -> TransitionEntity {
+        assert!(i32::from(elapsed) > total, "test setup must clear the gate");
+        TransitionEntity {
+            phase: 7,
+            elapsed,
+            ready: 3,
+        }
+    }
+
+    #[test]
+    fn the_handoff_needs_both_ready_bits_not_just_either() {
+        let g = TransitionGlobals {
+            total_duration: 100,
+            ..globals()
+        };
+        // Bit 1 without bit 0: rested at phase 7, but the spin clock has not
+        // passed `total - 0x1E`, so the post-switch never raises bit 0.
+        let mut e = TransitionEntity {
+            phase: 7,
+            elapsed: 50,
+            ..Default::default()
+        };
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert_eq!(e.ready, 2);
+        assert!(!tick.entered_battle_mode);
+
+        // Bit 0 without bit 1: the clock is spent but the machine is still
+        // walking the phases, so phase 7's arm has not run.
+        let mut e = TransitionEntity {
+            phase: 4,
+            elapsed: 200,
+            ..Default::default()
+        };
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert_eq!(e.ready, 1);
+        assert!(!tick.entered_battle_mode);
+
+        // Both: the tail reads `ready` *after* the switch and the post-switch
+        // OR, so a phase-7 tick with a spent clock raises both bits and
+        // completes inside the same tick rather than on the next one.
+        let mut e = TransitionEntity {
+            phase: 7,
+            elapsed: 200,
+            ..Default::default()
+        };
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert_eq!(e.ready, 3);
+        assert!(tick.entered_battle_mode);
+    }
+
+    #[test]
+    fn the_mode_write_lands_even_for_a_negative_battle_id() {
+        // The store is in the delay slot of the id test, so only the audio
+        // handoff behind it is skipped.
+        let g = TransitionGlobals {
+            total_duration: 100,
+            battle_id: -1,
+            ..globals()
+        };
+        let mut e = at_completion(100, 200);
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert!(tick.entered_battle_mode);
+        assert!(
+            !tick
+                .effects
+                .iter()
+                .any(|f| matches!(f, TransitionEffect::StartBattleBgmVoice)),
+            "a negative id skips the whole audio handoff"
+        );
+    }
+
+    #[test]
+    fn the_bgm_swap_runs_in_retail_order() {
+        let g = TransitionGlobals {
+            total_duration: 100,
+            battle_id: 4,
+            bundle_handle: 0xDEAD_BEEF,
+            ..globals()
+        };
+        let mut e = at_completion(100, 200);
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert_eq!(
+            tick.effects,
+            vec![
+                TransitionEffect::StopFieldBgmVoice,
+                TransitionEffect::ReleaseFieldBgmSlot,
+                TransitionEffect::InstallBattleSequence {
+                    bundle_handle: 0xDEAD_BEEF
+                },
+                TransitionEffect::StartBattleBgmVoice,
+            ],
+            "stop the field voice, release its slot, install the battle SEQ, start it"
+        );
+    }
+
+    #[test]
+    fn the_field_voice_stops_six_frames_before_the_handoff() {
+        let g = TransitionGlobals {
+            total_duration: 100,
+            battle_id: 0,
+            ..globals()
+        };
+        // 100 - 6 == 94: not `< 94`, so nothing yet.
+        let mut e = TransitionEntity {
+            phase: 7,
+            elapsed: 94,
+            ready: 3,
+        };
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert!(tick.effects.is_empty());
+        // One frame later the stop fires, and the mode write still does not.
+        let mut e = TransitionEntity {
+            phase: 7,
+            elapsed: 95,
+            ready: 3,
+        };
+        let tick = tick_transition(&mut e, &g, &TransitionResponses::default());
+        assert_eq!(tick.effects, vec![TransitionEffect::StopFieldBgmVoice]);
+        assert!(!tick.entered_battle_mode);
+    }
+
+    #[test]
+    fn one_formation_resets_the_battle_id_and_the_others_do_not() {
+        let mk = |slot0: u8| {
+            let g = TransitionGlobals {
+                total_duration: 100,
+                battle_id: 4,
+                formation_slot0: slot0,
+                ..globals()
+            };
+            let mut e = at_completion(100, 200);
+            tick_transition(&mut e, &g, &TransitionResponses::default()).cleared_battle_id
+        };
+        assert!(mk(FORMATION_RESET_BATTLE_ID));
+        assert!(!mk(FORMATION_RESET_BATTLE_ID.wrapping_sub(1)));
+        assert!(!mk(0));
     }
 
     fn desc() -> IntroQuadDesc {

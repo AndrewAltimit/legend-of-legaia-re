@@ -389,6 +389,30 @@ impl LegaiaViewer {
         (mesh.triangle_count(), mesh.vertex_count())
     }
 
+    /// Human note describing what an entry's mesh *is*, for the status line.
+    ///
+    /// Only `scene_tmd_stream` entries get one, and it is the reason the note
+    /// exists: their leading TMD is a battle-stage backdrop shell authored as
+    /// **half** a bowl, open toward whichever side the retail camera looks
+    /// from. Rendered bare and unlabelled that reads as a truncated parse, and
+    /// has repeatedly been mistaken for one (see
+    /// `docs/reference/re-do-not-re-walk.md`). The open side is measured from
+    /// the object-0 vertex pool, never hardcoded.
+    pub(crate) fn tmd_note(&self, entry: &ViewerEntry) -> String {
+        if !matches!(entry.tmd_source, Some(TmdSource::SceneTmdStream { .. })) {
+            return String::new();
+        }
+        let Some(tmd_buf) = self.tmd_bytes_for(entry) else {
+            return String::new();
+        };
+        let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
+            return String::new();
+        };
+        legaia_asset::scene_tmd_stream::shell_shape(&tmd)
+            .map(|s| s.describe())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn render_tim_at(
         &self,
         src: &[u8],

@@ -105,6 +105,10 @@ impl World {
                     CursorRow::Ally => target_slot,
                 };
                 let actor = session.actor;
+                // A freshly-armed action starts from an empty strike script -
+                // see [`World::clear_action_stream`] for the soft-lock a
+                // carried-over byte produces.
+                self.clear_action_stream(actor);
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3; // Attack
@@ -194,6 +198,7 @@ impl World {
                 let target = (party_count..self.actors.len() as u8)
                     .find(|&i| self.actors[i as usize].battle.liveness != 0)
                     .unwrap_or(party_count);
+                self.clear_action_stream(actor);
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;

@@ -20,6 +20,7 @@ mod inspect;
 pub mod minigames;
 mod monster;
 mod nav_disc;
+pub mod pad_bindings;
 pub mod play;
 pub mod play_battle;
 pub mod play_cutscene;
@@ -29,6 +30,7 @@ pub mod play_menu;
 pub mod play_name_entry;
 pub mod play_sfx;
 pub mod play_shop;
+pub mod play_tile_board;
 mod player_anm;
 mod prot_locate;
 pub mod rom_patcher;
@@ -38,6 +40,8 @@ mod scene_geom;
 pub mod sentinel_placements;
 pub mod session_save;
 pub mod sfx_view;
+pub mod texture_pack;
+pub mod texture_registry;
 pub mod tmd3d;
 mod viewer_render;
 
@@ -110,6 +114,11 @@ enum TmdSource {
     /// Bare TMD at offset 0 of the entry.
     Direct { offset: usize },
     /// scene_tmd_stream wrapper: 4-byte chunk0 header + bare TMD.
+    ///
+    /// These are battle-stage backdrop shells, and every one is authored as
+    /// **half** a bowl (see `docs/reference/re-do-not-re-walk.md`) - which is
+    /// why this variant is the one `LegaiaViewer::tmd_note` labels, so the
+    /// shape does not read as a broken parse.
     SceneTmdStream { offset: usize, len: usize },
     /// TMD packed inside one of the entry's LZS-decompressed sections.
     /// Field/town scene_asset_table entries store their environment-geometry

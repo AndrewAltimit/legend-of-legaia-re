@@ -54,6 +54,7 @@ Output (default): target/port-catalog/catalog.csv + catalog.md
 
 import argparse
 import csv
+import json
 import re
 import sys
 import tomllib
@@ -67,6 +68,7 @@ CRATES_DIR = REPO / "crates"
 OUT_DIR = REPO / "target" / "port-catalog"
 FEATURES_TOML = REPO / "scripts" / "ci" / "features.toml"
 IGNORE_TOML = REPO / "scripts" / "ci" / "port-catalog-ignore.toml"
+BASELINE = REPO / "scripts" / "ci" / "port-catalog-baseline.json"
 
 # Address ranges that correspond to executable code:
 #   SCUS_942.54   : 0x80010000 - 0x8006FFFF
@@ -1327,6 +1329,122 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
     return md
 
 
+# --- Ratchet -----------------------------------------------------------------
+#
+# The catalog drove the site's landing-page numbers while being unable to fail:
+# no --check, no --strict, no baseline, and the only non-zero exit in main() was
+# an unknown --feature name. A measurement that cannot report a regression is a
+# dashboard, and every wave that widened a worklist did so silently.
+#
+# What may be ratcheted is constrained by this file's design. It builds TWO call
+# graphs; the receiver-gated one exists solely for the stale-`NOT WIRED` test
+# (see build_rust_graph), and sharpening the shared permissive graph has been
+# tried and reverted twice. So the ratchet keys on quantities that are
+# properties of the tags, the docs and the dump corpus - not of graph
+# resolution. `n_stale`, the one figure read off the strict graph, is
+# deliberately absent.
+#
+# `disclosure_gap` is included despite coming from the permissive graph, because
+# the permissive graph OVER-reports reachability: a port it calls inert really is
+# inert, so an inert anchor with no `NOT WIRED:` tag is a lower bound on the real
+# disclosure gap. It only appears in a snapshot taken with --live, and is only
+# compared when both sides have it.
+RATCHET_MAX = [  # may fall freely, may not rise
+    ("worklist", "port"),
+    ("worklist", "dump"),
+    ("worklist", "ported_not_documented"),
+    ("worklist", "ported_not_dumped"),
+    ("live", "disclosure_gap"),
+]
+RATCHET_MIN = [("totals", "ported")]  # may rise freely, may not fall
+
+
+def snapshot(rows: list[dict]) -> dict:
+    """The ratchetable figures, in the same shape the baseline file carries."""
+    dd_not_p = [r for r in rows if r["dumped"] and r["documented"] and not r["ported"]]
+    out: dict = {
+        "totals": {"ported": sum(1 for r in rows if r["ported"])},
+        "worklist": {
+            "port": sum(1 for r in dd_not_p if not r["ignored"]),
+            "dump": sum(1 for r in rows if r["refs"] > 0 and not r["dumped"]),
+            "ported_not_documented": sum(
+                1 for r in rows if r["ported"] and not r["documented"]
+            ),
+            "ported_not_dumped": sum(
+                1 for r in rows if r["ported"] and not r["dumped"]
+            ),
+        },
+    }
+    if any(r["live_known"] for r in rows):
+        pairs = [a for r in rows if r["ported"] for a in r["anchors"]]
+        out["live"] = {
+            "disclosure_gap": sum(
+                1 for a in pairs if not a["live"] and not a["not_wired_tag"]
+            )
+        }
+    return out
+
+
+def run_ratchet(rows: list[dict], args) -> int:
+    """`--check` / `--update-baseline`. Returns a process exit status."""
+    current = snapshot(rows)
+
+    if args.update_baseline:
+        BASELINE.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n")
+        print(f"[port-catalog] baseline updated: {BASELINE}")
+        return 0
+
+    if not BASELINE.exists():
+        # Not a pass. Nothing was compared, and a bare OK here would be the
+        # same failure the rest of this change is about.
+        print(
+            f"[port-catalog] NOT RATCHETED - no baseline at {BASELINE}. Nothing "
+            f"was compared. Run --update-baseline once."
+        )
+        return 0
+
+    base = json.loads(BASELINE.read_text())
+    bad: list[str] = []
+    skipped: list[str] = []
+    for section, key in RATCHET_MAX + RATCHET_MIN:
+        was = base.get(section, {}).get(key)
+        now = current.get(section, {}).get(key)
+        if was is None:
+            continue
+        if now is None:
+            # Named, never silent: `live.disclosure_gap` is absent from a run
+            # without --live, and "the slow pass was not run" must not read the
+            # same as "the slow pass found nothing".
+            skipped.append(f"{section}/{key} (baselined at {was})")
+            continue
+        rising = (section, key) in RATCHET_MAX
+        if (now > was) if rising else (now < was):
+            arrow = "grew" if rising else "shrank"
+            bad.append(f"{section}/{key}: {was} -> {now} ({arrow})")
+    for s in skipped:
+        print(f"[port-catalog] NOT COMPARED THIS RUN: {s} - re-run with --live")
+    if bad:
+        print("[port-catalog] REGRESSION:")
+        for b in bad:
+            print(f"   {b}")
+        print(
+            "[port-catalog] a worklist may shrink and the ported count may grow, "
+            "not the reverse. If the move is intended - a newly dumped subsystem "
+            "widening the worklist, say - re-run with --update-baseline and say "
+            "why in the commit message."
+        )
+        print(
+            "[port-catalog] validate any surprise against the per-row pages "
+            "(--missing-ports, --live-audit), never against the count alone."
+        )
+        return 1
+    print(
+        f"[port-catalog] OK - {len(RATCHET_MAX) + len(RATCHET_MIN) - len(skipped)}"
+        f"/{len(RATCHET_MAX) + len(RATCHET_MIN)} figure(s) compared, none regressed."
+    )
+    return 0
+
+
 def summarize(rows: list[dict]) -> str:
     n = len(rows)
     n_dumped = sum(1 for r in rows if r["dumped"])
@@ -1818,6 +1936,18 @@ def main() -> int:
         default=10,
         help="per-feature top-N missing-ports cap for --dashboard (default: 10)",
     )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="ratchet the worklist + ported counts against "
+        "scripts/ci/port-catalog-baseline.json and exit non-zero on a "
+        "regression (add --live to include the disclosure gap)",
+    )
+    ap.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="rewrite the ratchet baseline (say why in the commit message)",
+    )
     args = ap.parse_args()
 
     if args.list_features:
@@ -1847,6 +1977,18 @@ def main() -> int:
                 print(depth.rstrip())
         return 0
 
+    if (args.check or args.update_baseline) and not FUNCS_DIR.exists():
+        # The `dumped` column reads the gitignored Ghidra corpus. Without it
+        # every row is undumped, which turns `ported but NOT dumped` from 4 into
+        # the whole port set - a failure about the checkout, not about the tree.
+        # Same skip-clean contract as disc-coverage.py and the disc-gated tests.
+        print(
+            f"[port-catalog] SKIPPED - no dump corpus at {FUNCS_DIR} "
+            "(gitignored; the catalog's `dumped` column, and therefore this "
+            "ratchet, only measures locally)."
+        )
+        return 0
+
     dumped = collect_dumped()
     refs, sources = collect_citations()
     docs = collect_doc_citations()
@@ -1873,6 +2015,9 @@ def main() -> int:
         )
 
     rows = build_rows(dumped, refs, sources, docs, ports, ignore=ignore, live=live_map)
+
+    if args.check or args.update_baseline:
+        return run_ratchet(rows, args)
 
     # Always write the global catalog so the latest state is on disk even when
     # the user is also drilling into a feature filter.

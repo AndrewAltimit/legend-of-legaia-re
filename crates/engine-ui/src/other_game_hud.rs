@@ -44,15 +44,21 @@
 //! source for its intro card and interval heading
 //! (`legaia-web-viewer::minigames_muscle::muscle_hud_json`).
 //!
-//! What is *not* available is where each quad goes. The three emitters have
-//! 9 / 31 / 23 retail call sites respectively, every one of them inside PROT
-//! 0977's own hub screens (`0x801CF2C0 .. 0x801D0324`), and none of those
-//! screens is ported - so the `(x, y, scale)` triples exist only as immediates
-//! inside code the engine does not run. Routing a page's art through these
-//! emitters would make its on-screen *extent* disc-derived (from each record's
-//! `size` field, which is real progress) while leaving its *placement*
-//! invented. That trade is why the tags below name a renderer rather than a
-//! parser.
+//! Where each quad goes is disc data too. The entry holds 40 emitter call
+//! sites - 9 centred, 19 corner, 12 decimal - all inside PROT 0977's own hub
+//! screens (`0x801CF2C0 .. 0x801D04EC`), and their `(sel, x, y, scale)`
+//! arguments are `li`/`addiu` immediates that constant-propagation over the
+//! entry's own bytes recovers. [`HUB_INTRO_CARD`] and its siblings are those
+//! recovered rows, each carrying the VA of the `jal` it came from; a
+//! disc-gated test re-reads that word and asserts it is still a `jal` to the
+//! emitter the row names. So a page drawing through
+//! [`hub_screen_quads`] has both its extent (each record's `size` field) and
+//! its placement disc-derived.
+//!
+//! The screens' *state* is a different matter and stays out of here: which
+//! screen is up, and the fade / zoom counters that feed the `brightness` and
+//! `scale` arguments, belong to the un-ported hub controllers. A host that
+//! draws a screen supplies those.
 
 /// Byte stride of one sprite descriptor in the table at `0x801D170C`.
 pub const HUD_SPRITE_STRIDE: usize = 0x14;
@@ -284,13 +290,17 @@ fn corner_span(texels: u8, size: i32, scale: i32) -> i32 {
 ///
 /// PORT: FUN_801d050c
 ///
-/// NOT WIRED: the retail quad emitter behind the dome HUD's centred sprites.
-/// The web host consumes the parsed sprite-table *geometry*
-/// ([`parse_sprite_table`] via `minigames_muscle::muscle_hud_json`) and
-/// composes its quads in the page's GL layer, so no non-test caller runs the
-/// engine-side emit math. Wiring needs an engine-side dome HUD renderer (a
-/// mode-24 HUD surface in the play-window or a web draw path that requests
-/// emitted quads instead of raw geometry).
+/// The PROT 0977 **hub-screen** quad emitter - the intro card, the INTERVAL
+/// heading and the ROUND word / hub digit strip. Not the match strip: the
+/// four-turn Turns Left / HP Left readout is drawn from the battle-action
+/// overlay 0898 through `func_0x8003541C` (label register + draw) and
+/// `func_0x8003563C` (per-actor record-queue append) - a different overlay,
+/// a different primitive path, and not the dome's readout at all (see
+/// `docs/subsystems/minigame-muscle-dome.md`).
+///
+/// Wired through [`hub_screen_quads`]: the dome page calls
+/// `minigames_muscle::muscle_hub_quads_json`, which runs this emitter over
+/// the recovered draw lists and hands the page finished screen rects.
 pub fn hud_quad_centred(
     rec: &mut HudSprite,
     x: i16,
@@ -319,9 +329,9 @@ pub fn hud_quad_centred(
 ///
 /// PORT: FUN_801d08ec
 ///
-/// NOT WIRED: same host gap as [`hud_quad_centred`] - the web host draws from
-/// the parsed geometry, so the corner-anchored emit math has no non-test
-/// caller until an engine-side dome HUD renderer exists.
+/// Wired through [`hub_screen_quads`] alongside [`hud_quad_centred`]: the
+/// score tally's six label strips ([`HUB_SCORE_TALLY_LABELS`]) are the
+/// corner-anchored draws.
 pub fn hud_quad_corner(
     rec: &mut HudSprite,
     x: i16,
@@ -385,7 +395,7 @@ pub fn decimal_slots(value: i32) -> [Option<u8>; DECIMAL_SLOTS] {
 ///
 /// PORT: FUN_801d1308 (glyph column)
 ///
-/// NOT WIRED: reached only through [`decimal_quads`] - see its note.
+/// Reached through [`decimal_quads`], which the score tally drives.
 #[inline]
 pub fn digit_column(digit: u8) -> u8 {
     ((digit as i32) * 8 + DIGIT_U_BASE) as u8
@@ -402,10 +412,10 @@ pub fn digit_column(digit: u8) -> u8 {
 ///
 /// PORT: FUN_801d1308
 ///
-/// NOT WIRED: the retail decimal-readout emitter. The dome page renders its
-/// numerals in the page's GL layer from the parsed digit-strip geometry, so
-/// the engine-side emit path (slot fill, glyph columns, pen advance) has no
-/// non-test caller until an engine-side dome HUD renderer exists.
+/// The retail decimal-readout emitter, built on [`hud_quad_centred`]. Wired
+/// through [`score_tally_quads`] - where retail drives it, as the six tally
+/// values, each drawn in two palette passes. A hub readout, not the match
+/// strip: see [`hud_quad_centred`].
 pub fn decimal_quads(
     digit: &mut HudSprite,
     x: i16,
@@ -425,6 +435,384 @@ pub fn decimal_quads(
         pen = pen.wrapping_add(DIGIT_ADVANCE as i16);
     }
     digit.clut = DIGIT_CLUT_BASE;
+    out
+}
+
+// --- Hub screens: the recovered retail draw lists ---------------------------
+
+/// Table row the ROUND banner's digit emitter draws every glyph from
+/// (`FUN_801D15C8` patches this record's `u0`, not record
+/// [`DIGIT_SPRITE_INDEX`]'s).
+pub const ROUND_DIGIT_SPRITE_INDEX: usize = 1;
+
+/// Texture-U pitch of one ROUND-banner glyph: `FUN_801D15C8` computes the
+/// column as `digit * 24` (`(d*2 + d) << 3`) and stores it as record
+/// [`ROUND_DIGIT_SPRITE_INDEX`]'s `u0` byte.
+pub const ROUND_DIGIT_U_PITCH: u8 = 24;
+
+/// How an emitter interprets a draw's `(x, y)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HubAnchor {
+    /// [`hud_quad_centred`] - `(x, y)` is the quad's centre.
+    Centre,
+    /// [`hud_quad_corner`] - `(x, y)` is the quad's top-left.
+    Corner,
+    /// [`hud_quad_centred`] through `FUN_801D15C8`: the `sel` index is
+    /// replaced by [`ROUND_DIGIT_SPRITE_INDEX`] and that record's `u0` is
+    /// first set to `digit * `[`ROUND_DIGIT_U_PITCH`].
+    RoundDigit(u8),
+}
+
+/// One recovered draw of a PROT 0977 hub screen.
+///
+/// `sel` is the raw emitter argument (`index | variant << 10`); `call_site`
+/// is the retail VA of the `jal` the row was read from, which is what makes
+/// the row checkable against the disc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HubDraw {
+    /// Emitter `sel` argument - see [`hud_sel_split`].
+    pub sel: i32,
+    /// Screen x, in the retail 320x240 frame.
+    pub x: i16,
+    /// Screen y.
+    pub y: i16,
+    /// Which emitter, and how it reads `(x, y)`.
+    pub anchor: HubAnchor,
+    /// 12.12 fixed-point scale argument.
+    pub scale: i32,
+    /// Retail VA of the `jal` this row was recovered from.
+    pub call_site: u32,
+}
+
+/// The **intro card**: the "Welcome to the Muscle Dome!" cursive strip
+/// (record 3) dead-centre of the frame. `FUN_801CF870`'s opening arm; its
+/// brightness argument is that arm's own fade counter (`DAT_801D1A80`).
+pub const HUB_INTRO_CARD: &[HubDraw] = &[HubDraw {
+    sel: 3,
+    x: 0xA0,
+    y: 0x78,
+    anchor: HubAnchor::Centre,
+    scale: 0x1000,
+    call_site: 0x801C_FA4C,
+}];
+
+/// The **course-title card**: record 4's 218x64 art centred high in the
+/// frame with its variant-2 twin offset `(+8, +8)` as a drop shadow. Both
+/// are drawn at a fixed brightness `0x80`; the retail arm animates the
+/// *scale* instead, ramping `DAT_801D1A88` down from
+/// [`TITLE_ART_ZOOM_START`] to [`TITLE_ART_ZOOM_END`].
+///
+/// The shadow's arguments are set at `0x801CFB04` and the arm then `j`s into
+/// the screen's shared emit tail, so its `call_site` is that tail's `jal` -
+/// which several draws of this screen share.
+pub const HUB_TITLE_ART: &[HubDraw] = &[
+    HubDraw {
+        sel: 0x804,
+        x: 0xA8,
+        y: 0x48,
+        anchor: HubAnchor::Centre,
+        scale: 0x1000,
+        call_site: 0x801C_FED0,
+    },
+    HubDraw {
+        sel: 4,
+        x: 0xA0,
+        y: 0x40,
+        anchor: HubAnchor::Centre,
+        scale: 0x1000,
+        call_site: 0x801C_FAFC,
+    },
+];
+
+/// Brightness both [`HUB_TITLE_ART`] draws are issued at.
+pub const TITLE_ART_BRIGHTNESS: i32 = 0x80;
+
+/// Scale the title-art zoom starts at (`DAT_801D1A88` seed).
+pub const TITLE_ART_ZOOM_START: i32 = 0x1640;
+
+/// Scale the title-art zoom clamps to.
+pub const TITLE_ART_ZOOM_END: i32 = 0x1000;
+
+/// The **INTERVAL heading** (record 16) centred near the top of the frame.
+pub const HUB_INTERVAL_HEADING: &[HubDraw] = &[HubDraw {
+    sel: 0x10,
+    x: 0xA0,
+    y: 0x20,
+    anchor: HubAnchor::Centre,
+    scale: 0x1000,
+    call_site: 0x801C_FED0,
+}];
+
+/// Screen y every [`round_banner_draws`] piece sits on.
+pub const ROUND_BANNER_Y: i16 = 0x78;
+
+/// Screen x of the ROUND word's centre.
+pub const ROUND_WORD_X: i16 = 0x78;
+
+/// Screen x of the round number's first (or only) digit.
+pub const ROUND_DIGIT_X: i16 = 0xF0;
+
+/// Screen x of the units digit when the round number has two digits
+/// (`ROUND_DIGIT_X + 24`, the same 24 px the glyph pitch uses).
+pub const ROUND_DIGIT_X2: i16 = 0x108;
+
+/// The **ROUND banner**: the ROUND word (record 0) plus the round number,
+/// each piece drawn twice - variant 1 then variant 2 - which is what gives
+/// the word its two-tone edge.
+///
+/// `round` is the displayed number (`DAT_801D1A94 + 1`); a value below 10
+/// draws one digit at [`ROUND_DIGIT_X`], otherwise the tens digit goes there
+/// and the units digit at [`ROUND_DIGIT_X2`]. The retail order is
+/// **all of variant 1, then all of variant 2**.
+///
+/// PORT: FUN_801d02f0
+pub fn round_banner_draws(round: i32) -> Vec<HubDraw> {
+    let mut out = Vec::new();
+    for (variant, site_word) in [(0x400, 0x801D_0324u32), (0x800, 0x801D_033C)] {
+        out.push(HubDraw {
+            sel: variant,
+            x: ROUND_WORD_X,
+            y: ROUND_BANNER_Y,
+            anchor: HubAnchor::Centre,
+            scale: 0x1000,
+            call_site: site_word,
+        });
+    }
+    // Retail emits the word's two variants back to back, then the digits'.
+    let digits: Vec<(i16, u8)> = if round < 10 {
+        vec![(ROUND_DIGIT_X, round.clamp(0, 9) as u8)]
+    } else {
+        let tens = round / 10;
+        vec![
+            (ROUND_DIGIT_X, (tens % 10) as u8),
+            (ROUND_DIGIT_X2, (round - tens * 10) as u8),
+        ]
+    };
+    for (variant, site) in [(0x400, 0x801D_036Cu32), (0x800, 0x801D_03EC)] {
+        for &(x, d) in &digits {
+            out.push(HubDraw {
+                sel: variant,
+                x,
+                y: ROUND_BANNER_Y,
+                anchor: HubAnchor::RoundDigit(d),
+                scale: 0x1000,
+                call_site: site,
+            });
+        }
+    }
+    out
+}
+
+/// Rows of the score-tally readout ([`HUB_SCORE_TALLY_LABELS`]).
+pub const SCORE_TALLY_ROWS: usize = 6;
+
+/// Screen x of every tally label's top-left corner.
+pub const SCORE_TALLY_LABEL_X: i16 = 0x40;
+
+/// Screen y of the first tally label; rows step [`SCORE_TALLY_ROW_PITCH`].
+pub const SCORE_TALLY_LABEL_Y: i16 = 0x50;
+
+/// Screen x of every tally value's first digit.
+pub const SCORE_TALLY_VALUE_X: i16 = 0xC0;
+
+/// Screen y of the first tally value - the label row's `y + 5`.
+pub const SCORE_TALLY_VALUE_Y: i16 = 0x55;
+
+/// Vertical pitch between two tally rows.
+pub const SCORE_TALLY_ROW_PITCH: i16 = 0x10;
+
+/// First sprite-table record of the six tally label strips (records
+/// `10 ..= 15`, each a 96x8 texel strip on the hub's page).
+pub const SCORE_TALLY_LABEL_INDEX: usize = 10;
+
+/// The **score tally's** six label strips, in retail draw order: all six in
+/// variant 1, then all six in variant 2.
+///
+/// The tally's *values* are not constants - they come off the overlay's
+/// counter block, so they are built by [`score_tally_quads`] instead.
+pub const HUB_SCORE_TALLY_LABELS: &[HubDraw] = &[
+    HubDraw {
+        sel: 0x40A,
+        x: 0x40,
+        y: 0x50,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F2C0,
+    },
+    HubDraw {
+        sel: 0x40B,
+        x: 0x40,
+        y: 0x60,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F300,
+    },
+    HubDraw {
+        sel: 0x40C,
+        x: 0x40,
+        y: 0x70,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F340,
+    },
+    HubDraw {
+        sel: 0x40D,
+        x: 0x40,
+        y: 0x80,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F378,
+    },
+    HubDraw {
+        sel: 0x40E,
+        x: 0x40,
+        y: 0x90,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F3B4,
+    },
+    HubDraw {
+        sel: 0x40F,
+        x: 0x40,
+        y: 0xA0,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F3E8,
+    },
+    HubDraw {
+        sel: 0x80A,
+        x: 0x40,
+        y: 0x50,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F418,
+    },
+    HubDraw {
+        sel: 0x80B,
+        x: 0x40,
+        y: 0x60,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F448,
+    },
+    HubDraw {
+        sel: 0x80C,
+        x: 0x40,
+        y: 0x70,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F478,
+    },
+    HubDraw {
+        sel: 0x80D,
+        x: 0x40,
+        y: 0x80,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F4A8,
+    },
+    HubDraw {
+        sel: 0x80E,
+        x: 0x40,
+        y: 0x90,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F4D8,
+    },
+    HubDraw {
+        sel: 0x80F,
+        x: 0x40,
+        y: 0xA0,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site: 0x801C_F508,
+    },
+];
+
+/// Per-row `(palette, palette)` pair of the tally's two decimal passes.
+///
+/// Retail draws all six values once with the first palette of the pair, then
+/// all six again with the second - rows `0..=3` use `(0, 1)` and rows `4`/`5`
+/// the brighter `(2, 3)`. Between the passes it also stamps the digit
+/// record's `semi_transparent` byte to `1` and its `page` byte to the pass
+/// number, which is what [`hud_quad_centred`]'s variant side effect does.
+pub const SCORE_TALLY_VALUE_PALETTES: [(i16, i16); SCORE_TALLY_ROWS] =
+    [(0, 1), (0, 1), (0, 1), (0, 1), (2, 3), (2, 3)];
+
+/// Build one hub screen's quads from a parsed sprite table.
+///
+/// `table` is [`parse_sprite_table`]'s output; it is taken by `&mut` because
+/// the retail emitters write their variant back into the shared record and
+/// the next call sees it - reproducing that is the point. A draw naming a
+/// record the table does not hold is skipped.
+///
+/// PORT: FUN_801d15c8 (the [`HubAnchor::RoundDigit`] arm)
+pub fn hub_screen_quads(
+    table: &mut [HudSprite],
+    draws: &[HubDraw],
+    brightness: i32,
+) -> Vec<HudQuad> {
+    let mut out = Vec::new();
+    for d in draws {
+        let (idx, variant) = hud_sel_split(d.sel);
+        let idx = match d.anchor {
+            HubAnchor::RoundDigit(_) => ROUND_DIGIT_SPRITE_INDEX,
+            _ => idx,
+        };
+        let Some(rec) = table.get_mut(idx) else {
+            continue;
+        };
+        if let HubAnchor::RoundDigit(digit) = d.anchor {
+            rec.u0 = digit.wrapping_mul(ROUND_DIGIT_U_PITCH);
+        }
+        out.push(match d.anchor {
+            HubAnchor::Corner => hud_quad_corner(rec, d.x, d.y, variant, brightness, d.scale),
+            _ => hud_quad_centred(rec, d.x, d.y, variant, brightness, d.scale),
+        });
+    }
+    out
+}
+
+/// Build the whole score-tally readout: the six label strips followed by the
+/// six decimal values, in retail's two-pass order.
+///
+/// `brightness` is per row - each row fades in on its own lane counter (see
+/// `legaia_engine_core::other_game_overlay::ScoreTally`).
+pub fn score_tally_quads(
+    table: &mut [HudSprite],
+    values: [i32; SCORE_TALLY_ROWS],
+    brightness: [i32; SCORE_TALLY_ROWS],
+) -> Vec<HudQuad> {
+    let mut out = Vec::new();
+    for (i, d) in HUB_SCORE_TALLY_LABELS.iter().enumerate() {
+        let mut one = *d;
+        one.sel = d.sel;
+        out.extend(hub_screen_quads(
+            table,
+            std::slice::from_ref(&one),
+            brightness[i % SCORE_TALLY_ROWS],
+        ));
+    }
+    for pass in 0..2 {
+        for row in 0..SCORE_TALLY_ROWS {
+            let Some(digit) = table.get_mut(DIGIT_SPRITE_INDEX) else {
+                continue;
+            };
+            // The `sb` pair retail issues between the passes: the digit
+            // record's transparency flag and its tpage page.
+            digit.semi_transparent = 1;
+            digit.page = pass as u8 + 1;
+            let (pal_a, pal_b) = SCORE_TALLY_VALUE_PALETTES[row];
+            out.extend(decimal_quads(
+                digit,
+                SCORE_TALLY_VALUE_X,
+                SCORE_TALLY_VALUE_Y + SCORE_TALLY_ROW_PITCH * row as i16,
+                values[row],
+                brightness[row],
+                if pass == 0 { pal_a } else { pal_b },
+            ));
+        }
+    }
     out
 }
 

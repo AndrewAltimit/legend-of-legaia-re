@@ -416,11 +416,135 @@ impl Default for Mapping {
     }
 }
 
+/// The key-name vocabulary [`Mapping`] uses, paired with the browser's
+/// `KeyboardEvent.code` for the same physical key.
+///
+/// A [`Mapping`] is keyed by the host-agnostic names the TOML config and
+/// `legaia-engine config set --binding` speak (`"Up"`, `"Z"`, `"RShift"`).
+/// The native window resolves those through its own winit `KeyCode` match;
+/// a browser host has `KeyboardEvent.code` instead, and this is the one
+/// place the two vocabularies are related.
+///
+/// It exists so the browser pages can **read** the binding table rather than
+/// keep their own. Three hand-maintained tables had already drifted apart -
+/// `X` was Square in the window and Circle in the tab, `S` was Circle in one
+/// and Down in the other, and Select / L1 / R1 / L2 / R2 were simply absent
+/// from the page - none of which is visible in any diff, because no file
+/// contains both tables.
+///
+/// The list is exactly the key names [`Mapping::default`] binds. A name with
+/// no entry here (a user rebinding to some key only the desktop build can
+/// see) resolves to `None` and is skipped by [`Mapping::dom_code_bindings`],
+/// which is the honest answer: the browser cannot report a key it has no
+/// code for.
+pub const KEY_NAME_DOM_CODES: [(&str, &str); 18] = [
+    ("Up", "ArrowUp"),
+    ("Down", "ArrowDown"),
+    ("Left", "ArrowLeft"),
+    ("Right", "ArrowRight"),
+    ("Z", "KeyZ"),
+    ("X", "KeyX"),
+    ("A", "KeyA"),
+    ("S", "KeyS"),
+    ("C", "KeyC"),
+    ("D", "KeyD"),
+    ("E", "KeyE"),
+    ("V", "KeyV"),
+    ("Q", "KeyQ"),
+    ("W", "KeyW"),
+    ("1", "Digit1"),
+    ("2", "Digit2"),
+    ("Enter", "Enter"),
+    ("RShift", "ShiftRight"),
+];
+
+/// Browser `KeyboardEvent.code` for a [`Mapping`] key name, if one exists.
+pub fn dom_code_for_key_name(key_name: &str) -> Option<&'static str> {
+    KEY_NAME_DOM_CODES
+        .iter()
+        .find(|(name, _)| *name == key_name)
+        .map(|(_, code)| *code)
+}
+
 impl Mapping {
+    /// The browser play page's keyboard layout.
+    ///
+    /// A second *named* layout rather than a host-side override table: both
+    /// hosts still read their bindings from here, so there is exactly one
+    /// place a binding is written down and the drift gate can compare the two.
+    ///
+    /// It differs from [`Default`] because the web page binds `WASD` to the
+    /// d-pad, which the desktop layout spends on Triangle / Circle / R1. A
+    /// `HashMap<key, button>` cannot hold both `S -> Down` and `S -> Circle`,
+    /// so the two layouts are genuinely distinct rather than one being a patch
+    /// over the other. The face buttons move to `Z` / `X` / `C` / `V` and the
+    /// shoulders to `Q` / `E`, which is what the page's hand-written table
+    /// used before it was retired.
+    ///
+    /// ```text
+    /// Arrow keys, WASD          -> D-pad
+    /// Z                         -> Cross      X -> Circle
+    /// C                         -> Triangle   V -> Square
+    /// Q -> L1   E -> R1   1 -> L2   2 -> R2
+    /// Enter                     -> Start
+    /// RShift                    -> Select
+    /// ```
+    pub fn web_default() -> Self {
+        let mut b = HashMap::new();
+        for (key, btn) in [
+            ("Up", "Up"),
+            ("Down", "Down"),
+            ("Left", "Left"),
+            ("Right", "Right"),
+            // WASD alongside the arrows - both reach the same four bits.
+            ("W", "Up"),
+            ("A", "Left"),
+            ("S", "Down"),
+            ("D", "Right"),
+            ("Z", "Cross"),
+            ("X", "Circle"),
+            ("C", "Triangle"),
+            ("V", "Square"),
+            ("Q", "L1"),
+            ("E", "R1"),
+            ("1", "L2"),
+            ("2", "R2"),
+            ("Enter", "Start"),
+            ("RShift", "Select"),
+        ] {
+            b.insert(key.to_string(), btn.to_string());
+        }
+        Self { bindings: b }
+    }
+
     /// Look up which [`PadButton`] `key_name` is bound to, if any.
     pub fn pad_button_for_key(&self, key_name: &str) -> Option<PadButton> {
         let btn_name = self.bindings.get(key_name)?;
         PadButton::from_name(btn_name)
+    }
+
+    /// This mapping as `(KeyboardEvent.code, pad bit)` pairs, sorted by code.
+    ///
+    /// The shape a browser host wants: its keydown handler has a `code` and
+    /// needs a bit. Bindings whose key name has no DOM code
+    /// ([`dom_code_for_key_name`]) or whose button name does not parse are
+    /// dropped rather than guessed.
+    ///
+    /// Sorted so the serialisation is stable - a page that caches this must
+    /// not see it reorder between calls.
+    pub fn dom_code_bindings(&self) -> Vec<(&'static str, u16)> {
+        let mut out: Vec<(&'static str, u16)> = self
+            .bindings
+            .iter()
+            .filter_map(|(key, btn)| {
+                Some((
+                    dom_code_for_key_name(key)?,
+                    PadButton::from_name(btn)?.mask(),
+                ))
+            })
+            .collect();
+        out.sort_unstable();
+        out
     }
 
     /// Load from a TOML file, falling back to [`Default`] if the file is
@@ -449,6 +573,121 @@ impl Mapping {
 mod tests {
     use super::*;
     use crate::retail_pad::{PadReport, REPEAT_PERIOD, REPEAT_WINDOW};
+
+    /// Every key the default layout binds must have a DOM code, or a browser
+    /// host reading [`Mapping::dom_code_bindings`] silently loses that button,
+    /// which is how Select and the four shoulder buttons came to be
+    /// unreachable on the play page in the first place.
+    #[test]
+    fn the_default_layout_survives_the_round_trip_to_dom_codes() {
+        let m = Mapping::default();
+        let dom = m.dom_code_bindings();
+        assert_eq!(
+            dom.len(),
+            m.bindings.len(),
+            "a default binding was dropped on the way to DOM codes: {:?}",
+            m.bindings
+                .keys()
+                .filter(|k| dom_code_for_key_name(k).is_none())
+                .collect::<Vec<_>>()
+        );
+
+        // Every distinct pad button of the 14-key layout is reachable, and
+        // each code carries exactly the bit the native side resolves.
+        for (key, btn) in &m.bindings {
+            let code = dom_code_for_key_name(key).expect("default key has a code");
+            let want = PadButton::from_name(btn)
+                .expect("default button parses")
+                .mask();
+            assert_eq!(
+                dom.iter().find(|(c, _)| *c == code).map(|(_, b)| *b),
+                Some(want),
+                "{key} ({code}) must carry {btn}"
+            );
+        }
+
+        // Two keys must never collide onto one code: a browser handler keys
+        // on the code alone and would resolve the wrong button.
+        let mut codes: Vec<&str> = dom.iter().map(|(c, _)| *c).collect();
+        codes.sort_unstable();
+        let before = codes.len();
+        codes.dedup();
+        assert_eq!(before, codes.len(), "two key names share one DOM code");
+    }
+
+    /// The bindings the browser pages used to hardcode, pinned against the
+    /// engine default. These are the four that disagreed key-for-key.
+    #[test]
+    fn the_web_disagreements_resolve_to_the_native_meaning() {
+        let dom = Mapping::default().dom_code_bindings();
+        let bit = |code: &str| dom.iter().find(|(c, _)| *c == code).map(|(_, b)| *b);
+        assert_eq!(bit("KeyZ"), Some(PadButton::Cross.mask()));
+        assert_eq!(bit("KeyX"), Some(PadButton::Square.mask()), "not Circle");
+        assert_eq!(bit("KeyS"), Some(PadButton::Circle.mask()), "not Down");
+        assert_eq!(bit("KeyA"), Some(PadButton::Triangle.mask()), "not Left");
+        // Absent from every hand-maintained page table.
+        assert_eq!(bit("ShiftRight"), Some(PadButton::Select.mask()));
+        assert_eq!(bit("KeyQ"), Some(PadButton::L1.mask()));
+        assert_eq!(bit("KeyW"), Some(PadButton::R1.mask()));
+        assert_eq!(bit("Digit1"), Some(PadButton::L2.mask()));
+        assert_eq!(bit("Digit2"), Some(PadButton::R2.mask()));
+    }
+
+    /// The web layout walks on `WASD` *and* the arrows, and moves the four
+    /// face buttons off the keys that costs.
+    ///
+    /// This is the property the browser page would otherwise lose by reading
+    /// [`Mapping::default`]: that layout spends `A` / `S` / `W` on Triangle /
+    /// Circle / R1, so a page reading it walks on the arrow keys only. Pinned
+    /// because "the d-pad still works, just not on the keys everyone reaches
+    /// for" is exactly the kind of regression a passing test suite hides.
+    #[test]
+    fn the_web_layout_walks_on_wasd_and_the_arrows() {
+        let dom = Mapping::web_default().dom_code_bindings();
+        let bit = |code: &str| dom.iter().find(|(c, _)| *c == code).map(|(_, b)| *b);
+
+        for (wasd, arrow, button) in [
+            ("KeyW", "ArrowUp", PadButton::Up),
+            ("KeyA", "ArrowLeft", PadButton::Left),
+            ("KeyS", "ArrowDown", PadButton::Down),
+            ("KeyD", "ArrowRight", PadButton::Right),
+        ] {
+            assert_eq!(bit(wasd), Some(button.mask()), "{wasd} must walk");
+            assert_eq!(bit(arrow), Some(button.mask()), "{arrow} must walk too");
+        }
+
+        // The face buttons the desktop layout parks on A/S/W live elsewhere.
+        assert_eq!(bit("KeyZ"), Some(PadButton::Cross.mask()));
+        assert_eq!(bit("KeyX"), Some(PadButton::Circle.mask()));
+        assert_eq!(bit("KeyC"), Some(PadButton::Triangle.mask()));
+        assert_eq!(bit("KeyV"), Some(PadButton::Square.mask()));
+        // Shoulders and Select, which no hand-written page table ever had.
+        assert_eq!(bit("KeyQ"), Some(PadButton::L1.mask()));
+        assert_eq!(bit("KeyE"), Some(PadButton::R1.mask()));
+        assert_eq!(bit("ShiftRight"), Some(PadButton::Select.mask()));
+
+        // Same no-collision rule as the desktop layout: a browser handler
+        // keys on the code alone, so one code must mean one button.
+        let mut codes: Vec<&str> = dom.iter().map(|(c, _)| *c).collect();
+        codes.sort_unstable();
+        let before = codes.len();
+        codes.dedup();
+        assert_eq!(before, codes.len(), "two key names share one DOM code");
+    }
+
+    /// A rebinding to a key the browser has no code for is dropped, not
+    /// guessed at - and the rest of the table still resolves.
+    #[test]
+    fn a_desktop_only_rebinding_is_dropped_rather_than_guessed() {
+        let mut m = Mapping::default();
+        m.bindings.insert("F13".into(), "Cross".into());
+        let dom = m.dom_code_bindings();
+        assert_eq!(dom.len(), m.bindings.len() - 1);
+        assert!(
+            dom.iter()
+                .any(|(c, b)| *c == "KeyZ" && *b == PadButton::Cross.mask())
+        );
+    }
 
     /// Driving from raw reports must produce the same edge queries as the
     /// packed-mask path, so wiring the retail pump in changes nothing for

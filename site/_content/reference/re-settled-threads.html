@@ -879,6 +879,52 @@
   <h3 id="d-prot0896">PROT 0896 - resolved</h3>
   <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>
 </section>
+<section class="doc-section" id="rendering-camera">
+  <h2>Rendering / camera</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>Evidence</th><th>Answer</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Does any retail shot author a non-zero camera roll?</td>
+        <td><span class="tag tag-done">resolved</span> (yes)</td>
+        <td><span class="tag tag-done">capture</span> + <span class="tag tag-done">disassembly</span></td>
+        <td>Eight scenes stage a reachable, executing op-<code>0x45</code> slot-2 roll, from <code>10</code> units (0.9&deg;) to <code>-660</code> (&minus;58&deg;). The port used to drop the <code>RotMatrixZ</code> factor and now composes it. <a href="#d-camera-roll">details &darr;</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="d-camera-roll">Camera roll - retail authors it</h3>
+  <p>Slot <code>2</code> of the op-<code>0x45</code> CONFIGURE mask is the roll angle <code>_DAT_8007B794</code>, the argument <code>FUN_8001CF50</code> hands to <code>RotMatrixZ</code> (<code>0x8004638C</code>) as the third factor of <code>Rx &middot; Ry &middot; Rz</code>. The engine used to compose pitch and yaw only, on the assumption that retail shots rarely roll.</p>
+  <p>Eight scenes roll. Every one of these beats carries the full nine-slot mask - pitch, yaw, roll, the eye trio, focus X and Z, <code>H</code>, and no focus Y - every operand is an in-range 12-bit angle, and the beats of one shot repeat the same tilt, which is what an authored Dutch angle looks like.</p>
+  <table>
+    <thead><tr><th>scene</th><th>what it is</th><th>PROT entry</th><th>record</th><th>roll (12-bit)</th><th>degrees</th></tr></thead>
+    <tbody>
+      <tr><td><code>edstati3</code></td><td>Ending (station3)</td><td>826</td><td>P2[0]</td><td><code>10</code>, <code>20</code></td><td>0.9, 1.8</td></tr>
+      <tr><td><code>station3</code></td><td>Karisto Station (late)</td><td>616</td><td>P2[0]</td><td><code>30</code></td><td>2.6</td></tr>
+      <tr><td><code>map03</code></td><td>World map (Karisto)</td><td>392</td><td>P2[10]</td><td><code>60</code></td><td>5.3</td></tr>
+      <tr><td><code>nilboa</code></td><td>Nivora Ravine</td><td>638</td><td>P2[33]</td><td><code>60</code></td><td>5.3</td></tr>
+      <tr><td><code>taiku</code></td><td>Muscle Dome</td><td>373</td><td>P2[27]</td><td><code>-120</code></td><td>&minus;10.5</td></tr>
+      <tr><td><code>korout</code></td><td>Field (korout)</td><td>534</td><td>P2[3]</td><td><code>240</code></td><td>21.1</td></tr>
+      <tr><td><code>juui1</code></td><td>Juggernaut interior 1</td><td>588</td><td>P2[0], P2[3], P2[4]</td><td><code>-400</code></td><td>&minus;35.2</td></tr>
+      <tr><td><code>juui2</code></td><td>Juggernaut interior 2</td><td>597</td><td>P2[0]</td><td><code>-660</code></td><td>&minus;58.0</td></tr>
+    </tbody>
+  </table>
+  <p>The two biggest tilts sit inside the Juggernaut, and the smallest opens an ending cutscene - which is where a canted camera is exactly what an author would reach for.</p>
+  <p>Roll stays a <strong>minority</strong> term: of the 371 CONFIGUREs a control-flow walk reaches, 123 set the slot at all and 15 of those write a non-zero value - roughly a third, then about one in eight. That is why "rarely" survived as long as it did. Rare is not never.</p>
+  <p><strong>Why it took execution.</strong> A field-VM record's tail is not linearly decodable, so a <em>decode</em> of the corpus has to pick a resynchronisation policy, and the policy is what it ends up measuring. Three instruments disagreed:</p>
+  <table>
+    <thead><tr><th>Instrument</th><th>CONFIGUREs reached</th><th>Non-zero rolls</th><th>What it was really measuring</th></tr></thead>
+    <tbody>
+      <tr><td>Strict linear (stop at first decode error)</td><td>21</td><td>0</td><td>its own blindness - it reaches none of the eight</td></tr>
+      <tr><td>Resuming linear (advance one byte on error)</td><td>2182</td><td>637 roll operands, 7 outside the 12-bit angle space</td><td>its resynchronisation into data</td></tr>
+      <tr><td>Raw byte scan (decode at every offset)</td><td>4257</td><td>a "2 %" ratio</td><td>its own post-hoc credibility filter</td></tr>
+    </tbody>
+  </table>
+  <p>The resuming sweep's own shortlist of "coherent" candidates - <code>deroa</code>, <code>chitei2</code>, <code>station3</code>, <code>town0b</code>, <code>retona</code>, <code>nilboa</code>, <code>edstati3</code> - scores three hits out of seven and misses five of the eight real ones. That is its signal-to-noise stated as a number: half its picks are data, and it cannot see most of what is there, because the authored rolls live in <strong>partition 2</strong> (cutscene-timeline / walk-on beat records) while the linear census walks partition 1.</p>
+  <p>The decider is control flow. Stepping the ported field VM from each record's real entry PC, under a probe host that answers every branch predicate both ways, gives the set of PCs control flow can arrive at; executing the same records in a real world gives the subset that runs. Both find the same eight scenes, and <strong>neither reaches a roll operand outside the angle space</strong> - which is what identifies the resuming sweep's impossible operands (<code>26708</code> is not an angle) as data.</p>
+  <p>Two corrections fall out. The parenthetical "zeroed in the field-camera build path" on the slot-2 row was wrong: none of <code>FUN_801DAB90</code>, <code>FUN_801DB8EC</code> or <code>FUN_801DBE9C</code> writes <code>_DAT_8007B794</code>, and the only zeroing is the scene-entry reset <code>FUN_80025C24</code>. And <code>edstati3</code> is a real scene - the ending cutscene block whose bundle sits at extraction entry 826. Its CDNAME label inherits forward as far as the battle-data packs at 863/864, and that is what made it look like a decode artefact rather than a scene.</p>
+  <p>Grade <span class="tag tag-done">capture</span> for the census (a disc-derived executing oracle) and <span class="tag tag-done">disassembly</span> for the factor itself - <code>0x8001CFD0..0x8001CFE8</code> loads <code>_DAT_8007B794</code> through <code>lui a0,0x8008; lh a0,-0x486c(a0)</code> and calls <code>0x8004638C</code> unless the render node's <code>+0x52</code> bit <code>0x200</code> is set.</p>
+</section>
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

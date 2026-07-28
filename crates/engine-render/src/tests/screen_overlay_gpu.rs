@@ -76,10 +76,119 @@ pub(super) struct Harness {
     vram_bg: wgpu::BindGroup,
     color_tex: wgpu::Texture,
     depth_view: wgpu::TextureView,
+    /// Colour-target extent. [`build_harness`] uses [`TARGET`] square; the
+    /// battle-intro test needs the real 320x240 display so a whole captured
+    /// frame fits.
+    pub(super) target: (u32, u32),
 }
 
-fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
+pub(super) fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
     build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, 0x001F)
+}
+
+/// The whole-VRAM variant: a full 1024x512 `R16Uint` page seeded from a real
+/// [`legaia_tim::Vram`], and a caller-chosen colour target.
+///
+/// [`build_harness`]'s 64x64 stand-in cannot hold a captured frame - the
+/// transition styles sample texture pages at VRAM x >= 320 - so a test that
+/// draws a captured frame back through the overlay pipeline needs this one.
+pub(super) fn build_harness_vram(
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    vram: &legaia_tim::Vram,
+    target: (u32, u32),
+) -> Harness {
+    let mut h = build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, 0x001F);
+    h.rebuild_vram(vram);
+    h.rebuild_color_target(target);
+    h
+}
+
+impl Harness {
+    /// Replace the bound VRAM texture with the full 1024x512 software page.
+    fn rebuild_vram(&mut self, vram: &legaia_tim::Vram) {
+        let (w, h) = (
+            legaia_tim::VRAM_WIDTH as u32,
+            legaia_tim::VRAM_HEIGHT as u32,
+        );
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("test full vram"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R16Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            vram.as_bytes(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 2),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let bgl = self.opaque.get_bind_group_layout(0);
+        self.vram_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("test full vram bg"),
+            layout: &bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            }],
+        });
+    }
+
+    /// Resize the colour + depth attachments.
+    fn rebuild_color_target(&mut self, (w, h): (u32, u32)) {
+        self.color_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("test color target"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let depth = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("test depth"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        self.depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+        self.target = (w, h);
+    }
 }
 
 /// [`build_harness`] with the colour-attachment format and the VRAM texel at
@@ -250,13 +359,29 @@ pub(super) fn build_harness_with(
         vram_bg,
         color_tex,
         depth_view,
+        target: (TARGET as u32, TARGET as u32),
     }
 }
 
 /// Render one primitive list over a clear colour and read back the centre
 /// pixel as RGBA8.
 pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> [u8; 4] {
-    let geo = build_geometry(prims, TARGET as u32, TARGET as u32);
+    let frame = render_frame_rgba(h, prims, clear);
+    let off = (2 * TARGET + 2) * 4; // centre pixel (2,2)
+    [frame[off], frame[off + 1], frame[off + 2], frame[off + 3]]
+}
+
+/// Render one primitive list over a clear colour and read the whole
+/// `TARGET x TARGET` frame back as tightly-packed RGBA8 - the same shape
+/// [`crate::CaptureImage`] carries, so `vram_capture` can be driven with a
+/// frame the real pipeline drew.
+pub(super) fn render_frame_rgba(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> Vec<u8> {
+    let (tw, th) = h.target;
+    // The geometry space is the PSX display, not the attachment - the same
+    // rule `Renderer::stage_screen_overlay` follows. The square harness is
+    // deliberately authored in its own size, so pass the target for it and
+    // the PSX display for a display-sized one.
+    let geo = build_geometry(prims, tw, th);
     // Empty geometry -> clear only (an empty buffer slice is invalid).
     let buffers = (!geo.is_empty()).then(|| {
         let vbuf = h
@@ -331,11 +456,11 @@ pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64
             }
         }
     }
-    // Read back the whole 4x4 (bytes_per_row must be 256-aligned).
-    let padded = 256u32;
+    // Read back the whole target (bytes_per_row must be 256-aligned).
+    let padded = (tw * 4).div_ceil(256) * 256;
     let buf = h.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("test readback"),
-        size: (padded * TARGET as u32) as u64,
+        size: (padded * th) as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -351,12 +476,12 @@ pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(padded),
-                rows_per_image: Some(TARGET as u32),
+                rows_per_image: Some(th),
             },
         },
         wgpu::Extent3d {
-            width: TARGET as u32,
-            height: TARGET as u32,
+            width: tw,
+            height: th,
             depth_or_array_layers: 1,
         },
     );
@@ -368,14 +493,15 @@ pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64
     h.device.poll(wgpu::PollType::wait()).unwrap();
     rx.recv().unwrap().unwrap();
     let data = buf.slice(..).get_mapped_range();
-    // Centre pixel (2,2).
-    let row = 2usize;
-    let col = 2usize;
-    let off = row * padded as usize + col * 4;
-    let px = [data[off], data[off + 1], data[off + 2], data[off + 3]];
+    // Drop the row padding so the result is a tight RGBA8 frame.
+    let mut frame = Vec::with_capacity((tw * th * 4) as usize);
+    for row in 0..th as usize {
+        let start = row * padded as usize;
+        frame.extend_from_slice(&data[start..start + (tw * 4) as usize]);
+    }
     drop(data);
     buf.unmap();
-    px
+    frame
 }
 
 #[test]
@@ -418,6 +544,7 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         clut: 0,
         tpage: 2 << 7, // depth = 2 (15bpp)
         color: 0x0080_8080,
+        gouraud: None,
         semi_transparent: false,
         ot_index: 10,
     });

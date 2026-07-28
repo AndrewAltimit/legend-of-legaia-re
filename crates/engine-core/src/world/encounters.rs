@@ -343,6 +343,16 @@ impl World {
             if let Some(s) = self.battle_evasion.get_mut(slot) {
                 *s = stats.eva;
             }
+            // Resolved SPD (base + the equipment table's footwear bonus). This
+            // used to be computed into `StatRecord::base_spd`, folded by the
+            // aggregator, and then dropped on the floor - the slot kept the raw
+            // `live_stats().spd` that `load_party` / `set_active_party` seeded,
+            // so every SPD point a party member's gear granted was invisible to
+            // turn order, the formation-advantage roll and the escape roll, all
+            // three of which read `battle_speed`.
+            if let Some(s) = self.battle_speed.get_mut(slot) {
+                *s = stats.spd;
+            }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
             // Seed the AP gauge base from the captured level. Base only - the
             // round-start `reset_party_ap` refills `current_ap` to it, and Fury

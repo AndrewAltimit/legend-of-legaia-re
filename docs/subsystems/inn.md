@@ -87,21 +87,34 @@ to make the inn unreachable in a port:
   animates the box geometry first, and its cursor does not wrap (the
   `state == 0x12` carve-out at `0x801D9474` clamps at both ends instead). See
   [`formats/mes.md`](../formats/mes.md#post-page-dispatch-state-0x19).
-- **`AD F8 08` is a spin, not an end.** `0x2D` tests a bit of the clip-control
-  word `actor+0x62`, and bit 8 (`0x0100`) is the "end" flag the actor tick
-  `FUN_800204F8` latches when a clip cursor reaches an end - so the
-  `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` triple is "play it, clear the
-  latch, wait for it". Retail's dialog SM `FUN_80039B7C` returns and re-enters
-  per frame until the latch lands. A runner that treats the halt as the end of
-  the conversation stops one instruction into the Yes branch, before the gate.
+- **`AD F8 08` is a spin, not an end - and it spins on the *player's* word.**
+  `0x2D` tests a bit of the clip-control word `actor+0x62`, and bit 8
+  (`0x0100`) is the "end" flag the actor tick `FUN_800204F8` latches when a
+  clip cursor reaches an end - so the `A2 F8 <clip>` / `AC F8 08` /
+  `AD F8 08` triple is "play it, clear the latch, wait for it". The `F8`
+  makes all three **cross-context**: `FUN_8003C83C` short-circuits that id to
+  the live player object (`_DAT_8007C364`) ahead of its actor-list walk, so
+  the innkeeper's record is driving the player's clip words, not its own.
+  Retail's dialog SM `FUN_80039B7C` returns and re-enters per frame until the
+  latch lands. A runner that treats the halt as the end of the conversation
+  stops one instruction into the Yes branch, before the gate.
+
+The Yes branch's full gesture is the door-swing shape aimed at the player -
+`AC F8 01` un-hold, `A2 F8 04` poke the clip, clear + spin, `AC F8 03`
+un-clamp, `4A 03 00`, `AB F8 03` re-clamp, clear + spin again, then
+`A2 F8 02` to hand the player back to the locomotion move. Every operand
+there is an animation bit of `+0x62`, which is why a port that read them as
+the record's own local flags saw a bit nothing ever set.
 
 Engine port of the whole path: `World::trigger_field_interact` →
 `World::drive_inline_dialogue` → `World::step_inline_dialogue`
 ([`crate::inline_dialogue`](../../crates/engine-core/src/inline_dialogue.rs)) →
-`legaia_engine_vm::field::step`. The runner parks on the clip-end spin and
-latches the tested bit once the cued player clip finishes (the port's stand-in
-for the anim tick's write, since the record's context is not bound to the poked
-actor); the gate reads the live purse through `FieldHost::party_bank_value`,
+`legaia_engine_vm::field::step`. The runner binds the poked actor's `+0x62`
+into the executing context around each cross-context `2B`/`2C`/`2D`, mirrors
+it back, and parks on the clip-end spin until the player's clip cursor
+(`field_env::PropAnimBank::actor_clips`, advanced by the `FUN_800204F8` port
+`PropAnim::tick`) latches the end itself - the runner writes no latch of its
+own. The gate reads the live purse through `FieldHost::party_bank_value`,
 the debit is the record's own `ADD_MONEY`, and the restore is its own
 `4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Disc-gated
 oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the

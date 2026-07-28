@@ -19,12 +19,28 @@ directory) produced by `legaia-extract`
 ```
 
 This boots the scene `town01` (Rim Elm) straight off the disc: field
-rendering, BGM, NPC scripts, dialog. Keyboard defaults: arrows = D-pad,
-`Z` = Cross, `Esc` = quit. In-window extras: left-mouse drag orbits the
-camera, `T` cycles the camera-distance preset, `R` toggles precise free-angle
-movement (an opt-in enhancement - retail-style movement is the default),
-`V` mutes audio. `--boot-ui` starts at the title screen → save-select flow
-instead of jumping into the scene.
+rendering, BGM, NPC scripts, dialog, and the full gameplay loop - walking
+rolls the scene's own random encounters, a battle opens the command menu, and
+victory returns you to the field with XP, gold and drops. Keyboard defaults:
+arrows = D-pad, `Z` = Cross, `Esc` = quit. In-window extras: left-mouse drag
+orbits the camera, `T` cycles the camera-distance preset, `R` toggles precise
+free-angle movement (an opt-in enhancement - retail-style movement is the
+default), `V` mutes audio. `--boot-ui` starts at the title screen →
+save-select flow instead of jumping into the scene.
+
+Two flags turn parts of that back off:
+
+- `--no-live-loop` stops random encounters from rolling, leaving field VM +
+  locomotion only - the mode to use when you are inspecting a scene rather
+  than playing it. A battle the engine is already in still resolves.
+- `--no-player-battle` auto-attacks each party turn instead of opening the
+  command menu.
+
+**Towns have no random encounters, by design.** Rim Elm is one of them, and so
+are most scenes with a shop in them: their encounter regions carry a zero
+trigger rate, exactly as on the retail disc. The window says so in the corner
+(`no random encounters in this scene`) so a quiet walk does not look like a
+broken engine - step onto the overworld, or `--scene map03`, to fight.
 
 ## 2. Pick a scene
 

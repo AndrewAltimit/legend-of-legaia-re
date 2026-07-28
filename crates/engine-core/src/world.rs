@@ -63,6 +63,7 @@ mod actors;
 pub mod ambient;
 mod assets_events;
 mod battle;
+pub use battle::BattleSpoilsBanner;
 mod effects;
 pub use effects::{
     ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS, ScriptVramMove,

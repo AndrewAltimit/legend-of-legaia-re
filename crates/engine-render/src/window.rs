@@ -422,15 +422,27 @@ pub fn walk_view_camera_mvp(
 /// each axis with the three camera-angle globals - `RotMatrixX(pitch)` at
 /// `0x800461A4`, `RotMatrixY(yaw)` at `0x8004629C`, `RotMatrixZ(roll)` at
 /// `0x8004638C` - each masking the 12-bit angle (`4096 = 360 deg`), indexing
-/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. Roll is
-/// rarely non-zero in retail shots, so this MVP folds the pitch + yaw
-/// composition into a spherical orbit + `glam::Mat4::look_at_rh` rather than
-/// a literal `RotMatrixX` * `RotMatrixY` matrix product; the visible result
-/// matches retail's framing for non-rolled shots.
+/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. This MVP
+/// folds the pitch + yaw pair into a spherical orbit +
+/// `glam::Mat4::look_at_rh` rather than a literal `RotMatrixX` *
+/// `RotMatrixY` matrix product, then rolls the resulting view frame; the
+/// visible result matches retail's framing.
+///
+/// **Roll is a real retail term, and it is applied.** Retail composes three
+/// axis factors and `roll_radians` is the third: an executing census of every
+/// MAN record on the disc
+/// (`crates/engine-core/tests/thread_camera_roll_execution.rs`) finds
+/// control-flow-reachable Configure beats staging a non-zero roll in eight
+/// scenes, in-range and held across the beats of one shot. Roll enters as a
+/// camera-space rotation about the view axis, applied after the orbit places
+/// the eye - the up vector that `Mat4::look_at_rh` fixes to `+Y` is what a
+/// non-zero `_DAT_8007B794` rotates.
+#[allow(clippy::too_many_arguments)]
 pub fn cutscene_camera_mvp(
     look_at: [f32; 3],
     pitch_radians: f32,
     yaw_radians: f32,
+    roll_radians: f32,
     fov_radians: f32,
     aabb_lo: [f32; 3],
     aabb_hi: [f32; 3],
@@ -464,6 +476,11 @@ pub fn cutscene_camera_mvp(
     let (ps, pc) = pitch.sin_cos();
     let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    // Retail's third factor. `FUN_8001CF50` post-multiplies `RotMatrixZ(roll)`
+    // onto `Rx * Ry`, i.e. it rotates about the axis the first two already
+    // aimed - the view axis - so in this orbit rendition the equivalent is a
+    // roll of the view frame, left-multiplied onto the look-at view.
+    let view = Mat4::from_rotation_z(roll_radians) * view;
     let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(fov, aspect.max(0.01), near, far);
     proj * view
@@ -477,9 +494,9 @@ pub fn cutscene_camera_mvp(
 /// control block and moves the live camera globals toward them over the beat's
 /// `apply_trigger` frames; this mirrors that per component.
 ///
-/// Nine components (focus xyz, pitch, yaw, H, eye-trio xyz) each carry their
-/// own in-flight glide: when a component's target changes, a glide is armed
-/// from the CURRENT pose over the staging beat's `apply` frames (`apply == 0`
+/// Ten components (focus xyz, pitch, yaw, H, eye-trio xyz, roll) each carry
+/// their own in-flight glide: when a component's target changes, a glide is
+/// armed from the CURRENT pose over the staging beat's `apply` frames (`apply == 0`
 /// commits that component immediately - the snap cut). Components whose
 /// targets did not change keep their in-flight glide untouched, so a
 /// follow-up single-slot poke (opdeene re-stages H alone one frame after
@@ -538,25 +555,28 @@ pub fn cutscene_camera_mvp(
 /// hosts different code at this VA - see `docs/reference/functions.md`.
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {
-    /// Current pose, packed `[look_at xyz, pitch, yaw, h, tr_eye xyz]`.
-    cur: [f32; 9],
+    /// Current pose, packed `[look_at xyz, pitch, yaw, h, tr_eye xyz, roll]`.
+    cur: [f32; 10],
     /// Per-component glide start pose (the pose when the target last changed).
-    start: [f32; 9],
+    start: [f32; 10],
     /// Per-component staged target.
-    target: [f32; 9],
+    target: [f32; 10],
     /// Per-component glide length in sim frames (0 = committed immediately).
-    total: [u32; 9],
+    total: [u32; 10],
     /// Per-component frames elapsed since the glide was armed.
-    done: [u32; 9],
+    done: [u32; 10],
     /// Per-component ease curve nibble, latched from the staging beat's mode.
-    curve: [u8; 9],
+    curve: [u8; 10],
     initialized: bool,
 }
 
 impl CutsceneCameraInterp {
-    /// Packed indices of the two angle components (shortest-arc glide).
+    /// Packed indices of the three angle components (shortest-arc glide).
     const PITCH: usize = 3;
     const YAW: usize = 4;
+    /// Roll (op-`0x45` slot 2) rides at the end of the packed pose so the
+    /// historical index numbering of the other nine is unchanged.
+    const ROLL: usize = 9;
 
     pub fn new() -> Self {
         Self::default()
@@ -568,7 +588,8 @@ impl CutsceneCameraInterp {
     }
 
     /// Snap individual packed components (0..2 look_at, 3 pitch, 4 yaw, 5 H,
-    /// 6..8 tr_eye) to `value` immediately - an `apply == 0` Configure beat.
+    /// 6..8 tr_eye, 9 roll) to `value` immediately - an `apply == 0` Configure
+    /// beat.
     ///
     /// Needed for **same-tick beat pairs**: the field VM runs until yield, so
     /// a snap beat immediately followed by a glide beat (map01's fly-in: the
@@ -587,7 +608,7 @@ impl CutsceneCameraInterp {
             return;
         }
         for &(i, v) in components {
-            if i >= 9 {
+            if i >= 10 {
                 continue;
             }
             self.cur[i] = v;
@@ -614,12 +635,13 @@ impl CutsceneCameraInterp {
         target_look_at: [f32; 3],
         target_pitch: f32,
         target_yaw: f32,
+        target_roll: f32,
         target_h: f32,
         target_tr_eye: [f32; 3],
         apply: u32,
         mode: u8,
         steps: u32,
-    ) -> ([f32; 3], f32, f32, f32, [f32; 3]) {
+    ) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
         let packed = [
             target_look_at[0],
             target_look_at[1],
@@ -630,14 +652,15 @@ impl CutsceneCameraInterp {
             target_tr_eye[0],
             target_tr_eye[1],
             target_tr_eye[2],
+            target_roll,
         ];
         if !self.initialized {
             self.cur = packed;
             self.start = packed;
             self.target = packed;
-            self.total = [0; 9];
-            self.done = [0; 9];
-            self.curve = [1; 9];
+            self.total = [0; 10];
+            self.done = [0; 10];
+            self.curve = [1; 10];
             self.initialized = true;
         } else {
             for (i, &target_i) in packed.iter().enumerate() {
@@ -663,13 +686,14 @@ impl CutsceneCameraInterp {
                     self.done[i] as f32 / self.total[i] as f32
                 };
                 let s = legaia_engine_vm::camera_mover::curve_unit(s, self.curve[i]);
-                let delta = if i == Self::PITCH || i == Self::YAW {
+                let angle = i == Self::PITCH || i == Self::YAW || i == Self::ROLL;
+                let delta = if angle {
                     wrap_pi(self.target[i] - self.start[i])
                 } else {
                     self.target[i] - self.start[i]
                 };
                 self.cur[i] = self.start[i] + delta * s;
-                if i == Self::PITCH || i == Self::YAW {
+                if angle {
                     self.cur[i] = wrap_pi(self.cur[i]);
                 }
             }
@@ -678,6 +702,7 @@ impl CutsceneCameraInterp {
             [self.cur[0], self.cur[1], self.cur[2]],
             self.cur[3],
             self.cur[4],
+            self.cur[Self::ROLL],
             self.cur[5],
             [self.cur[6], self.cur[7], self.cur[8]],
         )
@@ -860,6 +885,7 @@ mod camera_tests {
             [0.0, 0.0, 0.0],
             0.0,
             0.0,
+            0.0,
             60f32.to_radians(),
             LO,
             HI,
@@ -873,8 +899,8 @@ mod camera_tests {
         // Re-targeting the camera (the pinned op-0x45 focus params changing)
         // must change the projection - the shot follows the cutscene target.
         let fov = 60f32.to_radians();
-        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, fov, LO, HI, 1.5);
-        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], 0.0, 0.0, fov, LO, HI, 1.5);
+        let a = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, fov, LO, HI, 1.5);
+        let b = cutscene_camera_mvp([500.0, 0.0, -300.0], 0.0, 0.0, 0.0, fov, LO, HI, 1.5);
         assert_ne!(a.to_cols_array(), b.to_cols_array());
         assert!(finite(&b));
     }
@@ -882,12 +908,13 @@ mod camera_tests {
     #[test]
     fn cutscene_camera_pitch_yaw_and_fov_change_the_view() {
         let fov = 60f32.to_radians();
-        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, fov, LO, HI, 1.5);
+        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, fov, LO, HI, 1.5);
         // A quarter-turn heading orbits the eye -> different projection.
         let yawed = cutscene_camera_mvp(
             [0.0, 0.0, 0.0],
             0.0,
             std::f32::consts::FRAC_PI_2,
+            0.0,
             fov,
             LO,
             HI,
@@ -895,22 +922,76 @@ mod camera_tests {
         );
         assert_ne!(base.to_cols_array(), yawed.to_cols_array());
         // The decoded op-0x45 pitch (slot 0) tilts the eye -> different view.
-        let pitched =
-            cutscene_camera_mvp([0.0, 0.0, 0.0], 30f32.to_radians(), 0.0, fov, LO, HI, 1.5);
+        let pitched = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            30f32.to_radians(),
+            0.0,
+            0.0,
+            fov,
+            LO,
+            HI,
+            1.5,
+        );
         assert_ne!(base.to_cols_array(), pitched.to_cols_array());
         assert!(finite(&pitched));
         // Pitch is clamped shy of straight-down so the up vector never
         // degenerates into a non-finite look-at.
-        let steep =
-            cutscene_camera_mvp([0.0, 0.0, 0.0], 200f32.to_radians(), 0.0, fov, LO, HI, 1.5);
+        let steep = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            200f32.to_radians(),
+            0.0,
+            0.0,
+            fov,
+            LO,
+            HI,
+            1.5,
+        );
         assert!(finite(&steep));
         // A narrower FOV (more zoom, from a larger GTE H) also changes it, and
         // an out-of-range FOV is clamped to a finite matrix.
-        let zoomed =
-            cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 20f32.to_radians(), LO, HI, 1.5);
+        let zoomed = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            0.0,
+            0.0,
+            0.0,
+            20f32.to_radians(),
+            LO,
+            HI,
+            1.5,
+        );
         assert_ne!(base.to_cols_array(), zoomed.to_cols_array());
-        let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, LO, HI, 1.5);
+        let clamped = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, LO, HI, 1.5);
         assert!(finite(&clamped));
+    }
+
+    /// Slot 2 is a real retail param, so it has to move the shot: a non-zero
+    /// roll rotates the frame about the view axis, and zero is the identity
+    /// (so every non-rolled shot keeps its historical matrix bit-for-bit).
+    #[test]
+    fn cutscene_camera_roll_rotates_the_frame() {
+        let fov = 60f32.to_radians();
+        let base = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.2, 0.3, 0.0, fov, LO, HI, 1.5);
+        // The smallest authored retail roll is 10 units of 4096 (~0.88 deg).
+        let smallest = 10.0 / 4096.0 * std::f32::consts::TAU;
+        let rolled = cutscene_camera_mvp([0.0, 0.0, 0.0], 0.2, 0.3, smallest, fov, LO, HI, 1.5);
+        assert_ne!(
+            base.to_cols_array(),
+            rolled.to_cols_array(),
+            "a 10-unit roll must change the projection"
+        );
+        assert!(finite(&rolled));
+        // The largest, `juui2`'s -660 units (~-58 deg), stays finite too.
+        let steep = cutscene_camera_mvp(
+            [0.0, 0.0, 0.0],
+            0.2,
+            0.3,
+            -660.0 / 4096.0 * std::f32::consts::TAU,
+            fov,
+            LO,
+            HI,
+            1.5,
+        );
+        assert!(finite(&steep));
     }
 
     const TR0: [f32; 3] = [0.0, 200.0, 2800.0];
@@ -918,10 +999,11 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_first_call_snaps_to_target() {
         let mut it = CutsceneCameraInterp::new();
-        let (la, pitch, yaw, h, tr) = it.glide(
+        let (la, pitch, yaw, _, h, tr) = it.glide(
             [100.0, 0.0, -50.0],
             0.3,
             1.0,
+            0.0,
             768.0,
             [10.0, 220.0, 2900.0],
             480,
@@ -943,15 +1025,16 @@ mod camera_tests {
         // are measured linear with exact arrival).
         let mut it = CutsceneCameraInterp::new();
         // Snap to beat A.
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
         // Beat B re-targets with apply 100: 25 frames in = exactly 1/4 of
         // the travel on EVERY axis. Retail applies one curve to all ten -
         // the angles are not a special case (`FUN_801DC0BC` re-reads the
         // same curve word per axis).
-        let (la, _, yaw, h, tr) = it.glide(
+        let (la, _, yaw, _, h, tr) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
             1.0,
+            0.0,
             1024.0,
             [0.0, 200.0, 3200.0],
             100,
@@ -971,10 +1054,11 @@ mod camera_tests {
         );
         // The remaining 75 ticks arrive EXACTLY (no asymptote), and further
         // steps hold there.
-        let (la, _, _, h, tr) = it.glide(
+        let (la, _, _, _, h, tr) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
             1.0,
+            0.0,
             1024.0,
             [0.0, 200.0, 3200.0],
             100,
@@ -984,10 +1068,11 @@ mod camera_tests {
         assert_eq!(la[0], 100.0);
         assert_eq!(h, 1024.0);
         assert_eq!(tr[2], 3200.0);
-        let (la, _, _, _, _) = it.glide(
+        let (la, _, _, _, _, _) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
             1.0,
+            0.0,
             1024.0,
             [0.0, 200.0, 3200.0],
             100,
@@ -1003,9 +1088,10 @@ mod camera_tests {
         // Rim Elm fly-in (`apply 900`) fits `1-(1-t)^2` across its whole
         // descent in the retail capture.
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
-        let (la, _, _, _, tr) = it.glide(
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        let (la, _, _, _, _, tr) = it.glide(
             [100.0, 0.0, 0.0],
+            0.0,
             0.0,
             0.0,
             512.0,
@@ -1035,8 +1121,9 @@ mod camera_tests {
         // from a quad-IN half and a quad-OUT half meeting at the midpoint,
         // NOT from smoothstep - so the first half is `2u^2`.
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
-        let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 100, 4, 10);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        let (la, _, _, _, _, _) =
+            it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 100, 4, 10);
         let want = 100.0 * 2.0 * 0.1f32 * 0.1;
         assert!(
             (la[0] - want).abs() < 1e-2,
@@ -1045,7 +1132,8 @@ mod camera_tests {
         );
         assert!(la[0] < 5.0, "ease-in start is near-still: {}", la[0]);
         // The halves meet exactly at the midpoint of both time and travel.
-        let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 100, 4, 40);
+        let (la, _, _, _, _, _) =
+            it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 100, 4, 40);
         assert!((la[0] - 50.0).abs() < 1e-2, "midpoint: {}", la[0]);
     }
 
@@ -1056,9 +1144,20 @@ mod camera_tests {
         // must still be ~600/2300 of the way (constant velocity), and the
         // following snap re-stage takes over immediately.
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, [420.0, 0.0, 0.0], 0, 1, 1);
-        let (_, _, _, _, tr) = it.glide(
+        it.glide(
             [0.0, 0.0, 0.0],
+            0.0,
+            0.0,
+            0.0,
+            512.0,
+            [420.0, 0.0, 0.0],
+            0,
+            1,
+            1,
+        );
+        let (_, _, _, _, _, tr) = it.glide(
+            [0.0, 0.0, 0.0],
+            0.0,
             0.0,
             0.0,
             512.0,
@@ -1073,8 +1172,9 @@ mod camera_tests {
             "mid-drift at constant velocity: {} vs {expect}",
             tr[0]
         );
-        let (_, _, _, _, tr) = it.glide(
+        let (_, _, _, _, _, tr) = it.glide(
             [0.0, 0.0, 0.0],
+            0.0,
             0.0,
             0.0,
             512.0,
@@ -1089,8 +1189,8 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_apply_zero_snaps_the_beat() {
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
-        let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        let (la, _, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
         assert_eq!(la[0], 100.0, "apply 0 commits immediately (snap cut)");
     }
 
@@ -1100,11 +1200,11 @@ mod camera_tests {
         // frame later a Configure re-stages only H with apply 0. The dolly
         // components must keep gliding (per-component arming); only H snaps.
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 776.0, TR0, 0, 1, 1);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 776.0, TR0, 0, 1, 1);
         // Arm the dolly: focus X -> 480 over 480 ticks.
-        it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 776.0, TR0, 480, 1, 1);
+        it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 0.0, 776.0, TR0, 480, 1, 1);
         // One frame later: H-only re-stage with apply 0.
-        let (la, _, _, h, _) = it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 792.0, TR0, 0, 1, 1);
+        let (la, _, _, _, h, _) = it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 0.0, 792.0, TR0, 0, 1, 1);
         assert_eq!(h, 792.0, "H snapped by its apply-0 poke");
         assert!(
             la[0] > 0.0 && la[0] < 100.0,
@@ -1120,8 +1220,9 @@ mod camera_tests {
         // Start just below +π, target just above -π (i.e. ~6° apart across the
         // wrap). The glide must move the short way (toward +π / over the
         // seam), never unwind ~352° the long way.
-        it.glide([0.0, 0.0, 0.0], 0.0, PI - 0.05, 512.0, TR0, 0, 1, 1);
-        let (_, _, yaw, _, _) = it.glide([0.0, 0.0, 0.0], 0.0, -PI + 0.05, 512.0, TR0, 7, 1, 1);
+        it.glide([0.0, 0.0, 0.0], 0.0, PI - 0.05, 0.0, 512.0, TR0, 0, 1, 1);
+        let (_, _, yaw, _, _, _) =
+            it.glide([0.0, 0.0, 0.0], 0.0, -PI + 0.05, 0.0, 512.0, TR0, 7, 1, 1);
         // Partway across a ~0.1 rad arc lands near ±π, not near 0.
         assert!(
             yaw.abs() > PI - 0.1,
@@ -1132,9 +1233,10 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_reset_resnaps() {
         let mut it = CutsceneCameraInterp::new();
-        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1, 1);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 512.0, TR0, 0, 1, 1);
         it.reset();
-        let (la, _, _, _, _) = it.glide([500.0, 0.0, 0.0], 0.0, 0.25, 512.0, TR0, 480, 1, 1);
+        let (la, _, _, _, _, _) =
+            it.glide([500.0, 0.0, 0.0], 0.0, 0.25, 0.0, 512.0, TR0, 480, 1, 1);
         assert_eq!(la, [500.0, 0.0, 0.0], "reset snaps the next glide");
     }
 }

@@ -130,11 +130,108 @@ fi
 if command -v python3 >/dev/null 2>&1 \
     && [[ -f "scripts/ci/disc-coverage.py" ]]; then
     printf '[pre-commit] disc coverage ratchet\n'
-    if ! python3 scripts/ci/disc-coverage.py --check >/dev/null; then
-        python3 scripts/ci/disc-coverage.py --check >&2 || true
+    # --quiet, not >/dev/null. The redirect swallowed the "NOT MEASURED THIS
+    # RUN" / "NOT RATCHETED" lines along with the rollup, and those are exactly
+    # the lines that distinguish a pass from a comparison that never happened.
+    if ! python3 scripts/ci/disc-coverage.py --check --quiet; then
         printf '[pre-commit] disc coverage regressed -- if a dump was legitimately removed, re-run with --update-baseline and say why in the commit message (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi
+fi
+
+# Ghidra dump-corpus integrity. Three axes of one failure: a dump that reads
+# as authoritative and is wrong about where its bytes live, or a committed
+# sentence that is wrong about the dump.
+#
+#   stat drift      committed prose quotes a `size=` / instruction count the
+#                   dump no longer reports. Worst when the stale sentence is a
+#                   caveat: "the dump is empty, do not port this" suppresses
+#                   work silently and leaves no trace that it did.
+#   base integrity  a dump whose printed addresses are a constant delta off
+#                   because Ghidra was given the wrong load base. Ratchets the
+#                   SHIFTED set, so a new mis-based dump fails and importing
+#                   another copy of an already-catalogued window does not.
+#   jal targets     a decoded call target landing on no function entry, which
+#                   localises a byte window whose link base is unrecovered.
+#                   Ratchets the set of already-known targets.
+#
+# These live here and NOT in .github/workflows/main-ci.yml for the same reason
+# the disc-coverage ratchet above does: their input is ghidra/scripts/funcs/,
+# which is gitignored and absent on the runner. The hook is the only place the
+# corpus exists, so "it cannot run in CI" is the argument for wiring it here,
+# not an excuse for wiring it nowhere. Each self-skips when its inputs are
+# missing, so a clone without dumps passes.
+#
+# Cost: together they read the whole corpus and index the extracted images, so
+# budget a handful of seconds on top of the ratchet above.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-dump-stat-drift.py" ]]; then
+    printf '[pre-commit] dump-statistic drift check (committed prose vs the dumps)\n'
+    if ! python3 scripts/ghidra-analysis/check-dump-stat-drift.py --quiet; then
+        printf '[pre-commit] committed prose quotes a dump statistic that dump no longer reports -- update the sentence, and re-read whatever it concluded (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-dump-base-integrity.py" ]]; then
+    printf '[pre-commit] dump base-integrity ratchet\n'
+    if ! python3 scripts/ghidra-analysis/check-dump-base-integrity.py --check; then
+        printf '[pre-commit] a dump prints addresses its bytes do not occupy -- re-dump at the resolved base, or --update-baseline and say why (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ghidra-analysis/check-jal-target-integrity.py" ]]; then
+    printf '[pre-commit] call-target integrity ratchet\n'
+    if ! python3 scripts/ghidra-analysis/check-jal-target-integrity.py --check; then
+        printf '[pre-commit] a new call target resolves to no function entry -- see docs/tooling/call-target-integrity.md (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+# Port-catalog ratchet. The catalog feeds scripts/ci/progress-metrics.json and
+# the site's landing page, and until now it could not fail: no --check, no
+# baseline, in no hook and no workflow. So a wave that widened a worklist, or
+# dropped a `// PORT:` tag, moved the published number and reported nothing.
+#
+# Ratchets only figures that are properties of the tags, docs and dump corpus.
+# The catalog builds two call graphs and the receiver-gated one exists solely
+# for the stale-`NOT WIRED` test, so nothing read off it is baselined. The
+# default pass is the fast one; the disclosure-gap figure needs --live and is
+# reported as NOT COMPARED rather than silently passed when it is missing.
+#
+# Reads the gitignored dump corpus for its `dumped` column, so it self-skips
+# without it - the same exemption as the three checks above.
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/port-catalog.py" ]]; then
+    printf '[pre-commit] port-catalog ratchet\n'
+    if ! python3 scripts/ci/port-catalog.py --check; then
+        printf '[pre-commit] port catalog regressed -- check the per-row pages (--missing-ports / --live-audit), never the count alone; if intended, --update-baseline and say why (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+# Shipped-bundle freshness (warn-only, and only when the commit could have
+# invalidated the bundle). site/wasm/ is untracked build output that CI rebuilds
+# at deploy, so a stale local bundle is not a repository defect and must not
+# block a commit - but the whole point of the checker is that mtime and
+# `git log` both answer "in sync" for a bundle built from other sources, so the
+# moment to say so is right after the edit that staled it. Its 27-crate source
+# closure means an engine-only commit is exactly the case that looks safe and
+# is not. Skips silently with no bundle built. CI runs the same script,
+# likewise advisory.
+BUNDLE_SOURCE_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        crates/*|site/*|Cargo.toml|Cargo.lock) BUNDLE_SOURCE_TOUCHED=1; break ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+if [[ "$BUNDLE_SOURCE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-wasm-freshness.py" ]] \
+    && [[ -f "site/wasm/legaia_web_viewer_bg.wasm" ]]; then
+    printf '[pre-commit] shipped wasm bundle freshness (advisory)\n'
+    python3 scripts/ci/check-wasm-freshness.py --quiet || true
 fi
 
 # If the commit only touches files outside the Rust workspace (e.g. docs,
@@ -227,13 +324,35 @@ fi
 # framebuffers over one engine; a screen wired into only one of them is invisible
 # in a diff. This derives the shared feature surface from the engine-ui draw
 # builders and fails when a builder reaches one host and not the other without a
-# recorded reason. Hard gate: it is cheap, has no false positives that a waiver
-# cannot express, and the whole point is that it cannot be ignored.
+# recorded reason. Hard gate: it has no false positives that a waiver cannot
+# express, and the whole point is that it cannot be ignored.
+#
+# It is also cheap, but that is a property of the implementation rather than of
+# the idea: the reachability pass tokenises each host source once and intersects
+# the name set, where it used to run one anchored regex search per (name, file)
+# pair. Under the old shape this line said "cheap" about a gate costing tens of
+# seconds of CPU - more than every other gate in this hook put together. If you
+# reintroduce a per-name scan, delete the word.
 if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.py" ]]; then
     printf '[pre-commit] UI host-drift check (engine-ui builders vs both hosts)\n'
     if ! python3 scripts/ci/check-ui-host-drift.py --quiet; then
         printf '[pre-commit] UI drifted between the native window and the browser play page (see above).\n' >&2
         printf '[pre-commit] Wire the screen into crates/web-viewer, or record why not in scripts/ci/ui-host-drift-waivers.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
+# Trait-override symmetry. The sibling of the drift check, for the half of the
+# host surface that is a trait rather than a draw builder: engine-core traits
+# whose methods all carry default bodies let a host forget a hook with no
+# compile error and no diff. Hard gate for the same reasons - cheap, and every
+# false positive a waiver can express.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-trait-override-symmetry.py" ]]; then
+    printf '[pre-commit] trait-override symmetry check (engine-core hooks vs every host impl)\n'
+    if ! python3 scripts/ci/check-trait-override-symmetry.py --quiet; then
+        printf '[pre-commit] a host implements fewer trait hooks than its peers (see above).\n' >&2
+        printf '[pre-commit] Implement the hook, or record why not in scripts/ci/trait-override-waivers.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
         exit 1
     fi
 fi

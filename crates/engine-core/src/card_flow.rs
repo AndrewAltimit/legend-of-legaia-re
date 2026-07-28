@@ -54,15 +54,42 @@
 //!
 //! # NOT WIRED
 //!
-//! No host owns a [`CardIoMachine`] to produce the poll results these
-//! fold. The one card-image backend - the browser card rack
+//! Read this as two claims, because they are not the same claim and an
+//! earlier version of this heading ran them together.
+//!
+//! **The state machines.** No host owns a [`CardIoMachine`] to produce the
+//! poll results [`CardWriteMachine`] and [`CardHealth::fold_poll`]
+//! sequence. The one card-image backend - the browser card rack
 //! (`web-viewer::cards`), which does write real `0x2000`-byte blocks -
 //! patches the container bytes synchronously through `legaia_save`, with
 //! no asynchronous BIOS beat to sequence; the native saves are LGSF files.
 //! `SaveSelectSession` runs its own `NowChecking` beat straight off
 //! `card_status_poll`, so there is no frame on which to tick
-//! [`CardWriteMachine`] and nothing that would consume a
-//! [`SaveBlockSummary`].
+//! [`CardWriteMachine`]. That is a fact about the **entry point**.
+//!
+//! **The composer is different, and the distinction matters.**
+//! [`SaveBlockSummary`] is the shape `FUN_801E1934` builds before the
+//! memcpy, and the rule it encodes - what a Legaia save block's header and
+//! title carry - runs on **every card Save the port performs today**,
+//! through `SaveFile::write_into_retail_sc_block` rather than through this
+//! type. So "nothing consumes a [`SaveBlockSummary`]" is true of the type
+//! and false of the rule, and reading the first as the second hides a live
+//! gap:
+//!
+//! * retail stamps [`SAVE_HEADER_MAGIC`] - `"SC"`, the icon-frame
+//!   descriptor `0x11`, block count `1` - at block `+0`. The composer
+//!   stamps only the two-byte `SC`, leaving `+2` / `+3` at whatever the
+//!   block held.
+//! * retail writes the slot's two title digits
+//!   ([`save_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the
+//!   BIOS card browser renders full-width numerals). The composer writes
+//!   no title at all.
+//!
+//! A block missing those reads as a valid Legaia save to this engine - the
+//! payload and its checksum are right - and reads wrong on a real card's
+//! Load screen, which is the only place the header and title are shown.
+//! `engine-core/tests/save_block_checksum.rs` pins which regions the
+//! composer owns, so the omission is visible at the point of fix.
 
 /// Result code one card poll publishes, as `FUN_801E16E0` dispatches it.
 ///

@@ -641,21 +641,49 @@ Between them sits the card read - the "Now checking. Do not remove MEMORY
 CARD" dialog - which is why that beat exists at all.
 
 `SaveSelectSession` is renderer-agnostic and models the phases, not the id
-space, so a host picks which reading its slot list carries:
+space. Which reading its slot list carries comes from the `SaveRack` the host
+constructs, and the session derives the two-stage flag from that rack's kind
+(`SaveSelectSession::for_rack`) - a host never sets the flag itself, so the
+two hosts cannot answer the question differently.
 
-- **Flat** (default): the slot list *is* the save blocks; the pills show the
-  first two and Save picks a block straight off the pill row. The native
-  shell drives this against its on-disk LGSF slots.
-- **Card slots** (`set_card_slots_mode(true)`): the slot list is the two
-  ports. Save then crosses the same `NowChecking` beat Load does and raises
-  its overwrite prompt from the preview rather than from the pill row, and
-  `present` on a pill means "a card is inserted", not "this holds a save".
-  The browser play page (`legaia_web_viewer::cards` + `play_menu`) drives
-  this against the player's own card images.
+| Rack | Pill row | Preview grid | Who builds it |
+|---|---|---|---|
+| `SaveRack::CardPorts` | the console's two ports | the picked port's fifteen blocks | both shipped hosts |
+| `SaveRack::Blocks` | the block list itself | the same list | headless drivers that own a plain list of saves |
 
-The **grid cursor** is the host's, not the session's: `SlotPreview` ignores
-directions, so which of the fifteen blocks is focused - and therefore which
-block a confirm commits - is host state.
+Under `CardPorts`, Save crosses the same `NowChecking` beat Load does and
+raises its overwrite prompt from the preview rather than from the pill row,
+and `present` on a pill means "something is mounted here", not "this holds a
+save".
+
+### What backs a port
+
+A port is whatever the host mounts, and that is the only thing the two hosts
+differ in:
+
+- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts the
+  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`), so cell `i` of
+  the grid is card block `i + 1` - block 0 is the directory.
+- The native shell mounts its save directory as the card in port 1
+  (`disk_save_rack`), where cell `i` is `slot_{i}` - a plain index, no
+  directory block. Port 2 is the empty port.
+
+### The driver around the second stage
+
+Everything between the session and the bytes is
+`engine-core::save_screen::SaveScreenFlow`, shared by both hosts:
+
+- the 5x3 **grid cursor** (`SlotPreview` ignores directions, so the session
+  cannot own it),
+- the **card read**, asked for once per port rather than once per frame,
+- the rule that a **Load may not confirm an empty cell** - the session knows
+  only the phase, so an unguarded confirm reports `Loaded` on a block that
+  holds no save,
+- the `SaveCommit` that pairs the outcome's **port** with the grid's **cell**.
+
+A host supplies only the bytes: the fifteen snapshots behind a port, and the
+load / write against them. `scripts/ci/check-ui-host-drift.py` pins the rack
+kind each host declares.
 
 ## Relationship to `legaia_save`
 
@@ -665,6 +693,55 @@ from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
 `RETAIL_STORY_FLAGS_OFFSET`, `RETAIL_INVENTORY_OFFSET`, and `SAVE_GAME_DATA_RAM_BASE`
 expose all confirmed offsets; use `read_retail_story_flags` / `read_retail_inventory`
 to slice them from a raw SC block.
+
+### The composer is an in-place patch
+
+`SaveFile::write_into_retail_sc_block` stamps the SC magic and four regions -
+the four-slot character-record array, the story-flag bitmap, the inventory and
+the gold slot - restamping the block checksum as it goes, so what comes out is
+a block retail's loader accepts. It does **not** rewrite the block: every byte
+outside those regions survives, which is right for editing an existing save
+and is the sharp edge for a new one.
+
+The global game-data header at `RETAIL_GAME_DATA_OFFSET` carries the location
+name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`) beside
+the gold slot, and only gold is composed. A host that claims a previously-free
+card block and composes into it therefore ships a save whose location and
+scene label are whatever the card held there - `CardView::claim_block` writes
+the directory frame and does not clear the data block.
+
+Two properties keep the aliasing benign and are worth not re-deriving: slot 3
+(Terra)'s record tail overlaps the story-flag bitmap by design, and the
+composer's write order - records, then flags, then inventory - is what
+reclaims it. `engine-core/tests/save_block_checksum.rs` pins the region list,
+so extending the composer fails there rather than in a garbled info panel.
+
+### The PSX title frame
+
+The block's first 128 bytes are the console's own title frame - the only part
+of a save a real card's BIOS Load screen shows, and none of it is payload:
+
+| Offset | Field |
+|---|---|
+| `+0x00` | `"SC"` magic |
+| `+0x02` | icon-frame descriptor |
+| `+0x03` | block count |
+| `+0x04` | title, Shift-JIS |
+| `+0x60` | icon CLUT |
+| `+0x80` | 16x16 4bpp icon |
+
+Retail composes it in `FUN_801E1934`: `SAVE_HEADER_MAGIC` is the four bytes
+`SC 11 01`, and the title's two slot digits are biased by
+`SAVE_TITLE_DIGIT_BASE` so the BIOS browser renders full-width numerals (slot
+`0` shows as `01`). Both are ported, in `engine-core::card_flow`.
+
+The engine's composer stamps only the two-byte `SC`. A save it writes into a
+previously-free card block therefore has a correct payload and checksum behind
+a header the BIOS reads as junk - visible on a real console, invisible to this
+engine, which reads the payload directly. That is a gap in the composer, not
+in the ported rule; `card_flow`'s own note keeps the two apart, because "no
+host owns a `CardIoMachine`" is a fact about the state machines' entry point
+and says nothing about whether the composition rule is live.
 
 ## Story-flag persistence vs. scratchpad word
 

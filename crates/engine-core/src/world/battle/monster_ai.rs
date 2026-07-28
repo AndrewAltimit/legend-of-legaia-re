@@ -37,6 +37,7 @@ impl World {
                 // AGL-driven multi-action budget: how many swings this monster
                 // lands this turn (single swing when it has no AGL / swing data).
                 self.arm_monster_strike_budget(slot);
+                self.clear_action_stream(slot);
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
                 if let Some(a) = self.actors.get_mut(slot as usize) {
@@ -137,6 +138,7 @@ impl World {
         use vm::battle_action::ActionState;
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.active_actor = slot;
+        self.clear_action_stream(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
         if let Some(a) = self.actors.get_mut(slot as usize) {
@@ -146,11 +148,44 @@ impl World {
         self.maybe_confuse_retarget(slot);
     }
 
+    /// Zero an actor's action-parameter stream (`+0x1DF..+0x1EE`) and rewind
+    /// its strike cursor, the state a freshly-armed action starts from.
+    ///
+    /// Retail re-seeds the stream per action (`FUN_801EED1C` for a party
+    /// action, the AI picker for a monster one) and clears it wholesale at the
+    /// round boundary (`FUN_801D88CC` loop A, ported as
+    /// [`crate::battle_round::BattleRound::boundary`]), so no action ever
+    /// reads a byte another action left behind. The engine had no per-action
+    /// clear, and the gap was a **soft-lock**: the monster-AI picker writes
+    /// the chosen spell id into `params[0]` before the cast is folded, and a
+    /// cast that cannot fold (no catalog entry for the id - the default on a
+    /// host with no spell catalog) falls back to a physical strike that then
+    /// walked the spell id as if it were a swing-anim byte. The attack chain
+    /// staged it, the staged id happened to equal the actor's current anim id,
+    /// the anim commit's `q == current_anim` early-out skipped the
+    /// `ADVANCE_DONE` clear, and the chain's pacing gate held at `AttackChain`
+    /// (`0x1E`) for the rest of the session.
+    ///
+    /// REF: FUN_801D88CC (the round-boundary clear this is the per-action
+    /// sibling of)
+    /// REF: FUN_801EED1C (the party-side per-action seeder whose absence is
+    /// what leaves a stale stream behind)
+    pub(in crate::world) fn clear_action_stream(&mut self, slot: u8) {
+        let len = vm::battle_formulas::ACTION_STREAM_RANGE.len();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            for b in a.battle.params.iter_mut().take(len) {
+                *b = 0;
+            }
+            a.battle.strike_index = 0;
+        }
+    }
+
     /// Arm a generic physical strike for monster `slot` against the first
     /// living party member (fallback when a picked cast can't fold).
     fn arm_monster_physical(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
         self.arm_monster_strike_budget(slot);
+        self.clear_action_stream(slot);
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();

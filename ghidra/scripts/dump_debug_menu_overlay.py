@@ -19,6 +19,10 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
+    # The VA mode 16 READ INIT jals (FUN_8002612C). Interior, not an entry:
+    # this dumps the enclosing FUN_801CE97C under the requested address, which
+    # is the only image whose bytes cover it. See docs/subsystems/boot.md.
+    "801ce9c0",
     "801d63b0",  # FUN_801d63b0, inc=28, sz=1036
     "801de4c8",  # FUN_801de4c8, inc=16, sz=384
     "801de648",  # FUN_801de648, inc=16, sz=80

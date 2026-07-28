@@ -1,16 +1,35 @@
 //! Action-Point ("AP") gauge for Tactical Arts command input.
 //!
 //! Each character has a per-turn AP budget that limits how many art
-//! commands they can chain. The retail engine reads this from the
-//! character record's `+0xC9` byte (`current_ap`) and `+0xCA` byte
-//! (`bonus_ap` - the +5 charged by pressing Spirit). When the player is
-//! in command-input mode, every art slot dropped into the queue spends
-//! the slotted art's AP cost; the queue stops accepting input once the
-//! remaining budget would go below zero.
+//! commands they can chain. When the player is in command-input mode,
+//! every art slot dropped into the queue spends the slotted art's AP
+//! cost; the queue stops accepting input once the remaining budget would
+//! go below zero. Pressing the Spirit button during the command window
+//! adds a `+5` bonus exactly once per turn.
 //!
-//! The retail base AP starts at 4 and grows by 1 each level milestone
-//! (every 10 levels, capped at 10). Pressing the Spirit button during
-//! the command window adds the `+5` bonus exactly once per turn.
+//! # This is an approximation, and it counts the wrong units
+//!
+//! Retail has no gauge shaped like this one. Its command gauge is a pool
+//! at `ctx + 0x6DC` seeded from the acting actor's **AGL** (`actor +
+//! 0x154`) - hundreds, not single digits - and each *direction* command
+//! spends the per-`(character, weapon)` `+0x74` byte out of it (`0x1E` =
+//! 30 for a favored weapon, 42 off-class, 54 for the Astral Sword). An
+//! *art* is not paid from that pool at all: it is charged to the Spirit
+//! gauge `actor + 0x170`.
+//!
+//! This module inverts both halves - directions are free here and art
+//! units cost `1` - and its `4 + level/10` base is a fitted constant
+//! that approximates `AGL / 30`, the command count a favored weapon
+//! buys. Because it cannot vary with the equipped weapon, the whole
+//! weapon-specialty mechanic is invisible to it.
+//!
+//! The full comparison, the disassembly that pins the pool source, and
+//! what a faithful port needs (a reader for the `+0x74` byte in the
+//! player battle files, which `legaia_asset::battle_data_pack`
+//! documents but does not parse) are in
+//! `docs/subsystems/arts-command-gauge.md`.
+//!
+//! REF: FUN_801D388C (gauge build: pool <- actor `+0x154`, cost <- `+0x74`)
 //!
 //! ## What lives where
 //!
@@ -30,12 +49,14 @@
 
 use legaia_art::queue::{ActionConstant, ActionQueue};
 
-/// Default base AP for level-1 characters. The retail value is 4;
-/// engines targeting non-vanilla balance can override.
+/// Default base AP for level-1 characters. Approximates the command
+/// count a level-1 favored-weapon turn buys (`AGL / 30`); see the module
+/// note on units. Engines targeting non-vanilla balance can override.
 pub const DEFAULT_BASE_AP: u8 = 4;
 
 /// AP added when the player presses the Spirit button during command
-/// input. Retail value is 5; can be raised by some equipment.
+/// input. Engine constant in this module's command units, not a pinned
+/// retail value.
 pub const SPIRIT_AP_BONUS: u8 = 5;
 
 /// AP cost per [`ActionConstant`] when added to the queue.
@@ -190,11 +211,14 @@ impl ApGauge {
     }
 }
 
-/// Compute the per-level AP base.
+/// Compute the per-level AP base: `4 + (level / 10)`, capped at 10. The
+/// base climbs by 1 every 10 levels - characters at level 1..9 have base
+/// 4, 10..19 have base 5, etc., maxing at level 60 with base 10.
 ///
-/// Retail formula: `4 + (level / 10)`, capped at 10. The base climbs by
-/// 1 every 10 levels - characters at level 1..9 have base 4, 10..19
-/// have base 5, etc., maxing at level 60 with base 10.
+/// **Fitted, not pinned.** No retail site computes this. It stands in for
+/// `AGL / arm_cost`, the command count retail's gauge admits, and is
+/// wrong in kind rather than degree for an off-class weapon - see the
+/// module note on units.
 pub fn ap_base_for_level(level: u8) -> u8 {
     let raw = (DEFAULT_BASE_AP + level / 10) as u16;
     raw.min(10) as u8

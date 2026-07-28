@@ -39,52 +39,45 @@
 # in `engine-render/src/tests/`. The `DialogBoxLayout` / `DialogGlyphView` /
 # `dialog_clut_color` support types went with them.
 
-[[waiver]]
-builder = "game_over_draws_for"
-kind = "web_missing"
-reason = """
-Unreachable on BOTH hosts, and deliberately so - so read the `web_missing`
-bucket as an artifact of the instrument, not a claim: the checker classifies on
-whether a host's source *names* the builder, and the native window names it in
-a `match` arm over a variant nothing constructs. Referenced is not reached, and
-no textual gate can tell them apart.
-
-The native window declares `BootUiState::GameOver` but never constructs it
-(`window/boot_cutscene.rs` matches it at two sites; no `BootUiState::GameOver(`
-constructor exists outside tests), because retail's trigger is
-not pinned: the action-SM `0x5A` gate detects the wipe, but the battle-exit
-selector never reads the wipe cause, and no static mode-0x12 writer exists on
-the disc (see docs/subsystems/battle.md § party wipe). Worse, retail's game
-over is not a menu at all - PROT 0902 carries one string and one unconditional
-exit - so this builder's Continue/Retry/Quit rows are an engine invention.
-Wiring either host would commit the port to behaviour nobody has observed.
-Close it with a runtime probe, not by picking a trigger.
-
-Both hosts now run live battles (the browser via `play_battle.rs`), so the
-wipe path is exercised on both: `World::finish_battle` raises the
-`World::game_over` flag on `BattleEndCause::PartyWipe` and returns to the
-field, and both hosts leave that flag unconsumed - deliberately, and
-symmetrically, for the reason above. The gap is host-identical, not drift.
-"""
+# `game_over_draws_for` was waived here as unreachable on both hosts,
+# because retail's party-wipe destination is unpinned and this panel's
+# Continue / Retry / Quit rows are an engine invention. The waiver is
+# removed: both hosts now construct the panel off `World::game_over`
+# (native `BootUiState::GameOver` from the redraw loop, the browser from
+# `post_battle_overlay_draws`), which is a presentation the port owns. The
+# retail question the waiver raised is still open and still recorded in
+# `docs/subsystems/battle.md` - what changed is that a wiped party is no
+# longer a silent no-op that hands the player back a full-HP field.
 
 [[waiver]]
 builder = "key_rebind_draws_for"
 kind = "orphan"
 reason = """
-Web-exempt by design, but unreached on native too. The browser page's bindings
-are JS keycode tables owned by the page, not the engine - `PAD` in
-`site/js/play-app.js` for the in-scene pad and `BOOT_PAD` in
-`site/_content/play.html` for the title / save rack - and a shared rebind
-screen would have to write a config the browser has no place to persist. On
-native, rebinding today happens through the `legaia-input.toml` config file and
-the `legaia-engine config set --binding` subcommand; the in-engine screen this
-builder draws is not mounted in the window's menu tree.
+Unreached on BOTH hosts. This waiver used to open by calling the browser
+"web-exempt by design", on the premise that "the browser page's bindings are
+JS keycode tables owned by the page, not the engine - `PAD` in
+`site/js/play-app.js` ... and `BOOT_PAD` in `site/_content/play.html`". That
+premise is gone, and its being true was itself the bug: three hand-maintained
+tables drifted key-for-key (`X` was Square natively and Circle in both page
+tables, `S` was Circle natively and Down on the page, and Select / L1 / R1 /
+L2 / R2 were bound on neither page). Both pages now READ the engine's own
+table through `legaia_web_viewer::pad_bindings::pad_bindings_json`, so the
+bindings are engine-owned on every host and there is no page-side layout left
+to exempt.
 
-What must exist first is a **menu route**, on either host: the options screen
-both hosts draw (`options_draws_for`) has no row that opens a sub-screen, and
-`engine-core`'s `OptionsSession` carries no binding-edit state for one to
-drive. Closing it means growing that row and that state, not adding a draw
-call.
+What still blocks the screen is the half that was always true: a **menu
+route**. The options screen both hosts draw (`options_draws_for`) has no row
+that opens a sub-screen, and `engine-core`'s `OptionsSession` carries no
+binding-edit state for one to drive. `engine-core::key_rebind::KeyRebindSession`
+is complete - rows in canonical order, await-key state, eviction so two keys
+cannot report one button - and its only caller is
+`engine-core/tests/menu_suite_e2e.rs`. Native rebinding today happens through
+`legaia-input.toml` and `legaia-engine config set --binding`; the browser has
+no equivalent yet, but persistence is no longer the obstacle it was claimed to
+be (the page already persists saves).
+
+Closing it means growing that options row and that session state on both
+hosts, plus a wasm binding for `KeyRebindSession` - not adding a draw call.
 """
 
 # `sprite_draws_for` used to be waived here as "a generic anchor-translate
@@ -287,3 +280,47 @@ owns, so a host has neither the trigger nor the text.
 # the twin of the page's `load_disc` arming. Nothing to waive, and a future
 # divergence would have to be written into the shared builder, where it would
 # show up on both hosts at once.
+
+# --- Widened surface: engine-ui's intermediate draw records ------------------
+#
+# The checker's builder surface used to stop at `TextDraw` / `SpriteDraw`. It
+# now also counts the crate's intermediate records - `HudDraw`, `HudQuad`,
+# `DigitCell`, `BarFrame`, `ComparePanelField` - because a screen that stops at
+# one of those is still a screen, and leaving them off made two whole chains
+# (the fishing HUD, window 25's compare panel) invisible while every other
+# pause screen was covered. Thirteen builders arrived with the widening. Ten
+# were already reached on both hosts through methods the call graph now walks.
+# Of the remaining three gaps, the PROT 0977 arena-hub quad emitters
+# (`hud_quad_centred` / `hud_quad_corner` / `decimal_quads`) are now wired -
+# `minigames_muscle::muscle_hub_quads_json` runs them over the draw lists
+# recovered from that entry's own call sites and the dome page submits the
+# resulting rects - so only the one below is left.
+
+[[waiver]]
+builder = "equip_compare_panel_fields"
+kind = "orphan"
+reason = """
+`FUN_801D1290`, window 25 - the Equip screen's active-character stat-compare
+panel. It orphaned when the shop's equipment-buy recipient picker stopped
+drawing window 25: retail's picker script opens only window 36, so that draw
+was a panel retail does not show, and removing it was correct. What it left
+behind is this painter plus its category chain (`active_compare_category`,
+`CompareRows::from_category`), which nothing else reaches. The gate was blind
+to that for as long as its surface stopped at `TextDraw`.
+
+The covering path exists and is drawn on both hosts: the port's Equip screen
+prints its stat compare from `FUN_801D21C0`, window 22's own Best-Equipment
+pass, through `equip_screen_draws_for`'s `stat_compare` rows. So this is not a
+screen the player is missing - it is a second, descriptor-driven renderer of
+the same readout.
+
+The blocking capability is the **equip window set**, the same one that blocks
+window 24 (`count_panel_draws_for` above). Retail opens windows 2 / 24 / 25
+from one script (`0x801E4DC8`, sub-screen `0x13` / `FUN_801D9C14`); the port's
+equip flow (`legaia_engine_core::equip_session`) is built on the
+capture-pinned set 2 / 21 / 22 / 23, and window 25's rect `(14, 40, 144, 52)`
+overlaps the party window 21 it would have to replace. Closing it means
+moving the whole screen onto the descriptor-table layout - which is also what
+would give window 24 the item-info rect it needs - not adding a draw call to
+the screen as it stands.
+"""

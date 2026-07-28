@@ -35,6 +35,28 @@ impl World {
         )
     }
 
+    /// The defence half a melee command reads on `slot`: UDF (`+0x15C`) when
+    /// `(command - 0x0C) % 10 < 5`, LDF (`+0x160`) otherwise
+    /// ([`vm::battle_formulas::physical_defense_is_udf`], `FUN_801EC3E4` at
+    /// `0x801ECE14`).
+    ///
+    /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
+    /// (battle entry, from the catalog's UDF / LDF pair) carry a real split.
+    /// A slot with none configured - a synthetic battle that wrote only
+    /// [`Self::battle_defense`] - falls back to that scalar, so both halves
+    /// answer the same value and the parity pick is a no-op for it.
+    pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
+        let idx = slot as usize;
+        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx) {
+            return if vm::battle_formulas::physical_defense_is_udf(command) {
+                *udf
+            } else {
+                *ldf
+            };
+        }
+        self.battle_defense.get(idx).copied().unwrap_or(0)
+    }
+
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
     /// formula (the routine battle-action state `0x64` calls, the writer of
     /// the `_DAT_8007726C` outcome pointer). Party score = per-slot
@@ -263,8 +285,18 @@ impl World {
     /// Apply the retail `×6/5` stat-up ramp ([`vm::battle_formulas::buff_ramp`])
     /// to the per-slot scalar backing `stat`, returning the exact `u16` change.
     /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
+    ///
+    /// A Defense ramp is taken from the slot's **UDF half** when it carries a
+    /// [`Self::battle_defense_split`] - see [`Self::move_defense_split`] for why
+    /// the scalar alone is the wrong basis.
     fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
         use crate::spells::BuffStat;
+        if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense)
+            && let Some(Some((udf, _))) = self.battle_defense_split.get(slot as usize).copied()
+        {
+            let delta = (i32::from(vm::battle_formulas::buff_ramp(udf)) - i32::from(udf)) as i16;
+            return self.add_to_buff_scalar(slot, stat, delta);
+        }
         let scalar = match stat {
             BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
             BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
@@ -282,7 +314,8 @@ impl World {
 
     /// Add `delta` to the per-slot scalar backing `stat` and return the exact
     /// change made (after `u16` saturation). Stats with no live-loop scalar
-    /// return `0`.
+    /// return `0`. A Defense change also moves both halves of the slot's
+    /// defence split ([`Self::move_defense_split`]).
     pub(super) fn add_to_buff_scalar(
         &mut self,
         slot: u8,
@@ -290,6 +323,9 @@ impl World {
         delta: i16,
     ) -> i16 {
         use crate::spells::BuffStat;
+        if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense) {
+            self.move_defense_split(slot, delta);
+        }
         let scalar = match stat {
             BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
             BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
@@ -303,6 +339,32 @@ impl World {
         let after = (before + delta as i32).clamp(0, u16::MAX as i32);
         *scalar = after as u16;
         (after - before) as i16
+    }
+
+    /// Move both halves of `slot`'s defence split by `delta`, saturating at
+    /// zero. No-op for a slot with no split.
+    ///
+    /// The physical path reads the split, not the [`Self::battle_defense`]
+    /// scalar ([`Self::physical_defense_of`]), so a Defense buff that touched
+    /// only the scalar changed nothing a swing could see. That was already true
+    /// for every party slot - [`Self::seed_party_battle_stats`] writes the split
+    /// and never the scalar, so the scalar sat at `0` and the `×6/5` ramp of `0`
+    /// is `0` - and seeding the monster band's split would have extended the
+    /// same inertness to enemies. Retail's "Defense Up" raises `defense_high`
+    /// and `defense_low` together, which is what moving both halves models.
+    ///
+    /// **Bounded divergence:** retail ramps each facet by its own `×6/5`; the
+    /// engine applies one delta, taken from the UDF half, to both. The stored
+    /// `applied_delta` stays a single exactly-reversible number, so a buff that
+    /// expires restores the pair it found.
+    fn move_defense_split(&mut self, slot: u8, delta: i16) {
+        if let Some(Some((udf, ldf))) = self.battle_defense_split.get_mut(slot as usize) {
+            let shift = |v: &mut u16| {
+                *v = (i32::from(*v) + i32::from(delta)).clamp(0, i32::from(u16::MAX)) as u16;
+            };
+            shift(udf);
+            shift(ldf);
+        }
     }
 
     /// Tick the buffs on `slot` at the start of its turn: decrement each, and

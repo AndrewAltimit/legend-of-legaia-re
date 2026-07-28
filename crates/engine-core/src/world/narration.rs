@@ -2160,6 +2160,14 @@ impl World {
             self.inline_dialogue = Some(id);
             return;
         }
+        // The cross-context clip cursors advance once per frame. The field
+        // frame does it in `tick_prop_interactions`; a host that drives only
+        // the conversation (the disc oracles, the browser dialogue path) never
+        // reaches that call, so the bank arbitrates and exactly one of the two
+        // ticks. Runs before the slice below for the same reason retail's
+        // actor tick runs before the dialog SM: the spin must see the latch the
+        // clip earned on *this* frame, not last frame's.
+        self.field_prop_bank.tick_actor_clips_for_frame();
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -2233,27 +2241,76 @@ impl World {
             if id.pc < id.visited.len() {
                 id.visited[id.pc] = true;
             }
-            // `A2 F8 <move_id>` - a cross-context ExecMove poked at the PLAYER
-            // channel (`0xF8` = `_DAT_8007C364`). Retail re-points the player
-            // actor's `+0x4C` clip pointer and its actor tick plays the clip;
-            // the engine cues it the same way the cutscene timeline does, and
-            // the windowed host resolves the scene-ANM record off
-            // `World::field_player_move_cues`. The runner's own `ctx` is the
-            // record's, not the player's, so the cue is the only way an
-            // innkeeper's bow or a shopkeeper's turn reaches the screen.
+            // The `0x80`-prefix target byte, when this op carries one. Retail
+            // resolves it through `FUN_8003C83C` to *another actor's* record -
+            // `0xF8` to the live player (`_DAT_8007C364`), anything else by an
+            // actor-list walk on `ctx[+0x50]` - and then runs the op against
+            // that record's words, not the dispatching one's.
+            let ext_target = if b & 0x80 != 0 {
+                vm::field::peek_extended(&id.bytecode, id.pc)
+            } else {
+                None
+            };
+            // `A2 <target> <clip>` - a cross-context ExecMove. Retail writes
+            // the target's `+0x5C` and calls the anim tick, which re-points its
+            // `+0x4C` clip pointer and zeroes its cursor; the port binds the
+            // target's clip cursor in the bank, which is what the following
+            // `AC <target> 08` / `AD <target> 08` end-latch spin then waits on.
+            // For the player the windowed / browser hosts additionally draw the
+            // gesture off `World::field_player_move_cues` (moves 1/2 are the
+            // locomotion clips their own controller already animates).
             if (b & 0x7F) == 0x22
-                && vm::field::peek_extended(&id.bytecode, id.pc) == Some(0xF8)
+                && let Some(target) = ext_target
                 && let Some(&move_id) = id.bytecode.get(id.pc + 2)
-                && move_id > 2
             {
-                host.world.field_player_move_cues.push(move_id);
-                id.player_clip_frames = if host.world.field_player_anim.is_some() {
-                    crate::inline_dialogue::PLAYER_CLIP_CUE_SETTLE
-                } else {
-                    0
-                };
+                let fallback = host.world.player_clip_frames_hint();
+                host.world
+                    .field_prop_bank
+                    .bind_actor_clip(target, move_id, fallback);
+                if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
+                    host.world.field_player_move_cues.push(move_id);
+                }
             }
-            match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
+            // Bind the poked actor's `+0x62` into the executing context for the
+            // clip-control ops, and mirror it back after - the same discipline
+            // `World::step_prop_interaction` runs a prop's whole record under,
+            // narrowed to the one word a cross-context op reaches. Without it a
+            // conversation's `AC F8 08` would clear a latch on the NPC record's
+            // own flag word and its `AD F8 08` would wait on a bit nothing
+            // writes.
+            //
+            // A target the port has no cursor for (never poked with a clip)
+            // falls through to the record's own word - the op has to land
+            // somewhere, and the spin's timeout net covers the rest.
+            let saved_local_flags = id.ctx.local_flags;
+            let bound = ext_target
+                .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
+                .filter(|&target| {
+                    let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                        let hint = host.world.player_clip_frames_hint();
+                        Some(host.world.field_prop_bank.player_clip(hint).flags)
+                    } else {
+                        host.world
+                            .field_prop_bank
+                            .actor_clip(target)
+                            .map(|a| a.flags)
+                    };
+                    match flags {
+                        Some(f) => {
+                            id.ctx.local_flags = f;
+                            true
+                        }
+                        None => false,
+                    }
+                });
+            let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+            if let Some(target) = bound
+                && let Some(actor) = host.world.field_prop_bank.actor_clip_mut(target)
+            {
+                actor.flags = id.ctx.local_flags;
+                id.ctx.local_flags = saved_local_flags;
+            }
+            match step {
                 // A backward Advance onto an already-executed PC is the
                 // record's resident loop-back to its top selector - the end
                 // of ONE conversation pass (retail parks there until the next
@@ -2271,6 +2328,10 @@ impl World {
                 }
                 FieldStepResult::Advance { next_pc } => {
                     id.pc = next_pc;
+                    // The record moved, so whatever spin it was parked on has
+                    // fallen through: the park counter starts again from the
+                    // next one.
+                    id.park_frames = 0;
                     // Retail's run-to-next-text helper breaks after executing
                     // a raw `0x21` byte and returns it (`FUN_8003CF7C`
                     // `if (bVar1 == 0x21) break`); the dialog SM reads that
@@ -2312,41 +2373,26 @@ impl World {
                 // every scripted gesture beat unreachable, the innkeeper's
                 // among them (`docs/subsystems/inn.md`).
                 //
-                // Park while the cued player clip is still playing; once it
-                // is done, set the tested bit - that write IS the anim tick's
-                // latch, which the runner has to stand in for because the
-                // record's ctx is not bound to the poked actor - and re-step
-                // so the spin falls through. Bounded by
-                // `INLINE_SPIN_PARK_TIMEOUT` so an unmodelled latch cannot
-                // hold the player in the box forever.
+                // So: park, and re-test next frame. The runner writes nothing -
+                // the bit it is waiting on belongs to the poked actor's clip
+                // cursor, and `PropAnim::tick` is what sets it
+                // (`World::step_inline_dialogue` runs that tick at the top of
+                // the frame, exactly as retail's actor tick precedes the dialog
+                // SM). `INLINE_SPIN_PARK_TIMEOUT` stays as a net for a spin
+                // whose target the port cannot resolve to a cursor at all; a
+                // resolved one drains in the clip's own frame count.
                 //
                 // REF: FUN_800204F8 (the anim tick that owns the latch)
                 // REF: FUN_80039B7C (the dialog SM's per-frame re-entry)
                 FieldStepResult::Halt { final_pc }
                     if (b & 0x7F) == 0x2D && id.fallback_segment_pc.is_none() =>
                 {
-                    let playing = id.player_clip_frames > 0
-                        || host
-                            .world
-                            .field_player_anim
-                            .as_ref()
-                            .is_some_and(|a| a.scripted_active());
-                    if playing {
-                        id.player_clip_frames = id.player_clip_frames.saturating_sub(1);
-                        id.park_frames = id.park_frames.saturating_add(1);
-                        id.pc = final_pc;
-                        if id.park_frames > crate::inline_dialogue::INLINE_SPIN_PARK_TIMEOUT {
-                            id.done = true;
-                        }
-                        break;
-                    }
-                    id.park_frames = 0;
-                    let header = if b & 0x80 != 0 { 2 } else { 1 };
-                    if let Some(&bit) = id.bytecode.get(final_pc + header) {
-                        id.ctx.local_flags |= 1u16.checked_shl(u32::from(bit & 0x1F)).unwrap_or(0);
-                    }
+                    id.park_frames = id.park_frames.saturating_add(1);
                     id.pc = final_pc;
-                    continue;
+                    if id.park_frames > crate::inline_dialogue::INLINE_SPIN_PARK_TIMEOUT {
+                        id.done = true;
+                    }
+                    break;
                 }
                 // Any other halt/hold, an unhandled op, or an end: stop.
                 // (Unlike the cutscene timeline the runner does not force-

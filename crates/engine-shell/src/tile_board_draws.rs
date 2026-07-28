@@ -1,88 +1,32 @@
-//! Tile-board tile-actor draw assembly for the play-window renderer.
+//! Tile-board tile-actor draw assembly - re-exported from `engine-core`.
 //!
-//! [`World`] rebuilds `tile_board_draw_list` each field tick (the retail
-//! `overlay_0897_801e0f3c` deferred draw pass): one entry per drawable cell
-//! in the active draw set, carrying the cell value, the value's tile-actor
-//! pool slot, and the cell's world centre. This module turns that list into
-//! the renderer-facing per-cell draw set - the positions each tile actor's
-//! mesh instance draws at this frame - and answers the two ownership
-//! questions the generic actor draw loop needs (which pool slots are
-//! board-owned, which still need their template mesh uploaded).
+//! The assembly itself moved down into
+//! [`legaia_engine_core::tile_board`], because it was only ever `&World ->
+//! Vec<..>` and living here made it unreachable from the browser play page:
+//! `legaia-engine-shell` pulls winit and cpal and does not build for wasm32.
+//! `World` maintains `tile_board_draw_list` for both hosts - the field VM's
+//! op `0x49` installs a board regardless of who is rendering - so a scene
+//! that installed one on the play page drew nothing while the walk SM still
+//! refused its wall cells. That is a walk into an invisible board, not a
+//! cosmetic gap.
 //!
-//! Kept in the shell lib (not the `legaia-engine` bin) so the assembly is
-//! testable headlessly; the bin's redraw pass maps each draw's `slot` to its
-//! uploaded GPU mesh and pushes one `SceneDraw` per entry.
+//! This module stays as the native window's import path so the bin's redraw
+//! pass keeps its existing spelling, and so the two hosts demonstrably share
+//! one copy rather than two that can drift.
 //!
-//! PORT: overlay_0897_801e0f3c (per-cell tile-actor draw pass; the select +
-//! reposition halves live in `World::refresh_tile_board_draw_list`)
+//! **A re-export is not a port site.** The tag below is a `REF:`, not a
+//! `PORT:`: the ported pass is
+//! [`legaia_engine_core::tile_board::tile_board_actor_draws`], which is where
+//! the `PORT:` tag lives and which both hosts reach. A second `PORT:` here
+//! declared a port anchor on a module that is only four `pub use` names, so
+//! nothing could ever call *it* and the live-reachability audit read it as an
+//! inert port - a measurement artifact of the move down into `engine-core`,
+//! not a host that stopped drawing the board.
+//!
+//! REF: overlay_0897_801e0f3c (per-cell tile-actor draw pass - see the
+//! provenance caveat on the `engine-core` function: the renderer is the walk
+//! SM's tail block at `0x801EFEA0`, not an entry at this address)
 
-use legaia_engine_core::tile_board::{CELL_DRAW_FIRST, CELL_DRAW_LAST};
-use legaia_engine_core::world::World;
-
-/// One tile-actor mesh instance for this frame: the actor at `slot` draws
-/// at `world` (a drawable cell's tile centre, floor-snapped like the field
-/// NPC draws). A cell value repeated across cells yields multiple draws
-/// sharing one `slot` - the per-cell instancing the shared actor can't
-/// carry in its own transform.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TileActorDraw {
-    /// Actor-pool slot of the cell value's tile actor.
-    pub slot: u8,
-    /// The drawn cell's value (`2..=14`).
-    pub cell_value: u8,
-    /// World-space draw position `(x, y, z)` in the retail Y-down field
-    /// frame (the same convention the field NPC / placement draws use).
-    pub world: [f32; 3],
-}
-
-/// Assemble the per-cell tile-actor draw set from the world's per-frame
-/// tile-board draw list. Empty when no board is installed. Slots whose
-/// actor is gone (despawned mid-frame) are skipped - unresolved templates
-/// degrade to "no draw", never a panic.
-pub fn tile_board_actor_draws(world: &World) -> Vec<TileActorDraw> {
-    world
-        .tile_board_draw_list
-        .iter()
-        .filter(|d| world.actors.get(d.slot as usize).is_some_and(|a| a.active))
-        .map(|d| {
-            let y = world.sample_field_floor_height(d.world_x, d.world_z) as f32;
-            TileActorDraw {
-                slot: d.slot,
-                cell_value: d.cell_value,
-                world: [d.world_x as f32, y, d.world_z as f32],
-            }
-        })
-        .collect()
-}
-
-/// The distinct tile-actor slots in the active draw set whose actor carries
-/// a resolved template mesh (`tmd_ref`), in first-seen order - the set the
-/// renderer must upload before the per-cell draws can land. Unresolved
-/// templates (empty `tmd_ref`) are excluded: they allocated a slot but have
-/// nothing to upload.
-pub fn tile_actor_slots_needing_mesh(world: &World) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::new();
-    for d in &world.tile_board_draw_list {
-        if out.contains(&d.slot) {
-            continue;
-        }
-        if world
-            .actors
-            .get(d.slot as usize)
-            .is_some_and(|a| a.active && a.tmd_ref.is_some())
-        {
-            out.push(d.slot);
-        }
-    }
-    out
-}
-
-/// Whether actor-pool `slot` is a board-owned tile actor (a `2..=14` entry
-/// of the tile-actor table). The generic per-actor draw loop skips these -
-/// a tile actor draws once per cell through the deferred draw list, and its
-/// own transform only holds the *last* repositioned cell. Table slot 0 (the
-/// player) is not board-owned: the normal field path draws it.
-pub fn is_tile_actor_slot(world: &World, slot: usize) -> bool {
-    (CELL_DRAW_FIRST..=CELL_DRAW_LAST)
-        .any(|v| world.tile_actor_slots[v as usize].is_some_and(|s| s as usize == slot))
-}
+pub use legaia_engine_core::tile_board::{
+    TileActorDraw, is_tile_actor_slot, tile_actor_slots_needing_mesh, tile_board_actor_draws,
+};

@@ -88,6 +88,68 @@ impl World {
         self.roster.clone()
     }
 
+    /// Write the **battle party's** live HP / MP into their roster records.
+    ///
+    /// The narrow sibling of [`Self::save_party`], for
+    /// [`Self::finish_battle`]. Two differences, both deliberate:
+    ///
+    /// - It stops at [`Self::party_count`]. In battle the actor slots past
+    ///   the party band hold *monsters*, and `save_party`'s identity default
+    ///   walks the whole roster - so running it verbatim at battle end would
+    ///   copy a monster's HP into the fourth character's record.
+    /// - It writes `hp_cur` / `mp_cur` only, never `hp_max`. Max HP does not
+    ///   move during a fight, and the level-up applier has already written
+    ///   the post-victory maxima into the records by the time this runs.
+    pub(in crate::world) fn persist_battle_party_hp(&mut self) {
+        let n = (self.party_count as usize).min(self.actors.len());
+        for member in 0..n {
+            let rslot = self.party_roster_slot(member);
+            let (hp, mp) = {
+                let a = &self.actors[member].battle;
+                (a.hp, a.mp)
+            };
+            if let Some(rec) = self.roster.members.get_mut(rslot) {
+                let mut hms = rec.hp_mp_sp();
+                hms.hp_cur = hp;
+                hms.mp_cur = mp;
+                rec.set_hp_mp_sp(hms);
+            }
+        }
+    }
+
+    /// Project each present-party record's HP / MP back onto its party actor's
+    /// [`BattleActor`] mirrors - the inverse of the [`Self::save_party`]
+    /// resync, over the same `party_roster_slot` mapping.
+    ///
+    /// Used by [`Self::finish_battle`] after the field actor table is restored
+    /// from the pre-battle snapshot: the snapshot's mirrors are stale, and the
+    /// records (just written by [`Self::persist_battle_party_hp`]) hold the
+    /// post-battle truth.
+    ///
+    /// Bounded by [`Self::party_count`]: in the restored *field* table the
+    /// slots past the party band are NPCs, and pushing a character record's
+    /// HP onto an NPC's mirrors is never right.
+    pub fn resync_party_actors_from_roster(&mut self) {
+        let members = (self.party_count as usize).min(self.actors.len()).min(
+            if self.active_party.is_empty() {
+                self.roster.members.len()
+            } else {
+                self.active_party.len()
+            },
+        );
+        for member in 0..members {
+            let rslot = self.party_roster_slot(member);
+            let Some(hms) = self.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
+                continue;
+            };
+            let a = &mut self.actors[member];
+            a.battle.hp = hms.hp_cur;
+            a.battle.max_hp = hms.hp_max;
+            a.battle.mp = hms.mp_cur;
+            a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+        }
+    }
+
     /// Capture the complete engine state (party + globals) into a [`legaia_save::SaveFile`].
     ///
     /// Pairs with [`World::load_full`]. Use this instead of [`World::save_party`] when

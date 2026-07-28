@@ -36,6 +36,28 @@ below.
 | Charm battle softlock = unbounded reroll in `FUN_801E7320` | falsified (cannot spin from any reachable state) | The reroll loops are unbounded in isolation, but every reachable caller state has an exit: the scheduler `FUN_801DABA4` never seeds a dead actor (predicate `+0x14C != 0 && !(+0x16E & 0x4)`), the acting `0x380` monster is itself an in-band self-pick exit (`0x801E73E8` clears `+0x1DE`), and a band with zero living members means the previous `0x5A` already fired the wipe. The real defect is downstream in the `0x5A` victory arm's roster indexing ([battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)). Lesson: an unbounded loop hangs only under a reachable all-invalid state - check the predicates feeding it first. |
 | Gaza 2 `0x51` park: clamp asymmetry as a standalone retail generator | falsified (amplifier only; its exhibit was a phased mid-action state) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
+| Muscle Dome as a **card battle** with a per-fighter "score out of 108" | falsified (it is a 4-turn battle; the readout is the opponent's HP percentage) | [details ↓](#muscle-dome-was-never-a-card-battle) |
+
+### Muscle Dome was never a card battle
+
+Three claims fell together, and each is instructive about a different reading habit.
+
+**"A hand of four cards."** `FUN_801d388c` case `9` builds four slots in a `do { } while (< 4)` loop, which reads like a deal. The four slots are the four **d-pad directions**, always the same command ids `0xC..=0xF`, each carrying that fighter's own AP cost. Nothing is drawn, discarded or reshuffled; the arena is an ordinary battle whose command string is bounded by AP instead of by a fixed length. The retail presentation was already captured as the standard battle command cluster - the "card" reading survived the capture because the code's own loop shape kept suggesting it.
+
+**"A score of `hp * 0x6C / max`."** The compiler renders `× 100` as a shift-add chain: `sll 1` (2x), `addu` (3x), `sll 3` (24x), `addu` (25x), `sll 2` (**100x**), at `0x801d0f38..0x801d0f4c`. Stopping at the fourth instruction yields 25, and folding the wrong pair yields `0x6C` (108). The lesson generalises past this arm: **a multiplier read off a shift-add chain is only correct if you consume the whole chain**, and the check is free - Ghidra's own C prints `* 100`, and a second dump of the same code at a different load base (`overlay_0896_801f04b0.txt`) reproduces it.
+
+**"Rendered in phase `0x6e`, per fighter."** The computation lives in the phase-`0x14` arm; `0x6e` only re-stamps the two globals `0x14` already wrote. And the record it reads is `DAT_801c937c` - actor-table index 3, the first **enemy** slot - so there is one number on screen, the opponent's, not one per fighter. The whole match SM contains exactly two ratio computations and both are that one `× 100`.
+
+What the arm actually draws is the `Turns Left / HP Left` strip, whose format string is on the disc at PROT 0898 file offset `0x0`: `4 - ctx[+0x28a]` (the shared battle turn counter, bumped by `FUN_801e295c` case `0xff`) and the first enemy's HP percentage.
+
+**"…and four turns is the whole dome leg."** That last step is itself wrong, and it is the subtler trap.
+The arm is gated on `*(u8*)0x8007BD0C == 0xB6`, and `0x8007BD0C` is the four-slot **monster-id formation cell**, not a battle-type byte.
+The gate therefore names a *monster*, and the dome stages its own opponents into that same cell out of a 29-round table topping out at id `0xAA`, so no dome round can ever reach it.
+The strip belongs to monster `0xB6` - Koru, whose four-turn timed kill the curated boss table records independently.
+The general lesson: **a byte compared against a small constant is not a mode tag until you have found its writer**; this one had exactly one writer in the arena overlay and it writes a monster id.
+See [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome).
+
+A separate widget must not be folded into this one: `FUN_801d8de8` is the **shared battle status plate** (dumped under ten overlays), drawing each fighter's own HP/MP `cur`/`max` numerals from `+0x172`/`+0x14e` and `+0x174`/`+0x152`. It computes no percentage and is not dome-specific.
 
 ### Op-0x4E sub-op family - every sub-op 0..9 is a compare
 
@@ -148,6 +170,10 @@ re-derived by accident.
 | The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | `scene_tmd_stream` entries can hold two or more concatenated sub-streams (the "two-list" shape) | falsified (one stream per entry; 0 of 182 hold a second) | [details ↓](#concatenated-sub-streams-in-a-scene_tmd_stream-entry) |
+| The stage backdrop renders as half a bowl, so something drops the other half - mirror it to complete the circle | falsified (the half shell is the authored shape; 182 of 182 backdrops are half) | [details ↓](#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it) |
+| PROT 0968 is a 4 KB module (pointer-table head, 10/11 self-pointers, 2+8 spawn calls) | falsified (its own content is 2600 bytes; the rest is stale buffer) | The entry really is 2 sectors, but only file `0x00..0xA28` is 0968's. The trailing 1496 bytes are 0967's bytes at the *same* file offsets, cut mid-string at the sector boundary, and **nothing in 0968's own window references them** - no `jal`, no `j`, no materialisation. Every structural figure ever quoted for the entry was measured across both modules at once, which is why they never cohered. Full accounting on [`re-settled-threads.md`](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay). |
+| The literal `0x801F69D8` in `SCUS_942.54` is a cross-image reference naming 0968's loader callsite | falsified (it is the slot-B base constant) | The only literal-word hit outside the shared-base band, and therefore the only one an aliasing argument could not dismiss - which made it read as the last live lead. It is the SCUS global `0x80010390` holding the **slot-B overlay load address**, twin of `0x8001038C` for slot A, read by `FUN_8003EC70` and never written. A reference to a shared load base names the *slot*, not a tenant. Meanwhile the real callsite was never findable that way: the stage-overlay parameter is **computed** (`stage_id + 0x47`), so the constant `0x49` occurs nowhere. |
+| Battle `DAT_8007BD0C == 0xB5` at `0x801E6D04` is a test on the Lapis Wave **spell** id | falsified (it is the **formation monster** id - Cort) | Two id spaces collide on `0xB5`: spell `0xB5` is Lapis Wave, formation `0xB5` is monster-archive 181, Cort. The byte the branch reads is `*(u8 *)0x8007BD0C`, which is the formation id array, and its guard is an HP-reached-zero test on the first enemy actor - a form-transition trigger, not a cast. The wrong reading was self-consistent because Cort is also the caster of Lapis Wave. |
 
 ### Assets named by the entry the over-read window started in
 
@@ -263,6 +289,76 @@ detectors for exactly this, with disc-gated coverage in
 
 See [`scene-bundles.md`](../formats/scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape)
 for the corrected layout.
+
+### The half-authored backdrop shell, and the mirror that was supposed to complete it
+
+*Status:* falsified - the half shape is what the disc holds; the "completion"
+is the regression
+
+Open any `scene_tmd_stream` PROT entry in a mesh viewer and you get half a
+bowl: a sky dome, a distant mountain ring and a far ground ring, all sheared
+off along a plane through the origin. The reading that follows is almost
+irresistible - *a whole map got halved, so find the logic that makes it
+whole* - and it has been reached independently more than once, from the
+viewers and from the engine. The obvious repair is equally natural: draw the
+shell a second time under `Ry(180deg)` and close the circle.
+
+**The half shape is authored.** Measured over object 0 - the shell retail
+actually links as the background actor - all **182** `scene_tmd_stream`
+entries put at most **8%** of the shell's X or Z extent on the far side of
+`X = 0` / `Z = 0`; the widest overhang in the whole corpus is `0.079`
+(`0048_vell`, `Z` in `[-877, 10254]` against a symmetric `X`). The open side
+is `-X` in 129 entries, `-Z` in 49 and `+X` in 4. **None** opens toward `+Z`,
+which is the side retail seats the party on - the hole is always where the
+camera is, never behind it. `0007_town01` is the plain case: `X` in
+`[0, 10751]`, `Z` symmetric at `+-10751`, open toward the sea.
+
+**Nothing is being dropped**, which is the part a "halved" reading needs and
+does not have. Every one of the 378 objects across those entries has
+`vert_top + n_vert * 8 == normal_top` exactly, and the parsed body accounts
+for the whole declared chunk0 size. There is no unread vertex block, no
+second primitive list, and (per the row above) no second sub-stream: the
+missing half was never in the file.
+
+**What the mirror broke.** `legaia-engine play-window` shipped the
+`Ry(180deg)` duplicate for a while. For `town01` that planted a second copy
+of the village wall straight across the open `-X` side - the side that in
+retail is open sea. The mirror is a plausible fix only while the shell is
+believed to be radially symmetric, and it is not: these are *scenes*, with a
+sea on one side and a village on the other. Removed; the engine draws object
+0 once, at raw coordinates
+([`battle.md`](../subsystems/battle.md#backdrop-dome---sky--distant-mountains-prot-88-for-map01)).
+
+**The retail captures agree**, and they are what makes this terminal rather
+than an inference from the bytes. Across a four-angle stage-battle capture
+set the distant mountains cover **44-81%** of the horizon columns depending
+on camera angle - peaking when the orbit camera looks into the arc, troughing
+along its edge. A ring would hold roughly constant. The remaining horizon is
+open sky and grass, drawn by the flat procedural ground grid, exactly as the
+half shell predicts.
+
+Two things this is *not*. It is not the `+0x10` mesh puzzle - the
+walk-visible `.MAP` cells that name a pack mesh no layer draws, and so look
+like a candidate missing half until you read the flags. That family is
+`0x0011`, i.e. `FLAG_MESH_DRAWN` **clear**, and stamping it was separately
+falsified against retail: it draws a wall down every river
+(`FLAG_MESH_DRAWN` in `crates/asset/src/field_objects.rs`). And it is not the
+site's assembled map view or the engine's field renderer - those exclude
+`scene_tmd_stream` entries entirely and build the scene from the environment
+mesh pack plus the `.MAP` placements, whose draws resolve in range
+(`crates/web-viewer/tests/field_scene_assembly.rs`).
+
+**The durable lesson is about presentation, not bytes.** Every measurement
+here was already available, and the correct behaviour was already
+documented - the reading kept reopening because the *viewer* offered no way
+to tell an authored half shell from a truncated parse. A format whose correct
+output looks broken needs the tool to say so at the point of viewing, or the
+falsification has to be re-derived by whoever looks next. Both viewers now
+label these entries from the vertex pool
+(`scene_tmd_stream::shell_shape` / `ShellShape::describe`, e.g. "battle-stage
+backdrop (half shell, open toward -X)"), and the corpus sweep is pinned by
+`every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in
+`crates/asset/tests/scene_tmd_stream_real.rs`.
 
 ## Field / locomotion
 
@@ -446,6 +542,8 @@ and each shaped what work looked worth doing.
 | The disc-coverage report's excluded dumps are "typically the ones that report `0 instructions` and hold only decompiled C" | falsified (zero of them reported `0 instructions`) | The files that *do* report `0 instructions` were passing the header regex and being credited a byte each. Of the excluded set, three were C-only and four fifths were not dumps at all - pointer stubs, recorded negatives, data windows, analysis output. The count was real; the sentence attached to it had never been checked against the files. |
 | The inner of two nested overlay spans "cannot be repaired ... no amount of dumping moves it" | falsified | Address ambiguity really is total for the inner span - every extent in it falls in both by construction. Byte attribution then places most of those extents in one image or the other, and the row reports. The **starting point of a measurement was mistaken for its limit**, and the structural-sounding argument made it read as settled. |
 | The unattributable residue "is repaired by re-dumping, not by extracting another overlay" | falsified | Re-dumping repairs almost none of it. What remains is windows a few instructions long that no image reproduces at that VA, bytes in no extracted image at any VA (which needs an *extraction*), and extents where two dumps genuinely disagree (which is an answer). The residue had been described from its class names rather than counted from the artifact. |
+| `0x8005BA38` is "not a function - the dump reports `size=1 bytes, 0 instructions`" | falsified (it is a complete `RotTransPers`) | The dump was empty when the row was written and is 11 instructions now: load `VXY0`/`VZ0`, `RTPS`, store `SXY2` / `IR0` / the GTE `FLAG` word, return `SZ3 >> 2`. Nothing re-reads a caveat when its dump improves, so **a claim quoting a dump statistic decays silently** while reading as evidence-backed. Sibling instances: a "truncated dump" at 752 bytes that is 1528 today (three things left unported on it), and `0x8003D38C`'s ignore row, whose *verdict* survives - it is one instruction past the real entry `0x8003D388` - but whose stated evidence did not. Checker: `scripts/ghidra-analysis/check-dump-stat-drift.py`. |
+| "About 2 % of retail camera beats set a non-zero roll" | falsified (the figure was the scan's own filter) | The number came from a **byte scan** - decode an op-`0x45` CONFIGURE at every offset of every scene MAN - which finds 4257 "sites" where control flow reaches 371. Because junk sites set a junk roll almost every time, the scan applied a post-hoc "credible" filter and then measured roll over the survivors, so the ratio is a property of that filter. Its sibling strict linear sweep reported the opposite (zero non-zero rolls) by reaching 21 sites and none of the eight real ones. The answer - retail *does* roll, in eight scenes - came from executing the records, not decoding them: [`re-settled-threads.md`](re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll). |
 | An over-strict header regex is one instrument's bug | falsified (every instrument had its own) | Each tool over the dump corpus carried a private header regex, and the corpus spells all four header fields several ways, so each silently rejected a different subset of **real dumps** and reported them as a corpus deficiency. Fixed by one shared parser; see [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md#not-every-file-in-funcs-is-a-dump). |
 
 **Generalises to:** a measurement instrument has no oracle, so a number it prints

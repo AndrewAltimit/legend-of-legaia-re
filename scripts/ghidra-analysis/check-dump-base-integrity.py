@@ -102,6 +102,7 @@ Usage:
 
 import argparse
 import glob
+import json
 import os
 import re
 import sys
@@ -123,6 +124,8 @@ FUNCS = os.path.join(ROOT, "ghidra", "scripts", "funcs")
 OVERLAYS = os.path.join(ROOT, "extracted", "overlays")
 SCUS = os.path.join(ROOT, "extracted", "SCUS_942.54")
 OVERLAY_MAP = os.path.join(ROOT, "crates", "asset", "data", "static-overlays.toml")
+BASE_BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "dump-base-baseline.json")
 
 SCUS_BASE = 0x80010000
 SCUS_HEADER = 0x800
@@ -764,6 +767,13 @@ def main():
                          "source-level dumper defect; needs neither dumps nor "
                          "extracted/")
     ap.add_argument("--scripts-dir", default=GHIDRA_SCRIPTS)
+    ap.add_argument("--check", action="store_true",
+                    help="gate mode: fail only on a dump that is SHIFTED and "
+                         "absent from the committed baseline; skip cleanly "
+                         "where the corpus or extracted/ is absent")
+    ap.add_argument("--update-baseline", action="store_true",
+                    help="rewrite the baseline from this corpus (say why in "
+                         "the commit message)")
     args = ap.parse_args()
 
     if args.audit_dumpers:
@@ -771,8 +781,16 @@ def main():
     if args.shape:
         return run_shape(args)
 
+    if args.check and not os.path.isdir(args.funcs_dir):
+        print("[dump-base-integrity] SKIPPED - no dump corpus (gitignored).")
+        return 0
+
     images = load_images()
     if not images:
+        if args.check:
+            print("[dump-base-integrity] SKIPPED - no extracted/ images "
+                  "(gitignored; this gate only measures locally).")
+            return 0
         print("error: no extracted images found - run the extraction first "
               "(see docs/tooling/extraction.md)", file=sys.stderr)
         return 2
@@ -830,6 +848,51 @@ def main():
         cat["SHIFTED"] += 1
         shifted.append((base_name, va0, d, name, iva, len(hits)))
         per_dump.append((base_name, "SHIFTED", va0, iva, d, name, len(hits)))
+
+    if args.update_baseline:
+        with open(BASE_BASELINE, "w") as f:
+            json.dump({"shifted": sorted(nm for nm, _, _, _, _, _ in shifted)},
+                      f, indent=2)
+            f.write("\n")
+        print("[dump-base-integrity] baseline updated: %s (%d SHIFTED dump(s))"
+              % (BASE_BASELINE, len(shifted)))
+        return 0
+
+    if args.check:
+        # Ratchet on the SHIFTED *set*, not on its size. The corpus grows every
+        # time an overlay is imported, so a count ratchet would fire on healthy
+        # growth and stay silent when a mis-based dump replaced a sound one.
+        # NOT_FOUND is deliberately outside the ratchet: the docstring above
+        # grades it UNVERIFIABLE rather than known-bad, and gating on it would
+        # fail every RAM-capture-derived dump.
+        if not os.path.exists(BASE_BASELINE):
+            print("[dump-base-integrity] no baseline yet; run "
+                  "--update-baseline once.")
+            return 0
+        with open(BASE_BASELINE) as f:
+            known = set(json.load(f).get("shifted", []))
+        seen = {nm for nm, _, _, _, _, _ in shifted}
+        for nm in sorted(known - seen):
+            print("[dump-base-integrity] baselined dump %s is no longer "
+                  "SHIFTED - re-run --update-baseline to tighten the ratchet"
+                  % nm)
+        new = sorted(seen - known)
+        if new:
+            by_name = {r[0]: r for r in shifted}
+            print("[dump-base-integrity] %d dump(s) print addresses their "
+                  "bytes do not occupy, and are not in the baseline:" % len(new))
+            for nm in new:
+                _, va0, d, img, iva, _ = by_name[nm]
+                print("   %-44s printed %08x  real %08x  %+#x  %s"
+                      % (nm, va0, iva, d, img))
+            print("[dump-base-integrity] a filename prefix is not evidence of "
+                  "the load base - only the resolved bytes are. Re-dump at the "
+                  "resolved base, or --update-baseline and say why in the "
+                  "commit message. See docs/tooling/dump-corpus-integrity.md.")
+            return 1
+        print("[dump-base-integrity] OK - %d MATCH, %d baselined SHIFTED, no "
+              "new mis-based dump." % (cat["MATCH"], len(seen)))
+        return 0
 
     print("\n=== classification (%d dumps) ===" % len(files))
     for k in ("MATCH", "SHIFTED", "NOT_FOUND", "SHORT", "FOUND_NO_BASE", "PARSE_ERR"):

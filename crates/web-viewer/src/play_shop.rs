@@ -1158,7 +1158,13 @@ impl LegaiaRuntime {
         // In-battle overlay (HUD rows / encounter banner / command menus),
         // already in surface pixels - appended after the stage-space scale
         // below ([`crate::play_battle`]). Empty outside battle.
-        let battle = self.battle_overlay_draws(assets, surface_w, surface_h);
+        let mut battle = self.battle_overlay_draws(assets, surface_w, surface_h);
+        // Post-battle spoils / game over / "no encounters here" hint: all
+        // three are OUTSIDE battle mode, so they append here rather than
+        // inside `battle_overlay_draws` (which returns early off battle).
+        // The native window draws the same three from the same shared
+        // builders + world model.
+        battle.extend(self.post_battle_overlay_draws(assets, surface_w, surface_h));
         if shop.is_none() && windows.is_empty() && banners.is_empty() && battle.is_empty() {
             return CLOSED.to_string();
         }

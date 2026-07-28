@@ -243,6 +243,40 @@ impl RegionEncounterTable {
     pub fn is_empty(&self) -> bool {
         self.regions.is_empty()
     }
+
+    /// `true` when at least one region that can actually produce a battle
+    /// (non-zero rate increment **and** a non-empty formation range) owns at
+    /// least one tile it is the *first* match for.
+    ///
+    /// The "first match" qualifier is the whole point. [`Self::region_at_tile`]
+    /// stops at the first containing region, exactly like retail's walk, so a
+    /// rollable region whose every tile is already covered by an earlier
+    /// rate-0 row is unreachable - the scan below shadows regions in table
+    /// order the same way the lookup does. Several retail town scenes are
+    /// rollable-on-paper and unrollable in fact for precisely this reason;
+    /// that is scene data, not a bug.
+    ///
+    /// Cost is one pass over the union of the region AABBs against a 256x256
+    /// claim map, so call it on scene entry (or cache it), not per frame.
+    pub fn any_rollable(&self) -> bool {
+        let mut claimed = vec![false; 256 * 256];
+        for r in &self.regions {
+            let mut owns_a_tile = false;
+            for tz in r.tile_z_min..=r.tile_z_max {
+                for tx in r.tile_x_min..=r.tile_x_max {
+                    let idx = tz as usize * 256 + tx as usize;
+                    if !claimed[idx] {
+                        claimed[idx] = true;
+                        owns_a_tile = true;
+                    }
+                }
+            }
+            if owns_a_tile && r.rate_increment > 0 && r.formation_count > 0 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Build a [`RegionEncounterTable`] from a scene's decoded MAN bytes.

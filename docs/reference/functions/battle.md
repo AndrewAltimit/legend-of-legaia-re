@@ -12,8 +12,8 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801DBB8C` / `801D84C0` | **Battle party-name panel open / teardown** (0898). A matched pair over the label-actor block at `0x801F4E08`: the former registers a text actor through `FUN_8003541C` and stashes the handle, the latter builds the four panel buffers and clears that block - [details ↓](#801d84c0). Ported as `engine-vm::battle_party_panel`. |
 | `801DBC30` | **Battle label-strip blit** (0898): `(x, y)`. A 1:1 `0x40 x 0x10` textured quad from atlas `(0, 0x60)`, CLUT `0x7704` / tpage `7`, gated on `ctx[+0x6CE] == 0`. Ported as `engine-vm::battle_party_panel::label_strip`. |
 | `801F30C4` | **Two-mode effect burst** (0898, 563 instructions spanning `0x801F30C4..0x801F398C`): `(record, mode)`. Four iterations around the compass, three spawns each, placed by a trig term plus bounded random jitter. The entry is **one loop written twice** - [details ↓](#801f30c4). Ported as `engine-vm::battle_burst`. |
-| `801D5778` | **Pose-slot re-mapped copy** (battle-action overlay 0898). `(dst_slot, src_slot)` - both **indices**, scaled `*0x18` into the pose-slot array at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
-| `801D57E8` | **Pose-slot straight copy** (battle-action overlay 0898). `(dst_slot, src_slot)` over the same `0x80076C10` array and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
+| `801D5778` | **Screen-element placement re-mapped copy** (battle-action overlay 0898). `(dst_index, src_index)` - both **indices**, scaled `*0x18` into the placement table at `0x80076C10`. Copies `dst[+2] = src[+0xA]`, `dst[+4] = src[+0xC]`, `dst[+6] = src[+6]`, `dst[+0xA] = src[+0xA] - 0x140`, `dst[+0xC] = src[+0xC]`, `dst[+0x14] = src[+0x14]`. `overlay_battle_action_801d5778.txt`. |
+| `801D57E8` | **Screen-element placement straight copy** (battle-action overlay 0898). `(dst_index, src_index)` over the same `0x80076C10` table and stride; clones `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C` (u16) and `+0x14` (u32), and deliberately leaves `+0x00`, `+0x08`, `+0x10`, `+0x12` alone. The un-remapped sibling of `801D5778`. `overlay_battle_action_801d57e8.txt`. |
 | `80052FA0` / `800536BC` / `80053898` / `80053a28` | Party battle-mesh assembler (equipment-section splice) + CLUT decode + TSB/CBA relocation - [details ↓](#80052fa0) |
 | `80052770` / `800558fc` / `8003e8a8` | Player-file loader (Vahn/Noa/Gala/Terra battle records) - [details ↓](#80052770--800558fc--8003e8a8) |
 | `800520F0` | Battle scene loader (SCUS) - [details ↓](#800520f0) |
@@ -527,8 +527,8 @@ notably **not** `+0x00`.
 slot's name; non-zero takes a roster arm that sources three of four from fixed
 strings and measures each with `FUN_8003CBF8(buf, 0xC1, 1)`, storing
 `participant_id - 1` at the returned offset. Either way it then publishes the
-four label buffers (`ctx+0xA9 / +0x129 / +0x159 / +0x189`) into the pose-slot
-table `0x80076C10`, resets **all three** party actors to `+0x1DD = 3` (target the
+four label buffers (`ctx+0xA9 / +0x129 / +0x159 / +0x189`) into the
+screen-element placement table `0x80076C10`, resets **all three** party actors to `+0x1DD = 3` (target the
 first monster) and `+0x1DE = 0` (Martial Arts), writes each portrait cell as
 `participant_id + 0x32`, and anchors the panels by party size:
 

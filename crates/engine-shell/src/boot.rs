@@ -32,17 +32,32 @@ use crate::bgm::AudioBgmDirector;
 /// gameplay loop to arm when dropping into a field scene.
 #[derive(Debug, Clone, Default)]
 pub struct FieldLiveOpts {
-    /// Arm the Field<->Battle live gameplay loop (`World::live_gameplay_loop`).
-    /// `player_battle` implies this.
+    /// Arm the step-driven random-encounter roll
+    /// (`World::live_gameplay_loop`). Independent of `player_battle`: a
+    /// battle the engine is already in is always driven to resolution either
+    /// way, so this decides only whether one *starts* on its own.
     pub live_loop: bool,
-    /// Make battles player-driven (command menu). Implies `live_loop` and
-    /// installs the Seru-learning registry a player-driven battle needs. (The
-    /// item / spell / equipment catalogs are installed unconditionally now -
-    /// the field pause-menu reads them regardless of these flags.)
+    /// Make battles player-driven (command menu) and install the
+    /// Seru-learning registry a player-driven battle needs. (The item /
+    /// spell / equipment catalogs are installed unconditionally now - the
+    /// field pause-menu reads them regardless of these flags.)
     pub player_battle: bool,
     /// Optional Battle<->Field BGM swap id (resolved through the scene's BGM
     /// table by the live loop).
     pub battle_bgm: Option<u16>,
+}
+
+impl FieldLiveOpts {
+    /// Project onto the engine-core kernel's options
+    /// ([`legaia_engine_core::live_loop::LiveLoopOpts`]) - the shared shape
+    /// both hosts arm the loop through.
+    pub fn to_live_loop_opts(&self) -> legaia_engine_core::live_loop::LiveLoopOpts {
+        legaia_engine_core::live_loop::LiveLoopOpts {
+            live_loop: self.live_loop,
+            player_battle: self.player_battle,
+            battle_bgm: self.battle_bgm,
+        }
+    }
 }
 
 /// Default scene the binary boots into when no `--scene` is supplied. Uses
@@ -902,6 +917,16 @@ impl BootSession {
             if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
                 log::warn!("BGM bank not staged after scene enter: {e:#}");
             }
+            // Op-`0x35` sub-op 9 (`BgmDirector::queue`) is a DEFERRED start:
+            // the director stashes the resolved bytes and something has to
+            // trigger them. Scene entry is that trigger - and until now
+            // `flush_queue` had no caller in the binary at all, so every
+            // queued track was resolved, stored and silently dropped.
+            match bgm.flush_queue() {
+                Ok(true) => log::info!("BGM: flushed the queued track on scene enter"),
+                Ok(false) => {}
+                Err(e) => log::warn!("BGM queued track not started: {e:#}"),
+            }
         }
         self.frames += 1;
         Ok(event)
@@ -931,19 +956,6 @@ impl BootSession {
         }
 
         let world = &mut self.host.world;
-        world.set_active_scene_label(scene);
-
-        // `enter_field_scene` already installs the disc-resident per-scene
-        // encounter table from the MAN asset. Only fall back to the synthetic
-        // registry + vanilla tables when no MAN encounter was installed.
-        if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
-            world.set_formation_table(
-                legaia_engine_core::monster_catalog::vanilla_formation_table(),
-                legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
-            );
-            let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
-            world.install_encounter_for_scene(&registry, scene);
-        }
 
         // Install the equipment / spell / item catalogs unconditionally so
         // every consumer - not just the battle loop - sees real data. The
@@ -962,14 +974,11 @@ impl BootSession {
         );
         world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
 
-        if opts.live_loop || opts.player_battle {
-            world.live_gameplay_loop = true;
-        }
-        world.set_battle_bgm(opts.battle_bgm);
-        if opts.player_battle {
-            world.battle_player_driven = true;
-            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
-        }
+        // Scene label + encounter fallback + the loop / player-battle / BGM
+        // arming are the browser host's business too, so they live in one
+        // kernel both hosts call (`World::arm_live_loop`). Only the catalogs
+        // above stay here - they are disc-derived on native.
+        world.arm_live_loop(scene, &opts.to_live_loop_opts());
 
         Ok(world.mode)
     }
@@ -1015,19 +1024,20 @@ impl BootSession {
             legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
         });
         let world = &mut self.host.world;
-        world.live_gameplay_loop = true;
         world.set_equipment_table(equip_table);
-        world.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
-            world.battle_player_driven = true;
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
             world.set_spell_catalog(
                 self.spell_catalog
                     .clone()
                     .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
             );
-            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
         }
+        // The overworld always arms the loop (it is the encounter surface),
+        // through the same shared kernel the field path uses.
+        let mut live_opts = opts.to_live_loop_opts();
+        live_opts.live_loop = true;
+        world.arm_live_loop(scene, &live_opts);
         Ok(world.mode)
     }
 

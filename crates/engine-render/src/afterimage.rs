@@ -59,17 +59,25 @@
 //! is the retail software OT, which engine-render replaces with its own draw
 //! ordering.
 //!
-//! **What the draw path would be.** The screen-space `POLY_FT4` /
-//! ordering-table primitive path the retail streak needs exists as
-//! [`crate::screen_overlay`]: an [`AfterimageQuad`] converts to a
-//! [`crate::screen_overlay::ScreenQuad`] via
-//! [`crate::screen_overlay::afterimage_screen_quad`], would be ordered
-//! back-to-front with the rest of the frame's screen primitives, and drawn
-//! through [`crate::RenderTarget::ScreenOverlay`] against the shared PSX VRAM.
-//! That machinery is built and tested; what is missing is the per-frame
-//! emitter described in the NOT WIRED note above. Live effect billboards
-//! currently draw as 3D meshes via engine-shell's `effect_billboard_mesh`
-//! instead, which is why nothing has needed this 2D path yet.
+//! **What the draw path is.** The screen-space `POLY_FT4` / ordering-table
+//! primitive path the retail streak needs exists as [`crate::screen_overlay`]:
+//! an [`AfterimageQuad`] converts to a [`crate::screen_overlay::ScreenQuad`]
+//! via [`crate::screen_overlay::afterimage_screen_quad`], is ordered
+//! back-to-front with the rest of the frame's screen primitives, and draws
+//! against the shared PSX VRAM through
+//! [`crate::RenderTarget::SceneWithScreenPrims`] - the compositing form, which
+//! puts the quads over the battle scene in the same frame. (The older
+//! [`crate::RenderTarget::ScreenOverlay`] is a whole-frame mode and could
+//! never have carried a streak over a live scene; a note here once said the
+//! machinery was complete and only an emitter was missing, which was true of
+//! the geometry and false of the pass.)
+//!
+//! What is still missing is the per-frame emitter described in the NOT WIRED
+//! note above **and** the host frame that hands the built list to the
+//! renderer: no `RenderTarget::SceneWithScreenPrims` call exists outside this
+//! crate's tests. Live effect billboards currently draw as 3D meshes via
+//! engine-shell's `effect_billboard_mesh` instead, which is why nothing has
+//! needed this 2D path yet.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied

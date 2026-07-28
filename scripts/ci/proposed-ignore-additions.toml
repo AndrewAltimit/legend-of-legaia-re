@@ -9,4 +9,19 @@
 # VA_ALIASED and UNCERTAIN rows are deliberately absent: an aliased VA is
 # more work than one port site, not less, and UNCERTAIN needs a human.
 #
+# ---------------------------------------------------------------------
+# DO NOT MERGE THIS FILE UNREAD. A previous wave checked six of these
+# rows by hand and THREE were wrong. The DUPLICATE detector compares
+# relocation-masked instruction streams, and masking erases the `jal`
+# target - so every small thunk hashes identically to every other small
+# thunk, and distinct routines are proposed for deletion as copies of
+# one another. An ignore row removes an address from the worklist
+# permanently and nothing re-examines it afterwards, which is what makes
+# a wrong row here cost more than a wrong row anywhere else in the
+# measurement layer.
+#
+# Spot-check every DUPLICATE row with `--explain <addr>` before merging.
+# `--audit-ignored` re-raises rows already absorbed that read as wrong.
+# ---------------------------------------------------------------------
+#
 # Merge into the main ignore list after review - do not consume directly.

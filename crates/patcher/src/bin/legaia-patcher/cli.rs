@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use legaia_asset::battle_texture_catalog::BattleTextureSlot;
 
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
@@ -250,10 +251,12 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         allow_region_mismatch: bool,
     },
-    /// Read-only: catalog every texture (TIM) on the disc with its
-    /// replacement coordinates - the raw tier (uncompressed, always
-    /// replaceable in place) and the LZS tier (inside a compressed section,
-    /// replaceable when the edited section recompresses into its footprint).
+    /// Read-only: catalog every texture on the disc with its replacement
+    /// coordinates - the raw tier (uncompressed, always replaceable in
+    /// place), the LZS tier (inside a compressed section, replaceable when
+    /// the edited section recompresses into its footprint), and the battle
+    /// tier (the party's in-battle character art, which is not a TIM at all
+    /// and is replaceable within its record's slot footprint).
     TimList {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
@@ -278,12 +281,18 @@ pub(crate) enum Cmd {
         #[arg(long)]
         entry: Option<u32>,
         /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
-        /// within the decoded section with --lzs-section.
+        /// within the decoded section with --lzs-section. Not used by the
+        /// battle tier, which addresses by --battle-slot instead.
         #[arg(long, value_parser = parse_u64_flexible)]
-        offset: u64,
+        offset: Option<u64>,
         /// LZS section index for a compressed-tier texture.
         #[arg(long)]
         lzs_section: Option<u32>,
+        /// Battle-tier selector: a player-file record index, or `header0` /
+        /// `header1`. Needs --entry (863..866); `tim-list --tier battle`
+        /// prints both columns.
+        #[arg(long, value_parser = parse_battle_slot)]
+        battle_slot: Option<BattleTextureSlot>,
         /// Palette index to decode with (multi-palette textures only).
         #[arg(long, default_value_t = 0)]
         clut: usize,
@@ -306,12 +315,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         entry: Option<u32>,
         /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
-        /// within the decoded section with --lzs-section.
+        /// within the decoded section with --lzs-section. Not used by the
+        /// battle tier, which addresses by --battle-slot instead.
         #[arg(long, value_parser = parse_u64_flexible)]
-        offset: u64,
+        offset: Option<u64>,
         /// LZS section index for a compressed-tier texture.
         #[arg(long)]
         lzs_section: Option<u32>,
+        /// Battle-tier selector: a player-file record index, or `header0` /
+        /// `header1`. Needs --entry (863..866).
+        #[arg(long, value_parser = parse_battle_slot)]
+        battle_slot: Option<BattleTextureSlot>,
+        /// Battle tier only: which palette of the block to encode against.
+        /// The other palettes of the same block stay byte-identical.
+        #[arg(long, default_value_t = 0)]
+        clut: usize,
         /// The replacement image (PNG, any color type; must match the
         /// original texture's pixel dimensions exactly).
         #[arg(long)]
@@ -333,6 +351,57 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
+    /// Read-only: list the save-slot portraits (the memory-card block icons
+    /// and the save UI's per-character faces) with their slot numbers.
+    SaveIconList {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+    },
+    /// Decode one save-slot portrait to a 16x16 PNG for editing.
+    SaveIconExport {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+        /// Slot to export, `0`-based. Save number `n` uses slot `n - 1`.
+        #[arg(long)]
+        slot: usize,
+        /// Where to write the PNG.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Replace one save-slot portrait with an edited 16x16 PNG. Only that
+    /// tile's 16 pixel runs and its own 16-colour palette change; the other
+    /// portraits stay byte-identical.
+    SaveIconReplace {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references). Never
+        /// modified.
+        #[arg(long)]
+        input: PathBuf,
+        /// Slot to replace, `0`-based. Save number `n` uses slot `n - 1`.
+        #[arg(long)]
+        slot: usize,
+        /// The replacement portrait (PNG, any color type, exactly 16x16).
+        #[arg(long)]
+        png: PathBuf,
+        /// Fold excess colors to their nearest kept color instead of failing
+        /// when the image holds more than 16 distinct 15-bit colors.
+        #[arg(long, default_value_t = false)]
+        quantize: bool,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+        /// Validate the replacement without writing anything.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// Translation / language-pack tools: export the disc's text to an
     /// editable YAML pack, generate per-language skeletons, check coverage,
     /// and import a filled pack back onto a disc copy.
@@ -348,8 +417,18 @@ pub(crate) enum TimTierArg {
     Raw,
     /// TIMs inside LZS-compressed sections (replaceable when they re-fit).
     Lzs,
-    /// Both tiers.
+    /// The headerless 4bpp party battle art in the player files
+    /// (PROT 863..866). Not TIMs at all - no magic, no header - so no
+    /// magic scan can reach them.
+    Battle,
+    /// Every tier.
     All,
+}
+
+/// Parse a battle-texture slot selector: a record index, or `header0` /
+/// `header1` for the two blocks the player-file header points at.
+pub(crate) fn parse_battle_slot(s: &str) -> Result<BattleTextureSlot, String> {
+    s.parse()
 }
 
 /// Parse a decimal or `0x`-prefixed hexadecimal u64 (for byte offsets).
@@ -938,8 +1017,10 @@ pub(crate) struct RandomizeArgs {
         value_name = "COUNT"
     )]
     pub(crate) chicken_heart: Option<u8>,
-    /// Seed the Good Luck Bell accessory (raises the item-drop rate) into the
-    /// starting bag. `--good-luck-bell` for the default (1) or `--good-luck-bell N`.
+    /// Seed the Good Luck Bell accessory (Low Encounter - halves the encounter
+    /// rate) into the starting bag. It only puts the item in the bag; equipping
+    /// it is what applies the passive.
+    /// `--good-luck-bell` for the default (1) or `--good-luck-bell N`.
     #[arg(
         long,
         num_args = 0..=1,

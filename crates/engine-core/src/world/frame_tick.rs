@@ -253,6 +253,10 @@ impl World {
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Age the post-battle spoils panel (armed by `finish_battle`) and the
+        // no-encounters-here hint (armed by `arm_live_loop`).
+        self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
+        self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
         // Retail-frame sub-clock for the narration crawl roller. The sim ticks
         // at 100 Hz, but the roller's scroll is authored in retail's ~60 fps
         // field frames; advance a fixed-point accumulator by RETAIL_FPS each
@@ -473,6 +477,24 @@ impl World {
         }
         match self.mode {
             SceneMode::Battle => {
+                // Battle animation advance. This is SIMULATION, not
+                // presentation: its staged-clip end edge retires `ADVANCE_DONE`
+                // and converges the anim id pair - the pacing gate whose
+                // failure parks the attack chain at `AttackChain` (`0x1E`)
+                // forever. It ran only from the native window's redraw, so the
+                // browser and headless hosts never advanced it at all; it must
+                // sit here, where every host reaches it. Retail advances the
+                // anim system in the frame driver's tick passes (`FUN_8002519C`)
+                // ahead of the render passes, which is this position.
+                //
+                // Ahead of the dialogue gates below, and outside
+                // `live_battle_tick`, deliberately: that function early-returns
+                // while a command session or a submenu is open, and a command
+                // session stays open for as long as the player deliberates.
+                // Driving the anims from inside it would freeze every actor's
+                // idle loop for that whole window and un-freeze it on confirm.
+                // REF: FUN_8002519C
+                self.tick_battle_animations();
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the
@@ -496,10 +518,24 @@ impl World {
                             .push(crate::field_events::FieldEvent::DialogDismissed);
                     }
                     None
-                } else if self.live_gameplay_loop {
-                    self.live_battle_tick()
                 } else {
-                    Some(self.step_battle())
+                    // A battle that was ENTERED must be DRIVEN. Retail's
+                    // action SM (`FUN_801E295C`) has no "loop enabled"
+                    // concept - once the battle scene is up it always runs
+                    // the full per-frame driver until a wipe resolves it.
+                    // This arm used to be gated on
+                    // [`Self::live_gameplay_loop`], falling back to a bare
+                    // [`Self::step_battle`] that applies no damage, arms no
+                    // turn and never calls [`Self::finish_battle`] - while
+                    // battle *entry* (a field carrier's `3E FF` scripted
+                    // fight, a world-map region encounter) was never gated
+                    // at all. The result was an unresolvable battle: the
+                    // ungated entry paths could strand a default session in
+                    // `SceneMode::Battle` forever. The Field arm's random
+                    // encounter *roll* stays opt-in below; driving a battle
+                    // the engine is already in does not.
+                    // REF: FUN_801E295C (the retail action SM this drives)
+                    self.live_battle_tick()
                 }
             }
             SceneMode::Field => {
@@ -1487,7 +1523,8 @@ impl World {
     }
 
     /// Leave the Muscle Dome and restore the interrupted mode. On a won
-    /// contest, the reward Seru is credited through the capture kernel
+    /// contest - the opponent knocked out, the only way a leg ends - the
+    /// reward Seru is credited through the capture kernel
     /// ([`crate::seru_learning::record_capture`] against the installed
     /// registry, resolved by the reward spell id) - the engine's stand-in
     /// for the retail outright award message. Returns the session so the
@@ -1519,31 +1556,31 @@ impl World {
     ///
     /// - **Select**: [`Left`](input::PadButton::Left) /
     ///   [`Right`](input::PadButton::Right) / [`Up`](input::PadButton::Up) /
-    ///   [`Down`](input::PadButton::Down) commit hand cards 0..3 (the retail
-    ///   four card-selection direction bits, in the `ctx+0x1114..+0x1120`
-    ///   slot order); [`Cross`](input::PadButton::Cross) confirms the queue.
-    ///   The opponent commits through the shared selection logic when the
-    ///   player confirms.
-    /// - **Resolve**: the queues play out. Per-card damage here is a dev
-    ///   stand-in for the retail battle-action playback (see the constants) -
-    ///   the session's [`resolve_round`] is damage-model-agnostic.
-    /// - **RoundOver / decided**: [`Cross`] continues to the next round, or
-    ///   leaves a decided contest (via [`World::exit_muscle_dome`], crediting
-    ///   the reward Seru capture on a win).
+    ///   [`Down`](input::PadButton::Down) commit the four dealt directions
+    ///   (the retail direction bits, in the `ctx+0x1114..+0x1120` slot
+    ///   order); [`Cross`](input::PadButton::Cross) confirms the queue. The
+    ///   opponent commits through the shared selection logic when the player
+    ///   confirms.
+    /// - **Resolve**: each side's whole queued string plays out through the
+    ///   session's installed [`DomeDamageModel`] - the *shared* retail damage
+    ///   kernel (move-power record → predamage roll → element affinity →
+    ///   finisher, on the contest's PsyQ `rand()` stream), the same one the
+    ///   browser host resolves with. A session with no model installed
+    ///   resolves to no damage rather than to invented constants.
+    /// - **TurnOver / decided**: [`Cross`] takes the next turn, or leaves a
+    ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
+    ///   Seru capture on a win). A leg finishes on a KO and on nothing else:
+    ///   turns are counted, never budgeted. Retail agrees - the arena hands
+    ///   the round to an ordinary battle (`FUN_801D1510` sets game mode
+    ///   `0x14`), and the only battle-end signal comes from the `0x5A`
+    ///   end-of-action KO scans.
     ///
-    /// [`resolve_round`]: crate::muscle_dome::MuscleDomeSession::resolve_round
+    /// [`DomeDamageModel`]: crate::muscle_dome::DomeDamageModel
     ///
-    /// PORT: FUN_801d0748 (match SM phase loop: pick / commit / resolve /
-    /// score), with the card playback simplified per above.
+    /// PORT: FUN_801d0748 (the shared battle round driver's phase loop: pick /
+    /// commit / resolve), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
-        // Dev stand-in stats for the card playback (retail resolves each
-        // queued command through the battle-action path against the actor
-        // records).
-        const PLAYER_ATK: i32 = 60;
-        const OPPONENT_ATK: i32 = 50;
-        const PLAYER_DEF: i32 = 20;
-        const OPPONENT_DEF: i32 = 15;
         let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
             self.mode = self.muscle_return_mode;
             return;
@@ -1573,19 +1610,17 @@ impl World {
                 }
             }
             MusclePhase::Resolve => {
-                if let Some(s) = self.muscle_dome.as_mut() {
-                    s.resolve_round(|attacker, _cmd| {
-                        if attacker == 0 {
-                            (PLAYER_ATK - OPPONENT_DEF).max(1)
-                        } else {
-                            (OPPONENT_ATK - PLAYER_DEF).max(1)
-                        }
-                    });
+                if let Some(s) = self.muscle_dome.as_mut()
+                    && !s.resolve_turn_retail()
+                {
+                    // No disc tables staged: close the turn without damage
+                    // rather than substitute invented numbers for them.
+                    s.resolve_turn(|_, _| 0);
                 }
             }
-            MusclePhase::RoundOver => {
+            MusclePhase::TurnOver => {
                 if confirm && let Some(s) = self.muscle_dome.as_mut() {
-                    s.next_round();
+                    s.next_turn();
                 }
             }
             MusclePhase::Won | MusclePhase::Lost => {

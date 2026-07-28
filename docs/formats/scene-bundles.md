@@ -19,7 +19,7 @@ All four lead with the same 4-byte chunk0 header, in the form `(type << 24) | si
 
 ## scene_tmd_stream - bare-TMD prefix
 
-The dominant scene-asset layout. Implementation: `crates/asset/src/scene_tmd_stream.rs`. ~12% of all PROT entries match. Walked by `FUN_8001FE70` (the battle-init custom walker) - **not** by `FUN_8002541C` / `FUN_8001F05C` despite the chunk-header packing matching the standard format.
+The dominant scene-asset layout: 182 of the disc's 1233 PROT entries. Implementation: `crates/asset/src/scene_tmd_stream.rs`. Walked by `FUN_8001FE70` (the battle-init custom walker) - **not** by `FUN_8002541C` / `FUN_8001F05C` despite the chunk-header packing matching the standard format.
 
 ```text
 +0x00          u32 chunk0_header   ; (type=0x00 << 24) | size
@@ -74,6 +74,14 @@ The town0b / town0c clusters that appeared to confirm the shape are four-entry c
 
 The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs - the row-479 NPC palettes are not field-resident, matching retail.
 
+### The leading TMD is a half shell, and that is the authored shape
+
+Rendered on its own, one of these TMDs looks like half a bowl - a sky dome, a distant mountain ring and a far ground ring, all cut off along a plane through the origin. That is not a truncated parse. The entry is a **battle-stage backdrop**: retail registers the TMD and links **one** background actor for it (`FUN_800513F0`), drawing it once, world-fixed, with the missing side facing the camera. Nothing in the runtime mirrors or completes it, and mirroring it in the port is a falsified fix - see [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it).
+
+Measured over object 0 - the shell retail actually links - the half shape is universal: in all 182 entries at most 8% of the shell's X or Z extent lies on the far side of `X = 0` / `Z = 0`. The open side is `-X` in 129 entries, `-Z` in 49 and `+X` in 4; none opens toward `+Z`, the side the party is seated on. The trailing objects are near props / ground ribbons that stay off-camera, and several of *those* do straddle the plane, which is why the classifier reads object 0 rather than the whole pool.
+
+`scene_tmd_stream::shell_shape` returns the object-0 AABB plus the open side, and `ShellShape::describe` renders the viewer label; `shell_shape_all_objects` is the whole-pool form. The corpus sweep is pinned by `every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in `crates/asset/tests/scene_tmd_stream_real.rs`. Where the shell sits in the battle scene - the actor path, the camera, the flat ground grid under it - is in [`battle.md`](../subsystems/battle.md#backdrop-dome---sky--distant-mountains-prot-88-for-map01).
+
 Reading:
 
 ```rust
@@ -95,7 +103,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&buf) {
 
 ## scene_vab_stream - VAB-prefix
 
-Same outer wrapper as `scene_tmd_stream` but the leading chunk carries a Sony VAB sound bank instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: `crates/asset/src/scene_vab_stream.rs`. ~17% of all PROT entries match.
+Same outer wrapper as `scene_tmd_stream` but the leading chunk carries a Sony VAB sound bank instead of a TMD. The single largest distributed-VAB carrier in the corpus: 218 of the disc's 1233 PROT entries. Implementation: `crates/asset/src/scene_vab_stream.rs`.
 
 ```text
 +0x00          u32 chunk0_header  ; LE: type=0x00 in high byte, size=N in low 24 bits

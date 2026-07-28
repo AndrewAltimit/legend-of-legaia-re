@@ -602,6 +602,40 @@ about the file looks incomplete.
 `ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
+## A caveat outlives the dump it was written against
+
+Every failure above is a dump that is *wrong now*. This one is a dump that was
+right, got better, and left a false claim behind it in the source tree.
+
+A dump's statistics - `size=`, the instruction count, where the printed
+disassembly stops - are properties of the **extraction**, not of the function.
+When a dump is short, the honest response is to write a caveat against it and
+withhold whatever the missing window would have carried. That is what happened
+to the field-to-battle transition tick: a note recorded that its dump reported
+752 bytes / 188 instructions and stopped on a branch delay slot rather than a
+`jr ra`, and three things were deliberately left unported as decompiled-C-only
+on that basis - a completion arm, a game-mode write, and a per-style fade.
+
+The dump was later re-extracted by an extent walker that reports its own
+completeness, and now covers the whole 1528-byte body ending on a real `jr ra`.
+Nothing about the function changed. But **nothing re-reads a caveat when its
+underlying dump improves**, so the note kept asserting a truncation that had
+stopped existing, and kept three ports withheld for a reason that was no longer
+true. The tell was visible in the dump's own header the whole time: the numbers
+the caveat quoted were not the numbers in the file.
+
+The shape generalises past this one function. A caveat that quotes a dump's
+statistics is a claim with an expiry date, and the corpus is regenerated far
+more often than the prose that cites it. Two habits contain it:
+
+- **Quote the header, and say you are quoting it.** A caveat that names the
+  exact `size=` / `extent=` it was written against can be checked against the
+  file in one command; one that says "the dump is truncated" cannot.
+- **Re-read the caveat when the dump is regenerated,** not only when the claim
+  is challenged. A re-dump that *lengthens* a body is invisible to every gate
+  in this repo - coverage goes up, nothing goes red, and the stale caveat is
+  the only thing left pointing at work that no longer needs withholding.
+
 ## The disc-denominated gap list finds header-less dumps for free
 
 [`disc-coverage.py`](disc-coverage.md) builds each image's covered set from the
@@ -805,7 +839,23 @@ scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
 scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 4
 scripts/ghidra-analysis/check-dump-base-integrity.py --emit-base-csv /tmp/b.csv
 scripts/ghidra-analysis/check-dump-base-integrity.py --audit-dumpers
+scripts/ghidra-analysis/check-dump-base-integrity.py --check
+scripts/ghidra-analysis/check-dump-base-integrity.py --update-baseline
 ```
+
+`--check` is the gateable form the pre-commit hook runs. A bare sweep exits
+non-zero whenever any dump is SHIFTED, and the corpus has a standing
+population of those - catalogued on this page - so it reports a fact, not a
+regression, and could gate nothing. `--check` compares against the SHIFTED
+**set** recorded in `scripts/ghidra-analysis/dump-base-baseline.json` and fails
+only on a dump that is newly mis-based.
+
+A set and not a count, deliberately. The corpus grows every time an overlay is
+imported, so a count ratchet would fire on healthy growth and stay silent when
+a mis-based dump replaced a sound one. `NOT_FOUND` stays outside the ratchet
+for the reason given above - it grades UNVERIFIABLE, not known-bad, and gating
+on it would fail every capture-derived dump. Both inputs are gitignored, so
+the check reports `SKIPPED` and passes where they are absent.
 
 `--emit-base-csv` is the form a re-dump pass needs: per dump, the printed VA,
 the VA the bytes resolve to, the delta, and the image. **A re-dump has to be
@@ -827,6 +877,88 @@ page exists to prevent. `--list-shifted` regenerates it in about a minute.
 Run it after importing any program at a base recovered from call targets rather
 than a documented anchor, and after changing `static-overlays.toml` - the two
 cases where a base can be self-consistently wrong.
+
+## A caveat outlives the dump it was written against <a id="a-caveat-outlives-the-dump-it-was-written-against"></a>
+
+Everything above is about a dump's *addresses* being wrong. There is a second,
+quieter failure in the same family: a dump's **header changes under a claim
+already written about it**, and nothing re-reads the claim.
+
+The corpus is not immutable. Re-extract a dump with a better extent walker and
+it gets longer - which is progress everywhere except in the sentences that
+described the old one. Those keep asserting a truncation or an emptiness that
+is no longer there, while still reading as evidence-backed prose, because they
+quote a number.
+
+The failure only bites in one direction, and it is the expensive one. A dump
+that grows makes a *permissive* claim look stale but harmless; it makes a
+**restrictive** one actively suppressive. "The dump reports `size=1 bytes, 0
+instructions`, so this is data - do not open a port row for it" is a decision
+not to work on something, recorded once, never revisited, and invisible to
+every worklist afterwards. Three known instances:
+
+| Claim as written | What the dump reports now | Did the verdict survive? |
+|---|---|---|
+| A field-battle-intro dump is "truncated", `752 bytes, 188 instructions`, stopping on a branch delay slot | `1528 bytes, 382 instructions`, ending on a real `jr ra` | No - three things had been left unported on it, one of them a style selector another port needed. |
+| `0x8005BA38` is "**not a function**", `size=1 bytes, 0 instructions` | 44 bytes, 11 instructions - a complete `RotTransPers` | No. See [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#measurement-readings). |
+| `0x8003D38C` is a Ghidra split, evidenced by `size=1 bytes, 0 instructions` | 56 bytes, 14 instructions | **Yes** - it is one instruction past the real entry `0x8003D388`. Right verdict, evidence that had evaporated. |
+
+That third row is why the remedy is *restate*, not *reopen*. A verdict reached
+partly from the C, or from the shape of the surrounding code, can be perfectly
+correct while the statistic it cited stops being true. Re-derive it from the
+current disassembly and say what you now see.
+
+### Checking it
+
+```bash
+scripts/ghidra-analysis/check-dump-stat-drift.py
+scripts/ghidra-analysis/check-dump-stat-drift.py --uncited
+scripts/ghidra-analysis/check-dump-stat-drift.py --list-skipped
+```
+
+It scans committed prose (`docs/`, crate READMEs, top-level `*.md`, and
+`scripts/ci/*.toml` - the ignore list's justifications quote these statistics
+too) for lines that quote `size=N bytes` or `M instructions`, and compares them
+against the cited dump's header. Exit status is non-zero on any mismatch; it
+returns 0 when `ghidra/scripts/funcs/` is absent, so it is a no-op for a clone
+without the corpus - the same skip-clean shape as the disc-gated tests.
+
+**It matches the cited filename, never the address.** Globbing the corpus for
+an address is the obvious implementation and its false-positive rate makes it
+unusable: one address has a dump per importing program, siblings at an aliased
+VA legitimately differ, and many of the sentences are *about* that aliasing, so
+"the siblings disagree" is the sentence being right. Requiring the line to name
+exactly one dump file removes that whole class. The other false-positive source
+is arithmetic, not addressing - prose writes `3 026 instructions` with a
+separator, and a bare `\d+` clips the leading group and reports a formatting
+difference as drift; the counts are parsed with strict thousands grouping.
+
+The gate cannot run in CI: the corpus is gitignored and disc-derived, so CI has
+nothing to compare against. It runs from the local pre-commit set beside
+`check-shell-observer-traps.py`, under the hook-only exemption stated in
+[`host-drift.md`](host-drift.md#the-one-class-of-gate-allowed-to-be-hook-only).
+
+**A claim that quotes a count without citing its dump is not checkable by any
+tool.** `--uncited` lists those; they are prose to fix by hand, and the durable
+fix is to cite the dump whenever a statistic is quoted.
+
+### Every skipped line is accounted for
+
+`checked N; 0 drifted` is the same sentence whether the lines it could not
+check were three or three hundred, so the summary carries a count for each of
+the three ways a line drops out, and none of them lands in no bucket:
+
+| Skip | What it means | Named by default |
+|---|---|---|
+| ambiguous | the line names two or more dumps, so which one the statistic belongs to is undecidable from the text | no - `--list-skipped` |
+| absent dump | committed prose cites a dump this clone does not have | yes |
+| headerless dump | the dump is here and carries no `size=` line to check against | yes |
+| uncited | a statistic with no dump named at all | no - `--uncited` |
+
+Absent and headerless are named unconditionally because each is a defect
+somebody can act on. Ambiguity mostly is not: most ambiguous lines are
+phantom-VA findings that compare two dumps on purpose, and printing an
+unfixable list on every run is how a gate teaches people to skip its output.
 
 ## See also
 

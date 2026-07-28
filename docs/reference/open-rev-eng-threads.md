@@ -85,6 +85,23 @@ cheapest place to look for a claim that is still wrong.
   *subset* of them, not a twin.
 - **`FUN_8001EBEC`'s second pose-copy arm loads seven words**, so its range ends
   at `+0x15C`, not `+0x158`.
+- **A committed claim can quote a dump statistic the dump no longer reports.**
+  Re-extraction makes dumps longer, and a caveat written against the old one
+  keeps suppressing work - `0x8005BA38` was recorded "not a function, do not
+  open a port row" and is a complete `RotTransPers`. Checker:
+  `scripts/ghidra-analysis/check-dump-stat-drift.py`; the class is on
+  [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md#a-caveat-outlives-the-dump-it-was-written-against).
+- **A battle `0xB5` was read in the wrong id space.** Spell `0xB5` is Lapis
+  Wave; formation `0xB5` is Cort. The branch at `0x801E6D04` reads the
+  formation-id byte, and the wrong reading survived because Cort casts Lapis
+  Wave - the two spaces agreeing on the answer is what hid the error.
+- **"Retail shots rarely roll the camera" was false, and so was the row that
+  replaced it.** Retail authors a non-zero op-`0x45` slot-2 roll in eight
+  scenes. The renderer's dropped `RotMatrixZ` factor was a real divergence,
+  and the two linear censuses that had measured it - one strict, one
+  byte-resuming, plus a raw byte scan quoting a "2 %" figure as fact - were
+  each measuring their own decode gate. Settled by execution; see
+  [`re-settled-threads.md`](re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll).
 
 Two rows a prior audit flagged as the highest-risk `decompiled-C` claims on the
 register - the narration-roller op's operand decode and the item-add OOB
@@ -100,37 +117,6 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
-| Who latches the clip-end bit for a conversation's cross-context clip pokes | partial - the latch and the spin are settled; the port stands in for the latch instead of resolving the poked actor | [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
-
-### Clip-end latch for cross-context clip pokes
-
-*Status:* partial. The mechanism is settled from the disassembly: `ctx[+0x62]`
-is the clip-control word, bit 8 (`0x0100`) is the "end" flag the actor tick
-`FUN_800204F8` latches when a clip cursor reaches an end, and the recurring
-`A2 <t> <clip>` / `AC <t> 08` / `AD <t> 08` triple is "play it, clear the
-latch, spin until it re-latches" (see
-[`script-vm.md`](../subsystems/script-vm.md#0x2b-0x33-flag-manipulation-triplets)).
-A prop-bound record reaches the latch through its own `PropAnim` tick, which
-is why doors and cupboards play out correctly.
-
-What is not resolved is the **cross-context** form an NPC conversation uses.
-`A2 F8 …` pokes the player channel, so retail's spin reads the *player
-actor's* `+0x62` while the dispatcher is running the NPC's record. The port's
-inline-dialogue runner keeps one context per record and never resolves the
-`0x80`-prefix target to a live actor, so nothing writes that bit: it cues the
-player clip, parks the conversation while the clip plays, and then sets the
-tested bit itself as a stand-in for the tick's write. That reproduces the
-observable beat (the gesture plays, then the script continues - which is what
-makes an inn stay reachable, see [`inn.md`](../subsystems/inn.md)) but it is
-not the retail data path, and it cannot be right for a poke at a *third*
-actor's clip.
-
-*What would close it:* resolve the ext-target byte to the live actor the way
-`func_0x8003C83C` does, run the dispatcher against that actor's own
-`+0x62`/`+0x6A` words (the prop stepper already does exactly this for props),
-and let the existing clip players own the latch. A live capture of an
-innkeeper conversation reading back the player actor's `+0x62` across the
-spin would pin the expected cursor/latch sequence to check it against.
 
 ### Region story-flag gate families
 
@@ -152,25 +138,52 @@ organically, and Nivora's `0x370` has one live organic SET confirming its
 play order. The generic C1/C2 seeder already drives every family, so one
 dungeon-walk capture per region would close the residual.
 
+*What this needs is capture time, not a new instrument.*
+[`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
+is already the right probe and already logs exactly what the residual asks
+for: an exec breakpoint on the flag SET / CLEAR entry points with the writer's
+`ra`, plus a per-VSync scene-name and game-mode poll, so a single play-forward
+through a region emits the region's own SET order with the scene each write
+happened in. It is designed for whole-playthrough runs, so the four unwalked
+regions can be covered in one session rather than four.
+
+Two operating notes that apply to any run of it, both already bitten:
+PCSX-Redux probes **do not exit on their own** - kill on a timeout or the
+process hangs indefinitely
+([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)) - and the
+process-matching helpers in
+[`shell-observer-traps.md`](../tooling/shell-observer-traps.md) exist because
+`pgrep -f` matches the caller's own command line.
+
 ## Title / boot / overlays
 
 | Thread | Status | What would close it |
 |---|---|---|
-| PROT 0968 identity - the one unidentified slot-B cluster entry | open (narrowed to one entry) | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
+| PROT 0968 identity - the one unidentified slot-B cluster entry | mostly resolved - it is the Cort battle's stage overlay; only a residency capture is missing | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
 
 ### PROT 0968 identity - the one unidentified slot-B cluster entry
 
-*Status:* open - every other entry in the `0900..0969` slot-B cluster is
-identified ([`re-settled-threads.md`](re-settled-threads.md#slot-b-overlay-cluster-09000969-per-entry-identity))
+*Status:* mostly resolved. The loader chain, the selector, the module's real
+extent and its call profile are all pinned from the disassembly and the disc
+bytes; what is unconfirmed is a live capture showing it resident. The full
+write-up is on
+[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay).
 
-A 4 KB slot-B module (pointer-table head, 10/11 self-pointers resolve at the
-link base `0x801F69D8`, 2+8 spawn calls - stager-shaped). Its loader param
-would be `0x49`, which appears at no static SCUS callsite and no captured
-overlay callsite; it sits between the tutorial (0967, `0x48`) and the STR-path
-table (0969, `0x4A`). Identity needs either an uncaptured overlay callsite or
-a residency capture. (The old "STR overlay replicated across 0967/0968/0969/0970"
-reading was the over-read: the corrected 4 KB entry cannot contain the STR
-dispatch code at its `+0x225C` offsets.)
+In short: `formation monster id 0xB5` (archive id 181, **Cort**) sets the
+battle-stage id byte to `2`, and the stage-overlay path loads
+`FUN_8003EC70(stage_id + 0x47)` - loader param `0x49`, extraction entry 968.
+The old "`0x49` appears at no static SCUS callsite" statement was true and
+uninformative: the parameter is **computed**, so no constant-parameter scan
+can ever produce it.
+
+*What would close it:* a save state taken inside the Cort fight showing
+entry 968's bytes resident in the slot-B buffer at `0x801F69D8`, and the
+loader-B current-id tracker `gp+0x934` (`0x8007BC4C`) reading `0x49` - the
+same pair of observations that pinned 0967 for the Tetsu tutorial. Note the
+formation-table watch in
+[`autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
+already logs `DAT_8007BD0C[4]`, so one run through that fight confirms the
+`0xB5` selector and the residency together.
 
 ## Adding a thread
 

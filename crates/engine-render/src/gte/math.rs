@@ -98,15 +98,24 @@ impl GteMat3 {
     // NOT WIRED: the blocker is one level up, not here. All three axis
     // builders have a real non-test consumer in this crate -
     // `camera_view_rotation`, the port of retail's own composition pass
-    // `FUN_8001CF50` - and *it* is the routine with no host: the engine frames
-    // every camera with a `glam::Mat4::look_at_rh` instead of a product of
-    // axis factors, and carries neither the render node's `+0x52` skip-flag
-    // halfword nor a saved GTE control block. So what has to exist first is
-    // that camera, not a call to these. (The GTE register oracle in
-    // `gte/tests.rs` also drives them, which is why they are pinned; that is
-    // coverage, not the missing caller.) Note the radian argument is itself a
-    // deviation: retail takes a 12-bit angle and reads the LUT, which
-    // `billboard::rot_z_psx` models for Z.
+    // `FUN_8001CF50` - and *it* is the routine with no host. The hosts do
+    // build retail's `Rx * Ry * Rz` product now, roll included, but they build
+    // it with `glam` in f32 (`window::cutscene_camera_mvp`, the play window's
+    // `psx_camera_mvp`), and they carry neither the render node's `+0x52`
+    // skip-flag halfword nor a saved GTE control block. So what has to exist
+    // first is a camera that wants the q3.12 product, not a call to these.
+    // (The GTE register oracle in `gte/tests.rs` also drives them, which is
+    // why they are pinned; that is coverage, not the missing caller.) Note the
+    // radian argument is itself a deviation: retail takes a 12-bit angle and
+    // reads the LUT, which `billboard::rot_z_psx` models for Z.
+    //
+    // Measurement note, so a reader does not read the audit's silence here as
+    // a wiring: `rot_y` is the one of the three the live audit does *not* list
+    // as inert, and that is a name collision, not a caller. The permissive
+    // call graph resolves by symbol name and `legaia_engine_core`'s
+    // `coplanar_draws::rot_y` is live, so the edge it draws to this `rot_y`
+    // does not exist. `rot_x` and `rot_z` have no such twin and list
+    // correctly. See docs/tooling/port-catalog.md on the two graphs.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -214,17 +223,22 @@ pub mod view_rot_flags {
 /// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
 /// REF: FUN_8005B4E8
 ///
-/// NOT WIRED: the renderer does not build a view rotation by composing axis
-/// factors. Every camera MVP in `crate::window` folds the pitch + yaw pair
-/// into a spherical orbit and a `glam::Mat4::look_at_rh` (see
-/// [`crate::window::cutscene_camera_mvp`], which states the substitution),
-/// so there is no composition site to route through. Both of this function's
-/// own inputs are missing too: the engine's render node carries no `+0x52`
-/// flag halfword for the three per-axis skip bits, and it keeps no saved GTE
-/// control block for bit `0x400` to defer to. Wiring means giving render
-/// nodes that flag word and a saved-matrix slot, then replacing the
-/// `look_at_rh` camera with a factor product - a change to how the shot is
-/// framed, not a call insertion.
+/// NOT WIRED, and the reason is now narrow: **all three angle factors reach
+/// the shot**, but the hosts compose them in `glam` floating point rather than
+/// through this q3.12 rendition. The cutscene camera multiplies
+/// `Rx(pitch) * Ry(yaw) * Rz(roll)` in the same order this function does
+/// (`crate::window::cutscene_camera_mvp`, and the play window's
+/// `psx_camera_mvp`), so there is no dropped term left - what is missing is a
+/// caller that wants the *fixed-point* product. The earlier note here, that
+/// the roll factor is "decoded, stored, compared by the trace channel, and
+/// then never applied", was true when written and is not any more.
+///
+/// The other two inputs are still absent: the engine's render node carries no
+/// `+0x52` flag halfword for the three per-axis skip bits, and it keeps no
+/// saved GTE control block for bit `0x400` to defer to. Wiring means giving
+/// render nodes that flag word and a saved-matrix slot, then switching the
+/// camera builders from `glam` to this product - a precision change to the
+/// framing, not a call insertion.
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).

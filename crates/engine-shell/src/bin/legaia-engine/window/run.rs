@@ -398,7 +398,7 @@ pub(super) fn cmd_play_window_with_record(
             .collect();
         if let [tx, tz] = parts[..] {
             let (cx, cz) = (tx.clamp(0, 255) as u8, tz.clamp(0, 255) as u8);
-            session.host.world.seat_player_at_tile(cx, cz);
+            session.host.world.seat_player_at_tile_rescued(cx, cz);
             log::info!("play-window: LEGAIA_START_TILE seated player at tile ({cx},{cz})");
         } else {
             log::warn!("play-window: LEGAIA_START_TILE ignored (want \"X,Z\"): {spec:?}");
@@ -786,6 +786,7 @@ pub(super) fn cmd_play_window_with_record(
         ocean_anim: None,
         cpu_vram_base: None,
         battle_vram: None,
+        battle_intro: None,
         battle_vram_generation: None,
         battle_tex_slots_used: 0,
         battle_faces: Vec::new(),
@@ -819,6 +820,7 @@ pub(super) fn cmd_play_window_with_record(
         battle_ground_mesh: None,
         prev_scene_mode: None,
         monster_archive: None,
+        muscle_ladder_round: 0,
         battle_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
@@ -844,6 +846,7 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
+        save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
         options_state: legaia_engine_core::options::OptionsState::load_or_default(
             &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
         ),

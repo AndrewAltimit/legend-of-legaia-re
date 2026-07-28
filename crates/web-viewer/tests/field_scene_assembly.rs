@@ -252,3 +252,86 @@ fn system_ui_bundle_recovers_row510_samplers() {
         }
     }
 }
+
+/// World-map scenes: the assembled pack must carry **both** sparse walk-frame
+/// layers - the placed landmarks *and* the decoration cells (crossed-quad
+/// trees, mountain groups, props).
+///
+/// The browser path previously resolved only `walk_object_placements`, so the
+/// site's full-map view of Drake / Sebucus / Karisto lost the whole decoration
+/// layer while the native play-window
+/// (`resolve_world_map_terrain_draws`) drew it. The two are pinned against each
+/// other here: the pack's placement draws must equal what
+/// `walk_object_placements ++ walk_decoration_placements` resolves through the
+/// same `field_env` kernel, and the decoration half must be a real share of it.
+#[test]
+fn world_map_scenes_include_the_walk_decoration_layer() {
+    use legaia_engine_core::field_env;
+    use legaia_engine_core::scene::Scene;
+
+    /// The three kingdom world maps.
+    const KINGDOMS: &[&str] = &["map01", "map02", "map03"];
+
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping world-map decoration test");
+        return;
+    };
+    let disc = fs::read(&disc_path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
+    let cdname = extract_cdname_txt(&disc).expect("CDNAME.TXT extraction");
+    let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex from in-memory PROT");
+
+    for &name in KINGDOMS {
+        let pack = build_field_scene(&index, name)
+            .unwrap_or_else(|e| panic!("{name}: build_field_scene failed: {e}"));
+        let scene = Scene::load(&index, name).expect("scene load");
+        let floor_lut = scene.field_floor_height_lut(&index).ok().flatten();
+
+        // Engine side, resolved exactly the way the native window does.
+        let landmarks = scene
+            .walk_object_placements(&index)
+            .expect("walk_object_placements")
+            .unwrap_or_else(|| panic!("{name}: no walk landmarks"));
+        let deco = scene
+            .walk_decoration_placements(&index)
+            .expect("walk_decoration_placements")
+            .unwrap_or_else(|| panic!("{name}: no walk decorations"));
+        assert!(!deco.is_empty(), "{name}: decoration record layer is empty");
+
+        let (landmark_draws, _) =
+            field_env::resolve_env_draws(&pack.env_tmds, &landmarks, floor_lut);
+        let mut both = landmarks.clone();
+        both.extend(deco.iter().cloned());
+        let (expected, _) = field_env::resolve_env_draws(&pack.env_tmds, &both, floor_lut);
+
+        assert_eq!(
+            pack.placements, expected,
+            "{name}: assembled world-map layer must be landmarks ++ decorations"
+        );
+        let deco_draws = expected.len() - landmark_draws.len();
+        assert!(
+            deco_draws > 0,
+            "{name}: the decoration layer resolved to no draws - the browser \
+             full-map view would be missing the tree / mountain decor the \
+             native play-window draws"
+        );
+        // World maps carry no bulk terrain-tile layer; their ground is the
+        // continent heightfield.
+        assert!(pack.terrain.is_empty(), "{name}: unexpected terrain layer");
+        assert!(
+            pack.ground.as_ref().is_some_and(|h| h.quad_count() > 0),
+            "{name}: no continent heightfield"
+        );
+        for d in &pack.placements {
+            assert!(d.env_slot < pack.env_tmds.len(), "{name}: env_slot range");
+            assert!(d.res_tmd < pack.res.tmds.len(), "{name}: res_tmd range");
+        }
+        eprintln!(
+            "{name}: {} walk draws = {} landmark + {deco_draws} decoration \
+             ({} decoration records)",
+            pack.placements.len(),
+            landmark_draws.len(),
+            deco.len()
+        );
+    }
+}

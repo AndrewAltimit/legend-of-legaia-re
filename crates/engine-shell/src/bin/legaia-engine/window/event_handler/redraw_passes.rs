@@ -6,9 +6,9 @@
 use super::super::*;
 
 /// Decoded cutscene camera inputs to the retail PSX GTE model:
-/// `(focus, pitch_radians, yaw_radians, h, tr_eye)`. See
+/// `(focus, pitch_radians, yaw_radians, roll_radians, h, tr_eye)`. See
 /// [`PlayWindowApp::cutscene_view`].
-pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, [f32; 3]);
+pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, f32, [f32; 3]);
 
 impl PlayWindowApp {
     pub(super) fn compute_scene_camera(
@@ -27,7 +27,7 @@ impl PlayWindowApp {
         // the same `psx_camera_mvp * FIELD_WORLD_FLIP` composition (with
         // `tr_eye` pre-divided by the 6x world scale in `cutscene_view`)
         // frames it exactly like retail's 6x-scaled GTE camera.
-        if let Some((focus, pitch, yaw, h, tr_eye)) = cutscene_cam {
+        if let Some((focus, pitch, yaw, roll, h, tr_eye)) = cutscene_cam {
             // The cutscene camera is the EXACT retail PSX GTE model
             // `screen = H*(R*(v - focus) + tr_eye)/Ze` (`FUN_800172c0`
             // view build; `psx_camera_mvp`), driven by the decoded
@@ -41,8 +41,15 @@ impl PlayWindowApp {
             // world point, exactly like `field_follow_camera_mvp`'s
             // target. Eye distance is no longer a heuristic: `tr_eye.z`
             // is the pinned eye-back depth (op-0x45 offset slot 5).
-            Self::psx_camera_mvp(pitch, yaw, h, Vec3::from(tr_eye), Vec3::from(focus), aspect)
-                * FIELD_WORLD_FLIP
+            Self::psx_camera_mvp(
+                pitch,
+                yaw,
+                roll,
+                h,
+                Vec3::from(tr_eye),
+                Vec3::from(focus),
+                aspect,
+            ) * FIELD_WORLD_FLIP
         } else if in_world_map {
             let world = &self.session.host.world;
             let (az, zoom, px, pz, walk_mode) = world
@@ -147,6 +154,10 @@ impl PlayWindowApp {
                 Self::psx_camera_mvp(
                     to_rad(pitch_units),
                     to_rad(az as f32),
+                    // The world-map camera carries no roll: `_DAT_8007B794`
+                    // is the top-view AZIMUTH there, and it is already the
+                    // `az` argument above.
+                    0.0,
                     368.0,
                     tr,
                     Vec3::ZERO,

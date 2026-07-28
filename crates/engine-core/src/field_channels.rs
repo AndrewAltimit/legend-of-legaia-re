@@ -202,6 +202,18 @@ pub fn spawn_object_channels(
 /// (`ctx[+0x50] == target` - the `FUN_8003C83C` actor-list walk). Returns
 /// `None` for the special channels (`0xF8` player anchor, `0xFB` system) and
 /// unmatched ids.
+///
+/// Retail's resolver returns an actor **context pointer**, and it has an answer
+/// for both specials: `0xF8` short-circuits to the live player object out of
+/// `_DAT_8007C364` (`li v0,0xf8` / `bne a0,v0` / `lw v0,-0x3c9c(v0)`), `0xFB`
+/// walks a second list for the entry whose `+0xC` handler is `0x801DA51C`.
+/// This function answers a narrower question - *which of the scene's script
+/// channels is this* - and neither special is one, hence the `None`s. The
+/// engine models the specials where their state actually lives: a poked
+/// actor's clip words are
+/// [`crate::field_env::PropAnimBank::actor_clips`] (keyed by this same target
+/// byte), and the cutscene timeline carries its own player-anchor completion
+/// model. Widening this function instead would re-route both.
 // REF: FUN_8003C83C
 pub fn resolve_target(channels: &[FieldChannel], target: u8) -> Option<usize> {
     if target == 0xF8 || target == 0xFB {

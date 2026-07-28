@@ -107,22 +107,55 @@ created there. The only reference either has in any image is the `lui`/`addiu`
 pair inside its own copier, which is the copier taking the block's **address**,
 not calling it.
 
-That makes them a permanent hole in
-[disc-denominated code coverage](../../tooling/disc-coverage.md): bytes that
-decode as plausible code, sit inside no dumped function, and never will. The
-same is true of `0x8006F0F4`, the `0x320000`-iteration settle loop the cluster
-uses, whose body Ghidra keeps but whose surrounding alignment does not close.
+That is what kept them out of
+[disc-denominated code coverage](../../tooling/disc-coverage.md) for as long as
+it did: bytes that decode as plausible code and sit inside no dumped function,
+because auto-analysis had them as `undefined4` data words and `createFunction`
+declines an address it cannot first disassemble. Clearing the window and
+disassembling it word by word before creating the function is what closes them;
+each now has a dump of its own (`8006ef78.txt`, `8006ef8c.txt`, `8006f058.txt`,
+`8005bbb8.txt`). The residue is genuinely structural: `0x8006F0F4`, the
+`0x320000`-iteration settle loop the cluster uses, whose body Ghidra keeps but
+whose surrounding alignment does not close.
 
-`0x8005BBB8` is the third block of this shape and the one with no caller at all.
-It is the stock PSX exception-handler prologue - load the ExCB chain head from
-`0x100`, follow it, save `at`/`v0`/`v1`/`ra` into the saved-register area at
-`+8`, read `CAUSE` via `mfc0` - and it falls straight through into the
-`FlushCache` veneer at `0x8005BBE8`. A five-form reference sweep
+`0x8006EF8C` is the hook the first trampoline lands on, and the one block of the
+four that is a plain routine rather than a template. It returns immediately when
+`I_MASK` (`v1+0x1074`, with `v1` = `0x1F800000`) bit 7 - the SIO0
+controller-and-memory-card interrupt line - is clear; otherwise it spins while
+`JOY_STAT` (`v1+0x1044`) bit 7 is set and tail-jumps through the resume pointer
+`FUN_8006EFD0` stored at `0x8007BE04`, back into the kernel body just past the
+patched words. A transfer-settle wait wrapped around the BIOS's own handler.
+
+`0x8005BBB8` is the third block of this shape, and the reference sweep's answer
+for it needs reading carefully. It is the stock PSX exception-handler prologue -
+load the ExCB chain head from `0x100`, follow it, save `at`/`v0`/`v1`/`ra` into
+the saved-register area at `+8`, read `CAUSE` via `mfc0`. A five-form sweep
 ([address-reference-scan.md](../../tooling/address-reference-scan.md)) finds
-**no word, no `jal`, no `j`, no branch and no materialisation pair anywhere on
-the disc**, and the preceding instruction is a `jr ra`, so nothing falls into it
-either. It is linked-in `libapi` exception-handler code that this build never
-installs.
+**no word, no `jal`, no `j`, no branch and no materialisation pair** for
+`0x8005BBB8` itself. That is not the same as the block being unused: `InitGeom`
+(`FUN_8005BB48`) copies it over `C0table[6]` on every boot, and its copy loop
+names the extent exactly - `t2` = `0x8005BBB0`, `t1` = `0x8005BBE8`, so the two
+leading `nop`s are payload and the address the sweep can see is `0x8005BBB0`,
+eight bytes below the prologue proper. The block is installed; only its interior
+is unreferenced, which is what an entered-by-exception routine looks like.
+
+#### What is left of the `SCUS_942.54` code gap is not code
+
+With the payload blocks dumped, the executable's byte-denominated
+[code gap](../../tooling/disc-coverage.md) is four windows totalling 40 bytes,
+and none of them is an un-analysed routine. Each is short enough to fall under
+the gap classifier's tiny-gap rule, which calls a gap of fewer than eight words
+code **without reading the bytes** - so they are `code` by the instrument's
+default, not by evidence.
+
+| Window | What the words are |
+|---|---|
+| `0x80026CD4`..`0x80026CE4` | Four identical `0x00200000` words - the `crt0` stack-pointer table [described above](#the-entry-stub-80026c28). The stub reads `0x80026CD8` and ORs in `0x80000000`. |
+| `0x8005AFA8`, `0x8005DB94`, `0x80060498` | Two-word data records the linker left between functions. Word 0 decodes as a `jal` outside the 2 MB RAM window or a branch past the image, and word 1 as an invalid `SPECIAL` encoding (a `div` with a non-zero `rd`). The same two-word shape occurs seven more times inside the data segment, interleaved with the hardware-register address tables at `0x80078D04`..`0x8007B310`. |
+
+Nothing closes these by dumping. Creating a function over either shape would
+assert an entry point the bytes do not support, which is the failure the
+`worklist_*` ignore categories exist to prevent.
 
 ### libgte primitives
 
@@ -132,7 +165,7 @@ installs.
 | `8005B7CC` | `SetTransMatrix`-shaped - `setCopControlWord(2, 0xE000, x)`. |
 | `8005B6A8` | `SetTransMatrix` proper - loads three words from `matrix+0x14/+0x18/+0x1C` (the `long t[3]` tail of a PsyQ `MATRIX`, past the `short m[3][3]` head) into the GTE translation control registers TRX / TRY / TRZ. Eight instructions, no branches. `see ghidra/scripts/funcs/8005b6a8.txt`. |
 | `8005B7D8` | `SetFarColor` - shifts each of the three colour arguments left by 4 and writes them to the GTE far-colour control registers RFC / GFC / BFC. The `<< 4` is the PsyQ API's own 8-bit → 12-bit-fraction promotion, so a caller passes plain 0..255 components. `see ghidra/scripts/funcs/8005b7d8.txt`. |
-| `8005BA38` | **Not a function.** The dump reports `size=1 bytes, 0 instructions` - Ghidra could not decode a single instruction at this address, so it is data or padding between the GTE wrappers, minted as a `FUN_` only because something references the address. Do not open a port row for it. `see ghidra/scripts/funcs/8005ba38.txt`. |
+| `8005BA38` | **`RotTransPers`** - the single-vertex perspective transform, and the one-point sibling of `8005BA68` below. Loads `VXY0`/`VZ0` from the argument vector, issues GTE `RTPS` (`cop2 0x0180001`), then stores `SXY2`, `IR0` and the GTE `FLAG` control word (`cfc2 $31`) through the second, third and fourth arguments, returning `SZ3 >> 2` - PsyQ's `otz`. Eleven instructions, complete, closing on `jr ra` with the shift in the delay slot. This row previously read "**Not a function**", on a dump statistic that has since changed under it - see [`re-do-not-re-walk.md` § Measurement readings](../re-do-not-re-walk.md#measurement-readings). `see ghidra/scripts/funcs/8005ba38.txt`. |
 | `8001CF50` | **Cutscene/field camera GTE rotation build.** Composes the view rotation matrix from the three camera-angle globals by rotating about each axis: `RotMatrixX(pitch=_DAT_8007B790)` / `RotMatrixY(yaw=_DAT_8007B792)` / `RotMatrixZ(roll=_DAT_8007B794)` (each gated per-object by a flag bit at `obj+0x52` so a draw can inherit the globals), then sets the GTE translation from the focus and emits. This is what consumes the op-`0x45` camera angles - the build path `FUN_801DAB90` / `FUN_801DB8EC` only *stage* the angles + focus + H. See [`subsystems/cutscene.md`](../../subsystems/cutscene.md). |
 | `800461A4` / `8004629C` / `8004638C` | GTE `RotMatrixX` / `RotMatrixY` / `RotMatrixZ`. `(angle12)`: masks the angle to 12 bits (`4096 = 360°`), indexes the shared sin/cos LUT at `0x80070A2C` (`+0x800` = the quarter-wave cosine offset), and multiplies the current matrix by the per-axis rotation via GTE `mvmva`. Used by the camera build `FUN_8001CF50` and other per-object transforms. |
 | `8005BA1C` | GTE square-root / normalize - `mtc2 0xF000 / mfc2 0xF800`. |
@@ -152,6 +185,7 @@ gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<ad
 | Address | COP2 cmd | Role |
 |---|---|---|
 | `8005B158` | `MVMVA` ×3 (`0x0486012`, RT·V0) | `MulMatrix0`-shaped 3×3 matrix·matrix multiply: installs m0 into the RT control regs, streams m1's columns through V0, reads each product column from IR1..3 (clobbers RT). |
+| `8005B7B4` | none (`mtc2` LZCS) | LZCS load: three instructions writing the argument to GTE data register 30, which the hardware answers on LZCR (register 31). The seed half of the `8005BA1C` / `8005B0B8` count-leading-zeros pair; `8005B0B8` inlines its own `mtc2` rather than calling this. |
 | `8005B6F8` | none | Vertex staging: loads V0/V1/V2 from three packed-SVECTOR pointers (`lwc2` data regs 0..5) - the load half of an RTPT sequence. |
 | `8005B760` | none | SZ-FIFO staging: `mtc2` SZ0..SZ3 from the four args - the load half of an AVSZ4 sequence. |
 | `8005B828` | `MVMVA` (`0x04DA412`, LCM·IR+BK, lm=1) | Colour-matrix transform: vec3 from `a0` through the light-colour matrix + background colour, result to `a1` - the lighting second stage as a standalone op. |

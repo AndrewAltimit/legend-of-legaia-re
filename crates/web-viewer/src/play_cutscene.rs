@@ -188,7 +188,7 @@ impl LegaiaRuntime {
     /// Shape:
     /// ```text
     /// { "active": bool,  // a cutscene timeline is running
-    ///   "focus": [x, y, z], "pitch": rad, "yaw": rad,
+    ///   "focus": [x, y, z], "pitch": rad, "yaw": rad, "roll": rad,
     ///   "h": f, "tr": [x, y, z] }
     /// ```
     /// `null` before a scene is entered.
@@ -223,6 +223,11 @@ impl LegaiaRuntime {
         let pitch = param(0)
             .map(|v| v / 4096.0 * TAU)
             .unwrap_or_else(|| 0.45f32.atan());
+        // Slot 2 = roll (`_DAT_8007B794`, the GTE `RotMatrixZ` angle) - the
+        // third factor `FUN_8001CF50` composes. Retail authors it in eight
+        // scenes (`engine-core/tests/thread_camera_roll_execution.rs`), so the
+        // page gets it alongside pitch and yaw rather than dropping the term.
+        let roll = param(2).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
         let h = param(9).filter(|&h| h > 1.0).unwrap_or(512.0);
         let s = CUTSCENE_WORLD_SCALE;
         let tr = [
@@ -232,7 +237,8 @@ impl LegaiaRuntime {
         ];
         serde_json::json!({
             "active": w.cutscene_timeline_active(),
-            "focus": focus, "pitch": pitch, "yaw": yaw, "h": h, "tr": tr,
+            "focus": focus, "pitch": pitch, "yaw": yaw, "roll": roll,
+            "h": h, "tr": tr,
         })
         .to_string()
     }

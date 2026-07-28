@@ -111,18 +111,14 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let world = &mut host.world;
-        if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
-            world.set_formation_table(
-                legaia_engine_core::monster_catalog::vanilla_formation_table(),
-                legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
-            );
-            let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
-            world.install_encounter_for_scene(&registry, scene);
-        }
-        world.live_gameplay_loop = true;
-        world.battle_player_driven = true;
-        world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
+        // One shared kernel with the native host (`BootSession::enter_field_live`
+        // calls the same `World::arm_live_loop`). This used to be a
+        // hand-maintained copy of that block and had already lost the scene
+        // label and the Battle<->Field BGM swap - which is why battle music
+        // was silent in the browser while it played natively.
+        let mut opts = legaia_engine_core::live_loop::LiveLoopOpts::playable();
+        opts.battle_bgm = self.battle_bgm;
+        host.world.arm_live_loop(scene, &opts);
     }
 
     /// Per-tick battle presentation, called from [`LegaiaRuntime::tick_frame`]:
@@ -149,12 +145,10 @@ impl LegaiaRuntime {
                 _ => {}
             }
         }
-        // Drain world battle events and fold each into gameplay state
-        // (`ApplyArtStrike` mutates HP / status; the rest are visual-only).
-        let events = host.world.drain_battle_events();
-        for ev in events {
-            host.world.fold_battle_event(&ev);
-        }
+        // Drain world battle events. **Observation only** - the live battle
+        // loop owns the gameplay fold and re-publishes the stream, so folding
+        // again here would apply an art strike's HP twice.
+        let _events = host.world.drain_battle_events();
         // Floating damage / heal numbers: the live loop resolves HP itself
         // and queues a presentation-only FX per strike.
         let fx = host.world.drain_battle_hit_fx();
@@ -197,6 +191,52 @@ impl LegaiaRuntime {
                 self.enqueue_sfx(id, cue.timing_frames);
             }
         }
+    }
+
+    /// Out-of-battle battle presentation, in **surface pixels**: the
+    /// post-battle spoils panel and the game-over panel. Both sit outside
+    /// [`SceneMode::Battle`], which is why they are not part of
+    /// [`Self::battle_overlay_draws`], and both use the same shared
+    /// `engine-ui` builder + world model as the native window
+    /// (`window/battle.rs`, `window/boot_cutscene.rs`).
+    ///
+    /// The "this scene rolls no encounters" hint does **not** belong here.
+    /// The page treats a non-empty overlay as owning the frame - it clears
+    /// the canvas, blits, and returns before the dialog-box layer - so a
+    /// passive hint routed through this list would suppress every NPC
+    /// dialogue for the first seconds of a town. The page reads
+    /// [`Self::scene_rolls_encounters`] and prints its own notice instead.
+    pub(crate) fn post_battle_overlay_draws(
+        &self,
+        assets: &crate::play_menu::PlayMenuAssets,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        let Some(w) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let font = assets.font_ref();
+        let mut out: Vec<TextDraw> = Vec::new();
+
+        // Party wipe owns the frame.
+        if w.game_over {
+            let pen = (surface_w as i32 / 2 - 48, surface_h as i32 / 3);
+            out.extend(ui::game_over_draws_for(font, 1, false, pen));
+            return out;
+        }
+
+        if let Some(banner) = w.battle_spoils_banner() {
+            let view = ui::BattleSpoilsView {
+                xp: banner.xp,
+                gold: banner.gold,
+                level_ups: &banner.level_ups,
+                drops: &banner.drops,
+            };
+            let pen = (surface_w as i32 / 2 - 60, surface_h as i32 / 3);
+            out.extend(ui::battle_spoils_draws_for(font, &view, pen));
+        }
+
+        out
     }
 
     /// Battle overlay text draws in **surface pixels**: HUD rows, the
@@ -498,6 +538,43 @@ impl LegaiaRuntime {
         if let Some(h) = self.scene_host.as_mut() {
             h.world.live_gameplay_loop = on;
             h.world.battle_player_driven = on;
+        }
+    }
+
+    /// Set the Battle<->Field BGM swap track (`0` clears it), the browser twin
+    /// of the native window's `--battle-bgm <id>`. The id is routed through
+    /// the same director as field op-`0x35` starts, so it must resolve in the
+    /// current scene's asset table.
+    pub fn set_battle_bgm(&mut self, bgm_id: u16) {
+        self.battle_bgm = (bgm_id != 0).then_some(bgm_id);
+        if let Some(h) = self.scene_host.as_mut() {
+            h.world.set_battle_bgm(self.battle_bgm);
+        }
+    }
+
+    /// `true` when the current scene can produce a random encounter at all.
+    /// The page shows a "no random encounters here" hint when it is `false`,
+    /// so a town's designed silence doesn't read as a broken engine.
+    pub fn scene_rolls_encounters(&self) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.scene_encounters_rollable)
+    }
+
+    /// `true` while the party is wiped and the game-over panel owns the frame.
+    /// The page draws the panel and routes pad input into it; picking an
+    /// outcome clears the state through [`Self::game_over_retry`].
+    pub fn is_game_over(&self) -> bool {
+        self.scene_host.as_ref().is_some_and(|h| h.world.game_over)
+    }
+
+    /// Clear the game-over state and stand the party back up (the browser's
+    /// "Retry" row). Post-battle HP survives the fight now, so a wiped party
+    /// dropped straight back into the field would simply re-wipe.
+    pub fn game_over_retry(&mut self) {
+        if let Some(h) = self.scene_host.as_mut() {
+            h.world.game_over = false;
+            h.world.revive_party_full();
         }
     }
 }

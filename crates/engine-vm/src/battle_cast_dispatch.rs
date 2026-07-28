@@ -10,18 +10,24 @@
 //! REF: FUN_801DCEAC (a control for the reference scan below),
 //! REF: FUN_801F1CC8, FUN_801F20DC (the field image's twins at the same VAs)
 //!
-//! NOT WIRED, for two different reasons - and they should not be read as one.
+//! Two of the three ports here are inert and one is wired, for reasons that
+//! should not be read as one - the per-item notes carry the disclosures.
 //!
 //! **The two dispatchers** resolve to something the engine has no channel for.
 //! Both return a **retail VA**: the emitter is overlay code in the battle
 //! image, unported, so there is nothing callable at the other end; turning them
 //! into a wire needs an engine-side cast-effect pool keyed by spell id / effect
-//! class first. `FUN_801F2160` additionally needs the spell record's `+0x01`
-//! effect-class byte, which the engine's spell catalog (`crate::retail_magic`)
-//! does not decode - it carries name / MP / target only, so
-//! [`spell_effect_class`] has no live source of bytes. Both really are reached
-//! in retail (`jal 0x801f1ed4` at `0x801E4B1C` / `0x801E4C7C` / `0x801E4CA8`),
-//! so a host that grew that pool would have somewhere to put them.
+//! class first. `FUN_801F2160` additionally reads the spell record's `+0x01`
+//! effect-class byte, which nothing decodes: `legaia_engine_core::retail_magic`
+//! carries name / MP / target only, and `legaia_asset::spell_names` reads
+//! `+0`, `+2`, `+3`, `+4` and `+8` but skips `+1`. Note that is a decode gap,
+//! not a reach gap - [`spell_effect_class`] takes raw bytes, and
+//! `legaia_asset::spell_names::stats_file_offset` already locates them in a
+//! SCUS image the hosts hold. Beware also that `+0` is called "the cast class"
+//! there while `+1` is "the effect class" here; two different bytes, one word.
+//! Both dispatchers really are reached in retail (`jal 0x801f1ed4` at
+//! `0x801E4B1C` / `0x801E4C7C` / `0x801E4CA8`), so a host that grew that pool
+//! would have somewhere to put them.
 //!
 //! **`FUN_801DBA90` is different: retail reaches it from nowhere.** It is a
 //! genuine function entry - `27bdffe8 afb00010` at `0x801DBA90` in the
@@ -33,13 +39,27 @@
 //! as controls. So it is not a dispatch-table entry either - a static table
 //! holding it would show as the literal word.
 //!
-//! No engine-side channel can therefore fix this row, and the earlier reason
-//! here - "the engine does not model the `ctx+0x1F9` text buffer" - implied one
-//! could. The port stays because the routine is decoded and its three-part
-//! banner is the same assembly `FUN_801D8DE8`'s HUD case `0x59` shows; what it
-//! is not is unfinished wiring. One residual: an address assembled in more than
-//! two instructions, or reached as `table_base + index` where the base is
-//! computed, would not be caught.
+//! That is a fact about the *entry point*, and an earlier revision of this note
+//! turned it into "no engine-side channel can therefore fix this row" - which
+//! is a fact about the *rule*, and false. `FUN_801D8DE8`'s HUD case `0x59`
+//! (`0x801D9154..0x801D91D0`, gated on its `param_2 == 0`) is the same
+//! assembly **instruction for instruction**: the same `ctx[+0x13]` ->
+//! `DAT_8007BD10` character id, the same `-1` index into the same
+//! `0x801F4DFC` table, the same `ctx[+0x269] + 0x80` spell id at the same
+//! `0x800754C8 + id*0x0C + 8`, the same `0x801F4C28` suffix, and the same
+//! `FUN_8003CA78` / `FUN_8003CAC4` / `FUN_8003CAC4` calls against the same
+//! `ctx + 0x1F9`. A whole-image scan finds exactly two materialisations of the
+//! table VA and two of the suffix VA - one pair in each routine - so the two
+//! are twins and the case-`0x59` one is the live site.
+//!
+//! So the rule runs on every dome win, and the port is wired to it:
+//! `MuscleDomeSession::reward_banner` composes through this decode and both
+//! hosts show the result (`minigames_muscle::muscle_reward_banner_json`
+//! resolves the two overlay strings and the spell name). What stays true is
+//! that **this entry point** is dead - a host is running the twin, not
+//! reaching `0x801DBA90`. One residual on the scan: an address assembled in
+//! more than two instructions, or reached as `table_base + index` where the
+//! base is computed, would not be caught.
 //!
 //! ## The two dispatchers
 //!
@@ -196,6 +216,11 @@ pub const CAST_DISPATCH_TAIL: u32 = 0x801F_2410;
 /// gates it with `sltiu ..., 0x20`, so ids below `0x81` wrap to a large
 /// unsigned value and fail the bound exactly as ids above `0xA0` do.
 ///
+/// NOT WIRED: it returns a **retail VA** - overlay code in the battle image
+/// the port does not run - so there is nothing callable at the other end.
+/// Wiring needs an engine-side cast-effect pool keyed by spell id first; see
+/// the module note.
+///
 /// PORT: FUN_801F1ED4
 pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
     let index = action_id.wrapping_sub(SERU_SPELL_ID_MIN) as usize;
@@ -210,6 +235,11 @@ pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
 /// `effect_class` is byte `+0x01` of the spell record the queued action id
 /// selects (`0x800754C8 + id * 0x0C + 1`). Retail bounds it with
 /// `sltiu ..., 0x20`.
+///
+/// NOT WIRED: the same missing channel as [`seru_spell_emitter`], plus its
+/// key has no live source - the engine's spell catalog carries name / MP /
+/// target only, so [`spell_effect_class`] is never handed bytes. See the
+/// module note.
 ///
 /// PORT: FUN_801F2160
 pub fn spell_class_emitter(effect_class: u8, ctx_27a: u8) -> CastDispatch {

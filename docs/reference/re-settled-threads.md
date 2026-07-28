@@ -1039,7 +1039,7 @@ It is **never in main RAM** in any captured save (checked every 32-byte sub-CLUT
 
 *Status:* resolved (dump-confirmed)
 
-Reading the state-`0x28` block in `overlay_battle_action_801e295c.txt` (`0x801E3D0C`; the same block recurs in state `0x3C` at `0x801E4568`) settles **both** open questions. (1)
+Reading the block in `overlay_battle_action_801e295c.txt` settles **both** open questions. It is inlined twice: `0x801E4568` in state `0x28` (right after that state's capture-archive `jal 0x8003EC70` at `0x801E44EC`) and `0x801E3D0C` in state `0x3C` (right after that state's Pomander `+0x1DF == 0xFE` case at `0x801E3C4C`). The two are byte-identical, so which state a citation names does not change the answer - but the pairing above is the one the dump supports. (1)
 
 **PRIORITY - Half (`0x20`) wins.** The code is `andi 0x20; bne <half>` then `andi 0x10; beq <none>`, i.e. `if (bits & 0x20) {half} else if (bits & 0x10) {quarter}` - the `0x20` test short-circuits the `0x10` test. This matches the docs / `MpCostModifier::from_ability_flags`; the engine SM port + live cast path that applied Quarter first were a guess and are now flipped. (2)
 
@@ -1127,6 +1127,75 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
+| Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
+
+### Clip-end latch for cross-context clip pokes
+
+*Status:* resolved from the disassembly of both halves and ported; residual is
+port fidelity, not an open question
+
+`ctx[+0x62]` is the clip-control word and bit `8` (`0x0100`) is the end latch
+(see
+[`script-vm.md`](../subsystems/script-vm.md#0x2b-0x33-flag-manipulation-triplets)).
+The question was who writes that bit when the triple carries a `0x80`-prefix
+target, because then the word does not belong to the record being dispatched.
+
+**The resolver answers it.** `FUN_8003C83C` tests its argument against `0xF8`
+before anything else and returns `_DAT_8007C364` - the live player object -
+without walking any list (`li v0,0xf8` / `bne a0,v0,0x8003c858` /
+`lw v0,-0x3c9c(v0)` / `jr ra`). `0xFB` walks a second list for the entry whose
+`+0xC` handler is `0x801DA51C`; every other id walks `_DAT_8007C354` matching
+`*(u16*)(ctx+0x50)`. So a cross-context op runs against a **different actor
+record**, and the answer to "who latches" is "that actor's own anim tick" -
+the same `FUN_800204F8` a prop reaches, on a different struct.
+
+Its two halves both matter to the spin, and both are in the instructions
+(`ghidra/scripts/funcs/800204f8.txt`):
+
+| Half | What it does |
+|---|---|
+| Binder (`0x80020570..0x800205A8`) | Only when `+0x5C != +0x5E`: remember the id, `sh zero,0x68` (cursor to frame 0), point `+0x4C` at the clip. `+0x62` is **not** touched - hold / clamp / reverse are the script's to set, and clearing the latch is its `AC <t> 08`. |
+| Advancer (`0x800205AC..`) | Consume `+0x62` bit `0x200` (restart), clear bit `0x100`, step `+0x68` by `+0x6A` unless bit `0x2` (hold) is set, then wrap or clamp at either end and set bit `0x100` there. |
+
+One detail the port flattens: the advancer scales its step by the scratchpad
+byte `_DAT_1F800393` (`mult a0,v0` at `0x80020660` / `0x80020680`), the frame
+step the driver writes. `PropAnim::tick` advances one step per call, which is
+the same thing whenever that byte is `1`.
+
+The idiom is therefore literally a prop door swing aimed at another actor, and
+the retock innkeeper's Yes branch reads exactly that way once its bytes are
+disassembled: `AC F8 01` (un-hold), `A2 F8 04` (poke the clip), `AC F8 08` /
+`AD F8 08` (clear, spin), `AC F8 03` (un-clamp), `4A 03 00`, `AB F8 03`
+(re-clamp), `AC F8 08` / `AD F8 08` again, then `A2 F8 02` handing the player
+back to the locomotion move. Every one of those bits is an `ANIM_*` bit; none
+of them is a per-record local flag.
+
+**Port.** `engine-core::field_env::PropAnimBank` holds a cross-context cursor
+per target byte (`actor_clips`, keyed the way the resolver keys its walk).
+`World::step_inline_dialogue` binds the poked actor's `+0x62` into the
+executing context around each `2B`/`2C`/`2D`, mirrors it back, and **parks** on
+the spin - the same bind / re-sync / mirror-back discipline
+`World::step_prop_interaction` runs a prop's whole record under, narrowed to
+the one word a cross-context op reaches. The runner writes no latch of its own -
+`PropAnim::tick` is the port's only latch writer, everything else that touches
+`+0x62` is a script op arriving through the bind - and the cursor advances once per
+frame whichever driver reaches it first (the field frame's
+`tick_prop_interactions`, or the runner itself for a host that drives only a
+conversation). Pinned by `crates/engine-core/tests/inline_clip_latch.rs`,
+which asserts the latch appears on the poked actor's cursor and never on the
+record's own flag word, and that a stalled cursor never lets the spin through.
+
+*Residual (port, not RE).* An actor's **drawn** clip and its cursor are two
+objects in the port: the player's gesture is played by the host's
+`FieldPlayerAnim` off `World::field_player_move_cues`, an NPC's by the host's
+own clip player, while the latch is timed by the bank's cursor. They are
+rate-matched by construction (`ANIM_SPAWN_RATE` = 8 cursor units against
+`FieldClipPlayer::DEFAULT_TICKS_PER_FRAME` = 2) and sized from the scene ANM
+bundle where it resolves the poked id, but a clip the bundle cannot name falls
+back to a stand-in length. Retail has one struct; folding the port's two into
+one is engine work. Separately, no capture has confirmed that *nothing else*
+sets bit `8` at runtime - a script could set it with a `2B <t> 08` of its own,
+and none of the records read so far does.
 
 ### Ambient render-mode 4 - the VRAM-rect scroller
 
@@ -1984,7 +2053,9 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Debug flag `0x8007B98F` | resolved (the MSB of the debug-mode word `_DAT_8007B98C`) | `disassembly` + `capture` | [details ↓](#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c) |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative) | `capture` + `disassembly` | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay-loader index off-by-2 - remaining ripple | resolved (slot A reconciled; slot-B per-spell identity capture-pinned) | `capture` + `disassembly` | [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
-| Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved except 0968 (that residual is on the open page) | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved for every entry | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| PROT 0968 - what it is, who loads it, and how big it really is | resolved (residency capture still owed - on the open page) | `disassembly` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
+| `0x80010390` - the SCUS word that looked like a lead on 0968 | resolved: it is the slot-B overlay destination pointer, shared by every slot-B entry | `disassembly` | [details ↓](#0x80010390-is-the-slot-b-overlay-destination-pointer) |
 
 ### `_DAT_8007B98F` is byte +3 of the debug-mode word `_DAT_8007B98C`
 
@@ -2209,9 +2280,38 @@ The overlay loaders (`FUN_8003EBE4`/`FUN_8003EC70` → `FUN_8003E8A8(param + 0x3
    specials" guess is refuted, and **0926** is the unused-`0x98` one-sector `jr ra` stub.
    SummonFlute items (effect classes 126/127) enqueue the spell id directly, so the
    flutes ride the same stager mechanism as Seru magic.
-2. **The 0977 sub-id-5 minigame.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, cards resolve through the battle-action path).
+2. **The 0977 sub-id-5 minigame.** `0977` ("Ronginus") is the mode-24 case-5 **door/init** slot: the `0x801CEA6C` init prologue + the arena monster-name roster + `other6` dev paths. The Muscle Dome **match SM `FUN_801D0748` + all its data lives in the battle-action overlay (PROT 0898)**, not in `0977` and not in a separate aliasing overlay - the arena is a *mode of the battle engine* (fighters are battle actors, entered directions resolve through the battle-action path).
    Pinned by `asset overlay find-sig` of the controller prologue (`lui v0,0x8008; lw v0,-0x42dc(v0)` reading the ctx `_DAT_8007bd24`) → 0898 @ base `0x801CE818` file offset `0x1F30`, plus the deck/sub-draw/victory tables resolving in-overlay (`legaia_asset::muscle_dome::verify_resident`; the Duckstation `overlay_muscle_dome.bin` capture was that overlay's slot).
 3. **Engine mirrors.** `OVERLAY_PROT_BASE` carries the extraction-space `0x37F` (the engine host chain - `prot_one_shot_load` → `entry_start_lba_retail`, whose `toc` array starts at raw dword 2 - consumes extraction indices, so the raw `+ 0x381` loaded entries 2 high); `summon.rs` maps `0x81..=0x8B → 903..=913` directly. The constant's unit test documents the raw-vs-extraction shift.
+
+### Muscle Dome match shape: an ordinary battle ladder, not a card battle
+
+*Status:* resolved (disassembly) -
+[`minigame-muscle-dome.md § Course ladder`](../subsystems/minigame-muscle-dome.md#course-ladder-the-opponent-per-course-round)
+
+The arena's match rules read as a card battle scored on a per-fighter HP
+ratio "out of 108". All three parts of that are wrong. The four "cards" are
+the four d-pad **direction commands** `0xC..=0xF`, each carrying that
+fighter's own AP cost - the same input a normal battle command screen takes,
+bounded by AP. The `0x6C` came from consuming only part of the compiler's
+`× 100` shift-add chain at `0x801d0f38..0x801d0f4c`.
+
+What the arena *is*: a ladder of ordinary battles. PROT 0977's course
+descriptor table (`0x801D1A08`, three `{ i32 rounds; ptr first }` records)
+walks 29 `{ u32 label; u32 monster_id }` round records at `0x801D1920`, and
+`FUN_801D1510` stores the round's id into formation slot 0 at `0x8007BD0C`.
+Courses are 8 / 8 / 13 rounds, matching the populated rows of the score
+table at `0x801D1860`, and the 29 ids resolve against PROT 867 to the
+curated `casino.toml` line-ups 29 of 29 in order.
+
+Superseded within this entry: "battle type `0xB6` under a four-turn limit".
+`0x8007BD0C` is the **formation cell**, not a battle-type byte, so the
+strip's gate reads "the first enemy is monster `0xB6`" - Koru, the game's one
+four-turn timed boss - and no dome round fields that id. Falsification
+trail: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#muscle-dome-was-never-a-card-battle).
+Ports: `engine-core::muscle_dome` (`parse_course_ladder` /
+`course_score_cell` / `resolve_turn` playing whole strings per actor /
+`DomeDamageModel`, the one retail damage kernel both hosts resolve through).
 
 ### Battle arts-input UI decomposition (dome = standard battle input)
 
@@ -2281,13 +2381,115 @@ nothing here. The full accounting:
   entry-size over-read artifact: shift `0x5FE8` lies wholly past 0965's real
   `0x2000`-byte extent, and the corrected entries share no content). See also the
   [band's own settled row](#slot-b-capture-module-band-09350966-per-entry-identity).
-- **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep).
+- **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep);
+  battle-stage id `1`.
+- **0968** = the **Cort battle's stage overlay**, battle-stage id `2` -
+  [details ↓](#prot-0968---the-cort-battle-stage-overlay).
 - **0969** = the STR-path table the STR-mode init pages
   (`FUN_8003EC70(0x4A)`; [`boot.md`](../subsystems/boot.md)). An overlay-resident
-  callsite loads it too: the battle SM pages `0x4A` when a battle global holds
-  `0xB5` - the Lapis Wave spell id - (`jal 0x8003ec70` at `0x801E6D14`,
-  `overlay_battle_action_801e6968`), so the same small blob serves Cort's Lapis
-  Wave cinematic in battle.
+  callsite loads it too, and it is the **same gate as 0968's**: at `0x801E6D04`
+  the battle SM reads `*(u8 *)0x8007BD0C` - the first **formation monster id** -
+  compares it to `0xB5`, and pages `0x4A` (`jal 0x8003ec70` at `0x801E6D14`,
+  `overlay_battle_action_801e6968`). The guard immediately above it is
+  `lhu v0, 0x14C(actor)` on slot 3 of the actor table `0x801C9370`, taking the
+  load only when that actor's **HP has reached zero** - so 0969 is Cort's
+  form-transition module, paged when a form dies. The earlier reading of that
+  `0xB5` as "the Lapis Wave spell id" was an **id-space collision**: spell `0xB5`
+  is Lapis Wave, but the byte the branch reads is the formation id, and formation
+  `0xB5` is Cort (monster-archive id 181).
+
+### `0x80010390` is the slot-B overlay destination pointer
+
+*Status:* resolved - the one non-confounded lead in the 0968 hunt is a collision
+
+An address-reference sweep for `0x801F69D8` (0968's link base) over all 1234
+images produced exactly one literal-word hit outside the overlay band: a
+`0x801F69D8` at `SCUS_942.54 +0x390`. Since SCUS is not in the band and the
+band's own hits are worthless - slot-B overlays *share* the base, so the VA is
+simultaneously live in ~70 sibling images and every `jal`/`j`/branch to it is
+that sibling's own code - the SCUS hit read as the one genuine cross-image
+reference and the last thing left to follow.
+
+It is a collision. `0x80010390` is a **SCUS-resident global holding the slot-B
+overlay load address**, and `0x8001038C` is its slot-A twin. The two loaders
+are otherwise identical - `FUN_8003EBE4` reads `*(0x8001038C)` at `0x8003EC24`,
+`FUN_8003EC70` reads `*(0x80010390)` at `0x8003ECCC`, both then run
+`FUN_8003E8A8(param + 0x381)` and `FUN_8003E800` into that buffer, and they
+differ only in which residency tracker they stamp (`gp+0x924` vs `gp+0x934`).
+No instruction in `SCUS_942.54` ever *stores* to either word; a sweep for
+`lui 0x8001` paired with a memory op at `+0x38C`/`+0x390` finds nine sites and
+all nine are `lw`. So the literal is the slot-B base constant itself, shared by
+every slot-B entry, and carries zero information about 0968 specifically.
+
+The general lesson is the one the sweep tool already warns about in its own
+docstring, arriving from the other direction: **when overlays share a load
+base, a reference to that base is a reference to the slot, not to a tenant.**
+
+### PROT 0968 - the Cort battle stage overlay
+
+*Status:* resolved except for a residency capture, which stays on
+[`open-rev-eng-threads.md`](open-rev-eng-threads.md#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry)
+
+**Why the callsite hunt kept failing.** The search was for loader param `0x49`
+as a *constant*, and no constant produces it. Stage overlays are paged by a
+**computed** parameter: sub-states `0x0E`/`0x10` of the battle loader read the
+stage-id byte `_DAT_8007B64A` and call `FUN_8003EC70(stage_id + 0x47)`
+([`battle.md`](../subsystems/battle.md)). Nothing named `0x49` anywhere,
+because nothing ever writes it.
+
+**The selector.** `FUN_80055B6C`, the battle scene initialiser, ends its
+formation fix-up with a hardcoded override at `0x80055D2C`:
+
+```
+lbu   v1, -0x42f4(v1)   ; v1 = *(u8 *)0x8007BD0C - the first formation monster id
+addiu v0, zero, 0xb5
+bne   v1, v0, 0x80055d48
+addiu v0, zero, 2       ; delay slot
+sb    v0, -0x49b6(at)   ; *(u8 *)0x8007B64A = 2 - the battle-stage id
+```
+
+Formation id `0xB5` is monster-archive id **181 = Cort**, read straight off
+PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param `0x49` →
+extraction entry **968**, and the Cort fight is its only gate. The same byte
+against the same constant is what pages **0969** mid-battle when a Cort form's
+HP reaches zero, which is the corroboration: one boss, two modules, one
+formation-id test each.
+
+**Its real extent is 2600 bytes, not 4096.** The entry is 2 sectors, but only
+file `0x00..0xA28` is 0968's own content - a 7-entry dispatch table at offset 0
+(every target inside that window) and code from `0x1C`. Every `jal`, every `j`
+and every LUI+ADDIU materialisation in that window resolves either inside it or
+into `SCUS_942.54` / the co-resident slot-A battle overlay; **not one reaches
+past `0xA28`.**
+
+The trailing 1496 bytes are byte-identical to PROT 0967 at the *same* file
+offsets and cut mid-string at the sector boundary - stale mastering-buffer
+content from the neighbouring tutorial overlay, not 0968's. Two independent
+proofs it cannot be 0968's own:
+
+- it contains `FUN_801F747C`, a text-box placement routine whose style
+  dispatch is `jr *(0x801F6B48 + style*4)`. In 0967 that address is a 10-entry
+  jump table sitting at file `0x170`, right after 0967's 91-entry step table;
+  in 0968 file `0x170` is live code. The routine cannot run under 0968's
+  layout;
+- the same window materialises `0x801F7C80`, a string that exists only in
+  0967 and lies past 0968's end.
+
+This is why every prior structural read of the entry disagreed with itself:
+"pointer-table head, 10 of 11 self-pointers, 2+8 spawn calls" was measured over
+all 4096 bytes, mixing two modules. Measured over `0x00..0xA28` the picture is
+clean and its first instruction reads the battle-context pointer
+`_DAT_8007BD24` and writes `ctx[+0x6D6] = 0x100`.
+
+**What the module does.** A 7-state scripted battle set-piece. Its calls into
+`SCUS_942.54` are `FUN_80050ED4` (summon / effect-actor pool allocator) ×8,
+`FUN_80021B04` (actor spawn) ×2, `FUN_80024E80` (screen-fade spawn) ×2,
+`FUN_8003541C` (text actor), `FUN_8004FCC8` (cue / streamed-voice dispatch),
+`FUN_80058490` (`MoveImage` VRAM blit), plus `FUN_80035F04` and `FUN_80050E74`;
+it also calls `0x801D829C` in the co-resident slot-A battle overlay four times.
+Effect spawns, fades, a VRAM blit, a line of text and a voice cue is the shape
+of a boss's scripted sequence, and it is the same external-call family as the
+tutorial overlay 0967 minus the tutorial's own prompt helpers.
 
 ### PROT 0977 / 0978 extraction + the dump re-key
 
@@ -2763,6 +2965,93 @@ defeat any stream match - decide at full strength.
 Grade `disassembly`: every verdict is a word- or token-exact comparison
 against the corrected-extent extracted images, with each rival reading
 excluded by the same comparison rather than by arithmetic.
+
+## Rendering / camera
+
+| Thread | Status | Evidence | Answer |
+|---|---|---|---|
+| Does any retail shot author a non-zero camera roll? | resolved (yes) | `capture` + `disassembly` | Eight scenes stage a reachable, executing op-`0x45` slot-2 roll, from `10` units (0.9 deg) to `-660` (-58 deg). [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
+
+### Does any retail shot author a non-zero camera roll?
+
+*Status:* resolved - **yes**.
+
+Slot `2` of the op-`0x45` CONFIGURE mask is the roll angle `_DAT_8007B794`,
+the argument `FUN_8001CF50` hands to `RotMatrixZ` (`0x8004638C`) as the third
+factor of `Rx * Ry * Rz`. The port used to compose pitch and yaw and drop it,
+on the stated assumption that retail shots rarely roll.
+
+**Eight scenes roll.** Every one of these beats carries the full nine-slot
+mask - pitch, yaw, roll, the eye trio, focus X and Z, `H`, and no focus Y,
+matching the `opdeene` reading on [`cutscene.md`](../subsystems/cutscene.md) -
+every operand is an in-range 12-bit angle, and the beats of one shot repeat
+the same tilt, which is what an authored Dutch angle looks like.
+
+| scene | what it is | PROT entry | record | roll (12-bit) | degrees |
+|---|---|---|---|---|---|
+| `edstati3` | Ending (station3) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
+| `station3` | Karisto Station (late) | 616 | P2[0] | `30` | 2.6 |
+| `map03` | World map (Karisto) | 392 | P2[10] | `60` | 5.3 |
+| `nilboa` | Nivora Ravine | 638 | P2[33] | `60` | 5.3 |
+| `taiku` | Muscle Dome | 373 | P2[27] | `-120` | -10.5 |
+| `korout` | Field (korout) | 534 | P2[3] | `240` | 21.1 |
+| `juui1` | Juggernaut interior 1 | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
+| `juui2` | Juggernaut interior 2 | 597 | P2[0] | `-660` | -58.0 |
+
+The two biggest tilts sit inside the Juggernaut, and the smallest opens an
+ending cutscene - which is where a canted camera is exactly what an author
+would reach for.
+
+Roll stays a **minority** term: of the 371 CONFIGUREs a control-flow walk
+reaches, 123 set the slot at all and 15 of those write a non-zero value -
+roughly a third, then about one in eight. That is why "rarely" survived as
+long as it did. Rare is not never.
+
+**Why it took execution.** A field-VM record's tail is not linearly decodable,
+so a *decode* of the corpus has to pick a resynchronisation policy, and the
+policy is what it ends up measuring. Three instruments disagreed:
+
+| Instrument | CONFIGUREs reached | Non-zero rolls | What it was really measuring |
+|---|---|---|---|
+| Strict linear (stop at first decode error) | 21 | 0 | its own blindness - it reaches none of the eight |
+| Resuming linear (advance one byte on error) | 2182 | 637 roll operands, 7 of them outside the 12-bit angle space | its resynchronisation into data |
+| Raw byte scan (decode at every offset) | 4257 | a "2 %" ratio | its own post-hoc credibility filter |
+
+The resuming sweep's own shortlist of "coherent" candidates - `deroa`,
+`chitei2`, `station3`, `town0b`, `retona`, `nilboa`, `edstati3` - scores three
+hits out of seven and misses five of the eight real ones. That is the sweep's
+signal-to-noise stated as a number: half its picks are data, and it cannot see
+most of what is there, because the authored rolls live in **partition 2**
+(cutscene-timeline / walk-on beat records) while the linear census walks
+partition 1.
+
+The decider is control flow. Stepping the ported field VM
+(`legaia_engine_vm::field::step`) from each record's real entry PC, under a
+probe host that answers every branch predicate both ways, gives the set of PCs
+control flow can arrive at; executing the same records in a real `World`
+gives the subset that runs. Both find the same eight scenes, and **neither
+reaches a roll operand outside the angle space** - which is what identifies
+the resuming sweep's impossible operands (`26708` is not an angle) as data.
+Oracle: `crates/engine-core/tests/thread_camera_roll_execution.rs`; the linear
+modes are kept as a negative record in
+`crates/asset/tests/thread_camera_roll_census.rs`.
+
+**Two corrections fall out.** The parenthetical "zeroed in the field-camera
+build path" on the slot-2 row was wrong: none of `FUN_801DAB90`,
+`FUN_801DB8EC` or `FUN_801DBE9C` writes `_DAT_8007B794`, and the only zeroing
+is the scene-entry reset `FUN_80025C24`. And `edstati3` is a real scene - the
+ending cutscene block whose bundle sits at extraction entry 826. Its CDNAME
+label inherits forward as far as the battle-data packs at 863/864, and that is
+what made it look like a decode artefact rather than a scene.
+
+The port now composes the third factor: `Camera::roll`, the shell's
+`psx_camera_mvp` / `cutscene_view`, the cutscene interp's tenth component, and
+the browser page's orbit `cam.roll`.
+
+Grade `capture` for the census (a disc-derived executing oracle) and
+`disassembly` for the factor itself - `0x8001CFD0..0x8001CFE8` loads
+`_DAT_8007B794` through `lui a0,0x8008; lh a0,-0x486c(a0)` and calls
+`0x8004638C` unless the render node's `+0x52` bit `0x200` is set.
 
 ## Measurement + corpus
 

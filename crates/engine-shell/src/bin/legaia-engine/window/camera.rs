@@ -114,6 +114,10 @@ impl PlayWindowApp {
         Some(Self::psx_camera_mvp(
             to_rad(PITCH_UNITS),
             yaw,
+            // The field follow camera never rolls (`FUN_80025C24` seeds the
+            // roll global to `0` on scene entry and only an op-`0x45` beat
+            // writes it).
+            0.0,
             FIELD_H,
             Vec3::new(0.0, 0.0, depth),
             target,
@@ -320,12 +324,12 @@ impl PlayWindowApp {
     pub(super) fn battle_mvp_with_tr(yaw_rad: f32, tr: Vec3, aspect: f32) -> Mat4 {
         const PITCH_UNITS: f32 = 32.0;
         let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
-        Self::psx_camera_mvp(pitch, yaw_rad, 256.0, tr, Vec3::ZERO, aspect)
+        Self::psx_camera_mvp(pitch, yaw_rad, 0.0, 256.0, tr, Vec3::ZERO, aspect)
     }
 
     /// Shared PSX-projection camera: `screen = H * (R*(v - target) + tr) / Ze`
-    /// with `R = Rx(pitch)·Ry(yaw)` (the retail GTE camera-rotation build
-    /// `FUN_8001CF50`), `tr` the post-rotation eye-space translation, `target`
+    /// with `R = Rx(pitch)·Ry(yaw)·Rz(roll)` (the retail GTE camera-rotation
+    /// build `FUN_8001CF50`), `tr` the post-rotation eye-space translation, `target`
     /// the world-space look-at (retail folds it into the GTE translation as
     /// the negated focus trio `_DAT_80089118/1C/20`), and `H` the GTE
     /// projection register (`_DAT_8007B6F4`). The battle camera is this with
@@ -338,12 +342,24 @@ impl PlayWindowApp {
     pub(super) fn psx_camera_mvp(
         pitch_rad: f32,
         yaw_rad: f32,
+        roll_rad: f32,
         h: f32,
         tr: Vec3,
         target: Vec3,
         aspect: f32,
     ) -> Mat4 {
-        let r = Mat4::from_rotation_x(pitch_rad) * Mat4::from_rotation_y(yaw_rad);
+        // Retail's own composition order, `Rx * Ry * Rz` with pitch outermost
+        // (`FUN_8001CF50` post-multiplies each axis factor onto the resident
+        // rotation; `RotMatrixX` at `0x800461A4`, `RotMatrixY` at `0x8004629C`,
+        // `RotMatrixZ` at `0x8004638C`). `glam`'s `from_rotation_*` build the
+        // same right-handed factors as the crate's own q3.12 rendition
+        // `legaia_engine_render::gte::math::camera_view_rotation`, so this is
+        // that product in float. Roll (op-`0x45` slot 2, `_DAT_8007B794`) is
+        // authored by retail - eight scenes stage a non-zero one; see
+        // `crates/engine-core/tests/thread_camera_roll_execution.rs`.
+        let r = Mat4::from_rotation_x(pitch_rad)
+            * Mat4::from_rotation_y(yaw_rad)
+            * Mat4::from_rotation_z(roll_rad);
         let t = Mat4::from_translation(tr);
         let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
         // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
@@ -405,7 +421,9 @@ impl PlayWindowApp {
         // the actor draws *after* this camera, so the focus has to be
         // pre-scaled by the same factor to land on the same eye-space point.
         let focus = focus * super::BATTLE_WORLD_SCALE;
-        Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 256.0, tr, focus, aspect)
+        // The battle camera's rotation trio is `(pitch, yaw, 0)` - the battle
+        // phase script never stages a roll.
+        Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 0.0, 256.0, tr, focus, aspect)
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
@@ -435,7 +453,7 @@ impl PlayWindowApp {
     ///   `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses).
     ///   opdeene supplies all three per beat; the Z component is the eye-back
     ///   depth (raw ~16k-21k across beats).
-    pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, [f32; 3]) {
+    pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
         use std::f32::consts::TAU;
         // Retail folds a 6x uniform world scale into the camera rotation
         // (base matrix `DAT_8007BF10` = `24576*I`); the engine renders at 1x.
@@ -473,6 +491,12 @@ impl PlayWindowApp {
         let pitch = param(0)
             .map(|v| v / 4096.0 * TAU)
             .unwrap_or_else(|| 0.45f32.atan());
+        // Slot 2 = roll (`_DAT_8007B794`, the GTE `RotMatrixZ` angle). Retail
+        // authors it: an executing census of the whole MAN corpus finds
+        // reachable beats staging a non-zero roll in eight scenes, from a
+        // 0.9 deg tilt to -58 deg. A beat that omits the slot holds the
+        // scene-entry reset `0` (`FUN_80025C24`).
+        let roll = param(2).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
         // H (focal length) passed straight through; fall back to the field H.
         let h = param(9).filter(|&h| h > 1.0).unwrap_or(512.0);
         // Eye-space translation trio (offset slots 3/4/5), reduced into the
@@ -484,7 +508,7 @@ impl PlayWindowApp {
             param(4).unwrap_or(1200.0) / s,
             param(5).filter(|&z| z.abs() > 1.0).unwrap_or(17000.0) / s,
         ];
-        (focus, pitch, yaw, h, tr_eye)
+        (focus, pitch, yaw, roll, h, tr_eye)
     }
 
     /// Replay this frame's drained `apply == 0` Camera Configure beats as
@@ -504,6 +528,9 @@ impl PlayWindowApp {
                 match p.slot {
                     0 => comps.push((3, v / 4096.0 * TAU)),
                     1 => comps.push((4, v / 4096.0 * TAU)),
+                    // Roll rides packed component 9 (see
+                    // `CutsceneCameraInterp::ROLL`).
+                    2 => comps.push((9, v / 4096.0 * TAU)),
                     3 => comps.push((6, v / CUTSCENE_WORLD_SCALE)),
                     4 => comps.push((7, v / CUTSCENE_WORLD_SCALE)),
                     5 if v.abs() > 1.0 => comps.push((8, v / CUTSCENE_WORLD_SCALE)),
@@ -589,6 +616,7 @@ mod follow_compass_tests {
             let mvp = PlayWindowApp::psx_camera_mvp(
                 to_rad(PITCH_UNITS),
                 yaw,
+                0.0,
                 512.0,
                 Vec3::new(0.0, 0.0, 1200.0),
                 target,
@@ -644,13 +672,48 @@ mod cutscene_framing_tests {
         let pitch = 180.0 / 4096.0 * TAU;
         let yaw = -2967.0 / 4096.0 * TAU;
         let h = 792.0;
-        let mvp = PlayWindowApp::psx_camera_mvp(pitch, yaw, h, tr_eye, focus, 4.0 / 3.0)
+        // The captured intro beat's roll global reads `0`.
+        let mvp = PlayWindowApp::psx_camera_mvp(pitch, yaw, 0.0, h, tr_eye, focus, 4.0 / 3.0)
             * FIELD_WORLD_FLIP;
         let clip = mvp * v.extend(1.0);
         let ndc = clip.truncate() / clip.w;
         let px = (ndc.x * 0.5 + 0.5) * 320.0;
         let py = (0.5 - ndc.y * 0.5) * 240.0;
         (px, py)
+    }
+
+    /// The shell composes the camera rotation in `glam`; retail composes it
+    /// through the GTE. This pins the two to the same product, roll included,
+    /// so a sign or ordering slip in the third factor cannot pass unnoticed:
+    /// `psx_camera_mvp`'s `R` must equal
+    /// [`legaia_engine_render::gte::camera_view_rotation`], the q3.12
+    /// port of `FUN_8001CF50` (`Rx * Ry * Rz`, pitch outermost).
+    #[test]
+    fn the_shell_rotation_matches_the_ported_gte_composition_including_roll() {
+        use legaia_engine_render::gte::camera_view_rotation;
+        // `juui2`'s beat: pitch -643, yaw -1480, roll -660 (12-bit units).
+        let to_rad = |u: f32| u / 4096.0 * TAU;
+        let (pitch, yaw, roll) = (to_rad(-643.0), to_rad(-1480.0), to_rad(-660.0));
+        let want = camera_view_rotation(0, pitch, yaw, roll).expect("no saved-matrix flag");
+        let got =
+            Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw) * Mat4::from_rotation_z(roll);
+        // `camera_view_rotation` is row-major q3.12; `glam` is column-major
+        // f32. Compare element by element through both conventions.
+        for r in 0..3 {
+            for c in 0..3 {
+                let a = f32::from(want.m[r][c]) / 4096.0;
+                let b = got.col(c)[r];
+                assert!(
+                    (a - b).abs() < 2e-3,
+                    "R[{r}][{c}]: gte {a} vs glam {b}\nwant {:?}",
+                    want.m
+                );
+            }
+        }
+        // Dropping the third factor is visibly different, which is what makes
+        // this a test of the roll rather than of the pitch/yaw pair.
+        let without = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw);
+        assert_ne!(got.to_cols_array(), without.to_cols_array());
     }
 
     /// The retail intro shot ("It was the Seru.") frames the party at screen

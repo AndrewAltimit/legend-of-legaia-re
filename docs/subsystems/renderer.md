@@ -475,6 +475,122 @@ The asset-viewer's `--vram-extra-dir` is a *viewer* flag for browsing extracted
 scene-load path (`engine-core` never reads it). See
 [`asset-loader.md`](asset-loader.md#clut-data-scattering).
 
+### Capturing a drawn frame into VRAM
+
+On the console the framebuffer *is* VRAM: the display area is a rect inside the
+same 1024×512 halfword page textures are read from, so a primitive can sample
+pixels the GPU drew moments earlier. That is not a curiosity - it is how the
+field-to-battle transitions work. The curtain style slices a **captured field
+frame** into 240 row strips and 320 column strips and stretches them apart, and
+each strip is an ordinary textured quad whose texture page is the capture.
+
+The port's renderer draws through wgpu into a colour attachment with no
+relationship to `legaia_tim::Vram`: `Renderer::upload_vram` pushes the software
+page *to* the GPU and nothing comes back. `engine-render`'s `vram_capture`
+module adds the missing direction, and `Renderer::capture_into_vram` is
+`capture_rgba` plus that blit.
+
+**Where retail parks the capture** falls out of the curtain's own texture-page
+words, with no capture needed to read it. `0x105` / `0x108` decode to 15-bpp
+pages at VRAM `(320, 0)` and `(512, 0)`; the column pass' `0x115` / `0x118` to
+`(320, 256)` and `(512, 256)`. A page is 256 halfwords wide, and the row pass
+draws a `0xC0`-wide strip from the first page followed by a `0x80`-wide strip
+from the second - `0xC0 + 0x80 = 0x140`, one 320-pixel scanline spanning VRAM
+columns `320..=639`. So the capture is a 320×240 15-bpp image at `(320, 0)`,
+with a second copy at `(320, 256)`, parked to the right of the two display
+buffers at `(0, 0)` and `(0, 240)`.
+
+Three properties worth knowing before using it:
+
+- **The quantisation is exact.** Every colour on the engine's path is a
+  display-referred PSX framebuffer byte (see
+  [Colour space](#colour-space-psx-framebuffer-values-end-to-end)), and the last
+  stage of every 3D shader expands a 5-bit channel as `(c5 << 3) | (c5 >> 2)`.
+  `byte >> 3` therefore recovers `c5` for all 32 values, so a dithered frame
+  round-trips bit-for-bit; an undithered one takes the same 24→15 bit truncation
+  the PSX GPU applies on store.
+- **The resample is the one deviation.** Retail captures at the native 320×240;
+  the port renders at the window size, so the blit point-samples down into the
+  destination rect. At 320×240 the map is the identity and nothing is resampled.
+- **The mask bit is the caller's choice.** A 15-bpp texel of `0x0000` is
+  *transparent* when sampled, and black framebuffer pixels are exactly `0x0000`
+  - which is also the codebase-wide "unpopulated" word. Setting bit 15 (the
+  default) makes a captured black pixel opaque; clearing it reproduces the
+  "black reads as a hole" behaviour, at the cost of making the capture
+  indistinguishable from an unwritten region.
+
+The write lands in the **CPU-side** page, not a GPU-only copy, so a capture is
+equally visible to `Vram::move_image`, `region_has_data` and the VRAM parity
+oracle. That costs a full readback per capture, which is why this is a
+transition-frame primitive rather than something to run every frame.
+
+### Screen-space ordering-table pass
+
+`engine-render`'s `screen_overlay` is the 2D half of the renderer: PSX
+`POLY_FT4` / `POLY_GT4` quads plus flat quads, drawn back-to-front by
+ordering-table bucket with per-ABR semi-transparency, sampling the shared VRAM
+through the same CLUT decode the 3D VRAM-mesh path uses. `order_primitives`
+reproduces `AddPrim` + `DrawOTag` exactly: descending OT index, LIFO within a
+bucket.
+
+Two things about how it reaches the frame:
+
+- **It composites.** `RenderTarget::ScreenOverlay` is a whole-frame mode - it
+  clears and draws nothing but quads - so it cannot put a streak over a battle
+  scene or a transition strip over a field scene, which is what every consumer
+  actually needs. `RenderTarget::SceneWithScreenPrims` draws a `Scene` and then
+  the quad list in the same frame, at the reversed-Z near plane so the quads
+  pass the depth test against any scene geometry. Retail has no such
+  distinction: 3D primitives and screen-space packets go into the *same*
+  ordering table and `DrawOTag` walks it once, so the two-path split is a port
+  artifact and this is where the halves meet.
+- **Its coordinate space is the PSX display, not the window.** Every retail
+  screen-space emitter authors in 320×240 and clamps against it, so the staging
+  pass maps that space across the whole surface - the same mapping the shell's
+  `screen_fx` meshes get from `orthographic_rh(0, 320, 240, 0)`. Handing the
+  geometry builder the surface size instead pins a 320×240 overlay into the
+  top-left corner of a larger frame.
+
+A quad may carry one flat modulation colour (`POLY_FT4`) or four per-vertex
+colours (`POLY_GT4`). The gradient is not decoration: a transition quad's
+descriptor carries a separate top-edge and bottom-edge colour, and the two
+differing is what makes the quad a gradient.
+
+The pass is native-only. The browser hosts have the VRAM page and the 3D CLUT
+decode but no screen-space primitive type - see
+[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need)
+for exactly what would have to exist.
+
+### The field-to-battle transition emitter
+
+The two capabilities above exist for one consumer, and `engine-render`'s
+`battle_intro` is it: the per-frame, per-style working-set owner that stands
+between the transition state machine (live in `engine-core`, driven by
+`World::tick_encounter`) and the ordering table. It seeds the selected style's
+working set, advances it off the transition entity's own `+0x1A` clock rather
+than counting for itself, and emits `ScreenPrim`s plus the per-style fade.
+
+**Coverage is not uniform, and the split is which retail packet builder is
+ported.** The curtain draws end to end: `FUN_801CF1B0` emits *screen-space*
+corners with texture page, CLUT, UVs and a top/bottom colour pair, so there is
+no projection step to invent; its `0x14`-stride descriptor table parses out of
+PROT 0979, and its texture pages decode to the capture rects above. The other
+four styles - the two particle fields, the tile shatter and the swirl - end in
+a GTE/GPU packet emitter that is documented but not ported, and the swirl's fan
+is triangles, for which `ScreenPrim` has no variant at all. Their working sets
+still tick, because the fade ramp and the transition's own completion arm both
+ride the same clock.
+
+What this means in play: **every** battle now runs its retail fade ramp, and
+the formations retail gives the curtain to open with the actual curtain. The
+ordinary random encounter takes style 2, the tile shatter, which the port does
+not draw - see
+[`cutscene.md`](cutscene.md#which-style-a-battle-gets) for how a battle's style
+is selected.
+
+The native play window is the only host that reaches any of this; see
+[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need).
+
 ### Targeted VRAM upload
 
 The TIM corpus on a single PROT entry can run into the hundreds. Uploading every

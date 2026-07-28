@@ -3,6 +3,8 @@
 //!
 //! PORT: FUN_80050BB8 - pairwise battle-actor separation nudge
 //! PORT: FUN_80051078 - all-pairs separation driver (7x7 over the actor table)
+//! REF: FUN_80046A20 - the battle-scene per-frame tick that calls the driver,
+//! immediately after the action SM, on every battle frame
 //!
 //! Both live in `SCUS_942.54` (`funcs/80050bb8.txt` / `80051078.txt`). The pair
 //! kernel projects the between-actor gap onto the angle between the two actors
@@ -19,14 +21,38 @@
 //!
 //! # NOT WIRED
 //!
-//! Three things have to exist before a caller can run this pass. The engine
-//! seats battle actors at fixed formation points and never integrates a
-//! position, so there is no per-frame slot for an all-pairs nudge. The
-//! accumulators the kernel writes are the actor `+0x34` / `+0x38` pair, which
-//! `BattleActor` does not carry (the port's positions live on the actor's
-//! `move_state`, a different field set with no separate accumulator). And the
-//! body radius is `*(actor+0x22C)+0x58`, a field of the monster render record
-//! the engine does not load into the battle actor at all.
+//! One thing blocks this pass, and it is narrower than the three reasons this
+//! note used to give. Two of those three do not survive checking.
+//!
+//! **The real blocker: no position state in the right shape.** `BattleActor`
+//! carries no position at all - not the `+0x34` / `+0x38` accumulators this
+//! kernel writes, and not the `+0x3C` / `+0x40` pair it reads. Engine battle
+//! positions live on the actor's `move_state`, which is a *field*-actor record
+//! (`+0x14` / `+0x16` / `+0x18`) with no second pair, and `BattleActionHost`
+//! exposes `actor_position` as a read-only accessor with no setter. Retail's
+//! seat stager seeds `+0x34` / `+0x38` *from* `+0x3C` / `+0x40`, which means
+//! some other per-frame pass folds the accumulator back into the live
+//! position - and **that integrator is the thing the port genuinely does not
+//! have.** Wiring the nudge without it would write into a field nothing reads.
+//!
+//! **Falsified: "there is no per-frame slot for an all-pairs nudge."** The
+//! slot exists and retail's own call site maps onto it exactly. Retail's
+//! caller is the battle-scene per-frame tick `FUN_80046A20`, which runs
+//! `jal 0x801E295C` (the battle-action state machine) immediately followed by
+//! `jal 0x80051078` - unconditionally, every battle frame, gated only on
+//! "battle live and not tearing down". The engine's `World::live_battle_tick`
+//! calls its port of that same state machine, `step_battle()`; the pass goes
+//! on the line after. It is true that the engine seats actors once and never
+//! integrates a position, but that is the blocker above, not a missing slot.
+//!
+//! **Falsified: "the body radius is a field the engine does not load at
+//! all."** It loads it. Retail's stager derives `+0x58` from the monster
+//! record's `+0x1F` size class as `size << 5` (party slots take a constant
+//! instead). That byte is parsed by `legaia_asset`'s monster-archive reader,
+//! carried on `legaia_engine_core::monster_catalog`, and exposed live to this
+//! very state machine as `BattleActionHost::monster_size_class` - which the
+//! battle camera already consumes as the sibling `size << 7`. The radius is a
+//! shift away from a value the engine reads every action.
 
 /// One actor's separation-relevant state, mirroring the retail battle-actor
 /// struct fields the kernel reads and writes:

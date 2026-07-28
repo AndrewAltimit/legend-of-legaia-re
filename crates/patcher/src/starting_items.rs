@@ -95,7 +95,12 @@ pub const SPEED_CHAIN_ID: u8 = 0xD1;
 /// rate"). Not to be confused with the Chicken King, which guarantees escape.
 pub const CHICKEN_HEART_ID: u8 = 0xF4;
 
-/// Item id of the Good Luck Bell accessory ("Raises the item-drop rate").
+/// Item id of the Good Luck Bell accessory. It carries the **Low Encounter**
+/// passive (index `0x3C`), whose own SCUS description reads "Decrease encounter
+/// rate": `FUN_801D9E1C` halves the encounter rate with a single `srl ,1` at
+/// `0x801da1dc`. Nothing about it touches item drops - that is `0x31` "Items
+/// Up" on the Bronze Book, and conflating the two is what an earlier revision
+/// of this comment did.
 pub const GOOD_LUCK_BELL_ID: u8 = 0xFC;
 
 /// Default stack seeded for each accessory convenience toggle when it is enabled

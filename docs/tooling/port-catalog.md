@@ -313,6 +313,8 @@ python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> o
 python3 scripts/ci/port-catalog.py --live                # add the reachability column
 python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
 python3 scripts/ci/port-catalog.py --live-audit          # reachability vs `NOT WIRED:` disclosures
+python3 scripts/ci/port-catalog.py --check               # ratchet against the committed baseline
+python3 scripts/ci/port-catalog.py --live --update-baseline
 ```
 
 Output is written to `target/port-catalog/` (gitignored):
@@ -321,6 +323,47 @@ Output is written to `target/port-catalog/` (gitignored):
 - `<feature>.csv` / `<feature>.md` - per-feature subset when `--feature` is used.
 - `open-work.md` - single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
 - `live-audit.md` - reachability verdicts checked against the source's own `NOT WIRED:` disclosures, when `--live-audit` is used.
+
+## The ratchet
+
+The catalog's figures reach the site's landing page through
+`scripts/ci/progress-metrics.json`, so for as long as the tool had no failure
+mode - no `--check`, no baseline, and a place in neither the hook nor a
+workflow - a wave could widen a worklist or drop a `// PORT:` tag, move a
+published number, and report nothing. `--check` compares against
+`scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate; the same
+step runs in CI, where it reports `SKIPPED` because the `dumped` column reads
+the gitignored Ghidra corpus.
+
+| Figure | Direction |
+|---|---|
+| `worklist/port` - dumped + documented, not ported, not ignored | may not grow |
+| `worklist/dump` - cited but not dumped | may not grow |
+| `worklist/ported_not_documented` | may not grow |
+| `worklist/ported_not_dumped` | may not grow |
+| `live/disclosure_gap` - inert anchors carrying no `NOT WIRED:` tag | may not grow |
+| `totals/ported` | may not shrink |
+
+**What is deliberately not in it.** This tool builds two call graphs, and the
+receiver-gated one exists solely for the stale-`NOT WIRED:` test (see
+["Where the reachability pass over-reports"](#where-the-reachability-pass-over-reports)).
+Nothing read off that graph is baselined, because its numbers move with graph
+resolution rather than with the work - and sharpening the shared permissive
+graph has been tried and reverted more than once. Everything ratcheted above is
+a property of the tags, the docs and the dump corpus.
+
+`live/disclosure_gap` is the one entry taken from the permissive graph, and it
+is sound in that direction precisely because that graph *over*-reports
+reachability: a port it still calls inert really is inert, so an inert anchor
+with no disclosure is a lower bound. It needs `--live`, and a run without it
+prints `NOT COMPARED THIS RUN` rather than counting the figure as passed.
+
+A regression report is a prompt to open the per-row pages - `--missing-ports`,
+`--live-audit`, and the triage pages under
+[`live-audit-triage.md`](live-audit-triage.md) and
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md). **Validate a surprise
+against rows, never against the count**: three separate waves have found the
+count moving for a reason inside the measurement rather than inside the tree.
 
 ## Features (BFS from roots)
 

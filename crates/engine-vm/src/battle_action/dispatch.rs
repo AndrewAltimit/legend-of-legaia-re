@@ -391,6 +391,78 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
     // byte), and nothing in the engine reads a context HUD-state byte.
 }
 
+/// Retail's class-byte discriminator inside the action-seed's **Magic** arm
+/// (`overlay_battle_action_801e295c.txt` `0x801E2EB0..0x801E2F08`).
+///
+/// The arm stores `0x28` ([`ActionState::MagicCastBegin`]) first
+/// (`0x801E2EBC`), then reads the spell's class byte off the static table
+/// (`lbu v0,0x0(v0)` at `0x801E2EE4`, base `0x800754C8 + id*0xC`) and
+/// overrides it to `0x3C` ([`ActionState::SpiritPreArm`]) only when **both**
+/// tests pass:
+///
+/// ```text
+/// 801e2eec  sltiu v0,v0,0x14         ; class < 0x14 ?
+/// 801e2ef0  beq   v0,zero,801e2f24   ;   no  -> keep 0x28
+/// 801e2ef4  sltiu v0,a0,0x65         ; id < 0x65 ?
+/// 801e2ef8  beq   v0,zero,801e2f24   ;   no  -> keep 0x28
+/// 801e2efc  li    v0,0x3c            ; both  -> 0x3C
+/// ```
+///
+/// `LAB_801E2F24` is the *keep-`0x28`* fall-through (it is also where the
+/// Attack arm lands), not the `0x3C` store - a reading worth stating because
+/// the inverted one ("`class > 0x13` **or** `id > 100` → `0x3C`") is the
+/// opposite of what the branches do.
+///
+/// The two bands agree on the parts that matter to simulation - both debit
+/// the ability-bit-scaled MP cost and both raise the `0x4C` HUD label - so the
+/// override is about which animation/timing band drives the cast, not about
+/// what it costs. The player Seru block (`0x81..=0x8b`) fails the `id < 0x65`
+/// test and always takes `0x28`.
+///
+/// A host with no spell table ([`BattleActionHost::spell_class_byte`] =
+/// `None`) cannot evaluate the first test, so it keeps `0x28` - retail's own
+/// non-override branch.
+///
+/// REF: FUN_801E295C (`0x801E2EB0..0x801E2F08`)
+fn magic_seed_band<H: BattleActionHost + ?Sized>(host: &H, actor_slot: u8) -> ActionState {
+    let spell_id = host.actor(actor_slot).map_or(0, |a| a.params[0]);
+    match host.spell_class_byte(spell_id) {
+        Some(class) if class < 0x14 && spell_id < 0x65 => ActionState::SpiritPreArm,
+        _ => ActionState::MagicCastBegin,
+    }
+}
+
+/// The **Item** arm's twin of [`magic_seed_band`] (`0x801E2E30..0x801E2EAC`).
+///
+/// Like the Magic arm it stores its default first (`0x3C` =
+/// [`ActionState::SpiritPreArm`], at `0x801E2E40`) and overrides only for one
+/// shape: `(id + 0x68) & 0xFF < 2`, i.e. item id `0x98` or `0x99`
+/// (`0x801E2E6C..0x801E2E78`). Those two take `0x28` instead, and the arm
+/// stages them as a **summon**: `actor[+0x1E0] = 9` (the sub-route byte the
+/// pre-cast wait tests to reach `SummonInvoke`) and `actor[+0x1DF] -= 2`, so
+/// the cast band sees id `0x96` / `0x97`.
+///
+/// Not ported from the same arm: the `jal 0x80056798` at `0x801E2E3C` and the
+/// `ctx[+0xD] = (rand % 2) * 2` it feeds. `BattleActionCtx` has no `+0xD`
+/// field and nothing in the engine reads one, so porting the store would be
+/// dead - but the **draw** is not dead, it advances the shared `rand()`
+/// cursor, and the port currently skips it. That is an RNG-stream divergence
+/// for every item action, tracked as its own gap rather than smuggled in
+/// here.
+///
+/// REF: FUN_801E295C (`0x801E2E30..0x801E2EAC`)
+fn item_seed_band<H: BattleActionHost + ?Sized>(host: &mut H, actor_slot: u8) -> ActionState {
+    let item_id = host.actor(actor_slot).map_or(0, |a| a.params[0]);
+    if item_id.wrapping_add(0x68) >= 2 {
+        return ActionState::SpiritPreArm;
+    }
+    if let Some(actor) = host.actor_mut(actor_slot) {
+        actor.sub_route = 9;
+        actor.params[0] = item_id.wrapping_sub(2);
+    }
+    ActionState::MagicCastBegin
+}
+
 pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -445,12 +517,8 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             // Skip - UI input chain handles the chain.
             ActionState::DoneCleanup
         }
-        ActionCategory::Item => {
-            // Item route - a runtime check on the param byte chooses between
-            // 0x3C and 0x28; default to 0x3C (the more common path).
-            ActionState::SpiritPreArm
-        }
-        ActionCategory::Magic => ActionState::MagicCastBegin,
+        ActionCategory::Item => item_seed_band(host, actor_slot),
+        ActionCategory::Magic => magic_seed_band(host, actor_slot),
         ActionCategory::Attack => {
             // Set ctx combo timer and emit weapon-slash UI for party.
             ctx.combo_timer = 2;

@@ -190,25 +190,49 @@ impl MonsterCatalog {
 /// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
 /// entry 867; see [`legaia_asset::monster_archive`]).
 ///
-/// Mapping traced from `FUN_80054CB0` (record→actor field copy) plus the
-/// damage / accuracy formulas (see `legaia_asset::monster_archive` and
-/// `docs/subsystems/battle-formulas.md`):
-/// - `attack` <- `rec.attack()` (`stats[1]`, record `+0x12`) - the value the
-///   physical-damage routine reads as the attacker's offense (actor `+0x158`).
-/// - `udf` / `ldf` <- `rec.defense_high()` / `rec.defense_low()` (`stats[2]` /
-///   `stats[3]`) - the two defense facets the routine selects by move index.
-/// - `intel` / `accuracy` / `evasion` <- `rec.intelligence()` (`stats[4]`,
-///   record `+0x18`; the bestiary INT stat) - `accuracy`/`evasion` clamp it to
-///   a byte; the actor seeds both the accuracy and evasion roll from this stat.
+/// # The stats are the **battle-load boosted** ones, not the raw record
 ///
-/// - `speed` <- `rec.speed()` (`stats[5]`, record `+0x1A`) - the turn-order
+/// The six combat stats come from [`MonsterRecord::battle_stats`], not from the
+/// raw record accessors. The raw record is not what the player fights: retail's
+/// record→actor copy `FUN_80054CB0` boosts four of the six *while copying*, and
+/// the actor fields the damage / initiative / interrupt kernels read are the
+/// post-boost ones. Seeding a catalog entry from the raw record therefore ships
+/// a materially weaker enemy than retail in every fight in the game.
+///
+/// The copy is a plain unrolled `lhu` / `sh` pair per stat (record `+0x0E`
+/// `+0x12` `+0x14` `+0x16` `+0x18` `+0x1A` into actor `+0x154`/`+0x156`,
+/// `+0x158`/`+0x15A`, `+0x15C`/`+0x15E`, `+0x160`/`+0x162`, `+0x168`/`+0x16A`,
+/// `+0x164`/`+0x166` - the second of each pair is the "base" mirror). It then
+/// tests the per-battle flag byte `_DAT_8007bd24 + 0x287` and runs one of two
+/// boost profiles, re-reading the *record* value and adding it to the
+/// already-stored actor value. Both profiles boost; the flag only picks which,
+/// and the port takes the gate-set one (`battle_stats`), which is what a live
+/// international-retail capture and the curated bestiary both reproduce.
+///
+/// Mapping (the six stats plus the reward / behaviour fields):
+/// - `attack` <- `battle_stats()[1]` = `ATK + (ATK >> 2)` (`x5/4`) - the value
+///   the physical-damage routine reads as the attacker's offense (actor
+///   `+0x158`).
+/// - `udf` / `ldf` <- `battle_stats()[2]` / `[3]` = `UDF * 2` / `LDF * 2` - the
+///   two defense facets the routine selects by move index.
+/// - `intel` / `accuracy` / `evasion` <- `battle_stats()[4]` =
+///   `INT + (INT >> 3)` (`x9/8`; the bestiary INT stat) - `accuracy`/`evasion`
+///   clamp it to a byte; the actor seeds both the accuracy and evasion roll
+///   from this stat.
+///
+/// - `speed` <- `battle_stats()[5]` = SPD, **copied unchanged** - the turn-order
 ///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
 ///   each living actor's per-turn key from it.
 ///
-/// - `agl` <- `rec.agility()` (`stats[0]`, record `+0x0E`) - the per-round
+/// - `agl` <- `battle_stats()[0]` = AGL, **copied unchanged** - the per-round
 ///   action gauge (actor `+0x154`). Together with `action_costs` it drives the
 ///   enemy multi-action budget (how many swings the monster lands per turn; see
 ///   [`legaia_engine_vm::battle_action::enemy_action_budget`]).
+///
+/// HP and MP are copied unchanged too, so they stay on the plain record fields.
+///
+/// PORT: FUN_80054CB0 (record→actor stat copy + the gate-set boost profile;
+/// the arithmetic itself is `MonsterRecord::battle_stats`)
 /// - `action_costs` <- the `+0x74` AGL cost of each of the monster's candidate
 ///   physical swing actions. The archive parses **every** action record into
 ///   [`legaia_asset::monster_archive::MonsterRecord::spells`]
@@ -225,12 +249,16 @@ impl MonsterCatalog {
 /// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
 /// percent in the record and converted to the engine's `1/256` rate.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
-    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.attack());
+    // The battle-load boosted profile (`FUN_80054CB0`), in record-stat order:
+    // `[AGL, ATK, UDF, LDF, INT, SPD]`. Every stat below that the live actor
+    // carries is taken from here, never from the raw record accessors.
+    let bs = rec.battle_stats();
+    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, bs[1]);
     def.mp = rec.mp;
-    def.udf = rec.defense_high();
-    def.ldf = rec.defense_low();
-    def.speed = rec.speed();
-    def.agl = rec.agility();
+    def.udf = bs[2];
+    def.ldf = bs[3];
+    def.speed = bs[5];
+    def.agl = bs[0];
     // The picker's physical branch counts a record as a candidate swing when its
     // tag byte (`+0x0`, parsed as `MonsterSpell::id`) is in `0x0C..=0x1F` and
     // its `+0x74` AGL cost is not the `0xFF` "not-an-attack" sentinel.
@@ -240,8 +268,8 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
         .filter(|s| (0x0C..=0x1F).contains(&s.id) && s.agl_cost != 0xFF)
         .map(|s| s.agl_cost)
         .collect();
-    def.intel = rec.intelligence();
-    let int_byte = rec.intelligence().min(u8::MAX as u16) as u8;
+    def.intel = bs[4];
+    let int_byte = bs[4].min(u8::MAX as u16) as u8;
     def.accuracy = int_byte;
     def.evasion = int_byte;
     def.exp = rec.exp;

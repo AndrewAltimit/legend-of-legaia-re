@@ -465,11 +465,24 @@ impl World {
     /// Without a disc image the answer is `false`, which keeps disc-free
     /// battles on the shared kernel exactly as before.
     fn is_capture_class_move(&self, move_id: u8) -> bool {
+        self.spell_table_class(move_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS)
+    }
+
+    /// The `+0` **class byte** of `move_id`'s record in the disc spell table
+    /// (`DAT_800754C8 + id*0xC`), or `None` when no disc table is installed.
+    ///
+    /// One accessor, two consumers, because retail keys two decisions on this
+    /// one byte: the damage-kernel pick above ([`Self::is_capture_class_move`],
+    /// class `'c'`) and the action-seed band pick
+    /// (`legaia_engine_vm::battle_action` `action_seed`'s Magic arm, which
+    /// compares the byte against `0x14`). The battle-action host reaches it
+    /// through `BattleActionHost::spell_class_byte`.
+    pub(in crate::world) fn spell_table_class(&self, move_id: u8) -> Option<u8> {
         self.menu_text
             .as_ref()
             .and_then(|t| t.spell_names.as_ref())
             .and_then(|t| t.entry(move_id))
-            .is_some_and(|e| e.is_capture_class())
+            .map(|e| e.class)
     }
 
     /// Roll a **capture-class boss cast** whose streamed module calls the
@@ -1314,6 +1327,185 @@ mod capture_bypass_tests {
         assert!(
             respect[0] > respect[respect.len() - 1],
             "defence must actually mitigate a respecting hit: {respect:?}"
+        );
+    }
+}
+
+/// The engine has exactly **one** spell model, and the battle-action state
+/// machine reads it.
+///
+/// This module exists because it did not: `World` carried a `spell_costs` map
+/// and a `capture_spells` set that nothing ever wrote, the battle-action host
+/// answered `spell_mp_cost` / `is_capture_spell` from them, and the whole live
+/// cast path answered the same two questions from
+/// [`World::spell_catalog`] and the disc spell table instead. Both halves
+/// compiled, both were tested, and the state-machine half was silently a
+/// free-magic stub.
+#[cfg(test)]
+mod one_spell_model_tests {
+    use super::*;
+    use crate::spells::SpellCatalog;
+    use crate::world::vm_hosts::BattleHostImpl;
+    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    use legaia_engine_vm::battle_action::BattleActionHost;
+
+    /// **The canary.** For every spell the catalog prices, the host the engine
+    /// actually installs must quote that exact price - so a spell the player
+    /// pays 24 MP for through the menu costs 24 MP through the state machine
+    /// too.
+    ///
+    /// A host method that has drifted off the catalog (wired to a table nobody
+    /// fills, deleted back to the trait default, pointed at a second model)
+    /// shows up here as a `0`, or as a mismatch.
+    #[test]
+    fn the_battle_host_prices_every_catalog_spell_exactly_as_the_catalog_does() {
+        let mut world = World::new();
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        let priced: Vec<(u8, u8)> = world
+            .spell_catalog
+            .iter()
+            .map(|s| (s.id, s.mp_cost))
+            .collect();
+        assert!(
+            priced.iter().filter(|(_, mp)| *mp > 0).count() >= 10,
+            "the fixture must actually price spells, or this test is vacuous"
+        );
+
+        let host = BattleHostImpl { world: &mut world };
+        for (id, mp) in priced {
+            assert_eq!(
+                host.spell_mp_cost(id),
+                mp,
+                "spell {id:#04x} is priced {mp} by the catalog the live cast path \
+                 charges from; the battle-action host must not answer anything else"
+            );
+            if mp > 0 {
+                assert_ne!(
+                    host.spell_mp_cost(id),
+                    0,
+                    "spell {id:#04x} costs MP - a host quoting 0 is free magic"
+                );
+            }
+        }
+    }
+
+    /// The same canary for the retail block: the ids a real save can actually
+    /// cast are priced by the host at their byte-exact SCUS costs.
+    #[test]
+    fn the_battle_host_prices_the_retail_seru_block() {
+        let mut world = World::new();
+        world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+        let host = BattleHostImpl { world: &mut world };
+        for s in crate::retail_magic::SERU_MAGIC {
+            assert_eq!(
+                host.spell_mp_cost(s.id),
+                s.mp,
+                "{} ({:#04x}) costs {} MP in retail",
+                s.name,
+                s.id,
+                s.mp
+            );
+        }
+    }
+
+    /// The state machine's capture route and the live path's damage-kernel
+    /// pick read the **same** class byte, so they cannot disagree about a
+    /// record. Contrast both ways: no table installed → neither fires.
+    #[test]
+    fn the_capture_route_and_the_kernel_pick_share_one_class_byte() {
+        const ID: u8 = 0x37;
+
+        let mut bare = World::new();
+        assert!(
+            !bare.is_capture_class_move(ID),
+            "no disc table: the kernel pick sees no capture class"
+        );
+        {
+            let host = BattleHostImpl { world: &mut bare };
+            assert!(
+                !host.is_capture_spell(ID),
+                "no disc table: the SM must not route to the capture branch either"
+            );
+        }
+
+        let mut world = World::new();
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[ID as usize].class = CAPTURE_CLASS;
+        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+        assert!(world.is_capture_class_move(ID));
+        let host = BattleHostImpl { world: &mut world };
+        assert!(
+            host.is_capture_spell(ID),
+            "the class byte that routes the damage kernel must also route the SM"
+        );
+        assert!(
+            !host.is_capture_spell(ID.wrapping_add(1)),
+            "and only that record - the predicate is per-id, not a constant"
+        );
+    }
+
+    /// The seed discriminator reads the same accessor: a low-id, low-class
+    /// record is the one shape retail sends to the Spirit band instead of the
+    /// magic band.
+    #[test]
+    fn the_seed_discriminator_reads_the_same_class_byte() {
+        let mut world = World::new();
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[0x10].class = 0x02; // < 0x14, id < 0x65 -> Spirit band
+        entries[0x11].class = 0x32; // >= 0x14          -> magic band
+        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+        let host = BattleHostImpl { world: &mut world };
+        assert_eq!(host.spell_class_byte(0x10), Some(0x02));
+        assert_eq!(host.spell_class_byte(0x11), Some(0x32));
+        assert_eq!(
+            host.spell_class_byte(0x81),
+            Some(0),
+            "an unpopulated record still exists - only a missing table is None"
+        );
+    }
+
+    /// MP is charged **once**, by whichever path runs the cast.
+    ///
+    /// The live path debits in [`World::cast_spell_on_slots`]; the state
+    /// machine debits at `MagicCastBegin` / `SpiritPreArm` from
+    /// `spell_mp_cost`. They now quote the same number, which is what makes
+    /// "run both for one cast" a visible double charge rather than a silent
+    /// discrepancy - and why the live path parks at `EndOfAction` instead of
+    /// entering the magic band.
+    #[test]
+    fn both_cast_paths_quote_the_same_price_so_a_double_charge_would_be_visible() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+        for i in 0..2usize {
+            let a = world.spawn_actor(i);
+            a.battle.liveness = 1;
+            a.battle.hp = 500;
+            a.battle.max_hp = 500;
+            a.battle.mp = 100;
+        }
+        let def = world
+            .spell_catalog
+            .get(0x82)
+            .cloned()
+            .expect("Theeder is in the retail block");
+        assert_eq!(def.mp_cost, 24);
+
+        world.cast_spell_on_slots(0, &def, &[1]);
+        let live_charge = 100 - world.actors[0].battle.mp;
+        assert_eq!(live_charge, 24, "the live path charges the catalog price");
+
+        let host = BattleHostImpl { world: &mut world };
+        assert_eq!(
+            host.spell_mp_cost(0x82) as u16,
+            live_charge,
+            "the state machine would charge the very same MP for this cast"
         );
     }
 }

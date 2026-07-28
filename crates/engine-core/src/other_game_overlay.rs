@@ -12,15 +12,28 @@
 //!
 //! # NOT WIRED
 //!
-//! The overlay's *data* is reachable - `legaia_engine_ui::other_game_hud`
-//! parses PROT 0977's sprite descriptor table straight off the raw entry and
-//! the browser dome page consumes it - so "no PROT 0977 host" is not the
-//! blocker. What has no analogue is the overlay's per-frame **update**: these
-//! two kernels are driven by the door/init module's own counter block
-//! (`DAT_801D1AB4` boost flag, `DAT_801D1AE4` voice cursor), and the engine's
-//! [`crate::muscle_dome`] session models the arena's *match* rules - which
-//! live in the battle overlay, not here - and never runs a 0977 tick. Wiring
-//! needs that tick, not another parser.
+//! The overlay's *data* is reachable, and so are its screens: the browser
+//! dome page draws PROT 0977's hub screens through
+//! `legaia_engine_ui::other_game_hud`. What has no analogue is the one
+//! **tick** these two kernels belong to, and it is now identified rather
+//! than merely missing.
+//!
+//! Their caller is `FUN_801CF074` (true VA; the `801c085c` dump is mis-based
+//! by `+0xE818`), the contest **score-tally screen** - four count-up lanes
+//! that roll pending values into a sink, one [`step_scale`] step per lane
+//! per frame with an [`arena_voice_cue`] blip per step, lane 3's sink being
+//! the running score tally `_DAT_80084440` that
+//! [`crate::muscle_dome::settle_contest`] settles. The screen's layout is
+//! decoded (`other_game_hud::HUB_SCORE_TALLY_LABELS` /
+//! `score_tally_quads`), so the geometry half is done.
+//!
+//! What is missing is what the six rows *hold*. Retail fills them from a
+//! per-leg score breakdown the port does not compute: the session is a
+//! single fight with no course id, no round progression and no per-round
+//! scoring, so a tally driven today would be counting invented numbers up.
+//! The blocker is the course run, the same one
+//! [`crate::muscle_dome::settle_contest`] waits on - not another parser and
+//! not a renderer.
 
 /// Threshold above which the unslowed step is divided by five.
 pub const STEP_FAST_MIN: i32 = 6;

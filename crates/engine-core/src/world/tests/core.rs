@@ -119,6 +119,34 @@ fn battle_party_wipe_signals_end_via_world() {
     world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
     let out = world.tick();
     assert_eq!(out, Some(StepOutcome::BattleComplete));
+    // `tick` drives the battle to resolution unconditionally (see
+    // `frame_tick.rs`'s Battle arm), so the raised cause is consumed by
+    // `finish_battle` in the same tick: `battle_end` clears, `game_over`
+    // latches, and the world leaves battle mode. Read the *effect* of the
+    // wipe, not the transient cause byte.
+    assert_eq!(world.battle_end, None, "the cause is consumed on resolve");
+    assert!(world.game_over, "a party wipe raises game over");
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "battle mode is left on resolve"
+    );
+}
+
+/// The cause byte itself, read at the step that raises it - the half the
+/// test above can no longer observe now that `tick` resolves the battle.
+#[test]
+fn battle_party_wipe_raises_party_wipe_cause_on_the_step() {
+    let mut world = World::new();
+    world.mode = SceneMode::Battle;
+    for i in 0..3 {
+        world.actors[i].battle.liveness = 0;
+    }
+    for i in 3..8 {
+        world.actors[i].battle.liveness = 1;
+    }
+    world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+    assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
     assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
 }
 

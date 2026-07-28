@@ -535,7 +535,7 @@ browser for `site/minigames.html`. It is a thin JSON shell over the
 clean-room rules engines in `legaia-engine-core` - the beat clock + judge
 (`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
 machine + payout eval (`slot_machine`), the cast/tension/catch loop
-(`fishing`), and the card-battle deal/commit/resolve (`muscle_dome`). It
+(`fishing`), and the dome's four-turn deal/commit/resolve (`muscle_dome`). It
 carries no rules of its own.
 
 Every table each game plays with is decoded from the visitor's own disc via
@@ -549,7 +549,7 @@ Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
 `slot_collect` / `fishing_advance_cast` + `fishing_lock_cast` +
 `fishing_reel` + `fishing_recast` / `muscle_commit` +
-`muscle_end_selection` + `muscle_resolve` + `muscle_next_round`) /
+`muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. `load_disc` returns a status object naming which games'
 overlays resolved, so a disc that can't feed one game still plays the
 others. `dance_state_json` deliberately surfaces **both** halves of retail's
@@ -694,6 +694,51 @@ plus an import path (user-supplied YAML) and `export_lang_pack` (dump a
 source-bearing working pack from the user's own disc to author one) and
 `validate_lang_pack` (disc-measured dry run before patching). The packs are
 static assets fetched from `site/lang/`, never bundled into the WASM.
+
+### Texture replacement (`texture_registry`, `texture_pack`)
+
+The same page swaps textures for the user's own PNGs. Which *families* of
+texture exist is data, not control flow: `texture_registry` declares one
+`Tier` per family - its id, how it enumerates rows, how a row decodes to
+RGBA, and how a row resolves to a write - and `scan_textures` /
+`preview_texture_replace` / `apply_texture_replacements` iterate the registry
+rather than branching on a family. Adding a family is adding a `Tier`.
+
+Families are not all the same shape, which is why the registry exists. Two are
+standard PSX TIMs (raw in a PROT entry, or inside an LZS section) and share one
+writer. Save-slot portraits are tiles of a shared sheet addressed by slot, with
+their own writer. The summon / readef pages (PROT 893/894) are not TIMs at all -
+no TIM scan reaches them - and are listed and exportable but read-only, because
+this build has a decoder for that format and no encoder. The battle character
+art (PROT 863..866, `legaia_asset::battle_texture_catalog`) is likewise
+headerless and likewise invisible to a TIM scan, but does have an encoder, so
+it is replaceable - against its record's own slot allocation rather than a
+stream length, which is a budget that can genuinely be missed. A `Tier` says
+which it is, and a family that declares itself read-only cannot resolve a
+write.
+
+A row carries derived metadata only: coordinates, dimensions, palette count,
+byte length, VRAM placement, a label, and an FNV-1a-64 fingerprint of the
+stored bytes. A label is either curated - [`tim_labels`](../asset/README.md),
+keyed by fingerprint - or composed per row from disc data, which is why it is a
+`Cow`: the battle-art tier joins each block to the equipment it dresses, so
+`ScanCtx` carries the disc's `SCUS_942.54` item-name table alongside
+`PROT.DAT`. That join is what makes the family searchable by the word a person
+would actually type. The scan is a streaming pass into a caller sink -
+full-size pixels for every texture on the disc would not fit in 32-bit WASM
+memory - and `ScanCtx` keeps exactly one decompressed entry, which is enough
+because the compressed tier's rows arrive grouped by entry.
+
+`texture_pack` is the shareable form: one pretty-printed JSON file holding the
+user's replacement PNGs plus, per entry, the coordinates and fingerprint of the
+retail texture each replaces. It never contains retail pixels, so a pack is
+publishable. Import resolves each entry against the user's *current* image and
+grades it (`ok` / `unknown-family` / `not-found` / `hash-mismatch` /
+`size-mismatch`), so a different disc revision - or a texture the user already
+patched - is reported instead of silently overwritten. The format is versioned
+from v1 and a reader refuses a newer one rather than half-applying it. The page
+also keeps the queue in `localStorage` in exactly this format, so persistence
+and sharing are the same code path.
 
 `LegaiaViewer::monster_archive_json` decodes the global monster stat
 archive (PROT entry 867, extended footprint) into a JSON array of every

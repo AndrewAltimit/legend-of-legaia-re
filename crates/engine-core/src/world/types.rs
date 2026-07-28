@@ -301,8 +301,8 @@ pub enum SceneMode {
     /// exit. Retail `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame
     /// door-warp) for the Baka Fighter overlay (PROT 0976).
     BakaFighter,
-    /// Muscle Dome card-battle contest - the hand-select / commit / resolve
-    /// loop owns the frame ([`crate::muscle_dome::MuscleDomeSession`]); field
+    /// Muscle Dome contest, an ordinary battle fought to a KO - the direction-entry /
+    /// commit / resolve loop owns the frame ([`crate::muscle_dome::MuscleDomeSession`]); field
     /// / battle dispatch is suspended and the interrupted mode restored on
     /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
     /// on the `_DAT_8007bd24` context, entered through the mode-24 sub-id-5

@@ -18,7 +18,9 @@
 //! 4. **Drive the battle SM through to victory.** Loops [`World::tick`]
 //!    while applying clean-room formula damage (the same pattern as
 //!    `battle_full_playthrough.rs`) until every monster slot reaches 0
-//!    HP. Asserts the SM resolves to `BattleEndCause::MonsterWipe`.
+//!    HP. `World::tick` resolves the battle in the frame it completes, so
+//!    the assertions read the effects of a monster wipe (no `game_over`,
+//!    back in `SceneMode::Field`, party HP persisted into the records).
 //! 5. **Apply post-battle rewards.** Calls [`World::apply_battle_loot`]
 //!    with the formation + catalog. Asserts at least one party slot
 //!    leveled up against the retail XP table when the formation reward
@@ -44,7 +46,7 @@ use legaia_engine_core::monster_catalog::{
     FormationDef, MonsterCatalog, vanilla_formation_table, vanilla_monster_catalog,
 };
 use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, ActorFlags, BattleEndCause, StepOutcome};
+use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
 use legaia_engine_vm::battle_formulas::{accuracy_roll, psyq_rand_step};
 use legaia_save::{CharacterRecord, HpMpSp, Party, SaveExt, SaveExtV2, SaveFile};
 
@@ -356,20 +358,31 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // 4. Drive the battle SM until victory.
     let strikes = drive_battle_to_victory(&mut world).expect("battle should resolve");
     assert!(strikes > 0, "expected at least one formula strike landed");
+    // `World::tick` drives the battle to resolution itself, so the transient
+    // `battle_end` cause is already consumed by `finish_battle` - assert the
+    // effects a monster wipe leaves behind instead.
+    assert!(!world.game_over, "a monster wipe is not a party wipe");
     assert_eq!(
-        world.battle_end,
-        Some(BattleEndCause::MonsterWipe),
-        "SM should resolve into MonsterWipe after every monster falls"
+        world.mode,
+        SceneMode::Field,
+        "a resolved battle returns to the field"
     );
     let alive = (3..8)
         .filter(|i| world.actors[*i as usize].battle.liveness != 0)
         .count();
     assert_eq!(alive, 0, "no monster should remain alive after victory");
 
-    // Resync HP/MP back into the roster so save_full sees the post-battle
-    // state for the party (the SM updates BattleActor mirrors but not the
-    // record copy until save_party fires).
-    let _ = world.save_party();
+    // NO test-side HP/MP resync here: `finish_battle` persists the party's
+    // post-battle HP / MP into the roster records itself. This used to be a
+    // `world.save_party()` call carrying a comment that said exactly what the
+    // engine was failing to do.
+    for slot in 0..3usize {
+        assert_eq!(
+            world.roster.members[slot].hp_mp_sp().hp_cur,
+            world.actors[slot].battle.hp,
+            "slot {slot}: finish_battle must persist post-battle HP into the record"
+        );
+    }
 
     // 5. Apply post-battle rewards.
     let rewards = world.apply_battle_loot(&formation, &catalog);
@@ -1030,9 +1043,10 @@ fn real_battle_data_encounter_drives_loop() {
     enter_battle(&mut world, &formation, &catalog);
     let strikes = drive_battle_to_victory(&mut world).expect("battle resolves");
     assert!(strikes > 0);
-    assert_eq!(world.battle_end, Some(BattleEndCause::MonsterWipe));
+    // `tick` resolves the battle itself; the cause byte is consumed with it.
+    assert!(!world.game_over, "a monster wipe is not a party wipe");
+    assert_eq!(world.mode, SceneMode::Field);
 
-    let _ = world.save_party();
     let rewards = world.apply_battle_loot(&formation, &catalog);
     assert!(rewards.xp > 0);
     assert!(world.money > 0);

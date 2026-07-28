@@ -803,7 +803,13 @@
       const packNote = stat.tmd_pack_count > 1
         ? ` · 1 of ${stat.tmd_pack_count} meshes in the scene pack`
         : '';
-      summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${packNote}${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
+      /* What the mesh is, when the bare shape would mislead: the
+       * scene_tmd_stream entries are battle-stage backdrop shells authored as
+       * HALF a bowl, open toward whichever side the retail camera looks from.
+       * Unlabelled, that reads as a broken parse - it is the authored shape.
+       * The open side is measured from the vertex pool by the WASM side. */
+      const shapeNote = stat.tmd_note ? ` · ${stat.tmd_note}` : '';
+      summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${shapeNote}${packNote}${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
     }
     info.innerHTML = `<b>PROT ${stat.prot_index}</b> · ${summary} · slot ${stat.slot + 1}/${allEntries.length}`;
     list.querySelectorAll('li').forEach(li => li.classList.remove('active'));

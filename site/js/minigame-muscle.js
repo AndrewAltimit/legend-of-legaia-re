@@ -67,7 +67,7 @@
  * INTERVAL/ROUND headings from the dome's own data file (extraction 1220)
  * through the PROT 0977 overlay's sprite descriptor table
  * (engine-ui::other_game_hud). Screen geometry comes from the SCUS-static
- * battle HUD element table (0x80076C10) plus a live PCSX-Redux packet
+ * screen-element placement table (0x80076C10) plus a live PCSX-Redux packet
  * capture of a dome match (command cluster, enemy art, player HYPER ARTS!!
  * playback - scripts/pcsx-redux/autorun_muscle_hud_capture.lua).
  * The ARTS COMMAND INPUT is packet-pinned end to end (a recomp
@@ -312,11 +312,33 @@ window.MgMuscle = (function () {
       blit(3, p.pal, p.r[0], p.r[1], p.r[2], p.r[3], x, y, dw, dh);
       return dw || p.r[2];
     }
-    /* One dome-hub sprite (PROT 0977 descriptor record) at 1:1. */
-    function hubSprite(i, dx, dy, dw, dh) {
-      const r = hudMeta.hub && hudMeta.hub[i];
-      if (!r) return false;
-      return blit(r.sheet, r.pal, r.uv[0], r.uv[1], r.wh[0], r.wh[1], dx, dy, dw, dh);
+    /* A whole PROT 0977 hub screen, placed by retail rather than by us.
+     * The engine runs the overlay's own quad emitters (FUN_801D050C /
+     * FUN_801D08EC / FUN_801D1308) over the draw list recovered from that
+     * entry's call sites, so both the extent and the screen seat of every
+     * piece are disc-derived; the page only submits the resulting rects.
+     * `screen`: 0 intro card, 1 title art, 2 INTERVAL, 3 ROUND banner,
+     * 4 score tally. Returns the number of quads drawn (0 = unavailable,
+     * so the caller can fall back to its procedural text). */
+    const hubQuadCache = new Map();
+    function hubQuads(screen, arg, brightness) {
+      if (!api || !api.muscle_hub_quads_json) return 0;
+      const key = screen + ':' + (arg | 0) + ':' + (brightness | 0);
+      let m = hubQuadCache.get(key);
+      if (m === undefined) {
+        try {
+          m = JSON.parse(api.muscle_hub_quads_json(screen, arg | 0, brightness | 0));
+        } catch (e) {
+          m = { ok: false };
+        }
+        hubQuadCache.set(key, m);
+      }
+      if (!m.ok || !m.quads || !m.quads.length) return 0;
+      let n = 0;
+      for (const q of m.quads) {
+        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh)) n++;
+      }
+      return n;
     }
 
     /* Retail chip: 3-slice plate (8px caps + 16px body slices, 20 tall)
@@ -991,12 +1013,12 @@ window.MgMuscle = (function () {
         artsBanner = null;
         finishPlayback();
       } else if (mode === 'interval') {
-        api.muscle_next_round();
+        api.muscle_next_turn();
         const s2 = st();
         if (s2.phase === 'select') {
           mode = 'select';
           selectSub = 'menu';
-          setBanner('ROUND ' + (s2.round + 1), null, 70);
+          setBanner('ROUND ' + (s2.turn + 1), null, 70);
         }
       } else if (mode === 'decided') {
         if (lastOpts) start(lastOpts);
@@ -1052,7 +1074,7 @@ window.MgMuscle = (function () {
 
     function finishPlayback() {
       const state = st();
-      if (state.phase === 'round_over') {
+      if (state.phase === 'turn_over') {
         mode = 'interval';
       } else if (state.phase === 'won' || state.phase === 'lost') {
         mode = 'decided';
@@ -1061,12 +1083,23 @@ window.MgMuscle = (function () {
           play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].ko, true);
         }
         if (state.phase === 'won') {
-          /* Retail victory banner wording (FUN_801d8de8 case 0x59 composes
-           * "...acquired the power of..." + the reward spell name out of the
-           * shared spell-name table). */
-          const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
-          setBanner('YOU WIN!', spell
-            ? state.names[0] + ' acquired the power of ' + spell + '! — SPACE for a rematch'
+          /* Retail's own victory banner, composed the way retail composes
+           * it: the winning fighter's lead-in line from the PROT 0898
+           * victory-message table, the reward spell's name, then the fixed
+           * suffix - FUN_801D8DE8 case 0x59's three-part assembly, whose
+           * standalone twin FUN_801DBA90 the engine decodes. Falls back to
+           * the spell name alone when the overlay strings don't resolve. */
+          let sub = '';
+          try {
+            const b = JSON.parse(api.muscle_reward_banner_json());
+            if (b && b.ok && b.text) sub = b.text;
+          } catch (e) { sub = ''; }
+          if (!sub) {
+            const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
+            sub = spell ? state.names[0] + ' — ' + spell : '';
+          }
+          setBanner('YOU WIN!', sub
+            ? sub + ' — SPACE for a rematch'
             : 'SPACE for a rematch', 100000, 'good');
         } else {
           setBanner('YOU LOSE', 'SPACE for a rematch', 100000, 'bad');
@@ -1209,8 +1242,8 @@ window.MgMuscle = (function () {
       const a = Math.min(1, introT / 25);
       g.save();
       g.globalAlpha = a;
-      if (hudOk() && hubSprite(3, (320 - 240) / 2, 112)) {
-        /* drawn */
+      if (hudOk() && hubQuads(0, 0, 0x100)) {
+        /* drawn - retail seats the strip centred on (160, 120) */
       } else {
         g.font = 'italic ' + (15 * 2) + 'px "Brush Script MT", "Segoe Script", "Comic Sans MS", cursive';
         g.textAlign = 'center';
@@ -1748,10 +1781,10 @@ window.MgMuscle = (function () {
     }
 
     /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
-     * the commit/playback phase (`ctx+6 == 0x50`) runs and drains otherwise,
-     * mapped to a 160-px bar (`counter * 160 / 12`). The ramp + mapping are
-     * traced (port `engine-core::muscle_dome::time_meter_step`); the screen
-     * placement is fitted. */
+     * the direction-ENTRY phase (`ctx+6 == 0x50`) runs and drains otherwise,
+     * mapped to a 160-px bar (`counter * 160 / 12`). The counter comes from
+     * the port (`engine-core::muscle_dome::time_meter_step`, through
+     * `muscle_tick_time_meter`); only the screen placement is fitted. */
     function drawTimeMeter() {
       const hFull = 160;
       const hh = Math.round(meter * hFull / 12);
@@ -1765,6 +1798,17 @@ window.MgMuscle = (function () {
       text('TIME', x + 3, yBot + 7, 6, '#aeb6c4', 'center', '');
     }
 
+    /* Filled horizontal bar in 320x240 screen space (the canvas is 2x). */
+    function gaugeBar(x, y, w, h, frac, fill) {
+      const f = Math.max(0, Math.min(1, frac || 0));
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(x * 2, y * 2, w * 2, h * 2);
+      g.fillStyle = fill;
+      g.fillRect(x * 2, y * 2, Math.round(w * f) * 2, h * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
+      g.strokeRect(x * 2 + 0.5, y * 2 + 0.5, w * 2, h * 2);
+    }
+
     function drawInterval(state) {
       g.fillStyle = 'rgba(4,6,10,0.82)';
       g.fillRect(30 * 2, 52 * 2, 260 * 2, 136 * 2);
@@ -1774,27 +1818,29 @@ window.MgMuscle = (function () {
        * sprite (PROT 0977 record 16) off the dome data file. The panel's
        * info layout below is a page aid (the retail interval screen's own
        * layout is uncaptured). */
-      if (!(hudOk() && hubSprite(16, (320 - 192) / 2, 56))) {
+      if (!(hudOk() && hubQuads(2, 0, 0x100))) {
         text('INTERVAL', 160, 64, 10, '#ffd166', 'center');
       }
-      text('round ' + (state.round + 1) + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
-      /* The retail score readout: hp * 0x6c / max (FUN_801d0748 phase 0x6e),
-       * rendered per fighter out of 108. */
-      text('score  ' + state.names[0] + ' ' + state.score[0] + '/108' +
-        '   ·   ' + state.names[1] + ' ' + state.score[1] + '/108',
-        160, 84, 7, '#e8ecf2', 'center', '');
+      text('turn ' + state.turn + ' settled', 160, 75, 6, '#aeb6c4', 'center', '');
+      /* The OPPONENT's HP percentage (hp * 100 / max). Retail pairs this
+       * number with a "Turns Left" digit, but only in the one fight whose
+       * formation slot 0 is monster 0xB6 (Koru) - the dome ladder tops out
+       * at 0xAA, so no dome round raises that strip. The leg is won by
+       * emptying this bar, with no turn limit to beat. */
+      text('HP Left: ' + state.hp_left + '%', 160, 86, 9, '#ffd166', 'center');
+      gaugeBar(80, 94, 160, 6, state.hp_left / 100, '#d84b4b');
       text('damage taken   you ' + state.last_damage[0] +
-        '  ·  foe ' + state.last_damage[1], 160, 100, 7, '#e8ecf2', 'center', '');
+        '  ·  foe ' + state.last_damage[1], 160, 110, 7, '#e8ecf2', 'center', '');
       /* Spirit recovered this contest - the +0x170 gauge each hit fills
        * (spirit_gauge_fill); the interval framing itself is approximated. */
       text('spirit gauge   you ' + state.spirit[0] + '/100' +
-        '  ·  foe ' + state.spirit[1] + '/100', 160, 116, 7, '#7798d4', 'center', '');
+        '  ·  foe ' + state.spirit[1] + '/100', 160, 124, 7, '#7798d4', 'center', '');
       const q0 = state.queue[0].length, q1 = state.queue[1].length;
       text('commands played   you ' + q0 + '  ·  foe ' + q1,
-        160, 132, 7, '#aeb6c4', 'center', '');
-      text('budget reseeds from your AGL pool next round',
-        160, 152, 6, '#aeb6c4', 'center', '');
-      text('SPACE: next round', 160, 172, 8, '#2dcca7', 'center');
+        160, 138, 7, '#aeb6c4', 'center', '');
+      text('AP reseeds from your AGL pool next turn',
+        160, 154, 6, '#aeb6c4', 'center', '');
+      text('SPACE: next turn', 160, 172, 8, '#2dcca7', 'center');
     }
 
     function drawBanner() {
@@ -1806,18 +1852,15 @@ window.MgMuscle = (function () {
       g.globalAlpha = Math.max(0, Math.min(1, a));
       /* "ROUND n": the retail hub art - the 144x32 ROUND word (PROT 0977
        * record 0) + the hub 24x32 digit strip (record 1, u = digit*24). */
+      /* The retail banner is FUN_801D02F0: the ROUND word centred on
+       * (120, 120) and the round number's glyphs at x=240 (and x=264 for a
+       * second digit), every piece drawn twice - variant 1 then variant 2 -
+       * which is what gives the word its two-tone edge. The digit glyph is
+       * record 1, not the decimal readout's record 9, and its column is
+       * digit*24 (FUN_801D15C8). */
       const round = /^ROUND (\d+)$/.exec(banner.text);
-      if (round && hudOk() && hudMeta.hub && hudMeta.hub[1]) {
-        const num = round[1];
-        const total = 144 + 10 + num.length * 24;
-        const x0 = (320 - total) / 2;
-        hubSprite(0, x0, 56);
-        const d1 = hudMeta.hub[1];
-        for (let i = 0; i < num.length; i++) {
-          const dgt = num.charCodeAt(i) - 48;
-          blit(d1.sheet, d1.pal, dgt * 24, d1.uv[1], 24, 32,
-            x0 + 154 + i * 24, 56);
-        }
+      if (round && hudOk() && hubQuads(3, parseInt(round[1], 10), 0x100)) {
+        /* drawn */
       } else {
         const col = banner.cls === 'good' ? '#2dcca7'
           : banner.cls === 'bad' ? '#d84b4b' : '#ffd166';
@@ -1899,11 +1942,14 @@ window.MgMuscle = (function () {
       }
       runTickTimers();
 
-      /* Round time meter: ramp while the round is playing out, drain
-       * otherwise (the FUN_801d3444 shape, one step per tick). */
-      meter = mode === 'playback'
-        ? Math.min(12, meter + 1)
-        : Math.max(0, meter - 1);
+      /* Round time meter (FUN_801d3444): the ported ramp owns it - it climbs
+       * while the DIRECTION-ENTRY phase runs (retail gates on ctx+6 == 0x50)
+       * and drains otherwise. An earlier revision here ramped during
+       * PLAYBACK, which is the inverse of retail. */
+      if (api.muscle_tick_time_meter) {
+        api.muscle_tick_time_meter(1);
+        meter = st().time_meter | 0;
+      }
 
       /* Ease the HP bars toward their targets. */
       /* (targets are set per landed event; outside playback follow state) */
@@ -1998,7 +2044,7 @@ window.MgMuscle = (function () {
       } else if (mode === 'decided') {
         drawStatusPlate(state);
       }
-      if (meter > 0 && mode === 'playback') drawTimeMeter();
+      if (meter > 0) drawTimeMeter();
       drawPopups();
       drawBanner();
     }

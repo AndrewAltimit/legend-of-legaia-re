@@ -4,7 +4,68 @@
 
 use super::*;
 
+/// One line of the post-battle spoils panel's variable block, already
+/// resolved against the world's item catalog / roster.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BattleSpoilsBanner {
+    pub xp: u32,
+    pub gold: u32,
+    /// `"<name> drop"` lines - one per item the loot roll surfaced.
+    pub drops: Vec<String>,
+    /// `"<name> is now level N"` lines - one per character that crossed a
+    /// threshold in this battle's XP grant.
+    pub level_ups: Vec<String>,
+}
+
 impl World {
+    /// How long the post-battle spoils panel stays up, in sim ticks
+    /// (~3 s at the 100 Hz sim clock).
+    pub const SPOILS_BANNER_FRAMES: u16 = 300;
+
+    /// The post-battle spoils panel a host should be drawing this frame, or
+    /// `None` when the panel is not up.
+    ///
+    /// Resolves drop item ids through [`Self::item_catalog`] and level-up
+    /// character slots through [`Self::roster`], so a host needs no table of
+    /// its own. Falls back to `Item <id>` / `Member <n>` when a name is
+    /// unavailable (a disc-free build's synthetic catalog).
+    pub fn battle_spoils_banner(&self) -> Option<BattleSpoilsBanner> {
+        if self.battle_spoils_frames == 0 {
+            return None;
+        }
+        let r = self.last_battle_rewards.as_ref()?;
+        let drops = r
+            .drops
+            .iter()
+            .map(|&id| {
+                self.item_catalog
+                    .get(id)
+                    .map(|it| it.name.to_string())
+                    .unwrap_or_else(|| format!("Item {id}"))
+            })
+            .collect();
+        let level_ups = r
+            .level_ups
+            .iter()
+            .map(|lu| {
+                let slot = lu.char_id as usize;
+                let name = self
+                    .roster
+                    .members
+                    .get(slot)
+                    .map(|m| m.name())
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| format!("Member {}", slot + 1));
+                format!("{name} is now level {}", lu.new_level)
+            })
+            .collect();
+        Some(BattleSpoilsBanner {
+            xp: r.xp,
+            gold: r.gold,
+            drops,
+            level_ups,
+        })
+    }
     /// Resolve a finished battle and return to the field.
     ///
     /// On [`BattleEndCause::MonsterWipe`] applies loot (XP / gold / drops /
@@ -23,6 +84,9 @@ impl World {
             let rewards = self.apply_battle_loot(&formation, &catalog);
             self.monster_catalog = catalog;
             self.last_battle_rewards = Some(rewards);
+            // Arm the spoils panel. The numbers were always applied; nothing
+            // ever told the player about them.
+            self.battle_spoils_frames = Self::SPOILS_BANNER_FRAMES;
         }
         if self.battle_end == Some(BattleEndCause::PartyWipe) {
             self.game_over = true;
@@ -66,11 +130,24 @@ impl World {
         self.battle_shout_cues.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
-        // Restore the field actor table captured at the transition.
+        // Persist the battle's party HP / MP into the roster records BEFORE the
+        // field actor table is restored. The battle mutates the `BattleActor`
+        // mirrors on `self.actors`, and the restore below overwrites the whole
+        // table with the pre-battle clone - so without this every fight ended
+        // with the party back at full health and a party wipe was unobservable.
+        // `persist_battle_party_hp` is the party-band-scoped sibling of
+        // `save_party` - scoped precisely because the actor slots past the
+        // party band are monsters while a battle is up.
+        self.persist_battle_party_hp();
+        // Restore the field actor table captured at the transition, then push
+        // the just-persisted HP / MP back onto the restored party actors so the
+        // field-side mirrors agree with the records (the clone carries the
+        // pre-battle values).
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
             self.party_count = ret.party_count;
+            self.resync_party_actors_from_roster();
         }
         // Return to the mode the battle was entered from (the field for a
         // field encounter, the overworld for a world-map encounter), then

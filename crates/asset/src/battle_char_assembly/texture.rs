@@ -200,11 +200,33 @@ pub const RECORD0_TEXTURE_RECTS: [TextureRect; 2] = [
     },
 ];
 
+/// Bits per pixel of every battle-texture upload block's pixel half. The
+/// party band is authored entirely at 4bpp, so one VRAM halfword of a
+/// [`TextureRect`] carries [`TEXELS_PER_HALFWORD`] texels.
+pub const UPLOAD_BPP: u32 = 4;
+
+/// Texels packed into one VRAM halfword at [`UPLOAD_BPP`] (low nibble
+/// first) - the factor between a rect's halfword `w` and its pixel width.
+pub const TEXELS_PER_HALFWORD: usize = 4;
+
+/// CLUT entries one 4bpp palette consumes. A block's `clut_n` is a
+/// multiple of this: the retail files carry 1, 2, 3 or 15 palettes in a
+/// single run, and a mesh primitive's CBA column picks which one it
+/// samples.
+pub const CLUT_ENTRIES_PER_PALETTE: usize = 16;
+
 /// One decoded battle-texture upload block in the `FUN_80053B9C` frame:
 /// `[u16 clut_x][u16 clut_n][clut_n x u16 BGR555][w*h halfwords pixels]`.
 /// The CLUT half LoadImages to `(clut_x, 0x1E1 + party_slot, clut_n, 1)`
 /// with the STP bit forced on every non-zero entry; the pixel half
 /// LoadImages to the rect's banded `(fb_x, fb_y, w, h)`.
+///
+/// **This block is not a TIM.** It carries no `0x10` magic, no flag word
+/// and no per-half block headers - the geometry lives in the caller's
+/// placement rect, not in the bytes - so every TIM-keyed discovery path
+/// misses it by construction. [`crate::battle_texture_catalog`] is the
+/// tier that finds it; see `docs/formats/battle-data-pack.md`
+/// § Texture-pool upload blocks.
 #[derive(Debug, Clone)]
 pub struct TextureUpload {
     /// Placement rect (pre-band frame; see [`TextureRect`]).
@@ -214,7 +236,9 @@ pub struct TextureUpload {
     /// VRAM x (halfwords) of the CLUT run on row `0x1E1 + party_slot`.
     pub clut_x: u16,
     /// CLUT entries with the retail STP pass applied (`e |= 0x8000` on
-    /// every non-zero entry). Empty in both `record[0]` blocks.
+    /// every non-zero entry). May be empty - a block whose `clut_n` is 0
+    /// uploads pixels only and samples a palette some sibling block
+    /// installed (retail `PLAYER1`'s first `record[0]` block is one).
     pub clut: Vec<u16>,
     /// Pixel payload (`rect.w * rect.h` halfwords, row-major).
     pub pixels: Vec<u8>,
@@ -240,6 +264,89 @@ impl TextureUpload {
     /// CLUT entries as little-endian bytes (ready for a VRAM row write).
     pub fn clut_bytes(&self) -> Vec<u8> {
         self.clut.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
+    /// Pixel width in texels (`rect.w` halfwords x
+    /// [`TEXELS_PER_HALFWORD`]).
+    pub fn pixel_width(&self) -> usize {
+        self.rect.w as usize * TEXELS_PER_HALFWORD
+    }
+
+    /// Pixel height in rows (= `rect.h`).
+    pub fn pixel_height(&self) -> usize {
+        self.rect.h as usize
+    }
+
+    /// How many 16-colour palettes the CLUT run holds.
+    pub fn palette_count(&self) -> usize {
+        self.clut.len() / CLUT_ENTRIES_PER_PALETTE
+    }
+
+    /// One 16-entry palette of the CLUT run.
+    pub fn palette(&self, index: usize) -> Result<&[u16]> {
+        let start = index * CLUT_ENTRIES_PER_PALETTE;
+        self.clut
+            .get(start..start + CLUT_ENTRIES_PER_PALETTE)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "palette {index} out of range: this block carries {} ({} CLUT entries)",
+                    self.palette_count(),
+                    self.clut.len()
+                )
+            })
+    }
+
+    /// Byte size the block occupies in its decoded record
+    /// (`4 + clut_n*2 + w*h*2`).
+    pub fn block_bytes(&self) -> usize {
+        4 + self.clut.len() * 2 + self.pixels.len()
+    }
+
+    /// Decode the pixel half to row-major RGBA8 through palette `palette`.
+    ///
+    /// The pixel half is 4bpp, low nibble first, with a row stride of
+    /// `rect.w * 2` bytes. Colour conversion is the ordinary PSX 15-bit
+    /// one: because [`parse_upload_block`] has already forced STP onto
+    /// every non-zero entry, exactly the entries stored as `0x0000` decode
+    /// transparent and everything else opaque - which is what the block
+    /// means, not an approximation of it.
+    pub fn rgba(&self, palette: usize) -> Result<Vec<u8>> {
+        self.rgba_with_palette(self.palette(palette)?)
+    }
+
+    /// Decode the pixel half through a palette this block does not carry.
+    ///
+    /// Needed because a block may ship `clut_n = 0` - pixels only, sampling
+    /// a palette a sibling block put on the shared row. Pair with
+    /// [`crate::battle_texture_catalog::assemble_clut_row`] to get one.
+    pub fn rgba_with_palette(&self, pal: &[u16]) -> Result<Vec<u8>> {
+        if pal.len() < CLUT_ENTRIES_PER_PALETTE {
+            bail!(
+                "a 4bpp palette needs {CLUT_ENTRIES_PER_PALETTE} entries, got {}",
+                pal.len()
+            );
+        }
+        let (w, h) = (self.pixel_width(), self.pixel_height());
+        let row_bytes = self.rect.w as usize * 2;
+        if self.pixels.len() < row_bytes * h {
+            bail!(
+                "pixel payload is {} bytes, short of the {}x{} rect's {}",
+                self.pixels.len(),
+                w,
+                h,
+                row_bytes * h
+            );
+        }
+        let mut out = Vec::with_capacity(w * h * 4);
+        for row in 0..h {
+            let line = &self.pixels[row * row_bytes..(row + 1) * row_bytes];
+            for col in 0..w {
+                let byte = line[col / 2];
+                let nib = if col & 1 == 0 { byte & 0x0F } else { byte >> 4 };
+                out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(pal[nib as usize]));
+            }
+        }
+        Ok(out)
     }
 }
 

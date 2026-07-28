@@ -2122,7 +2122,7 @@ subcommands (`crates/patcher` `texture` module + the `legaia_tim::encode`
 encoder; format rules in [`formats/tim.md`](../formats/tim.md#encoding-png---tim-texture-replacement)):
 
 ```bash
-legaia-patcher tim-list    --input DISC.bin [--entry N] [--tier raw|lzs|all]
+legaia-patcher tim-list    --input DISC.bin [--entry N] [--tier raw|lzs|battle|all]
 legaia-patcher tim-export  --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] [--clut K] -o out.png
 legaia-patcher tim-replace --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] \
     --png edited.png [--quantize] [--dry-run] [--output patched.bin] [--patch out.ppf]
@@ -2156,12 +2156,36 @@ exact byte counts and writes nothing. In practice there is headroom - the
 optimal re-packer beats the retail compressor on every section measured - but
 a low-redundancy replacement image can still exceed it.
 
+**The battle tier is not TIMs.** The party's in-battle character art lives
+in the player battle files (PROT 863..866) as headerless 4bpp blocks - no
+magic word, geometry supplied by the loader - so no offset addresses it and
+neither TIM catalog finds it. It shares the three subcommands under
+`--tier battle` / `--battle-slot <record | header0 | header1>`, with two
+rules of its own: the recompression budget is the record's **slot
+allocation** (the descriptor chain pins every later record, so nothing may
+grow), and a block carries several 16-colour palettes, of which a
+replacement rewrites only the one it was exported through. Details:
+[`formats/battle-data-pack.md`](../formats/battle-data-pack.md#the-upload-block-is-not-a-tim).
+
+```bash
+legaia-patcher tim-list    --input DISC.bin --entry 864 --tier battle
+legaia-patcher tim-export  --input DISC.bin --entry 864 --battle-slot 14 -o armband.png
+legaia-patcher tim-replace --input DISC.bin --entry 864 --battle-slot 14 --png armband.png --patch out.ppf
+```
+
 After a non-dry-run replacement the command re-reads the patched texture and
 verifies it decodes pixel-exactly to the input (skipped when `--quantize`
 folded pixels). The same pipeline runs client-side on the site's
 [ROM-patcher page](#in-the-browser): scan the disc for every texture (with
 thumbnails), preview original vs replacement as the game will display it, and
 queue swaps alongside the randomizer options - nothing is uploaded.
+
+The browser grid lists this tier under the family id `battle-equip`, with the
+same slot addressing folded into its `(entry, section, offset)` coordinate: a
+descriptor index in `section`, and `record[0]` block `n` as `-1 - n`. Its rows
+are labelled from the disc's own item-name table, so the search box reaches
+them by the equipment's name rather than by coordinate - typing `terra` finds
+Noa's Ra-Seru armband.
 
 ### Re-pack slack
 

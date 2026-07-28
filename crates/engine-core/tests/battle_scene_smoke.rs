@@ -57,15 +57,26 @@ fn battle_complete_fires_on_party_wipe() {
     // Force the SM to the EndOfAction state (which routes through the
     // party-liveness check).
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-    let mut last_cause: Option<BattleEndCause> = None;
+    // Read the cause off the bare SM step: `World::tick` resolves the battle
+    // in the same frame it completes, which consumes `battle_end` into
+    // `game_over` (see `World::finish_battle`).
+    assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
+    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+
+    let mut world = build_world(3);
+    for i in 0..3 {
+        world.actors[i].battle.liveness = 0;
+    }
+    world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+    let mut completed = false;
     for _ in 0..100 {
-        let outcome = world.tick();
-        if let Some(StepOutcome::BattleComplete) = outcome {
-            last_cause = world.battle_end;
+        if let Some(StepOutcome::BattleComplete) = world.tick() {
+            completed = true;
             break;
         }
     }
-    assert_eq!(last_cause, Some(BattleEndCause::PartyWipe));
+    assert!(completed, "the wipe must resolve through tick");
+    assert!(world.game_over, "a party wipe raises game over");
 }
 
 #[test]

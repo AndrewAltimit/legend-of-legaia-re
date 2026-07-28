@@ -39,7 +39,9 @@ Three patching families share that machinery:
   [`damage_ap`](src/damage_ap.rs)). Both accept negative values, which invert
   the knob into an AP *drain*. The `tim-list` / `tim-export` / `tim-replace`
   subcommands replace any texture on the disc with a user-authored PNG
-  ([`texture`](#texture-replacement-texture-module)).
+  ([`texture`](#texture-replacement-texture-module)), including the party's
+  in-battle character art, which is not a TIM at all
+  ([`battle_texture`](#battle-character-art-battle_texture-module)).
 
 It is Track-1-adjacent tooling - it does **not** touch the clean-room engine -
 and it ships only code: no game bytes are embedded or committed, and every
@@ -89,6 +91,8 @@ full design.
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
 - [Texture replacement](#texture-replacement-texture-module)
+- [Battle character art](#battle-character-art-battle_texture-module)
+- [Save-slot portraits](#save-slot-portraits-save_icon-module)
 - [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
 - [Door coupling](#door-coupling)
@@ -1064,6 +1068,11 @@ catalogs know:
   footprint (`decompress_tracked`'s consumed count), else a clear size error
   and nothing is written.
 
+A third tier shares the same three subcommands but not this module: the
+party's in-battle character art has no TIM header to parse, so it is keyed
+by `--battle-slot` and handled by
+[`battle_texture`](#battle-character-art-battle_texture-module).
+
 `read_texture` resolves + strict-parses the target, `replace_texture` encodes
 and writes (with a `dry_run` mode the site's preview uses), and
 `texture_catalogs` joins the raw + deep catalogs for `tim-list` / the
@@ -1074,6 +1083,51 @@ else). Full reference:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
 encoder rules (alpha -> STP, palette reuse, byte-exact round trips):
 [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
+
+## Battle character art (`battle_texture` module)
+
+The party's in-battle skins - body, face, weapon and armour, one block per
+equipment variant - live in the player battle files (PROT 863..866) as
+**headerless** 4bpp blocks: `[u16 clut_x][u16 clut_n][BGR555 run][4bpp
+pixels]`, with the geometry supplied by the loader's static rect table
+rather than by the bytes. No magic word, so neither TIM catalog can reach
+them; measured on the retail disc, both contribute zero rows from those
+four entries. This module is the third tier that does, keyed by `--entry` +
+`--battle-slot` (a record index, or `header0`/`header1`).
+
+Two things differ from `tim-replace`. **The fit budget is a slot
+allocation, not a stream length**: the descriptor chain
+`offset[i+1] == offset[i] + size[i]` pins every later record, so the edited
+record must recompress into `size - 4` and nothing downstream may move -
+retail leaves a median of a few hundred spare bytes and as few as 2, so a
+refusal with the overage is a normal outcome. And **a block ships several
+palettes** (32 or 48 entries is the common case, one per recolour variant);
+a replacement rewrites the pixels plus only the palette it was exported
+through. Entries are matched in the post-STP frame the runtime samples, and
+an unchanged slot keeps its stored bytes, so an unedited round-trip writes
+nothing at all.
+
+The CLI loop is `tim-list --tier battle` -> `tim-export --battle-slot`
+-> edit -> `tim-replace --battle-slot` (`--clut N` picks the palette).
+Format reference:
+[`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-upload-block-is-not-a-tim).
+
+## Save-slot portraits (`save_icon` module)
+
+Swaps one of the 16x16 character faces the save UI draws and the memory-card
+block icon is cut from. A separate family from `tim-replace` because the
+sheet's palette is **per tile** - the generic encoder replicates a rebuilt
+palette across every CLUT row, which here would repaint all sixteen
+portraits - and because a tile is stored as 16 eight-byte runs 128 bytes
+apart, so one replacement is 17 small same-size writes.
+
+The CLI loop is `save-icon-list` -> `save-icon-export` (16x16 PNG) -> edit ->
+`save-icon-replace`. **Fifteen slots are offered, not sixteen**: tile 15 is
+blank width padding no code path selects, so art written there would never
+appear, and `replace_slot` refuses it. The encoder starts from the tile's
+existing palette, so re-encoding an unmodified portrait reproduces the disc
+bytes and a shared PPF carries only the user's own edit. Format reference:
+[`docs/formats/save-icon.md`](../../docs/formats/save-icon.md).
 
 ## Translation packs
 

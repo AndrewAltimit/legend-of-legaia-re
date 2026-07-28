@@ -49,6 +49,10 @@
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_field_battle_intro_801d1564.txt`,
 //! `..._801d1888.txt` and `..._801d1a20.txt` - disassembly, not the C.
+//!
+//! REF: FUN_80058490 - retail `MoveImage`, ported as
+//! `legaia_tim::Vram::move_image`. The wiring note on [`build_swirl_mesh`]
+//! names it as the capture primitive the engine already has.
 
 /// Bands in the swirl (`slti v0,t5,0x10`).
 pub const BANDS: usize = 0x10;
@@ -229,12 +233,22 @@ fn clamp(v: i32, bound: i32) -> i32 {
 ///
 /// PORT: FUN_801D1564
 ///
-/// NOT WIRED: nothing owns a [`SwirlMesh`]. `legaia_engine_core::World` tracks
-/// the transition as its phase counter only (`World::battle_intro`), and
-/// `legaia-engine-render` has no pass that draws a textured fan over a captured
-/// framebuffer - the engine has no captured framebuffer to texture with, since
-/// it presents through a swapchain rather than through a re-readable VRAM.
-/// Wiring needs a screen-capture render target first.
+/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
+/// owns the [`SwirlMesh`] between frames and ticks it from the live transition
+/// clock; `select_intro_style` reaches this style for one formation on the
+/// disc.
+///
+/// NOT DRAWN, and this one has a **named structural prerequisite** rather than
+/// only missing work. A drawn band half submits 32 primitives out of a
+/// 198-vertex fan - triangles, and
+/// `legaia_engine_render::screen_overlay::ScreenPrim` has no triangle variant
+/// at all: it is quads only, textured or flat. So this style cannot be emitted
+/// through the existing ordering-table pass however much of the packet
+/// assembly gets ported; the pass needs a triangle primitive first.
+///
+/// The two capture texpages the band draws sample **are** filled now -
+/// `vram_capture` lands the drawn field frame in the software VRAM, closing
+/// the gap an earlier note here named as the real blocker.
 pub fn build_swirl_mesh(allocated: bool, trig: &mut dyn SwirlTrig) -> SwirlBuildOutcome {
     if !allocated {
         return SwirlBuildOutcome::OutOfMemory;
@@ -398,8 +412,9 @@ pub struct SwirlTick {
 ///
 /// PORT: FUN_801D1888
 ///
-/// NOT WIRED: same missing host as [`build_swirl_mesh`] - nothing owns a
-/// [`SwirlMesh`] and there is no captured-framebuffer texture to draw it with.
+/// WIRED, without a draw - see [`build_swirl_mesh`] for the emitter that owns
+/// this mesh and for the triangle primitive the ordering-table pass would need
+/// before a band half could be submitted.
 pub fn tick_swirl(
     mesh: &mut SwirlMesh,
     elapsed: &mut i16,

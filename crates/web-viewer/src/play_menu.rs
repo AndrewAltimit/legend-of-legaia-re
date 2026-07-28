@@ -36,9 +36,14 @@
 //! 4. Confirming loads that block into the live world, or (Save) raises the
 //!    overwrite prompt and then writes the session into the card image.
 //!
-//! The grid cursor lives here rather than in the session: retail's session
-//! phases model the card read, while *which block* the player is pointing at
-//! is this host's business (the session's `SlotPreview` ignores directions).
+//! None of that flow lives here. The grid cursor, the once-per-port card
+//! read, the rule that a Load may not confirm an empty block and the mapping
+//! from a finished session back to `(port, cell)` are
+//! [`legaia_engine_core::save_screen::SaveScreenFlow`] - one kernel both this
+//! page and the native `play-window` drive, so the two cannot disagree about
+//! what the screen addresses. This host supplies only the **bytes**: the
+//! fifteen block snapshots behind a port, and the load / write against the
+//! card image.
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
@@ -52,8 +57,9 @@ use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::OptionsSession;
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
+use legaia_engine_core::save_screen::{SaveCommitKind, SaveScreenFlow};
 use legaia_engine_core::save_select::{
-    SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase, SlotInfoMode,
+    SaveRack, SaveSelectMode, SaveSelectSession, SelectPhase, SlotInfoMode,
 };
 use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
 use legaia_engine_core::status_screen::StatusScreenSession;
@@ -167,24 +173,15 @@ impl PlayMenuAssets {
 pub struct PlayMenu {
     cursor: u8,
     sub: Option<PlaySub>,
-    /// Cursor over the previewed card's 5x3 block grid (cell `i` = card block
-    /// `i + 1`). Only meaningful while a Load / Save sub-session is in
-    /// [`SelectPhase::SlotPreview`]; see the module docs for why it lives
-    /// here and not in the session.
-    save_grid_cursor: u8,
+    /// The save screen's shared driver: block-grid cursor + the card read
+    /// behind it. Lives in `engine-core` so this page and the native window
+    /// step the same cursor and gate the same confirms.
+    save_flow: SaveScreenFlow,
     /// CDNAME label of the scene an in-canvas card Load landed in, waiting for
     /// the page to pick it up ([`LegaiaRuntime::play_menu_take_load_scene`]).
     /// Retail resumes the save in the scene it was written in; the page owns
     /// scene entry, so the menu parks the label here.
     pending_load_scene: Option<String>,
-    /// `(card_slot, blocks)` - the result of the card read, held for as long
-    /// as its grid is up.
-    ///
-    /// This is what the "Now checking" beat is *for*: lifting fifteen SC
-    /// blocks through `SaveFile::from_retail_sc_block` copies the better part
-    /// of a card, so it happens once per read rather than once per frame in
-    /// the draw path.
-    save_grid_cache: Option<(u8, Vec<legaia_engine_core::save_select::SlotSnapshot>)>,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -200,39 +197,10 @@ impl PlayMenu {
         PlayMenu {
             cursor: 0,
             sub: None,
-            save_grid_cursor: 0,
+            save_flow: SaveScreenFlow::new(),
             pending_load_scene: None,
-            save_grid_cache: None,
         }
     }
-}
-
-/// Grid geometry of retail's slot-preview screen, mirrored from
-/// `legaia-engine-ui`'s pinned `SLOT_GRID_*` constants so the cursor walks
-/// the same cells the sprites are drawn at.
-const GRID_COLS: u8 = ui::SLOT_GRID_COLS as u8;
-const GRID_CELLS: u8 = (ui::SLOT_GRID_COLS * ui::SLOT_GRID_ROWS) as u8;
-
-/// Step the 5x3 block-grid cursor for one pad edge. Columns wrap within a
-/// row and rows wrap top-to-bottom, matching the retail grid's cursor.
-fn step_grid_cursor(cursor: u8, edge: u16) -> u8 {
-    let mut cell = cursor.min(GRID_CELLS - 1);
-    let (mut col, mut row) = (cell % GRID_COLS, cell / GRID_COLS);
-    let rows = GRID_CELLS / GRID_COLS;
-    if pressed(edge, PadButton::Left) {
-        col = (col + GRID_COLS - 1) % GRID_COLS;
-    }
-    if pressed(edge, PadButton::Right) {
-        col = (col + 1) % GRID_COLS;
-    }
-    if pressed(edge, PadButton::Up) {
-        row = (row + rows - 1) % rows;
-    }
-    if pressed(edge, PadButton::Down) {
-        row = (row + 1) % rows;
-    }
-    cell = row * GRID_COLS + col;
-    cell.min(GRID_CELLS - 1)
 }
 
 /// Stage origin + integer scale that upscales the 320x240 boot-UI stage to fill
@@ -484,37 +452,21 @@ impl LegaiaRuntime {
             .map(|m| m.sub.is_some())
             .unwrap_or(false);
         if has_sub {
-            // Anything the save screen needs off `&self` (reading the inserted
-            // card) has to happen before the `&mut` borrow below.
-            let save_ctx = self.save_screen_context();
-            self.refresh_card_read_cache(save_ctx);
-            let edge = self.gate_save_screen_edge(save_ctx, edge);
+            // Answer the flow's card read off `&self` before the `&mut`
+            // borrow below: reading a port lifts fifteen SC blocks, which is
+            // the one thing the kernel cannot do for itself.
+            self.service_card_read();
 
             let mut session_done = false;
+            let mut edge = edge;
             if let Some(m) = self.play_menu.as_mut()
                 && let Some(PlaySub::Session(session)) = m.sub.as_mut()
             {
-                // The save screen's block-grid cursor is this host's (the
-                // session's SlotPreview ignores directions - see the module
-                // docs). Step it BEFORE the session ticks so a confirm on the
-                // same edge commits the cell the player is looking at.
-                if let FieldMenuSubsession::Save(s) = session.as_mut() {
-                    match s.phase() {
-                        SelectPhase::SlotPreview { .. } => {
-                            m.save_grid_cursor = step_grid_cursor(m.save_grid_cursor, edge);
-                        }
-                        // The grid is not up yet: park the cursor on the first
-                        // cell so each card read starts at the top-left block,
-                        // and drop the previous read - the player may be about
-                        // to pick the other port.
-                        SelectPhase::Browsing { .. } | SelectPhase::NowChecking { .. } => {
-                            m.save_grid_cursor = 0;
-                            if matches!(s.phase(), SelectPhase::Browsing { .. }) {
-                                m.save_grid_cache = None;
-                            }
-                        }
-                        _ => {}
-                    }
+                // Step the grid cursor and gate an empty-block Load BEFORE
+                // the session ticks, so a confirm on the same edge commits
+                // the cell the player is looking at.
+                if let FieldMenuSubsession::Save(s) = session.as_ref() {
+                    edge = m.save_flow.before_tick(s, edge);
                 }
                 // Engine extension: Triangle on the Status screen swaps it
                 // for the Tactical Arts chain editor (retail's seven rows
@@ -538,11 +490,11 @@ impl LegaiaRuntime {
                 // (equip swap / item use / spell cast / card load-save)
                 // exactly as the native shell does, then drop back to the
                 // top-level list on the row that opened it.
-                let grid_cell = self
+                let flow = self
                     .play_menu
                     .as_ref()
-                    .map(|m| m.save_grid_cursor)
-                    .unwrap_or(0);
+                    .map(|m| m.save_flow.clone())
+                    .unwrap_or_default();
                 let sub = self.play_menu.as_mut().and_then(|m| m.sub.take());
                 if let Some(PlaySub::Session(session)) = sub {
                     let session = *session;
@@ -551,7 +503,7 @@ impl LegaiaRuntime {
                         // Load / Save reach the card rack, which needs the
                         // whole runtime - so it is applied outside the
                         // scene-host borrow the other rows take.
-                        FieldMenuSubsession::Save(s) => self.apply_card_outcome(&s, grid_cell),
+                        FieldMenuSubsession::Save(s) => self.apply_card_outcome(&flow, &s),
                         // Options: value edits commit inside the session's own
                         // popup (retail writes the config word at popup
                         // confirm and never reverts), so the closing state is
@@ -629,35 +581,31 @@ impl LegaiaRuntime {
             let cursor = self.play_menu.as_ref().map(|m| m.cursor).unwrap_or(0);
             let row = FieldMenuRow::from_index(cursor).unwrap_or(FieldMenuRow::Items);
             // Load / Save browse the console's two memory-card ports, so the
-            // slot list is the rack's card slots, not save blocks - and the
-            // session runs in the matching two-stage card mode. Every other
+            // rack is `CardPorts` - which is also what puts the session in
+            // the matching two-stage flow; no host flips that flag by hand
+            // (`SaveSelectSession::for_rack`). Every other
             // row builds the real retail sub-session from the disc catalogs
             // installed on the host world at `load_disc` (spell / equipment /
             // item), matching the native shell's `FieldMenuSubsession::build`.
-            let card_slots = self.card_slot_snapshots();
+            let rack = SaveRack::CardPorts(self.card_slot_snapshots());
             let sub = self.scene_host.as_ref().map(|host| {
                 let world = &host.world;
                 let chain = world.chain_library();
-                let mut session = FieldMenuSubsession::build(
+                PlaySub::Session(Box::new(FieldMenuSubsession::build(
                     row,
                     world,
                     &self.options_state,
-                    &card_slots,
+                    &rack,
                     &chain,
                     &world.spell_catalog,
                     &world.equipment_table,
-                );
-                if let FieldMenuSubsession::Save(s) = &mut session {
-                    s.set_card_slots_mode(true);
-                }
-                PlaySub::Session(Box::new(session))
+                )))
             });
             if let Some(sub) = sub
                 && let Some(m) = self.play_menu.as_mut()
             {
                 m.sub = Some(sub);
-                m.save_grid_cursor = 0;
-                m.save_grid_cache = None;
+                m.save_flow.reset();
             }
         }
     }
@@ -1100,97 +1048,46 @@ impl LegaiaRuntime {
         texts.extend(d);
     }
 
-    /// `(phase, mode, card_slot)` of an open Load / Save sub-screen, if one is
-    /// up. Read once per input so the card-reading work below can happen
-    /// before the menu's `&mut` borrow.
-    fn save_screen_context(&self) -> Option<(SelectPhase, SaveSelectMode, u8)> {
-        let m = self.play_menu.as_ref()?;
-        let PlaySub::Session(session) = m.sub.as_ref()?;
-        match session.as_ref() {
-            FieldMenuSubsession::Save(s) => Some((s.phase(), s.mode(), s.current_slot())),
-            _ => None,
-        }
-    }
-
-    /// Lift the chosen card's blocks into the menu's cache, once per card
-    /// read. Rebuilds only when the cache is missing or holds a different
-    /// port, so the grid's draw path never re-parses the card.
-    fn refresh_card_read_cache(&mut self, ctx: Option<(SelectPhase, SaveSelectMode, u8)>) {
-        let Some((phase, _, card)) = ctx else { return };
-        if !matches!(
-            phase,
-            SelectPhase::NowChecking { .. }
-                | SelectPhase::SlotPreview { .. }
-                | SelectPhase::ConfirmOverwrite { .. }
-                | SelectPhase::ConfirmDelete { .. }
-        ) {
-            return;
-        }
-        let stale = self
-            .play_menu
-            .as_ref()
-            .map(|m| m.save_grid_cache.as_ref().map(|(c, _)| *c) != Some(card))
-            .unwrap_or(false);
-        if !stale {
-            return;
-        }
-        let blocks = self.card_block_snapshots(card as usize);
-        if let Some(m) = self.play_menu.as_mut() {
-            m.save_grid_cache = Some((card, blocks));
-        }
-    }
-
-    /// Suppress a confirm on an **empty** block while Loading.
+    /// Answer the card read [`SaveScreenFlow`] is waiting on, if any.
     ///
-    /// The session has no idea what is in the grid - it only knows the phase -
-    /// so a Cross on an empty cell would report `Loaded` and leave the host to
-    /// fail parsing a block that holds no save, closing the screen with
-    /// nothing to show for it. Retail simply refuses. Saving into an empty
-    /// block is legitimate (that is how a new save is made), so this gates
-    /// Load only.
-    fn gate_save_screen_edge(
-        &self,
-        ctx: Option<(SelectPhase, SaveSelectMode, u8)>,
-        edge: u16,
-    ) -> u16 {
-        let Some((SelectPhase::SlotPreview { .. }, SaveSelectMode::Load, _)) = ctx else {
-            return edge;
+    /// The kernel decides *when* a port must be read (once per port, never
+    /// per frame); this host is what turns a port number into fifteen block
+    /// snapshots, because only it holds the card image.
+    fn service_card_read(&mut self) {
+        let Some(m) = self.play_menu.as_ref() else {
+            return;
         };
-        if !pressed(edge, PadButton::Cross) {
-            return edge;
-        }
-        let focused_has_save = self
-            .play_menu
-            .as_ref()
-            .and_then(|m| {
-                let (_, blocks) = m.save_grid_cache.as_ref()?;
-                Some(
-                    blocks
-                        .get(m.save_grid_cursor as usize)
-                        .map(|b| b.present)
-                        .unwrap_or(false),
-                )
-            })
-            .unwrap_or(false);
-        if focused_has_save {
-            edge
-        } else {
-            edge & !PadButton::Cross.mask()
+        let Some(PlaySub::Session(session)) = m.sub.as_ref() else {
+            return;
+        };
+        let FieldMenuSubsession::Save(s) = session.as_ref() else {
+            return;
+        };
+        let Some(port) = m.save_flow.pending_read(s) else {
+            return;
+        };
+        let blocks = self.card_block_snapshots(port as usize);
+        if let Some(m) = self.play_menu.as_mut() {
+            m.save_flow.install_blocks(port, blocks);
         }
     }
 
     /// Commit a finished Load / Save session against the memory-card rack.
     ///
-    /// The session's outcome slot is the **card port** the player picked off
-    /// the pill row; `grid_cell` is the block they picked out of that card's
-    /// preview grid (cell `i` = block `i + 1`). A failure (card ejected
-    /// mid-flow, unreadable block) is logged and drops the player back to the
-    /// menu rather than throwing - the world is left untouched.
-    fn apply_card_outcome(&mut self, session: &SaveSelectSession, grid_cell: u8) {
-        let block = grid_cell + 1;
-        match session.outcome() {
-            Some(SelectOutcome::Loaded(card)) => {
-                match self.load_session_from_card(card as usize, block) {
+    /// [`SaveScreenFlow::commit`] resolves the port off the session's outcome
+    /// and the cell off the grid; this host maps cell `i` to card block
+    /// `i + 1` (block 0 is the card directory) and moves the bytes. A failure
+    /// (card ejected mid-flow, unreadable block) is logged and drops the
+    /// player back to the menu rather than throwing - the world is left
+    /// untouched.
+    fn apply_card_outcome(&mut self, flow: &SaveScreenFlow, session: &SaveSelectSession) {
+        let Some(commit) = flow.commit(session) else {
+            return;
+        };
+        let block = commit.cell + 1;
+        match commit.kind {
+            SaveCommitKind::Load => {
+                match self.load_session_from_card(commit.port as usize, block) {
                     Ok(scene) => {
                         // Retail resumes a save in the scene it was written in.
                         // The page owns scene entry, so park the label for it.
@@ -1201,14 +1098,11 @@ impl LegaiaRuntime {
                     Err(e) => crate::console_log(&format!("play menu: card load failed: {e}")),
                 }
             }
-            Some(SelectOutcome::Saved(card)) => {
-                if let Err(e) = self.write_session_into_card(card as usize, block) {
+            SaveCommitKind::Save => {
+                if let Err(e) = self.write_session_into_card(commit.port as usize, block) {
                     crate::console_log(&format!("play menu: card save failed: {e}"));
                 }
             }
-            // Delete is not reachable from the card flow, and Cancelled is a
-            // no-op by construction.
-            _ => {}
         }
     }
 
@@ -1337,13 +1231,7 @@ impl LegaiaRuntime {
                 // blocks come off the card read's cache - see
                 // `refresh_card_read_cache`; an unread card draws an empty
                 // grid rather than re-parsing here every frame.
-                let empty: Vec<legaia_engine_core::save_select::SlotSnapshot> = Vec::new();
-                let blocks = menu
-                    .save_grid_cache
-                    .as_ref()
-                    .filter(|(c, _)| *c == card)
-                    .map(|(_, b)| b.as_slice())
-                    .unwrap_or(&empty);
+                let (blocks, cell) = menu.save_flow.preview(s);
                 let cells: Vec<SlotGridCell> = blocks
                     .iter()
                     .map(|b| SlotGridCell {
@@ -1351,7 +1239,6 @@ impl LegaiaRuntime {
                         portrait_char_id: b.present.then_some(b.leader_char_id),
                     })
                     .collect();
-                let cell = menu.save_grid_cursor;
                 sprites.extend(ui::slot_preview_grid_draws_for(
                     rects, &cells, cell, origin, scale,
                 ));

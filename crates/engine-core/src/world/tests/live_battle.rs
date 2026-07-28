@@ -36,30 +36,30 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
 }
 
 #[test]
-fn guard_stance_halves_basic_attack_damage() {
-    let mut world = live_battle_world_3v2();
-    // Monster slot 3 strikes party slot 0 (attack 50 vs defense 10).
-    world.battle_attack[3] = 50;
-    world.battle_defense[0] = 10;
-    world.actors[3].battle.active_target = 0;
-    world.battle_ctx.active_actor = 3;
-    world.apply_basic_attack();
-    let unguarded_dmg = 100 - world.actors[0].battle.hp;
-    assert!(unguarded_dmg > 1, "the strike lands for real damage");
-
-    // Same strike against a guarding defender: the guard-halve stage applies.
-    let mut world = live_battle_world_3v2();
-    world.battle_attack[3] = 50;
-    world.battle_defense[0] = 10;
-    world.actors[3].battle.active_target = 0;
-    world.battle_ctx.active_actor = 3;
-    world.battle_guarding[0] = true;
-    world.apply_basic_attack();
-    let guarded_dmg = 100 - world.actors[0].battle.hp;
-    assert_eq!(
-        guarded_dmg,
-        unguarded_dmg >> 1,
-        "guard halves the strike (finisher stage 3)"
+fn guard_stance_reduces_basic_attack_damage() {
+    // Monster slot 3 strikes party slot 0. The melee kernel models the Spirit
+    // stance as a **tripled guard roll** (`FUN_801EC3E4`, the defender's
+    // `+0x1DE == 4` arm), not as the summon/arts finisher's damage halve - so
+    // the assertion is a strict reduction, not an exact `>> 1`.
+    let strike = |guarding: bool| -> u16 {
+        let mut world = live_battle_world_3v2();
+        world.rng_state = 0x1234_5678;
+        world.battle_attack[3] = 200;
+        world.battle_defense[0] = 40;
+        world.actors[0].battle.max_hp = 9999;
+        world.actors[0].battle.hp = 9999;
+        world.actors[3].battle.active_target = 0;
+        world.battle_ctx.active_actor = 3;
+        world.battle_guarding[0] = guarding;
+        world.apply_basic_attack();
+        9999 - world.actors[0].battle.hp
+    };
+    let unguarded = strike(false);
+    let guarded = strike(true);
+    assert!(unguarded > 1, "the strike lands for real damage");
+    assert!(
+        guarded < unguarded,
+        "the guard stance must reduce the hit: {guarded} !< {unguarded}"
     );
 }
 
@@ -91,13 +91,14 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     );
     world.battle_ctx.active_actor = 3;
     world.apply_basic_attack();
-    let one_swing = legaia_engine_vm::battle_formulas::art_strike_damage_default(50, 10, 16);
-    let total = 9999 - world.actors[0].battle.hp;
+    // Each swing rolls its own damage (the melee roll pair), so count the
+    // strikes rather than compare a sum against a closed-form single hit.
     assert_eq!(
-        total,
-        one_swing * 3,
+        world.drain_battle_hit_fx().len(),
+        3,
         "a monster with an AGL budget of 3 lands three swings in one turn"
     );
+    assert!(9999 - world.actors[0].battle.hp > 0, "the swings landed");
 
     // A monster with no AGL / swing data falls back to a single swing (the
     // disc-free / synthetic catalog case) - one strike, RNG-free budget.
@@ -114,8 +115,8 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     world.battle_ctx.active_actor = 3;
     world.apply_basic_attack();
     assert_eq!(
-        100 - world.actors[0].battle.hp,
-        one_swing,
+        world.drain_battle_hit_fx().len(),
+        1,
         "unbudgeted monster lands exactly one swing"
     );
 }

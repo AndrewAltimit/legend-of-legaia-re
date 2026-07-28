@@ -1,21 +1,23 @@
-//! Disc-gated: drive the **real** parsed Muscle Dome hand tables (battle
-//! overlay PROT 0898) + the lead character's real swing costs (player file
-//! PROT 0863) through the engine card-battle rules engine
+//! Disc-gated: drive the **real** parsed Muscle Dome direction tables
+//! (battle overlay PROT 0898) + the lead character's real swing costs
+//! (player file PROT 0863) through the engine match rules
 //! ([`legaia_engine_core::muscle_dome`]).
 //!
 //! Closes the engine end of the arena: the play-window load path resolves
 //! the real deck (command ids `0xC..=0xF`) and the real per-command costs
 //! (the equipped-section swing records' `+0x74` bytes - the retail cost set
-//! is favored `0x1E` / off-class `0x2A` / far `0x36`), and a contest commits
-//! cards under the budget, resolves, and decides through the world tick.
-//! No Sony bytes are asserted, only structural facts. Skips + passes when
-//! `LEGAIA_DISC_BIN` is absent.
+//! is favored `0x1E` / off-class `0x2A` / far `0x36`), and a contest enters
+//! directions under the budget, resolves whole strings, and closes on a
+//! knockout through the world tick. No Sony bytes are asserted,
+//! only structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
 use legaia_asset::battle_char_assembly;
 use legaia_asset::muscle_dome as md;
 use legaia_asset::static_overlay;
 use legaia_engine_core::input::PadButton;
-use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_core::muscle_dome::{
+    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase,
+};
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::{SceneMode, World};
 
@@ -23,7 +25,12 @@ use legaia_engine_core::world::{SceneMode, World};
 /// off-class / far).
 const RETAIL_COSTS: [u8; 3] = [0x1E, 0x2A, 0x36];
 
-fn real_hand() -> Option<([u8; 4], [u8; 4])> {
+/// Stand-in fighter max HP (the arena's `+0x14e` records are not staged by
+/// this test - only the deck and the costs are disc-sourced).
+const PLAYER_HP: i32 = 500;
+const OPPONENT_HP: i32 = 400;
+
+fn real_hand() -> Option<([u8; 4], [u8; 4], Vec<u8>)> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
     let host = match SceneHost::open_disc(&disc) {
         Ok(h) => h,
@@ -32,7 +39,7 @@ fn real_hand() -> Option<([u8; 4], [u8; 4])> {
             return None;
         }
     };
-    // Hand command ids from the battle overlay.
+    // Direction command ids from the battle overlay.
     let rec = static_overlay::overlay_map()
         .by_prot_index(md::MUSCLE_OVERLAY_PROT_INDEX as u32)
         .expect("battle overlay in static map");
@@ -42,7 +49,7 @@ fn real_hand() -> Option<([u8; 4], [u8; 4])> {
         .expect("read PROT 0898 (extended)");
     let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
     assert!(md::verify_resident(&loaded), "arena resident in 0898");
-    let commands = md::hand_command_ids(&loaded).expect("real hand command ids decode");
+    let commands = md::hand_command_ids(&loaded).expect("real deck command ids decode");
 
     // Lead character's real swing costs (default equipment).
     let player = host
@@ -57,12 +64,12 @@ fn real_hand() -> Option<([u8; 4], [u8; 4])> {
         let i = (s.slot - 0xC) as usize;
         costs[i] = s.cost;
     }
-    Some((commands, costs))
+    Some((commands, costs, raw))
 }
 
 #[test]
 fn real_hand_tables_drive_a_decided_contest() {
-    let Some((commands, costs)) = real_hand() else {
+    let Some((commands, costs, overlay_0898)) = real_hand() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
@@ -83,8 +90,8 @@ fn real_hand_tables_drive_a_decided_contest() {
         );
     }
 
-    // Build the contest like the play-window M key: player hand carries the
-    // real costs keyed by command id.
+    // Build the contest like the play-window M key: the player's deal carries
+    // the real costs keyed by command id.
     let card = |cmd: u8, cost: u16| MuscleCard {
         command_id: cmd,
         cost,
@@ -92,7 +99,31 @@ fn real_hand_tables_drive_a_decided_contest() {
     let player_hand =
         std::array::from_fn(|i| card(commands[i], costs[(commands[i] - 0xC) as usize] as u16));
     let opp_hand = std::array::from_fn(|i| card(commands[i], 0x1E));
-    let session = MuscleDomeSession::new(player_hand, opp_hand, [120, 120], [500, 400], 1);
+    let mut session = MuscleDomeSession::new(
+        player_hand,
+        opp_hand,
+        [120, 120],
+        [PLAYER_HP, OPPONENT_HP],
+        1,
+    );
+    // Resolve through the shared retail damage kernel, built from this
+    // disc's own PROT 0898 tables (move-power records + the id -> index map
+    // + the element-affinity matrix), the way both hosts start a contest.
+    let profile = |hp: i32| DomeCombatant {
+        hp_max: hp as u16,
+        int: 60,
+        udf: 20,
+        ldf: 20,
+        element: 0,
+    };
+    let model = DomeDamageModel::from_battle_overlay(
+        &overlay_0898,
+        [profile(PLAYER_HP), profile(OPPONENT_HP)],
+        [PLAYER_HP, OPPONENT_HP],
+        0x1234_5678,
+    )
+    .expect("real PROT 0898 move-power tables decode into the damage kernel");
+    session.install_damage_model(model);
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -122,8 +153,8 @@ fn real_hand_tables_drive_a_decided_contest() {
         } else {
             match s.phase() {
                 MusclePhase::Select => {
-                    // Commit the cheapest still-affordable card; confirm once
-                    // nothing more fits.
+                    // Enter the cheapest still-affordable direction; confirm
+                    // once nothing more fits.
                     let pick = (0..4)
                         .filter(|&c| s.can_commit(0, c))
                         .min_by_key(|&c| s.hand(0)[c].cost);
@@ -133,7 +164,7 @@ fn real_hand_tables_drive_a_decided_contest() {
                     }
                 }
                 MusclePhase::Resolve => 0,
-                MusclePhase::RoundOver | MusclePhase::Won | MusclePhase::Lost => {
+                MusclePhase::TurnOver | MusclePhase::Won | MusclePhase::Lost => {
                     PadButton::Cross.mask()
                 }
             }
@@ -146,11 +177,46 @@ fn real_hand_tables_drive_a_decided_contest() {
     // pool, and every queued id is a real deck command.
     let s = world.muscle_dome.as_ref().unwrap();
     assert!(s.decided());
-    let dmg = s.last_round_damage();
-    assert!(dmg[0] > 0 || dmg[1] > 0, "the deciding round dealt damage");
-    // score readout formula holds at the terminal state.
-    for slot in 0..2 {
-        assert_eq!(s.score_percent(slot), s.hp(slot) * 0x6C / [500, 400][slot]);
+    let dmg = s.last_turn_damage();
+    assert!(dmg[0] > 0 || dmg[1] > 0, "the deciding turn dealt damage");
+    // The retail kernel ran: every play in the last turn came off a real
+    // deck command, and each fighter's whole string played before the
+    // other's (no command-by-command interleave).
+    let plays = s.last_turn_plays();
+    assert!(!plays.is_empty(), "the retail kernel logged the turn");
+    for p in plays {
+        assert!(
+            commands.contains(&p.cmd),
+            "played command {:#x} is a real deck id",
+            p.cmd
+        );
+    }
+    let switches = plays
+        .windows(2)
+        .filter(|w| w[0].attacker != w[1].attacker)
+        .count();
+    assert!(
+        switches <= 1,
+        "a turn is one whole string per fighter, saw {switches} handovers"
+    );
+    // The leg closed on a KO - the only end condition a dome round has. One
+    // side is on zero HP and the turn count is whatever it took; nothing
+    // capped it.
+    assert!(
+        matches!(s.phase(), MusclePhase::Won | MusclePhase::Lost),
+        "a dome leg ends by knockout"
+    );
+    assert!(
+        s.hp(0) == 0 || s.hp(1) == 0,
+        "the decided leg has a fighter on zero HP"
+    );
+    assert!(s.turn() >= 1, "at least one turn played");
+    // HP Left = the OPPONENT's HP as a plain percentage (scale 100, not the
+    // 0x6C an earlier reading took off the x100 shift-add chain).
+    assert_eq!(s.hp_left(), s.hp(1) * 100 / OPPONENT_HP);
+    for (slot, max) in [PLAYER_HP, OPPONENT_HP].into_iter().enumerate() {
+        assert_eq!(s.hp_left_percent(slot), s.hp(slot) * 100 / max);
+        assert!((0..=100).contains(&s.hp_left_percent(slot)), "a percentage");
     }
 
     // Leaving through the world tick restores the interrupted mode (release
