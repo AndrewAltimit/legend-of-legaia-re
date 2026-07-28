@@ -67,7 +67,7 @@
  * INTERVAL/ROUND headings from the dome's own data file (extraction 1220)
  * through the PROT 0977 overlay's sprite descriptor table
  * (engine-ui::other_game_hud). Screen geometry comes from the SCUS-static
- * battle HUD element table (0x80076C10) plus a live PCSX-Redux packet
+ * screen-element placement table (0x80076C10) plus a live PCSX-Redux packet
  * capture of a dome match (command cluster, enemy art, player HYPER ARTS!!
  * playback - scripts/pcsx-redux/autorun_muscle_hud_capture.lua).
  * The ARTS COMMAND INPUT is packet-pinned end to end (a recomp

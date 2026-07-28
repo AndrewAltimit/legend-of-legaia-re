@@ -12,7 +12,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
-- [Pose-slot table `0x80076C10`](#pose-slot-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
+- [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
 
 ## One-paragraph overview
 
@@ -2265,13 +2265,21 @@ consumes the turn through the Done band. The escape *probability* is the retail
 plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` and rolled by
 `World::roll_battle_escape`.
 
-## Pose-slot table `0x80076C10` and its copy helpers
+## Screen-element placement table `0x80076C10` and its copy helpers
 
 The battle animation dispatcher [`FUN_801D388C`](../reference/functions.md)
-keeps its per-slot animation state in a **24-byte-stride record array
-based at `0x80076C10`**. Two small overlay leaves move records around
-inside it; both take `(dst_index, src_index)`, address `0x80076C10 +
-index * 0x18` by the `(i*2 + i) << 3` idiom, and return nothing.
+moves records inside the **24-byte-stride array based at `0x80076C10`**, the
+table [`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)
+settles as a **screen-element placement** table. Two small overlay leaves move
+records around inside it; both take `(dst_index, src_index)`, address
+`0x80076C10 + index * 0x18` by the `(i*2 + i) << 3` idiom, and return nothing.
+
+This section called it a pose-slot table, one of three names three subsystems
+gave the same base. The record layout contradicts that reading in particular -
+see the `- 0x140` bias below - so prefer "screen-element placement". The name
+survived as long as it did because "pose slot" is simultaneously the right
+name for something else: the actor's animation-pose index, which
+[`battle.md`](battle.md) uses correctly and which is not this table.
 
 | Function | Fields written into `dst` |
 |---|---|

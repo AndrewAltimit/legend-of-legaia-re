@@ -1,6 +1,6 @@
 //! Four leaves of the battle overlay's shared "slot B" library: the
-//! living-actor cursor step, the two pose-slot copy helpers, and the
-//! tracked-widget pool teardown.
+//! living-actor cursor step, the two screen-element placement copy helpers,
+//! and the tracked-widget pool teardown.
 //!
 //! PORT: FUN_801D32BC
 //! PORT: FUN_801D57E8
@@ -21,15 +21,26 @@
 //!   `BattleActionCtx` gaining the `+0x1F` step counter and the `+0x20`/`+0x21`
 //!   history pair, *and* the boundary adopting retail's cursor order over the
 //!   initiative one.
-//! * `FUN_801D57E8` / `FUN_801D5778` copy between **pose slots** - the
-//!   per-actor animation-pose array the battle renderer double-buffers. The
-//!   engine animates from decoded ANM frames per actor and allocates no such
-//!   array. Note the table base is not unknown to this tree, only unowned:
-//!   `0x80076C10` is named three times under three readings -
-//!   `battle_party_panel::POSE_SLOT_TABLE` (which publishes label buffers
-//!   into it), `legaia_engine_ui::battle_name_banner`'s
-//!   `BANNER_X_FIELD_OFFSETS` (which calls it "the battle HUD block base"),
-//!   and here. Whoever allocates it first should reconcile the three.
+//! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
+//!   placement table** at `0x80076C10` - see
+//!   [the memory map](../../../../docs/reference/memory-map.md). The engine
+//!   builds its battle UI from world state every frame and allocates no such
+//!   table, so both stay unwired.
+//!
+//!   This module used to call the array a per-actor animation-pose buffer,
+//!   one of three names the same base carried. The record layout falsifies
+//!   that one specifically: `FUN_801D5778` writes
+//!   `dst[+0xA] = src[+0xA] - 0x140`, and `0x140` is the PSX display width, so
+//!   the field it shifts is a screen X and the operation is off-screen
+//!   staging. A pose index is not offset by a display width. The other two
+//!   readings - the party panel's publish target and the Muscle Dome's
+//!   element layout - were both compatible with placements all along; all
+//!   three now say "screen-element placement".
+//!
+//!   Keep the collision in mind when reading nearby code: "pose slot" is
+//!   still the right name for a *different* thing, the actor's animation-pose
+//!   index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
+//!   That collision is why the wrong name stuck here.
 //! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. The engine's
 //!   battle UI is rebuilt from world state every frame (`engine-ui` draw-list
 //!   builders), so nothing is tracked and nothing needs releasing.
@@ -179,18 +190,19 @@ pub fn step_actor_cursor(
 }
 
 // ---------------------------------------------------------------------------
-// FUN_801D57E8 / FUN_801D5778 - pose-slot copy helpers
+// FUN_801D57E8 / FUN_801D5778 - screen-element placement copy helpers
 // ---------------------------------------------------------------------------
 
-/// Byte stride of one record in the battle pose-slot array at `0x80076C10`.
-pub const POSE_SLOT_STRIDE: usize = 0x18;
+/// Byte stride of one record in the screen-element placement table at
+/// `0x80076C10`.
+pub const ELEMENT_PLACEMENT_STRIDE: usize = 0x18;
 
 /// The horizontal bias `FUN_801D5778` subtracts while re-mapping `+0x0A`.
 /// `0x140` = 320 = the PSX display width, i.e. the copy lands the clone one
 /// full screen to the left of its source.
-pub const POSE_SLOT_X_BIAS: u16 = 0x140;
+pub const ELEMENT_STAGING_X_BIAS: u16 = 0x140;
 
-/// One 24-byte record of the pose-slot array at `0x80076C10`.
+/// One 24-byte record of the screen-element placement table at `0x80076C10`.
 ///
 /// The two helpers only ever touch `+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C`
 /// and `+0x14`; `+0x00`, `+0x08`, `+0x0E`, `+0x10` and `+0x12` are carried
@@ -198,7 +210,7 @@ pub const POSE_SLOT_X_BIAS: u16 = 0x140;
 /// left alone by both copies. `+0x14` holds the acting actor's `+0x1BC`
 /// animation-descriptor pointer, modelled here as an opaque handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct PoseSlot {
+pub struct ElementPlacement {
     /// `+0x00` - never written by either helper.
     pub f00: u16,
     /// `+0x02`.
@@ -223,7 +235,8 @@ pub struct PoseSlot {
     pub anim: u32,
 }
 
-/// Straight partial clone of one pose slot into another. `FUN_801D57E8`.
+/// Straight partial clone of one placement record into another.
+/// `FUN_801D57E8`.
 ///
 /// Copies five halfwords (`+0x02`, `+0x04`, `+0x06`, `+0x0A`, `+0x0C`) plus
 /// the word at `+0x14`. It is **not** a `memcpy`: the destination's `+0x00`,
@@ -233,7 +246,7 @@ pub struct PoseSlot {
 /// (both indices are scaled `* 0x18` with no bound check).
 ///
 /// PORT: FUN_801D57E8
-pub fn pose_slot_copy(slots: &mut [PoseSlot], dst: usize, src: usize) {
+pub fn element_placement_copy(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;
     }
@@ -247,9 +260,9 @@ pub fn pose_slot_copy(slots: &mut [PoseSlot], dst: usize, src: usize) {
     d.anim = s.anim;
 }
 
-/// Re-mapped clone of one pose slot into another. `FUN_801D5778`.
+/// Re-mapped clone of one placement record into another. `FUN_801D5778`.
 ///
-/// Same array and stride as [`pose_slot_copy`], but three of the six moves are
+/// Same array and stride as [`element_placement_copy`], but three of the six moves are
 /// permuted and one is biased:
 ///
 /// ```text
@@ -268,7 +281,7 @@ pub fn pose_slot_copy(slots: &mut [PoseSlot], dst: usize, src: usize) {
 /// 16-bit.
 ///
 /// PORT: FUN_801D5778
-pub fn pose_slot_copy_remapped(slots: &mut [PoseSlot], dst: usize, src: usize) {
+pub fn element_placement_copy_remapped(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;
     }
@@ -277,7 +290,7 @@ pub fn pose_slot_copy_remapped(slots: &mut [PoseSlot], dst: usize, src: usize) {
     d.f02 = s.f0a;
     d.f04 = s.f0c;
     d.f06 = s.f06;
-    d.f0a = s.f0a.wrapping_sub(POSE_SLOT_X_BIAS);
+    d.f0a = s.f0a.wrapping_sub(ELEMENT_STAGING_X_BIAS);
     d.f0c = s.f0c;
     d.anim = s.anim;
 }
@@ -430,8 +443,8 @@ mod tests {
 
     #[test]
     fn pose_copy_is_partial() {
-        let mut slots = vec![PoseSlot::default(); 4];
-        slots[1] = PoseSlot {
+        let mut slots = vec![ElementPlacement::default(); 4];
+        slots[1] = ElementPlacement {
             f00: 0x1111,
             f02: 0x2222,
             f04: 0x3333,
@@ -447,7 +460,7 @@ mod tests {
         slots[0].f00 = 0xffff;
         slots[0].f08 = 0xeeee;
         slots[0].f0e = 0xdddd;
-        pose_slot_copy(&mut slots, 0, 1);
+        element_placement_copy(&mut slots, 0, 1);
         assert_eq!(slots[0].f02, 0x2222);
         assert_eq!(slots[0].f04, 0x3333);
         assert_eq!(slots[0].f06, 0x4444);
@@ -464,15 +477,15 @@ mod tests {
 
     #[test]
     fn pose_copy_remapped_permutes_and_biases() {
-        let mut slots = vec![PoseSlot::default(); 2];
-        slots[1] = PoseSlot {
+        let mut slots = vec![ElementPlacement::default(); 2];
+        slots[1] = ElementPlacement {
             f06: 0x0044,
             f0a: 0x0100,
             f0c: 0x0080,
             anim: 7,
             ..Default::default()
         };
-        pose_slot_copy_remapped(&mut slots, 0, 1);
+        element_placement_copy_remapped(&mut slots, 0, 1);
         assert_eq!(slots[0].f02, 0x0100, "dst+2 <- src+0xA");
         assert_eq!(slots[0].f04, 0x0080, "dst+4 <- src+0xC");
         assert_eq!(slots[0].f06, 0x0044);

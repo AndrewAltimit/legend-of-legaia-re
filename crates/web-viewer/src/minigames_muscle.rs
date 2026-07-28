@@ -1564,8 +1564,10 @@ impl LegaiaMinigames {
 // ARTS!! playback, and the GP0 packet stream + VRAM were read out of the
 // savestates (`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`). The
 // sprite geometry (screen anchors, glide endpoints, widths) additionally
-// lives in the SCUS-static battle HUD element table at `0x80076C10`
-// (24-byte stride, 80 records), exported raw below.
+// lives in the SCUS-static screen-element placement table at `0x80076C10`
+// (24-byte stride; 80 of its records are the dome's HUD), exported raw below.
+// That base carries one table under several historical names - see
+// `docs/reference/memory-map.md`.
 
 /// `PROT.DAT` file offset of the battle-chrome widget TIM (plates, D-pad,
 /// AP-plate art, HP/MP badges) in the unindexed pre-`init_data` gap.
@@ -1634,7 +1636,8 @@ fn arts_input_pieces() -> serde_json::Value {
     })
 }
 
-/// SCUS VA of the battle HUD element layout table (24-byte stride).
+/// SCUS VA of the screen-element placement table (24-byte stride); the
+/// dome's HUD is the first 80 records.
 const HUD_ELEMENT_TABLE_VA: u32 = 0x8007_6C10;
 
 /// Element records in the table.

@@ -229,7 +229,8 @@ command cluster, an enemy art, and a player HYPER ARTS!! playback; the GP0
 packet stream was read out of the live prim arena and every texture page was
 byte-matched between the snapshot VRAM and the disc bytes.
 
-**Layout.** The element layout table at SCUS `0x80076C10` (24-byte stride,
+**Layout.** The screen-element placement table at SCUS `0x80076C10`
+(24-byte stride,
 80 records, initialised data in `SCUS_942.54` at file `0x67410`) carries per
 element: two sprite/style selector bytes (`+0`/`+1`), two screen anchors
 `(x, y)` at `+2`/`+4` and `+0xA`/`+0xC` (the glide endpoints the

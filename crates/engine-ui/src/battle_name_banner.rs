@@ -73,8 +73,11 @@ pub const NUDGE_PIXELS: i32 = 3;
 pub const MARKER_CHAR_NAME_PREFIX: u8 = 0xC1;
 
 /// The four halfword banner-X fields retail writes, as offsets from the
-/// battle HUD block base `0x80076C10`. All four always receive the same
-/// value; they are separate fields of the four banner sub-primitives.
+/// screen-element placement table at `0x80076C10` (the canonical name for
+/// this base - see `docs/reference/memory-map.md`; this file used to call it
+/// "the battle HUD block base", one of four phrasings for one table). All
+/// four always receive the same value; they are separate fields of the four
+/// banner sub-primitives.
 pub const BANNER_X_FIELD_OFFSETS: [usize; 4] = [0x722, 0x72A, 0x73A, 0x742];
 
 /// Stride of one live character record (`0x80084708 + slot * 0x414`).
