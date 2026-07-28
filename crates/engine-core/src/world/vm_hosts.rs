@@ -1798,6 +1798,21 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .copied()
             .unwrap_or(0)
     }
+    /// Retail's `actor[+0x34]` / `actor[+0x38]` pair. The engine keeps the
+    /// battle seat on the actor's move state, where `World::enter_battle` puts
+    /// it from [`crate::battle_seats`] and the attack band's drift moves it -
+    /// the same numbers `World::battle_target_rows` hands the target picker's
+    /// angular enemy cursor.
+    ///
+    /// `None` is an unoccupied slot: the actor table holds exactly the seated
+    /// combatants, which is what makes it the engine's reading of retail's
+    /// roster-byte occupancy gate.
+    fn actor_position(&self, slot: u8) -> Option<(i16, i16)> {
+        self.world
+            .actors
+            .get(slot as usize)
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
+    }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);
         self.world

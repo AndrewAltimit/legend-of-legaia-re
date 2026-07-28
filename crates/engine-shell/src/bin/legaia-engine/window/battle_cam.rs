@@ -98,9 +98,22 @@
 //! place per-seat variation lives, so a host that drops it frames every seat
 //! on the formation centre - see [`BattleCamPose::focus`].
 //!
-//! REF: FUN_801D5854 (the framing cases), FUN_801D829C (the
-//! battle camera angle-tween builder these glides ride in retail; the
-//! fixed-point kernel port lives at `legaia_engine_vm::battle_camera`).
+//! ## The glides step on retail's own increments
+//!
+//! `FUN_801D829C` is the tween builder retail's framing cases arm, and its
+//! port is `legaia_engine_vm::battle_camera::build_camera_angle_tween`.
+//! [`Glide::linear`] calls it: the arrive-together glides take their
+//! per-component rates, their 12-bit shortest-arc yaw and their TR.z
+//! projection prescale straight out of it, so there is one implementation of
+//! the stepping arithmetic rather than two, and the increments are retail's
+//! `ceil(|delta| / duration)` integers rather than an exact float divide.
+//!
+//! The dialogue-dismiss glide keeps its own per-component rates: the trace has
+//! pitch settling on step 6 and TR.z on step 7, so that transition is not one
+//! arrive-together tween and no single duration reproduces it.
+//!
+//! REF: FUN_801D5854 (the framing cases), FUN_801D829C (the angle-tween
+//! builder).
 
 /// Battle-camera framing phase, derived from the live battle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,36 +236,42 @@ pub(crate) struct FormationBox {
     pub max: [f32; 2],
 }
 
+/// The far framing's eye-space Z in **raw world units**, before the
+/// projection prescale: `max(span * 3, 0x800)`, where `span` is the larger of
+/// the formation's two extents. This is the value retail's case 9 hands the
+/// tween builder, and [`prescale_tr_z`] is what the builder then does to it.
+pub(crate) fn menu_raw_z(bbox: Option<FormationBox>) -> i32 {
+    let span = match bbox {
+        // Retail keeps the LARGER of the two extents, so a formation that is
+        // wide but shallow still fits the frame.
+        Some(b) => (b.max[0] - b.min[0]).max(b.max[1] - b.min[1]),
+        None => 0.0,
+    };
+    (span * MENU_SPAN_SCALE).max(MENU_TR_Z_MIN_RAW) as i32
+}
+
 /// Retail's case-9 far framing for a formation. `None` (no present actors)
 /// keeps the minimum depth and the origin focus, which is what retail's
 /// un-entered min/max accumulators degenerate to.
 pub(crate) fn menu_framing(bbox: Option<FormationBox>, yaw: f32) -> BattleCamPose {
-    let (span, focus) = match bbox {
-        Some(b) => {
-            let dx = b.max[0] - b.min[0];
-            let dz = b.max[1] - b.min[1];
-            // Retail keeps the LARGER of the two extents, so a formation that
-            // is wide but shallow still fits the frame.
-            let span = dx.max(dz);
-            let centre = [
-                (b.min[0] + b.max[0]) * 0.5,
-                0.0,
-                (b.min[1] + b.max[1]) * 0.5,
-            ];
-            (span, centre)
-        }
-        None => (0.0, [0.0; 3]),
+    let focus = match bbox {
+        Some(b) => [
+            (b.min[0] + b.max[0]) * 0.5,
+            0.0,
+            (b.min[1] + b.max[1]) * 0.5,
+        ],
+        None => [0.0; 3],
     };
-    // `span * 3`, clamped up to the 0x800 floor, then through the same
-    // projection prescale every TR.z takes.
-    let raw = (span * MENU_SPAN_SCALE).max(MENU_TR_Z_MIN_RAW);
     BattleCamPose {
         pitch: MENU_PITCH,
         yaw,
-        tr: [MENU_TR_X, MENU_TR_Y, prescale_tr_z(raw as i32)],
+        tr: [MENU_TR_X, MENU_TR_Y, prescale_tr_z(menu_raw_z(bbox))],
         focus,
     }
 }
+/// Raw eye-space Z of the swing pose, before the projection prescale.
+const SWING_TR_Z_RAW: i32 = 0x800;
+
 /// Over-the-shoulder swing pose the submenu exit passes through
 /// (trace frames 163..173; yaw target is `4096` = `0` unwrapped upward from
 /// `2288`). Retail case `1` orbits the acting actor like the close-up does,
@@ -260,7 +279,7 @@ pub(crate) fn menu_framing(bbox: Option<FormationBox>, yaw: f32) -> BattleCamPos
 const SWING_POSE: BattleCamPose = BattleCamPose {
     pitch: 256.0,
     yaw: 4096.0,
-    tr: [0.0, 1536.0, 3276.0],
+    tr: [0.0, 1536.0, prescale_tr_z(SWING_TR_Z_RAW)],
     focus: [0.0; 3],
 };
 
@@ -296,28 +315,70 @@ struct Glide {
 
 impl Glide {
     /// Linear glide: every component arrives together after `steps` steps.
-    fn linear(from: &BattleCamPose, mut target: BattleCamPose, steps: u32, yaw: bool) -> Self {
+    ///
+    /// The rate table is **retail's**. `build_camera_angle_tween` is
+    /// `FUN_801D829C`, and its fourth argument is the glide's duration: it
+    /// emits one integer per-frame increment per component
+    /// (`ceil(|current - target| / duration)`) plus the 12-bit shortest-arc
+    /// adjustment on the rotation pair, which is precisely the arrive-together
+    /// law this walker wants. Calling it here means the engine holds one
+    /// implementation of the stepping arithmetic instead of two, and steps on
+    /// retail's rounding rather than on an exact float divide.
+    ///
+    /// `target_tr_z_raw` is the target's eye-space Z in **world** units - the
+    /// space retail's framing cases pass, and the one input the builder
+    /// converts (`(z << 8) / 0xA0`). The converted value is what the glide
+    /// converges on, so the caller's `target.tr[2]` is overwritten with it.
+    ///
+    /// `from` is `&mut` for the same reason retail's `current` side is: the
+    /// shortest-arc unwrap can move the *current* angle a full turn rather
+    /// than the target, and the pose the walker steps has to see that.
+    ///
+    /// REF: FUN_801D829C
+    fn linear(
+        from: &mut BattleCamPose,
+        mut target: BattleCamPose,
+        target_tr_z_raw: i32,
+        steps: u32,
+        yaw: bool,
+    ) -> Self {
+        use legaia_engine_vm::battle_camera::{CameraAngles, build_camera_angle_tween};
+
+        let trio = |v: [f32; 3]| [v[0] as i16, v[1] as i16, v[2] as i16];
+        let mut cur = CameraAngles {
+            rotation: [from.pitch as i16, from.yaw as i16, 0],
+            shake: trio(from.tr),
+            focus: trio(from.focus),
+        };
+        let mut tgt = CameraAngles {
+            rotation: [target.pitch as i16, target.yaw as i16, 0],
+            shake: [
+                target.tr[0] as i16,
+                target.tr[1] as i16,
+                target_tr_z_raw as i16,
+            ],
+            focus: trio(target.focus),
+        };
+        let table = build_camera_angle_tween(&mut cur, &mut tgt, steps.max(1) as u16);
+        // Step 1 of the builder converted TR.z into projection units in place.
+        target.tr[2] = tgt.shake[2] as f32;
         if yaw {
-            // Shortest arc: unwrap the target so the signed delta is the
-            // short way round (retail's 12-bit wrap-adjust).
-            let delta = (target.yaw - from.yaw).rem_euclid(4096.0);
-            let delta = if delta > 2048.0 {
-                delta - 4096.0
-            } else {
-                delta
-            };
-            target.yaw = from.yaw + delta;
+            // Both ends come back from the builder's wrap-adjust; the segment
+            // that leaves yaw to the idle orbit keeps its own value instead.
+            from.yaw = cur.rotation[1] as f32;
+            target.yaw = tgt.rotation[1] as f32;
         }
-        let steps_f = steps.max(1) as f32;
+        // The builder's slot order is rotation, translation, focus; roll
+        // (slot 2) is never driven here.
         let rate = [
-            (target.pitch - from.pitch).abs() / steps_f,
-            (target.yaw - from.yaw).abs() / steps_f,
-            (target.tr[0] - from.tr[0]).abs() / steps_f,
-            (target.tr[1] - from.tr[1]).abs() / steps_f,
-            (target.tr[2] - from.tr[2]).abs() / steps_f,
-            (target.focus[0] - from.focus[0]).abs() / steps_f,
-            (target.focus[1] - from.focus[1]).abs() / steps_f,
-            (target.focus[2] - from.focus[2]).abs() / steps_f,
+            table[0].step as f32,
+            table[1].step as f32,
+            table[3].step as f32,
+            table[4].step as f32,
+            table[5].step as f32,
+            table[6].step as f32,
+            table[7].step as f32,
+            table[8].step as f32,
         ];
         Glide {
             target,
@@ -413,7 +474,10 @@ impl BattleCamera {
         if phase == self.phase {
             return;
         }
-        let from = self.pose;
+        // `Glide::linear` may unwrap the CURRENT yaw a full turn (retail's
+        // wrap-adjust moves whichever side is behind), so the live pose has to
+        // see the adjustment.
+        let mut from = self.pose;
         self.glides.clear();
         match phase {
             BattleCamPhase::Menu => {
@@ -442,24 +506,32 @@ impl BattleCamera {
                     // stays on the acting actor (retail case 1); only the
                     // return pulls the focus out to the formation centre.
                     let swing = Glide::linear(
-                        &from,
+                        &mut from,
                         BattleCamPose {
                             focus: self.actor.world,
                             ..SWING_POSE
                         },
+                        SWING_TR_Z_RAW,
                         SUBMENU_SWING_STEPS,
                         true,
                     );
-                    let back =
-                        Glide::linear(&swing.target, self.menu_pose(), SWING_RETURN_STEPS, false);
+                    let mut swing_end = swing.target;
+                    let back = Glide::linear(
+                        &mut swing_end,
+                        self.menu_pose(),
+                        menu_raw_z(self.formation),
+                        SWING_RETURN_STEPS,
+                        false,
+                    );
                     self.glides.push_back(swing);
                     self.glides.push_back(back);
                 }
             }
             BattleCamPhase::Submenu => {
                 self.glides.push_back(Glide::linear(
-                    &from,
+                    &mut from,
                     self.actor.submenu_pose(),
+                    SUBMENU_TR_Z_RAW,
                     SUBMENU_ENTER_STEPS,
                     true,
                 ));
@@ -468,8 +540,10 @@ impl BattleCamera {
                 // Retail never re-enters the dialogue close-up mid-battle;
                 // snap defensively.
                 self.pose = DIALOGUE_POSE;
+                from = DIALOGUE_POSE;
             }
         }
+        self.pose = from;
         self.phase = phase;
     }
 
@@ -1073,6 +1147,52 @@ mod tests {
         // And keeps orbiting.
         steps(&mut cam, 1);
         assert_eq!(cam.pose().yaw, 4096.0 - 32.0);
+    }
+
+    /// The glide steps on `FUN_801D829C`'s **integer** per-frame increments,
+    /// not on an exact float divide. Retail's `ceil(|delta| / duration)`
+    /// overshoots slightly and clamps at the endpoint; a float rate would land
+    /// a fraction short on the same step. Pick a height delta the step count
+    /// does not divide and the two laws separate on the very first step.
+    #[test]
+    fn glide_rates_are_the_retail_ceiling_increments() {
+        let mut cam = traced_cam(BattleCamPhase::Menu);
+        // TR.y runs 1280 -> 1401: delta 121 over 6 steps. ceil = 21/step; an
+        // exact divide would be 20.1667.
+        cam.set_actor(BattleCamActor {
+            facing: 0,
+            height: Some(1401.0),
+            world: [0.0, 0.0, -800.0],
+        });
+        cam.set_phase(BattleCamPhase::Submenu);
+        steps(&mut cam, 1);
+        assert_eq!(cam.pose().tr[1], 1280.0 + 21.0);
+        steps(&mut cam, 4);
+        assert_eq!(cam.pose().tr[1], 1280.0 + 105.0);
+        // The last step clamps rather than overshooting to 1406.
+        steps(&mut cam, 1);
+        assert_eq!(cam.pose().tr[1], 1401.0);
+    }
+
+    /// The builder owns the TR.z projection prescale, so a glide handed the
+    /// raw world Z converges on exactly the value the framing cases publish.
+    #[test]
+    fn glide_endpoints_agree_with_the_framing_cases() {
+        let mut cam = traced_cam(BattleCamPhase::Menu);
+        cam.set_phase(BattleCamPhase::Submenu);
+        steps(&mut cam, SUBMENU_ENTER_STEPS as u64);
+        assert_eq!(
+            cam.pose().tr[2],
+            BattleCamActor::default().submenu_pose().tr[2]
+        );
+        cam.set_phase(BattleCamPhase::Menu);
+        steps(&mut cam, (SUBMENU_SWING_STEPS + SWING_RETURN_STEPS) as u64);
+        assert_eq!(cam.pose().tr[2], traced_menu_tr()[2]);
+        // And the raw-Z helper is what `menu_framing` prescales.
+        assert_eq!(
+            prescale_tr_z(menu_raw_z(Some(traced_formation()))),
+            traced_menu_tr()[2]
+        );
     }
 
     /// The shortest-arc unwrap goes the short way in both directions.

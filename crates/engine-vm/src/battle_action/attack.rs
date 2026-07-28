@@ -237,11 +237,10 @@ pub(super) fn attack_return<H: BattleActionHost + ?Sized>(
     host.pose(slot, Pose::Recover);
     // Counter-attack window is gated by both context flags.
     if ctx.counter_attack_a != 0 && ctx.counter_attack_b != 0 {
-        // Counter-attack swap: bump the active actor's queue counter and
-        // route back into AttackChain. Engines drive the actual swap.
-        if let Some(actor) = host.actor_mut(slot) {
-            actor.action_queue_counter = actor.action_queue_counter.saturating_add(1);
-        }
+        // Counter-attack swap: advance the turn cursor past the counterer and
+        // route back into AttackChain (retail `0x801E36D0`). Engines drive the
+        // actual swap.
+        ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
         return transition(ctx, ActionState::AttackChain);
     }
     transition(ctx, ActionState::DoneCleanup)

@@ -4,6 +4,91 @@ use super::*;
 
 // --- magic / item band ------------------------------------------------------
 
+/// Face the acting actor at whatever its target byte `+0x1DD` names - retail's
+/// `0x801E4334..0x801E43A4`, the tail of the cast-begin arm.
+///
+/// Two arms, split on whether the byte is a slot or a group code:
+///
+/// * **`code < 8`** (`sltiu v0, t2, 0x8` at `0x801E433C`): the bearing is taken
+///   straight from the target actor's seat. Retail skips the whole store when
+///   the actor is its own target (`beq v0, t2` at `0x801E4350`).
+/// * **`code >= 8`**: [`target_group_aim`](crate::battle_target_group::target_group_aim)
+///   folds the group's live seats into a centroid, and retail negates both
+///   components back into a world position (`subu a0, zero, a0` /
+///   `subu a1, zero, a1` at `0x801E438C`) before the same bearing call.
+///
+/// Either way the bearing is `FUN_80019B28(p1z, p1x, p2z, p2x)`, which
+/// differences `p2 - p1` - so passing the *target* as `p1` measures target ->
+/// actor, and the `+ 0x800` half-turn at `0x801E439C` is what turns it back
+/// into actor -> target. The result is masked to 12 bits and stored at `+0x46`.
+///
+/// The group walk is assembled in **retail slot numbering** (party `0..3`,
+/// monsters `3..7`), because that is the numbering the group codes index; the
+/// engine seats monsters at `party_count` instead, so the two are mapped here
+/// the same way [`super::dispatch`]'s target banner maps them.
+///
+/// A host with no [`BattleActionHost::actor_position`] leaves the facing alone.
+///
+/// REF: FUN_801E295C (`0x801E4334..0x801E43A4`)
+fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
+    use crate::battle_cue_group::MONSTER_SLOT_FIRST;
+    use crate::battle_target_group::{GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim};
+
+    let slot = ctx.active_actor;
+    let Some((actor_x, actor_z)) = host.actor_position(slot) else {
+        return;
+    };
+    let code = host.actor(slot).map_or(0, |a| a.active_target);
+    let party_count = host.party_count();
+
+    let (aim_z, aim_x) = if (code as usize) < ACTOR_SLOTS {
+        if code == slot {
+            return;
+        }
+        let Some((target_x, target_z)) = host.actor_position(code) else {
+            return;
+        };
+        (target_z, target_x)
+    } else {
+        let mut slots = [GroupSlot {
+            live: false,
+            x: 0,
+            z: 0,
+        }; ACTOR_SLOTS];
+        for (retail_slot, out) in slots.iter_mut().enumerate() {
+            let retail_slot = retail_slot as u8;
+            // Retail numbering -> the engine's compact seating.
+            let engine_slot = if retail_slot < MONSTER_SLOT_FIRST {
+                if retail_slot >= party_count {
+                    continue;
+                }
+                retail_slot
+            } else {
+                party_count + (retail_slot - MONSTER_SLOT_FIRST)
+            };
+            let Some((x, z)) = host.actor_position(engine_slot) else {
+                continue;
+            };
+            let live = host.actor(engine_slot).is_some_and(|a| {
+                // Party arm: the roster byte, i.e. seat occupancy. Monster arm:
+                // retail's `+0x4` prim word, read through its `+0x21C` twin.
+                retail_slot < MONSTER_SLOT_FIRST || a.render_flag != RENDER_FLAG_HIDDEN
+            });
+            *out = GroupSlot { live, x, z };
+        }
+        let Some(aim) = target_group_aim(code, &slots) else {
+            return;
+        };
+        (-aim.centroid_z, -aim.centroid_x)
+    };
+
+    let bearing = bearing_12bit_approx(aim_z, aim_x, actor_z, actor_x);
+    let facing = bearing.wrapping_add(0x800) & 0xFFF;
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.facing_angle = facing;
+    }
+}
+
 pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -26,6 +111,9 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
             _ => {}
         }
     }
+    // Turn to face the target (or the group's centroid). Retail runs this on
+    // the retargeted byte, before it picks the next state.
+    face_cast_target(host, ctx);
     // Stage frame timer for pre-cast wait.
     ctx.frame_timer = 0x14;
 
