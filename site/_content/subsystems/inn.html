@@ -7,7 +7,33 @@
 <section class="doc-section" id="what-is-this">
   <h2>What this page covers</h2>
   <p>Every town's dialogue, doors and triggers run as bytecode in the <a href="script-vm.html">field/event VM</a> (a small interpreter for per-scene scripts), and each scene ships its script in a container called the <strong>MAN</strong> (the scene's script + data sub-asset). An inn stay is nothing more than one such script: a gold check, a debit, a restore, a dream. Because the price is data inside the script rather than a row in a table, finding "what does this inn charge?" means <em>scanning the script bytes</em> - which is exactly what the clean-room engine does at scene load.</p>
-  <p>Engine-side session state: <code>engine-core::inn::InnSession</code>; the scene host scans the scripted cost from the MAN at load (<code>SceneHost::scene_inn_cost</code>) and <code>MenuRuntime::open_scene_inn</code> opens the prompt with it (<code>open_inn(cost)</code> is the direct entry for tests and tooling).</p>
+  <p>The clean-room engine runs that script rather than reimplementing it: walking up to an innkeeper and answering &ldquo;Yes&rdquo; steps the innkeeper's own record through the ported field VM, and the gold that leaves your purse and the HP that comes back are the script's own instructions doing it. See <a href="#trigger">The trigger</a>.</p>
+  <p>There is <em>also</em> an engine-side <code>InnSession</code> prompt (<code>engine-core::inn</code>, with its own cost window) which nothing on that path opens - see <a href="#open-items">Open items</a>.</p>
+</section>
+
+<section class="doc-section" id="trigger">
+  <h2>The trigger: the picker's own jump table</h2>
+  <p>There is no &ldquo;is this dialogue an inn?&rdquo; test anywhere - no opcode, no flag, no table of innkeepers. The hand-off from the offer to the restore is the <strong>option picker's per-option jump</strong>: each menu entry is a signed relative displacement, and the innkeeper's record is laid out so the <em>Yes</em> entry points at the gold gate. Answering the question <em>is</em> the trigger.</p>
+  <p>The shape, read off the <code>retock</code> innkeeper's record (the one carrying that scene's scanned charge):</p>
+<pre><code>1F &lt;greeting&gt; 00  1F &lt;price line&gt; 00  1F &lt;offer question&gt; 00
+2A &lt;rel16 yes&gt; &lt;rel16 no&gt; 24        ; 2-option picker + post-page continue
+1F &lt;"yes" label&gt; 00  1F &lt;"no" label&gt; 00
+  ; yes-jump target:
+A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end
+                                    ;   latch, spin until it re-latches
+... 26 &lt;rel16&gt;                      ; -&gt; the gate
+4E &lt;pp&gt; 30 &lt;cost u16&gt; &lt;skip u16&gt;    ; if gold &lt; cost, skip to the refusal
+3A &lt;sext24(-cost)&gt;                  ; take the money
+1F &lt;thank-you&gt; 00 1F &lt;good night&gt; 00
+35 / 34 / 4A / 36                   ; BGM release, fade, waits, cue
+4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot</code></pre>
+  <p>The <em>No</em> jump lands on the decline line and the gate's skip lands on the can't-afford line, both inside the same record - so a stay never leaves the field VM.</p>
+  <p>Two details of that layout are easy to get wrong, and either one alone makes the inn unreachable in a port:</p>
+  <ul>
+    <li><strong>The menu open byte is <code>0x2A</code>, not <code>0x27</code>.</strong> <code>FUN_80038050</code> - the handler that applies the chosen option's jump - treats <code>0x27</code>, <code>0x28</code>, <code>0x29</code> and <code>0x2A</code> in one arm. On the pager side <code>0x2A</code> enters state <code>0x11</code> where <code>0x27</code> enters <code>0x13</code>, and the shared cursor handler at <code>0x801D941C</code> reads the option count off the <em>active</em> state (<code>0x18</code> = 4, <code>0x16</code> = 3, otherwise 2). So <code>0x2A</code> is a <strong>2-option</strong> menu that animates the box geometry first, and its cursor clamps instead of wrapping. A decoder that stops at <code>0x29</code> finds no inn menu at all - and misses a large share of the field corpus's other menus with it.</li>
+    <li><strong><code>AD F8 08</code> is a spin, not an end.</strong> <code>0x2D</code> tests a bit of the clip-control word <code>actor+0x62</code>, and bit 8 is the &ldquo;end&rdquo; flag the actor tick <code>FUN_800204F8</code> latches when a clip finishes - so <code>A2 F8 &lt;clip&gt;</code> / <code>AC F8 08</code> / <code>AD F8 08</code> means &ldquo;play it, clear the latch, wait for it&rdquo;. Retail's dialog state machine returns there every frame and re-enters until the latch lands. Reading that halt as &ldquo;the conversation is over&rdquo; stops one instruction into the Yes branch, before the gate.</li>
+  </ul>
+  <p>Engine path: <code>World::trigger_field_interact</code> &rarr; <code>World::drive_inline_dialogue</code> &rarr; <code>World::step_inline_dialogue</code> &rarr; <code>legaia_engine_vm::field::step</code>. The runner parks on the clip-end spin and latches the tested bit once the cued player clip finishes; the gate reads the live purse through <code>FieldHost::party_bank_value</code>, and the debit and the restore are the record's own <code>ADD_MONEY</code> and <code>4C 82 &lt;slot&gt;</code> ops. Disc-gated oracle: <code>crates/engine-core/tests/inn_stay_field_vm_disc.rs</code>, which drives the real record from the interact call and checks the gold delta and the party pools on the Yes, No and can't-afford branches.</p>
 </section>
 
 <section class="doc-section" id="cost-source">
@@ -44,7 +70,7 @@
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
-  <p>The engine port models the prompt as a menu session (retail runs it as plain field-VM dialogue - see above). The port handles:</p>
+  <p>This section describes the port's <strong>alternative</strong> presentation - a menu session with its own cost window - which nothing on the reachable path opens (see <a href="#open-items">Open items</a>). The in-game stay is the field-VM record above.</p>
   <table>
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
@@ -59,7 +85,7 @@
 
 <section class="doc-section" id="session">
   <h2>InnSession</h2>
-  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_scene_inn(&amp;SceneHost)</code> (resolves the loaded scene's scanned cost and enters <code>InnConfirm</code>; returns <code>None</code> and installs nothing for free-rest scenes) or directly by <code>open_inn(cost)</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>.</p>
+  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_scene_inn(&amp;SceneHost)</code> (resolves the loaded scene's scanned cost and enters <code>InnConfirm</code>; returns <code>None</code> and installs nothing for free-rest scenes) or directly by <code>open_inn(cost)</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>. Neither entry has a production caller - see <a href="#open-items">Open items</a>.</p>
 </section>
 
 <section class="doc-section" id="open-items">
@@ -71,10 +97,18 @@
     <code>scene_gold_charges</code> (<code>scene_inn_cost()</code> = the first sub-3 charge). Disc-gated oracle:
     <code>crates/engine-core/tests/inn_cost_scene_disc.rs</code> (<code>retock</code>'s 240 G stay resolves;
     free-rest <code>town01</code> opens nothing).</li>
-    <li><strong>Render layout + trigger.</strong> Retail renders the prompt as ordinary field dialogue (MES text + option picker), not a
-    dedicated cost window; the port's <code>InnConfirm</code> panel is an engine-side presentation choice, and the innkeeper
-    dialogue does not yet hand off into it automatically (hosts call <code>open_scene_inn</code> themselves). The scripted restore
-    (<code>0x4C</code> records) and the <code>DREAM@@</code> hand-off are not yet mirrored.</li>
+    <li><strong>Trigger - resolved, wired.</strong> The stay runs as the innkeeper's own field-VM record, reached by walking up and
+    talking (see <a href="#trigger">The trigger</a>). The port had the ops and the cost scan but not the path: the
+    <code>0x2A</code> menu open byte decoded as nothing, the gold gate read an empty purse because the engine had no
+    <code>party_bank_value</code>, and the clip-end spin ended the conversation one instruction into the Yes branch.</li>
+    <li><strong><code>InnSession</code> has no production caller - disclosed, not wired.</strong> <code>MenuRuntime::open_inn</code> /
+    <code>open_scene_inn</code> and the <code>InnConfirm</code> / <code>InnSleep</code> sub-screens are an engine-side prompt with
+    its own cost window and commit kernel. Retail has no such screen and the reachable path does not pass through one, so wiring a
+    host into it would <em>replace</em> faithful innkeeper dialogue with an invented panel rather than fill a gap. It stays as the
+    direct entry for tests and tooling. Deleting it is a legitimate future call; inventing a caller for it is not.</li>
+    <li><strong>The <code>DREAM</code> hand-off is not mirrored.</strong> Some inns append a story-flag-gated tail that warps to a
+    <code>DREAM</code> scene after the restore. The restore runs first and unconditionally, so a stay is complete without it, but the
+    dream scenes themselves are not yet reached.</li>
   </ul>
 </section>
 

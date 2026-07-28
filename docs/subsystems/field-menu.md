@@ -1489,13 +1489,17 @@ can paint. Two consequences fall out of keying on the renderer:
   `_DAT_800845A4` with `0x66`; the painter is one routine and `CounterSource`
   tells a host which live total to feed it.
 
-The native window (`window/menu_draws.rs`, `window/shop_windows.rs`) draws
-its pause-screen tabs and the shop's vendor plate / purse / item-info /
-sell-quantity windows through this dispatch, at their disc-parsed rects. The
-painters for windows that no host **opens** yet - 5, 6, 7, 24, 25, 31, 36, 41,
-46 - stay unreached by a screen rather than by a mechanism; each one's
-remaining blocker is recorded per builder in
-`scripts/ci/ui-host-drift-waivers.toml`.
+Both hosts draw their pause-screen tabs and the shop's vendor plate / purse /
+item-info / sell-quantity windows through this dispatch, at their disc-parsed
+rects - the native window in `window/menu_draws.rs` + `window/shop_windows.rs`,
+the browser play page in `web-viewer::play_shop`. Windows **36 / 25 / 41** join
+them whenever the equipment-buy recipient sub-screen is up: that screen is one
+shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
+separate host-side draws, so its row order and cursor rows are the same on both.
+
+The painters for windows no host **opens** yet - 5, 6, 7, 24, 31, 46 - stay
+unreached by a screen rather than by a mechanism; each one's remaining blocker
+is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
 
 Three rules the block encodes are worth naming on their own:
 
@@ -1931,6 +1935,15 @@ draws the current values with no arrows.
 Ports: `engine-ui::equip_compare_panel_fields` /
 `party_compare_panel_fields`. The screen that opens both windows is the
 shop's equipment-buy recipient flow (`FUN_801DB380`; see
-[shop.md](shop.md)) - the browser play page draws them beside the
-recipient list (window 36), with the candidate blocks derived from the
-equipment modifier table rather than the inline trial-equip swap.
+[shop.md](shop.md)), and both hosts draw them beside the recipient list
+(window 36) through the shared `engine-ui::recipient_picker_draws_for`,
+with the candidate blocks derived from the equipment modifier table
+rather than the inline trial-equip swap.
+
+The category byte window 25 keys its row set on is the equip record's
+`+5`, and on the retail USA disc **every** equipment bonus row carries the
+`0x40` no-passive sentinel there - so the panel always shows the ATK /
+UDF / LDF triple in this flow. A host that cannot resolve the byte may
+pass the sentinel and get the identical screen, which is what lets the
+native window feed a constant where the browser page feeds a table
+lookup.

@@ -2233,6 +2233,26 @@ impl World {
             if id.pc < id.visited.len() {
                 id.visited[id.pc] = true;
             }
+            // `A2 F8 <move_id>` - a cross-context ExecMove poked at the PLAYER
+            // channel (`0xF8` = `_DAT_8007C364`). Retail re-points the player
+            // actor's `+0x4C` clip pointer and its actor tick plays the clip;
+            // the engine cues it the same way the cutscene timeline does, and
+            // the windowed host resolves the scene-ANM record off
+            // `World::field_player_move_cues`. The runner's own `ctx` is the
+            // record's, not the player's, so the cue is the only way an
+            // innkeeper's bow or a shopkeeper's turn reaches the screen.
+            if (b & 0x7F) == 0x22
+                && vm::field::peek_extended(&id.bytecode, id.pc) == Some(0xF8)
+                && let Some(&move_id) = id.bytecode.get(id.pc + 2)
+                && move_id > 2
+            {
+                host.world.field_player_move_cues.push(move_id);
+                id.player_clip_frames = if host.world.field_player_anim.is_some() {
+                    crate::inline_dialogue::PLAYER_CLIP_CUE_SETTLE
+                } else {
+                    0
+                };
+            }
             match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
                 // A backward Advance onto an already-executed PC is the
                 // record's resident loop-back to its top selector - the end
@@ -2280,6 +2300,53 @@ impl World {
                 {
                     id.pc = final_pc;
                     break;
+                }
+                // op-0x2D LFLAG_TST is a **spin**, not an end. The bit it
+                // tests is in the clip-control word `actor+0x62`, and bit 8
+                // (`0x0100`) is the "end" flag the actor's anim tick
+                // (`FUN_800204F8`) latches when the clip cursor reaches an
+                // end - so the retail idiom `A2 F8 <clip>` / `AC F8 08` /
+                // `AD F8 08` is "play it, clear the latch, wait for it". The
+                // dialog SM returns and re-enters per frame until the latch
+                // lands; ending the conversation here instead is what left
+                // every scripted gesture beat unreachable, the innkeeper's
+                // among them (`docs/subsystems/inn.md`).
+                //
+                // Park while the cued player clip is still playing; once it
+                // is done, set the tested bit - that write IS the anim tick's
+                // latch, which the runner has to stand in for because the
+                // record's ctx is not bound to the poked actor - and re-step
+                // so the spin falls through. Bounded by
+                // `INLINE_SPIN_PARK_TIMEOUT` so an unmodelled latch cannot
+                // hold the player in the box forever.
+                //
+                // REF: FUN_800204F8 (the anim tick that owns the latch)
+                // REF: FUN_80039B7C (the dialog SM's per-frame re-entry)
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x2D && id.fallback_segment_pc.is_none() =>
+                {
+                    let playing = id.player_clip_frames > 0
+                        || host
+                            .world
+                            .field_player_anim
+                            .as_ref()
+                            .is_some_and(|a| a.scripted_active());
+                    if playing {
+                        id.player_clip_frames = id.player_clip_frames.saturating_sub(1);
+                        id.park_frames = id.park_frames.saturating_add(1);
+                        id.pc = final_pc;
+                        if id.park_frames > crate::inline_dialogue::INLINE_SPIN_PARK_TIMEOUT {
+                            id.done = true;
+                        }
+                        break;
+                    }
+                    id.park_frames = 0;
+                    let header = if b & 0x80 != 0 { 2 } else { 1 };
+                    if let Some(&bit) = id.bytecode.get(final_pc + header) {
+                        id.ctx.local_flags |= 1u16.checked_shl(u32::from(bit & 0x1F)).unwrap_or(0);
+                    }
+                    id.pc = final_pc;
+                    continue;
                 }
                 // Any other halt/hold, an unhandled op, or an end: stop.
                 // (Unlike the cutscene timeline the runner does not force-

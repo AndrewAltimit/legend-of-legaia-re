@@ -30,6 +30,22 @@ use crate::dialog::OwnedDialogPanel;
 /// pathological inline script that never reaches a text segment or end.
 pub const INLINE_DIALOGUE_STEP_BUDGET: u32 = 256;
 
+/// Ticks a cross-context ExecMove against the player (`A2 F8 <move_id>`) holds
+/// the following clip-end spin before it may latch, when the host owns a
+/// player clip player ([`crate::field_anim::FieldPlayerAnim`]). The cue leaves
+/// `World::field_player_move_cues` for the host to drain on its next redraw,
+/// so the spin must not resolve on the tick that raised it or the clip would
+/// be skipped before it ever started; from the second tick on
+/// `FieldPlayerAnim::scripted_active` carries the real wait. A host with no
+/// clip player has no clip to wait for and latches immediately.
+pub const PLAYER_CLIP_CUE_SETTLE: u32 = 2;
+
+/// Consecutive parked ticks a clip-end spin (`2D <bit>` / `AD <target> <bit>`)
+/// may hold an NPC conversation before the runner gives up and ends it. The
+/// latch it waits on is written by another subsystem's tick, so an unmodelled
+/// one must not leave the player standing in a box forever.
+pub const INLINE_SPIN_PARK_TIMEOUT: u32 = 600;
+
 /// Resumable state for one running inline interaction script.
 #[derive(Debug)]
 pub struct InlineDialogue {
@@ -73,6 +89,11 @@ pub struct InlineDialogue {
     /// (`2D 08` end-latch spin, `4A` frame wait). The prop stepper bounds it
     /// so a decode drift can never soft-lock the engaged player.
     pub park_frames: u32,
+    /// Ticks left on a **player** clip this record cued with a cross-context
+    /// ExecMove (`A2 F8 <move_id>`), used as the settle window before the
+    /// clip-end spin that follows it is allowed to latch. See
+    /// [`PLAYER_CLIP_CUE_SETTLE`].
+    pub player_clip_frames: u32,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`]. Interaction records are **resident conversation
     /// drivers**: every story-state branch exits by jumping to a shared tail
@@ -101,6 +122,7 @@ impl InlineDialogue {
             npc_slot: None,
             prop_anchor: None,
             park_frames: 0,
+            player_clip_frames: 0,
             visited,
         }
     }
@@ -131,6 +153,7 @@ impl InlineDialogue {
             npc_slot: None,
             prop_anchor: None,
             park_frames: 0,
+            player_clip_frames: 0,
             visited,
         }
     }

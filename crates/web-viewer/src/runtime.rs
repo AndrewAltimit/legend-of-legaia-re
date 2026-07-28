@@ -161,6 +161,23 @@ pub struct LegaiaRuntime {
     /// byte and the stat-compare windows read the bonus columns. `None` on
     /// a PROT.DAT-only load.
     pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    /// Spell / seru display names from the same executable, used to label the
+    /// shop's seru-trade offers ("give (owner) -> receive"). `None` on a
+    /// PROT.DAT-only load, where offers fall back to `Seru NN` exactly as the
+    /// native window's do.
+    pub(crate) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// Live settings the pause menu's Options screen edits. The native window
+    /// keeps the same state on `PlayWindowApp` and persists it to
+    /// `legaia-options.toml`; this host keeps it for the session, which is
+    /// what makes the screen *remember* an edit. Without it every open
+    /// rebuilt from `OptionsState::default()` and every change was discarded
+    /// on close - the screen looked wired and did nothing.
+    ///
+    /// Persistence across page reloads is not wired: there is no filesystem
+    /// here and the page has no handle on this state, so a reload starts from
+    /// [`Default`]. The native window's TOML round-trip has no browser twin
+    /// yet.
+    pub(crate) options_state: legaia_engine_core::options::OptionsState,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -211,6 +228,8 @@ impl LegaiaRuntime {
             fishing_prev_phase: None,
             fishing_venues: None,
             equip_stats: None,
+            seru_names: None,
+            options_state: legaia_engine_core::options::OptionsState::default(),
             live_battles: true,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -270,6 +289,16 @@ impl LegaiaRuntime {
         // pause screens' info windows print. Executable-only, like above.
         if let Some(s) = scus.as_ref() {
             host.world.install_menu_text(s);
+            // The randomizer's seru-trade config (the `--seru-trade` blob in
+            // preserved rodata) plus the display-name table the offers are
+            // labelled with. Vanilla ships the config disabled, so this is a
+            // no-op on an unpatched disc; on a patched one it is what makes
+            // the shop's "Trade Seru" row appear. The native boot installs
+            // the same pair (`BootSession::open_with_source` +
+            // `ensure_seru_names`), and without it the browser page silently
+            // dropped the whole feature - a shop root row short.
+            host.world.install_seru_trade_config(s);
+            self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads
@@ -1019,6 +1048,51 @@ impl LegaiaRuntime {
         }
         for clip in self.npc_clips.values_mut() {
             clip.player.advance(1);
+        }
+        self.drive_player_move_cues();
+    }
+
+    /// Drain `World::field_player_move_cues` - the cross-context ExecMove
+    /// pokes a script aims at the **player** channel (`A2 F8 <move_id>`) -
+    /// and queue each as a scripted one-shot over the idle/walk pair, the
+    /// browser twin of the native window's cue drain in
+    /// `window/event_handler/redraw.rs`.
+    ///
+    /// Both the cutscene timeline and (since the inn wire) the inline-dialogue
+    /// runner raise these, and the runner's clip-end spin
+    /// (`AD F8 08`) holds the conversation while
+    /// [`legaia_engine_core::field_anim::FieldPlayerAnim::scripted_active`]
+    /// reports one playing - so a page that never drained the queue both
+    /// dropped every scripted player gesture and ran the beat behind it on a
+    /// different clock than native.
+    ///
+    /// Move ids `<= 2` are the locomotion walk moves the movement controller
+    /// already animates; the native drain skips them and so does this one.
+    fn drive_player_move_cues(&mut self) {
+        let cues: Vec<u8> = match self.scene_host.as_mut() {
+            Some(h) => std::mem::take(&mut h.world.field_player_move_cues),
+            None => return,
+        };
+        for id in cues {
+            if id <= 2 {
+                continue;
+            }
+            let (Some(bundle), Some(rec)) = (self.scene_anm.as_ref(), (id as usize).checked_sub(1))
+            else {
+                continue;
+            };
+            let Some(clip) =
+                legaia_engine_core::field_anim::FieldClipPlayer::from_record(bundle, rec)
+            else {
+                continue;
+            };
+            if let Some(anim) = self
+                .scene_host
+                .as_mut()
+                .and_then(|h| h.world.field_player_anim.as_mut())
+            {
+                anim.push_scripted(clip);
+            }
         }
     }
 

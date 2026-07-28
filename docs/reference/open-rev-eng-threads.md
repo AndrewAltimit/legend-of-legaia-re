@@ -100,6 +100,37 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
+| Who latches the clip-end bit for a conversation's cross-context clip pokes | partial - the latch and the spin are settled; the port stands in for the latch instead of resolving the poked actor | [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
+
+### Clip-end latch for cross-context clip pokes
+
+*Status:* partial. The mechanism is settled from the disassembly: `ctx[+0x62]`
+is the clip-control word, bit 8 (`0x0100`) is the "end" flag the actor tick
+`FUN_800204F8` latches when a clip cursor reaches an end, and the recurring
+`A2 <t> <clip>` / `AC <t> 08` / `AD <t> 08` triple is "play it, clear the
+latch, spin until it re-latches" (see
+[`script-vm.md`](../subsystems/script-vm.md#0x2b-0x33-flag-manipulation-triplets)).
+A prop-bound record reaches the latch through its own `PropAnim` tick, which
+is why doors and cupboards play out correctly.
+
+What is not resolved is the **cross-context** form an NPC conversation uses.
+`A2 F8 …` pokes the player channel, so retail's spin reads the *player
+actor's* `+0x62` while the dispatcher is running the NPC's record. The port's
+inline-dialogue runner keeps one context per record and never resolves the
+`0x80`-prefix target to a live actor, so nothing writes that bit: it cues the
+player clip, parks the conversation while the clip plays, and then sets the
+tested bit itself as a stand-in for the tick's write. That reproduces the
+observable beat (the gesture plays, then the script continues - which is what
+makes an inn stay reachable, see [`inn.md`](../subsystems/inn.md)) but it is
+not the retail data path, and it cannot be right for a poke at a *third*
+actor's clip.
+
+*What would close it:* resolve the ext-target byte to the live actor the way
+`func_0x8003C83C` does, run the dispatcher against that actor's own
+`+0x62`/`+0x6A` words (the prop stepper already does exactly this for props),
+and let the existing clip players own the latch. A live capture of an
+innkeeper conversation reading back the player actor's `+0x62` across the
+spin would pin the expected cursor/latch sequence to check it against.
 
 ### Region story-flag gate families
 

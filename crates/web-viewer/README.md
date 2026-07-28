@@ -354,6 +354,29 @@ what the two hosts actually do.
 The practical consequence for anyone adding a screen: wire it in both hosts, or
 write down why not.
 
+### Platform drift against the native window
+
+The gate above answers "does this host call the builder". It cannot answer "does
+this host feed the builder the same model", and that is where the drift it
+misses lives - both hosts call `shop_draws_for`, both call `options_draws_for`,
+and for a while both looked fine while one of them drew a blank screen. What is
+known today, found by reading the two hosts side by side rather than by any
+gate:
+
+| Area | State |
+|---|---|
+| Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and `play_shop::shop_trade_draws` is the twin of the native `draw_shop_trade`. |
+| Options screen | Half closed. Edits persist for the session; a page reload still starts from defaults, where the native window reloads `legaia-options.toml`. |
+| Inn prompt | Open, and host-symmetric in the sense that matters least: neither host opens an inn session, but only the native window would draw one if something did. |
+| Load / Save rows | Deliberate. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/`. A browser has no filesystem to be the other thing. |
+| Dance / Baka / Muscle | Deliberate. The native window starts them from developer keybinds; here they are their own site pages driven by `LegaiaMinigames`. Neither host reaches them from a field trigger yet. |
+
+The Options row deserves the sharpest statement, because it is the shape that
+recurs: the screen was *drawn* on both hosts and the gate was green, while one
+of them rebuilt the session from `OptionsState::default()` on every open and
+dropped the result on close. A screen can be fully wired and still be connected
+to nothing.
+
 ## Boot title screen (`boot_title`)
 
 The front of the native `--boot-ui` chain (publisher logos -> title ->

@@ -161,18 +161,24 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 | `0x24` | `3` -> `4` | continue text on the next line, same box (rows preserved) |
 | `0x48` | `9` -> `0xA` | box reset, then the open animation - a fresh box |
 | `0x4C` followed by `0xFF` | `6` -> `7` | box reset, then row buffer cleared (teardown) |
-| `0x2A` | `0x11` (box resize) | start the box geometry animation |
-| `0x27` | `0x13` -> `0x12` (init -> 2-option picker) | 2-option `Yes`/`No`-style menu |
-| `0x28` | `0x15` -> `0x14` (init -> 3-option picker) | 3-option menu |
-| `0x29` | `0x17` -> `0x16` (init -> 4-option picker) | 4-option menu |
+| `0x2A` | `0x11` -> `0x12` (resize -> 2-option picker) | 2-option menu, box geometry animated first |
+| `0x27` | `0x13` -> `0x14` (init -> 2-option picker) | 2-option `Yes`/`No`-style menu |
+| `0x28` | `0x15` -> `0x16` (init -> 3-option picker) | 3-option menu |
+| `0x29` | `0x17` -> `0x18` (init -> 4-option picker) | 4-option menu |
 
 **What the pager does and does not decide.** The state numbers above are read straight off the dispatch chain at `0x801D8FDC` and the jump table at `0x801CEBC0`, and the teardown-vs-fresh-box split is settled by the successor handlers. What is *not* in these instructions is the end of the **conversation**: `0x25` and `0x4C 0xFF` clear the row buffer and stop there - the pager neither returns a status nor signals its caller. Whether the dialogue session ends is decided caller-side, in the actor dialog SM `FUN_80039B7C` and the field VM. Treat "end conversation" / "close the dialog" as a reading of the box teardown, not as a property the pager byte carries; the session-level semantics are open.
 
-So the picker controls are MES `0x27` / `0x28` / `0x29`:
+So the picker controls are MES `0x27` / `0x28` / `0x29` **and `0x2A`**:
 
-- The open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x29` form and the high-bit `0xA7..0xA9` form are accepted; the field corpus stores the bare form.
+- The open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x2A` form and the high-bit `0xA7..0xAA` form are accepted; the field corpus stores the bare form.
 - Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`.
 - On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) - same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch - and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
+
+**`0x2A` is a fourth open byte, not a bare resize.** Its arity is not in the dispatch chain above, which only names the entry state; it is in the shared picker-cursor handler at `0x801D941C`, which reads the option count off the *active* state - `li t1,0x2` as the fall-through, `0x16` -> 3, `0x18` -> 4. State `0x12` therefore takes the 2 arm, the same count `0x27`'s `0x14` takes.
+
+Two further instructions settle that `0x12` is a live picker state and not a resize that falls through to something else. The same handler's `bne v1,0x12` carve-outs at `0x801D9474` and `0x801D94D0` make its cursor *clamp* at both ends where every other picker wraps. And the inline-script control handler `FUN_80038050` lists `case 0x2a` alongside `0x27`/`0x28`/`0x29` in the arm that applies the chosen option's relative jump - so a `0x2A` region is read as a jump table by the code that branches on it.
+
+The corpus agrees structurally: retail `0x2A` sites carry exactly two jump entries, a valid continuation byte at `O+5`, and two label segments after it. Every inn's `Yes`/`No` offer is one of these (see [`subsystems/inn.md`](../subsystems/inn.md#the-trigger-the-pickers-own-jump-table)), which is why a decoder that stops at `0x29` finds no inn menu at all.
 
 ### Picker control-region layout
 

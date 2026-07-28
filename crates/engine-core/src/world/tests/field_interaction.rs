@@ -315,6 +315,11 @@ fn spar_dialogue() -> Vec<u8> {
         b.extend_from_slice(lbl);
         b.push(0x00);
     }
+    // Branch bodies the four jumps land in. `legaia_mes::scan_pickers` only
+    // accepts a picker whose every option target is a byte of this script -
+    // a real record has its branches after the labels - so the fixture needs
+    // them too. Filler is field-VM `0x21` NOPs (no second picker).
+    b.resize(80, 0x21);
     b
 }
 

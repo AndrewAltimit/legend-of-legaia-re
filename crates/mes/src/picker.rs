@@ -3,20 +3,28 @@
 //! A field NPC's interaction text is a run of `0x1F`-lead glyph segments
 //! (the message lines) interleaved with control bytes that the per-actor
 //! dialog window pager (`FUN_801D84D0`) and the inline-script control handler
-//! (`FUN_80038050`) consume. Three of those control bytes open a **multiple-
+//! (`FUN_80038050`) consume. Four of those control bytes open a **multiple-
 //! choice menu**:
 //!
-//! | open byte (`& 0x7F`) | options |
-//! |---|---|
-//! | `0x27` | 2 (`Yes`/`No`-style) |
-//! | `0x28` | 3 |
-//! | `0x29` | 4 |
+//! | open byte (`& 0x7F`) | options | pager entry -> active state |
+//! |---|---|---|
+//! | `0x27` | 2 (`Yes`/`No`-style) | `0x13` -> `0x14` |
+//! | `0x28` | 3 | `0x15` -> `0x16` |
+//! | `0x29` | 4 | `0x17` -> `0x18` |
+//! | `0x2A` | 2, box geometry animated first | `0x11` -> `0x12` |
+//!
+//! `0x2A`'s arity is not in the post-page dispatch chain (which only names the
+//! entry state) but in the shared cursor handler at `0x801D941C`, whose option
+//! count is `0x18` -> 4, `0x16` -> 3, fall-through -> 2. `FUN_80038050` lists
+//! `case 0x2a` in the same arm as the other three, so the region after it is a
+//! jump table either way. Every inn's `Yes`/`No` offer is a `0x2A` menu - see
+//! `docs/subsystems/inn.md`.
 //!
 //! ## Control-region layout (relative to the open byte at index `O`)
 //!
 //! ```text
 //! [ .. 0x1F prompt segment .. 0x00 ]   <- the box text shown above the menu
-//! O                                     <- open byte (0x27 / 0x28 / 0x29)
+//! O                                     <- open byte (0x27 / 0x28 / 0x29 / 0x2A)
 //! O+1 .. O+N*2                          <- N option entries, 2 bytes each (i16 LE)
 //! O+N*2+1                               <- continuation byte
 //! [ optional 0x4C 0xFF terminate ]
@@ -101,7 +109,11 @@ impl Picker {
 /// Number of options implied by an open byte, or `None` if it isn't one.
 fn option_count(open_byte: u8) -> Option<usize> {
     match open_byte & 0x7f {
-        0x27 => Some(2),
+        // `0x2A` is the box-resize sibling of `0x27`: same 2-option wire
+        // format, different pager entry state (`0x11` -> active `0x12`
+        // instead of `0x13` -> `0x14`), and a cursor that clamps rather than
+        // wraps. See the module docs.
+        0x27 | 0x2A => Some(2),
         0x28 => Some(3),
         0x29 => Some(4),
         _ => None,
@@ -187,10 +199,25 @@ pub fn parse_picker_at(buf: &[u8], open: usize) -> Option<Picker> {
     })
 }
 
-/// Scan `buf` for every structurally-valid picker. A candidate open byte must
-/// be preceded by a `0x00` (the prompt segment's terminator) and pass
-/// [`parse_picker_at`]; this rejects the many coincidental `0x27`/`0x28`/`0x29`
-/// bytes that occur inside glyph runs and packed numeric data.
+/// Scan `buf` for every genuine picker in one interaction script.
+///
+/// A candidate open byte must be preceded by a `0x00` (the prompt segment's
+/// terminator), pass [`parse_picker_at`], and have **every option's jump
+/// target inside `buf`**. Together these reject the coincidental
+/// `0x27`..`0x2A` bytes that occur inside glyph runs and packed operand data.
+///
+/// The in-bounds rule is not a heuristic: `FUN_80038050` writes the chosen
+/// option's target straight into the actor's script PC (`actor[+0x9E]`), so a
+/// target outside the record is not a PC the runtime could ever resume at.
+/// It is what separates a jump table from four bytes of text - the field
+/// corpus has exactly one candidate that clears every other structural gate
+/// and fails this one, a `2A` sitting in an op's literal payload with the
+/// following dialogue lines reading as its labels.
+///
+/// [`parse_picker_at`] itself stays purely structural (it is handed an
+/// already-located open byte, sometimes in a buffer that is only a window
+/// onto the script), so the bound lives here where the buffer *is* the
+/// record.
 pub fn scan_pickers(buf: &[u8]) -> Vec<Picker> {
     let mut out = Vec::new();
     for i in 1..buf.len() {
@@ -200,7 +227,10 @@ pub fn scan_pickers(buf: &[u8]) -> Vec<Picker> {
         if buf[i - 1] != 0x00 {
             continue;
         }
-        if let Some(p) = parse_picker_at(buf, i) {
+        let Some(p) = parse_picker_at(buf, i) else {
+            continue;
+        };
+        if (0..p.n).all(|o| p.jump_target(o).is_some_and(|t| t < buf.len())) {
             out.push(p);
         }
     }
@@ -223,6 +253,11 @@ mod tests {
         b.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]); // label 0
         b.extend_from_slice(&[0x1F, b'N', b'o', 0x00]); // label 1
         assert_eq!(open, 4);
+        // Branch bodies both jumps land in. `scan_pickers` requires every
+        // option target to be a byte of this script (see its docs), which a
+        // real record satisfies by having the branches after the labels; the
+        // filler is field-VM `0x21` NOPs so it introduces no second picker.
+        b.resize(48, 0x21);
         b
     }
 
@@ -293,6 +328,8 @@ mod tests {
             b.extend_from_slice(lbl);
             b.push(0x00);
         }
+        // Branch bodies for the four jumps (see `yes_no`).
+        b.resize(80, 0x21);
         let p = parse_picker_at(&b, open).expect("immediate-labels 4-option picker");
         assert_eq!(p.n, 4);
         assert_eq!(p.continuation, 0x1F);
