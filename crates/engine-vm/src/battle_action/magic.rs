@@ -90,28 +90,51 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
     }
 }
 
+/// The item-target re-route at the head of the cast-begin arm
+/// (`0x801E4298..0x801E4334`).
+///
+/// Retail keys this on the acting actor's **target byte** `+0x1DD`, not on its
+/// action category: `lw t2, 0x20(sp)` at `0x801E4298` reloads the byte the
+/// prologue read out of `+0x1DD`. Target code `9` takes the override in
+/// `ctx[+0x24B]` and code `8` takes `ctx[+0x24A] - 1`, each only when that ctx
+/// byte is non-zero; a zero leaves the code alone, which is what sends it on to
+/// the group arm of [`face_cast_target`]. The two checks are **sequential** on
+/// the rewritten value (`0x801E42E8` reloads it before the `== 8` compare), so
+/// a `9` that resolves to `8` falls into the second arm.
+///
+/// The earlier port read `actor.action_category` instead, mapped `8` and `9` to
+/// the opposite ctx bytes, and rewrote unconditionally. Nothing in the engine
+/// writes either ctx byte, so all three were invisible in behaviour - but the
+/// wrong key made the arm unreachable, because it is `active_target` that
+/// carries `8` / `9` in this port (the monster-AI resolver `FUN_801E7320`
+/// writes them).
+///
+/// REF: FUN_801E295C (`0x801E4298..0x801E4334`)
+fn retarget_item_codes<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
+    let slot = ctx.active_actor;
+    let Some(mut code) = host.actor(slot).map(|a| a.active_target) else {
+        return;
+    };
+    let mut rewritten = false;
+    if code == 9 && ctx.item_target_b != 0 {
+        code = ctx.item_target_b;
+        rewritten = true;
+    }
+    if code == 8 && ctx.item_target_a != 0 {
+        code = ctx.item_target_a.wrapping_sub(1);
+        rewritten = true;
+    }
+    if rewritten && let Some(actor) = host.actor_mut(slot) {
+        actor.active_target = code;
+    }
+}
+
 pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    // Item-target re-route checks. Categories 8 and 9 are intermediate
-    // routing categories.
-    let category = host
-        .actor(slot)
-        .map(|a| ActionCategory::from_byte(a.action_category))
-        .unwrap_or(ActionCategory::Magic);
-    if let Some(actor) = host.actor_mut(slot) {
-        match category {
-            ActionCategory::ItemRetargetA => {
-                actor.active_target = ctx.item_target_a.saturating_sub(1);
-            }
-            ActionCategory::ItemRetargetB => {
-                actor.active_target = ctx.item_target_b;
-            }
-            _ => {}
-        }
-    }
+    retarget_item_codes(host, ctx);
     // Turn to face the target (or the group's centroid). Retail runs this on
     // the retargeted byte, before it picks the next state.
     face_cast_target(host, ctx);

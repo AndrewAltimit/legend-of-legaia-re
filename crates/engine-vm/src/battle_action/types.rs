@@ -26,12 +26,16 @@ pub enum ActionCategory {
     Spirit = 4,
     /// Run / Defend.
     Run = 5,
-    /// Item-target re-route (state `0x28` reseats `actor.active_target` to
-    /// `ctx.item_target_b`). Not a true category - it's an intermediate
+    /// Item-target re-route. Not a true category - it's an intermediate
     /// signal that the item-arm of the magic flow uses.
+    ///
+    /// NB the re-route itself is **not** keyed on this byte: state `0x28`
+    /// reads the *target* byte `+0x1DD` (see
+    /// `battle_action::magic`'s `retarget_item_codes`). These two variants
+    /// name the same values in the category space, and what the category
+    /// dispatch does with them is open.
     ItemRetargetB = 8,
-    /// Item-target re-route (state `0x28` reseats `actor.active_target` to
-    /// `ctx.item_target_a - 1`). Same caveat as `ItemRetargetB`.
+    /// Item-target re-route. Same caveat as [`ActionCategory::ItemRetargetB`].
     ItemRetargetA = 9,
 }
 

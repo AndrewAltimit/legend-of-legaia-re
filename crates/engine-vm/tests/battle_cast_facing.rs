@@ -40,15 +40,25 @@ impl SeatedHost {
         }
     }
     fn cast(&mut self, actor: u8, target: u8) -> u16 {
+        self.cast_with(actor, target, 0, 0).0
+    }
+    /// Same, with the cast census's two retarget latches armed. Returns the
+    /// facing and the target byte the arm left behind.
+    fn cast_with(&mut self, actor: u8, target: u8, sole_party: u8, sole_monster: u8) -> (u16, u8) {
         self.actors[actor as usize].action_category = 2; // Magic
         self.actors[actor as usize].active_target = target;
         let mut ctx = BattleActionCtx {
             action_state: ActionState::MagicCastBegin.as_byte(),
             active_actor: actor,
+            item_target_a: sole_party,
+            item_target_b: sole_monster,
             ..Default::default()
         };
         step(self, &mut ctx);
-        self.actors[actor as usize].facing_angle
+        (
+            self.actors[actor as usize].facing_angle,
+            self.actors[actor as usize].active_target,
+        )
     }
 }
 
@@ -183,4 +193,60 @@ fn a_host_without_positions_leaves_the_facing_untouched() {
     host.seats = vec![None; ACTOR_SLOTS];
     host.actors[0].facing_angle = 0x0ABC;
     assert_eq!(host.cast(0, 3), 0x0ABC);
+}
+
+/// The item-target re-route ahead of the facing block
+/// (`0x801E4298..0x801E4334`). It is keyed on the **target** byte, and the two
+/// group codes take opposite ctx latches: `9` (the enemy row) collapses onto
+/// the sole living monster in `ctx[+0x24B]`, `8` (the party) onto the sole
+/// living party member in `ctx[+0x24A]`, which is stored 1-based.
+///
+/// Both latches are live: `tick_cast_census` (`FUN_801E09F8`) recomputes them
+/// from the actor pool every frame.
+#[test]
+fn a_group_code_collapses_onto_a_lone_survivor() {
+    // Code 9 with monster slot 4 the only one left: the cast retargets to it
+    // and faces it (due +X of the caster), not the row centroid.
+    let mut host = standard_field();
+    let (facing, target) = host.cast_with(0, 9, 0, 4);
+    assert_eq!(target, 4);
+    assert_eq!(facing, 0x400);
+
+    // Code 8 with the sole party latch holding 2 (1-based) resolves to slot 1.
+    let mut host = standard_field();
+    let (_, target) = host.cast_with(0, 8, 2, 0);
+    assert_eq!(target, 1);
+}
+
+/// A zero latch leaves the code alone - which is what sends it on to the group
+/// arm rather than onto slot 0.
+#[test]
+fn a_cleared_latch_leaves_the_group_code_intact() {
+    let mut host = standard_field();
+    let (_, target) = host.cast_with(0, 9, 0, 0);
+    assert_eq!(target, 9);
+    let mut host = standard_field();
+    let (_, target) = host.cast_with(0, 8, 0, 0);
+    assert_eq!(target, 8);
+}
+
+/// The two checks are sequential on the rewritten value (`0x801E42E8` reloads
+/// it before the `== 8` compare), so a `9` that resolves to `8` falls straight
+/// into the second arm.
+#[test]
+fn a_nine_that_resolves_to_eight_takes_the_second_arm() {
+    let mut host = standard_field();
+    let (_, target) = host.cast_with(0, 9, 3, 8);
+    // 9 -> ctx[+0x24B] = 8, then 8 -> ctx[+0x24A] - 1 = 2.
+    assert_eq!(target, 2);
+}
+
+/// The re-route reads the target byte, not the action category: an actor whose
+/// category happens to be 8 or 9 is not retargeted.
+#[test]
+fn the_action_category_does_not_drive_the_re_route() {
+    let mut host = standard_field();
+    host.actors[0].action_category = 9;
+    let (_, target) = host.cast_with(0, 3, 2, 5);
+    assert_eq!(target, 3, "a concrete target slot is left alone");
 }
