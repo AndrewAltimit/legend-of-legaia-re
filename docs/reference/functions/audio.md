@@ -96,6 +96,17 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `8006D854` / `8006D7D0` / `8006D9A0` / `8006D9D8` | Streamed-audio block iterator family - `_854` is the phase machine on record `+0x46` that parses the streamed-resource header and walks its blocks; `_7D0` sub-dispatches on the phase; `_9A0` computes the current block size/offset; `_9D8` arms a block-transfer descriptor. `see ghidra/scripts/funcs/8006d854.txt`. |
 | `8006EE8C` / `8006EEE0` / `8006EFD0` | **Not audio.** Card start/stop veneers around a pair of BIOS kernel-code patches (B0 `0x4A` `InitCARD` / `0x4B` `StartCARD`, `ChangeClearPAD`, and the `ExceptionHandler` / `B0table[0x5B]` patchers). Documented with the teardown trio in [`runtime-libs.md`](runtime-libs.md#the-bios-kernel-patch-cluster-8006ee8c--8006ef18). |
 | `_DAT_801CE564` / `_DAT_801CE574` (data) | Legaia-installed seq-context vfn pointers - `_564` resolves the active script-VM seq context, `_574` is a worker-availability check. Used by `FUN_8006CA7C / CB3C / CDB0 / CE30 / DDC8`. |
+| `8006DB54` | **VAB-header table builder** - the states `2` / `3` / `4` body of the `FUN_8006D854` streaming machine, reading from the header cursor `+0x3C`. State `2` fills the `u16` array at `*ctx[+0x0]` (count `ctx[+0xE3]`) with the **big-endian** pair `src[4] << 8 | src[5]`; state `3` fills 5-byte program records at `*ctx[+0x4]` (count `ctx[+0xE9]`); state `4` fills 8-byte records at `*ctx[+0x8]` (count `ctx[+0xEA]`), chaining each record's `+0x4` SPU address as `prev_addr + ((prev_size + 3) & 0x1FC)`. `see ghidra/scripts/funcs/8006db54.txt`. |
+| `8006DFAC` | Cmd-state dispatch of the `FUN_8006D7D0` shape: phase `2` stamps `+0x36 = 0x44` / `+0x2C = &ctx[0x51]` / `+0x35 = 2`, phase `3` stamps `0x4D` / `&ctx[0x5D]` / `6`. Installed as the `+0x14` handler by `FUN_8006DF14`. `see ghidra/scripts/funcs/8006dfac.txt`. |
+| `8006DE30` | Cmd setter of the `FUN_8006E06C` family: `+0x36 = 0x4D`, `+0x35 = 6`, `+0x2C = ctx[+0x20]`. `see ghidra/scripts/funcs/8006de30.txt`. |
+| `8006DE4C` | Per-program channel-enable expander - for each of `ctx[+0xE9]` programs, walks six bytes of the buffer at `+0x20` against byte `+0x2` of the matching 5-byte record and writes `0xFF` / `0x00` into the six per-channel bytes at `+0x5D`, then parks the phase at `0xFE`. `see ghidra/scripts/funcs/8006de4c.txt`. |
+| `8006DF14` / `8006E000` | Session open / close pair over the same context. `_F14` dispatches the vtable slot `*0x801CE574` and on success sets phase `1`, installs `&FUN_8006DFAC` at `+0x14` and `&FUN_8006E000` at `+0x18`, and records whether its first argument equals `ctx[+0xE4]` at `+0x53`. `_000` reports busy while phase `2`, else dispatches `*0x801CE580` and zeroes the phase. `see ghidra/scripts/funcs/8006df14.txt`. |
+| `8006CC34` / `8006CD08` | The two getters over the tables `FUN_8006DB54` builds, both resolving the context through `*0x801CE564`. `_C34` bounds the index against `+0xE9` and returns byte `0..4` of the 5-byte record, selected by the five-entry jump table at `0x80015E70`; `_D08` bounds against `+0xEA` and returns either the 8-byte record's `+0x0` count or `*(record[+0x4] + tone)`. A negative index returns the count. `see ghidra/scripts/funcs/8006cc34.txt`, `8006cd08.txt`. |
+| `8006C820` | **Pitch → key converter**, the inverse of `_SsPitchFromKey` (`FUN_80066E50`), and a pure function of its three arguments - the body has no load or store. Octave = highest set bit of `~pitch`; the search then walks `0x30` steps whose running factor is scaled by `4155/4096` (= `2^(1/48)`, a quarter-tone) by `0x20` sub-steps, and returns `((base_note + step + (octave - 0xC) * 12) << 8) | (base_fine + remainder)`. `see ghidra/scripts/funcs/8006c820.txt`. |
+| `8006C948` | SPU voice volume-pair reader - copies the `u16` at `+0x0` / `+0x2` of record `voice * 0x10` in the `*0x8007AF40` table into two out-pointers, re-signing any value above `0x3FFF` as `value - 0x8000`. Sibling of the `+0xC` reader `FUN_8006C9A8`. `see ghidra/scripts/funcs/8006c948.txt`. |
+| `8006583C` / `800658EC` | Voice volume getter / setter, both bounded against the `0x18` SPU voices. The getter reads through `FUN_8006C948` and divides by `0x81` (reciprocal multiply `0x0FE03F81 >> 35`); the setter stores `l * 0x81` / `r * 0x81` into `0x801CE080 + voice*0x10` and raises bits `0x3` of the flag byte at `0x801CE060 + voice`. The `× 0x81` scale is the one every libsnd volume path applies. `see ghidra/scripts/funcs/8006583c.txt`, `800658ec.txt`. |
+| `800669D8` / `80066AC4` | Key-on / key-off with the fixed selector `0x21`. `_9D8` converts an `(l, r)` volume pair into libsnd's `(volume, pan)` form - equal values give pan `0x40`, otherwise the larger side keeps its volume and the pan is `0x1000 / value` or `0x7F - value` - then dispatches the note trigger `FUN_80066308`; `_AC4` is a 13-instruction shim onto the voice-table scan `FUN_8006688C`. `see ghidra/scripts/funcs/800669d8.txt`, `80066ac4.txt`. |
+| `80067D80` / `80067E48` / `80067DD4` | Open-bank record accessors over the `0x10`-stride table at `*0x801CE334`, each bounds-checking `(sep, seq)` through `FUN_80068B98` first and returning `-1` on failure. `_D80` reads byte `+0x1`; `_E48` reads byte `+0x4`; `_DD4` writes byte `+0x4` and reads it back. Same table the writer `FUN_80067D0C` uses. `see ghidra/scripts/funcs/80067d80.txt`. |
 
 ## SsAPI per-frame calc tier
 
@@ -157,6 +168,32 @@ writes one byte and reads one back, `FUN_8006D768` waits for `JOY_STAT` bit 1
 bounded by the Timer-2 pair below. `FUN_8006D470` pumps a 5-state handler table
 at `0x8007B2E8` indexed by `0x8007B2B8` - the same state word `FUN_8006D4F4`
 reads to pick its timeout.
+
+#### The five state handlers
+
+The table `FUN_8006D470` pumps holds one entry per phase of a frame, and every
+one of them ends in the byte exchange `FUN_8006D4F4`:
+
+| Slot | Address | What it sends |
+|---|---|---|
+| `0x8007B2E8` | `8006E114` | the constant select byte `0xFE` |
+| `0x8007B2EC` | `8006E134` | the context command byte `+0x36`, or `0x42` when it is zero |
+| `0x8007B2F0` | `8006E170` | `0` when `+0x36` is set, else `*0x8007B2C0`; then reads the reply's low nibble as the payload length, storing `nibble << 1` - or `0x20` when that is zero - at `0x8007B2E0` |
+| `0x8007B2F4` | `8006E1D8` | the next byte from the source slot `*0x801CE578` |
+| `0x8007B2F8` | `8006E208` | the payload loop: keeps pulling from `*0x801CE578` while `0x8007B2E0` stays positive, and on exhaustion appends the byte read from the JOY_DATA pointer `*0x8007B2E4` into `ctx[+0x3C]` at cursor `ctx[+0x44]++`, then calls the completion slot `*0x801CE560` |
+
+`FUN_8006E544` is the transmit-byte source those last two dispatch: with the
+cursor `ctx[+0x45] - 3` it returns `0` while the six per-slot enable bytes at
+`ctx[+0x57]` are clear, otherwise the cursor-th byte of `ctx[+0x28]` bounded by
+`ctx[+0x34]`; command `0x4D` reads `ctx[+0x2C]` bounded by `ctx[+0x35]` instead
+and pads with `0xFF` past the end.
+
+`FUN_8006CE78` is the acquire half. It takes a 2-bit port mask (bit `0` = port
+1, bit `1` = port 2), returns the previous mask reassembled from `0x8007B2C8`
+and `0x8007B2C4`, and per port either latches the enable flag or - once that
+port's not-connected counter at `0x801CE550` / `0x801CE554` has reached `0x96` -
+re-opens it through the driver vtable slot `*0x801CE580` with the context
+`*0x8007B2A8` (`+0xF0` for port 2). `see ghidra/scripts/funcs/8006ce78.txt`.
 
 #### `8006ED34` / `8006ED50` - the Timer-2 timeout pair
 

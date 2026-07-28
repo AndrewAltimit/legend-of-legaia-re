@@ -558,6 +558,27 @@ about the file looks incomplete.
 `ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
+## The disc-denominated gap list finds header-less dumps for free
+
+[`disc-coverage.py`](disc-coverage.md) builds each image's covered set from the
+`size=` header of every dump, and drops the files whose header does not parse.
+That has a side effect worth naming, because it turns two separate problems into
+one worklist: **a header-less dump of a real function shows up as an un-dumped
+code run at exactly that function's address.**
+
+So a run in the SCUS gap list is not necessarily a function nobody has looked
+at. It can equally be one that was dumped years ago into a file carrying only
+decompiled C, whose bytes were therefore never credited. Re-dumping the run
+repairs both readings at once - the gap closes and the header-less count falls -
+and the two moves are visible in the same report, which is the cheapest
+available check that a repair actually landed.
+
+The direction of the inference only runs one way. A closed gap proves a parseable
+header now exists over those bytes; it says nothing about whether the *body* is
+complete, which is the separate defect [the repair
+section](#the-remedy) covers. Read the two counts together and neither one
+carries the whole claim.
+
 ## Not every file in `funcs/` is a dump
 
 The corpus stores answers as well as dumps, and three kinds of answer are not

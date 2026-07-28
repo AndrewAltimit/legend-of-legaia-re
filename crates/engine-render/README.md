@@ -233,7 +233,11 @@ space under the ambient camera (MVMVA, low-halfword wrap), fans out the
 four ±half-size corners, optionally spins them in-plane (`Rz` from the
 12-bit PSX angle space), and perspective-divides each (RTPT×3 + RTPS),
 returning the screen corners in the exact order the retail `POLY_FT4`
-packet consumes plus the OT-bucket depth. `afterimage::
+packet consumes plus the OT-bucket depth. The divide is the GTE's UNR
+reciprocal and each stored corner is saturated to the SXY FIFO's signed
+11 bits, both through the same kernels the `Camera::transform` COP2
+oracle is pinned against - so a behind-camera corner takes the hardware's
+`0x1FFFF`-quotient smear rather than a sentinel. `afterimage::
 project_streak_corners` reproduces the streak caller's invocation
 (`+0x120` Y push, dynamic half-width, half-height `0x100`). `psx_sin` /
 `psx_cos` reproduce the retail `RotMatrix*` trig LUT -
@@ -343,9 +347,9 @@ live pose on every cache hit and logs any mismatch, which is what pins the
 
 ## Retail draw-decision kernels (no host yet)
 
-Four modules port SCUS passes that *decide* what the draw path does rather
-than emit geometry. Each is pure, unit-tested and carries a `NOT WIRED`
-disclosure naming the host it is missing - the state they act on
+A family of modules ports SCUS passes that *decide* what the draw path does
+rather than emit geometry. Each is pure, unit-tested and carries a
+`NOT WIRED` disclosure naming the host it is missing - the state they act on
 (actor pool, battle context, mode dispatcher) lives in `engine-core`.
 
 - [`actor_bind`](src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
@@ -361,6 +365,11 @@ disclosure naming the host it is missing - the state they act on
   variant equipment mesh per attach-bone channel from the playing entry's
   `+0xA4` frame windows, with the part-count-mismatch escape. Layout in
   [`battle-data-pack.md`](../../docs/formats/battle-data-pack.md).
+- [`battle_on_screen`](src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
+  a battle sprite on its seat actor and tests the projected box's horizontal
+  span against `[0, 0x140]`. Horizontal only: retail reads the X of two
+  corners and no Y at all, which is what separates it from the rectangle
+  probe `FUN_8001B73C`.
 - [`battle_sideband`](src/battle_sideband.rs) (`FUN_80056208`) - the battle
   intro / in-battle / outro sideband state machine and its cadence-invariant
   camera pull-back ramp.

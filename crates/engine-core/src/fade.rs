@@ -17,6 +17,11 @@
 //! stages the summon backdrop fade (state `0x33`) and the successful-escape
 //! white-out (state `0x66`, template at `DAT_801C9070`) through this.
 
+// REF: FUN_80020C14 - the per-frame ramp step over the block this loader
+// fills; ported in `crate::fade_ramp`.
+// REF: FUN_80025000 - the fade actor's tick, which drives that step.
+// REF: FUN_80024EE4 - the GP0 quad emitter the tick's packed colour goes to.
+
 /// The 13-`i16` fade template `FUN_80020B00` consumes (`param_2` field
 /// indices in brackets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,15 +34,18 @@ pub struct FadeTemplate {
     pub start_rgb: [i16; 3],
     /// `[7..=9]` - end RGB.
     pub end_rgb: [i16; 3],
-    /// `[10]` / `[11]` / `[12]` - mode words copied verbatim onto the state
-    /// (consumed by the pool actor's draw handler; semantics not yet pinned).
+    /// `[10]` / `[11]` / `[12]` - copied verbatim onto the state at `+0x1C`,
+    /// `+0x1E` and `+0x22`. The per-frame tick `FUN_80020C14` reads them as
+    /// **start delay**, **hold after the ramp** (`-1` = no hold) and the **id**
+    /// `FUN_80024E80` stamps and `FUN_80024EE4` receives - see
+    /// [`crate::fade_ramp`].
     pub mode: [i16; 3],
 }
 
 /// The successful-escape white-out template the battle-action SM writes at
 /// `DAT_801C9070` before spawning the fade (state `0x66`): kind `2`, a
-/// `0x40`-frame ramp from black `(0,0,0)` to white `(0xFF,0xFF,0xFF)`,
-/// mode words `(0, -1, 0)`.
+/// `0x40`-frame ramp from black `(0,0,0)` to white `(0xFF,0xFF,0xFF)`, and
+/// trailing words `(0, -1, 0)` - no start delay, no hold, id `0`.
 ///
 /// REF: FUN_801E295C (case 0x66 template write)
 pub fn escape_fade_template() -> FadeTemplate {
@@ -101,9 +109,14 @@ impl FadeState {
     /// Advance the ramp one frame (the linear integrator the loader's
     /// state layout implies: `current += delta`, latching exactly on the
     /// target at the end of the ramp). Returns `true` while the fade is
-    /// still running, `false` once it has completed. The retail pool
-    /// actor's per-frame tick isn't dumped yet, so the latch-at-end is the
-    /// engine's well-defined endpoint rather than a verified retail detail.
+    /// still running, `false` once it has completed.
+    ///
+    /// This is the engine's own endpoint model, not retail's. The retail pool
+    /// actor's per-frame tick is [`crate::fade_ramp`] (`FUN_80020C14` /
+    /// `FUN_80025000`): it scales the delta by the scratchpad vsync count,
+    /// clamps onto the target rather than latching on a frame counter, and
+    /// carries a start delay and a post-ramp hold that this model folds away.
+    /// Use `fade_ramp` where retail-exact timing matters.
     pub fn step(&mut self) -> bool {
         if self.elapsed >= self.duration {
             return false;

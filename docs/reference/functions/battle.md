@@ -29,6 +29,9 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `80042558` | **Per-frame stat aggregator + accessory-passive assembler.** Walks the 3 party members' equip ids `char +0x196..0x19D`: each item's passive index (`kind==1`→equip `+5`, `kind==2`→descriptor `+3`; `<0x40`) sets a bit in the ability bitfield `+0xF4..0x103`; boosts rebuild the effective-stat block `+0x104..0x11B` from base `+0x11C..0x12D`, bitfields OR into the global mask; a separate arm grants Talisman + Ra-Seru spells (`+0x13D` list). **All fields are in the character record `+0xF4..+0x13D`, NOT the battle-actor runtime struct** (`+0x14C`/`+0x150`/`+0x176` are in the `DAT_801C9370` pool). Full field map + correction: [battle-action § aggregator](../../subsystems/battle-action.md#fun_80042558---per-frame-stat-aggregator). `see ghidra/scripts/funcs/80042558.txt`. |
 | `80034250` | Goods description resolver (static): item id → descriptor `+3` passive index → `0x8007625C` record `+8` description pointer; the menu overlay's detail panel `FUN_801D0F1C` reads the same table's `+4` name pointer. |
 | `8004CE2C` | **Per-frame battle actor maintenance pass** (3 KB, 757 instructions). Four passes over the `DAT_801C9370` actor table; the last is a **CLUT status recolour** latched once per affliction, not a per-frame damage flash. Not a mode dispatcher. Pass-by-pass walk: [`subsystems/battle.md` § Per-frame actor maintenance](../../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c). `0x8004CE30` is the **second instruction** (`addiu sp,sp,-0x38`), not an entry. `see ghidra/scripts/funcs/8004ce2c.txt`. |
+| `8004DA00` | **Battle XA voice-stream selector** - the `+0x08` tick of the [static actor template](runtime-libs.md#static-actor-templates) at `0x800767F4`, which battle init `FUN_800513F0` spawns; it always ends by running the maintenance pass `FUN_8004CE2C` above. Arms one whole-clip stream per action, latched at `_DAT_8007BDB0` - [details ↓](#8004da00). Docs previously named this body `FUN_8004DA08`, which is its third instruction. `see ghidra/scripts/funcs/8004da00.txt`. |
+| `8005126C` | **Battle actor on-screen test.** `(actor) -> bool`. Copies the `SVECTOR` at `+0x3C..+0x43` of the actor record the `&DAT_801C9370` table holds for `actor[+0x5A]` into `actor[+0x14..+0x1B]`, projects a square box of half-extent `actor[+0x58]` about it through the billboard projector `FUN_800195A8`, and reads back the **X of corner 0 and the X of corner 1** - two X coordinates, not an `(x, y)` pair; no Y is ever read. Rejects only when both are `>= 0x141` or both are `< 0`, so the test is "the box's horizontal span overlaps `[0, 0x140]`". Contrast the rectangle probe `FUN_8001B73C`: [`subsystems/renderer.md` § On-screen probes](../../subsystems/renderer.md#on-screen-probes-two-tests-that-are-not-the-same-test). `see ghidra/scripts/funcs/8005126c.txt`. |
+| `80050D40` | **12-bit angle tween.** `(from, to, weight, slot)`. Wraps both angles into `0..0xFFF`, adds `0x1000` to whichever side makes the arc the short way round, accumulates the swept magnitude into `gp[0xA10]` (= `0x8007BD28`), records the adjusted endpoint pair as two halfwords at `0x801C9060 + (slot & 0xFF) * 4`, and returns `(to' + ((from' - to') * weight >> 4)) & 0xFFF`. A near-twin of the ANM angle interpolator `FUN_8001D088`, and **unreferenced** - see [Unreferenced SCUS entry points](#unreferenced-scus-entry-points). `see ghidra/scripts/funcs/80050d40.txt`. |
 | `0x8007625C` (data) | Passive-effect name/description table: 64 × 12-byte `[u32 scope][u32 name_ptr][u32 desc_ptr]`, indexed by the passive-effect index. Scope `1` = party-wide. |
 | `80043048` | **Inventory consume-by-slot:** `(slot: i16, amount, prev) -> remaining`. The stride-2 array at `_DAT_80085958` (= `0x80084140 + 0x1818` = SC `+0x1818`) is the **item inventory**: byte 0 = item id, byte 1 = stack count. Bounds-checked (`slot < gp[+0x2D4]`); subtracts `amount` from the count, clamps at 0, zeroes the id when the count reaches 0. (Previously mis-documented as a "status-effect timer decrementer" - the `0x80085958` table is the item bag the `Have 99 Items` / `Item Modifier` GameShark codes target, not a timer table, and its sibling helpers id-match + cap stacks at 99.) |
 | `80042310` | **Inventory consume-by-id:** `(id, amount) -> slot`. Scans the active window `gp[+0x2D2]..gp[+0x2D4]` of `_DAT_80085958` for `id`, then decrements that slot's count (same clamp-at-0 / zero-id-at-0 as `FUN_80043048`). Bounds-checked. |
@@ -222,9 +225,103 @@ The [S6 trace](../../tooling/playthrough-coverage.md) captured the **field->batt
 | `801CF5BC` | **Field->battle transition state machine** (752 B; the hot S6 hit, interior hits `+0x2C` `0x801CF5E8` / `+0x2D0` `0x801CF88C`). A phase counter at `arg+0x22` sequences the battle handoff: phase 1 runs the battle-mesh assembly (`FUN_80052770`), phase 2 loads the battle BGM (`func_0x800567a8("battle_bgm_%d", id)`) and the battle-scene bundle (`func_0x8001fc00(0x36F + id, ...)`). A parallel camera-spin timer `arg+0x1a` is compared against the total intro duration `DAT_801D2458`: near the end it raises the ready bits `arg+0x2a \|= 1`/`2`, and at completion (`arg+0x2a == 3`) it writes the game-mode handoff **`_DAT_8007B83C = 0x14`** (enter battle). Ambush special-case: `DAT_8007BD0C == 0xA6` (first-monster id) forces `_DAT_8007B880 = 0`. |
 | `801CFBB4` | **Battle-intro swirl/shatter particle builder** (492 B). Allocates a `0xDC00`-byte primitive buffer (`func_0x80017888`) and fills a grid of `0x2C`-stride sprite records (color `0x808080`, `0x40`x`0x40`, positions stepped from `-0x1400`/`-0x500`), each rotated through the sin/cos tables `_DAT_8007B7F8`/`_DAT_8007B81C` via `func_0x80019B28` - the visual effect drawn over the camera spin. |
 
+## Unreferenced SCUS entry points
+
+Three of the battle-band routines above are entry points that **nothing on the
+disc reaches**. Each opens a stack frame of its own and is preceded by a clean
+`jr ra` epilogue, so they are functions rather than interior labels - and a
+sweep of `SCUS_942.54`, every based overlay image and the raw bytes of every
+extracted `PROT.DAT` entry finds no literal address word, no `jal`, no `j`, no
+PC-relative branch and no `lui`+`addiu` materialisation for any of them
+([`address-reference-scan.md`](../../tooling/address-reference-scan.md)).
+
+| Address | What it is | The surviving path it duplicates |
+|---|---|---|
+| `8005126C` | battle actor on-screen test | none - the sibling rectangle probe `FUN_8001B73C` is a different test, so no live pass consults a horizontal-span verdict |
+| `80035274` | item / equipment passive-**name** draw | `FUN_80034250` (same chain, draws the passive *description*) and the menu overlay's window-34 renderer `FUN_801D4A80` |
+| `80050D40` | 12-bit angle tween | `FUN_8001D088`, the ANM interpolator, which every live angle blend uses |
+
+`FUN_80050D40` is worth separating from its twin precisely because it is
+*almost* the same routine. Both wrap the pair into `0..0xFFF`, add a turn to
+whichever side shortens the arc, accumulate the swept magnitude into the same
+global `0x8007BD28`, journal the adjusted endpoints into a slot table, and
+return `(to' + ((from' - to') * weight >> 4)) & 0xFFF`. Three things differ:
+this one takes the short arc on `> 0x800` where `_D088` takes it on `>= 0x800`,
+shifts the scaled delta logically (`srl`) where `_D088` shifts it
+arithmetically (`sra`), and masks the slot argument to a byte into a stride-4
+table at `0x801C9060` where `_D088` uses the raw argument into a stride-8 one
+at `0x800891A8`. A port that treats them as one function inherits the wrong
+sign behaviour on a negative delta.
+
+The pattern each one falls into is the same: a static routine that a later,
+overlay-resident or differently-parameterised sibling superseded, left linked
+because the linker keeps whole objects. The consequence for the port is that
+there is **nothing to wire them to** - the open question for `8005126C` was
+never "which pass culls with it" but "does any pass", and the answer is no.
+`80035274` is worth reading anyway for one fact it is the only decoded witness
+to: for an item whose property-table kind byte is `1`, the passive index comes
+from the [equipment record](../../formats/equipment-table.md)'s `+0x5` rather
+than the item-effect record's `+0x3` - and since every retail equipment row
+carries `0x40` there, that arm draws nothing even when reached.
+
+A fourth address of the same shape sits one level up rather than at the
+function: `FUN_80025054`'s
+[actor template](runtime-libs.md#static-actor-templates) is `0x80070614`, and
+*that record* is what nothing materialises. Its neighbours on the same grid are
+each named by a `lui`+`addiu` pair at a spawn site; `0x80070614` is not, so the
+tick is unreachable without any statement about the tick itself.
+
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `8004DA00`
+
+The SCUS half of the battle voice-stream census in
+[`audio.md`](../../subsystems/audio.md#streamed-cue-census-fun_8003eae4--fun_80019794).
+It is a per-frame tick, not a call: its address is the `+0x08` word of the
+[static actor template](runtime-libs.md#static-actor-templates) at
+`0x800767F4`, and every path through it ends in the actor-maintenance pass
+`FUN_8004CE2C`.
+
+**Its spawner is the battle scene-loader `FUN_800513F0`**, whose last act
+before returning is `FUN_80020DE0(0x800767F4, _DAT_8007C34C)` at `0x80051D3C` -
+so the selector goes resident for the whole battle and runs once per frame from
+the system actor pool. Nothing calls it directly, on the disc or anywhere else;
+the template word is its only reference, which is why a `jal` sweep finds no
+caller for it (see
+[`address-reference-scan.md`](../../tooling/address-reference-scan.md)).
+
+A stream is armed only when all four gates pass:
+
+- the CD is free (`_DAT_8007BC20 == 0`);
+- `_DAT_8007BD71 == 0xFF`;
+- the battle context `gp[0xA0C]` has `+0x26B == 0`, `+0x276 != 0` and `+0x7 != 0x5A`;
+- nothing is latched yet (`_DAT_8007BDB0 == -1`).
+
+The three gates that mean "not ready yet" (`+0x26B`, `_DAT_8007BD71`,
+`+0x276`) **reset the latch to `-1`** on their way out; the other two exits
+(`+0x7 == 0x5A`, and a latch that is already set) leave it alone. So the latch
+is cleared by the frames between actions, not by whoever consumes it.
+
+The acting seat comes from `ctx[+0x274]`, which indexes both the party-order
+byte table `DAT_8007BD10` and, for seats `0..2`, the three-entry actor-pointer
+table at `0x801C9370` - the same table the on-screen test `FUN_8005126C` reads
+(`lui 0x801d` + `addiu -0x6c90`; a `0x801D9370` reading of that pair is the
+sign of the `addiu` dropped). The clip id then follows the action class at
+`actor[+0x1DE]`:
+
+| Class | Clip id | Files |
+|---|---|---|
+| `1` | `party_slot + 0x19` | `XA27`..`XA29` |
+| `2` | `party_slot + 0x19` when the [spell record](../../formats/spell-table.md) `DAT_800754C8[actor[+0x1DF]]`'s first byte is `< 0x14`, else `7` | `XA27`..`XA29`, else `XA8` |
+| `3`, `4` | `(party_slot - 1) * 2` | `XA1` / `XA3` / `XA5` |
+| `0`, `>= 5` | none - returns without arming or touching the latch | - |
+| seat `>= 3` | `0x800787AF[DAT_8007BD09[seat]]` (the class byte is never read on this arm) | the monster-side table |
+
+`FUN_8003EAE4(0, clip)` starts it and the id is written to `_DAT_8007BDB0`, so
+the latch both records what is playing and blocks a second arm until something
+resets it to `-1`. `see ghidra/scripts/funcs/8004da00.txt`.
 
 ### `80052FA0`
 

@@ -53,6 +53,37 @@ RANGES = [
     ("80057974", "80057c44"),
     ("8006a158", "8006a420"),
     ("8006d4f4", "8006d768"),
+    # Third pass - the runs the report promoted once the second pass closed.
+    ("8006db54", "8006ddc8"),
+    ("8004da00", "8004dc68"),
+    ("800198e0", "80019b28"),
+    ("8006de30", "8006e06c"),
+    ("80059068", "80059280"),
+    ("80020c14", "80020de0"),
+    ("80057090", "8005724c"),
+    ("8004e13c", "8004e2f0"),
+    ("8006e114", "8006e2b4"),
+    ("80025000", "8002519c"),
+    ("8002bc38", "8002bdc4"),
+    ("8006c820", "8006c9a8"),
+    ("8006cc34", "8006cdb0"),
+    ("8005d834", "8005d9a0"),
+    ("8002a880", "8002a9cc"),
+    ("8002b7e0", "8002b92c"),
+    ("8002b28c", "8002b3d4"),
+    ("8005a8e8", "8005aa30"),
+    ("8006583c", "80065978"),
+    ("800669d8", "80066b00"),
+    ("8006ce78", "8006cf9c"),
+    ("80067d80", "80067e9c"),
+    ("80057dc8", "80057edc"),
+    ("80050d40", "80050e2c"),
+    ("8005126c", "8005133c"),
+    ("8002b6c4", "8002b790"),
+    ("80035274", "80035334"),
+    ("80026c28", "80026ce4"),
+    ("8006e544", "8006e600"),
+    ("80058554", "8005860c"),
 ]
 
 # Sub-runs the walk above reports as un-attributed: bytes inside a gap that
@@ -67,7 +98,33 @@ FORCE_RANGES = [
     ("800575c4", "80057600"),
     ("80057624", "80057860"),
     ("800607f4", "8006089c"),
+    # Third pass. Every one of these is a run Ghidra left undisassembled or
+    # marked as data; each was word-checked for MIPS plausibility against
+    # `extracted/SCUS_942.54` before being forced.
+    ("8006db54", "8006ddc8"),
+    ("8006de30", "8006df14"),
+    ("8006dfac", "8006e000"),
+    ("8006c820", "8006c948"),
+    ("8002a880", "8002a9cc"),
+    ("8002b904", "8002b92c"),
+    ("80025044", "80025054"),
+    ("8006ce78", "8006cf9c"),
+    ("80057dc8", "80057edc"),
+    ("80050d40", "80050e00"),
+    ("8006e544", "8006e600"),
+    ("80058554", "8005860c"),
 ]
+
+# Two runs in the third pass do NOT belong in FORCE_RANGES, for opposite
+# reasons, and both are worth recording so they are not re-attempted:
+#
+#   0x8006E2A8..0x8006E2B4 is three `nop`s - inter-function padding ahead of
+#   the already-catalogued 0x8006E2B4, with no `jr ra` to bound a body.
+#
+#   0x80026C28..0x80026CE4 is the PS-X EXE **entry stub** (the header's pc0),
+#   which ends in `break 0, 1` rather than `jr ra`, so the per-`jr ra` splitter
+#   here would walk off the end. Dump it with `DUMP_ONLY=80026c28
+#   dump_funcs.py`, whose create-function pass follows the flow instead.
 
 LIST_ONLY = False
 

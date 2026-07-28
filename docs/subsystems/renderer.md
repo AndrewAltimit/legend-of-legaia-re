@@ -257,9 +257,83 @@ their per-address roles live in
 - **`FUN_800351C0`** - the full-screen `320×224` backdrop quad (tag `0x08000000`).
 - **`FUN_8001B73C`** - a GTE on-screen visibility test (RTPT the four corners of
   an actor box, accept if any projects inside the `320×240` screen), not an
-  emitter - a cull probe.
+  emitter - a cull probe. See
+  [On-screen probes](#on-screen-probes-two-tests-that-are-not-the-same-test).
 - **`FUN_80029DD8`** - a 39-`cop2`-op 3D primitive emitter, sibling of
   `FUN_8002735C` / `FUN_80029888`.
+
+## The billboard projector (`FUN_800195A8`)
+
+The one helper every camera-facing rectangle in the game goes through: MVMVA the
+centre point into view space, fan four corners out around it with 16-bit adds,
+reset the GTE rotation to identity with TR zeroed, optionally compose an
+in-plane `Rz` from the 12-bit-angle LUT, then `RTPT` + `RTPS` the corners and
+hand back four SXY words plus `SZ3 >> 2` as the OT bucket. Riders include the
+battle move-FX afterimage streak and ribbon (`FUN_801E1AB0` / `FUN_801E1D98`),
+the on-screen probe `FUN_8005126C` below, and the cutscene / world-map sprite
+emitters.
+
+Two properties of the projection are easy to get wrong in a port, and both are
+hardware, not detail:
+
+- the perspective divide is the GTE's **UNR reciprocal**, not an exact
+  `h * x / z`, and `MAC0 >> 16` is an *arithmetic* shift - it floors. A
+  symmetric box therefore does not project symmetrically about the screen
+  centre.
+- `swc2` stores the **SXY FIFO** entry, which the GTE has already saturated to
+  signed 11 bits (`[-0x400, 0x3FF]`). A behind-camera corner is not a special
+  case: `SZ3` clamps to `0`, the divide returns its saturated `0x1FFFF`
+  quotient, and the corner lands near `OFX + 2 * IR1` rather than at any
+  sentinel - the classic PSX behind-the-lens smear.
+
+Port: [`legaia_engine_render::billboard`](../../crates/engine-render/src/billboard.rs),
+which runs both through the same `gte_divide` / `saturate_sxy` kernels the
+`Camera::transform` COP2 oracle is pinned against.
+
+## On-screen probes: two tests that are not the same test
+
+Retail has two GTE-backed "is this thing visible" probes. They read alike from
+the outside - project a box about an actor and return a boolean - and they are
+**not** interchangeable. Both are worth keeping straight because the engine port
+does no culling of its own (see
+[No distance culling](#no-distance-culling-every-loaded-body-is-drawn)), so
+anything that consults one of these is deciding to remove geometry the port
+otherwise draws.
+
+| | `FUN_8001B73C` | `FUN_8005126C` |
+|---|---|---|
+| box | actor `+0x14` ± `(size+1)<<6` in X/Z, `<<7` in Y | seat position ± `actor[+0x58]`, square |
+| projection | `RTPT` per corner triple, in-line | the billboard projector `FUN_800195A8` |
+| accept | any corner inside a real rectangle | the box's horizontal **span** overlaps the screen band |
+| Y tested | yes, `0 <= y < 0xF1` | **no** |
+
+`FUN_8001B73C` is the rectangle test: it RTPTs corner triples and takes the
+first corner whose X passes `sltiu 0x140` (an unsigned compare, so negatives
+fail on the same instruction) and whose Y is in `0 ..= 0xF0`.
+
+`FUN_8005126C` is the battle sprite's re-anchor + horizontal test, and it is
+the narrower of the two in every respect. It resolves the sprite's owner
+through the 8-slot battle actor table `&DAT_801C9370` at `actor[+0x5A]`, copies
+that actor's `+0x3C` `SVECTOR` verbatim into its own `+0x14`, projects a square
+box of half-extent `actor[+0x58]` about it with no in-plane spin, and then reads
+back exactly **two** halfwords: the X of corner 0 and the X of corner 1. It
+rejects only when both are `>= 0x141` or both are `< 0`, i.e. when the span
+misses `[0, 0x140]` entirely. No Y is read at any point, so an actor a full
+screen above or below the viewport still reads as on-screen.
+
+Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
+(`battle_actor_on_screen`), riding
+[`billboard::project_billboard`](../../crates/engine-render/src/billboard.rs).
+It is inert, and so is retail's. `0x8005126C` has **no reference of any kind**
+on the disc - no literal address word in any table or actor template, no `jal`,
+no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
+`SCUS_942.54`, every based overlay image and the raw bytes of every extracted
+`PROT.DAT` entry
+([`address-reference-scan.md`](../tooling/address-reference-scan.md);
+[`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)).
+So "what does retail do with a `0`" has an answer, and it is *nothing*: no pass
+consults this verdict. The port's lack of a cull here is parity, not a gap
+waiting on a caller.
 
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 

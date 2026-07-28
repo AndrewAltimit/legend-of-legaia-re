@@ -131,6 +131,8 @@ reserved/authoring data with no live consumer.
 | First boss trigger → Battle | resolved | `disassembly` | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` closed: writer-less across `SCUS_942.54` + every static overlay (validated absolute + gp-relative + address-materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` → `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it, and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit. Retail never sets it. See [battle.md](../subsystems/battle.md). |
 | Enemy-ally charm battle softlock | resolved (both tracks fixed) | `disassembly` | The state-`0x5A` victory arm's party-slot assumption OOB-indexes the win-pose roster `DAT_8007BD10` (via `0x801E6770`) when a living charmed ally is the acting actor at monster-wipe victory - the `FUN_801E7320` reroll theory is falsified ([`re-do-not-re-walk.md`](re-do-not-re-walk.md#battle--arts--level-up)). Fixed on both tracks: engine `victory_pose_fixup`/`charm_widen`, and the disc-side `legaia_patcher::charm_fix` guard - a single-word detour at the `0x801E6690` keep-branch into a SCUS dead-space liveness guard. Full chain + port: [battle.md](../subsystems/battle.md#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock). |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | resolved - exhaustive negative | `disassembly` | Bit `0x400` has **no retail setter**: a word-level decode of `SCUS_942.54` + every static-overlay image (all stores covering `+0x16C..+0x171`, pointer precomputes, `ori`/`sllv` bit-set shapes, the `+0x6F6` mirror, the `+0x21F` deferral) finds only clears - accessory cure `FUN_8004CE2C`, the per-round RNG waker `FUN_801F45A4`, item cures, the on-hit strip, battle-exit. The appliers (hit leg `FUN_801EC3E4`, cast leg `FUN_801E09F8`) map kinds 3/4/5/6 → `0x1`/`0x2`/random-`0x38`/`0x1000`, kinds 1-2 → the `0x380` deferral; none reaches `0x400`. Latent content. Writer inventory: [battle.md](../subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory). |
+| Who calls the battle on-screen test `FUN_8005126C`? | resolved - exhaustive negative | `disassembly` | [details ↓](#who-calls-the-battle-on-screen-test-fun_8005126c) |
+| What spawns the battle XA voice selector `FUN_8004DA00`? | resolved | `disassembly` | Nothing calls it - it is the `+0x08` tick of the [static actor template](functions/runtime-libs.md#static-actor-templates) at `0x800767F4`, and the battle scene-loader `FUN_800513F0` spawns that record into the system actor pool at `0x80051D3C` as its last act before returning. The selector is therefore a per-frame pass resident for the whole battle. Port `legaia_engine_audio::battle_voice`; the same reading corrects the template's base and tick offset (the `+0x0C`-from-`0x800767F0` frame was skewed 4 bytes low). |
 | Effect-VM pass-1 "state token algebra" (`FUN_801E0088`) | resolved + ported | `capture` | [details ↓](#effect-vm-pass-1-state-token-algebra-fun_801e0088) |
 | Seru-magic summon visual (e.g. Tail Fire) | resolved (player visual; wired) | `capture` | [details ↓](#seru-magic-summon-visual-eg-tail-fire) |
 | `summon.dat` / `readef.DAT` side-band streaming | resolved (entries + format) | `disassembly` | [details ↓](#summondat--readefdat-side-band-streaming) |
@@ -167,6 +169,44 @@ reserved/authoring data with no live consumer.
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Who calls the battle on-screen test `FUN_8005126C`?
+
+*Status:* resolved - **nobody**, and the same holds for two of its neighbours.
+
+The question was framed as "which draw pass consults the verdict, and what
+does it do with a `0`", because the port draws every battle body every frame
+and a cull could not be wired without knowing. The premise was wrong: there is
+no consumer to find.
+
+A five-form sweep of `SCUS_942.54`, all statically based overlay images and
+the raw bytes of every extracted `PROT.DAT` entry finds **no reference to
+`0x8005126C` at all** - no literal address word (so it sits in no dispatch
+table and no actor template), no `jal`, no `j`, no PC-relative branch, and no
+`lui`+`addiu` materialisation
+([`address-reference-scan.md`](../tooling/address-reference-scan.md)). The same
+sweep returns the same nothing for the passive-name draw `FUN_80035274` and
+the angle tween `FUN_80050D40`; all three open a stack frame and follow a
+clean `jr ra` epilogue, so they are entry points rather than interior labels.
+`FUN_80025054` is the same finding one level up - it is a template tick, and
+the template record `0x80070614` that would install it is what nothing
+materialises.
+
+The scan is only worth its negatives if its positives hold, so it was run
+against known answers first: the template word for `FUN_8004DA00` at
+`0x800767FC`, the 21 `jal` sites of the billboard projector `FUN_800195A8`, an
+intra-function branch target inside `FUN_8005126C` itself, and the menu
+overlay's documented sub-screen pointer table at `0x801E4F40`. Two limits bound
+the claim: an LZS-compressed PROT entry would hide a reference (overlay *code*
+is stored raw, so this does not cover the images callers live in), and an
+address assembled in more than two instructions is not a `lui`+`addiu` pair.
+
+Consequence for the port: `battle_on_screen` stays inert on purpose, and the
+three worklist rows are unreachable retail code rather than pending work - the
+write-ups are in
+[`battle.md` § Unreferenced SCUS entry points](functions/battle.md#unreferenced-scus-entry-points).
+The one row the same sweep *did* settle positively is `FUN_8004DA00`, whose
+spawner is the battle scene-loader `FUN_800513F0`.
 
 ### Action-SM state `0xFF` treated as battle end by the port
 

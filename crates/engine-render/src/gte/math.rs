@@ -95,15 +95,18 @@ impl GteMat3 {
     // (&DAT_80070A2C / &DAT_8007122C) by a 12-bit angle (4096 = 2*PI) and
     // composes via the GTE; this builds the same +Y rotation in q3.12 with a
     // radian input (ROT_ONE = 0x1000 matches the LUT's 1.0).
-    // NOT WIRED: the render path composes camera and object transforms as glam
-    // f32 matrices, so no frame-path code wants a q3.12 rotation. These
-    // builders serve the GTE register oracle, which needs matrices in the
-    // hardware's own fixed-point to compare against captured register state,
-    // and their callers are that oracle's tests. Note the radian argument is
-    // itself a deviation: retail takes a 12-bit angle and reads the LUT, which
-    // `billboard::rot_z_psx` models for Z. Wiring these means either the
-    // renderer moving to fixed-point transforms or an angle-driven camera
-    // path that wants the retail quantisation - neither exists.
+    // NOT WIRED: the blocker is one level up, not here. All three axis
+    // builders have a real non-test consumer in this crate -
+    // `camera_view_rotation`, the port of retail's own composition pass
+    // `FUN_8001CF50` - and *it* is the routine with no host: the engine frames
+    // every camera with a `glam::Mat4::look_at_rh` instead of a product of
+    // axis factors, and carries neither the render node's `+0x52` skip-flag
+    // halfword nor a saved GTE control block. So what has to exist first is
+    // that camera, not a call to these. (The GTE register oracle in
+    // `gte/tests.rs` also drives them, which is why they are pinned; that is
+    // coverage, not the missing caller.) Note the radian argument is itself a
+    // deviation: retail takes a 12-bit angle and reads the LUT, which
+    // `billboard::rot_z_psx` models for Z.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -116,7 +119,8 @@ impl GteMat3 {
     ///
     // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +X axis).
-    // NOT WIRED: GTE-oracle-only, same reason as `rot_y` above.
+    // NOT WIRED: same reason as `rot_y` above - `camera_view_rotation` calls
+    // it, and that pass is the one without a host.
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -129,7 +133,8 @@ impl GteMat3 {
     ///
     // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +Z axis).
-    // NOT WIRED: GTE-oracle-only, same reason as `rot_y` above. This address
+    // NOT WIRED: same reason as `rot_y` above - `camera_view_rotation` calls
+    // it, and that pass is the one without a host. This address
     // has a second, more faithful port in `billboard::rot_z_psx`, which takes
     // the retail 12-bit angle and reads the LUT rather than f32 trig; the two
     // are pinned to agree at the cardinals by a unit test there. That one is

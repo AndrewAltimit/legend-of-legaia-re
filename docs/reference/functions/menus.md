@@ -73,6 +73,7 @@ A cluster of status/equipment-panel draw helpers resident in the field/town over
 | `80043264` | Accessory-equipped predicate: `(char_idx, item_id) -> bool`. Scans the character's equip-id bytes `+0x19B..0x19D` (slots 5..7 of the `+0x196..0x19D` block - the Goods slots) for `item_id`. `see ghidra/scripts/funcs/80043264.txt`. |
 | `800430AC` | Party-wide accessory unequip-by-id: `(item_id) -> 0 \| 0x100`. For each active party member (`DAT_80084594` count, member ids at `0x80084598+`), scans the record's Goods slots `+0x19B..0x19D`; on the first match zeroes the slot and returns `0`, else `0x100`. Ghidra's auto-analysis leaves this body undisassembled (the `800430ac` function record is degenerate until re-created); the dump is force-created. Port: `engine-core::equipment::party_unequip_accessory_by_id`. `see ghidra/scripts/funcs/800430ac.txt`. |
 | `800302E4` | Equipment/item stat-field accessor - `(_, id, field 0..3)`. Decodes the id-space tag in the id's high nibble (`0x1000`/`0x6000`/`0x9000` resolve through an inventory slot then the item-name table `PTR_DAT_8007436C`; `0x7000` is a direct equipment id), and returns the field `a2` selects from the equipment stat table `DAT_80074F68` (8-byte stride; [`formats/equipment-table.md`](../../formats/equipment-table.md)). `see ghidra/scripts/funcs/800302e4.txt`. |
+| `80035274` | **Item / equipment passive-name draw.** `(item_id, _, arg)`. Resolves the item record at `0x80074368 + item_id*12` - the table whose `+0x4` name pointer is [`item-table.md`](../../formats/item-table.md)'s `PTR_DAT_8007436C` - through its two leading bytes into an [accessory-passive](../../formats/accessory-passive-table.md) slot, then draws that slot's **name**. Unreferenced in retail - [details ↓](#80035274). `see ghidra/scripts/funcs/80035274.txt`. |
 
 ## Shop screen panels
 
@@ -154,6 +155,32 @@ Callees of the pause/field menu overlay (loaded by the mode-22 CARD pair via `FU
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `80035274`
+
+The one routine that reads the item table's first two bytes as fields, so it is
+where their meaning comes from. Byte `+0x0` is a **class** and byte `+0x1` a
+**sub-index** into whichever per-class table the class selects:
+
+| `+0x0` | Table | Field taken |
+|---|---|---|
+| `1` | equipment stat table `DAT_80074F68` ([`equipment-table.md`](../../formats/equipment-table.md), 8-byte stride) | byte `+0x5` |
+| anything else | item-effect table `DAT_800752C0` ([`item-effect-table.md`](../../formats/item-effect-table.md), 4-byte stride) | byte `+0x3` |
+
+Either field lands in the same 64-slot index space, and only values `< 0x40` are
+drawn: the text ink `gp[0x13C]` is set to `4`, the pointer at
+`0x8007625C + index*12 + 4` goes through the sprite/text emitter `FUN_80036888`,
+and the ink is restored to `7`. An index `>= 0x40` draws nothing at all.
+
+`+4` of that record is the passive's **name**, not its description
+([`accessory-passive-table.md`](../../formats/accessory-passive-table.md)) -
+which is what separates this routine from the two that survive into retail
+menus. `FUN_80034250` and the window-34 renderer `FUN_801D4A80` both take `+8`,
+the description. Nothing on the disc reaches `FUN_80035274` at all: it has no
+caller, no jump-table slot and no materialisation site in any image, so the
+equipment arm's `+0x5` reading is decoded evidence about the item tables rather
+than about anything retail draws (see
+[`battle.md` § Unreferenced SCUS entry points](battle.md#unreferenced-scus-entry-points)).
 
 ### `8004313C`
 
