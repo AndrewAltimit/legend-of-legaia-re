@@ -4,29 +4,33 @@
 //!
 //! PORT: FUN_8005126C
 //!
-//! NOT WIRED: the two halves of the pass want state this crate does not hold
-//! and a consumer the port does not have.
+//! NOT WIRED: retail-unreachable, so there is nothing to wire it to. A sweep
+//! of `SCUS_942.54`, every based overlay image and the raw bytes of every
+//! extracted `PROT.DAT` entry finds `0x8005126C` in **none** of the five
+//! reference forms - no literal address word (so it sits in no dispatch table
+//! and on no actor template), no `jal`, no `j`, no PC-relative branch, no
+//! `lui`+`addiu` materialisation. No pass in retail asks this question, so
+//! none can be found by looking harder: the row is a documented negative
+//! rather than wiring work (`docs/tooling/worklist-classification.md`, "The
+//! reachability claim"), and it stays inert however much of the engine grows
+//! around it. Evidence: `docs/reference/functions/battle.md` § Unreferenced
+//! SCUS entry points, `docs/tooling/address-reference-scan.md` § The
+//! retail-unreachable set.
 //!
-//! * **No seat table.** The re-anchor step reads the 8-slot battle-actor
-//!   pointer table `&DAT_801C9370` at the sprite's own seat index
-//!   (`+0x5A`) and copies that actor's position `SVECTOR` verbatim. The pool
-//!   lives in `legaia_engine_core`'s battle scene, so [`battle_actor_on_screen`]
-//!   takes the seat position as an argument instead of resolving it, and
-//!   nothing in the engine produces the pair.
-//! * **Retail has no consumer for the verdict, and that is now settled.** The
-//!   port draws every loaded body every frame - no frustum cull, no draw
-//!   distance (see `docs/subsystems/renderer.md`, "No distance culling") - and
-//!   retail does the same, because nothing runs this test. A sweep of
-//!   `SCUS_942.54`, every based overlay image and the raw bytes of every
-//!   extracted `PROT.DAT` entry finds no reference to `0x8005126C` in any
-//!   form: no literal address word (so it is in no dispatch table and no actor
-//!   template), no `jal`, no `j`, no PC-relative branch, and no `lui`+`addiu`
-//!   materialisation. It is a linked-but-unreached entry point - see
-//!   `docs/reference/functions/battle.md` § Unreferenced SCUS entry points and
-//!   `docs/tooling/address-reference-scan.md`. So the earlier framing ("the
-//!   caller has to come first") had no answer to wait for; there is no pass to
-//!   wire this into, and a cull built on it would be an invention rather than
-//!   a port.
+//! Two consequences worth keeping apart from that:
+//!
+//! * **No cull is missing.** The port draws every loaded body every frame -
+//!   no frustum cull, no draw distance (`docs/subsystems/renderer.md`, "No
+//!   distance culling") - and so does retail, because nothing runs this test.
+//!   An earlier framing here ("the caller has to come first") implied a wait
+//!   with an end; there is none, and a cull built on this verdict would be an
+//!   invention rather than a port.
+//! * **No seat table**, which shapes the signature rather than holding the
+//!   row open. The re-anchor step reads the 8-slot battle-actor pointer table
+//!   `&DAT_801C9370` at the sprite's own seat index (`+0x5A`) and copies that
+//!   actor's position `SVECTOR` verbatim. The pool lives in
+//!   `legaia_engine_core`'s battle scene, so [`battle_actor_on_screen`] takes
+//!   the seat position as an argument instead of resolving it.
 //!
 //! REF: FUN_800195a8 - the billboard projector, ported as
 //! [`crate::billboard::project_billboard`]; this pass is one of its riders.
@@ -99,6 +103,10 @@ pub struct BattleActorOnScreen {
 /// against the screen band.
 ///
 /// PORT: FUN_8005126C - see the module docs for the per-step mapping.
+///
+/// NOT WIRED: retail-unreachable, so there is nothing to wire it to. Nothing
+/// on the disc references `FUN_8005126C` in any form; see the module's
+/// NOT WIRED section and `docs/tooling/address-reference-scan.md`.
 ///
 /// `seat_position` is the `SVECTOR` at `+0x3C` of `(&DAT_801C9370)[actor +
 /// 0x5A]`; `half_size` is `actor[+0x58]`, which retail passes as **both** the

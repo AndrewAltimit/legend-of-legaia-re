@@ -1374,24 +1374,35 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ColorFade { op0, rgb });
     }
 
-    fn effect_anim_trigger(&mut self, _ctx: &mut FieldCtx, arg: u8) {
-        // Faithful op 0x34 sub-3: FUN_800252EC(arg + 1) installs the prescript
-        // move-VM stager record at offsets[arg + 1] and stages it at the actor
-        // position via FUN_80021B04 → the move VM. The engine spawns a one-part
-        // field scene-graph effect; the event is still surfaced for host HUD.
-        let origin = self
-            .world
-            .player_actor_slot
-            .and_then(|s| self.world.actors.get(s as usize))
-            .map(|a| {
-                [
-                    a.move_state.world_x,
-                    a.move_state.world_y,
-                    a.move_state.world_z,
-                ]
-            })
-            .unwrap_or([0, 0, 0]);
-        self.world.spawn_field_stager(arg as usize + 1, origin);
+    fn effect_anim_trigger(&mut self, ctx: &mut FieldCtx, arg: u8) {
+        // Op 0x34 sub-3 is the ambient-tree install, and retail has ONE of
+        // them. The dispatcher arm at `0x801E00B0` is
+        // `FUN_800252EC(bytecode[1] + 1, s5 + 0x14, s5 + 0x24)` where `s5` is
+        // the executing script's context (`FUN_801DE840`'s third argument,
+        // retargeted by the `0x80` cross-context prefix), and that call stages
+        // the record through `FUN_80021B04` -> the move VM. The scene-entry
+        // installer is not a second mechanism: `FUN_8003A1E4` runs this same
+        // dispatcher for one frame slice per just-spawned placement, so a
+        // load-slice install and a runtime install differ only in when the
+        // arm is reached.
+        //
+        // The port therefore routes both to `spawn_ambient_record_at` - the
+        // full `FUN_80021B04` port, with the op-`0x25` fan-out, the
+        // self-modifying bytecode writes, the mode-3 CLUT-cell integrator,
+        // the mode-4 VRAM-rect scroller and the VDF morph envelope. Routing
+        // this arm at the older `SummonScene` pool instead left a runtime
+        // install running a stripped copy of its own tree.
+        //
+        // Seat = the executing context, not the player: `s5 + 0x14` is the
+        // ctx position and `s5 + 0x24` its render banks. A placement channel
+        // seeds both from its MAN record, so a scripted install stages where
+        // its actor stands.
+        //
+        // PORT: FUN_800252EC (op 0x34 sub-3 -> stager record `arg + 1`)
+        let origin = [ctx.world_x as i16, ctx.world_y as i16, ctx.world_z as i16];
+        let rot = [ctx.field_24, ctx.field_26 as i16, ctx.field_28];
+        self.world
+            .spawn_ambient_record_at(arg as usize + 1, origin, rot);
         self.world
             .pending_field_events
             .push(FieldEvent::EffectAnimTrigger { arg });
