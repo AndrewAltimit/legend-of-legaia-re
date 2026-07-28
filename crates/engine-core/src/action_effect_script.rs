@@ -62,7 +62,10 @@
 //! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.
 //! REF: FUN_801EC3E4 - the sibling call the caller pairs this with.
 //! REF: FUN_8002519C - the actor-list iterator that dispatches the tick.
-//! REF: FUN_801E295C - the action SM that stages the move.
+//! REF: FUN_801E295C - the action SM that stages the move. It is *not* a
+//! caller of this routine: a five-form reference sweep finds no `jal`, `j`,
+//! literal word or `lui`+`addiu` pair for `FUN_801DEA50` anywhere inside the
+//! battle-action overlay image.
 //! REF: FUN_80019B28 - the bearing helper.
 
 /// Bytes per effect-script record.
@@ -397,13 +400,21 @@ pub struct EffectScriptActor {
 /// gate on the zero-filled tail. The port keeps that structure, so a script
 /// with two terminators installs twice - which is what the bytes do.
 ///
-/// NOT WIRED: the retail caller is the battle-action SM `FUN_801E295C`, whose
-/// engine port drives typed art strikes rather than an 8-byte effect-script
-/// stream - `engine-core` has no `ctx[+0x1014]` move-power slot, no per-target
-/// `+0x1144` homing block, and no actor `+0x1F5` cursor to advance. Wiring this
-/// needs the battle action path to carry the disc effect-script block for the
-/// active move (the block is reachable - `legaia_asset::move_power` already
-/// parses the record the terminator installs).
+/// NOT WIRED: the blocker is the call's *arguments*, not its caller. Retail
+/// reaches `FUN_801DEA50` from exactly two `jal` sites, `0x800478B8` and
+/// `0x80047C08`, both inside `FUN_80047430` - the battle per-frame anim-node
+/// tick, which is ported **and live** (itself function-pointer-dispatched from
+/// `FUN_8002519C`). So the caller exists on a production path already; what the
+/// port cannot supply is the state that call passes: `engine-core` has no
+/// `ctx[+0x1014]` move-power slot, no per-target `+0x1144` homing block, and no
+/// actor `+0x1F5` cursor to advance. Wiring this needs the battle action path
+/// to carry the disc effect-script block for the active move (the block is
+/// reachable - `legaia_asset::move_power` already parses the record the
+/// terminator installs).
+///
+/// Both call sites sit behind a `_DAT_8007BD71 == 0xFF` gate whose arms have
+/// not been checked against the port's model of that byte; treat the argument
+/// list above as the settled part and that gate as open.
 pub fn step_effect_script<L: RotationLut>(
     lut: &L,
     block: &[u8],
