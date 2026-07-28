@@ -866,8 +866,14 @@ impl PlayWindowApp {
                             ink: *ink,
                         })
                         .collect();
-                    let shop_draws =
-                        shop_draws_for(&self.font, title, &rows, cursor, show_gold, (8, 140));
+                    let shop_draws = shop_draws_for(
+                        &self.font,
+                        title,
+                        &rows,
+                        cursor,
+                        show_gold,
+                        SHOP_OVERLAY_PEN,
+                    );
                     out.extend(shop_draws);
                 }
             } else if self.menu_runtime.inn_session.is_some() {
@@ -885,25 +891,31 @@ impl PlayWindowApp {
                     Some(MenuState::InnConfirm) => {
                         let title = format!("INN  Rest for {}G?", cost);
                         let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
-                        let inn_draws =
-                            shop_draws_for(&self.font, &title, &rows, cursor, Some(gold), (8, 140));
+                        let inn_draws = shop_draws_for(
+                            &self.font,
+                            &title,
+                            &rows,
+                            cursor,
+                            Some(gold),
+                            SHOP_OVERLAY_PEN,
+                        );
                         out.extend(inn_draws);
                     }
                     Some(MenuState::InnSleep) => {
                         let layout = self.font.layout_ascii("Resting...");
-                        out.extend(text_draws_for(&layout, (8, 140), white));
+                        out.extend(text_draws_for(&layout, SHOP_OVERLAY_PEN, white));
                     }
                     _ => {
                         let menu_label = format!("[{}]", label);
                         let ml_layout = self.font.layout_ascii(&menu_label);
-                        out.extend(text_draws_for(&ml_layout, (8, 140), white));
+                        out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
                     }
                 }
             } else {
                 // Non-shop, non-inn menu: show current mode label.
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
-                out.extend(text_draws_for(&ml_layout, (8, 140), white));
+                out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
             }
         }
         // Battle-event log: rendered along the right edge when non-empty.
@@ -1211,7 +1223,7 @@ impl PlayWindowApp {
                 banner.new_level,
                 banner.hp_gained,
                 banner.mp_gained,
-                (8, 60),
+                LEVEL_UP_BANNER_PEN,
             );
             out.extend(draws);
         }
@@ -1220,7 +1232,11 @@ impl PlayWindowApp {
         if let Some(banner) = &self.session.host.world.current_capture_banner
             && let Some(text) = banner.current_banner()
         {
-            out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
+            out.extend(capture_banner_draws_for(
+                &self.font,
+                &text,
+                CAPTURE_BANNER_PEN,
+            ));
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
         // (`FUN_80037174`) - every visible line drawn centered at its
@@ -1574,7 +1590,27 @@ pub(super) struct DialogStageLayout {
 }
 
 /// Top-left anchor of the battle HUD's slot-row block, in surface pixels.
+///
+/// Numerically equal to [`LEVEL_UP_BANNER_PEN`] and deliberately a separate
+/// constant: nothing ties the battle HUD's anchor to the post-battle banner's,
+/// and collapsing them would invent a coupling neither host has.
 pub(super) const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
+
+/// Pen the field shop / inn overlay draws at (`shop_draws_for`'s `pen`), and
+/// the anchor its plain-text stand-in lines share.
+///
+/// Duplicated on the browser play page as `play_shop::SHOP_PEN`; the two are
+/// pinned equal by `scripts/ci/check-ui-host-drift.py`, which is the only
+/// thing that keeps a move on one host from silently leaving the other behind.
+pub(super) const SHOP_OVERLAY_PEN: (i32, i32) = (8, 140);
+
+/// Pen the post-battle level-up banner draws at (`level_up_draws_for`).
+/// Web twin: `play_shop::LEVEL_UP_PEN`.
+pub(super) const LEVEL_UP_BANNER_PEN: (i32, i32) = (8, 60);
+
+/// Pen the monster-capture banner draws at (`capture_banner_draws_for`).
+/// Web twin: `play_shop::CAPTURE_PEN`.
+pub(super) const CAPTURE_BANNER_PEN: (i32, i32) = (8, 40);
 
 impl PlayWindowApp {
     /// Per-slot status-letter strips, one entry per HUD slot. Kept separate

@@ -896,7 +896,7 @@ impl PlayWindowApp {
                     &rows,
                     cursor,
                     None,
-                    (8, 140),
+                    super::hud::SHOP_OVERLAY_PEN,
                 ));
             }
             Some(MenuState::ShopTradeConfirm) => {
@@ -915,7 +915,7 @@ impl PlayWindowApp {
                     &rows,
                     cursor,
                     None,
-                    (8, 140),
+                    super::hud::SHOP_OVERLAY_PEN,
                 ));
             }
             _ => {}
