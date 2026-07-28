@@ -97,6 +97,33 @@ out, `_F118` clearing the address pair). `see
 ghidra/scripts/funcs/8006ee8c.txt`, `8006ef18.txt`, `8006efd0.txt`,
 `8006f088.txt`, `8006f118.txt`.
 
+#### The payload blocks are code that is never a function
+
+`0x8006EF78` and `0x8006F058` are the blocks the two patchers copy, and they are
+worth naming separately because of how they read to any instrument that measures
+code by function bodies. Each is real MIPS - it executes, in kernel RAM, after
+the copy - and nothing calls it at its link address, so no function is ever
+created there. The only reference either has in any image is the `lui`/`addiu`
+pair inside its own copier, which is the copier taking the block's **address**,
+not calling it.
+
+That makes them a permanent hole in
+[disc-denominated code coverage](../../tooling/disc-coverage.md): bytes that
+decode as plausible code, sit inside no dumped function, and never will. The
+same is true of `0x8006F0F4`, the `0x320000`-iteration settle loop the cluster
+uses, whose body Ghidra keeps but whose surrounding alignment does not close.
+
+`0x8005BBB8` is the third block of this shape and the one with no caller at all.
+It is the stock PSX exception-handler prologue - load the ExCB chain head from
+`0x100`, follow it, save `at`/`v0`/`v1`/`ra` into the saved-register area at
+`+8`, read `CAUSE` via `mfc0` - and it falls straight through into the
+`FlushCache` veneer at `0x8005BBE8`. A five-form reference sweep
+([address-reference-scan.md](../../tooling/address-reference-scan.md)) finds
+**no word, no `jal`, no `j`, no branch and no materialisation pair anywhere on
+the disc**, and the preceding instruction is a `jr ra`, so nothing falls into it
+either. It is linked-in `libapi` exception-handler code that this build never
+installs.
+
 ### libgte primitives
 
 | Address | Role |
