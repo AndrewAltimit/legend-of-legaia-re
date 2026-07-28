@@ -25,6 +25,12 @@
 //! different renderer is skipped rather than mis-drawn: the id is the lookup
 //! key and the renderer is the authority.
 //!
+//! One further sub-screen rides over the parked buy list:
+//! [`PlayWindowApp::recipient_window_draws`] paints the equipment-buy
+//! recipient picker (windows 36 / 25 / 41) through
+//! `engine-ui::recipient_picker_draws_for`, the same shared composition the
+//! browser play page calls.
+//!
 //! ## What is a stand-in
 //!
 //! The painters also return pictogram + cursor **sprite** requests (retail
