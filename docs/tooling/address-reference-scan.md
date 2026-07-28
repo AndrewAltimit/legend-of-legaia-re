@@ -108,6 +108,21 @@ against a known answer before trusting a "nothing found":
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
 
+## Relation to the in-container scripts
+
+Three Ghidra-side scripts cover pieces of this from inside a loaded program -
+`find_lui_writers.py` (materialisation pairs in a range),
+`find_addr_data.py` / `find_data_word.py` (literal address words), and
+`find_terrain_emitter_caller.py` (a combined sweep against a target set), all
+catalogued in [`ghidra.md`](ghidra.md#script-catalogue). They stay the right
+tool while you are already in a program and want the containing *function* of
+a hit, which they can name and this cannot.
+
+What the host-side scan adds is corpus and closure: it runs against every image
+at once without importing anything, it includes the raw PROT entries no Ghidra
+project holds, and it covers all five forms in one pass - which is what turns
+"I did not find a caller" into "no reference exists".
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the worklist this settles rows on.

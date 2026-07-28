@@ -97,6 +97,14 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 
 Modify `LO` / `HI` constants in the script to scan a different range.
 
+Off-container equivalent, and the one to reach for when the question is "does
+*anything* reference this address":
+[`address-reference-scan.md`](address-reference-scan.md) sweeps SCUS, every
+based overlay image and the raw PROT corpus for the materialisation pair
+alongside the four other reference forms - literal word, `jal`, `j`, and the
+PC-relative branch that reaches an intra-function label - so an empty result
+is a statement about the bytes rather than about the reference manager.
+
 Computed addresses are still missed - `lw r4, 0x18(r3)` where `r3 = 0x80080000 + index*4` can't be statically resolved when `index` is only known at runtime. Functions reading from arrays via runtime-computed indexing won't appear in xref lists; for these, dynamic analysis with watchpoints is the only static-tool-free path.
 
 ## Investigation patterns
