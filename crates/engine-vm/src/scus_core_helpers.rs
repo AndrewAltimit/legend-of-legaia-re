@@ -19,7 +19,7 @@
 //! (`ghidra/scripts/funcs/800203ec.txt`, `80020424.txt`, `80020454.txt`,
 //! `800204a4.txt`, `8001fa68.txt`) are the *spec*.
 //!
-//! REF: FUN_80020DE0, FUN_8002519C, FUN_8003F3FC
+//! REF: FUN_80020DE0, FUN_8002519C, FUN_8003F3FC, FUN_8001FE70
 //!
 //! # NOT WIRED
 //!
