@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """UI host-drift checker: does every shared screen reach BOTH hosts?
 
-The engine ships two hosts for the same game UI:
+The engine ships the same game UI through more than one framebuffer:
 
 * **native** - `legaia-engine play-window` (`crates/engine-shell`, wgpu via
   `crates/engine-render`),
-* **web** - the browser play page (`crates/web-viewer`, WebGL + canvas via
-  `site/play.html`).
+* **web** - the browser pages built from `crates/web-viewer`. That is two
+  surfaces, not one: the **play page** (`runtime.rs` + `play_*.rs`, driven by
+  `site/js/play-app.js`) and the **minigames page** (`minigames*.rs`,
+  `LegaiaMinigames`), which calls `engine-core` session types directly and
+  never goes through `World`.
+
+The web bucket is deliberately one label here, and saying why matters,
+because collapsing it is where this gate's blind spot lives. The
+*reachability* question below - "does a host's shipped source reach this
+builder" - is answered per binary, and both web surfaces ship in one
+`legaia-web-viewer` cdylib. Splitting them would not find a gap; it would
+manufacture 80 of them, because the minigames page is a different screen set
+rather than a second copy of the play page.
+
+What the collapse really hides is a *model* question - the two web surfaces
+can feed one shared kernel two differently-built models, and the pause-menu
+reachability test can never see it. That is what [`SIM_PAIRS`] is for; see
+"The third question" below.
 
 `crates/engine-ui` is the wgpu-free leaf both hosts share: every screen's
 geometry is a `pub fn ..._draws_for(...) -> Vec<TextDraw>` (or `SpriteDraw`)
@@ -22,10 +38,20 @@ A host reaches a screen transitively too. Builders compose - the party info
 panel folds in the AP gauge, the pen-only tab alias delegates to the tab
 painter - so "is this screen on screen" is a question about the call graph, not
 about which name the host happens to type. Host references seed the used-set and
-then propagate along engine-ui's own builder-to-builder edges. Counting only the
+then propagate along engine-ui's own internal call edges. Counting only the
 shallowest wrapper made every composed widget read as unused, which is a defect
 of the instrument rather than a gap in the port, and it rewarded a host for
 naming a wrapper over calling the thing that draws.
+
+The graph spans **every** `fn` engine-ui defines, not only the builders. Limiting
+it to builder-to-builder edges invents orphans wherever the composition runs
+through a method or a private helper, and engine-ui's fishing HUD is exactly
+that shape: `FishingBanners::service_frame` takes the four banner builders as
+function pointers and `HudDraw::resolve_bar` is what reaches `bar_frame` /
+`power_bar_frame`. Both are `impl` methods, so a builder-only graph reported six
+wired builders as unused - six waivers that would each have asserted a gap that
+does not exist, which is worse than the silence it replaced. Non-builder `fn`s
+are graph nodes only; nothing classifies them.
 
 Classification per builder:
 
@@ -33,6 +59,12 @@ Classification per builder:
 * used by native, not by web      -> DRIFT (fail, unless waived)
 * used by web, not by native      -> web-ahead (info only)
 * used by neither                 -> ORPHAN (fail, unless waived)
+
+Every orphan is **named** on stdout, waived or not. A count is not a finding: for
+as long as this gate printed `6 unused` and nothing else, deleting a builder's
+only caller was invisible - which is how `RecipientWindowRects::active_compare`
+was removed and left window 25's painter chain with no consumer at all. A count
+went from 5 to 6 and no line of output changed.
 
 Waivers live in `scripts/ci/ui-host-drift-waivers.toml`; each needs a reason.
 They are validated in both directions, which is what keeps the file honest:
@@ -79,6 +111,41 @@ Be precise about what that does and does not establish:
 A narrow check that says so is worth more than a broad one that implies more
 than it measured. Adding a pair is how the covered set grows.
 
+## The third question: do both hosts feed the same MODEL to a shared kernel?
+
+A geometry constant is the easy half of "same model". The hard half is the
+simulation: two hosts can call one `engine-core` kernel having built its inputs
+differently, or call different kernels entirely, and every check above stays
+green - the screen is reachable, the rects agree, and the numbers on it come
+from somewhere else.
+
+[`SIM_PAIRS`] is the simulation twin of [`CONSTANT_PAIRS`]. Each row names a
+feature and, per host, the **injection site** where that host hands a model to
+the shared kernel, plus what must be true of both sites at once. Three
+assertion modes, in increasing strength:
+
+* `symbols_all`  - each named symbol must appear in both bodies,
+* `symbols_same` - each named symbol must appear in both or in neither,
+* `pattern_same` - the *set* of regex captures must be equal across the two.
+
+`pattern_same` is the one that does not need the answer up front: it says the
+two sites must agree without saying what they must agree on, so it keeps
+working when the right set changes.
+
+Scope, stated as narrowly as the constant check above:
+
+* it DOES prove the two named sites mention (or omit) the same kernels, and
+  that neither site was renamed or deleted out from under the pairing;
+* it does NOT prove the arguments are equal, that the calls run in the same
+  order, or that either site is reached at runtime.
+
+A row may carry `blocked_on`, which marks a divergence that is known and being
+closed elsewhere. That marker is validated in both directions exactly as a
+waiver is: a `blocked_on` row that diverges reports and does not fail, and a
+`blocked_on` row that has become **clean** FAILS, demanding the marker be
+deleted. So a pending row cannot rot into a permanent exemption - the moment
+the work lands, the gate says so.
+
 Usage:
 
     python3 scripts/ci/check-ui-host-drift.py            # check, exit 1 on drift
@@ -86,8 +153,8 @@ Usage:
     python3 scripts/ci/check-ui-host-drift.py --list     # full surface table
     python3 scripts/ci/check-ui-host-drift.py --selftest # detector control suite
 
-Exit status: 0 = clean, 1 = drift / stale waiver / constant mismatch,
-2 = self-test failed.
+Exit status: 0 = clean, 1 = drift / stale waiver / constant mismatch /
+sim-pair mismatch, 2 = self-test failed.
 """
 
 import argparse
@@ -115,15 +182,41 @@ HOSTS = {
     "web": [REPO / "crates" / "web-viewer" / "src"],
 }
 
-# A draw builder is a public fn whose return type mentions TextDraw or
-# SpriteDraw - that is exactly "projects a view into renderer-agnostic
-# quads", i.e. one screen's (or one screen fragment's) geometry.
+# A draw builder is a public fn whose return type mentions one of engine-ui's
+# own draw-record types - that is exactly "projects a view into
+# renderer-agnostic geometry", i.e. one screen's (or one screen fragment's)
+# layout.
+#
+# `TextDraw` / `SpriteDraw` are the terminal records a renderer consumes.
+# The rest are engine-ui's *intermediate* records - a resolved screen that
+# still needs a host-owned atlas or font to become quads:
+#
+#   HudDraw           the fishing HUD's item list (ui_fishing)
+#   HudQuad           a PROT 0977 textured-Gouraud quad (other_game_hud)
+#   DigitCell         one placed digit of a numeric readout (ui_fishing)
+#   BarFrame          a resolved gauge bar (ui_fishing)
+#   ComparePanelField one field of an equip stat-compare panel
+#
+# They belong on the surface for the same reason the terminal records do: a
+# host "has" the screen exactly when it reaches the projection, and which
+# record type the projection stops at is an engine-ui implementation detail.
+# Leaving them off is not a smaller claim, it is a silent one - the whole
+# window-25 compare-panel chain and the whole fishing HUD were invisible to
+# this gate while every other pause screen was covered.
 #
 # Signatures here are routinely multi-line, so the return type is read from
 # the span between the fn keyword and the opening brace of the body rather
 # than from a single-line pattern.
+DRAW_RECORDS = "TextDraw|SpriteDraw|HudDraw|HudQuad|DigitCell|BarFrame|ComparePanelField"
+
 BUILDER_RE = re.compile(r"^pub fn (?P<name>[a-z0-9_]+)\s*[<(]", re.MULTILINE)
-DRAW_RET_RE = re.compile(r"->[^;{]*(?:TextDraw|SpriteDraw)")
+DRAW_RET_RE = re.compile(rf"->[^;{{]*(?:{DRAW_RECORDS})")
+
+# Every `fn` engine-ui defines, at any indentation: free functions, `impl`
+# methods and private helpers alike. These are the nodes of the internal call
+# graph. Only builders are ever classified; the rest exist so a composition
+# that runs through a method is not mistaken for an unused screen.
+ANY_FN_RE = re.compile(r"\bfn\s+(?P<name>[a-z0-9_]+)\s*[<(]")
 
 # ...but returning quads is not sufficient. A function that *takes* draw
 # records and hands them back is a batching transform inside the draw
@@ -144,7 +237,17 @@ DRAW_RET_RE = re.compile(r"->[^;{]*(?:TextDraw|SpriteDraw)")
 # exactly one function; every real screen takes a model (a session, a row
 # list, a rect, a font layout) and is untouched. `--selftest` pins both
 # directions.
-TRANSFORM_PARAM_RE = re.compile(r"\b(?:SpriteRequest|TextDraw|SpriteDraw)\b")
+#
+# The intermediate records count here too, and the case that proves it is
+# `fishing_hud_draws_for(font, items: &[HudDraw], captions, atlas, origin)
+# -> Vec<TextDraw>`. HudDraw records in, TextDraw records out: it is the
+# fishing HUD's *renderer*, and the screens are `persistent_hud_draws` /
+# `catch_hud_draws`, which take a model and return the item list. Counting the
+# renderer as a screen would have reported DRIFT, since the browser host walks
+# the same `HudDraw` list through its own projection - a true observation
+# about the rendering half, which this gate has already said it cannot decide,
+# reported in the one bucket that means "a screen is missing".
+TRANSFORM_PARAM_RE = re.compile(rf"\b(?:SpriteRequest|{DRAW_RECORDS})\b")
 
 LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 
@@ -192,6 +295,64 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
         "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
         "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
+    },
+]
+
+# Simulation injection sites that must agree across hosts. See the module
+# docstring's "third question" for the scope of the claim, and for what a
+# `blocked_on` marker does and does not buy.
+#
+# A row's `sites` map a host label to `(repo-relative path, fn name or None)`.
+# `None` means the whole file is the site, which is right when a host's
+# injection is a call made from a place the pairing should not pin.
+NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
+NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
+NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
+WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
+WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
+
+SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "Muscle Dome damage - the arena's per-exchange damage must come "
+        "off the same battle-formula kernel on both hosts, or the same card "
+        "deals different numbers in the window and in the browser",
+        "sites": {
+            "native": (NATIVE_FRAME_TICK, "tick_muscle_dome"),
+            "web": (WEB_MINIGAMES_MUSCLE, "muscle_resolve"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["damage_finish_lazy"],
+        "blocked_on": "the concurrent Muscle Dome lane is moving the native "
+        "tick onto `battle_formulas::damage_finish_lazy`; the browser host "
+        "already calls it. Delete this marker when the native side lands.",
+    },
+    {
+        "what": "save-select model - whether the slot rack is put in card-slots "
+        "mode decides how many rows it shows and what each row addresses, so "
+        "the two hosts must make the same call or neither may",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, None),
+            "web": (WEB_PLAY_MENU, None),
+        },
+        "mode": "symbols_same",
+        "symbols": ["set_card_slots_mode"],
+        "blocked_on": "the browser pause menu arms card-slots mode and the "
+        "native boot/cutscene save rack does not. A concurrent lane owns the "
+        "native window tree; delete this marker once the two agree.",
+    },
+    {
+        "what": "live-loop arming - the browser twin of `enter_field_live`. "
+        "Every `World::set_*` one host installs before running the live "
+        "gameplay loop and the other does not is a table the two simulations "
+        "disagree about (drops, prices, spells, battle BGM)",
+        "sites": {
+            "native": (NATIVE_BOOT, "enter_field_live"),
+            "web": (WEB_PLAY_BATTLE, "arm_live_battles"),
+        },
+        "mode": "pattern_same",
+        "pattern": r"\.(set_[a-z0-9_]+)\s*\(",
+        "blocked_on": "a concurrent lane is closing the arming gap. Delete "
+        "this marker once both sites install the same table set.",
     },
 ]
 
@@ -319,6 +480,144 @@ def first_difference(this: str, other: str, window: int = 60) -> str:
     hi = min(len(this), i + window)
     return ("..." if lo else "") + this[lo:hi] + ("..." if hi < len(this) else "")
 
+
+def signature_end(text: str, start: int) -> int:
+    """Index of the body's `{` for the `fn` at `text[start]`, or -1 if none.
+
+    Scans at bracket depth zero so a `;` inside an array return type
+    (`-> [f32; 4] {`) does not read as a bodyless trait declaration, and a
+    genuinely bodyless `fn f(..);` does.
+    """
+    i, n, depth = start, len(text), 0
+    while i < n:
+        c = text[i]
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth -= 1
+        elif depth == 0 and c == "{":
+            return i
+        elif depth == 0 and c == ";":
+            return -1
+        i += 1
+    return -1
+
+
+def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
+    """The source a [`SIM_PAIRS`] site names: one fn body, or the whole file.
+
+    Returns `(text, problem)`; `text` is None when the site cannot be
+    resolved, in which case `problem` says why. An unresolvable site is
+    always an error - a pairing that cannot find its own anchor checks
+    nothing, and would otherwise pass forever after a rename.
+    """
+    path = REPO / rel
+    if not path.is_file():
+        return None, f"host source {rel} is missing"
+    text = path.read_text(encoding="utf-8")
+    if fn_name is None:
+        return strip_comments(BLOCK_COMMENT_RE.sub(" ", text)), ""
+    m = re.search(rf"\bfn\s+{re.escape(fn_name)}\s*[<(]", text)
+    if not m:
+        return None, f"no `fn {fn_name}` in {rel} (renamed or deleted?)"
+    brace = signature_end(text, m.start())
+    if brace < 0:
+        return None, f"`fn {fn_name}` in {rel} has no body"
+    return strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace))), ""
+
+
+def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
+    """Evaluate one [`SIM_PAIRS`] row.
+
+    Returns `(hard_errors, divergences)`. A hard error (an unresolvable site,
+    a malformed row) always fails; a divergence fails unless the row carries
+    `blocked_on`.
+    """
+    sites: dict = pair["sites"]  # type: ignore[assignment]
+    errors: list[str] = []
+    bodies: dict[str, str] = {}
+    for host, (rel, fn_name) in sites.items():
+        text, problem = site_source(rel, fn_name)
+        if text is None:
+            errors.append(f"SIM {pair['what']!r}: {problem}")
+        else:
+            bodies[host] = text
+    if errors or len(bodies) != 2:
+        return errors, []
+
+    hosts = sorted(bodies)
+    a, b = hosts[0], hosts[1]
+    mode = pair.get("mode")
+    diffs: list[str] = []
+
+    def where(host: str) -> str:
+        rel, fn_name = sites[host]
+        return f"{rel}::{fn_name}" if fn_name else rel
+
+    if mode in ("symbols_all", "symbols_same"):
+        for sym in pair.get("symbols", []):  # type: ignore[union-attr]
+            seen = {h: re.search(rf"\b{re.escape(sym)}\b", bodies[h]) is not None for h in hosts}
+            if mode == "symbols_all" and not all(seen.values()):
+                missing = [h for h in hosts if not seen[h]]
+                diffs.append(
+                    f"`{sym}` is not called at {', '.join(where(h) for h in missing)}"
+                )
+            elif mode == "symbols_same" and seen[a] != seen[b]:
+                has = a if seen[a] else b
+                lacks = b if seen[a] else a
+                diffs.append(
+                    f"`{sym}` is called at {where(has)} but not at {where(lacks)} - "
+                    f"both must, or neither may"
+                )
+    elif mode == "pattern_same":
+        pat = re.compile(pair["pattern"])  # type: ignore[arg-type]
+        found = {h: {m.group(1) for m in pat.finditer(bodies[h])} for h in hosts}
+        if found[a] != found[b]:
+            only_a = sorted(found[a] - found[b])
+            only_b = sorted(found[b] - found[a])
+            if only_a:
+                diffs.append(f"only {where(a)}: {', '.join(only_a)}")
+            if only_b:
+                diffs.append(f"only {where(b)}: {', '.join(only_b)}")
+    else:
+        errors.append(f"SIM {pair['what']!r}: unknown mode {mode!r}")
+    return errors, diffs
+
+
+def check_sim_pairs() -> tuple[list[str], list[str]]:
+    """Compare every [`SIM_PAIRS`] row.
+
+    Returns `(problems, pending)`. `pending` lists the rows whose divergence
+    is disclosed by `blocked_on`; a `blocked_on` row with NO divergence is a
+    problem, not a pass - the marker has outlived the gap and must go.
+    """
+    problems: list[str] = []
+    pending: list[str] = []
+    for pair in SIM_PAIRS:
+        errors, diffs = sim_pair_divergence(pair)
+        problems.extend(errors)
+        if errors:
+            continue
+        blocked = pair.get("blocked_on")
+        if diffs and not blocked:
+            problems.append(
+                f"SIM DRIFT ({pair['what']}):\n"
+                + "".join(f"      {d}\n" for d in diffs)
+                + f"      The two hosts hand different models to the same kernel. "
+                f"Make the sites agree, or record why not with `blocked_on`."
+            )
+        elif diffs:
+            pending.append(f"{pair['what']}\n      " + "\n      ".join(diffs))
+        elif blocked:
+            problems.append(
+                f"STALE blocked_on ({pair['what']}): the two sites now agree, so "
+                f"the marker describes a gap that is closed. Drop `blocked_on` "
+                f"from the row in {Path(__file__).name} - a pending marker that "
+                f"outlives its gap is a permanent exemption wearing a temporary "
+                f"name."
+            )
+    return problems, pending
+
 # A host "has" a screen when its *shipped* code draws it. Both native roots
 # carry `#[cfg(test)]` modules inside `src/` - `engine-render/src/tests/` is a
 # whole directory of them - and a builder exercised only by a unit test is
@@ -390,7 +689,7 @@ def collect_builders() -> dict[str, str]:
             # The signature runs from the fn keyword to the body's opening
             # brace; anything past that is the body and must not be sniffed
             # for a return type.
-            brace = text.find("{", m.start())
+            brace = signature_end(text, m.start())
             if brace < 0:
                 continue
             if not is_screen_signature(text[m.start() : brace]):
@@ -451,21 +750,39 @@ def fn_body(text: str, brace: int) -> str:
     return text[brace + 1 :]
 
 
-def collect_builder_refs(names: set[str]) -> dict[str, set[str]]:
-    """Map builder name -> the builders its own body references.
+def collect_fn_names() -> set[str]:
+    """Every `fn` name engine-ui defines, at any indentation."""
+    out: set[str] = set()
+    for path in sorted(UI_SRC.rglob("*.rs")):
+        text = path.read_text(encoding="utf-8")
+        for m in ANY_FN_RE.finditer(text):
+            out.add(m.group("name"))
+    return out
 
-    This is the engine-ui-internal half of the call graph. It is deliberately
-    limited to builder-to-builder edges: a host that draws one screen draws
-    whatever that screen composes, and nothing further is claimed.
+
+def collect_call_graph(names: set[str]) -> dict[str, set[str]]:
+    """Map engine-ui fn name -> the engine-ui fn names its body references.
+
+    This is the engine-ui-internal half of the call graph. It spans free
+    functions, `impl` methods and private helpers, because a composition edge
+    is an edge wherever it is written - see the module docstring for the six
+    builders a builder-only graph reported as unused while both hosts drew
+    them.
+
+    Nodes are keyed by bare name, so two `impl`s that both define `service`
+    merge into one node. That over-counts "used", which is the safe direction
+    this file's `is_test_source` docstring argues for at length: the failure
+    it can produce is a nag about a screen that is in fact wired, never a
+    waiver asserting a gap that does not exist.
     """
     refs: dict[str, set[str]] = {n: set() for n in names}
     for path in sorted(UI_SRC.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
-        for m in BUILDER_RE.finditer(text):
+        for m in ANY_FN_RE.finditer(text):
             name = m.group("name")
-            if name not in names:
+            if name not in refs:
                 continue
-            brace = text.find("{", m.start())
+            brace = signature_end(text, m.start())
             if brace < 0:
                 continue
             body = strip_comments(fn_body(text, brace))
@@ -547,6 +864,19 @@ SELFTEST_SCREENS: list[tuple[str, str]] = [
      "pub fn sell_quantity_draws_for(font: &legaia_font::Font, rect: PainterRect, "
      "selected: bool, heading: &str, quantity: u32, held: u32, unit_price: u32) "
      "-> (Vec<TextDraw>, Option<PainterPictogram>, Option<PainterSprite>)"),
+    # Intermediate records are screens: a model in, a resolved screen out,
+    # still needing the host's atlas or font to become quads. These four are
+    # the whole reason the surface widened.
+    ("persistent_hud_draws",
+     "pub fn persistent_hud_draws(points: i32, best_points: i32, rod_index: u32, "
+     "lure_count: i32) -> Vec<HudDraw>"),
+    ("number_digit_cells",
+     "pub fn number_digit_cells(style: i32, x: i32, y: i32, value: i32) -> Vec<DigitCell>"),
+    ("bar_frame",
+     "pub fn bar_frame(x: i32, y: i32, value: i32, segments: i32, style: i32) -> BarFrame"),
+    ("equip_compare_panel_fields",
+     "pub fn equip_compare_panel_fields(view: &EquipComparePanelView<'_>, "
+     "pen: (i32, i32)) -> Vec<ComparePanelField>"),
 ]
 
 SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
@@ -564,7 +894,66 @@ SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
     ("scale_stage_text_draws",
      "pub fn scale_stage_text_draws(draws: &mut [TextDraw], stage_origin: (i32, i32), "
      "stage_scale: u32)"),
+    # The intermediate-record renderer: HudDraw list in, TextDraw list out.
+    # A projection of a screen it did not build - the screens are
+    # `persistent_hud_draws` / `catch_hud_draws` above.
+    ("fishing_hud_draws_for",
+     "pub fn fishing_hud_draws_for(font: &legaia_font::Font, items: &[HudDraw], "
+     "captions: &FishingCaptions<'_>, atlas: &FishingHudAtlas<'_>, origin: (i32, i32)) "
+     "-> Vec<TextDraw>"),
+    ("compare_panel_draws_for",
+     "pub fn compare_panel_draws_for(font: &legaia_font::Font, "
+     "fields: &[ComparePanelField]) -> Vec<TextDraw>"),
 ]
+
+# Control suite for `signature_end`, the scan the whole call graph rests on.
+# Each case is `(label, source, should_find_a_body)`.
+SELFTEST_SIGNATURES: list[tuple[str, str, bool]] = [
+    ("ordinary fn has a body", "fn f(a: i32) -> u8 { 0 }", True),
+    ("array return type's `;` is not a terminator",
+     "fn tint(x: u8) -> [f32; 4] { [0.0; 4] }", True),
+    ("trait declaration has no body", "fn on_scene_enter(&mut self, s: &str);", False),
+    ("generic fn has a body", "fn f<T: Into<u8>>(v: T) -> Vec<TextDraw> { vec![] }", True),
+]
+
+# Control suite for the sim-pair comparators, over synthetic bodies so the
+# modes are pinned independently of whatever the tree happens to look like.
+# Each case is `(label, mode, body_a, body_b, extra, should_diverge)`.
+SELFTEST_SIM: list[tuple[str, str, str, str, object, bool]] = [
+    ("symbols_all: both call it", "symbols_all",
+     "let d = damage_finish_lazy(&f);", "damage_finish_lazy(&g)", ["damage_finish_lazy"], False),
+    ("symbols_all: one host misses it", "symbols_all",
+     "let d = damage_finish_lazy(&f);", "let d = ad_hoc_damage(&g);",
+     ["damage_finish_lazy"], True),
+    ("symbols_same: neither calls it is agreement", "symbols_same",
+     "nothing()", "nothing_else()", ["set_card_slots_mode"], False),
+    ("symbols_same: exactly one calls it is drift", "symbols_same",
+     "s.set_card_slots_mode(true)", "s.reset()", ["set_card_slots_mode"], True),
+    ("pattern_same: same set in any order", "pattern_same",
+     "w.set_a(); w.set_b();", "w.set_b(); w.set_a();", r"\.(set_[a-z0-9_]+)\s*\(", False),
+    ("pattern_same: a missing installer is drift", "pattern_same",
+     "w.set_a(); w.set_b();", "w.set_a();", r"\.(set_[a-z0-9_]+)\s*\(", True),
+]
+
+
+def _selftest_sim_case(mode: str, a: str, b: str, extra: object) -> bool:
+    """Run one synthetic sim-pair comparison; True when it diverges."""
+    hosts = ["native", "web"]
+    bodies = {"native": a, "web": b}
+    diffs: list[str] = []
+    if mode in ("symbols_all", "symbols_same"):
+        for sym in extra:  # type: ignore[union-attr]
+            seen = {h: re.search(rf"\b{re.escape(sym)}\b", bodies[h]) is not None for h in hosts}
+            if mode == "symbols_all" and not all(seen.values()):
+                diffs.append(sym)
+            elif mode == "symbols_same" and seen["native"] != seen["web"]:
+                diffs.append(sym)
+    else:
+        pat = re.compile(str(extra))
+        found = {h: {m.group(1) for m in pat.finditer(bodies[h])} for h in hosts}
+        if found["native"] != found["web"]:
+            diffs.append("pattern")
+    return bool(diffs)
 
 
 # Control suite for the constant-pair normaliser. A normaliser that collapsed
@@ -630,7 +1019,25 @@ def run_selftest() -> int:
             verdict = "matched" if got else "differed"
             print(f"  FAIL  constants: {label} - normaliser {verdict}")
             failures += 1
-    total = len(SELFTEST_SCREENS) + len(SELFTEST_TRANSFORMS) + len(SELFTEST_CONSTANTS)
+    for label, src, want in SELFTEST_SIGNATURES:
+        if (signature_end(src, 0) >= 0) == want:
+            print(f"  ok    signature: {label}")
+        else:
+            print(f"  FAIL  signature: {label}")
+            failures += 1
+    for label, mode, a, b, extra, want in SELFTEST_SIM:
+        if _selftest_sim_case(mode, a, b, extra) == want:
+            print(f"  ok    sim pair: {label}")
+        else:
+            print(f"  FAIL  sim pair: {label}")
+            failures += 1
+    total = (
+        len(SELFTEST_SCREENS)
+        + len(SELFTEST_TRANSFORMS)
+        + len(SELFTEST_CONSTANTS)
+        + len(SELFTEST_SIGNATURES)
+        + len(SELFTEST_SIM)
+    )
     if failures:
         print(
             f"\nself-test: {failures} of {total} case(s) failed - the surface this "
@@ -684,13 +1091,35 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+    for _label, src, want in SELFTEST_SIGNATURES:
+        if (signature_end(src, 0) >= 0) != want:
+            print(
+                "ERROR: built-in signature control failed; the call graph cannot "
+                "find function bodies, so every reachability verdict below is "
+                "meaningless. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, mode, a, b, extra, want in SELFTEST_SIM:
+        if _selftest_sim_case(mode, a, b, extra) != want:
+            print(
+                "ERROR: built-in sim-pair control failed; a comparator that cannot "
+                "tell agreement from divergence proves nothing about the pairs "
+                "below. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
 
     builders = collect_builders()
     if not builders:
         print("[ui-drift] no draw builders found - is crates/engine-ui/src present?", file=sys.stderr)
         return 1
-    uses = collect_uses(set(builders))
-    seed_transitively(uses, collect_builder_refs(set(builders)))
+    # Seed and propagate over the whole engine-ui fn graph, then classify only
+    # the builders. Non-builder nodes exist so a composition that runs through
+    # a method is not mistaken for an unused screen.
+    fn_names = collect_fn_names()
+    uses = collect_uses(fn_names)
+    seed_transitively(uses, collect_call_graph(fn_names))
     waivers = load_waivers()
 
     drift: list[str] = []
@@ -768,6 +1197,10 @@ def main() -> int:
     # The model half: paired host constants must carry equal values.
     problems.extend(check_constant_pairs())
 
+    # The simulation half: paired injection sites must name the same kernels.
+    sim_problems, sim_pending = check_sim_pairs()
+    problems.extend(sim_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -779,8 +1212,21 @@ def main() -> int:
             f"(value equality only - see the module docstring for what this "
             f"does not prove)"
         )
+        print(
+            f"[ui-drift] paired simulation injection sites: {len(SIM_PAIRS)} "
+            f"({len(sim_pending)} disclosed as blocked)"
+        )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
+        # Name every orphan, waived or not. A bare count cannot distinguish
+        # "the same six as yesterday" from "a builder's last caller was
+        # deleted this morning", which is exactly how window 25's painter
+        # chain lost its consumer without a line of output changing.
+        for name in orphan:
+            mark = "waived" if name in waivers else "UNWAIVED"
+            print(f"[ui-drift] orphan ({mark}): {name}  {builders[name]}")
+        for note in sim_pending:
+            print(f"[ui-drift] sim pair blocked: {note}")
 
     if problems:
         print(f"\n[ui-drift] {len(problems)} problem(s):", file=sys.stderr)

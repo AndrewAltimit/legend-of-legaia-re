@@ -287,3 +287,93 @@ owns, so a host has neither the trigger nor the text.
 # the twin of the page's `load_disc` arming. Nothing to waive, and a future
 # divergence would have to be written into the shared builder, where it would
 # show up on both hosts at once.
+
+# --- Widened surface: engine-ui's intermediate draw records ------------------
+#
+# The checker's builder surface used to stop at `TextDraw` / `SpriteDraw`. It
+# now also counts the crate's intermediate records - `HudDraw`, `HudQuad`,
+# `DigitCell`, `BarFrame`, `ComparePanelField` - because a screen that stops at
+# one of those is still a screen, and leaving them off made two whole chains
+# (the fishing HUD, window 25's compare panel) invisible while every other
+# pause screen was covered. Thirteen builders arrived with the widening. Ten
+# were already reached on both hosts through methods the call graph now walks;
+# the four below are the real gaps.
+
+[[waiver]]
+builder = "hud_quad_centred"
+kind = "orphan"
+reason = """
+`FUN_801D050C`, the PROT 0977 arena-**hub** textured-Gouraud quad emitter (the
+intro card, the INTERVAL heading, the ROUND word and hub digit strip). Say hub
+precisely: the Muscle Dome's in-match Turns Left / HP Left strip is NOT this
+emitter's output - it is drawn from the battle-action overlay 0898 through
+`func_0x8003541C` (text-actor label register-and-draw) and `func_0x8003563C`
+(per-actor record-queue append). Two different overlays, two different
+primitive paths. Wiring these emitters to the match strip would tie unrelated
+HUDs and put a false provenance claim in the tree.
+
+The blocking capability, named exactly: a **`muscle_hud_quad_*` wasm export**
+and the JS rework behind it. The genuine consumer is the site's hub-sprite
+path - `hubSprite()` and the ROUND digit strip in `site/js/minigame-muscle.js`
+- which today takes the parsed sprite-table *geometry*
+(`other_game_hud::parse_sprite_table` via `minigames_muscle::muscle_hud_json`)
+and blits it in the page's own layer. Routing it through the engine emitter
+means exporting emitted quads and turning that blit into a quad draw; nothing
+smaller closes it, because the placement immediates live inside PROT 0977's
+own unported hub screens (`0x801CF2C0 .. 0x801D0324`) and every retail call
+site is in there.
+"""
+
+[[waiver]]
+builder = "hud_quad_corner"
+kind = "orphan"
+reason = """
+`FUN_801D08EC`, the corner-anchored sibling of `hud_quad_centred` above (same
+descriptor table, one shift less of extent, brightness clamped first). Same
+consumer, same blocking capability: the site's hub-sprite blit draws from
+parsed geometry, so the emit math has no non-test caller until a
+`muscle_hud_quad_*` export exists. Kept beside its sibling rather than merged
+into one waiver because they are two distinct retail routines with two
+distinct placement conventions, and a host adopting one need not adopt both.
+"""
+
+[[waiver]]
+builder = "decimal_quads"
+kind = "orphan"
+reason = """
+`FUN_801D1308`, the unsigned decimal readout built on `hud_quad_centred` -
+slot fill, per-digit texture-U column, pen advance including the blank slots.
+Blocked behind the emitter it is built on, and on the same export: the site's
+hub page renders the ROUND digit strip in its own layer from the parsed
+digit-record geometry. This is the hub strip; the dome's match numerals come
+from overlay 0898's record-queue path, as recorded above.
+"""
+
+[[waiver]]
+builder = "equip_compare_panel_fields"
+kind = "orphan"
+reason = """
+`FUN_801D1290`, window 25 - the Equip screen's active-character stat-compare
+panel. It orphaned when the shop's equipment-buy recipient picker stopped
+drawing window 25: retail's picker script opens only window 36, so that draw
+was a panel retail does not show, and removing it was correct. What it left
+behind is this painter plus its category chain (`active_compare_category`,
+`CompareRows::from_category`), which nothing else reaches. The gate was blind
+to that for as long as its surface stopped at `TextDraw`.
+
+The covering path exists and is drawn on both hosts: the port's Equip screen
+prints its stat compare from `FUN_801D21C0`, window 22's own Best-Equipment
+pass, through `equip_screen_draws_for`'s `stat_compare` rows. So this is not a
+screen the player is missing - it is a second, descriptor-driven renderer of
+the same readout.
+
+The blocking capability is the **equip window set**, the same one that blocks
+window 24 (`count_panel_draws_for` above). Retail opens windows 2 / 24 / 25
+from one script (`0x801E4DC8`, sub-screen `0x13` / `FUN_801D9C14`); the port's
+equip flow (`legaia_engine_core::equip_session`) is built on the
+capture-pinned set 2 / 21 / 22 / 23, and window 25's rect `(14, 40, 144, 52)`
+overlaps the party window 21 it would have to replace. Closing it means
+moving the whole screen onto the descriptor-table layout - which is also what
+would give window 24 the item-info rect it needs - not adding a draw call to
+the screen as it stands.
+"""

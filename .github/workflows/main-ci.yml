@@ -34,6 +34,64 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # -- Repository Gates -------------------------------------------------------
+  # The scripts/ci/check-*.py gates used to run ONLY from
+  # scripts/git-hooks/pre-commit. A gate that lives only in a hook is one
+  # `LEGAIA_SKIP_PRECOMMIT=1`, or one clone that never ran
+  # scripts/ci/install-hooks.sh, away from being fiction - and neither leaves a
+  # trace in the repository. Running them here is what makes the pre-commit
+  # hook a fast local mirror of CI rather than the only place they exist.
+  #
+  # Every gate in this job is disc-independent by construction: they read the
+  # repo's own sources, docs and site fragments. That matters because this job
+  # deliberately does NOT get LEGAIA_DISC_BIN, and because `extracted/` is
+  # gitignored and absent on the runner even when the disc is present.
+  #
+  # Separate job, not a step of `ci`: these take seconds, so a doc-link typo
+  # should report in seconds rather than behind a 40-minute clippy+test pass,
+  # and a red gate here must not read as a broken build.
+  gates:
+    name: Repo Gates
+    runs-on: self-hosted
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      # Each gate self-tests its own detectors and refuses to report a pass
+      # when a control fails, so `--selftest` is not run separately here.
+      - name: Doc legibility density
+        run: python3 scripts/ci/check-doc-density.py
+
+      - name: Doc links + heading anchors
+        run: python3 scripts/ci/check-md-links.py
+
+      - name: Site internal links
+        run: python3 scripts/ci/check-site-links.py
+
+      - name: Shell observer traps
+        run: python3 scripts/ci/check-shell-observer-traps.py
+
+      - name: UI host drift
+        run: python3 scripts/ci/check-ui-host-drift.py
+
+      - name: Trait-override symmetry
+        run: python3 scripts/ci/check-trait-override-symmetry.py
+
+      # site/wasm/ is build output that the deploy job rebuilds, so a stale
+      # bundle on the runner is not a repository defect. Reported, never fatal.
+      - name: Shipped wasm bundle freshness (advisory)
+        run: python3 scripts/ci/check-wasm-freshness.py || true
+
+      # Warn-only by design, matching the hook: the port catalog is kept in
+      # sync incrementally rather than blocking unrelated changes.
+      - name: Port-tag drift (advisory)
+        run: python3 scripts/ci/check-port-tags.py --quiet || true
+
   # -- Cargo CI ---------------------------------------------------------------
   ci:
     name: Legaia CI
@@ -158,7 +216,7 @@ jobs:
   # -- CI Summary -------------------------------------------------------------
   notify:
     name: CI Summary
-    needs: [ci, deploy-pages, disc-test]
+    needs: [gates, ci, deploy-pages, disc-test]
     if: always()
     runs-on: self-hosted
     steps:
@@ -171,11 +229,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Repo Gates | ${{ needs.gates.result == 'success' && 'pass' || needs.gates.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Disc Tests | ${{ needs.disc-test.result == 'success' && 'pass' || needs.disc-test.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.ci.result }}" == "failure" || "${{ needs.disc-test.result }}" == "failure" ]]; then
+          if [[ "${{ needs.gates.result }}" == "failure" || "${{ needs.ci.result }}" == "failure" || "${{ needs.disc-test.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
             exit 1

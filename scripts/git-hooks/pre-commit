@@ -238,4 +238,19 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.p
     fi
 fi
 
+# Trait-override symmetry. The sibling of the drift check, for the half of the
+# host surface that is a trait rather than a draw builder: engine-core traits
+# whose methods all carry default bodies let a host forget a hook with no
+# compile error and no diff. Hard gate for the same reasons - cheap, and every
+# false positive a waiver can express.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-trait-override-symmetry.py" ]]; then
+    printf '[pre-commit] trait-override symmetry check (engine-core hooks vs every host impl)\n'
+    if ! python3 scripts/ci/check-trait-override-symmetry.py --quiet; then
+        printf '[pre-commit] a host implements fewer trait hooks than its peers (see above).\n' >&2
+        printf '[pre-commit] Implement the hook, or record why not in scripts/ci/trait-override-waivers.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 printf '[pre-commit] OK\n'

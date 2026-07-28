@@ -284,13 +284,22 @@ fn corner_span(texels: u8, size: i32, scale: i32) -> i32 {
 ///
 /// PORT: FUN_801d050c
 ///
-/// NOT WIRED: the retail quad emitter behind the dome HUD's centred sprites.
-/// The web host consumes the parsed sprite-table *geometry*
+/// NOT WIRED: the PROT 0977 **hub-screen** quad emitter - the intro card, the
+/// INTERVAL heading and the ROUND word / hub digit strip. Not the match
+/// strip: the dome's Turns Left / HP Left readout is drawn from the
+/// battle-action overlay 0898 through `func_0x8003541C` (label register +
+/// draw) and `func_0x8003563C` (per-actor record-queue append), a different
+/// overlay with a different primitive path, so wiring these emitters to it
+/// would assert a chain that does not exist.
+///
+/// NOT WIRED: the genuine consumer is the site's hub-sprite path -
+/// `hubSprite()` and the ROUND digit strip in `site/js/minigame-muscle.js`,
+/// which today blits from the parsed sprite-table *geometry*
 /// ([`parse_sprite_table`] via `minigames_muscle::muscle_hud_json`) and
-/// composes its quads in the page's GL layer, so no non-test caller runs the
-/// engine-side emit math. Wiring needs an engine-side dome HUD renderer (a
-/// mode-24 HUD surface in the play-window or a web draw path that requests
-/// emitted quads instead of raw geometry).
+/// composes its own quads in the page's layer, so no non-test caller runs the
+/// engine-side emit math. The blocking capability is a `muscle_hud_quad_*`
+/// wasm export plus reworking that blit into a quad draw. Waived in
+/// `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn hud_quad_centred(
     rec: &mut HudSprite,
     x: i16,
@@ -319,9 +328,11 @@ pub fn hud_quad_centred(
 ///
 /// PORT: FUN_801d08ec
 ///
-/// NOT WIRED: same host gap as [`hud_quad_centred`] - the web host draws from
-/// the parsed geometry, so the corner-anchored emit math has no non-test
-/// caller until an engine-side dome HUD renderer exists.
+/// NOT WIRED: same host gap and same intended consumer as
+/// [`hud_quad_centred`] - the site's hub-sprite path draws from the parsed
+/// geometry, so the corner-anchored emit math has no non-test caller until a
+/// `muscle_hud_quad_*` export replaces that blit. Waived in
+/// `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn hud_quad_corner(
     rec: &mut HudSprite,
     x: i16,
@@ -402,10 +413,15 @@ pub fn digit_column(digit: u8) -> u8 {
 ///
 /// PORT: FUN_801d1308
 ///
-/// NOT WIRED: the retail decimal-readout emitter. The dome page renders its
-/// numerals in the page's GL layer from the parsed digit-strip geometry, so
-/// the engine-side emit path (slot fill, glyph columns, pen advance) has no
-/// non-test caller until an engine-side dome HUD renderer exists.
+/// NOT WIRED: the retail decimal-readout emitter, built on
+/// [`hud_quad_centred`] and blocked behind the same capability. The site's
+/// hub page renders the ROUND digit strip in its own layer from the parsed
+/// digit-record geometry, so the engine-side emit path (slot fill, glyph
+/// columns, pen advance) has no non-test caller until a `muscle_hud_quad_*`
+/// export replaces that blit. This is the hub strip, not the match strip -
+/// see [`hud_quad_centred`] for why the dome's Turns Left / HP Left readout
+/// is a different overlay and not this emitter's consumer. Waived in
+/// `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn decimal_quads(
     digit: &mut HudSprite,
     x: i16,
