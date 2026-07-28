@@ -63,15 +63,20 @@
 //! painters, and the screen that opens them is the shop's **equipment-buy
 //! recipient flow** (retail sub-screen `0x1C`, `FUN_801DB380`): the buy
 //! list's kind dispatch (`engine-core`'s `shop::buy_list_confirm_route`)
-//! routes an equipment row into `shop::BuyRecipientSession`, and the browser
-//! play page paints windows 25 / 41 beside the recipient list
-//! (`web-viewer::play_shop::recipient_window_draws`). The pause equip flow
-//! (`legaia_engine_core::equip_session`) still draws its capture-pinned
-//! window set (ids 2 / 21 / 22 / 23) and never opens these - window 25's
-//! rect `(14, 40, 144, 52)` overlaps the party window 21 it would have to
-//! replace. The native window has not grown the shop-side surface yet, so
-//! the host-drift gate reads both painters as web-ahead.
+//! routes an equipment row into `shop::BuyRecipientSession`, and
+//! [`recipient_picker_draws_for`] below paints windows 25 / 41 beside the
+//! recipient list. That composition is what both hosts call - the browser
+//! play page through `web-viewer::play_shop::recipient_window_draws`, the
+//! native window through `window/shop_windows.rs::recipient_window_draws` -
+//! so neither can grow a row order, a cursor row or a note string the other
+//! lacks. The pause equip flow (`legaia_engine_core::equip_session`) still
+//! draws its capture-pinned window set (ids 2 / 21 / 22 / 23) and never
+//! opens these - window 25's rect `(14, 40, 144, 52)` overlaps the party
+//! window 21 it would have to replace.
 
+use crate::ui_menu_window_painters::{
+    ChoiceFlags, EquipTargetRow, PainterRect, PainterSprite, equip_target_list_draws_for,
+};
 use crate::{TextDraw, text_draws_for};
 
 /// The eight-word derived-stat block at `0x801EF080` (and its trial-equip
@@ -632,6 +637,191 @@ pub fn compare_panel_draws_for(
     out
 }
 
+// ---------------------------------------------------------------------
+// The equipment-buy recipient sub-screen (windows 36 / 25 / 41)
+// ---------------------------------------------------------------------
+
+/// Window 36's header row - the picker's **bag row** (marker index 0), not a
+/// caption: confirming it buys one copy into the inventory. Retail's own
+/// string is a menu-overlay rodata literal; the port stages an
+/// engine-authored line in the same slot so the translation layer owns the
+/// text.
+pub const RECIPIENT_HEADING: &str = "Put in bag";
+
+/// Window 41's note for a member already wearing the staged item.
+pub const RECIPIENT_NOTE_EQUIPPED: &str = "Equipped";
+
+/// Window 41's note for a member the item's character mask excludes.
+pub const RECIPIENT_NOTE_CANNOT_EQUIP: &str = "Cannot equip";
+
+/// Stat-row labels for [`CompareRows::AtkUdfLdf`], in emit order.
+pub const COMPARE_LABELS_ATK: [&str; 3] = ["ATK", "UDF", "LDF"];
+
+/// Stat-row labels for [`CompareRows::SpdIntAgl`], in emit order.
+pub const COMPARE_LABELS_SPD: [&str; 3] = ["SPD", "INT", "AGL"];
+
+/// The three window rects the recipient sub-screen paints into, each `None`
+/// when the disc descriptor for that id resolves to a different renderer (or
+/// the window table did not parse at all).
+///
+/// A host fills this from the menu-overlay window table through
+/// `ui_menu_window_dispatch::painter_at`, so an id whose descriptor names a
+/// different routine is skipped rather than mis-drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RecipientWindowRects {
+    /// Window 36 (`FUN_801D56FC`) - the recipient row list.
+    pub target_list: Option<PainterRect>,
+    /// Window 25 (`FUN_801D1290`) - the highlighted member's compare panel.
+    pub active_compare: Option<PainterRect>,
+    /// Window 41 (`FUN_801D4C28`) - the party-wide compare column.
+    pub party_compare: Option<PainterRect>,
+}
+
+/// One party member as the recipient sub-screen sees them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecipientMemberView<'a> {
+    /// Display name from the character record `+0x2A7`.
+    pub name: &'a str,
+    /// `false` when the staged item's character mask excludes this member.
+    pub equippable: bool,
+    /// The member already wears the staged item, so window 41 prints the
+    /// "Equipped" note instead of a stat block.
+    pub already_equipped: bool,
+    /// Live derived-stat block (`0x801EF080`).
+    pub current: EquipStatBlock,
+    /// Trial-equip block (`0x801EF0A0`): `current` plus the staged item's
+    /// modifiers minus whatever the item would displace.
+    pub candidate: EquipStatBlock,
+    /// HP maximum straight off the record (`+0x104`).
+    pub hp_max: u16,
+    /// MP maximum straight off the record (`+0x108`).
+    pub mp_max: u16,
+}
+
+/// The whole equipment-buy recipient sub-screen (retail `0x1C`,
+/// `FUN_801DB380`) as a model: one row per party member behind a bag row,
+/// plus the two stat-compare readouts beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecipientPickerView<'a> {
+    /// Heading of window 36's list.
+    pub heading: &'a str,
+    /// Session cursor word (`DAT_801E46C0`): row 0 is the bag, rows `1..`
+    /// are party members, and the high bits carry the marker flags.
+    pub cursor: u32,
+    /// Party members in roster order.
+    pub members: &'a [RecipientMemberView<'a>],
+    /// Compare-category byte resolved for the staged item (equip record
+    /// `+5`). Every retail equipment record carries [`CATEGORY_DEFAULT`], so
+    /// a host without the raw table may pass that constant.
+    pub staged_category: u8,
+}
+
+/// Paint the recipient sub-screen's three windows.
+///
+/// This is the whole screen, not one window: the shared composition both
+/// hosts call, so the browser play page and the native window cannot drift
+/// apart in row order, cursor rows, category resolution or note strings. A
+/// window whose rect is `None` is skipped.
+///
+/// The returned sprites are window 36's marker requests
+/// ([`PainterSprite`]); the host draws them from its own cursor atlas (or an
+/// ASCII stand-in while that page is missing).
+///
+/// PORT: FUN_801db380 (the sub-screen's draw half; the session state machine
+/// is `legaia_engine_core::shop::BuyRecipientSession`)
+pub fn recipient_picker_draws_for(
+    font: &legaia_font::Font,
+    rects: RecipientWindowRects,
+    view: &RecipientPickerView<'_>,
+) -> (Vec<TextDraw>, Vec<PainterSprite>) {
+    let mut out = Vec::new();
+    let mut sprites = Vec::new();
+
+    // Window 36 - the recipient list. The header row is the bag row
+    // (marker index 0); each member row takes marker index i + 1.
+    if let Some(rect) = rects.target_list {
+        let rows: Vec<(EquipTargetRow, &str)> = view
+            .members
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                (
+                    EquipTargetRow {
+                        member_class: i as u8,
+                        equippable: m.equippable,
+                    },
+                    m.name,
+                )
+            })
+            .collect();
+        let (text, marks) =
+            equip_target_list_draws_for(font, rect, view.heading, &rows, ChoiceFlags(view.cursor));
+        out.extend(text);
+        sprites.extend(marks);
+    }
+
+    // Window 41 - the party-wide compare column.
+    if let Some(rect) = rects.party_compare {
+        let views: Vec<PartyCompareMemberView<'_>> = view
+            .members
+            .iter()
+            .map(|m| PartyCompareMemberView {
+                name: m.name,
+                outcome: if m.already_equipped {
+                    PartyCompareOutcome::Equipped(RECIPIENT_NOTE_EQUIPPED)
+                } else if !m.equippable {
+                    PartyCompareOutcome::CannotEquip(RECIPIENT_NOTE_CANNOT_EQUIP)
+                } else {
+                    PartyCompareOutcome::Stats {
+                        current: m.current,
+                        candidate: Some(m.candidate),
+                        labels: COMPARE_LABELS_ATK,
+                    }
+                },
+            })
+            .collect();
+        let fields = party_compare_panel_fields(&views, (rect.x, rect.y));
+        out.extend(compare_panel_draws_for(font, &fields));
+    }
+
+    // Window 25 - the highlighted member's own compare panel. Row 0 of the
+    // picker is the bag, so only rows `1..` have a member to compare.
+    let row = (view.cursor & 0xFFF) as usize;
+    if let (Some(rect), Some(m)) = (
+        rects.active_compare,
+        row.checked_sub(1).and_then(|i| view.members.get(i)),
+    ) {
+        // The staged-item detail arm: the picker always has a staged
+        // equipment id, retail's `slot_row >= 4` case. `staged_id` is
+        // positive there, so the "nothing staged" fallback (which is the
+        // only consumer of the equipped item's category) cannot fire.
+        let category = active_compare_category(CompareCategoryInputs {
+            slot_row: 4,
+            staged_id: 1,
+            staged_category: view.staged_category,
+            equipped_id: 0,
+            equipped_category: CATEGORY_DEFAULT,
+        });
+        let rows = CompareRows::from_category(category);
+        let panel = EquipComparePanelView {
+            name: m.name,
+            current: m.current,
+            candidate: m.candidate,
+            hp_max: m.hp_max,
+            mp_max: m.mp_max,
+            rows,
+            labels: match rows {
+                CompareRows::SpdIntAgl => COMPARE_LABELS_SPD,
+                _ => COMPARE_LABELS_ATK,
+            },
+        };
+        let fields = equip_compare_panel_fields(&panel, (rect.x, rect.y));
+        out.extend(compare_panel_draws_for(font, &fields));
+    }
+
+    (out, sprites)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -922,5 +1112,191 @@ mod tests {
             })
             .collect();
         assert_eq!(names, vec![46, 46 + 0x37, 46 + 0x6E]);
+    }
+
+    // -- the recipient sub-screen (windows 36 / 25 / 41) ----------------
+
+    const W36: PainterRect = PainterRect {
+        x: 138,
+        y: 98,
+        w: 168,
+        h: 52,
+    };
+    const W25: PainterRect = PainterRect {
+        x: 14,
+        y: 40,
+        w: 144,
+        h: 52,
+    };
+    const W41: PainterRect = PainterRect {
+        x: 14,
+        y: 46,
+        w: 108,
+        h: 158,
+    };
+
+    fn member(name: &str, equippable: bool, already: bool) -> RecipientMemberView<'_> {
+        RecipientMemberView {
+            name,
+            equippable,
+            already_equipped: already,
+            current: block(10, 20, 30),
+            candidate: block(15, 20, 25),
+            hp_max: 100,
+            mp_max: 40,
+        }
+    }
+
+    fn all_rects() -> RecipientWindowRects {
+        RecipientWindowRects {
+            target_list: Some(W36),
+            active_compare: Some(W25),
+            party_compare: Some(W41),
+        }
+    }
+
+    /// Cursor row 0 is the bag, so window 25 has nothing to compare and
+    /// draws nothing - the one row-indexing slip that would put member 0's
+    /// panel under the bag row.
+    #[test]
+    fn the_bag_row_draws_no_active_compare_panel() {
+        let font = legaia_font::Font::placeholder();
+        let members = [member("A", true, false), member("B", true, false)];
+        let view = RecipientPickerView {
+            heading: "h",
+            cursor: 0,
+            members: &members,
+            staged_category: CATEGORY_DEFAULT,
+        };
+        let bag_only = RecipientWindowRects {
+            target_list: None,
+            active_compare: Some(W25),
+            party_compare: None,
+        };
+        let (draws, _) = recipient_picker_draws_for(&font, bag_only, &view);
+        assert!(draws.is_empty());
+
+        // Row 1 is member 0, and now the panel paints.
+        let view = RecipientPickerView { cursor: 1, ..view };
+        let (draws, _) = recipient_picker_draws_for(&font, bag_only, &view);
+        assert!(!draws.is_empty());
+    }
+
+    /// Every member row takes marker index `i + 1`, because window 36's
+    /// header row *is* the bag row.
+    #[test]
+    fn member_rows_take_marker_index_one_and_up() {
+        let font = legaia_font::Font::placeholder();
+        let members = [member("A", true, false), member("B", false, false)];
+        let view = RecipientPickerView {
+            heading: "h",
+            cursor: 2,
+            members: &members,
+            staged_category: CATEGORY_DEFAULT,
+        };
+        let (_, sprites) = recipient_picker_draws_for(&font, all_rects(), &view);
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(
+            sprites[0].y,
+            W36.y + 2 * crate::ui_menu_window_painters::PAINTER_ROW_PITCH
+        );
+    }
+
+    /// Window 41 swaps a member's stat block for a note in two cases, and
+    /// "already equipped" wins over "cannot equip".
+    #[test]
+    fn window_41_notes_replace_the_stat_block() {
+        let members = [
+            member("A", true, false),
+            member("B", false, false),
+            member("C", false, true),
+        ];
+        let view = RecipientPickerView {
+            heading: "h",
+            cursor: 0,
+            members: &members,
+            staged_category: CATEGORY_DEFAULT,
+        };
+        let font = legaia_font::Font::placeholder();
+        let rects = RecipientWindowRects {
+            target_list: None,
+            active_compare: None,
+            party_compare: Some(W41),
+        };
+        // Drawn text is font quads, so assert on the field list the same
+        // call builds - rebuilt here through the public party painter.
+        let (draws, _) = recipient_picker_draws_for(&font, rects, &view);
+        assert!(!draws.is_empty());
+
+        let views = [
+            PartyCompareMemberView {
+                name: "A",
+                outcome: PartyCompareOutcome::Stats {
+                    current: block(10, 20, 30),
+                    candidate: Some(block(15, 20, 25)),
+                    labels: COMPARE_LABELS_ATK,
+                },
+            },
+            PartyCompareMemberView {
+                name: "B",
+                outcome: PartyCompareOutcome::CannotEquip(RECIPIENT_NOTE_CANNOT_EQUIP),
+            },
+            PartyCompareMemberView {
+                name: "C",
+                outcome: PartyCompareOutcome::Equipped(RECIPIENT_NOTE_EQUIPPED),
+            },
+        ];
+        let expect =
+            compare_panel_draws_for(&font, &party_compare_panel_fields(&views, (W41.x, W41.y)));
+        assert_eq!(draws.len(), expect.len());
+    }
+
+    /// Every retail equipment record's `+5` byte is the `0x40` sentinel, so
+    /// the recipient panel always shows the ATK / UDF / LDF triple. A host
+    /// that cannot resolve the byte may pass [`CATEGORY_DEFAULT`] and get
+    /// the identical screen; this pins that equivalence.
+    #[test]
+    fn the_equipment_category_sentinel_selects_the_atk_triple() {
+        let font = legaia_font::Font::placeholder();
+        let members = [member("A", true, false)];
+        let rects = RecipientWindowRects {
+            target_list: None,
+            active_compare: Some(W25),
+            party_compare: None,
+        };
+        let mk = |cat| RecipientPickerView {
+            heading: "h",
+            cursor: 1,
+            members: &members,
+            staged_category: cat,
+        };
+        let (a, _) = recipient_picker_draws_for(&font, rects, &mk(CATEGORY_DEFAULT));
+        let (b, _) = recipient_picker_draws_for(&font, rects, &mk(0x40));
+        assert_eq!(a.len(), b.len());
+        assert_eq!(
+            CompareRows::from_category(CATEGORY_DEFAULT),
+            CompareRows::AtkUdfLdf
+        );
+    }
+
+    /// A window whose descriptor did not resolve is skipped, not drawn at
+    /// the origin - the failure a `PainterRect::default()` fallback would
+    /// hide.
+    #[test]
+    fn an_unresolved_window_is_skipped() {
+        let font = legaia_font::Font::placeholder();
+        let members = [member("A", true, false)];
+        let view = RecipientPickerView {
+            heading: "h",
+            cursor: 1,
+            members: &members,
+            staged_category: CATEGORY_DEFAULT,
+        };
+        let (none, sprites) =
+            recipient_picker_draws_for(&font, RecipientWindowRects::default(), &view);
+        assert!(none.is_empty());
+        assert!(sprites.is_empty());
+        let (all, _) = recipient_picker_draws_for(&font, all_rects(), &view);
+        assert!(!all.is_empty());
     }
 }

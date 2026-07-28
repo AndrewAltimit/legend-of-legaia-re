@@ -774,11 +774,11 @@ pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
 ///
 /// PORT: FUN_801D56FC
 ///
-/// Wired on the web host: the shop's equipment-buy recipient flow
-/// (`engine-core`'s `menu_runtime` + `shop::BuyRecipientSession`) opens
-/// this window over the parked buy list, and the browser play page paints
-/// it (`web-viewer::play_shop::recipient_window_draws`). The native window
-/// has not grown the surface yet - web-ahead in the host-drift gate.
+/// Wired on both hosts through the shared composition
+/// [`crate::recipient_picker_draws_for`]: the shop's equipment-buy recipient
+/// flow (`engine-core`'s `menu_runtime` + `shop::BuyRecipientSession`) opens
+/// this window over the parked buy list, and each host resolves the rect off
+/// the disc window table and hands the model to that builder.
 pub fn equip_target_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

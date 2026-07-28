@@ -222,13 +222,14 @@ comes from window 50, so this is not that list under another id.
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`
 # (windows 25 / 41) were waived here as orphans blocked on "the flow that
-# opens them" - the shop's equipment-buy recipient picker (`FUN_801DB380`).
-# That flow is ported and reachable now: `menu_runtime`'s buy-list confirm
-# runs the retail kind dispatch (`shop::buy_list_confirm_route`), an
-# equipment row opens `shop::BuyRecipientSession` behind the
-# `retail_equipment_buy` opt-in, and the browser play page enables the flow
-# and paints all three windows over the parked buy list
-# (`web-viewer/src/play_shop.rs::recipient_window_draws`). They read as
-# web-ahead until the native window grows the same three-window surface
-# (`window/shop_windows.rs`) and flips the opt-in - which the checker
-# reports informationally rather than as drift.
+# opens them" - the shop's equipment-buy recipient picker (`FUN_801DB380`) -
+# and then read as web-ahead once the browser page grew that surface and the
+# native window had not. Both gaps are closed: `engine-ui`'s
+# `recipient_picker_draws_for` is now the whole sub-screen as one shared
+# composition, and each host only resolves the three rects off the disc
+# window table and builds the model - `web-viewer/src/play_shop.rs` and
+# `window/shop_windows.rs`, both named `recipient_window_draws`. The native
+# window arms the flow in `window/run.rs` off `BootSession::equip_restrictions`,
+# the twin of the page's `load_disc` arming. Nothing to waive, and a future
+# divergence would have to be written into the shared builder, where it would
+# show up on both hosts at once.

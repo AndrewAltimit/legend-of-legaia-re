@@ -110,9 +110,6 @@ const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
 /// menu-overlay rodata literal (`0x801CEC38`); both hosts stage the same
 /// engine-authored line so the translation layer owns the text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
-/// Window 36's header row - the recipient picker's bag row (marker index 0).
-/// Engine-authored for the same reason as [`SELL_QUANTITY_HEADING`].
-const RECIPIENT_HEADING: &str = "Put in bag";
 /// Stage-pixel pen for the level-up banner (native `(8, 60)`).
 const LEVEL_UP_PEN: (i32, i32) = (8, 60);
 /// Stage-pixel pen for the Seru-capture banner (native `(8, 40)`).
@@ -683,17 +680,21 @@ impl LegaiaRuntime {
     /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
     /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
     /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
+    ///
+    /// The layout itself is [`ui::recipient_picker_draws_for`], the shared
+    /// composition the native window calls too - this method only resolves
+    /// the three rects off the disc window table and builds the model. Row
+    /// order, cursor rows, note strings and the compare-category chain
+    /// therefore cannot drift between the two hosts.
     fn recipient_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_ui::ui_menu_window_painters::{ChoiceFlags, EquipTargetRow};
-        let mut out = Vec::new();
         let Some(session) = self.menu.recipient_session.as_ref() else {
-            return out;
+            return Vec::new();
         };
         let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
-            return out;
+            return Vec::new();
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return out;
+            return Vec::new();
         };
         let item_id = session.item_id;
         let members: Vec<&legaia_save::CharacterRecord> = world
@@ -732,13 +733,6 @@ impl LegaiaRuntime {
                 }
                 .as_index() as usize
             });
-        let category_of = |id: u8| -> u8 {
-            self.equip_stats
-                .as_ref()
-                .and_then(|t| t.bonus(id))
-                .map(|b| b.raw[5])
-                .unwrap_or(ui::CATEGORY_DEFAULT)
-        };
         let candidate_for = |rec: &legaia_save::CharacterRecord,
                              current: ui::EquipStatBlock|
          -> ui::EquipStatBlock {
@@ -762,114 +756,65 @@ impl LegaiaRuntime {
             cand
         };
 
-        // Window 36 - the recipient list. The header row is the bag row
-        // (marker index 0); each member row takes marker index i + 1.
-        if let Some((d, _)) = ui::painter_at(
-            table,
-            WIN_EQUIP_TARGET,
-            ui::MenuWindowPainter::EquipTargetList,
-        ) {
-            let rows: Vec<(EquipTargetRow, &str)> = labels
-                .iter()
-                .enumerate()
-                .map(|(i, label)| {
-                    (
-                        EquipTargetRow {
-                            member_class: i as u8,
-                            equippable: session.can_equip.get(i).copied().unwrap_or(false),
-                        },
-                        label.as_str(),
-                    )
-                })
-                .collect();
-            let (text, sprites) =
-                legaia_engine_ui::ui_menu_window_painters::equip_target_list_draws_for(
-                    font,
-                    ui::painter_rect(d),
-                    RECIPIENT_HEADING,
-                    &rows,
-                    ChoiceFlags(session.cursor),
-                );
-            out.extend(text);
-            for s in sprites {
-                out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
-            }
-        }
+        let rows: Vec<ui::RecipientMemberView<'_>> = members
+            .iter()
+            .zip(labels.iter())
+            .enumerate()
+            .map(|(i, (rec, label))| {
+                let current =
+                    ui::EquipStatBlock::from_character_record(&rec.raw).unwrap_or_default();
+                let hms = rec.hp_mp_sp();
+                ui::RecipientMemberView {
+                    name: label.as_str(),
+                    equippable: session.can_equip.get(i).copied().unwrap_or(false),
+                    already_equipped: rec.equipment().slots.contains(&item_id),
+                    current,
+                    candidate: candidate_for(rec, current),
+                    hp_max: hms.hp_max,
+                    mp_max: hms.mp_max,
+                }
+            })
+            .collect();
 
-        // Window 41 - the party-wide compare column.
-        if let Some((d, _)) = ui::painter_at(
-            table,
-            WIN_COMPARE_PARTY,
-            ui::MenuWindowPainter::PartyStatCompare,
-        ) {
-            let views: Vec<ui::PartyCompareMemberView<'_>> = members
-                .iter()
-                .zip(labels.iter())
-                .enumerate()
-                .filter_map(|(i, (rec, label))| {
-                    let current = ui::EquipStatBlock::from_character_record(&rec.raw)?;
-                    let outcome = if rec.equipment().slots.contains(&item_id) {
-                        ui::PartyCompareOutcome::Equipped("Equipped")
-                    } else if !session.can_equip.get(i).copied().unwrap_or(false) {
-                        ui::PartyCompareOutcome::CannotEquip("Cannot equip")
-                    } else {
-                        ui::PartyCompareOutcome::Stats {
-                            current,
-                            candidate: Some(candidate_for(rec, current)),
-                            labels: ["ATK", "UDF", "LDF"],
-                        }
-                    };
-                    Some(ui::PartyCompareMemberView {
-                        name: label.as_str(),
-                        outcome,
-                    })
-                })
-                .collect();
-            let rect = ui::painter_rect(d);
-            let fields = ui::party_compare_panel_fields(&views, (rect.x, rect.y));
-            out.extend(ui::compare_panel_draws_for(font, &fields));
-        }
+        // The staged item's compare-category byte (equip record `+5`). Every
+        // retail equipment record carries the `0x40` sentinel, so this is
+        // the same value the native host passes as a constant.
+        let staged_category = self
+            .equip_stats
+            .as_ref()
+            .and_then(|t| t.bonus(item_id))
+            .map(|b| b.raw[5])
+            .unwrap_or(ui::CATEGORY_DEFAULT);
 
-        // Window 25 - the highlighted member's own compare panel (rows 1..
-        // of the picker; row 0 is the bag).
-        let row = (session.cursor & 0xFFF) as usize;
-        if row >= 1
-            && let Some((rec, label)) = members.get(row - 1).zip(labels.get(row - 1))
-            && let Some(current) = ui::EquipStatBlock::from_character_record(&rec.raw)
-            && let Some((d, _)) = ui::painter_at(
+        let rects = ui::RecipientWindowRects {
+            target_list: ui::painter_at(
+                table,
+                WIN_EQUIP_TARGET,
+                ui::MenuWindowPainter::EquipTargetList,
+            )
+            .map(|(d, _)| ui::painter_rect(d)),
+            active_compare: ui::painter_at(
                 table,
                 WIN_COMPARE_ACTIVE,
                 ui::MenuWindowPainter::ActiveStatCompare,
             )
-        {
-            let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
-            let category = ui::active_compare_category(ui::CompareCategoryInputs {
-                // The staged-item detail arm: the picker always has a
-                // staged equipment id, retail's `slot_row >= 4` case.
-                slot_row: 4,
-                staged_id: i32::from(item_id),
-                staged_category: category_of(item_id),
-                equipped_id: displaced,
-                equipped_category: category_of(displaced),
-            });
-            let rows = ui::CompareRows::from_category(category);
-            let labels3 = match rows {
-                ui::CompareRows::SpdIntAgl => ["SPD", "INT", "AGL"],
-                _ => ["ATK", "UDF", "LDF"],
-            };
-            let hms = rec.hp_mp_sp();
-            let view = ui::EquipComparePanelView {
-                name: label.as_str(),
-                current,
-                candidate: candidate_for(rec, current),
-                hp_max: hms.hp_max,
-                mp_max: hms.mp_max,
-                rows,
-                labels: labels3,
-            };
-            let rect = ui::painter_rect(d);
-            let fields = ui::equip_compare_panel_fields(&view, (rect.x, rect.y));
-            out.extend(ui::compare_panel_draws_for(font, &fields));
+            .map(|(d, _)| ui::painter_rect(d)),
+            party_compare: ui::painter_at(
+                table,
+                WIN_COMPARE_PARTY,
+                ui::MenuWindowPainter::PartyStatCompare,
+            )
+            .map(|(d, _)| ui::painter_rect(d)),
+        };
+        let view = ui::RecipientPickerView {
+            heading: ui::RECIPIENT_HEADING,
+            cursor: session.cursor,
+            members: &rows,
+            staged_category,
+        };
+        let (mut out, sprites) = ui::recipient_picker_draws_for(font, rects, &view);
+        for s in sprites {
+            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
         }
         out
     }
@@ -951,6 +896,49 @@ impl LegaiaRuntime {
         self.menu
             .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
         true
+    }
+
+    /// Arm + open a shop stocked with **equipment** ids, the rows whose
+    /// buy-list confirm takes the retail `RecipientPicker` route
+    /// (`shop::buy_list_confirm_route` kind `1`) instead of the quantity
+    /// picker. The affordability test runs against the live purse, so the
+    /// party is topped up first - a refused row buzzes and never opens the
+    /// picker. `false` when the disc tables that decide the route are
+    /// missing.
+    pub fn debug_open_equipment_shop(&mut self) -> bool {
+        let Some(table) = self.equip_stats.clone() else {
+            return false;
+        };
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let Some(data) = host.world.item_shop_data.as_ref() else {
+            return false;
+        };
+        let items: Vec<legaia_engine_core::shop::ShopItem> = (1u8..=255)
+            .filter(|&id| table.is_equipment(id) && data.price(id) > 0)
+            .take(4)
+            .map(|id| legaia_engine_core::shop::ShopItem {
+                item_id: id,
+                price: data.price(id) as u32,
+            })
+            .collect();
+        if items.is_empty() {
+            return false;
+        }
+        host.world.money = legaia_engine_core::shop::GOLD_CAP;
+        let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
+        host.world.field_shop_armed = true;
+        host.world.field_shop_open = true;
+        self.menu
+            .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
+        true
+    }
+
+    /// Is the equipment-buy recipient picker (retail sub-screen `0x1C`)
+    /// currently the screen that owns the pad?
+    pub fn debug_recipient_picker_open(&self) -> bool {
+        self.menu.recipient_session.is_some()
     }
 }
 

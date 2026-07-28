@@ -852,6 +852,11 @@ impl PlayWindowApp {
                     None
                 };
                 out.extend(retail_windows);
+                // The equipment-buy recipient flow's windows (36 / 25 / 41)
+                // ride over the parked buy list while the picker owns the
+                // pad - the same compositing order the browser play page
+                // uses in `play_overlay_draws_json`.
+                out.extend(self.recipient_window_draws());
                 if !rows_spec.is_empty() {
                     let rows: Vec<ShopRow<'_>> = rows_spec
                         .iter()

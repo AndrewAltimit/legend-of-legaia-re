@@ -226,6 +226,156 @@ impl PlayWindowApp {
         out
     }
 
+    /// The three retail windows of the **equipment-buy recipient flow**
+    /// (menu-overlay sub-screen `0x1C`, `FUN_801DB380`), drawn while
+    /// [`legaia_engine_core::menu_runtime::MenuRuntime::recipient_session`]
+    /// owns the pad and the buy list stays parked behind it:
+    ///
+    /// | Id | Renderer | Content |
+    /// |---|---|---|
+    /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
+    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
+    /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
+    ///
+    /// The layout is [`legaia_engine_render::recipient_picker_draws_for`],
+    /// the same shared composition the browser play page calls
+    /// (`web-viewer::play_shop::recipient_window_draws`) - this method only
+    /// resolves the rects off the disc window table and builds the model.
+    pub(super) fn recipient_window_draws(&self) -> Vec<TextDraw> {
+        use legaia_engine_render::{
+            EquipStatBlock, MenuWindowPainter, RecipientMemberView, RecipientPickerView,
+            RecipientWindowRects, painter_at, painter_rect, recipient_picker_draws_for,
+        };
+        /// Equip-target recipient list (`0x24`).
+        const WIN_EQUIP_TARGET: usize = 36;
+        /// Active-character stat compare (`0x19`).
+        const WIN_COMPARE_ACTIVE: usize = 25;
+        /// Party-wide stat compare (`0x29`).
+        const WIN_COMPARE_PARTY: usize = 41;
+
+        let Some(session) = self.menu_runtime.recipient_session.as_ref() else {
+            return Vec::new();
+        };
+        let Some(table) = self.menu_window_table.as_ref() else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        let item_id = session.item_id;
+        let members: Vec<&legaia_save::CharacterRecord> = world
+            .roster
+            .members
+            .iter()
+            .take(session.can_equip.len())
+            .collect();
+        let labels: Vec<String> = members
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let n = r.name();
+                if n.is_empty() {
+                    format!("Member {}", i + 1)
+                } else {
+                    n
+                }
+            })
+            .collect();
+        // The slot the disc category names, and what currently sits in it -
+        // both feed the trial-equip (candidate) stat blocks.
+        let slot_idx = self
+            .menu_runtime
+            .equip_info
+            .as_ref()
+            .and_then(|i| i.entry(item_id))
+            .map(|e| {
+                use legaia_asset::equip_stats::EquipSlot as Disc;
+                use legaia_engine_core::equipment::EquipSlot;
+                match e.category {
+                    Disc::Weapon => EquipSlot::Weapon,
+                    Disc::Body => EquipSlot::BodyArmor,
+                    Disc::Head => EquipSlot::Helmet,
+                    Disc::Footwear => EquipSlot::Boot,
+                }
+                .as_index() as usize
+            });
+        let candidate_for =
+            |rec: &legaia_save::CharacterRecord, current: EquipStatBlock| -> EquipStatBlock {
+                let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
+                let old_m = world
+                    .equipment_table
+                    .get(displaced)
+                    .copied()
+                    .unwrap_or_default();
+                let new_m = world
+                    .equipment_table
+                    .get(item_id)
+                    .copied()
+                    .unwrap_or_default();
+                let mut cand = current;
+                cand.atk += i32::from(new_m.atk) - i32::from(old_m.atk);
+                cand.udf += i32::from(new_m.udf) - i32::from(old_m.udf);
+                cand.ldf += i32::from(new_m.ldf) - i32::from(old_m.ldf);
+                cand.spd += i32::from(new_m.spd) - i32::from(old_m.spd);
+                cand.int += i32::from(new_m.int) - i32::from(old_m.int);
+                cand
+            };
+
+        let rows: Vec<RecipientMemberView<'_>> = members
+            .iter()
+            .zip(labels.iter())
+            .enumerate()
+            .map(|(i, (rec, label))| {
+                let current = EquipStatBlock::from_character_record(&rec.raw).unwrap_or_default();
+                let hms = rec.hp_mp_sp();
+                RecipientMemberView {
+                    name: label.as_str(),
+                    equippable: session.can_equip.get(i).copied().unwrap_or(false),
+                    already_equipped: rec.equipment().slots.contains(&item_id),
+                    current,
+                    candidate: candidate_for(rec, current),
+                    hp_max: hms.hp_max,
+                    mp_max: hms.mp_max,
+                }
+            })
+            .collect();
+
+        let rects = RecipientWindowRects {
+            target_list: painter_at(table, WIN_EQUIP_TARGET, MenuWindowPainter::EquipTargetList)
+                .map(|(d, _)| painter_rect(d)),
+            active_compare: painter_at(
+                table,
+                WIN_COMPARE_ACTIVE,
+                MenuWindowPainter::ActiveStatCompare,
+            )
+            .map(|(d, _)| painter_rect(d)),
+            party_compare: painter_at(
+                table,
+                WIN_COMPARE_PARTY,
+                MenuWindowPainter::PartyStatCompare,
+            )
+            .map(|(d, _)| painter_rect(d)),
+        };
+        let view = RecipientPickerView {
+            heading: legaia_engine_render::RECIPIENT_HEADING,
+            cursor: session.cursor,
+            members: &rows,
+            // The picker only ever opens on the buy list's **equipment**
+            // route (`shop::buy_list_confirm_route` kind `1`), and every
+            // equipment bonus record on the disc carries the `0x40`
+            // no-passive sentinel in its `+5` compare-category byte - so
+            // this constant is the byte, not a fallback. The browser host
+            // looks the byte up in its parsed `EquipStatTable`; the two
+            // agree by construction, and `engine-ui`'s
+            // `the_equipment_category_sentinel_selects_the_atk_triple`
+            // pins the equivalence.
+            staged_category: legaia_engine_render::CATEGORY_DEFAULT,
+        };
+        let (mut out, sprites) = recipient_picker_draws_for(&self.font, rects, &view);
+        for s in sprites {
+            out.extend(self.painter_cursor_stand_in(s));
+        }
+        out
+    }
+
     /// Item display name, falling back to the id when the disc text tables
     /// are unavailable.
     fn shop_item_name(&self, id: u8) -> String {
