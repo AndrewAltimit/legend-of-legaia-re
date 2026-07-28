@@ -2283,7 +2283,7 @@ mod tests {
 
     #[test]
     fn hit_sting_keys_two_voices_per_random_pick() {
-        for r in 0..3u16 {
+        for r in 0..STING_RANDOM_VARIANTS {
             let [a, b] = dance_hit_sting_voices(r);
             assert_eq!((a.voice, b.voice), (0x12, 0x13));
             assert_eq!((a.tone, b.tone), ((2 * r) as i16, (2 * r + 1) as i16));
@@ -2294,6 +2294,25 @@ mod tests {
             // one rather than a guess.
             assert_eq!((a.level, b.level), (STING_LEVEL, STING_LEVEL));
             assert_eq!((a.program, b.program), (STING_PROGRAM, STING_PROGRAM));
+        }
+    }
+
+    /// The groovy-move tiers key a sting the random space never reaches, so
+    /// the kernel has to answer for it too: `FUN_801d1af4` reaches
+    /// `FUN_801d3d78` from four sites and three of them pass a literal `5`.
+    #[test]
+    fn the_tier_sting_is_outside_the_random_space() {
+        let [a, b] = dance_hit_sting_voices(STING_TIER_VARIANT);
+        assert_eq!((a.tone, b.tone), (0xa, 0xb));
+        assert_eq!((a.note, b.note), (0x41, 0x41));
+        assert_eq!((a.voice, b.voice), (0x12, 0x13));
+        // Same primitive, same two dropped-then-restored arguments.
+        assert_eq!((a.level, b.level), (STING_LEVEL, STING_LEVEL));
+        assert_eq!((a.program, b.program), (STING_PROGRAM, STING_PROGRAM));
+        // No random pick can produce it, which is why a `0..3` enumeration is
+        // short one sting rather than merely unlucky.
+        for r in 0..STING_RANDOM_VARIANTS {
+            assert_ne!(dance_hit_sting_voices(r)[0].tone, a.tone);
         }
     }
 
