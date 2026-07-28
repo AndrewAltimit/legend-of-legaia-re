@@ -696,11 +696,21 @@ fn retail_child_motion_reduces_to_vel_times_speed_and_drifts_during_wait() {
 }
 
 /// Spawn-record planar legs rotate by the master angle through the 4096-entry
-/// trig tables: at angle 0 the width leg maps to +X (exactly `width << 8` in
-/// 16.8) and at 0x400 (90 degrees) to -Z, with the table's one-index skew
-/// (`table[0xFFF - a]`) leaking a tiny cross-axis term.
+/// trig tables: at angle 0 the width leg maps to +X and at 0x400 (90 degrees)
+/// to -Z, with the table's one-index skew (`table[0xFFF - a]`) leaking a tiny
+/// cross-axis term.
+///
+/// The leg lands one LSB *short* of `width << 8`, not on it, because the
+/// retail tables truncate toward zero: the leg is scaled by `table[0xFFF]`,
+/// which is `0xFFF` (`trunc(4096 * cos(0xFFF))` = `trunc(4095.995)`), not
+/// `0x1000`. A stand-in that rounds hits the round number and looks tidier -
+/// and is off by one against the disc.
 #[test]
 fn retail_child_offsets_rotate_by_master_angle() {
+    // `trunc(0x1000 * cos)` one index off a quarter turn - the table entry both
+    // legs below are scaled by.
+    const NEAR_ONE: i32 = 0xFFF;
+
     let mut r = rec(0, 1);
     r.width = 16;
     r.height = 2;
@@ -714,7 +724,11 @@ fn retail_child_offsets_rotate_by_master_angle() {
         .expect("spawn");
     pool.tick_retail(&mut host, &catalog, 1);
     let c = &pool.children[0];
-    assert_eq!(c.pos[0], (1000 << 8) + (16 << 8), "width -> +X at angle 0");
+    assert_eq!(
+        c.pos[0],
+        (1000 << 8) + ((16 * NEAR_ONE) >> 4),
+        "width -> +X at angle 0"
+    );
     assert_eq!(c.pos[1], (500 << 8) - (2 << 8), "height subtracts from Y");
     assert_eq!(c.pos[2], (2000 << 8) - 6, "cross-axis skew from sin[0xFFF]");
 
@@ -727,7 +741,7 @@ fn retail_child_offsets_rotate_by_master_angle() {
     assert_eq!(c.pos[0], (1000 << 8) - 6, "cross-axis skew from cos[0xBFF]");
     assert_eq!(
         c.pos[2],
-        (2000 << 8) - (16 << 8),
+        (2000 << 8) - ((16 * NEAR_ONE) >> 4),
         "width -> -Z at 90 degrees"
     );
 }
@@ -830,9 +844,10 @@ fn retail_randomized_offsets_override_record_legs() {
 
     pool.tick_retail(&mut host, &catalog, 1);
     let c = &pool.children[0];
-    // Angle 0: X = dx << 8 (width leg), Z = dz << 8 + the sin[0xFFF] skew of
-    // the width leg (4 * -6 >> 4 = -2, floored).
-    assert_eq!(c.pos[0], 4 << 8);
+    // Angle 0: X = the width leg scaled by cos[0xFFF] = 0xFFF (the retail
+    // tables truncate, so it is one LSB short of `dx << 8`), Z = dz << 8 plus
+    // the sin[0xFFF] skew of the width leg (4 * -6 >> 4 = -2, floored).
+    assert_eq!(c.pos[0], (4 * 0xFFF) >> 4);
     assert_eq!(c.pos[2], (8 << 8) + ((4 * -6) >> 4));
 }
 

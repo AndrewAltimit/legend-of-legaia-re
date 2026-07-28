@@ -302,7 +302,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
 | `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
-| `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`, for `r = rand() % 3`. `overlay_dance_801d3d78.txt` |
+| `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`. Its caller passes `rand() % 3` on the chain-closed tier and a literal `5` on the three groovy-move tiers. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
 | `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: fade weight off the dancer's beat field `+0x78`, then a five-arm draw-mode jump table. See [The dancer emit dispatch](#the-dancer-emit-dispatch). `overlay_dance_801d387c.txt` |
@@ -396,7 +396,10 @@ digit already split their render routines): the number renderer's decimal split
 (`dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u`,
 `FUN_801d32f8`), the beat-track combo-flash CLUT + scrolling-note screen-x
 (`dance_combo_window_bright` / `dance_beat_track_note_x`, `FUN_801d2524`), the
-good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78`), the
+good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78` -
+the browser dance page decodes its stings through this, so the VAB program the
+tone index is looked up inside is retail's argument and not a page-side guess),
+the
 sequence-clear banner + star spawns (`good_banner_spawn`, `FUN_801d40dc`), the
 face-stamp rig selector (`dance_face_rig`, `FUN_801d03c4`), the count-in banner's
 slide/hold/fade envelope (`dance_countin_banner_envelope`, `FUN_801d2d98`), and
@@ -634,10 +637,10 @@ groovy move's, one per difficulty lane (`iVar8 = lane + 3`), and only fire when
 | tier (`iVar8`) | when | banner (widget) | sound |
 |---|---|---|---|
 | 1 | a missed direction | `Miss!` (10) at `(160, 128)` | cue `0x210` |
-| 2 | a closed direction chain | `Good!` (11) + 2 stars (`FUN_801d40dc`; star actors carry the accuracy weight at `+0x72`) | direct-keyed sting: `FUN_801d3d78(rand() % 3)` keys VAB program 1 tones `2r`/`2r+1` at note `0x3C + r` |
-| 3 | a **landed triangle** on lane 0 | `Cool!` (19) at `(160, 144)` + stars `±0x38` | cue `0x202` |
-| 4 | a landed triangle on lane 1 | `Great!!` (20) + stars `±0x50` | cue `0x203` |
-| 5 | a landed triangle on lane 2 | `Fever!!!` (21) | cue `0x205` |
+| 2 | a closed direction chain | `Good!` (11) + 2 stars (`FUN_801d40dc`; star actors carry the accuracy weight at `+0x72`) | direct-keyed sting `FUN_801d3d78(rand() % 3)` |
+| 3 | a **landed triangle** on lane 0 | `Cool!` (19) at `(160, 144)` + stars `±0x38` | cue `0x202` **and** the sting at `r = 5` |
+| 4 | a landed triangle on lane 1 | `Great!!` (20) + stars `±0x50` | cue `0x203` **and** the sting at `r = 5` |
+| 5 | a landed triangle on lane 2 | `Fever!!!` (21) | cue `0x205` **and** the sting at `r = 5` |
 
 **Confirmed** (the banner-per-tier map closes the "which on-screen label each
 tier spawns" question; the `Chicken!!` cell on the HUD page has no widget
@@ -699,10 +702,20 @@ at **extraction PROT 1231**. **Confirmed** cue sites:
 | confirm / cursor | `0x20` / `0x21` | `FUN_801D0750` (static table) |
 
 An on-beat **hit fires no ring cue**: it keys voices directly through
-`FUN_801D3D78(rand() % 3)`, so a good step picks one of three stings at random -
-each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
-`0x3C + r` (two voices via `func_0x80065034`, volume from the config global
-`_DAT_80084580`). **Confirmed.**
+`FUN_801D3D78(r)`, which keys VAB **program 1, tones `2r` and `2r + 1`
+together**, at note `0x3C + r` (two voices via `func_0x80065034`, volume from
+the config global `_DAT_80084580`). **Confirmed.**
+
+`r` is not always a random pick, and the tier table above is where that shows.
+The award routine `FUN_801D1AF4` reaches the sting from **four** sites: the
+chain-closed tier passes `rand() % 3` (the `0x55555556` magic-multiply divide),
+and each of the three groovy-move tiers passes the literal `5` - two as
+`li a0,0x5`, the third as a `move a0,v0` off the `li v0,0x5` its own tier
+compare just loaded. So a groovy move plays its cue *and* a sting, at tones
+`0xA` / `0xB` and note `0x41` - one that the random space never reaches.
+Exported as `dance::STING_RANDOM_VARIANTS` / `STING_TIER_VARIANT`; anything
+that enumerates "the stings" over `0..3` is short one. **Confirmed** from the
+disassembly of all four call sites.
 
 Both calls fill the primitive's full eight-argument shape
 `(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - the order the SCUS

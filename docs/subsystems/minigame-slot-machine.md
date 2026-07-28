@@ -479,7 +479,10 @@ cosine tables (4096-entry, amplitude `0x1000`, reached through the pointers
 sine one a quarter turn ahead). `FUN_801d0fa8` reads both pointers **inline**;
 it does not go through the shared polar helper `FUN_801d7bb8` that the fishing
 overlay uses on the same tables, so the reels are not among that helper's
-callers. So the reel is an ellipse of radius 585 in `y` and
+callers. The entries are `trunc(0x1000 * sin)` - truncating toward zero, not
+rounding, which matters here because the cylinder multiplies each entry by a
+radius before shifting it back down (see
+[the polar helper](minigame-fishing.md#the-shared-polar-offset-helper-fun_801d7bb8)). So the reel is an ellipse of radius 585 in `y` and
 512 in `z`: **a cylinder**, and the four corners go through `RotTransPers4`. The
 symbols curl away from the payline because the cylinder does.
 

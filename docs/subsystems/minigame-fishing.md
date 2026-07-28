@@ -288,7 +288,24 @@ permanently the `0` ramp.
 leading zeros are blank slots and the number ends up right-aligned. Retail
 seeds the last slot with `0` before the fill loop, which is what makes a value
 of zero draw a single `0` rather than nothing. Its first argument picks the slot
-pitch: `0` = 8 px, anything else = 16 px.
+pitch: `0` = 8 px, anything else = 16 px. A **negative** value draws nothing at
+all, and that needs no guard: the fill leaves seven slots at `-1` and puts the
+negative quotient in the units slot, which the draw loop's `bltz` skips like
+any other blank.
+
+The fill loop is not this overlay's own. `FUN_801D1308`, the Muscle Dome
+door/init overlay's decimal readout, opens with the identical one - same `-1`
+init, same pre-seeded units slot, same `!= 0` store gate, same eight `/10`
+steps by the same `0x66666667` magic multiply, same negative-slot skip -
+register allocation apart. What the two do **not** share is the emit half, and
+the difference is total: `FUN_801d76e0` branches on its first argument between
+two emitters (`FUN_801d7dd8` / `FUN_801d7d44`) running two pens at two pitches,
+and passes the digit as an argument; `FUN_801D1308` has one emitter, one pen,
+one widget id (`9`), and passes the digit by patching that widget descriptor's
+texture column (`digit * 8 - 0x80`) and CLUT in place, restoring the CLUT on
+return. So the port shares the fill and keeps the two emit halves apart -
+`number_digit_cells` takes its slots from
+`engine-ui::other_game_hud::decimal_slots`.
 
 ## Additional HUD draw helpers
 

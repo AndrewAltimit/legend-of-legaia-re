@@ -1116,6 +1116,31 @@ descriptor geometry* and composes its quads in JavaScript, so no Rust caller
 ever asks a ported emitter for a packet. One sink closes the block; three
 separately-worded reasons hid that.
 
+#### What the sink needs, so the next attempt does not re-derive it
+
+The sink is not a wrapper. Three things have to arrive together, and a shim
+that satisfies the audit without them is worse than the honest disclosure:
+
+- **A texel source on the native side.** The shape already exists - the play
+  window calls `minigame_fx::dance_quad_draws` every frame with the live
+  `DanceHudQuad` list - but it passes `solid_src: None`, because the dance
+  sprite page is not uploaded, so the sink materialises nothing. The fishing
+  HUD degrades the same way (`FishingHudAtlas::solid_src: None`). Adding a
+  second emitter into that path reaches a dead end, not a renderer; the
+  prerequisite is the overlay's 4bpp page resident in engine VRAM.
+- **A quad-shaped request on the web side.** The dome page's HUD is a 2D
+  canvas blitter: `muscle_hud_json` hands it sheet **rects** and the page's own
+  `blit(src, pal, u, v, w, h, dx, dy, ...)` decides the destination. Consuming
+  emitted quads means the page asking for `xy` per packet, which is a change in
+  the page's JavaScript, not only in the wasm surface.
+- **Somewhere to get the anchors.** Even with both of the above, `(x, y,
+  scale)` is not disc-derived. Every call site of the three emitters - 9 / 31 /
+  23 of them - is an immediate inside PROT 0977's own hub screens
+  (`0x801CF2C0 .. 0x801D0324`), none of which is ported. So a sink makes each
+  widget's **extent**, gouraud ramp and CLUT disc-derived while its
+  **placement** stays the page's. That is real progress and it is worth doing;
+  it is not "the retail HUD", and a wire that lands should say so.
+
 `dance_face_rig` has a second twist worth keeping: the browser resolves the rig
 from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
 already `0/2/3` - the exact output of the overlay's hard-coded slot -> rig
@@ -1123,10 +1148,10 @@ remap. The two agree, so the selector is redundant rather than missing. A
 disclosure that says "no host" reads as work; "the host arrives at the same
 answer from disc data" reads as a closed question.
 
-### Two reasons were wrong about the *arithmetic*, not just the caller
+### Three reasons were wrong about the *arithmetic*, not just the caller
 
-Both are the failure direction the preamble warns about - an unwired kernel's
-reading is never exercised, so a misreading survives:
+All three are the failure direction the preamble warns about - an unwired
+kernel's reading is never exercised, so a misreading survives:
 
 - **`other_game_overlay::cue_position`** decoded `_DAT_80084580` as a
   party-block coordinate and returned a "positional pair". It is the
@@ -1138,7 +1163,20 @@ reading is never exercised, so a misreading survives:
   (`level = 2`, `program = 1`). The program is what makes the browser page's
   `tones[1]` bank lookup correct rather than a guess - and
   `minigame-dance.md` had recorded it correctly all along, which is the
-  reminder to grep `docs/` before re-deriving.
+  reminder to grep `docs/` before re-deriving. The page now takes the whole
+  triple from the kernel, so the row is wired; see below.
+- **`minigame_slot_scene::sin_4096` / `cos_4096`** reproduced the two SCUS
+  quadrature tables with `.round()`. The retail entries are
+  `trunc(0x1000 * sin)`: truncation matches all 4096, rounding matches 2088.
+  This one is not an inert kernel - the effect VM's spawn-leg rotation and the
+  reel geometry both read it, and each multiplies the LSB by a radius - so it
+  was wrong *output*, not just a wrong reading, and the engine-vm test that
+  should have caught it was itself pinned to the port's rounded numbers rather
+  than to the disc. `engine-render::billboard::psx_sin` had the same table
+  right the whole time: two reproductions of one table, one of them wrong, and
+  nothing compared them. The disc-gated
+  `minigame_polar_trig_tables_disc` oracle now checks the reproduction entry
+  for entry instead of only checking that the disc truncates.
 
 ### Three rows that looked like three gaps are one, and one is unwireable
 
@@ -1164,6 +1202,33 @@ reading is never exercised, so a misreading survives:
 The transferable rule: when a reason names an artefact, check the artefact
 before checking the caller. Four of these six named artefacts were already in
 the tree, two of them cited by name three files away.
+
+### Two of the six close on a shared kernel, not on the sink
+
+Neither needed the quad sink, and both are now live:
+
+- **`dance_hit_sting_voices`.** The browser dance page already held both named
+  prerequisites and only ever recomputed the triple; it now asks the kernel,
+  which is what makes the bank index a read of the retail `program` argument
+  instead of a literal that happened to agree. Reading the *caller* while
+  wiring it also corrected the subsystem doc: `FUN_801D1AF4` reaches the sting
+  from four sites, and only one passes `rand() % 3` - the three groovy-move
+  tiers each pass a literal `5`, a sting outside the random space that the
+  page's `r > 2` bound had been dropping entirely.
+- **`other_game_hud::decimal_slots`.** Its reason said "reached only through
+  `decimal_quads`", which was true and hid that the fill is *shared*:
+  `FUN_801D1308` and the fishing overlay's `FUN_801D76E0` open with the
+  identical eight-slot loop, register allocation apart. `number_digit_cells`
+  now takes its slots from here, which puts the row on the live fishing HUD
+  path on both hosts. The two retail routines diverge only after the fill -
+  one emitter and a patched descriptor column against two emitters and two pen
+  pitches - so the emit halves stay separate, and delegating the whole routine
+  would have been the silent behaviour change.
+
+The second one also removed a port-side deviation nobody needed: the fishing
+field clamped a negative value to zero. Retail needs no guard - the fill leaves
+the slots blank and the draw loop's `bltz` skips the one negative slot - so a
+negative value draws nothing, in both routines.
 
 ### One more latent name collision, defused
 
