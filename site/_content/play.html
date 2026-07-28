@@ -660,7 +660,18 @@
        * canvas click. The scene's track feeds itself through the engine's
        * per-tick op-0x35 routing; a canvas click resumes it as a backstop. */
       if (typeof view._enableAudio === 'function') view._enableAudio();
-      statusEl.textContent = `Running ${label}. Click the canvas, then walk with the arrow keys.`;
+      let hint = '';
+      /* Several retail scenes - every town, including Rim Elm - carry only
+       * rate-0 encounter regions, so walking them produces no fights by
+       * design. Say so, or a quiet town reads as a broken engine. */
+      try {
+        if (typeof view.rt?.scene_rolls_encounters === 'function'
+            && !view.rt.scene_rolls_encounters()) {
+          hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
+        }
+      } catch (e) {}
+      statusEl.textContent =
+        `Running ${label}. Click the canvas, then walk with the arrow keys.${hint}`;
       window.__playState = st;
       canvas.focus();
     } catch (err) {

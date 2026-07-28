@@ -194,14 +194,18 @@ impl LegaiaRuntime {
     }
 
     /// Out-of-battle battle presentation, in **surface pixels**: the
-    /// post-battle spoils panel, the game-over panel, and the "this scene
-    /// rolls no encounters" hint. All three sit outside
+    /// post-battle spoils panel and the game-over panel. Both sit outside
     /// [`SceneMode::Battle`], which is why they are not part of
-    /// [`Self::battle_overlay_draws`].
+    /// [`Self::battle_overlay_draws`], and both use the same shared
+    /// `engine-ui` builder + world model as the native window
+    /// (`window/battle.rs`, `window/boot_cutscene.rs`).
     ///
-    /// Every one of them is the same shared `engine-ui` builder + world model
-    /// the native window uses (`window/battle.rs`,
-    /// `window/boot_cutscene.rs`).
+    /// The "this scene rolls no encounters" hint does **not** belong here.
+    /// The page treats a non-empty overlay as owning the frame - it clears
+    /// the canvas, blits, and returns before the dialog-box layer - so a
+    /// passive hint routed through this list would suppress every NPC
+    /// dialogue for the first seconds of a town. The page reads
+    /// [`Self::scene_rolls_encounters`] and prints its own notice instead.
     pub(crate) fn post_battle_overlay_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -232,13 +236,6 @@ impl LegaiaRuntime {
             out.extend(ui::battle_spoils_draws_for(font, &view, pen));
         }
 
-        if w.show_encounter_hint() {
-            out.extend(ui::text_draws_for(
-                &font.layout_ascii("no random encounters in this scene (retail)"),
-                (8, surface_h as i32 - 20),
-                [0.7, 0.7, 0.7, 1.0],
-            ));
-        }
         out
     }
 
