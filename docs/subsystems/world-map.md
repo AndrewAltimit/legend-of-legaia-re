@@ -543,11 +543,68 @@ Port: `legaia_engine_vm::world_map_overlay::equip_stat_panel` is the whole
 sub-draw and composes the four kernels the module already carried
 (`aggregate_slot_stats` twice, `can_equip`, `resolve_equip_slot`,
 `stat_deltas`); `baka_hub_actors::entry_list` calls it where the `jal` sits and
-splices its rows in as `HubDraw::EntrySubPanel`. The live path is
-`World::tick_submode_screen` -> `HubPainter::EntryList`. The panel's *data* -
-the character records and the two static tables - arrives through
-`HubEnv::equip`, which no host fills yet, so a live frame paints retail's
-no-candidate arm over a zero loadout.
+splices its rows in as `HubDraw::EntrySubPanel`. The painter dispatch is
+`World::tick_submode_screen` -> `HubPainter::for_window` -> `EntryList`, and
+which record index that dispatch gets is a separate question with its own
+answer - see
+[the triage page](../tooling/live-audit-triage.md#what-still-chooses-which-painter-runs).
+
+##### Where the panel's data comes from
+
+Retail addresses every input directly - the save block at `0x80084140`, the
+item property table `DAT_80074368`, the equipment table `DAT_80074F68`, the bag
+list, two scratch globals. `field_submode_screen::submode_env` projects each
+onto world state (`World::submode_equip_env`):
+
+| Retail read | World source |
+|---|---|
+| `char[+0x75E..]`, the five equip slots | `World::roster`, re-ordered by `hub_panel_slots` |
+| `char[+0x6DA/+0x6DC/+0x6DE]` ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
+| `DAT_80074368[id].+0/+1` kind + stat index | `World::item_effects` |
+| `DAT_80074F68[row][+0..+4]` the five bonuses | `World::equipment_table`, re-keyed row-wise through the same `+1` byte |
+| `0x80084140 + 0x1818`, the bag id list | `World::inventory`, id-ordered |
+| `0x8007B42C`, the weapon-slot table | `field_submode_screen::RETAIL_WEAPON_SLOTS` |
+| `_DAT_8007BB9C`, the class word | `World::set_hub_equip_mode` |
+| `DAT_80074F68[row].+6/+7` mask + slot byte | `World::install_hub_equip_restrictions` |
+
+Two of those rows are **host hand-ins rather than world state**, and both are
+about the candidate columns. The class word is a menu-list global that the list
+machinery publishes and the panel reads (see
+[`field-menu.md`](field-menu.md)); the engine's list ports carry no mirror of
+it, so nothing sets it and a hub screen opened without a list up sees `0` -
+retail's own no-candidate arm. The mask and slot bytes are the two columns of
+the equipment row that the modifier-only view a boot installs on the world
+drops; they survive on the `DiscEquipInfo` a host builds for its menu runtime.
+A mode set without them is ignored, because answering "can this character equip
+that" from a zero mask would paint the reject line over every entry.
+
+So `aggregate_slot_stats` runs on every painted frame and its numbers are the
+character's own; `can_equip`, `resolve_equip_slot` and `stat_deltas` run once a
+host supplies the two.
+
+##### The five slots are not in the engine's order
+
+Retail's `+0x196` array is `[body, head, weapon, weapon, footwear, goods x3]` -
+byte `0` is body armour, `1` the head slot, `4` footwear, and the weapon sits
+in byte `2` or `3` per the character halfword at `DAT_8007B42C` (`2, 3, 2` for
+Vahn / Noa / Gala). Two disc tables pin that independently: this panel's own
+`(+7 & 0x60) >> 5` resolution, and the equip screen's row map `DAT_801E43E8` =
+`00 01 00 04 05 06 07`, whose seven rows are weapon (overridden by the
+per-character halfword), helmet `1`, body armour `0`, footwear `4` and three
+Goods slots.
+
+The engine's equip array is weapon-first and inserts a hand-guard slot retail
+has no row for (`equip_session::ARMAMENT_ENGINE_SLOTS`), so
+`field_submode_screen::hub_panel_slots` re-orders a record before the kernel
+walks it. The aggregation is order-blind, but the **trial-equip destination**
+is not: handing the kernel an engine-ordered array would make a body-armour
+candidate displace the weapon.
+
+One consequence of retail's own arithmetic is worth stating, because it looks
+like a special case and is not: an empty slot holds id `0`, whose item-table
+`+1` byte names bonus row `0x6A`, and that row is eight zero bytes. Retail
+looks id `0` up like any other id and adds zero; the port does the same rather
+than skipping it.
 
 #### The save-screen hand-off
 

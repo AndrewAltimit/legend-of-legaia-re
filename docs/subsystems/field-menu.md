@@ -542,6 +542,19 @@ explicit slot map (`equip_session::ARMAMENT_ENGINE_SLOTS`), because the
 engine's equip array inserts a Hand Guard slot retail has no row for:
 footwear is engine slot `4`, not `3`.
 
+Reading the two tables off the disc settles retail's own `+0x196` order.
+`DAT_801E43E8` is `00 01 00 04 05 06 07` - one byte per slot row, so
+helmet is byte `1`, body armour byte `0`, footwear byte `4` and the three
+Goods rows bytes `5..7` - and `DAT_8007B42C` is `2, 3, 2` (halfwords),
+putting Vahn's and Gala's weapon in byte `2` and Noa's in byte `3`. The
+hub's [equipment sub-panel](world-map.md#the-per-entry-equipment-sub-panel)
+resolves `(+7 & 0x60) >> 5` to the same four destinations, which pins the
+order a second way. So the retail array is
+`[body, head, weapon, weapon, footwear, goods x3]` - **not** weapon-first.
+The engine's `EquipSlot` enum is its own model, and a record has to be
+re-ordered before a routine that indexes in retail's space walks it
+(`field_submode_screen::hub_panel_slots`).
+
 ### Best Equipment: how the candidates are picked
 
 `FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
