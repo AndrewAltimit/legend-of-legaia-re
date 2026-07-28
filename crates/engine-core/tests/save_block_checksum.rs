@@ -139,7 +139,9 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             RETAIL_STORY_FLAGS_OFFSET, RETAIL_STORY_FLAGS_SIZE,
         };
         let records = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE;
-        i < 2
+        // All four magic bytes, not just `SC`: the icon-frame descriptor and
+        // block count at `+2`/`+3` are the composer's too.
+        i < 4
             || (records..records + 4 * RETAIL_CHAR_RECORD_STRIDE).contains(&i)
             || (RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
                 .contains(&i)
@@ -183,12 +185,19 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
 /// is the full four bytes and `save_title_digits` is the slot's two
 /// full-width numerals.
 ///
-/// This is a characterisation of today's composer, deliberately written so
-/// that **fixing it fails here**: the assertion is "the composer does not
-/// write the title frame", and whoever makes it write one deletes this test
-/// and pins the bytes instead.
+/// The gap this test was written to characterise is **closed**: the composer
+/// now stamps all four magic bytes. What it pins instead is the split that
+/// replaced it - the composer owns the magic, and the block's *identity*
+/// (title digits, icon CLUT, icon bitmap) belongs to
+/// `legaia_save::card::write_retail_block_identity`, which needs a slot number
+/// and the slot's portrait and so cannot be folded in here.
+///
+/// Keeping the boundary asserted matters: a composer that quietly began
+/// zeroing the title frame would still produce a valid payload and checksum,
+/// and would still be wrong on real hardware, which is the failure mode the
+/// original gap had.
 #[test]
-fn the_composer_does_not_write_the_psx_title_frame() {
+fn the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner() {
     use legaia_engine_core::card_flow::{SAVE_HEADER_MAGIC, save_title_digits};
 
     let mut block = dirty_block();
@@ -199,26 +208,21 @@ fn the_composer_does_not_write_the_psx_title_frame() {
         .unwrap();
 
     assert_eq!(
-        &block[..2],
-        &SAVE_HEADER_MAGIC[..2],
-        "the `SC` half is written"
-    );
-    assert_eq!(
-        &block[2..4],
-        &pristine[2..4],
-        "the icon-frame descriptor and block count are not - retail's          `SAVE_HEADER_MAGIC` carries {:?} there",
-        &SAVE_HEADER_MAGIC[2..4]
+        &block[..4],
+        &SAVE_HEADER_MAGIC[..],
+        "all four magic bytes - `SC`, the icon-frame descriptor and the block \
+         count - are the composer's, not just the `SC` half"
     );
 
-    // Title (`+4..`), icon CLUT (`+0x60`) and icon bitmap (`+0x80`) likewise.
+    // Title (`+4..`), icon CLUT (`+0x60`) and icon bitmap (`+0x80`) are the
+    // identity writer's, so this composer must leave them exactly as found.
     for off in [0x04usize, 0x60, 0x80] {
         assert_eq!(
             block[off], pristine[off],
-            "title-frame byte {off:#x} is not part of the composed set"
+            "title-frame byte {off:#x} belongs to write_retail_block_identity"
         );
     }
 
-    // The rule for the title is ported and correct - it is only uncalled.
     // Slot 0 shows as "01", biased into the Shift-JIS full-width range.
     assert_eq!(save_title_digits(0), [0x4F, 0x50]);
     assert_eq!(save_title_digits(11), [0x50, 0x51]);
