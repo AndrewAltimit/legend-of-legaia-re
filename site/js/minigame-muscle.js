@@ -1089,12 +1089,23 @@ window.MgMuscle = (function () {
           play(loser, loser === 1 ? scene.clips[1].ko : scene.clips[0].ko, true);
         }
         if (state.phase === 'won') {
-          /* Retail victory banner wording (FUN_801d8de8 case 0x59 composes
-           * "...acquired the power of..." + the reward spell name out of the
-           * shared spell-name table). */
-          const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
-          setBanner('YOU WIN!', spell
-            ? state.names[0] + ' acquired the power of ' + spell + '! — SPACE for a rematch'
+          /* Retail's own victory banner, composed the way retail composes
+           * it: the winning fighter's lead-in line from the PROT 0898
+           * victory-message table, the reward spell's name, then the fixed
+           * suffix - FUN_801D8DE8 case 0x59's three-part assembly, whose
+           * standalone twin FUN_801DBA90 the engine decodes. Falls back to
+           * the spell name alone when the overlay strings don't resolve. */
+          let sub = '';
+          try {
+            const b = JSON.parse(api.muscle_reward_banner_json());
+            if (b && b.ok && b.text) sub = b.text;
+          } catch (e) { sub = ''; }
+          if (!sub) {
+            const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
+            sub = spell ? state.names[0] + ' — ' + spell : '';
+          }
+          setBanner('YOU WIN!', sub
+            ? sub + ' — SPACE for a rematch'
             : 'SPACE for a rematch', 100000, 'good');
         } else {
           setBanner('YOU LOSE', 'SPACE for a rematch', 100000, 'bad');

@@ -10,7 +10,8 @@
 //! REF: FUN_801DCEAC (a control for the reference scan below),
 //! REF: FUN_801F1CC8, FUN_801F20DC (the field image's twins at the same VAs)
 //!
-//! NOT WIRED, for two different reasons - and they should not be read as one.
+//! NOT WIRED - the **two dispatchers** are. The reward-banner composer below
+//! is wired, and the reason it once was not is not the dispatchers' reason.
 //!
 //! **The two dispatchers** resolve to something the engine has no channel for.
 //! Both return a **retail VA**: the emitter is overlay code in the battle
@@ -38,36 +39,27 @@
 //! as controls. So it is not a dispatch-table entry either - a static table
 //! holding it would show as the literal word.
 //!
-//! That scan result stands. What did **not** stand is the conclusion drawn
-//! from it - "no engine-side channel can therefore fix this row". A caller
-//! being absent in retail says nothing about whether the engine has somewhere
-//! to put the result, and here it does. This is the **Muscle Dome** victory
-//! banner, not a battle-action one:
+//! That is a fact about the *entry point*, and an earlier revision of this note
+//! turned it into "no engine-side channel can therefore fix this row" - which
+//! is a fact about the *rule*, and false. `FUN_801D8DE8`'s HUD case `0x59`
+//! (`0x801D9154..0x801D91D0`, gated on its `param_2 == 0`) is the same
+//! assembly **instruction for instruction**: the same `ctx[+0x13]` ->
+//! `DAT_8007BD10` character id, the same `-1` index into the same
+//! `0x801F4DFC` table, the same `ctx[+0x269] + 0x80` spell id at the same
+//! `0x800754C8 + id*0x0C + 8`, the same `0x801F4C28` suffix, and the same
+//! `FUN_8003CA78` / `FUN_8003CAC4` / `FUN_8003CAC4` calls against the same
+//! `ctx + 0x1F9`. A whole-image scan finds exactly two materialisations of the
+//! table VA and two of the suffix VA - one pair in each routine - so the two
+//! are twins and the case-`0x59` one is the live site.
 //!
-//! * [`BANNER_LEAD_IN_TABLE_VA`] is `0x801F4DFC`, which is exactly
-//!   `legaia_asset::muscle_dome::VICTORY_MSG_TABLE_VA` - the dome's
-//!   victory-message string-pointer table, load-verified by that module.
-//! * [`reward_banner`]'s `spell_id` half is `ctx[+0x269] + 0x80`, which is
-//!   already reimplemented as `legaia_engine_core::muscle_dome`'s
-//!   `REWARD_SPELL_ID_BASE` + `MuscleDomeSession::reward_spell_id()` - a
-//!   hand-duplicated copy of [`REWARD_SPELL_ID_BASE`] below, and one that
-//!   **both** hosts already display on a dome win.
-//! * The engine models the `ctx+0x1F9` composition too. `magic_xp`'s
-//!   `magic_level_increased_message` builds into the same retail buffer with
-//!   the same `FUN_8003CA78` + `FUN_8003CAC4` pair, and is wired through
-//!   `World::current_art_banner`.
-//!
-//! So the honest entry is a **wire with a named consumer**, not a dead row:
-//! replace the host-invented dome win string with this three-part assembly.
-//! It is left open here because it lands in the Muscle Dome session and the
-//! minigames hosts rather than in battle presentation, and because one input
-//! is still missing - `MuscleDomeSession` carries no fighter character id for
-//! `char_id`, and `legaia_asset::muscle_dome` counts the victory table's
-//! pointers without exposing a string reader. Both are plumbing.
-//!
-//! One residual on the scan itself: an address assembled in more than two
-//! instructions, or reached as `table_base + index` where the base is
-//! computed, would not be caught.
+//! So the rule runs on every dome win, and the port is wired to it:
+//! `MuscleDomeSession::reward_banner` composes through this decode and both
+//! hosts show the result (`minigames_muscle::muscle_reward_banner_json`
+//! resolves the two overlay strings and the spell name). What stays true is
+//! that **this entry point** is dead - a host is running the twin, not
+//! reaching `0x801DBA90`. One residual on the scan: an address assembled in
+//! more than two instructions, or reached as `table_base + index` where the
+//! base is computed, would not be caught.
 //!
 //! ## The two dispatchers
 //!

@@ -144,6 +144,30 @@ impl MuscleFighter {
     }
 }
 
+/// Read a little-endian `u32` at a VA inside the as-loaded PROT 0898 image.
+fn overlay_u32(image: &[u8], va: u32) -> Option<u32> {
+    let off = va.checked_sub(md::MUSCLE_OVERLAY_BASE_VA)? as usize;
+    Some(u32::from_le_bytes(
+        image.get(off..off + 4)?.try_into().ok()?,
+    ))
+}
+
+/// Read the NUL-terminated string at a VA inside the as-loaded PROT 0898
+/// image. Bounded at 128 bytes; non-ASCII bytes are dropped, which keeps a
+/// mis-resolved pointer from emitting binary into the page.
+fn overlay_string(image: &[u8], va: u32) -> Option<String> {
+    let off = va.checked_sub(md::MUSCLE_OVERLAY_BASE_VA)? as usize;
+    let win = image.get(off..(off + 128).min(image.len()))?;
+    let end = win.iter().position(|&b| b == 0)?;
+    Some(
+        win[..end]
+            .iter()
+            .filter(|&&b| (0x20..0x7F).contains(&b))
+            .map(|&b| b as char)
+            .collect(),
+    )
+}
+
 /// The cached PROT 0898 battle tables the dome plays with.
 pub(crate) struct MuscleTables {
     /// The four dealt hand command ids (deck table `DAT_801f4b8c`).
@@ -1740,6 +1764,67 @@ impl LegaiaMinigames {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// The live contest's **victory banner**, composed the way retail
+    /// composes it and resolved to real strings.
+    ///
+    /// Retail assembles three pieces into the battle context's text buffer
+    /// (`ctx + 0x1F9`): the winning fighter's lead-in line out of the
+    /// victory-message pointer table at `0x801F4DFC` indexed `char_id - 1`,
+    /// the reward spell's name from the shared spell-name table, and a fixed
+    /// suffix at `0x801F4C28`. The index half is
+    /// [`MuscleDomeSession::reward_banner`](legaia_engine_core::muscle_dome::MuscleDomeSession::reward_banner);
+    /// this resolves the two overlay strings off the as-loaded PROT 0898
+    /// image and the spell name off `SCUS_942.54`.
+    ///
+    /// `{"ok":true,"lead_in_index":n,"lead_in":"…","spell_id":n,
+    /// "spell":"…","suffix":"…","text":"…"}` - `text` is the three joined in
+    /// retail's order. `ok` is false with no live contest.
+    pub fn muscle_reward_banner_json(&self) -> String {
+        let Some(contest) = self.muscle.as_ref() else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        // Retail's `DAT_8007BD10[slot]` is the 1-based character id.
+        let char_id = contest.char_slot as u8 + 1;
+        let banner = contest.session.reward_banner(char_id);
+        let loaded = overlay_image(
+            &self.prot,
+            &self.entries,
+            md::MUSCLE_OVERLAY_PROT_INDEX as u32,
+        );
+        let lead_in = loaded
+            .as_deref()
+            .and_then(|img| {
+                overlay_string(
+                    img,
+                    overlay_u32(
+                        img,
+                        md::VICTORY_MSG_TABLE_VA + banner.lead_in_index as u32 * 4,
+                    )?,
+                )
+            })
+            .unwrap_or_default();
+        let suffix = loaded
+            .as_deref()
+            .and_then(|img| {
+                overlay_string(
+                    img,
+                    legaia_engine_vm::battle_cast_dispatch::BANNER_SUFFIX_VA,
+                )
+            })
+            .unwrap_or_default();
+        let spell = self.muscle_spell_name(banner.spell_id as u8);
+        serde_json::json!({
+            "ok": true,
+            "lead_in_index": banner.lead_in_index,
+            "lead_in": lead_in,
+            "spell_id": banner.spell_id,
+            "spell": spell,
+            "suffix": if banner.suffix { suffix.clone() } else { String::new() },
+            "text": format!("{lead_in}{spell}{}", if banner.suffix { suffix } else { String::new() }),
+        })
+        .to_string()
+    }
+
     /// The arena's **course ladder**, straight off the disc.
     ///
     /// PROT 0977 carries a 3-entry course descriptor table (`0x801D1A08`,

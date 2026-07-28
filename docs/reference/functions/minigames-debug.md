@@ -67,11 +67,48 @@ Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal r
 | `801D1308` | **Decimal readout** - up to eight digits through `FUN_801D050C`, stepping the digit record's texture column per glyph. Negative values draw nothing. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
 | `801D1288` | **Round-robin SFX cue** - one `FUN_80065034` voice-attr call per frame across voices `0x10..=0x13` (counter `DAT_801D1AE4 & 3`), at program `0` / tone `1` / note `0x3C`. Its last two arguments are `vol_l` / `vol_r`, halved out of the voice-volume config `_DAT_80084580`; the earlier "positioned from the party-block word" reading is falsified, see [`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md#the-arenas-per-frame-voice-cue-fun_801d1288). Not a sprite emitter - `FUN_80065034` is the libsnd `SpuSetVoiceAttr` analogue. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
 | `801D14B0` | **Step-size scaler** - a leaf: returns the argument unchanged while flag `DAT_801D1AB4` is set, else `arg/5` (`arg > 5`), `1` (`arg < 3`), or `arg/2`. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
-| `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Minigame per-frame update** - accumulates frame time (scratchpad `0x1F800314+0x7F`) into lane counters, scales each step via `FUN_801D14B0`, and triggers cues via `FUN_801D1288` / `FUN_801D08EC`. `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt`. |
+| `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Contest score-tally screen** - the six-row label + number readout, and the count-up that fills it. [details](#the-contest-score-tally-screen-fun_801cf074). `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt`. |
+| `801CF870` | **Intro / title / interval screen** - draws the "Welcome" strip (record 3) centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` under a shrinking scale ramp with a variant-2 shadow at `(168, 72)`, and the INTERVAL heading (record 16) at `(160, 32)`; tails into `FUN_801CF074` with its own fade counter. |
+| `801D02F0` | **ROUND banner** - record 0 centred on `(120, 120)` in both variants, then `DAT_801D1A94 + 1` as one digit at `x=240` or two at `x=240`/`x=264`, each in both variants. |
+| `801D15C8` | **ROUND digit glyph** - sets record **1**'s `u0` to `digit * 24` and delegates to `FUN_801D050C` with the index forced to 1. Not the decimal readout's record 9. |
+| `801D1510` | **Opponent installer** - indexes the course descriptor table `0x801D1A08` by `DAT_801D1A90`, its `+4` round pointer by `DAT_801D1A94`, `lbu`s the round record's `+4` monster id and `sb`s it into formation slot 0 at `0x8007BD0C` (clearing slots 1..3, and writing `0x14` to the stage word `0x8007B83C`). The arena's opponent, per (course, round). [details](../../subsystems/minigame-muscle-dome.md#course-ladder-the-opponent-per-course-round). |
+| `801D0CD4` | **Course menu** - walks all three descriptors, using each `+0x00` count as its loop bound and each round record's `+0x00` label pointer through the text drawer `0x80036888`; also clamps `DAT_801D1A94` against the count. |
 
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### The contest score-tally screen (`FUN_801CF074`)
+
+`FUN_801CF074(alpha)` is one whole screen: four count-up lanes and the
+twelve quads that show them. It returns non-zero while the count-up is still
+running and `0` once it has finished, which is how its caller knows to hold
+the screen.
+
+Each lane accumulates the scratchpad frame delta (`0x1F800393`) into its own
+fade counter, clamps that counter at `0x10`, and then - if its pending value
+is non-zero - takes one step through `FUN_801D14B0`, moves it from the
+pending counter into the sink, and fires `FUN_801D1288`. A lane whose
+pending value has reached zero instead starts the next lane's fade, so the
+rows fill in sequence.
+
+| Lane | Fade counter | Pending | Sink |
+|---|---|---|---|
+| 0 | `0x801D1ABC` | `0x801D1ACC` | `0x801D1AC8` |
+| 1 | `0x801D1AC0` | `0x801D1AD0` | `0x801D1AC8` |
+| 2 | `0x801D1AC4` | `0x801D1AD4` | `0x801D1AC8` |
+| 3 | `0x801D1AB8` | `0x801D1AAC` | `_DAT_80084440` |
+
+Lane 3's sink is the running contest score tally the settlement routine
+`FUN_801D0F60` settles, which is what identifies the screen.
+
+The draw is six label strips (records `10..=15`, corner-anchored at `x=0x40`,
+`y=0x50` stepping `0x10`, scale `0x1000`) followed by six decimal values
+(`x=0xC0`, `y=0x55` stepping `0x10`), each set emitted twice - variant 1 then
+variant 2, and for the digits palette `0`/`2` then `1`/`3`, with record 9's
+`+0x0F` / `+0x13` bytes stamped between the passes. Every brightness is
+`fade * (alpha << 4) >> 7`. Port: `legaia_engine_ui::other_game_hud`
+(`HUB_SCORE_TALLY_LABELS`, `score_tally_quads`).
 
 ### PROT 0977 HUD primitives
 

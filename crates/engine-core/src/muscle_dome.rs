@@ -533,6 +533,28 @@ impl MuscleDomeSession {
         REWARD_SPELL_ID_BASE.wrapping_add(self.reward_seru_index)
     }
 
+    /// The three-part **victory banner** retail composes on a dome win, as
+    /// indices - the host resolves the strings.
+    ///
+    /// `char_id` is the winning fighter's 1-based character id (retail's
+    /// `DAT_8007BD10[ctx+0x13]`); the lead-in line is entry `char_id - 1` of
+    /// the victory-message pointer table
+    /// ([`legaia_asset::muscle_dome::VICTORY_MSG_TABLE_VA`], which holds
+    /// exactly the three party fighters' lines), then the reward spell's
+    /// name, then a fixed suffix.
+    ///
+    /// Retail runs this assembly **inline** in `FUN_801D8DE8`'s HUD case
+    /// `0x59` (`0x801D9154..0x801D91D0`); `FUN_801DBA90` is a standalone,
+    /// instruction-identical twin of that arm which no image references. The
+    /// port composes through the decode of the twin because it is the same
+    /// rule; the *live* site is the case-`0x59` arm.
+    pub fn reward_banner(
+        &self,
+        char_id: u8,
+    ) -> legaia_engine_vm::battle_cast_dispatch::RewardBanner {
+        legaia_engine_vm::battle_cast_dispatch::reward_banner(char_id, self.reward_seru_index)
+    }
+
     /// Whether the leg is over - a KO either way, or the turn limit expired.
     pub fn decided(&self) -> bool {
         matches!(
