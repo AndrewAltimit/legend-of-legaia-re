@@ -1044,7 +1044,11 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Town/field free-movement locomotion | resolved | `capture` | [details ↓](#townfield-free-movement-locomotion) |
-| Field ambient animation - what makes jou's ground pulse and the water shimmer | resolved (residuals tracked on the open page) | `disassembly` | Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field scenes), the ambient move-VM tree the MAN P1 effect scripts install at entry, and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler (`FUN_80019D50`, lightning = flag `0x364`). Full chain + two move-VM decode corrections: [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md). |
+| Field ambient animation - what makes jou's ground pulse and the water shimmer | resolved | `disassembly` | Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field scenes), the ambient move-VM tree the MAN P1 placements install at entry, and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler (`FUN_80019D50`, lightning = flag `0x364`). Full chain + two move-VM decode corrections: [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md). |
+| Ambient render-mode 4 - what the op-`0x1E` seat animates | resolved | `disassembly` | A **cyclic VRAM-rect scroller**, and it is what makes waterfalls fall. Per fired period (`+0xC6` drained by the frame step alone, no speed scalar) the render tail rotates the seated rect `+0xD0..+0xD6` left by `+0xCC * frame_step` and up by `+0xCE * frame_step`, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (`80021df4.txt` `0x80022CB8..0x80022EE0`). Seventeen scenes carry one at plain entry; sixteen scroll upward over a texture-band rect, `tunnelc`'s second seat scrolls a CLUT row sideways. Ported as `engine-core::world::ambient::vram_scroll`. [details ↓](#ambient-render-mode-4---the-vram-rect-scroller) |
+| Master ambient record 0 - what reads the 8-byte rows | resolved (it is not a stager record at all) | `disassembly` | The **per-scene sound-effect descriptor bank** for cue ids `>= 0x200`. Both SFX readers resolve those ids as `*(u32*)0x8007B8D0 + offsets[0] + (id - 0x200)*8` - i.e. record 0 of whatever bundle is installed at `0x8007B8D0`, which in field mode is the scene prescript bundle (`field_asset_loader` `0x8001F850..0x8001F864` stores scene buffer + `0x12800`). `offsets[0]` is the identical word `FUN_800252EC` reads for stager id 0. Rows are the 8-byte descriptor of [`sfx-table.md`](../formats/sfx-table.md), category 3 (a variable VAB slot). [details ↓](#master-ambient-record-0---the-per-scene-sfx-descriptor-bank) |
+| town0e's morph-record installer | resolved (the census was shape-blind, not the disc) | `disassembly` | The install is the ordinary `0x34` sub-3 arg 0 (stager record 1) - it just rides **partition-1 placement 29**, a full placed actor with dialogue, as that record's second instruction, ahead of its `SysFlag.Test 0x1A` park/seat branch. A census that discriminates by script *shape* reports nothing here; the rule that finds it is the entry-slice one below. Residual: that the entry pre-run slice reaches it is an inference from the settled pre-run mechanism, not a capture. [details](../subsystems/field-ambient-fx.md#town0es-installer-is-a-placed-actor-not-an-effect-actor) |
+| Which op-`0x34` sub-3 installs fire at **scene entry** | resolved | `disassembly` | The ones the placement spawn-prologue slice (`FUN_8003A1E4`) executes - not a distinguished kind of script. The pre-run is gated on the record's first opcode being `0x24`/`0x25`, and the slice breaks after an opcode whose full byte is `0x21`; both nops, only one ends the slice. Ported as `engine-core::man_field_scripts::scene_entry_ambient_installs`. [details ↓](#which-op-0x34-sub-3-installs-fire-at-scene-entry) |
 | Scene bundle type-7 slot content (VDF) | resolved | `disassembly` | The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries), installed at `DAT_8007B7DC` via `FUN_8001FBCC`, consumed by the morph stager `FUN_8001C604`. Parser `legaia_asset::scene_vdf`; format in [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs). |
 | VDF morph render substitution - what draws the staged vertices, and what arms the lanes | resolved | `disassembly` | Per drawn group of a part whose flags carry op-`0x0A`'s bit `0x1000`, `FUN_8001ADA4` (`0x8001B424..`) calls `FUN_8001C604` (scratch copy + weighted-delta blend + group vertex-pointer retarget) and restores the pointer after the draw. Arming = op-`0x0A` **mesh** stager parts in the ambient tree (`pack slot = model_sel - 5`; rikuroa 69/70 behind flags `0x281`/`0x282`, town0e 10/11, jagaroom 20/21); weights ramp via `FUN_80020740` steered by op-`0x32` envelope flags. jou arms nothing at entry (cutscene op `0x1F` only). Ported to all three render surfaces; details in [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | What opens an inn stay in retail? | resolved (the premise was wrong) | `capture` | There is no inn trigger, because there is no inn *session*: retail composes a stay inline in the scene MAN out of generic ops (dialogue, an MES picker, an op-`0x4E` gold gate, op-`0x3A` `ADD_MONEY`, fades) and then one `4C 82 <slot>` per member. That opcode is the only inn-specific thing in the engine. Charge and restore are decoupled, so free rests are the same tail minus the gate. Ported as `op4c_n8_sub2_restore_party_slot`; the old "party-page mirror" label was wrong. [details](../subsystems/field-menu.md#inn-stay-there-is-no-inn-screen) |
@@ -1069,6 +1073,104 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
+
+### Ambient render-mode 4 - the VRAM-rect scroller
+
+*Status:* resolved - decoded from the disassembly and ported
+
+The seat is move-VM op `0x1E`: `+0x5A = 4` then seven operands into `+0xC4`
+(period reload), `+0xCC` / `+0xCE` (per-period horizontal / vertical step) and
+the rect `+0xD0..+0xD6`, in that order (`80023070.txt`
+`0x80023694..0x800236F0`). `+0xC6`, the live countdown, is deliberately *not*
+seated, so a freshly spawned part fires on its first tick.
+
+The render tail's arm (`80021df4.txt` `0x80022CB8..0x80022EE0`) drains `+0xC6`
+by `DAT_1F800393` **alone** - unlike the mode-3 sibling it does not fold in
+the `DAT_1F80037D` speed scalar - and tests the underflow with
+`sll v0,0x10; bgez`, so it fires exactly on the tick the stored halfword's
+sign bit sets. On that tick it reloads the period and rotates the rect: per
+axis, `FUN_8005842C` captures the leading strip into a buffer bump-allocated
+off `0x1F8003A0`, `FUN_80058490` slides the remainder over it, `FUN_800583C8`
+re-inserts the strip at the far edge - a cyclic rotation, horizontal first
+then vertical.
+
+Seventeen scenes put one on screen from their plain scene-entry ambient
+tree, resolved by walking the records through the move VM. A *linear* scan for
+the op word over-reports badly - the records jump, so a linear pass finds
+`0x1E`-shaped bytes inside operand streams. Sixteen of the seventeen scroll
+vertically only, upward, over a rect at `x >= 0x200`: falling water and energy
+columns. The seventeenth is `tunnelc`, whose second seat is a full-width
+one-row rect at `(0, 508)` stepping **right** - a CLUT row, walked by the same
+rotate primitive, since `StoreImage` / `MoveImage` / `LoadImage` do not care
+what the texels mean. The per-scene rect table is on the mechanism page.
+
+Port: `engine-core::world::ambient::vram_scroll`, applied in tick order by
+`World::step_ambient_fx` (the rotate is destructive, unlike the mode-3 write
+which is recomputed each frame from a cached capture). Disc-gated coverage
+`crates/engine-core/tests/ambient_mode4_scroll_disc.rs`. Mechanism write-up:
+[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-vram-rect-scroller-render-mode-4).
+
+### Which op-`0x34` sub-3 installs fire at scene entry
+
+*Status:* resolved - decoded from the disassembly and ported
+
+`FUN_8003A1E4` - the pre-run the placement spawn loop calls per just-spawned
+placement - carries its **own** copy of the per-actor script runner's frame
+slice rather than calling `FUN_80039B7C`. Two branch facts in that copy settle
+which installs are entry installs:
+
+- `0x8003A480`: `lbu` the first opcode, `addiu v0,v1,-0x24`, `sltiu v0,v0,0x2`,
+  `beq v0,zero,<skip>` - unless that byte is `0x24` or `0x25` the VM loop is
+  skipped entirely and the record's script never runs at load.
+- `0x8003A498..0x8003A4F4`: run while `(opcode & 0x7F) >= 0x20`; after
+  dispatching, `beq s1,s4` against `li s4,0x21` breaks the slice on the **raw**
+  byte `0x21` (so a cross-context `0xA1` does not break), as does an unchanged
+  returned PC.
+
+The consequence is the whole mechanism. `0x21` and `0x25` both disassemble as
+"nop" and only one of them ends the slice, so a record written
+`25 / 34 30 00 / …` fires its install in the load slice whatever follows it -
+which is why a dialogue-bearing placed actor installs its ambient tree exactly
+like a dedicated effect-actor script, and why an install placed *after* a `0x21`
+(`edkorout` P1[15]) does not fire at plain entry at all.
+
+Port: `engine-core::man_field_scripts::scene_entry_ambient_installs`, taking the
+**unconditional prefix** of that slice - a deliberate under-approximation, since
+a flag-gated install deeper in a record (`nilboa` P1[3], `suimon` P1[4]) depends
+on runtime state a static census cannot resolve. Disc-gated coverage
+`crates/engine-core/tests/ambient_entry_install_census_disc.rs`. Mechanism
+write-up:
+[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#which-installs-fire-at-scene-entry).
+
+### Master ambient record 0 - the per-scene SFX descriptor bank
+
+*Status:* resolved - the premise ("a stager record with unknown rows") was wrong
+
+`0x8007B8D0` is a shared **current-bundle** pointer, not one subsystem's.
+The field asset loader points it at the scene prescript bundle
+(`0x8001F850..0x8001F864`: `lw v0,0xd8(s3)` with `s3 = 0x1F800314`, plus
+`0x12800`), which is why `FUN_800252EC` reaches stager records through it at
+all. Both sound-effect descriptor readers use the same slot for cue ids
+`>= 0x200`, through the bundle's own offset table:
+
+- `FUN_800250D4` (`0x800250FC..0x8002514C`) - `desc = base + offsets[0] +
+  (id - 0x200)*8`, then `SpuKeyOn`s `+3 & 0x1F` consecutive voices.
+- `FUN_80016B6C` (`0x80016C24..0x80016CB0`) - the cue-ring drain, same
+  address arithmetic, and it hands bytes `+0..+4` to the designers' own
+  `"setbl p:%d t:%d l:%d n:%d id:%d"` debug print.
+
+`offsets[0]` is the identical word `FUN_800252EC` reads for stager id 0, so
+"record 0" and "the runtime SFX bank" name one address. The disc agrees:
+every populated row has category `+4 = 3` (a variable VAB slot), voice count
+1-2, a level in the low 60s, and a zero `+5..+7` trailer - the layout of
+[`sfx-table.md`](../formats/sfx-table.md)'s static table. Size is per scene
+(jou reserves 96 rows and populates 40; `rugi` carries 21). jou's own tree
+cues `0x20B` and `0x20E..0x211` - rows 11 and 14..17 of its own record 0.
+
+The boot sound-bank loader `FUN_8001FA88` writes the same slot and then
+immediately saves *its* bank's record-0 address at `gp+0x678`, precisely
+because the next scene load overwrites the slot - so the two readings are
+complementary, not contradictory.
 
 ### Town/field free-movement locomotion
 

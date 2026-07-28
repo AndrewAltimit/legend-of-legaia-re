@@ -306,7 +306,10 @@ pub fn build_field_scene_anim(
         if let Ok(Some(man_bytes)) = scene.field_man_payload(index)
             && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
         {
-            let installs = legaia_engine_core::man_field_scripts::ambient_effect_installs(
+            // Same census the native scene host uses (retail `FUN_8003A1E4`'s
+            // placement spawn-prologue slice) - keep the two in step, or the
+            // viewer and the play page animate different scenes.
+            let installs = legaia_engine_core::man_field_scripts::scene_entry_ambient_installs(
                 &man_file, &man_bytes,
             );
             if !installs.is_empty() {

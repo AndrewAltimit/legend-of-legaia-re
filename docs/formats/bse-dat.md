@@ -1,10 +1,13 @@
 # `bse.dat` - master sound bank
 
-The sound subsystem loads one bank at init and keeps a pointer into it for the
-rest of the session. Detection class: `bse_bank`. Parser
+The sound subsystem loads one bank at init and keeps a pointer into its record
+table for the rest of the session. Detection class: `bse_bank`. Parser
 [`crates/asset/src/bse_bank.rs`](../../crates/asset/src/bse_bank.rs).
 Confidence: **Confirmed** for the identification, the header word and the record
 stride; **Unknown** for what the record columns mean.
+
+The pointer that lasts is `gp+0x678`, **not** the buffer address - see
+[below](#the-slot-is-shared-the-session-pointer-is-gp0x678).
 
 ## Which entry it is
 
@@ -28,6 +31,28 @@ sector count is the entry's size - 2 sectors for entry 888, which fits the
 claims 88 sectors there; see
 [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).)
 
+### The slot is shared; the session pointer is `gp+0x678`
+
+`_DAT_8007B8D0` is where bse.dat *lands*, and it holds bse.dat's buffer only
+until the first field scene loads. The slot is the sound subsystem's
+**current-bundle** pointer, and the field asset loader repoints it at the
+scene's prescript bundle on every field load: `FUN_8001F7C0`
+`0x8001F840..0x8001F864` computes `*(0x1F800314 + 0xD8) + 0x12800` and stores it
+to `0x8007B8D0` (`sw v0,-0x4730(at)`). The slot-machine overlay does the same.
+
+That is why `FUN_8001FA88` does not simply leave the address there. Its tail
+(`0x8001FB8C..0x8001FBC0`) re-reads the buffer, resolves `base + offsets[0]`
+through the `+0x02` header word, and stores **that** to `gp+0x678` -
+`sw a0,0x678(gp)` - before returning. `gp+0x678` is the session-long handle to
+bse.dat's record table; `0x8007B8D0` is not a bse.dat pointer for any longer
+than one scene load. `see ghidra/scripts/funcs/8001fa88.txt`,
+`8001f7c0.txt`.
+
+The same slot is what makes the [SFX descriptor](sfx-table.md) table's
+`id >= 0x200` arm per-scene rather than per-session: it reads
+`_DAT_8007B8D0 + offsets[0]`, which in field mode is the scene's own prescript
+record 0, not this bank.
+
 ## Layout
 
 ```text
@@ -40,6 +65,11 @@ The `+0x02` word is consumed as a **byte offset**, not a count. The tail of
 `FUN_8001FA88` computes `gp[0x678] = base + ((s16)u16@+2 / 2) * 2` - `lhu
 v1,0x2(a0)`, sign-extend, round toward zero, `>> 1`, `<< 1` - i.e. a
 round-to-even of the offset, leaving `gp[0x678]` pointing at the record table.
+It is the identical expression `FUN_800252EC` and `FUN_800250D4` apply to the
+same slot, which is the structural reason the two readings of entry 1195
+[below](#1195-has-a-second-reading-and-the-bytes-do-not-separate-them) are hard
+to separate: a `[u16 tag][u16 body_offset]` header and a
+`[u16 count][u16 offsets[0]]` header are decoded by one piece of code.
 
 Each record is 8 bytes:
 
@@ -58,6 +88,14 @@ triple, since `0x3C` = 60 is middle C and the sibling
 **hypothesis**: no consumer of `gp[0x678]` has been traced, so nothing here
 asserts what the columns mean. What is pinned is the loader, the destination,
 the header word's use as a byte offset, and the 8-byte stride.
+
+The hypothesis did gain one piece of support that is worth stating carefully.
+The per-scene bank the SFX table's `id >= 0x200` arm reads is the *same* header
+shape with the *same* row walk, and there the columns **are** pinned - program,
+tone, level, voice count, category - by two traced consumers
+([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-master-ambient-record-0---the-per-scene-sfx-descriptor-bank)).
+That makes the reading plausible for this bank by analogy, not by evidence:
+the analogy is exactly what an untraced `gp+0x678` cannot settle.
 
 ## The two carriers
 
@@ -104,6 +142,6 @@ PROT corpus that matches these two entries and nothing else.
   `"bse.dat"` string lives in, and the per-scene `.dpk` the same function loads
   second.
 - [`sfx-table.md`](sfx-table.md) - the static SCUS sound-effect descriptors,
-  also 8-byte program/tone records, and the table whose ids `>= 0x200` are
-  documented as coming from a runtime bank instead.
+  also 8-byte program/tone records, and the ids `>= 0x200` that read whatever
+  bundle currently occupies this page's slot.
 - [`prot.md`](prot.md) - entry extents, and why the footprint is the real one.

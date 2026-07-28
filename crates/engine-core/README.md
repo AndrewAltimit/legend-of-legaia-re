@@ -276,7 +276,11 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   `scene_bgm_starts` censuses the op-`0x35` sub-1 BGM starts (the global
   `2000+i` ids behind `music_labels`), and `scene_stager_installs`
   censuses the op-`0x34` sub-3 move-VM stager installs across all three
-  partitions (the prescript single-consumer oracle's scanner). This is
+  partitions (the prescript single-consumer oracle's scanner).
+  `scene_entry_ambient_installs` is the narrower one both scene hosts run:
+  the subset of those installs retail's placement spawn-prologue slice
+  (`FUN_8003A1E4`) executes at scene load, which is what decides whether a
+  scene's ambient tree spawns. This is
   the scripted-encounter hunt's faithful discriminator: it surfaces a real
   inline `[count][ids]` arm at a decoded opcode boundary instead of the
   byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
@@ -349,6 +353,12 @@ presentation left to the host:
 - `music_labels` - resolves a global BGM id / `music_01` bank slot to its
   curated sound-test track label. See
   [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md).
+- `world::ambient` - the scene-entry ambient move-VM effect tree
+  (`spawn_ambient_record` fan-out, `step_ambient_fx` drain) and its two
+  render-tail arms: the CLUT-cell HSV cycler (`clut_cell_fx`, mode 3) and
+  the cyclic VRAM-rect scroller (`world::ambient::vram_scroll`, mode 4 -
+  the waterfalls). See
+  [`docs/subsystems/field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md).
 - `battle_seats` - the retail stage-seat tables, consumed by
   `World::enter_battle`.
 - `fishing::PrizeExchange` + `World::fishing_exchange_buy` - the

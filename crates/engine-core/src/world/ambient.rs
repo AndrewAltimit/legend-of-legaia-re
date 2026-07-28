@@ -32,13 +32,22 @@
 //!    software VRAM exactly like the scripted-CLUT sibling
 //!    [`World::step_clut_fx`].
 //!
+//! 3. **The mode-4 render tail.** The scroller sibling ([`vram_scroll`])
+//!    rotates an authored VRAM rect in place once per fired period. That
+//!    write is *destructive* rather than recomputed-from-capture, so its
+//!    requests are queued per game tick and drained against the same VRAM
+//!    surface in tick order.
+//!
 //! PORT: FUN_80021B04 (spawn-time first run + per-tick move-VM drive for
 //! the prescript-record parts)
 //! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50
 
+pub mod vram_scroll;
+
 use super::*;
 use crate::clut_cell_fx::{self, ClutCellFx};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome};
+use vram_scroll::VramScrollFx;
 
 /// Per-tick opcode budget for one ambient part (the records are small; the
 /// budget only guards a malformed stream).
@@ -50,6 +59,11 @@ const MAX_SPAWN_DEPTH: usize = 16;
 /// Cap on simultaneously live ambient parts (retail's effect-actor pool is
 /// far smaller; this only bounds a runaway spawn loop).
 const MAX_AMBIENT_PARTS: usize = 128;
+
+/// Cap on a mode-4 part's undrained strip rotations. Retail applies each
+/// one inside the tick that fired it; this only bounds a host that banks
+/// ticks without ever passing a VRAM surface (headless sims, tests).
+const MAX_PENDING_SCROLLS: usize = 64;
 
 /// One live ambient move-VM part.
 #[derive(Debug, Clone)]
@@ -74,6 +88,11 @@ pub struct AmbientPart {
     /// Latest mode-3 CLUT-cell write this part emitted (refreshed per game
     /// tick; applied to VRAM by [`World::step_ambient_fx`]).
     pub cell_fx: Option<ClutCellFx>,
+    /// Mode-4 strip rotations this part has fired but not yet applied to
+    /// VRAM. Each entry is one game tick's rotate; [`World::step_ambient_fx`]
+    /// drains them in tick order (the writes are destructive, so unlike
+    /// [`cell_fx`](Self::cell_fx) they cannot be recomputed from a capture).
+    pub scroll_fx: Vec<VramScrollFx>,
     /// Morph-lane weight snapshot from the previous tick (change detection
     /// for the VDF render substitution's dirty set).
     pub prev_morph_weights: Vec<u16>,
@@ -135,6 +154,7 @@ impl World {
             state,
             finished: false,
             cell_fx: None,
+            scroll_fx: Vec::new(),
             prev_morph_weights: Vec::new(),
         });
         Some(self.ambient_fx.len() - 1)
@@ -206,6 +226,13 @@ impl World {
             None
         };
 
+        // Mode-4 render tail: the VRAM-rect scroller. Retail gates this arm
+        // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
+        // and jou's carrier is a plain transform node (`model_sel = -1`).
+        let scroll_fx = (state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
+            .then(|| vram_scroll::mode4_integrate(&mut state, self.frame_step.max(1)))
+            .flatten();
+
         // VDF morph dirty tracking: when an armed part's lane weights moved
         // this tick, its mesh's `(pack_slot, group)` pairs need a re-stage.
         let mut dirty: Vec<(usize, u32)> = Vec::new();
@@ -236,6 +263,11 @@ impl World {
             part.finished = finished;
             if cell_fx.is_some() {
                 part.cell_fx = cell_fx;
+            }
+            if let Some(fx) = scroll_fx
+                && part.scroll_fx.len() < MAX_PENDING_SCROLLS
+            {
+                part.scroll_fx.push(fx);
             }
             if let Some(w) = new_weights {
                 part.prev_morph_weights = w;
@@ -394,10 +426,17 @@ impl World {
         if self.ambient_fx.is_empty() {
             return false;
         }
+        let mut wrote = false;
         for _ in 0..ticks {
             self.tick_ambient_fx();
+            // The mode-4 rotates are destructive and ordered: apply each
+            // tick's before running the next, exactly as retail's render
+            // tail does inside the tick that fired them.
+            wrote |= self.apply_ambient_scrolls(vram);
         }
-        let mut wrote = false;
+        // Whatever a headless tick banked up (a host that ticked without a
+        // VRAM surface) still lands, in queue order.
+        wrote |= self.apply_ambient_scrolls(vram);
         let fx: Vec<ClutCellFx> = self
             .ambient_fx
             .iter()
@@ -427,10 +466,66 @@ impl World {
         wrote
     }
 
+    /// Apply every mode-4 part's queued strip rotations to `vram`, in part
+    /// order. Returns `true` when any texels moved.
+    ///
+    /// PORT: FUN_80021DF4 (the mode-4 arm's StoreImage / MoveImage /
+    /// LoadImage trio, `0x80022D08..` and `0x80022DF8..`)
+    fn apply_ambient_scrolls(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let mut wrote = false;
+        for idx in 0..self.ambient_fx.len() {
+            if self.ambient_fx[idx].scroll_fx.is_empty() {
+                continue;
+            }
+            let queued = std::mem::take(&mut self.ambient_fx[idx].scroll_fx);
+            for fx in queued {
+                let (x, y, w, h) = fx.rect;
+                if w == 0 || h == 0 || w > 1024 || h > 512 {
+                    continue;
+                }
+                let src = read_rect(vram, x, y, w, h);
+                let out = vram_scroll::rotate_rect(
+                    &src,
+                    usize::from(w),
+                    usize::from(h),
+                    usize::from(fx.strip_w),
+                    usize::from(fx.strip_h),
+                );
+                if out != src {
+                    write_rect(vram, x, y, w, &out);
+                    // A rotated rect invalidates any mode-3 capture keyed on
+                    // exactly this rect (no retail scene pairs the two on one
+                    // rect; this keeps the cache honest if one ever did).
+                    self.ambient_cell_captures.remove(&fx.rect);
+                    wrote = true;
+                }
+            }
+        }
+        wrote
+    }
+
     /// Snapshot of the live ambient CLUT-cell effects (for tests and the
     /// web viewer's status line).
     pub fn active_ambient_cell_fx(&self) -> Vec<ClutCellFx> {
         self.ambient_fx.iter().filter_map(|p| p.cell_fx).collect()
+    }
+
+    /// The VRAM rects the live mode-4 scroller parts animate, with each
+    /// part's authored per-period steps - the seated `+0xD0..+0xD6` rect and
+    /// `+0xCC`/`+0xCE` (for tests and viewer status lines).
+    pub fn active_ambient_scroll_rects(&self) -> Vec<vram_scroll::ScrollSeat> {
+        self.ambient_fx
+            .iter()
+            .filter(|p| !p.finished && p.state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
+            .map(|p| {
+                let at = |off: usize| p.state.anim_block_u16(off - 0xAC);
+                (
+                    (at(0xD0), at(0xD2), at(0xD4), at(0xD6)),
+                    at(0xCC) as i16,
+                    at(0xCE) as i16,
+                )
+            })
+            .collect()
     }
 }
 
