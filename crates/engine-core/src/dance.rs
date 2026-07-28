@@ -1196,6 +1196,18 @@ pub const STING_LEVEL: i8 = 2;
 /// `2r` / `2r + 1` tone indices are inside.
 pub const STING_PROGRAM: u8 = 1;
 
+/// Sting variants the tier-2 award site draws between: `r = rand() % 3`, the
+/// `0x55555556` magic-multiply divide at `FUN_801d1af4 + 0x64C`.
+pub const STING_RANDOM_VARIANTS: u16 = 3;
+
+/// The **fixed** sting the three groovy-move tiers key instead, and it is
+/// outside the random space: all three of the tier-3 / 4 / 5 arms of
+/// `FUN_801d1af4` reach `FUN_801d3d78` with a literal `5` (two `li a0,0x5`,
+/// and a `move a0,v0` off the `li v0,0x5` the tier compare just loaded). So a
+/// groovy move is not "cue only" - it fires cue `0x202` / `0x203` / `0x205`
+/// *and* this sting, at tones `0xA` / `0xB` and note `0x41`.
+pub const STING_TIER_VARIANT: u16 = 5;
+
 /// One of the two voices a good-step sting keys (`FUN_801d3d78`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DanceStingVoice {
@@ -1211,25 +1223,28 @@ pub struct DanceStingVoice {
     pub note: i16,
 }
 
-// NOT WIRED: the reason here used to name two prerequisites, and the browser
-// dance page holds **both**. It keeps the dance overlay's own VAB resident
-// (`web-viewer::minigames_dance::DancePresentation::sting_vab`, whose own note
-// says `FUN_801d3d78` bypasses the cue ring) and it keys a voice from an
-// explicit `(program, tone, note)` triple in `dance_sting`. What it does not do
-// is ask this kernel for the triple: it recomputes `tone = 2r + layer` and
-// `note = 0x3C + r` inline, and reaches the bank as `tones[1]` - the same
-// [`STING_PROGRAM`] this returns. So the gap is one call, not a subsystem. The
+// Wired: the browser dance page's `dance_sting`
+// (`web-viewer::minigames_dance`) takes its `(program, tone, note)` triple
+// from here rather than recomputing it, and decodes the named tone out of the
+// overlay's own VAB - which is what makes the bank index a read of
+// [`STING_PROGRAM`] instead of a literal `1` that happened to agree. The
 // native window is a separate case and does still lack a key-on API:
 // `AudioBgmDirector::enqueue_sfx` only schedules cue ids.
 /// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
-/// **no** ring cue; instead one of three stings (`r = rand() % 3`) keys two
-/// voices together through the SPU voice-attr primitive (`FUN_80065034`, whose
-/// eight arguments are `(voice, level, program, tone, note, 0x40, vol_l,
-/// vol_r)`): voice `0x12` at tone `2r` and voice `0x13` at tone `2r + 1`, both
-/// in program [`STING_PROGRAM`] at level [`STING_LEVEL`] and note `0x3c + r`.
-/// Both volume slots are the voice-volume config `_DAT_80084580` halved, the
-/// same value [`crate::other_game_overlay::cue_volume`] decodes. Returns the two
-/// voice descriptors; the key-on itself is the audio host's.
+/// **no** ring cue; it keys two voices together through the SPU voice-attr
+/// primitive (`FUN_80065034`, whose eight arguments are `(voice, level,
+/// program, tone, note, 0x40, vol_l, vol_r)`): voice `0x12` at tone `2r` and
+/// voice `0x13` at tone `2r + 1`, both in program [`STING_PROGRAM`] at level
+/// [`STING_LEVEL`] and note `0x3c + r`. Both volume slots are the voice-volume
+/// config `_DAT_80084580` halved, the same value
+/// [`crate::other_game_overlay::cue_volume`] decodes. Returns the two voice
+/// descriptors; the key-on itself is the audio host's.
+///
+/// `r` is not always a random pick. `FUN_801d1af4` reaches this from **four**
+/// sites: the tier-2 chain-closed award passes `rand() % 3`
+/// ([`STING_RANDOM_VARIANTS`]), and each of the three groovy-move tiers passes
+/// the literal [`STING_TIER_VARIANT`]. Anything that enumerates "the stings"
+/// over `0..3` is missing the one the higher tiers play.
 pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
     let note = 0x3c + r as i16;
     let voice = |voice: u16, tone: i16| DanceStingVoice {
