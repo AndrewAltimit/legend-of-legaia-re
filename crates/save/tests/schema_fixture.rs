@@ -20,9 +20,9 @@
 
 use legaia_save::{
     BLOCK_SIZE, CharSaveExt, CharacterRecord, HpMpSp, Party, RETAIL_STORY_FLAGS_SIZE,
-    SAVE_BLOCK_MAGIC, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_EXT4_MAGIC,
-    SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SaveExt, SaveExtV2, SaveFile, SavedChainRecord,
-    read_retail_inventory, read_retail_story_flags,
+    SAVE_BLOCK_HEADER, SAVE_BLOCK_MAGIC, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC,
+    SAVE_FILE_EXT4_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SaveExt, SaveExtV2, SaveFile,
+    SavedChainRecord, read_retail_inventory, read_retail_story_flags,
 };
 
 const LGSF_FIXTURE: &str = "tests/fixtures/schema_synthetic.lgsf.bin";
@@ -178,7 +178,16 @@ fn retail_sc_writer_matches_golden_fixture() {
     save.write_into_retail_sc_block(&mut sc_block)
         .expect("write into retail SC block");
 
+    // The whole four-byte header, not just the magic: `+2` is the icon-frame
+    // descriptor and `+3` the block count. Stamping only `SC` leaves a
+    // previously-free block's `+2`/`+3` at zero, which the BIOS card browser
+    // reads as a malformed entry no matter how correct the payload is.
     assert_eq!(&sc_block[..2], &SAVE_BLOCK_MAGIC, "SC magic stamped at +0");
+    assert_eq!(
+        &sc_block[..4],
+        &SAVE_BLOCK_HEADER,
+        "full SC 11 01 header stamped at +0"
+    );
     let bits = read_retail_story_flags(&sc_block).expect("story flags region present");
     assert_eq!(
         bits,

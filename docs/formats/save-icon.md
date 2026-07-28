@@ -122,8 +122,16 @@ A PSX save block stores its icon as a contiguous 16x16 tile:
 
 | Block offset | Size | Field |
 |---|---|---|
+| `+0x00` | 4 | header: `SC` magic, icon-frame descriptor `0x11`, block count `1` |
 | `+0x60` | 32 | 16-entry palette (u16 LE BGR555) |
 | `+0x80` | 128 | icon pixels, 16 rows of 8 bytes, contiguous |
+
+All four header bytes are part of the icon's contract: `+0x02` describes the
+icon that follows. A writer that stamps only the two magic bytes leaves
+`+0x02`/`+0x03` as found, which in a previously-free block is zero - a
+correct payload behind a header the BIOS card browser reads as malformed.
+The port stamps the whole header plus the slot's digits and portrait through
+`legaia_save::card::write_retail_block_identity`.
 
 The strip stores the same tile as 16 eight-byte runs 128 bytes apart. Retail
 never converts in software - `StoreImage` reads a VRAM rectangle, and a

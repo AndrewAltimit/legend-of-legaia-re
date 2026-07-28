@@ -69,6 +69,136 @@ pub const CARD_MAGIC: [u8; 2] = *b"MC";
 /// `SC` magic at the start of each save block.
 pub const SAVE_BLOCK_MAGIC: [u8; 2] = *b"SC";
 
+/// The **full** four-byte header retail stamps at block `+0`: the `SC` magic,
+/// the icon-frame descriptor `0x11` (one frame, 16 colours), and the block
+/// count `1`.
+///
+/// Writing only [`SAVE_BLOCK_MAGIC`] leaves `+2` and `+3` as found, and in a
+/// previously-free block that is zero - which the BIOS card browser reads as
+/// a malformed entry however correct the payload behind it is.
+///
+/// PORT: FUN_801e1934 (`0x801E19FC..0x801E1A14`)
+pub const SAVE_BLOCK_HEADER: [u8; 4] = [b'S', b'C', 0x11, 0x01];
+
+/// Offset of the Shift-JIS save title inside an SC block.
+pub const RETAIL_TITLE_OFFSET: usize = 0x04;
+
+/// Offsets **within the title** of the two save-number digits' low bytes.
+/// The digits are full-width, so only the low byte of each 2-byte character
+/// varies.
+///
+/// PORT: FUN_801e1934 (`0x801E19E4..0x801E19E8`)
+pub const RETAIL_TITLE_DIGIT_OFFSETS: [usize; 2] = [0x23, 0x25];
+
+/// Low byte of the Shift-JIS full-width digit zero. A title digit is
+/// `SAVE_TITLE_DIGIT_BASE + digit`, which is what makes the BIOS render it
+/// as a full-width numeral.
+pub const SAVE_TITLE_DIGIT_BASE: u8 = 0x4F;
+
+/// Offset of the 16-entry icon palette (32 bytes, u16 LE BGR555).
+pub const RETAIL_ICON_CLUT_OFFSET: usize = 0x60;
+
+/// Offsets of the three 128-byte icon frame slots.
+///
+/// Retail writes the **same** tile into all three even though the header
+/// declares a single frame - three `StoreImage` calls on one rect.
+///
+/// PORT: FUN_801e1934 (`0x801E1B30..0x801E1B68`)
+pub const RETAIL_ICON_FRAME_OFFSETS: [usize; 3] = [0x80, 0x100, 0x180];
+
+/// Bytes in one icon frame (16x16 @ 4bpp).
+pub const RETAIL_ICON_FRAME_BYTES: usize = 128;
+
+/// Bytes in the icon palette.
+pub const RETAIL_ICON_CLUT_BYTES: usize = 32;
+
+/// Filename prefix retail gives a Legaia save on a USA disc. The **slot
+/// number is the suffix**: save number `n` is written as file
+/// `BASCUS-94254PRO-<n-1>`, zero-padded to two digits.
+///
+/// The separator is a hyphen. Verified two ways: the literal in the menu
+/// overlay's data segment, and the directory frames of real cards.
+pub const LEGAIA_SAVE_FILENAME_PREFIX: &str = "BASCUS-94254PRO-";
+
+/// The directory-frame filename for save slot `slot` (0-based).
+pub fn legaia_save_filename(slot: u32) -> String {
+    format!("{LEGAIA_SAVE_FILENAME_PREFIX}{:02}", slot.min(99))
+}
+
+/// The two title digits for save slot `slot`.
+///
+/// The slot is displayed **1-based**, so slot `0` writes `"01"`.
+///
+/// PORT: FUN_801e1934 (`0x801E1974..0x801E19EC`)
+pub fn save_title_digits(slot: u32) -> [u8; 2] {
+    let n = slot.wrapping_add(1);
+    [
+        SAVE_TITLE_DIGIT_BASE.wrapping_add((n / 10) as u8),
+        SAVE_TITLE_DIGIT_BASE.wrapping_add((n % 10) as u8),
+    ]
+}
+
+/// The per-slot portrait a save block carries as its memory-card icon.
+///
+/// Source it from the disc's portrait sheet
+/// (`legaia_asset::save_icon::SaveIconSheet::tile_block_pixels` +
+/// `tile_clut_bytes` for the same slot); this crate stays disc-free, so the
+/// caller supplies the bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailBlockIcon {
+    /// 16-entry palette, little-endian BGR555.
+    pub clut: [u8; RETAIL_ICON_CLUT_BYTES],
+    /// 16x16 @ 4bpp pixels in contiguous save-block layout.
+    pub pixels: [u8; RETAIL_ICON_FRAME_BYTES],
+}
+
+/// Stamp the block-identity fields retail's composer writes and a payload
+/// writer cannot derive: the four-byte header, the save-number digits in the
+/// title, and the slot's icon.
+///
+/// `icon = None` leaves the icon region as found - correct when re-saving
+/// over a block that already carries one, wrong for a previously-free block,
+/// which is why the caller should supply it whenever it has the disc.
+///
+/// The title digits are only patched when the block already carries a title
+/// (a non-zero byte in the title region): stamping two digits into an
+/// otherwise-empty title would produce a name that is two numerals and
+/// nothing else.
+///
+/// PORT: FUN_801e1934
+pub fn write_retail_block_identity(
+    sc_block: &mut [u8],
+    slot: u32,
+    icon: Option<&RetailBlockIcon>,
+) -> Result<()> {
+    if sc_block.len() < RETAIL_GAME_DATA_OFFSET {
+        bail!(
+            "SC block too small for its header: {} bytes, need {RETAIL_GAME_DATA_OFFSET}",
+            sc_block.len()
+        );
+    }
+    sc_block[..SAVE_BLOCK_HEADER.len()].copy_from_slice(&SAVE_BLOCK_HEADER);
+
+    let title = &mut sc_block[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET];
+    if title.iter().any(|&b| b != 0) {
+        let digits = save_title_digits(slot);
+        for (off, d) in RETAIL_TITLE_DIGIT_OFFSETS.iter().zip(digits.iter()) {
+            if let Some(slot_byte) = title.get_mut(*off) {
+                *slot_byte = *d;
+            }
+        }
+    }
+
+    if let Some(icon) = icon {
+        sc_block[RETAIL_ICON_CLUT_OFFSET..RETAIL_ICON_CLUT_OFFSET + RETAIL_ICON_CLUT_BYTES]
+            .copy_from_slice(&icon.clut);
+        for off in RETAIL_ICON_FRAME_OFFSETS {
+            sc_block[off..off + RETAIL_ICON_FRAME_BYTES].copy_from_slice(&icon.pixels);
+        }
+    }
+    Ok(())
+}
+
 /// Directory-frame state codes.
 pub mod state {
     /// Block holds the first frame of a save (and possibly the only one).
@@ -1014,6 +1144,90 @@ mod tests {
         let pairs: Vec<(u8, u8)> = (0..200u32).map(|i| ((i & 0xFF) as u8, 1)).collect();
         let n = write_retail_inventory(&mut block, &pairs).unwrap();
         assert_eq!(n, RETAIL_INVENTORY_SLOTS);
+    }
+
+    #[test]
+    fn save_icon_block_identity_stamps_the_full_header() {
+        let mut block = vec![0u8; BLOCK_SIZE];
+        write_retail_block_identity(&mut block, 0, None).unwrap();
+        // All four bytes, not just the magic - `+2` is the icon-frame
+        // descriptor and `+3` the block count.
+        assert_eq!(&block[..4], &SAVE_BLOCK_HEADER);
+    }
+
+    #[test]
+    fn save_icon_block_identity_writes_all_three_frames_and_the_palette() {
+        let mut block = vec![0u8; BLOCK_SIZE];
+        let icon = RetailBlockIcon {
+            clut: [0xA5; RETAIL_ICON_CLUT_BYTES],
+            pixels: [0x3C; RETAIL_ICON_FRAME_BYTES],
+        };
+        write_retail_block_identity(&mut block, 0, Some(&icon)).unwrap();
+        assert_eq!(
+            &block[RETAIL_ICON_CLUT_OFFSET..RETAIL_ICON_CLUT_OFFSET + RETAIL_ICON_CLUT_BYTES],
+            &icon.clut
+        );
+        // Retail writes the same tile into all three frame slots even though
+        // the header declares one frame.
+        for off in RETAIL_ICON_FRAME_OFFSETS {
+            assert_eq!(&block[off..off + RETAIL_ICON_FRAME_BYTES], &icon.pixels);
+        }
+        // Nothing past the header region moved.
+        assert!(block[RETAIL_GAME_DATA_OFFSET..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn save_icon_title_digits_are_one_based_and_full_width() {
+        assert_eq!(save_title_digits(0), [0x4F, 0x50], "slot 0 shows 01");
+        assert_eq!(save_title_digits(8), [0x4F, 0x58]);
+        assert_eq!(save_title_digits(9), [0x50, 0x4F], "slot 9 shows 10");
+        assert_eq!(save_title_digits(14), [0x50, 0x54], "slot 14 shows 15");
+    }
+
+    #[test]
+    fn save_icon_identity_patches_digits_only_into_a_real_title() {
+        // A block with no title: the digits must not be stamped into
+        // emptiness, or the BIOS shows a name that is two numerals.
+        let mut empty = vec![0u8; BLOCK_SIZE];
+        write_retail_block_identity(&mut empty, 4, None).unwrap();
+        assert!(
+            empty[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET]
+                .iter()
+                .all(|&b| b == 0)
+        );
+
+        // A block that already carries a title gets its two digits updated.
+        let mut titled = vec![0u8; BLOCK_SIZE];
+        titled[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET].fill(0x20);
+        write_retail_block_identity(&mut titled, 4, None).unwrap();
+        let title = &titled[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET];
+        assert_eq!(title[RETAIL_TITLE_DIGIT_OFFSETS[0]], 0x4F);
+        assert_eq!(
+            title[RETAIL_TITLE_DIGIT_OFFSETS[1]], 0x54,
+            "slot 4 shows 05"
+        );
+        // Every other title byte is untouched.
+        for (i, &b) in title.iter().enumerate() {
+            if !RETAIL_TITLE_DIGIT_OFFSETS.contains(&i) {
+                assert_eq!(b, 0x20, "title byte {i} moved");
+            }
+        }
+    }
+
+    #[test]
+    fn save_icon_filename_uses_a_hyphen_and_the_slot_suffix() {
+        // The separator is a hyphen, verified against the menu overlay's own
+        // literal and against real cards' directory frames.
+        assert_eq!(legaia_save_filename(0), "BASCUS-94254PRO-00");
+        assert_eq!(legaia_save_filename(1), "BASCUS-94254PRO-01");
+        assert_eq!(legaia_save_filename(14), "BASCUS-94254PRO-14");
+        assert!(legaia_save_filename(3).starts_with(LEGAIA_SAVE_FILENAME_PREFIX));
+    }
+
+    #[test]
+    fn save_icon_block_identity_rejects_a_short_block() {
+        let mut short = vec![0u8; 0x40];
+        assert!(write_retail_block_identity(&mut short, 0, None).is_err());
     }
 
     #[test]
