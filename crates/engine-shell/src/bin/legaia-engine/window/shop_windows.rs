@@ -44,8 +44,8 @@ use super::*;
 use legaia_engine_core::shop::ShopSession;
 use legaia_engine_render::MenuWindowPainter;
 use legaia_engine_render::ui_menu_window_painters::{
-    counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
-    sell_quantity_draws_for,
+    amount_prompt_draws_for, counter_panel_draws_for, item_description_draws_for,
+    record_title_tab_draws_for, sell_quantity_draws_for,
 };
 
 /// Vendor-name plate (`0x21`): the record-sourced title tab.
@@ -56,6 +56,8 @@ const WIN_PURSE: usize = 32;
 const WIN_ITEM_INFO: usize = 34;
 /// Sell quantity (`0x25`): quantity, held count, halved total.
 const WIN_SELL_QUANTITY: usize = 37;
+/// Point Card toast (`0x1F`): heading, 8-digit bank, unit label, cursor.
+const WIN_POINT_CARD: usize = 31;
 
 impl PlayWindowApp {
     /// The live shop's vendor name.
@@ -228,6 +230,35 @@ impl PlayWindowApp {
             if let Some(cur) = cur {
                 out.extend(self.painter_cursor_stand_in(cur));
             }
+        }
+
+        // Window 31 - the Point Card toast. Retail's buy commit hands the
+        // widget VM a one-command script (`0x801E4EDC` from the quantity
+        // commit, `0x801E4EA8` from the recipient picker; both decode to
+        // `[open 0x1F]` + terminator) and then stalls for a press, so this
+        // draws exactly while `MenuRuntime` reports the beat.
+        let toast = self
+            .menu_runtime
+            .point_card_toast()
+            .and_then(|_| {
+                legaia_engine_render::painter_at(
+                    table,
+                    WIN_POINT_CARD,
+                    MenuWindowPainter::AmountPrompt,
+                )
+            })
+            .map(|(d, _)| legaia_engine_render::painter_rect(d));
+        if let Some(rect) = toast {
+            let points = world.point_card.max(0) as u64;
+            let (text, cur) = amount_prompt_draws_for(
+                &self.font,
+                rect,
+                POINT_CARD_HEADING,
+                points,
+                POINT_CARD_UNIT_LABEL,
+            );
+            out.extend(text);
+            out.extend(self.painter_cursor_stand_in(cur));
         }
         out
     }
@@ -454,3 +485,12 @@ impl PlayWindowApp {
 /// engine-authored line in the same slot so the translation layer owns the
 /// text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+
+/// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
+/// character-substitution token the dialog codec resolves at draw time; the
+/// port stages an engine-authored line in the same slot for the same reason
+/// as [`SELL_QUANTITY_HEADING`].
+const POINT_CARD_HEADING: &str = "Points earned";
+/// The unit label window 31 puts `0x40` right of its number field
+/// (`0x801CEA50`).
+const POINT_CARD_UNIT_LABEL: &str = "point(s).";

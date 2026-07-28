@@ -627,6 +627,18 @@ pub struct ItemsInfoModel {
     pub count: u16,
     pub desc: String,
     pub passive: Option<(String, String)>,
+    /// The staged row is the **Point Card** (`0xFE`), which retail's shared
+    /// info panel branches on before anything else: `FUN_801D0F1C` compares
+    /// the staged id against `0xFE` at `0x801d0fc0` and, on a match, draws
+    /// its "Points Left" label + the `_DAT_800845B4` bank and **jumps past**
+    /// the whole passive / scope-pictogram block.
+    ///
+    /// The bank itself is not here because this model is built from the
+    /// session alone; a host reads [`crate::world::World::point_card`] and
+    /// calls `engine-ui`'s `item_points_panel_draws`. The passive lines stay
+    /// `None` on this row without needing a suppression: the Point Card's
+    /// effect descriptor carries the `0x41` no-passive sentinel.
+    pub is_point_card: bool,
 }
 
 /// Assemble the Items screen view model from a live session.
@@ -652,6 +664,7 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
             count: r.count as u16,
             desc: r.desc.clone(),
             passive: r.passive.clone(),
+            is_point_card: r.id == crate::shop::POINT_CARD_ITEM_ID,
         })
     };
     let throw_confirm = if s.focus == PauseItemsFocus::ThrowOutConfirm {

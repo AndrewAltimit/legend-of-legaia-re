@@ -28,16 +28,73 @@ Gold and inventory deltas are applied to the world on `ShopConfirm` slot 0
 (Yes): `try_buy` deducts gold and credits inventory; `try_sell` credits gold
 and decrements inventory.
 
-**Point Card accrual (retail).** The retail buy commit `FUN_801db7f4` also
-credits the Point Card counter `_DAT_800845B4` (u32) before the gold debit:
-when the party holds item `0xFE` (the Point Card - inventory-has check
-`func_0x80042f4c(0xFE)`), it adds `price / 20` per unit bought, capped at
-`9,999,999`. Sell transactions never accrue. The single-unit buy path of the
-recipient picker `FUN_801db380` (row 0 = "into the bag") applies the same
-accrual. Ported as `engine-core::shop::{point_card_credit,
-apply_point_card}` inside `BuyQuantitySession`; the engine's
-`buy_from_shop` world kernel does not yet apply it.
-`see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt`.
+## Point Card
+
+Item `0xFE` is a **third purse**, not a consumable: its own on-disc
+description says it earns "points worth 5% of the price when you shop", and
+the effect descriptor its subtype resolves to carries **neither** the field
+nor a meaningful use arm - the item is passive while held.
+
+The counter is `_DAT_800845B4` (u32, cap `9,999,999` - the same
+`0x0098967F` clamp as the gold purse). The retail buy commit `FUN_801db7f4`
+credits it **before** the gold debit: gated on the party holding `0xFE`
+(bag-slot scan `func_0x80042f4c(0xFE)`), it adds `price / 20` per unit
+bought - the `0xCCCCCCCD` reciprocal-multiply plus `srl 4` at
+`0x801dbadc..0x801dbb10`, times the quantity. Sell transactions never accrue.
+The recipient picker `FUN_801db380` applies the same accrual on both of its
+purchase arms. `see ghidra/scripts/funcs/overlay_menu_801db7f4.txt`.
+
+**The toast is window 31.** After crediting, the commit hands the widget-VM
+a script whose entire body is `01 1F` plus the terminator - one command,
+"open window `0x1F`" (`0x801E4EDC` from the quantity commit, `0x801E4EA8`
+from the recipient picker), and then parks in a phase that returns to the
+buy list only on a confirm / cancel press. Window 31's renderer
+`FUN_801DCE20` prints the counter as an 8-digit field between a heading and
+a "point(s)" unit label; see
+[field-menu.md](field-menu.md#ported-painters).
+
+The counter has a second, non-shop reader: the shared item-info panel
+`FUN_801D0F1C` branches on the staged item id being `0xFE` and prints the
+bank under a "Points Left" label instead of the accessory-passive lines, so
+the pause **Items** screen shows the running total whenever the hand is on
+the card.
+
+Port: `World::point_card` is the bank, with `World::point_card_held` /
+`World::credit_point_card` beside it (the accrual + clamp);
+`engine-core::shop::{point_card_credit, apply_point_card}` are the
+arithmetic kernels. `MenuRuntime` runs the accrual on its `ShopConfirm` buy
+commit and on both recipient-picker arms, and holds
+`MenuRuntime::point_card_toast` - the window-31 beat - until a press, with
+the menu VM frozen behind it.
+
+### What spends it
+
+The bank has a debit arm, and it is not a shop screen. Entry `14` of the
+effect-arm jump table `0x80014FA0` (`0x8004209C`) reads `_DAT_800845B4`,
+does nothing when it is zero, otherwise takes `min(bank, 9999)`, subtracts
+that from the bank and applies it as damage to a battle target - the
+`0x801C9370` actor table, HP at `+0x14C`, the usual reaction-byte staging at
+`+0x1DA`/`+0x1DC`. That is the Point Card **strike**, and it is why the
+capture harness's `LEGAIA_POINT_CARD_MAX` knob one-shots bosses (see
+[pcsx-redux-automation.md](../tooling/pcsx-redux-automation.md)).
+
+Two things about that arm are worth keeping straight, because both cut
+against the obvious reading:
+
+- **No item on the disc selects arm 14 through its effect descriptor.**
+  Decoding all 256 item records against the descriptor table yields classes
+  `0..8`, `11..13`, `126..131` and nothing else. The Point Card's own
+  descriptor is class `1`. So the arm is staged from the **battle** side -
+  the battle-action caller passes the actor's `+0x1E8` byte as the selector,
+  not a descriptor class - and the "jump table indexed by the descriptor
+  class byte" model in
+  [item-effect-table.md](../formats/item-effect-table.md) describes only the
+  field item-use caller.
+- **The Point Card's descriptor carries flag bit `0x40`**, which that page's
+  flag table does not list. Across the whole table the bit is set on exactly
+  five subtypes: the Point Card and the two summon-flute pairs - the
+  battle-only specials. Its meaning is unpinned; that it separates the
+  specials from the heals is the observation, not a decoded semantic.
 
 ### Retail quantity pickers (menu-overlay sub-screens)
 
@@ -93,10 +150,14 @@ an equipment row opens `BuyRecipientSession` behind the
 `MenuRuntime::retail_equipment_buy` opt-in - the browser play page
 enables it and draws windows 36 / 25 / 41 over the parked buy list.
 The two quantity **sessions** are not yet the hosts' quantity screen
-(the `ShopQuantity` list still drives `ShopSession::set_quantity`),
-and the engine's `buy_from_shop` kernel still applies no Point Card
-accrual - `World` carries no Point Card counter, so the recipient
-flow runs with the accrual gate closed.
+(the `ShopQuantity` list still drives `ShopSession::set_quantity`).
+The Point Card accrual and its window-31 toast *are* live on both the
+`ShopConfirm` commit and the recipient picker - `MenuRuntime` owns the
+gate and the beat, `World::point_card` the bank. It stays out of
+`World::buy_from_shop` on purpose: that kernel is also the randomizer
+runtime oracles' entry point, and retail's own kernel-equivalent (the
+bag add plus the purse store, `FUN_801DB7F4` case 3) carries no accrual
+either - the accrual is the sub-screen's, one phase earlier.
 
 ### State-machine routing
 

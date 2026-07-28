@@ -993,6 +993,17 @@ always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
 capture; the passive / points lines land inside it. See
 `overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
 
+The Point Card arm is a **branch, not an addition**: the id test at
+`0x801d0fd0` jumps to the routine's tail once it has drawn those two
+lines, so the passive block and the scope icon never run on that row. On
+the retail disc the exclusion is belt-and-braces - the Point Card's effect
+descriptor carries the `0x41` no-passive sentinel, so the passive block
+would draw nothing anyway. That is why the port keeps it as a separate
+builder (`engine-ui::item_points_panel_draws`) layered over
+`items_screen_draws_for` rather than as a field inside the info view: the
+condition is on the staged **id**, and the number is world state
+(`World::point_card`) the screen model does not carry.
+
 ### Command sub-flows (Use / Throw Out / Arrange)
 
 The command SM `FUN_801D7C00` (submenu 5) phases through the shared
@@ -1307,15 +1318,27 @@ that takes the window rect `a0` and hangs its content off
 | **Exchange tab `FUN_801DCFE4`** | the "Exchange" label STR (overlay rodata `0x801CEC6C`) at `(WX, WY)` CLUT 7 - title-tab content, no frame. `overlay_menu_801dcfe4.txt` |
 | **Gold box `FUN_801DCF84`** | money pictogram ICO `0x62` at `(WX, WY+2)` + the 8-digit party gold `_DAT_8008459C` at `(WX+0x28, WY)` CLUT 7 - the same money global the top-level id-49 box draws. `overlay_menu_801dcf84.txt` |
 | **Coin box `FUN_801DD028`** | casino-coin pictogram ICO `0x66` at `(WX, WY+2)` + the 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` CLUT 7. `overlay_menu_801dd028.txt` |
-| **Points box `FUN_801DCE20`** | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
+| **Points box `FUN_801DCE20`** (window 31) | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
 | **Item-info `FUN_801DCC20`** | when a prize id is staged (`DAT_801E46B0 > 0`): the shared item-info panel `FUN_801D0F1C` (name/desc), then CLUT 6 + the 2-digit bag count (`FUN_80042F4C(id)`) at `(WX+0x80, WY)`; always a `0x90 x 0x28` shade box `FUN_8002C69C(WX, WY+0x38)` under it - the Items id-17 `FUN_801DCB60` shape. `overlay_menu_801dcc20.txt` |
 | **Prompt line `FUN_801DCF14`** | the armed record's trailing string (`_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count the record owns - see [below](#these-window-ids-are-shared-not-exchange-only)) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
 | **Message box `FUN_801DCCB4`** | refills operand byte `0x801E46E5` in place from the staged character record byte (`record + 0x705`, record `_DAT_8007BB78 + _DAT_8007BB70*0x414`), draws the template STR `0x801E46E4` at `(WX, WY)` CLUT 7, then the advance hand at `(WX+0xE6, WY+0xD)` - the notify shape of the Items `FUN_801DCD58`. `overlay_menu_801dccb4.txt` |
 
-The exchange **session drivers** are `FUN_801DB380` / `FUN_801DB510` /
-`FUN_801DB7F4` (menu overlay; each runs the descriptor-window scripts and
-polls the list kernel like the Items sub-screens -
-`ghidra/scripts/funcs/overlay_menu_801db380.txt` and siblings).
+The Points box is the clearest case of the shared pool: it is listed here
+because it appears in this screen's window set, but the one caller on the
+disc that *opens* window 31 is the town shop's buy commit - a one-command
+widget script `[open 0x1F]` at `0x801E4EDC` / `0x801E4EA8` run right after
+the Point Card accrual. See [shop.md](shop.md#point-card).
+
+The exchange's own **session drivers** are not pinned. `FUN_801DB380` /
+`FUN_801DB7F4` were cited here as the drivers, and they are the town shop's
+sub-screens instead: `FUN_801DB380` debits the gold purse `0x8008459C` and
+writes equipment into the party records, `FUN_801DB7F4` debits the same purse
+and credits the Point Card - neither touches the coin bank a prize counter
+prices against. A third address cited beside them, `0x801DB510`, is not a
+function at all: it is interior to `FUN_801DB380`, whose entry is `0x801DB380`
+and whose body runs 1140 bytes to `0x801DB7F4`. What is shared with the
+exchange is the **window pool**, not the code - which is the point of the
+section below.
 
 ### These window ids are shared, not exchange-only
 
@@ -1510,7 +1533,16 @@ them whenever the equipment-buy recipient sub-screen is up: that screen is one
 shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
 separate host-side draws, so its row order and cursor rows are the same on both.
 
-The painters for windows no host **opens** yet - 5, 6, 7, 24, 31, 46 - stay
+**Window 31** joins them on the shop's Point Card beat. Which flow opens it
+is settled by the disc rather than inferred: both retail buy commits hand
+the widget VM a script whose entire body is `01 1F` plus the terminator -
+one command, "open window `0x1F`" (`0x801E4EDC` from the quantity commit
+`FUN_801DB7F4`, `0x801E4EA8` from the recipient picker `FUN_801DB380`) -
+and then park in a phase that only a confirm / cancel press releases. The
+engine keeps the bank on `World::point_card` and the beat on
+`MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
+
+The painters for windows no host **opens** yet - 5, 6, 7, 24, 46 - stay
 unreached by a screen rather than by a mechanism; each one's remaining blocker
 is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
 

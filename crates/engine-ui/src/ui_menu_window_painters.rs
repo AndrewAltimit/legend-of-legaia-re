@@ -370,9 +370,20 @@ pub fn char_prompt_draws_for(
 /// the accent pen, and puts the unit label `0x40` to its right back in the
 /// default pen.
 ///
+/// **Which flow opens it** is on the disc, not a guess: the retail buy
+/// commits hand the widget VM a script whose whole body is `01 1F` +
+/// terminator - "open window `0x1F`" - immediately after crediting the
+/// counter. `0x801E4EDC` is the quantity commit's (`FUN_801DB7F4` case 2),
+/// `0x801E4EA8` the recipient picker's (`FUN_801DB380`), and both stall in
+/// a following phase that returns to the buy list only on a confirm /
+/// cancel press.
+///
 /// PORT: FUN_801DCE20
-/// NOT WIRED: the engine models no Point Card total, so there is nothing to
-/// NOT WIRED: print; waived in scripts/ci/ui-host-drift-waivers.toml
+///
+/// Wired: `engine-core::World::point_card` is the counter and
+/// `MenuRuntime::point_card_toast` the beat; the native shop host
+/// (`window/shop_windows.rs`) paints this window while the toast is up, off
+/// the same disc-parsed rect as the shop's other descriptor windows.
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

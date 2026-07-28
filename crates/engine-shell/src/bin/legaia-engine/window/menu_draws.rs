@@ -398,13 +398,24 @@ impl PlayWindowApp {
             info,
             text_cursor: self.save_menu.is_none(),
         };
+        let info_pen = self.menu_window_pen(window_ids::ITEMS_INFO);
         let mut d = legaia_engine_render::items_screen_draws_for(
             &self.font,
             &view,
             self.menu_window_pen(window_ids::ITEMS_COMMAND),
             self.menu_window_pen(window_ids::ITEMS_LIST),
-            self.menu_window_pen(window_ids::ITEMS_INFO),
+            info_pen,
         );
+        // The shared info panel's Point Card arm: retail branches on the
+        // staged id being `0xFE` and prints the live bank instead of the
+        // passive lines (`FUN_801D0F1C` at `0x801d0fd0`).
+        if model.info.as_ref().is_some_and(|i| i.is_point_card) {
+            d.extend(legaia_engine_render::item_points_panel_draws(
+                &self.font,
+                info_pen,
+                self.session.host.world.point_card.max(0) as u32,
+            ));
+        }
         d.extend(self.menu_tab_title_draws(window_ids::TAB_ITEMS, "Items"));
         // Throw Out confirm prompt (descriptor id 9, renderer FUN_801D1B20):
         // the Yes/No window that slides in over the command window. The

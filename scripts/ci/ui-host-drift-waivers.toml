@@ -169,21 +169,49 @@ different window family.
 
 [[waiver]]
 builder = "amount_prompt_draws_for"
-kind = "orphan"
+kind = "web_missing"
 reason = """
-Window id 31 (`FUN_801DCE20`): heading, wide number field in the accent pen,
-trailing unit label, corner cursor. Dispatch-resolved; what is missing is the
-number and its beat. The renderer prints `_DAT_800845B4`, the **Point Card**
-counter the retail buy handler credits before the gold debit (see
-`docs/subsystems/shop.md`). The engine has the *kernels* - `shop.rs` carries
-`point_card_credit` / `apply_point_card` / `POINT_CARD_ITEM_ID`, and
-`BuyQuantitySession`'s `ToastWait` phase is the beat that shows this window -
-but both are disclosed NOT WIRED: `World` keeps no live Point Card counter
-(`money` and `casino_coins` are its only purses) and the hosts' quantity flow
-is `menu_runtime`'s `ShopQuantity` -> `World::buy_from_shop`, which has no
-toast beat. Wiring window 31 means landing the counter on `World` plus the
-retail-shaped quantity session in `menu_runtime`, on both hosts - a shop-flow
-re-plumb, not a draw call.
+Window id 31 (`FUN_801DCE20`), the **Point Card toast**. This was waived as an
+orphan blocked on "a shop-flow re-plumb": no live counter on `World`, and no
+toast beat in the hosts' quantity flow. Both halves are built. `World` carries
+the `point_card` bank (retail `_DAT_800845B4`) with `point_card_held` /
+`credit_point_card` beside it, `MenuRuntime` runs the accrual on its
+`ShopConfirm` buy commit and holds `point_card_toast` until a confirm / cancel
+press, and the native shop host paints this window off the disc-parsed rect
+while the toast is up (`window/shop_windows.rs`).
+
+Which window the beat opens is disc-sourced, not inferred: both retail buy
+commits hand the widget VM a script whose entire body is `01 1F` plus the
+terminator - "open window `0x1F`" - `0x801E4EDC` from the quantity commit
+(`FUN_801DB7F4` case 2) and `0x801E4EA8` from the recipient picker
+(`FUN_801DB380`).
+
+What is left is one call on the browser play page: `play_shop.rs` already
+resolves the shop's other four descriptor windows through `ui::painter_at`, so
+the addition is the same shape - resolve id 31 as `AmountPrompt` while
+`MenuRuntime::point_card_toast()` is `Some`, and feed the painter the heading,
+`World::point_card`, and the unit label. Delete this waiver with that call.
+"""
+
+[[waiver]]
+builder = "item_points_panel_draws"
+kind = "web_missing"
+reason = """
+The shared item-info panel's **Point Card arm** (`FUN_801D0F1C` at
+`0x801d0fd0`): when the staged item id is `0xFE`, retail replaces the panel's
+accessory-passive block with a "Points Left" label and the 8-digit
+`_DAT_800845B4` bank, then jumps to the routine's tail. It is a separate
+builder rather than a branch inside `items_screen_draws_for` because retail
+reaches it by a branch that skips that routine's remaining body, and because
+the bank is world state the screen model does not carry - the id-`0xFE` test
+is on `engine-core`'s `ItemsInfoModel::is_point_card`, the number is
+`World::point_card`.
+
+Native draws it (`window/menu_draws.rs`, on the Items screen). The browser play
+page builds the same screen in `play_menu.rs` from the same `ItemsInfoModel`,
+so the addition is the mirror of the native one: when `info.is_point_card`,
+append `ui::item_points_panel_draws(font, info_pen, world.point_card)` after
+`items_screen_draws_for`. Delete this waiver with that call.
 """
 
 [[waiver]]
