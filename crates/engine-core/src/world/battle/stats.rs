@@ -35,6 +35,28 @@ impl World {
         )
     }
 
+    /// The defence half a melee command reads on `slot`: UDF (`+0x15C`) when
+    /// `(command - 0x0C) % 10 < 5`, LDF (`+0x160`) otherwise
+    /// ([`vm::battle_formulas::physical_defense_is_udf`], `FUN_801EC3E4` at
+    /// `0x801ECE14`).
+    ///
+    /// Slots with no configured split - every monster slot today, since
+    /// battle entry seeds only the single [`Self::battle_defense`] scalar from
+    /// `max(UDF, LDF)` - fall back to that scalar, so both halves answer the
+    /// same value and the parity pick is a no-op for them. Party slots do
+    /// carry a real split ([`Self::seed_party_battle_stats`]).
+    pub(in crate::world) fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
+        let idx = slot as usize;
+        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx) {
+            return if vm::battle_formulas::physical_defense_is_udf(command) {
+                *udf
+            } else {
+                *ldf
+            };
+        }
+        self.battle_defense.get(idx).copied().unwrap_or(0)
+    }
+
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
     /// formula (the routine battle-action state `0x64` calls, the writer of
     /// the `_DAT_8007726C` outcome pointer). Party score = per-slot

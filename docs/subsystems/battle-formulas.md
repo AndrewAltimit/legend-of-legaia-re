@@ -5,7 +5,7 @@ Damage, MP-cost, and stat-cap math used by the [battle action state machine](bat
 ## Contents
 
 - [Damage application primitive - `FUN_800402F4`](#damage-application-primitive---fun_800402f4)
-- [Actor stat block + monster record mapping](#actor-stat-block--monster-record-mapping) - [spell list](#spell-list-record-0x4c) · [physical attack damage](#physical-attack-damage---overlay_battle_action_801ec3e4) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9 (accuracy)](#selector-9---accuracy--evasion-roll) · [stat-buff selectors](#stat-buff-selectors-17)
+- [Actor stat block + monster record mapping](#actor-stat-block--monster-record-mapping) - [spell list](#spell-list-record-0x4c) · [physical attack damage](#physical-attack-damage---overlay_battle_action_801ec3e4) · [the melee roll pair](#the-melee-roll-pair-and-the-underdog-rewrite) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9 (accuracy)](#selector-9---accuracy--evasion-roll) · [stat-buff selectors](#stat-buff-selectors-17)
 - [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula) · [run / escape roll](#run--escape-roll---fun_801e791c)
 - [Per-round status DoT ticker - `FUN_801E752C`](#per-round-status-dot-ticker---fun_801e752c) · [status application byte map](#status-application-the-art--move-record-status-byte)
 - [Summon-magic damage roll - `FUN_801dd0ac`](#summon-magic-damage-roll---fun_801dd0ac) - [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8)
@@ -146,12 +146,60 @@ Lines 2716-2826. The raw hit value is built from the **attacker's ATK** (`actor[
 atk = attacker[+0x158];                                  // stat1 = ATK
 def = ((move - 0xC) % 10 < 5) ? target[+0x15C]           // UDF (stat2)
                               : target[+0x160];           // LDF (stat3)
-raw   = (atk + rand() % (atk/8 + 1)) * armor_factor>>4 + … ;
+raw   = (atk + rand() % (atk/8 + 1)) * scalar >> 4 + … ;
 guard = def + rand() % (def/8 + 1) + … ;
 // damage applied when raw exceeds guard, scaled by the difference
 ```
 
-This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
+This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it. The full stage list is [below](#the-melee-roll-pair-and-the-underdog-rewrite).
+
+#### The melee roll pair and the underdog rewrite
+
+`FUN_801EC3E4` is a **different kernel** from the summon / arts roll
+`FUN_801DD0AC`: it rolls ATK against UDF/LDF, applies the HP loss itself, and
+never calls the `FUN_801DDB30` finisher. Both rolls are keyed on the staged
+command byte `+0x1D9`, through two tables in the overlay's rodata:
+`0x801F64EC[(id - 0x0C) % 5]` is the per-command **power scalar**, and
+`(id - 0x0C) % 10 < 5` picks UDF over LDF. The scalar values are the same
+five-entry multiplier scale `legaia_art::power` carries for art power tiers.
+
+The stages, each cited to `overlay_battle_action_801ec3e4.txt`:
+
+| Stage | Address | What it does |
+|---|---|---|
+| Attack roll | `0x801ECE78` | `raw = ((atk + rand%((atk>>3)+1)) * scalar >> 4) + (hp>>8) + ((ctx[+0x0A]*atk)>>6) + ((ctx[+0x6D2]*atk)>>16)` |
+| Art scale | `0x801ED0AC` | staged id `> 0x10`: `raw *= 13/10` (`14/10` with record bit `0x1000`), then one affinity pass |
+| Affinity | `0x801ED178` | `raw = raw * matrix[atk_elem][def_elem] / 100` - taken a second time for an art |
+| Guard roll | `0x801ED1B0` | `guard = def + rand%((def>>3)+1) + ((def*ctx[+0x6D4])>>10)`, **tripled** when the defender holds the Spirit stance (`+0x1DE == 4`) |
+| Status scales | `0x801ED25C` | `+0x16E` bit `0x1` → `×9/10`, bit `0x2` → `×7/10`; attacker's word scales `raw`, defender's scales `guard` |
+| Underdog rewrite | `0x801ED308` | see below |
+| Chip floor | `0x801ED4A0` | inside the rewrite only: a plain swing still within `guard + 3` becomes `guard + rand%3 + 3`; an art within `guard + 5` becomes `guard + rand%4 + 5` |
+| Cap + apply | `0x801EDA00` | `raw = min(raw, guard + 9999)`, then `damage = raw - guard` |
+
+The **underdog rewrite** is the load-bearing stage, and the one a port is most
+likely to get wrong. When the attack roll does not clear the guard roll
+(`raw <= guard + ((raw*scalar)>>6) + ((ctx[+0x0A]*raw)>>6) + ctx[+0x0A]`), the
+routine does not floor the hit - it *replaces* `raw` with
+`guard + ((((raw*3)>>2) + rand%((raw>>2)+1)) * scalar >> 6) + …`, so the damage
+becomes a fraction of the attacker's own roll rather than a constant. An
+attacker whose ATK sits under the defender's defence therefore still lands a
+hit that scales with ATK, which is the normal case for most of the game: real
+enemy defence exceeds a party member's ATK across whole chapters.
+
+**Engine wiring.** `battle_formulas::physical_predamage` ports the stages above
+(the party-defender elemental-guard ladder at `0x801ED844` is
+[`damage_finish`](#engine-side-mirror---engine-vmbattle_formulas)'s resist stage
+and stays there). `World::apply_basic_attack` runs every physical swing -
+party and monster - through it, as the **arm** command `0x0C`, since the
+engine's generic strike is one un-chained swing. RNG draws follow retail call
+order: attack roll, guard roll, then the rewrite draw and the chip-floor draw
+only when those arms fire. The `--damage-finish` gate now adds only the
+finisher's *post* stages on top (equipment resists); it no longer supplies a
+guard halve, because the melee kernel already charges the Spirit stance as the
+guard-roll triple. Regressions: `engine-vm/tests/battle_physical_predamage.rs`
+(hand-checked stage arithmetic) and
+`engine-core/tests/battle_physical_damage.rs` (a starting-stat party fells real
+archive enemies in a plausible number of swings).
 
 ### Selector 0 - basic damage (Attack / item / generic spell)
 
@@ -190,10 +238,32 @@ if (target_evasion < roll) {
 }
 ```
 
-`+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls - caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **hit probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
+`+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls - caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **success probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
 
-**Engine wiring.** `battle_formulas::accuracy_roll` ports this roll, and the live battle loop applies it per strike in both the arts/spell strike resolver and the basic-attack path (`engine-core::world::battle`). Each actor's `+0x168` value lives in the World-side `battle_accuracy` / `battle_evasion` arrays: party slots are seeded from each character's AGL-derived `acc`/`eva` (via `compute_battle_stats` in `seed_party_battle_stats`), monster slots from `MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`) at battle setup. The roll engages **only when the attacker's accuracy is seeded** (`acc != 0`); an unseeded attacker auto-hits and consumes no RNG, so disc-free / synthetic battles keep their always-land behaviour and bit-identical RNG streams.
-For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.)
+**This is an action-interrupt roll, not a to-hit roll.** Its success arm sets the
+target's `+0x16E` bit `0x4`, consumes a queued item, and clears the target's
+pending action category - it stuns the target out of its own turn. The routine
+that resolves a melee hit, [`FUN_801EC3E4`](#the-melee-roll-pair-and-the-underdog-rewrite),
+contains **no read of `+0x168` at all**, so a physical swing does not consult
+this roll and does not miss on it. Retail's "Miss" on a normal attack is the
+limb-vs-height mismatch (an LDF-target swing at a floating enemy, a UDF-target
+swing at a short one - see `legaia_art::power`), a size-class gate the port does
+not model yet.
+
+**Engine wiring.** `battle_formulas::accuracy_roll` ports the roll; the
+`battle_session` resolver still applies it per strike. `World::apply_basic_attack`
+**does not** - it used to, and the consequence was a fight running backwards.
+Each actor's `+0x168` value lives in the World-side `battle_accuracy` /
+`battle_evasion` arrays, and the two sides are seeded from different stats:
+party slots from each character's AGL-derived `acc`/`eva` (via
+`compute_battle_stats` in `seed_party_battle_stats`), monster slots from
+`MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`). A
+level-one party carries AGL around 100 where the opening bestiary carries INT
+around 12, so gating melee on `acc / (acc + eva)` gave the party an ~89% hit
+rate and the monsters ~11%. Regression:
+`apply_basic_attack_does_not_roll_accuracy`.
+
+For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.) That the two sides read different record columns at all is an **engine model**, and it is why any surviving consumer of these arrays needs re-checking before it is trusted for balance.
 
 ### Stat-buff selectors (1..7)
 
@@ -615,8 +685,9 @@ magnitude with a bit-identical RNG stream. (A party member's Tactical Art does
 **not** route through this table - the move-power table is special-attack-only
 [its id→index map leaves the basic-attack / art id bands `0x08..=0x11` /
 `0x16..=0x18` unmapped, pinned by a live capture], so a character's art takes its
-power from the per-strike art-record power byte instead; only `apply_basic_attack`'s
-flat `art_strike_damage_default` for a no-art generic hit is a stand-in.)
+power from the per-strike art-record power byte instead. A no-art generic swing
+belongs to neither branch: it runs the melee kernel `FUN_801EC3E4`
+[above](#the-melee-roll-pair-and-the-underdog-rewrite).)
 
 **The summon branch is wired the same way for player Seru-magic casts**
 (`World::player_summon_predamage`): when the monster catalog resolves the
@@ -948,6 +1019,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `summon_attacker_roll` / `summon_defender_roll` / `summon_bonus_roll` / `summon_predamage` | this doc, summon-roll stages 1+2 (`FUN_801dd0ac` summon branch) |
 | `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage` | this doc, arts/physical-roll stages 1+2 (`FUN_801dd0ac` non-summon branch, seeded by the `0x801F4F5C` move-power table) |
 | `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` | this doc, summon-roll scale stage (`FUN_801dd864`) |
+| `physical_predamage` / `command_power_scalar` / `physical_defense_is_udf` (+ `PhysicalHit`) | this doc, [the melee roll pair](#the-melee-roll-pair-and-the-underdog-rewrite) (`FUN_801EC3E4`) |
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |

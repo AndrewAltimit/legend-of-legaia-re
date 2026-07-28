@@ -321,18 +321,38 @@ impl World {
 
         // Recovery-edge ADVANCE_DONE clear (retail clears this when the
         // recovery animation finishes; we simulate the same edge inline).
+        //
+        // The second arm is the **stall guard** for the strike-pacing gate.
+        // `attack_chain` sets `ADVANCE_DONE` when it stages a swing byte and
+        // then holds until the animation system retires it. The engine's anim
+        // commit ([`Self::commit_staged_battle_anim`]) does retire it for a
+        // clip-less swing - but only through the branch it reaches *after* the
+        // `queued_anim == current_anim` early-out, so a staged byte that
+        // happens to equal the actor's current anim id never gets there and
+        // the chain parks at `AttackChain` (`0x1E`) for the rest of the
+        // session. Retire the flag here whenever the id pair has converged and
+        // no clip is in flight (`battle_staged_anim == None` is the marker the
+        // commit sets when it installs a player), which is exactly the
+        // zero-length-swing case; a real clip still paces the chain.
         let attacker = self.battle_ctx.active_actor as usize;
         if attacker < self.actors.len()
             && self.actors[attacker]
                 .battle
                 .flag_bits
                 .has(ActorFlags::ADVANCE_DONE)
-            && self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
         {
-            self.actors[attacker]
-                .battle
-                .flag_bits
-                .clear(ActorFlags::ADVANCE_DONE);
+            let a = &self.actors[attacker];
+            let converged_idle = a.battle_staged_anim.is_none()
+                && a.battle.queued_anim == a.battle.current_anim
+                && a.battle_animation.is_none();
+            if self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
+                || converged_idle
+            {
+                self.actors[attacker]
+                    .battle
+                    .flag_bits
+                    .clear(ActorFlags::ADVANCE_DONE);
+            }
         }
 
         // Cast-animation completion edge, the sibling of the clear above.
@@ -458,19 +478,17 @@ impl World {
     }
 
     /// Apply one generic physical strike from the active attacker to the
-    /// first living combatant on the opposing side. v0.1 stand-in for the
-    /// art-driven strike path: `damage = art_strike_damage_default(attack,
-    /// defense, 16)` (≈ `attack - defense`, floored at 1) so a party with no
-    /// configured weapon attack still chips the monster down - and, for a
-    /// monster attacker, a monster with no configured attack still chips the
-    /// party. The strike rolls against the target's evasion
-    /// ([`legaia_engine_vm::battle_formulas::accuracy_roll`]); when neither the
-    /// attacker's accuracy nor the target's evasion is seeded the roll auto-hits
-    /// and consumes no RNG, so the unseeded synthetic loop still resolves
-    /// exactly as before.
+    /// first living combatant on the opposing side, resolved through the
+    /// retail melee roll pair
+    /// ([`legaia_engine_vm::battle_formulas::physical_predamage`], the port of
+    /// `FUN_801EC3E4`) - attacker ATK rolled against the defender's UDF/LDF,
+    /// with the underdog rewrite that keeps a weak attacker's hit scaling
+    /// instead of flooring it.
     ///
     /// The opposing side is chosen by the attacker's slot: party slots
     /// (`< party_count`) strike monsters; monster slots strike the party.
+    ///
+    /// REF: FUN_801EC3E4
     pub(in crate::world) fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
         let party_count = self.party_count.max(1) as usize;
@@ -478,8 +496,8 @@ impl World {
         // number of swings its per-round AGL gauge affords this turn (computed at
         // turn arm by `arm_monster_strike_budget` / `enemy_action_budget`, the
         // port of `FUN_801E9FD4`'s budget loop). A party attacker always swings
-        // once here - its multi-hit is the AP / arts system. A miss doesn't end
-        // the turn (the loop continues); an emptied opposing side does.
+        // once here - its multi-hit is the AP / arts system. An emptied
+        // opposing side ends the loop.
         let strikes = if attacker >= party_count {
             self.monster_strike_budget.max(1)
         } else {
@@ -494,8 +512,29 @@ impl World {
 
     /// Apply a single generic physical strike from the active attacker. Returns
     /// `false` when there is no living opposing target (the caller stops the
-    /// multi-swing loop); a plain accuracy miss returns `true` (the turn's
-    /// remaining swings still happen). See [`Self::apply_basic_attack`].
+    /// multi-swing loop). See [`Self::apply_basic_attack`].
+    ///
+    /// **A melee swing always connects.** The routine that resolves a physical
+    /// hit, `FUN_801EC3E4`, contains no read of the accuracy / evasion
+    /// halfword `+0x168` at all - it rolls ATK against UDF/LDF and applies the
+    /// HP loss. `FUN_800402F4`'s selector-9 roll, which the port used to gate
+    /// this strike on, is the **queued-action interrupt** check: its success
+    /// arm sets the target's `+0x16E` bit `0x4` and clears the target's
+    /// pending action category, which is a stun, not a miss.
+    ///
+    /// Gating melee on that roll was not merely unfaithful, it inverted the
+    /// fight: the engine seeds a party slot's `+0x168` from AGL (~100 at level
+    /// one) and a monster's from its record INT (~12 for the opening
+    /// bestiary), so `acc / (acc + eva)` gave the party an ~89% hit rate and
+    /// the monsters ~11%. Enemies whiffed nine swings in ten.
+    ///
+    /// Retail's "Miss" on a normal attack is the limb-vs-height mismatch (an
+    /// LDF-target swing at a floating enemy, a UDF-target swing at a short
+    /// one - see `legaia_art::power`), which is a size-class gate the port
+    /// does not model yet, not a stat roll.
+    ///
+    /// REF: FUN_801EC3E4 (no `+0x168` read), FUN_800402F4 (selector 9 = the
+    /// action-interrupt roll, ported as `battle_formulas::accuracy_roll`)
     fn apply_one_basic_strike(&mut self) -> bool {
         let attacker = self.battle_ctx.active_actor as usize;
         let Some(target) = self.resolve_attack_target(attacker as u8) else {
@@ -503,37 +542,42 @@ impl World {
         };
         let target = target as usize;
         let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
-        let defense = self.battle_defense.get(target).copied().unwrap_or(0);
-        let acc = self.battle_accuracy.get(attacker).copied().unwrap_or(0);
-        let eva = self.battle_evasion.get(target).copied().unwrap_or(0);
-        // Roll only when the attacker's accuracy is seeded; an unseeded
-        // attacker (`acc == 0`) auto-hits and consumes no RNG.
-        let hit = if acc == 0 {
-            true
-        } else {
-            let mut seed = self.next_rng();
-            vm::battle_formulas::accuracy_roll(acc, eva, &mut seed)
-        };
-        if !hit {
-            return true;
-        }
+        let defense = self.physical_defense_of(target as u8, BASIC_ATTACK_COMMAND);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
         let target_guarding = self.battle_guarding.get(target).copied().unwrap_or(false);
-        let dmg = if self.use_damage_finish {
-            // Raw roll BEFORE any floor (`min_floor = 0`), then run it through
-            // the retail damage finisher so the universal post-stages apply.
-            // The defender's equipment resist words come from the real ability
-            // bitfield ([`Self::defender_resist`]) - a no-op for this path's
-            // non-elemental strike, but the All-Guard gate reads them the way
-            // retail does; the finisher still contributes the 9999 cap and the
-            // rand-based no-damage floor. The finisher draws a rand ONLY when
-            // the hit zeroes out, so draw one only then to keep the RNG
-            // call-count identical to retail (and to the flat path when the
-            // gate is off). Slots are classified party (`< 3`) vs enemy
-            // (`>= 3`) the way the finisher expects, independent of the
-            // engine's variable monster-slot base.
-            let raw = vm::battle_formulas::art_strike_damage(attack, defense, 16, 16, 0);
+        // The melee roll pair (`FUN_801EC3E4`). This is the whole damage
+        // model for a physical swing: retail's melee routine rolls attacker
+        // ATK against the defender's UDF/LDF, rewrites a roll that fails to
+        // clear the guard instead of flooring it, and applies the HP loss
+        // itself - it does **not** run through the summon/arts finisher
+        // `FUN_801DDB30`, which is why the Spirit stance arrives here as the
+        // guard-roll triple rather than as the finisher's halve.
+        let hp = self
+            .actors
+            .get(attacker)
+            .map(|a| a.battle.hp)
+            .unwrap_or_default();
+        let hit_inputs = vm::battle_formulas::PhysicalHit {
+            attacker_atk: attack,
+            attacker_hp: hp,
+            defender_def: defense,
+            command_scalar: vm::battle_formulas::command_power_scalar(BASIC_ATTACK_COMMAND),
+            staged_anim: BASIC_ATTACK_COMMAND,
+            defender_guarding: target_guarding,
+            ..Default::default()
+        };
+        let mut raw = vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
+            (self.next_rng() & 0x7FFF) as u16
+        });
+        if self.use_damage_finish {
+            // The finisher's *post* stages only: the defender's equipment
+            // elemental-guard / All-Guard ladder, the 9999 cap and the
+            // rand-based no-damage floor. `defender_guarding` is passed
+            // `false` because the melee kernel above already accounted for
+            // the Spirit stance - taking the finisher's halve as well would
+            // charge the stance twice. The floor draws a rand only when the
+            // hit zeroes out, which the melee kernel's chip floor makes rare.
             let floor_rand = if raw == 0 {
                 (self.next_rng() & 0x7FFF) as u16
             } else {
@@ -542,25 +586,20 @@ impl World {
             let attacker_is_party = (attacker as u8) < self.party_count;
             let target_is_party = (target as u8) < self.party_count;
             let defender_resist = self.defender_resist(target as u8);
-            vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
-                predamage: raw as u32,
+            raw = vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
+                predamage: u32::from(raw),
                 attacker_slot: if attacker_is_party { 0 } else { 3 },
                 defender_slot: if target_is_party { 0 } else { 3 },
                 attacker_element: 7, // basic attack is non-elemental
                 defender_resist,
-                defender_guarding: target_guarding,
+                defender_guarding: false,
                 enemy_defender_halve: false,
                 bypass_party_resist: false,
                 summon_power_pct: 100,
                 floor_rand,
-            }) as u16
-        } else {
-            // The flat path skips the finisher, so apply its guard-halve
-            // stage (`over >>= 1` when the defender guards) here so Spirit
-            // still defends without `--damage-finish`.
-            let flat = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
-            if target_guarding { flat >> 1 } else { flat }
-        };
+            }) as u16;
+        }
+        let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
         // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
         // target's absorbed hit still charges its gauge.
