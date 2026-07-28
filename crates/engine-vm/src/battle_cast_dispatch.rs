@@ -10,8 +10,8 @@
 //! REF: FUN_801DCEAC (a control for the reference scan below),
 //! REF: FUN_801F1CC8, FUN_801F20DC (the field image's twins at the same VAs)
 //!
-//! NOT WIRED - the **two dispatchers** are. The reward-banner composer below
-//! is wired, and the reason it once was not is not the dispatchers' reason.
+//! Two of the three ports here are inert and one is wired, for reasons that
+//! should not be read as one - the per-item notes carry the disclosures.
 //!
 //! **The two dispatchers** resolve to something the engine has no channel for.
 //! Both return a **retail VA**: the emitter is overlay code in the battle
@@ -216,6 +216,11 @@ pub const CAST_DISPATCH_TAIL: u32 = 0x801F_2410;
 /// gates it with `sltiu ..., 0x20`, so ids below `0x81` wrap to a large
 /// unsigned value and fail the bound exactly as ids above `0xA0` do.
 ///
+/// NOT WIRED: it returns a **retail VA** - overlay code in the battle image
+/// the port does not run - so there is nothing callable at the other end.
+/// Wiring needs an engine-side cast-effect pool keyed by spell id first; see
+/// the module note.
+///
 /// PORT: FUN_801F1ED4
 pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
     let index = action_id.wrapping_sub(SERU_SPELL_ID_MIN) as usize;
@@ -230,6 +235,11 @@ pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
 /// `effect_class` is byte `+0x01` of the spell record the queued action id
 /// selects (`0x800754C8 + id * 0x0C + 1`). Retail bounds it with
 /// `sltiu ..., 0x20`.
+///
+/// NOT WIRED: the same missing channel as [`seru_spell_emitter`], plus its
+/// key has no live source - the engine's spell catalog carries name / MP /
+/// target only, so [`spell_effect_class`] is never handed bytes. See the
+/// module note.
 ///
 /// PORT: FUN_801F2160
 pub fn spell_class_emitter(effect_class: u8, ctx_27a: u8) -> CastDispatch {

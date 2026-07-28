@@ -548,6 +548,8 @@ impl MuscleDomeSession {
     /// instruction-identical twin of that arm which no image references. The
     /// port composes through the decode of the twin because it is the same
     /// rule; the *live* site is the case-`0x59` arm.
+    // REF: FUN_801dba90 (the standalone twin this delegates to)
+    // REF: FUN_801d8de8 (case 0x59, the live site of the same assembly)
     pub fn reward_banner(
         &self,
         char_id: u8,
@@ -900,22 +902,25 @@ pub struct ContestSettlement {
 /// `(course, round)`; `prize_already_awarded` is the `0x6CB` flag-bank
 /// bit.
 ///
-// NOT WIRED: **one** of its three inputs is the blocker, not three. The other
-// two are cheap and the earlier reason overstated them:
+// NOT WIRED: **one** of its six inputs is the blocker, and it is now the only
+// one. Four have arrived since this note was first written:
 //
-// - `score_table_entry` needs no new subsystem. `DAT_801D1860` sits at file
-//   offset `0x3048` of the raw PROT 0977 entry (base `0x801CE818`), laid out
-//   `course * 0x40 + (round - 1) * 4` for three courses of 16 rounds, and
-//   `legaia_engine_ui::other_game_hud::parse_sprite_table` already reads that
-//   same entry at a fixed offset - the pattern transfers verbatim.
+// - `score_table_entry` is [`course_score_cell`], reading the same raw PROT
+//   0977 entry the ladder comes off.
+// - `round` and the course index are real: [`parse_course_ladder`] decodes
+//   the three courses and their 8 / 8 / 13 rounds, and the play window
+//   already walks one of them.
 // - `prize_already_awarded` is bit `0x6CB` of the system-flag bank the engine
 //   does model; [`crate::prize_exchange`] gates its own availability on the
 //   same bank.
 //
-// The real gap is `continuing`, and it gates every arm: [`MuscleDomeSession`]
-// is a *single* contest with no course id, no 1..=13 round progression and no
-// continue prompt, so nothing can answer whether a leg was survived. Promoting
-// the session to a course run is the work; the other two follow it.
+// What is left is `continuing`, and it gates every arm. It is the player's
+// *choice* to keep going, latched in retail at `DAT_801D1ADC` behind a
+// continue prompt, and no host offers one - a leg simply ends. Passing "the
+// player won" for it would halve or keep the tally on a decision retail never
+// asked for, which is a rule, not plumbing. The prompt is the work, and the
+// arm that sets the latch (inside `FUN_801D0CD4` / `FUN_801D0068`) is not yet
+// walked.
 /// PORT: FUN_801d0f60
 pub fn settle_contest(
     score: i32,
