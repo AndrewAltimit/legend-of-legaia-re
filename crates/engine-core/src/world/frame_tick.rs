@@ -477,6 +477,24 @@ impl World {
         }
         match self.mode {
             SceneMode::Battle => {
+                // Battle animation advance. This is SIMULATION, not
+                // presentation: its staged-clip end edge retires `ADVANCE_DONE`
+                // and converges the anim id pair - the pacing gate whose
+                // failure parks the attack chain at `AttackChain` (`0x1E`)
+                // forever. It ran only from the native window's redraw, so the
+                // browser and headless hosts never advanced it at all; it must
+                // sit here, where every host reaches it. Retail advances the
+                // anim system in the frame driver's tick passes (`FUN_8002519C`)
+                // ahead of the render passes, which is this position.
+                //
+                // Ahead of the dialogue gates below, and outside
+                // `live_battle_tick`, deliberately: that function early-returns
+                // while a command session or a submenu is open, and a command
+                // session stays open for as long as the player deliberates.
+                // Driving the anims from inside it would freeze every actor's
+                // idle loop for that whole window and un-freeze it on confirm.
+                // REF: FUN_8002519C
+                self.tick_battle_animations();
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the

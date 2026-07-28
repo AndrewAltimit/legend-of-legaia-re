@@ -300,14 +300,12 @@ impl PlayWindowApp {
             // prescript stagers (`FUN_800252EC` → `FUN_80021DF4`). No-op
             // when none are live (off the field / no trigger fired).
             self.session.host.world.tick_field_fx(0x0400);
-            // In battle, advance each monster actor's per-object idle
-            // animation into its `pose_frame` (the render pass below
-            // deforms the mesh via the rigid `posed_rot` builder).
+            // In battle, re-stamp the party's eye/mouth face frames
+            // from the playing clips' facial tracks (the retail
+            // per-frame facial animator). The clips themselves are
+            // advanced by `World::tick`'s Battle arm, which every host
+            // reaches - ticking them again here would run them at 2x.
             if self.session.host.world.mode == SceneMode::Battle {
-                self.session.host.world.tick_battle_animations();
-                // ...and re-stamp the party's eye/mouth face frames
-                // from the playing clips' facial tracks (the retail
-                // per-frame facial animator).
                 self.tick_battle_face_stamps();
             }
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
