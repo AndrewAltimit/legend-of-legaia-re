@@ -145,10 +145,18 @@ pub fn sprite_rect(quad: &ProjectedQuad) -> SpriteRect {
 ///
 /// PORT: FUN_801e4470
 // NOT WIRED: the emitter `FUN_801e3984` and the billboard projection
-// `FUN_800195a8` live behind `engine-render` (`billboard::project_billboard`),
-// which `engine-vm` cannot depend on, and the field host has no attached-sprite
-// actor class to tick. The missing host is an `engine-core` actor kind whose
-// `+0x90` back-link the arc-hop spawners would fill in.
+// `FUN_800195a8` live behind `engine-render` (`billboard::project_billboard`,
+// its only definition in the workspace), and `engine-vm` cannot depend on
+// that crate - `engine-render` depends on `engine-vm`, so the reverse edge is
+// a cargo cycle, which is why this takes its projector as a closure. The
+// caller therefore has to be a host, and no host has one to offer: the field
+// side has no attached-sprite actor class. The nearest sibling is a
+// *different* retail family - `effect_vm::pool`'s `child_billboards`
+// (`FUN_801E0088` pass 2) is wired end-to-end through
+// `World::active_effect_sprites`, but its children hang off an effect master,
+// not off a parent actor's `+0x90` back-link. The missing host is an
+// `engine-core` actor kind carrying that back-link, which the arc-hop
+// spawners would fill in - and those are inert for their own reasons.
 pub fn attached_sprite_tick<P, E>(
     parent: Option<(u32, (i16, i16, i16))>,
     local_offset: (i16, i16, i16),

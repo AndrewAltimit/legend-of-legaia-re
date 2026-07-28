@@ -201,10 +201,48 @@ impl BattleSession {
         self.maybe_close_picker_with_world(Some(world), out);
     }
 
-    /// Sweep targets: write a sentinel to `active_target` so the action SM
-    /// can branch on "all targets" if it cares (the retail SM treats `0xFF`
-    /// as "every alive monster" in some art bodies).
-    pub const SWEEP_TARGET_SENTINEL: u8 = 0xFF;
+    /// The `+0x1DD` byte a resolved sweep target writes - retail's
+    /// **target-group code**, not a sentinel.
+    ///
+    /// Retail has exactly one representation for "this cast is aimed at a whole
+    /// side", and it is a small code in the same byte a single target uses:
+    /// `8` for the party, `9` for the enemy row. The cast-begin facing store
+    /// splits on one instruction, `sltiu v0,t2,0x8` at `0x801E433C`, and hands
+    /// everything at or above `8` to `FUN_801DCEAC`, which decodes `8` to slots
+    /// `[0, 3)` and `9` to `[3, 7)`. Every writer of the byte in the dumped
+    /// corpus stays inside `{0..=6, 8, 9}` - the command menu (`0x801D1D6C`
+    /// writes `8`, `0x801D1D00` writes `9`), the monster-AI resolver
+    /// `FUN_801E7320`, the escape arm `0x801E7BE8` and the capture arm
+    /// `0x801E78C8`.
+    ///
+    /// This used to write `0xFF`, which is outside that space. Nothing
+    /// downstream understood it: `FUN_801DCEAC`'s "anything else" arm reads it
+    /// as the one-element group `[0xFF, 0x100)`, so the port's decode produced
+    /// an **empty** range, `target_group_aim` returned `None`, and a
+    /// sweep-targeted party cast came out with no group aim at all - the caster
+    /// kept whatever facing it already had. The settle gate `FUN_801E7250` and
+    /// the item-target re-route ignored it for the same reason.
+    ///
+    /// A `Self_` picker resolves through the same immediate path but is not a
+    /// group at all, so it writes the actor's own slot - the value retail's
+    /// `beq v0,t2` self-skip at `0x801E4350` expects.
+    ///
+    /// REF: FUN_801DCEAC (the decode), FUN_801E295C (`0x801E433C` split),
+    /// FUN_801E7320 (the monster-AI resolver that writes the same codes),
+    /// FUN_801E7250 (the settle gate that reads them)
+    fn sweep_target_code(
+        kind: crate::target_picker::TargetKind,
+        row: crate::target_picker::CursorRow,
+        actor_slot: u8,
+    ) -> u8 {
+        use crate::target_picker::{CursorRow, TargetKind};
+        use legaia_engine_vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
+        match (kind, row) {
+            (TargetKind::Self_, _) => actor_slot,
+            (_, CursorRow::Enemy) => TARGET_GROUP_ENEMIES,
+            (_, CursorRow::Ally) => TARGET_GROUP_PARTY,
+        }
+    }
 
     /// If the picker has reached `Done`, fold the outcome back into the
     /// session.
@@ -226,6 +264,7 @@ impl BattleSession {
             None => return,
         };
         let Some(outcome) = outcome else { return };
+        let picker_kind = self.target_picker.as_ref().map(|p| p.kind());
         let actor_slot = self.runner.active_party_slot();
         match outcome {
             PickerOutcome::Single { slot, .. } => {
@@ -240,8 +279,13 @@ impl BattleSession {
                 // alone.
                 self.commit_pending_command(out);
             }
-            PickerOutcome::Sweep { .. } => {
-                self.write_active_target(world, actor_slot, Self::SWEEP_TARGET_SENTINEL);
+            PickerOutcome::Sweep { row } => {
+                // The picker folds `AllAllies` / `AllEnemies` / `Self_` into
+                // one immediate outcome; `kind` is what separates the group
+                // codes from the self-cast again.
+                let kind = picker_kind.unwrap_or(crate::target_picker::TargetKind::AllEnemies);
+                let code = Self::sweep_target_code(kind, row, actor_slot);
+                self.write_active_target(world, actor_slot, code);
                 out.push(SessionEvent::TargetSweepConfirmed);
                 self.commit_pending_command(out);
             }

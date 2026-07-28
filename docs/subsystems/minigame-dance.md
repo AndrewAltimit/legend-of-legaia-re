@@ -192,8 +192,8 @@ This cluster is what the live trace surfaced as the resident mode-24 code (the `
 |---|---|---|
 | `FUN_801d3a2c` | **Per-frame floor pass.** Clears `DAT_801d6084`, walks the actor list when not paused, then sweeps the cell grid spawning one tile actor per drawn cell. See [The floor pass](#the-floor-pass). | Confirmed (structure); the exact per-cell emit is Inferred |
 | `FUN_801d2a10` | **Height-ramp install + step-marker floor pass.** Installs the shared 16-entry height ramp, then walks a `(x, y, width, height)` rect spawning marker tile actors. See [The floor pass](#the-floor-pass). | Confirmed (structure) |
-| `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. | Confirmed |
-| `FUN_801d3f54` | **Per-cell step-marker lookup.** Indexes a per-row header at `base + row*4` (count at `+4`, sub-list offset at `+2`), walks the sub-list (per-row stride from a table at `row - 0x7ff84ce8`) and returns the record whose first two bytes match the requested `(x, y)`, else NULL. | Confirmed |
+| `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. See [The floor pass](#the-floor-pass) for which sub-table it asks for. | Confirmed |
+| `FUN_801d3f54` | **Sub-table record lookup by cell.** First argument is the **kind** index, not a row: header offset `s16` at `base + kind*4 + 2`, count `s16` at `+4`, record stride the byte at `_DAT_8007B318 + kind`. Returns the first record whose two leading bytes match the requested `(x, y)`, else NULL. | Confirmed |
 
 ### The floor pass
 
@@ -204,6 +204,16 @@ Three regions of the scene buffer are involved. Tile **records** are `0x20` byte
 Per cell, both passes: read the cell word, take its tile record, require the record's `+0x12` bit `0x4`, probe the neighbour cell `(x + rec[6], y + rec[7])` and require it inside `0 ..= 0x7f`. `FUN_801d3a2c` additionally rejects a neighbour whose cell word carries bit `0x400`; `FUN_801d2a10` does not. The world position is `(x * 0x80 + rec[0] + 0x40, ramp[height nibble] + rec[2], y * 0x80 - (rec[4] - 0x40))` - note the **z** term subtracts. The spawn goes through the shared actor-spawn API against a transform template, and the record's `+0x1e` / `+0x12` bits are folded into the spawned actor's `+0x74` and `+0x10`.
 
 `FUN_801d2a10`'s two extras are the ramp and the marker template. Before the walk it writes the 16-entry ramp `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the *same* table `FUN_801d6028` and both floor passes later index by the terrain nibble, so the "per-column Y-offset table" reading of it was wrong: it is the terrain height ladder. Per cell it then calls `FUN_801d3ec0` for a step marker and turns its `rec[2] + 1` into a template choice: clip indices `6 ..= 9` take the marker template with `clip - 6` stamped into the spawned actor's `+0x50`, anything else non-zero takes the plain floor template, and `0` skips the cell.
+
+The step marker is **not a marker-specific record**. The call is
+`FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`
+region block - the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger
+records the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`)
+resolves, scanned primary-then-fallback exactly the same way. The marker's clip
+index is that record's `record` byte plus one. See
+[`field-map.md`](../formats/field-map.md) and
+[`encounter.md`](../formats/encounter.md) for the block; the engine already
+decodes it as `engine-core::field_regions::TileTrigger`.
 
 Its four arguments are `(x0, y0, width, height)` - retail computes the loop bounds as `x1 = a2 + a0` and `y1 = a3 + a1`, so the third and fourth are **extents**, not end coordinates. The `y << 8` in the cell address is the grid's row byte pitch, not a fixed-point conversion.
 
@@ -292,7 +302,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
 | `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
-| `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`, for `r = rand() % 3`. `overlay_dance_801d3d78.txt` |
+| `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`. Its caller passes `rand() % 3` on the chain-closed tier and a literal `5` on the three groovy-move tiers. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: hands the dancer to the shared clip driver `FUN_800204f8` only when its spin counter `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]. `overlay_dance_801d4098.txt` |
 | `FUN_801d387c` | Per-dancer sprite/shadow emit dispatch: fade weight off the dancer's beat field `+0x78`, then a five-arm draw-mode jump table. See [The dancer emit dispatch](#the-dancer-emit-dispatch). `overlay_dance_801d387c.txt` |
@@ -386,7 +396,10 @@ digit already split their render routines): the number renderer's decimal split
 (`dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u`,
 `FUN_801d32f8`), the beat-track combo-flash CLUT + scrolling-note screen-x
 (`dance_combo_window_bright` / `dance_beat_track_note_x`, `FUN_801d2524`), the
-good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78`), the
+good-step sting's two-voice pick (`dance_hit_sting_voices`, `FUN_801d3d78` -
+the browser dance page decodes its stings through this, so the VAB program the
+tone index is looked up inside is retail's argument and not a page-side guess),
+the
 sequence-clear banner + star spawns (`good_banner_spawn`, `FUN_801d40dc`), the
 face-stamp rig selector (`dance_face_rig`, `FUN_801d03c4`), the count-in banner's
 slide/hold/fade envelope (`dance_countin_banner_envelope`, `FUN_801d2d98`), and
@@ -624,10 +637,10 @@ groovy move's, one per difficulty lane (`iVar8 = lane + 3`), and only fire when
 | tier (`iVar8`) | when | banner (widget) | sound |
 |---|---|---|---|
 | 1 | a missed direction | `Miss!` (10) at `(160, 128)` | cue `0x210` |
-| 2 | a closed direction chain | `Good!` (11) + 2 stars (`FUN_801d40dc`; star actors carry the accuracy weight at `+0x72`) | direct-keyed sting: `FUN_801d3d78(rand() % 3)` keys VAB program 1 tones `2r`/`2r+1` at note `0x3C + r` |
-| 3 | a **landed triangle** on lane 0 | `Cool!` (19) at `(160, 144)` + stars `±0x38` | cue `0x202` |
-| 4 | a landed triangle on lane 1 | `Great!!` (20) + stars `±0x50` | cue `0x203` |
-| 5 | a landed triangle on lane 2 | `Fever!!!` (21) | cue `0x205` |
+| 2 | a closed direction chain | `Good!` (11) + 2 stars (`FUN_801d40dc`; star actors carry the accuracy weight at `+0x72`) | direct-keyed sting `FUN_801d3d78(rand() % 3)` |
+| 3 | a **landed triangle** on lane 0 | `Cool!` (19) at `(160, 144)` + stars `±0x38` | cue `0x202` **and** the sting at `r = 5` |
+| 4 | a landed triangle on lane 1 | `Great!!` (20) + stars `±0x50` | cue `0x203` **and** the sting at `r = 5` |
+| 5 | a landed triangle on lane 2 | `Fever!!!` (21) | cue `0x205` **and** the sting at `r = 5` |
 
 **Confirmed** (the banner-per-tier map closes the "which on-screen label each
 tier spawns" question; the `Chicken!!` cell on the HUD page has no widget
@@ -689,10 +702,28 @@ at **extraction PROT 1231**. **Confirmed** cue sites:
 | confirm / cursor | `0x20` / `0x21` | `FUN_801D0750` (static table) |
 
 An on-beat **hit fires no ring cue**: it keys voices directly through
-`FUN_801D3D78(rand() % 3)`, so a good step picks one of three stings at random -
-each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
-`0x3C + r` (two voices via `func_0x80065034`, volume from the config global
-`_DAT_80084580`). **Confirmed.**
+`FUN_801D3D78(r)`, which keys VAB **program 1, tones `2r` and `2r + 1`
+together**, at note `0x3C + r` (two voices via `func_0x80065034`, volume from
+the config global `_DAT_80084580`). **Confirmed.**
+
+`r` is not always a random pick, and the tier table above is where that shows.
+The award routine `FUN_801D1AF4` reaches the sting from **four** sites: the
+chain-closed tier passes `rand() % 3` (the `0x55555556` magic-multiply divide),
+and each of the three groovy-move tiers passes the literal `5` - two as
+`li a0,0x5`, the third as a `move a0,v0` off the `li v0,0x5` its own tier
+compare just loaded. So a groovy move plays its cue *and* a sting, at tones
+`0xA` / `0xB` and note `0x41` - one that the random space never reaches.
+Exported as `dance::STING_RANDOM_VARIANTS` / `STING_TIER_VARIANT`; anything
+that enumerates "the stings" over `0..3` is short one. **Confirmed** from the
+disassembly of all four call sites.
+
+Both calls fill the primitive's full eight-argument shape
+`(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - the order the SCUS
+cue drainer `FUN_80016B6C` pins - at **level `2`** (`li a1,0x2`), and both
+volume slots are the same `(_DAT_80084580 << 0xf) >> 0x10` halving every
+ordinary cue uses. The level and the program are the two arguments the engine
+port used to drop; the program is what makes the browser page's `tones[1]` bank
+lookup the right one rather than a guess.
 
 ## Open
 

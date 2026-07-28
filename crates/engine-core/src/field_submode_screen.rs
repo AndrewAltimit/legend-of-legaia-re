@@ -44,11 +44,13 @@
 //! rather than performs)
 
 use legaia_engine_vm::baka_hub_actors::{
-    self as hub, ACTOR_RETIRE, CoinCounter, HubAction, HubActor, HubDraw, HubEnv, HubFrame,
-    HubGrid, HubPainter, slot,
+    self as hub, ACTOR_RETIRE, CoinCounter, HubAction, HubActor, HubDraw, HubEnv, HubEquipEnv,
+    HubEquipRecord, HubFrame, HubGrid, HubPainter, slot,
 };
+use legaia_engine_vm::world_map_overlay::{EquipProps, ItemProps};
 
 use crate::actor_handler::ActorHandler;
+use crate::equipment::{DiscEquipEntry, DiscEquipInfo, EquipSlot};
 use crate::world::World;
 
 /// Which field-VM context armed the op-`0x49` park.
@@ -108,6 +110,22 @@ pub struct SubmodeScreen {
     /// The field-VM context that armed this park - see [`Op49ParkOwner`].
     /// Only that context's op-`0x49` reads [`Self::open`] / [`Self::done`].
     pub owner: Op49ParkOwner,
+    /// `_DAT_8007BB9C` - the selected menu-list row's **class nibble**, which
+    /// the entry list's equipment sub-panel reads to decide where its
+    /// comparison candidate comes from (see [`World::set_hub_equip_mode`]).
+    ///
+    /// Retail's own value is a menu-list global, not hub state: the list
+    /// machinery publishes the highlighted row's class there
+    /// ([`crate::menu_list_rows`]) and the sub-panel reads it. `0` is the
+    /// no-candidate arm, which is what a hub screen opened without a list up
+    /// sees.
+    pub equip_mode: u32,
+    /// The `+6` character mask and `+7` slot byte of the equipment table
+    /// `DAT_80074F68`, per item id - the two bytes of that row the engine's
+    /// world-resident tables do not carry (see
+    /// [`World::install_hub_equip_restrictions`]). Empty until a host installs
+    /// them, which also holds [`Self::equip_mode`] at the no-candidate arm.
+    pub equip_restrictions: std::collections::BTreeMap<u8, (u8, u8)>,
 }
 
 impl SubmodeScreen {
@@ -287,6 +305,143 @@ impl World {
         retired
     }
 
+    /// Install the two equipment-table bytes the sub-panel's **candidate** arm
+    /// needs and the world's own tables do not carry: the `+6` character mask
+    /// and the `+7` slot byte of `DAT_80074F68`.
+    ///
+    /// Everything else the panel reads is already world state - the character
+    /// records ([`World::roster`]), the item property table's `+0` / `+1` bytes
+    /// ([`World::item_effects`]) and the five stat bonuses
+    /// ([`World::equipment_table`]). These two bytes are dropped by the
+    /// modifier-only view a boot installs on the world, and survive only on the
+    /// [`DiscEquipInfo`] a host builds for its menu runtime - hence the
+    /// hand-in. Until one arrives the panel stays on retail's no-candidate arm
+    /// rather than answering "can this character equip that" from a zero mask,
+    /// which would paint the reject line over every entry.
+    pub fn install_hub_equip_restrictions(&mut self, info: &DiscEquipInfo) {
+        self.submode_screen.equip_restrictions = (0..=u8::MAX)
+            .filter_map(|id| info.entry(id).map(|e| (id, (e.mask, disc_slot_bits(e)))))
+            .collect();
+    }
+
+    /// Set the menu class word `_DAT_8007BB9C` the sub-panel's candidate ladder
+    /// reads (`0x1000` / `0x6000` / `0x9000` bag slot, `0x3000` the cursor as
+    /// an item id, `0x4000` compare against an empty loadout, anything else no
+    /// candidate at all).
+    ///
+    /// Honored only once [`World::install_hub_equip_restrictions`] has run -
+    /// see that method for why.
+    pub fn set_hub_equip_mode(&mut self, mode: u32) {
+        self.submode_screen.equip_mode = mode;
+    }
+
+    /// Project the world's equipment state onto the globals `FUN_801E5B4C`
+    /// reads: the per-entry character records plus the two static resolver
+    /// tables it walks them through.
+    ///
+    /// Retail addresses all of this directly - the save block at `0x80084140`,
+    /// the item property table `DAT_80074368` and the equipment table
+    /// `DAT_80074F68`. Each has a world-resident counterpart:
+    ///
+    /// | Retail read | World source |
+    /// |---|---|
+    /// | `char[+0x75E..]`, the five equip slots | [`World::roster`] |
+    /// | `char[+0x6DA/+0x6DC/+0x6DE]`, ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
+    /// | `DAT_80074368[id*0xC + 0/+1]`, kind + stat index | [`World::item_effects`] |
+    /// | `DAT_80074F68[row][+0..+4]`, the five bonuses | [`World::equipment_table`], re-keyed row-wise |
+    /// | `0x80084140 + 0x1818`, the bag id list | [`World::inventory`] |
+    /// | `0x8007B42C`, the weapon-slot table | [`RETAIL_WEAPON_SLOTS`] |
+    ///
+    /// The bonus rows arrive **keyed by item id** (that is the shape a battle
+    /// aggregator wants) and the panel indexes them by the stat-table row an
+    /// item's `+1` byte names, so they are re-keyed here through the same `+1`
+    /// byte. Rows no equippable id reaches stay zero, which is what the disc
+    /// holds for the one such row the panel can actually reach: item id `0`
+    /// (the empty-slot sentinel) names row `0x6A`, and that row is eight zero
+    /// bytes - so an empty slot contributes nothing without the port
+    /// special-casing id `0`, exactly as retail does not.
+    fn submode_equip_env(&self) -> HubEquipEnv {
+        let mut env = HubEquipEnv {
+            weapon_slots: RETAIL_WEAPON_SLOTS.to_vec(),
+            ..HubEquipEnv::default()
+        };
+        // One record per distinct entry code. The code is a character index
+        // (retail multiplies it by `0x414` against the save block), and the
+        // engine's roster is that same index space.
+        for &code in &self.active_party {
+            if env.records.iter().any(|r| r.code == code) {
+                continue;
+            }
+            let Some(rec) = self.roster.members.get(usize::from(code)) else {
+                continue;
+            };
+            let live = rec.live_stats();
+            env.records.push(HubEquipRecord {
+                code,
+                slots: hub_panel_slots(&rec.equipment().slots, usize::from(code)),
+                base_stats: [live.atk as i32, live.udf as i32, live.ldf as i32],
+            });
+        }
+
+        // The bag list the three inventory modes index with the shared cursor.
+        // Retail's is the item window's own slot order; the engine's bag is a
+        // map, so this is the id order `World::save_party` also writes.
+        let mut bag: Vec<u8> = self
+            .inventory
+            .iter()
+            .filter(|&(_, &count)| count > 0)
+            .map(|(&id, _)| id)
+            .collect();
+        bag.sort_unstable();
+        env.inventory = bag;
+
+        let Some(items) = self.item_effects.as_ref() else {
+            // No item property table: the aggregation has nothing to resolve
+            // an equipped id through, so every row prints its base stat. The
+            // candidate ladder stays off with it.
+            return env;
+        };
+        env.item_props = (0..=u8::MAX)
+            .map(|id| ItemProps {
+                kind: items.kind(id),
+                stat_index: items.subtype(id),
+            })
+            .collect();
+        for id in 0..=u8::MAX {
+            if items.kind(id) != legaia_asset::equip_stats::KIND_EQUIPMENT {
+                continue;
+            }
+            let Some(m) = self.equipment_table.get(id) else {
+                continue;
+            };
+            let row = usize::from(items.subtype(id));
+            if env.equip_props.len() <= row {
+                env.equip_props.resize(row + 1, EquipProps::default());
+            }
+            let props = &mut env.equip_props[row];
+            // Record order is `[INT, ATK, UDF, LDF, SPD]` - the `+0` byte is
+            // the INT bonus and lands last in retail's accumulator order, which
+            // is why the modifier view names its fields rather than indexing.
+            props.bonuses = [
+                m.int as u8,
+                m.atk as u8,
+                m.udf as u8,
+                m.ldf as u8,
+                m.spd as u8,
+            ];
+            // Several ids can name the same row; both halves of what lands here
+            // are that row's own bytes, so which id wrote it does not matter.
+            if let Some(&(mask, slot_bits)) = self.submode_screen.equip_restrictions.get(&id) {
+                props.char_mask = mask;
+                props.slot_bits = slot_bits;
+            }
+        }
+        if !self.submode_screen.equip_restrictions.is_empty() {
+            env.mode = self.submode_screen.equip_mode;
+        }
+        env
+    }
+
     /// Project the world's own state onto the globals the family reads.
     fn submode_env(&self, frame_delta: u8) -> HubEnv {
         let pad = self.input.pad() as u32;
@@ -318,6 +473,9 @@ impl World {
             entry_codes: self.active_party.clone(),
             gold: self.money,
             coin_bank: self.casino_coins.min(i32::MAX as u32) as i32,
+            // Everything the entry list's per-entry sub-draw `FUN_801E5B4C`
+            // reads out of RAM - see [`World::submode_equip_env`].
+            equip: self.submode_equip_env(),
             ..HubEnv::default()
         }
     }
@@ -367,6 +525,77 @@ fn run_slot(
         slot::CLOSE_TICK | 0x14..=0x18 => hub::close_tick(actor, env, cursor),
         _ => HubFrame::default(),
     }
+}
+
+/// Retail's per-character **weapon slot** table `DAT_8007B42C` (`SCUS_942.54`
+/// file `0x6BC2C`, halfword per character), which `resolve_equip_slot` indexes
+/// for a candidate whose `+7` byte says weapon.
+///
+/// The disc holds `2, 3, 2`: Vahn and Gala carry their weapon in equip byte
+/// `2`, Noa in byte `3`. The halfword after them is `0`, and an index past the
+/// pinned three resolves to `0` as well, so the two agree for every character.
+/// Only entry codes below `3` draw a panel at all.
+pub const RETAIL_WEAPON_SLOTS: [i16; 3] = [2, 3, 2];
+
+/// The three fixed slots of retail's `+0x196` array, as
+/// `(retail index, the engine slot holding that item)`: byte `0` is **body
+/// armour**, `1` the **head** slot, `4` **footwear**. Bytes `2` / `3` are the
+/// weapon, per [`RETAIL_WEAPON_SLOTS`].
+///
+/// That is retail's own order, and it is not the engine's. Two disc tables pin
+/// it independently: the panel's own slot resolution
+/// (`(+7 & 0x60) >> 5` -> `0`, `1`, the weapon table, `4`) and the equip
+/// screen's row map `DAT_801E43E8` = `00 01 00 04 05 06 07`, whose seven rows
+/// are weapon (overridden by the per-character halfword), helmet `1`, body
+/// armour `0`, footwear `4` and three Goods slots `5..7`. The engine's own
+/// array is weapon-first with a hand-guard slot retail has no row for
+/// ([`crate::equip_session::ARMAMENT_ENGINE_SLOTS`]), so a record has to be
+/// re-ordered before the ported kernel walks it - [`hub_panel_slots`].
+pub const HUB_PANEL_FIXED_SLOTS: [(usize, EquipSlot); 3] = [
+    (0, EquipSlot::BodyArmor),
+    (1, EquipSlot::Helmet),
+    (4, EquipSlot::Boot),
+];
+
+/// Re-order a character's engine equip array into the five slots the sub-panel
+/// walks, in retail's own `+0x196` order.
+///
+/// The aggregation itself is order-blind (it sums all five), so this matters
+/// for one thing: the **trial-equip destination**. `resolve_equip_slot` answers
+/// in retail's index space, so handing it an engine-ordered array would displace
+/// the wrong item - a body-armour candidate would replace the weapon.
+///
+/// The engine's hand-guard slot has no retail counterpart and is dropped, which
+/// is retail's own five-slot sum; retail's three Goods slots (`5..7`) are
+/// outside the walk for both.
+pub fn hub_panel_slots(equip: &[u8; 8], char_index: usize) -> [u8; 5] {
+    let mut out = [0u8; 5];
+    for (retail, engine) in HUB_PANEL_FIXED_SLOTS {
+        out[retail] = equip[engine.as_index() as usize];
+    }
+    let weapon = RETAIL_WEAPON_SLOTS
+        .get(char_index)
+        .copied()
+        .unwrap_or(0)
+        .clamp(0, 4) as usize;
+    out[weapon] = equip[EquipSlot::Weapon.as_index() as usize];
+    out
+}
+
+/// Rebuild an equipment record's `+7` **slot byte** from the disc restriction
+/// view: the four `& 0x60` categories plus the `0x01` Ra-Seru bit.
+///
+/// The panel reads `+7 & 0x60` only; the Ra-Seru bit rides along because it is
+/// the same byte and the view carries it.
+pub fn disc_slot_bits(entry: DiscEquipEntry) -> u8 {
+    use legaia_asset::equip_stats::EquipSlot as Disc;
+    let category = match entry.category {
+        Disc::Body => 0x00,
+        Disc::Head => 0x20,
+        Disc::Weapon => 0x40,
+        Disc::Footwear => 0x60,
+    };
+    category | u8::from(entry.is_ra_seru)
 }
 
 /// Panel width the driver actor carries (`+0x0E`), the anchor the right-edge

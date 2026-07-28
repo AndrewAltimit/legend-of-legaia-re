@@ -28,13 +28,20 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine caller. Both halves need a producer the engine does not have: the
-//! `0x801F6980` value window and the `0x801F6988` slot list are written by the
-//! summon-overlay side band (PROT 0900 / the `readef` streaming slots), and the
-//! output is GPU primitives linked into the ordering table at `_DAT_1F8003A0`.
+//! No engine caller, and the reason is neither the site nor the port. Retail
+//! calls this unconditionally at the head of every action-SM tick (`jal
+//! 0x801e805c` at `0x801E2A70`, ahead of the `ctx[+0x07]` jump), and that head
+//! is ported and live - so a caller could be added today and would run every
+//! frame. It would have nothing to say. Both halves need a producer the engine
+//! does not have: the `0x801F6980` value window and the `0x801F6988` slot list
+//! are written by the summon-overlay side band (PROT 0900 / the `readef`
+//! streaming slots), which nothing in `engine-core` loads, so every slot reads
+//! empty and both the teardown and the render walk return nothing. The output
+//! is GPU primitives linked into the ordering table at `_DAT_1F8003A0`;
 //! `engine-ui` draws battle damage numbers through its own `TextDraw` path
 //! instead. Wiring means the summon side band reaching `engine-core` and the
-//! quads reaching `engine-render`.
+//! quads reaching `engine-render` - a per-frame call ahead of either is a call
+//! that measures as wired and does nothing.
 
 /// Readout slots the value window holds (`_DAT_801F6980..0x801F6987`, four
 /// halfwords).

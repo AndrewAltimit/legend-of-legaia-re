@@ -52,3 +52,35 @@ tests reference the builders unchanged. The GPU-resident batch wrappers
 
 Depends only on `legaia-asset`, `legaia-font`, `legaia-tim`, `glam`, `serde`,
 and `bytemuck` - no wgpu, no winit - so it links into the lean WASM play build.
+
+## Whole-screen compositions
+
+Most builders paint one window. A few paint a **whole sub-screen** - several
+windows plus the rules that decide which of them draws - and those exist so the
+two hosts cannot answer that question differently.
+
+`recipient_picker_draws_for` is the pattern: the shop's equipment-buy recipient
+sub-screen (retail `0x1C`, `FUN_801DB380`) is windows 36 / 25 / 41 together,
+and the row order, the "row 0 is the bag" cursor offset, the note precedence
+("already equipped" beats "cannot equip") and the compare-category chain are
+all screen-level decisions rather than window-level ones. A host supplies the
+three rects it resolved off the disc window table plus a plain-data model, and
+gets the draws back. The alternative - each host composing the three painters
+itself - is what put the browser page a screen ahead of the native window for
+a release.
+
+## Host-drift gate
+
+`scripts/ci/check-ui-host-drift.py` treats the set of draw builders here as a
+machine-checkable feature surface: a host "has" a screen when its source calls
+that builder, transitively through this crate's own builder-to-builder edges.
+Native-only is a CI failure unless waived; unused is a failure unless waived;
+web-ahead is reported for information. Waivers live in
+`scripts/ci/ui-host-drift-waivers.toml` and each must name the capability that
+blocks the wire, because the checker validates a waiver's bucket but cannot
+read its prose.
+
+What the gate cannot see is drift *inside* a shared builder's inputs - two
+hosts calling the same function with different models. Three such gaps were
+found by hand rather than by the gate; the two live ones are recorded in the
+[web-viewer README](../web-viewer/README.md#platform-drift-against-the-native-window).

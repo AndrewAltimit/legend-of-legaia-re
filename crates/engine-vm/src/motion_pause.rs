@@ -34,20 +34,33 @@
 //!
 //! ## NOT WIRED
 //!
-//! Two of the three pieces exist engine-side and the third does not. The
-//! retail caller has an analogue - `World::check_field_walk_touch` is the
-//! `FUN_801D5B5C` touch post and runs from the locomotion step - and the
-//! default-move table is harvested at scene load into
-//! `World::field_npc_default_moves`. What is missing is the **actor view this
-//! kick sweeps**: retail reads a per-actor flag word (`+0x10 & 0x20000`,
-//! moving-class) and a motion-stream-installed pointer (`+0x80 != 0`) off one
-//! scene actor list, and the engine has neither field. Its field-NPC state is
-//! split across typed per-slot maps (in-flight walk legs, ambient motion
-//! channels, default-move pairs) with no flag word to gate on, so nothing can
-//! build a `[PauseKickActor]` slice to hand in. Wiring means giving the
-//! engine's field-NPC record a moving-class predicate and a
-//! motion-stream-present predicate, then projecting the map set into this
-//! view at the touch post - not adding a call.
+//! The blocker is the **write target**, not the inputs - a correction worth
+//! stating plainly, because the inputs are the part an earlier reading
+//! blamed.
+//!
+//! Everything this kick *reads* has an engine home. The retail caller has an
+//! analogue: `World::check_field_walk_touch` is the `FUN_801D5B5C` touch post
+//! and runs from the locomotion step. The default-move table is harvested at
+//! scene load into `World::field_npc_default_moves`, keyed by the same
+//! placement slot. Both gates are derivable from the typed per-slot maps -
+//! `+0x80 != 0` ("a motion stream is installed") is exactly "the placement has
+//! a bound tail-section-1 stream", which is what seeds
+//! `World::field_npc_ambient`, and the moving class is the slot set carrying a
+//! route or an in-flight leg. A `[PauseKickActor]` slice is projectable today.
+//!
+//! What has nowhere to land is the result. The kick's whole effect is to
+//! reload `+0x5C` / `+0x88`, the actor's **requested move-table id** and its
+//! motion-VM mirror, and the engine's field NPCs carry neither: they are
+//! per-slot map entries, not actor records, and their animation comes from ANM
+//! clips rather than from the move-table VM that `FUN_8003BC08` runs while
+//! `+0x5C > 0`. So a wired kick would compute correct ids and write them into a
+//! field that does not exist, for a consumer that does not run.
+//!
+//! The behaviour itself is not missing - `World::tick_field_npc_motions` holds
+//! autonomous legs while a dialogue is up directly, rather than by snapping
+//! every NPC back onto its default move. Wiring this means giving field NPCs a
+//! requested-move channel and a move-table consumer for it, which is a change
+//! to how field NPCs animate, not a call insertion.
 
 /// Moving-class actor bit in the `+0x10` flag word. Only actors with this
 /// bit set are candidates for the pause kick.

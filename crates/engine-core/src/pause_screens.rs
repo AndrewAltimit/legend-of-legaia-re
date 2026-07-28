@@ -1289,12 +1289,34 @@ pub fn notify_window_operands(window: (i16, i16), selector: i16, base: u8) -> No
 pub const ROOT_MENU_ROWS: u16 = 7;
 
 /// The entry-context kind byte (`*_DAT_8007B450`) that both gates the root
-/// menu's Save row and redirects its cancel into the Yes/No confirm.
+/// menu's **Load** row and redirects its cancel into the Yes/No confirm.
 pub const ROOT_MENU_CONTEXT_LOCKED: u8 = 0x0D;
 
-/// Sub-screen each root-menu row hands off to, in row order. Rows `5`
-/// (`0x18`, the save-card driver) and `6` (`0x19`, load-from-slot) are the
-/// two conditional ones - see [`root_menu_confirm_route`].
+/// The per-scene save-allow flag `_DAT_8007B6A8` gating the **Save** row.
+///
+/// Scene load seeds it from the MAN header's `[0x01] & 1`
+/// ([`legaia_asset::man_section::ManHeader::low_flag`]); a cleared flag is
+/// what makes a scene a no-save scene. It is the same byte the
+/// "Save Anywhere" cheat forces - see
+/// [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
+pub const ROOT_MENU_SAVE_ALLOW_FLAG: u32 = 0x8007_B6A8;
+
+/// Sub-screen each root-menu row hands off to, in the retail draw order
+/// **Items / Magic / Equip / Status / Options / Load / Save**. Rows `5`
+/// (Load, `0x18`) and `6` (Save, `0x19`) are the two conditional ones -
+/// see [`root_menu_confirm_route`].
+///
+/// The row labels are read off the menu overlay's own string pool - the
+/// seven pointers `FUN_801CFD68` hands the string primitive are `@Items`,
+/// `@Magic`, `@Equip`, `@Status`, `@Options`, `@Load`, `@Save` at
+/// `0x801CE9D0`, `..9D8`, `..9E0`, `..9E8`, `..9F4`, `0x801CEA00`,
+/// `..EA08` - so `0x18` is the **load** card driver and `0x19` the save
+/// one, which is the direction retail's own op selector confirms
+/// (`0x18` -> `FUN_801DD35C(1, 2)` skips the card-file erase, `0x19` ->
+/// `(1, 1)` performs it).
+///
+/// REF: FUN_801dd35c (the card-driver body whose op selector fixes the
+/// direction of the two gated rows)
 pub const ROOT_MENU_ROUTES: [u8; ROOT_MENU_ROWS as usize] =
     [0x05, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19];
 
@@ -1316,12 +1338,19 @@ pub enum RootMenuRoute {
 /// routes the confirmed row through [`ROOT_MENU_ROUTES`]. Two rows are
 /// conditional and buzz instead of advancing:
 ///
-/// * **Save** (row `5`) is blocked when an entry context is installed at
+/// * **Load** (row `5`) is blocked when an entry context is installed at
 ///   `_DAT_8007B450` **and** its kind byte is
 ///   [`ROOT_MENU_CONTEXT_LOCKED`]. A null context pointer allows the row -
-///   the test is on the kind, not on the pointer's presence.
-/// * **Load** (row `6`) is blocked when the save-block presence byte
-///   `_DAT_800846A8` is zero.
+///   the test is on the kind, not on the pointer's presence. The same
+///   context makes cancel ask first ([`root_menu_cancel_route`]), which is
+///   coherent: a parked field script must not be replaced by a loaded game
+///   nor abandoned without a confirm.
+/// * **Save** (row `6`) is blocked when the per-scene save-allow byte
+///   [`ROOT_MENU_SAVE_ALLOW_FLAG`] is zero.
+///
+/// Both gates are re-read by the list renderer `FUN_801CFD68`, which greys
+/// the same two rows to ink `0` from the same two globals - so the confirm
+/// arm never buzzes a row that drew white.
 ///
 /// Every accepted row first clears the shared list globals
 /// `_DAT_8007BB98` / `_DAT_8007BB90` / `_DAT_8007BB88`, and the Magic row
@@ -1332,20 +1361,34 @@ pub enum RootMenuRoute {
 /// `0x801D6BCC..0x801D6CF4`)
 /// REF: FUN_801d688c (the cursor navigator this screen drives; ported as
 /// `crate::menu_input`)
+/// REF: FUN_801cfd68 (the row renderer whose grey arms read the same two
+/// globals in the same order)
 ///
-/// NOT WIRED: the engine's pause root is
-/// [`crate::field_menu::FieldMenuSession`], which resolves a confirmed row
-/// to a typed [`crate::field_menu::FieldMenuRow`] and lets the shell push
-/// the matching sub-session - it has no sub-screen id space for
-/// [`ROOT_MENU_ROUTES`] to name. Its two conditional rows are gated by the
-/// host-supplied `FieldMenuRowMask` instead, and the entry-context pointer
-/// this routing keys on (`_DAT_8007B450`, whose kind byte both hides Save
-/// and arms the leave-confirm) has no engine analogue. Wiring needs that
-/// entry context on the world first.
+/// Live on the pause-menu path. [`crate::field_menu::FieldMenuSession`] calls
+/// this once per row to ink the list ([`crate::field_menu::FieldMenuSession::row_is_available`],
+/// which the renderer greys on) and once more on Cross to decide advance vs
+/// buzz - the same double read, in the same order, that keeps retail's row
+/// renderer and confirm arm agreeing. The `Sub(id)` payload is consumed rather
+/// than dropped: the session resolves the confirmed row back **through** the
+/// id ([`crate::field_menu::FieldMenuRow::from_retail_subscreen`]), so
+/// [`ROOT_MENU_ROUTES`] decides which sub-session the shell pushes.
+///
+/// Both gate inputs come from the world at menu-open
+/// (`BootSession::open_field_menu`): `save_allowed` from
+/// [`crate::world::World::scene_save_allowed`], which scene load seeds from
+/// [`legaia_asset::man_section::ManHeader::low_flag`], and
+/// `entry_context_kind` from
+/// [`crate::world::World::menu_entry_context_kind`]. The save gate is the one
+/// that bites on real data - the MAN bit is set on the three kingdom world
+/// maps and clear on every field scene, so Save greys everywhere but the
+/// overworld. The Load gate is plumbed and live but cannot yet reach its
+/// blocking value: the port tags each op-`0x49` park with its owning context
+/// instead of keeping retail's single pointer, and no path records the armed
+/// sub-op, so the kind resolves to `0`, `5` or `None` - all allow branches.
 pub fn root_menu_confirm_route(
     row: u16,
     entry_context_kind: Option<u8>,
-    any_save_block: bool,
+    save_allowed: bool,
 ) -> RootMenuRoute {
     match row {
         5 => {
@@ -1356,7 +1399,7 @@ pub fn root_menu_confirm_route(
             }
         }
         6 => {
-            if any_save_block {
+            if save_allowed {
                 RootMenuRoute::Sub(ROOT_MENU_ROUTES[6])
             } else {
                 RootMenuRoute::Buzz
@@ -1370,15 +1413,18 @@ pub fn root_menu_confirm_route(
 /// Sub-screen a cancel out of the root command picker lands on: `0` (the
 /// terminal exit screen) normally, and `3` - the Yes/No confirm - when the
 /// installed entry context's kind byte is [`ROOT_MENU_CONTEXT_LOCKED`]. So
-/// the same context that hides the Save row is the one that makes leaving
+/// the same context that hides the Load row is the one that makes leaving
 /// the menu ask first.
 ///
 /// PORT: FUN_801d6b20 (cancel arm `0x801D6CF8..0x801D6D18`)
 ///
-/// NOT WIRED: same missing entry context as [`root_menu_confirm_route`].
+/// NOT WIRED: same missing entry context as [`root_menu_confirm_route`],
+/// and a second missing piece of its own.
 /// [`crate::field_menu::FieldMenuSession`] closes on Circle with
-/// `FieldMenuOutcome::Closed` and has no leave-confirm sub-screen for the
-/// locked-context arm to select.
+/// `FieldMenuOutcome::Closed`; it has neither a sub-screen id space for
+/// the `0` / `3` return values to name nor a leave-confirm screen for the
+/// locked-context arm to select, so the prerequisite is a second pause-menu
+/// screen (the Yes/No leave confirm), not just the context byte.
 pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
     if entry_context_kind == Some(ROOT_MENU_CONTEXT_LOCKED) {
         3
@@ -2067,8 +2113,8 @@ mod tests {
     }
 
     #[test]
-    fn root_menu_save_row_is_gated_on_the_context_kind_not_its_presence() {
-        // No context at all: Save is available.
+    fn root_menu_load_row_is_gated_on_the_context_kind_not_its_presence() {
+        // No context at all: Load is available.
         assert_eq!(
             root_menu_confirm_route(5, None, false),
             RootMenuRoute::Sub(0x18)
@@ -2085,8 +2131,36 @@ mod tests {
         );
     }
 
+    /// Row 5 is `@Load` and row 6 is `@Save`, not the other way round, and
+    /// the two gates therefore attach to the rows the labels name. The
+    /// evidence is the menu overlay's own string pool: `FUN_801CFD68` hands
+    /// the string primitive `0x801CEA00` for row 5 and `0x801CEA08` for row
+    /// 6, and those cells hold `@Load` and `@Save`. Pinning it here keeps a
+    /// future edit from re-swapping the two gates back.
     #[test]
-    fn root_menu_load_row_needs_a_save_block() {
+    fn the_gated_rows_are_load_then_save_in_that_order() {
+        // The scene forbids saving; nothing is parked. Load is offered and
+        // Save buzzes - the shape a no-save scene has to produce.
+        assert_eq!(
+            root_menu_confirm_route(5, None, false),
+            RootMenuRoute::Sub(0x18)
+        );
+        assert_eq!(root_menu_confirm_route(6, None, false), RootMenuRoute::Buzz);
+        // A parked script context flips it: Save is fine, Load is refused,
+        // and leaving asks first.
+        assert_eq!(
+            root_menu_confirm_route(5, Some(ROOT_MENU_CONTEXT_LOCKED), true),
+            RootMenuRoute::Buzz
+        );
+        assert_eq!(
+            root_menu_confirm_route(6, Some(ROOT_MENU_CONTEXT_LOCKED), true),
+            RootMenuRoute::Sub(0x19)
+        );
+        assert_eq!(root_menu_cancel_route(Some(ROOT_MENU_CONTEXT_LOCKED)), 3);
+    }
+
+    #[test]
+    fn root_menu_save_row_needs_the_scene_save_allow_flag() {
         assert_eq!(root_menu_confirm_route(6, None, false), RootMenuRoute::Buzz);
         assert_eq!(
             root_menu_confirm_route(6, None, true),

@@ -19,13 +19,28 @@
 //!
 //! # NOT WIRED
 //!
-//! The engine's live cast path schedules its cues through
-//! `ArtStrikeInfo` / `BattleSfxCue` (see
-//! `docs/subsystems/battle-action.md`); nothing resolves through this
-//! byte-faithful mapper yet. Ported because the class -> cue-id algebra
-//! (including the per-character `char_kind * 0x10 + base` player band and
-//! the enemy-side `0x20C..0x20E` band) is the reference a cue-parity
-//! oracle needs.
+//! The call site exists and is live. Retail's `jal` sits in the arm that
+//! stamps state `0x3E` after the queued anim settles
+//! (`overlay_battle_action_801e295c.txt` `0x801E3DD8..0x801E3E08`), which the
+//! port has as `battle_action::spirit`'s `spirit_wait`. What blocks the call
+//! is that three of the five arguments have no carrier:
+//!
+//! * `actor[+0x1E8]` (cast class) and `actor[+0x1E9]` (sub-class) are not
+//!   fields of [`crate::battle_action::BattleActor`], and the state that
+//!   seeds them is not modelled - the port reads `0x3C` as `SpiritPreArm`,
+//!   which computes an MP cost and no class byte;
+//! * the char-kind byte `DAT_8007BD10[slot]` has no
+//!   [`BattleActionHost`](crate::battle_action::BattleActionHost) accessor,
+//!   and it is the `* 0x10` term that separates one character's cue band from
+//!   the next, so a zero stand-in would fire Vahn's cue for everyone.
+//!
+//! The sink is missing too: an [`CastCueOutcome::Sfx`] id is a raw
+//! `FUN_8004FCC8` one-shot, and the host trait carries no channel for one -
+//! the engine's battle cues ride `ArtStrikeInfo` / `BattleSfxCue` off a
+//! resolved strike (see `docs/subsystems/battle-action.md`). Ported because
+//! the class -> cue-id algebra (the per-character `char_kind * 0x10 + base`
+//! player band and the enemy-side `0x20C..0x20E` band) is the reference a
+//! cue-parity oracle needs.
 
 /// Outcome of the cast audio-cue dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

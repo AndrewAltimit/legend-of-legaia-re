@@ -1240,6 +1240,17 @@ pub struct World {
     /// Persisted in [`legaia_save::SaveExtV2::play_time_seconds`].
     pub play_time_seconds: u32,
 
+    /// Per-scene **save permission** - retail's `_DAT_8007B6A8`.
+    ///
+    /// Seeded at scene load from the scene MAN header's `[0x01] & 1`
+    /// ([`legaia_asset::man_section::ManHeader::low_flag`]) by
+    /// [`World::install_scene_save_permission`]; a scene with no MAN, and a
+    /// world that has not loaded one, reads `false` - the same state retail's
+    /// own init leaves the byte in. Read by the pause menu, where a cleared
+    /// flag greys the Save row and buzzes its confirm
+    /// ([`crate::pause_screens::root_menu_confirm_route`]).
+    pub scene_save_allowed: bool,
+
     /// Optional formation table - engines install this at boot via
     /// [`World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.
@@ -1823,24 +1834,14 @@ pub struct World {
     /// (retail re-enters the picker per round from `FUN_801DABA4`).
     pub battle_monster_flee_attempted: bool,
 
-    /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
-    /// setup. Live only until the first battle-action pass latches it; the
-    /// initiative seeder is the one consumer that reads *this* copy, to zero
-    /// the disadvantaged side's keys.
-    ///
-    /// REF: FUN_80051D84
-    pub battle_formation: vm::battle_formulas::FormationAdvantage,
-
-    /// `ctx+0x291` - the latched copy of [`Self::battle_formation`]. Retail's
-    /// `FUN_801E295C` state `0x00` copies `+0x290` here and then clears the
-    /// original; this is the copy that survives the battle and the one
-    /// [`World::roll_battle_escape`] reads (`== 2` -> the escape compare cannot
-    /// fail). Latching is what makes a pre-emptive strike affect escapes at
-    /// all - clearing `+0x290` without copying it silently disables them.
-    ///
-    /// REF: FUN_801E791C
-    pub battle_formation_latched: vm::battle_formulas::FormationAdvantage,
-
+    // The formation advantage (`ctx+0x290`) and its latched copy (`ctx+0x291`)
+    // are **not** fields here. Retail has exactly one of each, both inside the
+    // battle context the action SM owns, so the engine keeps them on
+    // [`Self::battle_ctx`] and reaches them through
+    // [`World::battle_formation`] / [`World::battle_formation_latched`]. They
+    // used to be a second copy on `World` that nothing ever pushed into the
+    // context, which left the SM's advantage-seeded turn-cursor arms
+    // unreachable.
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
@@ -2438,8 +2439,6 @@ impl World {
             battle_escaped: false,
             battle_no_escape: false,
             battle_monster_flee_attempted: false,
-            battle_formation: vm::battle_formulas::FormationAdvantage::None,
-            battle_formation_latched: vm::battle_formulas::FormationAdvantage::None,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -2448,6 +2447,7 @@ impl World {
             seru_registry: crate::seru_learning::SeruRegistry::new(),
             last_capture_outcomes: Vec::new(),
             play_time_seconds: 0,
+            scene_save_allowed: false,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             move_power: None,

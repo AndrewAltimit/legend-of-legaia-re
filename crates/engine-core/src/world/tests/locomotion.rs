@@ -172,7 +172,10 @@ fn locomotion_follows_terrain_height_only_when_gated_on() {
     world.reset_field_collision_grid();
     world.actors[0].move_state.world_x = 200;
     world.actors[0].move_state.world_z = 200;
-    world.actors[0].move_state.world_y = 999; // sentinel
+    // Sentinel: distinct from both floor tiers, and inside the ledge-hop dead
+    // band against them (`floor - y` lands in `[-0x60, 0x61)` either way), so
+    // the vertical controller's hop trigger stays out of this test.
+    world.actors[0].move_state.world_y = 20;
     // Floor tier 3 -> -40 across the 2x2 block around tile (1,1), which the
     // +Z walk lands in (x=200, z=208 -> tile (1,1)).
     world.field_floor_height_lut[3] = -40;
@@ -185,7 +188,7 @@ fn locomotion_follows_terrain_height_only_when_gated_on() {
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     assert_eq!(world.actors[0].move_state.world_z, 208);
-    assert_eq!(world.actors[0].move_state.world_y, 999);
+    assert_eq!(world.actors[0].move_state.world_y, 20);
 
     // Gate on: the next step snaps Y to the sampled floor height.
     world.follow_terrain_height = true;
@@ -407,9 +410,14 @@ fn load_field_script_resets_pc_and_ctx() {
 // ---------------------------------------------------------------------------
 
 /// A field world whose collision grid is all-floor (high nibble `0` = no
-/// walls) with the 2x2 tile block covering the hop's floor-sample point
-/// raised to elevation tier `1`. The LUT puts tier `1` at `height` world
-/// units, so walking +Z off tier `0` faces a `height`-unit step up.
+/// walls) with the 2x2 tile block covering the hop's floor-sample point on
+/// elevation tier `1`. The LUT puts tier `1` at `height` world units, so
+/// walking +Z off tier `0` faces a `height`-unit change of floor.
+///
+/// **World Y grows downward**, which is what the height LUT's sign means:
+/// `field_floor_height_lut` is loaded from the MAN header's 16 *negated*
+/// shorts, so a **negative** `height` is a raised tile (a step **up**) and a
+/// positive one is a drop.
 ///
 /// The player starts at the centre of tile (2, 2) facing +Z.
 fn ledge_world(height: i16) -> World {
@@ -433,9 +441,10 @@ fn ledge_world(height: i16) -> World {
 
 #[test]
 fn ledge_hop_posted_through_frame_tick() {
-    // A tier-1 step up of 200 units clears retail's +0x61 up-threshold, so
-    // one walking frame posts an upward hop. Driven through `tick()` rather
-    // than by calling the controller directly - this is the wiring test.
+    // A tier-1 floor 200 units *below* (world Y grows downward) clears
+    // retail's `>= +0x61` arm, so one walking frame posts the drop class.
+    // Driven through `tick()` rather than by calling the controller directly
+    // - this is the wiring test.
     let mut world = ledge_world(200);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
@@ -447,8 +456,8 @@ fn ledge_hop_posted_through_frame_tick() {
     let hop = world
         .field_ledge_hop
         .expect("the frame tick runs the vertical controller and it posts the hop");
-    assert_eq!(hop.kind, 0x10, "a step up is retail hop class 0x10");
-    assert!(hop.is_up());
+    assert_eq!(hop.kind, 0x10, "a drop is retail hop class 0x10");
+    assert!(!hop.is_up());
     // Landing point is three step-deltas ahead: z + 3 * (8 * 4) = z + 96.
     assert_eq!(
         hop.target_z,
@@ -456,6 +465,19 @@ fn ledge_hop_posted_through_frame_tick() {
         "the landing point sits 96 units ahead, retail's 3x probe scale"
     );
     assert_eq!(hop.target_x, world.actors[0].move_state.world_x);
+}
+
+#[test]
+fn ledge_hop_up_class_takes_the_taller_apex() {
+    // The mirror case: a *raised* tier-1 tile (negated LUT, so negative) is
+    // retail's `< -0x60` arm - the step up, which gets the 0x18 apex.
+    let mut world = ledge_world(-200);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    let hop = world.field_ledge_hop.expect("a raised tile is a ledge too");
+    assert_eq!(hop.kind, 0x18, "a step up is retail hop class 0x18");
+    assert!(hop.is_up());
+    assert_eq!(hop.arc.step, 0x100, "0x1000 / 0x10 frames");
 }
 
 #[test]
@@ -514,7 +536,8 @@ fn ledge_hop_refused_when_wall_ahead() {
 fn step_delta_clears_on_an_input_free_frame() {
     // Retail's `0x801d0550` clears the pair before the direction decode, so
     // a released pad leaves no stale delta for the hop trigger to act on.
-    let mut world = ledge_world(200);
+    // Flat ground here, so no hop session takes the frame off the walk.
+    let mut world = ledge_world(8);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     assert_eq!(world.field_step_delta, (0, 8));
@@ -528,5 +551,28 @@ fn step_delta_clears_on_an_input_free_frame() {
     assert!(
         world.field_ledge_hop.is_none(),
         "and posts no hop, since nothing walked"
+    );
+}
+
+#[test]
+fn a_started_hop_survives_the_pad_being_released() {
+    // The retail hop is a committed clip on two pool actors, not a per-frame
+    // reading of the pad: once `FUN_801d2404` has run, letting go of the pad
+    // does not cancel it - the phase machine holds the movement lock until
+    // its own end arm.
+    let mut world = ledge_world(200);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert!(world.field_ledge_hop.is_some(), "posted while walking");
+    world.set_pad(0);
+    let _ = world.tick();
+    let hop = world
+        .field_ledge_hop
+        .expect("the session outlives the frame that started it");
+    assert!(hop.arc.cursor > 0, "and it advanced rather than idling");
+    assert_ne!(
+        world.actors[0].move_state.flags & 0x0008_0000,
+        0,
+        "the movement lock is held for the flight"
     );
 }

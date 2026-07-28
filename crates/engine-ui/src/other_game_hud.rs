@@ -43,6 +43,16 @@
 //! The site's Muscle Dome page consumes the parsed records as the geometry
 //! source for its intro card and interval heading
 //! (`legaia-web-viewer::minigames_muscle::muscle_hud_json`).
+//!
+//! What is *not* available is where each quad goes. The three emitters have
+//! 9 / 31 / 23 retail call sites respectively, every one of them inside PROT
+//! 0977's own hub screens (`0x801CF2C0 .. 0x801D0324`), and none of those
+//! screens is ported - so the `(x, y, scale)` triples exist only as immediates
+//! inside code the engine does not run. Routing a page's art through these
+//! emitters would make its on-screen *extent* disc-derived (from each record's
+//! `size` field, which is real progress) while leaving its *placement*
+//! invented. That trade is why the tags below name a renderer rather than a
+//! parser.
 
 /// Byte stride of one sprite descriptor in the table at `0x801D170C`.
 pub const HUD_SPRITE_STRIDE: usize = 0x14;
@@ -340,9 +350,17 @@ pub fn hud_quad_corner(
 /// non-zero. A slot whose stored quotient is negative is skipped at draw
 /// time, so a **negative `value` renders nothing at all**.
 ///
-/// PORT: FUN_801d1308 (slot fill)
+/// Wired: this is the *shared* fill. `FUN_801d1308` and the fishing
+/// overlay's digit field `FUN_801d76e0` open with the identical loop - same
+/// `-1` init, same pre-seeded units slot, same `!= 0` store gate, same eight
+/// `/10` steps, same negative-slot skip - so
+/// [`crate::number_digit_cells`] takes its slots from here, which puts this
+/// on the live fishing HUD path (native window and browser page both). The
+/// two retail routines diverge only after the fill: this overlay emits one
+/// widget id and passes the digit by patching a descriptor's texture column,
+/// while the fishing one selects between two emitters and two pen pitches.
 ///
-/// NOT WIRED: reached only through [`decimal_quads`] - see its note.
+/// PORT: FUN_801d1308 (slot fill)
 pub fn decimal_slots(value: i32) -> [Option<u8>; DECIMAL_SLOTS] {
     let mut raw = [-1i32; DECIMAL_SLOTS];
     raw[DECIMAL_SLOTS - 1] = 0;

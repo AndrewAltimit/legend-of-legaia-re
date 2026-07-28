@@ -510,11 +510,14 @@ pub type EquipStatBonus = [u8; 5];
 /// [`stat_deltas`]; this is its result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatDelta {
-    /// Candidate raises the stat (retail glyph 5, ink 1).
+    /// Candidate raises the stat. Retail draws glyph
+    /// [`EQUIP_GLYPH_HIGHER`] and then selects ink [`EQUIP_INK_HIGHER`].
     Up,
-    /// Candidate lowers the stat (retail glyph 4, ink 6).
+    /// Candidate lowers it: glyph [`EQUIP_GLYPH_LOWER`], ink
+    /// [`EQUIP_INK_LOWER`].
     Down,
-    /// No change.
+    /// No change - neither `slt` fires, so nothing is drawn and the ink is
+    /// left where the label put it.
     Same,
 }
 
@@ -527,14 +530,20 @@ pub enum StatDelta {
 /// nothing but is still looked up in retail; callers pass a resolver that
 /// returns zeroes for id `0`.
 ///
-/// NOT WIRED: the engine's equip screen previews by trial-equipping into its
-/// own 8-slot array and re-running `legaia_engine_core::battle_stats`'s
-/// aggregator, so no caller wants a second aggregation - and this one needs
-/// the two static resolver tables (`DAT_80074368` stat index, `DAT_80074F68`
-/// bonuses) as closures, which no host assembles. The record window itself is
-/// **not** the blocker: `char[+0x75E]` rebases to record `+0x196`, which
-/// `crate::dev_equip_commit::commit_equip` already writes on live records.
+/// The consumer is **not** the pause-menu equip screen. `FUN_801E5B4C` has one
+/// `jal` in the corpus, `0x801F1778`, inside `FUN_801F16C0` - the hub panel's
+/// stacked per-entry label list, which draws a label and then calls this as the
+/// entry's **sub-draw**. The pause-menu preview is a separate flow that
+/// trial-equips into its own 8-slot array and re-runs
+/// `legaia_engine_core::battle_stats`'s aggregator, so it never reaches here.
+///
+/// Wired: [`equip_stat_panel`] is the whole sub-draw and runs this twice - once
+/// over the live loadout, once over the trial one - and
+/// [`crate::baka_hub_actors::entry_list`] calls it where the `jal` sits. The
+/// live path is `World::tick_submode_screen` -> `HubPainter::EntryList` ->
+/// `entry_list`.
 /// PORT: FUN_801E5B4C (aggregation loops)
+/// REF: FUN_801F16C0 - the hub entry list that calls this as a sub-draw.
 pub fn aggregate_slot_stats(
     slots: &[u8; 5],
     item_stat_index: impl Fn(u8) -> u8,
@@ -556,8 +565,10 @@ pub fn aggregate_slot_stats(
 /// `mask & (1 << char_idx)`; for any other character none of the guard arms
 /// match, so the item is treated as equippable.
 ///
-/// NOT WIRED: the engine's equip screen gates with
-/// `legaia_engine_core::equipment`'s own mask check.
+/// Wired: the candidate arm of [`equip_stat_panel`], which draws the reject
+/// line instead of the comparison columns when this returns `false`. The
+/// engine's own equip screen is a different screen and gates with
+/// `legaia_engine_core::equipment`'s mask check, not with this.
 /// PORT: FUN_801E5B4C (equippability guard)
 pub fn can_equip(mask: u8, char_idx: u32) -> bool {
     if char_idx < 3 {
@@ -572,8 +583,10 @@ pub fn can_equip(mask: u8, char_idx: u32) -> bool {
 /// `0 -> slot 0`, `1 -> slot 1`, `2 -> per-character weapon slot`
 /// (`weapon_slot_table[char_idx]`, from `0x8007B42C`), `3 -> slot 4`.
 ///
-/// Wired: [`crate::dev_equip_commit::commit_equip`] resolves the destination
-/// slot through here, and its own caller chain is
+/// Wired twice. [`equip_stat_panel`] resolves the trial-equip destination
+/// through here, which is retail's own use; and
+/// [`crate::dev_equip_commit::commit_equip`] resolves a real commit through it,
+/// with the caller chain
 /// `legaia_engine_core::dev_menu_host::DevMenuSession::commit_equip_row` ->
 /// `PlayWindowApp::tick_dev_menu` -> `handle_redraw`.
 ///
@@ -591,8 +604,9 @@ pub fn resolve_equip_slot(slot_bits: u8, char_idx: usize, weapon_slot_table: &[i
 /// the current totals. Retail shows the arrow next to a stat when the
 /// candidate total differs (`candidate > current -> Up`, `< -> Down`).
 ///
-/// NOT WIRED: no host builds a candidate loadout to compare - see
-/// [`aggregate_slot_stats`].
+/// Wired: [`equip_stat_panel`] runs this over the two aggregations and turns
+/// each verdict into the arrow glyph and the ink the candidate column beside it
+/// is drawn under.
 /// PORT: FUN_801E5B4C (LAB_801E5FB0 comparison block)
 pub fn stat_deltas(current: &[i32; 5], candidate: &[i32; 5]) -> [StatDelta; 5] {
     let mut out = [StatDelta::Same; 5];
@@ -606,9 +620,578 @@ pub fn stat_deltas(current: &[i32; 5], candidate: &[i32; 5]) -> [StatDelta; 5] {
     out
 }
 
+// ---------------------------------------------------------------------------
+// FUN_801E5B4C - the whole sub-panel
+// ---------------------------------------------------------------------------
+
+/// Rodata pointer VAs of the three stat labels, in draw order.
+///
+/// The pointers are loaded from consecutive words at `0x801F29CC` /
+/// `0x801F29D0` / `0x801F29D4`; the strings themselves are Sony bytes and are
+/// not reproduced.
+pub const EQUIP_LABEL_VAS: [u32; 3] = [0x801F_29CC, 0x801F_29D0, 0x801F_29D4];
+
+/// Rodata pointer VA of the "this character cannot equip that" line
+/// (`0x801F29C8`), the reject arm's only draw.
+pub const EQUIP_REJECT_VA: u32 = 0x801F_29C8;
+
+/// Which of the five aggregated bonus slots each drawn row reads.
+///
+/// Only three of the five are drawn: the equipment record's `+1` / `+2` / `+3`
+/// bytes, which [`equipment-table.md`] pins as ATK / UDF / LDF. The `+0` (INT)
+/// and `+4` (SPD) accumulators are summed and never painted.
+///
+/// [`equipment-table.md`]: ../../../docs/formats/equipment-table.md
+pub const EQUIP_ROW_BONUS_SLOTS: [usize; 3] = [1, 2, 3];
+
+/// Character-record offsets of the base stat each row adds its bonus total to.
+///
+/// Retail reads `0x80084140 + char*0x414 + 0x6DA/0x6DC/0x6DE`; rebasing by the
+/// `0x5C8` block-to-record distance gives `+0x112` / `+0x114` / `+0x116`, which
+/// `legaia_save` names `atk` / `udf` / `ldf`.
+pub const EQUIP_ROW_RECORD_OFFSETS: [usize; 3] = [0x112, 0x114, 0x116];
+
+/// Text ink (`_DAT_8007B454`) the panel opens on and restores to.
+pub const EQUIP_INK_NORMAL: i32 = 7;
+/// Ink the reject line draws under.
+pub const EQUIP_INK_REJECT: i32 = 9;
+/// Ink left for the candidate column when the candidate total is **lower**.
+pub const EQUIP_INK_LOWER: i32 = 1;
+/// Ink left for the candidate column when the candidate total is **higher**.
+pub const EQUIP_INK_HIGHER: i32 = 6;
+
+/// Glyph the arrow emitter draws when the candidate total is lower.
+pub const EQUIP_GLYPH_LOWER: i32 = 5;
+/// Glyph it draws when the candidate total is higher.
+pub const EQUIP_GLYPH_HIGHER: i32 = 4;
+
+/// Column offsets from the caller's pen: label, current value, arrow,
+/// candidate value.
+pub const EQUIP_COL_LABEL: i16 = 0x08;
+/// Current-total column.
+pub const EQUIP_COL_CURRENT: i16 = 0x38;
+/// Arrow column.
+pub const EQUIP_COL_ARROW: i16 = 0x50;
+/// Candidate-total column.
+pub const EQUIP_COL_CANDIDATE: i16 = 0x58;
+/// The reject line's own offsets, which are not a row of the grid.
+pub const EQUIP_REJECT_OFFSET: (i16, i16) = (0x0C, 0x08);
+
+/// Row pitch with the op-`0x49` descriptor clear / set (`_DAT_8007B450`).
+pub const EQUIP_ROW_PITCH: [i16; 2] = [0x0E, 0x0D];
+
+/// Digits every value column prints (`FUN_80034B78(value, 3, x, y)`).
+pub const EQUIP_VALUE_DIGITS: i32 = 3;
+
+/// Menu-mode words (`_DAT_8007BB9C`) that take the candidate from the
+/// inventory list at `0x80084140 + 0x1818`, indexed by the shared cursor.
+pub const EQUIP_MODE_INVENTORY: [u32; 3] = [0x1000, 0x6000, 0x9000];
+/// The mode that uses the shared cursor **as** the candidate id.
+pub const EQUIP_MODE_DIRECT: u32 = 0x3000;
+/// The mode that compares against an empty loadout when the cursor is `1`.
+pub const EQUIP_MODE_BLANK: u32 = 0x4000;
+
+/// The item-property table row `FUN_801E5B4C` reads for a candidate id
+/// (`DAT_80074368`, stride `0x0C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ItemProps {
+    /// `+0` - `1` = equipment, `2` = the class that draws the plain block.
+    pub kind: u8,
+    /// `+1` - index into the stride-8 equipment table.
+    pub stat_index: u8,
+}
+
+/// The equipment-table row (`DAT_80074F68`, stride `8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EquipProps {
+    /// `+0..+4` - the five stat bonuses.
+    pub bonuses: EquipStatBonus,
+    /// `+6` - the equip-character mask.
+    pub char_mask: u8,
+    /// `+7` - the slot-type bits.
+    pub slot_bits: u8,
+}
+
+/// What the caller publishes before the sub-draw plus the record fields it
+/// reads back out.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EquipPanelInput {
+    /// The caller's pen, `param_1[+0x0A]` / `param_1[+0x0C]`.
+    pub x: i16,
+    /// Pen y.
+    pub y: i16,
+    /// `_DAT_8007B469`, the character the caller published for this entry.
+    pub char_index: usize,
+    /// `char[+0x75E..+0x763]` - the five equip slot ids.
+    pub slots: [u8; 5],
+    /// The three base stats at [`EQUIP_ROW_BONUS_SLOTS`]' record offsets.
+    pub base_stats: [i32; 3],
+    /// `_DAT_8007BB9C`, the menu mode word.
+    pub mode: u32,
+    /// `_DAT_8007BB88`, the shared list cursor.
+    pub cursor: i32,
+    /// The inventory id list at `0x80084140 + 0x1818`, stride `2`, that the
+    /// three inventory modes index with the cursor.
+    pub inventory: Vec<u8>,
+    /// `0x8007B42C` - the per-character weapon slot table.
+    pub weapon_slots: Vec<i16>,
+    /// `_DAT_8007B450` non-zero, which tightens the row pitch by one pixel.
+    pub tight_rows: bool,
+}
+
+/// One draw the sub-panel emits, named for the retail emitter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EquipPanelDraw {
+    /// `FUN_80036888(*label_va, 0, 0, x, y)` under `ink`.
+    Label {
+        label_va: u32,
+        x: i16,
+        y: i16,
+        ink: i32,
+    },
+    /// `FUN_80034B78(value, 3, x, y)` under `ink`.
+    Value {
+        value: i32,
+        x: i16,
+        y: i16,
+        ink: i32,
+    },
+    /// `FUN_8003C1F8(glyph, x, y)` under `ink`.
+    Arrow {
+        glyph: i32,
+        x: i16,
+        y: i16,
+        ink: i32,
+    },
+}
+
+/// Which candidate loadout the mode word and cursor select.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EquipCandidate {
+    /// No comparison column: the three inventory modes, `0x3000` and `0x4000`
+    /// all fall through to the plain block for the cursor values that do not
+    /// name an item.
+    None,
+    /// Mode `0x4000` with cursor `1`: compare against an all-zero candidate.
+    Empty,
+    /// An item id to trial-equip.
+    Item(u8),
+}
+
+/// Decode the candidate the mode word and cursor select.
+///
+/// PORT: FUN_801E5B4C (`0x801E5C7C..0x801E5D18` mode ladder)
+pub fn equip_candidate(mode: u32, cursor: i32, inventory: &[u8]) -> EquipCandidate {
+    if EQUIP_MODE_INVENTORY.contains(&mode) {
+        let id = usize::try_from(cursor)
+            .ok()
+            .and_then(|i| inventory.get(i).copied())
+            .unwrap_or(0);
+        return EquipCandidate::Item(id);
+    }
+    if mode == EQUIP_MODE_DIRECT {
+        return EquipCandidate::Item(cursor as u8);
+    }
+    if mode == EQUIP_MODE_BLANK && cursor == 1 {
+        return EquipCandidate::Empty;
+    }
+    EquipCandidate::None
+}
+
+/// The whole of `FUN_801E5B4C`: the per-entry equipment stat sub-panel the hub
+/// entry list draws under each label.
+///
+/// Three rows, each `label | current | (arrow) | candidate`, over the ATK /
+/// UDF / LDF accumulators. The comparison columns only appear when the mode
+/// word names a candidate; otherwise retail draws the same three rows without
+/// them, which is the arm the hub's own list mode takes.
+///
+/// The ink is a **store to `_DAT_8007B454` between draws**, not a per-draw
+/// argument, and the arrow's store lands *after* its own `jal` - so the ink an
+/// arrow selects colours the candidate column beside it, not the arrow. That
+/// is reproduced here by carrying the ink forward.
+///
+/// PORT: FUN_801E5B4C
+///
+/// Wired: [`crate::baka_hub_actors::entry_list`] calls this where retail's
+/// `jal 0x801F1778` sits, once per drawn entry. Its own caller chain is
+/// `World::tick_submode_screen` -> `HubPainter::EntryList`.
+pub fn equip_stat_panel(
+    input: &EquipPanelInput,
+    item_props: impl Fn(u8) -> ItemProps,
+    equip_props: impl Fn(u8) -> EquipProps,
+) -> Vec<EquipPanelDraw> {
+    let current = aggregate_slot_stats(
+        &input.slots,
+        |id| item_props(id).stat_index,
+        |idx| equip_props(idx).bonuses,
+    );
+
+    let candidate = match equip_candidate(input.mode, input.cursor, &input.inventory) {
+        EquipCandidate::None => None,
+        EquipCandidate::Empty => Some([0i32; 5]),
+        EquipCandidate::Item(id) => {
+            let props = item_props(id);
+            match props.kind {
+                1 => {
+                    let equip = equip_props(props.stat_index);
+                    if !can_equip(equip.char_mask, input.char_index as u32) {
+                        // The reject arm draws one line and returns.
+                        let (dx, dy) = EQUIP_REJECT_OFFSET;
+                        return vec![EquipPanelDraw::Label {
+                            label_va: EQUIP_REJECT_VA,
+                            x: input.x + dx,
+                            y: input.y + dy,
+                            ink: EQUIP_INK_REJECT,
+                        }];
+                    }
+                    // Trial-equip into the resolved slot, aggregate, restore.
+                    let slot =
+                        resolve_equip_slot(equip.slot_bits, input.char_index, &input.weapon_slots);
+                    let mut trial = input.slots;
+                    if let Some(cell) = trial.get_mut(slot) {
+                        *cell = id;
+                    }
+                    Some(aggregate_slot_stats(
+                        &trial,
+                        |i| item_props(i).stat_index,
+                        |idx| equip_props(idx).bonuses,
+                    ))
+                }
+                // Kind 2 draws the plain block; every other kind draws nothing
+                // at all (`bne a0,v0,0x801E63E0` at `0x801E6280`).
+                2 => None,
+                _ => return Vec::new(),
+            }
+        }
+    };
+
+    let deltas = candidate.map(|c| stat_deltas(&current, &c));
+    let pitch = EQUIP_ROW_PITCH[usize::from(input.tight_rows)];
+    let mut out = Vec::new();
+    let mut y = input.y;
+    for (row, &bonus_slot) in EQUIP_ROW_BONUS_SLOTS.iter().enumerate() {
+        // The ink is reasserted per row: retail stores `7` before each label.
+        let mut ink = EQUIP_INK_NORMAL;
+        out.push(EquipPanelDraw::Label {
+            label_va: EQUIP_LABEL_VAS[row],
+            x: input.x + EQUIP_COL_LABEL,
+            y,
+            ink,
+        });
+        let base = input.base_stats[row];
+        out.push(EquipPanelDraw::Value {
+            value: base + current[bonus_slot],
+            x: input.x + EQUIP_COL_CURRENT,
+            y,
+            ink,
+        });
+        if let (Some(cand), Some(d)) = (candidate, deltas) {
+            match d[bonus_slot] {
+                StatDelta::Down => {
+                    out.push(EquipPanelDraw::Arrow {
+                        glyph: EQUIP_GLYPH_LOWER,
+                        x: input.x + EQUIP_COL_ARROW,
+                        y,
+                        ink,
+                    });
+                    ink = EQUIP_INK_LOWER;
+                }
+                StatDelta::Up => {
+                    out.push(EquipPanelDraw::Arrow {
+                        glyph: EQUIP_GLYPH_HIGHER,
+                        x: input.x + EQUIP_COL_ARROW,
+                        y,
+                        ink,
+                    });
+                    ink = EQUIP_INK_HIGHER;
+                }
+                StatDelta::Same => {}
+            }
+            out.push(EquipPanelDraw::Value {
+                value: base + cand[bonus_slot],
+                x: input.x + EQUIP_COL_CANDIDATE,
+                y,
+                ink,
+            });
+        }
+        // The last row does not advance - the epilogue follows it directly.
+        if row + 1 < EQUIP_ROW_BONUS_SLOTS.len() {
+            y += pitch;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- FUN_801E5B4C sub-panel ------------------------------------------
+
+    fn panel_input() -> EquipPanelInput {
+        EquipPanelInput {
+            x: 0x20,
+            y: 0x30,
+            char_index: 1,
+            slots: [1, 0, 0, 0, 0],
+            base_stats: [10, 20, 30],
+            ..EquipPanelInput::default()
+        }
+    }
+
+    /// Item 1 is an equippable with bonus row 1; item 2 is `kind 2`; item 3 is
+    /// an equippable Noa cannot wear; item 9 is a kind the panel ignores.
+    fn item(id: u8) -> ItemProps {
+        match id {
+            1 => ItemProps {
+                kind: 1,
+                stat_index: 1,
+            },
+            2 => ItemProps {
+                kind: 2,
+                stat_index: 0,
+            },
+            3 => ItemProps {
+                kind: 1,
+                stat_index: 3,
+            },
+            9 => ItemProps {
+                kind: 7,
+                stat_index: 0,
+            },
+            _ => ItemProps::default(),
+        }
+    }
+
+    fn equip(idx: u8) -> EquipProps {
+        match idx {
+            1 => EquipProps {
+                bonuses: [0, 5, 0, 0, 0],
+                char_mask: 7,
+                slot_bits: 0x40,
+            },
+            3 => EquipProps {
+                bonuses: [0, 9, 0, 0, 0],
+                char_mask: 1,
+                slot_bits: 0x40,
+            },
+            _ => EquipProps::default(),
+        }
+    }
+
+    #[test]
+    fn the_mode_ladder_picks_the_candidate_source() {
+        let inv = [0u8, 4, 8];
+        for m in EQUIP_MODE_INVENTORY {
+            assert_eq!(equip_candidate(m, 2, &inv), EquipCandidate::Item(8));
+        }
+        // `0x3000` uses the cursor as the id itself.
+        assert_eq!(
+            equip_candidate(EQUIP_MODE_DIRECT, 2, &inv),
+            EquipCandidate::Item(2)
+        );
+        // `0x4000` compares against nothing, and only on cursor 1.
+        assert_eq!(
+            equip_candidate(EQUIP_MODE_BLANK, 1, &inv),
+            EquipCandidate::Empty
+        );
+        assert_eq!(
+            equip_candidate(EQUIP_MODE_BLANK, 0, &inv),
+            EquipCandidate::None
+        );
+        // Anything else falls through to the plain block.
+        assert_eq!(equip_candidate(0, 1, &inv), EquipCandidate::None);
+        assert_eq!(equip_candidate(0x2000, 1, &inv), EquipCandidate::None);
+    }
+
+    #[test]
+    fn the_plain_block_is_three_label_value_rows() {
+        let input = panel_input();
+        let out = equip_stat_panel(&input, item, equip);
+        assert_eq!(out.len(), 6, "three rows, label + current only");
+        // Row 0 sits at the pen; rows step by the wide pitch.
+        let want_y = [0x30, 0x30 + 0x0E, 0x30 + 0x1C];
+        for (row, &y) in want_y.iter().enumerate() {
+            assert_eq!(
+                out[row * 2],
+                EquipPanelDraw::Label {
+                    label_va: EQUIP_LABEL_VAS[row],
+                    x: 0x20 + EQUIP_COL_LABEL,
+                    y,
+                    ink: EQUIP_INK_NORMAL,
+                }
+            );
+            // Slot 0 holds item 1, whose bonus lands on accumulator 1 - so
+            // only the ATK row picks it up.
+            let bonus = if row == 0 { 5 } else { 0 };
+            assert_eq!(
+                out[row * 2 + 1],
+                EquipPanelDraw::Value {
+                    value: input.base_stats[row] + bonus,
+                    x: 0x20 + EQUIP_COL_CURRENT,
+                    y,
+                    ink: EQUIP_INK_NORMAL,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn the_board_flag_tightens_the_row_pitch_by_one() {
+        let mut input = panel_input();
+        input.tight_rows = true;
+        let out = equip_stat_panel(&input, item, equip);
+        let ys: Vec<i16> = out
+            .iter()
+            .filter_map(|d| match d {
+                EquipPanelDraw::Label { y, .. } => Some(*y),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ys, vec![0x30, 0x30 + 0x0D, 0x30 + 0x1A]);
+    }
+
+    #[test]
+    fn a_candidate_adds_the_arrow_and_inks_the_column_beside_it() {
+        // Trial-equip item 1 (ATK +5) over an empty weapon slot: ATK rises.
+        let mut input = panel_input();
+        input.slots = [0; 5];
+        input.base_stats = [10, 20, 30];
+        input.mode = EQUIP_MODE_DIRECT;
+        input.cursor = 1;
+        let out = equip_stat_panel(&input, item, equip);
+
+        // Row 0: label, current, arrow, candidate. Rows 1/2: no arrow.
+        assert_eq!(
+            out[2],
+            EquipPanelDraw::Arrow {
+                glyph: EQUIP_GLYPH_HIGHER,
+                x: 0x20 + EQUIP_COL_ARROW,
+                y: 0x30,
+                // The arrow itself draws under the label's ink; its own store
+                // lands after the `jal`.
+                ink: EQUIP_INK_NORMAL,
+            }
+        );
+        assert_eq!(
+            out[3],
+            EquipPanelDraw::Value {
+                value: 10 + 5,
+                x: 0x20 + EQUIP_COL_CANDIDATE,
+                y: 0x30,
+                ink: EQUIP_INK_HIGHER,
+            }
+        );
+        // The unchanged rows still print a candidate column, just no arrow and
+        // no ink change.
+        assert_eq!(
+            out[6],
+            EquipPanelDraw::Value {
+                value: 20,
+                x: 0x20 + EQUIP_COL_CANDIDATE,
+                y: 0x30 + 0x0E,
+                ink: EQUIP_INK_NORMAL,
+            }
+        );
+        assert!(
+            !out.iter().any(|d| matches!(
+                d,
+                EquipPanelDraw::Arrow { y, .. } if *y != 0x30
+            )),
+            "only the stat that moved gets an arrow"
+        );
+    }
+
+    #[test]
+    fn losing_a_stat_picks_the_other_glyph_and_ink() {
+        let mut input = panel_input();
+        // Currently wearing item 1 in the weapon slot; the candidate is item 2,
+        // which is `kind 2` - so retail draws the plain block, not a swap.
+        input.mode = EQUIP_MODE_DIRECT;
+        input.cursor = 2;
+        assert_eq!(equip_stat_panel(&input, item, equip).len(), 6);
+
+        // A real downgrade: wearing item 3 (+9), trial item 1 (+5).
+        let mut input = panel_input();
+        input.char_index = 0;
+        input.slots = [0, 0, 3, 0, 0];
+        input.weapon_slots = vec![2, 2, 2];
+        input.mode = EQUIP_MODE_DIRECT;
+        input.cursor = 1;
+        let out = equip_stat_panel(&input, item, equip);
+        assert_eq!(
+            out[2],
+            EquipPanelDraw::Arrow {
+                glyph: EQUIP_GLYPH_LOWER,
+                x: 0x20 + EQUIP_COL_ARROW,
+                y: 0x30,
+                ink: EQUIP_INK_NORMAL,
+            }
+        );
+        assert!(matches!(
+            out[3],
+            EquipPanelDraw::Value {
+                value: 15,
+                ink: EQUIP_INK_LOWER,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn an_unequippable_candidate_replaces_the_whole_panel_with_one_line() {
+        let mut input = panel_input();
+        // Item 3's mask is Vahn-only and this entry is Noa.
+        input.char_index = 1;
+        input.mode = EQUIP_MODE_DIRECT;
+        input.cursor = 3;
+        let out = equip_stat_panel(&input, item, equip);
+        assert_eq!(
+            out,
+            vec![EquipPanelDraw::Label {
+                label_va: EQUIP_REJECT_VA,
+                x: 0x20 + EQUIP_REJECT_OFFSET.0,
+                y: 0x30 + EQUIP_REJECT_OFFSET.1,
+                ink: EQUIP_INK_REJECT,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_candidate_of_any_other_kind_draws_nothing_at_all() {
+        let mut input = panel_input();
+        input.mode = EQUIP_MODE_DIRECT;
+        input.cursor = 9;
+        assert!(
+            equip_stat_panel(&input, item, equip).is_empty(),
+            "`bne a0,v0,0x801E63E0` at 0x801E6280 skips the epilogue's draws"
+        );
+    }
+
+    #[test]
+    fn the_empty_candidate_compares_the_loadout_against_nothing() {
+        let mut input = panel_input();
+        input.mode = EQUIP_MODE_BLANK;
+        input.cursor = 1;
+        let out = equip_stat_panel(&input, item, equip);
+        // ATK is 10 + 5 now and 10 bare, so the candidate column is lower.
+        assert!(matches!(
+            out[2],
+            EquipPanelDraw::Arrow {
+                glyph: EQUIP_GLYPH_LOWER,
+                ..
+            }
+        ));
+        assert!(matches!(
+            out[3],
+            EquipPanelDraw::Value {
+                value: 10,
+                ink: EQUIP_INK_LOWER,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn fixed_decimal_zero_pads() {

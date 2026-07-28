@@ -43,10 +43,19 @@
 //!    on `World::tick_world_map_panels` and are tabulated there.
 //! 4. **Entry phase and dismissal.** Several of these machines park rather
 //!    than exit, and retail releases them from outside: the scene manager
-//!    watching `scene[+0x3E]`, whoever armed the flash counter, the executable
-//!    reload. [`PanelActorKind::entry_phase`] picks the arm the host wants to
-//!    run and [`PanelActorHost::dismiss`] is the escape hatch, without which
-//!    the first parking arm wedges the screen.
+//!    watching `scene[+0x3E]`, the executable reload.
+//!    [`PanelActorKind::entry_phase`] picks the arm the host wants to run and
+//!    [`PanelActorHost::dismiss`] is the escape hatch, without which the first
+//!    parking arm wedges the screen.
+//!
+//! The fade/flash actor's park is **not** in that list any more. Its releaser
+//! is identified: the actor's own phase-1 arm hands off to the in-field
+//! save/load screen driver ([`SaveScreenHandoff`]), the menu overlay's
+//! save-side UI writes both shared globals while the field overlay is paged
+//! out, and the counter it leaves selects which of the two terminal arms the
+//! actor takes. [`PanelActorHost::release_flash_with`] is that write, and it
+//! refuses to fire without an outstanding hand-off, because in retail nothing
+//! else stores to `_DAT_8007B43C` at all.
 //!
 //! # The pad layout trap
 //!
@@ -66,10 +75,11 @@ use legaia_engine_vm::world_map_panel::{
     CursorPad, PanelCommand, PanelDescriptor, PanelEffect, run_panel_script,
 };
 use legaia_engine_vm::world_map_panel_actors::{
-    ActorExit, FadeFlashEffect, FadeFlashInput, FillFadeEffect, FillFadeInput,
-    FlagWindowDescriptor, FlagWindowEffect, FlagWindowInput, HudDecision, HudInput, SubListEffect,
-    SubListInput, TextBoxEffect, TextBoxInput, fade_flash_tick, field_hud_tick, fill_fade_tick,
-    flag_window_tick, soft_reset_tick, sub_list_tick, text_box_tick,
+    ActorExit, BRIGHTNESS_MAX, FLASH_COUNTER_DONE_STEP, FLASH_COUNTER_SEED_A, FLASH_COUNTER_SEED_B,
+    FadeFlashEffect, FadeFlashInput, FillFadeEffect, FillFadeInput, FlagWindowDescriptor,
+    FlagWindowEffect, FlagWindowInput, HudDecision, HudInput, SubListEffect, SubListInput,
+    TextBoxEffect, TextBoxInput, fade_flash_tick, field_hud_tick, fill_fade_tick, flag_window_tick,
+    soft_reset_tick, sub_list_tick, text_box_tick,
 };
 use std::collections::HashMap;
 
@@ -105,11 +115,60 @@ pub const SUBLIST_PANEL_INDEX: i16 = 3;
 /// Value the host arms the flash counter `_DAT_8007B43C` with to release a
 /// parked brightness flash.
 ///
-/// `FUN_801ED308` parks at phase 3 until an external writer raises the counter
-/// to at least [`legaia_engine_vm::world_map_panel_actors::FLASH_COUNTER_RESTORE`];
-/// the ramp-down arm then returns to phase `counter - 1`, so `7` is the value
-/// that lands on the phase-6 terminal arm instead of the phase-5 dead end.
-pub const FLASH_RELEASE_COUNTER: i32 = 7;
+/// Not a port-invented number: it is retail's own
+/// [`FLASH_COUNTER_SEED_A`]` + `[`FLASH_COUNTER_DONE_STEP`] (`4 + 3`), the
+/// value the menu overlay's save-side completion screen leaves behind. The
+/// ramp-down arm decodes it as `phase = counter - 1`, so `7` selects the
+/// phase-6 terminal arm rather than the phase-5 dead end.
+pub const FLASH_RELEASE_COUNTER: i32 = FLASH_COUNTER_SEED_A + FLASH_COUNTER_DONE_STEP;
+
+/// The sibling release value, `5 + 3`, which selects the phase-7 terminal arm
+/// and the other handler id.
+pub const FLASH_RELEASE_COUNTER_ALT: i32 = FLASH_COUNTER_SEED_B + FLASH_COUNTER_DONE_STEP;
+
+/// Which of the save/load UI's two completion screens released the flash.
+///
+/// The menu overlay seeds `_DAT_8007B43C` differently on each and its
+/// completion path adds [`FLASH_COUNTER_DONE_STEP`]; the field-side actor then
+/// reads the sum back as its exit phase. That makes this the *return value* of
+/// the save screen, which is why it is an enum here and not a bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveScreenOutcome {
+    /// Seed [`FLASH_COUNTER_SEED_A`] - exit phase 6, handler `0x29`.
+    HandlerA,
+    /// Seed [`FLASH_COUNTER_SEED_B`] - exit phase 7, handler `0x2B`.
+    HandlerB,
+}
+
+impl SaveScreenOutcome {
+    /// The counter the menu side leaves for the field side, seed plus step.
+    pub fn release_counter(self) -> i32 {
+        match self {
+            SaveScreenOutcome::HandlerA => FLASH_RELEASE_COUNTER,
+            SaveScreenOutcome::HandlerB => FLASH_RELEASE_COUNTER_ALT,
+        }
+    }
+}
+
+/// The live save-screen hand-off `FUN_801D841C` made, while it is outstanding.
+///
+/// Retail's actor is a node on the system pool at `_DAT_8007C34C` whose `+0xC`
+/// handler is `0x80024190`; here it is the record of the spawn plus the one
+/// field the spawner writes. The engine reaches the memory-card UI as host
+/// screen state rather than by paging a code overlay under a running field
+/// session, so what the host owns is the *hand-off*, not a second copy of
+/// [`crate::field_save_screen_actor`]'s eleven-state sequencer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveScreenHandoff {
+    /// `FUN_80020DE0`'s first argument, `0x800706BC`.
+    pub descriptor: u32,
+    /// Its second, `_DAT_8007C34C`.
+    pub pool: u32,
+    /// `actor[+0x5C] != 0` - the save side. `FUN_801D841C` writes `1`; the
+    /// fill-fade sibling `FUN_801EE5D4` spawns the same descriptor and leaves
+    /// it zero, which is the load side.
+    pub is_save: bool,
+}
 
 /// A live window object - retail's per-panel actor, allocated by the window
 /// spawner the `op 1` / `op 2` arms call.
@@ -425,6 +484,11 @@ pub struct PanelFrame {
     pub retired: bool,
     /// The sub-list took its state-3 hand-off (row 1 confirm).
     pub hand_off: bool,
+    /// The fade/flash actor performed retail's `FUN_801D841C` hand-off this
+    /// frame. A host that owns the memory-card UI opens it here and answers
+    /// with [`PanelActorHost::release_flash_with`]; the panel host keeps the
+    /// same record in [`PanelActorHost::save_screen`] meanwhile.
+    pub save_screen: Option<SaveScreenHandoff>,
 }
 
 /// The panel-actor screen: one installed actor, the window system under it,
@@ -490,6 +554,14 @@ pub struct PanelActorHost {
     pub hud_cached_pos: Option<(i16, i16)>,
     /// The last party-HUD decision, for a renderer.
     pub hud: Option<HudDecision>,
+    /// The save-screen hand-off, while one is outstanding.
+    ///
+    /// Set by the fade/flash actor's phase-1 arm (retail's `FUN_801D841C`
+    /// spawn) and cleared when the flash is released. Retail's equivalent is
+    /// the live node on the pool at `_DAT_8007C34C`: it exists for exactly the
+    /// window in which the field overlay is not resident, which is exactly the
+    /// window this actor is parked in.
+    pub save_screen: Option<SaveScreenHandoff>,
 }
 
 impl Default for PanelActorHost {
@@ -526,6 +598,7 @@ impl Default for PanelActorHost {
             hud_timer: 0,
             hud_cached_pos: None,
             hud: None,
+            save_screen: None,
         }
     }
 }
@@ -551,6 +624,7 @@ impl PanelActorHost {
         self.timer = 0;
         self.handler_id = handler_id;
         self.cursor = 0;
+        self.save_screen = None;
         if let PanelActorKind::TravelArt(art) = kind {
             self.travel = Some(TravelArtActor::new(art));
         } else {
@@ -575,17 +649,41 @@ impl PanelActorHost {
         }
         self.kind = None;
         self.travel = None;
+        self.save_screen = None;
         self.phase = 0;
         self.timer = 0;
         true
     }
 
-    /// Release a brightness flash parked at phase 3 (see
-    /// [`FLASH_RELEASE_COUNTER`]). No-op unless the fade/flash actor is up.
-    pub fn release_flash(&mut self) {
-        if self.kind == Some(PanelActorKind::FadeFlash) {
-            self.flash_counter = FLASH_RELEASE_COUNTER;
+    /// Release a brightness flash parked at the hold phase
+    /// ([`legaia_engine_vm::world_map_panel_actors::FADE_FLASH_HOLD_PHASE`]),
+    /// the way retail's menu overlay does when its save/load UI finishes.
+    ///
+    /// The release is **gated on an outstanding save screen** because that is
+    /// the only thing that writes `_DAT_8007B43C` in retail: the counter's five
+    /// seeds and its `+3` completion step all live inside the menu overlay's
+    /// save-side screens (`FUN_801DC6B4` and the two completion panels at
+    /// `0x801D8A58` / `0x801D8B98`), and that overlay is only resident because
+    /// [`FadeFlashEffect::SpawnSaveScreen`] put the driver actor on the pool.
+    /// Nothing else in the corpus stores to the address.
+    ///
+    /// Returns whether a parked flash was released.
+    pub fn release_flash_with(&mut self, outcome: SaveScreenOutcome) -> bool {
+        if self.kind != Some(PanelActorKind::FadeFlash) || self.save_screen.is_none() {
+            return false;
         }
+        self.save_screen = None;
+        // The menu side pins the level as well as the counter, so the field
+        // side resumes at full white however long the UI took.
+        self.brightness = BRIGHTNESS_MAX;
+        self.flash_counter = outcome.release_counter();
+        true
+    }
+
+    /// [`Self::release_flash_with`] on the save-side completion screen, which
+    /// is the outcome the engine's own chord stands in for.
+    pub fn release_flash(&mut self) -> bool {
+        self.release_flash_with(SaveScreenOutcome::HandlerA)
     }
 
     /// Record that the party is standing on `map_id` at `(tile_x, tile_z)`.
@@ -625,6 +723,7 @@ impl PanelActorHost {
         );
         self.kind = None;
         self.travel = None;
+        self.save_screen = None;
         self.timer = 0;
     }
 
@@ -688,6 +787,18 @@ impl PanelActorHost {
                 FadeFlashEffect::CaptureAndClearTint => {
                     self.saved_tint = self.tint;
                     self.tint = [0; 3];
+                }
+                FadeFlashEffect::SpawnSaveScreen => {
+                    // `FUN_801D841C` verbatim: the descriptor / pool pair and
+                    // the one field it writes on the returned actor.
+                    let spawn = crate::cutscene_script_elements::save_screen_spawn();
+                    let handoff = SaveScreenHandoff {
+                        descriptor: spawn.descriptor,
+                        pool: spawn.pool,
+                        is_save: spawn.field_5c != 0,
+                    };
+                    self.save_screen = Some(handoff);
+                    frame.save_screen = Some(handoff);
                 }
                 FadeFlashEffect::RestoreTint => self.tint = self.saved_tint,
                 FadeFlashEffect::ClearSceneField3E => self.scene_field_3e = 0,

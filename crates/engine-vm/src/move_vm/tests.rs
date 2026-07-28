@@ -40,6 +40,9 @@ struct TestHost {
     /// Constant value returned by `ext_query_flag_bank` (lets predicate
     /// tests select the expected branch).
     ext_query_flag_bank_returns: u32,
+    /// Constant value returned by `ext_party_member_lookup` (lets sub-op
+    /// 0x3B tests select the hit or the miss path).
+    party_member: Option<[i16; 3]>,
     /// Mirrors the actor's move bytecode buffer for sub-ops 0x04 / 0x1B
     /// / 0x1E. Tests that exercise these ops pre-seed the buffer to
     /// match the program they pass to `step`, then assert on the
@@ -113,6 +116,9 @@ impl MoveHost for TestHost {
     }
     fn ext_world_struct_init(&mut self, idx: i16, vals: [i16; 5]) {
         self.ext_world_struct_inits.push((idx, vals));
+    }
+    fn ext_party_member_lookup(&self, _slot: i16) -> Option<[i16; 3]> {
+        self.party_member
     }
     fn move_slot_save_u32(&mut self, slot: u16, dword_off: u8, value: u32) {
         let slot_idx = (slot as usize) & 0xF;
@@ -394,8 +400,8 @@ fn op2f_subop_02_clears_face_rotation() {
     let bc = program(&[0x2F, 0x02]);
     step(&mut host, &mut state, &bc);
     assert_eq!(state.face_rotation, 0);
-    // default-arm size is 1.
-    assert_eq!(state.pc, 1);
+    // Size 2 - `li s2, 0x2` in the 0x801D36B0 exit.
+    assert_eq!(state.pc, 2);
 }
 
 #[test]
@@ -676,47 +682,45 @@ fn op2f_subop_08_sets_global_predicate_and_subop_09_clears_it() {
 }
 
 #[test]
-fn op2f_subop_0a_falls_through_when_predicate_set() {
+fn op2f_subop_0a_branches_by_delta_when_predicate_set() {
+    // `[2F][0A][delta]`. The predicate-set side falls to the shared
+    // 0x801D38C8 tail (`lhu v0,0x4(s3); addiu s2,v0,0x3`) = `3 + op[2]`.
     let mut host = TestHost::default();
     host.global_predicate = 1;
     let mut state = ActorState::new();
-    // The convention in this VM: dispatcher's `default_arm()` returns
-    // `size_u16 = 1` so the main step advances PC by 1 (matching the
-    // PSX dispatcher's `iVar16 = 1; default: iVar16 << 0x10; return
-    // iVar16 >> 0x10` shape).
-    let bc = program(&[0x2F, 0x0A]);
+    let bc = program(&[0x2F, 0x0A, 5]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1);
+    assert_eq!(state.pc, 8, "predicate set → pc += 3 + delta(5)");
 }
 
 #[test]
-fn op2f_subop_0a_skips_when_predicate_clear() {
+fn op2f_subop_0a_falls_through_when_predicate_clear() {
     let mut host = TestHost::default();
     host.global_predicate = 0;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x0A]);
+    let bc = program(&[0x2F, 0x0A, 5]);
     step(&mut host, &mut state, &bc);
-    // Skip path = `with_size(3)` → PC += 3.
+    // `beq v0,zero,0x801d4a3c` with `li s2, 0x3` in the delay slot.
     assert_eq!(state.pc, 3);
 }
 
 #[test]
-fn op2f_subop_0b_skips_when_predicate_set() {
+fn op2f_subop_0b_falls_through_when_predicate_set() {
     let mut host = TestHost::default();
     host.global_predicate = 1;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x0B]);
+    let bc = program(&[0x2F, 0x0B, 5]);
     step(&mut host, &mut state, &bc);
     assert_eq!(state.pc, 3);
 }
 
 #[test]
-fn op2f_subop_0b_falls_through_when_predicate_clear() {
+fn op2f_subop_0b_branches_by_delta_when_predicate_clear() {
     let mut host = TestHost::default();
     host.global_predicate = 0;
     let mut state = ActorState::new();
-    step(&mut host, &mut state, &program(&[0x2F, 0x0B]));
-    assert_eq!(state.pc, 1);
+    step(&mut host, &mut state, &program(&[0x2F, 0x0B, 5]));
+    assert_eq!(state.pc, 8, "predicate clear → pc += 3 + delta(5)");
 }
 
 #[test]
@@ -848,27 +852,63 @@ fn op2f_subop_10_then_subop_11_produces_a_running_capture() {
 }
 
 #[test]
-fn op2f_subop_06_skips_when_player_outside_box() {
+fn op2f_subop_06_branches_by_delta_when_player_outside_box() {
+    // `[2F][06][xa][za][xb][zb][delta]` - a 7-halfword conditional branch.
     // Box corners (xa=10, za=20, xb=20, zb=30) scaled by 0x80 + 0x40 =
     // x in [1344, 2624], z in [2624, 3904]. Player at (0, 0, 0) is
-    // outside → 0x06 takes the size-7 skip.
+    // outside → 0x06 takes the branch: `7 + op[6]`.
     let mut host = TestHost::default();
     host.player_xyz = [0, 0, 0];
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x06, 10, 20, 20, 30]);
+    let bc = program(&[0x2F, 0x06, 10, 20, 20, 30, 4]);
     step(&mut host, &mut state, &bc);
+    assert_eq!(state.pc, 11, "outside → pc += 7 + delta(4)");
+}
+
+#[test]
+fn op2f_subop_06_falls_through_when_player_inside_box() {
+    let mut host = TestHost::default();
+    host.player_xyz = [2000, 0, 3000]; // inside the [1344..2624] × [2624..3904] band
+    let mut state = ActorState::new();
+    let bc = program(&[0x2F, 0x06, 10, 20, 20, 30, 4]);
+    step(&mut host, &mut state, &bc);
+    // Untaken side is the preset `li s2, 0x7` at 0x801D3838 - the full
+    // instruction width, not one word.
     assert_eq!(state.pc, 7);
 }
 
 #[test]
-fn op2f_subop_06_continues_when_player_inside_box() {
+fn op2f_subop_07_is_the_inverse_branch_of_06() {
     let mut host = TestHost::default();
-    host.player_xyz = [2000, 0, 3000]; // inside the [1344..2624] × [2624..3904] band
+    let bc = program(&[0x2F, 0x07, 10, 20, 20, 30, 4]);
+
+    // Inside → 0x07 branches.
+    host.player_xyz = [2000, 0, 3000];
+    let mut inside = ActorState::new();
+    step(&mut host, &mut inside, &bc);
+    assert_eq!(inside.pc, 11, "inside → pc += 7 + delta(4)");
+
+    // Outside → 0x07 falls through.
+    host.player_xyz = [0, 0, 0];
+    let mut outside = ActorState::new();
+    step(&mut host, &mut outside, &bc);
+    assert_eq!(outside.pc, 7);
+}
+
+#[test]
+fn op2f_subop_06_canonicalises_the_box_in_the_bytecode() {
+    // `sh v1,0x4(s3)` / `sh a0,0x4(s0)` at 0x801D3784 swap op[2] with op[4]
+    // when op[4] < op[2]; the z pair swaps op[3] with op[5]. Both are
+    // ordinary self-modifying writes through the deferred bytecode hook.
+    let mut host = TestHost::default();
+    host.player_xyz = [0, 0, 0];
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x06, 10, 20, 20, 30]);
+    let bc = program(&[0x2F, 0x06, 20, 30, 10, 20, 0]);
     step(&mut host, &mut state, &bc);
-    // default-arm = size_u16 = 1 → PC += 1.
-    assert_eq!(state.pc, 1);
+    assert_eq!(host.move_bytecode_read_u16(2), 10, "op[2] takes op[4]");
+    assert_eq!(host.move_bytecode_read_u16(4), 20, "op[4] takes op[2]");
+    assert_eq!(host.move_bytecode_read_u16(3), 20, "op[3] takes op[5]");
+    assert_eq!(host.move_bytecode_read_u16(5), 30, "op[5] takes op[3]");
 }
 
 // ---- actor_tick / decrement_wait_timer wiring ----
@@ -1168,25 +1208,40 @@ fn op2f_subop_14_negative_delta_spin_waits() {
 }
 
 #[test]
-fn op2f_subop_36_axis_threshold_below() {
-    // 0x36 predicate: op[2] < (0x8E - axis). axis=0, op[2]=0x40 → 0x40 < 0x8E true.
+fn op2f_subop_36_axis_threshold_below_branches_by_delta() {
+    // 0x36 predicate: op[2] < (0x8E - axis). axis=0, op[2]=0x40 → 0x40 < 0x8E
+    // true. All four of 0x36..0x39 share the 0x801D4830 branch tail with
+    // 0x13 / 0x14: `[2F][36][arg][delta]`, taken side = `4 + op[3]`.
     let mut host = TestHost::default();
     host.axis_threshold = 0;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x36, 0x40]);
+    let bc = program(&[0x2F, 0x36, 0x40, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1, "predicate true → default-arm");
+    assert_eq!(state.pc, 7, "predicate true → pc += 4 + delta(3)");
 }
 
 #[test]
-fn op2f_subop_36_axis_threshold_above_skips() {
-    // op[2]=0xFF, axis=0: 0xFF < 0x8E is false → skip 4.
+fn op2f_subop_36_axis_threshold_above_falls_through() {
+    // op[2]=0xFF, axis=0: 0xFF < 0x8E is false → the preset `li s2, 0x4`.
     let mut host = TestHost::default();
     host.axis_threshold = 0;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x36, 0xFF]);
+    let bc = program(&[0x2F, 0x36, 0xFF, 3]);
     step(&mut host, &mut state, &bc);
     assert_eq!(state.pc, 4);
+}
+
+#[test]
+fn op2f_subop_36_negative_delta_walks_the_pc_back() {
+    // The delta is read `lhu` but truncated to 16 bits and sign-extended by
+    // the epilogue, so a negative displacement is a backwards branch.
+    let mut host = TestHost::default();
+    host.axis_threshold = 0;
+    let mut state = ActorState::new();
+    state.pc = 2;
+    let bc = program(&[0x00, 0x00, 0x2F, 0x36, 0x40, 0xFFFA]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(state.pc, 0, "predicate true → pc += 4 + (-6)");
 }
 
 #[test]
@@ -1195,12 +1250,12 @@ fn op2f_subop_37_is_inverse_of_36() {
     let mut host = TestHost::default();
     host.axis_threshold = 0;
     let mut state = ActorState::new();
-    let bc = program(&[0x2F, 0x37, 0xFF]);
+    let bc = program(&[0x2F, 0x37, 0xFF, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1);
-    // axis=0, op[2]=0x40 → 0x8E < 0x40 false → skip.
+    assert_eq!(state.pc, 7);
+    // axis=0, op[2]=0x40 → 0x8E < 0x40 false → fall through.
     let mut state2 = ActorState::new();
-    let bc2 = program(&[0x2F, 0x37, 0x40]);
+    let bc2 = program(&[0x2F, 0x37, 0x40, 3]);
     step(&mut host, &mut state2, &bc2);
     assert_eq!(state2.pc, 4);
 }
@@ -1211,11 +1266,11 @@ fn op2f_subop_38_predicate_outside_radius() {
     host.player_xyz = [0, 0, 0];
     let mut state = ActorState::new();
     // Actor at (10, 0, 0), player at origin → dist² = 100. r=8 → r²=64.
-    // 0x38: r² < dist² → 64 < 100 true → default-arm.
+    // 0x38: r² < dist² → 64 < 100 true → branch by delta.
     state.world_x = 10;
-    let bc = program(&[0x2F, 0x38, 8]);
+    let bc = program(&[0x2F, 0x38, 8, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1);
+    assert_eq!(state.pc, 7);
 }
 
 #[test]
@@ -1224,16 +1279,16 @@ fn op2f_subop_39_predicate_inside_radius() {
     host.player_xyz = [0, 0, 0];
     let mut state = ActorState::new();
     // Actor at (3, 0, 4), player at origin → dist² = 25. r=10 → r²=100.
-    // 0x39: dist² < r² → 25 < 100 true → default-arm.
+    // 0x39: dist² < r² → 25 < 100 true → branch by delta.
     state.world_x = 3;
     state.world_z = 4;
-    let bc = program(&[0x2F, 0x39, 10]);
+    let bc = program(&[0x2F, 0x39, 10, 3]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.pc, 1);
-    // Move actor to (100, 0, 0): dist² = 10000, r²=100 → false → skip.
+    assert_eq!(state.pc, 7);
+    // Move actor to (100, 0, 0): dist² = 10000, r²=100 → false → fall through.
     let mut state2 = ActorState::new();
     state2.world_x = 100;
-    let bc2 = program(&[0x2F, 0x39, 10]);
+    let bc2 = program(&[0x2F, 0x39, 10, 3]);
     step(&mut host, &mut state2, &bc2);
     assert_eq!(state2.pc, 4);
 }
@@ -1251,7 +1306,9 @@ fn op2f_subop_23_anim_lerp_zero_denom_is_noop() {
     assert_eq!(state.anim_3c, 100);
     assert_eq!(state.anim_3e, 200);
     assert_eq!(state.anim_40, 300);
-    assert_eq!(state.pc, 1);
+    // The trap guard changes whether the lerp lands, not how wide the
+    // instruction is - `li s2, 0x6` at 0x801D4100 is on both paths.
+    assert_eq!(state.pc, 6);
 }
 
 #[test]
@@ -1283,7 +1340,9 @@ fn op2f_subop_04_writes_actor_world_into_bytecode_buffer() {
     assert_eq!(host.bytecode_buffer[8], 10);
     assert_eq!(host.bytecode_buffer[9], 20);
     assert_eq!(host.bytecode_buffer[10], 30);
-    assert_eq!(state.pc, 1, "default-arm");
+    // Size 3 - `li s2, 0x3` at 0x801D36F8, in the exit that follows the
+    // three coordinate stores.
+    assert_eq!(state.pc, 3);
 }
 
 #[test]
@@ -1404,8 +1463,9 @@ fn op2f_subop_1f_rotates_hue_on_keyframe_desc_lo() {
     );
     // FUN_8001a6c8 caps at 0xF8.
     assert!(g <= 0xF8);
-    // PC advances by 1 (default_arm).
-    assert_eq!(state.pc, 1);
+    // Size 5 - opcode + sub-op + the three H/S/V delta words (`li s2, 0x5`
+    // at 0x801D3F60).
+    assert_eq!(state.pc, 5);
 }
 
 #[test]
@@ -1530,4 +1590,155 @@ fn zero_keyframe_weight_walks_the_retail_field_overlap() {
     // lane 6 -> `+0xAC`, the head of the anim block.
     state.zero_keyframe_weight(6);
     assert_eq!(state.anim_block_u16(0x00), 0);
+}
+
+// ---- 0x2F extension widths: every arm against the JT-derived table ----
+
+/// Build `[0x2F, sub_op, 0, 0, ...]` with **zero** padding.
+///
+/// `program()` pads with `0xFFFF`, which would feed the branch sub-ops a
+/// `-1` displacement; the width table is stated for a zero delta.
+fn ext_program(sub_op: u16) -> Vec<u16> {
+    let mut v = vec![0x2Fu16, sub_op];
+    v.resize(32, 0);
+    v
+}
+
+/// Every recognised sub-opcode advances the PC by its own width.
+///
+/// The widths are the `li s2, N` exit slots of `FUN_801D362C`, mirrored in
+/// [`crate::move_vm_overlay_ext::canonical_size`]. Ten arms are conditional
+/// branches whose taken side adds a signed displacement read from the last
+/// operand word; with a zeroed operand stream both sides collapse onto the
+/// fall-through width, so one table covers all 61.
+///
+/// The thing this guards against is a size-1 return leaking back in: that
+/// leaves the PC on the sub-opcode word, which the **outer** opcode space
+/// re-decodes as an instruction of its own.
+#[test]
+fn op2f_every_sub_opcode_advances_by_its_canonical_width() {
+    use crate::move_vm_overlay_ext::{MAX_SUB_OPCODE, canonical_size};
+
+    for sub_op in 0..MAX_SUB_OPCODE {
+        let expected = canonical_size(sub_op).expect("in-range sub-op has a width");
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        let bc = ext_program(sub_op);
+        let r = step(&mut host, &mut state, &bc);
+        assert_eq!(
+            r,
+            StepResult::Advance,
+            "sub-op 0x{sub_op:02X} did not advance"
+        );
+        assert_eq!(
+            state.pc, expected as i16,
+            "sub-op 0x{sub_op:02X}: advanced {} halfwords, disassembly says {expected}",
+            state.pc
+        );
+        assert!(
+            state.pc >= 2,
+            "sub-op 0x{sub_op:02X} advanced onto its own sub-opcode word"
+        );
+    }
+}
+
+/// Out-of-range sub-opcodes are the one size-1 path: `li s2, 0x1` at
+/// `0x801D365C`, in the delay slot of the `sltiu v1, 0x3D` bounds check.
+#[test]
+fn op2f_out_of_range_sub_opcode_advances_one_halfword() {
+    for sub_op in [crate::move_vm_overlay_ext::MAX_SUB_OPCODE, 0x40, 0xFFFF] {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        let bc = ext_program(sub_op);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1, "sub-op 0x{sub_op:04X} should resync by 1");
+    }
+}
+
+/// Sub-op 0x00 is the widest arm and the one most visibly wrong under a
+/// default-arm reading: a bare `j 0x801d4a3c` with `li s2, 0x10`.
+#[test]
+fn op2f_subop_00_skips_sixteen_halfwords() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    step(&mut host, &mut state, &ext_program(0x00));
+    assert_eq!(state.pc, 16);
+}
+
+/// 0x18 is the odd member of the 0x17..0x1A world-struct family: it seeds
+/// two words from `world_y`, not five from the bytecode, and is 5 wide
+/// where its siblings are 8.
+#[test]
+fn op2f_subop_18_is_five_wide_while_19_and_1a_are_eight() {
+    for (sub_op, width) in [(0x17u16, 8i16), (0x18, 5), (0x19, 8), (0x1A, 8)] {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &ext_program(sub_op));
+        assert_eq!(state.pc, width, "sub-op 0x{sub_op:02X}");
+    }
+}
+
+/// 0x1F / 0x20 are ordinary 5-halfword instructions whose three operands
+/// are the H/S/V deltas - not size-1 arms that re-read their own operands
+/// as a fresh opcode. `li s2, 0x5` at `0x801D3F60` is on the single path
+/// through the shared arm.
+#[test]
+fn op2f_hsv_ramp_sub_ops_consume_their_three_delta_operands() {
+    for sub_op in [0x1Fu16, 0x20] {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &ext_program(sub_op));
+        assert_eq!(state.pc, 5, "sub-op 0x{sub_op:02X}");
+    }
+}
+
+/// The HSV re-pack is a full 32-bit `sw` (`sw v1,0x0(s0)` at 0x801D3F84),
+/// so the packed word's top byte is cleared rather than preserved.
+#[test]
+fn op2f_hsv_ramp_repack_clears_the_top_byte() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    state.keyframe_desc = [0x0000, 0xAB00, 0, 0];
+    // Zero deltas: the colour round-trips, but the store still rewrites the
+    // whole word.
+    step(&mut host, &mut state, &ext_program(0x1F));
+    assert_eq!(
+        state.keyframe_desc[1] & 0xFF00,
+        0,
+        "the `sw` clears bits 24..31 of the packed RGB word"
+    );
+}
+
+/// 0x28's clamp branch selects whether z is clamped, not the width -
+/// `li s2, 0x5` sits in the delay slot of the branch at 0x801D43A8 and the
+/// fall-through exits with it unchanged.
+#[test]
+fn op2f_subop_28_is_five_wide_on_both_clamp_paths() {
+    for (raw_z, scale) in [(0x10u16, 0x1000u16), (0x7FFF, 0x7FFF)] {
+        let mut host = TestHost::default();
+        host.move_slot_save_u16(1, 4, raw_z);
+        let mut state = ActorState::new();
+        let mut bc = ext_program(0x28);
+        bc[2] = 1; // slot
+        bc[3] = 0x1000; // y scale
+        bc[4] = scale; // z scale
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 5);
+    }
+}
+
+/// 0x3B is 4 wide whether or not the party lookup resolves - `li s2, 0x4`
+/// is in the delay slot of the `beq` that guards the write.
+#[test]
+fn op2f_subop_3b_is_four_wide_on_both_lookup_paths() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    step(&mut host, &mut state, &ext_program(0x3B));
+    assert_eq!(state.pc, 4, "lookup miss");
+
+    let mut host2 = TestHost::default();
+    host2.party_member = Some([7, 8, 9]);
+    let mut state2 = ActorState::new();
+    step(&mut host2, &mut state2, &ext_program(0x3B));
+    assert_eq!(state2.pc, 4, "lookup hit");
 }

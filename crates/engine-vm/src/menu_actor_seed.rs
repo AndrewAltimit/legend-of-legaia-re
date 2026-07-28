@@ -36,8 +36,31 @@
 //! that arm returns early instead of falling into the shared tick - both
 //! paths tick the actor exactly once.
 //!
+//! REF: FUN_80020de0, FUN_800204f8  -- callees, not ported here
+//!
 //! `see ghidra/scripts/funcs/801e5834.txt`,
 //! `see ghidra/scripts/funcs/801e58a8.txt`
+//!
+//! ## Neither one runs in retail
+//!
+//! Both are real entries - `locate-entry-image.py` resolves each in PROT 0897
+//! with its own frame - and neither is reached. A five-form sweep of
+//! `SCUS_942.54`, all 31 based overlay images and the raw bytes of every
+//! extracted `PROT.DAT` entry finds no literal address word, no `jal`, no `j`,
+//! no in-image branch and no `lui`+`addiu` materialisation for either
+//! (`docs/tooling/address-reference-scan.md`).
+//!
+//! `FUN_801E58A8` needs the image qualifier. Its one scan hit is a branch in
+//! the **battle_action** overlay, which shares the slot-A load base and holds
+//! unrelated code at that VA; a branch is PC-relative and cannot leave its own
+//! image, so it is not a reference to the field-overlay routine.
+//! `--home field` marks it.
+//!
+//! That changes what the two `NOT WIRED` notes below mean. The missing
+//! pooled-actor fields they name are real gaps in the engine's `Actor`, but
+//! filling them would not make these two run, because retail does not run them
+//! either. Both are decoded provenance for the actor layout and the row-count
+//! arithmetic, not pending wiring work.
 
 /// The `base == 99` special case in the row-count seed.
 pub const BASE_SENTINEL: u16 = 99;
@@ -72,9 +95,24 @@ pub struct MenuActorSeed {
 ///
 /// PORT: FUN_801e5834
 ///
-/// NOT WIRED: the engine allocates menu actors through
-/// `legaia_engine_core::actor_alloc_host` with typed fields, and no host
-/// root spawns this particular descriptor.
+/// NOT WIRED: **retail-unreachable** - nothing on the disc reaches
+/// `FUN_801E5834` in any reference form, so no wiring pass can close this
+/// row (see the module's "Neither one runs in retail"). What follows is why
+/// the port could not run it *either*, kept because it names a real gap in
+/// the engine's pooled `Actor`.
+///
+/// The engine has the pool but not the write set. Its one
+/// spawner of a handler actor is
+/// `legaia_engine_core::world::World::open_field_submode_screen`, which
+/// takes a free slot through `spawn_handler_actor`, clears the phase byte
+/// `+0x54`, and then keeps the handler id, the cursor and the panel pen on
+/// a **side** `SubmodeScreen` struct instead of on the actor - so no pooled
+/// actor carries `+0x50` / `+0x14` / `+0x16` / `+0x9C` for this seed to
+/// fill, and `MenuActorSeed` has nowhere to land. The prerequisite is
+/// those four fields on the engine's pooled `Actor`, not a new subsystem;
+/// the descriptor itself (`0x801F2978`) is additionally a second
+/// pooled-actor family that no engine path spawns at all - the engine only
+/// ever seats `ActorHandler::SubmodeDriver`.
 pub fn menu_actor_seed(handler: u16, x: u16, y: u16, param: u16) -> MenuActorSeed {
     MenuActorSeed {
         phase: 0,
@@ -100,8 +138,19 @@ pub struct RowCountSeed {
 ///
 /// PORT: FUN_801e58a8
 ///
-/// NOT WIRED: no engine list model reads these three globals; the pause-menu
-/// and dev-menu row counts in `engine-ui` come from typed Rust lists.
+/// NOT WIRED: **retail-unreachable** - `FUN_801E58A8`'s only scan hit is a
+/// branch from another overlay at the same VA, which cannot reach it (see
+/// the module's "Neither one runs in retail"), so this row does not close by
+/// wiring. The port-side gap below stands on its own.
+///
+/// The three globals it derives the count from
+/// (`0x8007BDD8` base, `0x8007B8F8` pages, `0x8007B6AC` extra) are not
+/// modelled anywhere in the port, and the actor field it writes (`+0x5C`,
+/// with the `+0x5E = -2` sentinel) is one of the same missing pooled-actor
+/// fields [`menu_actor_seed`] names. Every engine list - the pause menu's,
+/// the dev menu's, the save rack's - counts its own typed `Vec`, so there
+/// is no consumer for a count keyed off a page global either. Both halves
+/// close together with those fields.
 pub fn row_count_seed(base: u16, pages: u16, extra: u32, flag_set: bool) -> RowCountSeed {
     if base == BASE_SENTINEL {
         return RowCountSeed {

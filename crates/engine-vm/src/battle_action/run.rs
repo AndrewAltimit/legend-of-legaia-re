@@ -140,10 +140,11 @@ pub(super) fn capture_sustain<H: BattleActionHost + ?Sized>(
     }
     ctx.frame_timer = 0x3C;
     host.ui_element(0x43, 1);
-    let slot = ctx.active_actor;
-    if let Some(actor) = host.actor_mut(slot) {
-        actor.action_queue_counter = 0;
-    }
+    // No `+0x1A` write here: the dispatcher's only four accesses to the turn
+    // cursor are `Begin`, the counter-attack swap, the run arm's skip loop and
+    // the end-of-action gate (see `BattleActionCtx::turn_cursor`). The zero
+    // this arm used to perform came with the superseded reading that put the
+    // counter on the actor record.
     host.pose(0, Pose::Defeat);
     transition(ctx, ActionState::CaptureEnd)
 }
@@ -185,19 +186,22 @@ pub(super) fn idle_hold<H: BattleActionHost + ?Sized>(
 /// The port hosts the retail body on the driver side (`engine-core`'s live
 /// loop runs `advance_battle_mode` - the `ctx[+0x28A]` bump - and
 /// `tick_status_0x400_wakes` - `FUN_801F45A4` - at its round boundary), so
-/// this handler does the SM-side bookkeeping only: clear every actor's
-/// acted counter (`+0x1A`) for the new round and hand control back through
-/// `EndOfAction`, the state the arming driver keys the next turn on.
+/// this handler does the SM-side bookkeeping only: rewind the turn cursor
+/// (`+0x1A`) for the new round and hand control back through `EndOfAction`,
+/// the state the arming driver keys the next turn on.
+///
+/// The rewind is the **engine's**, not retail's: retail reseeds the cursor by
+/// re-entering `Begin`, which the battle flow SM `FUN_801D0748` arms and the
+/// port does not drive from here. Retail's own `0xFF` body touches `+0x1A` not
+/// at all.
 ///
 /// PORT: FUN_801E295C case 0xFF (round boundary, `801e67e8`)
+/// REF: FUN_801D0748 (the battle flow SM that re-arms `Begin` in retail)
 pub(super) fn round_end<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    for slot in 0..host.slot_count() {
-        if let Some(actor) = host.actor_mut(slot) {
-            actor.action_queue_counter = 0;
-        }
-    }
+    let _ = host;
+    ctx.turn_cursor = 0;
     transition(ctx, ActionState::EndOfAction)
 }

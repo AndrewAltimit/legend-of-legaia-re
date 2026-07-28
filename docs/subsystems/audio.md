@@ -98,6 +98,14 @@ are therefore the same physical bank in two modes, which is why retail needs no
 extra SPU room for the field cues. Slot sizes, the SPU map and the structural
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
+The seeder and the reader are ported at opposite ends and never meet:
+`legaia_engine_core::scus_leaf_kernels::seed_boot_offset_table` writes the
+twelve-word image and `legaia_asset::sfx_table::spu_base_for_slot` answers the
+query the engine's audio host actually makes, returning the same values as
+literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two
+agree slot by slot, including the one slot the seeder skips and the four
+aliased pairs, so the duplication is guarded rather than silent.
+
 ## Monster sound bank - `h:\mpack\monster.snd`
 
 Battle-time monster sound banks live in a single packed `monster.snd` file. The loader is `FUN_8003E104(monster_idx, slot, dst_buf)` - called twice from the battle scene loader `FUN_800520F0` (slots 7 and 8, for the active battle's two monster sound banks). It reads the file's per-monster TOC at `0x801C8980 - 0x10` (4-byte stride, paired entries giving `[start_lba, end_lba+1]`), computes the LBA range, and dispatches:
@@ -1096,16 +1104,26 @@ aliases - neither overlay starts an XA stream of its own.
 | `0` (XA1) | slot-machine ambience | casino slot machine entry | 0975 `0x801CF0AC` |
 | `0x1F` (XA32) | Baka Fighter crowd/bed | duel start + round restart | 0976 `0x801CF6CC` / `0x801CFD90` |
 | `0x21` (XA34) | long battle stream | battle actions `0x2E`/`0x2F` | battle 0898 `0x801EBDD4` |
-| `0x800787AF` table (heroes `0x08` = XA9) | battle voice stream | `FUN_801E295C` SM state `0x6E` | battle 0898 `0x801E4F40`; same table in SCUS `FUN_8004DA08` |
-| `(char-1)*2` = `0`/`2`/`4` (XA1/3/5) | per-character long bank | `FUN_8004DA08` battle stream selector | SCUS `0x8004DAFC` |
-| `char + 0x19` = `0x1A`..`0x1C` (XA27..29) | per-character fanfare stream | `FUN_8004DA08` (spell-table class `< 0x14`) | SCUS `0x8004DB70` / `0x8004DBC4` |
-| `7` (XA8) | fallback battle stream | `FUN_8004DA08` (other spell classes) | SCUS `0x8004DB9C` |
+| `0x800787AF` table (heroes `0x08` = XA9) | battle voice stream | `FUN_801E295C` SM state `0x6E` | battle 0898 `0x801E4F40`; same table in SCUS `FUN_8004DA00` |
+| `(char-1)*2` = `0`/`2`/`4` (XA1/3/5) | per-character long bank | `FUN_8004DA00` battle stream selector | SCUS `0x8004DAFC` |
+| `char + 0x19` = `0x1A`..`0x1C` (XA27..29) | per-character fanfare stream | `FUN_8004DA00` (spell-table class `< 0x14`) | SCUS `0x8004DB70` / `0x8004DBC4` |
+| `7` (XA8) | fallback battle stream | `FUN_8004DA00` (other spell classes) | SCUS `0x8004DB9C` |
 | `0x10` (XA17) | scripted-scene voice stream | field voice player, whole-clip variant | field 0897 `0x801D4FCC` via `FUN_80019794` |
 | `op>>3` | MAN-script literal | field-VM XA opcode, `dur == 0` path | field 0897 `0x801E0430` via `FUN_80019794` |
 | `7` (XA8) | Ra-Seru summon stream | summon overlays 0903/0904/0905/0906/0907/0908 | each at its own `0x801F6Cxx`-`0x801F71xx` site (slot-B base `0x801F69D8`) |
 | `6` (XA7) | summon stream | PROT 0909 (outside the static corpus; head decoded from PROT.DAT) | 0909 file `+0x218` |
 | `0x11` (XA18) | attack-art stager stream | stagers 0924/0925/0926 | 0924 `0x801F6C80`; 0925/0926 file `+0x240` |
 | `0xE` (XA15) | high-summon / evil-god stream | summons 0927..0934 | each at its own `0x801F6Cxx`-`0x801F6Dxx` site |
+
+The three SCUS rows all belong to one resident selector, and it is not called
+from anywhere: `FUN_8004DA00` is the `+0x08` tick of the
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+at `0x800767F4`, which the battle scene-loader `FUN_800513F0` spawns into the
+system actor pool as its last act (`0x80051D3C`). So the party voice selector
+is a per-frame pass that goes resident when the battle loads and stays up for
+its duration, arming at most one clip per action behind the `_DAT_8007BDB0`
+latch. The port models the choice, not the residency:
+`legaia_engine_audio::battle_voice`.
 
 The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
 one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams

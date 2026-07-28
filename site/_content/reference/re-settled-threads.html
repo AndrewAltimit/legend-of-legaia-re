@@ -396,9 +396,37 @@
       </tr>
       <tr>
         <td>Field ambient animation - what makes jou's ground pulse and the water shimmer</td>
-        <td><span class="tag tag-done">resolved</span> (residuals on the open page)</td>
+        <td><span class="tag tag-done">resolved</span></td>
         <td><span class="tag tag-done">disassembly</span></td>
-        <td>Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field water/waterfall scenes), the ambient move-VM tree the MAN P1 effect scripts install at scene entry (<code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> spawn-time first run + op-<code>0x25</code> fan-out), and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler: op <code>0x2C</code> captures a palette rect and <code>FUN_80019D50</code> rewrites it per frame with integrated H/S/V adds (lightning = flag <code>0x364</code> brightness spikes + screen flash + thunder cues). Runs in the engine and the site field-scene viewer.</td>
+        <td>Three mechanisms: the bundle type-6 CLUT-walk table (12 carriers, 9 of them field water/waterfall scenes), the ambient move-VM tree the MAN P1 placements install at scene entry (<code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code> spawn-time first run + op-<code>0x25</code> fan-out), and jou's flesh pulse = the mode-3 CLUT-cell HSV cycler: op <code>0x2C</code> captures a palette rect and <code>FUN_80019D50</code> rewrites it per frame with integrated H/S/V adds (lightning = flag <code>0x364</code> brightness spikes + screen flash + thunder cues). Runs in the engine and the site field-scene viewer.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>Ambient render-mode 4 - what the op-<code>0x1E</code> seat animates</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>A <strong>cyclic VRAM-rect scroller</strong>, and it is what makes waterfalls fall. Per fired period (<code>+0xC6</code> drained by the frame step alone, without the mode-3 arm's speed scalar) the render tail rotates the seated rect <code>+0xD0..+0xD6</code> left by <code>+0xCC * frame_step</code> and up by <code>+0xCE * frame_step</code>, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (<code>0x80022CB8..0x80022EE0</code>). Seventeen scenes carry one at plain scene entry; sixteen scroll upward over a texture-band rect (<code>x &gt;= 0x200</code>) and <code>tunnelc</code>'s second seat is the exception that bounds the reading - a one-row rect at <code>(0, 508)</code> stepping right, i.e. a CLUT row walked by the same primitive. Ported as <code>engine-core::world::ambient::vram_scroll</code>.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>Master ambient record 0 - what reads the 8-byte rows</td>
+        <td><span class="tag tag-done">resolved</span> (it is not a stager record at all)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The <strong>per-scene sound-effect descriptor bank</strong> for cue ids <code>&gt;= 0x200</code>. Both SFX readers resolve those ids as <code>*(u32*)0x8007B8D0 + offsets[0] + (id - 0x200)*8</code> - record 0 of whatever bundle is installed at <code>0x8007B8D0</code>, which in field mode is the scene prescript bundle (the field asset loader stores scene buffer + <code>0x12800</code> there on every load). <code>offsets[0]</code> is the identical word <code>FUN_800252EC</code> reads for stager id 0, so "record 0" and "the runtime SFX bank" name one address. Rows are the 8-byte descriptor of the <a href="../formats/sfx-table.html">SFX table</a>, category 3 - a variable VAB slot.</td>
+        <td><code>docs/formats/sfx-table.md</code></td>
+      </tr>
+      <tr>
+        <td>Which op-<code>0x34</code> sub-3 installs fire at <strong>scene entry</strong></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The ones the placement spawn-prologue slice executes - the carrier is not a distinguished kind of script. <code>FUN_8003A1E4</code> carries its own copy of the per-actor frame slice: <code>0x8003A480</code> gates the entire pre-run on the record's first opcode being <code>0x24</code>/<code>0x25</code>, and <code>0x8003A4C4</code> breaks the slice <em>after</em> executing an opcode whose full byte is <code>0x21</code>. Both are "nop" to a disassembler and only one ends the slice, which is why a dialogue-bearing placed actor opening <code>25 / 34 30 00</code> installs its ambient tree exactly like a dedicated effect actor. Ported as <code>engine-core::man_field_scripts::scene_entry_ambient_installs</code>, taking the unconditional prefix of that slice - an under-approximation, since a flag-gated install deeper in a record depends on runtime state.</td>
+        <td><code>docs/subsystems/field-ambient-fx.md</code></td>
+      </tr>
+      <tr>
+        <td>town0e's morph-record installer</td>
+        <td><span class="tag tag-done">resolved</span> (the census was shape-blind, not the disc)</td>
+        <td><span class="tag tag-done">disassembly</span></td>
+        <td>The install is the ordinary <code>0x34</code> sub-3 arg 0 (stager record 1) - it just rides <strong>partition-1 placement 29</strong>, a full placed actor with its own dialogue, as that record's second instruction, ahead of its <code>SysFlag.Test 0x1A</code> park/seat branch. A census that discriminates by script <em>shape</em> reports nothing here; the entry-slice rule above finds it. Residual: that the entry pre-run slice reaches it is an inference from the settled pre-run mechanism, not a live capture of this scene.</td>
         <td><code>docs/subsystems/field-ambient-fx.md</code></td>
       </tr>
       <tr>

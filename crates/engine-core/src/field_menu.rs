@@ -15,6 +15,15 @@
 //! - **Load** → [`crate::save_select::SaveSelectSession`] in Load mode.
 //! - **Save** → [`crate::save_select::SaveSelectSession`] in Save mode.
 //!
+//! The last two rows are **conditional**, and the condition is disc data, not
+//! host policy: Load is blocked while an op-`0x49` entry context of kind
+//! `0x0D` is parked, and Save is blocked in any scene whose MAN header clears
+//! the save-allow bit - which on the retail disc is every field scene, the
+//! three kingdom world maps being the only ones that permit it. Hosts sample
+//! both into a [`FieldMenuGate`] at menu-open; the session then runs retail's
+//! own [`root_menu_confirm_route`] per row for both the ink and the confirm,
+//! so a row cannot draw white and then buzz.
+//!
 //! The engine's Tactical Arts chain editor
 //! ([`crate::tactical_arts_editor::ChainEditor`]) is an engine extension
 //! with no retail pause-menu row; it stays reachable through the
@@ -25,6 +34,10 @@
 //! [`FieldMenuEvent`] stream. The session emits an [`FieldMenuOutcome`] on
 //! Done - the shell's job is to push the matching sub-session, then call
 //! [`FieldMenuSession::resume`] when control returns.
+
+use crate::pause_screens::{
+    ROOT_MENU_ROUTES, ROOT_MENU_ROWS, RootMenuRoute, root_menu_confirm_route,
+};
 
 /// One menu row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +50,10 @@ pub enum FieldMenuRow {
     Load,
     Save,
 }
+
+/// The engine row list and the retail route table describe the same picker,
+/// so they must stay the same length.
+const _: () = assert!(FieldMenuRow::ALL.len() == ROOT_MENU_ROWS as usize);
 
 impl FieldMenuRow {
     /// Retail row order (`FUN_801CFD68` draw order, top to bottom).
@@ -69,6 +86,23 @@ impl FieldMenuRow {
     pub fn index(self) -> u8 {
         Self::ALL.iter().position(|r| *r == self).unwrap() as u8
     }
+
+    /// The retail sub-screen id this row hands off to
+    /// ([`crate::pause_screens::ROOT_MENU_ROUTES`]): Items `0x05`, Magic
+    /// `0x0E`, Equip `0x12`, Status `0x15`, Options `0x17`, Load `0x18`,
+    /// Save `0x19`.
+    pub fn retail_subscreen(self) -> u8 {
+        ROOT_MENU_ROUTES[self.index() as usize]
+    }
+
+    /// Inverse of [`Self::retail_subscreen`] - the row a retail sub-screen id
+    /// names. The seven ids are distinct, so this round-trips.
+    pub fn from_retail_subscreen(sub: u8) -> Option<Self> {
+        ROOT_MENU_ROUTES
+            .iter()
+            .position(|id| *id == sub)
+            .and_then(|i| Self::from_index(i as u8))
+    }
 }
 
 /// Per-row enable/disable mask. Engines that have a save-blocked overlay
@@ -99,6 +133,45 @@ impl FieldMenuRowMask {
 impl Default for FieldMenuRowMask {
     fn default() -> Self {
         Self::ALL_ENABLED
+    }
+}
+
+/// The two runtime inputs retail's root command picker gates its last two rows
+/// on, carried together because one function reads both.
+///
+/// Retail keeps them as globals the picker and its row renderer each sample
+/// directly: the entry-context pointer `_DAT_8007B450` (whose kind byte blocks
+/// **Load**) and the per-scene save-allow byte `_DAT_8007B6A8` (which blocks
+/// **Save**). The port has no globals, so a host samples both at menu-open and
+/// hands them over - see `BootSession::open_field_menu`, which reads
+/// [`crate::world::World::menu_entry_context_kind`] and
+/// [`crate::world::World::scene_save_allowed`].
+///
+/// Both the greying and the buzz come from one call to
+/// [`root_menu_confirm_route`] per row, which is what keeps them from
+/// disagreeing - retail's row renderer `FUN_801CFD68` re-tests the same two
+/// globals in the same order for exactly that reason.
+///
+/// The default is "unblocked": no entry context, saving permitted. That is the
+/// right default for a session a host builds without a world behind it (the
+/// menu suite's fixtures), not a claim about a scene.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldMenuGate {
+    /// Kind byte of the armed op-`0x49` entry context (`*_DAT_8007B450`), or
+    /// `None` when no script is parked. Only
+    /// [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] blocks Load.
+    pub entry_context_kind: Option<u8>,
+    /// The scene's save permission (`_DAT_8007B6A8`, seeded from the MAN
+    /// header bit). `false` greys Save and buzzes its confirm.
+    pub save_allowed: bool,
+}
+
+impl Default for FieldMenuGate {
+    fn default() -> Self {
+        Self {
+            entry_context_kind: None,
+            save_allowed: true,
+        }
     }
 }
 
@@ -161,6 +234,7 @@ pub enum FieldMenuEvent {
 pub struct FieldMenuSession {
     phase: FieldMenuPhase,
     mask: FieldMenuRowMask,
+    gate: FieldMenuGate,
     /// Optional gold count to display in the corner. Plain data - engines
     /// pass it through and the renderer view uses it.
     pub money: u32,
@@ -179,6 +253,7 @@ impl FieldMenuSession {
         Self {
             phase: FieldMenuPhase::Browsing { cursor: 0 },
             mask: FieldMenuRowMask::ALL_ENABLED,
+            gate: FieldMenuGate::default(),
             money: 0,
             play_time_seconds: 0,
         }
@@ -219,6 +294,58 @@ impl FieldMenuSession {
 
     pub fn set_mask(&mut self, mask: FieldMenuRowMask) {
         self.mask = mask;
+    }
+
+    /// The gate inputs this session was opened with.
+    pub fn gate(&self) -> FieldMenuGate {
+        self.gate
+    }
+
+    /// Install the entry-context / save-permission gate. Hosts call this at
+    /// menu-open with the values sampled off the world; a session left at the
+    /// default offers every row.
+    ///
+    /// Unlike [`Self::set_mask`], this does **not** take a row out of the
+    /// browse order: retail's picker runs `FUN_801D688C(&DAT_801E46BC, 7, 1)`
+    /// over all seven rows and lets the cursor sit on a blocked one, which
+    /// then draws grey and buzzes. The mask is the engine's separate "this row
+    /// does not exist here" concept and does skip.
+    pub fn set_gate(&mut self, gate: FieldMenuGate) {
+        self.gate = gate;
+    }
+
+    /// Retail's confirm routing for `row` under this session's gate - the
+    /// single decision behind both the row's ink and its confirm.
+    ///
+    /// PORT: FUN_801d6b20 (live wiring; kernel =
+    /// [`root_menu_confirm_route`])
+    pub fn route_for(&self, row: FieldMenuRow) -> RootMenuRoute {
+        root_menu_confirm_route(
+            u16::from(row.index()),
+            self.gate.entry_context_kind,
+            self.gate.save_allowed,
+        )
+    }
+
+    /// Is `row` offerable: present in the mask **and** not blocked by the
+    /// gate. This is the bit the renderer inks - a blocked row draws in the
+    /// retail grey (string CLUT `0`) instead of white.
+    pub fn row_is_available(&self, row: FieldMenuRow) -> bool {
+        self.mask.is_enabled(row) && !matches!(self.route_for(row), RootMenuRoute::Buzz)
+    }
+
+    /// The row a confirm on `row` actually enters, resolved **through** the
+    /// retail sub-screen id the route table names, or `None` when the row
+    /// buzzes. Round-tripping through the id is what makes
+    /// [`ROOT_MENU_ROUTES`] load-bearing here rather than decorative.
+    fn confirm_target(&self, row: FieldMenuRow) -> Option<FieldMenuRow> {
+        if !self.mask.is_enabled(row) {
+            return None;
+        }
+        match self.route_for(row) {
+            RootMenuRoute::Sub(sub) => FieldMenuRow::from_retail_subscreen(sub),
+            RootMenuRoute::Buzz | RootMenuRoute::None => None,
+        }
     }
 
     pub fn is_done(&self) -> bool {
@@ -273,12 +400,17 @@ impl FieldMenuSession {
                 if input.cross
                     && let Some(row) = FieldMenuRow::from_index(new_cursor)
                 {
-                    if self.mask.is_enabled(row) {
-                        self.phase = FieldMenuPhase::Suspended { row };
-                        events.push(FieldMenuEvent::Confirmed { row });
-                        events.push(FieldMenuEvent::EnteringSub { row });
-                    } else {
-                        events.push(FieldMenuEvent::InvalidConfirm { row });
+                    // Retail's own confirm arm decides: an accepted row plays
+                    // cue 0x20 and advances to the routed sub-screen, a
+                    // gated one plays the reject cue 0x23 and stays. The
+                    // engine's InvalidConfirm is that buzz.
+                    match self.confirm_target(row) {
+                        Some(target) => {
+                            self.phase = FieldMenuPhase::Suspended { row: target };
+                            events.push(FieldMenuEvent::Confirmed { row: target });
+                            events.push(FieldMenuEvent::EnteringSub { row: target });
+                        }
+                        None => events.push(FieldMenuEvent::InvalidConfirm { row }),
                     }
                 }
             }
@@ -339,7 +471,7 @@ impl FieldMenuSession {
             rows[i] = FieldMenuRowView {
                 row: *r,
                 label: r.label(),
-                enabled: self.mask.is_enabled(*r),
+                enabled: self.row_is_available(*r),
             };
         }
         FieldMenuView {
@@ -490,6 +622,140 @@ mod tests {
         mask.disable(FieldMenuRow::Items);
         let s = FieldMenuSession::with_mask(mask);
         assert_eq!(s.cursor(), FieldMenuRow::Magic.index());
+    }
+
+    /// Retail's list is Items / Magic / Equip / Status / Options / **Load** /
+    /// **Save** - `FUN_801CFD68` draws `@Load` at `+0x46` and `@Save` at
+    /// `+0x54`, and `FUN_801D6B20` routes row 5 to sub-screen `0x18` (the
+    /// load driver) and row 6 to `0x19` (the save driver). Pinning both ends
+    /// so the pair cannot silently invert again.
+    #[test]
+    fn row_five_is_load_and_row_six_is_save() {
+        assert_eq!(FieldMenuRow::from_index(5), Some(FieldMenuRow::Load));
+        assert_eq!(FieldMenuRow::from_index(6), Some(FieldMenuRow::Save));
+        assert_eq!(FieldMenuRow::Load.retail_subscreen(), 0x18);
+        assert_eq!(FieldMenuRow::Save.retail_subscreen(), 0x19);
+        for r in FieldMenuRow::ALL {
+            assert_eq!(
+                FieldMenuRow::from_retail_subscreen(r.retail_subscreen()),
+                Some(r)
+            );
+        }
+    }
+
+    /// A scene whose MAN clears the save-allow bit greys the Save row and
+    /// buzzes its confirm - and leaves the other six rows alone.
+    #[test]
+    fn no_save_scene_greys_the_save_row_and_buzzes_its_confirm() {
+        let mut s = FieldMenuSession::new();
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: None,
+            save_allowed: false,
+        });
+
+        let v = s.view();
+        assert!(!v.rows[FieldMenuRow::Save.index() as usize].enabled);
+        for r in FieldMenuRow::ALL {
+            if r != FieldMenuRow::Save {
+                assert!(v.rows[r.index() as usize].enabled, "{r:?} must stay white");
+            }
+        }
+
+        s.phase = FieldMenuPhase::Browsing {
+            cursor: FieldMenuRow::Save.index(),
+        };
+        let evs = s.tick(FieldMenuInput {
+            cross: true,
+            ..input()
+        });
+        assert!(
+            !s.is_suspended(),
+            "a blocked Save must not enter the driver"
+        );
+        assert_eq!(
+            evs,
+            vec![FieldMenuEvent::InvalidConfirm {
+                row: FieldMenuRow::Save
+            }]
+        );
+    }
+
+    /// The same session with the bit set offers Save normally.
+    #[test]
+    fn save_allowed_scene_confirms_the_save_row() {
+        let mut s = FieldMenuSession::new();
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: None,
+            save_allowed: true,
+        });
+        s.phase = FieldMenuPhase::Browsing {
+            cursor: FieldMenuRow::Save.index(),
+        };
+        let evs = s.tick(FieldMenuInput {
+            cross: true,
+            ..input()
+        });
+        assert!(s.view().rows[FieldMenuRow::Save.index() as usize].enabled);
+        assert!(evs.contains(&FieldMenuEvent::Confirmed {
+            row: FieldMenuRow::Save
+        }));
+        assert!(matches!(s.phase, FieldMenuPhase::Suspended { row } if row == FieldMenuRow::Save));
+    }
+
+    /// Retail's picker navigates all seven rows unconditionally
+    /// (`FUN_801D688C(&DAT_801E46BC, 7, 1)`); a gated row draws grey but the
+    /// cursor still lands on it. Only the engine's own row mask skips.
+    #[test]
+    fn a_gate_blocked_row_stays_navigable() {
+        let mut s = FieldMenuSession::new();
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: None,
+            save_allowed: false,
+        });
+        // Up from Items wraps onto the last row, which is the blocked Save.
+        let _ = s.tick(FieldMenuInput {
+            up: true,
+            ..input()
+        });
+        assert_eq!(s.cursor(), FieldMenuRow::Save.index());
+        assert!(!s.row_is_available(FieldMenuRow::Save));
+    }
+
+    /// The Load half of the same gate: an entry context of kind `0x0D` blocks
+    /// it, any other kind (and no context at all) does not.
+    #[test]
+    fn locked_entry_context_greys_only_the_load_row() {
+        let mut s = FieldMenuSession::new();
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: Some(crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED),
+            save_allowed: true,
+        });
+        let v = s.view();
+        assert!(!v.rows[FieldMenuRow::Load.index() as usize].enabled);
+        assert!(v.rows[FieldMenuRow::Save.index() as usize].enabled);
+
+        // Sub-op 0 (an armed inline shop) is not the blocking kind.
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: Some(0),
+            save_allowed: true,
+        });
+        assert!(s.row_is_available(FieldMenuRow::Load));
+    }
+
+    /// A row the engine's mask removes stays removed even when the retail
+    /// gate would allow it - the two concepts compose rather than override.
+    #[test]
+    fn the_mask_and_the_gate_compose() {
+        let mut mask = FieldMenuRowMask::ALL_ENABLED;
+        mask.disable(FieldMenuRow::Magic);
+        let mut s = FieldMenuSession::with_mask(mask);
+        s.set_gate(FieldMenuGate {
+            entry_context_kind: None,
+            save_allowed: false,
+        });
+        assert!(!s.row_is_available(FieldMenuRow::Magic));
+        assert!(!s.row_is_available(FieldMenuRow::Save));
+        assert!(s.row_is_available(FieldMenuRow::Items));
     }
 
     #[test]

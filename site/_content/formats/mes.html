@@ -206,18 +206,20 @@
       <tr><td><code>0x24</code></td><td><code>3</code> (next-line)</td><td>continue text on the next line, same box</td></tr>
       <tr><td><code>0x48</code></td><td><code>9</code> (init new box)</td><td>open a fresh box for the next page</td></tr>
       <tr><td><code>0x4C</code> followed by <code>0xFF</code></td><td><code>6</code> (terminate)</td><td>close the dialog</td></tr>
-      <tr><td><code>0x2A</code></td><td><code>0x11</code> (box resize)</td><td>start the box geometry animation</td></tr>
-      <tr><td><code>0x27</code></td><td><code>0x13</code> -&gt; <code>0x12</code></td><td>2-option <code>Yes</code> / <code>No</code> menu</td></tr>
-      <tr><td><code>0x28</code></td><td><code>0x15</code> -&gt; <code>0x14</code></td><td>3-option menu</td></tr>
-      <tr><td><code>0x29</code></td><td><code>0x17</code> -&gt; <code>0x16</code></td><td>4-option menu</td></tr>
+      <tr><td><code>0x2A</code></td><td><code>0x11</code> -&gt; <code>0x12</code></td><td>2-option menu, box geometry animated first</td></tr>
+      <tr><td><code>0x27</code></td><td><code>0x13</code> -&gt; <code>0x14</code></td><td>2-option <code>Yes</code> / <code>No</code> menu</td></tr>
+      <tr><td><code>0x28</code></td><td><code>0x15</code> -&gt; <code>0x16</code></td><td>3-option menu</td></tr>
+      <tr><td><code>0x29</code></td><td><code>0x17</code> -&gt; <code>0x18</code></td><td>4-option menu</td></tr>
     </tbody>
   </table>
-  <p>So the picker controls are MES <code>0x27</code> / <code>0x28</code> / <code>0x29</code> (the open byte is matched as <code>byte &amp; 0x7F</code>, so both the bare <code>0x27..0x29</code> form and the high-bit <code>0xA7..0xA9</code> form are accepted; the field corpus stores the bare form). Each picker arm sets the box dimensions from a per-N table and clamps the choice cursor at <code>*(DAT_801c6ea4 + 0xc)</code>. On confirm in the picker (<code>case 0x12</code> / <code>0x14</code> / <code>0x16</code> / <code>0x18</code>), the pager reads the <strong>continuation byte at <code>pbVar14[N*2 + 1]</code></strong> (past the N-option jump table) - same <code>0x24</code> / <code>0x48</code> / <code>0x4C 0xFF</code> jump table as the post-page dispatch - and advances. The chosen index lives in <code>*(DAT_801c6ea4 + 0xc)</code>.</p>
+  <p>So the picker controls are MES <code>0x27</code> / <code>0x28</code> / <code>0x29</code> <strong>and <code>0x2A</code></strong> (the open byte is matched as <code>byte &amp; 0x7F</code>, so both the bare <code>0x27..0x2A</code> form and the high-bit <code>0xA7..0xAA</code> form are accepted; the field corpus stores the bare form). Each picker arm sets the box dimensions from a per-N table and clamps the choice cursor at <code>*(DAT_801c6ea4 + 0xc)</code>. On confirm in the picker (<code>case 0x12</code> / <code>0x14</code> / <code>0x16</code> / <code>0x18</code>), the pager reads the <strong>continuation byte at <code>pbVar14[N*2 + 1]</code></strong> (past the N-option jump table) - same <code>0x24</code> / <code>0x48</code> / <code>0x4C 0xFF</code> jump table as the post-page dispatch - and advances. The chosen index lives in <code>*(DAT_801c6ea4 + 0xc)</code>.</p>
+
+  <p><strong><code>0x2A</code> is a fourth open byte, not a bare resize.</strong> Its arity is not in the dispatch chain above, which only names the entry state; it is in the shared picker-cursor handler at <code>0x801D941C</code>, whose option count is <code>0x18</code> &rarr; 4, <code>0x16</code> &rarr; 3, fall-through &rarr; 2. State <code>0x12</code> therefore takes the 2 arm, the same count <code>0x27</code>'s <code>0x14</code> takes. Two further instructions settle that <code>0x12</code> is a live picker state: the same handler's <code>bne v1,0x12</code> carve-outs make its cursor <em>clamp</em> at both ends where every other picker wraps, and <code>FUN_80038050</code> lists <code>case 0x2a</code> alongside the other three in the arm that applies the chosen option's relative jump. Every inn's <code>Yes</code> / <code>No</code> offer is one of these (see <a href="../subsystems/inn.html#trigger">Inn</a>), which is why a decoder that stops at <code>0x29</code> finds no inn menu at all.</p>
 
   <h3>Picker control-region layout</h3>
   <p>Relative to the open byte at index <code>O</code>, a picker occupies:</p>
 <pre><code>[ .. 0x1F prompt segment .. 0x00 ]   the box text shown above the menu
-O                                     open byte (0x27 / 0x28 / 0x29)
+O                                     open byte (0x27 / 0x28 / 0x29 / 0x2A)
 O+1 .. O+N*2                          N option entries, 2 bytes each (i16 LE)
 O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xFF)
 [ optional 0x4C 0xFF terminate ]

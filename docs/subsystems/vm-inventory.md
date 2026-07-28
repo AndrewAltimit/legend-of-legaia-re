@@ -100,8 +100,11 @@ calls them. Inert is a reachability statement, not a correctness one.
 - **Actor / sprite VM** (`legaia_engine_vm::run`) - the first VM ported, and
   the `Host`-trait shape every later VM port follows. Only its `Position` type
   is imported elsewhere; the interpreter itself has no caller.
-- **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - the engine's move VM
-  never dispatches op `0x2F`.
+- **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - its `step` / `walk`
+  walker has no caller. The module is not wholly inert, though: its
+  `canonical_size` width table is the disassembly-sourced mirror that
+  `move_vm::ext` is tested against, and `engine-core`'s VDF-pulse scanner
+  reads it to skip `0x2F` instructions.
 - **`title_overlay`** - superseded in practice by `menu`, which ports the same
   function and does have callers.
 - **`title_prim`**, **`vram_rect_copy`**, **`cutscene_trigger`** - supporting

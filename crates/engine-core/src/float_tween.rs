@@ -10,14 +10,22 @@
 //! Nothing in the engine owns the `gp+0x148` node list these passes walk.
 //! On-screen text and labels are rebuilt every frame by the `engine-ui`
 //! draw-list builders from the state that produces them, so no allocation
-//! path ever hands out a `0x34`-byte node, and no producer writes the
-//! `+0x24` tween descriptor that decides whether a node tweens at all -
-//! retail's is the label emitter `FUN_80032434`, which is not ported.
+//! path ever hands out a `0x34`-byte node, and nothing writes the `+0x24`
+//! tween descriptor that decides whether a node tweens at all.
 //! [`tick_node`] / [`tick_list`] therefore have no list to advance, and
 //! [`FIELD_SUBSYSTEM_RESET`] describes emptying a list that never exists.
-//! Wiring these needs the retail node pool plus its emitter, at which point
-//! the engine would also need the sibling draw pass `FUN_80031D00` to
-//! consume the tweened positions.
+//!
+//! The missing thing is the **node pool**, and naming the neighbouring
+//! functions as the blockers would be wrong - both are already in the tree.
+//! Retail's producer `FUN_80032434` is ported, as
+//! `crate::menu_list_rows`'s glyph-count scan and live-window upsert (itself
+//! inert); the sibling draw pass `FUN_80031D00` that consumes the tweened
+//! positions is ported **and live**, in `legaia_engine_render`. What neither
+//! of them carries across is the `0x34`-byte node with a descriptor hanging
+//! off `+0x24`: the port keeps the same information as typed row and draw
+//! state, and a tween has nowhere to write an interpolated `+0x0A`/`+0x0C`
+//! back to. Wiring these means adopting the node pool as the representation,
+//! not adding a call.
 //!
 //! `gp+0x148` (`0x8007B460`) is **one** sentinel-circular doubly-linked list of
 //! `0x34`-byte nodes, not several. The text/label producer `FUN_80032434`

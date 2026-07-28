@@ -379,12 +379,15 @@ mod tests {
     #[test]
     fn fx_descriptor_resolves_behavioural_fields_and_effect_lists() {
         use legaia_asset::move_power::{
-            EFFECT_AUX_TABLE_LEN, EFFECT_PROTO_TABLE_FILE_OFFSET, EFFECT_SFX_TABLE_FILE_OFFSET,
+            CUE_GROUP_STRIDE, CUE_GROUP_TABLE_FILE_OFFSET, CUE_GROUP_TABLE_LEN,
+            EFFECT_PROTO_TABLE_FILE_OFFSET, EFFECT_SFX_TABLE_FILE_OFFSET,
             IMPACT_EFFECT_TABLE_FILE_OFFSET,
         };
 
-        // Size past the SFX table (the furthest of the three tables).
-        let mut buf = vec![0u8; EFFECT_SFX_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN];
+        // Size past the cue-group table, the furthest of the aux regions
+        // `EffectAuxTables` requires.
+        let mut buf =
+            vec![0u8; CUE_GROUP_TABLE_FILE_OFFSET + CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE];
         // map[4] = 1 -> move id 4 resolves to record index 1.
         buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
 

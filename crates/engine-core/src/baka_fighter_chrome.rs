@@ -1132,11 +1132,14 @@ pub struct MirrorFrame {
     pub passes: Vec<MirrorPass>,
 }
 
-// NOT WIRED: this is a draw callback over the minigame sprite-actor pool -
-// it needs the actor's `+0x5A` live mask, `+0x5C` clip id and `+0x68` frame
-// cursor plus the runtime sprite archives `_DAT_8007B888` / `_DAT_8007B840`
-// to resolve the clip record. `BakaChrome`'s pool carries banner widgets, not
-// clip records, so there is nothing to hand it.
+// NOT WIRED: this is a draw callback over the minigame sprite-actor pool, and
+// that is now byte-evidence rather than a reading - nothing `jal`s it, but its
+// address sits as the callback word of a `0x18`-byte actor prototype at
+// `0x801D7688` (`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]`, the last record
+// before the `Vahn` name pool). It needs the spawned actor's `+0x5A` live mask,
+// `+0x5C` clip id and `+0x68` frame cursor plus the runtime sprite archives
+// `_DAT_8007B888` / `_DAT_8007B840` to resolve the clip record. `BakaChrome`'s
+// pool carries banner widgets, not clip records, so there is nothing to hand it.
 /// PORT: FUN_801d49e8 - the **mirrored two-pass sprite draw**.
 ///
 /// An empty live mask (`+0x5A == 0`) retires the actor outright and nothing
@@ -1267,12 +1270,15 @@ pub fn editor_band_open(match_timer: i32) -> bool {
     (match_timer.wrapping_sub(EDITOR_PHASE_BASE) as u32) < EDITOR_PHASE_SPAN
 }
 
-// NOT WIRED: the editor is a leftover development screen. Its band
-// (`DAT_801DBF44` in `400..=499`) is not a phase any shipping path enters, and
-// driving it needs the whole edit-cursor global cluster (`DAT_801DBF04`
-// action, `DAT_801DBF12` frame, `DAT_801DBF10` mode, `DAT_801DBF0A..0E` TRS)
-// plus a writable action table. `BakaFight` holds parsed, read-only action
-// sets.
+// NOT WIRED: the editor is a leftover development screen, and it is *linked*
+// rather than dead - nothing `jal`s `0x801D4FC8`, but its address is the
+// callback word of the `0x18`-byte actor prototype at `0x801D7670`, the
+// immediate sibling of [`mirrored_sprite_pass`]'s. So it is spawnable; what
+// never happens is the gate. Its band (`DAT_801DBF44` in `400..=499`) is not a
+// phase any shipping path enters, and driving it needs the whole edit-cursor
+// global cluster (`DAT_801DBF04` action, `DAT_801DBF12` frame, `DAT_801DBF10`
+// mode, `DAT_801DBF0A..0E` TRS) plus a writable action table. `BakaFight` holds
+// parsed, read-only action sets.
 /// PORT: FUN_801d4fc8 - the **developer action-table keyframe editor** tick.
 ///
 /// It is not the fight's pose path. Outside the [`editor_band_open`] window it

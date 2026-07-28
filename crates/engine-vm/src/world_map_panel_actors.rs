@@ -132,6 +132,26 @@ pub const BRIGHTNESS_HANDOFF_BIAS: i32 = 0x70;
 /// phase restores the tint instead of ramping (`slti v0,v0,6`).
 pub const FLASH_COUNTER_RESTORE: i32 = 6;
 
+/// The phase the actor parks on once the ramp has saturated: it re-pins the
+/// level at [`BRIGHTNESS_MAX`] every frame and only leaves when the counter
+/// reaches [`FLASH_COUNTER_RESTORE`].
+pub const FADE_FLASH_HOLD_PHASE: i16 = 3;
+
+/// What the menu overlay's save/load UI adds to the counter on its completion
+/// path (`addiu v1,v1,3` at `0x801DC9E0`, inside `FUN_801DC6B4`).
+///
+/// See [`fade_flash_tick`] for the whole protocol.
+pub const FLASH_COUNTER_DONE_STEP: i32 = 3;
+
+/// Counter seed the save-side completion screen leaves before the `+3`
+/// (`addiu v1,zero,4` at `0x801D8B64`). `4 + 3 = 7` lands the ramp-down arm's
+/// `phase = counter - 1` on phase 6, the exit that picks handler `0x29`.
+pub const FLASH_COUNTER_SEED_A: i32 = 4;
+
+/// The sibling seed (`addiu v1,zero,5` at `0x801D8D30`). `5 + 3 = 8` lands on
+/// phase 7, the exit that picks handler `0x2B`.
+pub const FLASH_COUNTER_SEED_B: i32 = 5;
+
 /// What one tick of the brightness fade/flash actor asks the host to do.
 ///
 /// PORT: FUN_801ed308
@@ -142,8 +162,19 @@ pub enum FadeFlashEffect {
     ApplyBrightness(i32),
     /// Copy the live tint triple `0x8007BF5D..5F` into the save slots
     /// `0x8007B634..636`, then zero both the live triple and its `+0xA1..A3`
-    /// mirror. Also clears the flash counter and calls `FUN_801D841C`.
+    /// mirror. Also clears the flash counter.
     CaptureAndClearTint,
+    /// `FUN_801D841C()` - the `jal` at `0x801ED3DC`, in the delay slot of the
+    /// last tint store, so it lands immediately after
+    /// [`FadeFlashEffect::CaptureAndClearTint`].
+    ///
+    /// Thirteen instructions: `FUN_80020DE0(0x800706BC, _DAT_8007C34C)` and
+    /// `sh 1,0x5c(v0)` on the **returned actor**. Descriptor `0x800706BC`'s
+    /// `+0x8` handler word is `0x80024190`, the in-field save/load screen
+    /// driver, and that actor's `+0x5C` is its save-vs-load discriminator - so
+    /// this is a save-side hand-off, not a screen-flash element. See
+    /// [`fade_flash_tick`].
+    SpawnSaveScreen,
     /// Copy the saved triple back over both the live triple and the mirror.
     RestoreTint,
     /// `scene[+0x3E] = 0` (case 5).
@@ -176,13 +207,39 @@ pub struct FadeFlashInput {
 /// both arms and ramps in the same frame and why phase 2's saturating path
 /// runs phase 3's tint restore.
 ///
+/// ## What this machine is half of
+///
+/// The white-out is not decoration: phase 1's hand-off spawns the **in-field
+/// save/load screen driver** ([`FadeFlashEffect::SpawnSaveScreen`]), which
+/// takes the game mode over, pages the menu overlay (PROT 899) in over the
+/// field overlay, runs the memory-card UI and pages the field overlay back.
+/// This actor is frozen for the whole of that - mode 23's frame body ticks
+/// only the save actor - so the ramp it left at [`BRIGHTNESS_MAX`] is what
+/// covers the swap.
+///
+/// The two halves talk through exactly two globals, and both are written from
+/// the **menu overlay's** save/load UI while the field overlay is not resident:
+///
+/// | Global | Field side (here) | Menu side |
+/// |---|---|---|
+/// | `_DAT_8007B440` brightness | ramped up, then down | pinned to `0xF2` at `0x801DC9DC` / `0x801D8B60` / `0x801DD190` |
+/// | `_DAT_8007B43C` counter | parks on it, then decodes it | seeded 1..5, then `+= 3` at `0x801DC9E0` |
+///
+/// `FUN_801DC6B4` returns `counter >= 6` - the same
+/// [`FLASH_COUNTER_RESTORE`] threshold phase 2/3 waits on - and the ramp-down
+/// arm's `phase = counter - 1` turns the seed the UI left into *which* exit
+/// this actor takes: seed [`FLASH_COUNTER_SEED_A`] (`+3 = 7`) selects phase 6
+/// and handler `0x29`, seed [`FLASH_COUNTER_SEED_B`] (`+3 = 8`) selects phase
+/// 7 and handler `0x2B`. So the counter is a return channel, not a timer.
+///
 /// PORT: FUN_801ed308
 ///
 /// Wired: `PanelActorKind::FadeFlash` in
 /// `legaia_engine_core::world_map_panel_host`. The host owns the brightness
-/// accumulator and the flash counter; the counter is an *external* input -
-/// this machine parks at phase 3 until something raises it, which is why the
-/// host exposes a release call.
+/// accumulator and the flash counter, performs the spawn through
+/// `legaia_engine_core::cutscene_script_elements::save_screen_spawn`, and
+/// releases the park through `PanelActorHost::release_flash`, which writes the
+/// counter the way the menu side does.
 pub fn fade_flash_tick(phase: i16, input: FadeFlashInput) -> (i16, i32, i32, Vec<FadeFlashEffect>) {
     let mut level = input.level;
     let mut counter = input.flash_counter;
@@ -202,6 +259,7 @@ pub fn fade_flash_tick(phase: i16, input: FadeFlashInput) -> (i16, i32, i32, Vec
             if level + BRIGHTNESS_HANDOFF_BIAS > BRIGHTNESS_MAX {
                 out.push(FadeFlashEffect::CaptureAndClearTint);
                 counter = 0;
+                out.push(FadeFlashEffect::SpawnSaveScreen);
                 phase = 2;
             }
             out.push(FadeFlashEffect::ApplyBrightness(level));

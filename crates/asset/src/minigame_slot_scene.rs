@@ -175,17 +175,29 @@ pub const SIN_TABLE_VA: u32 = 0x8007_0A2C;
 pub const COS_TABLE_VA: u32 = 0x8007_122C;
 
 /// `sin(angle)` in 4.12 fixed point, amplitude `0x1000` - the SCUS table at
-/// [`SIN_TABLE_VA`], reproduced (its entries are `round(0x1000 * sin)`).
+/// [`SIN_TABLE_VA`], reproduced.
+///
+/// The retail entries are `trunc(0x1000 * sin)`, **truncating toward zero**,
+/// not rounding: a stand-in that rounds disagrees with the disc table on about
+/// half of the 4096 entries by one LSB, and every consumer multiplies that
+/// error by a radius before shifting it back down. Nothing here reproduces a
+/// table *value* - the arithmetic is analytic and the disc is the oracle
+/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
 // REF: FUN_801d0fa8 (the reel renderer's trig-table reads)
 pub fn sin_4096(angle: i32) -> i32 {
     let a = angle.rem_euclid(ANGLE_FULL) as f64 * (core::f64::consts::TAU / ANGLE_FULL as f64);
-    (4096.0 * a.sin()).round() as i32
+    // `as i32` on an f64 truncates toward zero - the retail table's rounding.
+    (4096.0 * a.sin()) as i32
 }
 
 /// `cos(angle)` in 4.12 fixed point - the SCUS table at [`COS_TABLE_VA`].
+///
+/// That table *is* the sine one read a quarter turn ahead (the two VAs are
+/// `0x800` bytes apart), so this is the same read at a phase offset rather than
+/// an independent series - which is what keeps the two in exact agreement at
+/// the truncation boundaries.
 pub fn cos_4096(angle: i32) -> i32 {
-    let a = angle.rem_euclid(ANGLE_FULL) as f64 * (core::f64::consts::TAU / ANGLE_FULL as f64);
-    (4096.0 * a.cos()).round() as i32
+    sin_4096(angle + ANGLE_FULL / 4)
 }
 
 /// Model-space `y` of the reel cylinder at `angle` (`FUN_801d0fa8`).
@@ -1075,6 +1087,29 @@ mod tests {
         assert_eq!(cos_4096(0), 4096);
         assert_eq!(cos_4096(1024), 0);
         assert_eq!(cos_4096(128), 4017);
+    }
+
+    #[test]
+    fn trig_truncates_toward_zero_like_the_retail_tables() {
+        // The spot values above are agnostic - both roundings land on them.
+        // These three are not, and each pins a different edge of the rule.
+        //
+        // Positive fraction >= 0.5: rounding would say 13 / 19.
+        assert_eq!(sin_4096(2), 12);
+        assert_eq!(sin_4096(3), 18);
+        // The amplitude never saturates off-axis: cos(1) is 4095.995, and only
+        // the exact quarter turns reach 0x1000.
+        assert_eq!(cos_4096(1), 4095);
+        assert_eq!(cos_4096(4), 4095);
+        // Negative half: toward zero, not toward minus infinity. sin(2055) is
+        // -43.98, so flooring would say -44.
+        assert_eq!(sin_4096(2055), -43);
+        assert_eq!(sin_4096(3000), -4071);
+        // The cosine table is the sine table a quarter turn ahead, entry for
+        // entry - so the port's two functions cannot disagree at a boundary.
+        for a in 0..ANGLE_FULL {
+            assert_eq!(cos_4096(a), sin_4096(a + ANGLE_FULL / 4), "angle {a}");
+        }
     }
 
     #[test]

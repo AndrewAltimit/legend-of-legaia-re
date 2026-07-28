@@ -100,39 +100,37 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
-| Field ambient animation residuals (mode-4 scroller, record-0 rows, town0e's morph installer) | partial - the CLUT-cell cycler chain and the VDF morph render substitution are settled and ported | [details ↓](#field-ambient-animation-residuals) |
+| Who latches the clip-end bit for a conversation's cross-context clip pokes | partial - the latch and the spin are settled; the port stands in for the latch instead of resolving the poked actor | [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
 
-### Field ambient animation residuals
+### Clip-end latch for cross-context clip pokes
 
-*Status:* the main mechanisms are settled
-([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)): the bundle
-type-6 walker table (12 carriers), the ambient move-VM tree, the mode-3
-CLUT-cell HSV cycler (`FUN_80019D50`), and the VDF morph render
-substitution (`FUN_8001ADA4` + `FUN_8001C604` + the `FUN_80020740`
-envelope - armed by op-`0x0A` mesh stager parts, drawn with staged
-vertices on every surface) all run in the engine and the site viewers.
-Three residuals:
+*Status:* partial. The mechanism is settled from the disassembly: `ctx[+0x62]`
+is the clip-control word, bit 8 (`0x0100`) is the "end" flag the actor tick
+`FUN_800204F8` latches when a clip cursor reaches an end, and the recurring
+`A2 <t> <clip>` / `AC <t> 08` / `AD <t> 08` triple is "play it, clear the
+latch, spin until it re-latches" (see
+[`script-vm.md`](../subsystems/script-vm.md#0x2b-0x33-flag-manipulation-triplets)).
+A prop-bound record reaches the latch through its own `PropAnim` tick, which
+is why doors and cupboards play out correctly.
 
-1. **Render-mode 4** (the VRAM-rect cyclic scroller seated by outer op
-   `0x1E`, decoded at `80021df4.txt` `0x80022CC0..`) is documented from the
-   disassembly but not yet ported - jou's record 23 and any scrolling-texel
-   ambience stay static in the engine. Port = the strip-rotate arm applied
-   in `step_ambient_fx`.
-2. **Master ambient record 0** - the 8-byte spawn-row shape has no pinned
-   consumer (its body does not walk as move-VM bytecode). A write-watch on
-   an installed record-0 buffer in a live town would close it.
-3. **town0e's morph-record installer** - its op-`0x0A` records 10/11 hang
-   off stager record 1's fan-out, but no pure P1 effect script installs
-   that root (the `ambient_effect_installs` census finds nothing), so
-   which retail path spawns town0e's entry tree is unpinned. A live
-   capture in town0e watching `FUN_800252EC`'s argument would close it.
-   (jou's own morph arming is settled: none at entry - its 17 sub-entries
-   are cutscene-armed via op `0x1F`; the engine's plain-entry throb is the
-   documented `vdf_pulse` enhancement.)
+What is not resolved is the **cross-context** form an NPC conversation uses.
+`A2 F8 …` pokes the player channel, so retail's spin reads the *player
+actor's* `+0x62` while the dispatcher is running the NPC's record. The port's
+inline-dialogue runner keeps one context per record and never resolves the
+`0x80`-prefix target to a live actor, so nothing writes that bit: it cues the
+player clip, parks the conversation while the clip plays, and then sets the
+tested bit itself as a stand-in for the tick's write. That reproduces the
+observable beat (the gesture plays, then the script continues - which is what
+makes an inn stay reachable, see [`inn.md`](../subsystems/inn.md)) but it is
+not the retail data path, and it cannot be right for a poke at a *third*
+actor's clip.
 
-The engine's snapshot-at-spawn divergence (each self-modifying cycler
-instance captures one 16-halfword step behind retail) is a recorded
-divergence, not an open question.
+*What would close it:* resolve the ext-target byte to the live actor the way
+`func_0x8003C83C` does, run the dispatcher against that actor's own
+`+0x62`/`+0x6A` words (the prop stepper already does exactly this for props),
+and let the existing clip players own the latch. A live capture of an
+innkeeper conversation reading back the player actor's `+0x62` across the
+spin would pin the expected cursor/latch sequence to check it against.
 
 ### Region story-flag gate families
 

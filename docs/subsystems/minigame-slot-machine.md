@@ -475,7 +475,14 @@ Each reel emits 8 `POLY_GT4` faces per frame. A face spanning reel angles `a` an
 with `y(a) = (sin(a) * -0x249) >> 12` and `z(a) = cos(a) >> 3` - the SCUS sine /
 cosine tables (4096-entry, amplitude `0x1000`, reached through the pointers
 `_DAT_8007b81c` / `_DAT_8007b7f8`; the tables themselves live at SCUS
-`0x80070A2C` / `0x8007122C`). So the reel is an ellipse of radius 585 in `y` and
+`0x80070A2C` / `0x8007122C`, `0x800` bytes apart, so the "cosine table" is the
+sine one a quarter turn ahead). `FUN_801d0fa8` reads both pointers **inline**;
+it does not go through the shared polar helper `FUN_801d7bb8` that the fishing
+overlay uses on the same tables, so the reels are not among that helper's
+callers. The entries are `trunc(0x1000 * sin)` - truncating toward zero, not
+rounding, which matters here because the cylinder multiplies each entry by a
+radius before shifting it back down (see
+[the polar helper](minigame-fishing.md#the-shared-polar-offset-helper-fun_801d7bb8)). So the reel is an ellipse of radius 585 in `y` and
 512 in `z`: **a cylinder**, and the four corners go through `RotTransPers4`. The
 symbols curl away from the payline because the cylinder does.
 

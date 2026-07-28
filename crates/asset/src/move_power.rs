@@ -256,6 +256,32 @@ pub const EFFECT_SFX_TABLE_FILE_OFFSET: usize =
 /// SFX table into the prototype read).
 pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_SFX_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
 
+/// Runtime VA of the **cue-group table** the battle overlay's cue expander
+/// `FUN_801E22C8` indexes (`addiu v1, v0, 0x6470` at `0x801E2374`). One record
+/// per group id, `[count: u8][id: u8; 4]`, and each id is either an actor cue
+/// (bit `0x80` set) or an effect cue indexing [`EFFECT_SFX_TABLE_VA`] and
+/// [`EFFECT_PROTO_TABLE_VA`].
+pub const CUE_GROUP_TABLE_VA: u32 = 0x801F_6470;
+
+/// Raw-entry file offset of [`CUE_GROUP_TABLE_VA`] within PROT 0898.
+pub const CUE_GROUP_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (CUE_GROUP_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Byte stride of one cue-group record: the count byte plus four id bytes.
+pub const CUE_GROUP_STRIDE: usize = 5;
+
+/// Number of cue-group records. The table is bounded on the disc by the
+/// `data\battle\summon.DAT` path literal that follows it: 13 records fill
+/// `0x801F6470..0x801F64B5`, then three bytes of padding align the string to
+/// `0x801F64B8`. Retail's own callers agree - the twelve `jal 0x801E22C8` sites
+/// in `FUN_800402F4` pass group ids no higher than `0xC`.
+pub const CUE_GROUP_TABLE_LEN: usize = 13;
+
+/// Bit that marks a cue id as an **actor** cue rather than an effect cue
+/// (`andi v0, a0, 0x80` at `0x801E23C8`). Actor cues go to `FUN_801DFDF0` with
+/// the low seven bits and never touch either effect table.
+pub const CUE_ACTOR_FLAG: u8 = 0x80;
+
 /// Effect-list entry value that spawns the fixed screen-flash instead of a table
 /// effect (`FUN_801e09f8`'s `e == 100` arm: the `DAT_801c9070` flash struct +
 /// `FUN_80024e80`).
@@ -715,16 +741,27 @@ pub fn effect_trigger_index(
     index
 }
 
-/// The two auxiliary effect tables a move-power record's `+0x12` / `+0x16`
-/// effect-id lists index. Each [`EffectListEntry::Spawn`] index `e` yields the
-/// spawn parameter [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX
-/// cue [`Self::effect_sfx`]`(e)` (`0x801F6418`, `u8`; `0` = silent). Both are
-/// static PROT 0898 data, loaded with the battle-action overlay like the
-/// move-power table itself.
+/// The three auxiliary effect tables in the battle overlay's data band, all of
+/// them consumed by the same cue id space.
+///
+/// A move-power record's `+0x12` / `+0x16` effect-id lists index the first two:
+/// each [`EffectListEntry::Spawn`] index `e` yields the spawn parameter
+/// [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX cue
+/// [`Self::effect_sfx`]`(e)` (`0x801F6418`, `u8`; `0` = silent).
+///
+/// The third is the **cue-group table** at `0x801F6470`
+/// ([`Self::cue_group_bytes`]), which the battle overlay's cue expander
+/// `FUN_801E22C8` indexes by group id to get the set of cues one action's
+/// presentation fires. Its member bytes are ids in the *same* space as the
+/// other two tables, so the three are parsed together or not at all.
+///
+/// All three are static PROT 0898 data, loaded with the battle-action overlay
+/// like the move-power table itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectAuxTables {
     proto: [u32; EFFECT_AUX_TABLE_LEN],
     sfx: [u8; EFFECT_AUX_TABLE_LEN],
+    groups: [u8; CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE],
 }
 
 impl EffectAuxTables {
@@ -752,7 +789,29 @@ impl EffectAuxTables {
         }
         let mut sfx = [0u8; EFFECT_AUX_TABLE_LEN];
         sfx.copy_from_slice(&battle_overlay_0898[EFFECT_SFX_TABLE_FILE_OFFSET..sfx_end]);
-        Some(Self { proto, sfx })
+
+        const GROUP_BYTES: usize = CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE;
+        let groups_end = CUE_GROUP_TABLE_FILE_OFFSET + GROUP_BYTES;
+        if groups_end > battle_overlay_0898.len() {
+            return None;
+        }
+        let mut groups = [0u8; GROUP_BYTES];
+        groups.copy_from_slice(&battle_overlay_0898[CUE_GROUP_TABLE_FILE_OFFSET..groups_end]);
+        // Shape guard, so a build whose data band moved cannot yield a table of
+        // plausible-looking noise: a record names at most four cues, and every
+        // non-actor cue id has to index the two tables above.
+        for rec in groups.chunks_exact(CUE_GROUP_STRIDE) {
+            let count = rec[0] as usize;
+            if count > CUE_GROUP_STRIDE - 1 {
+                return None;
+            }
+            for &id in &rec[1..=count] {
+                if id & CUE_ACTOR_FLAG == 0 && (id as usize) >= EFFECT_AUX_TABLE_LEN {
+                    return None;
+                }
+            }
+        }
+        Some(Self { proto, sfx, groups })
     }
 
     /// The effect-prototype params (`0x801F6324`), one per spawn index.
@@ -775,6 +834,24 @@ impl EffectAuxTables {
     /// `None` when the index is outside the table.
     pub fn effect_sfx(&self, index: u8) -> Option<u8> {
         self.sfx.get(index as usize).copied()
+    }
+
+    /// The cue-group table (`0x801F6470`) as the flat `[count][id; 4]` byte
+    /// region the expander indexes - the shape
+    /// `legaia_engine_vm::battle_cue_group::CueTables::groups` takes.
+    pub fn cue_group_bytes(&self) -> &[u8] {
+        &self.groups
+    }
+
+    /// One cue group's `(count, ids)` pair, or `None` for a group id outside
+    /// [`CUE_GROUP_TABLE_LEN`]. `count` is already bounded to four by the
+    /// parser's shape guard.
+    pub fn cue_group(&self, group_id: u8) -> Option<(u8, [u8; CUE_GROUP_STRIDE - 1])> {
+        let base = (group_id as usize).checked_mul(CUE_GROUP_STRIDE)?;
+        let rec = self.groups.get(base..base + CUE_GROUP_STRIDE)?;
+        let mut ids = [0u8; CUE_GROUP_STRIDE - 1];
+        ids.copy_from_slice(&rec[1..]);
+        Some((rec[0], ids))
     }
 
     /// Resolve a proto entry's `u32` (a runtime VA into the battle overlay) to its
@@ -1118,11 +1195,18 @@ mod tests {
         );
     }
 
+    /// A 0898-shaped buffer: valid move-power map guard, room for all three aux
+    /// tables, and a cue-group table that passes the shape guard.
+    fn synthetic_0898() -> Vec<u8> {
+        let mut buf =
+            vec![0u8; CUE_GROUP_TABLE_FILE_OFFSET + CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // map guard
+        buf
+    }
+
     #[test]
     fn effect_aux_tables_parse_synthetic() {
-        // A 0898-shaped buffer: valid move-power map guard + known aux values.
-        let mut buf = vec![0u8; EFFECT_SFX_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN];
-        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // map guard
+        let mut buf = synthetic_0898();
         // proto[0x28] = 0xCAFEBABE, sfx[0x28] = 0x4d.
         let pb = EFFECT_PROTO_TABLE_FILE_OFFSET + 0x28 * 4;
         buf[pb..pb + 4].copy_from_slice(&0xCAFE_BABEu32.to_le_bytes());
@@ -1140,5 +1224,39 @@ mod tests {
         let mut bad = buf.clone();
         bad[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 0;
         assert!(EffectAuxTables::parse(&bad).is_none());
+    }
+
+    #[test]
+    fn cue_group_table_parses_and_is_shape_guarded() {
+        let mut buf = synthetic_0898();
+        // Group 3: two cues, one effect id and one actor id.
+        let g3 = CUE_GROUP_TABLE_FILE_OFFSET + 3 * CUE_GROUP_STRIDE;
+        buf[g3] = 2;
+        buf[g3 + 1] = 0x0C;
+        buf[g3 + 2] = 0x94; // actor cue: 0x80 | 0x14
+
+        let aux = EffectAuxTables::parse(&buf).expect("aux tables parse");
+        assert_eq!(aux.cue_group(3), Some((2, [0x0C, 0x94, 0, 0])));
+        assert_eq!(aux.cue_group(0), Some((0, [0; 4])), "an empty group");
+        assert_eq!(aux.cue_group(CUE_GROUP_TABLE_LEN as u8), None);
+        assert_eq!(
+            aux.cue_group_bytes().len(),
+            CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE
+        );
+        // The flat region is what the expander indexes.
+        assert_eq!(aux.cue_group_bytes()[3 * CUE_GROUP_STRIDE], 2);
+
+        // A count above the record's own capacity is not this table.
+        let mut bad = buf.clone();
+        bad[g3] = 5;
+        assert!(EffectAuxTables::parse(&bad).is_none());
+        // Nor is an effect cue id that cannot index the two tables above. The
+        // actor flag exempts an id from that bound, so set it on the low bits.
+        let mut bad = buf.clone();
+        bad[g3 + 1] = EFFECT_AUX_TABLE_LEN as u8;
+        assert!(EffectAuxTables::parse(&bad).is_none());
+        let mut ok = buf.clone();
+        ok[g3 + 1] = CUE_ACTOR_FLAG | EFFECT_AUX_TABLE_LEN as u8;
+        assert!(EffectAuxTables::parse(&ok).is_some());
     }
 }

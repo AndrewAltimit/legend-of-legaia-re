@@ -4,28 +4,140 @@ use super::*;
 
 // --- magic / item band ------------------------------------------------------
 
+/// Face the acting actor at whatever its target byte `+0x1DD` names - retail's
+/// `0x801E4334..0x801E43A4`, the tail of the cast-begin arm.
+///
+/// Two arms, split on whether the byte is a slot or a group code:
+///
+/// * **`code < 8`** (`sltiu v0, t2, 0x8` at `0x801E433C`): the bearing is taken
+///   straight from the target actor's seat. Retail skips the whole store when
+///   the actor is its own target (`beq v0, t2` at `0x801E4350`).
+/// * **`code >= 8`**: [`target_group_aim`](crate::battle_target_group::target_group_aim)
+///   folds the group's live seats into a centroid, and retail negates both
+///   components back into a world position (`subu a0, zero, a0` /
+///   `subu a1, zero, a1` at `0x801E438C`) before the same bearing call.
+///
+/// Either way the bearing is `FUN_80019B28(p1z, p1x, p2z, p2x)`, which
+/// differences `p2 - p1` - so passing the *target* as `p1` measures target ->
+/// actor, and the `+ 0x800` half-turn at `0x801E439C` is what turns it back
+/// into actor -> target. The result is masked to 12 bits and stored at `+0x46`.
+///
+/// The group walk is assembled in **retail slot numbering** (party `0..3`,
+/// monsters `3..7`), because that is the numbering the group codes index; the
+/// engine seats monsters at `party_count` instead, so the two are mapped here
+/// the same way [`super::dispatch`]'s target banner maps them.
+///
+/// A host with no [`BattleActionHost::actor_position`] leaves the facing alone.
+///
+/// REF: FUN_801E295C (`0x801E4334..0x801E43A4`)
+fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
+    use crate::battle_cue_group::MONSTER_SLOT_FIRST;
+    use crate::battle_target_group::{GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim};
+
+    let slot = ctx.active_actor;
+    let Some((actor_x, actor_z)) = host.actor_position(slot) else {
+        return;
+    };
+    let code = host.actor(slot).map_or(0, |a| a.active_target);
+    let party_count = host.party_count();
+
+    let (aim_z, aim_x) = if (code as usize) < ACTOR_SLOTS {
+        if code == slot {
+            return;
+        }
+        let Some((target_x, target_z)) = host.actor_position(code) else {
+            return;
+        };
+        (target_z, target_x)
+    } else {
+        let mut slots = [GroupSlot {
+            live: false,
+            x: 0,
+            z: 0,
+        }; ACTOR_SLOTS];
+        for (retail_slot, out) in slots.iter_mut().enumerate() {
+            let retail_slot = retail_slot as u8;
+            // Retail numbering -> the engine's compact seating.
+            let engine_slot = if retail_slot < MONSTER_SLOT_FIRST {
+                if retail_slot >= party_count {
+                    continue;
+                }
+                retail_slot
+            } else {
+                party_count + (retail_slot - MONSTER_SLOT_FIRST)
+            };
+            let Some((x, z)) = host.actor_position(engine_slot) else {
+                continue;
+            };
+            let live = host.actor(engine_slot).is_some_and(|a| {
+                // Party arm: the roster byte, i.e. seat occupancy. Monster arm:
+                // retail's `+0x4` prim word, read through its `+0x21C` twin.
+                retail_slot < MONSTER_SLOT_FIRST || a.render_flag != RENDER_FLAG_HIDDEN
+            });
+            *out = GroupSlot { live, x, z };
+        }
+        let Some(aim) = target_group_aim(code, &slots) else {
+            return;
+        };
+        // Retail's `subu`, which wraps rather than trapping.
+        (aim.centroid_z.wrapping_neg(), aim.centroid_x.wrapping_neg())
+    };
+
+    let bearing = bearing_12bit_approx(aim_z, aim_x, actor_z, actor_x);
+    let facing = bearing.wrapping_add(0x800) & 0xFFF;
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.facing_angle = facing;
+    }
+}
+
+/// The item-target re-route at the head of the cast-begin arm
+/// (`0x801E4298..0x801E4334`).
+///
+/// Retail keys this on the acting actor's **target byte** `+0x1DD`, not on its
+/// action category: `lw t2, 0x20(sp)` at `0x801E4298` reloads the byte the
+/// prologue read out of `+0x1DD`. Target code `9` takes the override in
+/// `ctx[+0x24B]` and code `8` takes `ctx[+0x24A] - 1`, each only when that ctx
+/// byte is non-zero; a zero leaves the code alone, which is what sends it on to
+/// the group arm of [`face_cast_target`]. The two checks are **sequential** on
+/// the rewritten value (`0x801E42E8` reloads it before the `== 8` compare), so
+/// a `9` that resolves to `8` falls into the second arm.
+///
+/// The earlier port read `actor.action_category` instead, mapped `8` and `9` to
+/// the opposite ctx bytes, and rewrote unconditionally. Nothing in the engine
+/// writes either ctx byte, so all three were invisible in behaviour - but the
+/// wrong key made the arm unreachable, because it is `active_target` that
+/// carries `8` / `9` in this port (the monster-AI resolver `FUN_801E7320`
+/// writes them).
+///
+/// REF: FUN_801E295C (`0x801E4298..0x801E4334`)
+fn retarget_item_codes<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
+    let slot = ctx.active_actor;
+    let Some(mut code) = host.actor(slot).map(|a| a.active_target) else {
+        return;
+    };
+    let mut rewritten = false;
+    if code == 9 && ctx.item_target_b != 0 {
+        code = ctx.item_target_b;
+        rewritten = true;
+    }
+    if code == 8 && ctx.item_target_a != 0 {
+        code = ctx.item_target_a.wrapping_sub(1);
+        rewritten = true;
+    }
+    if rewritten && let Some(actor) = host.actor_mut(slot) {
+        actor.active_target = code;
+    }
+}
+
 pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    // Item-target re-route checks. Categories 8 and 9 are intermediate
-    // routing categories.
-    let category = host
-        .actor(slot)
-        .map(|a| ActionCategory::from_byte(a.action_category))
-        .unwrap_or(ActionCategory::Magic);
-    if let Some(actor) = host.actor_mut(slot) {
-        match category {
-            ActionCategory::ItemRetargetA => {
-                actor.active_target = ctx.item_target_a.saturating_sub(1);
-            }
-            ActionCategory::ItemRetargetB => {
-                actor.active_target = ctx.item_target_b;
-            }
-            _ => {}
-        }
-    }
+    retarget_item_codes(host, ctx);
+    // Turn to face the target (or the group's centroid). Retail runs this on
+    // the retargeted byte, before it picks the next state.
+    face_cast_target(host, ctx);
     // Stage frame timer for pre-cast wait.
     ctx.frame_timer = 0x14;
 

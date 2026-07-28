@@ -477,16 +477,30 @@ pub enum MarkerTemplate {
 /// distinguishable and clip index `0` never occurs. `None` means the cell
 /// draws no marker at all.
 ///
+/// That record is not a marker-specific structure: the floor pass calls
+/// `FUN_801D3EC0(1, x, z)`, and `FUN_801D3F54(kind, x, z, block)` resolves it
+/// by scanning sub-table `kind` of the `.MAP` region block - offset `s16` at
+/// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
+/// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
+/// first and `+0x12000` on a miss. At `kind == 1` that is exactly the
+/// [`crate::field_regions::TileTrigger`] table, so the marker's clip index is
+/// [`TileTrigger::record`] `+ 1` of the record
+/// [`crate::field_regions::lookup_tile_trigger`] already returns.
+///
 /// The `6 ..= 9` window is an unsigned `clip - 6 < 4` test, so it is exactly
 /// the four marker clips; everything else falls through to the plain template.
+///
+/// [`TileTrigger::record`]: crate::field_regions::TileTrigger::record
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
-// NOT WIRED: the two templates are overlay-resident actor prototypes
-// (`DAT_801D42FC` / `DAT_801D4314`) copied by the shared spawn API, and the
-// clip index comes from `FUN_801D3EC0`'s step-layer record lookup, which is
-// not ported - the `.MAP`'s `+0x10000` / `+0x12000` step layers are decoded
-// only as trigger tables (`crate::field_regions`), not as the per-cell marker
-// records this reads. Wiring needs that record lookup ported plus the same
-// tile-actor sink [`floor_tile_spawns`] names.
+// REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
+// index comes out of)
+// NOT WIRED: the record *source* is not the blocker, and the earlier reason
+// here said it was. `FUN_801D3EC0`'s lookup is the kind-1 arm of the same
+// primary-then-fallback tile scan `crate::field_regions` ports, over the same
+// records - see the doc above. What is still missing is only the **sink**: the
+// two templates are overlay-resident actor prototypes (`DAT_801D42FC` /
+// `DAT_801D4314`) copied by the shared spawn API into the tile-actor list
+// [`floor_tile_spawns`] also has no consumer for.
 pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
     match marker {
         0 => None,
@@ -507,13 +521,26 @@ pub const POLAR_ANGLE_MASK: u32 = 0x0FFF;
 /// Fixed-point shift the helper folds the product down by.
 pub const POLAR_SHIFT: u32 = 12;
 
-// NOT WIRED: the two quadrature tables are reached through **runtime**
-// pointers (`_DAT_8007B81C` / `_DAT_8007B7F8`), installed by whichever overlay
-// owns them, and nothing in the engine decodes either table - so there is no
-// table pair to index and no caller can supply one. Its retail callers are the
-// hub overlays' own circular-motion paths (the slot machine's reel cylinders,
-// the fishing float's drift), none of which the engine drives from a table
-// lookup. Wiring it needs those tables located and parsed first.
+// REF: FUN_80026be0 (installs the two table pointers from SCUS rodata)
+// REF: FUN_801cf3bc, FUN_801d26cc, FUN_801d4004, FUN_801d4948 (its retail
+// callers), FUN_801d0fa8 (the reel renderer, which reads the same tables
+// inline and is NOT a caller)
+
+// NOT WIRED: the earlier reason here - "nothing in the engine decodes either
+// table, so no caller can supply one" - does not hold, and neither does its
+// claim about the callers. Both tables are **static SCUS rodata**, installed
+// once at boot by `FUN_80026be0` (`_DAT_8007B81C = &DAT_80070A2C`,
+// `_DAT_8007B7F8 = &DAT_8007122C`), and `legaia_asset::minigame_slot_scene`
+// already names them ([`SIN_TABLE_VA`] / [`COS_TABLE_VA`]) and synthesises
+// both; the play window materialises one for the fishing sway. The real gap is
+// the **lure point**: every retail call site is a facing-relative offset in the
+// fishing overlay, and the cast that creates the point this helper offsets from
+// is exactly what [`crate::fishing_actors::walk_grid_overhead`] and
+// [`crate::fishing_actors::water_tile_class`] also wait on. Those three rows
+// are one gap, not three.
+//
+// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
+// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
 /// PORT: FUN_801d7bb8 - the hub overlays' **polar offset** helper.
 ///
 /// One of the small shared routines in the band above `0x801D0018`: the dumps
@@ -526,14 +553,33 @@ pub const POLAR_SHIFT: u32 = 12;
 /// `FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)` reads the same
 /// 12-bit-masked angle out of **two** quadrature tables - whose pointers live
 /// at `_DAT_8007B81C` and `_DAT_8007B7F8` - and writes
-/// `table[angle] * radius * scale >> 12` through each pointer. Which of the
-/// pair is sine and which cosine is a property of the table data, not of this
-/// code, so the port keeps them positional (`table_a` -> the first output).
+/// `table[angle] * radius * scale >> 12` through each pointer.
+///
+/// `table_a` (the first output) is the **sine** table and `table_b` the
+/// **cosine** one: `FUN_80026be0` points `_DAT_8007B81C` at `DAT_80070A2C` and
+/// `_DAT_8007B7F8` at `DAT_8007122C`, and those two addresses are `0x800`
+/// bytes apart - one quarter turn of a 4096-entry `i16` table - so the pair is
+/// one table read at two phases, not two tables. Its entries are
+/// `trunc(0x1000 * sin)`, truncating toward zero rather than rounding.
 ///
 /// Both products are computed in full 32-bit width before the single shift,
 /// and the shift is a plain arithmetic `sra` - it rounds toward **minus
 /// infinity**, unlike the `bgez`-biased shifts elsewhere in these overlays.
 /// A caller feeding a 12.12 `scale` gets a 12.12 result back.
+///
+/// Every retail caller passes an actor's `+0x26` **facing** word as the angle
+/// and the frame delta (scratchpad `0x1F800393`) as the scale, so the pair it
+/// returns is a facing-relative world offset for this frame. The call sites
+/// are all in the fishing overlay:
+///
+/// | Caller | What it offsets |
+/// |---|---|
+/// | `FUN_801CF3BC` case `0xD` | camera translation `_DAT_80089118` / `_DAT_80089120`, radius `0x14` |
+/// | `FUN_801CF3BC` case `0x14` | the cast **lure** spawn, `actor.xz - polar(facing, 200)` |
+/// | `FUN_801D26CC` / `FUN_801D4004` / `FUN_801D4948` | that lure's per-frame run and the line/celebration actors |
+///
+/// The slot machine's reel cylinders are **not** among them: `FUN_801D0FA8`
+/// reads the same two table pointers inline and never calls this.
 ///
 /// Returns `None` when either table is too short to hold the masked angle.
 pub fn polar_offset(

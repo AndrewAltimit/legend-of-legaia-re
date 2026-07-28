@@ -16,6 +16,10 @@
 
 /// Byte stride of one record in the cue-group table at `0x801F6470`.
 /// Layout is `[count: u8][id: u8; 4]`, so a group holds at most four cues.
+///
+/// The disc-side parser states the same stride as
+/// `legaia_asset::move_power::CUE_GROUP_STRIDE`; the two are pinned equal by
+/// `constants_agree_with_the_disc_parser` below.
 pub const CUE_GROUP_STRIDE: usize = 5;
 
 /// Maximum cues one group can name.
@@ -103,15 +107,63 @@ pub struct CueTables<'a> {
 /// A group whose count byte is zero produces no spawns; the two actor writes
 /// still happen.
 ///
-/// NOT WIRED: the expansion names cue ids out of two battle-overlay tables
-/// (`0x801F6470` groups, `0x801F6418` SFX map) that no parser extracts, so a
-/// caller has no `CueTables` to pass. The engine's per-action presentation
-/// comes from the art record's own effect / hit cues instead
-/// (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), which is a different source
-/// for the same frames; routing through this one needs those two tables
-/// parsed first.
+/// NOT WIRED. **Both tables are disc-parsed now**, and two earlier notes here
+/// were wrong about that: the first said no parser extracted either, the second
+/// said the group table was "the whole prerequisite". Neither holds.
+/// `legaia_asset::move_power::EffectAuxTables` reads all three regions
+/// (`0x801F6324` prototypes, `0x801F6418` SFX map, `0x801F6470` groups) off
+/// PROT 0898 behind the move-power table's structural guard, so both
+/// [`CueTables`] fields have a live source and the pair composes - see
+/// `crates/engine-vm/tests/battle_cue_group_real.rs`.
+///
+/// What is missing is the **caller**, and the per-branch dispatch is the
+/// smallest of three blockers, not the whole of it.
+///
+/// Retail's only caller is `FUN_800402F4`, the item / restore applier, which
+/// reaches `jal 0x801e22c8` from eleven branches of its 132-entry class jump
+/// table (`0x80014FA0`) and picks the group id per branch: eight literals
+/// `5`..`0xC`, two computed (`s5 + 1` at `0x80040D74`, `param_2 + 3` at
+/// `0x80040E38`) and one forwarding its own `param_2` (`0x800408D4`). That
+/// selection is tabulated site-by-site in
+/// `docs/subsystems/battle-action.md` § "`FUN_800402F4`'s cue-group sites",
+/// and it is a `(class, tier)` table plus one per-slot loop - mechanical work,
+/// **not** a port of the applier's 1976 instructions.
+///
+/// The three things that actually block the wire:
+///
+/// 1. **The port's hook does not carry the primitive's arguments.** Retail's
+///    one call site inside the action SM is `0x801E4134` (state `0x3F`, spirit
+///    fire-damage) and it passes `a0 = actor[+0x1E8]` (`0x801E4124`),
+///    `a1 = actor[+0x1E9]` (`0x801E4130`), `a2 = ` the stacked target byte
+///    `+0x1DD` (`0x801E4108`) and `a3 = DAT_8007BD10[ctx[+0x13]]`, the roster
+///    **character id** (`0x801E411C`..`0x801E412C`). The port's
+///    `spirit_fire_damage` passes `queued_anim_b` (`+0x1E7`) and `spell_iter`
+///    (`+0x1FA`) for the first two - neither is `+0x1E8` / `+0x1E9`, and
+///    [`BattleActor`](crate::battle_action::BattleActor) models neither field -
+///    and the slot index for the fourth. So the class and tier that *select*
+///    the branch never reach the hook.
+/// 2. **The port has a call site retail does not.** `attack_chain` calls
+///    `apply_damage(next_byte, 0, target, slot)` with an animation byte where
+///    the primitive expects an effect class. `jal 0x800402f4` occurs exactly
+///    once in `FUN_801E295C`, at `0x801E4134`; the strike loop resolves damage
+///    through `FUN_801EC3E4`, not through the applier.
+/// 3. **The expansion has no consumer.** This function returns a *plan*.
+///    Nothing routes a [`CueSpawn`] into an effect pool or the SFX mixer, and
+///    `engine-core`'s `MovePowerTables::aux_tables()` is the only production
+///    holder of the group table.
+///
+/// Wiring on top of (1) and (2) would produce a call that satisfies a
+/// call-graph audit while expanding the wrong group from the wrong bytes, and
+/// (3) would discard the result anyway.
+///
+/// Meanwhile the engine's per-action presentation comes from the art record's
+/// own effect / hit cues (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), a
+/// different source for the same frames.
 ///
 /// PORT: FUN_801E22C8
+/// REF: FUN_800402F4 (the damage primitive that picks the group id),
+/// REF: FUN_801E295C (its one call site in the action SM, `0x801E4134`),
+/// REF: FUN_801EC3E4 (what the strike loop resolves damage through instead),
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
 /// REF: FUN_80058490 (sound packet submit)
 pub fn expand_cue_group(
@@ -383,6 +435,15 @@ pub fn plan_target_banner(inputs: &BannerInputs, target_anim_width: i16) -> Bann
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kernel and the disc-side parser each state the record shape; a
+    /// silent disagreement would put the parser's records out of phase with the
+    /// expander's indexing.
+    #[test]
+    fn constants_agree_with_the_disc_parser() {
+        assert_eq!(CUE_GROUP_STRIDE, legaia_asset::move_power::CUE_GROUP_STRIDE);
+        assert_eq!(CUE_ACTOR_FLAG, legaia_asset::move_power::CUE_ACTOR_FLAG);
+    }
 
     fn tables() -> (Vec<u8>, Vec<u8>) {
         // Group 0: empty. Group 1: two effect cues (ids 4, 5).

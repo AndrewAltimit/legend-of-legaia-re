@@ -71,9 +71,22 @@ pub enum ReleaseStep {
 /// Build the release sequence.
 ///
 /// PORT: FUN_801d8450
-// NOT WIRED: `engine-audio`'s mixer has no per-voice stop keyed on the retail
-// voice index and `engine-core` does not model the `0x80091508` SEQ resource
-// table, so there is no host root to call this from yet.
+// NOT WIRED: nothing owns the resources these steps hand back. The two
+// primitives the steps replay against both exist - `SustainedSfx::stop_voice`
+// is the model of `FUN_800653C8` down to its `id < 0x18` bound, and
+// `legaia_engine_audio::seq_slots::SeqResourceTable::release` carries the
+// `PORT: FUN_8001FF58` tag - so the earlier reading, that neither the
+// per-voice stop nor the `0x80091508` table was modelled, named the module's
+// own two `REF:` addresses as missing when both are ported.
+//
+// The gap is one level down. `SustainedSfx` tracks the *cue ring's*
+// reservation, which starts at `SUSTAINED_BASE_VOICE` (7); the field cue's
+// top two voices (`0x16`/`0x17`) are a second, separate reservation that the
+// engine never makes, so stopping them releases nothing. `SeqResourceTable`
+// is instantiated nowhere in the workspace, so slot 6 has no owner either.
+// And the two globals this clears have no engine counterpart. A caller added
+// at the scene teardown that already runs `release_sustained_sfx` would
+// therefore execute five correct steps against three absent resources.
 pub fn field_audio_release_steps() -> Vec<ReleaseStep> {
     let mut steps = Vec::with_capacity(FIELD_VOICE_COUNT as usize + 3);
     for i in 0..FIELD_VOICE_COUNT {

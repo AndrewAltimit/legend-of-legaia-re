@@ -217,24 +217,82 @@ pub(super) fn tick_frame_timer<H: BattleActionHost + ?Sized>(
 
 // --- state handlers ---------------------------------------------------------
 
+/// The **formation arm** of retail state `0x00` - the whole of
+/// `0x801E2AC0..0x801E2B48`, in one place, over the one byte pair retail has.
+///
+/// Two stores, in this order:
+///
+/// 1. **Seed the turn cursor** `ctx[+0x1A]` from the formation-advantage byte
+///    `ctx[+0x290]` (`0x801E2ACC` reads it). The switch has four arms and only
+///    three of them store: `0` seeds the cursor at the head of the order
+///    (`0x801E2B08`), `1` at `ctx[+0x00]` - the party count - (`0x801E2B0C`
+///    /`0x801E2B14`) and `2` at `ctx[+0x01]` - the monster count -
+///    (`0x801E2B18`/`0x801E2B20`), so an ambushed side starts its round partway
+///    down the order. Any other byte leaves the cursor alone (`0x801E2AEC`
+///    jumps clear of all three stores).
+/// 2. **Latch** `+0x290` into `+0x291` (`0x801E2B30`/`0x801E2B38`) and *then*
+///    clear the original (`0x801E2B48`). The latched copy is what the escape
+///    roll reads as "escape assured" (value `2` = the party opened with a
+///    pre-emptive strike), so the copy must happen before the clear - see
+///    [`BattleActionCtx::formation_latched`].
+///
+/// `ctx[+0x00]` / `ctx[+0x01]` are not modelled on [`BattleActionCtx`]; the
+/// caller passes the seated counts (in the engine, the host's party count and
+/// the slots above it).
+///
+/// Runs at most once per battle - see [`BattleActionCtx::formation_armed`] for
+/// why the port needs a flag where retail does not. Engines that stage the
+/// battle themselves may call this at battle open (retail's placement: the
+/// flow SM arms `ctx[7] = 0` at `0x801D3224` and the action SM runs `0x00` on
+/// the next frame, *before* the command menu resolves); [`begin`] runs it
+/// otherwise.
+///
+/// PORT: FUN_801E295C (`0x801E2AC0..0x801E2B48`)
+pub fn begin_formation_arm(
+    seated_party: u8,
+    seated_monsters: u8,
+    ctx: &mut BattleActionCtx,
+) -> bool {
+    if ctx.formation_armed {
+        return false;
+    }
+    ctx.formation_armed = true;
+    match ctx.formation_advantage {
+        0 => ctx.turn_cursor = 0,
+        1 => ctx.turn_cursor = seated_party,
+        2 => ctx.turn_cursor = seated_monsters,
+        _ => {}
+    }
+    ctx.formation_latched = ctx.formation_advantage;
+    ctx.formation_advantage = 0;
+    true
+}
+
+/// [`begin_formation_arm`] with the two seated counts read off a host.
+///
+/// `ctx[+0x00]` / `ctx[+0x01]` are the counts battle setup seated, so the
+/// monster figure is the number of **occupied** monster slots, not the width
+/// of the slot table - the engine's `slot_count()` is the fixed 8-slot table
+/// and the tail of it is empty in most formations.
+pub fn begin_formation_arm_for<H: BattleActionHost + ?Sized>(
+    host: &H,
+    ctx: &mut BattleActionCtx,
+) -> bool {
+    let party = host.party_count();
+    let monsters = (party..host.slot_count())
+        .filter(|&slot| host.actor(slot).is_some_and(|a| a.liveness != 0))
+        .count() as u8;
+    begin_formation_arm(party, monsters, ctx)
+}
+
 pub(super) fn begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     // Reset ctx counters at +0x6DA..+0x6DB.
     ctx.combo_timer = 0;
-    // Copy ctx[+0x274] (queued action) → actor[+0x1A].
-    if let Some(actor) = host.actor_mut(ctx.active_actor) {
-        actor.action_queue_counter = ctx.queued_action;
-    }
-    // Latch ctx[+0x290] into ctx[+0x291], then clear the original. The latched
-    // copy is what the escape roll reads as "escape assured" (value 2 = the
-    // party opened with a pre-emptive strike), so the copy must happen before
-    // the clear - see `BattleActionCtx::formation_latched`.
-    //
-    // PORT: FUN_801E295C state 0x00 (the +0x290 -> +0x291 latch)
-    ctx.formation_latched = ctx.formation_advantage;
-    ctx.formation_advantage = 0;
+    // Seed the turn cursor from the formation advantage, then latch it away.
+    begin_formation_arm_for(host, ctx);
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.
     if ctx.menu_open != 0 {
         transition(ctx, ActionState::QueuedFromMenu)

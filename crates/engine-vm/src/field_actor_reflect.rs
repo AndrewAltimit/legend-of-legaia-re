@@ -169,9 +169,18 @@ pub fn tile_of(v: i16) -> i16 {
 /// Run one tick of the reflection callback.
 ///
 /// PORT: FUN_801e5154
-// NOT WIRED: the actor-callback descriptor at 0x801F2950 is not parsed and
-// `engine-core`'s actor carries none of the fields this reads; wiring it
-// would edit `engine-core/src/world/**`, owned elsewhere.
+// NOT WIRED: the actor-callback descriptor at `0x801F2950` is not parsed -
+// nothing in the workspace reads that VA - so no actor is ever given this
+// tick as its callback, and no reflection pair is ever formed.
+//
+// That is the whole blocker. An earlier reading added "and `engine-core`'s
+// actor carries none of the fields this reads", which is false: `Actor`'s
+// `move_state` is `move_vm::ActorState`, which already carries `+0x10`
+// flags, the `+0x14/16/18` position, the `+0x26` facing, the `+0x5C/68/6A`
+// animation triple and the `+0x80..8A` mirror/bounds block at those exact
+// offsets. Only the `+0x64` animation-set word has no slot. So the storage
+// is largely there; what does not exist is the descriptor that would pair a
+// source actor with a reflection actor in the first place.
 pub fn tick_reflection(
     ctrl: &mut ReflectController,
     dst: &mut ReflectActor,

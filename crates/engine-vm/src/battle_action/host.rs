@@ -36,6 +36,26 @@ pub trait BattleActionHost {
         0
     }
 
+    /// The slot's battle-world planar seat - the `(x, z)` pair retail reads as
+    /// `actor[+0x34]` / `actor[+0x38]`.
+    ///
+    /// [`BattleActor`] deliberately does not carry the pair: the seat is world
+    /// state the host owns and the renderer moves, not action state. But the
+    /// action SM does read it, at the cast-begin facing store
+    /// (`overlay_0898_801e295c.txt` `0x801E4334..0x801E43A4`), which needs both
+    /// the acting actor's seat and either the target's seat or the centroid
+    /// [`crate::battle_target_group::target_group_aim`] folds out of the whole
+    /// table. This accessor is that read.
+    ///
+    /// `None` means the slot carries no actor at all - an empty seat, which the
+    /// group walk skips and the single-target arm bails on. The default is
+    /// `None` for every slot, so a host that tracks no positions keeps the
+    /// pre-accessor behaviour (the facing is left alone) rather than having a
+    /// bearing computed from zeros.
+    fn actor_position(&self, _slot: u8) -> Option<(i16, i16)> {
+        None
+    }
+
     /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
     /// table for min/max. Default no-op.
     fn camera_bounds(&mut self) {}

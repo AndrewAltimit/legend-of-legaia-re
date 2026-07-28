@@ -85,12 +85,21 @@ fn lerp12(delta: i32, t: i32) -> i32 {
 /// outcome the reject path produces.
 ///
 /// PORT: FUN_801d5c2c
-// NOT WIRED: the consumer is a **screen-space line primitive**, and the port
-// emits none - this is the 3-D half of the clipper `clip_segment_2d` below
-// names, and it is inert for exactly that reason. Neither `engine-ui`'s draw
-// list (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries
-// a line kind to project *for*. Wiring wants a line draw kind first, not a
-// fishing host.
+// NOT WIRED, AND UNWIREABLE: **retail reaches this routine from nowhere.** A
+// five-form reference sweep - literal LE word at every alignment, `lui`+`addiu`
+// / `ori` materialisation, `jal`, `j`, PC-relative branch - over `SCUS_942.54`,
+// every base-mapped overlay image and every raw PROT entry finds zero
+// references to `0x801D5C2C` in any form, and the fishing overlay holds exactly
+// one literal pointer anywhere in the surrounding `0x801D5000..0x801D63FF`
+// band, so it is not reached as `table_base + index` either. It is a real
+// prologue entry point (`locate-entry-image.py` frames it in PROT 0972 and in
+// no other image) that nothing calls - dead code the linker kept.
+//
+// So this is not the same row as [`clip_segment_2d`] below, which is live
+// retail code with one caller. Naming a missing line primitive here would imply
+// a call site could exist; none can. The port keeps the routine because the
+// arithmetic is documented ground truth for the projection those overlays use,
+// not because a host is owed.
 pub fn project_segment(a: [i32; 3], b: [i32; 3], near: i32, proj: i32) -> Option<ProjectedSegment> {
     if a[2] < near && b[2] < near {
         return None;
@@ -716,12 +725,15 @@ pub struct ClipRect {
 }
 
 // NOT WIRED: the consumer is a **screen-space line primitive**, and the port
-// emits none. `project_segment` above is this clipper's 3-D half and is inert
-// for the same reason: the fishing line, the slot machine's paylines and the
-// dance floor's guides are all two-point draws, and neither `engine-ui`'s draw
-// list (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries
-// a line primitive to clip *for*. Wiring wants a line draw kind first, not a
-// fishing host.
+// emits none. Retail's one caller (`0x801D3D00`, inside the per-frame fishing
+// tick `FUN_801D26CC`) clips the two endpoint pairs of a GPU line packet in
+// place and links it into the ordering table, which is exactly the draw kind
+// missing here: the fishing line, the slot machine's paylines and the dance
+// floor's guides are all two-point draws, and neither `engine-ui`'s draw list
+// (text + sprite + solid rect) nor `engine-render`'s VRAM pipeline carries a
+// line primitive to clip *for*. Wiring wants a line draw kind first, not a
+// fishing host. (`project_segment` above is a different case - retail never
+// calls it at all.)
 /// Clip a 2-D segment in place against [`ClipRect`].
 ///
 /// `p` and `q` are the two `(x, y)` endpoints; both are edited. Retail runs

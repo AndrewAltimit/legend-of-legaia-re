@@ -868,6 +868,17 @@ pub(super) fn cmd_play_window_with_record(
         cursor_x: 0.0,
     };
 
+    // Retail-shaped equipment buy: this window draws the recipient picker
+    // (window 36) and the two stat-compare windows (25 / 41) over the parked
+    // buy list (`window/shop_windows.rs`), so opt into the flow and install
+    // the disc restrictions the buy-list kind dispatch reads. Same arming
+    // the browser play page performs at `load_disc`; without the table the
+    // route falls back to the quantity picker, so the opt-in is gated on it.
+    if let Some(info) = app.session.equip_restrictions.clone() {
+        app.menu_runtime.install_equip_info(info);
+        app.menu_runtime.retail_equipment_buy = true;
+    }
+
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();

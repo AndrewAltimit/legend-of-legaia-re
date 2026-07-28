@@ -324,17 +324,34 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
         return StepOutcome::BattleComplete;
     }
 
-    // Pick next active actor: bump active actor's queue counter; if still
-    // less than (alive_count), restart at PreActionWait. Otherwise every
+    // Advance the turn cursor past the actor that just acted; if it is still
+    // short of the round's length, restart at PreActionWait. Otherwise every
     // living actor has acted → the ROUND is over (retail's `0x5A` non-wipe
     // arm writes state `0xFF`, the round boundary - not a battle end; see
     // `round_end`).
-    let bumped = if let Some(actor) = host.actor_mut(ctx.active_actor) {
-        actor.action_queue_counter = actor.action_queue_counter.saturating_add(1);
-        actor.action_queue_counter
-    } else {
-        0
-    };
+    //
+    // Retail's bound is `ctx[+0x00] + ctx[+0x01] - ctx[+0x25]` (`0x801E67B4`):
+    // the seated party and monster counts, less the **round-skip** count.
+    // `+0x25` is cleared once per round by the initiative seeder
+    // (`0x801DAB84`, the delay slot of its `jal 0x801DABA4`) and bumped inside
+    // `FUN_801DABA4` at `0x801DAC2C` for each actor-table slot that is dead
+    // (`+0x14C == 0`, guard `0x801DABD8`) *and* still holds an unspent
+    // initiative key (`+0x16C != 0`, guard `0x801DABE8`) - i.e. a combatant
+    // that died before its turn came up.
+    //
+    // The engine counts the **living** instead. The two agree while nobody
+    // dies mid-round; they diverge for an actor that dies *after* acting,
+    // which shrinks this bound but not retail's, so the engine can end a round
+    // one action early. Closing that needs all three bytes on the context -
+    // "seated" is not recoverable from the actor table once a slot is dead.
+    // See `docs/subsystems/battle-action.md` § "The three bytes the bound is
+    // built from".
+    //
+    // REF: FUN_801DABA4 (the round-skip bump this bound reads)
+    //
+    // PORT: FUN_801E295C (`0x801E679C..0x801E67C8`)
+    ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
+    let bumped = ctx.turn_cursor;
     let alive_total = (party_alive + monsters_alive) as u8;
     if bumped < alive_total {
         return transition(ctx, ActionState::PreActionWait);

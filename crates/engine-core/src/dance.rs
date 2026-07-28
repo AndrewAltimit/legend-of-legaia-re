@@ -1187,42 +1187,74 @@ pub fn dance_beat_track_note_x(base_x: i32, i: u32, frac: u32) -> i32 {
     base_x + (i as i32) * 16 - ((frac * 16 / BEAT_PERIOD) as i32 + 5) - 4
 }
 
+// REF: FUN_80065034 (the voice-attr primitive both key-ons go through)
+/// Channel mixer level both sting voices are keyed at (`li a1,0x2`).
+pub const STING_LEVEL: i8 = 2;
+
+/// VAB **program** both sting voices come from (`li a2,0x1`) - the argument
+/// the port used to drop, and the one that says which tone bank the
+/// `2r` / `2r + 1` tone indices are inside.
+pub const STING_PROGRAM: u8 = 1;
+
+/// Sting variants the tier-2 award site draws between: `r = rand() % 3`, the
+/// `0x55555556` magic-multiply divide at `FUN_801d1af4 + 0x64C`.
+pub const STING_RANDOM_VARIANTS: u16 = 3;
+
+/// The **fixed** sting the three groovy-move tiers key instead, and it is
+/// outside the random space: all three of the tier-3 / 4 / 5 arms of
+/// `FUN_801d1af4` reach `FUN_801d3d78` with a literal `5` (two `li a0,0x5`,
+/// and a `move a0,v0` off the `li v0,0x5` the tier compare just loaded). So a
+/// groovy move is not "cue only" - it fires cue `0x202` / `0x203` / `0x205`
+/// *and* this sting, at tones `0xA` / `0xB` and note `0x41`.
+pub const STING_TIER_VARIANT: u16 = 5;
+
 /// One of the two voices a good-step sting keys (`FUN_801d3d78`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DanceStingVoice {
     /// Voice id handed to the SPU key-on primitive (`0x12` / `0x13`).
     pub voice: u16,
-    /// Tone within the sting's program (`2r` / `2r + 1`).
+    /// Channel mixer level ([`STING_LEVEL`]).
+    pub level: i8,
+    /// VAB program ([`STING_PROGRAM`]).
+    pub program: u8,
+    /// Tone within [`STING_PROGRAM`] (`2r` / `2r + 1`).
     pub tone: i16,
     /// Note the voice is keyed at (`0x3c + r`).
     pub note: i16,
 }
 
-// NOT WIRED: the sting is a direct two-voice SPU key-on (voice, tone, note),
-// and the engine's audio host exposes only cue-id scheduling
-// (`AudioBgmDirector::enqueue_sfx` against the resident SFX bank). Wiring it
-// needs a host key-on API that takes a voice/tone/note triple, plus the dance
-// overlay's own sound bank resident to key it against.
+// Wired: the browser dance page's `dance_sting`
+// (`web-viewer::minigames_dance`) takes its `(program, tone, note)` triple
+// from here rather than recomputing it, and decodes the named tone out of the
+// overlay's own VAB - which is what makes the bank index a read of
+// [`STING_PROGRAM`] instead of a literal `1` that happened to agree. The
+// native window is a separate case and does still lack a key-on API:
+// `AudioBgmDirector::enqueue_sfx` only schedules cue ids.
 /// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
-/// **no** ring cue; instead one of three stings (`r = rand() % 3`) keys two
-/// voices together through the SPU key-on primitive (`FUN_80065034`): voice
-/// `0x12` at tone `2r` and voice `0x13` at tone `2r + 1`, both at note `0x3c + r`
-/// (retail takes the volume from the config global `DAT_80084580`). Returns the
-/// two voice descriptors; the key-on itself is the audio host's.
+/// **no** ring cue; it keys two voices together through the SPU voice-attr
+/// primitive (`FUN_80065034`, whose eight arguments are `(voice, level,
+/// program, tone, note, 0x40, vol_l, vol_r)`): voice `0x12` at tone `2r` and
+/// voice `0x13` at tone `2r + 1`, both in program [`STING_PROGRAM`] at level
+/// [`STING_LEVEL`] and note `0x3c + r`. Both volume slots are the voice-volume
+/// config `_DAT_80084580` halved, the same value
+/// [`crate::other_game_overlay::cue_volume`] decodes. Returns the two voice
+/// descriptors; the key-on itself is the audio host's.
+///
+/// `r` is not always a random pick. `FUN_801d1af4` reaches this from **four**
+/// sites: the tier-2 chain-closed award passes `rand() % 3`
+/// ([`STING_RANDOM_VARIANTS`]), and each of the three groovy-move tiers passes
+/// the literal [`STING_TIER_VARIANT`]. Anything that enumerates "the stings"
+/// over `0..3` is missing the one the higher tiers play.
 pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
     let note = 0x3c + r as i16;
-    [
-        DanceStingVoice {
-            voice: 0x12,
-            tone: (2 * r) as i16,
-            note,
-        },
-        DanceStingVoice {
-            voice: 0x13,
-            tone: (2 * r + 1) as i16,
-            note,
-        },
-    ]
+    let voice = |voice: u16, tone: i16| DanceStingVoice {
+        voice,
+        level: STING_LEVEL,
+        program: STING_PROGRAM,
+        tone,
+        note,
+    };
+    [voice(0x12, (2 * r) as i16), voice(0x13, (2 * r + 1) as i16)]
 }
 
 /// The sequence-clear ("Good!") banner and its two flanking star sparkles
@@ -1328,11 +1360,14 @@ pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
     }
 }
 
-// NOT WIRED: the port's dancers are rules records, not world actors - there is
-// no per-dancer actor with the `+0x5c` spin counter and `+0x10` flag word this
-// predicate reads, and no clip driver behind it. The spin state itself lives on
-// the session ([`DanceGame::groovy_lock`]); what is missing is an animated
-// dancer actor for the gate to admit.
+// NOT WIRED: the two arms are not equally blocked, and it is worth saying which
+// is which. The spin arm's datum exists - the session holds the `+0x5c` turn
+// counter and [`DanceGame::in_groovy_move`] already evaluates `spin > 0` on it -
+// so wiring that half would change nothing. The `+0x10` flag arm has no
+// analogue at all: the port's dancers are rules records with no actor flag
+// word, so passing `0` for `flags` would leave the second arm permanently dead
+// and the predicate degenerate. Both a dancer actor carrying that word and the
+// clip driver the predicate gates have to exist first.
 /// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
 /// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
 /// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
@@ -1343,10 +1378,19 @@ pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
     spin > 0 || (flags & 0x1000) != 0
 }
 
-// NOT WIRED: the rig index selects a per-dancer VRAM face strip for two
-// `MoveImage` blits. The engine uploads no dancer face strips and has no
-// blit pass for the dance floor, so nothing can consume a rig id. Wiring it
-// needs the dance overlay's face pages resident plus a VRAM blit host.
+// NOT WIRED: **both prerequisites the earlier reason named already exist.**
+// `legaia_asset::dance_art::FACE_RIGS` carries the four rigs' strips and frame
+// tables, `dance_art::face_window_rgba` performs the two `MoveImage` blits, and
+// the browser dance page runs the pair per frame
+// (`web-viewer::minigames_dance::dance_face_rgba`) - so "no face pages
+// resident, no blit pass" is false.
+//
+// What has no consumer is the *selector*. The host indexes `FACE_RIGS` by a rig
+// id it takes from the disc **cast table** (`dance_cast`'s per-dancer kind,
+// which on the qualifier floor is already `0/2/3`), so it never needs the
+// overlay's hard-coded slot -> rig remap. The two agree on that floor, which is
+// what makes this redundant rather than missing; a caller appears only if a
+// host ever drives the floor by slot index instead of by cast kind.
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -2239,11 +2283,36 @@ mod tests {
 
     #[test]
     fn hit_sting_keys_two_voices_per_random_pick() {
-        for r in 0..3u16 {
+        for r in 0..STING_RANDOM_VARIANTS {
             let [a, b] = dance_hit_sting_voices(r);
             assert_eq!((a.voice, b.voice), (0x12, 0x13));
             assert_eq!((a.tone, b.tone), ((2 * r) as i16, (2 * r + 1) as i16));
             assert_eq!((a.note, b.note), (0x3c + r as i16, 0x3c + r as i16));
+            // Both voices carry the two arguments the earlier port dropped:
+            // `li a1,0x2` (level) and `li a2,0x1` (program). The program is
+            // what makes the browser page's `tones[1]` bank lookup the right
+            // one rather than a guess.
+            assert_eq!((a.level, b.level), (STING_LEVEL, STING_LEVEL));
+            assert_eq!((a.program, b.program), (STING_PROGRAM, STING_PROGRAM));
+        }
+    }
+
+    /// The groovy-move tiers key a sting the random space never reaches, so
+    /// the kernel has to answer for it too: `FUN_801d1af4` reaches
+    /// `FUN_801d3d78` from four sites and three of them pass a literal `5`.
+    #[test]
+    fn the_tier_sting_is_outside_the_random_space() {
+        let [a, b] = dance_hit_sting_voices(STING_TIER_VARIANT);
+        assert_eq!((a.tone, b.tone), (0xa, 0xb));
+        assert_eq!((a.note, b.note), (0x41, 0x41));
+        assert_eq!((a.voice, b.voice), (0x12, 0x13));
+        // Same primitive, same two dropped-then-restored arguments.
+        assert_eq!((a.level, b.level), (STING_LEVEL, STING_LEVEL));
+        assert_eq!((a.program, b.program), (STING_PROGRAM, STING_PROGRAM));
+        // No random pick can produce it, which is why a `0..3` enumeration is
+        // short one sting rather than merely unlucky.
+        for r in 0..STING_RANDOM_VARIANTS {
+            assert_ne!(dance_hit_sting_voices(r)[0].tone, a.tone);
         }
     }
 

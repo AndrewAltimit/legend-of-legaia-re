@@ -21,7 +21,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
-use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuSession};
+use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost, SceneTickEvent};
 use legaia_engine_core::world::SceneMode;
@@ -753,6 +753,16 @@ impl BootSession {
         let mut session = FieldMenuSession::new();
         session.money = world.money.max(0) as u32;
         session.play_time_seconds = world.play_time_seconds;
+        // Sample the two row gates retail keeps as globals and reads at every
+        // draw: the op-`0x49` entry context (`*_DAT_8007B450`, which blocks
+        // Load) and the scene's save permission (`_DAT_8007B6A8`, seeded at
+        // scene load from the MAN header bit, which blocks Save). Both are
+        // scene-scoped and the menu suspends the field, so sampling once at
+        // open is equivalent to retail's per-frame re-read.
+        session.set_gate(FieldMenuGate {
+            entry_context_kind: world.menu_entry_context_kind(),
+            save_allowed: world.scene_save_allowed,
+        });
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
         self.field_menu = Some(session);

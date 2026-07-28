@@ -615,6 +615,123 @@ pub fn ambient_effect_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
     out
 }
 
+/// `true` when the field VM's next PC after `insn` is statically the byte
+/// after it - the condition under which a linear walk still models the
+/// executed instruction stream.
+///
+/// Everything that reads a flag, a bounding box or the inventory branches on
+/// runtime state; the jump ops leave the straight line; the blocking ops
+/// (`Yield`, `WaitFrames`, dialogue, a scene change) end the frame slice
+/// where they stand. `DataBlock` is inline operand data whose length the
+/// preceding op consumes, so a walk that lands *on* one has already desynced.
+fn continues_entry_slice(insn: &InsnInfo) -> bool {
+    match insn {
+        InsnInfo::JmpRel { .. }
+        | InsnInfo::CondJmp { .. }
+        | InsnInfo::BBoxTest { .. }
+        | InsnInfo::InventoryCmp { .. }
+        | InsnInfo::Yield { .. }
+        | InsnInfo::WaitFrames { .. }
+        | InsnInfo::SceneChange { .. }
+        | InsnInfo::WarpOrInteract { .. }
+        | InsnInfo::DataBlock { .. } => false,
+        InsnInfo::LFlag { kind, .. }
+        | InsnInfo::GFlag { kind, .. }
+        | InsnInfo::CFlag { kind, .. }
+        | InsnInfo::SystemFlag { kind, .. } => *kind != FlagKind::Test,
+        _ => true,
+    }
+}
+
+/// The stager ids a scene installs **at scene entry**: the op-`0x34` sub-3
+/// installs a partition-1 placement's spawn-prologue reaches in the one frame
+/// slice retail's placement installer runs it for. Returns the raw
+/// `AnimTrigger` operands (feed each to `World::spawn_ambient_record` as
+/// `arg + 1`), in record / pc order.
+///
+/// # The rule, and where it comes from
+///
+/// `FUN_8003A1E4` - the pre-run the placement spawn loop calls per just-spawned
+/// placement - carries its own copy of the per-actor script runner's frame
+/// slice, and both halves of it are load-bearing here:
+///
+/// - **The pre-run is gated on the record's first opcode.** `0x8003A480`
+///   is `addiu v0,v1,-0x24; sltiu v0,v0,0x2; beq v0,zero,<skip>` - unless the
+///   first byte is `0x24` or `0x25`, the whole VM loop is skipped and the
+///   record's script never runs at load. Every placement whose author wanted
+///   an entry install therefore opens with `25`.
+/// - **The slice runs while `(opcode & 0x7F) >= 0x20`, and breaks *after*
+///   executing an opcode whose full byte is `0x21`** (`0x8003A4C4`
+///   `beq s1,s4` against `li s4,0x21` - the raw byte, so the cross-context
+///   `0xA1` does not break), or when the returned PC does not advance. This
+///   is why `0x25` and `0x21` are both "nop" to the disassembler yet only one
+///   of them ends the entry slice: a record that opens `25 / 34 30 00` fires
+///   its install in the load slice, and the `21` that follows parks it.
+///
+/// So an install is a *scene-entry* install exactly when the prologue slice
+/// executes it. Statically the branch ops' outcomes are unknown, so this
+/// census takes the **unconditional prefix** of that slice
+/// ([`continues_entry_slice`]) and is therefore an under-approximation: a
+/// flag-gated install deeper in a record (`suimon` P1[4], `nilboa` P1[3]'s
+/// second install) is left out rather than guessed at.
+///
+/// Record 0 is skipped: it is the scene's own controller script, which the
+/// host runs live through the field VM, so its installs arrive on that path.
+///
+/// This supersedes [`ambient_effect_installs`], which discriminated by script
+/// *shape* (a record containing nothing but nops, flag writes, the install and
+/// a self-loop). That filter is a strict special case of this one - every id it
+/// finds this finds - but it silently drops every install carried by a placement
+/// that also does something else, which on the retail disc is most of them:
+/// `town0e`'s morph installer is the second instruction of a fully scripted,
+/// dialogue-bearing placement.
+// PORT: FUN_8003A1E4 (placement spawn-prologue pre-run -> entry stager installs)
+// REF: FUN_80039B7C (the same frame slice, per-frame), FUN_8003AEB0 (spawn loop),
+//      FUN_800252EC (the installer the op chains into)
+pub fn scene_entry_ambient_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let count = man_file
+        .header
+        .partition_counts
+        .get(1)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    for record in 1..count {
+        let Some((start, pc0, len)) = partition_record_span(man_file, man, 1, record) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        // The `FUN_8003A1E4` gate: no pre-run at all unless the script opens
+        // on the non-breaking nop pair.
+        if !matches!(body.get(pc0), Some(0x24 | 0x25)) {
+            continue;
+        }
+        for insn in LinearWalker::new(body, pc0) {
+            // A decode error means the walk has desynced; retail's PC would
+            // not be here at all, so stop rather than resync into noise.
+            let Ok(insn) = insn else { break };
+            let raw = insn.opcode | if insn.extended.is_some() { 0x80 } else { 0 };
+            // `sltiu v0,v0,0x20` - the loop exits BEFORE executing these.
+            if raw & 0x7F < 0x20 {
+                break;
+            }
+            if let InsnInfo::Effect {
+                kind: EffectKind::AnimTrigger { arg },
+                ..
+            } = insn.info
+            {
+                out.push(arg);
+            }
+            // `beq s1,s4` - the `0x21` nop executes, then ends the slice.
+            if raw == 0x21 || !continues_entry_slice(&insn.info) {
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// One partition-1 **boss-stager placement**: a placed actor whose own
 /// interaction record carries the field-VM scripted-battle op `3E FF <row>`
 /// (see `docs/subsystems/battle.md` § "Scripted-battle entry").

@@ -533,7 +533,9 @@ pub const DIGIT_PITCH_NARROW: i32 = 8;
 pub const DIGIT_PITCH_WIDE: i32 = 0x10;
 
 /// The digit field is a fixed 8 slots wide; the value is right-aligned in it.
-pub const DIGIT_FIELD_SLOTS: usize = 8;
+/// The same eight the dome overlay's readout fills - one width, because it is
+/// one fill loop ([`crate::other_game_hud::DECIMAL_SLOTS`]).
+pub const DIGIT_FIELD_SLOTS: usize = crate::other_game_hud::DECIMAL_SLOTS;
 
 /// Expand a number into its digit cells - the layout half of the digit blitter
 /// behind [`HudDraw::Number`].
@@ -546,38 +548,35 @@ pub const DIGIT_FIELD_SLOTS: usize = 8;
 /// `style` selects the slot pitch ([`DIGIT_PITCH_NARROW`] /
 /// [`DIGIT_PITCH_WIDE`]).
 ///
-/// Retail applies no negative guard; a negative `value` there yields negative
-/// quotients. The port clamps at zero instead, since every call site passes a
-/// count or a score.
+/// The **slot fill is not this routine's own**. `FUN_801d76e0` and the dome
+/// overlay's `FUN_801d1308` open with the identical fill (same `-1` init, same
+/// pre-seeded units slot, same `!= 0` store gate, same eight `/10` steps), so
+/// it is taken from [`crate::other_game_hud::decimal_slots`]. What the two
+/// retail routines do *not* share is the emit half: this one selects between
+/// two emitters on `style` and advances two pens (8 px / 16 px), while the dome
+/// one has a single emitter and passes its digit by patching a widget
+/// descriptor's texture column. That half stays here.
+///
+/// Negative `value` draws **nothing**, which is retail's behaviour and not a
+/// guard: the fill leaves every slot at `-1` except the units one, which takes
+/// the negative quotient, and both routines skip a negative slot at draw time
+/// (`bltz` at `0x801D77E4` / `0x801D1408`).
 // PORT: FUN_801d76e0 (8-slot right-aligned digit field: leading-zero blanking)
 pub fn number_digit_cells(style: i32, x: i32, y: i32, value: i32) -> Vec<DigitCell> {
-    let value = value.max(0);
     let pitch = if style == 0 {
         DIGIT_PITCH_NARROW
     } else {
         DIGIT_PITCH_WIDE
     };
 
-    // Slot contents: `-1` = blank, else the quotient at that power of ten.
-    let mut slots = [-1i32; DIGIT_FIELD_SLOTS];
-    slots[DIGIT_FIELD_SLOTS - 1] = 0;
-    let mut pow = 10_000_000i32;
-    for slot in slots.iter_mut() {
-        let q = value / pow;
-        if q != 0 {
-            *slot = q;
-        }
-        pow /= 10;
-    }
-
-    slots
+    crate::other_game_hud::decimal_slots(value)
         .iter()
         .enumerate()
-        .filter_map(|(i, &q)| {
-            (q >= 0).then_some(DigitCell {
+        .filter_map(|(i, slot)| {
+            slot.map(|digit| DigitCell {
                 x: x + i as i32 * pitch,
                 y,
-                digit: q % 10,
+                digit: digit as i32,
             })
         })
         .collect()
@@ -1134,6 +1133,37 @@ mod tests {
         let cells = number_digit_cells(0, 0, 0, 12_345_678);
         let digits: Vec<i32> = cells.iter().map(|c| c.digit).collect();
         assert_eq!(digits, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    /// The fill is the dome readout's, so the two retail routines' shared half
+    /// stays shared: every slot the fishing field emits is the slot
+    /// `decimal_slots` holds, at the index it holds it.
+    #[test]
+    fn digit_field_slots_are_the_dome_readouts_slots() {
+        for value in [0, 7, 42, 100, 999_999, 12_345_678, 99_999_999] {
+            let slots = crate::other_game_hud::decimal_slots(value);
+            let cells = number_digit_cells(0, 0, 0, value);
+            let expected: Vec<(usize, i32)> = slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| s.map(|d| (i, d as i32)))
+                .collect();
+            let got: Vec<(usize, i32)> = cells
+                .iter()
+                .map(|c| ((c.x / DIGIT_PITCH_NARROW) as usize, c.digit))
+                .collect();
+            assert_eq!(got, expected, "value {value}");
+        }
+    }
+
+    /// Retail draws nothing for a negative value - the fill leaves seven slots
+    /// blank and puts the negative quotient in the units slot, which the draw
+    /// loop's `bltz` skips. Not a guard, and not a lone zero.
+    #[test]
+    fn digit_field_draws_nothing_for_a_negative_value() {
+        assert!(number_digit_cells(0, 0, 0, -1).is_empty());
+        assert!(number_digit_cells(0, 0, 0, -12_345).is_empty());
+        assert!(number_digit_cells(1, 40, 20, -7).is_empty());
     }
 
     #[test]

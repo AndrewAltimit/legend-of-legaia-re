@@ -23,8 +23,15 @@
 //! ones that hold and the ones past the table - it is outside the switch,
 //! not inside any arm.
 //!
+//! REF: FUN_801d6628, FUN_80020de0, FUN_80031d00  -- callees, not ported here
+//!
 //! Evidence: `ghidra/scripts/funcs/overlay_menu_801dad6c.txt` and the
 //! jump table read out of the as-loaded PROT 0899 image.
+//!
+//! What the shape does *not* tell you is when it runs, and the answer is
+//! never: nothing on the disc reaches `FUN_801DAD6C` in any reference form.
+//! It is decoded provenance for how a menu open was meant to be staged, not a
+//! description of a path retail takes. See [`menu_open_step`].
 
 /// Steps the jump table covers. A step at or above this runs the tail
 /// only.
@@ -60,8 +67,17 @@ pub enum MenuOpenEffect {
 /// every parameter named `step` in the workspace and reads as wired.
 ///
 /// PORT: FUN_801DAD6C
-/// NOT WIRED: the menu host opens its screens directly rather than
-/// running the retail open sequence
+///
+/// NOT WIRED: **retail-unreachable**, so this is not a wiring gap and no
+/// host will ever close it. The engine's menu host does open its screens
+/// directly rather than running the sequence - but retail does not run it
+/// either. A five-form sweep of `SCUS_942.54`, all 31 based overlay images
+/// and the raw bytes of every extracted `PROT.DAT` entry finds no literal
+/// address word, no `jal`, no `j`, no branch and no `lui`+`addiu`
+/// materialisation for `FUN_801DAD6C` anywhere on the disc
+/// (`docs/tooling/address-reference-scan.md`). The routine is a real entry -
+/// `locate-entry-image.py` resolves it in PROT 0899 with its own frame - that
+/// nothing in the menu overlay or outside it reaches.
 pub fn menu_open_step(step_no: &mut u32, busy: bool) -> MenuOpenEffect {
     match *step_no {
         0 => {

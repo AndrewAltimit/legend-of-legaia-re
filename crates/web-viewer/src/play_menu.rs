@@ -50,7 +50,7 @@ use legaia_engine_core::field_menu_dispatch::{
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
-use legaia_engine_core::options::{OptionsSession, OptionsState};
+use legaia_engine_core::options::OptionsSession;
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_core::save_select::{
     SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase, SlotInfoMode,
@@ -552,6 +552,23 @@ impl LegaiaRuntime {
                         // whole runtime - so it is applied outside the
                         // scene-host borrow the other rows take.
                         FieldMenuSubsession::Save(s) => self.apply_card_outcome(&s, grid_cell),
+                        // Options: value edits commit inside the session's own
+                        // popup (retail writes the config word at popup
+                        // confirm and never reverts), so the closing state is
+                        // the player's. Lift it onto the runtime - the same
+                        // `self.options_state = session.state().clone()` the
+                        // native window does - or the next open rebuilds from
+                        // defaults and the screen forgets every change.
+                        FieldMenuSubsession::Config(o) => {
+                            self.options_state = o.state().clone();
+                            // The one option row set that reaches the
+                            // simulation, mirrored the way the native window
+                            // mirrors it each frame. Every other row on this
+                            // screen is display-only on both hosts today.
+                            if let Some(host) = self.scene_host.as_mut() {
+                                host.world.precise_movement = self.options_state.precise_movement;
+                            }
+                        }
                         other => {
                             if let Some(host) = self.scene_host.as_mut() {
                                 let world = &mut host.world;
@@ -576,8 +593,9 @@ impl LegaiaRuntime {
                                             world.store_chain_library(&library);
                                         }
                                     }
-                                    // Status / Options carry no world-mutating
-                                    // outcome on close.
+                                    // Status carries no world-mutating outcome
+                                    // on close (Options is lifted above, on
+                                    // the runtime rather than the world).
                                     _ => {}
                                 }
                             }
@@ -623,7 +641,7 @@ impl LegaiaRuntime {
                 let mut session = FieldMenuSubsession::build(
                     row,
                     world,
-                    &OptionsState::default(),
+                    &self.options_state,
                     &card_slots,
                     &chain,
                     &world.spell_catalog,
@@ -701,6 +719,31 @@ impl LegaiaRuntime {
             "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
         })
         .to_string()
+    }
+}
+
+/// Test-only probes for the disc-gated pause-menu oracles
+/// (`tests/menu_parity.rs`). Native-only so the wasm export surface the page
+/// consumes stays exactly the player-facing API.
+#[cfg(not(target_arch = "wasm32"))]
+impl LegaiaRuntime {
+    /// The runtime's live [`legaia_engine_core::options::OptionsState`] as
+    /// JSON - what the next Options open seeds itself from.
+    pub fn debug_options_json(&self) -> String {
+        serde_json::to_string(&self.options_state).unwrap_or_default()
+    }
+
+    /// The **open** Options sub-session's own state as JSON, or `None` when
+    /// that screen is not the one holding the pad. Comparing it against
+    /// [`Self::debug_options_json`] is what proves the seed is the runtime's
+    /// state rather than a fresh default.
+    pub fn debug_open_options_json(&self) -> Option<String> {
+        let m = self.play_menu.as_ref()?;
+        let PlaySub::Session(session) = m.sub.as_ref()?;
+        match session.as_ref() {
+            FieldMenuSubsession::Config(o) => serde_json::to_string(o.state()).ok(),
+            _ => None,
+        }
     }
 }
 

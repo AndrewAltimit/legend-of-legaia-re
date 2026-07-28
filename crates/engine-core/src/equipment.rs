@@ -18,8 +18,20 @@
 
 use crate::battle_stats::{EquipmentTable, ItemModifier};
 
-/// The 8 equipment slot kinds. Matches the retail `equip[8]` byte array
-/// at `+0x196` in the character record.
+/// The 8 equipment slot kinds, in the engine's own order.
+///
+/// This is **not** the retail `+0x196` byte order, despite the matching
+/// length. Two disc tables pin retail's independently: the hub equip
+/// sub-panel's `(byte +7 & 0x60) >> 5` slot resolution, and the equip
+/// screen's row map `DAT_801E43E8` = `00 01 00 04 05 06 07`. Retail puts
+/// **body armour at byte 0**, head at 1 and footwear at 4, and the weapon
+/// at byte 2 or 3 depending on the character (`_DAT_8007B42C` = `2, 3, 2`
+/// for Vahn / Noa / Gala). This enum is weapon-first with a hand-guard
+/// insert, so a retail record must be re-ordered before a ported kernel
+/// that walks slots by index touches it - see `hub_panel_slots` in
+/// `field_submode_screen`. Aggregation is order-blind, but a trial-equip
+/// destination is not: reading an engine-ordered array with retail's
+/// indices makes a body-armour candidate displace the weapon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipSlot {
     Weapon = 0,
@@ -698,12 +710,17 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// still removes it. Without the fallback the item survives on the
 /// character and the script's precondition silently fails.
 ///
-/// NOT WIRED: the engine's field-VM take-item host removes from the
-/// engine inventory only and has no bag-miss branch, so nothing reaches
-/// this. Wiring it is a one-site change in the field VM's take-item
-/// opcode host (`engine-vm` field step -> the `engine-core` world host),
-/// neither of which this module can reach from here; the kernel is
-/// exercised by this module's tests.
+/// NOT WIRED: the engine's field VM has **no take-item opcode at all**.
+/// It decodes the give side (`0x39` `GIVE_ITEM` in `engine-vm`'s field
+/// `step`, serviced by `FieldHost::give_item` and
+/// `FieldHostImpl::give_item` in `engine-core`'s `world::vm_hosts`) and
+/// nothing else in that family, so there is no bag consume for a bag-miss
+/// branch to hang off - the earlier reading, that the take host merely
+/// lacked the fallback, overstated what exists. Wiring is therefore two
+/// edits in two files this module cannot reach: decode the take opcode
+/// and add a `take_item` to `FieldHost`, then have the world's
+/// implementation call this on the `0x100` not-found sentinel. The kernel
+/// is exercised by this module's tests meanwhile.
 pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
     for member in &mut party.members {
         let mut eq = member.equipment();

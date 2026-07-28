@@ -32,13 +32,33 @@
 //!    software VRAM exactly like the scripted-CLUT sibling
 //!    [`World::step_clut_fx`].
 //!
+//! 3. **The mode-4 render tail.** The scroller sibling ([`vram_scroll`])
+//!    rotates an authored VRAM rect in place once per fired period. That
+//!    write is *destructive* rather than recomputed-from-capture, so its
+//!    requests are queued per game tick and drained against the same VRAM
+//!    surface in tick order.
+//!
+//! Retail reaches this chain from exactly **one** site. The field VM's op
+//! `0x34` sub-3 arm is `0x801E00B0`'s `jal 0x800252EC`, and the scene-entry
+//! installer `FUN_8003A1E4` has no install code of its own - it calls
+//! `FUN_801DE840`, the same dispatcher, for one frame slice per just-spawned
+//! placement. Scene-entry and runtime installs are therefore the same thing
+//! seen at two moments, and both land here
+//! ([`World::spawn_ambient_record_at`]). The `SummonScene`-backed
+//! [`World::spawn_field_stager`] is an earlier, thinner port of the same
+//! `FUN_800252EC` chain that carries neither render tail; it survives only as
+//! the play-window's `J`-key debug exerciser and is not on any retail path.
+//!
 //! PORT: FUN_80021B04 (spawn-time first run + per-tick move-VM drive for
 //! the prescript-record parts)
-//! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50
+//! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
+
+pub mod vram_scroll;
 
 use super::*;
 use crate::clut_cell_fx::{self, ClutCellFx};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome};
+use vram_scroll::VramScrollFx;
 
 /// Per-tick opcode budget for one ambient part (the records are small; the
 /// budget only guards a malformed stream).
@@ -47,9 +67,22 @@ const AMBIENT_PART_BUDGET: usize = 512;
 /// Recursion guard for op-`0x25` spawn chains within one tick.
 const MAX_SPAWN_DEPTH: usize = 16;
 
-/// Cap on simultaneously live ambient parts (retail's effect-actor pool is
-/// far smaller; this only bounds a runaway spawn loop).
-const MAX_AMBIENT_PARTS: usize = 128;
+/// Cap on simultaneously live ambient parts, taken from retail's own actor
+/// pool: `FUN_800203EC` seeds the free stack with `0x8E` down to `0`, i.e.
+/// **143 slots** of `0xD8` bytes, and `FUN_80020454` hands them out one at a
+/// time. That pool is shared with every other actor in the scene, so 143 is a
+/// ceiling the ambient tree alone never has, not a budget it is entitled to.
+///
+/// Exhausting it is an error path in retail too - `FUN_80020DE0` prints a
+/// diagnostic through `FUN_800567A8` and returns null - so
+/// [`World::push_ambient_part`] logs rather than dropping the spawn silently,
+/// and [`World::ambient_pool_exhausted`] makes the state queryable.
+pub const MAX_AMBIENT_PARTS: usize = 143;
+
+/// Cap on a mode-4 part's undrained strip rotations. Retail applies each
+/// one inside the tick that fired it; this only bounds a host that banks
+/// ticks without ever passing a VRAM surface (headless sims, tests).
+const MAX_PENDING_SCROLLS: usize = 64;
 
 /// One live ambient move-VM part.
 #[derive(Debug, Clone)]
@@ -74,6 +107,11 @@ pub struct AmbientPart {
     /// Latest mode-3 CLUT-cell write this part emitted (refreshed per game
     /// tick; applied to VRAM by [`World::step_ambient_fx`]).
     pub cell_fx: Option<ClutCellFx>,
+    /// Mode-4 strip rotations this part has fired but not yet applied to
+    /// VRAM. Each entry is one game tick's rotate; [`World::step_ambient_fx`]
+    /// drains them in tick order (the writes are destructive, so unlike
+    /// [`cell_fx`](Self::cell_fx) they cannot be recomputed from a capture).
+    pub scroll_fx: Vec<VramScrollFx>,
     /// Morph-lane weight snapshot from the previous tick (change detection
     /// for the VDF render substitution's dirty set).
     pub prev_morph_weights: Vec<u16>,
@@ -98,17 +136,57 @@ impl World {
     /// own immediate first run). Returns `false` when the id is out of
     /// range or no stager table is installed.
     pub fn spawn_ambient_record(&mut self, id: usize, origin: [i16; 3]) -> bool {
+        self.spawn_ambient_record_at(id, origin, [0, 0, 0])
+    }
+
+    /// [`Self::spawn_ambient_record`] with the spawner's rotation banks as
+    /// well as its position - the full retail seat.
+    ///
+    /// `FUN_800252EC(id, ctx + 0x14, ctx + 0x24)` hands `FUN_80021B04` two
+    /// three-halfword windows off the **executing script's** context, and the
+    /// stager copies both verbatim: `ctx[+0x14..+0x1A]` into the part's
+    /// `+0x14/+0x16/+0x18` (world x / y / z, `0x80021B94..`) and
+    /// `ctx[+0x24..+0x2A]` into `+0x24/+0x26/+0x28` (the render banks,
+    /// `0x80021D8C..`). The scene-entry census passes zeroes for both because
+    /// its installs run before any actor has moved.
+    pub fn spawn_ambient_record_at(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> bool {
         let Some(idx) = self.push_ambient_part(id, origin) else {
             return false;
         };
+        {
+            let st = &mut self.ambient_fx[idx].state;
+            st.render_24 = rot[0];
+            st.render_26 = rot[1];
+            st.render_28 = rot[2];
+        }
         self.tick_ambient_part(idx, 0);
         true
+    }
+
+    /// `true` when the ambient pool is full, so the next spawn is refused.
+    /// The retail sibling is `FUN_80020454` returning null with the free
+    /// stack empty; retail's own caller treats that as an error rather than
+    /// as a quota, and so does this - see [`MAX_AMBIENT_PARTS`].
+    pub fn ambient_pool_exhausted(&self) -> bool {
+        self.ambient_fx.len() >= MAX_AMBIENT_PARTS
     }
 
     /// Seat record `id` as a new ambient part (no first run). Returns the
     /// part index.
     fn push_ambient_part(&mut self, id: usize, origin: [i16; 3]) -> Option<usize> {
         if self.ambient_fx.len() >= MAX_AMBIENT_PARTS {
+            // Not a silent truncation: an ambient tree that reaches the pool
+            // ceiling has stopped animating whatever it could not seat. No
+            // retail scene comes near it once halted parts are freed - the
+            // corpus peak is `uru2`'s emitter and everything else is a few
+            // dozen (disc-gated `ambient_part_pool_disc`) - so reaching it
+            // means something upstream is spawning what retail does not.
+            // Retail reports its own allocation failure per attempt too
+            // (`FUN_80020DE0` -> `FUN_800567A8`), so per-refusal is the
+            // faithful cadence.
+            log::warn!(
+                "ambient part pool exhausted ({MAX_AMBIENT_PARTS} live): stager record {id} not seated"
+            );
             return None;
         }
         let rec = self.field_stagers.get(id)?;
@@ -135,6 +213,7 @@ impl World {
             state,
             finished: false,
             cell_fx: None,
+            scroll_fx: Vec::new(),
             prev_morph_weights: Vec::new(),
         });
         Some(self.ambient_fx.len() - 1)
@@ -206,6 +285,13 @@ impl World {
             None
         };
 
+        // Mode-4 render tail: the VRAM-rect scroller. Retail gates this arm
+        // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
+        // and jou's carrier is a plain transform node (`model_sel = -1`).
+        let scroll_fx = (state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
+            .then(|| vram_scroll::mode4_integrate(&mut state, self.frame_step.max(1)))
+            .flatten();
+
         // VDF morph dirty tracking: when an armed part's lane weights moved
         // this tick, its mesh's `(pack_slot, group)` pairs need a re-stage.
         let mut dirty: Vec<(usize, u32)> = Vec::new();
@@ -237,6 +323,11 @@ impl World {
             if cell_fx.is_some() {
                 part.cell_fx = cell_fx;
             }
+            if let Some(fx) = scroll_fx
+                && part.scroll_fx.len() < MAX_PENDING_SCROLLS
+            {
+                part.scroll_fx.push(fx);
+            }
             if let Some(w) = new_weights {
                 part.prev_morph_weights = w;
             }
@@ -246,7 +337,32 @@ impl World {
         // retail chain runs the child's VM inside the parent's spawn op,
         // which is what sequences the self-modifying fan-outs).
         for (slot, origin) in spawns {
-            if slot < 0 {
+            // Table entry 0 is not a stager record - it is the per-scene SFX
+            // descriptor bank (`docs/formats/sfx-table.md`'s `>= 0x200` half;
+            // `FUN_800250D4` and `FUN_80016B6C` both read it as 8-byte rows
+            // through this same `offsets[0]` word). Walking it as move-VM
+            // bytecode reads a row's `0x0003` category word as
+            // `WORLD_ROTATE_ADD` and runs off into the next row, so a part
+            // seated on it is pure noise that occupies a pool slot.
+            //
+            // The install op cannot name it (`FUN_800252EC` is called with
+            // `arg + 1`), so only an op-`0x25` operand of 0 reaches it.
+            //
+            // No authored record asks for one: a census over all 100 scenes
+            // and 2245 stager records finds no op-`0x25` spawn of slot 0 and
+            // no negative slot. That census walks records standalone, so it
+            // does not model the cross-record self-modification the live
+            // chain performs, and a slot-0 operand could still be produced at
+            // runtime - which is why the guard stays rather than becoming a
+            // debug assert. The negative half is an ordinary bounds check.
+            //
+            // This guard predates the `0x2F` sub-opcode width fix and was
+            // once load-bearing: `MoveExtResult::default_arm()` advanced one
+            // word for 50 of 61 extension sub-ops, so `2F 25 <slot>` re-entered
+            // the outer dispatcher on its own sub-opcode word and decoded as a
+            // child spawn of record 0. That decoder defect is fixed; the guard
+            // is now belt-and-braces, not a workaround.
+            if slot <= 0 {
                 continue;
             }
             if let Some(child) = self.push_ambient_part(slot as usize, origin) {
@@ -255,8 +371,78 @@ impl World {
         }
     }
 
+    /// Free the parts that halted on an earlier tick - retail's actor-list
+    /// walk, not a housekeeping convenience.
+    ///
+    /// `FUN_8002519C` walks the live actor list once per frame and, **before**
+    /// dispatching an actor's tick function, tests `actor[+0x10] & 0x8` - the
+    /// bit move-VM op `0x08` HALT sets (`0x800251E8`). Only the not-halted
+    /// branch reaches the `jalr` that runs the part at all, so a halted part
+    /// renders once more on the tick it halts - inside the call that halted
+    /// it - and never again: its CLUT-cell write stops and its strip rotation
+    /// stops there.
+    ///
+    /// The teardown is one walk later than that. The halted arm tests bit
+    /// `0x02000000` and, when it is **clear**, branches past the whole
+    /// teardown to set it (`0x800251F4` `and`/`beq` against `lui s3, 0x200`);
+    /// the next walk that still sees the actor halted runs `FUN_80024DFC`,
+    /// releases the heap buffers - including the mode-3 capture at `+0xA8`
+    /// when the tick word is the stager render tail `FUN_80021DF4` and
+    /// `+0x5A == 3` - and pushes the pool slot back with `FUN_800204A4`. This
+    /// port drops the part one tick earlier, which shifts nothing observable:
+    /// by then it has already stopped ticking and rendering, and the only
+    /// difference is how long its slot stays occupied.
+    ///
+    /// Without this a scene whose tree spawns on an infinite loop grows a
+    /// part per tick forever, because every child halts on its own first run
+    /// and nothing ever removes it - which is what drove the corpus into the
+    /// pool ceiling and made the ceiling look like an authored part count.
+    ///
+    /// A part still holding undrained mode-4 rotations is kept until they land
+    /// (retail applies each inside the tick that fired it; the engine queues
+    /// them for the next VRAM-bearing step, so retiring first would drop a
+    /// write retail performed).
+    ///
+    /// PORT: FUN_8002519C (the halt arm of the per-frame actor-list walk)
+    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC
+    fn retire_finished_ambient_parts(&mut self) {
+        if !self
+            .ambient_fx
+            .iter()
+            .any(|p| p.finished && p.scroll_fx.is_empty())
+        {
+            return;
+        }
+        let mut retired_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        self.ambient_fx.retain(|p| {
+            if p.finished && p.scroll_fx.is_empty() {
+                if let Some(fx) = p.cell_fx {
+                    retired_rects.push(fx.rect);
+                }
+                false
+            } else {
+                true
+            }
+        });
+        // The freed part's `+0xA8` capture buffer goes with it. Keep the
+        // engine's capture cache in step, but only for a rect no surviving
+        // part still cycles (retail's buffers are per-actor; the cache is
+        // keyed by rect and several parts may share one).
+        for rect in retired_rects {
+            if !self
+                .ambient_fx
+                .iter()
+                .any(|p| p.cell_fx.is_some_and(|f| f.rect == rect))
+            {
+                self.ambient_cell_captures.remove(&rect);
+            }
+        }
+    }
+
     /// Advance every live ambient part one retail game tick.
     pub fn tick_ambient_fx(&mut self) {
+        // Retail's walk frees the halted parts before ticking the rest.
+        self.retire_finished_ambient_parts();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
         // scalar) per tick.
@@ -394,10 +580,17 @@ impl World {
         if self.ambient_fx.is_empty() {
             return false;
         }
+        let mut wrote = false;
         for _ in 0..ticks {
             self.tick_ambient_fx();
+            // The mode-4 rotates are destructive and ordered: apply each
+            // tick's before running the next, exactly as retail's render
+            // tail does inside the tick that fired them.
+            wrote |= self.apply_ambient_scrolls(vram);
         }
-        let mut wrote = false;
+        // Whatever a headless tick banked up (a host that ticked without a
+        // VRAM surface) still lands, in queue order.
+        wrote |= self.apply_ambient_scrolls(vram);
         let fx: Vec<ClutCellFx> = self
             .ambient_fx
             .iter()
@@ -427,10 +620,66 @@ impl World {
         wrote
     }
 
+    /// Apply every mode-4 part's queued strip rotations to `vram`, in part
+    /// order. Returns `true` when any texels moved.
+    ///
+    /// PORT: FUN_80021DF4 (the mode-4 arm's StoreImage / MoveImage /
+    /// LoadImage trio, `0x80022D08..` and `0x80022DF8..`)
+    fn apply_ambient_scrolls(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let mut wrote = false;
+        for idx in 0..self.ambient_fx.len() {
+            if self.ambient_fx[idx].scroll_fx.is_empty() {
+                continue;
+            }
+            let queued = std::mem::take(&mut self.ambient_fx[idx].scroll_fx);
+            for fx in queued {
+                let (x, y, w, h) = fx.rect;
+                if w == 0 || h == 0 || w > 1024 || h > 512 {
+                    continue;
+                }
+                let src = read_rect(vram, x, y, w, h);
+                let out = vram_scroll::rotate_rect(
+                    &src,
+                    usize::from(w),
+                    usize::from(h),
+                    usize::from(fx.strip_w),
+                    usize::from(fx.strip_h),
+                );
+                if out != src {
+                    write_rect(vram, x, y, w, &out);
+                    // A rotated rect invalidates any mode-3 capture keyed on
+                    // exactly this rect (no retail scene pairs the two on one
+                    // rect; this keeps the cache honest if one ever did).
+                    self.ambient_cell_captures.remove(&fx.rect);
+                    wrote = true;
+                }
+            }
+        }
+        wrote
+    }
+
     /// Snapshot of the live ambient CLUT-cell effects (for tests and the
     /// web viewer's status line).
     pub fn active_ambient_cell_fx(&self) -> Vec<ClutCellFx> {
         self.ambient_fx.iter().filter_map(|p| p.cell_fx).collect()
+    }
+
+    /// The VRAM rects the live mode-4 scroller parts animate, with each
+    /// part's authored per-period steps - the seated `+0xD0..+0xD6` rect and
+    /// `+0xCC`/`+0xCE` (for tests and viewer status lines).
+    pub fn active_ambient_scroll_rects(&self) -> Vec<vram_scroll::ScrollSeat> {
+        self.ambient_fx
+            .iter()
+            .filter(|p| !p.finished && p.state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
+            .map(|p| {
+                let at = |off: usize| p.state.anim_block_u16(off - 0xAC);
+                (
+                    (at(0xD0), at(0xD2), at(0xD4), at(0xD6)),
+                    at(0xCC) as i16,
+                    at(0xCE) as i16,
+                )
+            })
+            .collect()
     }
 }
 

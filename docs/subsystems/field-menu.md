@@ -366,6 +366,30 @@ gray to CLUT 0 when blocked: Load when the dialog-context pointer
 `DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
 `DAT_8007b6a8` is clear.
 
+Those are the same two gates the confirm arm applies, in the same order,
+so no row can draw white and then buzz - see the [root command
+picker](save-screen.md#root-command-picker-fun_801d6b20), where Load
+routes to sub-screen `0x18` and Save to `0x19`. `DAT_8007b6a8` is
+per-scene: `legaia_asset::man_section::ManHeader::low_flag` is the MAN
+header bit (`[0x01] & 1`) that seeds it, which is what makes a no-save
+scene a property of the scene's own MAN rather than of the menu. Across
+the disc's MAN-bearing scenes the bit is set on the three kingdom world
+maps and clear on every field scene, so the Save row draws grey
+everywhere but the overworld.
+
+Engine port of the gate: scene load seeds
+`engine-core::world::World::scene_save_allowed`
+(`World::install_scene_save_permission`); the host samples it - together
+with the entry-context kind from `World::menu_entry_context_kind` - into a
+`field_menu::FieldMenuGate` when the pause menu opens
+(`BootSession::open_field_menu`). `FieldMenuSession` then calls
+`pause_screens::root_menu_confirm_route` per row for the ink and again on
+Cross for advance-vs-buzz, so one function decides both, and resolves the
+confirmed row back through the sub-screen id `ROOT_MENU_ROUTES` names. A
+gated row stays **navigable** and draws grey, matching the picker's
+unconditional 7-row cursor walk; the engine's separate row mask is the one
+that removes a row from the browse order.
+
 The seven labels are **NUL-terminated C strings** in the menu overlay's
 leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
 `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /
@@ -517,6 +541,19 @@ weapon halfword `DAT_8007B42C + char*2`, armaments `1..3` from
 explicit slot map (`equip_session::ARMAMENT_ENGINE_SLOTS`), because the
 engine's equip array inserts a Hand Guard slot retail has no row for:
 footwear is engine slot `4`, not `3`.
+
+Reading the two tables off the disc settles retail's own `+0x196` order.
+`DAT_801E43E8` is `00 01 00 04 05 06 07` - one byte per slot row, so
+helmet is byte `1`, body armour byte `0`, footwear byte `4` and the three
+Goods rows bytes `5..7` - and `DAT_8007B42C` is `2, 3, 2` (halfwords),
+putting Vahn's and Gala's weapon in byte `2` and Noa's in byte `3`. The
+hub's [equipment sub-panel](world-map.md#the-per-entry-equipment-sub-panel)
+resolves `(+7 & 0x60) >> 5` to the same four destinations, which pins the
+order a second way. So the retail array is
+`[body, head, weapon, weapon, footwear, goods x3]` - **not** weapon-first.
+The engine's `EquipSlot` enum is its own model, and a record has to be
+re-ordered before a routine that indexes in retail's space walks it
+(`field_submode_screen::hub_panel_slots`).
 
 ### Best Equipment: how the candidates are picked
 
@@ -1465,13 +1502,17 @@ can paint. Two consequences fall out of keying on the renderer:
   `_DAT_800845A4` with `0x66`; the painter is one routine and `CounterSource`
   tells a host which live total to feed it.
 
-The native window (`window/menu_draws.rs`, `window/shop_windows.rs`) draws
-its pause-screen tabs and the shop's vendor plate / purse / item-info /
-sell-quantity windows through this dispatch, at their disc-parsed rects. The
-painters for windows that no host **opens** yet - 5, 6, 7, 24, 25, 31, 36, 41,
-46 - stay unreached by a screen rather than by a mechanism; each one's
-remaining blocker is recorded per builder in
-`scripts/ci/ui-host-drift-waivers.toml`.
+Both hosts draw their pause-screen tabs and the shop's vendor plate / purse /
+item-info / sell-quantity windows through this dispatch, at their disc-parsed
+rects - the native window in `window/menu_draws.rs` + `window/shop_windows.rs`,
+the browser play page in `web-viewer::play_shop`. Windows **36 / 25 / 41** join
+them whenever the equipment-buy recipient sub-screen is up: that screen is one
+shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
+separate host-side draws, so its row order and cursor rows are the same on both.
+
+The painters for windows no host **opens** yet - 5, 6, 7, 24, 31, 46 - stay
+unreached by a screen rather than by a mechanism; each one's remaining blocker
+is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
 
 Three rules the block encodes are worth naming on their own:
 
@@ -1907,6 +1948,15 @@ draws the current values with no arrows.
 Ports: `engine-ui::equip_compare_panel_fields` /
 `party_compare_panel_fields`. The screen that opens both windows is the
 shop's equipment-buy recipient flow (`FUN_801DB380`; see
-[shop.md](shop.md)) - the browser play page draws them beside the
-recipient list (window 36), with the candidate blocks derived from the
-equipment modifier table rather than the inline trial-equip swap.
+[shop.md](shop.md)), and both hosts draw them beside the recipient list
+(window 36) through the shared `engine-ui::recipient_picker_draws_for`,
+with the candidate blocks derived from the equipment modifier table
+rather than the inline trial-equip swap.
+
+The category byte window 25 keys its row set on is the equip record's
+`+5`, and on the retail USA disc **every** equipment bonus row carries the
+`0x40` no-passive sentinel there - so the panel always shows the ATK /
+UDF / LDF triple in this flow. A host that cannot resolve the byte may
+pass the sentinel and get the identical screen, which is what lets the
+native window feed a constant where the browser page feeds a table
+lookup.

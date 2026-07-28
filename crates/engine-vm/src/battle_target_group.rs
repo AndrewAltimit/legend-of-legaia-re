@@ -16,55 +16,144 @@
 //! | `0xA` | `[0, 7)` | everyone |
 //! | anything else | `[code, code + 1)` | one explicit actor |
 //!
-//! Two things about the output are easy to get wrong and are faithful here:
+//! Three things about the output are easy to get wrong and are faithful here:
 //!
 //! * **The centroid is negated.** Retail divides `-sum` by the accepted count,
 //!   so the returned pair is the *camera-space translation* that brings the
 //!   group to the origin, not the group's own position.
 //! * **The extent lands at `+4` of its output struct, not `+0`.** Retail writes
-//!   a single halfword at `out_extent + 4` and never touches `+0`, and it clamps
-//!   the value to `0x400`.
-//!
-//! Slot liveness is read differently for the two halves of the actor table: a
-//! party slot (`< 3`) is live when the roster byte `DAT_8007BD10[slot]` is
-//! non-zero (that is the per-slot character id, so zero means "no such party
-//! member"), while a monster slot is live when the actor record's `+0x4` word is
-//! non-zero. A range whose slots are all dead yields no answer at all - retail
-//! would divide by zero there, so this port returns `None`.
+//!   a single halfword at `out_extent + 4` and never touches `+0`.
+//! * **`0x400` is the extent's floor, not its ceiling.** The tail compare is
+//!   `slti v0, v0, 0x400` / `beq v0, zero, <ret>` (`0x801DD094`), so the store
+//!   of `0x400` runs on the *`extent < 0x400`* side - a group tighter than
+//!   `0x400` is widened to it, and a wider one is left alone. See
+//!   [`MIN_GROUP_EXTENT`].
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_battle_action_801dceac.txt`.
 //!
-//! # NOT WIRED
+//! # Where it runs
 //!
 //! Every retail caller uses the centroid for one thing only: it feeds the two
 //! negated components straight into the 12-bit bearing helper `FUN_80019B28`
 //! and stores the result in the acting actor's facing halfword `+0x46`. That
 //! is the shape at all three call sites - the battle-action SM's cast-begin
-//! state (`overlay_battle_action_801e295c.txt` `0x801E4370..0x801E43A4`),
+//! state (`overlay_0898_801e295c.txt` `0x801E4370..0x801E43A4`),
 //! `FUN_801DC0A0` `0x801DC39C` and `0x801DC51C` - and none of them reads the
 //! extent output back at all.
 //!
-//! Two prerequisites are missing, so the engine has nothing to hand the
-//! centroid to:
+//! The port runs the SM's copy:
+//! [`magic_cast_begin`](crate::battle_action) assembles the eight
+//! [`GroupSlot`]s from [`BattleActionHost::actor_position`] and calls
+//! [`target_group_aim`] whenever the acting actor's target byte `+0x1DD` is a
+//! group code rather than a slot. `engine-core`'s monster-AI target resolver
+//! (`FUN_801E7320`) is what produces those codes in production: its class-`8`
+//! arm writes `9` (the enemy row) and its class-`7` arm writes `8` (the party)
+//! into `active_target`, one roll in three each.
 //!
-//! * [`crate::battle_action::bearing_12bit`] (`FUN_80019B28`) is itself
-//!   unwired for want of the `SCUS_942.54` arctan LUT at `0x8006F4C8`, which
-//!   no engine boot path extracts.
-//! * [`crate::battle_action::BattleActor`] carries the facing halfword
-//!   (`facing_angle`) but no `+0x34`/`+0x38` world position, so the port has
-//!   no source for the per-slot geometry [`GroupSlot`] describes; the battle
-//!   seat positions live on `engine-core`'s world actors instead, and nothing
-//!   there computes a facing.
+//! The walk is gated per slot, differently for the two halves of the actor
+//! table, and the port reaches the second gate indirectly:
+//!
+//! * A **party** slot is live when the roster byte `DAT_8007BD10[slot]` is
+//!   non-zero - the per-slot character id, so zero means "no such party
+//!   member". The port's equivalent is seat occupancy: the actor table holds
+//!   exactly the seated combatants.
+//! * A **monster** slot is live when the actor record's `+0x4` word is
+//!   non-zero. The port reads its `+0x21C` twin
+//!   ([`RENDER_FLAG_HIDDEN`]) instead. Why, and what that costs, is the next
+//!   section - it is not a shortcut that can simply be undone.
+//!
+//! A range whose slots are all dead yields no answer at all - retail would
+//! divide by zero there, so this port returns `None`.
+//!
+//! # Why the monster gate reads `+0x21C` and not `+0x4`
+//!
+//! `+0x4` is **not a flag**. It is the packed RGB tint the per-actor draw
+//! unpacks into the mesh colour word: `FUN_8004A908` loads it at `0x8004A998`,
+//! bails to "strip the RGB, keep the prim code" when it is zero
+//! (`0x8004A9A0`), and otherwise OR-s it under `+0x8`'s top byte into the
+//! render node's `+0x74` (`0x8004ABA0`). `0x20080200` is neutral grey; `0` is
+//! black, i.e. not drawn.
+//!
+//! That makes `+0x4 != 0` mean "seated **and** currently drawn", and it holds
+//! only because two routines maintain it every battle and every frame:
+//!
+//! * **Seating** - `FUN_800513F0` writes `0x20080200` on each occupied party
+//!   slot (`0x800515F4`) and `0x10040100` on each occupied monster slot
+//!   (`0x80051874`), and never writes an unoccupied monster slot at all, so an
+//!   empty seat keeps the allocator's zero. *That* is the occupancy half of the
+//!   gate, and `+0x21C` cannot express it: an empty seat reads `+0x21C == 0`,
+//!   the visible value.
+//! * **A per-frame tween** - `FUN_80050120` walks all eight slots each frame,
+//!   skips any with no model (`+0x22C == 0`, `0x8005016C`), freezes `+0x4`
+//!   whole while `+0x21C >= 0x0B` (`0x8005017C`/`0x80050180`), and otherwise
+//!   lerps it toward neutral through `FUN_80050F30` at 16 per channel per
+//!   frame, storing it back at `0x8005059C`. So the summon fade's `+0x4 = 0`
+//!   (`0x801E4B50`) is temporary: once state `0x36` drops `+0x21C` back to `0`
+//!   (`0x801E4CFC`) the tween walks `+0x4` from black to neutral over ~32
+//!   frames. Opening target select re-stamps it outright
+//!   (`FUN_801DA6B4`, `0x801DA74C`).
+//!
+//! The port has **neither** maintainer: nothing seats
+//! [`BattleActor::render_color`](crate::battle_action::BattleActor) and nothing
+//! tweens it, so it sits at its `Default` zero unless the target cursor has run.
+//! Switching the gate without both would be strictly worse than the twin -
+//! every monster would fail it until the player opened target select, and the
+//! summon fade's zero would be **permanent** rather than a 32-frame dip.
+//!
+//! The twin is therefore kept, with two known divergences, both recorded rather
+//! than papered over:
+//!
+//! * **Empty seats are under-rejected.** A monster slot that was never seated
+//!   reads `+0x21C == 0` and joins the centroid at the origin, pulling the aim
+//!   toward the middle of the stage. Retail rejects it on `+0x4 == 0`.
+//! * **A monster that dies during a summon is over-rejected.** State `0x36`'s
+//!   `+0x21C` clear is gated on `+0x14C != 0` (`0x801E4CE4`), so a slot that
+//!   died mid-fade keeps `0xFF` for the rest of the battle, while retail's
+//!   `+0x4` recovers through the tween.
+//!
+//! `+0x4` is read as a visibility predicate in five other places -
+//! actor separation `FUN_80051078` (`0x800510BC`/`0x800510D4`), the draw
+//! `FUN_8004A908`, the cast census `FUN_801E09F8` (`0x801E0A60`, which the port
+//! *does* mirror through [`crate::battle_cast_census`]), camera framing
+//! `FUN_801D5854` (`0x801D682C`) and the mirror-node seat `FUN_8004CE2C`
+//! (`0x8004D564`) - so seeding it is a change to all of them at once, not a
+//! local fix. The cast census is the one that bites: its `ctx[+0x249]` output
+//! gates the magic band's exit state `0x2E`, and with no tween to clear a
+//! zeroed tint a seeded census could hold that exit open indefinitely.
+//!
+//! REF: FUN_8004A908 (the draw that unpacks `+0x4`)
+//! REF: FUN_800513F0 (battle seating - the writer that establishes it)
+//! REF: FUN_80050120 (the per-frame tint tween), FUN_80050F30 (its lerp)
+//! REF: FUN_801DA6B4 (the target cursor's outright re-stamp)
+//! REF: FUN_80051078 (actor separation), FUN_801E09F8 (cast census),
+//! REF: FUN_801D5854 (camera framing), FUN_8004CE2C (mirror-node seat)
 
-/// The maximum the extent output is clamped to (`0x400`).
-pub const MAX_GROUP_EXTENT: i16 = 0x400;
+/// The value the extent output is **floored** at (`0x400`). Named for the
+/// direction of retail's compare: see the module doc.
+pub const MIN_GROUP_EXTENT: i16 = 0x400;
+
+/// Target-group code for **the party** - `+0x1DD == 8`, decoded to slots
+/// `[0, 3)`. The whole of retail's group-code space that anything writes is
+/// this and [`TARGET_GROUP_ENEMIES`]: the command menu writes `8` at
+/// `0x801D1D6C` and `9` at `0x801D1D00`, the monster-AI resolver `FUN_801E7320`
+/// writes `8`/`9`, and the escape / capture arms write one each. `0xA` decodes
+/// but no writer in the corpus produces it.
+pub const TARGET_GROUP_PARTY: u8 = 8;
+
+/// Target-group code for **the enemy row** - `+0x1DD == 9`, decoded to slots
+/// `[3, 7)`. See [`TARGET_GROUP_PARTY`].
+pub const TARGET_GROUP_ENEMIES: u8 = 9;
+
+/// The `+0x21C` render flag the summon-fade sweep writes alongside zeroing the
+/// `+0x4` prim word (`0x801E4B50`/`0x801E4B5C`). A monster carrying it is not
+/// drawn, which is the state retail's `+0x4` gate rejects.
+pub const RENDER_FLAG_HIDDEN: u8 = 0xFF;
 
 /// One actor slot's contribution to the group geometry.
 #[derive(Debug, Clone, Copy)]
 pub struct GroupSlot {
-    /// The slot is present and renderable: for a party slot (`< 3`) the roster
-    /// byte `DAT_8007BD10[slot] != 0`; for a monster slot the actor's `+0x4`
-    /// word `!= 0`. A dead slot contributes nothing.
+    /// The slot is present and renderable - the module doc's two gates. A dead
+    /// slot contributes nothing.
     pub live: bool,
     /// Actor world X (`+0x34`, i16).
     pub x: i16,
@@ -79,13 +168,15 @@ pub struct GroupAim {
     pub centroid_x: i16,
     /// `*(i16 *)(out_centroid + 4)`: `-sum_z / count`.
     pub centroid_z: i16,
-    /// `*(i16 *)(out_extent + 4)`: `max(max_x - min_x, max_z - min_z)`, clamped
-    /// to [`MAX_GROUP_EXTENT`].
+    /// `*(i16 *)(out_extent + 4)`: `max(max_x - min_x, max_z - min_z)`, floored
+    /// at [`MIN_GROUP_EXTENT`].
     pub extent: i16,
 }
 
 /// Decode a target-group code into the actor-slot range `[start, end)` the
 /// group covers.
+///
+/// REF: FUN_801E7320 (the monster-AI resolver that produces group codes)
 ///
 /// PORT: FUN_801DCEAC (group-code decode)
 pub fn target_group_range(code: u8) -> (u8, u8) {
@@ -148,8 +239,10 @@ pub fn target_group_aim(code: u8, slots: &[GroupSlot]) -> Option<GroupAim> {
     let centroid_x = (-sum_x) / count;
     let centroid_z = (-sum_z) / count;
 
+    // `slti`/`beq` at `0x801DD094`: the `0x400` store runs when the measured
+    // extent is BELOW it, so this is a floor.
     let extent = (max_x - min_x).max(max_z - min_z);
-    let extent = extent.min(MAX_GROUP_EXTENT as i32);
+    let extent = extent.max(MIN_GROUP_EXTENT as i32);
 
     Some(GroupAim {
         centroid_x: centroid_x as i16,
@@ -190,8 +283,8 @@ mod tests {
         // mean x = 30, mean z = 40, both negated.
         assert_eq!(aim.centroid_x, -30);
         assert_eq!(aim.centroid_z, -40);
-        // extents: x 50-10 = 40, z 60-20 = 40.
-        assert_eq!(aim.extent, 40);
+        // Measured extents (x 50-10 = 40, z 60-20 = 40) are below the floor.
+        assert_eq!(aim.extent, MIN_GROUP_EXTENT);
     }
 
     #[test]
@@ -199,24 +292,35 @@ mod tests {
         let slots = [live(10, 0), dead(), live(30, 0)];
         let aim = target_group_aim(8, &slots).unwrap();
         assert_eq!(aim.centroid_x, -20);
-        // The dead slot's 9999 must not reach the extremes.
-        assert_eq!(aim.extent, 20);
+        // The dead slot's 9999 must not reach the extremes: with it the X span
+        // would be 9989 and clear the floor, so the floored answer is the
+        // evidence it was skipped.
+        assert_eq!(aim.extent, MIN_GROUP_EXTENT);
     }
 
     #[test]
     fn the_larger_of_the_two_extents_wins() {
-        let slots = [live(0, 0), live(5, 100), live(10, 50)];
-        // x span 10, z span 100.
-        assert_eq!(target_group_aim(8, &slots).unwrap().extent, 100);
+        // Both spans clear the floor, so the max is observable.
+        let slots = [live(0, 0), live(500, 3000), live(1000, 1500)];
+        // x span 1000, z span 3000.
+        assert_eq!(target_group_aim(8, &slots).unwrap().extent, 3000);
+        // Mirrored: X wins when it is the larger.
+        let slots = [live(0, 0), live(3000, 500), live(1500, 1000)];
+        assert_eq!(target_group_aim(8, &slots).unwrap().extent, 3000);
     }
 
+    /// `0x400` is retail's **floor**, not its ceiling: a tight group is widened
+    /// to it and a wide one passes through untouched. The old reading here had
+    /// the compare backwards, which only a group wider than `0x400` can show.
     #[test]
-    fn extent_is_clamped() {
-        let slots = [live(-4000, 0), live(4000, 0), live(0, 0)];
+    fn extent_is_floored_not_capped() {
+        let tight = [live(-10, 0), live(10, 0), live(0, 0)];
         assert_eq!(
-            target_group_aim(8, &slots).unwrap().extent,
-            MAX_GROUP_EXTENT
+            target_group_aim(8, &tight).unwrap().extent,
+            MIN_GROUP_EXTENT
         );
+        let wide = [live(-4000, 0), live(4000, 0), live(0, 0)];
+        assert_eq!(target_group_aim(8, &wide).unwrap().extent, 8000);
     }
 
     #[test]
@@ -224,7 +328,8 @@ mod tests {
         let slots = [live(10, 10), live(400, 400), live(0, 0)];
         let aim = target_group_aim(1, &slots).unwrap();
         assert_eq!((aim.centroid_x, aim.centroid_z), (-400, -400));
-        assert_eq!(aim.extent, 0);
+        // One slot spans nothing, so the floor is what comes out.
+        assert_eq!(aim.extent, MIN_GROUP_EXTENT);
     }
 
     #[test]
@@ -233,6 +338,37 @@ mod tests {
         assert!(target_group_aim(8, &slots).is_none());
         // Out-of-range slot indices are the same case, not a panic.
         assert!(target_group_aim(9, &slots).is_none());
+    }
+
+    /// The composition retail performs at `0x801E4370..0x801E43A4`, which
+    /// `magic_cast_begin` now runs: retail negates the already-negated centroid
+    /// back into a world position, takes the bearing from the actor to it,
+    /// biases by a half-turn and masks to 12 bits before storing into `+0x46`.
+    /// This is the unit-level statement of it; the SM-level one is
+    /// `crates/engine-vm/tests/battle_cast_facing.rs`.
+    #[test]
+    fn cast_begin_composes_the_aim_with_the_live_bearing_kernel() {
+        use crate::battle_action::bearing_12bit_approx;
+
+        // A three-strong enemy row centred at (+400, 0) in world X/Z, and an
+        // actor sitting at the origin: the group is due +X of it.
+        let slots = [live(400, -100), live(400, 0), live(400, 100)];
+        let aim = target_group_aim(8, &slots).unwrap();
+        assert_eq!((aim.centroid_x, aim.centroid_z), (-400, 0));
+
+        // Retail's `subu a0,zero,a0` / `subu a1,zero,a1` on the two outputs.
+        let (group_z, group_x) = (-aim.centroid_z, -aim.centroid_x);
+        // `bearing_12bit(p1z, p1x, p2z, p2x)` with the **group** as `p1` and
+        // the actor as `p2` - the argument order at `0x801E4384..0x801E4394`,
+        // which measures group -> actor. The half-turn is what flips it back
+        // to actor -> group, and it is the same shape the single-target arm at
+        // `0x801E4358` uses with the target in place of the centroid.
+        let bearing = bearing_12bit_approx(group_z, group_x, 0, 0);
+        let facing = (bearing.wrapping_add(0x800)) & 0xFFF;
+        // The group is due +X of the actor, which is 0x400 of the 12-bit
+        // circle: the raw bearing is 0xC00 and the bias lands 0x400.
+        assert_eq!(bearing, 0xC00);
+        assert_eq!(facing, 0x400);
     }
 
     #[test]

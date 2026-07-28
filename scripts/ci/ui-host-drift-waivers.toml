@@ -72,13 +72,19 @@ builder = "key_rebind_draws_for"
 kind = "orphan"
 reason = """
 Web-exempt by design, but unreached on native too. The browser page's bindings
-are a JS keycode table (`site/js/play-app.js` PAD/BOOT_PAD) owned by the page,
-not the engine, and a shared rebind screen would have to write a config the
-browser has no place to persist. On native, rebinding today happens through the
-`legaia-input.toml` config file and the `legaia-engine config set --binding`
-subcommand; the in-engine screen this builder draws is not mounted in the
-window's menu tree. Closing it is a native-only job: give the options menu a
-rebind entry that opens this screen.
+are JS keycode tables owned by the page, not the engine - `PAD` in
+`site/js/play-app.js` for the in-scene pad and `BOOT_PAD` in
+`site/_content/play.html` for the title / save rack - and a shared rebind
+screen would have to write a config the browser has no place to persist. On
+native, rebinding today happens through the `legaia-input.toml` config file and
+the `legaia-engine config set --binding` subcommand; the in-engine screen this
+builder draws is not mounted in the window's menu tree.
+
+What must exist first is a **menu route**, on either host: the options screen
+both hosts draw (`options_draws_for`) has no row that opens a sub-screen, and
+`engine-core`'s `OptionsSession` carries no binding-edit state for one to
+drive. Closing it means growing that row and that state, not adding a draw
+call.
 """
 
 # `sprite_draws_for` used to be waived here as "a generic anchor-translate
@@ -94,19 +100,25 @@ builder = "records_screen_draws_for"
 kind = "web_missing"
 reason = """
 The retail world-map Records screen renderer (`FUN_801ED710`). The state
-behind it is host-agnostic (`engine-core::dev_menu_host` + the
-`RecordCounters` rebase), so the missing piece is not a model - it is the
-**gate**. The records page is a row of the retail developer menu, and the
-native window mounts that whole surface behind the `LEGAIA_DEV_MENU` process
-environment variable (`window/dev_menu.rs`), an opt-in that cannot travel
-with a link. A browser tab has no equivalent: a URL parameter or localStorage
-flag is one shared link away from every visitor, so porting the screen means
-shipping a state-editing debug surface to the public page - a different
-security posture, not the same screen ported. The play page does host the
-overworld walk (`enter_world_map_scene`); what it deliberately does not host
-is the dev-menu surface this page is a row of. Close it, if ever, with a
-player-facing Records screen (retail shows these counters outside the dev
-menu too), not by porting the dev gate.
+behind it is host-agnostic - the dev-menu model is `engine-core`'s
+`dev_menu_host` and the save-block-to-record rebase is this crate's
+`RecordCounters` - so the missing piece is not a model. It is the **gate**.
+
+The blocking capability, named precisely: a **process-scoped opt-in**. The
+records page is a row of the retail developer menu, and the native window
+mounts that whole surface behind `std::env::var_os("LEGAIA_DEV_MENU")`
+(`window/dev_menu.rs`), which is set by whoever launches the binary and
+reaches nobody else. A public web page has no such person. Every browser-side
+equivalent is either link-shareable (a query parameter, a hash, a stored flag)
+or discoverable in the shipped bundle (a key chord), so mounting the surface
+there ships a state-editing debug console to every visitor - a different
+security posture, not the same screen ported.
+
+The play page does host the overworld walk (`enter_world_map_scene`); what it
+deliberately does not host is the dev-menu surface this page is a row of. The
+only close that does not move the gate is a **player-facing** records screen,
+which is new design rather than a port: retail reaches these counters through
+the developer menu and nowhere else this project has pinned.
 """
 
 [[waiver]]
@@ -115,13 +127,13 @@ kind = "web_missing"
 reason = """
 The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
 list sibling of `records_screen_draws_for` above and behind the same
-`LEGAIA_DEV_MENU` process-environment gate in `window/dev_menu.rs`. Same
-deliberate gap, and sharper for this one: the list's rows *edit* live state
-(map id, encounter rate, character parameters, event flags -
-`engine-core::dev_menu_host`), so a browser mount without a
-non-link-shareable opt-in hands every visitor a cheat console. The engine
-model exists on both targets; the developer-only gate does not exist in a
-browser tab.
+process-scoped `LEGAIA_DEV_MENU` gate in `window/dev_menu.rs`. Same blocking
+capability, and sharper for this one: the records page only *reads*, while
+this list's rows **edit** live state (map id, encounter rate, character
+parameters, event flags - `engine-core::dev_menu_host`). A browser mount
+therefore hands every visitor a cheat console, not just a stats page. The
+engine model compiles on both targets; what does not exist in a browser tab
+is an opt-in only the person running the program can take.
 """
 
 
@@ -194,10 +206,18 @@ kind = "orphan"
 reason = """
 Window id 46 (`FUN_801D603C`): one heading over a two-row choice group whose
 markers come from the `DAT_801E46D0` branch chain. Dispatch-resolved, so what
-remains is a host decision rather than a mechanism: the options screen both
-hosts draw is `options_screen_draws_for`, an engine-styled list, and adopting
-this window pair replaces that screen's layout wholesale. The branch chain
-itself is unit-tested here.
+remains is not a mechanism.
+
+What must exist first is a **two-row choice screen whose state is the
+`DAT_801E46D0` flags word**. The engine has neither half. The options screen
+both hosts draw is `options_draws_for` - a multi-row label/value list fed from
+the config sub-session's own rows, not a two-choice group - so adopting this
+window replaces that screen's layout wholesale rather than filling a hole in
+it. And no engine state models the flags word: `confirm_prompt_draws` takes no
+selection at all, `confirm_dialog_text_draws_for` takes a plain 0/1 cursor, so
+nothing stages the `0x4000` suppress or `0x2000` mid-change arms and a host
+wiring this today would exercise one of the three marker arms and leave the
+other two unreachable. The branch chain itself is unit-tested here.
 """
 
 [[waiver]]
@@ -206,7 +226,9 @@ kind = "orphan"
 reason = """
 Window id 5 (`FUN_801D61B0`): the two-heading sibling of
 `choice_panel_draws_for`, sharing its marker branch chain and differing only
-in the marker column and first-row offset. Same host decision.
+in the marker column and first-row offset. Same prerequisite - a two-row
+choice screen driven by the `DAT_801E46D0` flags word - and the same absence
+of one, plus a second heading line no engine screen has a model for.
 """
 
 [[waiver]]
@@ -222,13 +244,14 @@ comes from window 50, so this is not that list under another id.
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`
 # (windows 25 / 41) were waived here as orphans blocked on "the flow that
-# opens them" - the shop's equipment-buy recipient picker (`FUN_801DB380`).
-# That flow is ported and reachable now: `menu_runtime`'s buy-list confirm
-# runs the retail kind dispatch (`shop::buy_list_confirm_route`), an
-# equipment row opens `shop::BuyRecipientSession` behind the
-# `retail_equipment_buy` opt-in, and the browser play page enables the flow
-# and paints all three windows over the parked buy list
-# (`web-viewer/src/play_shop.rs::recipient_window_draws`). They read as
-# web-ahead until the native window grows the same three-window surface
-# (`window/shop_windows.rs`) and flips the opt-in - which the checker
-# reports informationally rather than as drift.
+# opens them" - the shop's equipment-buy recipient picker (`FUN_801DB380`) -
+# and then read as web-ahead once the browser page grew that surface and the
+# native window had not. Both gaps are closed: `engine-ui`'s
+# `recipient_picker_draws_for` is now the whole sub-screen as one shared
+# composition, and each host only resolves the three rects off the disc
+# window table and builds the model - `web-viewer/src/play_shop.rs` and
+# `window/shop_windows.rs`, both named `recipient_window_draws`. The native
+# window arms the flow in `window/run.rs` off `BootSession::equip_restrictions`,
+# the twin of the page's `load_disc` arming. Nothing to waive, and a future
+# divergence would have to be written into the shared builder, where it would
+# show up on both hosts at once.

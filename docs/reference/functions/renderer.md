@@ -53,6 +53,9 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `80020B00` | **Fade-state loader.** `(i16* state, i16* template)`. Converts a 13-`i16` fade template into the pool actor's `+0x7C` ramp state in 10.6 fixed point: `state[0..2] = start_rgb << 6` (current), `state[4..6] = end_rgb << 6`, `state[8..10] = ((end − start) × 0x40) / duration` (per-frame delta), duration + three mode words copied verbatim. The displayed colour each frame is `current >> 6`, landing exactly on `end` after `duration` frames. Ported as `legaia_engine_core::fade::FadeState::load`; the escape template (kind 2, `0x40` frames, black → white) is pinned from the SM's case-`0x66` write. `see ghidra/scripts/funcs/80020b00.txt`. |
 | `801DE478` | **Field-overlay fade-actor spawn.** `(mode)`. The overlay-resident sibling of the SCUS pair `80024E80` / `80020B00`, and a *different* family: it allocates from the overlay template `&DAT_801F2810` (not `&DAT_80070674`) through the same allocator `FUN_80020DE0(template, _DAT_8007C34C)`, then forces `mode = 1` when the field/dual-mode gate `_DAT_8007B868` is non-zero, and stores the resulting `mode` as a halfword at `actor[+0x54]`. Seven independent RAM captures (baka-fighter / dance / debug-menu / fishing / slot-machine / both cutscene overlays) dump the same 20-instruction body here. `see ghidra/scripts/funcs/overlay_baka_fighter_801de478.txt`. |
 | `801DDC20` | **Field-overlay fade-actor RGB ramp tick.** `(actor)`. Per-frame body for the actors `801DE478` spawns: lerps a colour triple over a duration and pushes the packed result to the fade-quad emitter `FUN_80024EE4` - [details ↓](#801ddc20) |
+| `80020C14` | **SCUS fade-actor ramp step.** `(actor) -> packed RGB or -1`. The per-frame arithmetic over the `+0x7C` block `FUN_80020B00` loads: counts the start delay `+0x1C`, the duration `+0x20` and the hold `+0x1E` down by the scratchpad vsync delta `DAT_1F800393`, accumulates `current += delta * dt` per channel with a clamp onto the target on overshoot and onto `[0, 0x3FC0]` either way, and packs `R | G<<8 | B<<16` with each channel `>> 6`. Returns `-1` while still delaying and once the hold expires; duration expiry raises `actor[+0x62] \| 0x100`, hold expiry raises `actor[+0x10] \| 8`. [Details ↓](#80020c14--80025000). `see ghidra/scripts/funcs/80020c14.txt`. |
+| `80025000` | **SCUS fade-actor tick** - the pool actor's `+0x0C` handler, and the SCUS counterpart of `801DDC20`. Steps `FUN_80020C14` and, unless it returned `-1`, pushes the quad through `FUN_80024EE4(block[+0x22], block[+0x18], rgb)` - i.e. the id `FUN_80024E80` stamped into the template's last word, and the fade kind. Its address is the `+0x08` tick word of two [static actor templates](runtime-libs.md#static-actor-templates) - the records at `0x80070674` (the one `FUN_80024E80` spawns from) and `0x800706A4` (which no site materialises). [Details ↓](#80020c14--80025000). `see ghidra/scripts/funcs/80025000.txt`. |
+| `8002BC38` | Gradient sprite emitter - `(x, y, uv_rect, flags)` builds one `0x34`-byte `POLY_GT4` in the scratchpad prim arena `*0x1F8003A0`: GP0 code `0x3C` / `0x3E` selected by flag bit `0x80`, CLUT id `(flags & 0x7F) + 0x7FC0`, corners `(x, y)`..`(x+w, y+h)` from `uv_rect[2]` / `uv_rect[3]`, UV origin `uv_rect[0] + 0x80` / `uv_rect[1]`, and a fixed vertical white-to-black gouraud ramp (`0xFF`, `0xA0`, `0x50`, `0x00`); links with `FUN_8003D2C4`. No caller in `SCUS_942.54` or the 31 extracted overlays, and no pointer to it in any of them. `see ghidra/scripts/funcs/8002bc38.txt`. |
 | `0x801DDD44` (instruction) | Interior of `FUN_801DDC20`: the `nop` in the delay slot of that body's `bne a3,zero` divide-by-zero guard. Not an entry. |
 | `0x801DDDEC` (instruction) | Interior of `FUN_801DDC20`: the join label every arm of the ramp branches to before the flag test and the `FUN_80024EE4` push. Not an entry. |
 | `800195A8` | Billboard / screen-space textured-quad projector - [details ↓](#800195a8) |
@@ -277,6 +280,45 @@ Mixed function: the content-selection (item-usability / discovery-flag gating, p
 **Monospaced base-10 number formatter** (two byte-identical variants; differ only in leading-zero branch ordering). `(value, min_digits, x, y)` - decodes `value` into nine decimal digits by successive subtraction against the 9-entry pair table at `DAT_80073DCC` (each pair `[high, low]`: `digit_acc += 4` per multiple of the high threshold, `+1` per multiple of the low), then emits each digit as one GP0 `0x64` glyph sprite via `FUN_8003C11C` at the fixed 8 px column stride (`digit << 3` selects the U coordinate in the HUD-number glyph cell).
 
 `gp[+0x15c]` is the leading-zero-suppression latch (set once the first nonzero digit prints); `min_digits` forces zero-padding for fields like the save-screen play-time `HH:MM:SS` (`see ghidra/scripts/funcs/overlay_save_ui_saving_801e08d8.txt` callsite, value clamped to 99/0x3B then `/0x3C` decomposed). This is the integer formatter behind the `0xCE`-escape variable substitution (`FUN_80036888`, see [`formats/dialog-font.md`](../../formats/dialog-font.md)) and the records / save-screen stat counters. `see ghidra/scripts/funcs/80034b78.txt` / `80034e4c.txt`.
+
+
+### `80020C14` / `80025000`
+
+The SCUS fade family's per-frame half, and the exact reason
+[`fade.rs`](../../../crates/engine-core/src/fade.rs)'s ramp used to carry a
+guessed endpoint: the loader `FUN_80020B00` and the spawn `FUN_80024E80` were
+dumped, the tick was not.
+
+Reading the loader's stores against the tick's loads pins the whole `+0x7C`
+block, so the template's three trailing "mode words" are named rather than
+opaque:
+
+| Block offset | Template `i16` | Meaning |
+|---|---|---|
+| `+0x00` / `+0x02` / `+0x04` | `[3..=5] << 6` | current RGB, 10.6 fixed |
+| `+0x08` / `+0x0A` / `+0x0C` | `[7..=9] << 6` | target RGB, 10.6 fixed |
+| `+0x10` / `+0x12` / `+0x14` | `((end - start) << 6) / [1]` | per-frame delta |
+| `+0x18` | `[0]` (word) | fade kind |
+| `+0x1C` | `[10]` | start delay, in vsyncs |
+| `+0x1E` | `[11]` | hold after the ramp; `-1` = no hold |
+| `+0x20` | `[1]` | duration, in vsyncs |
+| `+0x22` | `[12]` | the id `FUN_80024E80` stamps, passed on as `FUN_80024EE4`'s first argument |
+
+Every countdown steps by `DAT_1F800393`, the scratchpad vsync delta, so the ramp
+is cadence-invariant in the same way the overlay sibling `801DDC20` is. The two
+families differ in how they get there: the overlay one **lerps** off the
+install-time endpoints each frame, this one **accumulates** a per-frame delta and
+clamps onto the target - so a delta whose sign disagrees with `target - current`
+never converges, and the clamp is what bounds it.
+
+Two flags come out of the countdowns rather than out of the colour: duration
+expiry sets `actor[+0x62] |= 0x100` and keeps drawing, hold expiry sets
+`actor[+0x10] |= 8` (the actor-list "finished" bit) and stops. A hold of `-1`
+skips the second entirely, which is why the battle-escape template's `[11]` is
+`-1`.
+
+Port: `legaia_engine_core::fade_ramp`. `see ghidra/scripts/funcs/80020c14.txt`,
+`80025000.txt`, `80020b00.txt`.
 
 ### `801DDC20`
 

@@ -51,13 +51,13 @@ The audit does **not** simply re-run the classifier over an absorbed row: that
 re-derives the row's own evidence and reads agreement as disagreement.
 [What an `--audit-ignored` re-raise means](#what-an---audit-ignored-re-raise-means)
 gives the test order and the two noise shapes it exists to suppress, and
-[the two kinds of ignore claim](#the-two-kinds-of-ignore-claim) says which rows
+[the three kinds of ignore claim](#the-three-kinds-of-ignore-claim) says which rows
 it can speak about at all.
 
-### The two kinds of ignore claim
+### The three kinds of ignore claim
 
 The `worklist_*` prefix on an ignore-list section is not cosmetic, and the audit's
-scope is exactly that prefix. Two different assertions live in
+scope is exactly that prefix. Three different assertions live in
 [`port-catalog-ignore.toml`](port-catalog.md), and only one of them is a claim
 the images can settle:
 
@@ -66,7 +66,9 @@ the images can settle:
   `worklist_duplicate`, `worklist_misbased_print`, `worklist_uncertain`;
 - a **scope** claim - *the routine is real, and the clean-room port covers it
   another way*: every unprefixed section, from `libgte` and `bios` through
-  `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`.
+  `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`;
+- a **reachability** claim - *the routine is real, the port does not cover it,
+  and retail never reaches it*: the `unreferenced` section, described below.
 
 The [entry-boundary test](#the-entry-boundary-test) refutes an address claim by
 finding a routine where the row says there is none. Against a scope claim it has
@@ -83,6 +85,59 @@ mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
 it. A **leaf** has no prologue, so a missing prologue is not a missing function -
 `FUN_801CF5D0` is a frameless eight-field record copy and is still the menu
 overlay's first routine.
+
+### The reachability claim
+
+A row in `unreferenced` says the opposite of an address claim: a routine *does*
+begin here, and nothing on the disc ever gets to it. That takes a different
+instrument again - the entry-boundary test only looks at the VA itself, and a
+call-graph sweep only looks for `jal`. The evidence is a whole-disc sweep for
+every reference form at once, over `SCUS_942.54`, the based overlay images and
+the raw bytes of every extracted `PROT.DAT` entry
+([`address-reference-scan.md`](address-reference-scan.md)).
+
+Its relation to the other two kinds is worth stating, because a row can only be
+one of them:
+
+| Kind | Says | Refuted by |
+|---|---|---|
+| address | no routine begins here | disassembling a routine at the VA |
+| scope | the port covers this another way | re-reading the body against the engine's implementation |
+| reachability | nothing on the disc reaches this entry | finding any reference form for the address |
+
+The reachability row is the one to prefer over a port. A port of a routine the
+runtime cannot enter is inert by construction, so it lands in the audit's
+disclosed-inert section and stays there forever - a wiring worklist entry no
+wiring pass can close. Settling it as a documented negative keeps the worklist
+honest in both directions.
+
+### A word hit separates a template-seated entry from an interior label
+
+The reachability sweep and the entry-boundary test answer different questions,
+and one scan shape invites reading the first as an answer to the second. An
+address with **no** `jal`, **no** `j`, **no** `lui`+`addiu` and only branches
+looks like an intra-function label, because a label is reached exactly that
+way. But a routine seated on a
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+scans almost identically: nothing calls it either - the actor pool copies its
+address into `actor[+0xC]` and the frame walk `jalr`s that - so the only
+evidence it leaves is the one word in the template.
+
+That single aligned word is the whole difference, and it is decisive in both
+directions: a label carries no copy of its own address anywhere, so a word hit
+at the VA rules `INTERIOR` out. `801D2298` (field ledge-hop advance) and
+`801D4098` (dance clip-driver gate) are the worked cases - each has exactly
+one word hit, in its own image, immediately after the template's `ffff0000`
+model-selector lead, and each is `REAL`. The scan's own triage calls both hits
+`incidental-code`, because the templates sit inside code
+([`address-reference-scan.md`](address-reference-scan.md#a-template-inside-a-code-region-reads-as-incidental-code)),
+so the class name is not the verdict - the neighbouring words are.
+
+Both directions of this cost something. Filing a template-seated entry as
+`INTERIOR` deletes a real port site; filing a label as `REAL` because the
+branches look like traffic mints a phantom row. Read the words at the hit.
+
+## The classifier's output
 
 The generated CSV holds addresses, class names and one-line reasons. It carries
 no dump text, so it is safe to commit; the dumps themselves are Sony-derived and

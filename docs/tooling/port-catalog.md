@@ -379,6 +379,14 @@ tool treats every entry the same way. Provenance for each entry lives in
 [`docs/reference/functions.md`](../reference/functions.md) and the audio /
 save-screen subsystem docs.
 
+One section is not PsyQ infrastructure and asserts something else entirely.
+`unreferenced` holds **retail-unreachable entry points**: real routines that
+nothing on the disc reaches, in any reference form, so a port of one could only
+be inert. What was scanned and why the row is preferred over code is on
+[`address-reference-scan.md`](address-reference-scan.md); how it differs from
+the other two claim kinds a row can make is in
+[`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim).
+
 Default behaviour:
 
 - `--missing-ports` excludes ignored entries. The summary line breaks the
@@ -391,6 +399,28 @@ one-line reason that names the PsyQ function and (where known) the BIOS
 vector. Keep the reason factual - it shows up in catalog drill-down output.
 Provenance citations belong in `docs/reference/functions.md`, not in the TOML
 reason field.
+
+### Settling a row whose blocker is "no caller"
+
+A worklist row often stalls on "what consumes this?", and the answer decides
+whether the row is work at all. Two of the ways this engine reaches code are
+invisible to a call-graph sweep - a function-pointer table or actor-template
+word, and a `lui`+`addiu` pair Ghidra's reference manager does not resolve - so
+"no `jal` targets it" is not yet a finding. Run the row's address through
+[`address-reference-scan.md`](address-reference-scan.md) before either porting
+or shelving it. It has three useful outcomes:
+
+- **A table or template word.** The consumer is whatever spawns or dispatches
+  through that record; the row is real work, and the doc gains a provenance
+  citation.
+- **Nothing, anywhere.** The address is linked but unreached, and porting it
+  can only add an inert row. Document the negative
+  ([`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)
+  is the worked example) and file the address under the ignore list's
+  `unreferenced` section, rather than closing the row with code.
+- **Branch sites but no call sites.** The address is an intra-function label,
+  not an entry - a `classify-worklist.py` `INTERIOR` row that the scan
+  confirms from the bytes.
 
 ## Open-work dashboard
 
@@ -446,6 +476,13 @@ The point of the table is to make the cross-cuts cheap to read:
   provenance link, not a correctness proof. Tests + retail-comparison still
   do that job - and `--live` answers only whether the code is *reached*, not
   whether it is right.
+- **A `#[cfg(test)]` helper is still a caller node.** Test functions are
+  excluded from a module anchor's *scope* but not from the call graph's
+  *callers*, so a helper with a common name (`step`, `tables`, `new`) collects
+  every same-named edge in the tree and marks its own module live - which
+  reads as a stale `NOT WIRED:` tag on a module nothing calls. Give test
+  helpers distinctive names; a row in the stale-tag section whose only path
+  runs through a test helper is this, not a wiring gap.
 - **The ignore-list is curated, not exhaustive.** Newly-dumped PsyQ helpers
   don't auto-classify - `--missing-ports` will surface them until they're
   explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte

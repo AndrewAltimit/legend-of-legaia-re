@@ -19,6 +19,7 @@ use legaia_asset::dance_cast::{self, DanceCast, DanceClip};
 use legaia_asset::field_objects::FLAG_PLACED;
 use legaia_asset::player_anm::PlayerAnmBundle;
 use legaia_asset::{character_pack, field_char_textures};
+use legaia_engine_core::dance::dance_hit_sting_voices;
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
@@ -1057,9 +1058,14 @@ impl LegaiaMinigames {
     }
 
     /// One layer of a good-step **hit sting**. Retail keys these directly
-    /// (`FUN_801d3d78`, bypassing the cue ring): a step picks `r = rand() % 3`
-    /// and keys VAB program 1 tones `2r` (layer 0) and `2r + 1` (layer 1)
-    /// together at note `0x3C + r`. Mono i16 PCM; empty when absent.
+    /// (`FUN_801d3d78`, bypassing the cue ring): two voices together, at the
+    /// tones and note [`dance_hit_sting_voices`] resolves `r` to. Mono i16 PCM;
+    /// empty when the bank does not hold that tone.
+    ///
+    /// The retail `r` space is not just the tier-2 award's `rand() % 3`
+    /// (`legaia_engine_core::dance::STING_RANDOM_VARIANTS`) - the three
+    /// groovy-move tiers all key `STING_TIER_VARIANT` as well, so `r = 5` is a
+    /// real sting and this accepts it.
     pub fn dance_sting_pcm(&self, r: u8, layer: u8) -> Vec<i16> {
         self.dance_sting(r, layer)
             .map(|(pcm, _)| pcm)
@@ -1113,24 +1119,32 @@ impl LegaiaMinigames {
 }
 
 impl LegaiaMinigames {
-    /// Decode one sting layer: program 1, tone `2r + layer`, keyed at note
-    /// `0x3C + r` against the tone's own centre note.
+    /// Decode one sting layer, keyed against the tone's own centre note.
+    ///
+    /// The `(program, tone, note)` triple is [`dance_hit_sting_voices`]'s, not
+    /// this page's: it is the ported `FUN_801d3d78`, so the bank index below is
+    /// a read of the retail `program` argument rather than a literal `1` that
+    /// happens to agree, and the tone / note arithmetic lives in one place.
     fn dance_sting(&self, r: u8, layer: u8) -> Option<(Vec<i16>, u32)> {
-        if r > 2 || layer > 1 {
+        if layer > 1 {
             return None;
         }
+        let voice = *dance_hit_sting_voices(r as u16).get(layer as usize)?;
         let (report, bytes) = self
             .dance_pres
             .as_ref()
             .and_then(|p| p.sting_vab.as_ref())?;
-        let atr = report.tones.get(1)?.get((r * 2 + layer) as usize)?;
+        let atr = report
+            .tones
+            .get(voice.program as usize)?
+            .get(usize::try_from(voice.tone).ok()?)?;
         if atr.vag <= 0 {
             return None;
         }
         let span = report.vag_samples.get(atr.vag as usize - 1)?;
         let body = bytes.get(span.byte_offset..span.byte_offset + span.size)?;
         let pcm = legaia_vab::decode_vag_aligned(body).ok()?;
-        let semitones = (0x3C + r) as f64 - atr.center as f64;
+        let semitones = voice.note as f64 - atr.center as f64;
         let rate = (44100.0 * 2f64.powf(semitones / 12.0)).round();
         Some((pcm, rate.clamp(4000.0, 96_000.0) as u32))
     }

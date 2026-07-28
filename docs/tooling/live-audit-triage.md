@@ -182,6 +182,22 @@ A related near-miss, left alone: `// PARTLY WIRED:` (used on `select_owned_rod`)
 matches neither regex. It is moot for that anchor, which the corrected audit
 resolves live, but a second use of the spelling would go unrecognised.
 
+**The corollary, which bites when a module later gets partly wired.** A
+module-level marker declares *every* port site in the file inert - that is the
+point of it, and it is right for a wholly-inert module such as `mdec::st_ring`,
+which discloses once and then tags seven addresses inside function bodies. It is
+wrong the moment the module becomes **mixed**. Wiring the player ledge hop made
+three kernels in `field_ledge_hop_arc.rs` live while two spawners stayed inert;
+the module heading kept claiming the whole file, so the audit reported the three
+live kernels as stale-tagged - a clean measurement regression caused by correct
+work, with nothing wrong in the tool.
+
+The fix belongs in the source, not the regex: a mixed module must not carry the
+module-level marker at all. Give the inert members their own per-function tags
+and retitle the section so it documents wiring status without asserting a
+blanket disclosure. Widening the regex would not help, and narrowing it would
+break the wholly-inert case it exists for.
+
 ### An import alias erases every `Alias::assoc_fn` edge under it
 
 `build_rust_graph` resolves a `Qual::name` call site by the qualifier **as
@@ -305,7 +321,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | WIRE |
 | `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
@@ -489,9 +505,15 @@ anchor. Wrap to the file's comment width.
   per-character item-menu ordering and greying. The engine's item menu has no
   favor pass, so there is no ordering for the score to affect.
 - **`classify_card_directory` / `card_directory_scan` / `card_free_blocks`** -
-  the engine's saves are LGSF files on disk. Nothing mounts a raw PSX
-  memory-card image at runtime, so no 15-frame card directory exists to walk.
-  Wiring these needs a real card-image backend behind the save-slot session.
+  the reason recorded here (no runtime card-image backend) **no longer
+  holds** and the source no longer says it. The browser card rack
+  (`web-viewer::cards`) mounts raw card images and runs the scan/budget
+  pair. What blocks the classifier is an **index-space mismatch**: the rack's
+  grid is keyed by physical block and the classifier keys by the filename's
+  save index, and nothing makes the two agree on a player's card. Adopting
+  it means re-keying the grid. Read the tags in `save_select.rs`, not this
+  bullet, for the current form - it is kept only to record that the earlier
+  reason was outgrown rather than wrong at the time.
 - **`list_append_u16` / `alloc_list_head` / `alloc_and_append` / `free`** - the
   module doc already carries the full reason under its `# NOT WIRED` heading;
   the audit compares per anchor, so each function needs its own line. Short
@@ -537,12 +559,27 @@ file is the whole of `FUN_801F0348`, is wired through
 inlines the `<< 7` + clamp rather than calling the helper. Deleting the helper
 loses no coverage and costs the address no anchor.
 
-**`build_camera_angle_tween`** (`801d829c`) is `DISCLOSE`. The builder emits a
-9-record `{step_count, endpoint}` step table that retail's per-frame walker then
-advances; the engine frames the battle camera by a per-action snap at action
-seed and has no per-frame angle walker, and the routine that arms retail's
-(`FUN_80021248`) is documented but unported. Nothing exists to consume a step
-table.
+**`build_camera_angle_tween`** (`801d829c`) was recorded here twice, wrongly
+both times, and is now **`WIRE`, landed**. The first reason read "the engine has
+no per-frame angle walker"; the engine has one, `engine-shell`'s
+`window/battle_cam.rs` `BattleCamera` / `Glide`. The second said adopting the
+table would change that walker's arithmetic, because the builder emits step
+*counts* where the walker uses rates.
+
+It does not emit step counts. The arming routine `FUN_80021248` signs each
+record's first halfword by comparing the endpoint against the live global
+(`0x80021378`, `0x800213D8`), which is only meaningful for an **increment** - so
+the builder's fourth argument is the tween's duration and its output is the
+per-frame increment. That makes retail's law arrive-together with one shared
+duration, which is exactly what `Glide::linear` was recomputing. It now builds
+its rate table from the port, and takes the 12-bit shortest-arc yaw and the TR.z
+projection prescale from it as well. What is still absent is only the
+*producer*: the walker's endpoints come from the traced phase framings rather
+than from retail's arming path.
+
+The lesson generalises: `delta / param` reads as either "how many steps" or
+"how far per step", and a kernel dumped on its own cannot tell you which. The
+consumer can.
 
 **`apply_shake`** (`801d9d30`) is `DISCLOSE`. It previously read `WIRE` on
 `BattleActionHost::screen_shake` as the half-built call site; that verdict is
@@ -567,6 +604,108 @@ accumulators. Wiring it means modelling that opcode first.
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.
 
+## The battle cluster: what a re-read of an already-disclosed block finds
+
+The `engine-vm` battle band (the `battle_action/` leaves, the intro styles,
+the camera and cursor kernels, the cast dispatchers) sits in the audit's
+*disclosed* section, so it never reached the table above. Re-reading it against
+the dumps settles the block as disclosure rather than wiring - and turns up
+six disclosures that named the wrong blocker. They are recorded because each
+is the failure the preamble warns about: a reason that reads correct, that the
+next audit agrees with, and that sends the reader looking for a port that
+already exists.
+
+| Anchor | The clause that was wrong | What holds instead |
+|---|---|---|
+| `801dceac` `target_group_aim` | `bearing_12bit` "is itself unwired for want of the arctan LUT" | It is live on every enemy-cursor step, over `approx_arctan_lut`. Both are wired now - see below. |
+| `80046a20` `gauge_colors` | the HUD's bar colour is "a constant of the widget" | It is a per-frame index, from the readout-tint siblings. |
+| `801d829c` `build_camera_angle_tween` | "the engine has no walker" | The native battle camera is one - see above. |
+| `801f0450` (arts auto-combo) | the caller is the unported flow SM `FUN_801D388C` | The caller is the action SM's own `Begin` arm. |
+| `801dba04` / `801db81c` / `801da34c` | "`FUN_801D0748` is not ported" | Its state space is `engine-core::battle_flow`, and it is live. |
+| `801e22c8` `expand_cue_group` | neither cue table "is extracted by a parser" | Both are, as `move_power::EffectAuxTables`. The blocker is the caller - see below. |
+
+Three shapes produced all six, and each is worth recognising on sight. The
+cue-table row is a fourth, milder one: a reason that quantifies over *both*
+inputs when only one is absent. Naming the two separately is what turns it
+into a one-region parser extension rather than an open-ended data hunt.
+
+**A kernel with a substitute input reads as blocked by the input it does not
+use.** `bearing_12bit` takes its arctan table as a parameter precisely so a
+host without the disc table can pass a computed one, and `bearing_12bit_approx`
+is that host-facing form. A disclosure written from the retail data dependency
+rather than from the port's signature will miss it every time.
+
+**The engine can hold the same retail decision twice, under two addresses.**
+`FUN_80046A20` picks a gauge-primitive colour; `FUN_800349EC` picks the
+readout-text colour. They share a code space and a threshold shape, so the
+presence of one reads as the absence of the whole idea. The surviving gap was
+the drawn bar, not the selection - a much narrower thing than the old reason
+claimed.
+
+**An address-keyed catalog cannot separate VA-aliased twins.** `801d388c` is
+reported ported and live; that row is the Muscle Dome overlay's routine at the
+same VA, and the battle flow SM really is unported - so here the *disclosure*
+was right and the catalog is the trap. One address up, `801d0748` is the
+opposite: the battle command SM genuinely is ported, and three disclosures said
+it was not. Read the crate and the file, never the flag, before writing either
+sentence.
+
+### The one accessor, and what it did and did not unblock
+
+The `WIRE` the block wanted was one host accessor:
+`BattleActionHost::actor_position(slot) -> Option<(i16, i16)>`, the actor
+`+0x34`/`+0x38` seat, implemented on `BattleHostImpl` off the world actors'
+move state. It landed, and with it the whole facing block at
+`0x801E4334..0x801E43A4` in `magic_cast_begin` - both the single-target arm and
+the `target_group_aim` group arm, which `FUN_801E7320`'s class-`7` / class-`8`
+target codes reach in production.
+
+Two things surfaced only once the kernel had a caller, which is the standing
+argument for wiring over disclosing:
+
+- `FUN_801DCEAC`'s extent output is **floored** at `0x400`, not capped at it
+  (`slti` / `beq` at `0x801DD094`). The port had the compare backwards, and no
+  existing test could see it because every synthetic group was narrower than
+  the bound.
+- the group walk's monster liveness gate reads the actor's `+0x4` prim word,
+  which the port leaves at its default - so a faithful transcription would have
+  produced a kernel that always answered `None`. The summon-fade sweep at
+  `0x801E4B50` zeroes `+0x4` and writes `+0x21C = 0xFF` in the next two
+  instructions, so the port reads the `+0x21C` twin.
+
+The same block turned up one more instance of the shape this page keeps
+finding - **the engine holding a retail decision twice**. The action SM's
+`Begin` arm seeds its turn cursor from the formation-advantage byte
+`ctx[+0x290]` and then latches it, and the port does both; but nothing writes
+`BattleActionCtx::formation_advantage` in production, because `engine-core`
+rolls, seeds and latches its *own* `World::battle_formation` copy at battle
+entry before the SM's first step. So the seed's `0` arm is what runs and its
+other two arms are unreachable. Closing that is a one-line mirror at battle
+entry plus a decision about which of the two latch sites survives - both in
+`crates/engine-core/src/world/`, so it is a sibling lane's edit.
+
+**`approach_distance` was not unblocked**, and the claim here that it would be
+is withdrawn. Its blocker is not geometry: it clamps a *requested* step length,
+and the port's attack band (`attack_advance` / `attack_short_step`) polls
+`range_check` rather than requesting a distance, so no call site holds a value
+for it to clamp. `FUN_801DF570` is also not called from the action SM at all -
+its caller is `FUN_801DEA50`.
+
+### `expand_cue_group`: the table was not the prerequisite
+
+Corrected on the same principle. The row above says only the group table was
+missing; it is parsed now (`EffectAuxTables` reads `0x801F6470` alongside the
+two effect tables, and `battle_cue_group_real.rs` composes the pair off the real
+overlay). That did **not** produce a caller. Retail's only caller is the
+damage-application primitive `FUN_800402F4`, which reaches `jal 0x801e22c8` from
+eleven branches and picks the group id per branch - eight literals, two
+computed, and exactly one forwarding its own `param_2`. The port models
+`FUN_800402F4` as
+the `apply_damage` host hook, whose parameters are the primitive's arguments and
+not its per-branch choices, so no honest single call site exists until that
+dispatch is ported. A disclosure that names a table when the blocker is a
+dispatch is the same error this page records for the panel painters.
+
 ## Known false positives the correction introduces
 
 Both are the accepted over-approximation direction, and both are named here
@@ -587,6 +726,94 @@ in the workspace, so it was always audit cause 4 - anchor granularity - and not
 a wired port; the receiver gate has since cleared it, and
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)
 records the collision it resolved through.
+
+## The menu / save / memory-card cluster
+
+Forty-eight inert anchors across `card_bu_io.rs`, `card_flow.rs`,
+`save_select.rs`, `save_subscreen.rs`, `pause_screens.rs`,
+`menu_open_sequence.rs`, `menu_list_rows.rs`, `spell_menu.rs`,
+`spell_party_broadcast.rs`, `target_picker.rs`, `equipment.rs`,
+`panel_backread_loader.rs`, `menu_actor_seed.rs` and `title_prim.rs`. None is
+`FALSE INERT` (a symbol-by-symbol sweep of the host crates returns zero
+non-doc references for all forty-eight). Exactly one took a `WIRE`; the rest
+settle `DISCLOSE`, and that outcome is worth stating rather than leaving as
+an absence, because one of them looks wireable and is not:
+
+- **`spell_targets_group`** would route a group spell past the target picker,
+  and the applier on the other side heals exactly one roster member - so
+  wiring it alone makes group spells heal nobody.
+
+**`root_menu_confirm_route` is the `WIRE`.** The first read of it stopped at
+"returns a retail sub-screen id the engine has no space for, so a caller
+keeps only the buzz/advance bit and drops the payload" - and dropping a
+payload *is* the usual tell. It was the wrong tell here: the seven ids are
+distinct, so a caller can resolve the confirmed row **through** the id rather
+than beside it, which is what `FieldMenuSession` now does. The gate inputs
+turned out to be the real question, and only one of the two was missing
+anything (below).
+
+The card cluster is the `world_map_panel_actors` shape again: ten anchors
+whose per-anchor lines were verbatim identical. They are one gap - an
+asynchronous card backend behind `save_select::CardIoMachine` - and the
+module now says so once, with the per-anchor lines citing it.
+
+### What the cluster's re-read changed
+
+Reading these disclosures against the disassembly overturned a claim that had
+propagated into two subsystem docs and two source files: the pause root's
+gated rows were labelled Save-then-Load, and they are **Load-then-Save**. The
+menu overlay's own rodata pool settles it - `FUN_801CFD68` hands the string
+primitive `0x801CEA00` for row 5 and `0x801CEA08` for row 6, and those cells
+hold `@Load` and `@Save`. Three consequences, all now corrected in
+[`save-screen.md`](../subsystems/save-screen.md):
+
+| Was | Is |
+|---|---|
+| row 6 gated on `_DAT_800846A8` | gated on `_DAT_8007B6A8`, the per-scene save-allow flag |
+| `0x18` saves, `0x19` loads | `0x18` loads, `0x19` saves |
+| entry-context byte `0x01` is a load | it is a field script's save point |
+
+The gate address was a plain arithmetic slip (`lui 0x8008` + `lbu -0x4958` is
+`0x8007B6A8`; `0x800846A8` is the escape counter). The direction was not - it
+was a reading of the op selector that nothing had cross-checked against the
+labels, and the labels are the cheaper evidence.
+
+One row's disclosure got *better* out of this rather than merely different.
+The Save gate is the MAN header bit
+[`ManHeader::low_flag`](../formats/encounter.md), which `legaia-asset` already
+parses and the engine then drops - so "the engine has no analogue" was wrong
+and the real prerequisite is two named edits: carry the flag through scene
+load onto the world, then hand it to `FieldMenuSession` at open. Both are
+made, so the anchor is live; see
+[`field-menu.md`](../subsystems/field-menu.md#top-level-pause-menu).
+
+The two gate inputs did not turn out to be the same kind of gap, which is
+the transferable part. The save flag was a **carry** gap - the datum existed,
+parsed, and simply had no route to its consumer, so the fix was plumbing and
+the gate now fires on real scenes. The entry-context kind is a **model** gap:
+retail keeps one global pointer whose first byte is the armed op-`0x49`
+sub-op, and the port deliberately replaced that global with a per-context
+tagged park, so no single place holds the byte to read. Its consumer is live
+and honest (it reads what the world can answer) but cannot reach the blocking
+kind until the op-`0x49` arm records its sub-op. A disclosure that lumps the
+two together as "both inputs are missing" reads as one piece of work and is
+two.
+
+### A latent duplicate-free-function-name landmine, defused
+
+`engine-core`'s `menu_list_rows::description_source` and `engine-ui`'s
+`ui_menu_window_painters::description_source` were two free functions of one
+name over different id spaces. A free-function edge is never receiver-gated,
+so the painter's first *non-test* call would have made the `engine-core`
+kernel read live and converted its correct disclosure into a false accusation
+in the audit's first section. Nothing had fired yet because the painter's
+copy is called only from its own tests. The `engine-core` copy is now
+`row_description_source`, per the recipe in
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md#the-fix-each-mechanism-takes).
+
+Worth generalising: a name collision is a defect *before* it produces a row,
+and the cheapest time to find one is while reading a disclosure, not after
+the audit accuses it.
 
 ## Not on this page: the world-map panel cluster
 
@@ -637,6 +864,111 @@ old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
 - neither table holds it - and it sits in the resident slot-B band whose widget
 descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
 to exist first is a base-confirmed dump of the image that really owns that VA.
+
+### What still chooses which painter runs
+
+The painters' `WIRE` is about the dispatch, and the dispatch is real:
+`World::tick_submode_screen` calls `HubPainter::for_window` on whatever record
+index the open screen carries. What picks that index is a separate question,
+and the answer is narrower than the row above reads.
+
+Retail decides it through a panel **descriptor**: a state machine installs one
+(`FUN_801E9B3C`) and the descriptor names the record. The port records the
+install as `HubAction::InstallPanel(<descriptor VA>)` and
+`World::apply_submode_actions` ignores that action, so the index comes from the
+opener's argument instead. `World::open_coin_counter` passes record `1`; the
+field-VM op-`0x49` path (`op49_menu_request`) passes `None` for every sub-op it
+does not resolve elsewhere. So record `1` is the only index a production frame
+reaches, and the entry list's record `3` paints when a caller names it.
+
+The descriptors the ported state machines install (`0x801F3340`, `0x801F3360`,
+`0x801F3370`, `0x801F3294`, `0x801F3388`, `0x801F2A88`) sit outside the
+`0x801F2C0C` panel-window record table, so the descriptor -> record mapping is a
+second format, and it is unread. Reading it is what would let a screen select
+its own painter the way retail does.
+
+## The field / motion / camera block
+
+Another *disclosed*-section cluster, and the one where the disclosures were
+least trustworthy. Every anchor here stayed inert, so the audit's own verdict
+never moved - but a majority of the reasons blamed something the tree already
+contains, which is the failure this page exists to catch. Sorted by what the
+old reason got wrong.
+
+**Reasons that named an existing symbol as missing.**
+
+| Anchor | The old reason claimed | What is actually there |
+|---|---|---|
+| `post_touch` (`8003d038`) | the collision path posts no touches and cannot identify the actor it hit | `World::field_prop_dir_probe` reports the touched placement; `World::check_field_walk_touch` posts from the locomotion step |
+| `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
+| `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
+| `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::submode_context`, which is read every frame |
+| `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
+| `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
+| `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
+| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards |
+| `step_scene_program` (`801d4a60`) | `_DAT_8007BC20` has no counterpart | modelled by four ports; live source `AudioOut::xa_active()` |
+
+Each reason is now rewritten to name the prerequisite that does hold. The
+pattern across them is one shape: **the reason described the subsystem the
+routine came from rather than the thing the port is waiting on.** Where a
+subsystem is largely present, that phrasing lands on a piece of it that exists,
+and the tag reads as correct forever after.
+
+**Reasons that named a lane boundary.** Three tags gave "wiring would edit
+`engine-core/src/world/**`, owned elsewhere" (or the equivalent) as the
+blocker. A file-ownership statement is not a structural fact, it stops being
+true the moment the wave lands, and it tells the next pass nothing. Those are
+replaced by the storage or dispatch prerequisite in each case.
+
+**One reason that restated the audit.** `expand_battle_id`'s "nothing
+dispatches to it yet" is the form the preamble rules out. The real position is
+sharper and partly *negative*: retail's caller is the battle-init formation
+resolve `FUN_80055B6C`, which the engine has no analogue of (it resolves a
+typed `FormationDef`, so no formation cell can be found empty), and the
+non-zero-id arm reads `DAT_8007b7fc`, a global with **no writer anywhere in
+retail**. Wiring that arm means adding a debug hook, not finding a caller.
+
+**One row is not a wiring question at all.** `spawn_arc_helper`
+(`801d5780`) is inert in the port because `FUN_801D5780` is inert in *retail*:
+it has no `jal`, no `j` and no literal address word anywhere in `SCUS_942.54`,
+the base-mapped overlay images, or the extracted PROT entries. Its three
+siblings in the same module are the controls that make that a real zero -
+`FUN_801D2404` and `FUN_801D25EC` are each found by `jal`, and `FUN_801D2298`
+as a table word. The bytes are a complete routine (field overlay `0897_xxx_dat`
+at file `0x6F68`, `addiu sp, sp, -0x28`), so this is shipped dead code, not a
+mis-read address.
+
+A `NOT WIRED:` reason that names a consumer the engine has yet to grow is wrong
+for this shape, because it implies wiring could close the row and nothing can.
+Two traps sit on the re-check: `ghidra/scripts/funcs/801d5780.txt` is a
+wrong-image import whose header resolves `entry=801d56fc`, and the VA is
+aliased - in the cutscene images it is a different function's entry. Read the
+field-overlay bytes, not a dump.
+
+**The one row worth a wire - and what wiring it turned up.** The
+`field_ledge_hop_arc` anchors sat behind a real gap rather than a missing
+reason: `World::try_field_ledge_hop` was live and classified an authored ledge
+correctly, posted a `FieldLedgeHop`, and **nothing read it** -
+`step_field_vertical` cleared the record at the top of the next frame. The port
+had no ledge hop at all, a player-visible absence rather than a cosmetic one.
+
+The named prerequisite (promote the record to a session with cursors that
+outlive the frame) was right but incomplete, and the incompleteness is the
+lesson: `advance_hop_session` (`FUN_801d2298`) **writes no position**. It is
+the tick of the *paired* helper, the phase / SFX / movement-lock machine. The
+record that moves the player is the arc helper, ticked by `FUN_801d5c08`,
+which was not in the corpus at all. Neither tick has a caller, so no
+call-graph question could have surfaced it; what does is the **template word**
+- an actor template's `+0x08` is its tick pointer, and reading the three
+templates the setup allocates from names all three ticks in one step. A row
+whose port is "a clip on a spawned pool actor" should be read that way before
+its prerequisite is called small.
+
+Both ticks now run from `World::step_field_vertical`, and the hop is covered
+end to end (`field_ledge_hop_wired.rs` synthetic, `field_ledge_hop_disc.rs`
+against a real scene's authored geometry).
 
 ## The dance / fishing minigame block
 
@@ -689,6 +1021,281 @@ walk heightfield, so `dance_face_rig` and `walk_grid_overhead` want a call in
 wants `PondInput` to carry the retail pressed-pad word instead of a
 pre-counted `edge_bonus`, which is a signature change its browser caller has
 to move with.
+
+## Not on this page either: the render / GTE cluster
+
+`engine-render`'s disclosed-inert rows - the billboard projector, the GTE
+axis-rotation builders and view-rotation build, the clip / packet-colour leaf
+kernels, and the actor-bind / actor-cull / afterimage / battle-tick /
+battle-sideband / mode-transition passes - were swept the same three ways as
+the rows above and came back **honest**: zero host-crate references for every
+anchor symbol, and no `FALSE INERT`. They are recorded here only for what the
+sweep found *inside* the disclosures, because both findings are shapes this
+page exists to name.
+
+**A disclosure can name the wrong level.** The three `GteMat3::rot_*` builders
+were disclosed as "GTE-oracle-only", i.e. as having no consumer but the tests.
+They have one: `camera_view_rotation`, the port of retail's own composition
+pass `FUN_8001CF50`, which sits three lines below them in the same file and is
+itself inert. Naming the tests as the blocker points a reader at coverage;
+naming the composition pass points at the camera that has to exist first.
+
+**"Has no source" can mean "has an inert producer".** The afterimage streak's
+half-width was disclosed as a word `engine-core` "does not model". It does:
+both of the streak's projection inputs are battle-context words
+(`ctx[+0x1144]`, `ctx[+0x6C6]`) written by `FUN_801DEA50`, which is ported as
+`engine-core::action_effect_script` and carries its own `NOT WIRED` note. When
+a disclosure says a value has no source, check whether the retail *writer* is
+already ported and inert - that turns an open-ended reason into a named one.
+
+That row said "the prerequisite is that module's caller". **It is not** - see
+[the infrastructure cluster](#the-infrastructure--leaf-kernel-cluster) below,
+which measured `FUN_801DEA50`'s references: the caller is `FUN_80047430`, it
+is ported, and it is live. What the streak is waiting on is the same thing
+`action_effect_script` is waiting on, which is the effect-script block and the
+actor cursor the stepper walks.
+
+## The infrastructure / leaf-kernel cluster
+
+Around forty-five disclosed-inert anchors spread over `engine-core`'s SCUS
+leaf kernels, overlay/CD/MDEC plumbing, mode entry, cutscene elements and
+effect ribbon; `engine-vm`'s SCUS helpers, VRAM rect copy, title primitives,
+panel backread and world-map overlay leaves; plus single anchors in `asset`,
+`mdec` and `engine-audio`. None is `FALSE INERT`. What the cluster produced
+instead is a **measurement**, because every anchor was put through the
+five-form reference scan
+([`address-reference-scan.md`](address-reference-scan.md)) before its
+disclosure was read, and the scan disagreed with the disclosure often enough
+to be the point of the exercise.
+
+### Two anchors are retail-unreachable
+
+`FUN_801CFE20` and `FUN_801CFE5C` - the FMV overlay's `DecDCTinSync` /
+`DecDCToutSync`-shaped wrappers, ported as `engine-core::mdec_dma_sync` - have
+**no reference of any form** across all 1234 images, including the raw bytes of
+every extracted PROT entry. The decode loop reaches the
+blocking waits through the DMA kick routines `FUN_801CFFDC` / `FUN_801D0070`
+instead, which call `FUN_801D0100` / `FUN_801D0198` directly. The module had
+described the wrappers as the entries "every decode step funnels its channel
+waits through"; that is now recorded the other way round, as code the game
+links and never calls. This is the bucket a wiring worklist has no slot for:
+the honest verdict is neither `WIRE` nor a prerequisite, but "no host call
+could correspond to anything".
+
+### Nine disclosures named a blocker that already exists
+
+Each of these read as a correct disclosure and would have survived another
+audit. They are listed with what the scan or a catalog lookup found instead.
+
+| Anchor | The reason said | The measurement says |
+|---|---|---|
+| `801dea50` `action_effect_script` | the caller is the battle-action SM `FUN_801E295C` | no reference of any form inside that overlay image; both `jal`s are in the anim-node tick `FUN_80047430`, ported and live |
+| `800265e8` `seed_boot_offset_table` | nothing in the corpus indexes `0x800917B0` | `FUN_8002630C` indexes it by VAB slot for `SsVabOpenHead`; the words are the per-slot SPU bases, already ported |
+| `80020224` `walk_descriptor_pairs` | MAIN_INIT is documented but not ported | MAIN_INIT is ported, as `engine-core::mode_entry_init` |
+| `80031ae4` `float_tween` | the label emitter `FUN_80032434` is not ported | it is ported; and the sibling draw pass `FUN_80031D00` named alongside it is ported **and live** |
+| `801d841c` `save_screen_spawn` | nothing wants a flash element at all | it is not a flash element - descriptor `0x800706BC` names the save/load screen driver; and `FUN_801ED308` calls it, ported and live |
+| `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
+| `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw; the marker its live port emitted is now the sub-draw itself |
+| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live |
+| `8001fa00` `init_identity_index_list` | the emitter that pops the list is unported | true, but the *seeder* is MAIN_INIT, which is ported |
+| `80035c00` `set_pair` | writing it from the menu host would invent state | the writers are three sites in the battle action resolver, not a menu |
+
+The shape worth generalising: **a disclosure is most often wrong about the
+half of the chain it did not have to look at.** Seven of the ten got the
+engine side right and the retail side wrong, and the retail side is the one a
+scan can settle mechanically.
+
+### The rest measured honest
+
+`panel_backread_loader` (one reference, the unported `FUN_80025358`),
+`morph_weight_apply` (the template word at descriptor `0x8007068C + 8`, exactly
+as disclosed), `effect_ribbon` (`FUN_8001ADA4` case 4, as disclosed),
+`cutscene::sprite_stack_pop` (`FUN_801D629C` at `0x801D648C`), `gameover_banner`
+(caller live, mode 18 never entered), `title_prim`, `overlay_loader`,
+`chunk_install`, `cd_dma`, `input`, `scene_name_sync`, `mode_entry_init`,
+`move_no_effect_guard`, `spawn_move_actor`, `scus_core_helpers`,
+`monster_archive::animation`, `new_game`, `player_anm`, `strv2_decode` and
+`seq_events`. `mode::other_warp_init_stage` is honest with a sharper edge: it
+has **no `jal` anywhere**, and its one reference is the mode-table slot
+`mode_table[24] + 0x10` at `0x800709DC`, a table `legaia_asset::mode_table`
+already parses from the disc.
+
+### One `WIRE`, since closed
+
+`save_screen_spawn` (`801d841c`), whose call site is `PanelActorHost`'s handler
+for the fade/flash actor's phase-1 arm in
+`crates/engine-core/src/world_map_panel_host.rs`. The handler saved and cleared
+the tint triple and stopped, dropping the spawn.
+
+Reading the callee before wiring it changed what the wire *is*. `FUN_801D841C`
+allocates from descriptor `0x800706BC`, whose handler word is the in-field
+save/load screen driver, and writes `1` to `+0x5C` of the **returned** actor -
+that driver's save-vs-load discriminator. So the arm is a save-screen hand-off,
+and the routine's old name was for a reading of the bytes that the descriptor
+table falsifies. Wiring it also identified the actor's parking releaser: the
+menu overlay's save-side UI, which is the only other writer of the two globals
+the two halves share. Both are written up in
+[`world-map.md`](../subsystems/world-map.md#the-save-screen-hand-off).
+
+## The minigame cluster's disclosures were mostly wrong about *what* blocked
+
+A pass over the whole minigame slice - `baka_fighter*`, `dance`, `fishing*`,
+`slot_machine`, `muscle_dome`, `minigame_floor`, `other_game_overlay` and
+`engine-ui`'s `other_game_hud` - produced **no** new `WIRE` and **no** new
+`FALSE INERT`. Every anchor really is unreached. What it did produce is six
+disclosures whose named prerequisite already existed somewhere in the tree, and
+two of those turned out to be port defects rather than wording. The corrected
+texts live on the anchors; what belongs here is the pattern, because it is the
+one a future audit will hit again.
+
+### The repeated blocker is a Rust-side quad sink, named six different ways
+
+Three subsystems each disclosed the *same* gap as a different missing artefact:
+
+| Anchor | What its reason claimed was missing | What actually exists |
+|---|---|---|
+| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
+| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_asset::dance_art` has both, run per frame by the browser dance page |
+| the `other_game_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
+
+The single real blocker under all three is that every host consumes the *parsed
+descriptor geometry* and composes its quads in JavaScript, so no Rust caller
+ever asks a ported emitter for a packet. One sink closes the block; three
+separately-worded reasons hid that.
+
+#### What the sink needs, so the next attempt does not re-derive it
+
+The sink is not a wrapper. Three things have to arrive together, and a shim
+that satisfies the audit without them is worse than the honest disclosure:
+
+- **A texel source on the native side.** The shape already exists - the play
+  window calls `minigame_fx::dance_quad_draws` every frame with the live
+  `DanceHudQuad` list - but it passes `solid_src: None`, because the dance
+  sprite page is not uploaded, so the sink materialises nothing. The fishing
+  HUD degrades the same way (`FishingHudAtlas::solid_src: None`). Adding a
+  second emitter into that path reaches a dead end, not a renderer; the
+  prerequisite is the overlay's 4bpp page resident in engine VRAM.
+- **A quad-shaped request on the web side.** The dome page's HUD is a 2D
+  canvas blitter: `muscle_hud_json` hands it sheet **rects** and the page's own
+  `blit(src, pal, u, v, w, h, dx, dy, ...)` decides the destination. Consuming
+  emitted quads means the page asking for `xy` per packet, which is a change in
+  the page's JavaScript, not only in the wasm surface.
+- **Somewhere to get the anchors.** Even with both of the above, `(x, y,
+  scale)` is not disc-derived. Every call site of the three emitters - 9 / 31 /
+  23 of them - is an immediate inside PROT 0977's own hub screens
+  (`0x801CF2C0 .. 0x801D0324`), none of which is ported. So a sink makes each
+  widget's **extent**, gouraud ramp and CLUT disc-derived while its
+  **placement** stays the page's. That is real progress and it is worth doing;
+  it is not "the retail HUD", and a wire that lands should say so.
+
+`dance_face_rig` has a second twist worth keeping: the browser resolves the rig
+from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
+already `0/2/3` - the exact output of the overlay's hard-coded slot -> rig
+remap. The two agree, so the selector is redundant rather than missing. A
+disclosure that says "no host" reads as work; "the host arrives at the same
+answer from disc data" reads as a closed question.
+
+### Three reasons were wrong about the *arithmetic*, not just the caller
+
+All three are the failure direction the preamble warns about - an unwired
+kernel's reading is never exercised, so a misreading survives:
+
+- **`other_game_overlay::cue_position`** decoded `_DAT_80084580` as a
+  party-block coordinate and returned a "positional pair". It is the
+  voice/SFX **volume** config, and the pair fills `vol_l` / `vol_r` of
+  `FUN_80065034(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - a
+  signature the SCUS cue drainer `FUN_80016B6C` pins by filling the same eight
+  slots from a cue descriptor. Now `cue_volume`, with the other six slots named.
+- **`dance_hit_sting_voices`** dropped two arguments of that same primitive
+  (`level = 2`, `program = 1`). The program is what makes the browser page's
+  `tones[1]` bank lookup correct rather than a guess - and
+  `minigame-dance.md` had recorded it correctly all along, which is the
+  reminder to grep `docs/` before re-deriving. The page now takes the whole
+  triple from the kernel, so the row is wired; see below.
+- **`minigame_slot_scene::sin_4096` / `cos_4096`** reproduced the two SCUS
+  quadrature tables with `.round()`. The retail entries are
+  `trunc(0x1000 * sin)`: truncation matches all 4096, rounding matches 2088.
+  This one is not an inert kernel - the effect VM's spawn-leg rotation and the
+  reel geometry both read it, and each multiplies the LSB by a radius - so it
+  was wrong *output*, not just a wrong reading, and the engine-vm test that
+  should have caught it was itself pinned to the port's rounded numbers rather
+  than to the disc. `engine-render::billboard::psx_sin` had the same table
+  right the whole time: two reproductions of one table, one of them wrong, and
+  nothing compared them. The disc-gated
+  `minigame_polar_trig_tables_disc` oracle now checks the reproduction entry
+  for entry instead of only checking that the disc truncates.
+
+### Three rows that looked like three gaps are one, and one is unwireable
+
+- **`polar_offset` / `walk_grid_overhead` / `water_tile_class`.** The polar
+  helper's reason said no engine code decodes its two quadrature tables. They
+  are static SCUS rodata that `FUN_80026be0` publishes at boot, `legaia_asset`
+  already names and synthesises them, and the play window materialises one. Its
+  reason was also wrong about the callers: the slot machine's reel renderer
+  reads the tables inline and never calls it, while every real caller is a
+  facing-relative offset in the fishing overlay - including the cast that
+  *creates* the lure point the other two rows wait on. One gap, three rows.
+- **`marker_template`.** Its reason said the step-layer record lookup is not
+  ported. `FUN_801D3EC0(1, x, z)` asks for sub-table kind **1** of the `.MAP`
+  region block - the same tile-trigger records `engine-core::field_regions`
+  decodes - so only the tile-actor sink is missing.
+- **`project_segment` (`801d5c2c`) cannot be wired at all.** A five-form
+  reference sweep finds zero references to it anywhere, and its band holds no
+  pointer table, so retail never executes it. Its old reason named a missing
+  line primitive, which implied a call site could exist; none can. Its 2-D
+  sibling `clip_segment_2d` *is* live retail code with one caller, so the pair
+  is asymmetric and had been disclosed as symmetric.
+
+The transferable rule: when a reason names an artefact, check the artefact
+before checking the caller. Four of these six named artefacts were already in
+the tree, two of them cited by name three files away.
+
+### Two of the six close on a shared kernel, not on the sink
+
+Neither needed the quad sink, and both are now live:
+
+- **`dance_hit_sting_voices`.** The browser dance page already held both named
+  prerequisites and only ever recomputed the triple; it now asks the kernel,
+  which is what makes the bank index a read of the retail `program` argument
+  instead of a literal that happened to agree. Reading the *caller* while
+  wiring it also corrected the subsystem doc: `FUN_801D1AF4` reaches the sting
+  from four sites, and only one passes `rand() % 3` - the three groovy-move
+  tiers each pass a literal `5`, a sting outside the random space that the
+  page's `r > 2` bound had been dropping entirely.
+- **`other_game_hud::decimal_slots`.** Its reason said "reached only through
+  `decimal_quads`", which was true and hid that the fill is *shared*:
+  `FUN_801D1308` and the fishing overlay's `FUN_801D76E0` open with the
+  identical eight-slot loop, register allocation apart. `number_digit_cells`
+  now takes its slots from here, which puts the row on the live fishing HUD
+  path on both hosts. The two retail routines diverge only after the fill -
+  one emitter and a patched descriptor column against two emitters and two pen
+  pitches - so the emit halves stay separate, and delegating the whole routine
+  would have been the silent behaviour change.
+
+The second one also removed a port-side deviation nobody needed: the fishing
+field clamped a negative value to zero. Retail needs no guard - the fill leaves
+the slots blank and the draw loop's `bltz` skips the one negative slot - so a
+negative value draws nothing, in both routines.
+
+### One more latent name collision, defused
+
+`other_game_overlay`'s free `sfx_cue` shared its name with
+`MenuInput::sfx_cue`. Nothing had fired - the free function is inert and the
+method is a method - but it is the
+[`description_source`](#a-latent-duplicate-free-function-name-landmine-defused)
+shape exactly, and the first bare `sfx_cue(..)` call anywhere would have turned
+a correct disclosure into a false accusation. Renamed to `arena_voice_cue`,
+which also says what it builds.
+
+### Two rows that read as dead code and are not
+
+`mirrored_sprite_pass` (`801d49e8`) and `editor_tick` (`801d4fc8`) have no
+`jal` anywhere, which invites the `project_segment` verdict. Both are wrong for
+it: each address is the callback word of a `0x18`-byte actor prototype in the
+Baka overlay's rodata (`0x801D7688` and `0x801D7670`, adjacent records). They
+are spawnable; what never happens for the editor is its *band* gate. "No `jal`"
+is not "unreachable" until the literal-word form has been checked too - which
+is the whole point of sweeping five reference forms rather than one.
 
 ## See also
 

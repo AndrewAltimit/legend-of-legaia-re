@@ -1065,6 +1065,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::AddMoney { delta });
     }
 
+    /// Op `0x4E` party-bank read - the read side of the two purses `add_money`
+    /// and the casino cash-out write. Sub-op 10 is party gold
+    /// (`_DAT_8008459C`), sub-op 11 the casino coin bank (`_DAT_800845A4`);
+    /// the VM normalises the 7-byte (sub-3 / sub-9) and 9-byte (sub-10 /
+    /// sub-11) encoded forms onto that pair before calling.
+    ///
+    /// Without it every scripted gold gate reads an empty purse, so each of
+    /// them takes its can't-afford branch: an inn stay, a paid tour, a train
+    /// ticket and a casino coin purchase are all one `0x4E` sub-3 compare
+    /// against a script literal (`legaia_asset::inn_costs`). That is the
+    /// whole affordability check - retail has no inn routine and no cost
+    /// table, so this read is what makes the charge reachable at all.
+    fn party_bank_value(&self, sub_op: u8) -> i32 {
+        match sub_op {
+            11 => self.world.casino_coins.min(i32::MAX as u32) as i32,
+            _ => self.world.money,
+        }
+    }
+
     fn set_item_count(&mut self, slot_byte: u8, count: u8) {
         if count == 0 {
             self.world.inventory.remove(&slot_byte);
@@ -1355,24 +1374,35 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ColorFade { op0, rgb });
     }
 
-    fn effect_anim_trigger(&mut self, _ctx: &mut FieldCtx, arg: u8) {
-        // Faithful op 0x34 sub-3: FUN_800252EC(arg + 1) installs the prescript
-        // move-VM stager record at offsets[arg + 1] and stages it at the actor
-        // position via FUN_80021B04 → the move VM. The engine spawns a one-part
-        // field scene-graph effect; the event is still surfaced for host HUD.
-        let origin = self
-            .world
-            .player_actor_slot
-            .and_then(|s| self.world.actors.get(s as usize))
-            .map(|a| {
-                [
-                    a.move_state.world_x,
-                    a.move_state.world_y,
-                    a.move_state.world_z,
-                ]
-            })
-            .unwrap_or([0, 0, 0]);
-        self.world.spawn_field_stager(arg as usize + 1, origin);
+    fn effect_anim_trigger(&mut self, ctx: &mut FieldCtx, arg: u8) {
+        // Op 0x34 sub-3 is the ambient-tree install, and retail has ONE of
+        // them. The dispatcher arm at `0x801E00B0` is
+        // `FUN_800252EC(bytecode[1] + 1, s5 + 0x14, s5 + 0x24)` where `s5` is
+        // the executing script's context (`FUN_801DE840`'s third argument,
+        // retargeted by the `0x80` cross-context prefix), and that call stages
+        // the record through `FUN_80021B04` -> the move VM. The scene-entry
+        // installer is not a second mechanism: `FUN_8003A1E4` runs this same
+        // dispatcher for one frame slice per just-spawned placement, so a
+        // load-slice install and a runtime install differ only in when the
+        // arm is reached.
+        //
+        // The port therefore routes both to `spawn_ambient_record_at` - the
+        // full `FUN_80021B04` port, with the op-`0x25` fan-out, the
+        // self-modifying bytecode writes, the mode-3 CLUT-cell integrator,
+        // the mode-4 VRAM-rect scroller and the VDF morph envelope. Routing
+        // this arm at the older `SummonScene` pool instead left a runtime
+        // install running a stripped copy of its own tree.
+        //
+        // Seat = the executing context, not the player: `s5 + 0x14` is the
+        // ctx position and `s5 + 0x24` its render banks. A placement channel
+        // seeds both from its MAN record, so a scripted install stages where
+        // its actor stands.
+        //
+        // PORT: FUN_800252EC (op 0x34 sub-3 -> stager record `arg + 1`)
+        let origin = [ctx.world_x as i16, ctx.world_y as i16, ctx.world_z as i16];
+        let rot = [ctx.field_24, ctx.field_26 as i16, ctx.field_28];
+        self.world
+            .spawn_ambient_record_at(arg as usize + 1, origin, rot);
         self.world
             .pending_field_events
             .push(FieldEvent::EffectAnimTrigger { arg });
@@ -1797,6 +1827,21 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .get(&(attacker, target))
             .copied()
             .unwrap_or(0)
+    }
+    /// Retail's `actor[+0x34]` / `actor[+0x38]` pair. The engine keeps the
+    /// battle seat on the actor's move state, where `World::enter_battle` puts
+    /// it from [`crate::battle_seats`] and the attack band's drift moves it -
+    /// the same numbers `World::battle_target_rows` hands the target picker's
+    /// angular enemy cursor.
+    ///
+    /// `None` is an unoccupied slot: the actor table holds exactly the seated
+    /// combatants, which is what makes it the engine's reading of retail's
+    /// roster-byte occupancy gate.
+    fn actor_position(&self, slot: u8) -> Option<(i16, i16)> {
+        self.world
+            .actors
+            .get(slot as usize)
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);

@@ -22,6 +22,12 @@
 # image-boundary test cannot refute a scope claim, so scope sections stay
 # unprefixed however they were arrived at. See
 # `docs/tooling/worklist-classification.md`.
+#
+# `[unreferenced]` is a third kind, and the only one whose evidence is a
+# negative over the disc rather than over one image or one crate: the routine is
+# real AND the port does not cover it another way - retail never reaches it at
+# all. Read that section's own header for what was scanned, and
+# `docs/tooling/address-reference-scan.md` for the tool and its limits.
 
 
 # PSX BIOS table dispatchers + syscall thunks. Statically linked PsyQ kernel
@@ -58,6 +64,7 @@
 "8005bbe8" = "FlushCache (BIOS A0 0x44)"
 "8005fd68" = "BIOS B0 0x5B (card init)"
 "8005fd78" = "ChangeClearRCnt (BIOS C0 0x0A)"
+"800565f8" = "InitHeap (BIOS A0 0x39) - li t2,0xA0; jr t2; li t1,0x39. One caller: the entry stub 80026c28. see ghidra/scripts/funcs/800565f8.txt"
 "8006b844" = "WaitEvent BIOS thunk (jr 0xB0, t1=0x0A)"
 "8006d7a4" = "BIOS C0 thunk (li t2,0xC0; jr t2; li t1,0x3) - ChangeThreadSubFunction"
 "8006ee14" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
@@ -90,6 +97,8 @@
 "8002b688" = "Heap block-list size summer: walks the circular block list rooted at *(gp+0x840)+0xc and sums each node's size field (+0x8), returning the total. PsyQ/libc heap bookkeeping (free/used total over the game heap); engine uses the Rust allocator. Surfaced running every field frame by the playthrough gap-set trace. see ghidra/scripts/funcs/8002b688.txt"
 "8002b3d4" = "InitHeap (PsyQ/libc): builds a circular doubly-linked free-list of param1 blocks of the given size at the heap head gp+0x840. The allocator init behind the 80017888 malloc wrapper; engine uses the Rust allocator. see ghidra/scripts/funcs/8002b3d4.txt"
 "8002b584" = "Heap free with neighbor coalescing (PsyQ/libc free-shape): returns a block to the gp+0x840 free-list, coalescing the forward + backward adjacent free neighbors. The underlying free the 80017b94 free wrapper calls; engine uses the Rust allocator. see ghidra/scripts/funcs/8002b584.txt"
+"8002a880" = "Heap bucket drain with coalescing: for bucket index a0 (bounds-checked against the count at heap[+0x4]) it walks the 12-byte-header list at heap[0] - a0*12 and, per block, unlinks it from its bucket, re-inserts it into the address-ordered free list at heap[0][+0xC] and merges it with the neighbour that begins at block + size + 0xC in either direction. Same [next, prev, size] header and same gp+0x840 heap descriptor as the already-ignored allocator 8002b468 and free 8002b584; Rust-side allocation replaces the arena wholesale. see ghidra/scripts/funcs/8002a880.txt"
+"8002b6c4" = "Heap dump diagnostic: three dev-string prints through the on-screen formatter 8001a068 (headers at 0x80010BE0 / 0x80010C00, per-block row at 0x80010BEC) reporting [start, end-1, size] for every block on the gp+0x840 heap's bucket chain (+0xC) and then on its address-ordered chain (+0x0). Reads the same headers as 8002a880 / 8002b468 / 8002b584 and writes nothing. see ghidra/scripts/funcs/8002b6c4.txt"
 
 # Added by the port-wiring wave.
 "8005de80" = "12-byte filename equality test: loads two pointers, tail-calls the BIOS strncmp thunk 80056748 (A0 0x18) with n=12 and returns `result == 0`. The ISO9660 directory-entry name match; the engine compares names with Rust str/slice equality through legaia_iso::iso9660. see ghidra/scripts/funcs/8005de..."
@@ -171,6 +180,7 @@
 "8005ec7c" = "CD stop/teardown: crit-enter + FUN_8005c2e4(0)/bee4(0), zeroes CD hw regs"
 "8005ed64" = "CD command enqueue: slot via FUN_8005c42c(&DAT_801cd210) then FUN_8005c328"
 "8005ef04" = "CD request-slot table clear: zeros word at each 0x20-stride entry of _DAT_801cadd8"
+"8005d834" = "CD transfer-completion wait with watchdog: clocks off VSync(-1) (8005fb84), gives up 0x3C0 vsync ticks after entry and 0x3C0000 poll rounds after that, and on expiry prints the last command / result / status names out of the three name-pointer tables 0x800793D0 / 0x80079450 / 0x80079688 through the dev formatter 800567a8 before re-resetting the CD registers via 8005d424; otherwise spins on DMA channel 3 CHCR (*0x800796B4) bit 0x01000000 while its argument is zero. The single caller is the CdDiskReady wrapper 8005c2c4 (already listed). The port reads the disc synchronously through legaia_iso. see ghidra/scripts/funcs/8005d834.txt"
 "8005fdb8" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+8)()"
 "8005fe18" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+0x14)(4,param)"
 "8005fe7c" = "callback vtable dispatch thunk: indirect call *(PTR_PTR_8007a860+0x10)()"
@@ -524,6 +534,23 @@
 "8006e46c" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e46c.txt"
 "8006e9c0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e9c0.txt"
 "8006ec24" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006ec24.txt"
+"8006db54" = "VAB-header table builder, the states 2 / 3 / 4 body of the +0x46 streaming state machine already listed as 8006d854: from the header cursor at ctx[+0x3c] state 2 fills the u16 array at *ctx[+0x0] (count ctx[+0xE3]) with the big-endian pair src[4] / src[5], state 3 fills the 5-byte program records at *ctx[+0x4] (count ctx[+0xE9]), and state 4 fills the 8-byte records at *ctx[+0x8] (count ctx[+0xEA]) chaining each record's +0x4 address as prev_addr + ((prev_size + 3) & 0x1FC) while copying 3 or 6 header bytes through the running cursor 0x801CE588. Each state parks at 0xFE on overrun. The clean-room VabBank parses the bank whole. see ghidra/scripts/funcs/8006db54.txt"
+"8006de30" = "SEQ/VAB cmd setter of the already-ignored 8006e06c family: ctx[+0x36] = 0x4D, ctx[+0x35] = 6, ctx[+0x2c] = ctx[+0x20]. Seven instructions. see ghidra/scripts/funcs/8006de30.txt"
+"8006de4c" = "Per-program channel-enable expander: for each of ctx[+0xE9] programs it walks six bytes of the buffer at ctx[+0x20] and the +0x2 byte of the matching 5-byte record at *ctx[+0x4], writing 0xFF or 0x00 into the six per-channel bytes at ctx[+0x5D]; ends by parking the state byte ctx[+0x46] at 0xFE. Same context struct as 8006db54 / 8006d854. see ghidra/scripts/funcs/8006de4c.txt"
+"8006dfac" = "Cmd-state dispatch of the 8006d7d0 shape: on ctx[+0x46] == 2 sets ctx[+0x36] = 0x44, ctx[+0x2c] = &ctx[0x51], ctx[+0x35] = 2; on 3 sets ctx[+0x36] = 0x4D, ctx[+0x2c] = &ctx[0x5D], ctx[+0x35] = 6. Installed as the ctx[+0x14] handler by 8006df14. see ghidra/scripts/funcs/8006dfac.txt"
+"8006df14" = "Sound-driver session open: dispatches the driver vtable slot *0x801CE574 and on a zero return sets ctx[+0x46] = 1, installs the handler pair &FUN_8006DFAC at ctx[+0x14] and &FUN_8006E000 at ctx[+0x18], latches its two arguments into ctx[+0x51] / ctx[+0x52] and records whether the first equals ctx[+0xE4] in ctx[+0x53]. see ghidra/scripts/funcs/8006df14.txt"
+"8006e000" = "Sound-driver session close, the tail of the 8006df14 pair: when ctx[+0x53] is set it reports busy while ctx[+0x46] == 2 and otherwise parks the state at 0xFE; when clear it dispatches the vtable slot *0x801CE580 and zeroes ctx[+0x46]. see ghidra/scripts/funcs/8006e000.txt"
+"8006cc34" = "Program-attribute getter over the tables 8006db54 builds: resolves the context through the vtable slot *0x801CE564, bounds the index against ctx[+0xE9], addresses the 5-byte record at *ctx[+0x4] + index*5 and returns byte 0..4 of it selected by a five-entry jump table at 0x80015E70; a negative index returns the record count instead. see ghidra/scripts/funcs/8006cc34.txt"
+"8006cd08" = "Tone-attribute getter, the 8-byte-record twin of 8006cc34: same *0x801CE564 vtable resolve, bounds the index against ctx[+0xEA], addresses *ctx[+0x8] + index*8, and returns either that record's +0x0 count or the sub-index byte at *(record[+0x4] + tone). see ghidra/scripts/funcs/8006cd08.txt"
+"8006c820" = "Pitch-to-key converter, the inverse of the already-ignored _SsPitchFromKey 80066e50 and a pure function of its three arguments - the body contains no load or store at all. Takes the highest set bit of ~pitch as the octave, then walks 0x30 quarter-tone steps (the running factor is multiplied by 4155/4096, i.e. 2^(1/48), each step) by 0x20 sub-steps until the accumulated fixed-point value passes the argument, and returns ((base_note + step + (octave - 0xC) * 12) << 8) | (base_fine + remainder). engine-audio derives voice pitch from the VAB tone record directly. see ghidra/scripts/funcs/8006c820.txt"
+"8006c948" = "SPU voice volume-pair reader: seven-instruction leaf over the same *0x8007AF40 record table as the already-ignored 8006c9a8, copying the u16 at +0x0 and +0x2 of record a0*0x10 into *a1 / *a2 and re-signing each value above 0x3FFF as value - 0x8000. see ghidra/scripts/funcs/8006c948.txt"
+"8006583c" = "Voice volume getter: bounds the voice id against the 0x18 SPU voices, reads the L/R pair through 8006c948 and divides each by 0x81 (the reciprocal multiply 0x0FE03F81 >> 35) to undo the x0x81 scale every libsnd volume setter applies. see ghidra/scripts/funcs/8006583c.txt"
+"800658ec" = "Voice volume setter, the write twin of 8006583c: bounds the id against 0x18, stores l * 0x81 and r * 0x81 into the u16 pair at 0x801CE080 + voice*0x10 and raises bits 0x3 of the per-voice flag byte at 0x801CE060 + voice - the same two libsnd BSS arrays the already-ignored reset 80065fe8 clears. see ghidra/scripts/funcs/800658ec.txt"
+"800669d8" = "Key-on with an L/R volume pair: converts the pair into libsnd's (volume, pan) form - equal values give pan 0x40, otherwise the larger side keeps its volume and the pan is 0x1000 / value or 0x7F - value - and dispatches the already-ignored note-trigger 80066308 with the fixed selector 0x21. see ghidra/scripts/funcs/800669d8.txt"
+"80066ac4" = "Key-off shim: 13 instructions whose whole body is the already-ignored voice-table scan 8006688c called with the fixed selector 0x21 and the caller's three sign-extended arguments. see ghidra/scripts/funcs/80066ac4.txt"
+"80067d80" = "Open-bank record getter: bounds-checks (sep, seq) through the already-ignored 80068b98 and returns byte +0x1 of the 0x10-stride record at *0x801CE334 + seq*0x10, or -1. Same table as the already-ignored writer 80067d0c. see ghidra/scripts/funcs/80067d80.txt"
+"80067e48" = "Open-bank record getter for byte +0x4 of the same *0x801CE334 record 80067d80 reads at +0x1; identical body modulo the field offset. see ghidra/scripts/funcs/80067e48.txt"
+"80067dd4" = "Open-bank record setter: the write twin of 80067e48 - same 80068b98 bounds check, stores its third argument into byte +0x4 of *0x801CE334 + seq*0x10 and reads it back as the return value. see ghidra/scripts/funcs/80067dd4.txt"
 
 # libspu primitives + SPU DMA transfer engine. Replaced by clean-room
 # software SPU in `engine-audio`.
@@ -608,6 +635,13 @@
 "8006d768" = "serial RX-ready spin: polls JOY_STAT bit 0x2, RX FIFO not empty. see ghidra/scripts/funcs/8006d768.txt"
 "8006ed34" = "Timer-2 timeout arm: latches the tick limit at 0x801CE80C and the Timer 2 count snapshot (0x1F801120) at 0x801CE808; the limit is sysclk/8 ticks, not a command byte. see ghidra/scripts/funcs/8006ed34.txt"
 "8006ed50" = "Timer-2 timeout poll: settle-reads the mode register (0x1F801124), unwraps the count against the target register or 0x10000, normalises to sysclk/8 (>>3 when mode bit 0x200 is clear), returns elapsed >= limit. see ghidra/scripts/funcs/8006ed50.txt"
+"8006ce78" = "Port-enable mask setter, the acquire half of the 8006d470 driver: takes a 2-bit mask (bit 0 = port 1, bit 1 = port 2), returns the previous mask reassembled from 0x8007B2C8 and 0x8007B2C4, and per port either latches the enable flag or - when that port's not-connected counter at 0x801CE550 / 0x801CE554 has reached 0x96 - re-opens it through the driver vtable slot *0x801CE580 with the context *0x8007B2A8 (+0xF0 for port 2), clearing the counter either way. Same 0x8007B2xx driver block as every row in this section. see ghidra/scripts/funcs/8006ce78.txt"
+"8006e114" = "Transfer-state handler 0 of the five-entry table at 0x8007B2E8 the state pump 8006d470 walks: sends the constant select byte 0xFE through the byte exchange 8006d4f4. Eight instructions. see ghidra/scripts/funcs/8006e114.txt"
+"8006e134" = "Transfer-state handler 1 of the 0x8007B2E8 table: sends the context command byte ctx[+0x36] through 8006d4f4, substituting 0x42 when it is zero. see ghidra/scripts/funcs/8006e134.txt"
+"8006e170" = "Transfer-state handler 2 of the 0x8007B2E8 table: sends 0 when ctx[+0x36] is set and *0x8007B2C0 otherwise, then reads the reply low nibble as the payload length, storing (nibble << 1) - or 0x20 when that is zero - into the remaining-byte counter 0x8007B2E0. see ghidra/scripts/funcs/8006e170.txt"
+"8006e1d8" = "Transfer-state handler 3 of the 0x8007B2E8 table: pulls the next byte to send from the driver vtable slot *0x801CE578 (the byte source 8006e544) and pushes it through 8006d4f4. see ghidra/scripts/funcs/8006e1d8.txt"
+"8006e208" = "Transfer-state handler 4 of the 0x8007B2E8 table - the payload loop: decrements the remaining-byte counter 0x8007B2E0 and while it is positive keeps sending bytes from *0x801CE578 through 8006d4f4; when it reaches zero it appends the byte read from the JOY_DATA pointer *0x8007B2E4 (0x1F801040) to ctx[+0x3C] at cursor ctx[+0x44]++ and calls the completion slot *0x801CE560. see ghidra/scripts/funcs/8006e208.txt"
+"8006e544" = "Transmit-byte source under handlers 3 and 4: with the cursor ctx[+0x45] - 3, returns 0 while the first six per-slot enable bytes at ctx[+0x57] are clear, otherwise the cursor-th byte of the buffer at ctx[+0x28] bounded by ctx[+0x34]; for command ctx[+0x36] == 0x4D it reads ctx[+0x2C] bounded by ctx[+0x35] and pads with 0xFF past the end. Pure serial-frame marshalling. see ghidra/scripts/funcs/8006e544.txt"
 
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
@@ -665,6 +699,8 @@
 "80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
 "8004695c" = "Request-latch setter: clears DAT_8007b6cc, arms gp[0x9d4]=1 with payload gp[0x9d0]=a0. A three-store one-shot 'arm this action' latch with no body of its own; the semantic lives in whichever consumer reads the latch. see ghidra/scripts/funcs/8004695c.txt"
 "8003d064" = "Packed 3-vector unpack leaf: reads three consecutive LE s16 from a0[0..6] into out-pointers, sign-extended. Callers (op-0x44 seat coords, cutscene/world-map overlays) inline this in Rust as 3x i16::from_le_bytes at each use site; no port artifact warranted. see ghidra/scripts/funcs/8003d064.txt"
+"8002b904" = "Master-mode reset leaf: four instructions storing the halfword 0 into the game-mode register _DAT_8007B83C and returning. Its address is a data word at 0x800708EC, in the same column of the 0x8007078C mode-handler table as FUN_80025F2C (mode 13) and the shared default FUN_80025EEC, so it is the mode whose whole per-frame body is `mode = 0`. The engine carries the mode as a typed Rust enum the shell writes directly. see ghidra/scripts/funcs/8002b904.txt"
+"80025344" = "Actor-flag clear leaf: five instructions clearing bit 0x2 of the actor flags word at actor[+0x10], called from the actor-template tick 80025054. The engine carries actor flags as typed Rust fields. see ghidra/scripts/funcs/80025344.txt"
 
 
 # Identity / no-op thunks at addresses outside the PsyQ region. These are
@@ -700,6 +736,11 @@
 "8003f084" = "Two-instruction stub (`jr ra; _li v0,1` - returns 1). Retail-stubbed hook, genuine jal target from main; classified PHANTOM in the worklist CSV."
 "8003cc90" = "Two-instruction stub (`jr ra; _clear v0` - returns 0). Retail-stubbed hook in the 8003cxxx dialog-text family, genuine jal target; classified PHANTOM in the worklist CSV. Sibling of 8002b92c."
 "8002b96c" = "Empty stub (`jr ra; nop`). The retail-stripped per-cell tile-sprite emitter of the 8002b9xx family (siblings 8002b93c/944/94c/954); the scene-load tile-window pass 80017ec8 polls it once per cell (1024x in the trace) but it emits nothing. The genuine tile draw is the engine's wgpu field-background path."
+"80025044" = "Empty stub (`jr ra; nop`) used as the null tick slot of an actor template: its address sits at the +0x0C tick word of three static templates (0x800706F4, 0x8007070C, 0x80076814). A template that ticks nothing. see ghidra/scripts/funcs/80025044.txt"
+"8002504c" = "Empty stub (`jr ra; nop`), the second null tick slot beside 80025044; referenced once, from the field overlay 0897 template table at 0x801F270C. see ghidra/scripts/funcs/8002504c.txt"
+"8002b914" = "Empty stub (`jr ra; nop`). Unreferenced member of the retail-stripped 8002b9xx leaf family (siblings 8002b93c/944/94c/954/96c). see ghidra/scripts/funcs/8002b914.txt"
+"8002b91c" = "Empty stub (`jr ra; nop`). Unreferenced member of the 8002b9xx family. see ghidra/scripts/funcs/8002b91c.txt"
+"8002b924" = "Empty stub (`jr ra; nop`) of the 8002b9xx family, referenced once as a data word at 0x80070754 inside the game-mode handler table region - a mode that ticks nothing. see ghidra/scripts/funcs/8002b924.txt"
 
 # Added by the port-wiring wave.
 "80050e00" = "11-instruction scan with no observable effect: walks a0[1], a0[2], a0[3] stopping at the first zero byte, incrementing a counter in v1 - and v1 is neither stored anywhere nor left as the return value (the epilogue is a bare `jr ra` with v0 holding the last loaded byte). Ghidra renders it `void`. ..."
@@ -767,6 +808,8 @@
 "801f1d20" = "Constant-argument thunk onto FUN_801ECA08, ten instructions in PROT 0897: `FUN_801ECA08(actor, 0x11, 0x17, 2)`. Same reasoning as 801f1c88."
 "80015e90" = "main(): cold-boot subsystem-init sequence + the master mode-dispatch loop over the 0x8007078C table (docs/subsystems/boot.md, The main loop). Host-replaced wholesale by engine-shell's driver loop + BootSession; the mode machine itself is the ported surface. see ghidra/scripts/funcs/80015e90.txt"
 "801e36a0" = "Constant-argument thunk onto the save-UI dispatcher: nine instructions whose whole body is `FUN_801DD35C(0, 0)` (`clear a0` then `move a1,a0`, so both arguments are literal zero) plus prologue/epilogue. Identical bodies in overlay_menu and overlay_shop_save; the third of its three refs is the overlay_battle_action dump, which is a mid-function citation inside FUN_801E295C, not a call to this body. FUN_801DD35C's first argument is the backdrop-dim brightness (clamped to 0xFF and folded into an RGB word at 0x801DD3BC..0x801DD3EC, skipped entirely when zero) and the second is the card-op selector documented in docs/subsystems/save-screen.md, so this call is 'tick the save UI with no dim and no card op'. The 3026-instruction callee is host-replaced wholesale - the save screen is drawn by engine-ui ui_title_save and driven by engine-core save_select / save_subscreen - so the thunk carries no semantic of its own. Same reasoning as 801f1c88 and 80015e90. see ghidra/scripts/funcs/overlay_menu_801e36a0.txt"
+"80026c28" = "The PS-X EXE entry stub, i.e. crt0 - the header's pc0 field is literally 0x80026C28. Word-zeroes 0x8007B6C0..0x801CE818, loads sp = 0x80200000 from the table at 0x80026CD4, sets gp = 0x8007B318, saves ra at 0x8007BB40, calls InitHeap (800565f8, BIOS A0 0x39) with base 0x801CE81C, then calls main (80015e90) and traps on `break 0, 1` if it ever returns. Host-replaced wholesale by engine-shell's driver, the same reasoning as the 80015e90 row above; note the BSS clear is the stub's, not the BIOS's (the header carries b_size = 0). see ghidra/scripts/funcs/80026c28.txt"
+"8002b7e0" = "Second emitted copy of the ported \"ME\" archive reader 8002b28c (legaia_asset::me_archive): the two instruction streams are identical modulo relocation except that 8002b28c brackets its body with the scratchpad stack swap to 0x1F8002DC and this one does not. Same magic check, same u16 size table, same bit-15 dispatch into the channel-delta codec 8002a9cc. Duplicate of a ported kernel; no static caller anywhere in SCUS or the 31 extracted overlays. see ghidra/scripts/funcs/8002b7e0.txt"
 
 
 # Overlay VA-aliased pseudo-addresses. The catalog keys functions by bare VA,
@@ -1567,6 +1610,7 @@
 "801d7c84" = "Fishing sub-screen icon row: reads up to four ids from the word array *(0x801D9114) at index `row*8 + i`, stops on -1, and emits each through the sprite emitter 80036888 out of the 0x28-stride descriptor array at 0x801D81A4, x stepping 0x10 per icon. see ghidra/scripts/funcs/overlay_fishing_801d7c84.txt"
 "801d24ec" = "Fishing venue backdrop: stamps the two GTE camera records at 0x8007BF44/0x8007BFB8, pushes the rotation trio through 800172c0 / 8003d1ec / 8003d368, then emits the gradient quad strip. Camera-and-packet only; the port's camera is `engine-core::camera`. see ghidra/scripts/funcs/overlay_fishing_801d24ec.txt"
 "801d7964" = "Fishing fill-primitive builder: unpacks two 24-bit RGB arguments into six halfwords of a 0x20-byte stack record, appends four caller words, and posts it with the fill-primitive poster 0x80024E80. No state read or written outside that record. Filed here rather than as a structural row - the reason describes a real body, so the claim is scope. see ghidra/scripts/funcs/overlay_fishing_801d7964.txt"
+"8002bc38" = "SCUS gradient sprite emitter: (x, y, uv_rect, flags) builds one 0x34-byte POLY_GT4 in the scratchpad prim arena *0x1F8003A0 - GP0 code 0x3C / 0x3E selected by flag bit 0x80, CLUT id (flags & 0x7F) + 0x7FC0, corners (x, y)..(x+w, y+h) from uv_rect[2]/[3], UV origin uv_rect[0] + 0x80 / uv_rect[1], and a fixed vertical white-to-black gouraud ramp 0xFF / 0xA0 / 0x50 / 0x00 - then links it with 8003d2c4. Packet geometry only: no store lands outside the packet. Same shape as the already-listed 801d6480 gradient bar, and with no caller or pointer reference in SCUS_942.54 or the 31 extracted overlays. see ghidra/scripts/funcs/8002bc38.txt"
 # Slot-B world-map render overlay (PROT 0901, link base 0x801F69D8): same
 # packet-only shape as the slot-A rows above.
 "801f73e4" = "World-map top-view band strip: zeroes the camera roll global 0x8007B792 (saving it into s5) and restores it on exit, pushes the camera through 800172c0 / 8003d1ec / 8003d368, then loops five times emitting a 0x14-byte flat rect (tag 0x04000000) per band into the scratchpad prim arena at *(0x1F8003A0) - each screen-clipped against the 0x140-wide, 0x80-high draw area with the extent shrunk rather than the packet dropped - and links each with 8003d2c4, closing with one 0x98 SetDrawMode fill through 80059010 and a final link. No band count, colour or geometry is read from game state: the tint endpoints come from literals (0x00808080 / 0x00404040 + 0x64000000) selected by 8003ce64, and the row pitch is `i << 7`. The engine draws the world-map sky/band layer from engine-render's own draw list. Body resolves to world_map_render(901) at its mapped base. see ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt"
@@ -1633,6 +1677,13 @@
 "8005a120" = "Linked-list DMA kick on channel 2: GP1 0x04000002 (direction CPU to GP0), MADR (*0x80078E2C) from the argument, BCR (*0x80078E30) cleared, CHCR (*0x80078E34) 0x01000401 - sync mode 2, from RAM, start. Nineteen instructions, no spin. see ghidra/scripts/funcs/8005a120.txt"
 "8005a16c" = "GPU-info read: writes GP1 0x10000000 | selector and returns GPUREAD & 0x00FFFFFF. Twelve instructions. Used by the ClearImage packet builder 80059978 to fetch the live draw-area/offset words. see ghidra/scripts/funcs/8005a16c.txt"
 "8005a19c" = "Three-argument shim into the already-ignored libgpu command-queue enqueue 8005a1c0: move a3,a2 then clear a2, i.e. forwards (a0, a1, 0, a2) so the queue entry takes no inline copy. Nine instructions. see ghidra/scripts/funcs/8005a19c.txt"
+"80057090" = "LoadTPage(pix, tp, abr, x, y, w, h): builds a RECT on the stack from (x, y, w, h) with the width divided by 4 / 2 / 1 for tp 0 / 1 / 2 (4bpp / 8bpp / 16bpp), calls LoadImage 800583c8, then tail-computes the tpage word through the already-ignored GetTPage 80057358 and returns it. engine-render uploads textures into its software VRAM and reads tpage fields out of TMD primitive words. see ghidra/scripts/funcs/80057090.txt"
+"8005717c" = "LoadClut(clut, x, y): RECT (x, y, 256, 1) - the 256-entry flat-strip CLUT form - LoadImage 800583c8, then GetClut 80057428 for the CBA word. Byte-identical to 800571e4 except for the width immediate. engine-render decodes CBA, never builds it. see ghidra/scripts/funcs/8005717c.txt"
+"800571e4" = "LoadClut2(clut, x, y): the 16-entry twin of 8005717c - same body with the RECT width immediate 0x10 instead of 0x100, same LoadImage 800583c8 + GetClut 80057428 tail. see ghidra/scripts/funcs/800571e4.txt"
+"80059068" = "SetDrawEnv packet builder: reads a DRAWENV (clip rect +0x0..+0x6, offset +0x8/+0xa, texture window +0xc, tpage fields +0x14/+0x16/+0x17, isbg +0x18, background RGB +0x19..+0x1b) and fills a GP0 word list through the already-ignored composers 80059568 (0xE3), 80059634 (0xE4), 80059700 (0xE5), 80059510 (0xE1) and 80059744 (0xE2), then 0xE6000000, and for isbg a GP0 0x60 fill-rect clamped against the framebuffer limits 0x80078D58 / 0x80078D5A; the packet word count lands in the tag byte at +0x3. engine-render sets draw state as wgpu pipeline state. see ghidra/scripts/funcs/80059068.txt"
+"8005a8e8" = "DrawSync(mode): with mode 0 it arms the timeout 8005aa30 and spins - draining the command queue through 8005a4a0 whenever the head/tail pair 0x80078E58 / 0x80078E5C differ - until DMA channel 2 CHCR (*0x80078E34) bit 0x01000000 clears and GPUSTAT (*0x80078E28) bit 0x04000000 is set, returning -1 on timeout; with any other mode it returns the pending-entry count (head - tail) & 0x3F without waiting. The port has no OT, no DMA channel and no status register to spin on. see ghidra/scripts/funcs/8005a8e8.txt"
+"80058554" = "ClearOTag(ot, n): the forward-linking OT clear - zeroes each entry's length byte at +0x3 and writes the 24-bit address of the following word into it, terminating the last entry with the 24-bit-masked sentinel address 0x80078E10; opens with the same 0x80078D56 debug-level gate and *0x80078D50 printf hook as the rest of the layer. Sibling of the already-ignored reverse form 80059890 (ClearOTagR). engine-render appends to a wgpu draw list. see ghidra/scripts/funcs/80058554.txt"
+"80057dc8" = "SetVideoMode(mode): latches the new mode byte at 0x80078D57, issues the GP1 0x08 display-mode word (bit 0x80 set for the PAL value) through slot +0x10 of the GPU module table *0x80078D4C after taking its default from slot +0x28, and on 0x80078D54 == 2 follows with the GP1 0x20 word 0x20000504 / 0x20000501; returns the previous mode. Guarded by the same 0x80078D56 debug-level printf gate as its neighbours. The port renders to a wgpu surface with no video standard to select. see ghidra/scripts/funcs/80057dc8.txt"
 
 
 # PSX BIOS interrupt-callback infrastructure (libapi), the tier under every
@@ -1683,3 +1734,34 @@
 [libsnd_seq_volume]
 "800648f0" = "SsSepSetVol(sep, seq, l, r): resolves DAT_801cd2c0[sep] + seq*0xB0, then either latches the pair into +0x58/+0x5A or - when the flag word is exactly 1, i.e. PLAY and nothing else - packs (sep | seq << 8) and dispatches _SsSeqNoteOn (80067e9c) to commit it live. Body-identical to the already-ignored 80064890 except for the seq*0xB0 stride, which is what makes it the SEP-indexed form. see ghidra/scripts/funcs/800648f0.txt"
 "8006497c" = "SsSepGetVol(sep, seq, &l, &r): 13 instructions, packs (sep | seq << 8) into an i16 and tail-calls the already-ignored getter 800683d8 (SsSeqGetVol). Pure argument marshalling - it touches no state of its own. see ghidra/scripts/funcs/8006497c.txt"
+
+
+# Retail-unreachable entry points - a REACHABILITY claim, not a scope one.
+#
+# Each row is a real function: Ghidra resolves the queried VA as the entry, and
+# the bytes agree - it either opens its own frame or sits immediately after a
+# clean `jr ra` epilogue, so control cannot fall into it and it is not an
+# interior label. What no row has is a way in. A sweep of `SCUS_942.54`, all 31
+# based overlay images and the raw bytes of every extracted `PROT.DAT` entry
+# finds NO reference in any of the five forms `find-address-word-refs.py`
+# covers: literal little-endian address word (the function-pointer table and
+# actor-template slot shapes), `lui`+`addiu`/`ori` materialisation, `jal`, `j`,
+# and PC-relative branch.
+#
+# The consequence is what puts them here rather than on the worklist. There is
+# nothing to wire a port of one of these to, in this engine or in retail, so
+# porting it can only manufacture an inert row no wiring pass can ever close.
+# The row is settled by documenting the negative instead - each address's
+# write-up lives under `docs/reference/functions/`, and the pattern they share
+# (a static routine an overlay-resident or differently-parameterised sibling
+# superseded, left linked because the linker keeps whole objects) is in
+# `docs/reference/functions/battle.md`.
+#
+# A reachability row is falsifiable and the scan says how: an address assembled
+# in more than two instructions, or reached as `table_base + index`, is not a
+# pair the scan can see. Re-run the address - and, for a row whose subject is a
+# table record, the table base too - before re-opening one.
+[unreferenced]
+"80025054" = "Actor-template tick, reachable only as the +0x08 word of the static template record at 0x80070614 (docs/reference/functions/runtime-libs.md). Each spawn site names its own record with its own lui+addiu pair - no dispatcher walks the 0x18 grid - so the whole table was swept, not just the record: 0x800705FC is materialised in the field overlay at 0x801D6D6C and passed straight to the allocator FUN_80020DE0, 0x8007062C at SCUS 0x80021B74, and 0x80070614 by nothing anywhere. The tick itself is a real entry (own `addiu sp,sp,-0x30` frame, `jr ra` + nop above it); it is unreachable one level up, because nothing spawns the actor that would run it. see ghidra/scripts/funcs/80025054.txt"
+"80035274" = "Item / equipment passive-NAME draw. Real entry - `addiu sp,sp,-0x20` frame under a clean `jr ra` / `addiu sp,sp,0x18` epilogue - with zero references of any form. The two routines that survive into retail menus, FUN_80034250 and the menu overlay's window-34 renderer FUN_801D4A80, walk the same item -> passive chain to the accessory-passive record's +0x08 description; only this one takes the +0x04 name. Worth reading rather than porting: it is the sole decoded witness to the item table's leading class / sub-index byte pair (docs/reference/functions/menus.md). see ghidra/scripts/funcs/80035274.txt"
+"80050d40" = "12-bit angle tween, (from, to, weight, slot), with zero references of any form. A frameless leaf - it opens no frame at all - and an entry rather than an interior label because the word above it is the `addiu sp,sp,0x20` delay slot of the previous function's `jr ra`, so nothing falls through into it. Its near-twin FUN_8001D088 is the ANM interpolator every live angle blend uses; the two differ in the short-arc comparison, `srl` vs `sra` on the scaled delta, and a stride-4 slot table at 0x801C9060 against a stride-8 one at 0x800891A8, so a port treating them as one function inherits the wrong sign behaviour on a negative delta. see ghidra/scripts/funcs/80050d40.txt"

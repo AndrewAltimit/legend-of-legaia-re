@@ -76,6 +76,28 @@ The `0977` door/init slot (a slot-A overlay at base `0x801CE818` - the base is p
 
 Engine port: `engine-core::muscle_dome::settle_contest`. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
 
+The score table's shape follows from that expression: three courses of sixteen
+`i32` cells, at file offset `0x3048` of the raw `0977` entry
+(`0x801D1860 - 0x801CE818`), reachable with the same fixed-offset read
+`engine-ui::other_game_hud::parse_sprite_table` already performs on that entry.
+
+### The arena's per-frame voice cue (`FUN_801D1288`)
+
+The same overlay keys one SPU voice per frame, rotating over `0x10 ..= 0x13` on
+the free-running counter `DAT_801D1AE4 & 3`. Its call is
+`FUN_80065034(voice, 0, 0, 1, 0x3C, 0x40, vol, vol)`, and that eight-argument
+shape is pinned by the SCUS cue drainer `FUN_80016B6C`, which fills the same
+slots from a cue descriptor: `(voice, level, program, tone, note, 0x40, vol_l,
+vol_r)`. So the arena cue is program `0`, tone `1`, note `0x3C`, at level `0`.
+
+Both volume slots are `(_DAT_80084580 << 0xf) >> 0x10` - the **voice/SFX volume
+config**, which the cold reset `FUN_8001FFA4` seeds to `200`, so a freshly
+booted game keys it at `100` per channel. Reading that pair as a *position*
+derived from a party-block word is **falsified**: `FUN_80016B6C` passes the
+identical expression into the identical two argument slots for every ordinary
+SFX cue in the game, and the dance overlay's own direct key-on `FUN_801D3D78`
+does the same. Port: `engine-core::other_game_overlay::cue_volume`.
+
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
 ## Arena backdrop (extraction 1225)

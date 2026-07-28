@@ -336,8 +336,14 @@ pub fn counter_panel_draws_for(
 /// exact one is still unpinned.
 ///
 /// PORT: FUN_801DCCB4
-/// NOT WIRED: which flow opens window 7 is unknown, and no host produces the
-/// NOT WIRED: `record[0x13D + sel]` glyph it substitutes; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is a **magic-side screen that carries a
+/// NOT WIRED: learned-magic list index**. The substituted glyph is
+/// NOT WIRED: `record[0x13D + DAT_8007BB78]`, an entry of the selected
+/// NOT WIRED: character's learned-magic id list; no engine session models that
+/// NOT WIRED: index (`spell_menu_draws_for`'s cursor selects a catalog row, not
+/// NOT WIRED: a record-list slot), so a host has nothing to substitute. Which
+/// NOT WIRED: magic flow opens window 7 is still unpinned. Waived in
+/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -416,12 +422,21 @@ pub fn amount_prompt_draws_for(
 /// **This painter is only the delta.** The gated body opens with
 /// `jal 0x801D0F1C` - the *shared item-info panel*, the same routine window
 /// 17's `FUN_801DCB60` calls - so window 24 is the item-info window plus a
-/// count. A host adopting it draws the info panel
-/// ([`crate::inventory_panel_draws_for`]) into the same rect first.
+/// count. A host adopting it draws that panel into the same rect first;
+/// its port is folded into [`crate::items_screen_draws_for`], which carries
+/// the `FUN_801D0F1C` tag, rather than standing alone as a rect painter.
 ///
 /// PORT: FUN_801DCC20
-/// NOT WIRED: which flow opens window 24 rather than window 17 (identical
-/// NOT WIRED: rect) is unknown; waived in scripts/ci/ui-host-drift-waivers.toml
+/// REF: FUN_801d0f1c - the shared item-info panel this painter is the delta
+/// over. Ported in `crate::ui_menu::pause_lists`, not here.
+/// NOT WIRED: two things must exist first, and neither is a call site. The
+/// NOT WIRED: painter is only the **delta** over the shared item-info panel
+/// NOT WIRED: (`jal 0x801D0F1C`), so a host adopting it has to draw that panel
+/// NOT WIRED: into the same rect first - this alone is not a screen. And
+/// NOT WIRED: window 24's rect is byte-identical to window 17's, so the two
+/// NOT WIRED: are the same box in different screens; which screen opens 24
+/// NOT WIRED: rather than 17 is unpinned, and picking one would invent a flow.
+/// NOT WIRED: Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -521,8 +536,15 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// `0x10` step below the heading.
 ///
 /// PORT: FUN_801D603C
-/// NOT WIRED: adopting windows 46 / 5 replaces the engine-styled options
-/// NOT WIRED: screen's layout, a host decision; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is a **two-row choice screen whose state
+/// NOT WIRED: is the `DAT_801E46D0` flags word**. The options screen both hosts
+/// NOT WIRED: draw (`crate::options_draws_for`) is a multi-row label/value
+/// NOT WIRED: list, so adopting windows 46 / 5 replaces its layout wholesale
+/// NOT WIRED: rather than filling a hole in it; and the confirm prompts that do
+/// NOT WIRED: exist carry no flags word (`confirm_prompt_draws` takes no
+/// NOT WIRED: selection, `confirm_dialog_text_draws_for` a plain 0/1 cursor),
+/// NOT WIRED: so two of [`ChoiceFlags`]'s three marker arms would stay
+/// NOT WIRED: unreachable. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -554,7 +576,10 @@ pub fn choice_panel_draws_for(
 /// branch chain as window 46.
 ///
 /// PORT: FUN_801D61B0
-/// NOT WIRED: same host decision as `choice_panel_draws_for`; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: same missing prerequisite as [`choice_panel_draws_for`] - a
+/// NOT WIRED: two-row choice screen driven by the `DAT_801E46D0` flags word -
+/// NOT WIRED: plus a second heading line no engine screen has a model for.
+/// NOT WIRED: Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn two_line_choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -592,8 +617,13 @@ pub fn two_line_choice_panel_draws_for(
 /// one whose cursor moves when a window is resized.
 ///
 /// PORT: FUN_801D6360
-/// NOT WIRED: no host opens window 6, and which flow does is unknown; the
-/// NOT WIRED: pause command list is window 50; waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is the **screen window 6 belongs to**, and
+/// NOT WIRED: the one candidate is ruled out: the pause command list both hosts
+/// NOT WIRED: draw (`crate::field_menu_draws_for`) takes its geometry from
+/// NOT WIRED: window 50, so this is not that list under another id. No other
+/// NOT WIRED: engine screen is a flat six-label stack, and the extent-anchored
+/// NOT WIRED: cursor means a host cannot borrow the rect from a neighbour - it
+/// NOT WIRED: would move. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -774,11 +804,11 @@ pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
 ///
 /// PORT: FUN_801D56FC
 ///
-/// Wired on the web host: the shop's equipment-buy recipient flow
-/// (`engine-core`'s `menu_runtime` + `shop::BuyRecipientSession`) opens
-/// this window over the parked buy list, and the browser play page paints
-/// it (`web-viewer::play_shop::recipient_window_draws`). The native window
-/// has not grown the surface yet - web-ahead in the host-drift gate.
+/// Wired on both hosts through the shared composition
+/// [`crate::recipient_picker_draws_for`]: the shop's equipment-buy recipient
+/// flow (`engine-core`'s `menu_runtime` + `shop::BuyRecipientSession`) opens
+/// this window over the parked buy list, and each host resolves the rect off
+/// the disc window table and hands the model to that builder.
 pub fn equip_target_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

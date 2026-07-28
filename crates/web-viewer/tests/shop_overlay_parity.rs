@@ -188,3 +188,134 @@ fn shop_descriptor_windows_paint_at_their_disc_rects() {
         table.window(34).map(|d| d.rect()),
     );
 }
+
+/// The **equipment-buy recipient sub-screen** (retail `0x1C`) must open off a
+/// buy-list equipment row and paint its three windows inside their own
+/// disc-parsed rects.
+///
+/// This is the oracle behind `engine-ui`'s shared
+/// `recipient_picker_draws_for`, the composition both hosts call. It pins the
+/// chain rather than the pixels: the kind dispatch has to route an equipment
+/// row to the picker (not the quantity screen), the session has to take the
+/// pad, and windows 36 / 25 / 41 have to draw at the descriptor table's
+/// rects. The native window reaches the same builder through
+/// `window/shop_windows.rs::recipient_window_draws`, so a break here is a
+/// break on both hosts.
+#[test]
+fn the_recipient_picker_paints_its_three_windows_at_their_disc_rects() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Some(table) = disc_window_table() else {
+        eprintln!("[skip] menu-overlay window table did not parse from this disc");
+        return;
+    };
+    if !rt.debug_open_equipment_shop() {
+        eprintln!("[skip] no priced equipment row available on this disc build");
+        return;
+    }
+    // Cross enters the Buy list; cross again confirms row 0, whose kind byte
+    // is `1` (equipment) and therefore routes to the recipient picker.
+    rt.play_shop_input(CROSS);
+    rt.play_shop_input(0);
+    rt.play_shop_input(CROSS);
+    rt.play_shop_input(0);
+    assert!(
+        rt.debug_recipient_picker_open(),
+        "an equipment buy row must route to the recipient picker \
+         (shop::buy_list_confirm_route kind 1) - it did not open"
+    );
+
+    // Move the hand onto the first party row so window 25 (the highlighted
+    // member's compare panel) has a member to compare. Row 0 is the bag.
+    rt.play_shop_input(DOWN);
+    rt.play_shop_input(0);
+
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");
+    let texts = v["texts"].as_array().cloned().unwrap_or_default();
+    let inside = |id: usize| -> usize {
+        let Some(d) = table.window(id) else {
+            return 0;
+        };
+        let (x, y, w, h) = d.rect();
+        texts
+            .iter()
+            .filter(|t| {
+                let q = &t["dst"];
+                let (qx, qy) = (q[0].as_i64().unwrap_or(0), q[1].as_i64().unwrap_or(0));
+                qx >= x as i64 && qx < (x + w) as i64 && qy >= y as i64 && qy < (y + h) as i64
+            })
+            .count()
+    };
+    for id in [36usize, 25, 41] {
+        assert!(
+            inside(id) > 0,
+            "recipient window {id} must draw inside its disc rect {:?} - nothing did",
+            table.window(id).map(|d| d.rect()),
+        );
+    }
+}
+
+/// The shop's **seru-trade** screens must draw on the browser host.
+///
+/// Seru trading is a patcher feature (`--seru-trade`): retail's config blob
+/// ships disabled, so the shop root hides the row and neither screen is
+/// reachable on a vanilla disc. On a patched one both are - and the page used
+/// to draw nothing at all for `ShopTrade` / `ShopTradeConfirm` while the
+/// session held the pad, because its row table only covered the `'static`-label
+/// states and fell through to an empty list. The native window has drawn both
+/// all along (`window/menu_draws.rs::draw_shop_trade`), so this was platform
+/// drift the UI host-drift gate cannot see: both hosts call the same
+/// `shop_draws_for` builder and differ only in what they feed it.
+#[test]
+fn the_seru_trade_screens_draw_on_the_browser_host() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Arm the feature first: the root's row list is rebuilt from
+    // `World::seru_trade_enabled` every frame, so the shop must open with it
+    // already on.
+    assert!(rt.debug_enable_seru_trade(0x5EED_5EED));
+    if !rt.debug_open_test_shop() {
+        eprintln!("[skip] no priced merchant record available on this disc build");
+        return;
+    }
+    // Root rows are Buy / Sell / Trade Seru / Exit - drop two rows onto Trade
+    // and confirm.
+    for _ in 0..2 {
+        rt.play_shop_input(DOWN);
+        rt.play_shop_input(0);
+    }
+    rt.play_shop_input(CROSS);
+    rt.play_shop_input(0);
+
+    let trade = legaia_engine_core::menu_runtime::MenuState::ShopTrade.as_byte();
+    assert_eq!(
+        rt.debug_menu_state_byte(),
+        trade,
+        "picking the third shop-root row must enter ShopTrade; \
+         seru_trade_enabled gates the row into the list"
+    );
+    // Assert on the engine shop panel's own pen (`SHOP_PEN`, stage y 140):
+    // the retail descriptor windows keep painting either way at their disc
+    // rects, so "the overlay emitted quads" would pass with the trade screen
+    // still blank. The panel's title row lands on y 140 exactly.
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");
+    let title_row = v["texts"]
+        .as_array()
+        .map(|t| {
+            t.iter()
+                .filter(|d| d["dst"][1].as_i64() == Some(140))
+                .count()
+        })
+        .unwrap_or(0);
+    assert!(
+        title_row > 0,
+        "the seru-trade offer list must paint at the shop panel pen - an \
+         empty panel is the blank screen this test exists to catch"
+    );
+}

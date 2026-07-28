@@ -1,6 +1,7 @@
 //! The attack-approach distance clamp.
 //!
 //! PORT: FUN_801DF570
+//! REF: FUN_801DEA50 (its one caller, at `0x801DEDC8`)
 //!
 //! `(slot, requested) -> i16`. Given an acting actor and a requested step, this
 //! returns how far the approach is actually allowed to close - the kernel behind
@@ -58,6 +59,13 @@
 //! `0x19` approach-park investigation wants, since a clamp that can only return
 //! `[3d/4, d]` can never close the last quarter on its own. See
 //! `docs/subsystems/battle-action.md` ("The `0x19` attack-approach park").
+//!
+//! **The host's seat accessor does not unblock it**, and a triage note that
+//! said it would is withdrawn. Positions were never the gap: the retail caller
+//! is not the action SM at all. The corpus holds exactly one `jal 0x801df570`,
+//! at `0x801DEDC8` inside `FUN_801DEA50` (the staged-value reader), and its
+//! `a1` is a sign-extended halfword - the requested step. That is the value the
+//! port has no producer for.
 
 /// Half-turn added to the bearing before the LUT lookup (`0x800` of a 12-bit
 /// angle).
