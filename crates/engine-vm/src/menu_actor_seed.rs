@@ -36,6 +36,8 @@
 //! that arm returns early instead of falling into the shared tick - both
 //! paths tick the actor exactly once.
 //!
+//! REF: FUN_80020de0, FUN_800204f8  -- callees, not ported here
+//!
 //! `see ghidra/scripts/funcs/801e5834.txt`,
 //! `see ghidra/scripts/funcs/801e58a8.txt`
 //!

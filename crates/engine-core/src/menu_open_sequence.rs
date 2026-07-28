@@ -23,6 +23,8 @@
 //! ones that hold and the ones past the table - it is outside the switch,
 //! not inside any arm.
 //!
+//! REF: FUN_801d6628, FUN_80020de0, FUN_80031d00  -- callees, not ported here
+//!
 //! Evidence: `ghidra/scripts/funcs/overlay_menu_801dad6c.txt` and the
 //! jump table read out of the as-loaded PROT 0899 image.
 //!

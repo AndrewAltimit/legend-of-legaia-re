@@ -29,6 +29,8 @@
 //! only in which bit they extract - bit [`IN_BUSY_BIT`] and bit
 //! [`OUT_POLL_BIT`] respectively.
 //!
+//! REF: FUN_801cfe98, FUN_801d0230  -- callees / co-resident, not ported here
+//!
 //! Provenance: `ghidra/scripts/funcs/overlay_str_fmv_0x801CFE20.txt`,
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,
 //! `..._0x801D0230.txt`. Ported from the disassembly.
