@@ -1127,6 +1127,75 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
+| Who latches the clip-end bit for a conversation's cross-context clip pokes | resolved (port residual named) | `disassembly` + `capture` | The **poked actor's own anim tick**, on the poked actor's own `+0x62`. `FUN_8003C83C` short-circuits target `0xF8` to the live player object out of `_DAT_8007C364` before its actor-list walk, so an NPC record's `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` reads and writes the *player's* clip words. [details ↓](#clip-end-latch-for-cross-context-clip-pokes) |
+
+### Clip-end latch for cross-context clip pokes
+
+*Status:* resolved from the disassembly of both halves and ported; residual is
+port fidelity, not an open question
+
+`ctx[+0x62]` is the clip-control word and bit `8` (`0x0100`) is the end latch
+(see
+[`script-vm.md`](../subsystems/script-vm.md#0x2b-0x33-flag-manipulation-triplets)).
+The question was who writes that bit when the triple carries a `0x80`-prefix
+target, because then the word does not belong to the record being dispatched.
+
+**The resolver answers it.** `FUN_8003C83C` tests its argument against `0xF8`
+before anything else and returns `_DAT_8007C364` - the live player object -
+without walking any list (`li v0,0xf8` / `bne a0,v0,0x8003c858` /
+`lw v0,-0x3c9c(v0)` / `jr ra`). `0xFB` walks a second list for the entry whose
+`+0xC` handler is `0x801DA51C`; every other id walks `_DAT_8007C354` matching
+`*(u16*)(ctx+0x50)`. So a cross-context op runs against a **different actor
+record**, and the answer to "who latches" is "that actor's own anim tick" -
+the same `FUN_800204F8` a prop reaches, on a different struct.
+
+Its two halves both matter to the spin, and both are in the instructions
+(`ghidra/scripts/funcs/800204f8.txt`):
+
+| Half | What it does |
+|---|---|
+| Binder (`0x80020570..0x800205A8`) | Only when `+0x5C != +0x5E`: remember the id, `sh zero,0x68` (cursor to frame 0), point `+0x4C` at the clip. `+0x62` is **not** touched - hold / clamp / reverse are the script's to set, and clearing the latch is its `AC <t> 08`. |
+| Advancer (`0x800205AC..`) | Consume `+0x62` bit `0x200` (restart), clear bit `0x100`, step `+0x68` by `+0x6A` unless bit `0x2` (hold) is set, then wrap or clamp at either end and set bit `0x100` there. |
+
+One detail the port flattens: the advancer scales its step by the scratchpad
+byte `_DAT_1F800393` (`mult a0,v0` at `0x80020660` / `0x80020680`), the frame
+step the driver writes. `PropAnim::tick` advances one step per call, which is
+the same thing whenever that byte is `1`.
+
+The idiom is therefore literally a prop door swing aimed at another actor, and
+the retock innkeeper's Yes branch reads exactly that way once its bytes are
+disassembled: `AC F8 01` (un-hold), `A2 F8 04` (poke the clip), `AC F8 08` /
+`AD F8 08` (clear, spin), `AC F8 03` (un-clamp), `4A 03 00`, `AB F8 03`
+(re-clamp), `AC F8 08` / `AD F8 08` again, then `A2 F8 02` handing the player
+back to the locomotion move. Every one of those bits is an `ANIM_*` bit; none
+of them is a per-record local flag.
+
+**Port.** `engine-core::field_env::PropAnimBank` holds a cross-context cursor
+per target byte (`actor_clips`, keyed the way the resolver keys its walk).
+`World::step_inline_dialogue` binds the poked actor's `+0x62` into the
+executing context around each `2B`/`2C`/`2D`, mirrors it back, and **parks** on
+the spin - the same bind / re-sync / mirror-back discipline
+`World::step_prop_interaction` runs a prop's whole record under, narrowed to
+the one word a cross-context op reaches. The runner writes no latch of its own -
+`PropAnim::tick` is the port's only latch writer, everything else that touches
+`+0x62` is a script op arriving through the bind - and the cursor advances once per
+frame whichever driver reaches it first (the field frame's
+`tick_prop_interactions`, or the runner itself for a host that drives only a
+conversation). Pinned by `crates/engine-core/tests/inline_clip_latch.rs`,
+which asserts the latch appears on the poked actor's cursor and never on the
+record's own flag word, and that a stalled cursor never lets the spin through.
+
+*Residual (port, not RE).* An actor's **drawn** clip and its cursor are two
+objects in the port: the player's gesture is played by the host's
+`FieldPlayerAnim` off `World::field_player_move_cues`, an NPC's by the host's
+own clip player, while the latch is timed by the bank's cursor. They are
+rate-matched by construction (`ANIM_SPAWN_RATE` = 8 cursor units against
+`FieldClipPlayer::DEFAULT_TICKS_PER_FRAME` = 2) and sized from the scene ANM
+bundle where it resolves the poked id, but a clip the bundle cannot name falls
+back to a stand-in length. Retail has one struct; folding the port's two into
+one is engine work. Separately, no capture has confirmed that *nothing else*
+sets bit `8` at runtime - a script could set it with a `2B <t> 08` of its own,
+and none of the records read so far does.
 
 ### Ambient render-mode 4 - the VRAM-rect scroller
 

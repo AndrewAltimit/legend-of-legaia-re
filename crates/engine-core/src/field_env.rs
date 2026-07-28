@@ -422,6 +422,30 @@ pub const ANIM_SPAWN_FLAGS: u16 = 0x0015;
 /// `FUN_8003A55C`'s `*(short *)(actor + 0x6a) >>= 1`.
 pub const ANIM_SPAWN_RATE: i16 = 8;
 
+/// The cross-context target byte that names the **player** actor. Retail's
+/// id-to-context resolver `FUN_8003C83C` special-cases it ahead of the
+/// actor-list walk - `li v0,0xf8` / `bne a0,v0` / `lw v0,-0x3c9c(v0)`, i.e.
+/// return the live player object out of `_DAT_8007C364` - so an NPC record's
+/// `A2 F8 <clip>` / `AC F8 08` / `AD F8 08` triple reads and writes the
+/// *player's* `+0x62`, not the dispatching record's.
+///
+/// REF: FUN_8003C83C
+pub const PLAYER_ANCHOR_TARGET: u8 = 0xF8;
+
+/// Frame count the player's clip cursor falls back to when neither the scene
+/// ANM bundle nor an installed [`crate::field_anim::FieldPlayerAnim`] can
+/// measure the real clip - the player-side twin of the prop bank's 1-frame
+/// stand-in. It only has to be finite: what it bounds is how long a script's
+/// end-latch spin waits, and a headless world has no clip to watch anyway.
+pub const PLAYER_CLIP_STANDIN_FRAMES: u16 = 15;
+
+/// The move id the player actor's `+0x5C` carries while the locomotion
+/// controller owns the clip. Ids `1`/`2` are the walk moves the field
+/// controller animates itself; a scripted gesture pokes a higher id, and
+/// poking `1`/`2` back is how a record hands the player to locomotion again
+/// (the `A2 F8 02` that closes the innkeeper's bow).
+pub const LOCOMOTION_MOVE_ID: u8 = 1;
+
 /// Half-extent of the prop contact box, in world units. Same box the field
 /// locomotion's static-entity collision arm uses for a placed record
 /// (`World::field_prop_colliders` / `FIELD_PROP_BOX_HALF`); retail's
@@ -469,6 +493,23 @@ impl PropAnim {
             frames,
             scaled_step,
             step_div,
+            cursor: 0,
+            flags: ANIM_SPAWN_FLAGS,
+            rate: ANIM_SPAWN_RATE,
+        }
+    }
+
+    /// An actor a script reaches **cross-context**, in the state the actor
+    /// template leaves every spawned actor in: looping playback
+    /// ([`ANIM_SPAWN_FLAGS`]) at the template rate, cursor at zero. `anim_id`
+    /// is the actor's live `+0x5C` - `0` for one that has never been poked, the
+    /// locomotion move for the player.
+    pub fn cross_context(anim_id: u8, frames: u16) -> Self {
+        Self {
+            anim_id,
+            frames: frames.max(1),
+            scaled_step: false,
+            step_div: 0,
             cursor: 0,
             flags: ANIM_SPAWN_FLAGS,
             rate: ANIM_SPAWN_RATE,
@@ -864,13 +905,37 @@ impl PropAnimState {
     }
 }
 
-/// Per-scene bank of placed-prop animation runtimes, keyed by the placement's
-/// footprint-anchor tile ([`EnvDraw::anchor`]) so the four Rim Elm cupboards
-/// each keep their own cursor.
+/// Per-scene bank of live actor clip cursors: one entry per placed prop, keyed
+/// by the placement's footprint-anchor tile ([`EnvDraw::anchor`]) so the four
+/// Rim Elm cupboards each keep their own cursor, plus the **cross-context**
+/// cursors ([`Self::actor_clips`]) a running script pokes by target id.
+///
+/// Everything in here is the same retail surface - the `+0x5C` / `+0x62` /
+/// `+0x68` / `+0x6A` words of an actor record that the per-frame anim tick
+/// `FUN_800204F8` advances - so the bank is what "the clip tick" means in the
+/// port. Scripts only ever *read* the latch; the tick is the only writer.
 #[derive(Debug, Clone, Default)]
 pub struct PropAnimBank {
     /// Live props, keyed by anchor tile.
     pub props: std::collections::BTreeMap<(u8, u8), PropAnimState>,
+    /// Clip cursors for the actors a script reaches **cross-context** - the
+    /// `0x80`-prefixed opcode forms whose target byte `FUN_8003C83C` resolves
+    /// to some other actor's record. Keyed by that target byte (which is the
+    /// resolver's own key: `ctx[+0x50]`, with [`PLAYER_ANCHOR_TARGET`] for the
+    /// player). An entry exists once a poke has bound a clip to it; the player
+    /// anchor is created on first use because retail's player actor is always
+    /// running its locomotion clip.
+    pub actor_clips: std::collections::BTreeMap<u8, PropAnim>,
+    /// Scene ANM clip metadata by anim id (`(frame_count, scaled_step,
+    /// step_div)` for record `id - 1`), captured at scene build so a clip poke
+    /// mid-conversation can size its cursor without re-opening the bundle.
+    /// Index `0` is unused (`anim_id == 0` means "no clip").
+    clips: Vec<Option<(u16, bool, u8)>>,
+    /// Set by [`Self::tick_anims`], cleared by
+    /// [`Self::tick_actor_clips_for_frame`] - the once-per-frame guard that
+    /// keeps a cursor advancing exactly one step per field frame no matter
+    /// which of the world's two drivers reached it first.
+    ticked_this_frame: bool,
 }
 
 impl PropAnimBank {
@@ -890,7 +955,15 @@ impl PropAnimBank {
         man: &[u8],
         mut clip: impl FnMut(u8) -> Option<(u16, bool, u8)>,
     ) -> Self {
-        let mut bank = PropAnimBank::default();
+        let mut bank = PropAnimBank {
+            // Capture the whole id space up front: a prop resolves its clip
+            // once at spawn, but a *cross-context* poke (`A2 <target> <clip>`)
+            // arrives mid-conversation, long after the bundle borrow is gone.
+            clips: (0..=u8::MAX)
+                .map(|id| if id == 0 { None } else { clip(id) })
+                .collect(),
+            ..Default::default()
+        };
         for p in placements {
             let anchor = (p.anchor_col, p.anchor_row);
             if bank.props.contains_key(&anchor) {
@@ -902,7 +975,7 @@ impl PropAnimBank {
             if bind.anim_id == 0 {
                 continue;
             }
-            let (frames, scaled, div) = clip(bind.anim_id).unwrap_or((1, false, 0));
+            let (frames, scaled, div) = bank.clip_meta(bind.anim_id).unwrap_or((1, false, 0));
             let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
                 continue;
             };
@@ -947,6 +1020,93 @@ impl PropAnimBank {
         for p in self.props.values_mut() {
             p.anim.tick();
         }
+        for a in self.actor_clips.values_mut() {
+            a.tick();
+        }
+        self.ticked_this_frame = true;
+    }
+
+    /// Advance the cross-context cursors for a frame in which
+    /// [`Self::tick_anims`] has not already done it, and return whether that
+    /// tick happened here.
+    ///
+    /// The world reaches the clip cursors down two paths - the field frame's
+    /// `World::tick_prop_interactions` and, for a host that drives only a
+    /// conversation, `World::step_inline_dialogue`. A cursor that advanced
+    /// twice in one frame would latch its end early, and one that advanced
+    /// zero times would leave a script's end-latch spin waiting on a clip that
+    /// never moves, so exactly one of the two ticks each frame.
+    pub fn tick_actor_clips_for_frame(&mut self) -> bool {
+        if std::mem::take(&mut self.ticked_this_frame) {
+            return false;
+        }
+        for a in self.actor_clips.values_mut() {
+            a.tick();
+        }
+        true
+    }
+
+    /// Scene ANM metadata for `anim_id` (`(frame_count, scaled_step,
+    /// step_div)` of record `anim_id - 1`), or `None` when the scene carries
+    /// no bundle / no such record.
+    pub fn clip_meta(&self, anim_id: u8) -> Option<(u16, bool, u8)> {
+        *self.clips.get(anim_id as usize)?
+    }
+
+    /// The live clip cursor a cross-context poke at `target` reads and writes,
+    /// if one has been bound.
+    pub fn actor_clip(&self, target: u8) -> Option<&PropAnim> {
+        self.actor_clips.get(&target)
+    }
+
+    /// Mutable form of [`Self::actor_clip`].
+    pub fn actor_clip_mut(&mut self, target: u8) -> Option<&mut PropAnim> {
+        self.actor_clips.get_mut(&target)
+    }
+
+    /// The player's clip cursor, created on first use in the state retail's
+    /// player actor idles in: the actor template's looping `+0x62`
+    /// ([`ANIM_SPAWN_FLAGS`]) over the locomotion clip, whose length
+    /// `locomotion_frames` supplies. A looping clip latches [`ANIM_END`] once
+    /// per wrap, which is why a script may clear and wait on the latch without
+    /// poking a clip of its own first.
+    pub fn player_clip(&mut self, locomotion_frames: u16) -> &mut PropAnim {
+        self.actor_clips
+            .entry(PLAYER_ANCHOR_TARGET)
+            .or_insert_with(|| PropAnim::cross_context(LOCOMOTION_MOVE_ID, locomotion_frames))
+    }
+
+    /// Bind a cross-context clip poke - `A2 <target> <clip>`, retail's op-`0x22`
+    /// `ExecMove` writing `ctx[+0x5C]` and calling the anim tick - onto
+    /// `target`'s cursor.
+    ///
+    /// This is the **binder** half of `FUN_800204F8`, and it is faithful about
+    /// the two things that matter to a following end-latch spin: the rebind is
+    /// skipped entirely when the id is unchanged (`lh v1,0x5c` / `lh v0,0x5e` /
+    /// `beq v1,v0`), and when it does run it zeroes the frame cursor
+    /// (`sh zero,0x68(s0)`) and leaves `+0x62` alone - the script's own
+    /// `2B`/`2C` ops own the hold / clamp / reverse bits, and clearing the end
+    /// latch is the script's `AC <target> 08`, not the bind's.
+    ///
+    /// `fallback_frames` sizes the cursor when the scene bundle cannot
+    /// (see [`PLAYER_CLIP_STANDIN_FRAMES`]).
+    ///
+    /// PORT: FUN_800204F8 (binder half)
+    pub fn bind_actor_clip(&mut self, target: u8, anim_id: u8, fallback_frames: u16) {
+        let meta = self.clip_meta(anim_id);
+        let entry = self
+            .actor_clips
+            .entry(target)
+            .or_insert_with(|| PropAnim::cross_context(0, fallback_frames));
+        if entry.anim_id == anim_id {
+            return;
+        }
+        let (frames, scaled, div) = meta.unwrap_or((fallback_frames.max(1), false, 0));
+        entry.anim_id = anim_id;
+        entry.frames = frames.max(1);
+        entry.scaled_step = scaled;
+        entry.step_div = div;
+        entry.cursor = 0;
     }
 }
 
@@ -1367,6 +1527,64 @@ mod tests {
         let placed = placement(Some(0), Some(4), 64);
         let (draws, _) = resolve_env_draws(&env_tmds, &[placed], Some(lut));
         assert_eq!(draws[0].world_y, -128 + 64);
+    }
+
+    /// The **binder** half of `FUN_800204F8`, as a cross-context poke reaches
+    /// it: on a clip change it remembers the id and zeroes the frame cursor
+    /// (`sh zero,0x68(s0)`) and nothing else - `+0x62` stays exactly as the
+    /// script left it, because hold / clamp / reverse and the end latch are the
+    /// script's own `2B`/`2C` ops. A re-poke of the id already bound is skipped
+    /// whole (`lh v1,0x5c` / `lh v0,0x5e` / `beq v1,v0`), so it does not
+    /// restart a clip mid-play.
+    #[test]
+    fn a_cross_context_poke_zeroes_the_cursor_and_leaves_the_control_word() {
+        let mut bank = PropAnimBank::default();
+        bank.bind_actor_clip(PLAYER_ANCHOR_TARGET, 4, 15);
+        // Let the script write the control word the way the innkeeper's does.
+        let a = bank.actor_clip_mut(PLAYER_ANCHOR_TARGET).unwrap();
+        a.flags = (a.flags & !ANIM_HOLD) | ANIM_CLAMP;
+        a.cursor = 40;
+        let marked = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().flags;
+
+        // Same id again: no rebind, so the cursor keeps playing.
+        bank.bind_actor_clip(PLAYER_ANCHOR_TARGET, 4, 15);
+        let a = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap();
+        assert_eq!(a.cursor, 40, "a re-poke of the bound id must not restart");
+        assert_eq!(a.flags, marked);
+
+        // A different id: cursor back to frame 0, control word untouched.
+        bank.bind_actor_clip(PLAYER_ANCHOR_TARGET, 5, 15);
+        let a = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap();
+        assert_eq!(a.anim_id, 5);
+        assert_eq!(a.cursor, 0, "the binder zeroes +0x68 on a clip change");
+        assert_eq!(a.flags, marked, "the binder never writes +0x62");
+    }
+
+    /// The once-per-frame arbitration: whichever driver gets there first
+    /// advances the cursor, and the other one does not advance it again.
+    #[test]
+    fn a_cross_context_cursor_advances_once_per_frame() {
+        let mut bank = PropAnimBank::default();
+        bank.bind_actor_clip(PLAYER_ANCHOR_TARGET, 4, 15);
+        let step = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().rate;
+
+        // Field frame: the prop-layer tick moves it, the runner's catch-up
+        // declines.
+        let before = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().cursor;
+        bank.tick_anims();
+        assert!(!bank.tick_actor_clips_for_frame(), "already ticked");
+        assert_eq!(
+            bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().cursor - before,
+            step
+        );
+
+        // Conversation-only frame: the catch-up is the tick.
+        let before = bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().cursor;
+        assert!(bank.tick_actor_clips_for_frame(), "nothing ticked it yet");
+        assert_eq!(
+            bank.actor_clip(PLAYER_ANCHOR_TARGET).unwrap().cursor - before,
+            step
+        );
     }
 
     #[test]
