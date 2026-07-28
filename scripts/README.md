@@ -78,6 +78,7 @@ directory.
 - `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` - PSX GPU-primitive decode + emitter/ground-tile analysis.
 - `call-graph.py` / `scan_funcs_for_addr_range.py` - call-graph + address-range scans over the Ghidra dumps.
 - `locate-entry-image.py` - which based overlay image actually holds a worklist address's function entry, from disc bytes (stack-frame prologue + in-image `jal` sites). Disambiguates the VA aliasing at the shared `0x801CE818` / `0x801F69D8` bases; prints both signals rather than a verdict, because leaf entries have no frame and jump-table / SCUS-called entries have no in-overlay `jal`.
+- `find-address-word-refs.py` - who references an address, in **all five** forms at once: literal LE word (function-pointer table / actor-template slot), `lui`+`addiu`/`ori` materialisation, `jal`, `j`, PC-relative branch. Sweeps SCUS, the based overlay images and (`--prot`) the raw bytes of every extracted PROT entry, so "no caller" becomes a statement about the disc rather than about one tool's blind spot. `--range` answers "who references this table", `--home` marks the branch hits a slot sibling contributes at the shared base. See [`docs/tooling/address-reference-scan.md`](../docs/tooling/address-reference-scan.md).
 
 See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 [`docs/tooling/static-overlay-pipeline.md`](../docs/tooling/static-overlay-pipeline.md).

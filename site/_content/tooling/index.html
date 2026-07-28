@@ -18,6 +18,7 @@
     <li>Most of Legaia's game logic is <em>not</em> in the executable - it lives in overlays, chunks of code the game loads into RAM on demand. <a href="overlay-capture.html">Overlay capture</a>, the <a href="static-overlay-pipeline.html">static overlay pipeline</a>, and the <a href="pcsx-redux-automation.html">PCSX-Redux</a> / <a href="mednafen-automation.html">mednafen</a> probe harnesses recover and observe that code at runtime; the <a href="spine-flag-writers-capture.html">spine flag-writers runbook</a> is a worked example of one such hunt.</li>
     <li>The <a href="port-catalog.html">port catalog</a> is the bookkeeping: per-function status across the whole decompilation + engine-port effort.</li>
     <li><a href="disc-coverage.html">Disc coverage</a> is the same question with the denominator taken from the disc instead of from our own citations &mdash; the only measure that can say how much of the game is left.</li>
+    <li>The <a href="address-reference-scan.html">address-reference scan</a> settles the question that stalls individual threads: who reaches this routine, and &mdash; when the honest answer is nobody &mdash; how that is told apart from work not yet done.</li>
   </ul>
 </section>
 
@@ -59,6 +60,10 @@
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
       <div class="card-body">Per-function status: <code>dumped</code> &times; <code>documented</code> &times; <code>ported</code> &times; <code>ignored</code>. <code>// PORT:</code> and <code>// REF:</code> tags, BFS-from-roots feature views, ignore-list of statically-linked PsyQ infra, drift checker wired into the pre-commit hook, regenerable open-work dashboard.</div>
+    </a>
+    <a class="card" href="address-reference-scan.html">
+      <div class="card-title">Address-reference scan</div>
+      <div class="card-body">"Who calls this?" answered from the disc's own bytes rather than from one tool's blind spot: every way the game can reach an address &mdash; pointer table, split-address pair, call, jump, branch &mdash; swept across the executable, all 31 overlay images and every archive entry at once. Also settles the opposite question, which is how a routine the game never runs gets told apart from unfinished work.</div>
     </a>
     <a class="card" href="determinism-replay.html">
       <div class="card-title">Determinism + replay</div>
