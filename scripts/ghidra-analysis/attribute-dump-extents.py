@@ -46,6 +46,10 @@ DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
 OVERLAY_MAP = os.path.join(REPO, "crates", "asset", "data", "static-overlays.toml")
 DEFAULT_OUT = os.path.join(HERE, "dump-extent-attribution.csv")
 
+# One header parser for the whole corpus, shared with `scripts/ci/disc-coverage.py`.
+sys.path.insert(0, HERE)
+import dump_header  # noqa: E402
+
 SCUS_BASE = 0x80010000
 SCUS_HEADER = 0x800
 
@@ -59,8 +63,6 @@ MIN_SIGNABLE = 8
 # over-read and not a coincidence. Same probe `classify-worklist.py` uses.
 OVER_READ_PROBE = 256
 
-HDR_RE = re.compile(r"^==\s+(\S+)\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)")
-SIZE_RE = re.compile(r"^size=(\d+) bytes,\s*(\d+) instructions")
 INSN_RE = re.compile(r"^([0-9a-fA-F]{8})\s+(\S+)\s*(.*)$")
 
 MEM_MNEMONICS = {
@@ -226,14 +228,16 @@ def read_dumps(funcs_dir):
             continue
         if not lines:
             continue
-        m = HDR_RE.match(lines[0].strip())
-        s = SIZE_RE.match(lines[1].strip()) if len(lines) > 1 else None
-        if not m or not s:
+        # One header parser, shared with `disc-coverage.py`, so the two
+        # instruments agree about which files are dumps and where each one
+        # starts. A private regex here silently dropped real dumps whose header
+        # uses one of the corpus's other spellings, and the resulting extents
+        # then had no attribution row at all - which reads in the coverage
+        # report as unresolvable ambiguity rather than as a parser gap.
+        dump, _reject = dump_header.parse_text("".join(lines), path)
+        if dump is None:
             continue
-        nbytes = int(s.group(1))
-        if nbytes <= 0:
-            continue
-        entry = int(m.group(3), 16)
+        entry, nbytes = dump.entry, dump.nbytes
         insns, in_dis = [], False
         for line in lines[2:]:
             if "--- DISASSEMBLY ---" in line:

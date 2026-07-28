@@ -13,12 +13,14 @@ Two measurements, and they are NOT the same kind of number - the report says so
 in its own text, because quoting them interchangeably is the obvious way to
 misuse this page:
 
-  CODE  - byte-exact. Every Ghidra dump header carries `entry=` and
-          `size=N bytes`, so the dumped functions are real byte intervals.
-          Merge them, subtract from an image's extent, and every remaining byte
-          is genuinely un-dumped. Gaps are then classified code-vs-data so the
-          rodata an executable carries inside its text segment does not inflate
-          the denominator.
+  CODE  - byte-exact. A Ghidra dump header states the body's entry and size, so
+          the dumped functions are real byte intervals. Merge them, subtract
+          from an image's extent, and every remaining byte is genuinely
+          un-dumped. Gaps are then classified code-vs-data so the rodata an
+          executable carries inside its text segment does not inflate the
+          denominator. The header is parsed by `dump_header`, shared with the
+          attribution sweep - the corpus spells every header field more than
+          one way and a private regex silently under-counts.
 
   DATA  - format RECOGNITION, one level coarser. `asset categorize` says which
           format class each PROT entry is. Knowing an entry is a
@@ -60,7 +62,6 @@ import csv
 import glob
 import json
 import os
-import re
 import struct
 import sys
 import tomllib
@@ -69,6 +70,14 @@ import tomllib
 # port-catalog.py's `Path(__file__).resolve().parent.parent.parent`.
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The dump header has one parser, shared with the attribution sweep. Each
+# instrument over this corpus used to carry its own regex, and because the
+# corpus spells every header field more than one way, each silently rejected a
+# different subset of real dumps as "no parseable header". See
+# `scripts/ghidra-analysis/dump_header.py`.
+sys.path.insert(0, os.path.join(REPO, "scripts", "ghidra-analysis"))
+import dump_header  # noqa: E402
+
 DEFAULT_FUNCS = os.path.join(REPO, "ghidra", "scripts", "funcs")
 DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
 DEFAULT_OUT = os.path.join(REPO, "target", "disc-coverage")
@@ -76,9 +85,6 @@ OVERLAY_MAP = os.path.join(REPO, "crates", "asset", "data", "static-overlays.tom
 BASELINE = os.path.join(REPO, "scripts", "ci", "disc-coverage-baseline.json")
 ATTRIBUTION = os.path.join(
     REPO, "scripts", "ghidra-analysis", "dump-extent-attribution.csv")
-
-HDR_RE = re.compile(r"^==\s+(\S+)\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)")
-SIZE_RE = re.compile(r"^size=(\d+) bytes,\s*(\d+) instructions")
 
 # MIPS I primary opcodes the R3000A actually issues. Used only to tell a gap of
 # code from a gap of data; it is a statistical test over a whole gap, never a
@@ -105,28 +111,23 @@ UNEXPLAINED_CLASSES = {
 
 
 def read_dump_extents(funcs_dir):
-    """Every dump's (entry_va, end_va). Returns [] when the corpus is absent."""
+    """Every dump's (entry_va, end_va), plus a census of what was excluded.
+
+    Returns `(extents, rejects)` where `rejects` counts `dump_header`'s reject
+    classes. The census is the point: a single "N files had no parseable
+    header" number invites - and previously carried - a wrong explanation of
+    what those files are. Most of them are the corpus storing an ANSWER, and
+    only a handful are defective dumps.
+    """
     out = []
-    unparsed = 0
+    rejects = {}
     for path in sorted(glob.glob(os.path.join(funcs_dir, "*.txt"))):
-        try:
-            with open(path, errors="replace") as fh:
-                first, second = fh.readline(), fh.readline()
-        except OSError:
+        dump, reject = dump_header.parse_file(path)
+        if dump is None:
+            rejects[reject] = rejects.get(reject, 0) + 1
             continue
-        m, s = HDR_RE.match(first.strip()), SIZE_RE.match(second.strip())
-        if not m or not s:
-            # Dumps that report `0 instructions` and carry only decompiled C
-            # land here. They are not evidence of coverage and are excluded.
-            unparsed += 1
-            continue
-        nbytes = int(s.group(1))
-        if nbytes <= 0:
-            unparsed += 1
-            continue
-        entry = int(m.group(3), 16)
-        out.append((entry, entry + nbytes))
-    return out, unparsed
+        out.append(dump.extent)
+    return out, rejects
 
 
 # Extent classes in `dump-extent-attribution.csv` whose verdict is that the
@@ -370,7 +371,30 @@ def data_report(extracted):
     }
 
 
-def render(scus, overlays, amb_totals, data, unparsed, attributed):
+REJECT_TEXT = {
+    "pointer_stub": ("answer", "recorded interior citation naming its enclosing "
+                     "dump - the corpus's correct handling of a mid-function "
+                     "address, not a missing dump"),
+    "nofunc_record": ("answer", "recorded negative: no analyzed function at or "
+                      "containing that address"),
+    "data_window": ("answer", "a fixed hex or address-range window, declared as "
+                    "a window rather than a body"),
+    "not_a_dump": ("answer", "an analysis script's output whose filename happens "
+                   "to end `_<addr>.txt` - xref sweeps, listings, notes"),
+    "zero_insns": ("defect", "states a size but `0 instructions`: Ghidra decoded "
+                   "none, so the window is data being asked for as code"),
+    "no_extent": ("defect", "a body dump stating neither a size nor a signable "
+                  "instruction stream"),
+    "gapped_stream": ("defect", "printed addresses stop being consecutive, so "
+                      "the range between them is not evidenced"),
+    "empty_dump": ("defect", "a header with no body at all - the dump script "
+                   "wrote its header and then failed"),
+    "zero_bytes": ("defect", "states `size=0`"),
+    "no_entry": ("defect", "an extent with no recoverable entry address"),
+}
+
+
+def render(scus, overlays, amb_totals, data, rejects, attributed):
     ambiguous, resolved, residue = amb_totals
     L = []
     add = L.append
@@ -490,9 +514,29 @@ def render(scus, overlays, amb_totals, data, unparsed, attributed):
             "(`scripts/ghidra-analysis/dump-extent-attribution.csv` absent); "
             "overlay rows are attributed by address alone.")
         add("")
-    add("`%d` dump file(s) carried no parseable `size=` header (typically the "
-        "ones that report `0 instructions` and hold only decompiled C). They are "
-        "excluded - such a dump is not evidence of coverage." % unparsed)
+    add("### Files excluded from the numerator")
+    add("")
+    answers = sum(n for k, n in rejects.items()
+                  if REJECT_TEXT.get(k, ("defect",))[0] == "answer")
+    defects = sum(rejects.values()) - answers
+    add("`%d` file(s) in the dump directory are not counted as evidence. They "
+        "are not one population: **%d** are the corpus storing an *answer* "
+        "rather than a dump, and only **%d** are defective dumps. A single "
+        "count over the two invites the wrong reading of what is left to "
+        "repair." % (sum(rejects.values()), answers, defects))
+    add("")
+    add("| class | files | kind | what it is |")
+    add("|---|---:|---|---|")
+    for k, n in sorted(rejects.items(), key=lambda r: -r[1]):
+        kind, why = REJECT_TEXT.get(k, ("defect", "unclassified"))
+        add("| `%s` | %d | %s | %s |" % (k, n, kind, why))
+    add("")
+    add("Header parsing is shared with the attribution sweep "
+        "(`scripts/ghidra-analysis/dump_header.py`) so the two agree about what "
+        "a dump is. The corpus spells every header field more than one way, and "
+        "an instrument with its own regex rejects a different subset of real "
+        "dumps as unparseable - which reads as a corpus gap and is really a "
+        "parser one.")
     add("")
 
     add("## Data")
@@ -566,7 +610,7 @@ def main():
         print("[disc-coverage] Both are gitignored; this gate only measures locally.")
         return 0
 
-    extents, unparsed = read_dump_extents(args.funcs)
+    extents, rejects = read_dump_extents(args.funcs)
     if not extents:
         print("[disc-coverage] SKIPPED - dump corpus present but empty.")
         return 0
@@ -583,7 +627,7 @@ def main():
         print("[disc-coverage] SKIPPED - no extractable images found.")
         return 0
 
-    report = render(scus, overlays, amb_totals, data, unparsed, bool(attrib))
+    report = render(scus, overlays, amb_totals, data, rejects, bool(attrib))
     os.makedirs(args.out, exist_ok=True)
     md_path = os.path.join(args.out, "disc-coverage.md")
     with open(md_path, "w") as fh:
