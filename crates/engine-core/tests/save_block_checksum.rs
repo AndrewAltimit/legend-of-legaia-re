@@ -155,8 +155,8 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
          intended, widen the list here"
     );
 
-    // And the un-composed header fields really are untouched: this is the
-    // edge above, stated as a fact about the composer rather than about any
+    // And the un-composed fields really are untouched: this is the edge
+    // above, stated as a fact about the composer rather than about any
     // particular leftover value.
     for off in [
         legaia_save::card::RETAIL_LOCATION_NAME_OFFSET,
@@ -168,4 +168,58 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             "offset {off:#x} is not part of the composed set"
         );
     }
+}
+
+/// The block's first 128 bytes are the PSX **title frame**, the only part a
+/// real card's Load screen shows: `SC` at `+0`, the icon-frame descriptor at
+/// `+2` and the block count at `+3` (`card_flow::SAVE_HEADER_MAGIC`), the
+/// title from `+4`, the icon CLUT at `+0x60` and the 16x16 4bpp icon at
+/// `+0x80`.
+///
+/// The composer stamps the two-byte `SC` and nothing else of it, so a save
+/// written into a previously-free card block carries a valid payload and a
+/// valid checksum behind a header the BIOS browser reads as junk. Retail's
+/// own rule is ported and sitting right there unused - `SAVE_HEADER_MAGIC`
+/// is the full four bytes and `save_title_digits` is the slot's two
+/// full-width numerals.
+///
+/// This is a characterisation of today's composer, deliberately written so
+/// that **fixing it fails here**: the assertion is "the composer does not
+/// write the title frame", and whoever makes it write one deletes this test
+/// and pins the bytes instead.
+#[test]
+fn the_composer_does_not_write_the_psx_title_frame() {
+    use legaia_engine_core::card_flow::{SAVE_HEADER_MAGIC, save_title_digits};
+
+    let mut block = dirty_block();
+    let pristine = dirty_block();
+    a_world()
+        .save_full()
+        .write_into_retail_sc_block(&mut block)
+        .unwrap();
+
+    assert_eq!(
+        &block[..2],
+        &SAVE_HEADER_MAGIC[..2],
+        "the `SC` half is written"
+    );
+    assert_eq!(
+        &block[2..4],
+        &pristine[2..4],
+        "the icon-frame descriptor and block count are not - retail's          `SAVE_HEADER_MAGIC` carries {:?} there",
+        &SAVE_HEADER_MAGIC[2..4]
+    );
+
+    // Title (`+4..`), icon CLUT (`+0x60`) and icon bitmap (`+0x80`) likewise.
+    for off in [0x04usize, 0x60, 0x80] {
+        assert_eq!(
+            block[off], pristine[off],
+            "title-frame byte {off:#x} is not part of the composed set"
+        );
+    }
+
+    // The rule for the title is ported and correct - it is only uncalled.
+    // Slot 0 shows as "01", biased into the Shift-JIS full-width range.
+    assert_eq!(save_title_digits(0), [0x4F, 0x50]);
+    assert_eq!(save_title_digits(11), [0x50, 0x51]);
 }

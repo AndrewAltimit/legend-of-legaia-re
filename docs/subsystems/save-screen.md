@@ -716,6 +716,33 @@ composer's write order - records, then flags, then inventory - is what
 reclaims it. `engine-core/tests/save_block_checksum.rs` pins the region list,
 so extending the composer fails there rather than in a garbled info panel.
 
+### The PSX title frame
+
+The block's first 128 bytes are the console's own title frame - the only part
+of a save a real card's BIOS Load screen shows, and none of it is payload:
+
+| Offset | Field |
+|---|---|
+| `+0x00` | `"SC"` magic |
+| `+0x02` | icon-frame descriptor |
+| `+0x03` | block count |
+| `+0x04` | title, Shift-JIS |
+| `+0x60` | icon CLUT |
+| `+0x80` | 16x16 4bpp icon |
+
+Retail composes it in `FUN_801E1934`: `SAVE_HEADER_MAGIC` is the four bytes
+`SC 11 01`, and the title's two slot digits are biased by
+`SAVE_TITLE_DIGIT_BASE` so the BIOS browser renders full-width numerals (slot
+`0` shows as `01`). Both are ported, in `engine-core::card_flow`.
+
+The engine's composer stamps only the two-byte `SC`. A save it writes into a
+previously-free card block therefore has a correct payload and checksum behind
+a header the BIOS reads as junk - visible on a real console, invisible to this
+engine, which reads the payload directly. That is a gap in the composer, not
+in the ported rule; `card_flow`'s own note keeps the two apart, because "no
+host owns a `CardIoMachine`" is a fact about the state machines' entry point
+and says nothing about whether the composition rule is live.
+
 ## Story-flag persistence vs. scratchpad word
 
 Two distinct global-state stores share the *name* "story flags" but live in
