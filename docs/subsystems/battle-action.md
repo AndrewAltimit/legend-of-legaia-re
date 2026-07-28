@@ -164,8 +164,17 @@ animations](../formats/battle-data-pack.md#battle-animations-record0)).
 
 The full step body for state `0x28`:
 
-- If `+0x1DE == 9` (item-target re-route), reseats `actor[+0x1DD]` to `ctx[+0x24B]` (item-target). If `+0x1DE == 8`, similar reroute via `ctx[+0x24A] - 1`.
-- Then resolves bearing to target and writes facing. Sets `ctx[+0x6D8] = 0x14` (frame timer).
+- **Item-target re-route**, keyed on the **target** byte `actor[+0x1DD]` and not
+  on the category (`lw t2, 0x20(sp)` at `0x801E4298` reloads the byte the
+  prologue read out of `+0x1DD`): a target of `9` takes `ctx[+0x24B]`, a target
+  of `8` takes `ctx[+0x24A] - 1`, each only when that ctx byte is non-zero. The
+  two checks run in sequence on the rewritten value (`0x801E42E8`), so a `9`
+  that resolves to `8` falls into the second arm. Those ctx bytes are the cast
+  census's sole-survivor latches - `+0x24A` the lone living party slot
+  (1-based), `+0x24B` the lone living monster - so this is a group code
+  degenerating onto its last target.
+- Then [faces the target](#the-cast-begin-facing-store) and writes
+  `actor[+0x46]`. Sets `ctx[+0x6D8] = 0x14` (frame timer).
 - For party (`actor_id < 3`), looks up the spell-name string via `&DAT_800754D0 + actor[+0x1DF]*0xC`, computes centered X for HUD, writes `_DAT_80077332/+0x33A/+0x344/+0x352/+0x35C` (HUD label slots), fires UI element `FUN_801D8DE8(0x4C, 0)` (spell label).
 - If the spell's first table byte is `'c'` (capture-class spell) → `ctx[7] = 0x6E` (capture path) + queues capture archive load via `func_0x8003EC70`.
 - Reads MP cost from `&DAT_800754D0 + spell_id*0xC + 3` (entry +3); reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E3D0C`). Subtracts from `actor[+0x150]` (MP).
