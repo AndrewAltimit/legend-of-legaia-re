@@ -38,11 +38,13 @@
 //! over `SCUS_942.54`, the based overlay images and the raw PROT entries finds
 //! no reference of any form to `0x801DEA50` inside the battle-action overlay
 //! image: the only two `jal` sites in the corpus are `0x800478B8` and
-//! `0x80047C08`, both inside **`FUN_80047430`**, the per-frame battle
-//! render-node update. Both are gated on `DAT_8007BD71 == 0xFF`, the effect-VM
+//! `0x80047C08`, both inside **`FUN_80047430`**, the battle per-frame
+//! anim-node tick. Both are gated on `DAT_8007BD71 == 0xFF`, the effect-VM
 //! ready flag, and both are preceded by the paired call to `FUN_801EC3E4` with
 //! the same three arguments. So this runs once per frame off the render tick
-//! for the acting actor, not once per action off the SM.
+//! for the acting actor, not once per action off the SM - and that tick is
+//! itself reached by function pointer from the actor-list iterator
+//! `FUN_8002519C`, which is live-pinned mid-battle.
 //!
 //! That caller is ported and live: `FUN_80047430`'s HP-bar arm is
 //! `legaia_engine_vm::battle_hp_bar`, driven from `World::tick_battle_hp_bars`.
@@ -57,7 +59,7 @@
 //! 3. a [`RotationLut`] pair, which no `engine-core` host holds.
 //!
 //! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
-//! REF: FUN_80047430 - the sole retail caller, the battle render-node update.
+//! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.
 //! REF: FUN_801EC3E4 - the sibling call the caller pairs this with.
 //! REF: FUN_801E295C - the action SM that stages the move.
 //! REF: FUN_80019B28 - the bearing helper.
