@@ -104,7 +104,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         FieldMenuRow::Magic,
         &world,
         &legaia_engine_core::options::OptionsState::default(),
-        &[],
+        &legaia_engine_core::save_select::SaveRack::Blocks(Vec::new()),
         &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
         &world.spell_catalog,
         &legaia_engine_core::battle_stats::EquipmentTable::new(),

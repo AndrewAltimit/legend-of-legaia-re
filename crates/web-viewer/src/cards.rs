@@ -107,7 +107,7 @@ impl LegaiaRuntime {
     /// Per-**card-slot** snapshots: the pill row of the retail save screen.
     /// `present` means "a card is inserted here", not "this holds a save" -
     /// in card-slots mode that is what the session gates its confirm on
-    /// (see `SaveSelectSession::set_card_slots_mode`).
+    /// (see `SaveRack::CardPorts` and `save_screen::SaveScreenFlow`).
     ///
     /// The label carries the card's own name so the page can surface which
     /// image is in which port.

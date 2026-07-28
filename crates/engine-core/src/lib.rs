@@ -106,6 +106,7 @@ pub mod register_ramp;
 pub mod retail_magic;
 pub mod retail_pad;
 pub mod save_menu_atlas;
+pub mod save_screen;
 pub mod save_select;
 pub mod save_subscreen;
 pub mod scene;

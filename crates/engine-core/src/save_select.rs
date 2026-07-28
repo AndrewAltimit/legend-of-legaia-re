@@ -35,11 +35,13 @@
 //! Retail is two-stage: the pills are the console's **two memory-card
 //! slots** (the libcd channel's `port`, see
 //! `docs/subsystems/save-screen.md`), and the 5x3 preview grid is the
-//! chosen card's fifteen blocks. Hosts that model it that way opt in via
-//! [`SaveSelectSession::set_card_slots_mode`], which routes Save-mode
-//! confirmation through the same `NowChecking` card-read beat Load mode
-//! already uses and lands the overwrite prompt after the grid rather than
-//! before it. The flag is off by default, so the flat model is unchanged.
+//! chosen card's fifteen blocks. A host declares which of the two it has by
+//! building a [`SaveRack`] and calling [`SaveSelectSession::for_rack`];
+//! [`SaveRack::CardPorts`] routes Save-mode confirmation through the same
+//! `NowChecking` card-read beat Load mode already uses and lands the
+//! overwrite prompt after the grid rather than before it. The driver around
+//! that second stage - grid cursor, card read, commit target - is
+//! [`crate::save_screen::SaveScreenFlow`], so both hosts run one copy of it.
 //!
 //! Engines call [`SaveSelectSession::tick`] each frame and react to
 //! returned [`SelectEvent`]s. The session never reads the save data
@@ -985,6 +987,24 @@ pub struct SelectInput {
     pub triangle: bool,
 }
 
+impl SelectInput {
+    /// Unpack an edge-triggered PSX pad word, the shape every host already
+    /// drives its menus with.
+    pub fn from_pad_edge(pressed: u16) -> Self {
+        use crate::input::PadButton;
+        let is = |b: PadButton| pressed & b.mask() != 0;
+        Self {
+            up: is(PadButton::Up),
+            down: is(PadButton::Down),
+            left: is(PadButton::Left),
+            right: is(PadButton::Right),
+            cross: is(PadButton::Cross),
+            circle: is(PadButton::Circle),
+            triangle: is(PadButton::Triangle),
+        }
+    }
+}
+
 /// Events emitted per `tick`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectEvent {
@@ -1128,7 +1148,54 @@ pub struct SaveSelectSession {
     card_poll_counter: u16,
 }
 
+/// What a save screen's pill row addresses - and the one thing that decides
+/// whether the session runs retail's two-stage card flow.
+///
+/// Hosts do not set [`SaveSelectSession::set_card_slots_mode`]; they declare
+/// a rack and [`SaveSelectSession::for_rack`] derives the flag from it. That
+/// is deliberate: the mode is a property of *what the slot list is*, not a
+/// switch a host may flip independently, and having each host decide
+/// separately is the exact shape `scripts/ci/check-ui-host-drift.py` calls a
+/// simulation divergence.
+///
+/// The driver around a card-ports session lives in
+/// [`crate::save_screen::SaveScreenFlow`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveRack {
+    /// Flat: the pill row **is** the block list. A pick off the pills is a
+    /// pick of the save itself. Kept for headless drivers that own a plain
+    /// list of saves and never show a second stage.
+    Blocks(Vec<SlotSnapshot>),
+    /// Retail: the pills are the console's memory-card **ports**, and the
+    /// 5x3 preview grid is the chosen port's fifteen blocks. `present` on a
+    /// port means "something is mounted here", not "this holds a save".
+    CardPorts(Vec<SlotSnapshot>),
+}
+
+impl SaveRack {
+    /// The pill row's entries.
+    pub fn slots(&self) -> &[SlotSnapshot] {
+        match self {
+            Self::Blocks(s) | Self::CardPorts(s) => s,
+        }
+    }
+
+    /// `true` for the two-stage card flow.
+    pub fn is_card_ports(&self) -> bool {
+        matches!(self, Self::CardPorts(_))
+    }
+}
+
 impl SaveSelectSession {
+    /// Build a session against a [`SaveRack`], taking the card-slots mode
+    /// from the rack's kind. This is the constructor hosts use; `new` is the
+    /// flat-list shorthand behind it.
+    pub fn for_rack(mode: SaveSelectMode, rack: &SaveRack) -> Self {
+        let mut s = Self::new(mode, rack.slots().to_vec());
+        s.card_slots_mode = rack.is_card_ports();
+        s
+    }
+
     pub fn new(mode: SaveSelectMode, slots: Vec<SlotSnapshot>) -> Self {
         let phase = if slots.is_empty() {
             SelectPhase::Done(SelectOutcome::Cancelled)
@@ -1182,13 +1249,16 @@ impl SaveSelectSession {
         self.card_events
     }
 
-    /// Opt into the retail two-stage memory-card flow (see the module
-    /// docs). Set this when the slot list models the console's two
-    /// **memory-card slots** instead of individual save blocks: Save mode
-    /// then crosses the `NowChecking` card-read beat and lands in
+    /// The retail two-stage memory-card flow: Save mode crosses the
+    /// `NowChecking` card-read beat and lands in
     /// [`SelectPhase::SlotPreview`], where the host renders the chosen
     /// card's block grid, and the overwrite prompt fires from the preview
     /// rather than from the pill row.
+    ///
+    /// **Hosts do not call this** - they build a [`SaveRack`] and let
+    /// [`Self::for_rack`] derive the flag, so the two hosts cannot make the
+    /// call differently. It stays public for tests that want a session in a
+    /// given mode without constructing a rack around it.
     pub fn set_card_slots_mode(&mut self, on: bool) {
         self.card_slots_mode = on;
     }

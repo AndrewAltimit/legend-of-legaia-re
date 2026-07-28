@@ -3,6 +3,78 @@
 use super::*;
 
 impl PlayWindowApp {
+    /// Drive [`legaia_engine_core::save_screen::SaveScreenFlow`] for whichever
+    /// save screen is open this frame, and return the edge the session should
+    /// see.
+    ///
+    /// Two responsibilities, both the kernel's decision and neither this
+    /// host's: *when* a port must be read (the flow asks, once per port), and
+    /// what a pad edge means on the block grid. All this shell adds is the
+    /// bytes - `disk_port_blocks` turns a port number into fifteen block
+    /// snapshots, the same shape the browser's card rack hands over.
+    fn service_save_flow(&mut self, edge: u16) -> u16 {
+        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        let session = match &self.boot_ui {
+            BootUiState::SaveSelect(s) => Some(s),
+            BootUiState::FieldMenu {
+                sub: Some(FieldMenuSubsession::Save(s)),
+            } => Some(s),
+            _ => None,
+        };
+        let Some(session) = session else { return edge };
+        let pending = self.save_flow.pending_read(session);
+        let blocks = pending.map(|port| disk_port_blocks(&self.save_dir, port));
+        // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
+        // session above borrowed `self.boot_ui`.
+        let session = match &self.boot_ui {
+            BootUiState::SaveSelect(s) => s,
+            BootUiState::FieldMenu {
+                sub: Some(FieldMenuSubsession::Save(s)),
+            } => s,
+            _ => return edge,
+        };
+        let mut flow = std::mem::take(&mut self.save_flow);
+        if let (Some(port), Some(blocks)) = (pending, blocks) {
+            flow.install_blocks(port, blocks);
+        }
+        let edge = flow.before_tick(session, edge);
+        self.save_flow = flow;
+        edge
+    }
+
+    /// Move the bytes a finished save screen asked for.
+    ///
+    /// [`SaveCommit`](legaia_engine_core::save_screen::SaveCommit) is in rack
+    /// coordinates: `port` is the card the player picked off the pill row,
+    /// `cell` the block they picked out of its 5x3 grid. This shell mounts
+    /// its save directory as the card in port 1, where cell `i` is
+    /// `slot_{i:02}` - a plain index, not the `i + 1` a real card's block 0
+    /// directory forces. Any other port is unmounted and there is nothing to
+    /// move.
+    fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) {
+        use legaia_engine_core::save_screen::SaveCommitKind;
+        if commit.port != 0 {
+            log::warn!(
+                "save screen: port {} holds no card; nothing written",
+                commit.port + 1
+            );
+            return;
+        }
+        let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(self.save_dir.clone());
+        let slot = commit.cell;
+        let world = &mut self.session.host.world;
+        match commit.kind {
+            SaveCommitKind::Load => match runtime.load_from_slot(world, slot) {
+                Ok(p) => log::info!("save screen: loaded slot {slot} from {}", p.display()),
+                Err(e) => log::warn!("save screen: load slot {slot} failed: {e:#}"),
+            },
+            SaveCommitKind::Save => match runtime.save_to_slot(world, slot) {
+                Ok(p) => log::info!("save screen: saved slot {slot} to {}", p.display()),
+                Err(e) => log::warn!("save screen: save slot {slot} failed: {e:#}"),
+            },
+        }
+    }
+
     /// Tick the boot-UI state machine (when active) using the latest
     /// pad bitmask. Returns `true` if the boot UI is still active and
     /// the scene tick should be skipped this frame.
@@ -10,6 +82,13 @@ impl PlayWindowApp {
         // Build edge-triggered "newly pressed" mask so menu navigation
         // doesn't auto-repeat on held keys.
         let pressed = self.pad & !self.prev_pad;
+        // Save-screen driver first: answer the card read the flow is waiting
+        // on and let it step the block-grid cursor / gate an empty-block Load
+        // BEFORE the session sees this edge. It runs ahead of the match
+        // because the match borrows `self.boot_ui` for the rest of the tick.
+        let pressed = self.service_save_flow(pressed);
+        // Read-only copy for the commit below, taken for the same reason.
+        let save_flow = self.save_flow.clone();
         let cross = pressed & 0x4000 != 0;
         let circle = pressed & 0x2000 != 0;
         let triangle = pressed & 0x1000 != 0;
@@ -112,12 +191,16 @@ impl PlayWindowApp {
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {
-                            // Open the save-select panel against `save_dir`.
-                            let snapshots = scan_save_dir(&self.save_dir);
+                            // Open the save-select panel against the shell's
+                            // rack: retail's two card ports, port 1 mounted
+                            // with `save_dir`. The rack kind is what puts the
+                            // session in the two-stage flow - no host flips
+                            // that flag by hand.
+                            self.save_flow.reset();
                             self.boot_ui = BootUiState::SaveSelect(
-                                legaia_engine_core::save_select::SaveSelectSession::new(
+                                legaia_engine_core::save_select::SaveSelectSession::for_rack(
                                     legaia_engine_core::save_select::SaveSelectMode::Load,
-                                    snapshots,
+                                    &disk_save_rack(&self.save_dir),
                                 ),
                             );
                         }
@@ -145,26 +228,20 @@ impl PlayWindowApp {
                 };
                 let _ = session.tick(input);
                 if let Some(outcome) = session.outcome() {
+                    // `commit` pairs the port off the outcome with the block
+                    // cell off the grid; the flat pill-slot reading is what
+                    // this used to do and is wrong for a two-stage rack.
+                    let commit = save_flow.commit(session);
                     match outcome {
-                        SelectOutcome::Loaded(slot) => {
-                            // Hydrate the world from the slot file.
-                            let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(
-                                self.save_dir.clone(),
-                            );
-                            match runtime.load_from_slot(&mut self.session.host.world, slot) {
-                                Ok(p) => log::info!("loaded slot {} from {}", slot, p.display()),
-                                Err(e) => log::warn!("load slot {slot} failed: {e:#}"),
-                            }
-                            self.boot_ui = BootUiState::Inactive;
-                        }
                         SelectOutcome::Cancelled => {
                             // Back to title.
                             self.boot_ui =
                                 BootUiState::Title(legaia_engine_core::title::TitleSession::new());
                         }
-                        SelectOutcome::Saved(_) | SelectOutcome::Deleted(_) => {
-                            // Save-select in Load mode shouldn't emit these,
-                            // but degrade gracefully.
+                        _ => {
+                            if let Some(c) = commit {
+                                self.apply_save_commit(c);
+                            }
                             self.boot_ui = BootUiState::Inactive;
                         }
                     }
@@ -253,44 +330,12 @@ impl PlayWindowApp {
                                 }
                             }
                             FieldMenuSubsession::Status(_) => {}
+                            // The retail Load / Save rows, committed through
+                            // the shared flow: the outcome names the card
+                            // port, the grid names the block.
                             FieldMenuSubsession::Save(s) => {
-                                use legaia_engine_core::save_select::SelectOutcome;
-                                let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(
-                                    self.save_dir.clone(),
-                                );
-                                match s.outcome() {
-                                    Some(SelectOutcome::Saved(slot)) => {
-                                        match runtime
-                                            .save_to_slot(&mut self.session.host.world, slot)
-                                        {
-                                            Ok(p) => log::info!(
-                                                "field menu: saved slot {} to {}",
-                                                slot,
-                                                p.display()
-                                            ),
-                                            Err(e) => log::warn!(
-                                                "field menu: save slot {slot} failed: {e:#}"
-                                            ),
-                                        }
-                                    }
-                                    // The retail Load row: picking a slot
-                                    // replaces the running world with the
-                                    // saved one.
-                                    Some(SelectOutcome::Loaded(slot)) => {
-                                        match runtime
-                                            .load_from_slot(&mut self.session.host.world, slot)
-                                        {
-                                            Ok(p) => log::info!(
-                                                "field menu: loaded slot {} from {}",
-                                                slot,
-                                                p.display()
-                                            ),
-                                            Err(e) => log::warn!(
-                                                "field menu: load slot {slot} failed: {e:#}"
-                                            ),
-                                        }
-                                    }
-                                    _ => {}
+                                if let Some(c) = save_flow.commit(&s) {
+                                    self.apply_save_commit(c);
                                 }
                             }
                             FieldMenuSubsession::Config(o) => {
@@ -328,7 +373,11 @@ impl PlayWindowApp {
                     None => None,
                 };
                 if let Some(row) = suspended_row {
-                    let snapshots = scan_save_dir(&self.save_dir);
+                    // The shell's save rack: retail's two card ports, port 1
+                    // mounted with `save_dir`. Its kind is what puts a Load /
+                    // Save sub-session in the two-stage flow.
+                    let rack = disk_save_rack(&self.save_dir);
+                    self.save_flow.reset();
                     // Build sub-sessions from the DISC tables the boot path
                     // already installed on the world (spell table, equipment
                     // bonus table) plus the live saved-chain library - not
@@ -340,7 +389,7 @@ impl PlayWindowApp {
                         row,
                         world,
                         &self.options_state,
-                        &snapshots,
+                        &rack,
                         &chain_library,
                         &world.spell_catalog,
                         &world.equipment_table,
@@ -368,11 +417,11 @@ impl PlayWindowApp {
                 if let Some(outcome) = session.outcome() {
                     match outcome {
                         GameOverOutcome::Continue => {
-                            let snapshots = scan_save_dir(&self.save_dir);
+                            self.save_flow.reset();
                             self.boot_ui = BootUiState::SaveSelect(
-                                legaia_engine_core::save_select::SaveSelectSession::new(
+                                legaia_engine_core::save_select::SaveSelectSession::for_rack(
                                     legaia_engine_core::save_select::SaveSelectMode::Load,
-                                    snapshots,
+                                    &disk_save_rack(&self.save_dir),
                                 ),
                             );
                         }
@@ -513,6 +562,7 @@ impl PlayWindowApp {
                 out.extend(save_select_phase_text_draws(
                     &self.font,
                     s,
+                    &self.save_flow,
                     stage_origin,
                     stage_scale,
                     self.save_menu.is_some(),

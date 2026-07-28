@@ -28,7 +28,7 @@ use crate::input::PadButton;
 use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as InvTargetRow};
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
 use crate::pause_screens::{PauseItemRow, PauseItemsSession};
-use crate::save_select::{SaveSelectMode, SaveSelectSession, SelectInput, SlotSnapshot};
+use crate::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
 use crate::spell_menu::{
     CasterSlot as SpellCasterSlot, SpellMenuInput, SpellMenuOutcome, SpellMenuSession,
     TargetRow as SpellTargetRow,
@@ -67,11 +67,14 @@ impl FieldMenuSubsession {
     /// override one of the construction inputs (e.g. supply a custom
     /// equipment table for Equip, or a saved-chain library for Arts)
     /// should build that variant directly.
+    /// `save_rack` is the model behind the Load / Save rows - and its kind
+    /// is what puts the session in retail's two-stage card flow, so a host
+    /// never decides that separately. See [`SaveRack`].
     pub fn build(
         row: FieldMenuRow,
         world: &World,
         options: &OptionsState,
-        save_slots: &[SlotSnapshot],
+        save_rack: &SaveRack,
         chain_library: &ChainLibrary,
         spell_catalog: &SpellCatalog,
         equipment_table: &EquipmentTable,
@@ -93,14 +96,12 @@ impl FieldMenuSubsession {
             }
             FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
             FieldMenuRow::Status => Self::Status(StatusScreenSession::new(status_snapshots(world))),
-            FieldMenuRow::Load => Self::Save(SaveSelectSession::new(
-                SaveSelectMode::Load,
-                save_slots.to_vec(),
-            )),
-            FieldMenuRow::Save => Self::Save(SaveSelectSession::new(
-                SaveSelectMode::Save,
-                save_slots.to_vec(),
-            )),
+            FieldMenuRow::Load => {
+                Self::Save(SaveSelectSession::for_rack(SaveSelectMode::Load, save_rack))
+            }
+            FieldMenuRow::Save => {
+                Self::Save(SaveSelectSession::for_rack(SaveSelectMode::Save, save_rack))
+            }
             FieldMenuRow::Options => Self::Config(OptionsSession::new(options.clone())),
         }
     }
@@ -792,8 +793,12 @@ mod tests {
         world
     }
 
-    fn fresh_save_slots() -> Vec<SlotSnapshot> {
-        (0..3).map(SlotSnapshot::empty).collect()
+    fn fresh_save_slots() -> SaveRack {
+        SaveRack::Blocks(
+            (0..3)
+                .map(crate::save_select::SlotSnapshot::empty)
+                .collect(),
+        )
     }
 
     fn build(row: FieldMenuRow, world: &World) -> FieldMenuSubsession {

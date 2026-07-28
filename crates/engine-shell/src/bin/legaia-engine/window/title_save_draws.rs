@@ -189,14 +189,14 @@ impl PlayWindowApp {
         // bottom info panel; NowChecking shows a centered dialog box
         // with the "Now checking. Do not remove MEMORY CARD" message.
         match session.phase() {
-            SelectPhase::SlotPreview { slot } => {
-                // Build per-cell views from the session's slot
-                // snapshots. Each cell maps to one memory-card block;
-                // up to 15 cells (5×3 grid).
+            SelectPhase::SlotPreview { .. } => {
+                // The grid is the picked PORT's fifteen blocks, focused by
+                // the shared flow's cursor - NOT the pill row, which in a
+                // two-stage rack lists the card ports instead.
+                let (blocks, cell) = self.save_flow.preview(session);
                 let cells: Vec<legaia_engine_render::SlotGridCell> = (0..15)
                     .map(|i| {
-                        session
-                            .slots()
+                        blocks
                             .get(i)
                             .map(|s| legaia_engine_render::SlotGridCell {
                                 present: s.present,
@@ -212,11 +212,11 @@ impl PlayWindowApp {
                 draws.extend(legaia_engine_render::slot_preview_grid_draws_for(
                     &assets.rects,
                     &cells,
-                    slot,
+                    cell,
                     stage_origin,
                     stage_scale,
                 ));
-                let info = build_slot_info_view(session.slots(), slot);
+                let info = build_slot_info_view(blocks, cell);
                 let view = info.as_ref().map(|i| i.as_view());
                 let panel_y_offset = info_panel_slide_offset(session);
                 draws.extend(legaia_engine_render::slot_info_panel_draws_for(

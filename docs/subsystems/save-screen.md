@@ -641,21 +641,49 @@ Between them sits the card read - the "Now checking. Do not remove MEMORY
 CARD" dialog - which is why that beat exists at all.
 
 `SaveSelectSession` is renderer-agnostic and models the phases, not the id
-space, so a host picks which reading its slot list carries:
+space. Which reading its slot list carries comes from the `SaveRack` the host
+constructs, and the session derives the two-stage flag from that rack's kind
+(`SaveSelectSession::for_rack`) - a host never sets the flag itself, so the
+two hosts cannot answer the question differently.
 
-- **Flat** (default): the slot list *is* the save blocks; the pills show the
-  first two and Save picks a block straight off the pill row. The native
-  shell drives this against its on-disk LGSF slots.
-- **Card slots** (`set_card_slots_mode(true)`): the slot list is the two
-  ports. Save then crosses the same `NowChecking` beat Load does and raises
-  its overwrite prompt from the preview rather than from the pill row, and
-  `present` on a pill means "a card is inserted", not "this holds a save".
-  The browser play page (`legaia_web_viewer::cards` + `play_menu`) drives
-  this against the player's own card images.
+| Rack | Pill row | Preview grid | Who builds it |
+|---|---|---|---|
+| `SaveRack::CardPorts` | the console's two ports | the picked port's fifteen blocks | both shipped hosts |
+| `SaveRack::Blocks` | the block list itself | the same list | headless drivers that own a plain list of saves |
 
-The **grid cursor** is the host's, not the session's: `SlotPreview` ignores
-directions, so which of the fifteen blocks is focused - and therefore which
-block a confirm commits - is host state.
+Under `CardPorts`, Save crosses the same `NowChecking` beat Load does and
+raises its overwrite prompt from the preview rather than from the pill row,
+and `present` on a pill means "something is mounted here", not "this holds a
+save".
+
+### What backs a port
+
+A port is whatever the host mounts, and that is the only thing the two hosts
+differ in:
+
+- The browser play page (`legaia_web_viewer::cards` + `play_menu`) mounts the
+  player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`), so cell `i` of
+  the grid is card block `i + 1` - block 0 is the directory.
+- The native shell mounts its save directory as the card in port 1
+  (`disk_save_rack`), where cell `i` is `slot_{i}` - a plain index, no
+  directory block. Port 2 is the empty port.
+
+### The driver around the second stage
+
+Everything between the session and the bytes is
+`engine-core::save_screen::SaveScreenFlow`, shared by both hosts:
+
+- the 5x3 **grid cursor** (`SlotPreview` ignores directions, so the session
+  cannot own it),
+- the **card read**, asked for once per port rather than once per frame,
+- the rule that a **Load may not confirm an empty cell** - the session knows
+  only the phase, so an unguarded confirm reports `Loaded` on a block that
+  holds no save,
+- the `SaveCommit` that pairs the outcome's **port** with the grid's **cell**.
+
+A host supplies only the bytes: the fifteen snapshots behind a port, and the
+load / write against them. `scripts/ci/check-ui-host-drift.py` pins the rack
+kind each host declares.
 
 ## Relationship to `legaia_save`
 

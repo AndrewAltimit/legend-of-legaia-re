@@ -306,7 +306,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
 NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
-NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
+NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
@@ -326,18 +326,20 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["resolve_turn_retail"],
     },
     {
-        "what": "save-select model - whether the slot rack is put in card-slots "
-        "mode decides how many rows it shows and what each row addresses, so "
-        "the two hosts must make the same call or neither may",
+        "what": "save-select model - which rack a host declares decides how "
+        "many pills the screen shows and what each one addresses, so the two "
+        "hosts must declare the same kind. No host sets the card-slots flag "
+        "any more: `SaveSelectSession::for_rack` derives it from the "
+        "`SaveRack` variant, and the driver around the second stage is the "
+        "shared `save_screen::SaveScreenFlow` - so the assertion is on the "
+        "rack kind each host builds, which is the one thing left that a host "
+        "still chooses",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, None),
+            "native": (NATIVE_SAVE_HELPERS, "disk_save_rack"),
             "web": (WEB_PLAY_MENU, None),
         },
-        "mode": "symbols_same",
-        "symbols": ["set_card_slots_mode"],
-        "blocked_on": "the browser pause menu arms card-slots mode and the "
-        "native boot/cutscene save rack does not. A concurrent lane owns the "
-        "native window tree; delete this marker once the two agree.",
+        "mode": "pattern_same",
+        "pattern": r"SaveRack::(\w+)",
     },
     {
         "what": "live-loop arming - the browser twin of `enter_field_live`. "

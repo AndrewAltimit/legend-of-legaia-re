@@ -904,10 +904,19 @@ pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA768..0x801DA844`)
 ///
-/// NOT WIRED: see [`sub15_list_source`]. The engine's spell list is
-/// [`crate::spell_menu::SpellRowView`], built per frame from the catalog
-/// rather than stored as a reorderable per-character array, so there is no
-/// backing array for a swap to permute.
+/// NOT WIRED: see [`sub15_list_source`] - the blocker is that no engine
+/// NOT WIRED: screen offers a reorder, and only that.
+///
+/// This note used to add "the engine's spell list is built per frame from
+/// the catalog rather than stored as a reorderable per-character array, so
+/// there is no backing array for a swap to permute". That is false and it
+/// pointed the next reader at the wrong half of the gap. The backing array
+/// is the record itself: `field_menu_dispatch::build_spell_session` fills
+/// each caster's rows from `member.spell_list()`, which reads exactly the
+/// `+0x13D` / `+0x161` pair this swaps, **in record order**. So a swap here
+/// does permute what the Magic screen lists - `spell_swap_permutes_the_magic
+/// _screen_order` in `field_menu_subsession_e2e` pins that. What is missing
+/// is a screen that offers the exchange, not the data under it.
 pub fn sub15_swap_rows(record: &mut [u8], a: usize, b: usize) {
     if a == b {
         return;

@@ -23,7 +23,7 @@ use legaia_engine_core::field_menu_dispatch::{
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::items::ItemCatalog;
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::save_select::{SaveSelectMode, SlotSnapshot};
+use legaia_engine_core::save_select::{SaveRack, SaveSelectMode, SlotSnapshot};
 use legaia_engine_core::spells::SpellCatalog;
 use legaia_engine_core::tactical_arts_editor::{ChainEditor, ChainLibrary};
 use legaia_engine_core::world::World;
@@ -46,8 +46,8 @@ fn fresh_world() -> World {
     world
 }
 
-fn slots() -> Vec<SlotSnapshot> {
-    (0..3).map(SlotSnapshot::empty).collect()
+fn slots() -> SaveRack {
+    SaveRack::Blocks((0..3).map(SlotSnapshot::empty).collect())
 }
 
 fn build(row: FieldMenuRow, world: &World, options: &OptionsState) -> FieldMenuSubsession {
@@ -292,4 +292,88 @@ fn apply_arts_outcome_writes_through_chain_library() {
     } else {
         panic!("expected Arts sub");
     }
+}
+
+/// The rack the dispatcher is handed - not a per-host flag - is what puts a
+/// Load / Save sub-session in retail's two-stage card flow. This is the one
+/// decision both the native window and the browser play page make, and the
+/// point of routing it through `build` is that neither can make it
+/// differently (`scripts/ci/check-ui-host-drift.py`, save-select sim pair).
+#[test]
+fn the_rack_kind_carries_card_slots_mode_through_the_dispatcher() {
+    let world = fresh_world();
+    let ports = SaveRack::CardPorts((0..2).map(SlotSnapshot::empty).collect());
+    let blocks = SaveRack::Blocks((0..15).map(SlotSnapshot::empty).collect());
+    for row in [FieldMenuRow::Load, FieldMenuRow::Save] {
+        for (rack, expect) in [(&ports, true), (&blocks, false)] {
+            let sub = FieldMenuSubsession::build(
+                row,
+                &world,
+                &OptionsState::default(),
+                rack,
+                &ChainLibrary::new(),
+                &SpellCatalog::vanilla(),
+                &EquipmentTable::new(),
+            );
+            let FieldMenuSubsession::Save(s) = sub else {
+                panic!("{row:?} must build a save sub-session");
+            };
+            assert_eq!(s.card_slots_mode(), expect, "{row:?} against {rack:?}");
+            assert_eq!(s.slots().len(), rack.slots().len());
+        }
+    }
+}
+
+/// `save_subscreen::sub15_swap_rows` used to disclose itself as unreachable
+/// partly because "the engine's spell list is built per frame from the
+/// catalog rather than stored as a reorderable per-character array". That
+/// half was wrong, and this pins the correction: the Magic screen's rows
+/// come off the record's `+0x13D` / `+0x161` pair **in record order**, so
+/// permuting those bytes permutes what the player sees. The real gap is
+/// that no engine screen offers the exchange - not the data under it.
+#[test]
+fn spell_swap_permutes_the_magic_screen_order() {
+    use legaia_engine_core::save_subscreen::sub15_swap_rows;
+    let mut world = fresh_world();
+    let member = &mut world.roster.members[0];
+    let mut list = member.spell_list();
+    list.count = 3;
+    list.ids[..3].copy_from_slice(&[0x81, 0x82, 0x83]);
+    list.levels[..3].copy_from_slice(&[1, 2, 3]);
+    member.set_spell_list(list);
+
+    let ids_on_screen = |w: &World| -> Vec<u8> {
+        let sub = FieldMenuSubsession::build(
+            FieldMenuRow::Magic,
+            w,
+            &OptionsState::default(),
+            &slots(),
+            &ChainLibrary::new(),
+            &SpellCatalog::vanilla(),
+            &EquipmentTable::new(),
+        );
+        let FieldMenuSubsession::Spells(mut s) = sub else {
+            panic!("Magic must build a spell sub-session");
+        };
+        // Step into the caster's spell list: Cross on the char picker.
+        s.tick(
+            legaia_engine_core::spell_menu::SpellMenuInput::from_pad_edge(PadButton::Cross.mask()),
+        );
+        s.current_spell_rows().iter().map(|r| r.spell_id).collect()
+    };
+
+    assert_eq!(ids_on_screen(&world), vec![0x81, 0x82, 0x83]);
+    sub15_swap_rows(&mut world.roster.members[0].raw, 0, 2);
+    assert_eq!(
+        ids_on_screen(&world),
+        vec![0x83, 0x82, 0x81],
+        "the swap reaches the Magic screen through the record, not through a \
+         separate reorderable array"
+    );
+    let levels = world.roster.members[0].spell_list().levels;
+    assert_eq!(
+        &levels[..3],
+        &[3, 2, 1],
+        "the parallel `+0x161` byte moves with its id"
+    );
 }

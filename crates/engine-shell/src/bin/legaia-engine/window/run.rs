@@ -846,6 +846,7 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
+        save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
         options_state: legaia_engine_core::options::OptionsState::load_or_default(
             &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
         ),
