@@ -324,9 +324,16 @@ screen above or below the viewport still reads as on-screen.
 Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
 (`battle_actor_on_screen`), riding
 [`billboard::project_billboard`](../../crates/engine-render/src/billboard.rs).
-It is inert, and deliberately so: no dumped function `jal`s `0x8005126C`, so
-what retail does with a `0` is unknown, and wiring a guessed consumer would
-delete bodies the port currently draws on no evidence.
+It is inert, and so is retail's. `0x8005126C` has **no reference of any kind**
+on the disc - no literal address word in any table or actor template, no `jal`,
+no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
+`SCUS_942.54`, every based overlay image and the raw bytes of every extracted
+`PROT.DAT` entry
+([`address-reference-scan.md`](../tooling/address-reference-scan.md);
+[`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)).
+So "what does retail do with a `0`" has an answer, and it is *nothing*: no pass
+consults this verdict. The port's lack of a cull here is parity, not a gap
+waiting on a caller.
 
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 

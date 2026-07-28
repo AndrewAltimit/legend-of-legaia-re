@@ -336,6 +336,56 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `801D9C3C` | **Field-overlay MAN-load reset hook** (field overlay 0897). Called from the SCUS MAN decoder `FUN_8003AEB0` at `0x8003B444`. Reseeds the `0x801F2734..0x801F275C` and `0x801F3530..0x801F3538` globals (`0x801F2734 = 1`, `0x801F2740 = 3`, the rest zeroed), zeroes sixteen words ending at `0x801F357C`, then find-or-spawns a root actor (`FUN_8003CF04`, then `FUN_80020DE0` on template `0x801F2760`), clearing its `+0x50` / `+0x54`. |
 | `801DA390` | **Offset ease-toward-target** (field/world overlay). Skipped entirely when `_DAT_1f800394 & 0x1000000`. Eases the scalar `_DAT_8007bcac` toward the delta `cam[+0x4a] - player[+0x16]` (camera struct `DAT_801c6ea4`, player `_DAT_8007c364`) by a per-frame step: `0xc` when a d-pad direction is held (`_DAT_8007b850 & 0xf000`) under mode bit `0x20000`, otherwise `1`, and frozen while the player is stationary (`+0x16==+0x1e && +0x18==+0x20`); the step is also clamped to the remaining distance in `[1,0xc]`. `see ghidra/scripts/funcs/801da390.txt`. |
 
+## Static actor templates
+
+Most of the engine's per-frame work is done by **pool actors**, and an actor's
+behaviour is not chosen by a call - it is copied out of a static 24-byte
+**template** record by the allocator `FUN_80020DE0(template, pool)`. The
+template's tick pointer becomes `actor[+0x0C]`, which the actor-list walk then
+invokes every frame. So a routine that is only ever a tick has **no caller** in
+the call-graph sense; its one reference on the whole disc is the pointer word
+inside its template.
+
+The layout is fixed by the allocator's own field copies
+(`see ghidra/scripts/funcs/80020de0.txt`, `0x80020E34..0x80020EE0`):
+
+| off | type | field | lands at |
+|---|---|---|---|
+| `+0x00` | u16 | actor kind / seed word | consumed by the allocator's tail |
+| `+0x02` | u16 | secondary id | `actor[+0x62]` |
+| `+0x04` | u16 | mesh / bank index - **written at spawn time** by several sites before the call | `actor[+0x60]` and `actor[+0x64]` |
+| `+0x06` | u16 | `0xFFFF` on every record | - |
+| `+0x08` | ptr | **tick** - the per-frame handler | `actor[+0x0C]` |
+| `+0x0C` | u32 | flags, OR'd with `2` | `actor[+0x10]` |
+| `+0x10` | u32 | zero on every record | - |
+| `+0x14` | u16 | initial state word | `actor[+0x56]` |
+
+Records sit on a `0x18` grid. Known table heads: `0x800705FC` and
+`0x8007671C` in SCUS (the second one's leading eight records differ only in
+`+0x00`, and are reached by an index rather than individually), a third at
+`0x80073E60`, and per-overlay tables such as the field overlay's
+`0x801F2704..` band.
+
+**Each spawn site names its own record with a `lui`+`addiu` pair** - there is
+no dispatcher walking the table - so a record that nothing materialises is a
+record nothing spawns from, and its tick never runs. That is a checkable
+property rather than an inference: the
+[address-reference scan](../../tooling/address-reference-scan.md) resolves the
+materialisation sites of a whole table with `--range`.
+
+### The `+0x0C` framing error
+
+Several older rows describe the tick as the template's `+0x0C` word and quote
+a base 4 bytes below the real one (`0x800767F0` for `0x800767F4`, `0x80070670`
+for `0x80070674`). The allocator reads `lw v0, 0x8(s1)`, and the spawn sites
+pass the grid address itself - `addiu a0, a0, 0x67f4` at `0x80051D40`,
+`addiu s0, s0, 0x680c` at `0x80051A70` - so the tick is at **`+0x08`** and the
+record boundary is the grid address. The skewed frame names the same
+absolute pointer word, so nothing downstream of it was wrong; it is the
+record's *base* that the frame gets wrong, which matters the moment a doc
+quotes the neighbouring fields. Same shape as the `0x801E473C` menu-table skew
+in [`field-menu.md`](../../subsystems/field-menu.md#window-descriptor-table).
+
 ## Stub helpers
 -
 These are 2-instruction `jr ra` / nop bodies - likely retail-disabled debug hooks where the dev gate lives in the caller. Listed for completeness so a clean-room port can implement them as no-ops without further investigation.

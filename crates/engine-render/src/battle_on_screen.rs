@@ -13,14 +13,20 @@
 //!   lives in `legaia_engine_core`'s battle scene, so [`battle_actor_on_screen`]
 //!   takes the seat position as an argument instead of resolving it, and
 //!   nothing in the engine produces the pair.
-//! * **No consumer for the verdict.** The port draws every loaded body every
-//!   frame - no frustum cull, no draw distance (see
-//!   `docs/subsystems/renderer.md`, "No distance culling"). Retail's own
-//!   caller for this test is not identified either: `0x8005126C` has no
-//!   `jal` from any dumped function, so which pass consults the verdict, and
-//!   what it does when it reads `0`, is unknown. Wiring a *guess* here would
-//!   remove bodies the port currently draws on evidence that does not exist
-//!   yet. What has to come first is that caller.
+//! * **Retail has no consumer for the verdict, and that is now settled.** The
+//!   port draws every loaded body every frame - no frustum cull, no draw
+//!   distance (see `docs/subsystems/renderer.md`, "No distance culling") - and
+//!   retail does the same, because nothing runs this test. A sweep of
+//!   `SCUS_942.54`, every based overlay image and the raw bytes of every
+//!   extracted `PROT.DAT` entry finds no reference to `0x8005126C` in any
+//!   form: no literal address word (so it is in no dispatch table and no actor
+//!   template), no `jal`, no `j`, no PC-relative branch, and no `lui`+`addiu`
+//!   materialisation. It is a linked-but-unreached entry point - see
+//!   `docs/reference/functions/battle.md` § Unreferenced SCUS entry points and
+//!   `docs/tooling/address-reference-scan.md`. So the earlier framing ("the
+//!   caller has to come first") had no answer to wait for; there is no pass to
+//!   wire this into, and a cull built on it would be an invention rather than
+//!   a port.
 //!
 //! REF: FUN_800195a8 - the billboard projector, ported as
 //! [`crate::billboard::project_billboard`]; this pass is one of its riders.

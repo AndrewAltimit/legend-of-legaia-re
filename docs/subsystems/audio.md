@@ -1107,6 +1107,16 @@ aliases - neither overlay starts an XA stream of its own.
 | `0x11` (XA18) | attack-art stager stream | stagers 0924/0925/0926 | 0924 `0x801F6C80`; 0925/0926 file `+0x240` |
 | `0xE` (XA15) | high-summon / evil-god stream | summons 0927..0934 | each at its own `0x801F6Cxx`-`0x801F6Dxx` site |
 
+The three SCUS rows all belong to one resident selector, and it is not called
+from anywhere: `FUN_8004DA00` is the `+0x08` tick of the
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+at `0x800767F4`, which the battle scene-loader `FUN_800513F0` spawns into the
+system actor pool as its last act (`0x80051D3C`). So the party voice selector
+is a per-frame pass that goes resident when the battle loads and stays up for
+its duration, arming at most one clip per action behind the `_DAT_8007BDB0`
+latch. The port models the choice, not the residency:
+`legaia_engine_audio::battle_voice`.
+
 The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
 one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams
 the whole clip (`FUN_80019794(op>>3)`).
