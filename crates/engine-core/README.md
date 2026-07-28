@@ -349,6 +349,12 @@ presentation left to the host:
 - `music_labels` - resolves a global BGM id / `music_01` bank slot to its
   curated sound-test track label. See
   [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md).
+- `world::ambient` - the scene-entry ambient move-VM effect tree
+  (`spawn_ambient_record` fan-out, `step_ambient_fx` drain) and its two
+  render-tail arms: the CLUT-cell HSV cycler (`clut_cell_fx`, mode 3) and
+  the cyclic VRAM-rect scroller (`world::ambient::vram_scroll`, mode 4 -
+  the waterfalls). See
+  [`docs/subsystems/field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md).
 - `battle_seats` - the retail stage-seat tables, consumed by
   `World::enter_battle`.
 - `fishing::PrizeExchange` + `World::fishing_exchange_buy` - the

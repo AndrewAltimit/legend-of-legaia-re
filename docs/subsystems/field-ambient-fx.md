@@ -8,12 +8,13 @@ VRAM and mesh pool, all disc-authored, all per-scene.
 | Mechanism | Carrier | Stepper | What it animates |
 |---|---|---|---|
 | [Walker table](#mechanism-1---the-scene-walker-table-bundle-type-6-slot) | Scene bundle type-6 slot | `FUN_8001ADA4` case 0xB | CLUT-cell `MoveImage` cycling: water / waterfall shimmer |
-| [Ambient move-VM tree](#mechanism-2---the-ambient-move-vm-effect-tree) | Prescript stager bundle + MAN P1 effect scripts | Move VM + `FUN_80021DF4` render tail | Palette pulses (HSV cycling), lightning, ambient SFX, particles |
+| [Ambient move-VM tree](#mechanism-2---the-ambient-move-vm-effect-tree) | Prescript stager bundle + MAN P1 scripts | Move VM + `FUN_80021DF4` render tail | Palette pulses (HSV cycling), VRAM-rect scrolling, lightning, ambient SFX, particles |
 | [Texture strips / morphs](#mechanism-3---strip-cycling-and-vertex-morphs) | Move records (op `0x40`) / bundle type-7 VDF | Move VM / morph stager `FUN_8001C604` + envelope `FUN_80020740` | Texel strip frames; vertex deformation (render substitution) |
 
 Confidence: **Confirmed** (disassembly) for the walker-table chain, the
-ambient install chain, the mode-3 CLUT-cell cycler, and the VDF pack format;
-**Inferred** where marked.
+ambient install chain, both render-tail arms (the mode-3 CLUT-cell cycler
+and the mode-4 rect scroller), the record-0 SFX bank, and the VDF pack
+format; **Inferred** where marked.
 
 ## Mechanism 1 - the scene walker table (bundle type-6 slot)
 
@@ -148,24 +149,115 @@ story-beat effects (op `0x13` effect-descriptor children, op `0x1F` morph
 installs, op `0x14` colour ramps at absolute world positions). These are
 cutscene-driven, not entry-ambient.
 
-**Mode 4** (`+0x5A = 4`, seated by outer op `0x1E`) is the sibling VRAM
-animator: per period `+0xC4` it captures a strip of the rect
-`(+0xD0, +0xD2, +0xD4, +0xD6)`, `MoveImage`s the remainder over, and
-re-inserts the strip at the far edge - a cyclic scroll of a texel/CLUT rect
-(`80021df4.txt` `0x80022CC0..0x80022EE0`; horizontal shift `+0xCC * dt`,
-vertical `+0xCE * dt`). Decoded from the disassembly; not yet ported -
-see the open threads.
+### The VRAM-rect scroller (render mode 4)
 
-### The master ambient record 0
+Mode 4 is the sibling of the CLUT-cell cycler, and it animates **texels in
+place**: an authored VRAM rect is rotated under whatever meshes sample it,
+with no vertex, UV or CLUT touched. It is what makes waterfalls fall.
+
+Move-VM op `0x1E` seats it in one instruction - `+0x5A = 4` then seven
+operands into `+0xC4` (period reload), `+0xCC` / `+0xCE` (per-period
+horizontal / vertical step) and the rect `+0xD0..+0xD6` (`x, y, w, h`), in
+that order (`FUN_80023070` `0x80023694..0x800236F0`). The countdown `+0xC6`
+is *not* seated, so a freshly spawned part fires on its first tick.
+
+The render tail then runs, per game tick (`80021df4.txt`
+`0x80022CB8..0x80022EE0`):
+
+1. `+0xC6 -= DAT_1F800393` - the adaptive frame step **alone**; unlike the
+   mode-3 arm this one does not fold in the `DAT_1F80037D` speed scalar.
+   The branch is `sll v0,0x10; bgez`, so the arm fires exactly on the tick
+   the stored halfword's sign bit sets, i.e. on underflow.
+2. On that tick `+0xC6` reloads from `+0xC4` and the two steps are read;
+   otherwise both stay zero and both arms below are skipped.
+3. Each non-zero step runs the same three-call strip rotate, horizontal
+   first (`0x80022D08..`), vertical second (`0x80022DF8..`). With
+   `sw = +0xCC * frame_step`: `FUN_8005842C` (`StoreImage`) captures
+   `(x, y, sw, h)` into a scratch buffer bump-allocated off `0x1F8003A0` at
+   `((sw*h*2) + 3) / 4 * 4` bytes; `FUN_80058490` (`MoveImage`) slides
+   `(x + sw, y, w - sw, h)` onto `(x, y)`; `FUN_800583C8` (`LoadImage`)
+   re-inserts the strip at `(x + w - sw, y, sw, h)`. Net: a **cyclic left
+   rotation** by `sw` halfwords. The vertical arm is the transpose
+   (`sh = +0xCE * frame_step`, top strip out, remainder up, strip back in at
+   `y + h - sh`) - a cyclic up rotation.
+
+Eight scenes put a live scroller on screen from their plain scene-entry
+ambient tree, resolved by walking the records through the move VM (a
+*linear* scan for the op word over-reports - the records jump):
+
+| Scene | Rect `(x, y, w, h)` | Per-period step |
+|---|---|---|
+| `jou` | `(0x220, 0x80, 0x0E, 0x80)` | up 1 |
+| `jouinb` | `(0x280, 0x100, 0x14, 0x80)`, `(0x280, 0x180, 0x14, 0x80)`, `(0x294, 0x100, 0x14, 0x50)` | up 3 / 6 / 7 |
+| `jouine` | `(0x240, 0x100, 0x14, 0x80)`, `(0x240, 0x180, 0x14, 0x50)` | up 3 / 7 |
+| `korout` | `(0x280, 0x00, 0x40, 0x100)` | up 1 |
+| `koin3`, `other7` | `(0x280, 0x00, 0x08, 0x100)` | up 2 |
+| `deroa` | `(0x268, 0xA0, 0x18, 0x60)` | up 1 |
+| `noaru` | `(0x240, 0x00, 0x18, 0x60)`, `(0x258, 0x00, 0x08, 0x20)` | up 1 / 1 |
+
+Every entry-reachable carrier scrolls **vertically only**, upward, over a
+rect in the upper texture band (`x >= 0x200`) - falling water and energy
+columns, never a CLUT row. Each carrier's record is the same three-line
+shape jou's record 23 uses: the `0x1E` seat, then an infinite `0x1A` /
+`0x1B` wait loop, so the VM parks and the render tail scrolls forever.
+
+Engine port: `engine-core::world::ambient::vram_scroll` (`mode4_integrate`
+countdown + `rotate_rect` texel kernel), queued per game tick by
+`World::tick_ambient_fx` and applied to the software VRAM by
+`World::step_ambient_fx`. Unlike the mode-3 write - recomputed each frame
+from a cached capture - the rotate is **destructive**, so the queue is
+drained in tick order inside the step. Coverage:
+`crates/engine-core/tests/ambient_mode4_scroll_disc.rs`.
+
+### The master ambient record 0 - the per-scene SFX descriptor bank
 
 Town prescripts' record 0 is the fixed run of 8-byte rows
-`[u8 a][u8 b][u8 c][u8 d][u16 3][u16 0]` (the "768-byte master ambient
-stager"). Its row semantics are still **Unknown** - it is installed like any
-record but its body does not walk as move-VM bytecode; the `0x0003` word
-would execute as `WORLD_ROTATE_ADD` and the next row byte-pair as an
-out-of-range opcode, ending the tick. Whether a dedicated consumer reads the
-rows (spawn table?) or the record is effectively inert in retail remains
-open.
+`[u8 p][u8 t][u8 l][u8 n][u16 3][u16 0]` (the "768-byte master ambient
+stager"). It is not move-VM bytecode and never was: it is the **per-scene
+extension of the sound-effect descriptor table**
+([`sfx-table.md`](../formats/sfx-table.md)), covering cue ids `>= 0x200`.
+
+The addressing is what pins it. In field mode the bundle base
+`_DAT_8007B8D0` is the scene buffer + `0x12800` - the prescript bundle
+(`field_asset_loader` `0x8001F840..0x8001F864`, `lw v0,0xd8(s3)` with
+`s3 = 0x1F800314`). Both SFX consumers then reach the bank the same way,
+through the bundle's own offset table:
+
+```text
+id <  0x200:  desc = DAT_8006F198 + id*8               ; the static table
+id >= 0x200:  desc = _DAT_8007B8D0 + offsets[0]        ; = record 0
+                     + (id - 0x200)*8
+```
+
+`FUN_800250D4` (`0x800250FC..0x8002514C`) keys `+3 & 0x1F` voices on;
+`FUN_80016B6C` (`0x80016C24..0x80016CB0`) drains the cue ring and, on the
+same descriptor, prints the designer's `"setbl p:%d t:%d l:%d n:%d id:%d"`
+line from bytes `+0..+4`. `offsets[0]` is the identical word
+`FUN_800252EC` reads for stager id 0 - so "record 0" and "the runtime SFX
+bank" are two names for one address.
+
+The row shape falls straight out of that, and the disc bears it out: `+0`
+program, `+1` tone (consecutive within a program), `+2` level (clustered in
+the low 60s, exactly where the static table's `l` sits), `+3` voice count
+`1..=2`, `+4` = **category 3** - the variable VAB slot a per-scene bank has
+to key - and `+5..+7` zero in every row, the same trailer the static table
+carries. The record is sized per scene, not fixed: jou reserves 96 rows and
+populates 40 (`0x200..=0x227`); `rugi` carries 21, all populated. jou's own
+tree is the worked example - its lightning director cues `0x20B` and its
+ambient SFX loop cues `0x20E..0x211`, i.e. rows 11 and 14..17 of its own
+record 0, all inside the populated span.
+
+Confidence: **Confirmed** (disassembly). What each row's `p` / `t` selects
+inside the scene's VAB is the open half - that is the same question the
+static table leaves open, not a record-0 question.
+
+Two knock-ons worth carrying: `0x8007B8D0` is a shared *current-bundle*
+slot, not one subsystem's pointer (the boot sound-bank loader
+`FUN_8001FA88` puts its own `0x1800`-byte buffer there and immediately
+saves that bank's record-0 address at `gp+0x678`, because the next scene
+load overwrites the slot); and record 0 being data is why it must **not**
+be spawned as a stager - walking it as move-VM bytecode reads the `0x0003`
+category word as `WORLD_ROTATE_ADD` and dies on the next row.
 
 ## Mechanism 3 - strip cycling and vertex morphs
 
@@ -201,12 +293,36 @@ Op `0x1F` is the direct-install sibling (writes the index bytes + four
 weights outright). Corpus census of op-`0x0A` carriers: `rikuroa`/
 `rikuroa2` records 69/70 (spawned from the entry install behind system
 flags `0x281`/`0x282` - the generator sacs swell only in that story
-state), `town0e` records 10/11 (spawned ×3+1 from its record-1 tree; the
-tree's own installer is not a pure P1 effect script and remains unpinned),
+state), `town0e` records 10/11 (spawned ×3+1 from its record-1 tree - see
+[below](#town0es-installer-is-a-placed-actor-not-an-effect-actor)),
 `jagaroom` records 20/21 (not referenced by any op-`0x25` in the table -
 non-entry installs). **jou arms nothing at plain entry**: no `0x0A`
 anywhere in its 47 stager records; its flesh-growth morphs ride the P2
 cutscene chains (op `0x1F` in record 13).
+
+#### town0e's installer is a placed actor, not an effect actor
+
+The install op is the same one every other ambience uses - `0x34` sub-3
+with arg 0, i.e. stager record 1 - but it does not sit on a dedicated
+effect-actor script. It is the **second instruction of partition-1
+placement 29**, a full placed actor with its own dialogue: `25` (nop),
+`34 30 00` (install), then a `SysFlag.Test 0x1A` that either parks the
+actor at the off-map `(0x7F, 0x7F)` tile and self-loops, or seats it on a
+real tile and runs its script. The install is ahead of that branch, so it
+fires whichever way the flag reads.
+
+That is why a shape-filtered census of *pure* effect scripts
+(`engine-core::man_field_scripts::ambient_effect_installs`, which requires
+the record to contain nothing but nops, flag writes, the install and the
+self-loop) reports town0e as having no ambient install: the record is not
+pure, not absent. `scene_stager_installs` - the unfiltered op-`0x34` sub-3
+census over all three partitions - finds it.
+
+What the disc bytes do **not** settle is the moment it fires. Retail
+pre-runs each partition-1 placement's channel at scene entry, and the
+install is ahead of every blocking op in this record, so it should land in
+that first slice - but that step is an inference from the settled pre-run
+mechanism, not something a live capture has shown for this scene.
 
 **Render substitution** (`FUN_8001ADA4` `0x8001B424..`, per drawn group):
 when the part's flags carry bit `0x1000`, `FUN_8001C604(actor, group)`
@@ -243,11 +359,18 @@ during its cutscene set pieces. Scenes with retail arming are untouched
 - `engine-core::man_field_scripts::ambient_effect_installs` scans the MAN
   P1 effect scripts; scene entry auto-spawns each install
   (`World::spawn_ambient_record` - PORT of the `FUN_80021B04` prescript
-  path, including the spawn-time first run and op-`0x25` recursion).
-- `World::step_ambient_fx(vram)` drains the retail game-tick bank, ticks the
-  parts, and applies the live `ClutCellFx` writes with a per-rect capture
-  cache; the play-window calls it beside `step_clut_fx` and re-uploads on
+  path, including the spawn-time first run and op-`0x25` recursion). It is
+  the shape-filtered census, so a scene whose install rides a placed
+  actor's script (town0e) does not auto-spawn - the unfiltered
+  `scene_stager_installs` is what finds those.
+- `World::step_ambient_fx(vram)` drains the retail game-tick bank, ticks
+  the parts, and applies both render-tail arms: the `ClutCellFx` writes
+  through a per-rect capture cache, and the mode-4 strip rotations in tick
+  order. The play-window calls it beside `step_clut_fx` and re-uploads on
   change.
+- The spawn-time first run also runs the render-tail arms, so a part
+  seated at scene entry emits its first cell write / strip rotate on the
+  entry tick rather than the one after.
 - All three render surfaces drain the world's VDF-morph dirty set beside
   the palette fx (see the mechanism-3 section): the play-window
   substitutes rebuilt meshes into its draw lists, the two web surfaces
