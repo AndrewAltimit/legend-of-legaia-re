@@ -197,9 +197,10 @@ ambient tree, resolved by walking the records through the move VM (a
 
 Every entry-reachable carrier scrolls **vertically only**, upward, over a
 rect in the upper texture band (`x >= 0x200`) - falling water and energy
-columns, never a CLUT row. Each carrier's record is the same three-line
-shape jou's record 23 uses: the `0x1E` seat, then an infinite `0x1A` /
-`0x1B` wait loop, so the VM parks and the render tail scrolls forever.
+columns, never a CLUT row. None of them retires: jou's record 23 is the
+shape to read, three lines long - the `0x1E` seat, then an infinite
+`0x1A` / `0x1B` wait loop - so the VM parks and the render tail scrolls
+forever.
 
 Engine port: `engine-core::world::ambient::vram_scroll` (`mode4_integrate`
 countdown + `rotate_rect` texel kernel), queued per game tick by
