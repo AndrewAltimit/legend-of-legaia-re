@@ -489,9 +489,15 @@ anchor. Wrap to the file's comment width.
   per-character item-menu ordering and greying. The engine's item menu has no
   favor pass, so there is no ordering for the score to affect.
 - **`classify_card_directory` / `card_directory_scan` / `card_free_blocks`** -
-  the engine's saves are LGSF files on disk. Nothing mounts a raw PSX
-  memory-card image at runtime, so no 15-frame card directory exists to walk.
-  Wiring these needs a real card-image backend behind the save-slot session.
+  the reason recorded here (no runtime card-image backend) **no longer
+  holds** and the source no longer says it. The browser card rack
+  (`web-viewer::cards`) mounts raw card images and runs the scan/budget
+  pair. What blocks the classifier is an **index-space mismatch**: the rack's
+  grid is keyed by physical block and the classifier keys by the filename's
+  save index, and nothing makes the two agree on a player's card. Adopting
+  it means re-keying the grid. Read the tags in `save_select.rs`, not this
+  bullet, for the current form - it is kept only to record that the earlier
+  reason was outgrown rather than wrong at the time.
 - **`list_append_u16` / `alloc_list_head` / `alloc_and_append` / `free`** - the
   module doc already carries the full reason under its `# NOT WIRED` heading;
   the audit compares per anchor, so each function needs its own line. Short
@@ -587,6 +593,94 @@ in the workspace, so it was always audit cause 4 - anchor granularity - and not
 a wired port; the receiver gate has since cleared it, and
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)
 records the collision it resolved through.
+
+## The menu / save / memory-card cluster
+
+Forty-eight inert anchors across `card_bu_io.rs`, `card_flow.rs`,
+`save_select.rs`, `save_subscreen.rs`, `pause_screens.rs`,
+`menu_open_sequence.rs`, `menu_list_rows.rs`, `spell_menu.rs`,
+`spell_party_broadcast.rs`, `target_picker.rs`, `equipment.rs`,
+`panel_backread_loader.rs`, `menu_actor_seed.rs` and `title_prim.rs`. None is
+`FALSE INERT` (a symbol-by-symbol sweep of the host crates returns zero
+non-doc references for all forty-eight). Exactly one took a `WIRE`; the rest
+settle `DISCLOSE`, and that outcome is worth stating rather than leaving as
+an absence, because one of them looks wireable and is not:
+
+- **`spell_targets_group`** would route a group spell past the target picker,
+  and the applier on the other side heals exactly one roster member - so
+  wiring it alone makes group spells heal nobody.
+
+**`root_menu_confirm_route` is the `WIRE`.** The first read of it stopped at
+"returns a retail sub-screen id the engine has no space for, so a caller
+keeps only the buzz/advance bit and drops the payload" - and dropping a
+payload *is* the usual tell. It was the wrong tell here: the seven ids are
+distinct, so a caller can resolve the confirmed row **through** the id rather
+than beside it, which is what `FieldMenuSession` now does. The gate inputs
+turned out to be the real question, and only one of the two was missing
+anything (below).
+
+The card cluster is the `world_map_panel_actors` shape again: ten anchors
+whose per-anchor lines were verbatim identical. They are one gap - an
+asynchronous card backend behind `save_select::CardIoMachine` - and the
+module now says so once, with the per-anchor lines citing it.
+
+### What the cluster's re-read changed
+
+Reading these disclosures against the disassembly overturned a claim that had
+propagated into two subsystem docs and two source files: the pause root's
+gated rows were labelled Save-then-Load, and they are **Load-then-Save**. The
+menu overlay's own rodata pool settles it - `FUN_801CFD68` hands the string
+primitive `0x801CEA00` for row 5 and `0x801CEA08` for row 6, and those cells
+hold `@Load` and `@Save`. Three consequences, all now corrected in
+[`save-screen.md`](../subsystems/save-screen.md):
+
+| Was | Is |
+|---|---|
+| row 6 gated on `_DAT_800846A8` | gated on `_DAT_8007B6A8`, the per-scene save-allow flag |
+| `0x18` saves, `0x19` loads | `0x18` loads, `0x19` saves |
+| entry-context byte `0x01` is a load | it is a field script's save point |
+
+The gate address was a plain arithmetic slip (`lui 0x8008` + `lbu -0x4958` is
+`0x8007B6A8`; `0x800846A8` is the escape counter). The direction was not - it
+was a reading of the op selector that nothing had cross-checked against the
+labels, and the labels are the cheaper evidence.
+
+One row's disclosure got *better* out of this rather than merely different.
+The Save gate is the MAN header bit
+[`ManHeader::low_flag`](../formats/encounter.md), which `legaia-asset` already
+parses and the engine then drops - so "the engine has no analogue" was wrong
+and the real prerequisite is two named edits: carry the flag through scene
+load onto the world, then hand it to `FieldMenuSession` at open. Both are
+made, so the anchor is live; see
+[`field-menu.md`](../subsystems/field-menu.md#top-level-pause-menu).
+
+The two gate inputs did not turn out to be the same kind of gap, which is
+the transferable part. The save flag was a **carry** gap - the datum existed,
+parsed, and simply had no route to its consumer, so the fix was plumbing and
+the gate now fires on real scenes. The entry-context kind is a **model** gap:
+retail keeps one global pointer whose first byte is the armed op-`0x49`
+sub-op, and the port deliberately replaced that global with a per-context
+tagged park, so no single place holds the byte to read. Its consumer is live
+and honest (it reads what the world can answer) but cannot reach the blocking
+kind until the op-`0x49` arm records its sub-op. A disclosure that lumps the
+two together as "both inputs are missing" reads as one piece of work and is
+two.
+
+### A latent duplicate-free-function-name landmine, defused
+
+`engine-core`'s `menu_list_rows::description_source` and `engine-ui`'s
+`ui_menu_window_painters::description_source` were two free functions of one
+name over different id spaces. A free-function edge is never receiver-gated,
+so the painter's first *non-test* call would have made the `engine-core`
+kernel read live and converted its correct disclosure into a false accusation
+in the audit's first section. Nothing had fired yet because the painter's
+copy is called only from its own tests. The `engine-core` copy is now
+`row_description_source`, per the recipe in
+[`stale-not-wired-triage.md`](stale-not-wired-triage.md#the-fix-each-mechanism-takes).
+
+Worth generalising: a name collision is a defect *before* it produces a row,
+and the cheapest time to find one is while reading a disclosure, not after
+the audit accuses it.
 
 ## Not on this page: the world-map panel cluster
 

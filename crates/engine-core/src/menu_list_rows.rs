@@ -19,8 +19,8 @@
 //!   list;
 //! - [`build_price_gated_rows`] - content id 2, the price-gated bag list;
 //! - [`row_name_source`] - the per-class row-name resolver `FUN_8002FF8C`;
-//! - [`description_source`] - the highlighted-row description dispatcher
-//!   `FUN_80034250`;
+//! - [`row_description_source`] - the highlighted-row description
+//!   dispatcher `FUN_80034250`;
 //! - [`LiveWindowSet`] - the live-window upsert `FUN_80032434` (the
 //!   `gp+0x148` = `0x8007B460` sorted window list the kernel iterates).
 //!
@@ -34,7 +34,7 @@
 //! [`crate::equip_session::EquipItem`] - and the hosts render those. No
 //! code path produces the class-tagged `u16` entry words
 //! ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]) that [`row_name_source`] and
-//! [`description_source`] decode, and none allocates the `gp+0x148`
+//! [`row_description_source`] decode, and none allocates the `gp+0x148`
 //! live-window list node ([`LiveWindowSet`], [`list_alloc`]) that the
 //! kernel reads them out of. Wiring any of this needs that window/list-node
 //! model to exist first and the screens to be rebuilt on top of it; the
@@ -220,7 +220,16 @@ pub const LIST_MODE_PARKED: i32 = 4;
 /// payload as the id directly. A resolved id of 0 draws nothing. Retail
 /// then hands the string to the text drawer `FUN_800337B0` at the
 /// window's `(+0xA, +0xC)` rect origin; the draw stays host-side here.
-pub fn description_source(
+///
+/// The name is deliberately not the bare `description_source`:
+/// `legaia_engine_ui`'s `ui_menu_window_painters` declares a free function
+/// of that name over a different id space, and the port catalog's call
+/// graph links a bare call to **every** in-tree free function of the name
+/// with no receiver to disambiguate. Sharing it would make this kernel read
+/// live off the painter's first non-test call site and turn the disclosure
+/// above into a false accusation - the `countdown_frame` / `cursor_step`
+/// shape recorded in `docs/tooling/stale-not-wired-triage.md`.
+pub fn row_description_source(
     list_mode: i32,
     screen_class: u16,
     cursor_payload: u16,
@@ -602,41 +611,41 @@ mod tests {
     }
 
     #[test]
-    fn description_source_laws() {
+    fn row_description_source_laws() {
         let bag = [0u8, 0x77, 0x10, 0];
         let at = |slot: u16| bag[slot as usize];
         // Parked list draws nothing.
         assert_eq!(
-            description_source(LIST_MODE_PARKED, CLASS_BAG, 1, at),
+            row_description_source(LIST_MODE_PARKED, CLASS_BAG, 1, at),
             DescriptionSource::None
         );
         // Bag classes dereference the slot.
         assert_eq!(
-            description_source(1, CLASS_BAG, 1, at),
+            row_description_source(1, CLASS_BAG, 1, at),
             DescriptionSource::ItemDesc(0x77)
         );
         assert_eq!(
-            description_source(1, CLASS_BAG_EQUIP, 2, at),
+            row_description_source(1, CLASS_BAG_EQUIP, 2, at),
             DescriptionSource::ItemDesc(0x10)
         );
         // Passive class routes to the accessory-passive chain.
         assert_eq!(
-            description_source(1, CLASS_PASSIVE, 1, at),
+            row_description_source(1, CLASS_PASSIVE, 1, at),
             DescriptionSource::PassiveDesc(0x77)
         );
         // 0x7000 uses the payload as the id directly.
         assert_eq!(
-            description_source(1, CLASS_ITEM_ICON, 0x42, at),
+            row_description_source(1, CLASS_ITEM_ICON, 0x42, at),
             DescriptionSource::ItemDesc(0x42)
         );
         // A resolved id of 0 draws nothing (empty bag slot).
         assert_eq!(
-            description_source(1, CLASS_BAG, 0, at),
+            row_description_source(1, CLASS_BAG, 0, at),
             DescriptionSource::None
         );
         // Other classes draw nothing.
         assert_eq!(
-            description_source(1, CLASS_SPELL, 1, at),
+            row_description_source(1, CLASS_SPELL, 1, at),
             DescriptionSource::None
         );
     }

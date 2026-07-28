@@ -131,6 +131,18 @@ impl SceneHost {
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
             .map(Arc::new);
+        // Per-scene save permission (`_DAT_8007B6A8`). Retail's MAN loader
+        // seeds it from the header's `[0x01] & 1` as it walks the buffer;
+        // seeding here covers both entry paths (field + world map) off the
+        // one cached payload, and a scene with no MAN clears it.
+        // PORT: FUN_8003AEB0 (live wiring; kernel =
+        //       `World::install_scene_save_permission`)
+        let man_header = self
+            .field_man_cache
+            .as_ref()
+            .and_then(|man| legaia_asset::man_section::parse(man).ok());
+        self.world
+            .install_scene_save_permission(man_header.as_ref());
         // The actor-list work retail's MAN loader `FUN_8003AEB0` does around
         // its own decode: two inlined `FUN_8003CF40` retire sweeps, the
         // submode open `FUN_801D9C3C()`, and the fixed-template scene-actor

@@ -698,12 +698,17 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// still removes it. Without the fallback the item survives on the
 /// character and the script's precondition silently fails.
 ///
-/// NOT WIRED: the engine's field-VM take-item host removes from the
-/// engine inventory only and has no bag-miss branch, so nothing reaches
-/// this. Wiring it is a one-site change in the field VM's take-item
-/// opcode host (`engine-vm` field step -> the `engine-core` world host),
-/// neither of which this module can reach from here; the kernel is
-/// exercised by this module's tests.
+/// NOT WIRED: the engine's field VM has **no take-item opcode at all**.
+/// It decodes the give side (`0x39` `GIVE_ITEM` in `engine-vm`'s field
+/// `step`, serviced by `FieldHost::give_item` and
+/// `FieldHostImpl::give_item` in `engine-core`'s `world::vm_hosts`) and
+/// nothing else in that family, so there is no bag consume for a bag-miss
+/// branch to hang off - the earlier reading, that the take host merely
+/// lacked the fallback, overstated what exists. Wiring is therefore two
+/// edits in two files this module cannot reach: decode the take opcode
+/// and add a `take_item` to `FieldHost`, then have the world's
+/// implementation call this on the `0x100` not-found sentinel. The kernel
+/// is exercised by this module's tests meanwhile.
 pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
     for member in &mut party.members {
         let mut eq = member.equipment();

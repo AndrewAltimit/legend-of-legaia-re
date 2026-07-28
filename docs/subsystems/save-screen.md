@@ -52,7 +52,7 @@ The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
 | `_DAT_8007B450` | Sub-screen ID (`DAT_801E46A4`) | Meaning |
 |---|---|---|
 | `(char*)1` sentinel | `0x2` | Save (from menu entry) |
-| `*ptr == '\x01'` | `0x19` | Load from slot |
+| `*ptr == '\x01'` | `0x19` | Save from a field script's save point |
 | `*ptr == '\x07'` | `0x20` | Auto-save path |
 | `*ptr == '\r'` | `0x4` | Post-save return |
 | `*ptr == '\x00'` | `0x1a` | Cancel / back |
@@ -68,25 +68,25 @@ write as a level assignment inverts the exit fade. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
-### `FUN_801DAEF4` - load-from-slot driver (224 bytes, sub-screen 0x19)
+### `FUN_801DAEF4` - save-to-slot driver (224 bytes, sub-screen 0x19)
 
-The load half of the `0x18` / `0x19` card-driver pair - `0x18` writes the card,
-this one reads it. It is *not* the slot selector; that is sub-screen `0x01`
+The save half of the `0x18` / `0x19` card-driver pair - `0x18` reads the card,
+this one writes it. It is *not* the slot selector; that is sub-screen `0x01`
 (`FUN_801D6B20`), which this screen returns to.
 
 The op selector is what distinguishes the two: both install the same card handle
-and both drive `FUN_801DD35C`, but `0x18` calls it `(1, 2)` to save and `0x19`
-calls it `(1, 1)` to load (see
+and both drive `FUN_801DD35C`, but `0x18` calls it `(1, 2)` to load and `0x19`
+calls it `(1, 1)` to save (see
 [Load/save dispatch](#loadsave-dispatch-fun_801dd35c)).
 
 Internal step counter in `DAT_801E46AC`:
 
 | Step | Action |
 |---|---|
-| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM (`FUN_801D6628`) with `&DAT_801E4E30` (the load-slot menu bytecode). |
+| 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM (`FUN_801D6628`) with `&DAT_801E4E30` (the save-slot menu bytecode). |
 | 1 | Wait while `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2 once it reads zero. |
-| 2 | Call `FUN_801DD35C(1, 1)` - the load (card → RAM) direction; advance to step 3 on success. |
-| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` slot selector; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override.
+| 2 | Call `FUN_801DD35C(1, 1)` - the save (RAM → card) direction; advance to step 3 on success. |
+| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` slot selector; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override - a save raised from a parked field script hands control back to the script instead of to the menu.
 
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.
@@ -193,8 +193,8 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x15` | `FUN_801DA2A0` | per-character list screen - one body serving three lists (abilities / magic / a third), selected by the step counter; see [below](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0) |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
-| `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
-| `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
+| `0x18` | `FUN_801DAE24` | load-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
+| `0x19` | `FUN_801DAEF4` | save-to-slot path (entry-context `*ptr == '\x01'`, a field script's save point) |
 | `0x1A` | `FUN_801DAFD4` | shop **Buy / Sell / Quit mode select** (the earlier "save-slot confirm" reading is superseded - the "existence table at `0x80084140 + 0x1818`" its row-1 validation scans is the **inventory array** at `0x80085958`, i.e. "own anything to sell"). Row `0` → `0x1B` buy list; row `1` → the sell list `0x1E` on a non-empty bag (empty bag buzzes `0x23` in place); row `2` / cancel → `0x00` exit. See [shop.md](shop.md) |
 | `0x1B` | `FUN_801DB21C` | shop **buy list** (the earlier "card-full / error screen" label is falsified): kind-4 shop list; confirm checks gold `0x8008459C` against the item price (buzz `0x23` + stay), then routes on the item **kind** byte - `1` → `0x1C` recipient picker, `2` → `0x1D` quantity picker, else back to `0x1A`; cancel → `0x1A`. Port `engine-core::shop::buy_list_confirm_route` |
 | `0x1C` | `FUN_801DB380` | shop **buy recipient picker** (equipment buys; port `engine-core::shop`) |
@@ -225,21 +225,44 @@ clears the shared list globals `_DAT_8007BB98` / `_DAT_8007BB90` /
 
 The last two rows are gated:
 
-- **Row 5 → `0x18`** (save-card driver) is blocked when the installed
-  entry context `_DAT_8007B450` has kind byte `0x0D`. The test is on the
-  kind, **not** on the pointer's presence - a null context pointer takes
-  the *allow* branch.
-- **Row 6 → `0x19`** (load from slot) is blocked when the save-block
-  presence byte `_DAT_800846A8` is zero.
+- **Row 5, `@Load` → `0x18`** (load-card driver) is blocked when the
+  installed entry context `_DAT_8007B450` has kind byte `0x0D`. The test is
+  on the kind, **not** on the pointer's presence - a null context pointer
+  takes the *allow* branch.
+- **Row 6, `@Save` → `0x19`** (save-card driver) is blocked when the
+  per-scene save-allow byte `_DAT_8007B6A8` is zero. That byte is the
+  "Save Anywhere" cheat's target and is seeded at scene load from the MAN
+  header's `[0x01] & 1` (`legaia_asset::man_section::ManHeader::low_flag`),
+  so a no-save scene is a property of the scene's own MAN.
 
 Both blocked cases play the reject cue `0x23` and stay on the picker;
 both allowed cases play `0x20` first.
 
+The save-allow bit is what makes saving an **overworld** affordance rather
+than an anywhere one: across the disc's MAN-bearing scenes it is set on the
+three kingdom world maps (`map01` / `map02` / `map03`) and clear on every
+field scene, town and dungeon alike. A field save is reached the other way -
+through the entry-context byte `0x01`, which opens `0x19` directly from a
+script's save point without going through this row at all.
+
 Cancel leaves for sub-screen `0` (the terminal exit screen) - except
 under that same `0x0D` entry context, where it goes to `3`, the Yes/No
-confirm. So one context byte both hides Save and makes leaving ask
-first. Engine port: `engine-core::pause_screens::{root_menu_confirm_route,
+confirm. So one context byte both hides Load and makes leaving ask
+first, which is the pair a parked field script wants: it must not be
+replaced by a loaded game, and it must not be abandoned silently. Engine port: `engine-core::pause_screens::{root_menu_confirm_route,
 root_menu_cancel_route}`.
+
+`root_menu_confirm_route` runs live under the engine's pause menu, once per
+row for the row's ink and once on confirm for advance-vs-buzz - the same
+double read that keeps retail's renderer and confirm arm from disagreeing.
+Its gate inputs are sampled off the world when the menu opens: the scene's
+save permission (`World::scene_save_allowed`, seeded at scene load by
+`World::install_scene_save_permission`) and the entry-context kind
+(`World::menu_entry_context_kind`). The save half is fully fed; the
+entry-context half cannot yet reach `0x0D`, because the port tags each
+op-`0x49` park with its owning context rather than keeping retail's single
+pointer and no path records the armed sub-op. See
+[field-menu.md](field-menu.md#top-level-pause-menu).
 
 ### Engine port of the sub-screen graph
 
@@ -277,15 +300,15 @@ id.
 ### Load/save dispatch (`FUN_801DD35C`)
 
 The saving-overlay's main routine is shared between the load and save paths.
-Sub-screens `0x18` (save) and `0x19` (load) are structurally identical
+Sub-screens `0x18` (load) and `0x19` (save) are structurally identical
 3-state drivers - they install the card handle, invoke a direction-specific
 display actor, then call `FUN_801DD35C(1, op)` repeatedly until it returns
 non-zero. The op selector distinguishes direction:
 
 | Sub-screen | Driver | Display actor | Call | Direction |
 |---|---|---|---|---|
-| `0x18` | `FUN_801DAE24` | `&DAT_801E4E28` | `FUN_801DD35C(1, 2)` | save (RAM → card) |
-| `0x19` | `FUN_801DAEF4` | `&DAT_801E4E30` | `FUN_801DD35C(1, 1)` | load (card → RAM) |
+| `0x18` | `FUN_801DAE24` | `&DAT_801E4E28` | `FUN_801DD35C(1, 2)` | load (card → RAM) |
+| `0x19` | `FUN_801DAEF4` | `&DAT_801E4E30` | `FUN_801DD35C(1, 1)` | save (RAM → card) |
 
 Both install `_DAT_8007B44C = DAT_801C6EA0` (PSX libC card handle) on state 0,
 so the same global handle is used in both directions. On success both return
@@ -293,6 +316,27 @@ to sub-screen `0x01` (the slot picker). Both directions share the same
 saving-overlay state machine; the load branch's bulk memcpy
 `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is the
 post-libcd-read copy (staging buffer → SC RAM).
+
+#### Which op is which direction
+
+Three independent readings agree, and they are recorded because the pair
+reads naturally the other way round (`0x18` before `0x19`, save before
+load) and an earlier revision of this page had them swapped:
+
+1. **The row labels.** `FUN_801CFD68` hands the string primitive seven
+   pointers; the sixth and seventh are `0x801CEA00` and `0x801CEA08`, which
+   hold `@Load` and `@Save` in the menu overlay's rodata pool. Row 5 routes
+   to `0x18`, row 6 to `0x19`.
+2. **The op flag.** `FUN_801DD35C` turns its second argument into the flag
+   `0x801F0200`: op `1` clears it, op `2` sets it. The cleared arm is the
+   one that resolves the card filename and calls `FUN_801E37CC` - the BIOS
+   erase - before writing. Nothing erases a file in order to read it.
+3. **The set arm's messages.** The op-`2` arm's status phase draws
+   `"Unable to load data."` / `"Damaged data."`.
+
+The corollary is that entry-context byte `0x01`, which opens `0x19`
+directly, is a **save** entry - a field script's save point - not a load
+one.
 
 ### Libcd I/O state machine (`FUN_801E3294`)
 

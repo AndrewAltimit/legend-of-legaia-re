@@ -60,6 +60,16 @@ off either end is a silent no-op:
   list. Port: `engine-core::shop::SellQuantitySession` (+
   `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
 
+The scroll fix-up is the one piece of that flow the engine does not run.
+It repairs a paged list's persisted `(scroll_top, selected)` pair, and the
+engine's shop drives every list from a single flat cursor with no scroll
+window - the paged model (`engine-core::menu_list_rows`) is ported but
+unused. The engine also does not meet the condition the fix-up guards:
+its sell commit returns the hand to row `0`, where retail keeps it on the
+list and therefore has to pull it off the row the sale just deleted.
+Paging the shop lists through the list-node allocator is the prerequisite,
+not a missing call.
+
 Their sibling is the **buy recipient picker** (`FUN_801DB380`): before
 the quantity screen the buy flow asks who the purchase is for - row 0
 buys one copy into the bag, a party row runs an equippability check

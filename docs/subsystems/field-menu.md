@@ -366,6 +366,30 @@ gray to CLUT 0 when blocked: Load when the dialog-context pointer
 `DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
 `DAT_8007b6a8` is clear.
 
+Those are the same two gates the confirm arm applies, in the same order,
+so no row can draw white and then buzz - see the [root command
+picker](save-screen.md#root-command-picker-fun_801d6b20), where Load
+routes to sub-screen `0x18` and Save to `0x19`. `DAT_8007b6a8` is
+per-scene: `legaia_asset::man_section::ManHeader::low_flag` is the MAN
+header bit (`[0x01] & 1`) that seeds it, which is what makes a no-save
+scene a property of the scene's own MAN rather than of the menu. Across
+the disc's MAN-bearing scenes the bit is set on the three kingdom world
+maps and clear on every field scene, so the Save row draws grey
+everywhere but the overworld.
+
+Engine port of the gate: scene load seeds
+`engine-core::world::World::scene_save_allowed`
+(`World::install_scene_save_permission`); the host samples it - together
+with the entry-context kind from `World::menu_entry_context_kind` - into a
+`field_menu::FieldMenuGate` when the pause menu opens
+(`BootSession::open_field_menu`). `FieldMenuSession` then calls
+`pause_screens::root_menu_confirm_route` per row for the ink and again on
+Cross for advance-vs-buzz, so one function decides both, and resolves the
+confirmed row back through the sub-screen id `ROOT_MENU_ROUTES` names. A
+gated row stays **navigable** and draws grey, matching the picker's
+unconditional 7-row cursor walk; the engine's separate row mask is the one
+that removes a row from the browse order.
+
 The seven labels are **NUL-terminated C strings** in the menu overlay's
 leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
 `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /
