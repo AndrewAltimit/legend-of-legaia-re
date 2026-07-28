@@ -12,7 +12,7 @@
 //!
 //! The four `PORT` tags for the handlers above live on the items that
 //! implement them - [`PositionTween::step`], [`ElementTeardown::step`],
-//! [`AmbientEmitter::step`] and [`flash_element_spawn`] - rather than on this
+//! [`AmbientEmitter::step`] and [`save_screen_spawn`] - rather than on this
 //! module. A module-level tag makes the whole file the reachability anchor, and
 //! the file's other items *are* reachable, which reports a wired port that is
 //! not one. A tag on a `const` degrades the same way, which is why
@@ -224,27 +224,43 @@ impl ElementTeardown {
 ///
 /// The whole function is thirteen instructions:
 /// `FUN_80020DE0(0x800706BC, _DAT_8007C34C)` followed by a single
-/// `sh 1,0x5c(v0)` on the returned actor. `0x800706BC` sits inside the
-/// 24-byte spawn-descriptor family at `0x800705FC..0x80070763` that
-/// `docs/subsystems/asset-loader.md` already documents (the scene-transition
-/// streaming actor uses `0x80070734` out of the same family) - it is **not** a
-/// row of the mode table at `0x8007078C`.
-pub const FLASH_ELEMENT_DESCRIPTOR: u32 = 0x8007_06BC;
+/// `sh 1,0x5c(v0)`. `0x800706BC` sits inside the 24-byte spawn-descriptor
+/// family at `0x800705FC..0x80070763` that `docs/subsystems/asset-loader.md`
+/// already documents (the scene-transition streaming actor uses `0x80070734`
+/// out of the same family) - it is **not** a row of the mode table at
+/// `0x8007078C`.
+///
+/// The descriptor's `+0x8` handler word reads `0x80024190` on the disc, which
+/// is the **in-field save/load screen driver**
+/// ([`crate::field_save_screen_actor`]) - so this routine is a save-screen
+/// hand-off, not the spawn of a "screen-flash element" that an earlier reading
+/// named it for. Two independent checks agree: the fill-fade sibling
+/// `FUN_801EE5D4` spawns the same descriptor at `0x801EE6D8` and leaves
+/// `+0x5C` alone, which is that actor's load side; and the two globals
+/// `FUN_801ED308` shares with it are written from nowhere but the menu
+/// overlay's save/load UI.
+pub const SAVE_SCREEN_DESCRIPTOR: u32 = 0x8007_06BC;
 
-/// The pool discriminator, `_DAT_8007C34C` - the system actor pool the same
-/// family of one-shot elements spawns into.
-pub const FLASH_ELEMENT_POOL: u32 = 0x8007_C34C;
+/// The pool discriminator, `_DAT_8007C34C` - the system actor pool the
+/// driver's node hangs off.
+pub const SAVE_SCREEN_POOL: u32 = 0x8007_C34C;
 
 /// The one field `FUN_801D841C` writes on the actor it just spawned:
 /// `+0x5C = 1`.
-pub const FLASH_ELEMENT_FIELD_5C: i16 = 1;
+///
+/// The store's base register is the `jal`'s **return value**, not the `lui`
+/// that preceded it, so this lands on the new actor rather than on a global.
+/// `FUN_80024190`'s state 4 branches on it: zero runs the load-side dispatcher
+/// `FUN_801DD35C`, non-zero the save-write flow `FUN_801DC6B4`. `1` is
+/// therefore "save".
+pub const SAVE_SCREEN_FIELD_5C: i16 = 1;
 
 /// The whole of `FUN_801D841C`, which is a spawn and one store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FlashElementSpawn {
-    /// First argument of `FUN_80020DE0` - [`FLASH_ELEMENT_DESCRIPTOR`].
+pub struct SaveScreenSpawn {
+    /// First argument of `FUN_80020DE0` - [`SAVE_SCREEN_DESCRIPTOR`].
     pub descriptor: u32,
-    /// Second argument - [`FLASH_ELEMENT_POOL`].
+    /// Second argument - [`SAVE_SCREEN_POOL`].
     pub pool: u32,
     /// Written to `+0x5C` of the actor the spawn returns.
     pub field_5c: i16,
@@ -255,25 +271,26 @@ pub struct FlashElementSpawn {
 /// PORT: FUN_801D841C
 /// REF: FUN_801ED308 - the panel fade/flash actor, the only caller.
 ///
-/// NOT WIRED - but **not for want of a caller**, which is what an earlier
-/// reading of this row said. The sole `jal` to `0x801D841C` in the corpus is
-/// `0x801ED3DC`, inside `FUN_801ED308`, the world-map panel brightness
-/// fade/flash actor; that function is ported and live, as
-/// `legaia_engine_vm::world_map_panel_actors::fade_flash_tick`, and the arm
-/// that performs the call is already modelled -
-/// `FadeFlashEffect::CaptureAndClearTint`, whose own doc records that retail
-/// calls `FUN_801D841C` there.
+/// Wired: the sole `jal` to `0x801D841C` in the corpus is `0x801ED3DC`, inside
+/// `FUN_801ED308`, the world-map panel brightness fade/flash actor. That
+/// function is ported and live as
+/// `legaia_engine_vm::world_map_panel_actors::fade_flash_tick`, its phase-1
+/// arm emits `FadeFlashEffect::SpawnSaveScreen` where the `jal` sits, and
+/// `legaia_engine_core::world_map_panel_host::PanelActorHost` calls this from
+/// that arm's handler. The call path is `World::tick` ->
+/// `World::tick_world_map` -> `World::tick_world_map_panels` ->
+/// `PanelActorHost::tick`.
 ///
-/// What is missing is one host arm: `PanelActorHost`'s handler for that
-/// effect saves and clears the tint triple and stops, dropping the spawn.
-/// Wiring is a call from that arm through
-/// [`crate::actor_alloc_host`]'s port of `FUN_80020DE0` with this
-/// descriptor - a call site in the panel host, not a new subsystem.
-pub fn flash_element_spawn() -> FlashElementSpawn {
-    FlashElementSpawn {
-        descriptor: FLASH_ELEMENT_DESCRIPTOR,
-        pool: FLASH_ELEMENT_POOL,
-        field_5c: FLASH_ELEMENT_FIELD_5C,
+/// The result is load-bearing rather than recorded: the hand-off it opens is
+/// what `PanelActorHost::release_flash_with` requires before it will write the
+/// flash counter, which is retail's own precondition - the counter's only
+/// writers are the menu overlay's save-side screens, and that overlay is
+/// resident only because this spawn put its driver on the pool.
+pub fn save_screen_spawn() -> SaveScreenSpawn {
+    SaveScreenSpawn {
+        descriptor: SAVE_SCREEN_DESCRIPTOR,
+        pool: SAVE_SCREEN_POOL,
+        field_5c: SAVE_SCREEN_FIELD_5C,
     }
 }
 
@@ -1068,20 +1085,17 @@ mod tests {
     }
 
     #[test]
-    fn the_flash_element_descriptor_is_inside_the_spawn_descriptor_family() {
-        assert!((0x8007_05FC..=0x8007_0763).contains(&FLASH_ELEMENT_DESCRIPTOR));
-        assert_ne!(
-            FLASH_ELEMENT_DESCRIPTOR, 0x8007_078C,
-            "not a mode-table row"
-        );
-        assert_eq!(FLASH_ELEMENT_FIELD_5C, 1);
-        assert_eq!(FLASH_ELEMENT_POOL, 0x8007_C34C);
+    fn the_save_screen_descriptor_is_inside_the_spawn_descriptor_family() {
+        assert!((0x8007_05FC..=0x8007_0763).contains(&SAVE_SCREEN_DESCRIPTOR));
+        assert_ne!(SAVE_SCREEN_DESCRIPTOR, 0x8007_078C, "not a mode-table row");
+        assert_eq!(SAVE_SCREEN_FIELD_5C, 1);
+        assert_eq!(SAVE_SCREEN_POOL, 0x8007_C34C);
         assert_eq!(
-            flash_element_spawn(),
-            FlashElementSpawn {
-                descriptor: FLASH_ELEMENT_DESCRIPTOR,
-                pool: FLASH_ELEMENT_POOL,
-                field_5c: FLASH_ELEMENT_FIELD_5C,
+            save_screen_spawn(),
+            SaveScreenSpawn {
+                descriptor: SAVE_SCREEN_DESCRIPTOR,
+                pool: SAVE_SCREEN_POOL,
+                field_5c: SAVE_SCREEN_FIELD_5C,
             }
         );
     }

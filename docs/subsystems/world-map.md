@@ -400,13 +400,13 @@ and each one changes behaviour:
 - **`FUN_801ED308`'s tint capture also spawns an actor.** The arm at
   `0x801ED398..0x801ED3E0` saves the live tint triple `0x8007BF5D..5F` into
   `0x8007B634..636`, zeroes the triple and its `+0xA1..A3` mirror, clears the
-  flash accumulator, and then calls `FUN_801D841C` - a thirteen-instruction
-  spawn of descriptor `0x800706BC` into pool `_DAT_8007C34C` with `+0x5C = 1`,
-  the screen-flash element. That `jal` at `0x801ED3DC` is the **only**
-  reference to `0x801D841C` in the corpus. The port models the arm as
-  `FadeFlashEffect::CaptureAndClearTint`, and the spawn is the part
-  `PanelActorHost` does not yet perform, so the flash currently reads as a
-  tint clear with no element behind it.
+  flash counter, and then calls `FUN_801D841C` - a thirteen-instruction spawn
+  of descriptor `0x800706BC` into pool `_DAT_8007C34C` with `+0x5C = 1`. That
+  `jal` at `0x801ED3DC` is the **only** reference to `0x801D841C` in the
+  corpus. What it spawns is the [save-screen hand-off](#the-save-screen-hand-off)
+  below, not a screen-flash element. Ported as
+  `FadeFlashEffect::CaptureAndClearTint` followed by
+  `FadeFlashEffect::SpawnSaveScreen`, both applied by `PanelActorHost`.
 - **`FUN_801EF014` works in an inverted row space.** The list draws bottom-up,
   so the picker converts the absolute selection to a screen row with
   `row = rows - (sel - first_visible) - 1`, hands *that* to `FUN_801E9DC8`
@@ -488,29 +488,109 @@ Three inputs it supplies are the **port's**, not retail's:
   sub-list's own state-3 hand-off installs the Riremito travel art, and
   Square while an actor is up dismisses it.
 
-One painter has a **sub-draw** the port stops short of. `FUN_801F16C0`, the
-stacked per-entry label list, publishes each entry's code byte to
-`DAT_8007B469` and then calls `FUN_801E5B4C` for that entry, advancing the pen
-`0x0D` before and `0x2A` after - and `FUN_801E5B4C` is the equipment
-stat-comparison panel: it aggregates the five equip-slot bonuses through the
-static tables `DAT_80074368` and `DAT_80074F68` and paints the per-stat
-up/down arrows. The `jal` at `0x801F1778` is its only reference in the corpus,
-so the panel exists for this list and nothing else - in particular it is not
-the pause-menu equip preview, which is a separate flow with its own
-aggregator. `legaia_engine_vm::baka_hub_actors::entry_list` ports the list and
-emits a `HubDraw::EntrySubDraw` marker where the call goes; nothing matches on
-that marker yet, so the four `world_map_overlay` kernels that port
-`FUN_801E5B4C` are inert behind a live caller rather than behind no caller.
+#### The per-entry equipment sub-panel
+
+One painter has a **sub-draw**. `FUN_801F16C0`, the stacked per-entry label
+list, publishes each entry's code byte to `DAT_8007B469` and then calls
+`FUN_801E5B4C` for that entry, advancing the pen `0x0D` before and `0x2A`
+after. The `jal` at `0x801F1778` is `FUN_801E5B4C`'s only reference in the
+corpus, so the panel exists for this list and nothing else - in particular it
+is not the pause-menu equip preview, which is a separate flow with its own
+aggregator.
+
+The code byte is a **character index**, not a list position: the sub-draw
+multiplies it by `0x414` against the save block at `0x80084140` and reads that
+character's five equip slots at `+0x75E`. So the list is the party roster and
+each row's panel is that member's equipment stats.
+
+What it draws is three rows, not five. The aggregation sums all five bonus
+bytes of the stride-8 equipment table, but only accumulators `1`, `2` and `3` -
+ATK, UDF, LDF per [`equipment-table.md`](../formats/equipment-table.md) - are
+painted, each added to the character record's own base stat at `+0x6DA` /
+`+0x6DC` / `+0x6DE` (record `+0x112` / `+0x114` / `+0x116`). INT and SPD are
+summed and discarded.
+
+| Column | Offset from the pen | Emitter |
+|---|---|---|
+| Stat label | `x + 0x08` | `FUN_80036888`, pointer from `0x801F29CC + row*4` |
+| Current total | `x + 0x38` | `FUN_80034B78`, 3 digits |
+| Delta arrow | `x + 0x50` | `FUN_8003C1F8`, only when the totals differ |
+| Candidate total | `x + 0x58` | `FUN_80034B78`, 3 digits |
+
+Rows step `0x0E`, or `0x0D` while the op-`0x49` descriptor cell `_DAT_8007B450`
+is set; the third row does not step at all.
+
+Three details are invisible in the decompiled C:
+
+- **The ink is a store between draws, and the arrow's store lands after its own
+  `jal`.** `_DAT_8007B454` is set to `7` before each label; the up-arrow arm
+  stores `1` and the down-arrow arm `6` *after* drawing the glyph. So the ink
+  an arrow selects colours the **candidate column beside it**, not the arrow.
+- **The comparison columns are conditional on a mode word.** `_DAT_8007BB9C`
+  selects where the candidate comes from: `0x1000` / `0x6000` / `0x9000` index
+  the inventory list at `0x80084140 + 0x1818` with the shared cursor, `0x3000`
+  uses the cursor as the item id, `0x4000` with cursor `1` compares against an
+  empty loadout, and anything else draws the same three rows with no candidate
+  column at all.
+- **The candidate's item kind decides between three whole outcomes.** Kind `1`
+  runs the equippability mask and then trial-equips into the slot
+  `(slot_bits & 0x60) >> 5` resolves; a mask miss replaces the entire panel
+  with one line at `(x + 0x0C, y + 8)` under ink `9`. Kind `2` draws the plain
+  three rows. **Any other kind draws nothing at all** - the arm at `0x801E6280`
+  branches straight to the epilogue.
+
+Port: `legaia_engine_vm::world_map_overlay::equip_stat_panel` is the whole
+sub-draw and composes the four kernels the module already carried
+(`aggregate_slot_stats` twice, `can_equip`, `resolve_equip_slot`,
+`stat_deltas`); `baka_hub_actors::entry_list` calls it where the `jal` sits and
+splices its rows in as `HubDraw::EntrySubPanel`. The live path is
+`World::tick_submode_screen` -> `HubPainter::EntryList`. The panel's *data* -
+the character records and the two static tables - arrives through
+`HubEnv::equip`, which no host fills yet, so a live frame paints retail's
+no-candidate arm over a zero loadout.
+
+#### The save-screen hand-off
+
+`FUN_801D841C` is not a flash element. Its `jal` target `FUN_80020DE0` is the
+actor allocator, and the store that follows it, `sh 1,0x5c(v0)`, uses the
+allocator's **return value** as its base - so the `1` lands on the new actor's
+`+0x5C`, not on a global. Descriptor `0x800706BC`'s `+0x8` handler word reads
+`0x80024190` on the disc: the [in-field save/load screen
+driver](../reference/functions/game-modes.md), whose `+0x5C` is its
+save-vs-load discriminator. `1` is the save side.
+
+The fill-fade sibling closes the pair. `FUN_801EE5D4` spawns the **same**
+descriptor at `0x801EE6D8`, from the same pool, and never writes `+0x5C` - the
+load side. Both actors then do the identical tint capture. So the two
+transitions in this band are the field-side wrappers around the memory-card UI,
+one per direction, and the brightness ramp exists to cover the overlay swap.
+
+The two halves talk through exactly two globals while the field overlay is
+paged out, and a sweep of every based image for stores to them finds writers in
+only two places - `FUN_801ED308` here and the menu overlay's save/load screens:
+
+| Global | Field side (`FUN_801ED308`) | Menu side (PROT 899) |
+|---|---|---|
+| `_DAT_8007B440` brightness | ramps up, holds, ramps down | pinned to `0xF2` at `0x801DC9DC` / `0x801D8B60` / `0x801DD190` |
+| `_DAT_8007B43C` counter | parks on `< 6`, then decodes it | seeded `1`..`5`, then `+= 3` at `0x801DC9E0` |
+
+`FUN_801DC6B4`'s epilogue returns `counter >= 6` - the same threshold the hold
+phase waits on - and the ramp-down arm reads the counter as `phase = counter - 1`.
+So the seed the completion screen leaves is a **return value**, not a timer:
+`4` (`0x801D8B64`) becomes `7` and selects phase 6 and handler `0x29`, `5`
+(`0x801D8D30`) becomes `8` and selects phase 7 and handler `0x2B`. The engine
+mirrors this in `PanelActorHost::release_flash_with`, which refuses to write
+the counter unless a hand-off is outstanding, because in retail nothing else
+writes it at all.
 
 **Several of these machines park rather than exit**, and that is the fact a
 host has to know before it installs one. `FUN_801EE90C` entered at phase 0
 does not reach its prompt at all: it jumps straight to the fill-fade block at
 phase 10, walks 11..13, and settles on phase **14**, an arm whose whole body
-is `scene[+0x3E] = 0`. `FUN_801ED308` parks at phase 3 until an external
-writer raises the flash counter `_DAT_8007B43C`, and `FUN_801EDF00`'s phase 3
-only redraws. Retail releases all three from outside - the scene manager
-watching `scene[+0x3E]`, the actor that armed the flash, the executable
-reload - so a host that models none of those needs both an entry phase per
+is `scene[+0x3E] = 0`. `FUN_801ED308` parks at phase 3 until the save-screen
+hand-off answers on the flash counter, and `FUN_801EDF00`'s phase 3 only
+redraws. Retail releases all three from outside - the scene manager watching
+`scene[+0x3E]`, the menu overlay's save UI, the executable reload - so a host that models none of those needs both an entry phase per
 actor (`PanelActorKind::entry_phase`, which seeds the text box at its prompt)
 and a dismiss (`PanelActorHost::dismiss`). Without them the screen wedges on
 the first parking arm, which is what a live `play-window` session showed.

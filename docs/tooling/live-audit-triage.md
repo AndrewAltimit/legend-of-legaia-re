@@ -1055,9 +1055,9 @@ audit. They are listed with what the scan or a catalog lookup found instead.
 | `800265e8` `seed_boot_offset_table` | nothing in the corpus indexes `0x800917B0` | `FUN_8002630C` indexes it by VAB slot for `SsVabOpenHead`; the words are the per-slot SPU bases, already ported |
 | `80020224` `walk_descriptor_pairs` | MAIN_INIT is documented but not ported | MAIN_INIT is ported, as `engine-core::mode_entry_init` |
 | `80031ae4` `float_tween` | the label emitter `FUN_80032434` is not ported | it is ported; and the sibling draw pass `FUN_80031D00` named alongside it is ported **and live** |
-| `801d841c` `flash_element_spawn` | nothing wants a flash element at all | `FUN_801ED308` does, at `0x801ED3DC`; it is ported and live, and the arm is already modelled |
+| `801d841c` `save_screen_spawn` | nothing wants a flash element at all | it is not a flash element - descriptor `0x800706BC` names the save/load screen driver; and `FUN_801ED308` calls it, ported and live |
 | `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
-| `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw, whose live port emits an unhandled marker |
+| `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw; the marker its live port emitted is now the sub-draw itself |
 | `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live |
 | `8001fa00` `init_identity_index_list` | the emitter that pops the list is unported | true, but the *seeder* is MAIN_INIT, which is ported |
 | `80035c00` `set_pair` | writing it from the menu host would invent state | the writers are three sites in the battle action resolver, not a menu |
@@ -1082,13 +1082,22 @@ has **no `jal` anywhere**, and its one reference is the mode-table slot
 `mode_table[24] + 0x10` at `0x800709DC`, a table `legaia_asset::mode_table`
 already parses from the disc.
 
-### One `WIRE`, out of this lane's reach
+### One `WIRE`, since closed
 
-`flash_element_spawn`. The call site is `PanelActorHost`'s handler for
-`FadeFlashEffect::CaptureAndClearTint` in
-`crates/engine-core/src/world_map_panel_host.rs`, which saves and clears the
-tint triple and stops. Retail spawns the flash element in the same arm. One
-call, against a host that already exists.
+`save_screen_spawn` (`801d841c`), whose call site is `PanelActorHost`'s handler
+for the fade/flash actor's phase-1 arm in
+`crates/engine-core/src/world_map_panel_host.rs`. The handler saved and cleared
+the tint triple and stopped, dropping the spawn.
+
+Reading the callee before wiring it changed what the wire *is*. `FUN_801D841C`
+allocates from descriptor `0x800706BC`, whose handler word is the in-field
+save/load screen driver, and writes `1` to `+0x5C` of the **returned** actor -
+that driver's save-vs-load discriminator. So the arm is a save-screen hand-off,
+and the routine's old name was for a reading of the bytes that the descriptor
+table falsifies. Wiring it also identified the actor's parking releaser: the
+menu overlay's save-side UI, which is the only other writer of the two globals
+the two halves share. Both are written up in
+[`world-map.md`](../subsystems/world-map.md#the-save-screen-hand-off).
 
 ## The minigame cluster's disclosures were mostly wrong about *what* blocked
 
