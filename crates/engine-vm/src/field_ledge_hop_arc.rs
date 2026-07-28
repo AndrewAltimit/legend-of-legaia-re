@@ -129,7 +129,13 @@
 //! the player, the pair holds the movement lock until six frames after the
 //! landing.
 //!
-//! # NOT WIRED
+//! # Wiring status
+//!
+//! This heading deliberately avoids the module-level disclosure marker. That
+//! marker declares *every* port site in a file inert, which is right for a
+//! wholly-inert module but wrong here: this module is mixed, and claiming it
+//! whole would report the three live hop kernels as stale-tagged. The two
+//! inert spawners carry their own per-function tags instead.
 //!
 //! Only the two standalone spawners are inert now, and for different reasons -
 //! see their own tags. [`spawn_arc_helper`] is **retail-unreachable**:

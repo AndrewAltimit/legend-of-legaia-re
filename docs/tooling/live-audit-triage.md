@@ -182,6 +182,22 @@ A related near-miss, left alone: `// PARTLY WIRED:` (used on `select_owned_rod`)
 matches neither regex. It is moot for that anchor, which the corrected audit
 resolves live, but a second use of the spelling would go unrecognised.
 
+**The corollary, which bites when a module later gets partly wired.** A
+module-level marker declares *every* port site in the file inert - that is the
+point of it, and it is right for a wholly-inert module such as `mdec::st_ring`,
+which discloses once and then tags seven addresses inside function bodies. It is
+wrong the moment the module becomes **mixed**. Wiring the player ledge hop made
+three kernels in `field_ledge_hop_arc.rs` live while two spawners stayed inert;
+the module heading kept claiming the whole file, so the audit reported the three
+live kernels as stale-tagged - a clean measurement regression caused by correct
+work, with nothing wrong in the tool.
+
+The fix belongs in the source, not the regex: a mixed module must not carry the
+module-level marker at all. Give the inert members their own per-function tags
+and retitle the section so it documents wiring status without asserting a
+blanket disclosure. Widening the regex would not help, and narrowing it would
+break the wholly-inert case it exists for.
+
 ### An import alias erases every `Alias::assoc_fn` edge under it
 
 `build_rust_graph` resolves a `Qual::name` call site by the qualifier **as
