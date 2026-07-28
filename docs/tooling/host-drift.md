@@ -178,6 +178,55 @@ about these is contested.
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | battle 3D layer on web | The browser host runs live battles and draws the HUD, command menus and banners, but not the battle *scene* - no 3D layer stands behind them. |
+| screen-space PSX primitives on web | The native renderer draws PSX `POLY_FT4`/`POLY_GT4` quads in ordering-table order; the browser has no equivalent, because `SpriteDraw` cannot carry a PSX primitive. See below. |
+
+### Screen-space PSX primitives: what the web host would need
+
+This one is worth spelling out, because the surface tier 1 measures makes it
+invisible. Every screen-space effect retail draws - the field-to-battle
+transition styles, the move-FX afterimage streak, any `screen_fx` sprite - is a
+PSX primitive: a quad whose texels come out of VRAM through a per-primitive
+CLUT/texpage pair, blended by one of four fixed ABR equations, ordered by an
+ordering-table bucket rather than by a depth test. `engine-render` has that pass
+([`renderer.md`](../subsystems/renderer.md#screen-space-ordering-table-pass)).
+The browser does not, and the reason is a type: `engine-ui`'s `SpriteDraw` is a
+**semantic alias of `TextDraw`** - an axis-aligned destination rect, an atlas
+source rect and one flat RGBA tint. Nothing in it can express a texpage, a CLUT,
+per-vertex UVs, per-vertex colour, an ABR mode or an OT bucket, so a builder
+returning `SpriteDraw` is on tier 1's surface while the *capability* is not.
+
+The browser is not starting from nothing: the play page already uploads a
+1024x512 VRAM page (`field_vram_bytes`) and already samples it with the 4/8/15
+bpp + CLUT decode for **3D** meshes. What is missing is the 2D half.
+
+Five things, in the order they block each other:
+
+1. **A draw record that is a PSX primitive.** Four corners rather than a rect,
+   four `(u, v)` pairs, a `(cba, tsb)` pair, per-vertex colour, a
+   semi-transparency flag and an OT index. `engine-render`'s
+   `screen_overlay::ScreenPrim` is that record, and it is renderer-agnostic
+   apart from its `bytemuck` vertex struct - the shape to lift into `engine-ui`,
+   not to re-invent.
+2. **An ordering-table sort, shared.** `order_primitives` is back-to-front by OT
+   index with LIFO tie-breaking, which is `AddPrim` + `DrawOTag`. Two hosts
+   sorting the same list differently is a divergence no gate would catch, so
+   this is the one piece that must be *shared code* rather than a second
+   implementation.
+3. **A WebGL fragment path with the same CLUT decode as the 2D pass.** The 3D
+   decode already exists on the page; the 2D pass needs the same function with
+   no texture-window remap.
+4. **Four ABR blend modes.** WebGL2 can express modes 1-3 with `blendFunc`;
+   mode 0 (`0.5*B + 0.5*F`) needs a constant blend factor, exactly as the native
+   pipeline does.
+5. **A framebuffer capture.** The transition styles texture their strips with a
+   *captured field frame*. Native does this by reading the drawn frame back into
+   the software VRAM (`vram_capture`); the browser would render to an FBO and
+   blit into its VRAM texture instead - cheaper there, since it never has to
+   leave the GPU.
+
+Items 1 and 2 are the ones that decide whether this ends as one model or two.
+Doing them in `engine-ui`, where both hosts already meet, is what keeps the next
+transition from being written twice.
 
 ## Adding coverage
 

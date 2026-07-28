@@ -35,6 +35,30 @@
 //! per-ABR blend pipeline. Textured quads sample the shared PSX VRAM texture
 //! with the same 4/8/15-bpp + CLUT decode the 3D VRAM-mesh shader uses.
 //!
+//! ## Two things about how this reaches a frame
+//!
+//! **It composites over a scene.** [`crate::RenderTarget::ScreenOverlay`] is a
+//! whole-frame mode - clear, then quads and nothing else - so on its own it can
+//! never put a streak over a battle scene or a transition strip over a field
+//! scene, which is the only thing any consumer wants.
+//! [`crate::RenderTarget::SceneWithScreenPrims`] draws both in one frame.
+//! Retail draws no such distinction: 3D primitives and screen-space packets go
+//! into the *same* ordering table and one `DrawOTag` walks it.
+//!
+//! **The coordinate space is the PSX display, not the window.** Every retail
+//! emitter authors screen coordinates in 320x240 and clamps against it, so the
+//! renderer hands [`build_geometry`] that space and the overlay stretches over
+//! the whole surface - matching the `orthographic_rh(0, 320, 240, 0)` the
+//! native shell's `screen_fx` meshes already use.
+//!
+//! ## Wiring status
+//!
+//! Nothing outside this crate builds a [`ScreenPrim`] yet. The pass is
+//! substrate: the consumers (the afterimage streak, the five field-to-battle
+//! transition styles) are ported but blocked on their own inputs, each stated
+//! on its own module. It is also **native-only** - see
+//! `docs/tooling/host-drift.md` for what the browser hosts would need.
+//!
 //! ## Simplifications vs. hardware (documented, not hidden)
 //!
 //! A semi-transparent *textured* PSX prim honours the per-texel STP bit

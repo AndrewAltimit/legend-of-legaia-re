@@ -36,6 +36,18 @@
 //!
 //! [`list_append_u16`] is likewise uncalled: its retail caller
 //! `FUN_8003F3FC` (the sprite placement/clip routine) is not ported.
+//!
+//! [`copy_blocks_32`] is inert too, and this section used to leave it out -
+//! the audit attributed it here through the module tag while the prose named
+//! only the other two, which is a disclosure that reads as covering an anchor
+//! it never mentions. It is inert for a reason that does not close: its retail
+//! caller `FUN_8001FE70` **is** ported and live, as
+//! `legaia_asset::parse_streaming_with`, but the copy itself is retail's way of
+//! moving a chunk body into an aligned buffer and the Rust walker borrows the
+//! chunk in place instead. There is no destination buffer to copy into, so
+//! there is no call site - not a missing host. The kernel is kept for the two
+//! edges the instruction stream settles and a `memcpy` would not: the
+//! `count <= 0` case still copies one block, and the stride is fixed at `0x20`.
 
 // ---------------------------------------------------------------------------
 // Retail memory layout

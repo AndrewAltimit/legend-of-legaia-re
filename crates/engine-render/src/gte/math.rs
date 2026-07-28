@@ -107,6 +107,14 @@ impl GteMat3 {
     // coverage, not the missing caller.) Note the radian argument is itself a
     // deviation: retail takes a 12-bit angle and reads the LUT, which
     // `billboard::rot_z_psx` models for Z.
+    //
+    // Measurement note, so a reader does not read the audit's silence here as
+    // a wiring: `rot_y` is the one of the three the live audit does *not* list
+    // as inert, and that is a name collision, not a caller. The permissive
+    // call graph resolves by symbol name and `legaia_engine_core`'s
+    // `coplanar_draws::rot_y` is live, so the edge it draws to this `rot_y`
+    // does not exist. `rot_x` and `rot_z` have no such twin and list
+    // correctly. See docs/tooling/port-catalog.md on the two graphs.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -225,6 +233,17 @@ pub mod view_rot_flags {
 /// nodes that flag word and a saved-matrix slot, then replacing the
 /// `look_at_rh` camera with a factor product - a change to how the shot is
 /// framed, not a call insertion.
+///
+/// That substitution has one measurable consequence, and it is a *dropped
+/// term* rather than a re-parameterisation. This pass composes three factors;
+/// [`crate::window::cutscene_camera_mvp`] takes two. Retail's Camera
+/// Configure op writes all three angle globals and the engine's camera
+/// controller stores all three (slot `2` lands in its `angles()` trio), but
+/// only pitch and yaw are read back out into the shot - the roll factor is
+/// decoded, stored, compared by the trace channel, and then never applied.
+/// The MVP's own note calls roll "rarely non-zero in retail shots"; that is
+/// the assumption the substitution rests on, and nothing in the repo measures
+/// it against the disc's Camera Configure operands.
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).
