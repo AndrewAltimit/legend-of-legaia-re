@@ -1049,6 +1049,51 @@ impl LegaiaRuntime {
         for clip in self.npc_clips.values_mut() {
             clip.player.advance(1);
         }
+        self.drive_player_move_cues();
+    }
+
+    /// Drain `World::field_player_move_cues` - the cross-context ExecMove
+    /// pokes a script aims at the **player** channel (`A2 F8 <move_id>`) -
+    /// and queue each as a scripted one-shot over the idle/walk pair, the
+    /// browser twin of the native window's cue drain in
+    /// `window/event_handler/redraw.rs`.
+    ///
+    /// Both the cutscene timeline and (since the inn wire) the inline-dialogue
+    /// runner raise these, and the runner's clip-end spin
+    /// (`AD F8 08`) holds the conversation while
+    /// [`legaia_engine_core::field_anim::FieldPlayerAnim::scripted_active`]
+    /// reports one playing - so a page that never drained the queue both
+    /// dropped every scripted player gesture and ran the beat behind it on a
+    /// different clock than native.
+    ///
+    /// Move ids `<= 2` are the locomotion walk moves the movement controller
+    /// already animates; the native drain skips them and so does this one.
+    fn drive_player_move_cues(&mut self) {
+        let cues: Vec<u8> = match self.scene_host.as_mut() {
+            Some(h) => std::mem::take(&mut h.world.field_player_move_cues),
+            None => return,
+        };
+        for id in cues {
+            if id <= 2 {
+                continue;
+            }
+            let (Some(bundle), Some(rec)) = (self.scene_anm.as_ref(), (id as usize).checked_sub(1))
+            else {
+                continue;
+            };
+            let Some(clip) =
+                legaia_engine_core::field_anim::FieldClipPlayer::from_record(bundle, rec)
+            else {
+                continue;
+            };
+            if let Some(anim) = self
+                .scene_host
+                .as_mut()
+                .and_then(|h| h.world.field_player_anim.as_mut())
+            {
+                anim.push_scripted(clip);
+            }
+        }
     }
 
     /// Put the player somewhere they can actually stand.
