@@ -834,7 +834,8 @@ to be the point of the exercise.
 
 `FUN_801CFE20` and `FUN_801CFE5C` - the FMV overlay's `DecDCTinSync` /
 `DecDCToutSync`-shaped wrappers, ported as `engine-core::mdec_dma_sync` - have
-**no reference of any form in any image**. The decode loop reaches the
+**no reference of any form** across all 1234 images, including the raw bytes of
+every extracted PROT entry. The decode loop reaches the
 blocking waits through the DMA kick routines `FUN_801CFFDC` / `FUN_801D0070`
 instead, which call `FUN_801D0100` / `FUN_801D0198` directly. The module had
 described the wrappers as the entries "every decode step funnels its channel

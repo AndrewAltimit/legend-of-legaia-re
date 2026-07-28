@@ -47,11 +47,14 @@
 //! | `FUN_801CFE20` | **none**, in any image |
 //! | `FUN_801CFE5C` | **none**, in any image |
 //!
-//! The two `mode`-selecting wrappers are **retail-unreachable**: nothing in
-//! the STR/FMV overlay, in `SCUS_942.54`, in any other based overlay image or
-//! in the raw PROT bytes references either one by word, `jal`, `j`, branch or
-//! `lui`+`addiu` pair. They are the overlay's linked-in copies of the libpress
-//! `DecDCTinSync` / `DecDCToutSync` shape, and the game never calls them.
+//! The two `mode`-selecting wrappers are **retail-unreachable**: over all 1234
+//! images - `SCUS_942.54`, every based overlay, and the raw bytes of every
+//! extracted PROT entry - nothing references either one by word, `jal`, `j` or
+//! `lui`+`addiu` pair. `0x801CFE5C` has no hit of any kind; `0x801CFE20`'s one
+//! hit is a PC-relative branch at `0x801CFCC8` in the **field** image, which is
+//! a different function occupying that VA, not a reference to this one. They
+//! are the overlay's linked-in copies of the libpress `DecDCTinSync` /
+//! `DecDCToutSync` shape, and the game never calls them.
 //! What the decode loop reaches is the pair one level down - `FUN_801CFFDC`
 //! and `FUN_801D0070`, the DMA kick routines, each of which waits on its
 //! channel by calling the blocking kernel directly before starting the
