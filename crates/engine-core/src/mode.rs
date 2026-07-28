@@ -726,6 +726,13 @@ pub struct ModeInitStage {
 // / `enter_slot_machine` / `enter_dance` / ...), which is also why the
 // warp-shared reset half of the retail body has no state to clear. Same
 // missing prerequisite as `crate::overlay_loader`.
+//
+// The reference scan sharpens what "no dispatcher" means here: `0x80025980`
+// has **no `jal` anywhere on the disc**. Its one reference of any form is the
+// word at `0x800709DC`, which is `mode_table[24] + 0x10` in the 28 x 24-byte
+// table at `0x8007078C` - so retail reaches it only by indexing that table,
+// and `legaia_asset::mode_table` already recovers the table from the disc.
+// The gap is a dispatcher that calls the slot, not a table to call it from.
 pub fn other_warp_init_stage(sub_id: i16) -> Option<ModeInitStage> {
     /// Per-sub-id overlay init entries (jump table at `0x80010AE4`).
     const OTHER_WARP_ENTRIES: [u32; 7] = [

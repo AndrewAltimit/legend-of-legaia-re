@@ -273,12 +273,16 @@ pub fn parse_player_lzs(file: &[u8], count: usize) -> Result<Container> {
 /// PORT: FUN_80020224
 ///
 /// NOT WIRED: retail reaches this from the field overlay's `MAIN_INIT`
-/// (`FUN_801D6704`), and `MAIN_INIT` is documented but not ported - the engine
-/// has no boot-time routine that hands a container to a per-descriptor
-/// dispatcher and folds the returns. It resolves scene sub-assets through the
-/// typed [`AssetType`] chain into `SceneAssets` instead, so no engine
-/// caller has a `dispatch` closure standing in for `FUN_8001F05C` to pass. The
-/// prerequisite is that init path, not a call site for the walker.
+/// (`FUN_801D6704` at `0x801D6B0C`, the sole `jal` to `0x80020224` in the
+/// corpus). `MAIN_INIT` **is** ported, as
+/// `legaia_engine_core::mode_entry_init` - but as its leaf kernels and an
+/// ordered step list, not as a routine that hands a container to a
+/// per-descriptor dispatcher and folds the returns, so the step this walker
+/// would be is one the port describes rather than executes. The engine
+/// resolves scene sub-assets through the typed [`AssetType`] chain into
+/// `SceneAssets` instead, so no engine caller has a `dispatch` closure
+/// standing in for `FUN_8001F05C` to pass. The prerequisite is an executing
+/// MAIN_INIT, not a call site for the walker.
 ///
 /// Descriptor-pair **walker** - the runtime consumer of the
 /// [`parse_player_lzs`] container shape (`docs/formats/asset-descriptor.md`).

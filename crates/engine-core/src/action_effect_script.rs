@@ -32,16 +32,33 @@
 //! [`docs/formats/move-power.md`](../../../docs/formats/move-power.md) for the
 //! record the terminator installs.
 //!
-//! NOT WIRED (whole module). The retail caller is the battle-action SM
-//! `FUN_801E295C`, whose engine port drives typed art strikes: there is no
-//! `ctx[+0x1014]` move-power slot, no per-target `+0x1144` homing block, and no
-//! actor `+0x1F5` cursor to advance. The disc side is closer than the runtime
-//! side - `legaia_asset::move_power` already parses the record the terminator
-//! installs - so what is missing is a battle-action path that carries the
-//! active move's effect-script block, not the data itself.
+//! NOT WIRED (whole module). **The caller is not the blocker, and is not the
+//! battle-action SM.** A five-form reference scan
+//! ([`docs/tooling/address-reference-scan.md`](../../../docs/tooling/address-reference-scan.md))
+//! over `SCUS_942.54`, the based overlay images and the raw PROT entries finds
+//! no reference of any form to `0x801DEA50` inside the battle-action overlay
+//! image: the only two `jal` sites in the corpus are `0x800478B8` and
+//! `0x80047C08`, both inside **`FUN_80047430`**, the per-frame battle
+//! render-node update. Both are gated on `DAT_8007BD71 == 0xFF`, the effect-VM
+//! ready flag, and both are preceded by the paired call to `FUN_801EC3E4` with
+//! the same three arguments. So this runs once per frame off the render tick
+//! for the acting actor, not once per action off the SM.
 //!
-//! REF: FUN_80050ED4, FUN_801DFDF0 (effect spawn), FUN_801E295C (the action SM
-//! that drives this), FUN_80019B28 (the bearing helper)
+//! That caller is ported and live: `FUN_80047430`'s HP-bar arm is
+//! `legaia_engine_vm::battle_hp_bar`, driven from `World::tick_battle_hp_bars`.
+//! What is missing is the stepper's **inputs**, and there are three:
+//!
+//! 1. the active move's 8-byte effect-script block, loaded onto the acting
+//!    actor - the disc side is closer than the runtime side, since
+//!    `legaia_asset::move_power` already parses the record the terminator
+//!    installs;
+//! 2. the actor `+0x1F5` cursor and the `ctx[+0x1014]` / per-target `+0x1144`
+//!    homing block the walk writes into;
+//! 3. a [`RotationLut`] pair, which no `engine-core` host holds.
+//!
+//! REF: FUN_80050ED4, FUN_801DFDF0 (effect spawn), FUN_80047430 (the sole
+//! retail caller), FUN_801E295C (the action SM that stages the move),
+//! FUN_80019B28 (the bearing helper)
 
 /// Bytes per effect-script record.
 pub const RECORD_STRIDE: usize = 8;
@@ -101,7 +118,7 @@ pub const MOVE_POWER_STRIDE: usize = 0x1A;
 /// impossible - the single-slot form always runs once.
 ///
 /// NOT WIRED: classified only from [`step_effect_script`]'s terminator arm,
-/// which has no caller. Its input is the acting actor's `+0x1DD` scope byte -
+/// which no engine host drives. Its input is the acting actor's `+0x1DD` scope byte -
 /// engine battle actors carry a typed target selection
 /// ([`crate::target_picker::TargetKind`]) instead, so nothing produces the raw
 /// byte this reads.
@@ -216,7 +233,7 @@ pub trait RotationLut {
 /// branch takes `facing & 0xFFF` ([`FacingBias::None`]) and the table branch
 /// takes `(facing + 0x800) & 0xFFF` ([`FacingBias::Half`]).
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
 /// It also needs a [`RotationLut`] the engine does not hold - retail's pair of
 /// `i16` LUTs behind `_DAT_8007B7F8` / `_DAT_8007B81C` are disc-resident tables
 /// the battle overlay dereferences, and `engine-core` has no loader for them
@@ -272,7 +289,7 @@ impl FacingBias {
 /// biased by `0xFFF` when negative before the `>> 12`, i.e. it truncates
 /// toward zero rather than flooring.
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
 /// Its own missing input is narrower than the stepper's: the **mesh-header
 /// scale** at `actor[+0x22C][+0x72]`. Engine battle actors carry a typed pose
 /// and no mesh-header pointer, so nothing can supply it.
@@ -294,7 +311,7 @@ pub fn scale_offset(off: i16, scale: u16) -> i32 {
 /// Returns `None` for action `0` (no queued action - the read would run off the
 /// front of the map).
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which has no caller.
+/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
 /// The map it indexes *is* reachable - `legaia_asset::move_power` parses the
 /// same table this offset addresses - so the missing input here is only the
 /// caller, not the data. A battle-action path that carried the acting actor's

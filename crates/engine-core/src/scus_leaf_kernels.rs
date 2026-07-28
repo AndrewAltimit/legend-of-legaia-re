@@ -44,11 +44,17 @@
 ///
 /// PORT: FUN_8001FA00
 ///
-/// NOT WIRED: the list it fills is the sprite stack the cutscene sprite
-/// emitter `FUN_801D629C` pops from ([`crate::cutscene::sprite_stack_pop`]).
-/// That emitter is not ported - the engine draws cutscene sprites as
-/// `screen_fx` widgets built from the decoded scripts - so no
-/// `[count][halfword entries]` buffer is ever allocated for this to seed.
+/// NOT WIRED: the two ends of this list sit in different functions, and only
+/// the far end is unported. Retail **seeds** the list from the field scene
+/// initialiser `FUN_801D6704` ("MAIN_INIT") at `0x801D7384` - the sole `jal`
+/// to `0x8001FA00` in the corpus - and that initialiser is ported, as
+/// [`crate::mode_entry_init`]. It **pops** from the list in the cutscene
+/// sprite emitter `FUN_801D629C` ([`crate::cutscene::sprite_stack_pop`]),
+/// which is not ported: the engine draws cutscene sprites as `screen_fx`
+/// widgets built from the decoded scripts. So what is missing is the
+/// `[count][halfword entries]` buffer itself - `mode_entry_init` ports
+/// MAIN_INIT as leaf kernels and a step list, not as an allocator - plus the
+/// emitter that would drain it.
 pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
     if n > 0 {
         for (i, slot) in list.iter_mut().take(n as usize).enumerate() {
@@ -164,11 +170,16 @@ impl StagedCharacterSelector {
     /// PORT: FUN_80035C00
     ///
     /// NOT WIRED: the pair is read back by the pause-menu notify /
-    /// message-box path as a character-record selector. Nothing in the engine
-    /// *stages* a character id - its menu screens address party members by
-    /// roster slot directly - so there is no producer to put behind this
-    /// setter, and writing it from the menu host would be inventing state the
-    /// reader does not consult.
+    /// message-box path as a character-record selector, but the **writer** is
+    /// not a menu path at all - all three `jal`s to `0x80035C00` in the corpus
+    /// (`0x80040884`, `0x80040CC8`, `0x8004208C`) sit inside `FUN_800402F4`,
+    /// the battle action resolver, each on the arm that has just stored the
+    /// actor's reaction byte at `+0x729`. So a producer would have to be the
+    /// battle damage arm staging "who to show a message about", and the engine
+    /// resolves that per action instead: it addresses party members by roster
+    /// slot and its notify path takes the character with the draw. Wiring this
+    /// means giving the battle round a staged-selector cell for the notify
+    /// screen to read, on both sides at once.
     pub fn set_pair(&mut self, primary: u16, secondary: u16) {
         self.primary = primary;
         self.secondary = secondary;
@@ -240,11 +251,17 @@ impl TimedSoundArm {
 /// loader left there, which is why the array is `Option`-free but the gap is
 /// called out here.
 ///
-/// The consumer is not identified from this dump. Every literal ends in the
-/// low byte `0x10` and the values ascend to `0x6F010`, so they read as a set
-/// of offsets into one region rather than as pointers. Six of the seven
-/// distinct values share the low *three* nibbles `0x010`; `0x6C810` does not,
-/// so that is a coincidence of the set, not a rule.
+/// The region the offsets index is **SPU RAM**, and the index is the VAB
+/// slot: `FUN_8002630C` materialises `0x800917B0` at `0x80026340` and reads
+/// `table[slot]` as the address it hands `SsVabOpenHead`. That is why every
+/// literal ends in the low byte `0x10` and the values ascend to `0x6F010` -
+/// they are bank bases inside one region, and the low three nibbles `0x010`
+/// hold for six of the seven because banks are placed on coarse boundaries,
+/// not because the encoding requires it (`0x6C810` does not).
+///
+/// The eight distinct slots and the four aliased pairs are the same ones
+/// [`legaia_asset::sfx_table::spu_base_for_slot`] returns; word `+0x24`
+/// (slot 9) being unwritten is that helper's `None`.
 pub const BOOT_OFFSET_TABLE: [u32; 12] = [
     0x0000_1010, // +0x00
     0x0001_0010, // +0x04
@@ -277,11 +294,20 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 ///
 /// PORT: FUN_800265E8
 ///
-/// NOT WIRED: no consumer of the seeded table is identified in the dumped
-/// corpus - the words read as offsets into one region, but nothing in the
-/// corpus indexes `0x800917B0`. Wiring it needs that reader found first;
-/// calling it from the engine's boot path would write a table no engine
-/// subsystem then looks at.
+/// NOT WIRED: the reader is **identified** - `FUN_8002630C`, the libsnd VAB
+/// open path, materialises `0x800917B0` at `0x80026340` and indexes it by the
+/// VAB slot (`sll v0,slot,2; addu v0,v0,base; lw a2,0x0(v0)`) to get the SPU
+/// address it hands `SsVabOpenHead`. These twelve words are therefore the
+/// per-slot **SPU RAM bases**, which is also why they match
+/// [`legaia_asset::sfx_table::spu_base_for_slot`] word for word (see
+/// [`docs/formats/sfx-table.md`](../../../docs/formats/sfx-table.md)).
+///
+/// What is missing is the boot path, not the reader: the engine's audio host
+/// asks `spu_base_for_slot` directly, so no code ever builds the twelve-word
+/// image and there is nothing to seed. Wiring this means making that helper
+/// read a seeded table instead of returning literals, which is a refactor of
+/// one source of truth rather than a call insertion - the equality is guarded
+/// by `crates/engine-core/tests/infra_boot_offset_table.rs`.
 pub fn seed_boot_offset_table(table: &mut [u32; 12]) {
     for (i, word) in BOOT_OFFSET_TABLE.iter().enumerate() {
         if i == BOOT_OFFSET_TABLE_UNWRITTEN {

@@ -1,5 +1,6 @@
-//! The FMV overlay's **MDEC DMA sync** pair - the two entry points every
-//! decode step of the STR playback loop funnels its channel waits through.
+//! The FMV overlay's **MDEC DMA sync** pair - the two `libpress`-shaped
+//! wrappers over the channel waits, and the blocking kernels underneath them
+//! that the decode loop actually reaches.
 //!
 //! Both live in the slot-A STR/FMV overlay and are byte-identical in PROT
 //! 0970 (`cutscene_str`) and PROT 0971 (`debug_menu`), the same co-residency
@@ -8,8 +9,8 @@
 //! `overlay_debug_menu_*` dumps at these VAs are that capture's copy of the
 //! same overlay bytes.
 //!
-//! Each takes one argument that selects between a **blocking** wait and a
-//! **non-blocking poll** of the same busy bit:
+//! Each wrapper takes one argument that selects between a **blocking** wait
+//! and a **non-blocking poll** of the same busy bit:
 //!
 //! | Entry | argument `0` | argument non-zero |
 //! |---|---|---|
@@ -29,14 +30,44 @@
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,
 //! `..._0x801D0230.txt`. Ported from the disassembly.
 //!
+//! # Which of these retail reaches
+//!
+//! A five-form reference scan
+//! ([`docs/tooling/address-reference-scan.md`](../../../docs/tooling/address-reference-scan.md))
+//! separates the four addresses into two kinds, and the split is not the one
+//! the wrapper/kernel shape suggests:
+//!
+//! | Address | References in the corpus |
+//! |---|---|
+//! | `FUN_801D0100` | two `jal`s, from `FUN_801CFE20` and `FUN_801CFFDC` |
+//! | `FUN_801D0198` | two `jal`s, from `FUN_801CFE5C` and `FUN_801D0070` |
+//! | `FUN_801CFE20` | **none**, in any image |
+//! | `FUN_801CFE5C` | **none**, in any image |
+//!
+//! The two `mode`-selecting wrappers are **retail-unreachable**: nothing in
+//! the STR/FMV overlay, in `SCUS_942.54`, in any other based overlay image or
+//! in the raw PROT bytes references either one by word, `jal`, `j`, branch or
+//! `lui`+`addiu` pair. They are the overlay's linked-in copies of the libpress
+//! `DecDCTinSync` / `DecDCToutSync` shape, and the game never calls them.
+//! What the decode loop reaches is the pair one level down - `FUN_801CFFDC`
+//! and `FUN_801D0070`, the DMA kick routines, each of which waits on its
+//! channel by calling the blocking kernel directly before starting the
+//! transfer.
+//!
+//! Read that as a statement about retail, not as a wiring gap: no host call
+//! could make [`mdec_in_sync`] / [`mdec_out_sync`] correspond to something the
+//! game does, because the game does not do it.
+//!
 //! # NOT WIRED
 //!
-//! The engine's MDEC path is a software decoder (`legaia_mdec`) driven
-//! frame-at-a-time by `crate::cutscene`; it has no DMA channels and no MDEC
-//! status register, so nothing produces the status words these helpers read.
-//! Wiring needs a hardware-shaped MDEC front end - which the clean-room port
-//! deliberately does not have - or a host that models the two busy bits as
-//! decoder back-pressure.
+//! The blocking halves [`wait_mdec_in_idle`] / [`wait_mdec_out_idle`] do have
+//! retail callers, and they are inert for the ordinary reason: the engine's
+//! MDEC path is a software decoder (`legaia_mdec`) driven frame-at-a-time by
+//! `crate::cutscene`; it has no DMA channels and no MDEC status register, so
+//! nothing produces the status words these helpers read. Wiring needs a
+//! hardware-shaped MDEC front end - which the clean-room port deliberately
+//! does not have - or a host that models the two busy bits as decoder
+//! back-pressure.
 
 /// Countdown the blocking waits start from (`0x100000` iterations).
 pub const SPIN_BUDGET: i32 = 0x0010_0000;
@@ -155,6 +186,11 @@ impl MdecSync {
 /// it per spin, the polling arm reads it once.
 ///
 /// PORT: FUN_801cfe20
+///
+/// NOT WIRED: `FUN_801CFE20` is **retail-unreachable** - it has no reference
+/// of any form anywhere on the disc, and the decode loop waits on the in
+/// channel through `FUN_801CFFDC` instead. See the module note; this is not a
+/// gap a host call could close.
 pub fn mdec_in_sync<F: FnMut() -> u32>(mode: i32, mut in_status: F) -> MdecSync {
     if mode == 0 {
         MdecSync::Waited(wait_mdec_in_idle(in_status))
@@ -167,6 +203,11 @@ pub fn mdec_in_sync<F: FnMut() -> u32>(mode: i32, mut in_status: F) -> MdecSync 
 /// anything else polls bit [`OUT_POLL_BIT`] of the **in**-side word.
 ///
 /// PORT: FUN_801cfe5c
+///
+/// NOT WIRED: `FUN_801CFE5C` is **retail-unreachable** - it has no reference
+/// of any form anywhere on the disc, and the decode loop waits on the out
+/// channel through `FUN_801D0070` instead. See the module note; this is not a
+/// gap a host call could close.
 pub fn mdec_out_sync<Fo: FnMut() -> u32, Fi: FnMut() -> u32>(
     mode: i32,
     out_status: Fo,

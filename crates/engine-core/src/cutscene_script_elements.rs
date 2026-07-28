@@ -254,9 +254,20 @@ pub struct FlashElementSpawn {
 ///
 /// PORT: FUN_801D841C
 ///
-/// NOT WIRED: no element-actor dispatch - see the module docs. The pool
-/// spawner itself is [`crate::actor_alloc_host`]'s port of `FUN_80020DE0`;
-/// what is missing is a caller that wants a flash element at all.
+/// NOT WIRED - but **not for want of a caller**, which is what an earlier
+/// reading of this row said. The sole `jal` to `0x801D841C` in the corpus is
+/// `0x801ED3DC`, inside `FUN_801ED308`, the world-map panel brightness
+/// fade/flash actor; that function is ported and live, as
+/// `legaia_engine_vm::world_map_panel_actors::fade_flash_tick`, and the arm
+/// that performs the call is already modelled -
+/// `FadeFlashEffect::CaptureAndClearTint`, whose own doc records that retail
+/// calls `FUN_801D841C` there.
+///
+/// What is missing is one host arm: `PanelActorHost`'s handler for that
+/// effect saves and clears the tint triple and stops, dropping the spawn.
+/// Wiring is a call from that arm through
+/// [`crate::actor_alloc_host`]'s port of `FUN_80020DE0` with this
+/// descriptor - a call site in the panel host, not a new subsystem.
 pub fn flash_element_spawn() -> FlashElementSpawn {
     FlashElementSpawn {
         descriptor: FLASH_ELEMENT_DESCRIPTOR,
@@ -840,12 +851,20 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// REF: FUN_801D8280 - the `DAT_8007C018` resident-object table walker that
 /// calls this on every object's primitive block.
 ///
-/// NOT WIRED: no caller. The engine's colour grading is per render node
-/// (`crate::fade::ColorGrade` / `crate::fade::SceneTintRamp`, a multiply applied
-/// at draw time), not a destructive rewrite of the mesh's own colour words, and
-/// it has no equivalent of the `DAT_8007C018` resident-object table. Wiring it
-/// needs that table plus a decision to mutate parsed TMD data in place, which is
-/// a different grading model from the one the renderer already has.
+/// NOT WIRED. "No caller" would be the wrong reason: the sole `jal` to
+/// `0x801D5E20` in the corpus is `0x801D82F8`, inside the `REF`'d walker
+/// `FUN_801D8280`, and that walker is both ported and live - it is the field
+/// VM's op `0x4C` outer-nibble-E sub-6 arm, whose host hook
+/// `FieldHost::op4c_n_e_sub6_call_d8280` takes the three `i16` operands and
+/// has an empty default body. So a scene script can already reach this, and
+/// the arm silently does nothing.
+///
+/// The blocker is the grading **model**, not the route. The engine grades per
+/// render node (`crate::fade::ColorGrade` / `crate::fade::SceneTintRamp`, a
+/// multiply applied at draw time) rather than rewriting the mesh's own colour
+/// words, and it has no equivalent of the `DAT_8007C018` resident-object
+/// table for the walker to iterate. Wiring it needs that table plus a
+/// decision to mutate parsed TMD data in place.
 pub fn shift_primitive_colours(
     groups: &mut [(PrimGroupHeader, Vec<[u8; 4]>)],
     shift: &HsvShift,
