@@ -104,6 +104,8 @@ pub struct GroupAim {
 /// Decode a target-group code into the actor-slot range `[start, end)` the
 /// group covers.
 ///
+/// REF: FUN_801E7320 (the monster-AI resolver that produces group codes)
+///
 /// PORT: FUN_801DCEAC (group-code decode)
 pub fn target_group_range(code: u8) -> (u8, u8) {
     match code {

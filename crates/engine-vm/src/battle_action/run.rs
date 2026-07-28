@@ -196,6 +196,7 @@ pub(super) fn idle_hold<H: BattleActionHost + ?Sized>(
 /// at all.
 ///
 /// PORT: FUN_801E295C case 0xFF (round boundary, `801e67e8`)
+/// REF: FUN_801D0748 (the battle flow SM that re-arms `Begin` in retail)
 pub(super) fn round_end<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,

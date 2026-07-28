@@ -590,7 +590,8 @@ pub struct BattleActionCtx {
     /// combatant count less the skipped tail, so the thing being compared is a
     /// position in the order, not anything per-actor.
     ///
-    /// PORT: FUN_801E295C (`ctx[+0x1A]`, all four sites)
+    /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
+    /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,
     /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
     /// transition). Non-zero while a menu is still drawing.

@@ -60,6 +60,8 @@
 //! a field-VM opcode. Feeding one to the other is a category error, so
 //! routing the `ScreenShake` host event through this kernel would not wire it.
 
+// REF: FUN_80021248 (the arming routine that signs this builder's records
+// and hands them to the per-frame walker)
 use crate::battle_formulas::psyq_rand_step;
 
 /// The camera rotation/shake/focus trios `FUN_801D829C` tweens. Mirrors the

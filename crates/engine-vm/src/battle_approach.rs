@@ -1,6 +1,7 @@
 //! The attack-approach distance clamp.
 //!
 //! PORT: FUN_801DF570
+//! REF: FUN_801DEA50 (its one caller, at `0x801DEDC8`)
 //!
 //! `(slot, requested) -> i16`. Given an acting actor and a requested step, this
 //! returns how far the approach is actually allowed to close - the kernel behind
