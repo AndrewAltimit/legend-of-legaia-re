@@ -48,8 +48,13 @@
 //!   `0x1F800393`. None of the three is modelled, and the result goes to
 //!   `FUN_80024EE4`, a primitive submit with no engine channel.
 //! * [`bgr555_to_grey`] desaturates a **captured framebuffer** strip. The
-//!   engine presents through a swapchain and has no re-readable frame to walk
-//!   - the same prerequisite the battle-intro swirl waits on.
+//!   engine never lands its drawn 3D scene in the software PSX VRAM, so the
+//!   strip has no source - the same prerequisite the battle-intro swirl waits
+//!   on. Read that module's note before re-opening this: the older phrasing
+//!   here ("presents through a swapchain and has no re-readable frame") was
+//!   wrong about the mechanism. `legaia_tim::Vram` *is* a persistent
+//!   re-readable framebuffer and `Renderer::capture_rgba` *does* read a frame
+//!   back; what is missing is the step that puts the scene into VRAM.
 //! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
 //!   colour/OTZ setup, whose depth term comes from the GTE transform
 //!   `FUN_8003D344` per actor per frame. `engine-render` computes its own

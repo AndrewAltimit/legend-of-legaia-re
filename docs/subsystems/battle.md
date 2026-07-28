@@ -35,6 +35,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 **Runtime-memory captures + tests**
 - [Encounter trigger memory layout](#encounter-trigger---runtime-memory-layout) · [scene-init residency](#battle-scene-init-residency-window) · [item-use residency](#item-use-battle-event-residency) · [stat-growth observations](#captured-stat-growth-observations)
 - [CDNAME → MV STR cutscene routing](#cdname--mv-str-cutscene-routing) · [end-to-end gameplay loop test](#end-to-end-gameplay-loop-integration-test)
+- [Field-to-battle intro presentation](#field-to-battle-intro-presentation) - [what blocks the styles](#what-actually-blocks-the-styles)
 
 ## Battle scene loader (`FUN_800520F0`)
 
@@ -2078,7 +2079,7 @@ stated by the concrete writes.
 | `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra - documented, not ported. |
 | `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
 | `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
-| `FUN_80046A20` | Party HP/MP status-face selector: keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` (and status word `+0x16E`) it writes an expression state (`2`/`3`/`6`/`7`/`9`) into the four portrait slots at `DAT_801C8FA0`. |
+| `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
 | `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
 | `FUN_8004C650` | Battle name-banner placement: measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
 | `FUN_8004CCD4` | Per-command display resolver (battle-data-pack): for each of the actor's up-to-2 command slots, tests a threshold value against the `+0xA4` range pairs and writes the matching `+0x1034` (hit) or `+0x1030` (fallback) display pointer into the caller's output table. |
@@ -2086,7 +2087,7 @@ stated by the concrete writes.
 | `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Its live arms ease the actor's packed tint/tween word `+0x04` toward a target via `FUN_80050F30`, and treat the packed arrival value `0x20080200` (all three channels at the neutral `0x80` target) as "reached". |
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
 | `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' position accumulators `+0x34`/`+0x38` apart by `sin/cos >> 10`. Positional physics keyed on the game's trig tables; ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes). |
-| `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. |
+| `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |
 | `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write - documented, not ported. |
 
 The animation pair `FUN_800495C8` / `FUN_80049858` (pose→vertex blend) is
@@ -2096,6 +2097,61 @@ battle-overlay actor-**presentation** layer: it moves and tints the on-screen
 actor sprites but touches no HP/MP/stat field, so it sits beside - not inside -
 the [damage formulas](battle-formulas.md). Only `FUN_80050F30` is a pure kernel;
 the rest depend on the actor table, the trig LUTs, or the GPU ordered list.
+
+## Field-to-battle intro presentation
+
+The transition between leaving the field and the battle scene coming up is its
+own overlay, PROT 0979 `field_battle_intro`. It does two jobs at once:
+sequence the battle handoff, and drive one of five visual styles.
+
+The **handoff** half is live. `FUN_801CF5BC` is ported as
+`engine-vm::battle_intro_transition::tick_transition` and driven once per frame
+by `World::tick_battle_intro` for as long as the encounter session sits in its
+`Transition` phase. Phase 7 is terminal: it raises `ready` bit 1 and stops
+advancing, and bit 0 comes from the post-switch spin test, so `ready == 3` is
+the completion state.
+
+The **visual** half is not. Five style kernels are ported and none is reached
+by a host:
+
+| Style | Retail | Port |
+|---|---|---|
+| Scatter particles | `FUN_801CFDA0` | `battle_intro_styles::tick_particle_field` (`PARTICLE_TICK_A`) |
+| Scatter with spin-up | `FUN_801D0370` | same, `PARTICLE_TICK_B` |
+| Tile shatter | `FUN_801D0D24` | `battle_intro_tiles::tick_tile_grid` |
+| Swirl fan | `FUN_801D1888` | `battle_intro_swirl::tick_swirl` |
+| Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` |
+
+### What actually blocks the styles
+
+Two things, and neither is the screen-space draw path - a point worth stating
+plainly because the modules' own notes previously claimed otherwise.
+
+1. **No working-set owner.** `World::battle_intro` is a `TransitionEntity`
+   (`phase` / `elapsed` / `ready`). Nothing holds a particle block, tile grid
+   or swirl mesh between frames.
+2. **No captured field frame.** Every style textures itself with the field
+   image retail left in VRAM. The engine never lands its drawn 3D scene in the
+   software PSX VRAM: the VRAM texture is created `TEXTURE_BINDING |
+   COPY_DST`, and only TIM / CLUT / texture-page uploads ever reach it.
+
+What is **not** missing: `engine-render` has the screen-space textured
+primitive path these styles draw through - `RenderTarget::ScreenOverlay` over
+per-primitive tpage / CLUT with `screen_overlay::order_primitives` as the
+ordering table, and `billboard::project_billboard` (a port of `FUN_800195A8`)
+as the sprite projector the particle field rides, returning the OT bucket
+`particle_quad_accepted` consumes. A frame capture also exists
+(`Renderer::capture_rgba`), and `legaia_tim::Vram` is a persistent re-readable
+framebuffer whose `move_image` is a port of retail's own capture primitive.
+
+The curtain has a third input missing: its descriptor table at overlay VA
+`0x801D1EC4`. That is a parse rather than a discovery - PROT 0979 is already
+identified and base-pinned in `crates/asset/data/static-overlays.toml`, so the
+bytes are reachable; nothing decodes the `0x14`-stride records yet.
+
+`crates/engine-vm/tests/battle_intro_chain.rs` pins the half that is done: all
+four working sets seed and tick from the live transition clock, each advancing
+one step per frame, with no gap in the arithmetic.
 
 ## See also
 

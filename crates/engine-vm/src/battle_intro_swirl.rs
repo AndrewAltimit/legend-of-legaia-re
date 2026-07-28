@@ -49,6 +49,10 @@
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_field_battle_intro_801d1564.txt`,
 //! `..._801d1888.txt` and `..._801d1a20.txt` - disassembly, not the C.
+//!
+//! REF: FUN_80058490 - retail `MoveImage`, ported as
+//! `legaia_tim::Vram::move_image`. The wiring note on [`build_swirl_mesh`]
+//! names it as the capture primitive the engine already has.
 
 /// Bands in the swirl (`slti v0,t5,0x10`).
 pub const BANDS: usize = 0x10;
@@ -229,12 +233,38 @@ fn clamp(v: i32, bound: i32) -> i32 {
 ///
 /// PORT: FUN_801D1564
 ///
-/// NOT WIRED: nothing owns a [`SwirlMesh`]. `legaia_engine_core::World` tracks
-/// the transition as its phase counter only (`World::battle_intro`), and
-/// `legaia-engine-render` has no pass that draws a textured fan over a captured
-/// framebuffer - the engine has no captured framebuffer to texture with, since
-/// it presents through a swapchain rather than through a re-readable VRAM.
-/// Wiring needs a screen-capture render target first.
+/// NOT WIRED: nothing owns a [`SwirlMesh`]. `World::battle_intro` is a
+/// `TransitionEntity` (`phase` / `elapsed` / `ready`) with no room for one.
+///
+/// The second half of the earlier note here was wrong, and wrong in a way
+/// that overstated the work. It said `engine-render` "has no pass that draws
+/// a textured fan over a captured framebuffer - the engine has no captured
+/// framebuffer to texture with, since it presents through a swapchain rather
+/// than through a re-readable VRAM", and concluded that wiring "needs a
+/// screen-capture render target first". Point by point:
+///
+/// * **The VRAM is re-readable.** `legaia_tim::Vram` is a persistent CPU-side
+///   1024x512 `u16` framebuffer with rect read/write, and its `move_image` is
+///   a port of `FUN_80058490` - retail's own capture primitive, the very op
+///   that stashes a frame into a texpage.
+/// * **The pass exists.** `screen_overlay::ScreenQuad` +
+///   `RenderTarget::ScreenOverlay` is a screen-space `POLY_FT4` path with
+///   per-primitive tpage / CLUT / OT ordering, and its shader's 15-bpp direct
+///   branch is what [`TPAGE_PRIMARY`] and [`TPAGE_MIRRORED`] decode through.
+///   `engine-render`'s own `afterimage` module says as much about the same
+///   machinery ("built and tested; what is missing is the per-frame
+///   emitter"), so the two notes contradicted each other.
+/// * **A frame capture exists.** `Renderer::capture_rgba` renders any target
+///   into an offscreen texture and reads it back.
+///
+/// The real blocker is narrower: nothing ever lands the *drawn 3D scene* into
+/// `Vram`. `upload_vram` creates the texture `TEXTURE_BINDING | COPY_DST`
+/// with no `RENDER_ATTACHMENT`, and `Vram` only ever receives TIM / CLUT /
+/// texture-page uploads, so the two capture texpages the swirl samples are
+/// never filled. Closing it needs a step that puts the field frame there -
+/// either a colour target that is also `TEXTURE_BINDING`, or a
+/// `capture_rgba` -> BGR555 -> `Vram::write_block` round trip, which uses only
+/// existing public API. That is a wiring step, not a new subsystem.
 pub fn build_swirl_mesh(allocated: bool, trig: &mut dyn SwirlTrig) -> SwirlBuildOutcome {
     if !allocated {
         return SwirlBuildOutcome::OutOfMemory;
@@ -399,7 +429,11 @@ pub struct SwirlTick {
 /// PORT: FUN_801D1888
 ///
 /// NOT WIRED: same missing host as [`build_swirl_mesh`] - nothing owns a
-/// [`SwirlMesh`] and there is no captured-framebuffer texture to draw it with.
+/// [`SwirlMesh`], and the two capture texpages the band draws sample are
+/// never filled because `engine-render` does not land its drawn scene in the
+/// software VRAM. The screen-space textured pass itself exists; see the note
+/// on [`build_swirl_mesh`] for why the older "no re-readable VRAM" reading of
+/// this was wrong.
 pub fn tick_swirl(
     mesh: &mut SwirlMesh,
     elapsed: &mut i16,

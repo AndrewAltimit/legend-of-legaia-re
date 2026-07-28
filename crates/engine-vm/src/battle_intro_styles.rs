@@ -42,6 +42,12 @@
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_field_battle_intro_801cfda0.txt`,
 //! `..._801d0370.txt` and `..._801d11d0.txt` - disassembly, not the C.
+//!
+//! REF: FUN_800195A8 - the sprite projector, ported as
+//! `legaia_engine_render::billboard::project_billboard`.
+//! REF: FUN_8003D2C4 - retail `AddPrim`, whose ordering is
+//! `legaia_engine_render::screen_overlay::order_primitives`.
+//! Both are named in the wiring notes below.
 
 use crate::battle_intro_particles::IntroParticle;
 use crate::battle_intro_transition::{
@@ -271,11 +277,30 @@ pub fn particle_quad_accepted(style: &ParticleTickStyle, depth: i32, corner0: (i
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// NOT WIRED: `legaia_engine_core::World::battle_intro` is the transition's
-/// phase counter and nothing else - it owns no particle block, and
-/// `legaia-engine-render` has no pass that projects 1160 sprite quads through
-/// the GTE into an ordering table. Both halves have to exist before ticking a
-/// field that nothing draws is worth the cost.
+/// NOT WIRED: `legaia_engine_core::World::battle_intro` owns no particle
+/// block. It is a `battle_intro_transition::TransitionEntity` - `phase`,
+/// `elapsed`, `ready` - and nothing else, so there is nowhere to keep the
+/// `PARTICLE_TICK_COUNT` records between frames.
+///
+/// That is the whole blocker. The draw side is **not** missing, and the
+/// earlier note here - "`legaia-engine-render` has no pass that projects 1160
+/// sprite quads through the GTE into an ordering table" - was wrong in each
+/// of its three clauses:
+///
+/// * `engine-render`'s `billboard::project_billboard` is a port of
+///   `FUN_800195A8`, the sprite projector this style rides, and it returns
+///   both the screen corners and the OT bucket that
+///   [`particle_quad_accepted`] already consumes.
+/// * `screen_overlay::order_primitives` *is* the ordering table
+///   (`REF: FUN_8003D2C4` / `DrawOTag`).
+/// * `RenderTarget::ScreenOverlay` draws the ordered primitives against the
+///   shared PSX VRAM, and `screen_overlay::afterimage_screen_quad` is the
+///   same converter shape a particle quad needs, already written and tested.
+///
+/// So the worklist entry is one item, not two: a per-frame emitter that owns
+/// the particle block and pushes its accepted quads as screen primitives.
+/// `crates/engine-vm/tests/battle_intro_chain.rs` pins the half that is
+/// already done - the kernels compose from the live transition clock.
 pub fn tick_particle_field(
     particles: &mut [IntroParticle],
     style: &ParticleTickStyle,
@@ -402,11 +427,22 @@ fn warp(offset: i32, elapsed: i32) -> i32 {
 /// PORT: FUN_801D11D0
 /// REF: FUN_801CF1B0 (the quad builder), FUN_801D1D9C (the mid-pass emitter)
 ///
-/// NOT WIRED: the descriptor table lives inside PROT 0979, which the engine
-/// never loads, and the strips texture a captured field framebuffer the engine
-/// does not produce. This is nonetheless the function that gives
-/// [`build_intro_quad`] its retail caller: everything below the table read is
-/// ported, and a host that supplies the parsed table gets the whole style.
+/// NOT WIRED: two inputs are missing, and neither is the draw path.
+///
+/// * **The descriptor table.** It sits at overlay VA `0x801D1EC4`, inside
+///   PROT 0979 `field_battle_intro`, which no runtime engine path loads. Note
+///   this is a *parse*, not a discovery: that entry is already identified and
+///   base-pinned in `crates/asset/data/static-overlays.toml`, so `asset
+///   overlay` reaches the bytes today. Nothing decodes the `0x14`-stride
+///   records into [`IntroQuadDesc`] yet.
+/// * **The source texels.** The strips texture the field frame retail left in
+///   VRAM. `engine-render` never lands its drawn 3D scene in the software
+///   VRAM - see the note on [`crate::battle_intro_swirl::build_swirl_mesh`],
+///   which spells out what that does and does not mean.
+///
+/// This is nonetheless the function that gives [`build_intro_quad`] its retail
+/// caller: everything below the table read is ported, and a host that supplies
+/// the parsed table gets the whole style.
 pub fn tick_curtain(table: &mut [IntroQuadDesc], elapsed: &mut i16, frame_step: u8) -> CurtainTick {
     let mut out = CurtainTick::default();
     let clock = i32::from(*elapsed);

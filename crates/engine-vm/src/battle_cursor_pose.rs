@@ -24,7 +24,12 @@
 //! * `FUN_801D57E8` / `FUN_801D5778` copy between **pose slots** - the
 //!   per-actor animation-pose array the battle renderer double-buffers. The
 //!   engine animates from decoded ANM frames per actor and allocates no such
-//!   array.
+//!   array. Note the table base is not unknown to this tree, only unowned:
+//!   `0x80076C10` is named three times under three readings -
+//!   `battle_party_panel::POSE_SLOT_TABLE` (which publishes label buffers
+//!   into it), `legaia_engine_ui::battle_name_banner`'s
+//!   `BANNER_X_FIELD_OFFSETS` (which calls it "the battle HUD block base"),
+//!   and here. Whoever allocates it first should reconcile the three.
 //! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. The engine's
 //!   battle UI is rebuilt from world state every frame (`engine-ui` draw-list
 //!   builders), so nothing is tracked and nothing needs releasing.

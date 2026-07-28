@@ -272,12 +272,20 @@ pub use crate::battle_intro_particles::ParticleEnv;
 /// PORT: FUN_801D081C
 /// REF: FUN_80019B28 (heading), FUN_8005AF0C (sqrt), FUN_80056798 (rand)
 ///
-/// NOT WIRED: `legaia_engine_core::World` models the transition as the phase
-/// counter alone (`World::battle_intro`, driven by
-/// `battle_intro_transition::tick_transition`); it carries no per-style working
-/// set, and `legaia-engine-render` has no transition pass to draw 256 textured
-/// quads into. Wiring needs both, plus the `0x801CE8BC` corner table off the
-/// disc - seeding a grid nothing draws would be an inert allocation.
+/// NOT WIRED: `legaia_engine_core::World::battle_intro` is a
+/// `TransitionEntity` (`phase` / `elapsed` / `ready`) driven by
+/// `battle_intro_transition::tick_transition`; it carries no per-style working
+/// set, so nothing owns a [`TileGrid`] between frames. The other input is the
+/// `0x801CE8BC` corner table, overlay data in PROT 0979 that nothing decodes.
+///
+/// The earlier note here also claimed `legaia-engine-render` "has no
+/// transition pass to draw 256 textured quads into". That is false:
+/// `RenderTarget::ScreenOverlay` draws ordered screen-space `POLY_FT4`
+/// primitives with per-primitive tpage and CLUT against the shared PSX VRAM.
+/// The tiles' own texture pages ([`TILE_TPAGE_LEFT`] / [`TILE_TPAGE_RIGHT`])
+/// sample the captured field frame, which is the input `engine-render` does
+/// not currently produce - see [`crate::battle_intro_swirl::build_swirl_mesh`]
+/// for exactly what that gap is and is not.
 pub fn seed_tile_grid(
     sub_style: TileSubStyle,
     allocated: bool,
@@ -493,7 +501,9 @@ pub struct TileTick {
 /// PORT: FUN_801D0D24
 ///
 /// NOT WIRED: same missing host as [`seed_tile_grid`] - nothing owns a
-/// [`TileGrid`] and nothing draws one.
+/// [`TileGrid`] between frames. The draw path exists
+/// (`RenderTarget::ScreenOverlay`); what it has no source for is the captured
+/// field frame the tiles texture themselves with.
 pub fn tick_tile_grid(grid: &mut TileGrid, elapsed: &mut i16, frame_step: u8) -> TileTick {
     let mut out = TileTick {
         not_first_frame: *elapsed != 0,
