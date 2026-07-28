@@ -1065,6 +1065,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::AddMoney { delta });
     }
 
+    /// Op `0x4E` party-bank read - the read side of the two purses `add_money`
+    /// and the casino cash-out write. Sub-op 10 is party gold
+    /// (`_DAT_8008459C`), sub-op 11 the casino coin bank (`_DAT_800845A4`);
+    /// the VM normalises the 7-byte (sub-3 / sub-9) and 9-byte (sub-10 /
+    /// sub-11) encoded forms onto that pair before calling.
+    ///
+    /// Without it every scripted gold gate reads an empty purse, so each of
+    /// them takes its can't-afford branch: an inn stay, a paid tour, a train
+    /// ticket and a casino coin purchase are all one `0x4E` sub-3 compare
+    /// against a script literal (`legaia_asset::inn_costs`). That is the
+    /// whole affordability check - retail has no inn routine and no cost
+    /// table, so this read is what makes the charge reachable at all.
+    fn party_bank_value(&self, sub_op: u8) -> i32 {
+        match sub_op {
+            11 => self.world.casino_coins.min(i32::MAX as u32) as i32,
+            _ => self.world.money,
+        }
+    }
+
     fn set_item_count(&mut self, slot_byte: u8, count: u8) {
         if count == 0 {
             self.world.inventory.remove(&slot_byte);
