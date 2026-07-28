@@ -102,20 +102,37 @@
 //!
 //! # NOT WIRED
 //!
-//! Every item in this module is inert, for one shared reason: retail's clip
+//! Three of the four items here are inert for one shared reason: retail's clip
 //! lives on a **spawned helper actor** drawn from the `FUN_80020de0` pool, and
 //! `engine-core`'s world model has neither that pool nor a per-actor clip
-//! cursor. `World::try_field_ledge_hop` posts the `FieldLedgeHop` and stops.
+//! cursor.
+//!
+//! [`spawn_arc_helper`] is the exception and does not belong to that group:
+//! **retail does not call it either.** `FUN_801D5780` has no reference of any
+//! form anywhere in the shipped data, while its three siblings each do, so it
+//! is dead code in the retail image rather than an engine wiring gap. Its own
+//! tag carries the evidence and the two traps that make the row easy to
+//! re-read wrongly.
+//!
+//! Worth stating at full strength, because it is larger than "the arc is not
+//! animated": the hop is **detected and dropped**. `World::try_field_ledge_hop`
+//! is live off the per-frame vertical controller and posts a `FieldLedgeHop`
+//! into `World::field_ledge_hop`, and that field has no reader anywhere in the
+//! workspace - `World::step_field_vertical` clears it to `None` at the top of
+//! the very next frame before re-posting. So the port currently has no ledge
+//! hop at all: the player walks up to an authored ledge, the engine classifies
+//! it correctly as a hop-up or hop-down, and nothing moves.
 //!
 //! The concrete blocker is a storage one and it is named precisely so the next
 //! pass does not re-derive it: driving [`advance_hop_session`] needs a
-//! `cursor`/`extent` pair that survives between frames, and the only places it
-//! can live are a new `World` field (`crates/engine-core/src/world/state.rs`)
-//! or a new field on `FieldLedgeHop` / the actor's `ActorState`
-//! (`crates/engine-core/src/world/types.rs`, `engine-vm`'s `move_vm`). All
-//! three are outside this module's path set. Computing the arc without
-//! somewhere to keep the cursor would be inventing state nothing reads, so it
-//! is deliberately not done.
+//! `cursor`/`extent` pair that survives between frames, and `FieldLedgeHop` is
+//! a per-frame transient with no such pair. Closing this means promoting it to
+//! a session that outlives the frame - a `cursor`/`extent` on `FieldLedgeHop`
+//! itself is the smallest shape that works - and then stepping it from the
+//! same vertical controller that posts it, applying [`HopTick`]'s position to
+//! the player actor. Computing the arc without somewhere to keep the cursor
+//! would be inventing state nothing reads, so it is deliberately not done
+//! here.
 
 /// Fixed-point full-clip extent: retail's cursor runs `0 ..= 0x1000`.
 pub const CLIP_FULL: i32 = 0x1000;
@@ -171,8 +188,11 @@ fn mid(a: i16, b: i16) -> i16 {
 /// PORT: FUN_801d2404
 // NOT WIRED: the helper-actor pool `FUN_801d2404` allocates from, and the
 // per-frame advance `FUN_801d2298` that consumes the clip, have no
-// counterpart in `engine-core`'s world model; wiring would edit
-// `engine-core/src/world/**`, owned elsewhere.
+// counterpart in `engine-core`'s world model. The arc's inputs are all
+// present - `World::field_ledge_hop` carries exactly this function's
+// `(target, kind)` - but that record is a per-frame transient nothing reads,
+// so there is no session for the built arc to be stored on. See the
+// module's `NOT WIRED` section.
 pub fn build_hop_arc(start: (i16, i16, i16), target: HopTarget, apex: i16, frames: i16) -> HopArc {
     let end = (target.x, target.y, target.z);
 
@@ -267,8 +287,28 @@ pub struct HopSpawn {
 ///   straight from the `+0x9E` store to the epilogue.
 ///
 /// PORT: FUN_801d5780
-// NOT WIRED: see the module's `NOT WIRED` section - the clip needs a helper
-// actor to live on, and `engine-core` has no pool to allocate one from.
+// NOT WIRED, AND UNWIRABLE: **retail never calls this function either.** It is
+// not the engine that is missing a consumer - `FUN_801D5780` has zero
+// references of any form in the shipped data: no `jal`, no `j`, and no literal
+// address word, across `SCUS_942.54`, every base-mapped overlay image and every
+// extracted PROT entry. Its three siblings in this module are the controls that
+// make that a real zero rather than a scan artifact: `FUN_801D2404` and
+// `FUN_801D25EC` are each found by `jal` in the field overlay, and
+// `FUN_801D2298` is found as a table word at VA `0x801F229C`.
+//
+// The bytes are a complete, well-formed routine - field overlay `0897_xxx_dat`
+// at file `0x6F68` opens `addiu sp, sp, -0x28` and the null-`a0` bail at
+// `0x801D57A4` is `bne s0, zero, +3`, exactly as ported - so this is dead code
+// shipped in the image, not a mis-read address. Read the row as "retail reaches
+// it from nowhere", and do not write a call site to satisfy an audit: there is
+// no production path to put one on.
+//
+// Re-checking this from `ghidra/scripts/funcs/801d5780.txt` will mislead. That
+// dump is a wrong-image import - its header resolves `entry=801d56fc`, so it
+// shows the address as interior to a menu-family function. The address is
+// additionally VA-aliased: in the cutscene images it *is* an entry, of a
+// different 92-instruction function. The field-overlay bytes above are the
+// evidence, not any dump.
 pub fn spawn_arc_helper(
     src: Option<(i16, i16, i16)>,
     target: HopTarget,
@@ -402,7 +442,9 @@ pub struct HopTick {
 ///
 /// PORT: FUN_801d2298
 // NOT WIRED: see the module's `NOT WIRED` section - nothing in `engine-core`
-// owns a `HopSession` between frames.
+// owns a `HopSession` between frames. This is the anchor whose absence makes
+// the port's ledge hop a no-op rather than an unanimated warp: without a
+// surviving cursor there is no per-frame step to apply.
 pub fn advance_hop_session(session: &mut HopSession, step: u8) -> HopTick {
     let mut tick = HopTick::default();
 

@@ -302,11 +302,18 @@ pub const BIND_RECORD_STRIDE: usize = 4;
 // PORT: FUN_8003d038
 // REF: FUN_801cfc40 (the collision probe that posts), FUN_80038158
 //      (the wait-for-touch consumer at 0x8003882C)
-// NOT WIRED: the port's field collision path does not post touches - it
-// resolves per-axis walls and stops, without identifying the actor it hit.
-// A wired caller would be the actor-vs-actor overlap test standing in for
-// FUN_801cfc40, storing this function's result into the mailbox the motion
-// VM's wait-for-touch opcode reads. Reachable only from tests.
+// NOT WIRED: the missing piece is the **consumer**, not the caller. The
+// producer side is present - `World::field_prop_dir_probe` is the port of
+// FUN_801cfc40 and already returns which placement a probe touched
+// (`PropDirProbe::touch`), and `World::check_field_walk_touch` is the
+// FUN_801d5b5c post, running from the locomotion step every frame. What
+// nothing in the engine owns is the one-slot mailbox `DAT_80073F1C` this
+// stores into, because its only reader is the wait-for-touch arm of
+// FUN_80038158 (`0x8003882C`) and that arm is decoded but unported: the
+// engine's slice of that VM is the ambient facing channel (ops 0x04 /
+// 0x0D) plus the static MAN decode, so no script can wake on a touch.
+// Wiring means porting that arm first - a call added ahead of it would
+// fill a mailbox with no reader.
 pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
     let class = *bind_records.get(index.checked_mul(BIND_RECORD_STRIDE)?)?;
     if class == TOUCH_POST_SUPPRESS_CLASS {
@@ -570,9 +577,11 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
 ///
 /// NOT WIRED: this is the applier for [`FieldActorFacing::RotateToward`], and
 /// nothing selects that arm - see the disclosure on [`field_actor_plan`] for
-/// the missing prerequisite (the per-actor `+0x10` flag word). The engine's
-/// field NPCs turn through the bytecode laws in [`step`] instead, so no
-/// caller has a `(current, target, rate)` triple to clamp.
+/// the missing prerequisite (field NPCs are typed per-slot maps rather than
+/// actor records, so they carry no `+0x10` flag word to select on, even
+/// though pool actors do). The engine's field NPCs turn through the bytecode
+/// laws in [`step`] instead, so no caller has a `(current, target, rate)`
+/// triple to clamp.
 pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     let mut delta = i32::from(target) - i32::from(current);
     if delta > rate {
@@ -685,17 +694,22 @@ pub struct FieldActorInputs {
 /// PORT: FUN_8003BC08
 ///
 /// NOT WIRED: every input this plan branches on is a bit of the retail
-/// per-actor flag word `+0x10`, and the engine has no flag word. `World`
-/// splits field-NPC state into typed per-slot maps - in-flight walk legs,
-/// ambient facing channels, default-move pairs, glide speeds - and decides
-/// what to run from which map a slot appears in, so there is no single record
-/// to read `0x2` / `0x2000` / `0x20000000` / `0x100` / `0x400` / `0x8` /
-/// `0x1000` off. Its NPC tick therefore calls [`step`] directly with a
-/// MAN-decoded program rather than asking this driver first. Wiring means
-/// giving the engine's field-actor record that flag word (or a typed
-/// equivalent per predicate) and routing the tick through the plan - which
-/// changes which NPCs move on a given frame, so it lands with the field
-/// oracles, not as a call insertion.
+/// per-actor flag word `+0x10`, and the actors this plan is *for* do not
+/// carry one. Note what that does **not** say: the flag word itself exists -
+/// [`crate::move_vm::ActorState::flags`] is `+0x10` and `engine-core` tests
+/// its bits on pool actors in production (`0x80000` movement-disable in the
+/// locomotion and vertical controllers, `0x2000` slow-fall). The gap is that
+/// **field NPCs are not pool actors**: `World` keys them by placement slot
+/// across typed maps - positions, in-flight walk legs, ambient facing
+/// channels, default-move pairs, glide speeds - and decides what to run from
+/// which map a slot appears in, so a village NPC has no `ActorState` to read
+/// `0x2` / `0x2000` / `0x20000000` / `0x100` / `0x400` / `0x8` / `0x1000`
+/// off. Its NPC tick therefore calls [`step`] directly with a MAN-decoded
+/// program rather than asking this driver first. Wiring means promoting
+/// field NPCs to actor records (or giving the maps a typed equivalent per
+/// predicate) and routing the tick through the plan - which changes which
+/// NPCs move on a given frame, so it lands with the field oracles, not as a
+/// call insertion.
 ///
 /// REF: FUN_80019278 (bearing-to-target, feeds `FaceTarget` / `RotateToward`),
 /// FUN_80039B7C, FUN_80038158, FUN_800204F8

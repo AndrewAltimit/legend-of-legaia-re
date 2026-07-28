@@ -53,11 +53,28 @@
 //!
 //! # Not wired
 //!
-//! `engine-core` models neither the `+0x50` / `+0x54` actor state pair nor the
-//! scene record's `+0x2E` / `+0x40` slots, and the debug-mode word is not
-//! plumbed into the engine's input path. Wiring means editing
-//! `engine-core/src/world/**` and `engine-core/src/input.rs`, both owned by
-//! other changes.
+//! The blocker is the **route to this slot**, and the actor pair is not part
+//! of it.
+//!
+//! `engine-core` does model `+0x50` / `+0x54`: they are `Actor::state_50` and
+//! `Actor::state_54`, documented at those offsets, and `man_load_actor_reset`
+//! already clears the second on a fresh submode driver. The table this handler
+//! sits in is dispatched live, too - slot `7` of the 52-entry
+//! `PTR_FUN_801F33B4`, whose port is `World::tick_submode_screen`'s `run_slot`
+//! over [`crate::baka_hub_actors::slot`].
+//!
+//! What is missing is anything that puts `7` in an actor's `+0x50`. The engine
+//! grounds only slot `0`: `field_submode_screen::slot_for_op49_sub_op` returns
+//! the close tick for every sub-op it cannot name, because retail picks the
+//! slot from the op-`0x49` operand payload it reads through `_DAT_8007B450`,
+//! and the engine carries no such payload. Adding a dispatch arm ahead of that
+//! would be an arm nothing selects.
+//!
+//! Two smaller gaps sit behind it, and they are the ones with no engine home
+//! at all: the scene record's `+0x2E` / `+0x40` save-slot pair, which is where
+//! the outgoing state is parked for the return, and the build's debug-mode word
+//! `_DAT_8007B98C`, which the engine's input path does not carry - so even
+//! reached, the handler could only ever pick [`STATE_NORMAL`].
 
 /// The state installed on every non-debug path.
 pub const STATE_NORMAL: u16 = 0x30;
@@ -109,9 +126,12 @@ pub fn picked_state(inputs: StatePickInputs) -> u16 {
 /// Run the handler. `current_state` is the actor's `+0x50` on entry.
 ///
 /// PORT: FUN_801f1f4c
-// NOT WIRED: the engine models neither actor `+0x50`/`+0x54` nor the scene
-// record's `+0x2E`/`+0x40`, and the debug-mode word is not plumbed through
-// `engine-core`'s input path.
+// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4` - the
+// engine grounds only slot `0` because retail picks the slot from the
+// op-`0x49` operand payload behind `_DAT_8007B450`, which it does not carry.
+// The actor pair `+0x50`/`+0x54` DOES exist (`Actor::state_50` /
+// `Actor::state_54`); what has no engine home is the scene record's
+// `+0x2E`/`+0x40` and the debug-mode word. See the module's `Not wired`.
 pub fn state_pick(inputs: StatePickInputs, current_state: u16) -> StatePickWrites {
     StatePickWrites {
         scene_slot_2e: -1,

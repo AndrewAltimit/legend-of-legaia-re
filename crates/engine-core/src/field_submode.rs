@@ -215,11 +215,24 @@ pub struct PanelRow {
 /// `count != 0` test), which is why the frame and labels are emitted separately
 /// from this pass.
 ///
-/// NOT WIRED: this is the layout half of a render-track routine; the draw
-/// leaves it feeds (`FUN_8002B994` highlight bar, `FUN_8002C488` glyph run,
-/// `FUN_80036888` label, `FUN_8002C69C` frame) are GPU-primitive builders with
-/// no `engine-core` counterpart, and the context block it reads is the same one
-/// [`open_submode`] cannot reach.
+/// NOT WIRED: this is the layout half of a render-track routine, and the
+/// blocker is on the render side only - the inputs are all live.
+///
+/// The context clause an earlier reading carried ("the context block it reads
+/// is the same one [`open_submode`] cannot reach") is false, and contradicts
+/// this module's own header: `open_submode` **is** live, its ten seeds land in
+/// `World::submode_context`, and `World::submode_env` reads that block every
+/// frame. The row inputs are live with it - the cursor and entry count this
+/// pass wants are already projected into `HubEnv`.
+///
+/// What has no consumer is the output. The submode screen's own draw list
+/// (`World::submode_screen.draws()`, built by the ported panel-window
+/// painters) is not read by any host: neither `engine-shell` nor the browser
+/// page renders the op-`0x49` screen at all. So a `PanelRow` would join a
+/// draw list nothing paints. The prerequisite is a host consumer for that
+/// list; the four draw leaves it would then need (`FUN_8002B994` highlight
+/// bar, `FUN_8002C488` glyph run, `FUN_80036888` label, `FUN_8002C69C` frame)
+/// are themselves ported, in `engine-render`, `engine-ui` and `legaia-font`.
 pub fn submode_panel_rows(
     origin: (i16, i16),
     count: u8,
@@ -295,8 +308,11 @@ pub struct CardRequest {
 ///
 /// NOT WIRED: nothing in `engine-core` requests a master-mode transition by
 /// writing the retail mode word - [`crate::mode::GameMode`] changes go through
-/// typed scene-host calls, so there is no `_DAT_8007B83C` to store into. The
-/// companion flag `_DAT_8007BB00` has no engine counterpart at all; its
+/// typed scene-host calls. Two ports do carry a `_DAT_8007B83C` mirror
+/// (`scene_transition_actor`'s `EnterGameMode` step and
+/// `ProtCdDmaHost::set_overlay_mode_state`), so the word is not unmodelled;
+/// neither is a live master-mode driver a request could be routed through.
+/// The companion flag `_DAT_8007BB00` has no engine counterpart at all; its
 /// consumer is not in the ported set, which is the narrower blocker of the two.
 pub const fn request_card_mode() -> CardRequest {
     CardRequest {
