@@ -1,1 +1,2 @@
 addr,class,reason
+80050e74,REAL,self-entry body of 24 instructions returning `jr ra`

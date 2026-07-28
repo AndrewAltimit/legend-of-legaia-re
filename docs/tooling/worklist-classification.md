@@ -146,6 +146,25 @@ are not. A checked-in copy of the current run lives beside the script at
 verdicts are readable without a populated `funcs/` directory. Volatile counts
 live in that artifact rather than on this page.
 
+### An empty output is not a result
+
+Both committed artifacts - the CSV and
+`scripts/ci/proposed-ignore-additions.toml` - are *generated*, and nothing
+regenerates them on a schedule or checks them in a gate. So each has two
+states that look alike in a diff and in a directory listing:
+
+| What you see | Could mean | Or could mean |
+|---|---|---|
+| CSV with a header row and nothing else | the open worklist is empty and every row is classified | the instrument has not been run since the worklist last changed |
+| proposal TOML with only its comment header | every proposal has been reviewed and merged | the same |
+
+The two are told apart by re-running, not by reading. Before citing either
+file as evidence of a clean worklist, regenerate it against a checkout with a
+populated `funcs/` and see whether the file changes. The CSV shipped as a bare
+header row for a while, which reads as "classified and clean" and was in fact
+"unrun" - the exact `0 findings` / `findings not shown` ambiguity the gates on
+this page's siblings exist to remove.
+
 ## The classes
 
 | Class | What it means | How it is detected |
@@ -510,9 +529,19 @@ risk:
 | `DUPLICATE` | Merge only when a peer is ported, or is a live worklist row that names the routine stably. A peer that is itself aliased does not qualify - ignoring both ends deletes the routine. |
 | `VA_ALIASED`, `UNCERTAIN` | Never merged. |
 
-The `DUPLICATE` rule is not hypothetical: a cross-image relocated match can name
-a peer whose own row stands for two routines, in which case the match identifies
-neither. The sharper form of the same failure is a peer address that is not a
+**Never merge the proposal file unread**, and `DUPLICATE` is why. A wave that
+hand-checked six proposed rows found three of them wrong, all the same way:
+normalisation masks absolute address-shaped immediates, which erases a `jal`
+target, so *every small thunk hashes identically to every other small thunk*
+and distinct routines are proposed for deletion as copies of one another. The
+cost is asymmetric - an ignore row leaves the worklist permanently and nothing
+re-examines it - so a wrong row here is more expensive than a wrong row
+anywhere else in this layer. The generated file now carries that warning in its
+own header, where it cannot be missed by someone who never opened this page.
+
+The `DUPLICATE` rule is not hypothetical in the other direction either: a
+cross-image relocated match can name a peer whose own row stands for two
+routines, in which case the match identifies neither. The sharper form of the same failure is a peer address that is not a
 body at all - the matching stream came from a mis-based dump *printed* at that
 VA, while the VA itself hosts an unrelated routine in some other overlay. Both
 are checked mechanically now: a peer qualifies only when a dump at the peer VA
