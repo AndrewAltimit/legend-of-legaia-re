@@ -235,11 +235,12 @@ pub fn action_tags(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 /// monster may carry several entries sharing a tag (the search takes the first)
 /// and may omit a tag entirely.
 ///
-/// Provenance note: `ghidra/scripts/funcs/80050e2c.txt` carries decompiled C
-/// but an **empty** disassembly section (`size=1 bytes, 0 instructions`), so it
-/// is not on its own evidence for anything. The first-match-wins shape and the
-/// `0xFF` sentinel below are read off the executable directly - `SCUS_942.54`
-/// text VA `0x80010000`, so file offset `0x800 + (0x80050e2c - 0x80010000)`:
+/// Provenance note: the first-match-wins shape and the `0xFF` sentinel below
+/// were read off the executable directly - `SCUS_942.54` text VA `0x80010000`,
+/// so file offset `0x800 + (0x80050e2c - 0x80010000)` - because the dump then
+/// carried decompiled C over an empty disassembly section. The dump has since
+/// been re-extracted and now disassembles the whole 72-byte body, so it
+/// corroborates the transcription below rather than being unusable:
 ///
 /// ```text
 /// 80050e2c  andi a2,a2,0xff      ; count
