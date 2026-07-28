@@ -1204,6 +1204,36 @@ mod tests {
 
     // -- FUN_801DCCB4 / FUN_801DCE20 -----------------------------------
 
+    /// Window 31's three pens, off `FUN_801DCE20`: the heading at the
+    /// content origin, the 8-cell bank one row pitch below it in the
+    /// accent pen, the unit label `0x40` right of that, and the corner
+    /// cursor at the fixed `(+0xE6, +0xD)` inset the whole notify family
+    /// shares with window 7.
+    #[test]
+    fn amount_prompt_puts_its_number_a_row_below_the_heading() {
+        let font = legaia_font::Font::placeholder();
+        let (draws, cur) = amount_prompt_draws_for(&font, W32, "earned", 12, "pt");
+        assert_eq!((cur.x, cur.y), (W32.x + 0xE6, W32.y + 0x0D));
+        let row1 = W32.y + PAINTER_ROW_PITCH;
+        // The 8-cell field is right-aligned, so "12" inks the last two
+        // cells - never the field origin.
+        let digits: Vec<i32> = draws
+            .iter()
+            .filter(|d| d.dst.1 == row1 && d.color == PAINTER_INK_ACCENT)
+            .map(|d| d.dst.0)
+            .collect();
+        assert_eq!(digits.len(), 2);
+        assert!(digits.iter().all(|x| *x > W32.x));
+        // The unit label shares the number's row but keeps the default pen.
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.1 == row1 && d.dst.0 >= W32.x + 0x40 && d.color == MENU_TEXT_WHITE)
+        );
+        // The heading is the only thing on the origin row.
+        assert!(draws.iter().any(|d| d.dst.1 == W32.y));
+    }
+
     // -- FUN_801D4A80 --------------------------------------------------
 
     #[test]
