@@ -77,11 +77,19 @@ def as_int(token: str) -> int:
     return int(_STRIP.sub("", token))
 
 
-def dump_header(name: str) -> tuple[int | None, int | None] | None:
-    """`(size_bytes, instruction_count)` from a dump's header, if it has one."""
+def dump_header(name: str) -> tuple[int | None, int | None] | str:
+    """`(size_bytes, instruction_count)` from a dump's header.
+
+    Returns a *reason string* instead of a tuple when no comparison is
+    possible, so the caller can bucket the skip by cause rather than dropping
+    it. The two causes are not the same finding: `absent` means committed prose
+    cites a dump nobody in this clone has (unverifiable, and possibly a dump
+    that was never produced), while `headerless` means the file is here and
+    carries no `size=` line for the claim to be checked against.
+    """
     path = FUNCS / name
     if not path.exists():
-        return None
+        return "absent"
     head = path.read_text(errors="replace").split("\n", 6)[:6]
     size = insn = None
     for line in head:
@@ -91,7 +99,7 @@ def dump_header(name: str) -> tuple[int | None, int | None] | None:
         m = INSN_RE.search(line)
         if m and insn is None:
             insn = as_int(m.group(1))
-    return None if size is None and insn is None else (size, insn)
+    return "headerless" if size is None and insn is None else (size, insn)
 
 
 def scan_lines():

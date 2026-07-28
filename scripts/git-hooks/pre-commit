@@ -227,8 +227,15 @@ fi
 # framebuffers over one engine; a screen wired into only one of them is invisible
 # in a diff. This derives the shared feature surface from the engine-ui draw
 # builders and fails when a builder reaches one host and not the other without a
-# recorded reason. Hard gate: it is cheap, has no false positives that a waiver
-# cannot express, and the whole point is that it cannot be ignored.
+# recorded reason. Hard gate: it has no false positives that a waiver cannot
+# express, and the whole point is that it cannot be ignored.
+#
+# It is also cheap, but that is a property of the implementation rather than of
+# the idea: the reachability pass tokenises each host source once and intersects
+# the name set, where it used to run one anchored regex search per (name, file)
+# pair. Under the old shape this line said "cheap" about a gate costing tens of
+# seconds of CPU - more than every other gate in this hook put together. If you
+# reintroduce a per-name scan, delete the word.
 if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.py" ]]; then
     printf '[pre-commit] UI host-drift check (engine-ui builders vs both hosts)\n'
     if ! python3 scripts/ci/check-ui-host-drift.py --quiet; then

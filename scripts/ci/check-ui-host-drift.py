@@ -762,6 +762,29 @@ def collect_fn_names() -> set[str]:
     return out
 
 
+WORD_RUN = re.compile(r"[0-9A-Za-z_]+")
+
+
+def word_set(text: str) -> set[str]:
+    r"""Every maximal `[0-9A-Za-z_]` run in `text`.
+
+    `re.search(rf"\b{re.escape(n)}\b", text)` is true for an identifier `n`
+    exactly when `n` is one of these runs - Python's `\b` is a word/non-word
+    transition, so "matches as a whole word" and "is a maximal word run" are
+    the same predicate. Asking it this way costs one pass over the text
+    instead of one compiled search per candidate name, which is the whole
+    difference between this gate costing half a minute of CPU and costing a
+    second: the two host trees crossed with the engine-ui name set was 173k
+    regex searches, 92% of the run.
+
+    The run class has to be `[0-9A-Za-z_]+` and not the Rust-identifier
+    `[A-Za-z_][0-9A-Za-z_]*`. The latter tokenises `1foo` as `foo` and would
+    report a match where `\bfoo\b` finds none - a numeric literal silently
+    promoted to a call edge, in the direction that hides drift.
+    """
+    return set(WORD_RUN.findall(text))
+
+
 def collect_call_graph(names: set[str]) -> dict[str, set[str]]:
     """Map engine-ui fn name -> the engine-ui fn names its body references.
 
@@ -788,9 +811,8 @@ def collect_call_graph(names: set[str]) -> dict[str, set[str]]:
             if brace < 0:
                 continue
             body = strip_comments(fn_body(text, brace))
-            for other in names:
-                if other != name and re.search(rf"\b{re.escape(other)}\b", body):
-                    refs[name].add(other)
+            refs[name] |= word_set(body) & names
+            refs[name].discard(name)
     return refs
 
 
@@ -824,9 +846,8 @@ def collect_uses(names: set[str]) -> dict[str, set[str]]:
                 if is_test_source(path):
                     continue
                 body = strip_comments(path.read_text(encoding="utf-8"))
-                for name in names:
-                    if name in uses and re.search(rf"\b{re.escape(name)}\b", body):
-                        uses[name].add(host)
+                for name in word_set(body) & names:
+                    uses[name].add(host)
     return uses
 
 
@@ -999,8 +1020,40 @@ SELFTEST_CONSTANTS: list[tuple[str, str, str, bool]] = [
 ]
 
 
+# Control suite for `word_set`, which stands in for the per-name
+# `re.search(r"\bNAME\b", body)` the reachability pass used to run. The
+# substitution is the reason this gate costs a second instead of half a
+# minute, and it is only sound if the two predicates agree on every string -
+# so each case is checked twice: against the stated expectation, and against
+# the regex it replaced. A control that only asked "does word_set say yes"
+# would pass just as happily for a tokeniser that had drifted along with it.
+SELFTEST_WORDS: list[tuple[str, str, str, bool]] = [
+    ("plain call", "let v = foo(bar);", "foo", True),
+    ("method position", "self.model.foo();", "foo", True),
+    ("path position", "engine_ui::foo(&font)", "foo", True),
+    ("prefixed name", "let v = draw_foo(bar);", "foo", False),
+    ("suffixed name", "let v = foo_draws_for(bar);", "foo", False),
+    # The one an identifier-shaped tokeniser gets wrong: `[A-Za-z_][\w]*`
+    # finds `foo` inside `1foo`, `\bfoo\b` does not.
+    ("digit-prefixed run", "let v = 1foo;", "foo", False),
+    ("digit-suffixed run", "let v = foo2;", "foo", False),
+    ("absent", "let v = bar(baz);", "foo", False),
+]
+
+
 def run_selftest() -> int:
     failures = 0
+    for label, text, name, want in SELFTEST_WORDS:
+        got = name in word_set(text)
+        ref = re.search(rf"\b{re.escape(name)}\b", text) is not None
+        if got == want and ref == want:
+            print(f"  ok    word set: {label}")
+        else:
+            print(
+                f"  FAIL  word set: {label} - word_set={got}, "
+                f"regex={ref}, expected {want}"
+            )
+            failures += 1
     for name, sig in SELFTEST_SCREENS:
         if is_screen_signature(sig):
             print(f"  ok    {name}: counted as a screen")
@@ -1034,7 +1087,8 @@ def run_selftest() -> int:
             print(f"  FAIL  sim pair: {label}")
             failures += 1
     total = (
-        len(SELFTEST_SCREENS)
+        len(SELFTEST_WORDS)
+        + len(SELFTEST_SCREENS)
         + len(SELFTEST_TRANSFORMS)
         + len(SELFTEST_CONSTANTS)
         + len(SELFTEST_SIGNATURES)
@@ -1068,6 +1122,15 @@ def main() -> int:
     # The surface is only meaningful if the classifier demonstrably separates
     # the two shapes. Run the control every time: a "0 orphans" verdict from a
     # classifier that counts everything, or nothing, is not a measurement.
+    for _label, text, name, want in SELFTEST_WORDS:
+        if (name in word_set(text)) != want:
+            print(
+                "ERROR: built-in word-set control failed; the reachability pass "
+                "cannot tell a whole-name reference from a substring, so every "
+                "host label below is unreliable. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
     for _name, sig in SELFTEST_SCREENS:
         if not is_screen_signature(sig):
             print(
@@ -1220,6 +1283,15 @@ def main() -> int:
         )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
+        # Name every native-only builder, waived or not, for the same reason
+        # the orphans below are named. A waived row still prints nothing but
+        # its contribution to a count, so "2 native-only" is indistinguishable
+        # from "the same 2 as yesterday plus one that lost its web caller and
+        # one that gained one" - the arithmetic is stable while the membership
+        # is not. Naming is what makes a waiver auditable from the output.
+        for name in drift:
+            mark = "waived" if name in waivers else "UNWAIVED"
+            print(f"[ui-drift] native-only ({mark}): {name}  {builders[name]}")
         # Name every orphan, waived or not. A bare count cannot distinguish
         # "the same six as yesterday" from "a builder's last caller was
         # deleted this morning", which is exactly how window 25's painter
