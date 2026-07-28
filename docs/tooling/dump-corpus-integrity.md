@@ -602,6 +602,40 @@ about the file looks incomplete.
 `ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
+## A caveat outlives the dump it was written against
+
+Every failure above is a dump that is *wrong now*. This one is a dump that was
+right, got better, and left a false claim behind it in the source tree.
+
+A dump's statistics - `size=`, the instruction count, where the printed
+disassembly stops - are properties of the **extraction**, not of the function.
+When a dump is short, the honest response is to write a caveat against it and
+withhold whatever the missing window would have carried. That is what happened
+to the field-to-battle transition tick: a note recorded that its dump reported
+752 bytes / 188 instructions and stopped on a branch delay slot rather than a
+`jr ra`, and three things were deliberately left unported as decompiled-C-only
+on that basis - a completion arm, a game-mode write, and a per-style fade.
+
+The dump was later re-extracted by an extent walker that reports its own
+completeness, and now covers the whole 1528-byte body ending on a real `jr ra`.
+Nothing about the function changed. But **nothing re-reads a caveat when its
+underlying dump improves**, so the note kept asserting a truncation that had
+stopped existing, and kept three ports withheld for a reason that was no longer
+true. The tell was visible in the dump's own header the whole time: the numbers
+the caveat quoted were not the numbers in the file.
+
+The shape generalises past this one function. A caveat that quotes a dump's
+statistics is a claim with an expiry date, and the corpus is regenerated far
+more often than the prose that cites it. Two habits contain it:
+
+- **Quote the header, and say you are quoting it.** A caveat that names the
+  exact `size=` / `extent=` it was written against can be checked against the
+  file in one command; one that says "the dump is truncated" cannot.
+- **Re-read the caveat when the dump is regenerated,** not only when the claim
+  is challenged. A re-dump that *lengthens* a body is invisible to every gate
+  in this repo - coverage goes up, nothing goes red, and the stale caveat is
+  the only thing left pointing at work that no longer needs withholding.
+
 ## The disc-denominated gap list finds header-less dumps for free
 
 [`disc-coverage.py`](disc-coverage.md) builds each image's covered set from the

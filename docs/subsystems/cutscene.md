@@ -1334,13 +1334,22 @@ assembly, the bundle read, the load waits) are surfaced on `World::battle_intro_
 for a host that owns those reads.
 
 Two switches drive the visuals. A **style selector `DAT_801D2460` (0..=4)** dispatches to
-one of five per-frame transition emitters (below); a second switch then applies a per-style
-screen fade `func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
+one of five per-frame transition emitters (below) through the jump table at `0x801CE890`; a
+second switch, table at `0x801CE8A8`, then applies a per-style screen fade
+`func_0x80024EE4(2, blend, level*0x10101)`, the fade `level` ramped from the
 `actor+0x1a`-vs-`DAT_801D2458` remaining-time delta (a different slope + threshold per
-style). **Dump caveat:** the classifier marks `801cf5bc` **UNCERTAIN** because its
-disassembly section stops at `0x801CF8A8` without a `jr ra`. That is a truncated *dump
-window*, not a short body - the decompiled C is complete (both switches, the fade and the
-`return`), so the function is real and the truncation is the only anomaly.
+style). Both run with `sp` swapped onto the scratchpad at `0x1F800310`. Ports:
+`engine-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
+
+**The old dump caveat here is retired.** It said `801cf5bc`'s "disassembly section stops at
+`0x801CF8A8` without a `jr ra`", making it a truncated *dump window*, and on that basis the
+two switches, the completion arm and the game-mode write were left unported as C-only. That
+was true of the dump it was written against; the dump has since been re-extracted by an
+extent walker that reports its own completeness, and now covers the whole 1528-byte body
+ending on a real `jr ra` at `0x801CFBAC`. Nothing about the function changed - the window
+onto it did, and the caveat kept asserting a truncation that had stopped existing. All four
+items are disassembly-grounded and ported. See
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
 ### Per-style emitters (render-track GTE/GPU)
 
@@ -1363,7 +1372,20 @@ Every style is a **(init, tick)** pair, and the allocation sizes are what pair t
 
 Ports: `battle_intro_particles` (the two seeders), `battle_intro_styles` (styles 0, 1, 3),
 `battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). Any allocation failure bumps
-the error counter `_DAT_8007B828` by ten. `FUN_801D1CD4` is an inert stub - it writes a
+the error counter `_DAT_8007B828` by ten.
+
+#### Which style a battle gets
+
+`DAT_801D2460` is **not** an input from outside the overlay: the transition's own init block
+(`0x801CE97C`..`0x801CEB38`) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
+the resolved formation cell's first monster id `DAT_8007BD0C`, and - for two arms - the
+current map/scene index `DAT_80084540`. The default is style 2, so the ordinary random
+encounter shatters; style 3 is reached by three formations and style 4 by one. Port:
+`engine-vm::battle_intro_styles::select_intro_style`, whose doc comment carries the full
+override table in retail's own evaluation order.
+
+Two of the eleven stores are delay-slot stores that land on both arms of their branch, which
+is why the flags-set path defaults to style 1 rather than to the initial style 2. `FUN_801D1CD4` is an inert stub - it writes a
 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
 
