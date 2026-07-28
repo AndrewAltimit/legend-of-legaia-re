@@ -336,10 +336,27 @@ pub const BATTLE_ID_FALLBACK_MONSTER: u8 = 4;
 /// only diverges if `0x8007B7FC` ever holds a value above `0xFF`, in
 /// which case retail's band tests would fail where this port's succeed.
 ///
-/// NOT WIRED: no caller outside this module's tests. The live encounter
-/// path is [`EncounterRecord::parse`] (used by the field scripts and
-/// `world::encounters`); this scripted-battle-id sibling is ported for
-/// completeness and nothing dispatches to it yet.
+/// NOT WIRED: retail's own caller is a battle-init stage the engine does not
+/// have, and half of this routine is unreachable in retail too - so "nothing
+/// dispatches to it *yet*" overstates the case.
+///
+/// The single retail caller is the battle-init formation resolve
+/// `FUN_80055B6C`, on two arms (`0x80055C14` / `0x80055C6C`): a non-zero
+/// `DAT_8007b7fc` runs the id path, and a zero one runs this only when the
+/// formation cell `DAT_8007bd0c` is **still empty**, as the last-resort
+/// `[4, 4, 4, 4]` fill. The engine has no such stage: it resolves a battle
+/// through a typed `FormationDef` looked up in `World::formation_table`, so
+/// there is no four-byte cell that can be found empty and no fallback point
+/// for this to occupy.
+///
+/// The id arm is narrower still. `DAT_8007b7fc` has **no writer anywhere in
+/// retail** - a 47-program sweep finds none and a live write-watch stayed
+/// silent across three boss fights - so it is a debug forced-battle hook.
+/// Wiring that arm means *adding* a hook, not finding a missing caller.
+///
+/// The live encounter path is [`EncounterRecord::parse`] (used by the field
+/// scripts and `world::encounters`), which is the `actor[+0x94]` record path,
+/// the other of the two formation sources.
 ///
 /// See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md#scripted-battle-id-path-fun_8005567c).
 // PORT: FUN_8005567c

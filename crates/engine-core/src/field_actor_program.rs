@@ -374,12 +374,21 @@ enum Flow {
 /// NOT WIRED: the actor is spawned (`World::man_load_actor_reset` runs
 /// [`MAN_LOAD_RESUME`] on every scene load, so a resumed program's actor is on
 /// the pool carrying [`ActorHandler::ScriptedScene`]), but nothing ticks it.
-/// The specific missing input is [`ProgramEnv`]'s middle three fields: the BGM
-/// request/acknowledge pair `_DAT_8007BABC` / `_DAT_8007BAA0` and the CD-XA
-/// in-flight counter `_DAT_8007BC20` have no `engine-core` counterparts, and
-/// states `0x02`, `0x16` and `0x19` each park indefinitely on them - a step
-/// driven with invented values would either stall the program forever or run
-/// it through its voice line in one frame. The rest is present: the player
+/// The specific missing input narrows to **one** of [`ProgramEnv`]'s middle
+/// three fields: the BGM request/acknowledge pair `_DAT_8007BABC` /
+/// `_DAT_8007BAA0`. The engine's BGM model is synchronous - `BgmDirector`'s
+/// calls do not return an acknowledgement and `World::current_bgm` is a single
+/// latch - so there is no `request == ack` condition for states `0x02`,
+/// `0x16` and `0x19` to park on, and a step driven with an invented value
+/// would either stall the program forever or run it through its voice line in
+/// one frame.
+///
+/// The CD-XA in-flight counter `_DAT_8007BC20` is **not** part of the
+/// blocker, and saying it had no counterpart was wrong: four ports already
+/// model it as an input (`scene_transition_actor`, `baka_fighter_chrome`,
+/// `fishing`, and `engine-audio`'s `anim_cue`), and a live truth source
+/// exists in `AudioOut::xa_active()`. A caller could supply that field today.
+/// The rest is present too: the player
 /// transform, the flag bank ([`crate::world::World::system_flag_test`]), the
 /// cadence byte and the actor's own `+0x50`/`+0x54`/`+0x9E` all have engine
 /// homes.

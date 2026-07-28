@@ -668,11 +668,16 @@ Retail does no bounds check on the index. The port
 out-of-range index rather than reading past the table, which is the safe
 reading of the same outcome.
 
-That port is **not wired**: the engine's field collision path resolves
-per-axis walls and stops without identifying which actor it hit, so
-nothing calls `post_touch` and no script can currently wake on a touch.
-Wiring it needs an actor-vs-actor overlap test standing in for
-`FUN_801CFC40`.
+That port is **not wired**, and what blocks it is the mailbox's *reader*.
+The producer side is present: `World::field_prop_dir_probe` is the port of
+`FUN_801CFC40` and already reports which placement a probe touched, and
+`World::check_field_walk_touch` is the `FUN_801D5B5C` post, running from
+the locomotion step. What no engine state models is `DAT_80073F1C`
+itself, because its only consumer is the wait-for-touch arm above, and
+the engine's slice of `FUN_80038158` is the ambient facing channel plus
+the static MAN decode - that arm is decoded but unported. A call added
+ahead of it would fill a mailbox nothing reads, so the arm is the
+prerequisite.
 
 Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
 `0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.

@@ -368,16 +368,27 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
 /// Pass 3 is set-only (never cleared); retail runs this over the freshly
 /// streamed `.MAP` where the bits start clear.
 ///
-/// NOT WIRED: all three passes rewrite the streamed `.MAP` image in place,
-/// and the engine does not keep one. Scene load decodes the object grid once
-/// into typed state ([`crate::world::World::field_object_cells`] and
-/// friends) and drops the bytes, so the cell-mirror and trigger-stamp passes
-/// have no buffer to stamp and no consumer that re-reads it. The engine also
-/// has no owner for pass 1's per-descriptor `+0x16` countdown - nothing
-/// decrements it - so the flag decay has no input. Wiring this needs the
-/// mutable `.MAP` image held resident for the scene's lifetime, with the
-/// walk-on dispatch and floor sampler reading it back instead of the decoded
-/// vectors.
+/// NOT WIRED: the blocker is **which region** of the `.MAP` survives scene
+/// load, not whether any of it does - "the engine does not keep one" is too
+/// strong and hides where the real gap is.
+///
+/// Three of the four regions are resident. `World::field_collision_grid`
+/// holds `+0x4000..+0x8000` verbatim and is *mutated at runtime* by the
+/// field-VM `0x4C` nibble-7 wall paints; `World::field_map_region_block`
+/// holds `+0x10000..+0x12000` verbatim; and the whole image stays cached
+/// behind `ProtIndex::entry_cache` for the session, one clone from mutable.
+/// `World::field_object_cells` holds the `+0x8000` cell words, decoded to
+/// `u16` but bit-for-bit the same values passes 2 and 3 stamp.
+///
+/// What is genuinely absent is the region pass 1 walks: the `+0x0000..0x4000`
+/// **object-descriptor table** is read transiently at scene load by
+/// `legaia_asset::field_objects::parse_placements` and never retained, so the
+/// per-descriptor `+0x12`/`+0x16` words have no home - and with them no owner
+/// for the `+0x16` countdown, which nothing in the engine decrements, leaving
+/// the flag decay without an input even if the bytes were kept. Passes 2 and
+/// 3 would also need their consumers switched: the walk-on dispatch and floor
+/// sampler read the decoded vectors, not the stamped bytes, so stamping alone
+/// would change nothing observable.
 pub fn refresh_object_grid_marks(map: &mut [u8]) {
     let rd16 = |m: &[u8], o: usize| u16::from_le_bytes([m[o], m[o + 1]]);
     let wr16 = |m: &mut [u8], o: usize, v: u16| m[o..o + 2].copy_from_slice(&v.to_le_bytes());
@@ -512,17 +523,19 @@ pub struct WindowSpawn {
 /// `window` is `(x0, z0, x1, z1)` and `elevation_lut` the scratchpad LUT. The
 /// returned list is in the sweep's own order (X outer, Z inner).
 ///
-/// NOT WIRED: retail's two enable gates and its whole effect need state the
-/// engine does not keep. The sweep is a *mutation* of a resident actor list
-/// (it frees every entry, including the `flags & 0x800` mesh buffers, before
-/// re-creating them) driven by a resident `.MAP` image - the same missing
-/// buffer that leaves [`refresh_object_grid_marks`] unwired. The engine decodes
-/// the object grid once at scene entry into typed state and draws every
-/// placement for the whole map through
+/// NOT WIRED: the blocker is the **resident placement list**, not the map
+/// bytes. The sweep is a *mutation* of a live actor list (it frees every
+/// entry, including the `flags & 0x800` mesh buffers, before re-creating
+/// them), and the engine has no per-scene placement actor list to free and
+/// refill; nor does it retain the `+0x0000..0x4000` object-descriptor region
+/// this indexes, which is the one `.MAP` region that really is dropped after
+/// scene load (see [`refresh_object_grid_marks`] for which regions are not). The
+/// engine decodes the object grid once at scene entry into typed state and
+/// draws every placement for the whole map through
 /// [`crate::field_env::resolve_placed_env_draws`], which already honours this
 /// sweep's `0x400` gate as the *ownership* rule; nothing re-runs a windowed
-/// rebuild. Wiring it needs the field host to hold the `.MAP` bytes resident
-/// and to re-plan on every region-box change.
+/// rebuild. Wiring it needs the descriptor region held resident and a
+/// placement actor list to re-plan on every region-box change.
 // REF: FUN_8003A55C (the complementary init sweep), FUN_80024C88 (the spawn),
 // FUN_801D7518 (the per-list free the sweep opens with)
 pub fn window_rebuild_spawns(

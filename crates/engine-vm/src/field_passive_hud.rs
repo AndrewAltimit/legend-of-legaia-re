@@ -116,8 +116,9 @@ pub struct HudIcon {
 /// `0x8000 / 43`; retail heights are far below that, so the port keeps the
 /// widths honest rather than pretending the three agree.
 // NOT WIRED: same blocker as [`passive_hud_icons`] - the lifts feed a GTE
-// three-point transform that only a field HUD host would issue, and no such
-// host exists.
+// three-point transform, and while the transform itself is ported and live
+// (`engine-render`'s `Camera::transform`), no host issues it for a party
+// member's head anchor.
 pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
     let h = i64::from(height);
     [
@@ -134,10 +135,18 @@ pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
 /// `FUN_800431D0`.
 ///
 /// PORT: FUN_801d095c
-// NOT WIRED: the field HUD's icon-atlas draw list is built by `engine-ui`, and
-// nothing there yet emits above-head widgets - `engine-core`'s field overlay
-// draws the party HUD and the dialog panel only. The bit source exists
-// (`engine-core::accessory_passives`), the projection host does not.
+// NOT WIRED: what is missing is the **glue**, not a subsystem - the earlier
+// reading of this row blamed a projection host that already exists. Every
+// piece is present: the bit source is `engine-core::accessory_passives`, the
+// world-to-screen projector is `engine-render`'s `Camera::transform` (the
+// GTE RTPS/RTPT path, already used to place effect billboards from
+// `World::active_effect_sprites`), and the icon primitive is `engine-ui`'s
+// `PainterPictogram` - the port of `FUN_8002C488`, this module's own draw
+// leaf. What nobody has written is the pass that projects a party member's
+// head anchor and feeds the result into `sprite_draws_for`: `engine-ui`'s
+// builders all take an already-screen pen, so the caller has to do the
+// projection, and no host does. It lands in the shell's redraw pass beside
+// the effect-billboard build, not in `engine-vm`.
 pub fn passive_hud_icons<F: Fn(u8) -> bool>(anchor: (i32, i32), has_bit: F) -> Vec<HudIcon> {
     let (ax, ay) = anchor;
     let mut out = Vec::new();

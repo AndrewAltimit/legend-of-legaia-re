@@ -638,6 +638,78 @@ old reason: `0x801F90DC` has no reference anywhere in the field overlay's bytes
 descriptors `engine-core::screen_fx` pins at `0x801F8FE4..0x801F902C`. What has
 to exist first is a base-confirmed dump of the image that really owns that VA.
 
+## The field / motion / camera block
+
+Another *disclosed*-section cluster, and the one where the disclosures were
+least trustworthy. Every anchor here stayed inert, so the audit's own verdict
+never moved - but a majority of the reasons blamed something the tree already
+contains, which is the failure this page exists to catch. Sorted by what the
+old reason got wrong.
+
+**Reasons that named an existing symbol as missing.**
+
+| Anchor | The old reason claimed | What is actually there |
+|---|---|---|
+| `post_touch` (`8003d038`) | the collision path posts no touches and cannot identify the actor it hit | `World::field_prop_dir_probe` reports the touched placement; `World::check_field_walk_touch` posts from the locomotion step |
+| `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
+| `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
+| `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::submode_context`, which is read every frame |
+| `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
+| `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
+| `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
+| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards |
+| `step_scene_program` (`801d4a60`) | `_DAT_8007BC20` has no counterpart | modelled by four ports; live source `AudioOut::xa_active()` |
+
+Each reason is now rewritten to name the prerequisite that does hold. The
+pattern across them is one shape: **the reason described the subsystem the
+routine came from rather than the thing the port is waiting on.** Where a
+subsystem is largely present, that phrasing lands on a piece of it that exists,
+and the tag reads as correct forever after.
+
+**Reasons that named a lane boundary.** Three tags gave "wiring would edit
+`engine-core/src/world/**`, owned elsewhere" (or the equivalent) as the
+blocker. A file-ownership statement is not a structural fact, it stops being
+true the moment the wave lands, and it tells the next pass nothing. Those are
+replaced by the storage or dispatch prerequisite in each case.
+
+**One reason that restated the audit.** `expand_battle_id`'s "nothing
+dispatches to it yet" is the form the preamble rules out. The real position is
+sharper and partly *negative*: retail's caller is the battle-init formation
+resolve `FUN_80055B6C`, which the engine has no analogue of (it resolves a
+typed `FormationDef`, so no formation cell can be found empty), and the
+non-zero-id arm reads `DAT_8007b7fc`, a global with **no writer anywhere in
+retail**. Wiring that arm means adding a debug hook, not finding a caller.
+
+**One row is not a wiring question at all.** `spawn_arc_helper`
+(`801d5780`) is inert in the port because `FUN_801D5780` is inert in *retail*:
+it has no `jal`, no `j` and no literal address word anywhere in `SCUS_942.54`,
+the base-mapped overlay images, or the extracted PROT entries. Its three
+siblings in the same module are the controls that make that a real zero -
+`FUN_801D2404` and `FUN_801D25EC` are each found by `jal`, and `FUN_801D2298`
+as a table word. The bytes are a complete routine (field overlay `0897_xxx_dat`
+at file `0x6F68`, `addiu sp, sp, -0x28`), so this is shipped dead code, not a
+mis-read address.
+
+A `NOT WIRED:` reason that names a consumer the engine has yet to grow is wrong
+for this shape, because it implies wiring could close the row and nothing can.
+Two traps sit on the re-check: `ghidra/scripts/funcs/801d5780.txt` is a
+wrong-image import whose header resolves `entry=801d56fc`, and the VA is
+aliased - in the cutscene images it is a different function's entry. Read the
+field-overlay bytes, not a dump.
+
+**The one row worth a wire, and why it is not one yet.**
+`field_ledge_hop_arc`'s four anchors sit behind a real gap rather than a
+missing reason: `World::try_field_ledge_hop` is live, classifies an authored
+ledge correctly, posts a `FieldLedgeHop`, and **nothing reads it** -
+`step_field_vertical` clears the record at the top of the next frame. The port
+therefore has no ledge hop at all, which is a player-visible absence rather
+than a cosmetic one. The prerequisite is small and named: `FieldLedgeHop` is a
+per-frame transient and needs a `cursor`/`extent` pair that outlives the frame,
+after which the same controller can step `advance_hop_session` and apply the
+result. It is left open here only because the record's declaration sits outside
+this slice.
+
 ## The dance / fishing minigame block
 
 The `dance.rs` / `dance_tutorial.rs` / `fishing_actors.rs` / `fishing_chrome.rs`

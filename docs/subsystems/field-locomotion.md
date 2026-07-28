@@ -395,6 +395,14 @@ after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
 (`FUN_801d1878`), which posts a `FieldLedgeHop` into `World::field_ledge_hop`.
 The step-delta pair is `World::field_step_delta`.
 
+The post is where the port currently stops, and the consequence is worth
+naming: `World::field_ledge_hop` has **no reader**, and `step_field_vertical`
+clears it at the top of the next frame before re-posting. So the detection is
+faithful - the engine classifies an authored ledge as a hop-up or hop-down
+correctly - and nothing then moves the player. Closing it means giving the
+record a cursor that outlives the frame and stepping it from the same
+controller; see the arc section below.
+
 Two deliberate divergences:
 
 - The **settle is opt-in** (`World::field_vertical_settle`, default off). The
@@ -795,7 +803,8 @@ Both halves are ported into
 returns the frame's writes rather than reaching into the player context. Both
 are inert: the clip lives on a spawned helper actor and `engine-core`'s world
 model has no pool to allocate one from, nor anywhere to keep a cursor between
-frames. What ticks it in retail is **open**: the "field scene loop
+frames - `FieldLedgeHop` is a per-frame transient, which is the smallest thing
+that has to change. What ticks it in retail is **open**: the "field scene loop
 `FUN_801f5748`" this section used to name is a phantom VA - `0x801F5748` sits
 `0x1F30` past PROT 0897's own `0x25000` bytes, and the bytes there are PROT
 0898's `FUN_801D0748`.
@@ -809,6 +818,22 @@ template `0x801F22AC` carrying the caller's encounter-record pointer at
 count at `+0x9E`, plus an `owner == player` flag at `+0x50`. When that second
 allocation fails retail sets the tear-down bit `8` on the arc helper and
 abandons the whole spawn rather than leaving a headless clip.
+
+Of those two, **`FUN_801d5780` is dead code in the retail image**. It has no
+reference of any form - no `jal`, no `j`, no literal address word - in
+`SCUS_942.54`, in any base-mapped overlay image, or in any extracted PROT
+entry, while `FUN_801d2404` and `FUN_801d25ec` are each found by `jal` and
+`FUN_801d2298` as a table word at VA `0x801F229C`, which is what makes the zero
+a real one. The bytes are nonetheless a complete routine: field overlay
+`0897_xxx_dat` at file `0x6F68` opens `addiu sp, sp, -0x28` and bails on a null
+`a0` at `0x801D57A4`. So the arc family ships one entry point nothing reaches -
+worth knowing before treating its port's inertness as an engine gap.
+
+Two traps sit on any re-check of that address. The dump
+`ghidra/scripts/funcs/801d5780.txt` is a wrong-image import whose header
+resolves `entry=801d56fc`, so it shows the address as interior to a
+menu-family function; and the VA is aliased, being a different function's
+entry in the cutscene images. The field-overlay bytes are the evidence.
 
 ## Provenance
 
