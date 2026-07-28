@@ -39,17 +39,21 @@ canonicalises each dump's opening instructions into a base-independent token
 sequence and looks that up in an index built the same way over every extracted
 image.
 
-Default pass, 10-instruction signature, 3624 dumps:
+Default pass, 10-instruction signature:
 
-| Class | Count | What it means | Usable for |
-|---|---|---|---|
-| `MATCH` | 2606 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
-| `SHIFTED` | 292 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
-| `NOT_FOUND` | 107 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
-| `SHORT` | 619 | Fewer than 10 instructions; too short to sign. | No verdict either way. |
+| Class | What it means | Usable for |
+|---|---|---|
+| `MATCH` | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
+| `SHIFTED` | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
+| `NOT_FOUND` | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
+| `SHORT` | Fewer than 10 instructions; too short to sign. | No verdict either way. |
 
-Those four numbers are what the committed script prints at its default
-threshold, and they are the ones to quote.
+The four counts are deliberately **not** quoted here. They are state over a
+gitignored corpus that changes whenever anyone adds a dump, and a stale count in
+a committed doc reads as a fact - which is the failure this page exists to
+prevent, applied to itself. Roughly three quarters of the corpus resolves
+`MATCH`, and `SHIFTED` is dominated by two clusters ([below](#the-shift-clusters)).
+Run the sweep for the numbers.
 
 ### `canon()` must fold register spellings, not just mnemonics
 
@@ -87,12 +91,11 @@ indistinguishable, from the outside, from a corpus that genuinely lacks the
 image.
 
 Lowering the threshold trades coverage for certainty. At `--min-insns 4` the
-`SHORT` class shrinks to 468 and the sweep returns 2698 `MATCH` / 372
-`SHIFTED` / 86 `NOT_FOUND` - but a 4-instruction signature also matches
-*ambiguously*, so part of that growth is the method resolving dumps it should
-have declined. Treat a multi-hit resolution as weaker than a single-hit one.
-The clusters below are quoted at both thresholds for exactly this reason: the
-counts move, the conclusion does not.
+`SHORT` class roughly halves and most of it lands in `MATCH` - but a
+4-instruction signature also matches *ambiguously*, so part of that growth is
+the method resolving dumps it should have declined. Treat a multi-hit resolution
+as weaker than a single-hit one. The clusters below shift with the threshold for
+exactly this reason: the counts move, the conclusion does not.
 
 ### A capture with no static image is not automatically unattributable
 
@@ -140,17 +143,17 @@ corpus.
 
 ## The shift clusters
 
-The `SHIFTED` dumps are not scattered one-offs. Two clusters account for the
-overwhelming majority, and both point at one mistake. Counts are given as
-`default / --min-insns 4`.
+The `SHIFTED` dumps are not scattered one-offs. Two deltas account for the
+overwhelming majority, and both point at one mistake. Run `--list-shifted` for
+the live per-delta counts; what is stable is the delta and its reading.
 
-| Delta | Count | Program | Reading |
-|---|---|---|---|
-| `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
-| `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
-| `+0xD018` | 8 / 8 | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
-| `+0x9818` / `+0xD818` | small | `overlay_0978_*` | One `0x801C0000` import of 0978's over-read footprint; the delta names the stratum - `+0xD818` = field_battle_intro (0979) bytes, `+0x9818` = **dance** (0980) bytes. |
-| `+0xE818` / `+0xA018` | small | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
+| Delta | Program | Reading |
+|---|---|---|
+| `+0xE818` | field overlay (PROT 0897) | The dominant cluster. Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
+| `+0x5818` | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
+| `+0xD018` | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
+| `+0x9818` / `+0xD818` | `overlay_0978_*` | One `0x801C0000` import of 0978's over-read footprint; the delta names the stratum - `+0xD818` = field_battle_intro (0979) bytes, `+0x9818` = **dance** (0980) bytes. |
+| `+0xE818` / `+0xA018` | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
 
 The `+0xE818` mistake is not confined to the field overlay. `overlay_0899_xxx_dat_*`
 dumps take the same delta into the *menu* overlay, so the base error travels with
