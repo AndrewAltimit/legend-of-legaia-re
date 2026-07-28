@@ -179,13 +179,18 @@ fn synthetic_character_record_round_trip_preserves_typed_fields() {
 /// The patch must:
 ///
 /// - read back the new value through `read_retail_coins`,
-/// - leave every other byte of the card untouched (a no-op patch is
-///   byte-identical - the export-what-you-imported baseline),
+/// - leave every byte outside the coin slot and the block's own checksum
+///   word untouched (a no-op patch is byte-identical - the
+///   export-what-you-imported baseline),
 /// - keep the block parsing as a valid retail save
 ///   (`SaveFile::from_retail_sc_block` yields the same party records),
-/// - keep every directory-frame XOR checksum self-consistent (the only
-///   checksum a card image carries; the retail SC payload itself is a
-///   plain RAM memcpy with no checksum - see `docs/subsystems/save-screen.md`).
+/// - keep **both** of a card image's checksums self-consistent: the
+///   per-directory-frame XOR, which block edits never touch, and the
+///   block's own additive word at `+0x1FFC`, which every edit invalidates
+///   and `write_retail_coins` restamps. Retail's loader compares the latter
+///   (`FUN_801DD35C` state 5) and captions a stale block "Damaged data.",
+///   so the restamp is what makes the exported card loadable - see
+///   `docs/subsystems/save-screen.md`.
 #[test]
 fn real_card_coin_patch_round_trips_and_stays_valid() {
     let Some(card_path) = locate_card() else {
@@ -246,8 +251,22 @@ fn real_card_coin_patch_round_trips_and_stays_valid() {
         assert_eq!(a.raw, b.raw, "party records untouched");
     }
 
-    // Exactly 4 bytes changed, all inside the coin slot.
-    let base = legaia_save::BLOCK_SIZE * block_idx as usize + legaia_save::RETAIL_COINS_OFFSET;
+    // A real retail-written block already satisfies its own checksum - the
+    // non-vacuous half of this oracle, since a patch that broke it would
+    // otherwise look identical to one that never had it.
+    assert!(
+        legaia_save::sc_block_checksum_valid(block),
+        "an unedited retail block validates against FUN_801E38D8"
+    );
+    assert!(
+        legaia_save::sc_block_checksum_valid(block2),
+        "and so does the patched one, because the writer restamped it"
+    );
+
+    // Only the coin slot and the block's checksum word changed.
+    let blk = legaia_save::BLOCK_SIZE * block_idx as usize;
+    let coin = blk + legaia_save::RETAIL_COINS_OFFSET;
+    let ck = blk + legaia_save::RETAIL_BLOCK_CHECKSUM_OFFSET;
     let diff: Vec<usize> = bytes
         .iter()
         .zip(patched.iter())
@@ -256,8 +275,9 @@ fn real_card_coin_patch_round_trips_and_stays_valid() {
         .map(|(i, _)| i)
         .collect();
     assert!(
-        diff.iter().all(|&i| (base..base + 4).contains(&i)),
-        "only the coin slot may change: {diff:?}"
+        diff.iter()
+            .all(|&i| (coin..coin + 4).contains(&i) || (ck..ck + 4).contains(&i)),
+        "only the coin slot and the checksum word may change: {diff:?}"
     );
 
     // Directory-frame checksums stay self-consistent (we never touch frames).

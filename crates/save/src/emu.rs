@@ -19,12 +19,14 @@
 //! cryptographically signed; an in-place patch would produce a file the PS3
 //! refuses, so offering it would be a trap. Convert to `.mcr`/`.mcs` first.
 //!
-//! There is no game-side checksum to fix after an SC-block edit: the retail
-//! save payload is a plain memcpy of the RAM window
-//! (`FUN_8001A8B0(SC_base=0x80084140, staging, 0x1A18)` - see
-//! `docs/subsystems/save-screen.md`). The only checksum in a card image is
-//! the per-directory-frame XOR (frame byte `0x7F`), which SC-block edits
-//! never touch.
+//! A card image carries **two** checksums and an SC-block edit has to keep
+//! both: the per-directory-frame XOR (frame byte `0x7F`), which block-byte
+//! patches never touch, and the block's own additive word at `+0x1FFC`,
+//! which every edit invalidates. The `write_retail_*` writers restamp the
+//! latter for you ([`crate::card::restamp_sc_block_checksum`]); a caller
+//! that pokes block bytes directly has to. Retail's loader compares it and
+//! captions a stale block "Damaged data." - see
+//! `docs/subsystems/save-screen.md`.
 
 use anyhow::{Result, bail};
 
@@ -400,8 +402,9 @@ mod tests {
             "a single-block save records one block's worth of bytes"
         );
         assert_eq!(u16::from_le_bytes([frame[8], frame[9]]), 0xFFFF);
-        // The XOR checksum is the only one a card image carries; a card
-        // browser rejects the frame without it.
+        // The frame's XOR checksum; a card browser rejects the frame
+        // without it. (The block it points at carries its own, separate
+        // additive checksum - see `card::sc_block_checksum`.)
         let want = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
         assert_eq!(frame[0x7F], want);
 
@@ -431,8 +434,13 @@ mod tests {
         assert!(detect(&[0u8; 64]).is_err());
     }
 
+    /// The coin patch touches exactly two fields: the coin slot, and the
+    /// block's own additive checksum word, which retail's loader compares
+    /// (`FUN_801DD35C` state 5) and which any edit invalidates. Leaving the
+    /// second one alone would produce a card the game captions "Damaged
+    /// data." - so a narrower assertion here would be asserting the bug.
     #[test]
-    fn targeted_coin_patch_only_touches_four_bytes() {
+    fn targeted_coin_patch_touches_the_coin_slot_and_the_checksum_word() {
         let mut card = raw_card();
         // Fill the SC block with a pattern so any stray write shows.
         for (i, b) in card[BLOCK_SIZE..2 * BLOCK_SIZE].iter_mut().enumerate() {
@@ -444,6 +452,12 @@ mod tests {
         let block = view.sc_block_mut(&mut card, 1).unwrap();
         crate::card::write_retail_coins(block, 12345).unwrap();
         assert_eq!(crate::card::read_retail_coins(block), Some(12345));
+        assert!(
+            crate::card::sc_block_checksum_valid(block),
+            "the patched block validates against the retail sum"
+        );
+        let coin = BLOCK_SIZE + crate::card::RETAIL_COINS_OFFSET;
+        let ck = BLOCK_SIZE + crate::card::RETAIL_BLOCK_CHECKSUM_OFFSET;
         let diff: Vec<usize> = before
             .iter()
             .zip(card.iter())
@@ -453,10 +467,12 @@ mod tests {
             .collect();
         assert!(
             diff.iter()
-                .all(|&i| (BLOCK_SIZE + crate::card::RETAIL_COINS_OFFSET
-                    ..BLOCK_SIZE + crate::card::RETAIL_COINS_OFFSET + 4)
-                    .contains(&i)),
-            "only the 4 coin bytes may change: {diff:?}"
+                .all(|&i| (coin..coin + 4).contains(&i) || (ck..ck + 4).contains(&i)),
+            "only the coin slot and the checksum word may change: {diff:?}"
         );
+        // Non-vacuous: the pattern fill left the word stale beforehand.
+        assert!(!crate::card::sc_block_checksum_valid(
+            &before[BLOCK_SIZE..2 * BLOCK_SIZE]
+        ));
     }
 }

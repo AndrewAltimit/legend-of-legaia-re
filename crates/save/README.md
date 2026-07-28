@@ -63,11 +63,23 @@ The companion helpers in [`card`](src/card.rs) (`read_retail_*` /
 want the whole `SaveFile` - including the party gold
 (`RETAIL_GOLD_OFFSET` = SC `+0x45C`, RAM `0x8008459C`) and the casino
 coin bank (`RETAIL_COINS_OFFSET` = SC `+0x464`, RAM `0x800845A4` - the
-slot-machine cash-out global). The retail payload is a plain memcpy of
-the RAM window (`FUN_8001A8B0`, no in-block checksum), so a targeted
-in-place field write yields a save the retail loader accepts; the only
-checksum in a card image is the directory-frame XOR, which block edits
-never touch.
+slot-machine cash-out global).
+
+### The block checksum
+
+A card image carries **two** checksums, and an in-place SC edit has to
+keep both. The directory-frame XOR (frame byte `0x7F`) describes the
+frame and block-byte patches never touch it. The block itself ends in an
+additive word at `RETAIL_BLOCK_CHECKSUM_OFFSET` (SC `+0x1FFC`) summing
+every `u32` before it - retail stamps it when it composes a save
+(`FUN_801E1934`) and compares it when it loads one (`FUN_801DD35C` state
+5, the "Damaged data." arm). Every edit to the payload invalidates it.
+
+`sc_block_checksum` / `sc_block_checksum_valid` /
+`restamp_sc_block_checksum` are the kernel, and every `write_retail_*`
+helper restamps for its caller, so a targeted field write still yields a
+save the retail loader accepts. A caller poking block bytes directly has
+to restamp itself. `save-tool saves` prints each block's verdict.
 
 The [`emu`](src/emu.rs) module normalizes the containers emulators
 export: raw 128 KiB `.mcr`/`.mcd` card images, DexDrive `.gme`, and

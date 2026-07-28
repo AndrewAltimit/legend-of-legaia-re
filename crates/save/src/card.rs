@@ -33,7 +33,14 @@
 //! ```text
 //! +0x0000  u8[2]   = 'SC'   save block magic
 //! +0x0002  ...             game-specific payload
+//! +0x1FFC  u32 LE          additive checksum of the words before it
 //! ```
+//!
+//! The trailing word is Legaia's own, not part of the PSX block format:
+//! retail stamps it when it composes a save and compares it when it loads
+//! one, so an in-place edit that leaves it stale yields a block the game
+//! refuses. [`sc_block_checksum`] is the kernel and every writer here
+//! restamps.
 //!
 //! Legaia saves embed the runtime state at fixed offsets within each
 //! block. The character record region begins at the offset documented
@@ -214,8 +221,10 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
 /// save size at `+4` (first frame of a chain only, hence `total_size:
 /// Option`), next-block pointer at `+8` (`0xFFFF` ends the chain), 20-byte
 /// product code at `+10`, and the XOR checksum of bytes `0x00..0x7E` at
-/// `0x7F` - the only checksum a card image carries (the SC payload itself has
-/// none; see `docs/subsystems/save-screen.md`).
+/// `0x7F`. That XOR covers the **frame**; the block it describes carries a
+/// second, independent checksum of its own at
+/// [`RETAIL_BLOCK_CHECKSUM_OFFSET`], and both have to hold for retail to
+/// load the save (see `docs/subsystems/save-screen.md`).
 ///
 /// `total_size` is **block-aligned** - `blocks * BLOCK_SIZE`, the byte count
 /// a real card records, never the payload length.
@@ -448,12 +457,115 @@ pub const RETAIL_GOLD_OFFSET: usize = 0x45C;
 /// (`crates/cheats/src/classify.rs`). Linear map:
 /// `0x200 + (0x800845A4 - 0x80084340) = 0x464`.
 ///
-/// Because the retail save payload is a plain memcpy of the RAM window
-/// (`FUN_8001A8B0(SC_base, staging, 0x1A18)` - no per-block checksum), a
-/// targeted in-place write here yields a save the retail loader accepts
-/// unchanged; the only checksum in a memory-card image is the **directory
-/// frame** XOR (frame byte `0x7F`), which block-byte patches never touch.
+/// An in-place write here is **not** the end of the edit: the block carries
+/// its own additive checksum at [`RETAIL_BLOCK_CHECKSUM_OFFSET`] and every
+/// writer in this module restamps it - see [`sc_block_checksum`].
 pub const RETAIL_COINS_OFFSET: usize = 0x464;
+
+// ---------------------------------------------------------------------
+// Save-block checksum
+// ---------------------------------------------------------------------
+
+/// Number of little-endian u32 words in one SC save block.
+pub const SC_BLOCK_WORDS: usize = BLOCK_SIZE / 4;
+
+/// Word index the additive block checksum is stored at - the block's last
+/// word. The sum covers every word *before* it.
+pub const SC_BLOCK_CHECKSUM_WORD: usize = SC_BLOCK_WORDS - 1;
+
+/// Byte offset of the additive block checksum inside an SC save block.
+pub const RETAIL_BLOCK_CHECKSUM_OFFSET: usize = SC_BLOCK_CHECKSUM_WORD * 4;
+
+/// The additive save-block checksum, over a block already read as words.
+///
+/// Retail walks `0x7FF` little-endian u32 words from the block base with a
+/// wrapping accumulator and returns the total, stopping one word short of
+/// the block's final word:
+///
+/// ```text
+/// 801e38d8  clear a1            ; sum = 0
+/// 801e38dc  move  v1,a1         ; i   = 0
+/// 801e38e0  lw    v0,0x0(a0)    ; w   = block[i]
+/// 801e38e4  addiu v1,v1,0x1     ; i  += 1
+/// 801e38e8  addu  a1,a1,v0      ; sum = sum +. w   (wrapping)
+/// 801e38ec  slti  v0,v1,0x7ff   ; loop while i < 0x7ff
+/// 801e38f0  bne   v0,zero,...
+/// 801e38f4  _addiu a0,a0,0x4    ; block ptr += 4  (delay slot, always)
+/// 801e38f8  jr    ra
+/// 801e38fc  _move v0,a1         ; return sum
+/// ```
+///
+/// The base it sums from is the block's **first byte** - the `SC` magic -
+/// not the game-data region at [`RETAIL_GAME_DATA_OFFSET`]: the composer
+/// `FUN_801E1934` zero-fills a whole `0x2000` staging block, copies
+/// `0x1A18` bytes of live state over its front, sums that buffer and stores
+/// the result at `+0x1FFC`, and the writer hands the same `0x2000` bytes to
+/// the BIOS. The load direction reads the block back whole and compares.
+///
+/// PORT: FUN_801E38D8 (`ghidra/scripts/funcs/overlay_menu_801e38d8.txt`)
+pub fn sc_block_checksum_words(words: &[u32]) -> u32 {
+    words
+        .iter()
+        .take(SC_BLOCK_CHECKSUM_WORD)
+        .fold(0u32, |sum, &w| sum.wrapping_add(w))
+}
+
+/// The additive save-block checksum of a byte-addressed SC block.
+///
+/// `None` when the block is too short to hold the checksum word. See
+/// [`sc_block_checksum_words`] for the retail kernel this wraps.
+pub fn sc_block_checksum(sc_block: &[u8]) -> Option<u32> {
+    if sc_block.len() < BLOCK_SIZE {
+        return None;
+    }
+    Some(
+        sc_block[..RETAIL_BLOCK_CHECKSUM_OFFSET]
+            .chunks_exact(4)
+            .fold(0u32, |sum, c| {
+                sum.wrapping_add(u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            }),
+    )
+}
+
+/// Whether a block's stored checksum word matches a fresh
+/// [`sc_block_checksum`] - the test retail's load path applies before it
+/// accepts a block.
+///
+/// The compare lives in state `5` of the load/save driver `FUN_801DD35C`
+/// (`0x801df880`: `jal FUN_801E38D8` on the read buffer, then
+/// `lw v1,0x1ffc(s1); beq v1,v0`). A match advances to sub-state `0x16`
+/// and the block is copied into live RAM; a mismatch latches
+/// `DAT_801EF140 = 2` and routes to sub-state `0x13`, the "Damaged data."
+/// arm. A short block can never be valid.
+///
+/// REF: FUN_801DD35C (`ghidra/scripts/funcs/overlay_menu_801dd35c.txt`)
+pub fn sc_block_checksum_valid(sc_block: &[u8]) -> bool {
+    let Some(sum) = sc_block_checksum(sc_block) else {
+        return false;
+    };
+    let stored = &sc_block[RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4];
+    u32::from_le_bytes([stored[0], stored[1], stored[2], stored[3]]) == sum
+}
+
+/// Recompute and store a block's checksum word, returning the value stored.
+///
+/// This is the last thing retail's save composer does (`FUN_801E1934` at
+/// `0x801e1be0`: sum the staging block, `sw v0,0x1ffc(v1)`), so it is the
+/// last thing an in-place edit of a real block has to do too - otherwise
+/// the retail loader captions the save "Damaged data." and refuses it.
+/// Every `write_retail_*` writer in this module calls it.
+///
+/// `None` (and no write) when the block is shorter than [`BLOCK_SIZE`] -
+/// a caller editing a bare game-data window rather than a whole card block
+/// has no checksum word to restamp.
+///
+/// REF: FUN_801E1934 (`ghidra/scripts/funcs/overlay_menu_801e1934.txt`)
+pub fn restamp_sc_block_checksum(sc_block: &mut [u8]) -> Option<u32> {
+    let sum = sc_block_checksum(sc_block)?;
+    sc_block[RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4]
+        .copy_from_slice(&sum.to_le_bytes());
+    Some(sum)
+}
 
 /// Read the party gold (i32 LE at [`RETAIL_GOLD_OFFSET`]) from a retail SC
 /// save block. `None` if the block is too small.
@@ -462,13 +574,15 @@ pub fn read_retail_gold(sc_block: &[u8]) -> Option<i32> {
     Some(i32::from_le_bytes(b.try_into().unwrap()))
 }
 
-/// Write the party gold in place. `Err` if the block is too small.
+/// Write the party gold in place, restamping the block checksum
+/// ([`restamp_sc_block_checksum`]). `Err` if the block is too small.
 pub fn write_retail_gold(sc_block: &mut [u8], gold: i32) -> Result<()> {
     let end = RETAIL_GOLD_OFFSET + 4;
     if sc_block.len() < end {
         bail!("sc_block too small for retail gold field (need >= {end})");
     }
     sc_block[RETAIL_GOLD_OFFSET..end].copy_from_slice(&gold.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
     Ok(())
 }
 
@@ -480,14 +594,18 @@ pub fn read_retail_coins(sc_block: &[u8]) -> Option<u32> {
 }
 
 /// Write the casino coin bank in place - the targeted patch the site's
-/// minigames use to bank won coins into a player's own retail save. Only
-/// these 4 bytes change. `Err` if the block is too small.
+/// minigames use to bank won coins into a player's own retail save.
+///
+/// Two fields change: the coin slot and the block checksum word
+/// ([`restamp_sc_block_checksum`]), which retail's loader compares before it
+/// will accept the block. `Err` if the block is too small.
 pub fn write_retail_coins(sc_block: &mut [u8], coins: u32) -> Result<()> {
     let end = RETAIL_COINS_OFFSET + 4;
     if sc_block.len() < end {
         bail!("sc_block too small for retail coin field (need >= {end})");
     }
     sc_block[RETAIL_COINS_OFFSET..end].copy_from_slice(&coins.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
     Ok(())
 }
 
@@ -609,6 +727,7 @@ pub fn write_retail_char_records(sc_block: &mut [u8], records: &[Vec<u8>]) -> Re
         let take = rec.len().min(RETAIL_CHAR_RECORD_STRIDE);
         dst[..take].copy_from_slice(&rec[..take]);
     }
+    restamp_sc_block_checksum(sc_block);
     Ok(n)
 }
 
@@ -630,6 +749,7 @@ pub fn write_retail_story_flags(sc_block: &mut [u8], bits: &[u8]) -> Result<usiz
     dst.fill(0);
     let take = bits.len().min(RETAIL_STORY_FLAGS_SIZE);
     dst[..take].copy_from_slice(&bits[..take]);
+    restamp_sc_block_checksum(sc_block);
     Ok(take)
 }
 
@@ -656,6 +776,7 @@ pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result
         dst[i * 2] = id;
         dst[i * 2 + 1] = count;
     }
+    restamp_sc_block_checksum(sc_block);
     Ok(n)
 }
 
@@ -992,5 +1113,78 @@ mod tests {
         let sc_name = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE + NAME_OFFSET;
         assert_eq!(sc_name, RETAIL_GAME_DATA_OFFSET + 0x66F);
         assert_eq!(&block[sc_name..sc_name + 4], b"Vahn");
+    }
+
+    // -- FUN_801E38D8 / FUN_801E1934 / FUN_801DD35C state 5 --------------
+
+    #[test]
+    fn checksum_covers_every_word_but_the_last() {
+        // 0x7FF words of 1 -> 0x7FF; the stored word itself is excluded.
+        let mut block = vec![0u8; BLOCK_SIZE];
+        for w in 0..SC_BLOCK_CHECKSUM_WORD {
+            block[w * 4] = 1;
+        }
+        block[RETAIL_BLOCK_CHECKSUM_OFFSET] = 0xFF; // must not be summed
+        assert_eq!(
+            sc_block_checksum(&block),
+            Some(SC_BLOCK_CHECKSUM_WORD as u32)
+        );
+        // The word-slice kernel and the byte form agree.
+        let words: Vec<u32> = block
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        assert_eq!(
+            sc_block_checksum_words(&words),
+            sc_block_checksum(&block).unwrap()
+        );
+    }
+
+    #[test]
+    fn checksum_wraps_and_needs_a_full_block() {
+        let mut block = vec![0u8; BLOCK_SIZE];
+        block[0..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        block[4..8].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(sc_block_checksum(&block), Some(2)); // 0xFFFF_FFFF + 3
+        // Anything short of a whole block has no checksum word at all.
+        assert_eq!(sc_block_checksum(&block[..BLOCK_SIZE - 1]), None);
+        assert!(!sc_block_checksum_valid(&block[..BLOCK_SIZE - 1]));
+        assert_eq!(restamp_sc_block_checksum(&mut vec![0u8; 0x1A18]), None);
+    }
+
+    /// The oracle by contrast: a restamped block validates, a byte poked
+    /// afterwards does not, and restamping again repairs it. This is the
+    /// whole reason every `write_retail_*` writer restamps.
+    #[test]
+    fn a_field_edit_invalidates_the_checksum_until_it_is_restamped() {
+        let mut block = vec![0u8; BLOCK_SIZE];
+        block[..2].copy_from_slice(&SAVE_BLOCK_MAGIC);
+        assert!(restamp_sc_block_checksum(&mut block).is_some());
+        assert!(sc_block_checksum_valid(&block));
+
+        // A raw poke leaves the word stale.
+        block[RETAIL_GOLD_OFFSET] ^= 0x5A;
+        assert!(!sc_block_checksum_valid(&block), "stale after a raw poke");
+        assert!(restamp_sc_block_checksum(&mut block).is_some());
+        assert!(sc_block_checksum_valid(&block));
+
+        // Every writer in this module does the restamp for its caller.
+        write_retail_gold(&mut block, 12_345).unwrap();
+        assert!(sc_block_checksum_valid(&block), "gold writer restamps");
+        write_retail_coins(&mut block, 777).unwrap();
+        assert!(sc_block_checksum_valid(&block), "coin writer restamps");
+        write_retail_inventory(&mut block, &[(0x10, 3)]).unwrap();
+        assert!(sc_block_checksum_valid(&block), "inventory writer restamps");
+        write_retail_story_flags(&mut block, &[0xAA; 8]).unwrap();
+        assert!(
+            sc_block_checksum_valid(&block),
+            "story-flag writer restamps"
+        );
+        write_retail_char_records(&mut block, &[vec![0x11; RETAIL_CHAR_RECORD_STRIDE]]).unwrap();
+        assert!(sc_block_checksum_valid(&block), "record writer restamps");
+
+        // And the values survive the restamp.
+        assert_eq!(read_retail_gold(&block), Some(12_345));
+        assert_eq!(read_retail_coins(&block), Some(777));
     }
 }

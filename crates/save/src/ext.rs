@@ -522,6 +522,12 @@ impl SaveFile {
     /// `money` is written to the pinned retail gold slot
     /// ([`crate::card::RETAIL_GOLD_OFFSET`]), so gold round-trips through
     /// the retail block like the party / flags / inventory do.
+    ///
+    /// Each helper restamps the block's additive checksum
+    /// ([`crate::card::restamp_sc_block_checksum`]), so a full-size block
+    /// comes out of here in the state retail's loader accepts. On a block
+    /// shorter than [`crate::card::BLOCK_SIZE`] there is no checksum word to
+    /// restamp and the regions are simply written.
     pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
         if sc_block.len() < 2 {
             bail!("sc_block too small to hold SC magic");

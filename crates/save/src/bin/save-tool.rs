@@ -403,9 +403,25 @@ fn saves(path: &PathBuf) -> Result<()> {
     }
     println!("active saves in {}:", path.display());
     for s in &saves {
+        // The block's own additive checksum at +0x1FFC - the word retail's
+        // load path compares before it will accept the save. A block edited
+        // in place without restamping it reads `checksum=STALE` here and
+        // captions "Damaged data." in game.
+        let ck = legaia_save::read_block(&raw, s.block)
+            .map(|b| {
+                if legaia_save::sc_block_checksum_valid(b) {
+                    "ok".to_string()
+                } else {
+                    match legaia_save::sc_block_checksum(b) {
+                        Some(sum) => format!("STALE (computed {sum:#010x})"),
+                        None => "n/a (short block)".to_string(),
+                    }
+                }
+            })
+            .unwrap_or_else(|| "n/a".to_string());
         println!(
-            "  block={} chain={:?} size={} bytes  product={}",
-            s.block, s.block_chain, s.file_size, s.product_code
+            "  block={} chain={:?} size={} bytes  product={}  checksum={}",
+            s.block, s.block_chain, s.file_size, s.product_code, ck
         );
     }
     Ok(())
