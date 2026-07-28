@@ -419,6 +419,25 @@ pub enum RenderTarget<'a> {
         vram: &'a UploadedVram,
         prims: &'a [crate::screen_overlay::ScreenPrim],
     },
+    /// A [`Scene`] with a screen-space ordering-table pass **composited over
+    /// it in the same frame**, sampling the scene's own VRAM.
+    ///
+    /// [`Self::ScreenOverlay`] is a whole-frame mode: it clears and draws
+    /// nothing but quads, so it cannot put a streak over a battle scene or a
+    /// transition strip over a field scene - which is what every consumer of
+    /// the ordering table actually needs. This variant is the compositing
+    /// form. The quads draw last, after the meshes, sprites and text, at the
+    /// reversed-Z near plane, so they pass the depth test against any scene
+    /// geometry.
+    ///
+    /// Retail has no equivalent distinction: on the console the 3D primitives
+    /// and the screen-space packets go into the *same* ordering table and
+    /// `DrawOTag` walks it once. Two draw paths is a port artifact, and this
+    /// variant is where they meet.
+    SceneWithScreenPrims {
+        scene: &'a Scene<'a>,
+        prims: &'a [crate::screen_overlay::ScreenPrim],
+    },
 }
 
 /// Per-actor draw inside a [`Scene`].

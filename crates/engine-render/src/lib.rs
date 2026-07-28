@@ -55,6 +55,7 @@ mod renderer;
 pub mod scene_lights;
 pub mod screen_overlay;
 mod shaders;
+pub mod vram_capture;
 
 pub use renderer::*;
 

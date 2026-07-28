@@ -78,7 +78,7 @@ pub(super) struct Harness {
     depth_view: wgpu::TextureView,
 }
 
-fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
+pub(super) fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
     build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, 0x001F)
 }
 
@@ -256,6 +256,16 @@ pub(super) fn build_harness_with(
 /// Render one primitive list over a clear colour and read back the centre
 /// pixel as RGBA8.
 pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> [u8; 4] {
+    let frame = render_frame_rgba(h, prims, clear);
+    let off = (2 * TARGET + 2) * 4; // centre pixel (2,2)
+    [frame[off], frame[off + 1], frame[off + 2], frame[off + 3]]
+}
+
+/// Render one primitive list over a clear colour and read the whole
+/// `TARGET x TARGET` frame back as tightly-packed RGBA8 - the same shape
+/// [`crate::CaptureImage`] carries, so `vram_capture` can be driven with a
+/// frame the real pipeline drew.
+pub(super) fn render_frame_rgba(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> Vec<u8> {
     let geo = build_geometry(prims, TARGET as u32, TARGET as u32);
     // Empty geometry -> clear only (an empty buffer slice is invalid).
     let buffers = (!geo.is_empty()).then(|| {
@@ -368,14 +378,15 @@ pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64
     h.device.poll(wgpu::PollType::wait()).unwrap();
     rx.recv().unwrap().unwrap();
     let data = buf.slice(..).get_mapped_range();
-    // Centre pixel (2,2).
-    let row = 2usize;
-    let col = 2usize;
-    let off = row * padded as usize + col * 4;
-    let px = [data[off], data[off + 1], data[off + 2], data[off + 3]];
+    // Drop the 256-byte row padding so the result is a tight RGBA8 frame.
+    let mut frame = Vec::with_capacity(TARGET * TARGET * 4);
+    for row in 0..TARGET {
+        let start = row * padded as usize;
+        frame.extend_from_slice(&data[start..start + TARGET * 4]);
+    }
     drop(data);
     buf.unmap();
-    px
+    frame
 }
 
 #[test]
@@ -418,6 +429,7 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         clut: 0,
         tpage: 2 << 7, // depth = 2 (15bpp)
         color: 0x0080_8080,
+        gouraud: None,
         semi_transparent: false,
         ot_index: 10,
     });

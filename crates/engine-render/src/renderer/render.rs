@@ -15,6 +15,11 @@ pub struct CaptureImage {
     pub height: u32,
 }
 
+/// Panic message for the two arms that `encode_frame`'s normalisation makes
+/// unreachable. Kept as one constant so the invariant is stated once.
+const NORMALISED: &str =
+    "RenderTarget::SceneWithScreenPrims is rebound to Scene before these matches";
+
 impl Renderer {
     /// Render the scene. Dispatches by [`RenderTarget`]:
     /// * `Clear` - clear to dark gray, no draws.
@@ -46,6 +51,23 @@ impl Renderer {
     /// the on-screen [`Self::render`] (swapchain view) and the offscreen
     /// [`Self::capture_rgba`] (readback texture view). Does not present.
     fn encode_frame(&self, target: RenderTarget<'_>, color_view: &wgpu::TextureView) -> Result<()> {
+        // `SceneWithScreenPrims` is a `Scene` plus a composited ordering-table
+        // pass; unwrap it here so the scene arms below stay single-purpose and
+        // the overlay is drawn as a tail on top of whatever the scene emitted.
+        let (target, composited_prims) = match target {
+            RenderTarget::SceneWithScreenPrims { scene, prims } => {
+                (RenderTarget::Scene(scene), prims)
+            }
+            other => (other, &[] as &[crate::screen_overlay::ScreenPrim]),
+        };
+        let composited_vram = match &target {
+            RenderTarget::Scene(s) => Some(s.vram),
+            _ => None,
+        };
+        let composite_overlay = composited_vram.is_some() && !composited_prims.is_empty();
+        if composited_vram.is_some() {
+            self.stage_screen_overlay(composited_prims);
+        }
         // Stage uniform writes before begin_render_pass.
         match &target {
             RenderTarget::Texture(t) => {
@@ -124,6 +146,8 @@ impl Renderer {
                 self.stage_screen_overlay(prims);
             }
             RenderTarget::Clear => {}
+            // Rebound to `Scene` at the top of this function.
+            RenderTarget::SceneWithScreenPrims { .. } => unreachable!("{NORMALISED}"),
         }
         crate::profile::mark("uniforms");
 
@@ -449,12 +473,53 @@ impl Renderer {
                 RenderTarget::ScreenOverlay { vram, .. } => {
                     self.draw_screen_overlay(&mut rp, vram);
                 }
+                // Rebound to `Scene` at the top of this function.
+                RenderTarget::SceneWithScreenPrims { .. } => unreachable!("{NORMALISED}"),
+            }
+            // The composited ordering-table tail of `SceneWithScreenPrims`:
+            // drawn last so the quads sit over the scene's meshes, sprites and
+            // text, at the reversed-Z near plane.
+            if let (true, Some(vram)) = (composite_overlay, composited_vram) {
+                self.draw_screen_overlay(&mut rp, vram);
             }
         }
         crate::profile::mark("encode");
         self.queue.submit(std::iter::once(enc.finish()));
         crate::profile::mark("submit");
         Ok(())
+    }
+
+    /// Render one frame offscreen and land it in the **software PSX VRAM** at
+    /// `dst`, quantised to BGR555 - the port's equivalent of the console's
+    /// framebuffer living inside the same page textures are read from.
+    ///
+    /// This is what makes a drawn frame addressable as a texture. Retail's
+    /// field-to-battle curtain slices a captured field frame into row and
+    /// column strips and stretches them apart; its strips' texture pages
+    /// decode to [`crate::vram_capture::FIELD_CAPTURE_ROWS`] /
+    /// `FIELD_CAPTURE_COLS`, so a caller reproducing that style captures into
+    /// those rects and then draws the strips through
+    /// [`RenderTarget::SceneWithScreenPrims`] (or `ScreenOverlay`) against the
+    /// re-uploaded VRAM.
+    ///
+    /// The written page is the CPU-side [`Vram`], not a GPU-only copy, so the
+    /// capture is equally visible to `Vram::move_image`, the VRAM parity
+    /// oracle and `region_has_data`. Push it back to the GPU with
+    /// [`Self::upload_vram`] before drawing against it.
+    ///
+    /// Cost: one offscreen frame plus a full readback and a resample, so this
+    /// is a transition-frame primitive, not something to run every frame.
+    pub fn capture_into_vram(
+        &self,
+        target: RenderTarget<'_>,
+        vram: &mut Vram,
+        dst: crate::vram_capture::VramRect,
+        opts: crate::vram_capture::CaptureOpts,
+    ) -> Result<usize> {
+        let img = self.capture_rgba(target)?;
+        Ok(crate::vram_capture::blit_rgba_into_vram(
+            &img.rgba, img.width, img.height, vram, dst, opts,
+        ))
     }
 
     /// Render one frame into an offscreen texture at the current surface
@@ -948,9 +1013,17 @@ impl Renderer {
     /// vertex/index buffers if needed, upload the geometry, and cache the
     /// per-run draw list for [`Self::draw_screen_overlay`]. The staging pass
     /// of [`RenderTarget::ScreenOverlay`].
+    /// The geometry space is the **PSX display** (320x240), not the window:
+    /// every retail screen-space emitter authors there and clamps against it,
+    /// so handing `build_geometry` the surface size would pin the overlay into
+    /// the top-left corner of a larger frame. See
+    /// [`crate::screen_overlay::build_geometry`].
     fn stage_screen_overlay(&self, prims: &[crate::screen_overlay::ScreenPrim]) {
-        let (w, h) = (self.config.width, self.config.height);
-        let geo = crate::screen_overlay::build_geometry(prims, w, h);
+        let geo = crate::screen_overlay::build_geometry(
+            prims,
+            crate::vram_capture::PSX_SCREEN_WIDTH as u32,
+            crate::vram_capture::PSX_SCREEN_HEIGHT as u32,
+        );
         self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
         if geo.is_empty() {
             return;

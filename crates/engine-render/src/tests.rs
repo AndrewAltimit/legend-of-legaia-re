@@ -13,3 +13,4 @@ mod menu_overlays;
 mod screen_overlay_gpu;
 mod text_overlay;
 mod title_save_screen;
+mod vram_capture_gpu;
