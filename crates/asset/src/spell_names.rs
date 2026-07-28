@@ -167,6 +167,12 @@ pub const TARGET_ALL_BIT: u8 = 0x20;
 /// One decoded spell-table entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct SpellEntry {
+    /// **Cast class** (`stats +0`). [`CAPTURE_CLASS`] (`'c'`) marks the boss
+    /// cinematic casts, whose damage runs in their own streamed module rather
+    /// than through the shared move-power kernel - see
+    /// [`capture_class_records`] and
+    /// `docs/subsystems/battle-formulas.md`. Any other value is a plain cast.
+    pub class: u8,
     /// Display name, or `None` for an empty / internal-tier slot.
     pub name: Option<String>,
     /// MP cost (`stats +3`).
@@ -181,6 +187,11 @@ pub struct SpellEntry {
 }
 
 impl SpellEntry {
+    /// `true` when this record's class byte is [`CAPTURE_CLASS`].
+    pub fn is_capture_class(&self) -> bool {
+        self.class == CAPTURE_CLASS
+    }
+
     /// Decode the `+2` byte into a [`SpellTargetShape`] (side + scope bits).
     pub fn target_shape(&self) -> SpellTargetShape {
         let ally = self.target & TARGET_ALLY_BIT != 0;
@@ -208,6 +219,7 @@ impl SpellNameTable {
         let mut entries = Vec::with_capacity(SPELL_COUNT);
         for id in 0..SPELL_COUNT {
             let stat = map.off(STATS_VA + (id * RECORD_STRIDE) as u32)?;
+            let class = *scus.get(stat)?;
             let target = *scus.get(stat + 2)?;
             let mp = *scus.get(stat + 3)?;
             let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
@@ -225,6 +237,7 @@ impl SpellNameTable {
                 None
             };
             entries.push(SpellEntry {
+                class,
                 name,
                 mp,
                 target,
@@ -363,10 +376,8 @@ mod tests {
     fn target_shape_decodes_side_and_scope_bits() {
         let shape = |b: u8| {
             SpellEntry {
-                name: None,
-                mp: 0,
                 target: b,
-                desc: None,
+                ..Default::default()
             }
             .target_shape()
         };

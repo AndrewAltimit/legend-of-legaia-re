@@ -727,9 +727,6 @@ per-spell tick function (e.g. PROT 960 `+0x1C60`: `0x7B` -> the `+0xB0C`
 function, `0xA6` -> `+0x0`). Xain's **Bloody Horns** (PROT 952: hit `0x1D0`
 via `FUN_801DD6B4`) and **Terio Punch** (PROT 953: `0x274` via
 `FUN_801DD6B4`) bypass the ladder -
-NB the neighbouring `09xx` extents overlap on disc (entry 953 starts `0x1800`
-into entry 952's window), so the Terio Punch word also appears in 952's window
-at `+0x2238`; it is the same physical word, not a second Bloody Horns hit -
 **this is why Earth Jewels do not reduce them** despite Xain's element byte
 being 0 (Earth) and being read by the scale - while the enemy-side
 **Evil Seru Magic** module (PROT 966: `0x327` / `0x100` via `FUN_801DD4B0`)
@@ -756,7 +753,9 @@ rises. Mirrored in `engine-vm::battle_damage_wrappers`.
 
 The full wrapper census over every capture-class module (byte-scan of the
 extracted entries for the `jal` words `0x0C0775AD` bypass / `0x0C07752C`
-respect, each module's own extent bounded by the next entry's head-overlap):
+respect, each module's own extent bounded by the next entry's head - the
+`09xx` extents **tile exactly**, so every offset below names one physical
+word inside its own entry):
 
 | Module | Spells (shared per module) | Known caster | Wrapper |
 |---|---|---|---|
@@ -782,6 +781,30 @@ cast is in a bypass module**
 (Hyper Wave is plain-class; Hyper Lightning / Hyper Crush / Chaos Flare /
 Genocidal Cannon all respect), and non-capture casts (plain-class, player
 summons, move-power specials) all reach the finisher with `param_5 = 0`.
+
+#### "Respect" is a different kernel, not the shared kernel
+
+The respecting arm of the census is `FUN_801DD4B0`, and a capture-class cast
+never reaches `FUN_801DD0AC` at all - the `0x63` arm pages the module, and the
+module's tick calls a wrapper. `FUN_801DD4B0`'s attacker and defender rolls are
+instruction-identical to the shared kernel's, so the two agree exactly on any
+hit that clears the defender's mitigation; the whole divergence is the bonus
+arm:
+
+| | `FUN_801DD0AC` | `FUN_801DD4B0` |
+|---|---|---|
+| threshold | `defender + (power >> 1) + (agl >> 1)` | `defender + power` |
+| rebuild | `+ rand % ((power >> 3) + 1) + (agl >> 1) + rand % ((agl >> 3) + 1)` | `+ rand % ((power >> 2) + 1)` |
+| draws when it fires | two | one |
+
+So the routing question is only "which arm rebuilds a hit that fell short", and
+it also changes the RNG-cursor advance (five draws vs four on the bonus path).
+The class byte that answers it is `stats +0` of the `DAT_800754C8` record,
+decoded by `legaia_asset::spell_names` as `SpellEntry::class` /
+`capture_class_records`; the engine reads it off the SCUS spell table installed
+at boot and routes in `World::capture_respect_predamage`. The six bypass ids are
+checked first, because a shared module dispatches per spell and the class byte
+cannot separate two ticks of one module.
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
 overlay as the move-power table (`World::element_affinity`), and the monster

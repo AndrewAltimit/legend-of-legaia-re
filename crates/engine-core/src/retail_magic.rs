@@ -306,10 +306,9 @@ mod tests {
         let shape_to_target = |s: S| target_from_shape(s);
         for spell in SERU_MAGIC {
             let e = SpellEntry {
-                name: None,
                 mp: spell.mp,
                 target: byte_for(spell.target),
-                desc: None,
+                ..Default::default()
             };
             assert_eq!(
                 shape_to_target(e.target_shape()),

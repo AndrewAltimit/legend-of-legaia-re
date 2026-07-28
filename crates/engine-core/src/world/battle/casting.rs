@@ -280,6 +280,9 @@ impl World {
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             return self.capture_bypass_predamage(attacker, target, power);
         }
+        if self.is_capture_class_move(move_id) {
+            return self.capture_respect_predamage(attacker, target, power);
+        }
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
@@ -443,6 +446,129 @@ impl World {
                 .unwrap_or(false),
             enemy_defender_halve: false,
             bypass_party_resist: SPELL_BYPASSES_PARTY_RESIST,
+            summon_power_pct: 100,
+            floor_rand: 0,
+        };
+        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        Some(over.min(9999) as u16)
+    }
+
+    /// `true` when `move_id`'s spell-table record is **capture-class** (class
+    /// byte `'c'` at `DAT_800754C8 + id*0xC`).
+    ///
+    /// A capture-class cast never reaches the shared kernel `FUN_801DD0AC`:
+    /// the action SM's `0x63` arm pages the cast's own streamed module
+    /// (`FUN_8003EC70(record[+1] + 0x28)` -> PROT `935..966`) and that
+    /// module's ticks call one of the two per-move wrappers instead. So the
+    /// class byte is the routing question, and it is disc data - read here off
+    /// the SCUS spell table installed at boot ([`Self::install_menu_text`]).
+    /// Without a disc image the answer is `false`, which keeps disc-free
+    /// battles on the shared kernel exactly as before.
+    fn is_capture_class_move(&self, move_id: u8) -> bool {
+        self.menu_text
+            .as_ref()
+            .and_then(|t| t.spell_names.as_ref())
+            .and_then(|t| t.entry(move_id))
+            .is_some_and(|e| e.is_capture_class())
+    }
+
+    /// Roll a **capture-class boss cast** whose streamed module calls the
+    /// guard-**respecting** wrapper `FUN_801DD4B0`.
+    ///
+    /// This is the majority arm of the capture band: the census over every
+    /// capture-class module finds the bypass wrapper in exactly six of them
+    /// ([`CAPTURE_BYPASS_MOVE_IDS`]) and the respecting wrapper in all the
+    /// rest - every Songi cast, Neo Star Slash, the enemy-side Evil Seru
+    /// Magic, and the whole Earthquake / Chaos Breath / Blade Breath band
+    /// (`docs/subsystems/battle-formulas.md`).
+    ///
+    /// `FUN_801DD4B0` is **not** the shared kernel. Its attacker and defender
+    /// rolls are instruction-identical to `FUN_801DD0AC`'s, but its bonus arm
+    /// is not, and that is the whole difference:
+    ///
+    /// | | `FUN_801DD0AC` (shared) | `FUN_801DD4B0` (this) |
+    /// |---|---|---|
+    /// | bonus threshold | `defender + (power >> 1) + (agl >> 1)` | `defender + power` |
+    /// | bonus rebuild | `+ rand % ((power >> 3) + 1) + (agl >> 1) + rand % ((agl >> 3) + 1)` | `+ rand % ((power >> 2) + 1)` |
+    /// | draws on the bonus path | two | one |
+    ///
+    /// So a capture-class respecting cast routed through the shared kernel
+    /// lands on a different damage figure *and* advances the RNG cursor by a
+    /// different amount. The finisher runs with `bypass_party_resist = false`
+    /// ([`PHYSICAL_BYPASSES_PARTY_RESIST`]), so the party defender's jewel /
+    /// All-Guard ladder applies - which is what community playtests observe
+    /// for these casts.
+    ///
+    /// Stat bridge is [`Self::enemy_move_predamage`]'s: `+0x14C` live HP and
+    /// the `+0x168` AGL-derived stat on the attacker, [`Self::summon_roll_defender`]
+    /// on the defender. `power` is the move-power table's `+0` scalar; retail's
+    /// module bakes a per-hit constant into the call site instead, so the
+    /// magnitude stays the engine's own seed even though the arithmetic is the
+    /// wrapper's.
+    ///
+    /// PORT: FUN_801DD4B0 (live wiring; pure kernel in
+    /// `battle_damage_wrappers::physical_wrapper_predamage`)
+    fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+        use legaia_engine_vm::battle_damage_wrappers::{
+            PHYSICAL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
+            physical_wrapper_predamage,
+        };
+        use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+
+        let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
+        let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
+        let defender = self.summon_roll_defender(target)?;
+        let a = WrapperAttacker {
+            hp: attacker_hp,
+            agl: self
+                .battle_accuracy
+                .get(attacker as usize)
+                .copied()
+                .unwrap_or(0),
+            // `+0x158` is not read on this path at all.
+            spell_power: 0,
+            status: 0,
+        };
+        let d = WrapperDefender {
+            hp: defender.hp,
+            agl: defender.agl,
+            stat_a: defender.stat_a,
+            stat_b: defender.stat_b,
+            status: defender.status,
+            guard: defender.guard,
+        };
+        let power_u = power.max(0) as u32;
+        let rng3 = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        let (atk, def) =
+            physical_wrapper_predamage(power_u, &a, &d, element_affinity_pct, rng3, || {
+                (self.next_rng() & 0x7fff) as u16
+            });
+
+        let attacker_element = self
+            .actors
+            .get(attacker as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.element)
+            .unwrap_or(7);
+        let target_is_party = target < self.party_count;
+        let finish = DamageFinish {
+            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            attacker_slot: 3,
+            defender_slot: if target_is_party { 0 } else { 3 },
+            attacker_element,
+            defender_resist: self.defender_resist(target),
+            defender_guarding: self
+                .battle_guarding
+                .get(target as usize)
+                .copied()
+                .unwrap_or(false),
+            enemy_defender_halve: false,
+            bypass_party_resist: PHYSICAL_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
         };
@@ -983,6 +1109,118 @@ mod capture_bypass_tests {
             damage_without_resist(RESPECT_MOVE_ID),
             damage_without_resist(BYPASS_MOVE_ID),
             "the bypass id must route through the wrapper roll, not FUN_801DD0AC"
+        );
+    }
+
+    /// Mark `id` capture-class in a synthetic spell table and install it as
+    /// the world's disc-derived menu text - the same table
+    /// `World::install_menu_text` fills from `SCUS_942.54`.
+    fn with_capture_class(world: &mut World, id: u8) {
+        use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[id as usize].class = CAPTURE_CLASS;
+        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+    }
+
+    fn damage_as_capture_class(move_id: u8) -> u16 {
+        let mut world = world_with_resisting_party();
+        with_capture_class(&mut world, move_id);
+        let before = world.actors[0].battle.hp;
+        world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+        before - world.actors[0].battle.hp
+    }
+
+    /// The default fixture rolls a huge attacker against a bare defender, so
+    /// **neither** kernel's bonus arm fires and the two agree exactly - the
+    /// rolls outside that arm are instruction-identical. This variant is the
+    /// opposite corner: a small power against a heavy defence, where both
+    /// arms fire and the two rebuilds differ.
+    fn world_on_the_bonus_floor() -> World {
+        let mut world = world_with_resisting_party();
+        world.battle_accuracy[1] = 20; // attacker `+0x168`
+        world.battle_defense[0] = 4000; // defender `+0x15C`
+        world.move_power = Some(
+            crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(40))
+                .expect("synthetic catalog parses"),
+        );
+        world
+    }
+
+    /// A capture-class cast whose module calls the **respecting** wrapper is
+    /// `FUN_801DD4B0`, not the shared kernel `FUN_801DD0AC`. The two share an
+    /// attacker and defender roll but not a bonus arm: this one fires on
+    /// `attacker < defender + power` and rebuilds with one draw, the shared
+    /// kernel widens the threshold by `agl >> 1` and rebuilds with two. So the
+    /// same move id resolves to a different figure once the spell table says
+    /// the cast is capture-class.
+    ///
+    /// This is the contrast that makes the routing non-vacuous: the *only*
+    /// thing that differs between the two runs is the class byte.
+    #[test]
+    fn a_capture_class_cast_leaves_the_shared_kernel() {
+        let cast = |capture: bool| {
+            let mut world = world_on_the_bonus_floor();
+            if capture {
+                with_capture_class(&mut world, RESPECT_MOVE_ID);
+            }
+            let before = world.actors[0].battle.hp;
+            world.cast_spell_on_slots(1, &spell(RESPECT_MOVE_ID), &[0]);
+            before - world.actors[0].battle.hp
+        };
+        let shared = cast(false);
+        let wrapped = cast(true);
+        assert!(shared > 0 && wrapped > 0, "both paths land a hit");
+        assert_ne!(
+            shared, wrapped,
+            "the class byte must route the cast off FUN_801DD0AC"
+        );
+    }
+
+    /// The other half of the same fact: away from the bonus floor the two
+    /// kernels agree to the unit, so this routing is not a blanket damage
+    /// change - it is a change to what happens when a hit fails to clear the
+    /// defender's mitigation.
+    #[test]
+    fn off_the_bonus_floor_the_two_kernels_agree() {
+        assert_eq!(
+            damage_from(RESPECT_MOVE_ID),
+            damage_as_capture_class(RESPECT_MOVE_ID),
+            "outside the bonus arm FUN_801DD4B0 and FUN_801DD0AC are the same roll"
+        );
+    }
+
+    /// ...and it is still a *respecting* hit: the party defender's elemental
+    /// resist ladder halves it, unlike the six bypass ids.
+    #[test]
+    fn a_capture_class_respecting_cast_still_takes_the_resist_ladder() {
+        let mut world = world_with_resisting_party();
+        with_capture_class(&mut world, RESPECT_MOVE_ID);
+        if let Some(m) = world.roster.members.get_mut(0) {
+            let mut bits = m.ability_bits();
+            bits[3] &= !0x20;
+            m.set_ability_bits(bits);
+        }
+        let before = world.actors[0].battle.hp;
+        world.cast_spell_on_slots(1, &spell(RESPECT_MOVE_ID), &[0]);
+        let unresisted = before - world.actors[0].battle.hp;
+        let resisted = damage_as_capture_class(RESPECT_MOVE_ID);
+        assert!(resisted > 0);
+        assert_eq!(unresisted, resisted * 2, "the ladder halves this hit");
+    }
+
+    /// A bypass id stays on the bypass wrapper even when the table also calls
+    /// it capture-class: the census list is checked first, because a shared
+    /// module dispatches per spell and the class byte cannot tell the two
+    /// ticks apart.
+    #[test]
+    fn the_bypass_census_wins_over_the_class_byte() {
+        assert_eq!(
+            damage_from(BYPASS_MOVE_ID),
+            damage_as_capture_class(BYPASS_MOVE_ID),
+            "a bypass id must not be re-routed by the class byte"
         );
     }
 
