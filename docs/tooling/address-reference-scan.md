@@ -107,6 +107,39 @@ inside an instruction stream. The verdict is a triage summary, not a
 substitute for reading the disassembly at the hit
 ([`ghidra.md`](ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
+### A template inside a code region reads as `incidental-code`
+
+`code` outranks the other two counts, and a
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+is a small constant record **linked among the routines it seats**, not in a
+separate data region. So its `+0x8` tick word collects frame markers from its
+neighbours, scores `code > 0` with `entry = 0`, and prints `incidental-code`
+even though `ptr = 1` among constants is exactly the `template-field` shape.
+Read that verdict as "aligned word, neighbourhood is code" and go look, rather
+than as "not a reference".
+
+The tell is one word back. `FUN_80020DE0` consumes a template as
+`+0x0/+0x2/+0x4` u16 fields, `+0x8` tick function, `+0xC` flags, `+0x14`
+sub-state, and `+0x4` is the model selector - `0xFFFF` for the transform-node
+helpers, the same `ffff0000` lead the prescript stager records open with. A
+word that decodes as a routine's VA immediately after an `ffff0000` is a
+template's tick slot, not a stray immediate:
+
+| Address | Image | Template | Words at the hit |
+|---|---|---|---|
+| `801D2298` | 0897 `field` | `0x801F2294` | `… 00000000 · ffff0000 · **801d2298** · 00000000 …` |
+| `801D4098` | 0980 `dance` | `0x801D42FC` | `… 00150000 · ffff0000 · **801d4098** · 00008082 …` |
+
+Both are `REAL` function entries reached through their template, and both are
+ported and documented - the ledge-hop per-frame advance
+([`field-locomotion.md`](../subsystems/field-locomotion.md)) and the dancer
+clip-driver gate ([`minigame-dance.md`](../subsystems/minigame-dance.md)). The
+scan's shape for each - one aligned word hit, no `jal`, no `j`, no `lui`, and
+branches only from images that cannot reach them - is the shape of a
+template-seated routine, and it is worth telling apart from an interior label,
+which collects **no** word hit at all
+([`worklist-classification.md`](worklist-classification.md#a-word-hit-separates-a-template-seated-entry-from-an-interior-label)).
+
 ## Controls
 
 The scan is only worth its negatives if its positives are checked, so run it

@@ -111,6 +111,32 @@ disclosed-inert section and stays there forever - a wiring worklist entry no
 wiring pass can close. Settling it as a documented negative keeps the worklist
 honest in both directions.
 
+### A word hit separates a template-seated entry from an interior label
+
+The reachability sweep and the entry-boundary test answer different questions,
+and one scan shape invites reading the first as an answer to the second. An
+address with **no** `jal`, **no** `j`, **no** `lui`+`addiu` and only branches
+looks like an intra-function label, because a label is reached exactly that
+way. But a routine seated on a
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+scans almost identically: nothing calls it either - the actor pool copies its
+address into `actor[+0xC]` and the frame walk `jalr`s that - so the only
+evidence it leaves is the one word in the template.
+
+That single aligned word is the whole difference, and it is decisive in both
+directions: a label carries no copy of its own address anywhere, so a word hit
+at the VA rules `INTERIOR` out. `801D2298` (field ledge-hop advance) and
+`801D4098` (dance clip-driver gate) are the worked cases - each has exactly
+one word hit, in its own image, immediately after the template's `ffff0000`
+model-selector lead, and each is `REAL`. The scan's own triage calls both hits
+`incidental-code`, because the templates sit inside code
+([`address-reference-scan.md`](address-reference-scan.md#a-template-inside-a-code-region-reads-as-incidental-code)),
+so the class name is not the verdict - the neighbouring words are.
+
+Both directions of this cost something. Filing a template-seated entry as
+`INTERIOR` deletes a real port site; filing a label as `REAL` because the
+branches look like traffic mints a phantom row. Read the words at the hit.
+
 ## The classifier's output
 
 The generated CSV holds addresses, class names and one-line reasons. It carries
