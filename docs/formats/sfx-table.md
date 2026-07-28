@@ -3,9 +3,9 @@
 Every actor / battle sound effect is keyed to an 8-byte descriptor in a static
 `SCUS_942.54` rodata table at `DAT_8006F198`. The descriptor tells the sound
 system which VAB program + tone to play, how many SPU voices to fan the cue
-across, and which mixer channel it belongs to. This is the static counterpart of
-the runtime bank `_DAT_8007B8D0` (loaded from `.dpk` / `monster.snd`), which
-covers ids `>= 0x200`.
+across, and which mixer channel it belongs to. Ids `>= 0x200` come from a
+**per-scene** extension of the same table instead -
+[below](#ids--0x200-come-from-the-current-bundles-record-0).
 
 ## Table base + record layout
 
@@ -34,9 +34,40 @@ true extent is 100 entries.
 The field names are the designer's own, recovered from the runtime debug format
 string `"setbl p:%d t:%d l:%d n:%d id:%d"`.
 
+### Ids `>= 0x200` come from the current bundle's record 0
+
+The gate's other arm is not a second fixed table. Both readers resolve it the
+same way, out of the sound subsystem's **current-bundle** slot `_DAT_8007B8D0`:
+
+```text
+id <  0x200:  desc = DAT_8006F198 + id*8              ; this page's table
+id >= 0x200:  desc = _DAT_8007B8D0 + offsets[0]       ; the bundle's record 0
+                     + (id - 0x200)*8
+```
+
+`FUN_800250D4` is the readable one (`0x800250F4..0x8002514C`): `slti v0,a2,0x200`
+picks the arm, the `>= 0x200` side loads `0x8007B8D0`, applies the bundle
+header's `+0x02` word to reach `offsets[0]`, and adds `(id - 0x200) * 8`;
+`FUN_80016B6C` (`0x80016C24..0x80016CB0`) does the same before printing the
+designer's `"setbl p:%d t:%d l:%d n:%d id:%d"` line off `+0..+4`. The row layout
+is therefore the layout above, and the disc bears it out.
+
+**Which** bundle sits in that slot is the whole content of the claim. It is
+whatever loaded last: `FUN_8001FA88` puts `bse.dat` there at init, and the field
+asset loader repoints it at the scene's prescript bundle on every field load
+(`FUN_8001F7C0` `0x8001F864`). So in field mode the `>= 0x200` bank is the
+**scene's own prescript record 0**, sized and authored per scene - jou reserves
+96 rows and populates 40, `rugi` carries 21 - and it is neither `bse.dat` nor a
+`.dpk` / `monster.snd`. Full treatment, including why record 0 must not be
+spawned as a move-VM stager, in
+[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-master-ambient-record-0---the-per-scene-sfx-descriptor-bank);
+the init-time occupant of the slot in [`bse-dat.md`](bse-dat.md).
+
 ## Consumers
 
-Two functions read the table, both indexing `&DAT_8006F198 + id*8`:
+Two functions read the table, both indexing `&DAT_8006F198 + id*8` for
+`id < 0x200` and the [current bundle's record 0](#ids--0x200-come-from-the-current-bundles-record-0)
+above it:
 
 - **`FUN_800250D4(sound_id, voice)`** - the per-actor SFX trigger (from the actor
   tick `FUN_80021DF4`). Uses only the voice count (`n & 0x1F`), `SpuKeyOn`-ing

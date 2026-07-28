@@ -48,11 +48,9 @@ resolve their own bundle's table) and the site field-scene viewer
 
 ### Install chain
 
-At scene entry, each MAN **partition-1 effect-actor script** (a dedicated
-record of the shape `install id N` + infinite loop - the Shift-JIS-named
-"effect" actors of the prescript consumer census,
-[`scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only))
-fires field-VM op `0x34` sub-3. The chain:
+At scene entry the placement installer runs each MAN **partition-1 placement**
+through the field VM for one frame slice, and every op `0x34` sub-3 that slice
+executes installs one stager record. The chain:
 
 ```text
 field VM op 0x34 sub-3 (arg)
@@ -62,6 +60,52 @@ field VM op 0x34 sub-3 (arg)
                                        ; move-VM bytecode ONCE immediately
   → FUN_80023070 every game tick thereafter
 ```
+
+The carrier is **not** a distinguished kind of script. Most scenes do put the
+install on a dedicated effect-actor record (`install id N` + infinite loop - the
+Shift-JIS-named "effect" actors of the prescript consumer census,
+[`scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only)),
+but a fully scripted, dialogue-bearing placement installs exactly the same way,
+and on the retail disc that is the majority case. What decides it is
+[which ops the load slice reaches](#which-installs-fire-at-scene-entry).
+
+#### Which installs fire at scene entry
+
+`FUN_8003A1E4`, the pre-run the placement spawn loop calls per just-spawned
+placement, carries its own copy of the per-actor script runner's frame slice.
+Two properties of that loop settle the question, and both are raw-branch facts:
+
+- **The pre-run is gated on the record's first opcode.** `0x8003A480` reads
+  `bytecode[pc0]` and runs `addiu v0,v1,-0x24; sltiu v0,v0,0x2; beq v0,zero`
+  past the whole VM loop - so unless the first byte is `0x24` or `0x25` the
+  record's script never runs at load at all. Every placement authored to install
+  something at entry opens with `25`.
+- **The slice runs while `(opcode & 0x7F) >= 0x20` and breaks *after* executing
+  an opcode whose full byte is `0x21`** (`0x8003A4C4` `beq s1,s4` against
+  `li s4,0x21` - the raw byte, so the cross-context `0xA1` does not break), or
+  when the dispatcher returns an unchanged PC. `FUN_80039B7C`'s per-frame slice
+  (`0x80039E20`) is the identical pair of tests.
+
+`0x21` and `0x25` are both "nop" to a disassembler and only one of them ends the
+slice. That is the whole mechanism: a record written `25 / 34 30 00 / …` fires
+its install in the load slice whatever follows, and the `21` further down is
+where the placement parks. A second install *after* that `21` (`edkorout`
+P1[15]) belongs to a later slice, which a free-roam placement never gets - the
+per-actor ticker only dispatches script stepping for an actor carrying the
+script-engaged bit.
+
+Ports read this as the record's **unconditional entry prefix**: walk from the
+record's first opcode and stop at the first branch, jump, blocking op or `0x21`.
+That is an under-approximation on purpose - a flag-gated install deeper in a
+record (`nilboa` P1[3]'s second install, both of `suimon` P1[4]'s) is left out
+rather than guessed at, because the branch outcome is runtime state.
+
+`see ghidra/scripts/funcs/8003a1e4.txt`, `80039b7c.txt`. Port:
+`engine-core::man_field_scripts::scene_entry_ambient_installs`, with the
+per-scene census pinned by the disc-gated
+`crates/engine-core/tests/ambient_entry_install_census_disc.rs`. Of the scenes
+that install an ambient tree at entry, 22 carry it on a pure effect-actor
+record and 41 on an ordinary placement.
 
 Installer records fan out with move-VM op `0x25` (spawn child from the
 prescript bundle); each child is also first-run inside the parent's spawn op,
@@ -181,7 +225,7 @@ The render tail then runs, per game tick (`80021df4.txt`
    (`sh = +0xCE * frame_step`, top strip out, remainder up, strip back in at
    `y + h - sh`) - a cyclic up rotation.
 
-Eight scenes put a live scroller on screen from their plain scene-entry
+Seventeen scenes put a live scroller on screen from their plain scene-entry
 ambient tree, resolved by walking the records through the move VM (a
 *linear* scan for the op word over-reports - the records jump):
 
@@ -189,18 +233,33 @@ ambient tree, resolved by walking the records through the move VM (a
 |---|---|---|
 | `jou` | `(0x220, 0x80, 0x0E, 0x80)` | up 1 |
 | `jouinb` | `(0x280, 0x100, 0x14, 0x80)`, `(0x280, 0x180, 0x14, 0x80)`, `(0x294, 0x100, 0x14, 0x50)` | up 3 / 6 / 7 |
-| `jouine` | `(0x240, 0x100, 0x14, 0x80)`, `(0x240, 0x180, 0x14, 0x50)` | up 3 / 7 |
+| `jouind`, `jouine` | `(0x240, 0x100, 0x14, 0x80)`, `(0x240, 0x180, 0x14, 0x50)` | up 3 / 7 |
+| `vell` | `(0x2AA, 0x28, 0x14, 0x80)`, `(0x2AA, 0xA8, 0x14, 0x50)` | up 3 / 7 |
 | `korout` | `(0x280, 0x00, 0x40, 0x100)` | up 1 |
 | `koin3`, `other7` | `(0x280, 0x00, 0x08, 0x100)` | up 2 |
+| `keikoku` | `(0x240, 0x00, 0x20, 0x100)` | up 1 |
 | `deroa` | `(0x268, 0xA0, 0x18, 0x60)` | up 1 |
 | `noaru` | `(0x240, 0x00, 0x18, 0x60)`, `(0x258, 0x00, 0x08, 0x20)` | up 1 / 1 |
+| `dolk` | `(0x2E0, 0xE0, 0x10, 0x20)`, `(0x2F0, 0xE0, 0x10, 0x20)` | up 1 / 2 |
+| `dolk2` | the same two rects | up 1 / 1 |
+| `jiji` | `(0x310, 0x00, 0x10, 0x20)` | up 1 |
+| `dohaty` | `(0x2C0, 0xC0, 0x10, 0x40)` | up 1 |
+| `station` | `(0x300, 0x100, 0x18, 0x60)` | up 1 |
+| `tunnelc` | `(0x300, 0x100, 0x20, 0x80)`; `(0x00, 0x1FC, 0x100, 0x01)` | up 1; **right 0x10** |
 
-Every entry-reachable carrier scrolls **vertically only**, upward, over a
-rect in the upper texture band (`x >= 0x200`) - falling water and energy
-columns, never a CLUT row. None of them retires: jou's record 23 is the
-shape to read, three lines long - the `0x1E` seat, then an infinite
-`0x1A` / `0x1B` wait loop - so the VM parks and the render tail scrolls
-forever.
+Sixteen of the seventeen scroll **vertically only**, upward, over a rect in
+the upper texture band (`x >= 0x200`) - falling water and energy columns,
+animated as texels. `tunnelc`'s second seat is the one exception and it is
+worth reading as a limit on the generalisation rather than as an oddity: a
+full-width one-row rect at `(0, 508)` stepping right by 16 halfwords is a
+**CLUT row**, so the same rotate primitive walks a palette when the authored
+rect is a palette. Nothing in the mode's implementation distinguishes the two
+cases - `StoreImage` / `MoveImage` / `LoadImage` do not care what the texels
+mean - and the corpus simply contains one author who used that.
+
+None of them retires: jou's record 23 is the shape to read, three lines long -
+the `0x1E` seat, then an infinite `0x1A` / `0x1B` wait loop - so the VM parks
+and the render tail scrolls forever.
 
 Engine port: `engine-core::world::ambient::vram_scroll` (`mode4_integrate`
 countdown + `rotate_rect` texel kernel), queued per game tick by
@@ -309,21 +368,25 @@ effect-actor script. It is the **second instruction of partition-1
 placement 29**, a full placed actor with its own dialogue: `25` (nop),
 `34 30 00` (install), then a `SysFlag.Test 0x1A` that either parks the
 actor at the off-map `(0x7F, 0x7F)` tile and self-loops, or seats it on a
-real tile and runs its script. The install is ahead of that branch, so it
-fires whichever way the flag reads.
+real tile and runs its script.
 
-That is why a shape-filtered census of *pure* effect scripts
-(`engine-core::man_field_scripts::ambient_effect_installs`, which requires
-the record to contain nothing but nops, flag writes, the install and the
-self-loop) reports town0e as having no ambient install: the record is not
-pure, not absent. `scene_stager_installs` - the unfiltered op-`0x34` sub-3
-census over all three partitions - finds it.
+Both halves of the [entry-slice rule](#which-installs-fire-at-scene-entry)
+apply exactly here, which is what makes town0e the worked example for it: the
+record opens `25`, so the pre-run runs at all; the install sits ahead of the
+`SysFlag.Test`, so it is in the unconditional prefix and fires whichever way
+the flag reads. A census that instead discriminates on script *shape* - the
+record containing nothing but nops, flag writes, the install and a self-loop -
+reports town0e as having no ambient install, because the record is not pure,
+not absent.
 
-What the disc bytes do **not** settle is the moment it fires. Retail
-pre-runs each partition-1 placement's channel at scene entry, and the
-install is ahead of every blocking op in this record, so it should land in
-that first slice - but that step is an inference from the settled pre-run
-mechanism, not something a live capture has shown for this scene.
+What the disc bytes do **not** settle is the precise moment inside scene load.
+The pre-run mechanism is disassembly-settled and this record is inside its
+first slice, but no live capture has shown that slice running for this scene.
+
+The tree it installs is small and entirely about the VDF morphs: record 1 fans
+out into two render-mode nodes, three copies of the mesh record binding
+env-pack slot 112 and one binding slot 113, and it is the slot-113 part whose
+op-`0x0A` arms lanes 10 / 11 under the `0x1000` recycle envelope.
 
 **Render substitution** (`FUN_8001ADA4` `0x8001B424..`, per drawn group):
 when the part's flags carry bit `0x1000`, `FUN_8001C604(actor, group)`
@@ -357,13 +420,16 @@ during its cutscene set pieces. Scenes with retail arming are untouched
 
 ## Engine + viewer wiring
 
-- `engine-core::man_field_scripts::ambient_effect_installs` scans the MAN
-  P1 effect scripts; scene entry auto-spawns each install
-  (`World::spawn_ambient_record` - PORT of the `FUN_80021B04` prescript
-  path, including the spawn-time first run and op-`0x25` recursion). It is
-  the shape-filtered census, so a scene whose install rides a placed
-  actor's script (town0e) does not auto-spawn - the unfiltered
-  `scene_stager_installs` is what finds those.
+- `engine-core::man_field_scripts::scene_entry_ambient_installs` is the
+  census both hosts run at scene entry - the
+  [entry-slice rule](#which-installs-fire-at-scene-entry) over every P1
+  placement, so a scene whose install rides a placed actor's script (town0e)
+  auto-spawns like any other. Each install goes to
+  `World::spawn_ambient_record` (PORT of the `FUN_80021B04` prescript path,
+  including the spawn-time first run and op-`0x25` recursion). The narrower
+  `ambient_effect_installs` (pure effect scripts only) and the unfiltered
+  three-partition `scene_stager_installs` remain as the two sub-censuses the
+  format work uses; neither is the entry rule.
 - `World::step_ambient_fx(vram)` drains the retail game-tick bank, ticks
   the parts, and applies both render-tail arms: the `ClutCellFx` writes
   through a per-rect capture cache, and the mode-4 strip rotations in tick
