@@ -39,6 +39,12 @@
 //! control-flow mirror alongside it and no host keys off it yet. The
 //! step machines below are therefore verified against the disassembly
 //! but exercised only by unit tests.
+//!
+//! That reason covers the **step machines** and nothing else. The
+//! `sub15_*` family below are free functions the machine never calls, so
+//! building a host for [`SaveScreenMachine`] would not reach them; they
+//! carry their own reason and a reader should not read this heading onto
+//! them.
 
 /// Sub-screen ids, as indexed out of the retail pointer table.
 ///
@@ -786,12 +792,16 @@ pub enum Sub15ListSource {
 ///
 /// PORT: FUN_801DA2A0 (see `ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`)
 ///
-/// NOT WIRED: nothing constructs a [`SaveScreenMachine`] - the module's own
-/// disclosure applies. Sub-screen `0x15` additionally has no engine screen
-/// of its own: the ability bitfield is surfaced through
-/// [`crate::accessory_passives`] and the spell list through
-/// [`crate::spell_menu`], each with its own typed row model, so there is no
-/// caller that wants a row *count* keyed by a retail step number.
+/// NOT WIRED: sub-screen `0x15` has no engine screen. The ability bitfield
+/// is surfaced through [`crate::accessory_passives`] and the spell list
+/// through [`crate::spell_menu`], each with its own typed row model, so
+/// nothing wants a row *count* keyed by a retail step number.
+///
+/// The module's "nothing constructs a [`SaveScreenMachine`]" is **not** the
+/// blocker here and this family should not cite it: these four are free
+/// functions, no step machine calls them, and giving the module a host
+/// would leave them exactly as unreached as they are now. A disclosure that
+/// borrows the file's headline reason reads as one gap and is two.
 pub fn sub15_list_source(step: u8) -> Sub15ListSource {
     match step {
         2 | 5 => Sub15ListSource::Abilities,

@@ -26,6 +26,14 @@ at `block + 0x86F + n*0x414`. See
 [`docs/subsystems/save-screen.md`](../subsystems/save-screen.md)
 for the wrapper around it.
 
+"Verbatim dump" is true of the bytes and not of the whole block. Editing
+a record in place also invalidates the block's additive checksum at
+`block + 0x1FFC`, which retail's loader compares before it will accept
+the save - a stale word captions the slot "Damaged data." and the record
+never reaches RAM. `legaia_save::card::restamp_sc_block_checksum` is the
+fix-up, and `write_retail_char_records` applies it for its callers; see
+[the checksum section](../subsystems/save-screen.md#save-block-checksum-fun_801e38d8).
+
 Field offsets are pinned by a fusion of three sources:
 
 - decompiled function dumps under `ghidra/scripts/funcs/` (notably
