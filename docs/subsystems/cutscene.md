@@ -357,6 +357,18 @@ software decoder does not model, so they carry no port site and are listed in
 `scripts/ci/port-catalog-ignore.toml`. The two spin waiters additionally share their VA with the
 fishing overlay's own resident, so the bare address is not one function either.
 
+The overlay also carries a `mode`-selecting wrapper over each waiter - `FUN_801CFE20` and
+`FUN_801CFE5C`, argument `0` blocking and anything else polling the busy bit, the libpress
+`DecDCTinSync` / `DecDCToutSync` shape. **Neither is reachable.** A five-form reference scan
+([`address-reference-scan.md`](../tooling/address-reference-scan.md)) over `SCUS_942.54`, the
+based overlay images and the raw PROT entries finds no word, `jal`, `j`, branch or `lui`+`addiu`
+reference to either address in any image. Retail waits on a channel from the DMA kick routines
+instead - `FUN_801CFFDC` calls `FUN_801D0100` and `FUN_801D0070` calls `FUN_801D0198`, each
+before starting its transfer - so the wrappers are linked in and never called. They are ported
+in `legaia_engine_core::mdec_dma_sync` for the shape; that module records them as
+retail-unreachable rather than as a wiring gap, because no host call could make them correspond
+to something the game does.
+
 #### Remaining MDEC / St helpers
 
 Four more overlay helpers sit on that same clean-room boundary and carry no port site:
