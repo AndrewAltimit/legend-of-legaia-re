@@ -352,6 +352,13 @@ own callers never index past `0xC`. Every one of those thirteen records passes
 the shape check - count within the record, and every non-actor id inside the
 61-entry effect space - which is what the parser guards on.
 
+The group table has exactly **one** consumer. A reference scan of
+`SCUS_942.54` plus every base-mapped overlay image - literal word at any
+alignment, `lui`+`addiu` / `lui`+`ori`, `jal` / `j` - finds `0x801F6470`
+materialised once, at `0x801E2370` inside `FUN_801E22C8` itself. Its two
+sibling tables are reached from five sites each, always in pairs, which is the
+structural statement that one id indexes both.
+
 The caller is the damage-application primitive `FUN_800402F4`, which reaches
 `jal 0x801e22c8` from eleven branches and chooses the group id per branch: eight
 literals (`5`..`0xC`), two computed, and one forwarding its own `param_2`. The
