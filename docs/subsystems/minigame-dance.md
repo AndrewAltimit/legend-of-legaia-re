@@ -192,8 +192,8 @@ This cluster is what the live trace surfaced as the resident mode-24 code (the `
 |---|---|---|
 | `FUN_801d3a2c` | **Per-frame floor pass.** Clears `DAT_801d6084`, walks the actor list when not paused, then sweeps the cell grid spawning one tile actor per drawn cell. See [The floor pass](#the-floor-pass). | Confirmed (structure); the exact per-cell emit is Inferred |
 | `FUN_801d2a10` | **Height-ramp install + step-marker floor pass.** Installs the shared 16-entry height ramp, then walks a `(x, y, width, height)` rect spawning marker tile actors. See [The floor pass](#the-floor-pass). | Confirmed (structure) |
-| `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. | Confirmed |
-| `FUN_801d3f54` | **Per-cell step-marker lookup.** Indexes a per-row header at `base + row*4` (count at `+4`, sub-list offset at `+2`), walks the sub-list (per-row stride from a table at `row - 0x7ff84ce8`) and returns the record whose first two bytes match the requested `(x, y)`, else NULL. | Confirmed |
+| `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. See [The floor pass](#the-floor-pass) for which sub-table it asks for. | Confirmed |
+| `FUN_801d3f54` | **Sub-table record lookup by cell.** First argument is the **kind** index, not a row: header offset `s16` at `base + kind*4 + 2`, count `s16` at `+4`, record stride the byte at `_DAT_8007B318 + kind`. Returns the first record whose two leading bytes match the requested `(x, y)`, else NULL. | Confirmed |
 
 ### The floor pass
 
@@ -204,6 +204,16 @@ Three regions of the scene buffer are involved. Tile **records** are `0x20` byte
 Per cell, both passes: read the cell word, take its tile record, require the record's `+0x12` bit `0x4`, probe the neighbour cell `(x + rec[6], y + rec[7])` and require it inside `0 ..= 0x7f`. `FUN_801d3a2c` additionally rejects a neighbour whose cell word carries bit `0x400`; `FUN_801d2a10` does not. The world position is `(x * 0x80 + rec[0] + 0x40, ramp[height nibble] + rec[2], y * 0x80 - (rec[4] - 0x40))` - note the **z** term subtracts. The spawn goes through the shared actor-spawn API against a transform template, and the record's `+0x1e` / `+0x12` bits are folded into the spawned actor's `+0x74` and `+0x10`.
 
 `FUN_801d2a10`'s two extras are the ramp and the marker template. Before the walk it writes the 16-entry ramp `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the *same* table `FUN_801d6028` and both floor passes later index by the terrain nibble, so the "per-column Y-offset table" reading of it was wrong: it is the terrain height ladder. Per cell it then calls `FUN_801d3ec0` for a step marker and turns its `rec[2] + 1` into a template choice: clip indices `6 ..= 9` take the marker template with `clip - 6` stamped into the spawned actor's `+0x50`, anything else non-zero takes the plain floor template, and `0` skips the cell.
+
+The step marker is **not a marker-specific record**. The call is
+`FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`
+region block - the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger
+records the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`)
+resolves, scanned primary-then-fallback exactly the same way. The marker's clip
+index is that record's `record` byte plus one. See
+[`field-map.md`](../formats/field-map.md) and
+[`encounter.md`](../formats/encounter.md) for the block; the engine already
+decodes it as `engine-core::field_regions::TileTrigger`.
 
 Its four arguments are `(x0, y0, width, height)` - retail computes the loop bounds as `x1 = a2 + a0` and `y1 = a3 + a1`, so the third and fourth are **extents**, not end coordinates. The `y << 8` in the cell address is the grid's row byte pitch, not a fixed-point conversion.
 
@@ -693,6 +703,14 @@ An on-beat **hit fires no ring cue**: it keys voices directly through
 each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
 `0x3C + r` (two voices via `func_0x80065034`, volume from the config global
 `_DAT_80084580`). **Confirmed.**
+
+Both calls fill the primitive's full eight-argument shape
+`(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - the order the SCUS
+cue drainer `FUN_80016B6C` pins - at **level `2`** (`li a1,0x2`), and both
+volume slots are the same `(_DAT_80084580 << 0xf) >> 0x10` halving every
+ordinary cue uses. The level and the program are the two arguments the engine
+port used to drop; the program is what makes the browser page's `tones[1]` bank
+lookup the right one rather than a guess.
 
 ## Open
 

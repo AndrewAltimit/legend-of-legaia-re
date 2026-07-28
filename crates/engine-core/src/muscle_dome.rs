@@ -410,14 +410,22 @@ pub struct ContestSettlement {
 /// `(course, round)`; `prize_already_awarded` is the `0x6CB` flag-bank
 /// bit.
 ///
-// NOT WIRED: three of its inputs have no producer in the port. The
-// `score_table_entry` is a cell of the arena overlay's per-`(course, round)`
-// score table `DAT_801d1860`, for which `legaia_asset` has no parser; the
-// `continuing` latch belongs to a course *ladder* the port does not model
-// ([`MuscleDomeSession`] is a single contest with no course id and no continue
-// prompt); and `prize_already_awarded` is the story-flag `0x6CB` bit, which
-// nothing reads on this path. Wiring it needs the score table parsed and the
-// contest promoted to a course run.
+// NOT WIRED: **one** of its three inputs is the blocker, not three. The other
+// two are cheap and the earlier reason overstated them:
+//
+// - `score_table_entry` needs no new subsystem. `DAT_801D1860` sits at file
+//   offset `0x3048` of the raw PROT 0977 entry (base `0x801CE818`), laid out
+//   `course * 0x40 + (round - 1) * 4` for three courses of 16 rounds, and
+//   `legaia_engine_ui::other_game_hud::parse_sprite_table` already reads that
+//   same entry at a fixed offset - the pattern transfers verbatim.
+// - `prize_already_awarded` is bit `0x6CB` of the system-flag bank the engine
+//   does model; [`crate::prize_exchange`] gates its own availability on the
+//   same bank.
+//
+// The real gap is `continuing`, and it gates every arm: [`MuscleDomeSession`]
+// is a *single* contest with no course id, no 1..=13 round progression and no
+// continue prompt, so nothing can answer whether a leg was survived. Promoting
+// the session to a course run is the work; the other two follow it.
 /// PORT: FUN_801d0f60
 pub fn settle_contest(
     score: i32,

@@ -1312,12 +1312,23 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
     p >> shift
 }
 
-// NOT WIRED: a textured-quad emit needs both halves of a source the engine does
-// not assemble - the 51-record widget descriptor table
-// (`legaia_asset::baka_opponents::parse_baka_hud`, which no host calls) and the
-// PROT 1203 HUD sprite page uploaded into VRAM. The duel HUD in the play window
-// is font text, so there is no textured quad to build. Wiring it needs that page
-// resident plus a quad sink in the renderer's sprite pass.
+// NOT WIRED: **the two sources the earlier reason called missing both exist.**
+// `legaia_asset::baka_opponents::parse_baka_hud` is called by the play window
+// (`window/minigames.rs`, which stages the 51 records for the duel) and by the
+// browser duel page, and that page also decodes the PROT 1203 art pack the
+// widgets sample. The port already hands both hosts retail's whole argument
+// tuple: `BakaChrome` emits one
+// [`ChromeDraw`](crate::baka_fighter_chrome::ChromeDraw) per call of this
+// emitter, carrying the same `(widget, x, y, brightness, size)`, and the play
+// window resolves its `u` column through
+// [`crate::baka_fighter_chrome::glyph_u`].
+//
+// What has no consumer is only the last step - the POLY_GT4 assembly itself.
+// The play window draws each `ChromeDraw` as font text and the browser page
+// composes its own quads in the page's GL layer, so nothing asks for a
+// [`HudWidgetQuad`]. This is the same shape as the dome HUD emitters in
+// `legaia_engine_ui::other_game_hud`: a Rust-side quad sink is one gap across
+// three minigames, not three gaps.
 /// PORT: FUN_801d5ed0 - the Baka Fighter HUD textured-quad emitter.
 ///
 /// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the

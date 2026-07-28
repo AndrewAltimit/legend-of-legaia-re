@@ -531,7 +531,19 @@ the coin strip through widget `0x2f`, `u = 0x58 + digit * 0x10`). The digit
 drawers' right-aligned decimal decomposition is ported as
 `engine-core::baka_fighter::right_aligned_number_cells` / `coin_digit_cells`
 / `single_digit_cell`. Parser
-[`legaia_asset::baka_opponents::parse_baka_hud`].
+[`legaia_asset::baka_opponents::parse_baka_hud`], which both hosts run - the
+play window stages the 51 records for the duel, the browser duel page decodes
+them alongside the PROT 1203 art pack the widgets sample.
+
+The engine splits `FUN_801d5ed0` in two, which is worth knowing when reading its
+wiring status: `BakaChrome` emits one `ChromeDraw` per call of the retail
+emitter, carrying the same `(widget, x, y, brightness, size)` tuple, and both
+hosts consume those - but each then draws them its own way (font text natively,
+page-composed quads in the browser), so the `POLY_GT4` assembly
+`engine-core::baka_fighter::hud_widget_quad` performs has no consumer. That is
+the same shape as the dome HUD's emitters in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md); a Rust-side quad sink is
+one gap across the minigames, not one per minigame.
 
 The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
 
@@ -620,6 +632,15 @@ gate is the match-timer global read as an unsigned window - `DAT_801dbf44 -
 400 < 100`, i.e. the `400..=499` band, distinct from the `== 100` band a live
 round runs in - and outside that band it retires both the editor actor and the
 fighter actor and returns. Inside it:
+
+It is **linked, not dead**. Nothing `jal`s it; its address is the callback word
+of a `0x18`-byte actor prototype at `0x801D7670` -
+`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]` - whose immediate sibling at
+`0x801D7688` carries `FUN_801d49e8`, the mirrored sprite pass. So the editor is
+spawnable through the ordinary actor path and it is the *band* that never
+opens, which is a different claim from "unreferenced code" (contrast
+`FUN_801d5c2c` in [`minigame-fishing.md`](minigame-fishing.md#scene-geometry-helpers),
+which really has no reference of any form).
 
 - draws the action / frame cursors and their labels
   (`func_0x8002b98c` / `func_0x8002b984` / `func_0x80017d98`);

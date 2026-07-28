@@ -1187,42 +1187,59 @@ pub fn dance_beat_track_note_x(base_x: i32, i: u32, frac: u32) -> i32 {
     base_x + (i as i32) * 16 - ((frac * 16 / BEAT_PERIOD) as i32 + 5) - 4
 }
 
+// REF: FUN_80065034 (the voice-attr primitive both key-ons go through)
+/// Channel mixer level both sting voices are keyed at (`li a1,0x2`).
+pub const STING_LEVEL: i8 = 2;
+
+/// VAB **program** both sting voices come from (`li a2,0x1`) - the argument
+/// the port used to drop, and the one that says which tone bank the
+/// `2r` / `2r + 1` tone indices are inside.
+pub const STING_PROGRAM: u8 = 1;
+
 /// One of the two voices a good-step sting keys (`FUN_801d3d78`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DanceStingVoice {
     /// Voice id handed to the SPU key-on primitive (`0x12` / `0x13`).
     pub voice: u16,
-    /// Tone within the sting's program (`2r` / `2r + 1`).
+    /// Channel mixer level ([`STING_LEVEL`]).
+    pub level: i8,
+    /// VAB program ([`STING_PROGRAM`]).
+    pub program: u8,
+    /// Tone within [`STING_PROGRAM`] (`2r` / `2r + 1`).
     pub tone: i16,
     /// Note the voice is keyed at (`0x3c + r`).
     pub note: i16,
 }
 
-// NOT WIRED: the sting is a direct two-voice SPU key-on (voice, tone, note),
-// and the engine's audio host exposes only cue-id scheduling
-// (`AudioBgmDirector::enqueue_sfx` against the resident SFX bank). Wiring it
-// needs a host key-on API that takes a voice/tone/note triple, plus the dance
-// overlay's own sound bank resident to key it against.
+// NOT WIRED: the reason here used to name two prerequisites, and the browser
+// dance page holds **both**. It keeps the dance overlay's own VAB resident
+// (`web-viewer::minigames_dance::DancePresentation::sting_vab`, whose own note
+// says `FUN_801d3d78` bypasses the cue ring) and it keys a voice from an
+// explicit `(program, tone, note)` triple in `dance_sting`. What it does not do
+// is ask this kernel for the triple: it recomputes `tone = 2r + layer` and
+// `note = 0x3C + r` inline, and reaches the bank as `tones[1]` - the same
+// [`STING_PROGRAM`] this returns. So the gap is one call, not a subsystem. The
+// native window is a separate case and does still lack a key-on API:
+// `AudioBgmDirector::enqueue_sfx` only schedules cue ids.
 /// PORT: FUN_801d3d78 - the on-beat "good step" sting. A judged direction fires
 /// **no** ring cue; instead one of three stings (`r = rand() % 3`) keys two
-/// voices together through the SPU key-on primitive (`FUN_80065034`): voice
-/// `0x12` at tone `2r` and voice `0x13` at tone `2r + 1`, both at note `0x3c + r`
-/// (retail takes the volume from the config global `DAT_80084580`). Returns the
-/// two voice descriptors; the key-on itself is the audio host's.
+/// voices together through the SPU voice-attr primitive (`FUN_80065034`, whose
+/// eight arguments are `(voice, level, program, tone, note, 0x40, vol_l,
+/// vol_r)`): voice `0x12` at tone `2r` and voice `0x13` at tone `2r + 1`, both
+/// in program [`STING_PROGRAM`] at level [`STING_LEVEL`] and note `0x3c + r`.
+/// Both volume slots are the voice-volume config `_DAT_80084580` halved, the
+/// same value [`crate::other_game_overlay::cue_volume`] decodes. Returns the two
+/// voice descriptors; the key-on itself is the audio host's.
 pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
     let note = 0x3c + r as i16;
-    [
-        DanceStingVoice {
-            voice: 0x12,
-            tone: (2 * r) as i16,
-            note,
-        },
-        DanceStingVoice {
-            voice: 0x13,
-            tone: (2 * r + 1) as i16,
-            note,
-        },
-    ]
+    let voice = |voice: u16, tone: i16| DanceStingVoice {
+        voice,
+        level: STING_LEVEL,
+        program: STING_PROGRAM,
+        tone,
+        note,
+    };
+    [voice(0x12, (2 * r) as i16), voice(0x13, (2 * r + 1) as i16)]
 }
 
 /// The sequence-clear ("Good!") banner and its two flanking star sparkles
@@ -1328,11 +1345,14 @@ pub fn dance_countin_banner_envelope(frame: i32) -> CountInBanner {
     }
 }
 
-// NOT WIRED: the port's dancers are rules records, not world actors - there is
-// no per-dancer actor with the `+0x5c` spin counter and `+0x10` flag word this
-// predicate reads, and no clip driver behind it. The spin state itself lives on
-// the session ([`DanceGame::groovy_lock`]); what is missing is an animated
-// dancer actor for the gate to admit.
+// NOT WIRED: the two arms are not equally blocked, and it is worth saying which
+// is which. The spin arm's datum exists - the session holds the `+0x5c` turn
+// counter and [`DanceGame::in_groovy_move`] already evaluates `spin > 0` on it -
+// so wiring that half would change nothing. The `+0x10` flag arm has no
+// analogue at all: the port's dancers are rules records with no actor flag
+// word, so passing `0` for `flags` would leave the second arm permanently dead
+// and the predicate degenerate. Both a dancer actor carrying that word and the
+// clip driver the predicate gates have to exist first.
 /// PORT: FUN_801d4098 - the per-dancer actor clip-driver gate. Retail hands the
 /// dancer to the shared clip driver `FUN_800204f8` only when its spin counter
 /// (`+0x5c`, the groovy-move turns left) is positive **or** its flag word
@@ -1343,10 +1363,19 @@ pub fn dance_clip_driver_gate(spin: i16, flags: u32) -> bool {
     spin > 0 || (flags & 0x1000) != 0
 }
 
-// NOT WIRED: the rig index selects a per-dancer VRAM face strip for two
-// `MoveImage` blits. The engine uploads no dancer face strips and has no
-// blit pass for the dance floor, so nothing can consume a rig id. Wiring it
-// needs the dance overlay's face pages resident plus a VRAM blit host.
+// NOT WIRED: **both prerequisites the earlier reason named already exist.**
+// `legaia_asset::dance_art::FACE_RIGS` carries the four rigs' strips and frame
+// tables, `dance_art::face_window_rgba` performs the two `MoveImage` blits, and
+// the browser dance page runs the pair per frame
+// (`web-viewer::minigames_dance::dance_face_rgba`) - so "no face pages
+// resident, no blit pass" is false.
+//
+// What has no consumer is the *selector*. The host indexes `FACE_RIGS` by a rig
+// id it takes from the disc **cast table** (`dance_cast`'s per-dancer kind,
+// which on the qualifier floor is already `0/2/3`), so it never needs the
+// overlay's hard-coded slot -> rig remap. The two agree on that floor, which is
+// what makes this redundant rather than missing; a caller appears only if a
+// host ever drives the floor by slot index instead of by cast kind.
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -2244,6 +2273,12 @@ mod tests {
             assert_eq!((a.voice, b.voice), (0x12, 0x13));
             assert_eq!((a.tone, b.tone), ((2 * r) as i16, (2 * r + 1) as i16));
             assert_eq!((a.note, b.note), (0x3c + r as i16, 0x3c + r as i16));
+            // Both voices carry the two arguments the earlier port dropped:
+            // `li a1,0x2` (level) and `li a2,0x1` (program). The program is
+            // what makes the browser page's `tones[1]` bank lookup the right
+            // one rather than a guess.
+            assert_eq!((a.level, b.level), (STING_LEVEL, STING_LEVEL));
+            assert_eq!((a.program, b.program), (STING_PROGRAM, STING_PROGRAM));
         }
     }
 

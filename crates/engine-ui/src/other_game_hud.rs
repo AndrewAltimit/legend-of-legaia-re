@@ -43,6 +43,16 @@
 //! The site's Muscle Dome page consumes the parsed records as the geometry
 //! source for its intro card and interval heading
 //! (`legaia-web-viewer::minigames_muscle::muscle_hud_json`).
+//!
+//! What is *not* available is where each quad goes. The three emitters have
+//! 9 / 31 / 23 retail call sites respectively, every one of them inside PROT
+//! 0977's own hub screens (`0x801CF2C0 .. 0x801D0324`), and none of those
+//! screens is ported - so the `(x, y, scale)` triples exist only as immediates
+//! inside code the engine does not run. Routing a page's art through these
+//! emitters would make its on-screen *extent* disc-derived (from each record's
+//! `size` field, which is real progress) while leaving its *placement*
+//! invented. That trade is why the tags below name a renderer rather than a
+//! parser.
 
 /// Byte stride of one sprite descriptor in the table at `0x801D170C`.
 pub const HUD_SPRITE_STRIDE: usize = 0x14;
