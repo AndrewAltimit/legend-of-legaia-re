@@ -32,6 +32,10 @@ scripts/ghidra-analysis/find-address-word-refs.py 8005126c
 # Widen to every extracted PROT entry (raw bytes; no VA is claimed for them).
 scripts/ghidra-analysis/find-address-word-refs.py 8005126c --prot
 
+# Name the image that holds the routine, so branch hits from its slot
+# siblings are marked instead of counted (see "A branch cannot cross images").
+scripts/ghidra-analysis/find-address-word-refs.py 801e58a8 --home field
+
 # "Who references this table?" - expand a VA range to its word-aligned members.
 scripts/ghidra-analysis/find-address-word-refs.py --range 800705fc:80070760
 
@@ -57,6 +61,32 @@ same VA is a different word in each slot-A sibling: the *image* is as much of
 the answer as the offset is. The bottom row is why `--prot` hits carry no VA -
 a streamed entry has no load base, and inventing one would be the phantom-VA
 defect all over again.
+
+## A branch cannot cross images
+
+Of the five forms, four carry a copy of the address they reach and are
+therefore evidence wherever they are found: a `jal` in one overlay can call a
+routine in another, or in SCUS, whenever both are resident. A **branch is not
+like that**. It is PC-relative, so it can only reach code in its own image -
+which makes a `BR` hit evidence about *that image's* copy of the VA and about
+nothing else.
+
+Under a shared slot-A base every overlay has a byte at every VA, so this is not
+a corner case. Two of the addresses on this page's own worklist read as
+referenced for exactly that reason and are not: `0x801CFE20`, the FMV overlay's
+MDEC-in sync wrapper, collects a branch from the **field** overlay, whose bytes
+at that VA are the epilogue of an unrelated routine; `0x801E58A8`, a field
+overlay list-count seed, collects one from **battle_action**. Neither branch
+can reach the routine it appears to reference.
+
+`--home <image>` makes the check mechanical. Name the image that holds the
+routine - [`locate-entry-image.py`](../../scripts/ghidra-analysis/locate-entry-image.py)
+answers that from the prologue - and branch hits from any other overlay print as
+`br~` and tally under `branch_alias` instead of `branch`. When a target's only
+hits are aliased branches the tool says so outright. The flag exits non-zero on
+a name that matches no loaded overlay, so a typo cannot quietly mark every hit
+an alias. SCUS is never marked: its base is unique, so a hit there is never an
+aliasing artifact.
 
 ## Classification
 
@@ -107,6 +137,9 @@ against a known answer before trusting a "nothing found":
   table needs the table *base* scanned too before it means anything.
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
+- **Aliased branches.** A `BR` hit in an image that does not hold the routine
+  is not a reference to it; pass `--home` and read `branch_alias`
+  ([above](#a-branch-cannot-cross-images)).
 
 ## Relation to the in-container scripts
 
