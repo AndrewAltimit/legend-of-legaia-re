@@ -2764,6 +2764,49 @@ Grade `disassembly`: every verdict is a word- or token-exact comparison
 against the corrected-extent extracted images, with each rival reading
 excluded by the same comparison rather than by arithmetic.
 
+## Measurement + corpus
+
+| Thread | Status | Evidence | Answer |
+|---|---|---|---|
+| What is in the `SCUS_942.54` code gap the citation graph never listed | resolved | `disassembly` + `capture` | [details ↓](#what-is-in-the-scus_94254-code-gap) |
+| Why three plausible-code blocks in `SCUS_942.54` can never be a function body | resolved | `disassembly` | The BIOS kernel-patch cluster copies `0x8006EF78` and `0x8006F058` into kernel RAM, and `0x8005BBB8` is the stock PSX exception-handler prologue with no reference of any of the five forms anywhere on the disc. Each is real MIPS that executes only after relocation, so nothing calls it at its link address and no function record exists. See [`runtime-libs.md`](functions/runtime-libs.md#the-payload-blocks-are-code-that-is-never-a-function). |
+| Is the unattributable dump-extent residue a re-dumping problem | resolved (no) | `capture` | Three shapes remain and only one is dump-shaped: short windows no image reproduces at that VA, bytes in no extracted image at any VA (needs an **extraction**), and extents where two dumps genuinely resolve to different images (an answer). The earlier "repaired by re-dumping" reading is on [`re-do-not-re-walk.md`](re-do-not-re-walk.md#measurement-readings). |
+| Can the inner of two nested overlay spans be measured at all | resolved (yes) | `capture` | Address ambiguity is total for it by construction; byte attribution places most of its extents anyway and the row reports. What is structural is that it can never be resolved *by address* - a statement about one method, not about the image. |
+
+### What is in the `SCUS_942.54` code gap
+
+*Status:* resolved
+
+The gap is what the citation-denominated instruments cannot see, and it is
+mostly one thing. Working
+[the disc-denominated gap list](../tooling/disc-coverage.md) until it stopped
+yielding produced ~95 function entries; a five-form reference sweep over each
+one, across `SCUS_942.54`, the based overlay images and every PROT entry, splits
+them roughly three quarters / one fifth / three:
+
+- **No reference of any form, anywhere.** Ghidra builds functions from the call
+  graph, so a routine nothing references gets no function record, no dump, and no
+  citation - and is therefore invisible to a worklist derived from citations.
+  This is the class only the bytes can find, and it was the majority of what was
+  left.
+- **Referenced from `SCUS_942.54`.** Mostly reached through the entry-stub / init
+  path, or from a body whose own analysis was incomplete.
+- **Referenced only from an overlay** (three): live routines whose only caller is
+  in an image the SCUS-only analysis never sees. The standing "zero static
+  callers is not dead" trap, surfacing as a coverage gap.
+
+Four of the recovered entries are game logic rather than library material and are
+written up in the function directory: the inventory count-add primitive carrying
+the 99 stack cap (`80042FE8`), the CD-read retry step and subsystem mode toggle
+(`8003F210` / `8003EDAC`), and a camera preset (`800260DC`).
+
+Grade `disassembly` for the identifications, `capture` for the reachability
+split - the latter rests on
+[`find-address-word-refs.py`](../tooling/address-reference-scan.md), whose
+negative is a statement about *static* references only: a computed target
+assembled some other way, or a caller in an overlay never extracted, would not
+appear.
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts, and the page to move a row back to if new evidence reopens it.

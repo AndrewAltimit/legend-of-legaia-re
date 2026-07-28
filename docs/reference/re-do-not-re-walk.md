@@ -435,6 +435,24 @@ the *import*, never about the game. The identity questions - which image,
 which offset, is this a function at all - are answered from the extracted
 image at its mapped base, and only from there.
 
+## Measurement readings
+
+Falsified claims about the *instruments*, not about the game. They belong here
+for the same reason the rest do: each was a plausible reading, each was believed,
+and each shaped what work looked worth doing.
+
+| Thread | Verdict | Why |
+|---|---|---|
+| The disc-coverage report's excluded dumps are "typically the ones that report `0 instructions` and hold only decompiled C" | falsified (zero of them reported `0 instructions`) | The files that *do* report `0 instructions` were passing the header regex and being credited a byte each. Of the excluded set, three were C-only and four fifths were not dumps at all - pointer stubs, recorded negatives, data windows, analysis output. The count was real; the sentence attached to it had never been checked against the files. |
+| The inner of two nested overlay spans "cannot be repaired ... no amount of dumping moves it" | falsified | Address ambiguity really is total for the inner span - every extent in it falls in both by construction. Byte attribution then places most of those extents in one image or the other, and the row reports. The **starting point of a measurement was mistaken for its limit**, and the structural-sounding argument made it read as settled. |
+| The unattributable residue "is repaired by re-dumping, not by extracting another overlay" | falsified | Re-dumping repairs almost none of it. What remains is windows a few instructions long that no image reproduces at that VA, bytes in no extracted image at any VA (which needs an *extraction*), and extents where two dumps genuinely disagree (which is an answer). The residue had been described from its class names rather than counted from the artifact. |
+| An over-strict header regex is one instrument's bug | falsified (every instrument had its own) | Each tool over the dump corpus carried a private header regex, and the corpus spells all four header fields several ways, so each silently rejected a different subset of **real dumps** and reported them as a corpus deficiency. Fixed by one shared parser; see [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md#not-every-file-in-funcs-is-a-dump). |
+
+**Generalises to:** a measurement instrument has no oracle, so a number it prints
+is believed on the strength of its *explanation*. Check the explanation against
+the files, not against its own plausibility - three of the four rows above are a
+correct count with a wrong story attached, and the story is what directed effort.
+
 ## Related pages
 
 - [`open-rev-eng-threads.md`](open-rev-eng-threads.md) - the live hunts.

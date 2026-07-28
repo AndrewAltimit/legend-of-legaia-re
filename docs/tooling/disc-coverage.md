@@ -133,6 +133,37 @@ at ~94% plausible opcodes and ~0% pointer density, and the large gaps reported
 as code match that signature while the head of the segment (87% printable ASCII,
 48% plausible) does not.
 
+### What the `SCUS_942.54` gap turned out to be
+
+Worth stating as a result rather than as method, because it is the clearest
+demonstration of what this measurement is *for*.
+
+Working the gap list until it stopped yielding produced ~95 function entries. A
+five-form reference sweep
+([address-reference-scan.md](address-reference-scan.md)) over every one of them,
+across `SCUS_942.54`, the based overlay images and every PROT entry, splits them
+three ways:
+
+| | Share | Why it had no dump |
+|---|---|---|
+| **no reference of any form, anywhere** | about three quarters | Ghidra creates functions from the call graph. A routine nothing references gets no function record, so it gets no dump, so nothing cites it, so it is invisible to any citation-denominated instrument - including a dump worklist derived from one. |
+| referenced from `SCUS_942.54` | about a fifth | mostly reached through the entry-stub / init path, or from a body whose own analysis was incomplete. |
+| referenced only from an overlay | three | the routine is live, and the call comes from an image the SCUS-only analysis never sees - the standing "zero static callers is not dead" trap, showing up here as a coverage gap. |
+
+The first row is the point. **The bytes find the class the citation graph
+structurally cannot**, and they find it as a *majority* of what was left. A
+worklist built from what the project has cited can never list a routine nobody
+has cited; a worklist built from an image's own bytes lists it whether anyone
+has heard of it or not.
+
+Two cautions on quoting the first row. "No reference exists" is much stronger
+than "no SCUS caller" - the sweep covers the overlays and the PROT archive - but
+it is still a statement about *static* references, so a computed target
+assembled some other way, or a caller in an overlay that has never been
+extracted, would not appear. And an unreferenced routine is not automatically
+dead code in the interesting sense: much of this band is linked-in library
+material the game does not call.
+
 ### A code gap is not automatically un-analysed code
 
 Subtracting the dumps leaves a remainder, and the obvious reading - "these are
