@@ -16,7 +16,7 @@
 //! | `0xA` | `[0, 7)` | everyone |
 //! | anything else | `[code, code + 1)` | one explicit actor |
 //!
-//! Two things about the output are easy to get wrong and are faithful here:
+//! Three things about the output are easy to get wrong and are faithful here:
 //!
 //! * **The centroid is negated.** Retail divides `-sum` by the accepted count,
 //!   so the returned pair is the *camera-space translation* that brings the
@@ -50,8 +50,8 @@
 //! arm writes `9` (the enemy row) and its class-`7` arm writes `8` (the party)
 //! into `active_target`, one roll in three each.
 //!
-//! Two liveness gates gate the walk, and the port reads the second one
-//! indirectly:
+//! The walk is gated per slot, differently for the two halves of the actor
+//! table, and the port reaches the second gate indirectly:
 //!
 //! * A **party** slot is live when the roster byte `DAT_8007BD10[slot]` is
 //!   non-zero - the per-slot character id, so zero means "no such party

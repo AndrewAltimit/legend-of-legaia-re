@@ -305,7 +305,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | WIRE |
 | `801d9d30` | `apply_shake` | `crates/engine-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` | `crates/engine-vm/src/effect_vm/pool.rs:742` | FALSE INERT |
 | `801e0088` | `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs:287` | FALSE INERT |
@@ -537,22 +537,27 @@ file is the whole of `FUN_801F0348`, is wired through
 inlines the `<< 7` + clamp rather than calling the helper. Deleting the helper
 loses no coverage and costs the address no anchor.
 
-**`build_camera_angle_tween`** (`801d829c`) is `DISCLOSE`, but **the reason
-recorded here was wrong and is corrected**: it read "the engine has no
-per-frame angle walker", and the engine has one. `engine-shell`'s
-`window/battle_cam.rs` glides the battle camera between its traced framings
-through `BattleCamera` / `Glide`, which carries its own `REF: FUN_801D829C`,
-walks the same component order this builder emits, and does the shortest-arc
-yaw. The per-action height snap is a separate channel, not a substitute for a
-walker.
+**`build_camera_angle_tween`** (`801d829c`) was recorded here twice, wrongly
+both times, and is now **`WIRE`, landed**. The first reason read "the engine has
+no per-frame angle walker"; the engine has one, `engine-shell`'s
+`window/battle_cam.rs` `BattleCamera` / `Glide`. The second said adopting the
+table would change that walker's arithmetic, because the builder emits step
+*counts* where the walker uses rates.
 
-What is genuinely absent is the *producer*: retail's arming routine
-`FUN_80021248` is documented and unported, so the walker's endpoints come from
-the traced phase framings instead of from a built table. Its stepping is also
-`f32` at arrive-together rates rather than the integer `{step_count,
-endpoint}` records, so adopting the table changes the walker's arithmetic -
-an `engine-shell` edit, which is why this stays `DISCLOSE` rather than
-becoming a `WIRE` for the `engine-vm` lane.
+It does not emit step counts. The arming routine `FUN_80021248` signs each
+record's first halfword by comparing the endpoint against the live global
+(`0x80021378`, `0x800213D8`), which is only meaningful for an **increment** - so
+the builder's fourth argument is the tween's duration and its output is the
+per-frame increment. That makes retail's law arrive-together with one shared
+duration, which is exactly what `Glide::linear` was recomputing. It now builds
+its rate table from the port, and takes the 12-bit shortest-arc yaw and the TR.z
+projection prescale from it as well. What is still absent is only the
+*producer*: the walker's endpoints come from the traced phase framings rather
+than from retail's arming path.
+
+The lesson generalises: `delta / param` reads as either "how many steps" or
+"how far per step", and a kernel dumped on its own cannot tell you which. The
+consumer can.
 
 **`apply_shake`** (`801d9d30`) is `DISCLOSE`. It previously read `WIRE` on
 `BattleActionHost::screen_shake` as the half-built call site; that verdict is
@@ -590,12 +595,12 @@ already exists.
 
 | Anchor | The clause that was wrong | What holds instead |
 |---|---|---|
-| `801dceac` `target_group_aim` | `bearing_12bit` "is itself unwired for want of the arctan LUT" | It is live on every enemy-cursor step, over `approx_arctan_lut`. |
+| `801dceac` `target_group_aim` | `bearing_12bit` "is itself unwired for want of the arctan LUT" | It is live on every enemy-cursor step, over `approx_arctan_lut`. Both are wired now - see below. |
 | `80046a20` `gauge_colors` | the HUD's bar colour is "a constant of the widget" | It is a per-frame index, from the readout-tint siblings. |
 | `801d829c` `build_camera_angle_tween` | "the engine has no walker" | The native battle camera is one - see above. |
 | `801f0450` (arts auto-combo) | the caller is the unported flow SM `FUN_801D388C` | The caller is the action SM's own `Begin` arm. |
 | `801dba04` / `801db81c` / `801da34c` | "`FUN_801D0748` is not ported" | Its state space is `engine-core::battle_flow`, and it is live. |
-| `801e22c8` `expand_cue_group` | neither cue table "is extracted by a parser" | `0x801F6418` is, as `move_power::EffectAuxTables`; only the group table is not. |
+| `801e22c8` `expand_cue_group` | neither cue table "is extracted by a parser" | Both are, as `move_power::EffectAuxTables`. The blocker is the caller - see below. |
 
 Three shapes produced all six, and each is worth recognising on sight. The
 cue-table row is a fourth, milder one: a reason that quantifies over *both*
@@ -623,15 +628,61 @@ opposite: the battle command SM genuinely is ported, and three disclosures said
 it was not. Read the crate and the file, never the flag, before writing either
 sentence.
 
-The `WIRE` the block wants is one host accessor, and it is out of reach from
-the `engine-vm` side: `BattleActionHost` exposes the scalar
-`range_check(actor, target)` and no per-slot `(x, z)`, while
-`engine-core`'s target-picker slot state already carries each seat's
-`+0x34`/`+0x38` pair. Adding the accessor and implementing it on
-`BattleHostImpl` wires `target_group_aim` plus the facing store at
-`0x801E4370..0x801E43A4`, and puts `approach_distance` within reach of the
-same arm. The composition that wire has to reproduce is pinned as a test in
-`battle_target_group.rs`.
+### The one accessor, and what it did and did not unblock
+
+The `WIRE` the block wanted was one host accessor:
+`BattleActionHost::actor_position(slot) -> Option<(i16, i16)>`, the actor
+`+0x34`/`+0x38` seat, implemented on `BattleHostImpl` off the world actors'
+move state. It landed, and with it the whole facing block at
+`0x801E4334..0x801E43A4` in `magic_cast_begin` - both the single-target arm and
+the `target_group_aim` group arm, which `FUN_801E7320`'s class-`7` / class-`8`
+target codes reach in production.
+
+Two things surfaced only once the kernel had a caller, which is the standing
+argument for wiring over disclosing:
+
+- `FUN_801DCEAC`'s extent output is **floored** at `0x400`, not capped at it
+  (`slti` / `beq` at `0x801DD094`). The port had the compare backwards, and no
+  existing test could see it because every synthetic group was narrower than
+  the bound.
+- the group walk's monster liveness gate reads the actor's `+0x4` prim word,
+  which the port leaves at its default - so a faithful transcription would have
+  produced a kernel that always answered `None`. The summon-fade sweep at
+  `0x801E4B50` zeroes `+0x4` and writes `+0x21C = 0xFF` in the next two
+  instructions, so the port reads the `+0x21C` twin.
+
+The same block turned up one more instance of the shape this page keeps
+finding - **the engine holding a retail decision twice**. The action SM's
+`Begin` arm seeds its turn cursor from the formation-advantage byte
+`ctx[+0x290]` and then latches it, and the port does both; but nothing writes
+`BattleActionCtx::formation_advantage` in production, because `engine-core`
+rolls, seeds and latches its *own* `World::battle_formation` copy at battle
+entry before the SM's first step. So the seed's `0` arm is what runs and its
+other two arms are unreachable. Closing that is a one-line mirror at battle
+entry plus a decision about which of the two latch sites survives - both in
+`crates/engine-core/src/world/`, so it is a sibling lane's edit.
+
+**`approach_distance` was not unblocked**, and the claim here that it would be
+is withdrawn. Its blocker is not geometry: it clamps a *requested* step length,
+and the port's attack band (`attack_advance` / `attack_short_step`) polls
+`range_check` rather than requesting a distance, so no call site holds a value
+for it to clamp. `FUN_801DF570` is also not called from the action SM at all -
+its caller is `FUN_801DEA50`.
+
+### `expand_cue_group`: the table was not the prerequisite
+
+Corrected on the same principle. The row above says only the group table was
+missing; it is parsed now (`EffectAuxTables` reads `0x801F6470` alongside the
+two effect tables, and `battle_cue_group_real.rs` composes the pair off the real
+overlay). That did **not** produce a caller. Retail's only caller is the
+damage-application primitive `FUN_800402F4`, which reaches `jal 0x801e22c8` from
+eleven branches and picks the group id per branch - eight literals, two
+computed, and exactly one forwarding its own `param_2`. The port models
+`FUN_800402F4` as
+the `apply_damage` host hook, whose parameters are the primitive's arguments and
+not its per-branch choices, so no honest single call site exists until that
+dispatch is ported. A disclosure that names a table when the blocker is a
+dispatch is the same error this page records for the panel painters.
 
 ## Known false positives the correction introduces
 

@@ -79,7 +79,8 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
         let Some(aim) = target_group_aim(code, &slots) else {
             return;
         };
-        (-aim.centroid_z, -aim.centroid_x)
+        // Retail's `subu`, which wraps rather than trapping.
+        (aim.centroid_z.wrapping_neg(), aim.centroid_x.wrapping_neg())
     };
 
     let bearing = bearing_12bit_approx(aim_z, aim_x, actor_z, actor_x);
