@@ -72,9 +72,18 @@ pub struct MenuActorSeed {
 ///
 /// PORT: FUN_801e5834
 ///
-/// NOT WIRED: the engine allocates menu actors through
-/// `legaia_engine_core::actor_alloc_host` with typed fields, and no host
-/// root spawns this particular descriptor.
+/// NOT WIRED: the engine has the pool but not the write set. Its one
+/// spawner of a handler actor is
+/// `legaia_engine_core::world::World::open_field_submode_screen`, which
+/// takes a free slot through `spawn_handler_actor`, clears the phase byte
+/// `+0x54`, and then keeps the handler id, the cursor and the panel pen on
+/// a **side** `SubmodeScreen` struct instead of on the actor - so no pooled
+/// actor carries `+0x50` / `+0x14` / `+0x16` / `+0x9C` for this seed to
+/// fill, and `MenuActorSeed` has nowhere to land. The prerequisite is
+/// those four fields on the engine's pooled `Actor`, not a new subsystem;
+/// the descriptor itself (`0x801F2978`) is additionally a second
+/// pooled-actor family that no engine path spawns at all - the engine only
+/// ever seats `ActorHandler::SubmodeDriver`.
 pub fn menu_actor_seed(handler: u16, x: u16, y: u16, param: u16) -> MenuActorSeed {
     MenuActorSeed {
         phase: 0,
@@ -100,8 +109,14 @@ pub struct RowCountSeed {
 ///
 /// PORT: FUN_801e58a8
 ///
-/// NOT WIRED: no engine list model reads these three globals; the pause-menu
-/// and dev-menu row counts in `engine-ui` come from typed Rust lists.
+/// NOT WIRED: the three globals it derives the count from
+/// (`0x8007BDD8` base, `0x8007B8F8` pages, `0x8007B6AC` extra) are not
+/// modelled anywhere in the port, and the actor field it writes (`+0x5C`,
+/// with the `+0x5E = -2` sentinel) is one of the same missing pooled-actor
+/// fields [`menu_actor_seed`] names. Every engine list - the pause menu's,
+/// the dev menu's, the save rack's - counts its own typed `Vec`, so there
+/// is no consumer for a count keyed off a page global either. Both halves
+/// close together with those fields.
 pub fn row_count_seed(base: u16, pages: u16, extra: u32, flag_set: bool) -> RowCountSeed {
     if base == BASE_SENTINEL {
         return RowCountSeed {

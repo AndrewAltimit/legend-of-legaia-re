@@ -1314,6 +1314,9 @@ pub const ROOT_MENU_SAVE_ALLOW_FLAG: u32 = 0x8007_B6A8;
 /// one, which is the direction retail's own op selector confirms
 /// (`0x18` -> `FUN_801DD35C(1, 2)` skips the card-file erase, `0x19` ->
 /// `(1, 1)` performs it).
+///
+/// REF: FUN_801dd35c (the card-driver body whose op selector fixes the
+/// direction of the two gated rows)
 pub const ROOT_MENU_ROUTES: [u8; ROOT_MENU_ROWS as usize] =
     [0x05, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19];
 
