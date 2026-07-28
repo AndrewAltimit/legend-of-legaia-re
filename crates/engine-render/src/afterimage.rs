@@ -28,6 +28,9 @@
 //! the part that would be reused unchanged once a caller exists; do not
 //! delete it.
 //!
+//! REF: FUN_801dea50 - the action effect script, which writes both of the
+//! battle-context words the streak's projection reads.
+//!
 //! Each call to the retail `FUN_801e1ab0` emits **one** semi-transparent
 //! textured quad (a PSX `POLY_FT4`) into the depth-sorted primitive buffer;
 //! the per-frame streak is built by calling it repeatedly. The quad is a

@@ -64,6 +64,11 @@
 //! straight into the `POLY_FT4` packet's `xy0..xy3` slots, so [`xy`]
 //! (`BillboardCorners::xy`) is in exactly that retail vertex order.
 //!
+//! REF: FUN_801e1ab0 - the afterimage streak, the rider whose out-pointer
+//! order fixes [`BillboardCorners::xy`]; ported as [`crate::afterimage`].
+//! REF: FUN_800485bc - a cutscene / world-map sprite emitter riding the same
+//! projector, documented but not ported.
+//!
 //! ## Projection is the hardware path
 //!
 //! The corner projection runs the same two kernels the rest of the crate's
