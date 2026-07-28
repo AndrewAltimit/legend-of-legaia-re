@@ -1,14 +1,22 @@
 //! `tim-list` / `tim-export` / `tim-replace` - texture replacement.
 //!
-//! The modding loop: `tim-list` catalogs every TIM on the disc with its
+//! The modding loop: `tim-list` catalogs every texture on the disc with its
 //! replacement coordinates, `tim-export` decodes one to a PNG for editing,
-//! and `tim-replace` encodes an edited PNG back into a same-size in-place
-//! disc patch (EDC/ECC re-encoded per touched sector).
+//! and `tim-replace` encodes an edited PNG back into an in-place disc patch
+//! (EDC/ECC re-encoded per touched sector).
+//!
+//! Three tiers share these commands. The raw and LZS tiers are keyed by a
+//! byte offset (`--offset`, plus `--lzs-section`); the **battle** tier is
+//! keyed by `--entry` + `--battle-slot`, because its blocks are not TIMs
+//! and have no magic word to be an offset *of* - see
+//! [`legaia_patcher::battle_texture`].
 
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
+use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+use legaia_patcher::battle_texture::{self, BattleTextureTarget};
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::ppf;
 use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture, texture_catalogs};
@@ -30,7 +38,7 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let (raw, deep) = texture_catalogs(&patcher)?;
 
-    println!("tier  entry  section  offset      size       bpp  cluts  bytes    label");
+    println!("tier  entry  section  offset/slot  size       bpp  cluts  bytes    label");
     let mut raw_n = 0usize;
     if matches!(tier, TimTierArg::Raw | TimTierArg::All) {
         for t in &raw {
@@ -79,9 +87,34 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
             );
         }
     }
+    let mut battle_n = 0usize;
+    if matches!(tier, TimTierArg::Battle | TimTierArg::All) {
+        for b in &battle_texture::catalog(&patcher)? {
+            if let Some(e) = entry
+                && b.entry_index != e
+            {
+                continue;
+            }
+            battle_n += 1;
+            println!(
+                "battle{:>4}  {:>7}  {:>10}  {:>4}x{:<4}  {:>3}  {:>5}  {:>7}  {}",
+                b.entry_index,
+                b.section,
+                b.slot().to_string(),
+                b.width,
+                b.height,
+                b.bpp,
+                b.clut_count,
+                b.byte_len,
+                b.label,
+            );
+        }
+    }
     println!(
         "\n{raw_n} raw texture(s) (always replaceable in place) + {deep_n} LZS-compressed \
-         (replaceable when the edited section recompresses into its footprint)."
+         (replaceable when the edited section recompresses into its footprint) + {battle_n} \
+         battle block(s) (party character art; not TIMs, replaceable within the record's \
+         slot footprint)."
     );
     println!(
         "Export one:  legaia-patcher tim-export --input DISC.bin --entry N --offset 0xHEX \
@@ -91,17 +124,38 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
         "Replace it:  legaia-patcher tim-replace --input DISC.bin --entry N --offset 0xHEX \
          [--lzs-section S] --png edited.png --patch out.ppf"
     );
+    println!(
+        "Battle art:  legaia-patcher tim-export --input DISC.bin --entry 864 \
+         --battle-slot 14 -o armband.png"
+    );
     Ok(())
 }
 
+/// Resolve the battle-tier target from `--entry` + `--battle-slot`, or
+/// report what a caller who passed only one of them is missing.
+fn battle_target(entry: Option<u32>, slot: BattleTextureSlot) -> Result<BattleTextureTarget> {
+    let entry = entry.context(
+        "--battle-slot needs --entry: the slot selector is per player file. Retail's are          863 (Vahn) / 864 (Noa) / 865 (Gala) / 866. Run `tim-list --tier battle` to see them.",
+    )?;
+    Ok(BattleTextureTarget { entry, slot })
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_tim_export(
     input: &Path,
     entry: Option<u32>,
-    offset: u64,
+    offset: Option<u64>,
     lzs_section: Option<u32>,
+    battle_slot: Option<BattleTextureSlot>,
     clut: usize,
     output: &Path,
 ) -> Result<()> {
+    if let Some(slot) = battle_slot {
+        return cmd_battle_export(input, battle_target(entry, slot)?, clut, output);
+    }
+    let offset = offset.context(
+        "pass --offset (the byte offset tim-list prints), or --battle-slot for the battle tier",
+    )?;
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let t = target(entry, offset, lzs_section);
@@ -134,8 +188,10 @@ pub(crate) fn cmd_tim_export(
 pub(crate) fn cmd_tim_replace(
     input: &Path,
     entry: Option<u32>,
-    offset: u64,
+    offset: Option<u64>,
     lzs_section: Option<u32>,
+    battle_slot: Option<BattleTextureSlot>,
+    clut: usize,
     png: &Path,
     quantize: bool,
     output: Option<&Path>,
@@ -147,6 +203,21 @@ pub(crate) fn cmd_tim_replace(
             "pass --output <patched.bin> and/or --patch <out.ppf> (or --dry-run to only validate)"
         );
     }
+    if let Some(slot) = battle_slot {
+        return cmd_battle_replace(
+            input,
+            battle_target(entry, slot)?,
+            clut,
+            png,
+            quantize,
+            output,
+            patch,
+            dry_run,
+        );
+    }
+    let offset = offset.context(
+        "pass --offset (the byte offset tim-list prints), or --battle-slot for the battle tier",
+    )?;
     let original = load_image(input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
     let t = target(entry, offset, lzs_section);
@@ -212,6 +283,187 @@ pub(crate) fn cmd_tim_replace(
     if let Some(ppf_path) = patch {
         let runs = ppf::diff_runs(&original, &patched);
         let desc = format!("Legaia texture replace {t}");
+        let bytes = ppf::write_ppf3(&desc, &runs);
+        note_overwrite(ppf_path);
+        std::fs::write(ppf_path, &bytes)
+            .with_context(|| format!("write {}", ppf_path.display()))?;
+        println!(
+            "wrote {} ({} change run(s)) - safe to share, carries only your edit",
+            ppf_path.display(),
+            runs.len()
+        );
+    }
+    if let Some(out) = output {
+        note_overwrite(out);
+        std::fs::write(out, &patched).with_context(|| format!("write {}", out.display()))?;
+        let bin_name = out
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "patched.bin".into());
+        let cue_path = out.with_extension("cue");
+        std::fs::write(&cue_path, cue_contents(&bin_name))
+            .with_context(|| format!("write {}", cue_path.display()))?;
+        println!(
+            "wrote {} + {} (contains Sony bytes - local play only, never redistribute)",
+            out.display(),
+            cue_path.display()
+        );
+    }
+    Ok(())
+}
+
+/// `tim-export --battle-slot` - decode one player-file battle block.
+fn cmd_battle_export(
+    input: &Path,
+    target: BattleTextureTarget,
+    palette: usize,
+    output: &Path,
+) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let ex = battle_texture::export_block(&patcher, &target, palette)?;
+    legaia_tim::write_png(output, ex.width, ex.height, &ex.rgba)?;
+    println!(
+        "wrote {} - {} ({}x{}, 4 bpp, decoded through {})",
+        output.display(),
+        target,
+        ex.width,
+        ex.height,
+        ex.palette,
+    );
+    if ex.palette_count > 1 {
+        println!(
+            "  this block ships {} palettes; --clut 0..{} picks which one you see (the mesh \
+             samples them per primitive)",
+            ex.palette_count,
+            ex.palette_count - 1
+        );
+    } else if ex.palette_count == 0 {
+        println!(
+            "  this block ships no palette of its own - it samples the CLUT row its \
+             sibling blocks assemble, so --clut indexes that row"
+        );
+    }
+    println!("Edit it (same dimensions!) and feed it back through tim-replace --battle-slot.");
+    Ok(())
+}
+
+/// `tim-replace --battle-slot` - write an edited PNG back into a
+/// player-file battle block, recompressing the record into its own slot.
+#[allow(clippy::too_many_arguments)]
+fn cmd_battle_replace(
+    input: &Path,
+    target: BattleTextureTarget,
+    palette: usize,
+    png: &Path,
+    quantize: bool,
+    output: Option<&Path>,
+    patch: Option<&Path>,
+    dry_run: bool,
+) -> Result<()> {
+    let original = load_image(input)?;
+    let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
+
+    let png_bytes = std::fs::read(png).with_context(|| format!("read {}", png.display()))?;
+    let (w, h, rgba) = decode_png_rgba(&png_bytes)?;
+
+    let outcome = battle_texture::replace_block(
+        &mut patcher,
+        &target,
+        &rgba,
+        w,
+        h,
+        palette,
+        quantize,
+        dry_run,
+    )?;
+    println!(
+        "{}: {}x{} 4 bpp via {} - {} palette entr{} changed",
+        target,
+        outcome.width,
+        outcome.height,
+        outcome.palette,
+        outcome.palette_entries_changed,
+        if outcome.palette_entries_changed == 1 {
+            "y"
+        } else {
+            "ies"
+        },
+    );
+    if outcome.unchanged {
+        println!(
+            "  the image is already what is on disc - nothing written (re-encoding an \
+             unchanged record would still move disc bytes, since our LZS encoder is not \
+             the one the mastering used)"
+        );
+    } else {
+        println!(
+            "  slot fit: recompressed {} bytes into the {}-byte allocation (retail used {})",
+            outcome.fit.recompressed, outcome.fit.capacity, outcome.fit.retail,
+        );
+    }
+    if outcome.quantized_pixels > 0 {
+        println!(
+            "  {} pixel(s) quantized to the nearest kept colour",
+            outcome.quantized_pixels
+        );
+    }
+    if dry_run {
+        println!("dry run: validated only, nothing written");
+        return Ok(());
+    }
+
+    // Verify off the patched image, and prove the edit was surgical: this
+    // block decodes to the requested pixels and no sibling block moved.
+    let before = battle_texture::catalog(&DiscPatcher::open(original.clone())?)?;
+    let after = battle_texture::catalog(&patcher).context("re-read patched catalog")?;
+    if outcome.quantized_pixels == 0 {
+        let got = battle_texture::export_block(&patcher, &target, palette)?;
+        let want: Vec<u8> = rgba
+            .chunks_exact(4)
+            .flat_map(|p| {
+                let stored = if p[3] == 0 {
+                    0
+                } else {
+                    let e = legaia_tim::encode::rgba8_to_bgr555(p.try_into().unwrap());
+                    if e == 0 { 0x8000 } else { e }
+                };
+                legaia_tim::bgr555_to_rgba8(stored)
+            })
+            .collect();
+        if got.rgba != want {
+            bail!("verification failed: patched block does not decode to the input image");
+        }
+        println!("verified: the block decodes pixel-exactly to the input image");
+    }
+    // The write must have touched this block and nothing else. A no-op
+    // edit legitimately touches none, so the rule is containment, not a
+    // count: an unedited round-trip is a zero-run patch.
+    let want = target.slot.to_string();
+    let strays: Vec<_> = before
+        .iter()
+        .zip(&after)
+        .filter(|(b, a)| b.fnv1a != a.fnv1a || b.entry_index != a.entry_index)
+        .map(|(b, _)| (b.entry_index, b.slot().to_string()))
+        .filter(|(e, s)| (*e, s.as_str()) != (target.entry, want.as_str()))
+        .collect();
+    if !strays.is_empty() {
+        bail!(
+            "verification failed: the write also changed {} other block(s): {}",
+            strays.len(),
+            strays
+                .iter()
+                .map(|(e, s)| format!("entry {e} slot {s}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    println!("verified: every other battle block is byte-identical");
+
+    let patched = patcher.into_image();
+    if let Some(ppf_path) = patch {
+        let runs = ppf::diff_runs(&original, &patched);
+        let desc = format!("Legaia battle texture replace {target}");
         let bytes = ppf::write_ppf3(&desc, &runs);
         note_overwrite(ppf_path);
         std::fs::write(ppf_path, &bytes)

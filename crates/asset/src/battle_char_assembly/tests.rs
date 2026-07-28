@@ -262,6 +262,72 @@ fn upload_block_applies_stp_and_band_math() {
 }
 
 #[test]
+fn upload_block_decodes_4bpp_pixels_through_a_chosen_palette() {
+    // 2 halfwords wide x 2 rows = 8 texels a row, packed low nibble first.
+    // Two palettes: entry 0 of each is stored 0x0000 (transparent after the
+    // STP pass), the rest are distinct opaque colours.
+    let rect = TextureRect {
+        x0: 0,
+        y0: 0,
+        w: 2,
+        h: 2,
+    };
+    let mut block = Vec::new();
+    block.extend_from_slice(&0u16.to_le_bytes()); // clut_x
+    block.extend_from_slice(&32u16.to_le_bytes()); // clut_n = 2 palettes
+    for p in 0..2u16 {
+        for i in 0..16u16 {
+            // Palette 0: red ramp. Palette 1: green ramp. Index 0 is 0x0000.
+            let e = if i == 0 {
+                0
+            } else if p == 0 {
+                i
+            } else {
+                i << 5
+            };
+            block.extend_from_slice(&e.to_le_bytes());
+        }
+    }
+    // Row 0: indices 0,1,2,3 / 4,5,6,7. Row 1: all index 1.
+    block.extend_from_slice(&[0x10, 0x32, 0x54, 0x76]);
+    block.extend_from_slice(&[0x11, 0x11, 0x11, 0x11]);
+    let u = parse_upload_block(&block, rect, 0).expect("parse");
+
+    assert_eq!((u.pixel_width(), u.pixel_height()), (8, 2));
+    assert_eq!(u.palette_count(), 2);
+    assert_eq!(u.block_bytes(), 4 + 32 * 2 + 8);
+
+    let rgba = u.rgba(0).expect("palette 0");
+    assert_eq!(rgba.len(), 8 * 2 * 4);
+    // Index 0 stays 0x0000 through the STP pass -> fully transparent.
+    assert_eq!(&rgba[0..4], &[0, 0, 0, 0]);
+    // Index 1 of palette 0 is red 1/31, opaque via the forced STP bit.
+    assert_eq!(&rgba[4..8], &legaia_tim::bgr555_to_rgba8(0x8001));
+    // Nibble order is low-first: texel 1 comes from the low nibble of the
+    // second byte pair, i.e. the run is 0,1,2,3,4,5,6,7.
+    assert_eq!(&rgba[7 * 4..8 * 4], &legaia_tim::bgr555_to_rgba8(0x8007));
+    // Row 1 is uniformly index 1.
+    assert_eq!(&rgba[8 * 4..9 * 4], &legaia_tim::bgr555_to_rgba8(0x8001));
+
+    // Palette 1 repaints the same indices green.
+    let green = u.rgba(1).expect("palette 1");
+    assert_eq!(&green[4..8], &legaia_tim::bgr555_to_rgba8(0x8020));
+    assert_eq!(&green[0..4], &[0, 0, 0, 0], "index 0 stays transparent");
+
+    // Out-of-range palettes name the count instead of panicking.
+    let err = u.rgba(2).unwrap_err().to_string();
+    assert!(err.contains("out of range"), "{err}");
+
+    // A borrowed palette decodes a block that carries none of its own.
+    let borrowed: Vec<u16> = (0..16u16)
+        .map(|i| if i == 0 { 0 } else { i << 10 })
+        .collect();
+    let blue = u.rgba_with_palette(&borrowed).expect("borrowed palette");
+    assert_eq!(&blue[4..8], &legaia_tim::bgr555_to_rgba8(0x0400));
+    assert!(u.rgba_with_palette(&borrowed[..4]).is_err());
+}
+
+#[test]
 fn upload_block_rejects_short_payload() {
     let rect = TextureRect {
         x0: 0,

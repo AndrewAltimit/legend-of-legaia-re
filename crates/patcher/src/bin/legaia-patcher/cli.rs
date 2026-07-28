@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use legaia_asset::battle_texture_catalog::BattleTextureSlot;
 
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
@@ -250,10 +251,12 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         allow_region_mismatch: bool,
     },
-    /// Read-only: catalog every texture (TIM) on the disc with its
-    /// replacement coordinates - the raw tier (uncompressed, always
-    /// replaceable in place) and the LZS tier (inside a compressed section,
-    /// replaceable when the edited section recompresses into its footprint).
+    /// Read-only: catalog every texture on the disc with its replacement
+    /// coordinates - the raw tier (uncompressed, always replaceable in
+    /// place), the LZS tier (inside a compressed section, replaceable when
+    /// the edited section recompresses into its footprint), and the battle
+    /// tier (the party's in-battle character art, which is not a TIM at all
+    /// and is replaceable within its record's slot footprint).
     TimList {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
         /// is accepted and resolved to the `.bin` it references).
@@ -278,12 +281,18 @@ pub(crate) enum Cmd {
         #[arg(long)]
         entry: Option<u32>,
         /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
-        /// within the decoded section with --lzs-section.
+        /// within the decoded section with --lzs-section. Not used by the
+        /// battle tier, which addresses by --battle-slot instead.
         #[arg(long, value_parser = parse_u64_flexible)]
-        offset: u64,
+        offset: Option<u64>,
         /// LZS section index for a compressed-tier texture.
         #[arg(long)]
         lzs_section: Option<u32>,
+        /// Battle-tier selector: a player-file record index, or `header0` /
+        /// `header1`. Needs --entry (863..866); `tim-list --tier battle`
+        /// prints both columns.
+        #[arg(long, value_parser = parse_battle_slot)]
+        battle_slot: Option<BattleTextureSlot>,
         /// Palette index to decode with (multi-palette textures only).
         #[arg(long, default_value_t = 0)]
         clut: usize,
@@ -306,12 +315,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         entry: Option<u32>,
         /// Byte offset of the TIM (decimal or 0xHEX): within the entry, or
-        /// within the decoded section with --lzs-section.
+        /// within the decoded section with --lzs-section. Not used by the
+        /// battle tier, which addresses by --battle-slot instead.
         #[arg(long, value_parser = parse_u64_flexible)]
-        offset: u64,
+        offset: Option<u64>,
         /// LZS section index for a compressed-tier texture.
         #[arg(long)]
         lzs_section: Option<u32>,
+        /// Battle-tier selector: a player-file record index, or `header0` /
+        /// `header1`. Needs --entry (863..866).
+        #[arg(long, value_parser = parse_battle_slot)]
+        battle_slot: Option<BattleTextureSlot>,
+        /// Battle tier only: which palette of the block to encode against.
+        /// The other palettes of the same block stay byte-identical.
+        #[arg(long, default_value_t = 0)]
+        clut: usize,
         /// The replacement image (PNG, any color type; must match the
         /// original texture's pixel dimensions exactly).
         #[arg(long)]
@@ -399,8 +417,18 @@ pub(crate) enum TimTierArg {
     Raw,
     /// TIMs inside LZS-compressed sections (replaceable when they re-fit).
     Lzs,
-    /// Both tiers.
+    /// The headerless 4bpp party battle art in the player files
+    /// (PROT 863..866). Not TIMs at all - no magic, no header - so no
+    /// magic scan can reach them.
+    Battle,
+    /// Every tier.
     All,
+}
+
+/// Parse a battle-texture slot selector: a record index, or `header0` /
+/// `header1` for the two blocks the player-file header points at.
+pub(crate) fn parse_battle_slot(s: &str) -> Result<BattleTextureSlot, String> {
+    s.parse()
 }
 
 /// Parse a decimal or `0x`-prefixed hexadecimal u64 (for byte offsets).

@@ -500,6 +500,7 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 | `tim_scan` / `tmd_scan` | Brute-force magic search inside an entry. |
 | `tim_catalog` | Flat strict-validated TIM inventory over the whole `PROT.DAT` image (catches the unindexed-gap TIMs `tim_scan` can't); maps each to its owning entry + offset; reproduces an external reference decoder's TIM set item-for-item. |
 | `tim_deep_catalog` | Separate tier: strict-validated TIMs recovered from inside LZS-compressed sections, keyed by `(entry, LZS section, offset-in-section)`. |
+| `battle_texture_catalog` | A third texture tier keyed by `(entry, record, section, pool offset)`: the headerless 4bpp party-character art in the player battle files (PROT 863..866). Not TIMs - no magic, no header, geometry from the loader's rect table - so both TIM catalogs miss the family by construction. Admission is the exact-extent rule. Rows carry the same fields a `tim_deep_catalog` row does plus a human-readable `label` (item names join in via the descriptor's equipment id), and `decode_block` renders one to RGBA from just the PROT image + spans. |
 | `tim_labels` | Curated semantic labels for cataloged TIMs (raw + deep), keyed by content fingerprint: coarse visual categories + precise reverse-engineered pins for the boot/title/menu textures. Our own annotations, not asset bytes. |
 
 ## CLI
@@ -513,6 +514,7 @@ asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # sta
 asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
 asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
 asset tim-deep-catalog <PROT.DAT>         # TIMs inside LZS-compressed sections (--out, --rollup)
+asset battle-texture-catalog <PROT.DAT>   # headerless 4bpp battle art in PROT 863..866 (--scus for names, --out, --rollup)
 asset tim-render-distinct <PROT.DAT> --out <dir>  # decode each distinct TIM to PNG (local only; drives tim_labels)
 asset tmd-scan         <input>            # locate embedded TMDs
 asset clut-finder                         # which entry's TIM supplies a VRAM CLUT cell

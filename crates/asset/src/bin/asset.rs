@@ -361,6 +361,31 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         rollup: bool,
     },
+    /// Battle-texture catalog: the headerless 4bpp character-art blocks in
+    /// the player battle files (PROT entries 863..866). These are NOT TIMs -
+    /// no magic, no header, geometry supplied by the loader's static rect
+    /// table - so neither `tim-catalog` nor `tim-deep-catalog` can see them.
+    /// Each row is keyed by `(entry, record, section, pool offset)` with
+    /// dimensions, palette counts, byte length and an FNV fingerprint. A
+    /// block is admitted only when its declared extent lands exactly on the
+    /// end of its record (or, for the two chained `record[0]` blocks, on the
+    /// next block's offset).
+    BattleTextureCatalog {
+        /// PROT.DAT image (e.g. `extracted/PROT.DAT`).
+        prot: PathBuf,
+        /// `SCUS_942.54` image, to label each block with the equipment its
+        /// art belongs to instead of a bare id.
+        #[arg(long)]
+        scus: Option<PathBuf>,
+        /// Write the catalog as TSV (`.tsv`) or JSON to this path. Default
+        /// prints a table.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Also print the count + rollup digest (the value the disc-gated
+        /// regression pins).
+        #[arg(long, default_value_t = false)]
+        rollup: bool,
+    },
     /// Decode each DISTINCT cataloged TIM (raw + deep, deduped by content
     /// fingerprint) to a PNG plus a manifest, for local inspection /
     /// categorization. Output is decoded pixel data - keep it local, never
@@ -1157,6 +1182,12 @@ fn main() -> Result<()> {
         Cmd::TimDeepCatalog { prot, out, rollup } => {
             tim_deep_catalog_cmd(&prot, out.as_deref(), rollup)
         }
+        Cmd::BattleTextureCatalog {
+            prot,
+            scus,
+            out,
+            rollup,
+        } => battle_texture_catalog_cmd(&prot, scus.as_deref(), out.as_deref(), rollup),
         Cmd::TimRenderDistinct { prot, out, tier } => tim_render_distinct_cmd(&prot, &out, tier),
         Cmd::TmdScan {
             dir,

@@ -812,7 +812,10 @@ member it issues up to seven upload blocks through `FUN_80053B9C`
 1. **Two `record[0]` image blocks**, at the file header's `clut_a_off` /
    `clut_b_off` inside record[0]'s decoded output, with inline rects
    `(x0, y0, w, h)` = `(0x20, 0x80, 0x20, 0x80)` and `(0x60, 0x00, 0x20,
-   0x80)` (both carry `clut_n = 0` in retail).
+   0x80)`. They **chain**: block 0 ends exactly where block 1 begins, and
+   block 1 finishes the decoded record. Their `clut_n` is not fixed - seven
+   of the eight retail blocks ship a real palette run (16, 32, 48 or 240
+   entries); only `PLAYER1`'s first block is pixel-only.
 2. **One block per flagged equipment section** (the decoded slot's
    `upload_flag` at `+0x12`), at `decoded + tmd_body_end`, with the rect
    taken from the static `SCUS_942.54` table at **`0x800775B8`**
@@ -864,6 +867,97 @@ Typed port: `legaia_asset::battle_char_assembly` -
 play-window battle path uploads these blocks for each assembled member
 (PROT 1204's atlases remain the fallback approximation).
 
+### The upload block is not a TIM
+
+Read as a *texture source* rather than as a VRAM write, each of those
+blocks is the party's in-battle character art - body, face, weapon and
+armour skins, one block per equipment variant. The layout is
+
+```text
+  [u16 clut_x][u16 clut_n][clut_n x u16 BGR555][w*h halfwords of 4bpp]
+```
+
+and that is the whole header. There is no `0x10` magic word, no flag word,
+no per-half block header, and **no geometry in the bytes at all**: `w` and
+`h` come from the loader's static rect table above, not from the block.
+
+This is why every texture-discovery path on this disc missed the family by
+construction, not by oversight. The raw TIM catalog scans bytes for the TIM
+magic; the deep TIM catalog LZS-decompresses first and then scans for the
+same magic. The blocks *are* LZS-compressed, so the deep tier reaches the
+right bytes - the magic simply is not there to find, and
+`legaia_tim::parse_strict` has nothing to parse. Measured on the retail
+disc: both TIM catalogs contribute **zero** rows from entries 863..866
+(`crates/asset/tests/battle_texture_catalog_real.rs`).
+
+A second trap sits inside the block. `clut_n` is commonly **32**, i.e. two
+16-colour palettes in one run, and 48 (three) is common too - a mesh
+primitive's CBA column picks which palette it samples. Decoding such a
+block as a single 16-entry CLUT produces a plausible image at roughly a 5 %
+pixel match against a rip of the real thing.
+
+### The catalog tier
+
+[`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
+is the third texture tier, alongside the raw and LZS TIM catalogs. It keys
+each block by `(PROT entry, record, section, pool offset)`, where
+`record = -1` marks the two header `record[0]` blocks and `section` then
+carries the block ordinal.
+
+With no magic to check, admission is structural and exact: a block's
+declared extent `4 + clut_n*2 + w*h*2` must land **precisely** on the byte
+the layout says it ends at - the end of the decoded record for a section
+block, the next block's offset for the first of the chained `record[0]`
+pair - and `clut_n` must be a whole number of 16-colour palettes. Retail
+satisfies this for every block in all four files, so a wrong rect or a
+short decode fails the catalog rather than emitting a plausible row.
+
+The retail census:
+
+| entry | file | `record[0]` blocks | flagged section blocks |
+|---|---|---|---|
+| 863 | `PLAYER1` (Vahn) | 2 | 52 |
+| 864 | `PLAYER2` (Noa) | 2 | 47 |
+| 865 | `PLAYER3` (Gala) | 2 | 41 |
+| 866 | `PLAYER4` | 2 | 5 |
+
+153 blocks in total, every one 4bpp and 128 rows tall, 128 or 256 texels
+wide - about 1.34 MiB of pixel data. Two of them ship `clut_n = 0`: they
+upload pixels only and sample a palette a sibling block put on the shared
+row, so decoding them needs the row the whole file assembles
+(`assemble_clut_row`).
+
+Rows carry the same fields a [`tim_deep_catalog`](tim.md) row does, so a
+generic texture consumer can hold both: coordinates, dimensions, bpp,
+palette count, a content fingerprint and a **label**. Because the
+descriptor ids are item ids, handing the builder an
+[item-name table](item-table.md) resolves each label to the equipment whose
+art it is - `"Noa - Ra-Seru Terra $8"` for the block above - which is what
+makes the family findable by name rather than by offset. `decode_block`
+renders one row to RGBA from nothing but the `PROT.DAT` image and its TOC
+spans, so a browser or exporter never has to know what an equipment
+section or a `record[0]` stream is.
+
+### Replacing a block
+
+`legaia_patcher::battle_texture` writes one back. The fit budget is
+**different from the LZS texture tier's**: a player file's records are
+addressed by the descriptor table, whose chain invariant
+`offset[i+1] == offset[i] + size[i]` pins every later record in place, so
+the edited record must recompress into its own slot allocation (`size - 4`,
+past the `dec_size` prefix) and nothing downstream may move. Retail leaves
+a median of a few hundred spare bytes per slot and as few as 2, so a
+detailed repaint can genuinely fail to fit - which is reported with the
+overage rather than written over the next record.
+
+A replacement rewrites the pixels plus **only the palette it was exported
+through**, leaving the block's sibling palettes byte-identical so their
+recolour variants keep working. Entries are compared in the post-STP frame
+the runtime samples (`FUN_80053B9C` ORs `0x8000` onto every non-zero entry
+as it uploads, so `0x1234` and `0x9234` are one colour), and an unchanged
+slot keeps its stored bytes verbatim - retail stores most entries with STP
+clear, and re-deriving the stored form would rewrite the ones it did not.
+
 ## Parser status
 
 Two parsers read these files:
@@ -878,6 +972,10 @@ Two parsers read these files:
   relocation (`relocate_tsb_cba`), and the texture-pool uploads at the
   pinned placement (`character_texture_uploads` and friends - see
   [Texture-pool VRAM placement](#texture-pool-vram-placement)).
+- [`legaia_asset::battle_texture_catalog`](../../crates/asset/src/battle_texture_catalog.rs)
+  catalogs the same files' texture-pool blocks as a texture tier -
+  see [The catalog tier](#the-catalog-tier) - and `resolve_block` /
+  `assemble_clut_row` read one back out for decode or replacement.
 - [`legaia_asset::battle_data_pack`](../../crates/asset/src/battle_data_pack.rs)
   (the TMD-slot walker) reads the same descriptor table in the
   `[id, offset, size]` frame above. Detection validates the chain invariant
@@ -949,7 +1047,29 @@ mednafen-state clut-trace \
   --json /tmp/clut_corpus.json \
   ~/.mednafen/mcs/Legend\ of\ Legaia*.mc2 \
   ~/.mednafen/mcs/Legend\ of\ Legaia*.mc6
+
+# Catalog the headerless texture blocks across all four player files.
+asset battle-texture-catalog extracted/PROT.DAT --rollup
+asset battle-texture-catalog extracted/PROT.DAT --out /tmp/battle_textures.tsv
 ```
+
+Off a user's disc image, the same family is the `battle` tier of the
+texture-modding commands (`legaia_patcher::battle_texture`). It is keyed by
+`--entry` + `--battle-slot` rather than by `--offset`, because the blocks
+have no magic word for an offset to be *of*:
+
+```bash
+# List the blocks (a record index, or header0 / header1, per row).
+legaia-patcher tim-list --input DISC.bin --entry 864 --tier battle
+
+# Export Noa's Ra-Seru armband ("Terra $8", equipment id 0x11) and put it back.
+legaia-patcher tim-export  --input DISC.bin --entry 864 --battle-slot 14 -o armband.png
+legaia-patcher tim-replace --input DISC.bin --entry 864 --battle-slot 14 \
+  --png armband.png --patch armband.ppf
+```
+
+`--clut N` picks which of the block's palettes you see (and, on replace,
+which one the pixels are encoded against).
 
 (The CLI names keep the historical "battle-data-pack" spelling; they operate
 on the player files.)
