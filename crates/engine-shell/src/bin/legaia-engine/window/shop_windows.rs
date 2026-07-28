@@ -271,8 +271,15 @@ impl PlayWindowApp {
     /// | Id | Renderer | Content |
     /// |---|---|---|
     /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
-    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
+    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare - **an engine addition**, see below |
     /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
+    ///
+    /// Retail's picker script `0x801E4E84` opens window 36 and nothing else,
+    /// over the shop set the entry script `0x801E4E64` already put up - which
+    /// includes window 41 but not 25. Window `0x19` is named by one open
+    /// command in the whole menu overlay, the Equip screen's, so this host
+    /// paints one panel more than retail does; the divergence is recorded on
+    /// `engine-ui::recipient_picker_draws_for` and is symmetric across hosts.
     ///
     /// The layout is [`legaia_engine_render::recipient_picker_draws_for`],
     /// the same shared composition the browser play page calls

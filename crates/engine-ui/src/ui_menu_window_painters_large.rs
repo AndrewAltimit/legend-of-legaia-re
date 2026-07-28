@@ -730,6 +730,18 @@ pub struct RecipientPickerView<'a> {
 /// ([`PainterSprite`]); the host draws them from its own cursor atlas (or an
 /// ASCII stand-in while that page is missing).
 ///
+/// **Window 25 is a known divergence.** Retail's picker adds exactly one
+/// window over the already-open shop set: its script `0x801E4E84` runs a
+/// single `01 24`, and the shop's own stat compare is window **41**, opened
+/// by the shop-entry script `0x801E4E64`. Window `0x19` is named by exactly
+/// one open command anywhere in the menu overlay - the Equip screen's
+/// `0x801E4DC8`, beside windows 2 and 24 - so no shop screen creates it and
+/// retail never draws its renderer here. Both hosts pass a rect for it and
+/// so paint one panel more than retail does. Closing that means dropping
+/// `RecipientWindowRects::active_compare` on both hosts at once; leaving the
+/// field is what keeps them symmetric until then. See
+/// `docs/subsystems/field-menu.md` ("Which screen opens a window").
+///
 /// PORT: FUN_801db380 (the sub-screen's draw half; the session state machine
 /// is `legaia_engine_core::shop::BuyRecipientSession`)
 pub fn recipient_picker_draws_for(

@@ -30,6 +30,7 @@ resolved through the window-descriptor table below.
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
 - [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [Inn stay](#inn-stay-there-is-no-inn-screen)
+- [Which screen opens a window](#which-screen-opens-a-window)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed) · [Overlay identity + VA-aliasing](#overlay-identity--va-aliasing)
 
@@ -751,11 +752,17 @@ phase 0. Items-screen slots of the table: 5 = command window
 list (`FUN_801D8734`), 9 = the all-party apply (`FUN_801D7FF8` - its
 picker runs with count 0, confirm/cancel only), 0xA = the single-target
 apply (`FUN_801D8308`), 0xB/0xC/0xD = the Door of Light / Door of Wind /
-Incense special routes; 0xE/0xF = the Magic screen's caster/list
-handlers, 0x10/0x11 = the group-cast and single-target Magic apply flows
-(spell-stat byte `+2` bit `0x20` picks between them), 0x12/0x13/0x14 =
-the Equip screen chain (character picker → slot browse → candidate
-list; the `DAT_801E46A4 == 0x13` gate of `FUN_801D21C0`).
+Incense special routes; 0xE = the Magic screen's caster/list handler
+(`FUN_801D9110`, the only writer that routes on to 0xF / 0x10 / 0x11),
+0xF/0x10 = the group-cast and single-target Magic apply flows
+(`FUN_801D9280` / `FUN_801D9594` - both call the effect-apply handler
+`FUN_800402F4`, and they differ in the one argument that decides scope:
+the shared cursor primitive gets row count `0` for the group cast and
+the live party count for the single-target one, the same split items use
+at 9 / 0xA); 0x12/0x13/0x14 = the Equip screen chain (character picker →
+slot browse → candidate list; the `DAT_801E46A4 == 0x13` gate of
+`FUN_801D21C0`). The table runs `0x00..=0x20` and ends on a `0` word;
+`0x20` is the casino prize counter (`FUN_801DC1CC`).
 
 The list windows themselves (descriptor kind 4) are paged by the
 SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the
@@ -1533,7 +1540,45 @@ them whenever the equipment-buy recipient sub-screen is up: that screen is one
 shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
 separate host-side draws, so its row order and cursor rows are the same on both.
 
-**Window 31** joins them on the shop's Point Card beat. Which flow opens it
+### Which screen opens a window
+
+The descriptor table says what a window *looks like*; it never says which
+screen puts it on the glass. That is the **open script** - the 4-byte
+`[opcode, window_id, p0, p1]` command list a sub-screen hands the widget VM
+`FUN_801D6628`, terminated by opcode `0`, with opcode `1` = open/slide-in,
+`4` = close/slide-away, `6` / `0xA` = hide / re-show an already-created
+window (see [shop.md](shop.md#mode-select-panel-buy--sell--quit)).
+
+That makes "which screen opens window N" a decidable question over the
+overlay's own bytes rather than a guess, and it is worth walking whenever a
+painter looks orphaned. Every `jal 0x801D6628` in the image carries its
+script address in `a0`; decoding those, walking each script, and mapping the
+call site back through the sub-screen table at `0x801E4F40` gives a complete
+window → screen map. Two properties make the result trustworthy: a window
+that no `01` command names is never created at all, and the recovered map
+agrees with every sub-screen id this page pinned independently (5, 7, 0xB,
+0xD, the shop's 0x1B..0x1F, the exchange's 0x20).
+
+What it settles for the windows whose painters had no screen:
+
+| Window | Script | Sub-screen | Screen |
+|---|---|---|---|
+| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | leave-confirm, reached only from the pause root's cancel with entry-context byte `0x0D` |
+| 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
+| 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
+| 24 + 25 | `0x801E4DC8` | `0x13` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
+| 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
+| 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
+
+Two of those rows correct a reading this page used to carry. Window 25 is an
+**Equip** window - its id appears in exactly one `01` command in the whole
+overlay, the Equip screen's - so a shop screen does not open it; the shop's
+own stat compare is window 41. And windows 5 / 6 are not options-screen or
+pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
+`FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
+and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).
+
+**Window 31** joins the dispatch-drawn set on the shop's Point Card beat. Which flow opens it
 is settled by the disc rather than inferred: both retail buy commits hand
 the widget VM a script whose entire body is `01 1F` plus the terminator -
 one command, "open window `0x1F`" (`0x801E4EDC` from the quantity commit
