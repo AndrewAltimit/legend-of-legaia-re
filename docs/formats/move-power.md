@@ -320,11 +320,44 @@ both). The tables live in the same PROT 0898 overlay after the power table:
   begins where it ends - packed variable-length records, not a fixed stride). See
   Open for the decoded layout.
 - `0x801f6418` (file `0x27C00`) - per-effect **SFX id** (`u8`, `0` = silent).
+- `0x801f6470` (file `0x27C58`) - the **cue-group table**, described below.
 
 The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
 61-entry index space bounds both (the runtime's `< 100` spawn guard is a loose
-safety check). Parsed by `legaia_asset::move_power::EffectAuxTables`; the
-per-entry dispatch is `EffectListEntry::classify`.
+safety check). All three regions are parsed by
+`legaia_asset::move_power::EffectAuxTables`; the per-entry dispatch is
+`EffectListEntry::classify`.
+
+### The cue-group table `0x801F6470`
+
+A third region of the same data band, indexed by **group id** rather than by
+effect id. The battle overlay's cue expander `FUN_801E22C8` reads it at
+`addiu v1, v0, 0x6470` (`0x801E2374`) and walks one record per call:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `+0x00` | u8 | cue count, `0..=4`; zero means the group spawns nothing |
+| `+0x01..+0x05` | u8 × 4 | cue ids, only the first `count` of them read |
+
+Stride is therefore `5`. A cue id with bit `0x80` set is an **actor** cue -
+`FUN_801DFDF0(id & 0x7F, pos, yaw)`, the strike pose - and the low seven bits do
+not index either effect table. Any other id indexes **both** tables above with
+the same value: `0x801F6418[id]` is the sound to play (skipped when zero) and
+`0x801F6324[id]` is the prototype to spawn.
+
+The table holds **13 records**. Two independent bounds agree: on the disc the
+records fill `0x801F6470..0x801F64B5` and are followed by three padding bytes
+and the `data\battle\summon.DAT` path literal at `0x801F64B8`; and retail's
+own callers never index past `0xC`. Every one of those thirteen records passes
+the shape check - count within the record, and every non-actor id inside the
+61-entry effect space - which is what the parser guards on.
+
+The caller is the damage-application primitive `FUN_800402F4`, which reaches
+`jal 0x801e22c8` from eleven branches and chooses the group id per branch: eight
+literals (`5`..`0xC`), two computed, and one forwarding its own `param_2`. The
+port has the kernel (`legaia_engine_vm::battle_cue_group::expand_cue_group`) and
+now both of its tables, but not that dispatch - see the module's `NOT WIRED`
+note.
 
 ### Effect-id → triggering-move inverse index (disc-derivable, no capture)
 
