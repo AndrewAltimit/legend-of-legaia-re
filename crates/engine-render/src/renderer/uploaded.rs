@@ -457,6 +457,12 @@ pub struct ColorSceneDraw<'a> {
 /// MVP per actor. Optionally overlays a [`UploadedLines`] mesh (e.g. a
 /// stage-geometry wireframe) using the supplied MVP, and/or a 2D text
 /// batch (HUD / debug text / dialog).
+///
+/// `Copy` because every field is a reference or a small value: a caller that
+/// has to re-draw the same scene against a *different* VRAM page in the same
+/// frame - which is what the field-to-battle capture does - can then write
+/// `Scene { vram: &captured, ..scene }` instead of rebuilding the draw lists.
+#[derive(Clone, Copy)]
 pub struct Scene<'a> {
     pub vram: &'a UploadedVram,
     pub draws: &'a [SceneDraw<'a>],

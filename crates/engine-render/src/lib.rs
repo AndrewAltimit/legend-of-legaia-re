@@ -27,6 +27,7 @@ pub mod actor_cull;
 pub mod afterimage;
 pub mod attach_swap;
 pub mod battle_actor_tick;
+pub mod battle_intro;
 pub mod battle_on_screen;
 pub mod battle_sideband;
 pub mod billboard;

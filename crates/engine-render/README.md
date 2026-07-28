@@ -244,10 +244,76 @@ project_streak_corners` reproduces the streak caller's invocation
 `trunc(4096·sin(2π·a/4096))`, pinned entry-for-entry by the disc-gated
 `gte_sin_lut_real` oracle in `engine-shell`.
 
+A `ScreenQuad` also carries an optional per-vertex `gouraud` array, which
+makes it a `POLY_GT4` rather than a `POLY_FT4`. The transition styles need
+it: a built transition quad carries a separate top-edge and bottom-edge
+colour, and the gradient between them *is* the effect.
+
+Two render targets consume the pass. `RenderTarget::ScreenOverlay` is the
+whole-frame form - it clears and draws nothing but quads.
+`RenderTarget::SceneWithScreenPrims` is the compositing form, drawing the
+ordered quads on top of a `Scene` in the same frame; that is what any real
+consumer needs, since a streak over a battle scene or a transition strip
+over a field scene cannot be expressed by the whole-frame form. Retail draws
+no such distinction - 3D primitives and screen-space packets share one
+ordering table and one `DrawOTag` walk - so the split is a port artifact and
+this variant is where the halves meet.
+
+The primitives are authored in the **PSX display space** (320x240), not the
+window: every retail emitter clamps against `0x140`/`0xF0`, so the renderer
+hands `build_geometry` that space and the overlay stretches over the whole
+surface.
+
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
 live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
 math, but the module is the single citation point for retail-correct
 fixed-point arithmetic when re-targeting captured GTE traces.
+
+## Landing a drawn frame back in VRAM
+
+On the console the framebuffer *is* VRAM - the display area is a rect inside
+the same 1024x512 halfword page textures are read from - so a primitive can
+sample pixels the GPU drew moments earlier. The renderer only ever pushed
+the software page *to* the GPU; [`vram_capture`](src/vram_capture.rs) is the
+missing direction. `blit_rgba_into_vram` quantises an RGBA8 readback to
+BGR555 and writes it into a `legaia_tim::Vram` rect, and
+`Renderer::capture_into_vram` wires that to `capture_rgba`. The write lands
+in the CPU-side page, so the capture is equally visible to `move_image`,
+`region_has_data` and the VRAM parity oracle.
+
+The quantisation is exact rather than approximate: the shaders' last stage
+expands a 5-bit channel as `(c5 << 3) | (c5 >> 2)`, so `byte >> 3` recovers
+`c5` for all 32 values. A capture at the native 320x240 is not resampled at
+all; a window-sized frame is point-sampled down.
+
+`FIELD_CAPTURE_ROWS` / `FIELD_CAPTURE_COLS` name where retail parks the
+field-to-battle capture. That falls out of the transition's own texture-page
+words with no capture needed - they decode to 15-bpp pages whose strips span
+VRAM columns `320..=639` on two rows.
+
+## Field-to-battle transition emitter
+
+[`battle_intro`](src/battle_intro.rs) is the per-frame, per-style working-set
+owner that stands between the (already live) transition state machine in
+`engine-core` and the ordering table above. It seeds the selected style's
+working set, advances it off the transition entity's own clock, and emits
+`ScreenPrim`s plus the per-style fade.
+
+Style coverage is **not** uniform, and the difference is which retail packet
+builder is ported rather than effort:
+
+| Style | Ticks | Emits |
+|---|---|---|
+| Curtain | yes | yes - complete |
+| Scatter / spin-up particles, tile shatter, swirl | yes | no |
+
+The curtain is complete because its packet builder is itself ported and
+produces screen-space corners, so there is no projection step to invent; its
+descriptor table is disc data that parses, and its texture pages decode to
+the capture rects above. The other four end in a GTE/GPU packet emitter that
+is documented but not ported, and the swirl's fan is triangles, which
+`ScreenPrim` has no variant for at all. Their working sets still tick,
+because the fade and the battle handoff both ride the same clock.
 
 ## GTE register-transfer + memory ops
 

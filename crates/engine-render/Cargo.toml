@@ -23,3 +23,10 @@ serde.workspace = true
 serde_json.workspace = true
 wgpu = "26"
 winit = "0.30"
+
+[dev-dependencies]
+# The battle-intro descriptor-table oracle reads PROT 0979 straight out of
+# `PROT.DAT` (disc-gated; nothing is committed).
+legaia-prot = { path = "../prot" }
+# The camera-roll census LZS-decodes every scene bundle's MAN (disc-gated).
+legaia-lzs = { path = "../lzs" }

@@ -422,11 +422,29 @@ pub fn walk_view_camera_mvp(
 /// each axis with the three camera-angle globals - `RotMatrixX(pitch)` at
 /// `0x800461A4`, `RotMatrixY(yaw)` at `0x8004629C`, `RotMatrixZ(roll)` at
 /// `0x8004638C` - each masking the 12-bit angle (`4096 = 360 deg`), indexing
-/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. Roll is
-/// rarely non-zero in retail shots, so this MVP folds the pitch + yaw
-/// composition into a spherical orbit + `glam::Mat4::look_at_rh` rather than
-/// a literal `RotMatrixX` * `RotMatrixY` matrix product; the visible result
-/// matches retail's framing for non-rolled shots.
+/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. This MVP
+/// folds the pitch + yaw composition into a spherical orbit +
+/// `glam::Mat4::look_at_rh` rather than a literal `RotMatrixX` *
+/// `RotMatrixY` matrix product; the visible result matches retail's framing
+/// for non-rolled shots.
+///
+/// **Roll is dropped, and how often that costs a shot is measured.** This is
+/// a dropped term, not a re-parameterisation: the retail pass composes three
+/// factors and this takes two, so a beat that sets a non-zero
+/// `_DAT_8007B794` frames differently here than on the console. An earlier
+/// note justified that with "roll is rarely non-zero in retail shots", which
+/// was an assumption about the disc that nothing checked. It now is checked -
+/// `tests/render_camera_roll_census.rs` walks every scene bundle's MAN and
+/// decodes every op-`0x45` Configure site:
+///
+/// * about a third of authored beats set the roll slot at all, and almost
+///   every one of those sets it to **zero**;
+/// * a little over **2%** set a non-zero roll. Most are small (a handful of
+///   12-bit units, under ten degrees), a few are large.
+///
+/// So the assumption holds as a majority statement and is false as an
+/// absolute one: there are authored shots on the disc this MVP frames wrong,
+/// and the fix is the factor product, not a bigger orbit.
 pub fn cutscene_camera_mvp(
     look_at: [f32; 3],
     pitch_radians: f32,

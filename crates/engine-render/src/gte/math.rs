@@ -241,9 +241,15 @@ pub mod view_rot_flags {
 /// controller stores all three (slot `2` lands in its `angles()` trio), but
 /// only pitch and yaw are read back out into the shot - the roll factor is
 /// decoded, stored, compared by the trace channel, and then never applied.
-/// The MVP's own note calls roll "rarely non-zero in retail shots"; that is
-/// the assumption the substitution rests on, and nothing in the repo measures
-/// it against the disc's Camera Configure operands.
+///
+/// The assumption the substitution rested on - the MVP's own "roll is rarely
+/// non-zero in retail shots" - is now **measured** rather than asserted.
+/// `tests/render_camera_roll_census.rs` decodes every op-`0x45` Configure
+/// site in every scene bundle's MAN: roughly a third of authored beats set
+/// the roll slot, nearly all of them to zero, and a little over 2% set it
+/// non-zero. That is small enough to explain why nobody noticed and large
+/// enough that the dropped term is not free - the disc contains authored
+/// shots this engine frames wrong.
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).

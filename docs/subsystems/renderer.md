@@ -561,6 +561,36 @@ decode but no screen-space primitive type - see
 [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need)
 for exactly what would have to exist.
 
+### The field-to-battle transition emitter
+
+The two capabilities above exist for one consumer, and `engine-render`'s
+`battle_intro` is it: the per-frame, per-style working-set owner that stands
+between the transition state machine (live in `engine-core`, driven by
+`World::tick_encounter`) and the ordering table. It seeds the selected style's
+working set, advances it off the transition entity's own `+0x1A` clock rather
+than counting for itself, and emits `ScreenPrim`s plus the per-style fade.
+
+**Coverage is not uniform, and the split is which retail packet builder is
+ported.** The curtain draws end to end: `FUN_801CF1B0` emits *screen-space*
+corners with texture page, CLUT, UVs and a top/bottom colour pair, so there is
+no projection step to invent; its `0x14`-stride descriptor table parses out of
+PROT 0979, and its texture pages decode to the capture rects above. The other
+four styles - the two particle fields, the tile shatter and the swirl - end in
+a GTE/GPU packet emitter that is documented but not ported, and the swirl's fan
+is triangles, for which `ScreenPrim` has no variant at all. Their working sets
+still tick, because the fade ramp and the transition's own completion arm both
+ride the same clock.
+
+What this means in play: **every** battle now runs its retail fade ramp, and
+the formations retail gives the curtain to open with the actual curtain. The
+ordinary random encounter takes style 2, the tile shatter, which the port does
+not draw - see
+[`cutscene.md`](cutscene.md#which-style-a-battle-gets) for how a battle's style
+is selected.
+
+The native play window is the only host that reaches any of this; see
+[`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-what-the-web-host-would-need).
+
 ### Targeted VRAM upload
 
 The TIM corpus on a single PROT entry can run into the hundreds. Uploading every
