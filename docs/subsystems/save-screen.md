@@ -694,6 +694,28 @@ from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
 expose all confirmed offsets; use `read_retail_story_flags` / `read_retail_inventory`
 to slice them from a raw SC block.
 
+### The composer is an in-place patch
+
+`SaveFile::write_into_retail_sc_block` stamps the SC magic and four regions -
+the four-slot character-record array, the story-flag bitmap, the inventory and
+the gold slot - restamping the block checksum as it goes, so what comes out is
+a block retail's loader accepts. It does **not** rewrite the block: every byte
+outside those regions survives, which is right for editing an existing save
+and is the sharp edge for a new one.
+
+The global game-data header at `RETAIL_GAME_DATA_OFFSET` carries the location
+name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`) beside
+the gold slot, and only gold is composed. A host that claims a previously-free
+card block and composes into it therefore ships a save whose location and
+scene label are whatever the card held there - `CardView::claim_block` writes
+the directory frame and does not clear the data block.
+
+Two properties keep the aliasing benign and are worth not re-deriving: slot 3
+(Terra)'s record tail overlaps the story-flag bitmap by design, and the
+composer's write order - records, then flags, then inventory - is what
+reclaims it. `engine-core/tests/save_block_checksum.rs` pins the region list,
+so extending the composer fails there rather than in a garbled info panel.
+
 ## Story-flag persistence vs. scratchpad word
 
 Two distinct global-state stores share the *name* "story flags" but live in
