@@ -217,8 +217,36 @@ table + draw list so they don't leak into the next scene; the player actor
 
 - ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height` (`addiu fp,fp,0xe` at `0x801e0948`), so a cell array cannot ride the operand stream, and the cells are rand-filled at `0x801EF334`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
 - ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758` (SET `func_0x8003ce08` / TEST `func_0x8003ce64`, reader `func_0x8003ce9c`), consumed in walk SM case 8. See [event-flag bases](#cell-value-semantics). The engine still surfaces only the exit through the op-49 resume.
-- ~~Per-cell tile-actor **rendering**.~~ **Resolved:** the engine draw path is complete - `legaia_engine_shell::tile_board_draws` assembles per-cell draws from `World::tile_board_draw_list` (floor-snapped Y, one mesh instance per drawable cell) and the play-window redraw pass uploads each board slot's template once per install and skips board-owned slots in the generic actor loop; unresolved templates degrade to no-draw. Confirmed via offscreen screenshot diff (13 tile-actor meshes instanced per cell). Disc-gated coverage: `crates/engine-shell/tests/tile_board_draw_live.rs`.
+- ~~Per-cell tile-actor **rendering**.~~ **Resolved, on both hosts.** See [Rendering the board](#rendering-the-board).
 - **No retail scene installs a board.** A disc-wide census (every partition record of all scene MANs, scripted-table + v12-embedded forms, walked with the field-VM disassembler, plus a raw byte-pair sweep) finds zero op-`0x49` sub-5 sites - the board is a script-reachable but retail-unused mode (pinned by the negative census test in `tile_board_draw_live.rs`). The play-window `LEGAIA_TILE_BOARD_DEMO=1` env var synthesizes a retail-shaped 14-byte install near the player for that reason. Consequences: the intended per-cell tile *art* (retail header `+0xc` template base into `DAT_801f35bc`) and the board-plane Y behaviour have no retail reference to compare against - only a live capture of a debug-menu entry into the mode could pin them.
+
+## Rendering the board
+
+The assembly is `legaia_engine_core::tile_board`: `tile_board_actor_draws`
+(per-cell draws off `World::tile_board_draw_list`, floor-snapped Y, one mesh
+instance per drawable cell), `tile_actor_slots_needing_mesh` and
+`is_tile_actor_slot`. Unresolved templates degrade to no-draw rather than a
+panic.
+
+Each host uploads a board slot's template mesh once and skips board-owned
+slots in its **generic** actor loop - a tile actor's own transform only holds
+the last repositioned cell, so drawing it there as well ghosts one tile:
+
+- play-window - `legaia_engine_shell::tile_board_draws` (a re-export of the
+  three above) and the redraw pass;
+- browser play page - `legaia_web_viewer::play_tile_board` and
+  [`site/js/play-app.js`](../../site/js/play-app.js).
+
+The assembly first lived in the shell crate, which pulls winit and does not
+build for wasm32 - so the play page ran the walk SM against a board it never
+drew, and a `CELL_WALL` cell blocked a player who could see nothing there.
+That is a walk into an invisible wall, not a missing decoration, which is why
+the shared home is `engine-core` rather than `engine-ui` (the UI crate takes
+view structs, not a `World`).
+
+Confirmed via offscreen screenshot diff (13 tile-actor meshes instanced per
+cell). Disc-gated coverage:
+`crates/engine-shell/tests/tile_board_draw_live.rs`.
 
 ## See also
 

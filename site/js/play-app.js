@@ -25,6 +25,7 @@
   const A2R = Math.PI * 2 / 4096;     /* PSX 12-bit angle -> radians */
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
+  const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
   /* Wall-clock NPC anim fallback rate, used ONLY against a cached WASM
    * without the engine clip-state API. The live path reads each clip's
    * current frame from the engine, whose playhead advances in sim-tick time
@@ -44,17 +45,85 @@
   const VR_FP_EYE_HEIGHT_M = 1.6;
   const VR_FP_FALLBACK_MESH_HEIGHT = 130;
 
-  /* Keyboard -> PSX pad bits (`legaia_engine_core::input::PadButton`). */
-  const PAD = {
+  /* Keyboard -> PSX pad bits. Deliberately NOT a table in this file.
+   *
+   * There used to be one here and another in play.html's title loop, and
+   * neither agreed with the engine's own default layout or with each other:
+   * `X` was Square in the native window and Circle in both page tables, `S`
+   * was Circle natively and Down here, and Select / L1 / R1 / L2 / R2 had no
+   * binding on the page at all. None of that shows up in a diff, because no
+   * file held two of the columns.
+   *
+   * So the page reads the binding table out of the engine instead
+   * (`legaia_engine_core::input::Mapping::default` through
+   * `pad_bindings_json`). A rebind now lands on every host at once and a
+   * disagreement can no longer be written down.
+   *
+   * Consequence worth knowing: the arrow keys walk, and WASD does not. The
+   * engine layout binds A / S / W to Triangle / Circle / R1, which is what
+   * the native window has always done. */
+  let PAD = null;
+  let PAD_BTN = null;
+  let SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+
+  /* Bindings of last resort, used only against a cached wasm bundle that
+   * predates the export. Deliberately a bare minimum - walk, confirm, cancel,
+   * menu - because this is a degraded mode, not a second layout to maintain.
+   * The console line is the point: a silent fallback here is how the tables
+   * diverged the first time. */
+  const PAD_STALE_FALLBACK = {
     ArrowUp: 0x0010, ArrowRight: 0x0020, ArrowDown: 0x0040, ArrowLeft: 0x0080,
-    KeyW: 0x0010, KeyD: 0x0020, KeyS: 0x0040, KeyA: 0x0080,
-    KeyZ: 0x4000,   /* Cross    - talk / confirm / advance */
-    KeyX: 0x2000,   /* Circle   - cancel */
-    KeyC: 0x1000,   /* Triangle */
-    KeyV: 0x8000,   /* Square   */
-    Enter: 0x0008,  /* Start    */
-    Space: 0x4000,  /* Cross (second binding - the natural "talk" key) */
+    KeyZ: 0x4000, KeyX: 0x2000, Enter: 0x0008,
   };
+
+  /* Adopt the engine's binding table. `src` is a LegaiaRuntime or the wasm
+   * module namespace - both export the same two calls. Idempotent. */
+  function adoptPadBindings(src) {
+    if (PAD) return PAD;
+    let table = null, buttons = null;
+    try {
+      if (src && typeof src.pad_bindings_json === 'function') {
+        table = JSON.parse(src.pad_bindings_json());
+        buttons = JSON.parse(src.pad_buttons_json());
+      }
+    } catch (e) { table = null; }
+    if (!table || !Object.keys(table).length) {
+      console.warn('[play] engine pad bindings unavailable (stale wasm bundle?) - '
+        + 'falling back to arrows + Z/X/Enter only. Rebuild site/wasm/.');
+      table = PAD_STALE_FALLBACK;
+      buttons = null;
+    }
+    PAD = table;
+    PAD_BTN = buttons;
+    /* Keys the canvas swallows so the page doesn't scroll under the player. */
+    SWALLOW = new Set(Object.keys(PAD).concat(['ArrowUp', 'ArrowDown',
+      'ArrowLeft', 'ArrowRight', 'Space']));
+    return PAD;
+  }
+  /* PSX digital-pad word layout. Hardware, not a binding choice: these bits
+   * are the same in the engine, the recomp and the console, and the runtime's
+   * `set_pad` doc lists them. Used only to answer `legaiaPadButton` against a
+   * stale bundle that has no button table to serve. */
+  const PAD_BITS = {
+    Select: 0x0001, L3: 0x0002, R3: 0x0004, Start: 0x0008,
+    Up: 0x0010, Right: 0x0020, Down: 0x0040, Left: 0x0080,
+    L2: 0x0100, R2: 0x0200, L1: 0x0400, R1: 0x0800,
+    Triangle: 0x1000, Circle: 0x2000, Cross: 0x4000, Square: 0x8000,
+  };
+
+  /* Exposed so play.html's title loop, which runs before any PlayView exists,
+   * shares this one table instead of keeping a third. */
+  window.legaiaAdoptPadBindings = adoptPadBindings;
+  window.legaiaPadTable = () => PAD;
+  window.legaiaPadMaskOf = padMaskOf;
+  window.legaiaPadButton = (name) => (PAD_BTN && PAD_BTN[name]) || PAD_BITS[name] || 0;
+
+  /* Fold a set of key codes into a pad word. */
+  function padMaskOf(keys) {
+    let mask = 0;
+    for (const k of keys) mask |= (PAD && PAD[k]) || 0;
+    return mask;
+  }
 
   /* The retail menu's own clock. Its timers (the save screen's "Now checking"
    * beat, every slide-in) are counted in 60 Hz frames, so the menu ticks on
@@ -64,10 +133,6 @@
   /* Most catch-up ticks one frame may replay (a backgrounded tab can hand us
    * an arbitrarily large gap). */
   const MENU_TICK_MAX_CATCHUP = 8;
-
-  /* Keys the canvas swallows so the page doesn't scroll under the player. */
-  const SWALLOW = new Set(Object.keys(PAD).concat(['Space', 'ArrowUp', 'ArrowDown',
-    'ArrowLeft', 'ArrowRight']));
 
   /* Blits sub-rects of a source atlas (font glyphs or the menu-chrome sheet)
    * with a per-quad RGBA multiply tint, over a 2D canvas. The retail pause menu
@@ -248,6 +313,8 @@
         throw new Error('TmdRenderer global missing (webgl-tmd.js not loaded?)');
       }
       this.rt = runtime;
+      /* One binding table, read from the engine rather than typed here. */
+      adoptPadBindings(runtime);
       this.canvas = canvas;
       this.renderer = new window.TmdRenderer(canvas);
       this.opts = opts || {};
@@ -267,6 +334,8 @@
       this.staticDraws = [];
       this.player = null;    /* { basePositions } */
       this.npcs = [];        /* [{ meshId, base, objectIds, frames, partCount, frameCount, out }] */
+      this.tileMeshSlots = [];
+      this.tileActorSlots = new Set();
       /* Animated environment props (a placement whose object bind names a
        * clip: the Rim Elm windmill, swinging house doors). Each gets its own
        * mesh instance so its clip advances independently; re-posed per frame
@@ -517,6 +586,8 @@
       this.staticDraws = [];
       this.player = null;
       this.npcs = [];
+      this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
+      this.tileActorSlots = new Set();   /* every board-owned slot, drawn or not */
       this.animProps = [];
       /* Scene-owned caption image (the prologue's baked TIM): re-resolve on
        * the next draw that needs it. */
@@ -653,7 +724,8 @@
           const frames = rt.play_npc_pose_frames(npc.i);
           const dims = rt.play_npc_pose_dims(npc.i);
           const rec = {
-            i: npc.i, meshId, base, objectIds: rt.play_npc_mesh_object_ids(),
+            i: npc.i, slot: npc.slot, meshId, base,
+            objectIds: rt.play_npc_mesh_object_ids(),
             frames, frameCount: dims[0], partCount: dims[1],
             out: new Float32Array(base.length), lastFrame: -1, lastGen: -1,
           };
@@ -672,13 +744,47 @@
       this._followCamera();
     }
 
+    /* Upload a scene mesh for every board-owned actor slot the engine reports,
+     * once each. Cheap when no board is installed: the engine returns an empty
+     * slot list and this is two array reads.
+     *
+     * `tileActorSlots` is the exclusion set the generic actor loop consults -
+     * the browser twin of the native redraw pass's `is_tile_actor_slot` skip.
+     * Teardown (the script closing the board) empties both lists, so a second
+     * board in the same scene re-uploads rather than drawing the first one's
+     * meshes at the new cells. */
+    _syncTileBoard(rt) {
+      const owned = rt.play_tile_actor_slots();
+      if (!owned.length) {
+        if (this.tileMeshSlots.length) this.tileMeshSlots = [];
+        if (this.tileActorSlots.size) this.tileActorSlots = new Set();
+        return;
+      }
+      this.tileActorSlots = new Set(Array.from(owned, (s) => s | 0));
+      const want = rt.play_tile_board_slots();
+      for (let i = 0; i < want.length; i++) {
+        const slot = want[i] | 0;
+        if (this.tileMeshSlots.indexOf(slot) >= 0) continue;
+        let ok = true;
+        try { rt.play_tile_actor_mesh(slot); } catch (e) { ok = false; }
+        if (!ok) continue;
+        const pos = rt.play_tile_actor_mesh_positions();
+        const idx = rt.play_tile_actor_mesh_indices();
+        if (!pos.length || !idx.length) continue;
+        const flat = rt.play_tile_actor_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(TILE_MESH_BASE + slot, pos,
+          rt.play_tile_actor_mesh_uvs(), rt.play_tile_actor_mesh_cba_tsb(),
+          idx, flat.length ? flat : null);
+        this.tileMeshSlots.push(slot);
+      }
+    }
+
     /* ---------- input ---------- */
 
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
-        const bit = PAD[e.code];
-        if (bit === undefined) return;
+        if (!PAD || PAD[e.code] === undefined) return;
         if (SWALLOW.has(e.code)) e.preventDefault();
         if (down) { this.held.add(e.code); this.pulse.add(e.code); }
         else this.held.delete(e.code);
@@ -729,10 +835,7 @@
 
     /* Held keys OR the not-yet-consumed press edges -> one pad word. */
     _repack() {
-      let mask = 0;
-      for (const k of this.held) mask |= (PAD[k] || 0);
-      for (const k of this.pulse) mask |= (PAD[k] || 0);
-      this.pad = mask;
+      this.pad = padMaskOf(this.held) | padMaskOf(this.pulse);
     }
 
     /* Held-key state, for the on-screen control legend. */
@@ -831,7 +934,7 @@
         this.sfxEvent('menu_cancel');
       } else {
         let edge = 0;
-        for (const k of p) edge |= (PAD[k] || 0);
+        edge |= padMaskOf(p);
         /* Cue the engine's own blips off this frame's edges: a direction is a
          * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
          * provenance come from the engine (`play_sfx_events_json`) - the page
@@ -919,7 +1022,7 @@
       if (!open) return false;
       this._ensureMenuBlitters();
       let edge = 0;
-      for (const k of this.pulse) edge |= (PAD[k] || 0);
+      edge |= padMaskOf(this.pulse);
       let committed = false;
       try { committed = rt.name_entry_input(edge); } catch (e) {}
       if (committed && typeof this.opts.onNamed === 'function') {
@@ -954,7 +1057,7 @@
       if (!open) return false;
       this._ensureMenuBlitters();
       let edge = 0;
-      for (const k of this.pulse) edge |= (PAD[k] || 0);
+      edge |= padMaskOf(this.pulse);
       try { rt.play_shop_input(edge); } catch (e) {}
       /* The shop owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
@@ -1310,7 +1413,7 @@
            * town01 - available mid-narration too. The engine returns the
            * target label once; enter it like a door. */
           if (this._cut && this._cut.chain
-              && (this.pulse.has('KeyZ') || this.pulse.has('Space'))
+              && (padMaskOf(this.pulse) & window.legaiaPadButton('Cross'))
               && typeof rt.play_take_prologue_handoff === 'function') {
             let target = '';
             try { target = rt.play_take_prologue_handoff(true); } catch (e) {}
@@ -1462,6 +1565,11 @@
        * the engine's frame (or the clip itself, via an ANIMATE cue re-target -
        * the `generation` bump) actually changed. Falls back to the wall-clock
        * animator against a cached WASM without the clip-state API. */
+      /* Tile board (field-VM op 0x49), synced BEFORE the NPC loop because
+       * that loop consults `tileActorSlots` to skip board-owned actors -
+       * syncing after it would leave the exclusion set one frame stale, which
+       * is exactly one frame of ghosted tiles per board install. */
+      if (typeof rt.play_tile_actor_slots === 'function') this._syncTileBoard(rt);
       const nt = rt.play_npc_transforms();
       const clipStates = (typeof rt.play_npc_clip_states === 'function')
         ? rt.play_npc_clip_states() : null;
@@ -1474,6 +1582,12 @@
          * or a cutscene hide): not drawn - retail parks despawned actors at
          * the far-corner sentinel tile precisely so they never render. */
         if (nt[base] === this._hideXZ && nt[base + 2] === this._hideXZ) continue;
+        /* Board-owned actor: it draws once per board cell through the tile
+         * pass below, and its own transform holds only the last repositioned
+         * cell - drawing it here too ghosts a tile at whichever cell the
+         * refresh touched last. The native redraw pass skips the same slots
+         * (`is_tile_actor_slot`). */
+        if (this.tileActorSlots.has(n.slot | 0)) continue;
         if (clipStates && n.i * 2 + 1 < clipStates.length) {
           const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
           if (f >= 0 && (f !== n.lastFrame || gen !== n.lastGen)) {
@@ -1498,6 +1612,30 @@
           rotY: -(nt[base + 3] + 2048) * A2R,
           scale: 1.0,
         });
+      }
+
+      /* Tile board (field-VM op 0x49). A board is installed at RUNTIME by the
+       * scene's script, not at scene load, so the upload is checked here per
+       * frame rather than in `_rebuild` - the native window's redraw pass does
+       * the same. Without this the page ran the walk state machine against a
+       * board it never drew: the wall cells still blocked, so the player
+       * walked into nothing and stopped.
+       *
+       * A cell whose mesh never uploaded is SKIPPED, not drawn at the origin
+       * (the native `drained_spawn_slots` gate); the generic actor loop skips
+       * board-owned slots entirely, because a tile actor's own transform only
+       * carries the last repositioned cell. */
+      if (typeof rt.play_tile_board_transforms === 'function') {
+        const tb = rt.play_tile_board_transforms();
+        for (let i = 0; i + 3 < tb.length; i += 4) {
+          const slot = tb[i] | 0;
+          if (this.tileMeshSlots.indexOf(slot) < 0) continue;
+          draws.push({
+            meshId: TILE_MESH_BASE + slot,
+            x: tb[i + 1], y: -tb[i + 2], z: tb[i + 3],
+            rotY: 0, scale: 1.0,
+          });
+        }
       }
 
       /* Cutscene camera: while a timeline runs, aim the orbit camera from

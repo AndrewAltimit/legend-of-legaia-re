@@ -57,6 +57,10 @@ pub struct LegaiaRuntime {
     pub(crate) field: Option<FieldRender>,
     /// Lead party member's field-form mesh.
     pub(crate) player: Option<PlayerRig>,
+    /// The tile-board actor mesh staged for upload, one slot at a time
+    /// (`crate::play_tile_board`). Board cells all draw the same handful of
+    /// template meshes, so the page uploads each slot once per scene.
+    pub(crate) tile_mesh: Option<crate::play_tile_board::StagedTileMesh>,
     /// The scene's MAN-placed NPC catalog.
     pub(crate) npcs: Option<NpcRender>,
     /// Live NPC clip players keyed by placement slot - the browser twin of
@@ -209,6 +213,7 @@ impl LegaiaRuntime {
             scene_host: None,
             field: None,
             player: None,
+            tile_mesh: None,
             npcs: None,
             npc_clips: std::collections::HashMap::new(),
             scene_anm: None,

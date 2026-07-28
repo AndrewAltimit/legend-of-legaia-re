@@ -41,6 +41,8 @@ invoke them by `scripts/ci/<name>` path.
 - `check-site-links.py` - static-site internal-link + anchor gate.
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
 - `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
+- `check-ui-host-drift.py` (+ `ui-host-drift-waivers.toml`) - hard gate: every `engine-ui` draw builder must reach both hosts, paired host geometry constants must carry equal values, and paired simulation injection sites must name the same kernels. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md).
+- `check-trait-override-symmetry.py` (+ `trait-override-waivers.toml`) - hard gate: an `engine-core` trait whose methods all carry default bodies lets a host forget a hook with no compile error, so every host implementing one must override the same set. Same page.
 - `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
 - `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke. `site/wasm/` is **not committed**; run `build-wasm.sh` once to browse `site/` locally. It also stamps `site/wasm/SOURCE_STAMP.json` (untracked); `check-wasm.sh --full` verifies it.

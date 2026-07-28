@@ -320,9 +320,15 @@
           <div class="play-keys" id="play-keys">
             <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
             <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
-            <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
-            <kbd data-key="KeyV">V</kbd><span>Square (reel harder while fishing)</span>
+            <kbd data-key="KeyS">S</kbd><span>Cancel (Circle)</span>
+            <kbd data-key="KeyA">A</kbd><span>Triangle</span>
+            <kbd data-key="KeyX">X</kbd><span>Square (reel harder while fishing)</span>
             <kbd data-key="Enter">Enter</kbd><span>Start</span>
+            <kbd data-key="ShiftRight">R-Shift</kbd><span>Select</span>
+            <kbd data-key="KeyQ">Q</kbd><span>L1</span>
+            <kbd data-key="KeyW">W</kbd><span>R1</span>
+            <kbd data-key="Digit1">1</kbd><span>L2</span>
+            <kbd data-key="Digit2">2</kbd><span>R2</span>
             <kbd>Drag</kbd><span>Swing the camera</span>
             <kbd>Wheel</kbd><span>Zoom</span>
           </div>
@@ -458,7 +464,7 @@
 <script src="js/webgl-math.js?v=zfight-1"></script>
 <script src="js/webgl-tmd.js?v=zfight-1"></script>
 <script src="js/field-scene-view.js?v=play-3"></script>
-<script src="js/play-app.js?v=play-7"></script>
+<script src="js/play-app.js?v=play-8"></script>
 <script>
 (function () {
   'use strict';
@@ -671,10 +677,21 @@
    * black overlay and feeds it edge-triggered pad words. This runs BEFORE any
    * scene / PlayView exists, so it owns a tiny self-contained RAF + key loop. */
   let bootTitleRAF = 0;
-  const BOOT_PAD = { ArrowUp: 0x0010, ArrowDown: 0x0040, KeyW: 0x0010, KeyS: 0x0040,
-    KeyZ: 0x4000, Space: 0x4000, KeyX: 0x2000, Enter: 0x0008 };
+  /* No BOOT_PAD table here any more. This loop used to carry a third keyboard
+   * map beside play-app.js's and the engine's, and the three disagreed: `X`
+   * was Circle here and Square in the native window, `S` walked down here and
+   * pressed Circle there, and Select / L1 / R1 / L2 / R2 existed in neither
+   * page table. The title loop now shares the one table play-app.js reads out
+   * of the engine (`legaia_engine_core::input::Mapping::default` via
+   * `pad_bindings_json`), so a rebind reaches the title card too. */
   function runBootTitle(then) {
     if (!runtime) { then('new_game'); return; }
+    const PAD = window.legaiaAdoptPadBindings
+      ? window.legaiaAdoptPadBindings(runtime)
+      : null;
+    const padMaskOf = window.legaiaPadMaskOf || ((keys) => {
+      let m = 0; for (const k of keys) m |= (PAD && PAD[k]) || 0; return m;
+    });
     try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
     if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
     stageEl.style.display = 'grid';
@@ -698,7 +715,7 @@
     } catch (e) { console.warn('boot title atlas', e); }
     const pulse = new Set();
     const onKey = (e) => {
-      if (BOOT_PAD[e.code] === undefined) return;
+      if (!PAD || PAD[e.code] === undefined) return;
       e.preventDefault();
       pulse.add(e.code);
     };
@@ -713,8 +730,7 @@
     };
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
-      let edge = 0;
-      for (const k of pulse) edge |= (BOOT_PAD[k] || 0);
+      const edge = padMaskOf(pulse);
       pulse.clear();
       let outcome = '';
       try { outcome = runtime.boot_title_step(edge); } catch (e) { return finish('new_game'); }

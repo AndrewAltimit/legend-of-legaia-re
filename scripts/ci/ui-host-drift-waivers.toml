@@ -71,20 +71,31 @@ symmetrically, for the reason above. The gap is host-identical, not drift.
 builder = "key_rebind_draws_for"
 kind = "orphan"
 reason = """
-Web-exempt by design, but unreached on native too. The browser page's bindings
-are JS keycode tables owned by the page, not the engine - `PAD` in
-`site/js/play-app.js` for the in-scene pad and `BOOT_PAD` in
-`site/_content/play.html` for the title / save rack - and a shared rebind
-screen would have to write a config the browser has no place to persist. On
-native, rebinding today happens through the `legaia-input.toml` config file and
-the `legaia-engine config set --binding` subcommand; the in-engine screen this
-builder draws is not mounted in the window's menu tree.
+Unreached on BOTH hosts. This waiver used to open by calling the browser
+"web-exempt by design", on the premise that "the browser page's bindings are
+JS keycode tables owned by the page, not the engine - `PAD` in
+`site/js/play-app.js` ... and `BOOT_PAD` in `site/_content/play.html`". That
+premise is gone, and its being true was itself the bug: three hand-maintained
+tables drifted key-for-key (`X` was Square natively and Circle in both page
+tables, `S` was Circle natively and Down on the page, and Select / L1 / R1 /
+L2 / R2 were bound on neither page). Both pages now READ the engine's own
+table through `legaia_web_viewer::pad_bindings::pad_bindings_json`, so the
+bindings are engine-owned on every host and there is no page-side layout left
+to exempt.
 
-What must exist first is a **menu route**, on either host: the options screen
-both hosts draw (`options_draws_for`) has no row that opens a sub-screen, and
-`engine-core`'s `OptionsSession` carries no binding-edit state for one to
-drive. Closing it means growing that row and that state, not adding a draw
-call.
+What still blocks the screen is the half that was always true: a **menu
+route**. The options screen both hosts draw (`options_draws_for`) has no row
+that opens a sub-screen, and `engine-core`'s `OptionsSession` carries no
+binding-edit state for one to drive. `engine-core::key_rebind::KeyRebindSession`
+is complete - rows in canonical order, await-key state, eviction so two keys
+cannot report one button - and its only caller is
+`engine-core/tests/menu_suite_e2e.rs`. Native rebinding today happens through
+`legaia-input.toml` and `legaia-engine config set --binding`; the browser has
+no equivalent yet, but persistence is no longer the obstacle it was claimed to
+be (the page already persists saves).
+
+Closing it means growing that options row and that session state on both
+hosts, plus a wasm binding for `KeyRebindSession` - not adding a draw call.
 """
 
 # `sprite_draws_for` used to be waived here as "a generic anchor-translate
