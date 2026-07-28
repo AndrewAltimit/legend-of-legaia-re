@@ -347,6 +347,8 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     // See `docs/subsystems/battle-action.md` § "The three bytes the bound is
     // built from".
     //
+    // REF: FUN_801DABA4 (the round-skip bump this bound reads)
+    //
     // PORT: FUN_801E295C (`0x801E679C..0x801E67C8`)
     ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
     let bumped = ctx.turn_cursor;

@@ -162,6 +162,8 @@ pub struct CueTables<'a> {
 ///
 /// PORT: FUN_801E22C8
 /// REF: FUN_800402F4 (the damage primitive that picks the group id),
+/// REF: FUN_801E295C (its one call site in the action SM, `0x801E4134`),
+/// REF: FUN_801EC3E4 (what the strike loop resolves damage through instead),
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
 /// REF: FUN_80058490 (sound packet submit)
 pub fn expand_cue_group(

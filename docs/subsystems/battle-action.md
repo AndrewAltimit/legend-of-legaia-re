@@ -326,6 +326,40 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x890..+0x893` (ctx) | u8 × 4 | 4-byte fade-back sentinel `84 10 42 08`. Written by the summon `0x37` and capture `0x71` paths. |
 | `+0x102C`/`+0x1080`/`+0x1074` (ctx) | int* | Scratch pointers to live UI widgets (fade primitive, HP-bar, damage-popup). |
 
+### `+0x4` is a tint, not a flag - and it has a per-frame driver
+
+`+0x4` reads like a visibility bit everywhere it is tested, and five separate
+routines do test it that way, but the value itself is a **packed RGB tint**:
+`FUN_8004A908` loads it (`0x8004A998`), strips the mesh colour and bails when it
+is zero (`0x8004A9A0`), and otherwise OR-s it under `+0x8`'s top byte into the
+render node's `+0x74` (`0x8004ABA0`). `0x20080200` is neutral grey; `0` draws
+black.
+
+Two routines keep it meaningful, and the summon fade only makes sense read
+against them:
+
+- **Seating.** `FUN_800513F0` stamps `0x20080200` on each occupied party slot
+  (`0x800515F4`) and `0x10040100` on each occupied monster slot (`0x80051874`).
+  An unoccupied monster seat is never written, so it keeps the allocator's zero
+  - that is how `+0x4 == 0` also means "no monster here".
+- **A per-frame tint tween.** `FUN_80050120` walks all eight slots each frame,
+  skips any with no model (`+0x22C == 0`), holds `+0x4` frozen while
+  `+0x21C >= 0x0B` (`0x8005017C`) and otherwise lerps it back toward neutral
+  through `FUN_80050F30`, storing at `0x8005059C`.
+
+So the summon sweep's `+0x4 = 0` / `+0x21C = 0xFF` pair at `0x801E4B50` is a
+*hold*: the `0xFF` freezes the tween, and state `0x36`'s `+0x21C = 0`
+(`0x801E4CFC`) releases it, after which the tint walks back to neutral in about
+32 frames. The `+0x8 = 0x81000000` write beside it fires precisely because
+`+0x4` is still black at that moment.
+
+**Port.** The engine carries `+0x21C` and leaves `+0x4` at zero, so the target-
+group walk reads the twin. The two are **not** interchangeable - an empty seat
+reads `+0x21C == 0` where retail rejects it on `+0x4`, and a monster that dies
+mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
+`engine-vm`'s `battle_target_group` module doc carries the full comparison and
+why seeding `+0x4` without also porting the tween would be worse than the twin.
+
 ## The `0x51` exit gate and the HP-bar settle invariant
 
 State `0x51` (done / fade-down) leaves the action band only when
