@@ -17,6 +17,11 @@
 //! stages the summon backdrop fade (state `0x33`) and the successful-escape
 //! white-out (state `0x66`, template at `DAT_801C9070`) through this.
 
+// REF: FUN_80020C14 - the per-frame ramp step over the block this loader
+// fills; ported in `crate::fade_ramp`.
+// REF: FUN_80025000 - the fade actor's tick, which drives that step.
+// REF: FUN_80024EE4 - the GP0 quad emitter the tick's packed colour goes to.
+
 /// The 13-`i16` fade template `FUN_80020B00` consumes (`param_2` field
 /// indices in brackets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

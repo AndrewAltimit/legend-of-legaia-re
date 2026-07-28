@@ -61,6 +61,15 @@
 //! Until then this module is the retail reference the host model is checked
 //! against, not the thing driving the screen.
 
+// REF: FUN_80020B00 - the template loader whose stores name this block's
+// fields; ported in `crate::fade` as `FadeState::load`.
+// REF: FUN_80024E80 - the spawn that stamps the `+0x22` id.
+// REF: FUN_80024EE4 - the GP0 quad emitter the tick's result is handed to; the
+// engine draws the overlay from its own draw list, so the port stops at the
+// descriptor.
+// REF: FUN_801DDC20 - the overlay-resident sibling ramp (a lerp, not an
+// accumulator), ported as `crate::field_actor_kernels::step_colour_tween`.
+
 /// The two latched outcomes the step raises on the owning actor.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RampFlags {
