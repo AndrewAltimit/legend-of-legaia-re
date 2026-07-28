@@ -1984,7 +1984,9 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | Debug flag `0x8007B98F` | resolved (the MSB of the debug-mode word `_DAT_8007B98C`) | `disassembly` + `capture` | [details ↓](#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c) |
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative) | `capture` + `disassembly` | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay-loader index off-by-2 - remaining ripple | resolved (slot A reconciled; slot-B per-spell identity capture-pinned) | `capture` + `disassembly` | [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
-| Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved except 0968 (that residual is on the open page) | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved for every entry | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
+| PROT 0968 - what it is, who loads it, and how big it really is | resolved (residency capture still owed - on the open page) | `disassembly` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
+| `0x80010390` - the SCUS word that looked like a lead on 0968 | resolved: it is the slot-B overlay destination pointer, shared by every slot-B entry | `disassembly` | [details ↓](#0x80010390-is-the-slot-b-overlay-destination-pointer) |
 
 ### `_DAT_8007B98F` is byte +3 of the debug-mode word `_DAT_8007B98C`
 
@@ -2310,13 +2312,115 @@ nothing here. The full accounting:
   entry-size over-read artifact: shift `0x5FE8` lies wholly past 0965's real
   `0x2000`-byte extent, and the corrected entries share no content). See also the
   [band's own settled row](#slot-b-capture-module-band-09350966-per-entry-identity).
-- **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep).
+- **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep);
+  battle-stage id `1`.
+- **0968** = the **Cort battle's stage overlay**, battle-stage id `2` -
+  [details ↓](#prot-0968---the-cort-battle-stage-overlay).
 - **0969** = the STR-path table the STR-mode init pages
   (`FUN_8003EC70(0x4A)`; [`boot.md`](../subsystems/boot.md)). An overlay-resident
-  callsite loads it too: the battle SM pages `0x4A` when a battle global holds
-  `0xB5` - the Lapis Wave spell id - (`jal 0x8003ec70` at `0x801E6D14`,
-  `overlay_battle_action_801e6968`), so the same small blob serves Cort's Lapis
-  Wave cinematic in battle.
+  callsite loads it too, and it is the **same gate as 0968's**: at `0x801E6D04`
+  the battle SM reads `*(u8 *)0x8007BD0C` - the first **formation monster id** -
+  compares it to `0xB5`, and pages `0x4A` (`jal 0x8003ec70` at `0x801E6D14`,
+  `overlay_battle_action_801e6968`). The guard immediately above it is
+  `lhu v0, 0x14C(actor)` on slot 3 of the actor table `0x801C9370`, taking the
+  load only when that actor's **HP has reached zero** - so 0969 is Cort's
+  form-transition module, paged when a form dies. The earlier reading of that
+  `0xB5` as "the Lapis Wave spell id" was an **id-space collision**: spell `0xB5`
+  is Lapis Wave, but the byte the branch reads is the formation id, and formation
+  `0xB5` is Cort (monster-archive id 181).
+
+### `0x80010390` is the slot-B overlay destination pointer
+
+*Status:* resolved - the one non-confounded lead in the 0968 hunt is a collision
+
+An address-reference sweep for `0x801F69D8` (0968's link base) over all 1234
+images produced exactly one literal-word hit outside the overlay band: a
+`0x801F69D8` at `SCUS_942.54 +0x390`. Since SCUS is not in the band and the
+band's own hits are worthless - slot-B overlays *share* the base, so the VA is
+simultaneously live in ~70 sibling images and every `jal`/`j`/branch to it is
+that sibling's own code - the SCUS hit read as the one genuine cross-image
+reference and the last thing left to follow.
+
+It is a collision. `0x80010390` is a **SCUS-resident global holding the slot-B
+overlay load address**, and `0x8001038C` is its slot-A twin. The two loaders
+are otherwise identical - `FUN_8003EBE4` reads `*(0x8001038C)` at `0x8003EC24`,
+`FUN_8003EC70` reads `*(0x80010390)` at `0x8003ECCC`, both then run
+`FUN_8003E8A8(param + 0x381)` and `FUN_8003E800` into that buffer, and they
+differ only in which residency tracker they stamp (`gp+0x924` vs `gp+0x934`).
+No instruction in `SCUS_942.54` ever *stores* to either word; a sweep for
+`lui 0x8001` paired with a memory op at `+0x38C`/`+0x390` finds nine sites and
+all nine are `lw`. So the literal is the slot-B base constant itself, shared by
+every slot-B entry, and carries zero information about 0968 specifically.
+
+The general lesson is the one the sweep tool already warns about in its own
+docstring, arriving from the other direction: **when overlays share a load
+base, a reference to that base is a reference to the slot, not to a tenant.**
+
+### PROT 0968 - the Cort battle stage overlay
+
+*Status:* resolved except for a residency capture, which stays on
+[`open-rev-eng-threads.md`](open-rev-eng-threads.md#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry)
+
+**Why the callsite hunt kept failing.** The search was for loader param `0x49`
+as a *constant*, and no constant produces it. Stage overlays are paged by a
+**computed** parameter: sub-states `0x0E`/`0x10` of the battle loader read the
+stage-id byte `_DAT_8007B64A` and call `FUN_8003EC70(stage_id + 0x47)`
+([`battle.md`](../subsystems/battle.md)). Nothing named `0x49` anywhere,
+because nothing ever writes it.
+
+**The selector.** `FUN_80055B6C`, the battle scene initialiser, ends its
+formation fix-up with a hardcoded override at `0x80055D2C`:
+
+```
+lbu   v1, -0x42f4(v1)   ; v1 = *(u8 *)0x8007BD0C - the first formation monster id
+addiu v0, zero, 0xb5
+bne   v1, v0, 0x80055d48
+addiu v0, zero, 2       ; delay slot
+sb    v0, -0x49b6(at)   ; *(u8 *)0x8007B64A = 2 - the battle-stage id
+```
+
+Formation id `0xB5` is monster-archive id **181 = Cort**, read straight off
+PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param `0x49` →
+extraction entry **968**, and the Cort fight is its only gate. The same byte
+against the same constant is what pages **0969** mid-battle when a Cort form's
+HP reaches zero, which is the corroboration: one boss, two modules, one
+formation-id test each.
+
+**Its real extent is 2600 bytes, not 4096.** The entry is 2 sectors, but only
+file `0x00..0xA28` is 0968's own content - a 7-entry dispatch table at offset 0
+(every target inside that window) and code from `0x1C`. Every `jal`, every `j`
+and every LUI+ADDIU materialisation in that window resolves either inside it or
+into `SCUS_942.54` / the co-resident slot-A battle overlay; **not one reaches
+past `0xA28`.**
+
+The trailing 1496 bytes are byte-identical to PROT 0967 at the *same* file
+offsets and cut mid-string at the sector boundary - stale mastering-buffer
+content from the neighbouring tutorial overlay, not 0968's. Two independent
+proofs it cannot be 0968's own:
+
+- it contains `FUN_801F747C`, a text-box placement routine whose style
+  dispatch is `jr *(0x801F6B48 + style*4)`. In 0967 that address is a 10-entry
+  jump table sitting at file `0x170`, right after 0967's 91-entry step table;
+  in 0968 file `0x170` is live code. The routine cannot run under 0968's
+  layout;
+- the same window materialises `0x801F7C80`, a string that exists only in
+  0967 and lies past 0968's end.
+
+This is why every prior structural read of the entry disagreed with itself:
+"pointer-table head, 10 of 11 self-pointers, 2+8 spawn calls" was measured over
+all 4096 bytes, mixing two modules. Measured over `0x00..0xA28` the picture is
+clean and its first instruction reads the battle-context pointer
+`_DAT_8007BD24` and writes `ctx[+0x6D6] = 0x100`.
+
+**What the module does.** A 7-state scripted battle set-piece. Its calls into
+`SCUS_942.54` are `FUN_80050ED4` (summon / effect-actor pool allocator) ×8,
+`FUN_80021B04` (actor spawn) ×2, `FUN_80024E80` (screen-fade spawn) ×2,
+`FUN_8003541C` (text actor), `FUN_8004FCC8` (cue / streamed-voice dispatch),
+`FUN_80058490` (`MoveImage` VRAM blit), plus `FUN_80035F04` and `FUN_80050E74`;
+it also calls `0x801D829C` in the co-resident slot-A battle overlay four times.
+Effect spawns, fades, a VRAM blit, a line of text and a voice cue is the shape
+of a boss's scripted sequence, and it is the same external-call family as the
+tutorial overlay 0967 minus the tutorial's own prompt helpers.
 
 ### PROT 0977 / 0978 extraction + the dump re-key
 

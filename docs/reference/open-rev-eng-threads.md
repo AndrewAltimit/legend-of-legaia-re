@@ -156,21 +156,67 @@ dungeon-walk capture per region would close the residual.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| PROT 0968 identity - the one unidentified slot-B cluster entry | open (narrowed to one entry) | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
+| PROT 0968 identity - the one unidentified slot-B cluster entry | mostly resolved - it is the Cort battle's stage overlay; only a residency capture is missing | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
 
 ### PROT 0968 identity - the one unidentified slot-B cluster entry
 
-*Status:* open - every other entry in the `0900..0969` slot-B cluster is
-identified ([`re-settled-threads.md`](re-settled-threads.md#slot-b-overlay-cluster-09000969-per-entry-identity))
+*Status:* mostly resolved. The loader chain, the selector, the module's real
+extent and its call profile are all pinned from the disassembly and the disc
+bytes; what is unconfirmed is a live capture showing it resident. The full
+write-up is on
+[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay).
 
-A 4 KB slot-B module (pointer-table head, 10/11 self-pointers resolve at the
-link base `0x801F69D8`, 2+8 spawn calls - stager-shaped). Its loader param
-would be `0x49`, which appears at no static SCUS callsite and no captured
-overlay callsite; it sits between the tutorial (0967, `0x48`) and the STR-path
-table (0969, `0x4A`). Identity needs either an uncaptured overlay callsite or
-a residency capture. (The old "STR overlay replicated across 0967/0968/0969/0970"
-reading was the over-read: the corrected 4 KB entry cannot contain the STR
-dispatch code at its `+0x225C` offsets.)
+In short: `formation monster id 0xB5` (archive id 181, **Cort**) sets the
+battle-stage id byte to `2`, and the stage-overlay path loads
+`FUN_8003EC70(stage_id + 0x47)` - loader param `0x49`, extraction entry 968.
+The old "`0x49` appears at no static SCUS callsite" statement was true and
+uninformative: the parameter is **computed**, so no constant-parameter scan
+can ever produce it.
+
+*What would close it:* a save state taken inside the Cort fight showing
+entry 968's bytes resident in the slot-B buffer at `0x801F69D8`, and the
+loader-B current-id tracker `gp+0x934` (`0x8007BC4C`) reading `0x49` - the
+same pair of observations that pinned 0967 for the Tetsu tutorial.
+
+## Rendering / camera
+
+| Thread | Status | What would close it |
+|---|---|---|
+| Does any retail shot author a non-zero camera roll? | open - a static sweep provably cannot decide it | [details ↓](#does-any-retail-shot-author-a-non-zero-camera-roll) |
+
+### Does any retail shot author a non-zero camera roll?
+
+*Status:* open. The port's cutscene camera composes pitch and yaw and drops
+roll, on the assumption that retail shots rarely roll. That assumption is
+load-bearing and had never been measured.
+
+Roll is slot `2` of the op-`0x45` CONFIGURE mask
+([`cutscene.md`](../subsystems/cutscene.md)), so it looks like a cheap static
+sweep of the scene MANs. It is not, and the census
+(`crates/asset/tests/thread_camera_roll_census.rs`) exists mainly to record
+why. A field-VM record's tail is not linearly decodable - data follows code -
+so the sweep must choose a mode, and **the two modes disagree by two orders of
+magnitude**: stopping at the first decode error reaches 21 CONFIGUREs
+corpus-wide, resuming a byte at a time reaches 2182. Every error gate between
+them moves the non-zero count monotonically, with no plateau, so a gated
+census is measuring its own threshold.
+
+The resuming mode is not merely suspect - it is **provably** decoding data:
+seven of its roll operands lie outside the 12-bit space `RotMatrixZ` masks its
+argument to, and an authored angle cannot be `26708`.
+
+Two things do survive every mode, and the test asserts them: roll is an
+**optional** slot (~29% of beats set it, against ~100% for pitch, yaw, the eye
+trio, focus X/Z and H), and the mask decode cross-checks against a fact
+established independently of this sweep - focus Y (slot 7) is rarer still,
+matching the `opdeene` reading already on `cutscene.md`.
+
+*What would close it:* execution, not decode. Run the candidate records
+through the ported field VM and read the roll each CONFIGURE commits. The
+candidates are the scenes whose resuming-sweep operands are in-range and
+repeat coherently: `deroa`, `chitei2`, `station3`, `town0b`, `retona`,
+`nilboa`, `edstati3`. A reachability (control-flow) walker over MAN records
+would settle it statically and retire the test's second assertion.
 
 ## Adding a thread
 
