@@ -179,11 +179,24 @@ about these is contested.
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | battle 3D layer on web | The browser host runs live battles and draws the HUD, command menus and banners, but not the battle *scene* - no 3D layer stands behind them. |
 | screen-space PSX primitives on web | The native renderer draws PSX `POLY_FT4`/`POLY_GT4` quads in ordering-table order; the browser has no equivalent, because `SpriteDraw` cannot carry a PSX primitive. See below. |
+| field-to-battle transition on web | The native play window opens a battle with the retail transition - the fade on every style, the curtain where retail selects it. The browser page cuts straight to the battle, because the transition is drawn entirely out of the row above. |
 
 ### Screen-space PSX primitives: what the web host would need
 
 This one is worth spelling out, because the surface tier 1 measures makes it
-invisible. Every screen-space effect retail draws - the field-to-battle
+invisible - **and it is now a shipped asymmetry rather than a latent one.**
+The native play window drives the field-to-battle intro emitter
+(`engine-render`'s `battle_intro`) through
+`RenderTarget::SceneWithScreenPrims` on every encounter; the browser play page
+has no path that could and cuts straight into the battle. The simulation half
+is shared and identical on both hosts - `World::tick_encounter` runs the
+transition state machine either way, so the handoff timing, the BGM swap and
+the battle that opens are the same. What differs is only whether anything is
+drawn during it.
+
+That is the honest shape of this gap, and it is deliberately **not** closed by
+a waiver: no gate fails, because no gate can see a capability that has no type
+to be measured through. Every screen-space effect retail draws - the field-to-battle
 transition styles, the move-FX afterimage streak, any `screen_fx` sprite - is a
 PSX primitive: a quad whose texels come out of VRAM through a per-primitive
 CLUT/texpage pair, blended by one of four fixed ABR equations, ordered by an

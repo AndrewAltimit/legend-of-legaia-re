@@ -1,6 +1,8 @@
 //! Extracted from `window.rs` (mechanical split; behavior-preserving).
 
 use super::*;
+use legaia_engine_render::battle_intro::BattleIntro;
+use legaia_engine_render::screen_overlay::ScreenPrim;
 
 // The battle-HUD row fold and the encounter-banner label are shared with the
 // browser play page: both live in `legaia_engine_core::battle_hud` and each
@@ -1103,6 +1105,193 @@ impl PlayWindowApp {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // The field-to-battle intro transition
+    // -----------------------------------------------------------------------
+
+    /// Arm, advance or drop the field-to-battle intro emitter so it tracks the
+    /// encounter session's `Transition` phase, and return this frame's screen
+    /// primitives.
+    ///
+    /// This is the host half of `legaia_engine_render::battle_intro`. The
+    /// simulation half is already live: `World::tick_encounter` runs
+    /// `tick_transition` every frame the session sits in `Transition`, and
+    /// `World::battle_intro` carries the entity whose `+0x1A` clock the styles
+    /// ride. What was missing was an owner for the per-style working set and
+    /// a route from its output into a draw call - both of which land here.
+    ///
+    /// The emitter adopts the live entity's clock rather than counting for
+    /// itself, so a dropped or repeated simulation tick cannot desynchronise
+    /// the visuals from the handoff the same state machine performs.
+    ///
+    /// Returns an empty list whenever no transition is running, which is also
+    /// what makes the caller's target choice a two-arm match rather than a
+    /// mode test.
+    pub(super) fn take_battle_intro_frame(&mut self) -> (Option<BattleIntro>, Vec<ScreenPrim>) {
+        use legaia_engine_core::encounter::EncounterPhase;
+
+        let phase = self
+            .session
+            .host
+            .world
+            .encounter
+            .as_ref()
+            .map(|s| s.phase());
+        let Some(EncounterPhase::Transition { roll, .. }) = phase else {
+            self.battle_intro = None;
+            return (None, Vec::new());
+        };
+        let Some(entity) = self.session.host.world.battle_intro else {
+            return (self.battle_intro.take(), Vec::new());
+        };
+        let total = self
+            .session
+            .host
+            .world
+            .encounter
+            .as_ref()
+            .map(|s| i32::from(s.transition_frames))
+            .unwrap_or(0);
+
+        if self.battle_intro.is_none() {
+            self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
+        }
+        // Hand the emitter out by value: the render pass needs it while the
+        // renderer holds an immutable borrow of `self`, which a `&mut self`
+        // method could not have. The caller puts it back.
+        let mut intro = self.battle_intro.take().expect("armed above");
+        // Retail's per-frame step is the display-frame delta; the window's
+        // simulation tick is one display frame.
+        let prims = intro.tick(entity.elapsed, 1).prims;
+        (Some(intro), prims)
+    }
+
+    /// Build the emitter for the battle about to open.
+    ///
+    /// The style is **not** a choice the port makes: `select_intro_style` is a
+    /// port of the intro overlay's own init block, which keys on the battle
+    /// flags byte, the formation's first monster id and the current scene. The
+    /// engine feeds it the resolved formation and the loaded scene so a given
+    /// battle gets the style retail gives it.
+    fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
+        use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+
+        let slot0 = self
+            .session
+            .host
+            .world
+            .battle_monster_slots()
+            .first()
+            .map(|&(_, id, _)| id as u8)
+            .unwrap_or(formation_id as u8);
+        let choice = select_intro_style(&IntroStyleInputs {
+            battle_flags: 0,
+            formation_slot0: slot0,
+            scene_index: self.battle_intro_scene_index(),
+        });
+        let table = self
+            .intro_quad_table()
+            .unwrap_or_else(legaia_engine_render::battle_intro::IntroQuadTable::neutral);
+        log::info!(
+            "play-window: battle intro style {:?} (sub {}) for formation slot0 {slot0:#04x}",
+            choice.style,
+            choice.sub_style
+        );
+        let seed = self.session.host.world.rng_state;
+        let mut env = IntroEnv::new(seed);
+        let mut trig = IntroEnv::new(seed);
+        BattleIntro::new(
+            choice.style,
+            choice.sub_style,
+            total,
+            table,
+            &mut env,
+            &mut trig,
+            // The `0x801CE8BC` corner table is overlay data nothing decodes;
+            // the tile seeder only needs a shape, and its style does not draw.
+            [0, 1, 0x11, 0x12],
+        )
+    }
+
+    /// The scene index `select_intro_style`'s two scene-conditional overrides
+    /// compare against (`DAT_80084540`, the current map / scene PROT base).
+    fn battle_intro_scene_index(&self) -> u32 {
+        self.session
+            .host
+            .scene
+            .as_ref()
+            .map(|s| s.start)
+            .unwrap_or(0)
+    }
+
+    /// Parse the curtain style's descriptor table out of PROT 0979.
+    ///
+    /// `None` when the entry cannot be read or the overlay map has no base for
+    /// it, in which case the emitter falls back to a neutral table - the
+    /// strips then carry the capture unmodulated instead of not drawing.
+    fn intro_quad_table(&self) -> Option<legaia_engine_render::battle_intro::IntroQuadTable> {
+        const INTRO_OVERLAY_PROT: u32 = 979;
+        let raw = self
+            .session
+            .host
+            .index
+            .entry_bytes_extended(INTRO_OVERLAY_PROT)
+            .ok()?;
+        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
+        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, rec.base_va)
+    }
+
+    /// Land the field frame in VRAM for the transition to texture itself with,
+    /// once, on the frame the emitter is armed.
+    ///
+    /// This is the port's equivalent of the console's framebuffer *being*
+    /// VRAM: retail's strips sample the frame the GPU drew moments earlier, so
+    /// the port re-renders the field scene offscreen, blits it into the two
+    /// rects the style's texture pages decode to, and uploads that page for
+    /// the strips to sample.
+    ///
+    /// An **associated** function, not a method: the render pass calls it
+    /// while the renderer is borrowed out of `self`, so it takes the three
+    /// pieces it needs rather than `&mut self`. The scene's pristine page is
+    /// borrowed and cloned inside, never edited.
+    ///
+    /// Returns the uploaded page to draw this frame against, or `None` when
+    /// there is nothing to capture (no emitter, already captured, no base).
+    pub(super) fn capture_battle_intro_frame(
+        intro: Option<&mut BattleIntro>,
+        renderer: &legaia_engine_render::Renderer,
+        scene: &RenderScene<'_>,
+        base: Option<&legaia_tim::Vram>,
+    ) -> Option<legaia_engine_render::UploadedVram> {
+        let intro = intro?;
+        if !intro.needs_capture() {
+            return None;
+        }
+        let base = base?;
+        let page = match intro.capture_field_frame(
+            renderer,
+            legaia_engine_render::RenderTarget::Scene(scene),
+            base,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("play-window: battle intro capture: {e:#}");
+                return None;
+            }
+        };
+        match renderer.upload_vram(page) {
+            Ok(v) => {
+                log::info!("play-window: battle intro captured the field frame into VRAM");
+                Some(v)
+            }
+            Err(e) => {
+                log::error!("play-window: battle intro VRAM upload: {e:#}");
+                None
+            }
+        }
+    }
+
     /// Leave battle: restore the clean field VRAM and drop the appended
     /// battle monster meshes (the field actor table was already restored from
     /// the pre-battle snapshot, so those slots no longer reference them).
@@ -1404,6 +1593,63 @@ impl PlayWindowApp {
             (8, surface_h as i32 - 20),
             dim,
         )
+    }
+}
+
+/// The trig / sqrt / PRNG the intro styles' seeders reach into.
+///
+/// Retail reads two 4096-entry tables at `_DAT_8007B7F8` / `_DAT_8007B81C`,
+/// which are runtime-built and which the engine does not carry, so this
+/// computes the same q12 sine and cosine instead. The difference is confined
+/// to the four styles whose packet builders are **not** ported: the curtain -
+/// the one style that draws - calls none of this, so nothing on screen depends
+/// on the substitution. Recorded here rather than hidden because it is the
+/// reason the working sets tick with plausible rather than retail-identical
+/// values.
+struct IntroEnv {
+    lcg: u32,
+}
+
+impl IntroEnv {
+    fn new(seed: u32) -> Self {
+        Self {
+            lcg: seed | 1, // a zero state would stick
+        }
+    }
+
+    fn sin_q12(units: i32) -> i16 {
+        let r = (units.rem_euclid(0x1000) as f64) * std::f64::consts::TAU / 4096.0;
+        (r.sin() * 4096.0) as i16
+    }
+}
+
+impl legaia_engine_vm::battle_intro_particles::ParticleEnv for IntroEnv {
+    fn heading(&mut self, x: i32, z: i32) -> i32 {
+        let a = (z as f64).atan2(x as f64);
+        ((a * 4096.0 / std::f64::consts::TAU) as i32).rem_euclid(0x1000)
+    }
+    fn sin(&mut self, h: i32) -> i16 {
+        Self::sin_q12(h)
+    }
+    fn cos(&mut self, h: i32) -> i16 {
+        Self::sin_q12(h + 0x400)
+    }
+    fn sqrt(&mut self, v: i32) -> i32 {
+        if v <= 0 { 0 } else { (v as f64).sqrt() as i32 }
+    }
+    fn rand(&mut self) -> i32 {
+        // A 15-bit draw, the range the seeders' `%` arms expect.
+        self.lcg = self.lcg.wrapping_mul(0x0001_9660).wrapping_add(0x3C6E_F35F);
+        ((self.lcg >> 16) & 0x7FFF) as i32
+    }
+}
+
+impl legaia_engine_vm::battle_intro_swirl::SwirlTrig for IntroEnv {
+    fn table_x(&mut self, e: i32) -> i16 {
+        Self::sin_q12(e + 0x400)
+    }
+    fn table_y(&mut self, e: i32) -> i16 {
+        Self::sin_q12(e)
     }
 }
 

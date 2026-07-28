@@ -468,6 +468,12 @@ impl PlayWindowApp {
         // sacs): rebuild the pack meshes whose morph deltas moved this frame
         // (collected outside the renderer borrow; uploaded inside it below).
         let field_morph_rebuilds = self.take_field_morph_rebuilds();
+        // Field-to-battle intro: advance the transition emitter and take both
+        // it and its screen-space primitives out of `self`, before the
+        // renderer borrow below - the same borrow-window pattern as the morph
+        // rebuilds above. Both are empty whenever no transition is running,
+        // and the emitter is put back after the render. See `window::battle`.
+        let (mut battle_intro, battle_intro_prims) = self.take_battle_intro_frame();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -1669,10 +1675,40 @@ impl PlayWindowApp {
                 }
             }
             legaia_engine_render::profile::mark("drawlist");
-            if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+            // On the frame the transition arms, land the field frame in the
+            // software VRAM the intro strips texture themselves with, and draw
+            // the rest of this frame against that page. Retail gets it for
+            // free - on the console the framebuffer *is* VRAM - so the port
+            // re-renders this scene offscreen and blits the readback in.
+            let intro_vram = Self::capture_battle_intro_frame(
+                battle_intro.as_mut(),
+                r,
+                &scene,
+                self.cpu_vram_base.as_ref(),
+            );
+            let scene = match intro_vram.as_ref() {
+                Some(v) => RenderScene { vram: v, ..scene },
+                None => scene,
+            };
+            // The intro's primitives composite *over* the scene in one frame.
+            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
+            // mode which clears and draws nothing but quads, so it could never
+            // carry a transition strip over a field scene.
+            let target = if battle_intro_prims.is_empty() {
+                RenderTarget::Scene(&scene)
+            } else {
+                RenderTarget::SceneWithScreenPrims {
+                    scene: &scene,
+                    prims: &battle_intro_prims,
+                }
+            };
+            if let Err(e) = r.render(target) {
                 log::error!("render: {e:#}");
             }
         }
+        // The transition emitter was taken out of `self` for the render
+        // borrow; put it back so its working set survives to the next frame.
+        self.battle_intro = battle_intro;
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }
