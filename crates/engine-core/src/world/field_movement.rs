@@ -4,6 +4,7 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_vm::field_ledge_hop_arc as hop_arc;
 
 /// Result of one direction's prop-collision probe
 /// ([`World::field_prop_dir_probe`]): whether a solid prop box blocks the
@@ -2121,19 +2122,131 @@ impl World {
         let probe_y = self.sample_field_floor_height(clamp(x + sx) as i32, clamp(z + sz) as i32);
         let cur_y = self.actors[slot].move_state.world_y as i32;
         let rise = probe_y - cur_y;
-        let kind = if rise >= FIELD_HOP_UP_THRESHOLD {
+        // World Y grows downward, so the *numerically* larger floor ahead is
+        // the lower one: retail's `>= +0x61` arm is the drop (apex `0x10`),
+        // its `< -0x60` arm the step up (apex `0x18`, the taller arc that
+        // clears the lip). `0x801D1B14..0x801D1B44`.
+        let kind = if rise >= FIELD_HOP_DOWN_THRESHOLD_DOWNWARD {
             0x10
-        } else if rise < FIELD_HOP_DOWN_THRESHOLD {
+        } else if rise < FIELD_HOP_UP_THRESHOLD_DOWNWARD {
             0x18
         } else {
             return false; // flat ground - nothing to hop
         };
-        self.field_ledge_hop = Some(FieldLedgeHop {
-            target_x: clamp(x + 3 * sx),
-            target_y: clamp(probe_y),
-            target_z: clamp(z + 3 * sz),
+        self.start_field_ledge_hop(
+            slot,
+            (clamp(x + 3 * sx), clamp(probe_y), clamp(z + 3 * sz)),
             kind,
+        );
+        true
+    }
+
+    /// Arc setup: retail `FUN_801d2404` (field overlay `overlay_0897`, 122
+    /// instructions at file offset `0x3BEC`), the sole `jal` target of
+    /// [`Self::try_field_ledge_hop`]'s tail.
+    ///
+    /// PORT: FUN_801d2404
+    ///
+    /// Retail spawns two pool actors here - the arc helper carrying the
+    /// Bezier and the paired helper carrying the phase clip - and raises the
+    /// player's movement-lock bit `+0x10 & 0x80000` so the walk controller
+    /// and the vertical settle both yield for the flight. The engine has no
+    /// actor pool, so the two clips are stored on the world's
+    /// [`World::field_ledge_hop`] session instead; everything else is the
+    /// retail body, including the arithmetic, which lives in
+    /// [`legaia_engine_vm::field_ledge_hop_arc::build_hop_arc`].
+    ///
+    /// `apex` is the class byte the classifier picked - retail passes it
+    /// straight through as `a1` - and the clip is always `0x10` frames
+    /// (`a2`).
+    fn start_field_ledge_hop(&mut self, slot: usize, target: (i16, i16, i16), apex: u16) {
+        let start = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_y, ms.world_z)
+        };
+        let arc = hop_arc::build_hop_arc(
+            start,
+            hop_arc::HopTarget {
+                x: target.0,
+                y: target.1,
+                z: target.2,
+            },
+            apex as i16,
+            FIELD_HOP_CLIP_FRAMES,
+        );
+        // The player cannot steer mid-hop: retail's `0x801D25A8..0x801D25B8`
+        // ORs `0x80000` into the player context's `+0x10`, and the phase
+        // machine's end arm is the only thing that clears it again.
+        self.actors[slot].move_state.flags |= 0x0008_0000;
+        self.field_ledge_hop = Some(FieldLedgeHop {
+            target_x: target.0,
+            target_y: target.1,
+            target_z: target.2,
+            kind: apex,
+            arc,
+            phase: hop_arc::HopSession {
+                cursor: 0,
+                extent: FIELD_HOP_CLIP_FRAMES,
+            },
+            landed: false,
+            finished: false,
+            sfx: None,
         });
+    }
+
+    /// Advance a live hop one frame - the pair of pool-actor ticks retail
+    /// runs off the two helper templates the setup allocated:
+    ///
+    /// * the **arc** helper's `FUN_801d5c08` (template `0x801F227C`), which
+    ///   steps `+0x9C` by `+0x9E * DAT_1F800393`, evaluates the Bezier and
+    ///   writes the result into the parent actor's `+0x14 / +0x16 / +0x18` -
+    ///   the parent being the player, back-linked at setup;
+    /// * the **paired** helper's `FUN_801d2298` (template `0x801F2294`), the
+    ///   phase machine: take-off cue `0x2A` plus the airborne flag
+    ///   `0x200000` on the zero frame, the flag drop as the cursor crosses
+    ///   the extent, and at `extent + 6` the movement-lock release plus the
+    ///   landing cue `0x29`.
+    ///
+    /// Returns `true` while a session owns the frame - the caller must not
+    /// then settle or re-probe, exactly as retail's `0x80000` gate makes
+    /// `FUN_801d1ba0` yield. A finished session is reaped on the next call
+    /// rather than immediately, so the landing frame's cue and position stay
+    /// readable for the frame they happen on.
+    ///
+    /// PORT: FUN_801d5c08
+    /// REF: FUN_801d2298, FUN_801e45bc
+    fn tick_field_ledge_hop(&mut self, slot: usize) -> bool {
+        let Some(mut hop) = self.field_ledge_hop else {
+            return false;
+        };
+        if hop.finished {
+            self.field_ledge_hop = None;
+            return false;
+        }
+        hop.sfx = None;
+        // `DAT_1F800393`, the frame-delta scalar both ticks pace on. The arc
+        // multiplies it into the cursor step; the phase machine adds it raw.
+        let scalar = self.move_ramp_ratio.max(1);
+        if !hop.landed {
+            let tick = hop_arc::advance_hop_arc(&mut hop.arc, scalar);
+            let ms = &mut self.actors[slot].move_state;
+            ms.world_x = tick.position.0;
+            ms.world_y = tick.position.1;
+            ms.world_z = tick.position.2;
+            hop.landed = tick.arrived;
+        }
+        let phase = hop_arc::advance_hop_session(&mut hop.phase, scalar);
+        hop.sfx = phase.sfx;
+        let ms = &mut self.actors[slot].move_state;
+        ms.flags |= phase.player_flags_set;
+        ms.flags &= !phase.player_flags_clear;
+        // `+0x62` bit 8 - retail's anim-active marker, raised at take-off and
+        // at the crossing, cleared by the end arm. `local_flags` is that
+        // half-word.
+        ms.local_flags |= phase.player_anim_set;
+        ms.local_flags &= !phase.player_anim_clear;
+        hop.finished = phase.finished;
+        self.field_ledge_hop = Some(hop);
         true
     }
 
@@ -2192,9 +2305,18 @@ impl World {
     /// The **ledge-hop trigger below is not gated on any of that**: it runs
     /// off the step delta on every field frame, which is what makes this
     /// controller worth having wired even at the engine's flat-Y default.
+    ///
+    /// A hop already in flight takes the frame instead. Retail reaches the
+    /// same place by a different route - the hop's own `0x80000` movement
+    /// lock trips this function's first gate while the two helper actors tick
+    /// out of the pool - but the engine has no pool, so the hop tick runs
+    /// from here, ahead of that gate.
     pub fn step_field_vertical(&mut self, slot: usize) {
-        self.field_ledge_hop = None;
         if slot >= self.actors.len() || !self.actors[slot].active {
+            self.field_ledge_hop = None;
+            return;
+        }
+        if self.tick_field_ledge_hop(slot) {
             return;
         }
         let flags = self.actors[slot].move_state.flags;

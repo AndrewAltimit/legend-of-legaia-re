@@ -52,13 +52,19 @@ pub struct FieldPropCollider {
     pub solid: bool,
 }
 
-/// A ledge hop started by [`World::try_field_ledge_hop`] - the argument
-/// triple retail builds on the stack and hands to `FUN_801d2404`.
+/// A **live** ledge hop: the argument triple retail builds on the stack for
+/// `FUN_801d2404`, plus the two clips the two helper actors that call spawns
+/// carry between frames.
 ///
-/// The hop is posted, not simulated here: retail's `FUN_801d2404` owns the
-/// arc animation, and this record is what the engine's motion layer would
-/// consume to drive it.
-// REF: FUN_801d1878, FUN_801d2404
+/// Retail keeps this state on a pair of pool actors - the arc helper
+/// (template `0x801F227C`, ticked by `FUN_801d5c08`, which evaluates the
+/// Bezier and writes the player's transform) and the paired helper (template
+/// `0x801F2294`, ticked by `FUN_801d2298`, which runs the phase / SFX /
+/// movement-lock machine). `engine-core` has no actor pool, so the two clips
+/// live here instead and [`World::step_field_vertical`] ticks them; the
+/// record is reaped the frame after [`Self::finished`] goes true, which is
+/// what makes the landing cue observable.
+// REF: FUN_801d1878, FUN_801d2404, FUN_801d5c08, FUN_801d2298
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldLedgeHop {
     /// Landing X - three step-deltas ahead (`x + 3 * dx * 4`).
@@ -68,16 +74,35 @@ pub struct FieldLedgeHop {
     pub target_y: i16,
     /// Landing Z - three step-deltas ahead (`z + 3 * dz * 4`).
     pub target_z: i16,
-    /// Retail's hop-class selector: `0x10` when the landing floor is at
-    /// least `0x61` units **above** the actor (hop up), `0x18` when it is
-    /// more than `0x60` units **below** (hop down).
+    /// Retail's hop-class selector, which doubles as the arc's apex height in
+    /// world units. `0x18` when the floor ahead is more than `0x60` units
+    /// **above** the actor - a step **up**, which needs the taller arc to
+    /// clear the lip - and `0x10` when it is at least `0x61` units **below**,
+    /// a drop. World Y grows downward, so the class the larger *numeric*
+    /// rise selects is the one that goes down.
     pub kind: u16,
+    /// The arc helper's clip: `+0x14`/`+0x24`/`+0x3C` endpoints and control
+    /// point, plus the `+0x9C` cursor and `+0x9E` step.
+    pub arc: legaia_engine_vm::field_ledge_hop_arc::HopArc,
+    /// The paired helper's `+0x9C` / `+0x9E`, the phase machine's cursor.
+    pub phase: legaia_engine_vm::field_ledge_hop_arc::HopSession,
+    /// The arc reached `0x1000` and snapped the player to the landing point.
+    /// The phase machine keeps running (and the movement lock keeps holding)
+    /// for six more frames after this.
+    pub landed: bool,
+    /// The phase machine hit `extent + 6`: the movement lock is released and
+    /// the record is reaped on the next tick.
+    pub finished: bool,
+    /// The `FUN_80035B50` cue this tick fired, if any - take-off `0x2A` or
+    /// landing `0x29`. Neither host routes it to audio yet.
+    pub sfx: Option<u8>,
 }
 
 impl FieldLedgeHop {
-    /// `true` for the upward class (`kind == 0x10`).
+    /// `true` for the upward class - the floor ahead is above the actor, so
+    /// retail selects the taller `0x18` apex.
     pub fn is_up(&self) -> bool {
-        self.kind == 0x10
+        self.kind == 0x18
     }
 }
 

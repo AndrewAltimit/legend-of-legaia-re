@@ -377,31 +377,46 @@ routine inlined, instruction for instruction: the same `(z >> 6) + 2` and
 index, the same `quad = (zc & 1) << 1 | (xc & 1)` selector, the same
 high-nibble read.
 
-Both clear, it samples the floor one delta ahead and classifies the rise:
+Both clear, it samples the floor one delta ahead - the actor is *temporarily
+moved* to `(x + s1, z + s0)`, `FUN_80019278` is called, and the position is
+restored, the sample being stashed in the half-word `0x8007BDE2` between the
+two step-delta globals (`0x801d1ac4..0x801d1b04`) - and classifies the rise:
 
-| Rise vs `+0x16` | Class | Meaning |
+| `floor_ahead - +0x16` | Apex passed as `a1` | Meaning |
 |---|---|---|
-| `>= +0x61` | `0x10` | hop up |
-| `< -0x60` | `0x18` | hop down |
+| `>= +0x61` | `0x10` | drop - the floor ahead is *lower* |
+| `< -0x60` | `0x18` | step up - the floor ahead is *higher* |
 | otherwise | - | flat ground; no hop |
 
+**World Y grows downward, so the sign of the difference is the opposite of the
+direction of travel.** A numerically larger floor ahead sits further down; the
+`>= +0x61` arm is therefore the drop, and it gets the *shorter* apex. The step
+up gets `0x18`, the taller arc that clears the lip. The class byte is not a
+label the arc looks up - it **is** the apex height, passed straight into
+`FUN_801d2404`'s `a1`.
+
 The landing triple (`x + 3 * s1`, sampled height, `z + 3 * s0`) plus the class
-goes to `FUN_801d2404`, which owns the arc. `FUN_801d1878` returns `1`.
+goes to `FUN_801d2404`, which owns the arc. `FUN_801d1878` returns `1`. Note
+the landing *height* is the sample taken `s1` (32 units) ahead while the
+landing *position* is `3 * s1` (96) ahead - retail does not re-sample at the
+far point.
 
 ### Engine port
 
 `World::step_field_vertical` (`FUN_801d1ba0`) runs in the field frame tick
 after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
-(`FUN_801d1878`), which posts a `FieldLedgeHop` into `World::field_ledge_hop`.
-The step-delta pair is `World::field_step_delta`.
+(`FUN_801d1878`), which classifies the ledge and starts the hop through
+`World::start_field_ledge_hop` (`FUN_801d2404`). The step-delta pair is
+`World::field_step_delta`.
 
-The post is where the port currently stops, and the consequence is worth
-naming: `World::field_ledge_hop` has **no reader**, and `step_field_vertical`
-clears it at the top of the next frame before re-posting. So the detection is
-faithful - the engine classifies an authored ledge as a hop-up or hop-down
-correctly - and nothing then moves the player. Closing it means giving the
-record a cursor that outlives the frame and stepping it from the same
-controller; see the arc section below.
+`World::field_ledge_hop` is the live session, not a per-frame transient: it
+carries both clips retail keeps on the two spawned helper actors, and
+`step_field_vertical` advances them through
+`World::tick_field_ledge_hop` before anything else, returning the frame to the
+hop. So a session, once started, is a **committed clip** - releasing the pad
+does not cancel it, and the player is locked (`+0x10 & 0x80000`) from the
+setup until six frames after the landing. The record is reaped the tick after
+it finishes, which is what leaves the landing frame's cue readable.
 
 Two deliberate divergences:
 
@@ -414,6 +429,14 @@ Two deliberate divergences:
   keyed by compass direction rather than by an arbitrary delta pair, so the
   clearance test runs at direction granularity - a collider inside the hop
   lane but outside the direction probes is a sub-tile discrepancy.
+
+Coverage: `engine-core/tests/field_ledge_hop_wired.rs` walks the whole flight
+against a synthetic grid (take-off, arc peak above both endpoints, exact
+landing, lock release, reap), and the disc-gated
+`engine-core/tests/field_ledge_hop_disc.rs` finds an authored ledge in a real
+scene's own `.MAP` data and drives the player over it. Authored ledges are
+not rare: sweeping every scene's grid with retail's own predicate finds
+candidates in most field scenes, including Rim Elm.
 
 ## Where the collision grid comes from
 
@@ -732,7 +755,8 @@ See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### The scripted hop-arc controller
 
-The functions `FUN_801d2404` (setup) and `FUN_801d2298` (per-frame advance).
+The setup `FUN_801d2404` plus the **two** per-frame ticks it arms -
+`FUN_801d5c08` on the arc helper and `FUN_801d2298` on the paired one.
 Distinct from the placed-prop bind-clip path above, this is a **single-instance
 arc controller** with its own cursor pair (`actor+0x9c` / `actor+0x9e`), **not**
 the prop system's `+0x68`/`+0x6A` frame cursor. It works on the big field-scene
@@ -750,7 +774,8 @@ field-overlay (`0897`) bodies; the short mis-based standalone dumps at
 encoding, at `0x801D1B70` inside the **ledge-hop trigger** `FUN_801d1878`, and
 the argument set-up there pins the signature: `a0` is a pointer to the
 three-half-word landing triple the trigger built at `sp+0x18`, `a1` is the arc's
-peak height (`0x10` for a hop up, `0x18` for a hop down) and `a2` is the clip
+peak height (`0x10` for a drop, `0x18` for a step up - see the class table
+above; world Y grows downward) and `a2` is the clip
 length in frames (always `0x10`). It is the same triple
 `World::try_field_ledge_hop` posts as `FieldLedgeHop`. This is a **hop arc, not
 a hinge swing**; nothing in the body reads a door.
@@ -771,11 +796,64 @@ the movement-lock bit `0x80000`; if that second spawn fails, the first helper
 instead gets the tear-down bit `8` in its `+0x10` and the hop is abandoned.
 Ported as `legaia_engine_vm::field_ledge_hop_arc::build_hop_arc`.
 
-**`FUN_801d2298` - per-frame advance.** Called with the helper actor in `a0`.
-Each frame it re-transforms the control block's player actor
-(`func_0x801db510` then `func_0x801daa50`, the resident world-transform + copy
-helpers) and steps a small 3-phase state driven by the cursor `+0x9c` against
-the extent `+0x9e`:
+#### Which routine ticks which helper
+
+The two helpers do different jobs, and the split is settled by data rather than
+by reading either body: an actor template is six words and word `2` is its tick
+pointer (see [`runtime-libs.md`](../reference/functions/runtime-libs.md#static-actor-templates)).
+The three templates this family uses read out of the field overlay at slot-A
+base `0x801CE818` as:
+
+| Template | File offset | Tick |
+|---|---|---|
+| `0x801F227C` - arc helper | `0x23A64` | `FUN_801d5c08` |
+| `0x801F2294` - paired helper | `0x23A7C` | `FUN_801d2298` |
+| `0x801F22AC` - emitter | `0x23A94` | `FUN_801d5d60` |
+
+So `FUN_801d2298` is the **paired** record's tick and writes no position at
+all; the record that moves the player is the arc helper. Treating
+`FUN_801d2298` as "the" advance leaves the position write unaccounted for,
+which is the shape this section had while `FUN_801d5c08` was unread.
+
+#### `FUN_801d5c08` - the arc tick
+
+86 instructions at file `0x73F0`. Bails when the parent (`+0x90`, the player)
+already carries the pool tear-down bit `+0x10 & 8`. Otherwise:
+
+1. `+0x9c += (s16)(+0x9e) * DAT_1f800393` - note the scalar **multiplies**
+   here where the phase machine adds it, which is what keeps the two in step at
+   any frame pacing. Stored back with `sh`, so the wrap is retail's.
+2. While `(s16)+0x9c < 0x1000`, it evaluates the seeded quadratic Bezier at the
+   cursor - control point at `+0x3c`, start at `+0x14`, end at `+0x24` -
+   through the shared fixed-point evaluator `FUN_801e45bc` (file `0x15DA4`) and
+   copies the result into the **parent actor's** `+0x14..+0x1b`.
+3. At `0x1000` or past it the clip is over: `+0x9c` is clamped to `0x1000`, the
+   end point is copied into the parent verbatim (no final curve evaluation -
+   the landing is exact by construction), and the helper sets its own `+0x10`
+   tear-down bit. A non-player parent additionally gets `-P2y` written to its
+   `+0x8e`; the player hop never takes that arm.
+
+`FUN_801e45bc` splits each basis coefficient into integer and fractional halves
+(`sra 12` / `andi 0xfff`) so the accumulator fits in 32 bits, folds the
+fractional sum down by `sra 12` and shifts once more. That is exactly
+`floor(numerator / 0x1000^2)` - **floor**, not truncate, which matters because
+world Y is routinely negative.
+
+That evaluator is shared, and elsewhere in these docs it is described as a
+**linear blend** - the [cutscene position tween](cutscene.md) and the move-VM's
+[ext sub-ops `0x0E` / `0x12`](move-vm-overlay-ext.md) both call it a midpoint
+helper. Both readings are correct and are the same routine's degenerate case:
+`a0` arrives holding the control point, so a caller that seeds it with the
+plain midpoint gets exactly `(1-t)*P0 + t*P2` back. The hop is the caller that
+**overwrites the Y midpoint** with the apex-corrected control point, and that
+single store is the whole difference between a slide and an arc.
+
+#### `FUN_801d2298` - the phase tick
+
+Called with the paired helper in `a0`. Each frame it re-transforms the control
+block's player actor (`func_0x801db510` then `func_0x801daa50`, the resident
+world-transform + copy helpers) and steps a small 3-phase state driven by the
+cursor `+0x9c` against the extent `+0x9e`:
 
 | Phase | Condition | Effect |
 |---|---|---|
@@ -797,17 +875,21 @@ The cursor store sits in a **branch delay slot** (`sh a0, 0x9c(s0)` at
 against `+0x9e + 6` at all: a cursor saturated at `+0x9e` would never reach
 that threshold, and the hop would hold the movement lock forever.
 
-Both halves are ported into
+All three halves are ported into
 [`legaia_engine_vm::field_ledge_hop_arc`](../../crates/engine-vm/src/field_ledge_hop_arc.rs)
-- the setup as `build_hop_arc` and the advance as `advance_hop_session`, which
-returns the frame's writes rather than reaching into the player context. Both
-are inert: the clip lives on a spawned helper actor and `engine-core`'s world
-model has no pool to allocate one from, nor anywhere to keep a cursor between
-frames - `FieldLedgeHop` is a per-frame transient, which is the smallest thing
-that has to change. What ticks it in retail is **open**: the "field scene loop
-`FUN_801f5748`" this section used to name is a phantom VA - `0x801F5748` sits
-`0x1F30` past PROT 0897's own `0x25000` bytes, and the bytes there are PROT
-0898's `FUN_801D0748`.
+- the setup as `build_hop_arc`, the arc tick as `advance_hop_arc` (with the
+evaluator as `bezier_at`), and the phase tick as `advance_hop_session`, which
+returns the frame's writes rather than reaching into the player context. All
+three are live: `engine-core` has no actor pool, so the two clips live on the
+`World::field_ledge_hop` session and `World::step_field_vertical` runs both
+ticks - the arc's result written to the player actor, the phase's flag writes
+folded into the same actor's `+0x10`. A hop therefore occupies 16 frames of
+arc plus six of recovery, exactly as retail paces it.
+
+The "field scene loop `FUN_801f5748`" this section once named as the driver was
+a phantom VA - `0x801F5748` sits `0x1F30` past PROT 0897's own `0x25000` bytes,
+and the bytes there are PROT 0898's `FUN_801D0748`. The real answer was never a
+caller at all: both ticks are template words, invoked by the actor-list walk.
 
 The same arithmetic has two more entries in the image, both ported alongside:
 `FUN_801d5780` is the four-argument standalone form (start point from the `a0`
@@ -824,7 +906,9 @@ reference of any form - no `jal`, no `j`, no literal address word - in
 `SCUS_942.54`, in any base-mapped overlay image, or in any extracted PROT
 entry, while `FUN_801d2404` and `FUN_801d25ec` are each found by `jal` and
 `FUN_801d2298` as a table word at VA `0x801F229C`, which is what makes the zero
-a real one. The bytes are nonetheless a complete routine: field overlay
+a real one. Nor is it a pool-actor tick reached from a template instead of a
+call: the three templates this family allocates from name `FUN_801d5c08`,
+`FUN_801d2298` and `FUN_801d5d60`, and none of them names this one. The bytes are nonetheless a complete routine: field overlay
 `0897_xxx_dat` at file `0x6F68` opens `addiu sp, sp, -0x28` and bails on a null
 `a0` at `0x801D57A4`. So the arc family ships one entry point nothing reaches -
 worth knowing before treating its port's inertness as an engine gap.
@@ -843,7 +927,8 @@ entry in the cutscene images. The field-overlay bytes are the evidence.
 - Scene-entry map-init `FUN_8003aeb0` (height LUT fill, `+0x8000` footprint OR, player-actor setup) - `ghidra/scripts/funcs/8003aeb0.txt`. Object spawn iterator `FUN_8003a55c` (low-nibble floor-height read, `+0x8000` index walk) - `ghidra/scripts/funcs/8003a55c.txt`.
 - Floor sampler `FUN_80019278` (both height models: the `cell & 0x800` elevation-override branch and the bilinear nibble branch) - `ghidra/scripts/funcs/80019278.txt`. Its kind-table lookups `FUN_801D5630` / `FUN_801D5AE0` - `ghidra/scripts/funcs/overlay_cutscene_mapview_801d5630.txt`, `ghidra/scripts/funcs/overlay_0896_801d5ae0.txt`.
 - Runtime pin: `scripts/pcsx-redux/autorun_player_pos_watch.lua` (write-watchpoint on `*(0x8007c364) + 0x14/0x18`).
-- Scripted hop-arc controller: setup `FUN_801d2404` and per-frame advance `FUN_801d2298` - see `ghidra/scripts/funcs/overlay_0897_door_raw_801d2298_801d2600.txt` and `overlay_0897_door_801d2404.txt` (the base-correct contiguous `overlay_0897.bin` dumps; the short standalone `801d2404.txt` / `801d2298.txt` are wrong-base fragments). Both bodies also read directly out of the extracted `0897_xxx_dat.BIN` at slot-A base `0x801CE818`, file `+0x3BEC` and `+0x3A80`. Sole caller of the setup is `FUN_801d1878` at `0x801D1B70` - the only `jal 0x801D2404` encoding in the image. Scene control block `0x8007c348` cleared by MAIN_INIT `FUN_801d6704` (`func_0x8001a8b0(&DAT_8007c348, …, 0x7b0c)`); helper templates `0x801f227c` / `0x801f2294`.
+- Scripted hop-arc controller: setup `FUN_801d2404` and phase advance `FUN_801d2298` - see `ghidra/scripts/funcs/overlay_0897_door_raw_801d2298_801d2600.txt` and `overlay_0897_door_801d2404.txt` (the base-correct contiguous `overlay_0897.bin` dumps; the short standalone `801d2404.txt` / `801d2298.txt` are wrong-base fragments). Sole caller of the setup is `FUN_801d1878` at `0x801D1B70` - the only `jal 0x801D2404` encoding in the image. Scene control block `0x8007c348` cleared by MAIN_INIT `FUN_801d6704` (`func_0x8001a8b0(&DAT_8007c348, …, 0x7b0c)`); helper templates `0x801f227c` / `0x801f2294`.
+- The arc tick `FUN_801d5c08` (file `0x73F0`), the Bezier evaluator `FUN_801e45bc` (file `0x15DA4`) and the three template records at `0x801f227c` / `0x801f2294` / `0x801f22ac` (files `0x23A64` / `0x23A7C` / `0x23A94`) all read directly out of the extracted `overlay_field_0897.bin` at slot-A base `0x801CE818` - as do `FUN_801d1878` (`0x3060`), `FUN_801d1ba0` (`0x3388`) and `FUN_801d2404` (`0x3BEC`). The bare-named corpus dumps for `801d5c08` / `801d5d60` are wrong-image imports; disassemble the field-overlay bytes instead (`scripts/ghidra-analysis/disasm-overlay-fn.py --base 0x801CE818`).
 
 ## Town / field parity
 

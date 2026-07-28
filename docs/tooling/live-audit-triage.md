@@ -909,17 +909,28 @@ wrong-image import whose header resolves `entry=801d56fc`, and the VA is
 aliased - in the cutscene images it is a different function's entry. Read the
 field-overlay bytes, not a dump.
 
-**The one row worth a wire, and why it is not one yet.**
-`field_ledge_hop_arc`'s four anchors sit behind a real gap rather than a
-missing reason: `World::try_field_ledge_hop` is live, classifies an authored
-ledge correctly, posts a `FieldLedgeHop`, and **nothing reads it** -
-`step_field_vertical` clears the record at the top of the next frame. The port
-therefore has no ledge hop at all, which is a player-visible absence rather
-than a cosmetic one. The prerequisite is small and named: `FieldLedgeHop` is a
-per-frame transient and needs a `cursor`/`extent` pair that outlives the frame,
-after which the same controller can step `advance_hop_session` and apply the
-result. It is left open here only because the record's declaration sits outside
-this slice.
+**The one row worth a wire - and what wiring it turned up.** The
+`field_ledge_hop_arc` anchors sat behind a real gap rather than a missing
+reason: `World::try_field_ledge_hop` was live and classified an authored ledge
+correctly, posted a `FieldLedgeHop`, and **nothing read it** -
+`step_field_vertical` cleared the record at the top of the next frame. The port
+had no ledge hop at all, a player-visible absence rather than a cosmetic one.
+
+The named prerequisite (promote the record to a session with cursors that
+outlive the frame) was right but incomplete, and the incompleteness is the
+lesson: `advance_hop_session` (`FUN_801d2298`) **writes no position**. It is
+the tick of the *paired* helper, the phase / SFX / movement-lock machine. The
+record that moves the player is the arc helper, ticked by `FUN_801d5c08`,
+which was not in the corpus at all. Neither tick has a caller, so no
+call-graph question could have surfaced it; what does is the **template word**
+- an actor template's `+0x08` is its tick pointer, and reading the three
+templates the setup allocates from names all three ticks in one step. A row
+whose port is "a clip on a spawned pool actor" should be read that way before
+its prerequisite is called small.
+
+Both ticks now run from `World::step_field_vertical`, and the hop is covered
+end to end (`field_ledge_hop_wired.rs` synthetic, `field_ledge_hop_disc.rs`
+against a real scene's authored geometry).
 
 ## The dance / fishing minigame block
 
