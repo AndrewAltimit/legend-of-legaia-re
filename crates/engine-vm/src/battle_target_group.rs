@@ -120,6 +120,13 @@
 //! local fix. The cast census is the one that bites: its `ctx[+0x249]` output
 //! gates the magic band's exit state `0x2E`, and with no tween to clear a
 //! zeroed tint a seeded census could hold that exit open indefinitely.
+//!
+//! REF: FUN_8004A908 (the draw that unpacks `+0x4`)
+//! REF: FUN_800513F0 (battle seating - the writer that establishes it)
+//! REF: FUN_80050120 (the per-frame tint tween), FUN_80050F30 (its lerp)
+//! REF: FUN_801DA6B4 (the target cursor's outright re-stamp)
+//! REF: FUN_80051078 (actor separation), FUN_801E09F8 (cast census),
+//! REF: FUN_801D5854 (camera framing), FUN_8004CE2C (mirror-node seat)
 
 /// The value the extent output is **floored** at (`0x400`). Named for the
 /// direction of retail's compare: see the module doc.
