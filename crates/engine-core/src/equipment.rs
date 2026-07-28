@@ -18,8 +18,20 @@
 
 use crate::battle_stats::{EquipmentTable, ItemModifier};
 
-/// The 8 equipment slot kinds. Matches the retail `equip[8]` byte array
-/// at `+0x196` in the character record.
+/// The 8 equipment slot kinds, in the engine's own order.
+///
+/// This is **not** the retail `+0x196` byte order, despite the matching
+/// length. Two disc tables pin retail's independently: the hub equip
+/// sub-panel's `(byte +7 & 0x60) >> 5` slot resolution, and the equip
+/// screen's row map `DAT_801E43E8` = `00 01 00 04 05 06 07`. Retail puts
+/// **body armour at byte 0**, head at 1 and footwear at 4, and the weapon
+/// at byte 2 or 3 depending on the character (`_DAT_8007B42C` = `2, 3, 2`
+/// for Vahn / Noa / Gala). This enum is weapon-first with a hand-guard
+/// insert, so a retail record must be re-ordered before a ported kernel
+/// that walks slots by index touches it - see `hub_panel_slots` in
+/// `field_submode_screen`. Aggregation is order-blind, but a trial-equip
+/// destination is not: reading an engine-ordered array with retail's
+/// indices makes a body-armour candidate displace the weapon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipSlot {
     Weapon = 0,

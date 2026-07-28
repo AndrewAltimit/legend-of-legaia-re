@@ -346,15 +346,22 @@ impl World {
             // seated on it is pure noise that occupies a pool slot.
             //
             // The install op cannot name it (`FUN_800252EC` is called with
-            // `arg + 1`), so only an op-`0x25` operand of 0 reaches it, and
-            // in this port that operand is manufactured rather than authored:
-            // `MoveExtResult::default_arm()` advances one word for several
-            // `0x2F` extension sub-ops whose retail arms are wider - `0x25`
-            // among them, size 3 per `move_vm_overlay_ext::canonical_size` -
-            // so `2F 25 <slot>` re-enters the outer dispatcher on its own
-            // sub-opcode word and decodes as a child spawn of record 0.
-            // Guarding here keeps the pool honest while that lives in
-            // `engine-vm`.
+            // `arg + 1`), so only an op-`0x25` operand of 0 reaches it.
+            //
+            // No authored record asks for one: a census over all 100 scenes
+            // and 2245 stager records finds no op-`0x25` spawn of slot 0 and
+            // no negative slot. That census walks records standalone, so it
+            // does not model the cross-record self-modification the live
+            // chain performs, and a slot-0 operand could still be produced at
+            // runtime - which is why the guard stays rather than becoming a
+            // debug assert. The negative half is an ordinary bounds check.
+            //
+            // This guard predates the `0x2F` sub-opcode width fix and was
+            // once load-bearing: `MoveExtResult::default_arm()` advanced one
+            // word for 50 of 61 extension sub-ops, so `2F 25 <slot>` re-entered
+            // the outer dispatcher on its own sub-opcode word and decoded as a
+            // child spawn of record 0. That decoder defect is fixed; the guard
+            // is now belt-and-braces, not a workaround.
             if slot <= 0 {
                 continue;
             }

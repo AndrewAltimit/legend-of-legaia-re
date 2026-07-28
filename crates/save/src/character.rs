@@ -109,8 +109,15 @@ pub struct HpMpSp {
     pub sp_max: u16,
 }
 
-/// Equipment-slot bytes at `+0x196..0x19D`. 8 slots - typically
-/// (weapon, armour, helmet, ring, accessory_1..3, currency-slot).
+/// Equipment-slot bytes at `+0x196..0x19D`, 8 slots.
+///
+/// Retail's order is **body armour, head, then a per-character weapon
+/// byte**: the hub equip sub-panel resolves a slot as `(byte +7 & 0x60) >> 5`
+/// and the equip screen's row map `DAT_801E43E8` reads `00 01 00 04 05 06 07`,
+/// which together put armour at 0, head at 1 and footwear at 4. The weapon
+/// sits at byte 2 or 3 per `_DAT_8007B42C` (`2, 3, 2` for Vahn / Noa / Gala).
+/// It is *not* weapon-first - `legaia_engine_core::equipment::EquipSlot` uses
+/// a different, engine-defined order and re-maps before walking a record.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EquipmentSlots {
     /// Raw 8 slot bytes; semantic mapping is engine-defined.
