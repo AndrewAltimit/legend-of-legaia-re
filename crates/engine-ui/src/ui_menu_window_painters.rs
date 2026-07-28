@@ -427,6 +427,8 @@ pub fn amount_prompt_draws_for(
 /// the `FUN_801D0F1C` tag, rather than standing alone as a rect painter.
 ///
 /// PORT: FUN_801DCC20
+/// REF: FUN_801d0f1c - the shared item-info panel this painter is the delta
+/// over. Ported in `crate::ui_menu::pause_lists`, not here.
 /// NOT WIRED: two things must exist first, and neither is a call site. The
 /// NOT WIRED: painter is only the **delta** over the shared item-info panel
 /// NOT WIRED: (`jal 0x801D0F1C`), so a host adopting it has to draw that panel
