@@ -185,14 +185,14 @@ mod tests {
     const MONSTER_INDEX: [u8; 6] = [0, 0, 0, 4, 5, 6];
     const MONSTER_CLIPS: [u8; 8] = [0, 1, 2, 3, 0x08, 0x09, 0x0A, 0x0B];
     // Spell id 0x81 is a low-class (fanfare) spell, 0x82 a high-class one.
-    fn spell_classes() -> Vec<u8> {
+    fn voice_spell_classes() -> Vec<u8> {
         let mut v = vec![0x40u8; 0x100];
         v[0x81] = 0x02;
         v[0x82] = 0x20;
         v
     }
 
-    fn tables(spells: &[u8]) -> BattleVoiceTables<'_> {
+    fn voice_tables(spells: &[u8]) -> BattleVoiceTables<'_> {
         BattleVoiceTables {
             party_order: &PARTY_ORDER,
             monster_index: &MONSTER_INDEX,
@@ -210,9 +210,13 @@ mod tests {
         }
     }
 
-    fn step(ctx: BattleVoiceCtx, action: BattleVoiceAction, latch: i32) -> BattleVoiceStep {
-        let spells = spell_classes();
-        battle_voice_step(false, 0xFF, latch, ctx, action, tables(&spells))
+    // Helper names in a `#[cfg(test)]` module are still caller nodes in the
+    // port catalog's call graph, so a common one (`step`, `tables`, `new`)
+    // resolves onto this file by name and reports the module live. Keep them
+    // distinctive.
+    fn voice_step(ctx: BattleVoiceCtx, action: BattleVoiceAction, latch: i32) -> BattleVoiceStep {
+        let spells = voice_spell_classes();
+        battle_voice_step(false, 0xFF, latch, ctx, action, voice_tables(&spells))
     }
 
     #[test]
@@ -220,19 +224,33 @@ mod tests {
         let action = BattleVoiceAction { class: 1, id: 0 };
         let mut busy = ready_ctx(0);
         busy.suppress = 1;
-        assert_eq!(step(busy, action, 0x1A), BattleVoiceStep::ClearLatch);
+        assert_eq!(voice_step(busy, action, 0x1A), BattleVoiceStep::ClearLatch);
 
         let mut idle = ready_ctx(0);
         idle.action_live = 0;
-        assert_eq!(step(idle, action, 0x1A), BattleVoiceStep::ClearLatch);
+        assert_eq!(voice_step(idle, action, 0x1A), BattleVoiceStep::ClearLatch);
 
-        let spells = spell_classes();
+        let spells = voice_spell_classes();
         assert_eq!(
-            battle_voice_step(false, 0x00, 0x1A, ready_ctx(0), action, tables(&spells)),
+            battle_voice_step(
+                false,
+                0x00,
+                0x1A,
+                ready_ctx(0),
+                action,
+                voice_tables(&spells)
+            ),
             BattleVoiceStep::ClearLatch,
         );
         assert_eq!(
-            battle_voice_step(true, 0xFF, 0x1A, ready_ctx(0), action, tables(&spells)),
+            battle_voice_step(
+                true,
+                0xFF,
+                0x1A,
+                ready_ctx(0),
+                action,
+                voice_tables(&spells)
+            ),
             BattleVoiceStep::ClearLatch,
         );
     }
@@ -242,16 +260,19 @@ mod tests {
         let action = BattleVoiceAction { class: 1, id: 0 };
         let mut phased = ready_ctx(0);
         phased.phase = PHASE_SUPPRESS;
-        assert_eq!(step(phased, action, NO_CLIP), BattleVoiceStep::Hold);
+        assert_eq!(voice_step(phased, action, NO_CLIP), BattleVoiceStep::Hold);
         // Already latched: nothing happens, and the latch is not reset.
-        assert_eq!(step(ready_ctx(0), action, 0x1A), BattleVoiceStep::Hold);
+        assert_eq!(
+            voice_step(ready_ctx(0), action, 0x1A),
+            BattleVoiceStep::Hold
+        );
     }
 
     #[test]
     fn class_one_arms_the_seats_fanfare_clip() {
         // Seats 0/1/2 -> party slots 1/2/3 -> XA27/XA28/XA29 (0x1A..0x1C).
         for (seat, want) in [(0u8, 0x1Au8), (1, 0x1B), (2, 0x1C)] {
-            let got = step(
+            let got = voice_step(
                 ready_ctx(seat),
                 BattleVoiceAction { class: 1, id: 0 },
                 NO_CLIP,
@@ -262,13 +283,13 @@ mod tests {
 
     #[test]
     fn class_two_splits_on_the_spell_class_byte() {
-        let low = step(
+        let low = voice_step(
             ready_ctx(1),
             BattleVoiceAction { class: 2, id: 0x81 },
             NO_CLIP,
         );
         assert_eq!(low, BattleVoiceStep::Arm { clip: 0x1B });
-        let high = step(
+        let high = voice_step(
             ready_ctx(1),
             BattleVoiceAction { class: 2, id: 0x82 },
             NO_CLIP,
@@ -286,7 +307,7 @@ mod tests {
         // Party slots 1/2/3 -> (slot - 1) * 2 = XA1 / XA3 / XA5.
         for (seat, want) in [(0u8, 0u8), (1, 2), (2, 4)] {
             for class in [3u8, 4] {
-                let got = step(ready_ctx(seat), BattleVoiceAction { class, id: 0 }, NO_CLIP);
+                let got = voice_step(ready_ctx(seat), BattleVoiceAction { class, id: 0 }, NO_CLIP);
                 assert_eq!(got, BattleVoiceStep::Arm { clip: want }, "seat {seat}");
             }
         }
@@ -295,7 +316,7 @@ mod tests {
     #[test]
     fn voiceless_classes_hold() {
         for class in [0u8, 5, 6, 0xFF] {
-            let got = step(ready_ctx(0), BattleVoiceAction { class, id: 0 }, NO_CLIP);
+            let got = voice_step(ready_ctx(0), BattleVoiceAction { class, id: 0 }, NO_CLIP);
             assert_eq!(got, BattleVoiceStep::Hold, "class {class}");
         }
     }
@@ -304,7 +325,7 @@ mod tests {
     fn monster_seats_ignore_the_action_class() {
         // Seat 3 -> monster index 4 -> clip 0x08, whatever the class byte is.
         for class in [0u8, 1, 5, 0xFF] {
-            let got = step(ready_ctx(3), BattleVoiceAction { class, id: 0 }, NO_CLIP);
+            let got = voice_step(ready_ctx(3), BattleVoiceAction { class, id: 0 }, NO_CLIP);
             assert_eq!(got, BattleVoiceStep::Arm { clip: 0x08 }, "class {class}");
         }
     }
@@ -312,8 +333,8 @@ mod tests {
     #[test]
     fn missing_tables_hold_rather_than_guess() {
         let empty: [u8; 0] = [];
-        let spells = spell_classes();
-        let mut t = tables(&spells);
+        let spells = voice_spell_classes();
+        let mut t = voice_tables(&spells);
         t.party_order = &empty;
         assert_eq!(
             battle_voice_step(
@@ -327,7 +348,7 @@ mod tests {
             BattleVoiceStep::Hold,
         );
 
-        let mut t = tables(&empty);
+        let mut t = voice_tables(&empty);
         t.party_order = &PARTY_ORDER;
         assert_eq!(
             battle_voice_step(

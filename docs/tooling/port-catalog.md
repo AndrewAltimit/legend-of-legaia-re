@@ -467,6 +467,13 @@ The point of the table is to make the cross-cuts cheap to read:
   provenance link, not a correctness proof. Tests + retail-comparison still
   do that job - and `--live` answers only whether the code is *reached*, not
   whether it is right.
+- **A `#[cfg(test)]` helper is still a caller node.** Test functions are
+  excluded from a module anchor's *scope* but not from the call graph's
+  *callers*, so a helper with a common name (`step`, `tables`, `new`) collects
+  every same-named edge in the tree and marks its own module live - which
+  reads as a stale `NOT WIRED:` tag on a module nothing calls. Give test
+  helpers distinctive names; a row in the stale-tag section whose only path
+  runs through a test helper is this, not a wiring gap.
 - **The ignore-list is curated, not exhaustive.** Newly-dumped PsyQ helpers
   don't auto-classify - `--missing-ports` will surface them until they're
   explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte
