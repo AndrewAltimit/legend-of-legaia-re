@@ -989,8 +989,10 @@ pub(crate) struct RandomizeArgs {
         value_name = "COUNT"
     )]
     pub(crate) chicken_heart: Option<u8>,
-    /// Seed the Good Luck Bell accessory (raises the item-drop rate) into the
-    /// starting bag. `--good-luck-bell` for the default (1) or `--good-luck-bell N`.
+    /// Seed the Good Luck Bell accessory (Low Encounter - halves the encounter
+    /// rate) into the starting bag. It only puts the item in the bag; equipping
+    /// it is what applies the passive.
+    /// `--good-luck-bell` for the default (1) or `--good-luck-bell N`.
     #[arg(
         long,
         num_args = 0..=1,
