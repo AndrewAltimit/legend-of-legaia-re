@@ -99,6 +99,14 @@ jobs:
       - name: Disc coverage ratchet (skips without disc data)
         run: python3 scripts/ci/disc-coverage.py --check
 
+      # The catalog's numbers reach the site's landing page, so a silently
+      # widening worklist is a published figure moving with nothing to say so.
+      # Its `dumped` column reads the gitignored Ghidra corpus, so this reports
+      # SKIPPED here and has teeth in the hook; it is listed for the same reason
+      # the disc-coverage ratchet is.
+      - name: Port-catalog ratchet (skips without the dump corpus)
+        run: python3 scripts/ci/port-catalog.py --check
+
       # site/wasm/ is build output that the deploy job rebuilds, so a stale
       # bundle on the runner is not a repository defect. Reported, never fatal.
       - name: Shipped wasm bundle freshness (advisory)
