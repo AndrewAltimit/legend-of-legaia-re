@@ -40,6 +40,12 @@ pub(crate) const TILE_BOARD_SPEED: i32 = crate::tile_board::TILE / 8;
 pub(crate) const FIELD_GRID_STRIDE: usize = 0x80;
 /// Total field-collision-grid size: `0x80` rows of `0x80` bytes.
 pub(crate) const FIELD_GRID_LEN: usize = FIELD_GRID_STRIDE * 0x80;
+/// How far [`crate::world::World::nearest_standable_seat`] will nudge a seat
+/// that lands off the walkable grid, in 64-unit collision sub-cells (8 = four
+/// 128-unit tiles). Retail's own door-arrival tiles are standable and never
+/// reach this path; the bound keeps a *derived* seat's correction local
+/// enough to still be the spot the caller named.
+pub(crate) const SEAT_RESCUE_RADIUS_SUBCELLS: i32 = 8;
 /// Base walk step (retail `base_step = 8` in `FUN_801d01b0`). Scaled by the
 /// player's `+0x72` speed multiplier and the per-frame delta scalar.
 pub(crate) const FIELD_BASE_STEP: i32 = 8;

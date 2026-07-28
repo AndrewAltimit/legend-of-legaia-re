@@ -63,6 +63,20 @@ Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x
 
 **Do not cite `overlay_0897_801d6704.txt` for this function.** That dump is base-correct (the static-overlay map puts `FUN_801D6704` at `0x801CE818 + 0x7EEC`) but **incomplete**: its instruction stream jumps `0x801d71b4 -> 0x801d72d4`, dropping the two-part-BGM arm entirely, and it carries no `jr ra`. The live-RAM captures agree with each other across all 901 instructions. See [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
+### The engine's synthesised cold seat, and why the overworlds need one
+
+Retail has exactly one authored cold seat, and it is `town01`'s. The engine's scene picker enters any scene cold, so `World::resolve_cold_field_spawn` synthesises the rest: it keeps `0xA40` when that coordinate is standable, inside the scene's **main region**, and not on a kind-0 teleport pad, and otherwise falls back to a kind-0 door-arrival anchor and then to the main region's centroid.
+
+The main region is the largest connected open-floor component **that does not reach three or more of the map's outer edges**. That exclusion is what keeps a kingdom overworld's entry on land.
+
+On `map01` / `map02` / `map03` the collision grid leaves the sea open. Retail can afford that: the coastline is a closed wall ring, and the party only ever arrives on the overworld through a door warp onto land, so the water side is unreachable rather than blocked. The sea is nevertheless each map's largest open region by roughly 4:1 - 25435 sub-cells against the continent's 7201, 29624 against 6733, 27183 against 6859, each sea at 2-3% raised floor against its continent's 83-99%. A size-only pick therefore seated the player offshore with the whole landmass walled off behind the coast, and free-roam wandered open water. The edge rule narrows to exactly those three scenes: a sweep of every `.MAP`-bearing scene on the disc finds no other whose chosen region reaches three map edges.
+
+The `.MAP` data is retail and is untouched. Disc-gated coverage: `crates/engine-core/tests/field_spawn_ashore_disc.rs` - each overworld spawns on raised ground inside the smaller region, holding any direction for 1500 frames never reaches the larger one, `town01`'s New Game seat stays byte-identical, and the set of scenes seated outside their largest region is exactly the three overworlds.
+
+**`World::seat_player_at_tile` is region-aware too.** A standable tile is taken exactly as given, so every op-`0x3F` door arrival lands byte-exactly on its operand. Only a tile the walkability grid does not cover is nudged to the nearest open sub-cell within four tiles (`World::nearest_standable_seat`); past that bound the coordinate is returned unchanged, because hauling the player across the map is a different decision from correcting a seat.
+
+The callers this protects are the ones whose tile is *derived* rather than authored - the `LEGAIA_START_TILE` debug seat, an encounter region's AABB centre. A derived tile really does land in walls: `map03`'s first encounter region centres on one, and a player seated there had every locomotion direction blocked with nothing on screen to explain it.
+
 ## Per-frame flow
 
 1. **Disabled gate.** If `player.flags & 0x80000` is set, skip all movement (an encounter is queued or a cutscene owns the player).
@@ -498,6 +512,8 @@ misclassifying hop shows up there as a 42-unit overshoot into the wall.
 Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 
 - **High nibble - walls.** Four sub-cell wall bits (the `2×2` quadrant grid the collision check samples; see above). The quadrant bit is `(x_cell & 1) | ((z_cell & 1) << 1)` - bit `1` odd-X, bit `2` odd-Z, bit `4` even-X/odd-Z, bit `8` both odd - selected inside the probe `FUN_801D56C4` itself, whose 47-instruction body is the whole sampler: two signed `/64` cell derivations (`z_cell = z/64 + 2`, `x_cell = ceil(x/64) - 1`), the `(x_cell/2 & 0x7F) + (z_cell/2 & 0x7F) * 0x80` byte index into `*(0x1F8003EC) + 0x4000`, the quadrant select out of `byte >> 4`, and a `!= 0` return meaning **blocked**. Ported as [`World::field_tile_is_wall`](../../crates/engine-core/src/world/field_movement.rs).
+
+  **Both** `& 0x7F` masks are load-bearing, and the row's is easy to lose. Retail spells the row term `((z_cell + sign) << 6) & 0x3f80` (`0x801D5710..0x801D571C`) - the same 7-bit mask the column gets one instruction earlier, written as a pre-scaled offset - so the byte index can never leave the `0x4000`-byte grid and a Z past the last row **wraps** onto a real row. Drop the mask and the index runs off the buffer from `z >= 0x3F80` up; a port that answers "no wall" there hands the player an open corridor along the far edge of every scene instead of retail's wrapped read.
 - **Low nibble - floor-elevation tier.** A 4-bit index `0..15` into a 16-entry `short` height LUT at scratchpad `0x1f80035c` (`= 0x1f800314 + 0x48`). The object/actor spawn iterator `FUN_8003a55c` reads `LUT[byte & 0xf]` and adds it to each placed object's Y, so a tile's collision byte also encodes its floor height (raised platforms, multi-level rooms). The LUT is filled at scene entry by `FUN_8003aeb0` from the MAN asset header (`_DAT_8007b898 + 2`, 16 negated `short`s). The same low nibble is **terrain elevation**: `FUN_80019278` (SCUS) bilinearly interpolates a smooth ground height from the 2×2 block of floor nibbles here - `grid[0],[1],[0x80],[0x81]`, weighted by the sub-tile position - so the world-map walk-view continent is a heightfield surface,
   not a flat plane (see [`world-map.md`](world-map.md), "the continent ground is a procedural heightfield"). But this bilinear surface is only **half** the floor model - see [Floor height: two models](#floor-height-two-models) below.
 

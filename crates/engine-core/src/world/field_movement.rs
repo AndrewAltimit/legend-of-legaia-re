@@ -410,6 +410,16 @@ impl World {
     /// tests one candidate-centre point - a standoff/feel difference, not an
     /// indexing one.
     ///
+    /// **Both** cell axes are masked to 7 bits, so the byte index can never
+    /// leave the `0x4000`-byte grid: retail's row term is
+    /// `((z_cell + sign) << 6) & 0x3f80` (`0x801D5710..0x801D571C`), which is
+    /// `((z_cell / 2) & 0x7F) * 0x80` - the same `& 0x7F` the column gets at
+    /// `0x801D570C`. A Z past the grid's last row therefore **wraps** in
+    /// retail rather than reading as open floor, and the port must wrap with
+    /// it: an unmasked row index runs off the end of the buffer from
+    /// `z >= 0x3F80` up, and reading that as "no wall" hands the player a
+    /// free corridor along the far edge of every scene.
+    ///
     /// PORT: FUN_801d56c4 (field-overlay walkability probe, 47 instructions
     /// `0x801D56C4..0x801D577C`: the two signed `/64` cell derivations, the
     /// `(col + row*0x80)` byte index into `*(0x1F8003EC) + 0x4000`, the
@@ -425,7 +435,7 @@ impl World {
         let zc = ((z as i32) >> 6) + 2;
         let xc = (((x as i32) + 0x3F) >> 6) - 1;
         let col = (xc / 2) & 0x7F;
-        let row = (zc - (zc >> 31)) >> 1;
+        let row = ((zc - (zc >> 31)) >> 1) & 0x7F;
         let idx = (col + row * FIELD_GRID_STRIDE as i32) as usize;
         let Some(&byte) = self.field_collision_grid.get(idx) else {
             return false;
@@ -484,9 +494,30 @@ impl World {
     /// component's sub-cell count. Deterministic: components are numbered in
     /// row-major scan order.
     fn field_walk_components(&self) -> (Vec<u16>, Vec<u32>) {
+        let (labels, sizes, _) = self.field_walk_components_edged();
+        (labels, sizes)
+    }
+
+    /// [`Self::field_walk_components`] plus, per component, which of the
+    /// map's four outer edges its sub-cells reach
+    /// (`[x_min, x_max, z_min, z_max]`).
+    ///
+    /// The edge record is what separates a scene's playable ground from the
+    /// **open space around it**. A kingdom overworld's collision grid leaves
+    /// the sea open - retail can afford that, because the coastline is a
+    /// closed wall ring and a party that only ever arrives through a door
+    /// warp can never be on the water side of it. The sea is nevertheless
+    /// the grid's *largest* open region by a factor of ~4, so a size-only
+    /// pick lands the cold-entry player offshore with the whole continent
+    /// unreachable. A region that reaches three or more map edges is that
+    /// surrounding space rather than an enclosed area of the map, which is
+    /// the discriminator [`Self::resolve_cold_field_spawn`] uses.
+    fn field_walk_components_edged(&self) -> (Vec<u16>, Vec<u32>, Vec<[bool; 4]>) {
         let stride = FIELD_GRID_STRIDE * 2;
+        let last = stride as i32 - 1;
         let mut labels = vec![0u16; stride * stride];
         let mut sizes: Vec<u32> = Vec::new();
+        let mut edges: Vec<[bool; 4]> = Vec::new();
         let mut queue: std::collections::VecDeque<(i32, i32)> = std::collections::VecDeque::new();
         for sz in 0..stride as i32 {
             for sx in 0..stride as i32 {
@@ -496,10 +527,15 @@ impl World {
                 }
                 let label = (sizes.len() + 1) as u16;
                 let mut count = 0u32;
+                let mut touched = [false; 4];
                 labels[idx] = label;
                 queue.push_back((sx, sz));
                 while let Some((cx, cz)) = queue.pop_front() {
                     count += 1;
+                    touched[0] |= cx == 0;
+                    touched[1] |= cx == last;
+                    touched[2] |= cz == 0;
+                    touched[3] |= cz == last;
                     for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                         let (nx, nz) = (cx + dx, cz + dz);
                         if !(0..stride as i32).contains(&nx) || !(0..stride as i32).contains(&nz) {
@@ -513,9 +549,10 @@ impl World {
                     }
                 }
                 sizes.push(count);
+                edges.push(touched);
             }
         }
-        (labels, sizes)
+        (labels, sizes, edges)
     }
 
     /// Size (in 64-unit sub-cells) of the connected open-floor region the
@@ -542,6 +579,44 @@ impl World {
         }
     }
 
+    /// The nearest standable world position to `(x, z)`, or `(x, z)` itself
+    /// when it already is one.
+    ///
+    /// "Standable" is the spawn test [`Self::field_spawn_is_valid`]: on the
+    /// authored walk-visible floor and clear of the collision grid's wall
+    /// bits. The search walks outward in 64-unit sub-cell rings and stops at
+    /// [`SEAT_RESCUE_RADIUS_SUBCELLS`]; within a ring, sub-cells are visited
+    /// in a fixed row-major order, so the answer is deterministic. A point
+    /// with nothing standable inside the radius is returned unchanged - a
+    /// bounded nudge is a correction, and hauling the player across the map
+    /// would be a different decision that the caller has not asked for.
+    ///
+    /// Scenes with no collision grid loaded (`field_spawn_is_valid` reads
+    /// every tile as off-floor there) pass straight through.
+    pub fn nearest_standable_seat(&self, x: i16, z: i16) -> (i16, i16) {
+        if self.field_collision_grid.len() < FIELD_GRID_LEN
+            || self.field_object_cells.len() < FIELD_GRID_LEN
+            || self.field_spawn_is_valid(x, z)
+        {
+            return (x, z);
+        }
+        let (sx0, sz0) = ((x as i32) >> 6, (z as i32) >> 6);
+        for r in 1..=SEAT_RESCUE_RADIUS_SUBCELLS {
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    if dx.abs().max(dz.abs()) != r {
+                        continue;
+                    }
+                    let (sx, sz) = (sx0 + dx, sz0 + dz);
+                    if self.field_subcell_open(sx, sz) {
+                        return ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+                    }
+                }
+            }
+        }
+        (x, z)
+    }
+
     /// Size (in 64-unit sub-cells) of the scene's largest connected open-floor
     /// region, or `0` when no sub-cell is open.
     pub fn field_largest_walk_component_size(&self) -> usize {
@@ -562,21 +637,34 @@ impl World {
     /// arbitrary scenes cold, and for many of them the fixed seat lands off the
     /// authored walkable floor, inside a walled-off pocket (a "valid" point
     /// whose connected region is tiny), in a secondary region cut off from the
-    /// scene's main playable area, or on a kind-0 intra-scene teleport tile
-    /// (a door pad whose first tile-crossing dispatch warps the player).
+    /// scene's main playable area, on a kind-0 intra-scene teleport tile
+    /// (a door pad whose first tile-crossing dispatch warps the player), or -
+    /// on the three kingdom overworlds - **offshore**.
+    ///
+    /// The **main region** is the largest connected open-floor component that
+    /// does not reach three or more of the map's outer edges
+    /// ([`Self::field_walk_components_edged`]). Dropping the outer ones is
+    /// what keeps a kingdom overworld's cold entry on its continent: `map01` /
+    /// `map02` / `map03` leave the sea open in the collision grid (retail's
+    /// coastline ring is what keeps the party out of it, and retail never
+    /// cold-enters an overworld at all), and that sea is ~4x the size of the
+    /// continent, so a plain size pick seats the player on open water with the
+    /// whole landmass walled off behind the coast. No other scene on the disc
+    /// has an outer component large enough to be picked, so this narrows to
+    /// the three overworlds and leaves every town / dungeon spawn where it
+    /// was.
     ///
     /// Selection rule (deterministic per scene):
     ///
     /// 1. Keep the retail seat when it is standable, inside the scene's
-    ///    **largest** connected open-floor component, and not on a kind-0
-    ///    teleport tile (`teleport_tiles`) - town01's New Game opening stays
-    ///    byte-identical.
+    ///    **main region**, and not on a kind-0 teleport tile
+    ///    (`teleport_tiles`) - town01's New Game opening stays byte-identical.
     /// 2. Otherwise take the first kind-0 teleport **destination** (`anchors`,
     ///    in disc table order) that passes the same checks - a retail-authored
     ///    door-arrival spot.
-    /// 3. Otherwise spawn at the largest component's own sub-cell nearest its
+    /// 3. Otherwise spawn at the main region's own sub-cell nearest its
     ///    centroid (skipping teleport tiles), i.e. the middle of the scene's
-    ///    biggest playable region.
+    ///    biggest enclosed playable region.
     /// 4. A scene with no open floor at all keeps the retail seat (nothing
     ///    better to resolve against).
     ///
@@ -591,15 +679,23 @@ impl World {
     ) -> (i16, i16) {
         let default = (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ);
         let stride = FIELD_GRID_STRIDE * 2;
-        let (labels, sizes) = self.field_walk_components();
-        // Largest component; ties keep the first (lowest label) for
-        // determinism.
-        let Some(largest_label) = sizes
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(&a.0)))
-            .map(|(i, _)| (i + 1) as u16)
-        else {
+        let (labels, sizes, edges) = self.field_walk_components_edged();
+        // Largest component, ignoring any that reaches three or more of the
+        // map's outer edges (see `field_walk_components_edged`: that is the
+        // open space *around* the authored area - the kingdom overworlds'
+        // sea, which outweighs their continent ~4:1). Ties keep the first
+        // (lowest label) for determinism; a scene whose every component is
+        // an outer one keeps the plain largest.
+        let enclosed = |i: usize| edges[i].iter().filter(|t| **t).count() < 3;
+        let pick = |filtered: bool| -> Option<u16> {
+            sizes
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !filtered || enclosed(*i))
+                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(&a.0)))
+                .map(|(i, _)| (i + 1) as u16)
+        };
+        let Some(largest_label) = pick(true).or_else(|| pick(false)) else {
             return default;
         };
         let on_teleport_tile = |x: i16, z: i16| -> bool {
@@ -2700,5 +2796,150 @@ mod face_target_tests {
         // A slot with no position is left untouched - no heading is invented.
         w.face_field_npc_toward(9, 100, 100);
         assert!(!w.field_npc_headings.contains_key(&9));
+    }
+}
+
+#[cfg(test)]
+mod seat_tests {
+    use super::*;
+
+    /// A synthetic scene: every tile walk-visible, wall bytes only at the
+    /// named **grid** cells (`(col, row)` of the `+0x4000` grid).
+    fn scene(walls: &[(usize, usize)]) -> World {
+        let mut w = World::new();
+        let mut grid = vec![0u8; FIELD_GRID_LEN];
+        for &(col, row) in walls {
+            grid[row * FIELD_GRID_STRIDE + col] = 0xF0;
+        }
+        w.load_field_collision_grid(&grid);
+        // Object grid: `CELL_WALK_VISIBLE` (0x1000) on every tile, LE u16.
+        w.load_field_object_cells(&[0x00u8, 0x10].repeat(FIELD_GRID_LEN));
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        w
+    }
+
+    /// World centre of collision-grid cell `(col, row)` under the biased
+    /// derivation the wall probe uses (`x in [128c, 128c+128)`,
+    /// `z in [128r-128, 128r)`).
+    fn cell_centre(col: i16, row: i16) -> (i16, i16) {
+        (col * 128 + 64, row * 128 - 64)
+    }
+
+    /// Retail's byte index masks **both** cell axes to 7 bits
+    /// (`0x801D570C` column, `0x801D571C` row), so a Z past the grid's last
+    /// row wraps onto a real row instead of running off the buffer. The
+    /// unmasked port read fell out of `Vec::get` and answered "no wall",
+    /// which handed the player an open corridor along the far edge of every
+    /// scene.
+    #[test]
+    fn wall_probe_wraps_the_row_like_retail() {
+        // Grid row 0 is solid, row 1 is open.
+        let w = scene(&(0..FIELD_GRID_STRIDE).map(|c| (c, 0)).collect::<Vec<_>>());
+        let open = cell_centre(20, 1);
+        assert!(!w.field_tile_is_wall(open.0, open.1), "grid row 1 is open");
+        // `z = 16300` derives z_cell 256 -> row 128, which retail masks back
+        // to row 0 (`andi 0x3f80`) and must read that row's wall bits. The
+        // unmasked port index ran off the buffer and answered "open".
+        assert!(
+            w.field_tile_is_wall(open.0, 16300),
+            "a Z past the last grid row wraps onto row 0, not into open floor"
+        );
+    }
+
+    /// The seat rescue is a **no-op on a standable tile** - an authored door
+    /// arrival lands exactly where the op-`0x3F` operand says.
+    #[test]
+    fn authored_seat_is_untouched() {
+        let mut w = scene(&[]);
+        w.seat_player_at_tile(20, 20);
+        let ms = &w.actors[0].move_state;
+        assert_eq!((ms.world_x, ms.world_z), (20 * 128 + 64, 20 * 128 + 64));
+        // ...and the half-tile bit still selects the far half.
+        w.seat_player_at_tile(20 | 0x80, 20);
+        let ms = &w.actors[0].move_state;
+        assert_eq!((ms.world_x, ms.world_z), (20 * 128 + 128, 20 * 128 + 64));
+    }
+
+    /// A seat the walkability grid does not cover is nudged onto the nearest
+    /// open sub-cell rather than parking the player inside a wall, where
+    /// every locomotion direction is blocked.
+    #[test]
+    fn seat_inside_a_wall_is_rescued_to_open_floor() {
+        // A 3x3 grid-cell block of solid wall over the seat tile (20, 20),
+        // whose biased cell is (col 20, row 21).
+        let walls: Vec<(usize, usize)> = (19..=21)
+            .flat_map(|c| (20..=22).map(move |r| (c, r)))
+            .collect();
+        let mut w = scene(&walls);
+        let asked = (20i16 * 128 + 64, 20i16 * 128 + 64);
+        assert!(
+            w.field_tile_is_wall(asked.0, asked.1),
+            "the tile the caller names is a wall"
+        );
+        w.seat_player_at_tile(20, 20);
+        let seated = {
+            let ms = &w.actors[0].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        assert_ne!(seated, asked, "the seat moved off the wall");
+        assert!(
+            !w.field_tile_is_wall(seated.0, seated.1),
+            "the rescued seat is standable"
+        );
+        // The nudge stays local - within the documented sub-cell radius.
+        let d = ((seated.0 - asked.0) as i32)
+            .abs()
+            .max(((seated.1 - asked.1) as i32).abs());
+        assert!(
+            d <= SEAT_RESCUE_RADIUS_SUBCELLS * 64 + 64,
+            "the nudge is bounded, got {d} units"
+        );
+    }
+
+    /// Nothing standable within the radius: the caller's coordinate is
+    /// returned unchanged rather than the player being hauled across the map.
+    #[test]
+    fn a_seat_with_no_open_floor_nearby_is_left_alone() {
+        let walls: Vec<(usize, usize)> = (0..FIELD_GRID_STRIDE)
+            .flat_map(|c| (0..FIELD_GRID_STRIDE).map(move |r| (c, r)))
+            .collect();
+        let w = scene(&walls);
+        assert_eq!(w.nearest_standable_seat(2624, 2624), (2624, 2624));
+    }
+
+    /// The cold-spawn resolver's main region skips an open area that reaches
+    /// three or more map edges - the shape a kingdom overworld's sea has, and
+    /// the reason a size-only pick seated the player offshore. Here the
+    /// border ring is the bigger region and the enclosed pocket the smaller
+    /// one; the pocket must win.
+    #[test]
+    fn cold_spawn_prefers_an_enclosed_region_over_the_map_border() {
+        // Wall ring around grid cells 8..=40 seals an interior pocket;
+        // everything outside it is one big open region touching all four map
+        // edges - the shape of a kingdom overworld's sea.
+        let mut walls: Vec<(usize, usize)> = Vec::new();
+        for i in 8..=40 {
+            walls.push((i, 8));
+            walls.push((i, 40));
+            walls.push((8, i));
+            walls.push((40, i));
+        }
+        let w = scene(&walls);
+        let inside = (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ);
+        let pocket = w.field_walk_component_size(inside.0, inside.1);
+        assert!(pocket > 0, "the pocket is open floor");
+        assert!(
+            w.field_largest_walk_component_size() > pocket,
+            "the border region is the larger of the two - a size-only pick \
+             would take it"
+        );
+        // The retail cold seat (0xA40) is inside the pocket, so rule 1 keeps
+        // it: that is the assertion that the pocket, not the border region,
+        // is the main region.
+        assert_eq!(
+            w.resolve_cold_field_spawn(&[], &[]),
+            (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ)
+        );
     }
 }
