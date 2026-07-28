@@ -263,3 +263,71 @@ impl World {
         }
     }
 }
+
+/// Per-scene save permission and the pause menu's entry-context kind - the two
+/// gate inputs the retail root command picker reads before it lets a row
+/// through.
+impl World {
+    /// Seed [`World::scene_save_allowed`] from the scene MAN just loaded.
+    ///
+    /// Retail's MAN loader does this inline, one instruction after it takes
+    /// the header's status word: it reads byte `+1` of the resident MAN
+    /// buffer `_DAT_8007B898`, masks bit `0`, and stores the result **byte
+    /// wide** into the per-scene save-allow flag `_DAT_8007B6A8`.
+    ///
+    /// ```text
+    /// 8003af48  lbu   v0,0x1(v1)        ; v1 = _DAT_8007B898 (the MAN)
+    /// 8003af4c  lbu   s7,0x0(v1)
+    /// 8003af50  andi  v0,v0,0x1
+    /// 8003af54  sb    v0,-0x4958(a0)    ; a0 = 0x80080000 -> 0x8007B6A8
+    /// ```
+    ///
+    /// `None` (the scene carries no MAN, or its MAN did not parse) clears the
+    /// flag, which is the state retail's own init leaves the byte in
+    /// (`FUN_80025980` zeroes it) - no MAN, no permission.
+    ///
+    /// On the retail disc the bit is set on exactly the three kingdom
+    /// world-map scenes and clear on every field scene, which is why saving
+    /// outside a scripted save point is a world-map-only affordance.
+    ///
+    /// PORT: FUN_8003aeb0 (`0x8003AF48..0x8003AF54`)
+    pub fn install_scene_save_permission(
+        &mut self,
+        man: Option<&legaia_asset::man_section::ManFile>,
+    ) {
+        self.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
+    }
+
+    /// Kind byte of the op-`0x49` entry context the pause menu tests - the
+    /// engine's read of retail `*_DAT_8007B450`.
+    ///
+    /// Retail parks the field VM on op `0x49` by storing the **operand
+    /// pointer** into `_DAT_8007B450` (`sw s6,-0x4bb0(s0)` in the op's Idle
+    /// arm), and that operand opens on its sub-op byte (`lbu v0,0x0(s6)` two
+    /// instructions earlier). So the "kind byte" every consumer dereferences
+    /// is just the armed sub-op: `1` is a field save point (which enters the
+    /// card driver directly), `0x0D` is the context that blocks the menu's
+    /// Load row and turns its cancel into a Yes/No confirm.
+    ///
+    /// The port has no single global to read - it tags each park with the
+    /// context that armed it ([`crate::field_submode_screen::Op49ParkOwner`])
+    /// and resolves three sub-ops through dedicated host paths - so the kind
+    /// is recovered from those paths instead: an armed inline shop is sub-op
+    /// `0` and an installed tile board is sub-op `5`. Both are `!= 0x0D`, so
+    /// they take the same allow branch retail takes, and a park whose sub-op
+    /// the engine does not track reads `None` (also the allow branch). The
+    /// blocking kind is therefore reachable only once the op-`0x49` arm
+    /// records its sub-op, which is the one edit that would make this
+    /// function able to return `0x0D`.
+    ///
+    /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
+    pub fn menu_entry_context_kind(&self) -> Option<u8> {
+        if self.field_shop_armed {
+            return Some(0);
+        }
+        if self.tile_board_armed {
+            return Some(5);
+        }
+        None
+    }
+}

@@ -1364,22 +1364,27 @@ pub enum RootMenuRoute {
 /// REF: FUN_801cfd68 (the row renderer whose grey arms read the same two
 /// globals in the same order)
 ///
-/// NOT WIRED: the engine's pause root is
-/// [`crate::field_menu::FieldMenuSession`], which resolves a confirmed row
-/// to a typed [`crate::field_menu::FieldMenuRow`] and lets the shell push
-/// the matching sub-session - it has no sub-screen id space for
-/// [`ROOT_MENU_ROUTES`] to name, so a caller would consume only the
-/// buzz/advance bit and drop the `Sub(id)` payload. Both gate inputs are
-/// missing too, and they are missing in different places. The
-/// entry-context pointer `_DAT_8007B450` has no engine analogue at all
-/// (`crate::field_submode_screen` parks per context instead of keeping the
-/// one global). The save-allow flag *is* on the disc and *is* parsed -
-/// [`legaia_asset::man_section::ManHeader::low_flag`] - and then dropped:
-/// no scene-load path carries it onto the world and
-/// `BootSession::open_field_menu` seeds only money and play time. So
-/// wiring is two edits neither of which lives here: carry `low_flag`
-/// through scene load onto `World`, then hand it and the park state to
-/// [`crate::field_menu::FieldMenuSession`] at open.
+/// Live on the pause-menu path. [`crate::field_menu::FieldMenuSession`] calls
+/// this once per row to ink the list ([`crate::field_menu::FieldMenuSession::row_is_available`],
+/// which the renderer greys on) and once more on Cross to decide advance vs
+/// buzz - the same double read, in the same order, that keeps retail's row
+/// renderer and confirm arm agreeing. The `Sub(id)` payload is consumed rather
+/// than dropped: the session resolves the confirmed row back **through** the
+/// id ([`crate::field_menu::FieldMenuRow::from_retail_subscreen`]), so
+/// [`ROOT_MENU_ROUTES`] decides which sub-session the shell pushes.
+///
+/// Both gate inputs come from the world at menu-open
+/// (`BootSession::open_field_menu`): `save_allowed` from
+/// [`crate::world::World::scene_save_allowed`], which scene load seeds from
+/// [`legaia_asset::man_section::ManHeader::low_flag`], and
+/// `entry_context_kind` from
+/// [`crate::world::World::menu_entry_context_kind`]. The save gate is the one
+/// that bites on real data - the MAN bit is set on the three kingdom world
+/// maps and clear on every field scene, so Save greys everywhere but the
+/// overworld. The Load gate is plumbed and live but cannot yet reach its
+/// blocking value: the port tags each op-`0x49` park with its owning context
+/// instead of keeping retail's single pointer, and no path records the armed
+/// sub-op, so the kind resolves to `0`, `5` or `None` - all allow branches.
 pub fn root_menu_confirm_route(
     row: u16,
     entry_context_kind: Option<u8>,

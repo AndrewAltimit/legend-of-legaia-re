@@ -1240,6 +1240,17 @@ pub struct World {
     /// Persisted in [`legaia_save::SaveExtV2::play_time_seconds`].
     pub play_time_seconds: u32,
 
+    /// Per-scene **save permission** - retail's `_DAT_8007B6A8`.
+    ///
+    /// Seeded at scene load from the scene MAN header's `[0x01] & 1`
+    /// ([`legaia_asset::man_section::ManHeader::low_flag`]) by
+    /// [`World::install_scene_save_permission`]; a scene with no MAN, and a
+    /// world that has not loaded one, reads `false` - the same state retail's
+    /// own init leaves the byte in. Read by the pause menu, where a cleared
+    /// flag greys the Save row and buzzes its confirm
+    /// ([`crate::pause_screens::root_menu_confirm_route`]).
+    pub scene_save_allowed: bool,
+
     /// Optional formation table - engines install this at boot via
     /// [`World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.
@@ -2448,6 +2459,7 @@ impl World {
             seru_registry: crate::seru_learning::SeruRegistry::new(),
             last_capture_outcomes: Vec::new(),
             play_time_seconds: 0,
+            scene_save_allowed: false,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             move_power: None,
