@@ -333,6 +333,35 @@ impl RampScheduler {
         }
     }
 
+    // NOT WIRED: nothing calls it because nothing needs to. The host builds a
+    // fresh `RampScheduler` per scene rather than recycling one across the
+    // boundary, so the scene-entry reset has no live caller; it exists so a
+    // host that does keep a long-lived pool re-arms the header slot the way
+    // retail does instead of clearing all 64 and handing out slot 0.
+    /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
+    ///
+    /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears
+    /// slot 0's `+0x1A` / `+0x1C`, then writes `_DAT_801C66BE = 1` - slot 0's
+    /// own `+0x1E` - so the header re-arms as occupied and slots 1..63 come
+    /// back free. That asymmetric last store is why the pool's usable count
+    /// is [`RAMP_SLOTS`] (63) and not 64; a port that clears all 64 and stops
+    /// hands out the list header as an allocatable slot.
+    ///
+    /// The routine ends with an actor sweep (`actor_free(&DAT_800742EC,
+    /// _DAT_8007C34C)`) that retires the pool's own driver actor. The port
+    /// has no such driver - the host ticks the scheduler directly - so that
+    /// half has no counterpart here; see [`RampScheduler::free_owner`] for
+    /// the owner-scoped sweep the engine does model.
+    ///
+    /// Nothing carries across a scene boundary: `overflow` is reset too,
+    /// because retail's `DAT_80073ED0` counter is diagnostic and a stale
+    /// count would misreport the new scene.
+    pub fn reset_pool(&mut self) {
+        self.slots.clear();
+        self.slots.resize(RAMP_SLOTS, None);
+        self.overflow = 0;
+    }
+
     pub fn active(&self) -> usize {
         self.slots.iter().filter(|s| s.is_some()).count()
     }
@@ -393,6 +422,132 @@ fn rgb_lerp(start: i32, end: i32, remaining: i32, total: i32, finished: bool) ->
         out |= (lerp_remaining(s, e, remaining, total) & 0xFF) << shift;
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// The player-zone ramp actor (`FUN_80037018`)
+// ---------------------------------------------------------------------------
+
+/// Destination width of a [`ZoneRamp`] - retail's `slot+0x8C`.
+///
+/// Deliberately **not** [`RampKind`]. The two width ladders disagree on kind
+/// `3`: the pool tick `FUN_80036D80` gives it the three-lane packed-RGB lerp,
+/// while `FUN_80037018`'s `slti 3` / `slti 5` pair sends `3` and `4` to the
+/// same `sw`. Reusing one enum for both would import an RGB lerp this
+/// routine never performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneRampWidth {
+    /// `kind 1` - `sb`.
+    U8,
+    /// `kind 2` - `sh`.
+    U16,
+    /// `kind 3` **and** `kind 4` - `sw`.
+    U32,
+}
+
+/// One player-zone ramp actor's record, as `FUN_80037018` reads it off the
+/// actor it is the `+0x0C` handler of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZoneRamp {
+    /// `+0x80` - the value at the low edge of the window.
+    pub start: i32,
+    /// `+0x84` - the value at the high edge.
+    pub end: i32,
+    /// `+0x88` / `+0xC8` - the X gate. Outside it the actor does nothing;
+    /// X takes no part in the interpolation.
+    pub x_lo: i16,
+    pub x_hi: i16,
+    /// `+0x8A` / `+0xCA` - the Z window. Both the gate **and** the ramp
+    /// parameter: the output is where the player's Z sits inside it.
+    pub z_lo: i16,
+    pub z_hi: i16,
+    /// `+0x8C` - destination width selector, kept raw so the out-of-range
+    /// arm stays reachable.
+    pub kind: i32,
+}
+
+/// What one tick of a [`ZoneRamp`] does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneRampTick {
+    /// A gate rejected: nothing is written and the actor stays live.
+    Idle,
+    /// Store `value` through the actor's `+0x94` destination pointer.
+    Write { value: i32, width: ZoneRampWidth },
+    /// `kind` is none of `1..=4`: retail sets its **own** `+0x10 |= 8` yield
+    /// bit, so the actor retires instead of writing.
+    Retire,
+    /// `z_lo == z_hi`. Retail divides by the zero span and executes
+    /// `break 0x1C00`, the MIPS divide-by-zero trap. The port reports it
+    /// rather than reproducing a CPU exception; no shipped record is built
+    /// this way.
+    DivideByZero,
+}
+
+// NOT WIRED: the port has no spawner for this actor. Its records are built by
+// scene content - something has to write the actor's `+0x80..+0xCA` fields and
+// the `+0x94` destination pointer - and the engine's scene loader installs no
+// actor carrying handler VA `0x80037018`; `engine-core::actor_handler` knows
+// the VA only as the target of the MAN loader's retire sweep. Reaching it
+// needs the spawn side first, and a destination model for a raw pointer.
+/// PORT: FUN_80037018 - the **player-zone ramp actor** tick.
+///
+/// Not a slot of the [`RampScheduler`] pool, despite the family resemblance:
+/// its fields live at `+0x80..+0xCA` of a full actor record (the pool's slots
+/// are `0x20` bytes), it is dispatched as an actor `+0x0C` handler rather
+/// than walked by `FUN_80036D80`, and it interpolates on the **player's
+/// position** instead of on a countdown. Nothing decrements here, so the
+/// value tracks the player and can run backwards; the actor never retires
+/// itself on a completed ramp. What clears them is the scene MAN loader's
+/// second inlined retire sweep (`FUN_8003AEB0` at `0x8003B414`), which is
+/// keyed on this very VA - see `engine_core::actor_handler`.
+///
+/// Two global gates come first, both shared with the field touch dispatch:
+/// the player's engaged flag (`_DAT_8007C364[+0x10] & 0x80000`) and the
+/// scratch system lock (`_DAT_1F800394 & 0x400`). Then the AABB test, X
+/// before Z. The interpolation is
+///
+/// ```text
+/// value = start + (end - start) * (player.z - z_lo) / (z_hi - z_lo)
+/// ```
+///
+/// with MIPS `mult`/`mflo` (low word, wrapping) and a toward-zero `div`. The
+/// second overflow guard retail emits (`v1 == i32::MIN && span == -1`) is
+/// unreachable: the Z gates have already forced `z_lo <= player.z <= z_hi`,
+/// so the span is non-negative before the divide.
+pub fn zone_ramp_tick(
+    ramp: &ZoneRamp,
+    player_x: i16,
+    player_z: i16,
+    player_engaged: bool,
+    system_lock: bool,
+) -> ZoneRampTick {
+    if player_engaged || system_lock {
+        return ZoneRampTick::Idle;
+    }
+    if player_x < ramp.x_lo || ramp.x_hi < player_x {
+        return ZoneRampTick::Idle;
+    }
+    if player_z < ramp.z_lo || ramp.z_hi < player_z {
+        return ZoneRampTick::Idle;
+    }
+    let span = i32::from(ramp.z_hi) - i32::from(ramp.z_lo);
+    if span == 0 {
+        return ZoneRampTick::DivideByZero;
+    }
+    let elapsed = i32::from(player_z) - i32::from(ramp.z_lo);
+    let value = ramp
+        .end
+        .wrapping_sub(ramp.start)
+        .wrapping_mul(elapsed)
+        .wrapping_div(span)
+        .wrapping_add(ramp.start);
+    let width = match ramp.kind {
+        1 => ZoneRampWidth::U8,
+        2 => ZoneRampWidth::U16,
+        3 | 4 => ZoneRampWidth::U32,
+        _ => return ZoneRampTick::Retire,
+    };
+    ZoneRampTick::Write { value, width }
 }
 
 /// The ambient VM ops this module executes. Everything else in the
@@ -1480,6 +1635,160 @@ mod tests {
         assert!(s.install(r).is_none());
         assert_eq!(s.overflow, 1);
         assert_eq!(s.active(), RAMP_SLOTS);
+    }
+
+    #[test]
+    fn pool_reset_frees_every_slot_and_the_overflow_counter() {
+        let mut s = RampScheduler::new();
+        let r = Ramp {
+            dest: 1,
+            owner: 7,
+            start: 0,
+            end: 1,
+            total: 100,
+            remaining: 100,
+            kind: RampKind::U16,
+        };
+        for _ in 0..RAMP_SLOTS {
+            s.install(r);
+        }
+        assert!(s.install(r).is_none());
+        assert_eq!((s.active(), s.overflow), (RAMP_SLOTS, 1));
+
+        s.reset_pool();
+        assert_eq!((s.active(), s.overflow), (0, 0));
+        // Slot 0 stays the list header, so the pool is still 63 wide - not 64.
+        for _ in 0..RAMP_SLOTS {
+            assert!(s.install(r).is_some());
+        }
+        assert!(s.install(r).is_none());
+    }
+
+    fn zone_ramp_fixture() -> ZoneRamp {
+        ZoneRamp {
+            start: 0,
+            end: 0x100,
+            x_lo: -100,
+            x_hi: 100,
+            z_lo: 0,
+            z_hi: 0x40,
+            kind: 2,
+        }
+    }
+
+    #[test]
+    fn zone_ramp_interpolates_on_the_player_z_inside_the_box() {
+        let r = zone_ramp_fixture();
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 0, false, false),
+            ZoneRampTick::Write {
+                value: 0,
+                width: ZoneRampWidth::U16
+            }
+        );
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 0x20, false, false),
+            ZoneRampTick::Write {
+                value: 0x80,
+                width: ZoneRampWidth::U16
+            }
+        );
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 0x40, false, false),
+            ZoneRampTick::Write {
+                value: 0x100,
+                width: ZoneRampWidth::U16
+            }
+        );
+        // X is a gate only - it never moves the value.
+        assert_eq!(
+            zone_ramp_tick(&r, 99, 0x20, false, false),
+            zone_ramp_tick(&r, -99, 0x20, false, false)
+        );
+    }
+
+    #[test]
+    fn zone_ramp_gates_reject_before_any_arithmetic() {
+        let r = zone_ramp_fixture();
+        // Both global gates, then each AABB edge - all four `bnez` exits.
+        assert_eq!(zone_ramp_tick(&r, 0, 0x20, true, false), ZoneRampTick::Idle);
+        assert_eq!(zone_ramp_tick(&r, 0, 0x20, false, true), ZoneRampTick::Idle);
+        assert_eq!(
+            zone_ramp_tick(&r, -101, 0x20, false, false),
+            ZoneRampTick::Idle
+        );
+        assert_eq!(
+            zone_ramp_tick(&r, 101, 0x20, false, false),
+            ZoneRampTick::Idle
+        );
+        assert_eq!(zone_ramp_tick(&r, 0, -1, false, false), ZoneRampTick::Idle);
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 0x41, false, false),
+            ZoneRampTick::Idle
+        );
+    }
+
+    #[test]
+    fn zone_ramp_width_ladder_sends_kind_3_to_sw_not_to_rgb() {
+        let mut r = zone_ramp_fixture();
+        for (kind, want) in [
+            (1, ZoneRampWidth::U8),
+            (2, ZoneRampWidth::U16),
+            (3, ZoneRampWidth::U32),
+            (4, ZoneRampWidth::U32),
+        ] {
+            r.kind = kind;
+            assert_eq!(
+                zone_ramp_tick(&r, 0, 0x40, false, false),
+                ZoneRampTick::Write {
+                    value: 0x100,
+                    width: want
+                },
+                "kind {kind}"
+            );
+        }
+        // Everything else takes the `+0x10 |= 8` arm.
+        for kind in [0, 5, -1, 0x10] {
+            r.kind = kind;
+            assert_eq!(
+                zone_ramp_tick(&r, 0, 0x40, false, false),
+                ZoneRampTick::Retire,
+                "kind {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn zone_ramp_truncates_toward_zero_and_reports_the_zero_span() {
+        let mut r = zone_ramp_fixture();
+        r.end = 100;
+        r.z_hi = 100;
+        // 100 * 33 / 100 = 33 exactly; 100 * 1 / 3 truncates to 33 as well.
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 33, false, false),
+            ZoneRampTick::Write {
+                value: 33,
+                width: ZoneRampWidth::U16
+            }
+        );
+        // A descending window truncates toward zero, not toward -inf.
+        r.start = 0;
+        r.end = -100;
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 33, false, false),
+            ZoneRampTick::Write {
+                value: -33,
+                width: ZoneRampWidth::U16
+            }
+        );
+
+        // A degenerate window is retail's divide-by-zero trap.
+        r.z_lo = 5;
+        r.z_hi = 5;
+        assert_eq!(
+            zone_ramp_tick(&r, 0, 5, false, false),
+            ZoneRampTick::DivideByZero
+        );
     }
 
     #[test]

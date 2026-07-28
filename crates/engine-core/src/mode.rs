@@ -783,6 +783,78 @@ pub fn mode_init_stage(mode: GameMode) -> Option<ModeInitStage> {
     }
 }
 
+/// An INIT handler that is **not** the [`ModeInitStage`] wrapper shape.
+///
+/// Three of the mode table's INIT slots skip staging entirely. They open no
+/// overlay request, run no [`CORE_STATE_RESET`], and wait on nothing - which
+/// is the whole point of recording them: a reader who assumes every INIT row
+/// stages an overlay will look for a load that is not there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeInitBare {
+    /// The handler's entire body is a half-word store of the mode index into
+    /// `_DAT_8007B83C`, then `jr ra`.
+    SetsMode(GameMode),
+    /// The handler's entire body is a frame, one `jal` to this VA, and the
+    /// epilogue. Nothing is passed and nothing is returned.
+    Calls(u32),
+}
+
+/// The bare INIT handlers, beside [`mode_init_stage`]'s staging ones.
+///
+// NOT WIRED: same missing prerequisite as `mode_init_stage` and
+// `other_warp_init_stage` - the engine has no mode-table overlay-residency
+// model, so nothing walks the INIT column at all. Two of the three rows have
+// no destination even in principle: mode 4 is a bounce back to the debug menu
+// and mode 16 jumps at a VA that is an entry point in no image. Mode 20 is
+// the row a wiring pass could reach, and the port enters battle through
+// `SceneMode::Battle` rather than through the mode table.
+// PORT: FUN_8002611c (mode-4 MONSTER TEST INIT)
+// PORT: FUN_8002612c (mode-16 READ INIT)
+// PORT: FUN_800565d8 (mode-20 BATTLE INIT)
+// REF: FUN_80055b6c (the battle-scene setup mode 20 calls)
+/// | Mode | Handler | Body |
+/// |---|---|---|
+/// | 4 MONSTER TEST INIT | `FUN_8002611C` | `sh zero, _DAT_8007B83C`; `jr ra` |
+/// | 16 READ INIT | `FUN_8002612C` | `jal 0x801CE9C0` |
+/// | 20 BATTLE INIT | `FUN_800565D8` | `jal 0x80055B6C` |
+///
+/// **Mode 4 bounces.** Its four instructions write mode `0`, so MONSTER TEST
+/// INIT hands control straight back to CONFIG (the debug menu) on the
+/// dispatcher's next pass without ever reaching mode 5 MONSTER MODE - the
+/// same body shape as the mode-13-column reset leaf `FUN_8002B904`, and the
+/// reason the debug menu's monster-test entry appears to do nothing. The
+/// store is `sh`, matching every other retail writer of that word.
+///
+/// **Mode 16 jumps into slot A blind.** Unlike modes 0/2/18/24 it never calls
+/// the overlay loader `FUN_8003EBE4`, so `0x801CE9C0` is whatever image
+/// happens to be resident in overlay slot A - and that VA is not an entry
+/// point in any of them (see [`READ_INIT_TARGET`]). A retail-stripped dev
+/// path.
+///
+/// **Mode 20 is the one live row.** `FUN_80055B6C` is the battle-scene setup
+/// entry, resident in `SCUS_942.54`, so BATTLE INIT is a real call and not a
+/// stub. Battle entry in the port does not run through the mode table - see
+/// [`GameMode::scene_mode`] - so this records the retail chain rather than
+/// driving it.
+pub fn mode_init_bare(mode: GameMode) -> Option<ModeInitBare> {
+    match mode {
+        GameMode::MonsterTest => Some(ModeInitBare::SetsMode(GameMode::ConfigInit)),
+        GameMode::ReadInit => Some(ModeInitBare::Calls(READ_INIT_TARGET)),
+        GameMode::BattleInit => Some(ModeInitBare::Calls(0x8005_5B6C)),
+        _ => None,
+    }
+}
+
+/// The VA mode 16 READ INIT `jal`s.
+///
+/// It is an **interior** address, not an entry: the only image whose bytes
+/// cover it is the debug-menu overlay, where it is `0x801CE818 + 0x1A8` -
+/// mid-way through the `sw zero` global-clear block of `FUN_801CE97C`. No
+/// based overlay image holds a frame or an in-image `jal` there. Because
+/// `FUN_8002612C` performs no overlay load of its own, what mode 16 actually
+/// jumps into depends on which image slot A last received.
+pub const READ_INIT_TARGET: u32 = 0x801C_E9C0;
+
 /// The mid-frame driver a per-frame mode handler calls between the
 /// frame-begin pass and the frame-end pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1038,6 +1110,41 @@ mod tests {
         // Non-wrapper modes have no plan.
         assert!(mode_init_stage(GameMode::MainMode).is_none());
         assert!(mode_init_stage(GameMode::BattleInit).is_none());
+    }
+
+    #[test]
+    fn bare_init_handlers_are_disjoint_from_the_staging_ones() {
+        // Mode 4 writes the mode word and returns: it never reaches mode 5.
+        assert_eq!(
+            mode_init_bare(GameMode::MonsterTest),
+            Some(ModeInitBare::SetsMode(GameMode::ConfigInit))
+        );
+        assert_eq!(
+            mode_init_bare(GameMode::ReadInit),
+            Some(ModeInitBare::Calls(0x801C_E9C0))
+        );
+        assert_eq!(READ_INIT_TARGET, 0x801C_E9C0);
+        assert_eq!(
+            mode_init_bare(GameMode::BattleInit),
+            Some(ModeInitBare::Calls(0x8005_5B6C))
+        );
+
+        // The two shapes never overlap: a mode is staged or bare, not both.
+        for m in [
+            GameMode::ConfigInit,
+            GameMode::MainInit,
+            GameMode::GameOverInit,
+            GameMode::MonsterTest,
+            GameMode::ReadInit,
+            GameMode::BattleInit,
+            GameMode::MainMode,
+        ] {
+            assert!(
+                mode_init_stage(m).is_none() || mode_init_bare(m).is_none(),
+                "{m:?} claims both an overlay stage and a bare body"
+            );
+        }
+        assert!(mode_init_bare(GameMode::MainMode).is_none());
     }
 
     /// The default handler covers 12 of the 14 per-frame modes; MAPDISP and

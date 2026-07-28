@@ -325,6 +325,21 @@ TARGETS = [
     "8005b948",
     "8005b96c",
     "8005b9c4",
+
+    # The SCUS_942.54 byte-denominated code gaps (scripts/ci/disc-coverage.py,
+    # docs/tooling/disc-coverage.md). Four of these needed the window cleared
+    # of `undefined4` data units before `disassemble()` would run - the auto
+    # analyser had the BIOS-patch payload blocks as data, and `createFunction`
+    # declines an address it cannot first disassemble, which is why they read
+    # as un-dumped code for so long. `dump()` below re-creates nothing, so
+    # re-running this list only refreshes what already exists.
+    "8005b7b4",  # libgte LZCS load leaf (3 insns)
+    "8005bbb8",  # exception-handler prologue InitGeom copies over C0table[6]
+    "8006ef78",  # 5-word trampoline FUN_8006EFD0 patches into the kernel
+    "8006ef8c",  # the pad / memory-card IRQ pre-hook it jumps to
+    "8006f058",  # ChangeClearPAD patch payload FUN_8006F088 swaps in
+    "8005b0b8",  # GTE leading-zero converter - body under-extent, 3rd exit arm
+    "80019788",  # global-buffer base getter - body under-extent, delay slot
 ]
 
 OUT_DIR = "/scripts/funcs"
@@ -343,6 +358,39 @@ decomp = DecompInterface()
 opts = DecompileOptions()
 decomp.setOptions(opts)
 decomp.openProgram(prog)
+
+
+# Windows the auto-analyser left as `undefined4` DATA rather than code, keyed
+# by entry -> exclusive end. `createFunction` declines an address it cannot
+# first disassemble, and plain `disassemble()` stops at the next data unit, so
+# these four read as un-dumped code in `scripts/ci/disc-coverage.py` until the
+# window is cleared and walked a word at a time. Each is a BIOS-patch payload
+# block: real MIPS that only executes after its installer relocates it, which
+# is why nothing calls it in place and nothing marked it code.
+# See docs/reference/functions/runtime-libs.md.
+FORCE_DISASM_WINDOWS = {
+    "8006ef78": "8006ef8c",
+    "8006ef8c": "8006efd0",
+    "8006f058": "8006f088",
+    "8005bbb8": "8005bbe8",
+}
+
+
+def _force_window(addr_str, addr):
+    """Clear + word-walk a `FORCE_DISASM_WINDOWS` entry so flow can complete."""
+    end_str = FORCE_DISASM_WINDOWS.get(addr_str.lower())
+    if end_str is None:
+        return
+    end = af.getAddress(end_str)
+    if end is None:
+        return
+    listing.clearCodeUnits(addr, end.subtract(1), False)
+    cur = addr
+    while cur.getOffset() < end.getOffset():
+        if listing.getInstructionAt(cur) is None:
+            disassemble(cur)
+        cur = cur.add(4)
+    print("[force] disassembled {}..{} as code".format(addr_str, end_str))
 
 
 def dump(addr_str):
@@ -369,6 +417,7 @@ def dump(addr_str):
         # not yet defined in the project DB: disassemble + create it
         if listing.getInstructionAt(addr) is None:
             disassemble(addr)
+        _force_window(addr_str, addr)
         func = createFunction(addr, "FUN_" + addr_str)
         if func is not None:
             print("[new] created function at {}".format(addr_str))

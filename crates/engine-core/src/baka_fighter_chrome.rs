@@ -703,7 +703,7 @@ pub struct AnimSlotInstall {
 /// are zeroed. When the block already holds [`ANIM_SLOT_CAP`] slots the
 /// routine returns immediately and installs nothing.
 pub fn anim_slot_install(keys: &mut Vec<i16>, key_raw: i32) -> AnimSlotInstall {
-    let key = (if key_raw >= 0 { key_raw } else { key_raw + 0xF } >> 4) as i16;
+    let key = anim_slot_key(key_raw);
     let count = keys.len() as i32;
     if count >= ANIM_SLOT_CAP {
         return AnimSlotInstall {
@@ -728,6 +728,65 @@ pub fn anim_slot_install(keys: &mut Vec<i16>, key_raw: i32) -> AnimSlotInstall {
             count: keys.len() as i32,
             full: false,
         }
+    }
+}
+
+/// The key both slot routines scan on: the caller's raw fixed-point frame
+/// time divided by 16, truncated **toward zero** (`bgez` on the raw value,
+/// `+0xF` when negative, then `sra 4`). Both `FUN_801D57BC` and
+/// `FUN_801D58E0` open with this identical bias-and-shift, so a port that
+/// rounds either one the other way stops finding its own installed slots.
+fn anim_slot_key(key_raw: i32) -> i16 {
+    (if key_raw >= 0 { key_raw } else { key_raw + 0xF } >> 4) as i16
+}
+
+/// Result of [`anim_slot_delete`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimSlotDelete {
+    /// Index the key was found at, or `None` when the scan missed. Retail
+    /// returns `-1` for the miss and the slot-block pointer otherwise, so the
+    /// caller can only distinguish the two by sign.
+    pub slot: Option<usize>,
+    /// Live-slot count after the call. Unchanged on a miss.
+    pub count: i32,
+}
+
+// NOT WIRED beyond the editor: like its installer sibling, the only retail
+// caller is the developer keyframe editor `FUN_801D4FC8` in the
+// `DAT_801DBF44 == 400..500` sub-phase, which no shipping path enters.
+/// PORT: FUN_801D58E0 - the animation-slot **remover**, sibling of
+/// [`anim_slot_install`].
+///
+/// Same block resolution (`fighter * 0x60`, count at `+0x1C`, 8-byte slots
+/// from `+0x20` with the key half-word at slot `+0x06`) and the same
+/// [`anim_slot_key`] bias-and-shift on the query. It scans the live slots for
+/// the key; a miss returns `-1` and touches nothing.
+///
+/// A hit compacts: retail copies each following slot down one place with a
+/// pair of unaligned `lwl`/`lwr` + `swl`/`swr` word moves covering the whole
+/// 8-byte record (`+0x20` and `+0x24`), then decrements the count. It never
+/// clears the slot it just vacated at the top of the block - that entry stays
+/// as a stale duplicate above `count` and is simply never scanned again.
+///
+/// The port's slot model carries the key only, matching [`anim_slot_install`]:
+/// the three accumulator half-words retail also moves are zeroed at install
+/// and are not modelled anywhere.
+pub fn anim_slot_delete(keys: &mut Vec<i16>, key_raw: i32) -> AnimSlotDelete {
+    let key = anim_slot_key(key_raw);
+    // Retail's scan is bounded by the live count, so an empty block never
+    // enters the loop and falls straight through to the `-1` return.
+    match keys.iter().position(|&k| k == key) {
+        Some(slot) => {
+            keys.remove(slot);
+            AnimSlotDelete {
+                slot: Some(slot),
+                count: keys.len() as i32,
+            }
+        }
+        None => AnimSlotDelete {
+            slot: None,
+            count: keys.len() as i32,
+        },
     }
 }
 
@@ -1327,6 +1386,7 @@ pub fn editor_tick(
             anim_slot_install(slots, query);
             edit = EditorKeyEdit::Install;
         } else {
+            anim_slot_delete(slots, query);
             edit = EditorKeyEdit::Remove;
         }
     }
@@ -1683,6 +1743,63 @@ mod tests {
         assert_eq!(keys.len(), 8);
         assert!(anim_slot_install(&mut keys, 0x900).full);
         assert_eq!(keys.len(), 8);
+    }
+
+    #[test]
+    fn anim_slot_delete_compacts_and_reports_the_index() {
+        let mut keys = Vec::new();
+        for k in 0..4 {
+            anim_slot_install(&mut keys, k * 0x10);
+        }
+        assert_eq!(keys, vec![0, 1, 2, 3]);
+
+        // A miss changes nothing and reports `-1` (here: `None`).
+        let miss = anim_slot_delete(&mut keys, 0x90);
+        assert_eq!(miss.slot, None);
+        assert_eq!(miss.count, 4);
+        assert_eq!(keys, vec![0, 1, 2, 3]);
+
+        // The query takes the same `>> 4` the installer used, so 0x1F finds
+        // the slot 0x10 installed.
+        let hit = anim_slot_delete(&mut keys, 0x1F);
+        assert_eq!(hit.slot, Some(1));
+        assert_eq!(hit.count, 3);
+        // Everything above the hole moved down one place.
+        assert_eq!(keys, vec![0, 2, 3]);
+
+        // Deleting the last live slot needs no move at all.
+        let tail = anim_slot_delete(&mut keys, 0x30);
+        assert_eq!((tail.slot, tail.count), (Some(2), 2));
+        assert_eq!(keys, vec![0, 2]);
+    }
+
+    #[test]
+    fn anim_slot_key_truncates_toward_zero_on_both_sides() {
+        // The `+0xF` bias is what makes the arithmetic shift truncate toward
+        // zero instead of toward negative infinity.
+        assert_eq!(anim_slot_key(0x1F), 1);
+        assert_eq!(anim_slot_key(-0x1F), -1);
+        assert_eq!(anim_slot_key(-0x20), -2);
+        assert_eq!(anim_slot_key(-1), 0);
+    }
+
+    #[test]
+    fn editor_removes_the_keyframe_when_edit_mode_is_off() {
+        let mut slots = vec![0i16, 1, 2];
+        let t = editor_tick(
+            EDITOR_PHASE_BASE,
+            0,
+            0,
+            1,
+            0,
+            false,
+            8,
+            &[0, 0x10, 0x20],
+            &mut slots,
+        );
+        assert_eq!(t.edit, EditorKeyEdit::Remove);
+        // frame 1 << EDITOR_FRAME_SHIFT, taken back down by `>> 4`, is key 1.
+        assert_eq!(slots, vec![0, 2]);
     }
 
     #[test]

@@ -205,6 +205,42 @@ any static loader call (see the 0896 row in
 | 24/25 | OTHER | `0x80025980` | `0x80025EEC` |
 | 26/27 | STR (FMV) | `0x80025FB4` | `0x80025EEC` |
 
+##### Three INIT handlers stage nothing
+
+Modes 4, 16 and 20 do not follow the "reset, wait, load slot A, `jal` into the
+loaded overlay" wrapper shape the rows above share. Each is a handful of
+instructions with no overlay request in it at all, and a reader who assumes
+every INIT row loads something will go looking for a load that is not there.
+
+| Mode | Handler | Whole body |
+|---|---|---|
+| 4 `MONSTER TEST INIT` | `FUN_8002611C` | `sh zero, _DAT_8007B83C`; `jr ra` |
+| 16 `READ INIT` | `FUN_8002612C` | frame, `jal 0x801CE9C0`, epilogue |
+| 20 `BATTLE INIT` | `FUN_800565D8` | frame, `jal 0x80055B6C`, epilogue |
+
+**Mode 4 bounces off itself.** Its four instructions write master mode `0`, so
+MONSTER TEST INIT hands straight back to CONFIG - the debug menu it was
+entered from - and mode 5 `MONSTER MODE` is never reached. Same body as the
+mode-14 column's `FUN_8002B904`.
+
+**Mode 16 jumps into overlay slot A blind.** `0x801CE9C0` is not a function
+entry in any image on the disc. The only one whose bytes cover it is the
+debug-menu overlay, where it is slot-A base `0x801CE818` + `0x1A8` - the
+`lui at,0x8008 / sw zero,-0x4748(at)` pair inside `FUN_801CE97C`'s global-clear
+block. Because `FUN_8002612C` never calls the loader `FUN_8003EBE4`, mode 16
+executes whatever sits at slot A + `0x1A8` at the time, which is a
+retail-stripped dev path rather than a callable target. The address sweep
+(`scripts/ghidra-analysis/locate-entry-image.py`) finds no frame and no
+in-image `jal` for it across all 31 based overlays.
+
+**Mode 20 is the one live row of the three.** `FUN_80055B6C` is the battle
+scene setup entry and is resident in `SCUS_942.54`, so BATTLE INIT is an
+ordinary call - the battle mode simply needs no overlay swap because its code
+is already linked into the executable.
+
+All three are mirrored as `legaia_engine_core::mode::mode_init_bare`, beside
+`mode_init_stage` for the staging rows.
+
 **Structural fact:** 12 of the 14 per-frame modes share the generic per-frame handler `0x80025EEC`; only Mode 13 (world-map display) and Mode 23 (menu / memory card) carry their own. So the per-frame "MODE" half of the state machine is mostly one shared tick parameterised by `+0x14`, not 14 distinct handlers. (The `0x80025DA0` MAPDSIP-init dev string is misspelled on the disc - "MAPDSIP", not "MAPDISP".)
 
 **The in-field pause menu runs under the CARD pair (mode 23), not field mode 3.** Every menu-open capture in the save library - equipment / status / options, opened from both the field (`map01`) and town (`town01`) - holds `_DAT_8007B83C = 0x17` (23). So the "CARD" dev label covers the whole menu / memory-card overlay surface (the field menu carries the Save flow), which is also why mode 23 is one of the two per-frame modes with its own handler.

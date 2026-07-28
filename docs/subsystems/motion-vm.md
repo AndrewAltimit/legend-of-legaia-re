@@ -573,6 +573,42 @@ with no free slot bumps the `DAT_80073ED0` overflow counter and is dropped.
 Installers are `FUN_8003C5F0` and this op's inlined copy; the pool is reset
 by `FUN_8003CDA8` at scene entry.
 
+The reset is worth reading for one asymmetric store. It zeroes the busy word
+`+0x1E` of all **64** raw slots and clears slot 0's `+0x1A` / `+0x1C`, then
+writes `_DAT_801C66BE = 1` - slot 0's own `+0x1E` - so the list header comes
+back marked occupied and only slots 1..63 are handed out. That single store
+is where the pool's usable count of 63 comes from; a reset that clears all 64
+and stops will allocate the header. It closes with an actor sweep
+(`actor_free(&DAT_800742EC, _DAT_8007C34C)`) retiring the pool's driver
+actor, which the port has no counterpart for because the host ticks the
+scheduler directly.
+
+#### `FUN_80037018` is not a slot of this pool
+
+The routine at `0x80037018` lerps two `i32` endpoints into a destination
+pointer at a selectable width, and is otherwise a different subsystem:
+
+| | `FUN_80036D80` slot | `FUN_80037018` |
+|---|---|---|
+| Record | `0x20`-byte pool slot | a full actor, fields at `+0x80..+0xCA` |
+| Reached by | the per-frame pool walk | actor `+0x0C` handler dispatch |
+| Ramp parameter | the slot's own countdown | **the player's Z position** |
+| `kind == 3` | packed-RGB three-lane lerp | plain `sw`, same arm as `kind 4` |
+
+It gates on the player context `_DAT_8007C364`: the engaged flag
+`+0x10 & 0x80000`, the scratch system lock `_DAT_1F800394 & 0x400`, then an
+AABB over the player's X (`+0x14`, against actor `+0x88` / `+0xC8`) and Z
+(`+0x18`, against `+0x8A` / `+0xCA`). Inside the box it stores
+`start + (end - start) * (player.z - z_lo) / (z_hi - z_lo)` through the
+pointer at `+0x94`, at the width `+0x8C` selects (`1` = `sb`, `2` = `sh`,
+`3` or `4` = `sw`); any other width sets the actor's own `+0x10 |= 8` yield
+bit instead. Nothing counts down, so the value tracks the player and runs
+backwards when he walks back; the actor never finishes. What clears these is
+the scene MAN loader's second inlined retire sweep (`FUN_8003AEB0` at
+`0x8003B414`), which is keyed on this VA - see
+[`script-vm.md`](script-vm.md). Ported as
+`legaia_engine_vm::ambient_motion::zone_ramp_tick`.
+
 #### Clean-room port
 
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
@@ -711,9 +747,13 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
   a different function at an aliased address).
 - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d5a68.txt` - the
   wander's three-point fan over the same test.
-- The scheduler tick `FUN_80036D80` and the pool reset `FUN_8003CDA8` have no
-  standalone dump; both are plain `SCUS_942.54` bodies at those addresses.
-  The two walk LUTs at `0x80073F04` / `0x80073F14` are plain `SCUS_942.54`
+- `ghidra/scripts/funcs/80036d80.txt` - the scheduler tick.
+- `ghidra/scripts/funcs/8003cda8.txt` - the scene-entry pool reset.
+- `ghidra/scripts/funcs/80037018.txt` - the player-zone ramp actor. The
+  disassembly in that dump stops eleven instructions in while its C carries
+  the whole body; the offsets above are read off `SCUS_942.54` at file
+  `+0x27818` instead.
+- The two walk LUTs at `0x80073F04` / `0x80073F14` are plain `SCUS_942.54`
   rodata.
 
 ## See also

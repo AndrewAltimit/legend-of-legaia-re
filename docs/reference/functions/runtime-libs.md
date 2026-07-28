@@ -107,22 +107,55 @@ created there. The only reference either has in any image is the `lui`/`addiu`
 pair inside its own copier, which is the copier taking the block's **address**,
 not calling it.
 
-That makes them a permanent hole in
-[disc-denominated code coverage](../../tooling/disc-coverage.md): bytes that
-decode as plausible code, sit inside no dumped function, and never will. The
-same is true of `0x8006F0F4`, the `0x320000`-iteration settle loop the cluster
-uses, whose body Ghidra keeps but whose surrounding alignment does not close.
+That is what kept them out of
+[disc-denominated code coverage](../../tooling/disc-coverage.md) for as long as
+it did: bytes that decode as plausible code and sit inside no dumped function,
+because auto-analysis had them as `undefined4` data words and `createFunction`
+declines an address it cannot first disassemble. Clearing the window and
+disassembling it word by word before creating the function is what closes them;
+each now has a dump of its own (`8006ef78.txt`, `8006ef8c.txt`, `8006f058.txt`,
+`8005bbb8.txt`). The residue is genuinely structural: `0x8006F0F4`, the
+`0x320000`-iteration settle loop the cluster uses, whose body Ghidra keeps but
+whose surrounding alignment does not close.
 
-`0x8005BBB8` is the third block of this shape and the one with no caller at all.
-It is the stock PSX exception-handler prologue - load the ExCB chain head from
-`0x100`, follow it, save `at`/`v0`/`v1`/`ra` into the saved-register area at
-`+8`, read `CAUSE` via `mfc0` - and it falls straight through into the
-`FlushCache` veneer at `0x8005BBE8`. A five-form reference sweep
+`0x8006EF8C` is the hook the first trampoline lands on, and the one block of the
+four that is a plain routine rather than a template. It returns immediately when
+`I_MASK` (`v1+0x1074`, with `v1` = `0x1F800000`) bit 7 - the SIO0
+controller-and-memory-card interrupt line - is clear; otherwise it spins while
+`JOY_STAT` (`v1+0x1044`) bit 7 is set and tail-jumps through the resume pointer
+`FUN_8006EFD0` stored at `0x8007BE04`, back into the kernel body just past the
+patched words. A transfer-settle wait wrapped around the BIOS's own handler.
+
+`0x8005BBB8` is the third block of this shape, and the reference sweep's answer
+for it needs reading carefully. It is the stock PSX exception-handler prologue -
+load the ExCB chain head from `0x100`, follow it, save `at`/`v0`/`v1`/`ra` into
+the saved-register area at `+8`, read `CAUSE` via `mfc0`. A five-form sweep
 ([address-reference-scan.md](../../tooling/address-reference-scan.md)) finds
-**no word, no `jal`, no `j`, no branch and no materialisation pair anywhere on
-the disc**, and the preceding instruction is a `jr ra`, so nothing falls into it
-either. It is linked-in `libapi` exception-handler code that this build never
-installs.
+**no word, no `jal`, no `j`, no branch and no materialisation pair** for
+`0x8005BBB8` itself. That is not the same as the block being unused: `InitGeom`
+(`FUN_8005BB48`) copies it over `C0table[6]` on every boot, and its copy loop
+names the extent exactly - `t2` = `0x8005BBB0`, `t1` = `0x8005BBE8`, so the two
+leading `nop`s are payload and the address the sweep can see is `0x8005BBB0`,
+eight bytes below the prologue proper. The block is installed; only its interior
+is unreferenced, which is what an entered-by-exception routine looks like.
+
+#### What is left of the `SCUS_942.54` code gap is not code
+
+With the payload blocks dumped, the executable's byte-denominated
+[code gap](../../tooling/disc-coverage.md) is four windows totalling 40 bytes,
+and none of them is an un-analysed routine. Each is short enough to fall under
+the gap classifier's tiny-gap rule, which calls a gap of fewer than eight words
+code **without reading the bytes** - so they are `code` by the instrument's
+default, not by evidence.
+
+| Window | What the words are |
+|---|---|
+| `0x80026CD4`..`0x80026CE4` | Four identical `0x00200000` words - the `crt0` stack-pointer table [described above](#the-entry-stub-80026c28). The stub reads `0x80026CD8` and ORs in `0x80000000`. |
+| `0x8005AFA8`, `0x8005DB94`, `0x80060498` | Two-word data records the linker left between functions. Word 0 decodes as a `jal` outside the 2 MB RAM window or a branch past the image, and word 1 as an invalid `SPECIAL` encoding (a `div` with a non-zero `rd`). The same two-word shape occurs seven more times inside the data segment, interleaved with the hardware-register address tables at `0x80078D04`..`0x8007B310`. |
+
+Nothing closes these by dumping. Creating a function over either shape would
+assert an entry point the bytes do not support, which is the failure the
+`worklist_*` ignore categories exist to prevent.
 
 ### libgte primitives
 
@@ -152,6 +185,7 @@ gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<ad
 | Address | COP2 cmd | Role |
 |---|---|---|
 | `8005B158` | `MVMVA` ×3 (`0x0486012`, RT·V0) | `MulMatrix0`-shaped 3×3 matrix·matrix multiply: installs m0 into the RT control regs, streams m1's columns through V0, reads each product column from IR1..3 (clobbers RT). |
+| `8005B7B4` | none (`mtc2` LZCS) | LZCS load: three instructions writing the argument to GTE data register 30, which the hardware answers on LZCR (register 31). The seed half of the `8005BA1C` / `8005B0B8` count-leading-zeros pair; `8005B0B8` inlines its own `mtc2` rather than calling this. |
 | `8005B6F8` | none | Vertex staging: loads V0/V1/V2 from three packed-SVECTOR pointers (`lwc2` data regs 0..5) - the load half of an RTPT sequence. |
 | `8005B760` | none | SZ-FIFO staging: `mtc2` SZ0..SZ3 from the four args - the load half of an AVSZ4 sequence. |
 | `8005B828` | `MVMVA` (`0x04DA412`, LCM·IR+BK, lm=1) | Colour-matrix transform: vec3 from `a0` through the light-colour matrix + background colour, result to `a1` - the lighting second stage as a standalone op. |
