@@ -321,6 +321,18 @@ fn encode_pixels(
     Ok((palette, pixels, quantized))
 }
 
+/// Decode a palette-plus-indices pair the way the runtime samples it: low
+/// nibble first, row-major, `0x0000` transparent.
+fn pixels_to_rgba(pixels: &[u8], palette: &[u16; CLUT_ENTRIES_PER_PALETTE]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pixels.len() * 8);
+    for byte in pixels {
+        for nib in [byte & 0x0F, byte >> 4] {
+            out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(palette[nib as usize]));
+        }
+    }
+    out
+}
+
 /// Recompression fit numbers for a battle-texture replacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleFit {
@@ -352,23 +364,32 @@ pub struct BattleReplaceOutcome {
     pub fit: BattleFit,
 }
 
-/// Replace one block's art with `rgba`, in place.
-///
-/// The whole record is re-LZS'd (the block is its tail, and the record is
-/// one stream), then written back into the record's own slot footprint. A
-/// record that no longer fits errors with the byte overage and writes
-/// nothing - the descriptor chain forbids growing into the next slot.
-#[allow(clippy::too_many_arguments)]
-pub fn replace_block(
-    patcher: &mut DiscPatcher,
+/// An edit resolved against the disc but not yet committed: the record with
+/// the new block spliced in, plus everything both the preview and the write
+/// need to report. Shared so a preview cannot disagree with the write it
+/// previews - they are the same encode.
+struct Edited {
+    block: ResolvedBlock,
+    source: PaletteSource,
+    new_palette: [u16; CLUT_ENTRIES_PER_PALETTE],
+    pixels: Vec<u8>,
+    quantized_pixels: usize,
+    palette_entries_changed: usize,
+    /// The whole decoded record with the edited block spliced in.
+    decoded: Vec<u8>,
+    /// The spliced record came out identical to the one on disc.
+    unchanged: bool,
+}
+
+fn edit_block(
+    patcher: &DiscPatcher,
     target: &BattleTextureTarget,
     rgba: &[u8],
     width: usize,
     height: usize,
     palette: usize,
     quantize: bool,
-    dry_run: bool,
-) -> Result<BattleReplaceOutcome> {
+) -> Result<Edited> {
     let block = read_block(patcher, target)?;
     if (width, height) != (block.upload.pixel_width(), block.upload.pixel_height()) {
         bail!(
@@ -414,30 +435,42 @@ pub fn replace_block(
     let pix_off = block.pool_offset + 4 + clut_bytes;
     decoded[pix_off..pix_off + pixels.len()].copy_from_slice(&pixels);
 
+    let unchanged = decoded == block.decoded;
+    Ok(Edited {
+        block,
+        source,
+        new_palette,
+        pixels,
+        quantized_pixels,
+        palette_entries_changed,
+        decoded,
+        unchanged,
+    })
+}
+
+/// Recompress an edited record and measure it against its slot allocation.
+/// `Ok` only when it fits - the descriptor chain forbids growing into the
+/// next slot, so an overage is an error carrying its own size.
+fn recompress(e: &Edited) -> Result<(Vec<u8>, BattleFit)> {
+    let block = &e.block;
     // An unedited round-trip stops here. Recompressing would still move
     // disc bytes (our encoder is not retail's) for no visible change.
-    let unchanged = decoded == block.decoded;
-    if unchanged {
-        return Ok(BattleReplaceOutcome {
-            width,
-            height,
-            palette: source,
-            palette_entries_changed,
-            quantized_pixels,
-            unchanged,
-            fit: BattleFit {
+    if e.unchanged {
+        return Ok((
+            Vec::new(),
+            BattleFit {
                 capacity: block.stream_capacity,
                 retail: block.stream_consumed,
                 recompressed: block.stream_consumed,
             },
-        });
+        ));
     }
 
     // Retail's own encoder is not ours, so try both and keep the smaller -
     // the greedy pass sometimes beats the optimal one's token choices on
     // this data, and every byte counts against the slot footprint.
-    let greedy = legaia_lzs::compress(&decoded);
-    let optimal = legaia_lzs::compress_optimal(&decoded);
+    let greedy = legaia_lzs::compress(&e.decoded);
+    let optimal = legaia_lzs::compress_optimal(&e.decoded);
     let stream = if greedy.len() <= optimal.len() {
         greedy
     } else {
@@ -457,6 +490,95 @@ pub fn replace_block(
             block.stream_capacity,
             stream.len() - block.stream_capacity
         );
+    }
+    Ok((stream, fit))
+}
+
+/// A validated-but-unwritten replacement, with the art as it will display.
+#[derive(Debug, Clone)]
+pub struct BattlePreview {
+    pub width: usize,
+    pub height: usize,
+    /// The replacement as the runtime will sample it: 15-bit rounding and
+    /// any colour folding already applied, decoded through the palette the
+    /// write would install.
+    pub rgba: Vec<u8>,
+    /// Palettes the block carries of its own (0 for a pixel-only block).
+    pub palette_count: usize,
+    pub palette: PaletteSource,
+    pub palette_entries_changed: usize,
+    pub quantized_pixels: usize,
+    pub unchanged: bool,
+    pub fit: BattleFit,
+}
+
+/// Validate a replacement and render it as it will display, without writing.
+///
+/// Same encode and same fit measurement [`replace_block`] performs, so a
+/// preview that says "valid, recompresses to N bytes" is not a second
+/// opinion about the write - it is the write, stopped before the patch.
+pub fn preview_block(
+    patcher: &DiscPatcher,
+    target: &BattleTextureTarget,
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    palette: usize,
+    quantize: bool,
+) -> Result<BattlePreview> {
+    let e = edit_block(patcher, target, rgba, width, height, palette, quantize)?;
+    let (_, fit) = recompress(&e)?;
+    Ok(BattlePreview {
+        width,
+        height,
+        rgba: pixels_to_rgba(&e.pixels, &e.new_palette),
+        palette_count: e.block.upload.palette_count(),
+        palette: e.source,
+        palette_entries_changed: e.palette_entries_changed,
+        quantized_pixels: e.quantized_pixels,
+        unchanged: e.unchanged,
+        fit,
+    })
+}
+
+/// Replace one block's art with `rgba`, in place.
+///
+/// The whole record is re-LZS'd (the block is its tail, and the record is
+/// one stream), then written back into the record's own slot footprint. A
+/// record that no longer fits errors with the byte overage and writes
+/// nothing - the descriptor chain forbids growing into the next slot.
+#[allow(clippy::too_many_arguments)]
+pub fn replace_block(
+    patcher: &mut DiscPatcher,
+    target: &BattleTextureTarget,
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    palette: usize,
+    quantize: bool,
+    dry_run: bool,
+) -> Result<BattleReplaceOutcome> {
+    let e = edit_block(patcher, target, rgba, width, height, palette, quantize)?;
+    let (stream, fit) = recompress(&e)?;
+    let Edited {
+        block,
+        source,
+        quantized_pixels,
+        palette_entries_changed,
+        unchanged,
+        ..
+    } = e;
+
+    if unchanged {
+        return Ok(BattleReplaceOutcome {
+            width,
+            height,
+            palette: source,
+            palette_entries_changed,
+            quantized_pixels,
+            unchanged,
+            fit,
+        });
     }
 
     if !dry_run {

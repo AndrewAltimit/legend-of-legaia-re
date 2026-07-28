@@ -191,6 +191,24 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
                 bpp: 4,
             })
         }
+        ReplaceOp::BattleEquip(target) => {
+            let block = legaia_patcher::battle_texture::read_block(patcher, &target)
+                .map_err(|e| format!("{e:#}"))?;
+            // The scan fingerprints the block's decoded bytes exactly as
+            // stored - header, CLUT run, pixels - so the same window has to
+            // be hashed here, not the post-STP form the upload carries.
+            let end = block.pool_offset + block.upload.block_bytes();
+            let bytes = block
+                .decoded
+                .get(block.pool_offset..end)
+                .ok_or_else(|| format!("{target} runs past its own record"))?;
+            Ok(Ident {
+                fnv1a: fnv1a64(bytes),
+                width: block.upload.pixel_width() as u32,
+                height: block.upload.pixel_height() as u32,
+                bpp: 4,
+            })
+        }
     }
 }
 

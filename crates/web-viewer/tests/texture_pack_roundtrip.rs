@@ -86,7 +86,7 @@ fn entry_for(row: &TexRow, png: Vec<u8>) -> PackEntry {
         original_width: row.width,
         original_height: row.height,
         original_bpp: row.bpp,
-        label: row.label.unwrap_or("").to_string(),
+        label: row.label.as_deref().unwrap_or("").to_string(),
         quantize: false,
         png,
     }

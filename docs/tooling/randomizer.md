@@ -2180,6 +2180,13 @@ folded pixels). The same pipeline runs client-side on the site's
 thumbnails), preview original vs replacement as the game will display it, and
 queue swaps alongside the randomizer options - nothing is uploaded.
 
+The browser grid lists this tier under the family id `battle-equip`, with the
+same slot addressing folded into its `(entry, section, offset)` coordinate: a
+descriptor index in `section`, and `record[0]` block `n` as `-1 - n`. Its rows
+are labelled from the disc's own item-name table, so the search box reaches
+them by the equipment's name rather than by coordinate - typing `terra` finds
+Noa's Ra-Seru armband.
+
 ### Re-pack slack
 
 A scene MAN is packed with **no compressed slack** (the next asset starts right

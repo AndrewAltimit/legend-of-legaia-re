@@ -1434,8 +1434,8 @@ pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValu
 // are a translation layer to JS values and nothing else, so adding a texture
 // family does not touch this file.
 
-use legaia_patcher::save_icon;
 use legaia_patcher::texture::replace_texture;
+use legaia_patcher::{battle_texture, save_icon};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 
 use crate::texture_pack::{self, PackEntry, PackMeta};
@@ -1487,21 +1487,30 @@ fn coord_of(tier: &str, entry: i32, section: i32, offset: f64) -> Result<TexCoor
     })
 }
 
-/// Read `PROT.DAT` plus the CDNAME block map out of a disc image, dropping
-/// the image before either is used.
+/// What the scan needs out of a disc image, read before the image is
+/// dropped: the `PROT.DAT` payload, the CDNAME block map, and the executable.
 ///
-/// Peak-memory discipline: the scan only needs the payload, and a full image
-/// plus payload plus scan state would not fit comfortably in 32-bit WASM
-/// memory.
-fn prot_and_blocks(
-    image: Vec<u8>,
-) -> Result<(Vec<u8>, Option<legaia_prot::cdname::IndexMap>), JsValue> {
+/// Peak-memory discipline: the scan only needs these, and a full image plus
+/// payload plus scan state would not fit comfortably in 32-bit WASM memory.
+///
+/// The executable is here because a texture family can need data that is not
+/// in `PROT.DAT` at all - the battle-equipment tier names its rows after the
+/// equipment they belong to, and that name table lives in `SCUS_942.54`. It
+/// is the disc that holds both, so the disc is where both get read.
+struct DiscScanInput {
+    prot: Vec<u8>,
+    blocks: Option<legaia_prot::cdname::IndexMap>,
+    scus: Option<Vec<u8>>,
+}
+
+fn disc_scan_input(image: Vec<u8>) -> Result<DiscScanInput, JsValue> {
     let prot = legaia_iso::iso9660::read_file_in_image(&image, "PROT.DAT")
         .ok_or_else(|| err("PROT.DAT not found in disc image"))?;
     let blocks = crate::disc::extract_cdname_txt(&image)
         .and_then(|t| legaia_prot::cdname::parse_str(&t).ok());
+    let scus = crate::disc::extract_scus(&image);
     drop(image);
-    Ok((prot, blocks))
+    Ok(DiscScanInput { prot, blocks, scus })
 }
 
 /// Every TOC entry's `(byte_offset, size_bytes, index)`.
@@ -1549,7 +1558,11 @@ fn row_js(
     Reflect::set(&o, &"bpp".into(), &num(row.bpp as f64))?;
     Reflect::set(&o, &"cluts".into(), &num(row.cluts as f64))?;
     Reflect::set(&o, &"bytes".into(), &num(row.bytes as f64))?;
-    Reflect::set(&o, &"label".into(), &row.label.unwrap_or("").into())?;
+    Reflect::set(
+        &o,
+        &"label".into(),
+        &row.label.as_deref().unwrap_or("").into(),
+    )?;
     // A 64-bit fingerprint does not survive a JS number, and a pack compares
     // it for equality - so it crosses as hex text, never as a float.
     Reflect::set(
@@ -1600,9 +1613,9 @@ fn row_js(
 /// side (0 = no thumbnails). `fnv1a` is 16 hex digits.
 #[wasm_bindgen]
 pub fn scan_textures(image: Vec<u8>, thumb_max: u32) -> Result<JsValue, JsValue> {
-    let (prot, blocks) = prot_and_blocks(image)?;
+    let DiscScanInput { prot, blocks, scus } = disc_scan_input(image)?;
     let spans = entry_spans(&prot)?;
-    let ctx = ScanCtx::new(&prot, &spans);
+    let ctx = ScanCtx::with_scus(&prot, &spans, scus.as_deref());
 
     let textures = js_sys::Array::new();
     let mut counts: Vec<(&'static str, usize)> =
@@ -1697,9 +1710,9 @@ pub fn decode_texture(
     offset: f64,
 ) -> Result<JsValue, JsValue> {
     let coord = coord_of(tier, entry, section, offset)?;
-    let (prot, _) = prot_and_blocks(image)?;
-    let spans = entry_spans(&prot)?;
-    let ctx = ScanCtx::new(&prot, &spans);
+    let input = disc_scan_input(image)?;
+    let spans = entry_spans(&input.prot)?;
+    let ctx = ScanCtx::new(&input.prot, &spans);
     let img = reg::read_row(&ctx, &coord).map_err(err)?;
     rgba_js(img.w, img.h, &img.data)
 }
@@ -1834,6 +1847,57 @@ pub fn preview_texture_replace(
                 Err(e) => return fail(&out, format!("{e:#}")),
             }
         }
+        ReplaceOp::BattleEquip(target) => {
+            let orig = battle_texture::export_block(&patcher, &target, reg::BATTLE_PREVIEW_PALETTE)
+                .map_err(|e| err(format!("read battle texture: {e:#}")))?;
+            Reflect::set(
+                &out,
+                &"original".into(),
+                &rgba_js(orig.width, orig.height, &orig.rgba)?,
+            )?;
+            Reflect::set(&out, &"width".into(), &num(orig.width as f64))?;
+            Reflect::set(&out, &"height".into(), &num(orig.height as f64))?;
+            Reflect::set(&out, &"bpp".into(), &num(4.0))?;
+            Reflect::set(&out, &"cluts".into(), &num(orig.palette_count as f64))?;
+
+            let (pw, ph, rgba) = match decode_png_rgba(png) {
+                Ok(v) => v,
+                Err(e) => return fail(&out, format!("read PNG: {e}")),
+            };
+            // One call: the same encode and the same recompression the write
+            // performs, stopped before the patch. A separate "preview" encode
+            // could disagree with the writer about a folded colour.
+            match battle_texture::preview_block(
+                &patcher,
+                &target,
+                &rgba,
+                pw,
+                ph,
+                reg::BATTLE_PREVIEW_PALETTE,
+                quantize,
+            ) {
+                Ok(p) => {
+                    Reflect::set(&out, &"preview".into(), &rgba_js(pw, ph, &p.rgba)?)?;
+                    Reflect::set(
+                        &out,
+                        &"new_palette_entries".into(),
+                        &num(p.palette_entries_changed as f64),
+                    )?;
+                    Reflect::set(
+                        &out,
+                        &"quantized_pixels".into(),
+                        &num(p.quantized_pixels as f64),
+                    )?;
+                    let f = Object::new();
+                    Reflect::set(&f, &"capacity".into(), &num(p.fit.capacity as f64))?;
+                    Reflect::set(&f, &"recompressed".into(), &num(p.fit.recompressed as f64))?;
+                    Reflect::set(&out, &"fit".into(), &f)?;
+                    Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+                    Reflect::set(&out, &"error".into(), &"".into())?;
+                }
+                Err(e) => return fail(&out, format!("{e:#}")),
+            }
+        }
     }
     Ok(out.into())
 }
@@ -1944,6 +2008,38 @@ pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsVa
                             f.recompressed, f.capacity
                         ),
                         None => String::new(),
+                    },
+                ));
+            }
+            ReplaceOp::BattleEquip(target) => {
+                let outcome = battle_texture::replace_block(
+                    &mut patcher,
+                    &target,
+                    &rgba,
+                    w,
+                    h,
+                    reg::BATTLE_PREVIEW_PALETTE,
+                    spec.quantize,
+                    false,
+                )
+                .map_err(|e| err(format!("battle texture {i} ({target}): {e:#}")))?;
+                summary.push_str(&format!(
+                    "battle art: {target} replaced ({}x{} 4 bpp, {}{}{})\n",
+                    outcome.width,
+                    outcome.height,
+                    outcome.palette,
+                    if outcome.quantized_pixels > 0 {
+                        format!(", {} pixel(s) quantized", outcome.quantized_pixels)
+                    } else {
+                        String::new()
+                    },
+                    if outcome.unchanged {
+                        " - identical to retail, nothing written".to_string()
+                    } else {
+                        format!(
+                            ", recompressed {}B into the {}B slot",
+                            outcome.fit.recompressed, outcome.fit.capacity
+                        )
                     },
                 ));
             }

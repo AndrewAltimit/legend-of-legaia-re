@@ -709,16 +709,25 @@ standard PSX TIMs (raw in a PROT entry, or inside an LZS section) and share one
 writer. Save-slot portraits are tiles of a shared sheet addressed by slot, with
 their own writer. The summon / readef pages (PROT 893/894) are not TIMs at all -
 no TIM scan reaches them - and are listed and exportable but read-only, because
-this build has a decoder for that format and no encoder. A `Tier` says which
-it is, and a family that declares itself read-only cannot resolve a write.
+this build has a decoder for that format and no encoder. The battle character
+art (PROT 863..866, `legaia_asset::battle_texture_catalog`) is likewise
+headerless and likewise invisible to a TIM scan, but does have an encoder, so
+it is replaceable - against its record's own slot allocation rather than a
+stream length, which is a budget that can genuinely be missed. A `Tier` says
+which it is, and a family that declares itself read-only cannot resolve a
+write.
 
 A row carries derived metadata only: coordinates, dimensions, palette count,
-byte length, VRAM placement, the curated [`tim_labels`](../asset/README.md)
-label, and an FNV-1a-64 fingerprint of the stored bytes. The scan is a
-streaming pass into a caller sink - full-size pixels for every texture on the
-disc would not fit in 32-bit WASM memory - and `ScanCtx` keeps exactly one
-decompressed entry, which is enough because the compressed tier's rows arrive
-grouped by entry.
+byte length, VRAM placement, a label, and an FNV-1a-64 fingerprint of the
+stored bytes. A label is either curated - [`tim_labels`](../asset/README.md),
+keyed by fingerprint - or composed per row from disc data, which is why it is a
+`Cow`: the battle-art tier joins each block to the equipment it dresses, so
+`ScanCtx` carries the disc's `SCUS_942.54` item-name table alongside
+`PROT.DAT`. That join is what makes the family searchable by the word a person
+would actually type. The scan is a streaming pass into a caller sink -
+full-size pixels for every texture on the disc would not fit in 32-bit WASM
+memory - and `ScanCtx` keeps exactly one decompressed entry, which is enough
+because the compressed tier's rows arrive grouped by entry.
 
 `texture_pack` is the shareable form: one pretty-printed JSON file holding the
 user's replacement PNGs plus, per entry, the coordinates and fingerprint of the

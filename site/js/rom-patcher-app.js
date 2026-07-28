@@ -731,6 +731,15 @@ function drawRgba(canvas, img) {
 function texDesc(t) {
   const off = '0x' + t.offset.toString(16).toUpperCase();
   if (t.tier === 'save-icon') return `save icon · slot ${t.section} (save ${t.section + 1})`;
+  // Battle art numbers its blocks over two slot spaces in one signed field:
+  // an equipment record index, or a shared header block at -1 - n. Spell
+  // both out rather than printing a bare negative section.
+  if (t.tier === 'battle-equip') {
+    const slot = t.section >= 0
+      ? `equipment record ${t.section}`
+      : `shared header block ${-1 - t.section}`;
+    return `battle art · entry ${t.entry} ${slot} +${off}`;
+  }
   const where = t.entry < 0 ? `gap +${off}`
     : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
       : `entry ${t.entry} +${off}`;
@@ -829,12 +838,22 @@ function setupTextureReplacer(wasm, discBytes) {
     tiers.forEach((t) => {
       if (t.count > 0) chips.push({ text: t.title, q: t.id, n: t.count, tip: t.about });
     });
+    // Label chips group on the label's leading segment. A curated label is
+    // one closed-vocabulary word and groups to itself; a label a family
+    // *composes* per row is unique per row ("Noa - Ra-Seru Terra $8"), so
+    // without grouping every such row would become its own chip and bury
+    // the strip. The lead segment is the useful shortcut anyway - it is the
+    // character. Capped as well, so a future family cannot flood the strip
+    // however its labels are shaped; a label past the cap is still typeable.
     const byLabel = new Map();
     rows.forEach((r) => {
-      if (r.label) byLabel.set(r.label, (byLabel.get(r.label) || 0) + 1);
+      if (!r.label) return;
+      const key = r.label.split(' - ')[0];
+      byLabel.set(key, (byLabel.get(key) || 0) + 1);
     });
     [...byLabel.entries()]
       .sort((a, b) => b[1] - a[1])
+      .slice(0, 24)
       .forEach(([label, n]) => chips.push({ text: label, q: label, n }));
 
     const current = (filterInput.value || '').trim().toLowerCase();
@@ -944,7 +963,16 @@ function setupTextureReplacer(wasm, discBytes) {
       ? 'none - the unindexed gap before entry 0'
       : `${t.entry}${t.block ? ` (${t.block})` : ''}`);
     add('Pixels', `${t.width} × ${t.height}, ${t.bpp} bpp`);
-    add('Palettes', t.cluts > 0 ? `${t.cluts}` : 'none (direct colour)');
+    // "no palette of its own" is not "no palette" on the battle-art family:
+    // such a block is still 4bpp and samples one a sibling block installed
+    // on the shared row, so calling it direct colour would be wrong.
+    add('Palettes', t.cluts > 0
+      ? `${t.cluts}` + (t.tier === 'battle-equip' && t.cluts > 1
+        ? ' - shown and replaced through the first; the others recolour the same pixels'
+        : '')
+      : t.tier === 'battle-equip'
+        ? 'none of its own - it borrows one another block installs'
+        : 'none (direct colour)');
     add('Size on disc', `${t.bytes} bytes`);
     if (t.vram) add('VRAM', `(${t.vram.x}, ${t.vram.y}), ${t.vram.w} × ${t.vram.h}`);
     if (t.clut_vram) add('Palette in VRAM', `(${t.clut_vram.x}, ${t.clut_vram.y})`);
@@ -954,6 +982,12 @@ function setupTextureReplacer(wasm, discBytes) {
     } else if (t.tier === 'lzs') {
       add('Replaceable', 'yes, if your edit re-compresses into the retail stream ' +
         '(the preview measures it exactly)');
+    } else if (t.tier === 'battle-equip') {
+      // Not the LZS tier's budget: this record's slot is pinned by the
+      // descriptor chain, and retail leaves as little as two spare bytes in
+      // one, so "it did not fit" is a normal answer here.
+      add('Replaceable', 'yes, if your edit re-compresses into this record\'s own ' +
+        'slot (some are within a few bytes of full - the preview measures it exactly)');
     } else {
       add('Replaceable', `yes - written in place, same ${t.bytes} bytes`);
     }

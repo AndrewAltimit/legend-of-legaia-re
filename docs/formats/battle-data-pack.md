@@ -969,6 +969,13 @@ as it uploads, so `0x1234` and `0x9234` are one colour), and an unchanged
 slot keeps its stored bytes verbatim - retail stores most entries with STP
 clear, and re-deriving the stored form would rewrite the ones it did not.
 
+The site's [ROM-patcher page](../tooling/randomizer.md#texture-replacement)
+lists the same blocks as the texture family `battle-equip`, folding the two
+slot spaces into its `(entry, section, offset)` coordinate: a descriptor
+index in `section`, `record[0]` block `n` as `-1 - n`. Palette 0 is the
+convention there for viewing, exporting and re-encoding, so an exported PNG
+is the frame the write expects back.
+
 ## Parser status
 
 Two parsers read these files:

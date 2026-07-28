@@ -23,10 +23,16 @@ use std::env;
 use std::fs;
 
 use legaia_web_viewer::texture_registry::{
-    self as reg, Rgba, ScanCtx, TIER_LZS, TIER_RAW, TIER_SAVE_ICON, TIER_SUMMON, TexRow,
+    self as reg, Rgba, ScanCtx, TIER_BATTLE_EQUIP, TIER_LZS, TIER_RAW, TIER_SAVE_ICON, TIER_SUMMON,
+    TexRow,
 };
 
 /// The comparable shape of one grid row.
+///
+/// `label` is owned because a row's label is no longer always a curated
+/// `&'static str` - a family that composes one per row from disc data emits
+/// an owned string. That is a type adaptation on both sides of the
+/// comparison, not a change to what either side computes.
 #[derive(Debug, PartialEq, Eq)]
 struct Row {
     tier: &'static str,
@@ -38,7 +44,7 @@ struct Row {
     bpp: u32,
     cluts: usize,
     bytes: usize,
-    label: Option<&'static str>,
+    label: Option<String>,
 }
 
 impl From<&TexRow> for Row {
@@ -53,7 +59,7 @@ impl From<&TexRow> for Row {
             bpp: r.bpp,
             cluts: r.cluts,
             bytes: r.bytes,
-            label: r.label,
+            label: r.label.as_deref().map(str::to_string),
         }
     }
 }
@@ -81,7 +87,7 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
             bpp: t.bpp,
             cluts: t.clut_count,
             bytes: t.byte_len,
-            label: t.label,
+            label: t.label.map(str::to_string),
         });
     }
 
@@ -106,7 +112,7 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
                 bpp: t.bpp,
                 cluts: t.clut_count,
                 bytes: t.byte_len,
-                label: t.label,
+                label: t.label.map(str::to_string),
             });
         }
         i = end;
@@ -133,7 +139,7 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
                 cluts: 1,
                 bytes: legaia_asset::save_icon::TILE_BLOCK_BYTES
                     + legaia_asset::save_icon::TILE_CLUT_BYTES,
-                label: Some("save-slot portrait"),
+                label: Some("save-slot portrait".to_string()),
             });
         }
     }
@@ -168,6 +174,24 @@ fn disc() -> Option<Vec<u8>> {
         return None;
     }
     fs::read(path).ok()
+}
+
+/// The rows a scan emits when the page also handed it the disc executable -
+/// which is what `scan_textures` does. Only the families that name their rows
+/// from an on-disc table differ from [`registry_rows`].
+fn registry_rows_with_scus(
+    prot: &[u8],
+    spans: &[(u64, u64, u32)],
+    scus: Option<&[u8]>,
+) -> Vec<Row> {
+    let ctx = ScanCtx::with_scus(prot, spans, scus);
+    let mut rows = Vec::new();
+    let mut sink = |row: TexRow, _: Option<Rgba>| -> Result<(), String> {
+        rows.push(Row::from(&row));
+        Ok(())
+    };
+    reg::scan_all(&ctx, false, &mut sink).expect("scan");
+    rows
 }
 
 fn prot_and_spans(image: &[u8]) -> (Vec<u8>, Vec<(u64, u64, u32)>) {
@@ -308,8 +332,16 @@ fn every_row_can_be_read_back_by_its_own_coordinate() {
     }
 }
 
+/// The inverse of the pin this file used to carry.
+///
+/// Until the battle-equipment family landed, PROT 863..866 yielded **zero**
+/// rows - both TIM catalogs are blind to headerless art, so the grid offered
+/// nothing there and no filter string could reach Terra's armband. That gap
+/// was measured rather than asserted in a comment, precisely so closing it
+/// would break the measurement. This is the same measurement, run the other
+/// way: the counts are the parser lane's, per player file.
 #[test]
-fn the_battle_equipment_entries_are_still_unreachable() {
+fn the_battle_equipment_entries_are_reachable_now() {
     let Some(image) = disc() else {
         eprintln!("LEGAIA_DISC_BIN unset - skipping");
         return;
@@ -318,19 +350,109 @@ fn the_battle_equipment_entries_are_still_unreachable() {
     drop(image);
     let (rows, _) = registry_rows(&prot, &spans, false);
 
-    // The player battle files. Their equipment textures are not TIMs, so the
-    // grid reaches none of them and no filter string can - which is the
-    // whole reason the registry has a slot reserved for that family. When a
-    // parser for it lands and its tier goes in, this test is what should
-    // fail, and the fix is to delete it.
-    for entry in 863i64..=866 {
+    // Per entry: the two chained header `record[0]` blocks plus the flagged
+    // equipment-section pools. 153 across the family.
+    for (entry, want) in [(863i64, 54usize), (864, 49), (865, 43), (866, 7)] {
         let n = rows.iter().filter(|r| r.entry == entry).count();
-        assert_eq!(
-            n, 0,
-            "PROT {entry} now yields {n} row(s) - if the battle-equipment \
-             family has been added, retire this test rather than weakening it"
+        assert_eq!(n, want, "PROT {entry} row count");
+        // And every one of them is this family's - no TIM tier suddenly
+        // reaching in, which would mean duplicate rows for one texture.
+        assert!(
+            rows.iter()
+                .filter(|r| r.entry == entry)
+                .all(|r| r.tier == TIER_BATTLE_EQUIP),
+            "PROT {entry} rows must all come from the battle-equipment tier"
         );
     }
+    let battle: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.tier == TIER_BATTLE_EQUIP)
+        .collect();
+    assert_eq!(battle.len(), 153, "whole-family block count");
+    for r in &battle {
+        assert_eq!(r.bpp, 4, "the whole family is 4bpp");
+        assert_eq!(r.height, 128);
+        assert!(r.width == 128 || r.width == 256, "width {}", r.width);
+    }
+}
+
+/// The labels are the search vocabulary, and the useful half of them is not
+/// derivable from `PROT.DAT`: the descriptor ids are *item* ids, so naming a
+/// block after the equipment it dresses needs `SCUS_942.54`. Without that
+/// join the grid says "Noa - equip 0x11" and typing `terra` finds nothing.
+#[test]
+fn battle_equipment_labels_carry_the_equipment_name() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        return;
+    };
+    let (prot, spans) = prot_and_spans(&image);
+    let scus = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54");
+    drop(image);
+    let scus = scus.expect("the disc's executable");
+
+    let named = registry_rows_with_scus(&prot, &spans, Some(&scus));
+    let unnamed = registry_rows_with_scus(&prot, &spans, None);
+    // Nothing but the labels may move: the coordinates a change pack pins
+    // must not depend on whether the executable was readable.
+    assert_eq!(
+        named
+            .iter()
+            .map(|r| (r.tier, r.entry, r.section, r.offset))
+            .collect::<Vec<_>>(),
+        unnamed
+            .iter()
+            .map(|r| (r.tier, r.entry, r.section, r.offset))
+            .collect::<Vec<_>>(),
+        "the item table may only change labels"
+    );
+
+    let label_of = |r: &Row| r.label.clone().unwrap_or_default().to_lowercase();
+    let battle: Vec<&Row> = named
+        .iter()
+        .filter(|r| r.tier == TIER_BATTLE_EQUIP)
+        .collect();
+
+    // The worked example: Noa's Ra-Seru armband, the block someone rips out
+    // of an emulator and then cannot find on the disc. Entry 864 is Noa, so
+    // matching "terra" there is the item name doing the work - not the
+    // character name, which only entry 866 carries.
+    let noa_terra: Vec<&&Row> = battle
+        .iter()
+        .filter(|r| r.entry == 864 && label_of(r).contains("terra"))
+        .collect();
+    assert!(
+        !noa_terra.is_empty(),
+        "typing `terra` must reach Noa's Ra-Seru art"
+    );
+    assert!(
+        noa_terra.iter().any(|r| label_of(r).contains("ra-seru")),
+        "and `ra-seru` must reach it too"
+    );
+    // Every character's own name is searchable across the whole family.
+    for (entry, who) in [
+        (863i64, "vahn"),
+        (864, "noa"),
+        (865, "gala"),
+        (866, "terra"),
+    ] {
+        assert!(
+            battle
+                .iter()
+                .filter(|r| r.entry == entry)
+                .all(|r| label_of(r).contains(who)),
+            "every entry-{entry} label should name {who}"
+        );
+    }
+    // Without the executable the same rows fall back to ids, which is the
+    // measurement that keeps the assertions above non-vacuous.
+    assert!(
+        unnamed
+            .iter()
+            .filter(|r| r.tier == TIER_BATTLE_EQUIP && r.entry == 864)
+            .all(|r| !label_of(r).contains("ra-seru")),
+        "without SCUS there is nothing to name the equipment with"
+    );
 }
 
 #[test]

@@ -117,6 +117,64 @@ fn unedited_round_trip_writes_nothing() {
     assert_eq!(patcher.image(), &original[..], "zero-run patch");
 }
 
+/// The preview the browser grid shows before a swap is queued. It has to be
+/// the write stopped early, not a second opinion about it: an encoder that
+/// folded a colour differently, or a fit measured another way, would put a
+/// "valid, fits" verdict in front of an edit that then fails or lands
+/// looking different.
+#[test]
+fn a_preview_is_the_write_stopped_before_the_patch() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let original = disc.clone();
+    let mut patcher = DiscPatcher::open(disc).expect("open");
+    let ex = battle_texture::export_block(&patcher, &ARMBAND, 0).expect("export");
+
+    // Previewing the block's own export renders it back unchanged, and says
+    // so - the same verdict `replace_block` reaches.
+    let same =
+        battle_texture::preview_block(&patcher, &ARMBAND, &ex.rgba, ex.width, ex.height, 0, false)
+            .expect("preview");
+    assert!(same.unchanged);
+    assert_eq!(same.rgba, ex.rgba, "an unedited preview is the original");
+    assert_eq!(same.palette_entries_changed, 0);
+    assert_eq!(same.quantized_pixels, 0);
+    assert_eq!(same.palette, PaletteSource::Block(0));
+    assert_eq!(same.palette_count, ex.palette_count);
+
+    // A real edit: the preview's fit is the number the write then honours,
+    // and its pixels are what the write then puts on the disc.
+    let edited = mirror(&ex.rgba, ex.width, ex.height);
+    let p =
+        battle_texture::preview_block(&patcher, &ARMBAND, &edited, ex.width, ex.height, 0, false)
+            .expect("preview");
+    assert!(!p.unchanged);
+    assert_eq!(p.rgba, edited, "a palette-preserving edit previews exactly");
+    assert!(p.fit.recompressed <= p.fit.capacity, "{:?}", p.fit);
+    assert_eq!(
+        patcher.image(),
+        &original[..],
+        "a preview must never touch the image"
+    );
+
+    let outcome = battle_texture::replace_block(
+        &mut patcher,
+        &ARMBAND,
+        &edited,
+        ex.width,
+        ex.height,
+        0,
+        false,
+        false,
+    )
+    .expect("replace");
+    assert_eq!(outcome.fit, p.fit, "the preview measured the real write");
+    let after = battle_texture::export_block(&patcher, &ARMBAND, 0).expect("re-export");
+    assert_eq!(after.rgba, p.rgba, "the disc holds what the preview showed");
+}
+
 #[test]
 fn a_repaint_is_surgical_edc_valid_and_deterministic() {
     let Some(disc) = load_disc() else {

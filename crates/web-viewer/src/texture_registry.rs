@@ -35,8 +35,10 @@
 //! only transiently in the [`Rgba`] the sink consumes and never leave the
 //! user's browser.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 
+use legaia_patcher::battle_texture::BattleTextureTarget;
 use legaia_patcher::texture::TextureTarget;
 
 /// A VRAM rectangle: `(x, y, width in framebuffer units, height)`.
@@ -57,10 +59,11 @@ pub struct Rgba {
 ///
 /// `entry < 0` names the unindexed `PROT.DAT` gap that precedes entry 0.
 /// `section` is overloaded per family by design - it is the LZS section index
-/// on the compressed tier, the slot number on families addressed by slot, and
-/// `-1` where neither applies - because the page, the queue and the pack have
-/// carried this triple since the first tier and widening it would invalidate
-/// every stored coordinate.
+/// on the compressed tier, the slot number on families addressed by slot,
+/// `-1` where neither applies, and on the battle-equipment tier a signed
+/// selector over *two* slot spaces (see [`battle_slot`]) - because the page,
+/// the queue and the pack have carried this triple since the first tier and
+/// widening it would invalidate every stored coordinate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct TexCoord {
     pub tier: &'static str,
@@ -82,9 +85,15 @@ pub struct TexRow {
     pub cluts: usize,
     /// Bytes the texture occupies at rest.
     pub bytes: usize,
-    /// Curated semantic label from [`legaia_asset::tim_labels`], keyed by
-    /// content fingerprint; `None` when this fingerprint isn't curated.
-    pub label: Option<&'static str>,
+    /// What this texture is, in words - the page's whole search vocabulary.
+    /// `None` when the family has nothing to say about this row.
+    ///
+    /// Borrowed for the families whose labels are curated constants (the TIM
+    /// tiers key [`legaia_asset::tim_labels`] by content fingerprint, so those
+    /// are `&'static str`); owned for a family that *composes* a label per row
+    /// from disc data, which the battle-equipment tier does - it joins the
+    /// character to the equipment's own item name.
+    pub label: Option<Cow<'static, str>>,
     /// FNV-1a-64 over the texture's stored bytes. A hash, never the bytes -
     /// this is what a change pack pins a replacement to, so importing onto a
     /// different disc revision (or onto an already-patched texture) is
@@ -118,6 +127,12 @@ pub enum ReplaceOp {
     /// the generic TIM path would repaint every portrait, because the sheet
     /// stores one tile as sixteen scattered runs sharing a strip.
     SaveIconSlot(usize),
+    /// A headerless battle-equipment block, written through
+    /// `legaia_patcher::battle_texture`. Not a TIM write and not a
+    /// same-size write: the block is the tail of an LZS record whose slot
+    /// allocation is pinned by the descriptor chain, so the whole record is
+    /// re-compressed into that allocation or the write is refused.
+    BattleEquip(BattleTextureTarget),
 }
 
 /// A texture family.
@@ -160,17 +175,40 @@ pub struct ScanCtx<'a> {
     pub prot: &'a [u8],
     /// Every TOC entry's `(byte_offset, size_bytes, index)`.
     pub spans: &'a [(u64, u64, u32)],
+    /// The disc executable's item-name table, when the caller had the
+    /// executable to hand. Not derivable from `prot` - it lives in
+    /// `SCUS_942.54` - and a family that names its rows after equipment
+    /// needs it, so it is scan state rather than a parameter of one family.
+    names: Option<legaia_asset::item_names::ItemNameTable>,
     /// Last decompressed entry. Deliberately one slot - see the module docs.
     lzs: RefCell<LzsCache>,
 }
 
 impl<'a> ScanCtx<'a> {
+    /// A context with no executable, so families that label rows from the
+    /// item table fall back to ids. Enough for every decode path - only the
+    /// scan produces labels.
     pub fn new(prot: &'a [u8], spans: &'a [(u64, u64, u32)]) -> Self {
         Self {
             prot,
             spans,
+            names: None,
             lzs: RefCell::new(None),
         }
+    }
+
+    /// A context that can name equipment. `scus` is the raw `SCUS_942.54`
+    /// image; an unparseable one is the same as none.
+    pub fn with_scus(prot: &'a [u8], spans: &'a [(u64, u64, u32)], scus: Option<&[u8]>) -> Self {
+        Self {
+            names: scus.and_then(legaia_asset::item_names::ItemNameTable::from_scus),
+            ..Self::new(prot, spans)
+        }
+    }
+
+    /// The item-name table, when one was supplied.
+    pub fn item_names(&self) -> Option<&legaia_asset::item_names::ItemNameTable> {
+        self.names.as_ref()
     }
 
     /// The `(byte_offset, size_bytes)` footprint of a TOC entry.
@@ -214,12 +252,24 @@ pub const TIER_LZS: &str = "lzs";
 pub const TIER_SAVE_ICON: &str = "save-icon";
 /// `tier` id of the summon / readef battle side-band texture pages.
 pub const TIER_SUMMON: &str = "summon";
+/// `tier` id of the battle-equipment character art (PROT 863..866).
+pub const TIER_BATTLE_EQUIP: &str = "battle-equip";
 
 /// Sub-palette used to preview a summon texture page. The page is 4bpp
 /// against a 256-entry CLUT row, so a viewer must pick one 16-colour window;
 /// retail picks per draw. Window 0 is the preview convention, and the row is
 /// labelled so nobody reads the thumbnail as the only colouring.
 pub const SUMMON_PREVIEW_CLUT_SUB: usize = 0;
+
+/// Palette used to view, export and re-encode a battle-equipment block.
+///
+/// Most of these blocks ship two or three 16-colour palettes in one CLUT run
+/// and a mesh primitive's CBA column decides which it samples, so there is no
+/// single "the" colouring. Palette 0 is the convention across the grid, the
+/// exported PNG and the write, which is what makes the exported PNG the thing
+/// the write expects back: an edit re-encodes against the palette it was
+/// exported through and leaves the sibling palettes untouched.
+pub const BATTLE_PREVIEW_PALETTE: usize = 0;
 
 /// Every family the grid offers, in the order rows are emitted. The order is
 /// part of the observable scan output (the page pages through it), so new
@@ -267,36 +317,18 @@ pub fn tiers() -> &'static [Tier] {
             read: read_summon,
             op: op_read_only,
         },
-        // NEXT FAMILY - battle equipment textures (PROT 863..866, the player
-        // battle files). This is the family behind "I ripped Terra's armband
-        // and cannot find it": those entries hold no TIM at all, so both TIM
-        // catalogs report zero rows for all four and no filter string can
-        // reach them.
-        //
-        // It is not implemented here because its parser is being written
-        // elsewhere. Dropping it in is one `Tier` value once that lands:
-        //
-        //     Tier {
-        //         id: "battle-equip",
-        //         title: "Battle equipment textures",
-        //         about: "...",
-        //         replaceable: <whether an encoder exists>,
-        //         scan: scan_battle_equip,
-        //         read: read_battle_equip,
-        //         op: op_battle_equip,
-        //     }
-        //
-        // What `scan_battle_equip` needs from that parser, given a
-        // `&[u8]` PROT entry:
-        //   - an iterator of (stable byte offset within the entry, width,
-        //     height, bpp, clut count, byte length),
-        //   - an RGBA decode for one such offset.
-        // The byte offset is the load-bearing part: it is what makes a row
-        // addressable by the existing `(entry, section, offset)` coordinate,
-        // and therefore what a change pack can pin. A family addressed only
-        // by a runtime index (party slot, equipment id) needs a slot-shaped
-        // coordinate instead - `section` is free for that, as the save-icon
-        // and summon tiers already use it.
+        Tier {
+            id: TIER_BATTLE_EQUIP,
+            title: "Battle character art",
+            about: "The party's in-battle skins, one block per equipment \
+                    variant (PROT 863..866). Headerless, so no TIM scan \
+                    reaches them. Replaceable when the edit recompresses \
+                    into the record's own slot allocation.",
+            replaceable: true,
+            scan: scan_battle_equip,
+            read: read_battle_equip,
+            op: op_battle_equip,
+        },
     ]
 }
 
@@ -370,7 +402,7 @@ fn scan_raw(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result
             bpp: t.bpp,
             cluts: t.clut_count,
             bytes: t.byte_len,
-            label: t.label,
+            label: t.label.map(Cow::Borrowed),
             fnv1a: t.fnv1a,
             vram,
             clut_vram,
@@ -417,7 +449,7 @@ fn scan_lzs(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result
             bpp: t.bpp,
             cluts: t.clut_count,
             bytes: t.byte_len,
-            label: t.label,
+            label: t.label.map(Cow::Borrowed),
             fnv1a: t.fnv1a,
             vram,
             clut_vram,
@@ -469,7 +501,7 @@ fn scan_save_icons(
             bpp: 4,
             cluts: 1,
             bytes: si::TILE_BLOCK_BYTES + si::TILE_CLUT_BYTES,
-            label: Some("save-slot portrait"),
+            label: Some(Cow::Borrowed("save-slot portrait")),
             fnv1a: fnv1a64(&ident),
             vram: Some((vx, vy, vw, vh)),
             clut_vram: Some((si::CLUT_RECT.0, si::CLUT_RECT.1)),
@@ -624,7 +656,7 @@ fn scan_summon(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Res
                 bpp: 4,
                 cluts: t.clut_rows,
                 bytes: p.clut_bytes + p.page_bytes,
-                label: Some("summon texture page"),
+                label: Some(Cow::Borrowed("summon texture page")),
                 fnv1a: fnv1a64(&ident),
                 vram: None,
                 clut_vram: None,
@@ -636,6 +668,150 @@ fn scan_summon(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Res
         }
     }
     Ok(())
+}
+
+// --- Battle-equipment character art -----------------------------------------
+//
+// The family behind "I ripped Terra's armband out of an emulator and cannot
+// find it on the disc". A player battle file's character art is
+//
+//     [u16 clut_x][u16 clut_n][BGR555 run][w*h halfwords of 4bpp]
+//
+// and that is the entire header: no magic, no flag word, no geometry (the
+// rect comes from the loader's static table). So both TIM catalogs report
+// zero rows for PROT 863..866 - not because the art hides well but because
+// there is no TIM there to find - and before this tier no filter string on
+// the page could reach a single block of it.
+//
+// Labels are composed rather than curated: the descriptor ids are item ids,
+// so with the disc's own name table a row reads "Noa - Ra-Seru Terra $8".
+// That is the whole point of plumbing `SCUS_942.54` into [`ScanCtx`] - the
+// label IS the search vocabulary, and "Noa - equip 0x11" is not searchable
+// by anything a person would type.
+
+/// The `section` half of a battle-equipment coordinate.
+///
+/// A block is either a flagged equipment section's pool, addressed by its
+/// descriptor-table index, or one of the two header-resident `record[0]`
+/// blocks, which sit outside that table entirely. The two spaces fold into
+/// one signed field the way the parser already marks them apart: a
+/// descriptor index is itself, and `record[0]` block `n` is `-1 - n`.
+/// `offset` stays the block's byte offset inside its decoded record, so the
+/// coordinate carries both an addressable slot and a checkable position.
+fn battle_section(block: &legaia_asset::battle_texture_catalog::BattleTextureBlock) -> i64 {
+    if block.is_record0() {
+        -1 - block.section as i64
+    } else {
+        block.record_index as i64
+    }
+}
+
+/// The inverse: the slot selector a coordinate's `section` names.
+fn battle_slot(
+    section: i64,
+) -> Result<legaia_asset::battle_texture_catalog::BattleTextureSlot, String> {
+    use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+    let bad = || format!("{section} is not a battle-equipment slot");
+    if section < 0 {
+        u8::try_from(-1 - section)
+            .map(BattleTextureSlot::Record0)
+            .map_err(|_| bad())
+    } else {
+        usize::try_from(section)
+            .map(BattleTextureSlot::Section)
+            .map_err(|_| bad())
+    }
+}
+
+/// The catalog rows of one player file, with labels when the context has an
+/// item table. Per-entry rather than whole-disc so a single-row read pays
+/// for one file, not four.
+fn battle_blocks_of_entry(
+    ctx: &ScanCtx<'_>,
+    entry: u32,
+) -> Vec<legaia_asset::battle_texture_catalog::BattleTextureBlock> {
+    use legaia_asset::battle_texture_catalog as btc;
+    let Some(file) = ctx.entry_bytes(entry) else {
+        return Vec::new();
+    };
+    let mut id = 0u32;
+    btc::build_from_file_with_names(entry, file, &mut id, ctx.item_names())
+}
+
+fn battle_rgba(
+    ctx: &ScanCtx<'_>,
+    block: &legaia_asset::battle_texture_catalog::BattleTextureBlock,
+) -> Option<Rgba> {
+    use legaia_asset::battle_texture_catalog as btc;
+    btc::decode_block(ctx.prot, ctx.spans, block, BATTLE_PREVIEW_PALETTE)
+        .ok()
+        .map(|d| Rgba {
+            w: d.width,
+            h: d.height,
+            data: d.rgba,
+        })
+}
+
+fn scan_battle_equip(
+    ctx: &ScanCtx<'_>,
+    want_pixels: bool,
+    sink: &mut Sink<'_>,
+) -> Result<(), String> {
+    use legaia_asset::battle_texture_catalog as btc;
+
+    for entry in btc::PLAYER_FILE_ENTRIES {
+        for b in battle_blocks_of_entry(ctx, entry) {
+            let row = TexRow {
+                coord: TexCoord {
+                    tier: TIER_BATTLE_EQUIP,
+                    entry: b.entry_index as i64,
+                    section: battle_section(&b),
+                    offset: b.pool_offset,
+                },
+                width: b.width,
+                height: b.height,
+                bpp: b.bpp,
+                cluts: b.clut_count,
+                bytes: b.byte_len,
+                label: Some(Cow::Owned(b.label.clone())),
+                fnv1a: b.fnv1a,
+                // Deliberately unreported. Where these pixels land is a
+                // function of which party slot the character occupies in a
+                // given battle, decided at battle load - so there is no one
+                // rect, and naming one would be a claim the bytes do not
+                // make.
+                vram: None,
+                clut_vram: None,
+            };
+            let rgba = want_pixels.then(|| battle_rgba(ctx, &b)).flatten();
+            sink(row, rgba)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_battle_equip(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
+    let entry = u32::try_from(c.entry).map_err(|_| format!("no PROT entry {}", c.entry))?;
+    let slot = battle_slot(c.section)?;
+    let block = battle_blocks_of_entry(ctx, entry)
+        .into_iter()
+        .find(|b| b.slot() == slot && b.pool_offset == c.offset)
+        .ok_or_else(|| {
+            format!(
+                "no battle-equipment block at entry {entry} slot {slot} +0x{:X}",
+                c.offset
+            )
+        })?;
+    battle_rgba(ctx, &block).ok_or_else(|| "battle-equipment block does not decode".to_string())
+}
+
+fn op_battle_equip(c: &TexCoord) -> Result<ReplaceOp, String> {
+    let entry = u32::try_from(c.entry)
+        .map_err(|_| "battle-equipment art lives in a PROT entry, not the gap".to_string())?;
+    Ok(ReplaceOp::BattleEquip(BattleTextureTarget {
+        entry,
+        slot: battle_slot(c.section)?,
+    }))
 }
 
 // --- Targeted single-row decode ---------------------------------------------
@@ -801,6 +977,62 @@ mod tests {
                 t.id
             );
         }
+    }
+
+    #[test]
+    fn the_battle_slot_field_names_both_of_its_slot_spaces() {
+        use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+        // A descriptor index is itself ...
+        for i in [0usize, 1, 14, 51] {
+            assert_eq!(
+                battle_slot(i as i64).expect("a section index"),
+                BattleTextureSlot::Section(i)
+            );
+        }
+        // ... and the two header blocks take the negative half, which is
+        // what lets one signed field address both. `-1` is a real slot here,
+        // not the "does not apply" the other families spell it as.
+        assert_eq!(
+            battle_slot(-1).expect("header block 0"),
+            BattleTextureSlot::Record0(0)
+        );
+        assert_eq!(
+            battle_slot(-2).expect("header block 1"),
+            BattleTextureSlot::Record0(1)
+        );
+        assert!(battle_slot(-9999).is_err());
+    }
+
+    #[test]
+    fn battle_coordinates_resolve_to_the_battle_writer() {
+        use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+        for (section, want) in [
+            (14i64, BattleTextureSlot::Section(14)),
+            (-1, BattleTextureSlot::Record0(0)),
+        ] {
+            let c = TexCoord {
+                tier: TIER_BATTLE_EQUIP,
+                entry: 864,
+                section,
+                offset: 0x3784,
+            };
+            match replace_op(&c).expect("resolves") {
+                ReplaceOp::BattleEquip(t) => {
+                    assert_eq!(t.entry, 864);
+                    assert_eq!(t.slot, want);
+                }
+                other => panic!("battle art must not take another writer: {other:?}"),
+            }
+        }
+        // The unindexed gap holds no player file, so there is nothing to
+        // address there.
+        let gap = TexCoord {
+            tier: TIER_BATTLE_EQUIP,
+            entry: -1,
+            section: 0,
+            offset: 0,
+        };
+        assert!(replace_op(&gap).is_err());
     }
 
     #[test]
