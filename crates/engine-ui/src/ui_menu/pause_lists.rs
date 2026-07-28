@@ -135,6 +135,22 @@ pub const MAGIC_SCREEN_WINDOW_RECTS: [(usize, (i32, i32, i32, i32)); 4] = [
 /// chrome alongside the id-17 frame.
 pub const ITEMS_INFO_EXTRA_BOX_RECT: (i32, i32, i32, i32) = (14, 164, 144, 40);
 
+/// Label the item-info panel's **Point Card** arm puts in the extra widget
+/// box, at [`ITEMS_INFO_POINTS_LABEL_OFFSET`] off the info window's content
+/// origin. Retail's own literal is a menu-overlay rodata string
+/// (`0x801CEA30`); the port stages an engine-authored line in the same slot
+/// so the translation layer owns the text.
+pub const ITEMS_INFO_POINTS_LABEL: &str = "Points Left";
+/// Pen offset of [`ITEMS_INFO_POINTS_LABEL`] from the info window's content
+/// origin (`FUN_801D0F1C`: `a3 = WX + 0x18`, stack `WY + 0x41`).
+pub const ITEMS_INFO_POINTS_LABEL_OFFSET: (i32, i32) = (0x18, 0x41);
+/// Pen offset of the 8-digit Point Card bank (`a2 = WX + 0x38`,
+/// `a3 = WY + 0x4E`).
+pub const ITEMS_INFO_POINTS_VALUE_OFFSET: (i32, i32) = (0x38, 0x4e);
+/// Digit-field width of that bank (`a1 = 8`) - the same 8 cells window 31
+/// and the two currency counters use.
+pub const ITEMS_INFO_POINTS_DIGITS: i32 = 8;
+
 /// Row pitch of the Items / Magic list pages and of the Use / Throw Out /
 /// Arrange command rows (`FUN_801D0D18` steps `+0xE`; list rows measured
 /// at the same 14-px pitch on the captures).
@@ -279,8 +295,11 @@ fn list_page_header_draws(
 /// `X+0x7C`, widget-box frame)
 /// PORT: FUN_801d0f1c (info window: name / description at `+0x10` /
 /// passive name+desc at `+0x38`/`+0x48`; the kind-2 scope pictogram
-/// (ICO `0x84`/`0x85` at `X+0x84`) and the id-`0xFE` gold panel stay
-/// undrawn)
+/// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn. The id-`0xFE` arm is
+/// [`item_points_panel_draws`], which a host adds on top - retail branches
+/// to it at `0x801d0fd0` and jumps past this routine's passive block, and
+/// the Point Card's own `0x41` no-passive sentinel means that block draws
+/// nothing on that row anyway.)
 pub fn items_screen_draws_for(
     font: &legaia_font::Font,
     view: &PauseItemsView<'_>,
@@ -355,6 +374,49 @@ pub fn items_screen_draws_for(
             str_at(&mut out, line2, ix, iy + 0x48, MENU_TEXT_WHITE);
         }
     }
+    out
+}
+
+/// The item-info panel's **Point Card** arm: the "Points Left" label and
+/// the 8-digit bank, both inside the extra widget box
+/// ([`ITEMS_INFO_EXTRA_BOX_RECT`]) that the id-17 renderer emits under its
+/// own window.
+///
+/// Retail reaches this by comparing the staged item id against `0xFE`
+/// (`li v0,0xfe` / `bne` at `0x801d0fc0..0x801d0fd0`) and, on a match,
+/// drawing the label in the default pen at `WX+0x18, WY+0x41` and
+/// `_DAT_800845B4` as an 8-cell field in the accent pen at
+/// `WX+0x38, WY+0x4E`, then jumping to the routine's tail. So this is a
+/// *replacement* for the passive block, not an addition to it - the two
+/// never coexist, and on the retail disc they cannot: the Point Card's
+/// effect descriptor carries the `0x41` no-passive sentinel.
+///
+/// `info_pen` is the id-17 window's content origin, the same pen
+/// [`items_screen_draws_for`] takes; `points` is the live bank
+/// (`engine-core::World::point_card`).
+///
+/// PORT: FUN_801d0f1c (the id-`0xFE` arm at `0x801d0fd8..0x801d1018`)
+pub fn item_points_panel_draws(
+    font: &legaia_font::Font,
+    info_pen: (i32, i32),
+    points: u32,
+) -> Vec<TextDraw> {
+    let (ix, iy) = info_pen;
+    let (lx, ly) = ITEMS_INFO_POINTS_LABEL_OFFSET;
+    let (vx, vy) = ITEMS_INFO_POINTS_VALUE_OFFSET;
+    let mut out = text_draws_for(
+        &font.layout_ascii(ITEMS_INFO_POINTS_LABEL),
+        (ix + lx, iy + ly),
+        MENU_TEXT_WHITE,
+    );
+    out.extend(num_field_draws(
+        font,
+        points as u64,
+        ix + vx,
+        iy + vy,
+        ITEMS_INFO_POINTS_DIGITS,
+        MENU_TEXT_GOLD,
+    ));
     out
 }
 
@@ -1280,5 +1342,37 @@ mod pause_list_tests {
         assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x14));
         // Single page -> no arrows at the arrow row besides the hand.
         assert!(!items_cmd.iter().any(|d| d.dst.1 == arrow_y));
+    }
+
+    /// The Point Card arm's two pens, straight off the `0x801d0fd8` block:
+    /// the label at `WX+0x18, WY+0x41` and the 8-cell bank at
+    /// `WX+0x38, WY+0x4E`, both inside the extra widget box the id-17
+    /// renderer emits.
+    #[test]
+    fn point_card_panel_lands_in_the_extra_widget_box() {
+        let font = legaia_font::Font::placeholder();
+        let (bx, by, bw, bh) = ITEMS_INFO_EXTRA_BOX_RECT;
+        let pen = (14, 108); // window 17's content origin
+        let d = item_points_panel_draws(&font, pen, 1234);
+        assert!(!d.is_empty());
+        assert!(
+            d.iter()
+                .any(|t| (t.dst.0, t.dst.1) == (pen.0 + 0x18, pen.1 + 0x41))
+        );
+        // The bank is right-aligned in an 8-cell field, so its leftmost
+        // glyph sits four cells in rather than at the field origin.
+        let digits: Vec<i32> = d
+            .iter()
+            .filter(|t| t.dst.1 == pen.1 + 0x4e)
+            .map(|t| t.dst.0)
+            .collect();
+        assert_eq!(digits.len(), 4, "1234 inks four of the eight cells");
+        assert!(digits.iter().all(|x| *x >= pen.0 + 0x38));
+        // Both rows live inside the extra box, which is what makes this a
+        // replacement for the passive lines rather than an overdraw.
+        for t in &d {
+            assert!(t.dst.0 >= bx && t.dst.0 < bx + bw, "{:?}", t.dst);
+            assert!(t.dst.1 >= by && t.dst.1 < by + bh, "{:?}", t.dst);
+        }
     }
 }

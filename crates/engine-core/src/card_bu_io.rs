@@ -52,6 +52,13 @@
 //! [`crate::save_select::card_frame_tick`] is the frame hook it would be
 //! ticked from.
 //!
+//! The *bytes* half of that backend already exists and is not the gap:
+//! `legaia_save::emu::CardView` addresses a real card's blocks and
+//! directory frames, and `legaia_save::card` keeps the block checksum the
+//! retail loader compares. What is missing is the asynchronous shape
+//! around it - an issue, a per-frame poll, and a completion the step
+//! machine can consume.
+//!
 //! Evidence: `ghidra/scripts/funcs/overlay_menu_801e37cc.txt`,
 //! `overlay_menu_801e3a00.txt`, `overlay_menu_801e3a98.txt`,
 //! `overlay_menu_801e3bec.txt`, `overlay_menu_801e3c90.txt`,
@@ -73,9 +80,26 @@ pub const CARD_DIR_SLOTS: usize = 32;
 /// Stride of one directory-name record (`addiu s1,s1,0x28`).
 pub const CARD_DIR_STRIDE: usize = 0x28;
 
-/// Bytes retail seeks past before a block read, when the read is flagged as
-/// starting at the second frame (`lseek(fd, 0x200, 0)`).
+/// Bytes retail seeks past before a *summary* read (`lseek(fd, 0x200, 0)`).
+///
+/// `0x200` is the block's PSX header: the `SC` frame at `+0`, the icon CLUT
+/// at `+0x60` and three 128-byte icon frames at `+0x80` / `+0x100` /
+/// `+0x180`. Game data starts after it, which is why this is the seek
+/// distance and not a frame size - a card frame is `0x80` bytes, and this
+/// is four of them.
 pub const CARD_FRAME_BYTES: u32 = 0x200;
+
+/// The one read length that takes the [`CARD_FRAME_BYTES`] seek.
+///
+/// Retail has no seek *flag*. `FUN_801E3C90` tests the transfer-length
+/// global (`DAT_801F01B8`) against `0x80` and seeks only then, and that
+/// same global is what the caller passed as the length - so the seek is a
+/// function of the length alone. `0x80` is the one-frame per-slot summary
+/// read; the full-block load passes `0x2000` and starts at byte 0.
+pub const CARD_SUMMARY_READ_LEN: u32 = 0x80;
+
+/// Length of a whole save block, the load/save transfer size.
+pub const CARD_BLOCK_READ_LEN: u32 = 0x2000;
 
 /// `open` flag bits retail passes to the BIOS `bu` driver.
 ///
@@ -248,10 +272,15 @@ impl CardIoState {
     /// the cached names survive, which is what lets the save screen
     /// re-enter without re-walking the card.
     ///
-    /// The same routine re-points `DAT_801F32A0` at `0x80084140`, the
-    /// save-block existence array the save screen scans; the port keeps
-    /// that array in [`save_select`](crate::save_select) rather than
-    /// behind a pointer, so there is nothing to re-point here.
+    /// The same routine re-points `DAT_801F32A0` at `0x80084140` - the
+    /// **live game-state window**, the `0x1A18` bytes the save composer
+    /// copies into a card block and the load direction copies back out
+    /// (`FUN_801E1934` / `FUN_801DD35C`). It is not a per-slot existence
+    /// array: the character records the save screen reads are inside it
+    /// (`0x80084708` = `+0x5C8`), and so are gold (`+0x45C`), the story
+    /// flags (`+0x14C0`) and the bag (`+0x1818`). The port keeps that
+    /// state as typed world/party data rather than behind a pointer, so
+    /// there is nothing to re-point here.
     ///
     /// PORT: FUN_801E0598
     /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
@@ -267,21 +296,23 @@ impl CardIoState {
 
     /// Issue a card read.
     ///
-    /// `FUN_801E3C90` clears the read-failure flag, formats the path,
-    /// opens non-blocking for read and - if the caller's frame selector
-    /// says so - seeks one 512-byte frame in before the `read`. The
-    /// completion arrives later through [`Self::step`], not here.
+    /// `FUN_801E3C90(port, unit, name, buf, len)` clears the read-failure
+    /// flag, formats the path, opens non-blocking for read, drains event
+    /// array A and issues the `read`. The completion arrives later through
+    /// [`Self::step`], not here. The destination buffer is the caller's -
+    /// the port leaves it to the host, which is what a [`CardOp`] names.
+    ///
+    /// The `lseek(fd, 0x200, 0)` is **not** a caller flag. Retail tests the
+    /// transfer-length global `DAT_801F01B8` against
+    /// [`CARD_SUMMARY_READ_LEN`] and seeks only then - and that global is
+    /// the very value the caller passed as `len` (`FUN_801E13B8` at
+    /// `0x801e15dc` loads it into the length argument). So the seek is
+    /// derived here rather than taken, and a "seek with a full-block
+    /// length" is a state retail cannot reach.
     ///
     /// PORT: FUN_801E3C90
     /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
-    pub fn read_file(
-        &mut self,
-        port: u8,
-        unit: u8,
-        name: &str,
-        len: u32,
-        seek_second_frame: bool,
-    ) -> CardIssue {
+    pub fn read_file(&mut self, port: u8, unit: u8, name: &str, len: u32) -> CardIssue {
         self.read_failed = false;
         let path = bu_path(port, unit, Some(name));
         self.fd_open = true;
@@ -290,16 +321,22 @@ impl CardIoState {
             path,
             flags: open_flags::READ,
             len,
-            seek_second_frame,
+            seek_second_frame: len == CARD_SUMMARY_READ_LEN,
         })
     }
 
     /// Issue a card write.
     ///
-    /// `FUN_801E3D68` clears the write-failure flag, and when the caller
-    /// asks for a new file it first opens with the create flag (one block)
-    /// and closes that handle before reopening for write. A failed create
-    /// latches the failure flag and returns without issuing the write.
+    /// `FUN_801E3D68(port, unit, name, buf, len, create)` clears the
+    /// write-failure flag (and the sibling `DAT_801EF118` the port folds
+    /// into the same reset), and when the caller asks for a new file it
+    /// first opens with the create flag (one block) and closes that handle
+    /// before reopening for write. A failed create latches the failure flag
+    /// and returns without issuing the write.
+    ///
+    /// The one caller (`FUN_801E13B8` at `0x801e1570`) always passes the
+    /// composed block buffer and [`CARD_BLOCK_READ_LEN`] - a whole
+    /// `0x2000`-byte block, checksum word included.
     ///
     /// PORT: FUN_801E3D68
     /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
@@ -564,7 +601,7 @@ mod tests {
             write_failed: true,
             ..Default::default()
         };
-        let issue = st.read_file(0, 0, "SAVE", 0x2000, true);
+        let issue = st.read_file(0, 0, "SAVE", CARD_BLOCK_READ_LEN);
         assert!(!st.read_failed);
         assert!(st.write_failed, "read must not touch the write flag");
         assert_eq!(st.phase, CardPhase::Reading);
@@ -574,9 +611,28 @@ mod tests {
                 path: "bu00:SAVE".to_string(),
                 flags: open_flags::READ,
                 len: 0x2000,
-                seek_second_frame: true,
+                // A whole-block load starts at byte 0; only the 0x80
+                // summary read seeks past the header.
+                seek_second_frame: false,
             })
         );
+    }
+
+    /// The seek is a function of the length, not an independent flag -
+    /// `FUN_801E3C90` tests `DAT_801F01B8 == 0x80`, and that global *is*
+    /// the length the caller passed.
+    #[test]
+    fn only_the_summary_length_takes_the_header_seek() {
+        let mut st = CardIoState::default();
+        let CardIssue::Issued(CardOp::Read {
+            seek_second_frame, ..
+        }) = st.read_file(0, 0, "SAVE", CARD_SUMMARY_READ_LEN)
+        else {
+            panic!("read must issue");
+        };
+        assert!(seek_second_frame);
+        assert_eq!(CARD_SUMMARY_READ_LEN, 0x80);
+        assert_eq!(CARD_FRAME_BYTES, 0x200, "SC header + three icon frames");
     }
 
     #[test]
@@ -614,7 +670,7 @@ mod tests {
     #[test]
     fn step_holds_the_phase_until_a_handle_fires() {
         let mut st = CardIoState::default();
-        st.read_file(0, 0, "SAVE", 0x200, false);
+        st.read_file(0, 0, "SAVE", CARD_BLOCK_READ_LEN);
         assert_eq!(st.step([false; 4]), CardStep::Waiting);
         assert_eq!(st.phase, CardPhase::Reading);
         assert!(st.fd_open);
@@ -634,7 +690,7 @@ mod tests {
         assert!(!st.fd_open, "the step closes the descriptor");
 
         let mut st = CardIoState::default();
-        st.read_file(0, 0, "SAVE", 0x200, false);
+        st.read_file(0, 0, "SAVE", CARD_BLOCK_READ_LEN);
         assert_eq!(
             st.step([false, false, false, true]),
             CardStep::Finished { ok: false }

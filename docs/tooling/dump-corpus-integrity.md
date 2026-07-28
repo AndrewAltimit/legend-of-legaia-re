@@ -39,17 +39,21 @@ canonicalises each dump's opening instructions into a base-independent token
 sequence and looks that up in an index built the same way over every extracted
 image.
 
-Default pass, 10-instruction signature, 3624 dumps:
+Default pass, 10-instruction signature:
 
-| Class | Count | What it means | Usable for |
-|---|---|---|---|
-| `MATCH` | 2606 | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
-| `SHIFTED` | 292 | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
-| `NOT_FOUND` | 107 | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
-| `SHORT` | 619 | Fewer than 10 instructions; too short to sign. | No verdict either way. |
+| Class | What it means | Usable for |
+|---|---|---|
+| `MATCH` | Printed VA equals the VA the bytes resolve to. | Everything. Addresses, provenance citations, port tags. |
+| `SHIFTED` | Bytes resolve at a constant non-zero delta. The dump was produced at the wrong load base. | Instruction *text* and decoded `jal` targets only. Never its addresses, and never as provenance for a function identity. |
+| `NOT_FOUND` | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
+| `SHORT` | Fewer than 10 instructions; too short to sign. | No verdict either way. |
 
-Those four numbers are what the committed script prints at its default
-threshold, and they are the ones to quote.
+The four counts are deliberately **not** quoted here. They are state over a
+gitignored corpus that changes whenever anyone adds a dump, and a stale count in
+a committed doc reads as a fact - which is the failure this page exists to
+prevent, applied to itself. Roughly three quarters of the corpus resolves
+`MATCH`, and `SHIFTED` is dominated by two clusters ([below](#the-shift-clusters)).
+Run the sweep for the numbers.
 
 ### `canon()` must fold register spellings, not just mnemonics
 
@@ -87,12 +91,11 @@ indistinguishable, from the outside, from a corpus that genuinely lacks the
 image.
 
 Lowering the threshold trades coverage for certainty. At `--min-insns 4` the
-`SHORT` class shrinks to 468 and the sweep returns 2698 `MATCH` / 372
-`SHIFTED` / 86 `NOT_FOUND` - but a 4-instruction signature also matches
-*ambiguously*, so part of that growth is the method resolving dumps it should
-have declined. Treat a multi-hit resolution as weaker than a single-hit one.
-The clusters below are quoted at both thresholds for exactly this reason: the
-counts move, the conclusion does not.
+`SHORT` class roughly halves and most of it lands in `MATCH` - but a
+4-instruction signature also matches *ambiguously*, so part of that growth is
+the method resolving dumps it should have declined. Treat a multi-hit resolution
+as weaker than a single-hit one. The clusters below shift with the threshold for
+exactly this reason: the counts move, the conclusion does not.
 
 ### A capture with no static image is not automatically unattributable
 
@@ -140,17 +143,17 @@ corpus.
 
 ## The shift clusters
 
-The `SHIFTED` dumps are not scattered one-offs. Two clusters account for the
-overwhelming majority, and both point at one mistake. Counts are given as
-`default / --min-insns 4`.
+The `SHIFTED` dumps are not scattered one-offs. Two deltas account for the
+overwhelming majority, and both point at one mistake. Run `--list-shifted` for
+the live per-delta counts; what is stable is the delta and its reading.
 
-| Delta | Count | Program | Reading |
-|---|---|---|---|
-| `+0xE818` | 208 / 221 | field overlay (PROT 0897) | Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
-| `+0x5818` | 50 / 55 | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
-| `+0xD018` | 8 / 8 | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
-| `+0x9818` / `+0xD818` | small | `overlay_0978_*` | One `0x801C0000` import of 0978's over-read footprint; the delta names the stratum - `+0xD818` = field_battle_intro (0979) bytes, `+0x9818` = **dance** (0980) bytes. |
-| `+0xE818` / `+0xA018` | small | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
+| Delta | Program | Reading |
+|---|---|---|
+| `+0xE818` | field overlay (PROT 0897) | The dominant cluster. Imported at base `0x801C0000` instead of `0x801CE818`. `0x801CE818 - 0x801C0000 = 0xE818`. |
+| `+0x5818` | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
+| `+0xD018` | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
+| `+0x9818` / `+0xD818` | `overlay_0978_*` | One `0x801C0000` import of 0978's over-read footprint; the delta names the stratum - `+0xD818` = field_battle_intro (0979) bytes, `+0x9818` = **dance** (0980) bytes. |
+| `+0xE818` / `+0xA018` | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
 
 The `+0xE818` mistake is not confined to the field overlay. `overlay_0899_xxx_dat_*`
 dumps take the same delta into the *menu* overlay, so the base error travels with
@@ -507,17 +510,58 @@ used.
 
 ### The residue is the finding
 
-Roughly three fifths of ambiguous extents attribute to exactly one image, and a
+Roughly two thirds of ambiguous extents attribute to exactly one image, and a
 further fifth attribute to *no* image because the print is mis-based. What is
-left does not yield to more effort of the same kind, and the largest share of it
-is not a corpus gap but a **dump** gap: windows too short to sign, dumps that
-carry decompiled C and no instruction stream at all, and gapped streams. Those
-are repaired by re-dumping, not by extracting another overlay.
+left splits three ways, and only one of the three is anything like a dump defect:
 
-Lowering the signature floor does not help, and that is measured rather than
-assumed: going from eight instructions to five moves a handful of extents and
-changes the per-image ambiguity by well under a point, while making every
-verdict rest on less evidence. The floor is not the binding constraint.
+- a few-instruction window that no image's own content reproduces at that VA;
+- bytes that are in no extracted image at any VA, which needs an **extraction**
+  rather than a dump - most were taken from live RAM captures of overlays never
+  extracted statically;
+- two dumps at one extent resolving to different images, which is several
+  routines sharing a range and is an answer rather than a gap.
+
+That corrects a claim this page used to make - that the residue was dominated by
+dump defects and was "repaired by re-dumping". Re-dumping repairs almost none of
+it. The mistake is worth keeping visible because of how it was made: the residue
+had been *described* from the classes' names rather than counted from the CSV,
+and the names are suggestive enough that nobody re-derived them.
+
+**The floor was not the binding constraint; the header parser was.** Lowering the
+signature floor from eight instructions to five moves a handful of extents, which
+is what this page measured and reported. What it did not test was whether the
+instrument was seeing the whole corpus: a private, over-strict header regex was
+dropping real dumps before any of this ran, so their extents had no attribution
+row at all and read as unresolvable ambiguity. Repairing the parser moved several
+times what any floor change did.
+
+### One floor cannot serve two questions
+
+The sweep asks two things of an opening window, and their sensitivity to its
+length is opposite:
+
+| Question | Method | Effect of a short window |
+|---|---|---|
+| does *this* image's own content reproduce this window at *this* VA? | fixed-offset comparison against a handful of candidates | mild: a short window that matches several returns `identical`, which credits each and is honest |
+| do these bytes appear at *any* offset in *any* image? | a search over millions of positions - how a mis-based print is identified | severe: a short signature has millions of chances to match by accident |
+
+One floor was applied to both. For the search that is right; for the at-VA test
+it discards evidence for a risk that test does not run. Splitting them - three
+instructions at a VA, eight to search - resolves most of the `short` residue while
+leaving `misbased` (the only *positive* claim about where bytes live) on the
+stronger evidence it needs.
+
+The split is set from a control rather than from judgement, which is the part
+worth copying. `attribute-dump-extents.py --validate-short-floor` truncates every
+extent the full window already resolves and re-runs the at-VA test at each short
+length. Over ~3000 trials it produces **no wrong answer at any length down to one
+instruction**, and loses precision only by naming several images instead of one.
+Agreement is 99.9% at three instructions and 98.9% at one.
+
+**A confidence floor belongs to a question, not to an instrument.** Shared across
+two, it is simultaneously too loose for the sensitive question and too strict for
+the robust one - and only the second failure is invisible, because it surfaces as
+missing data rather than as a wrong answer.
 
 One image's row can therefore become meaningful while the other's does not, and
 that is a legitimate result rather than a half-finished one. The inner of two
@@ -597,10 +641,40 @@ the defect it is being counted as. Nearly a fifth of what a cited-only shape
 sweep once called defective was this - the instrument scoring the corpus's own
 good work against it.
 
-The same lesson applies to the header regex that finds those files: it accepted
-one spelling of `(entry=…)` while three exist in the corpus, so real dumps fell
-into the headerless classes. **A parser's strictness is a claim about the
-corpus, and an over-strict one manufactures a gap.**
+The same lesson applies to the header regex that finds those files. **A parser's
+strictness is a claim about the corpus, and an over-strict one manufactures a
+gap** - and this one was made independently by every instrument here, because
+each carried its own regex.
+
+The corpus spells all four header fields more than one way, having been written
+by a dozen dump scripts over a long period:
+
+| Field | Spellings in the corpus |
+|---|---|
+| printed VA | bare `801cf098`; `0x801CF098` |
+| entry | `(entry=…)`; `(entry=0x…)`; `(entry=…, label=…)`; `(entry …)` after a `--` header; absent |
+| label | one token (`FUN_801cf098`); several (`slot-4 handler FUN_80044434`) |
+| extent | `size=N bytes, M instructions`; the same with a trailing parenthetical or extra field; `size=N bytes` alone; `min=<VA> max=<VA>` instead |
+
+Accepting only the bare-VA spelling dropped 54 real function dumps; `(entry=…,
+label=…)` dropped 20 more; a size line with no instruction count dropped 6. Every
+one of those files was complete and correct.
+
+The number those rejects produced was then *explained* wrongly, and that is the
+part that survived review: the coverage report described them as "typically the
+ones that report `0 instructions` and hold only decompiled C". Not one of them
+reported `0 instructions` - the files that do were passing the regex and being
+credited - and three of several hundred were C-only. **A plausible explanation
+attached to a number nobody re-derived is how a measurement defect becomes a
+documented fact.**
+
+[`dump_header.py`](../../scripts/ghidra-analysis/dump_header.py) is now the one
+parser, imported by `disc-coverage.py` and `attribute-dump-extents.py`. Import
+it rather than writing a fifth regex. It also rejects with a **named class**
+rather than a bare failure, so a caller can separate the corpus storing an
+answer - pointer stubs, recorded negatives, data windows, analysis output, four
+fifths of what is excluded - from a dump that genuinely cannot evidence its own
+extent.
 
 ## Every instrument in this chain has had a defect that made a number look better
 

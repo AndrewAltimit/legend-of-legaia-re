@@ -13,12 +13,14 @@ Two measurements, and they are NOT the same kind of number - the report says so
 in its own text, because quoting them interchangeably is the obvious way to
 misuse this page:
 
-  CODE  - byte-exact. Every Ghidra dump header carries `entry=` and
-          `size=N bytes`, so the dumped functions are real byte intervals.
-          Merge them, subtract from an image's extent, and every remaining byte
-          is genuinely un-dumped. Gaps are then classified code-vs-data so the
-          rodata an executable carries inside its text segment does not inflate
-          the denominator.
+  CODE  - byte-exact. A Ghidra dump header states the body's entry and size, so
+          the dumped functions are real byte intervals. Merge them, subtract
+          from an image's extent, and every remaining byte is genuinely
+          un-dumped. Gaps are then classified code-vs-data so the rodata an
+          executable carries inside its text segment does not inflate the
+          denominator. The header is parsed by `dump_header`, shared with the
+          attribution sweep - the corpus spells every header field more than
+          one way and a private regex silently under-counts.
 
   DATA  - format RECOGNITION, one level coarser. `asset categorize` says which
           format class each PROT entry is. Knowing an entry is a
@@ -60,7 +62,6 @@ import csv
 import glob
 import json
 import os
-import re
 import struct
 import sys
 import tomllib
@@ -69,6 +70,14 @@ import tomllib
 # port-catalog.py's `Path(__file__).resolve().parent.parent.parent`.
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The dump header has one parser, shared with the attribution sweep. Each
+# instrument over this corpus used to carry its own regex, and because the
+# corpus spells every header field more than one way, each silently rejected a
+# different subset of real dumps as "no parseable header". See
+# `scripts/ghidra-analysis/dump_header.py`.
+sys.path.insert(0, os.path.join(REPO, "scripts", "ghidra-analysis"))
+import dump_header  # noqa: E402
+
 DEFAULT_FUNCS = os.path.join(REPO, "ghidra", "scripts", "funcs")
 DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
 DEFAULT_OUT = os.path.join(REPO, "target", "disc-coverage")
@@ -76,9 +85,6 @@ OVERLAY_MAP = os.path.join(REPO, "crates", "asset", "data", "static-overlays.tom
 BASELINE = os.path.join(REPO, "scripts", "ci", "disc-coverage-baseline.json")
 ATTRIBUTION = os.path.join(
     REPO, "scripts", "ghidra-analysis", "dump-extent-attribution.csv")
-
-HDR_RE = re.compile(r"^==\s+(\S+)\s+([0-9a-fA-F]{8})\s+\(entry=([0-9a-fA-F]{8})\)")
-SIZE_RE = re.compile(r"^size=(\d+) bytes,\s*(\d+) instructions")
 
 # MIPS I primary opcodes the R3000A actually issues. Used only to tell a gap of
 # code from a gap of data; it is a statistical test over a whole gap, never a
@@ -105,28 +111,23 @@ UNEXPLAINED_CLASSES = {
 
 
 def read_dump_extents(funcs_dir):
-    """Every dump's (entry_va, end_va). Returns [] when the corpus is absent."""
+    """Every dump's (entry_va, end_va), plus a census of what was excluded.
+
+    Returns `(extents, rejects)` where `rejects` counts `dump_header`'s reject
+    classes. The census is the point: a single "N files had no parseable
+    header" number invites - and previously carried - a wrong explanation of
+    what those files are. Most of them are the corpus storing an ANSWER, and
+    only a handful are defective dumps.
+    """
     out = []
-    unparsed = 0
+    rejects = {}
     for path in sorted(glob.glob(os.path.join(funcs_dir, "*.txt"))):
-        try:
-            with open(path, errors="replace") as fh:
-                first, second = fh.readline(), fh.readline()
-        except OSError:
+        dump, reject = dump_header.parse_file(path)
+        if dump is None:
+            rejects[reject] = rejects.get(reject, 0) + 1
             continue
-        m, s = HDR_RE.match(first.strip()), SIZE_RE.match(second.strip())
-        if not m or not s:
-            # Dumps that report `0 instructions` and carry only decompiled C
-            # land here. They are not evidence of coverage and are excluded.
-            unparsed += 1
-            continue
-        nbytes = int(s.group(1))
-        if nbytes <= 0:
-            unparsed += 1
-            continue
-        entry = int(m.group(3), 16)
-        out.append((entry, entry + nbytes))
-    return out, unparsed
+        out.append(dump.extent)
+    return out, rejects
 
 
 # Extent classes in `dump-extent-attribution.csv` whose verdict is that the
@@ -183,6 +184,49 @@ def merge(intervals):
     return merged
 
 
+MIPS_JR_RA = 0x03E00008
+# `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
+# vector into before `jr $t2`.
+_ADDIU_T2_ZERO = 0x240A0000
+BIOS_VECTORS = (0xA0, 0xB0, 0xC0)
+
+
+def gap_shape(image, base_va, a, b):
+    """Why a code gap is a gap. Four shapes, and only one of them is work.
+
+    A gap is not automatically an un-analysed routine, and reporting the total
+    as if it were makes the last percent read as a dump worklist when most of it
+    can never be closed by dumping:
+
+    | shape | what it is |
+    |---|---|
+    | `padding` | every word is `nop`. Inter-function alignment; no function body will ever contain it. |
+    | `return_tail` | `jr ra` (+ `nop`): a routine's exit that its analysed body stops short of. |
+    | `bios_thunk_slot` | the delay slot of a `jr $t2` BIOS-call thunk. The body ends at the `jr` because the target is a register, so the slot falls outside it. |
+    | `code` | genuinely un-dumped instructions. |
+
+    The three non-`code` shapes are properties of where a function *body* ends,
+    not of what has been analysed, so they persist however much is dumped.
+    """
+    n = (b - a) // 4
+    start = a - base_va
+    if n <= 0 or start < 0 or start + n * 4 > len(image):
+        return "code"
+    words = struct.unpack_from("<%dI" % n, image, start)
+    if all(w == 0 for w in words):
+        return "padding"
+    if words[0] == MIPS_JR_RA and all(w == 0 for w in words[1:]):
+        return "return_tail"
+    if start >= 8:
+        pre = struct.unpack_from("<2I", image, start - 8)
+        # `addiu $t2, $zero, 0xA0|B0|C0` then `jr $t2`
+        if ((pre[0] & 0xFFFF0000) == _ADDIU_T2_ZERO
+                and (pre[0] & 0xFFFF) in BIOS_VECTORS
+                and (pre[1] & 0xFC1FFFFF) == 0x00000008):
+            return "bios_thunk_slot"
+    return "code"
+
+
 def classify_gap(image, base_va, a, b):
     """True when the bytes in [a, b) look like code rather than data."""
     n = (b - a) // 4
@@ -228,10 +272,15 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
 
     code_gap = data_gap = 0
     code_gaps = []
+    shapes = {}
     for a, b in gaps:
         if classify_gap(image, base_va, a, b):
             code_gap += b - a
-            code_gaps.append((a, b))
+            shape = gap_shape(image, base_va, a, b)
+            n, nb = shapes.get(shape, (0, 0))
+            shapes[shape] = (n + 1, nb + b - a)
+            if shape == "code":
+                code_gaps.append((a, b))
         else:
             data_gap += b - a
 
@@ -247,6 +296,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
         "data_gap": data_gap,
         "code_denominator": denom,
         "pct": (100.0 * covered / denom) if denom else 0.0,
+        "gap_shapes": shapes,
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }
 
@@ -370,7 +420,40 @@ def data_report(extracted):
     }
 
 
-def render(scus, overlays, amb_totals, data, unparsed, attributed):
+GAP_SHAPE_TEXT = {
+    "code": "genuinely un-dumped instructions - the only shape that is work",
+    "padding": "every word is `nop`: inter-function alignment, which no function "
+               "body will ever contain",
+    "return_tail": "`jr ra` (+ `nop`) that the preceding routine's analysed body "
+                   "stops short of",
+    "bios_thunk_slot": "the delay slot of a `jr $t2` PSX BIOS-call thunk; the "
+                       "body ends at the `jr` because its target is a register",
+}
+
+REJECT_TEXT = {
+    "pointer_stub": ("answer", "recorded interior citation naming its enclosing "
+                     "dump - the corpus's correct handling of a mid-function "
+                     "address, not a missing dump"),
+    "nofunc_record": ("answer", "recorded negative: no analyzed function at or "
+                      "containing that address"),
+    "data_window": ("answer", "a fixed hex or address-range window, declared as "
+                    "a window rather than a body"),
+    "not_a_dump": ("answer", "an analysis script's output whose filename happens "
+                   "to end `_<addr>.txt` - xref sweeps, listings, notes"),
+    "zero_insns": ("defect", "states a size but `0 instructions`: Ghidra decoded "
+                   "none, so the window is data being asked for as code"),
+    "no_extent": ("defect", "a body dump stating neither a size nor a signable "
+                  "instruction stream"),
+    "gapped_stream": ("defect", "printed addresses stop being consecutive, so "
+                      "the range between them is not evidenced"),
+    "empty_dump": ("defect", "a header with no body at all - the dump script "
+                   "wrote its header and then failed"),
+    "zero_bytes": ("defect", "states `size=0`"),
+    "no_entry": ("defect", "an extent with no recoverable entry address"),
+}
+
+
+def render(scus, overlays, amb_totals, data, rejects, attributed):
     ambiguous, resolved, residue = amb_totals
     L = []
     add = L.append
@@ -442,6 +525,24 @@ def render(scus, overlays, amb_totals, data, unparsed, attributed):
         add("`SCUS_942.54` is the only image here with an unambiguous answer: it "
             "is a single load image at a fixed base with no VA aliasing.")
         add("")
+        shapes = scus.get("gap_shapes") or {}
+        if shapes:
+            add("### What the `SCUS_942.54` code gap is")
+            add("")
+            add("Not every gap is an un-analysed routine, and reading the total "
+                "as a worklist overstates what dumping can close. Three of the "
+                "four shapes are properties of where a function *body* ends "
+                "rather than of what has been analysed, so they persist however "
+                "much is dumped.")
+            add("")
+            add("| shape | gaps | bytes | what it is |")
+            add("|---|---:|---:|---|")
+            for key in ("code", "padding", "return_tail", "bios_thunk_slot"):
+                if key not in shapes:
+                    continue
+                n, nb = shapes[key]
+                add("| `%s` | %d | %d | %s |" % (key, n, nb, GAP_SHAPE_TEXT[key]))
+            add("")
         if scus["top_code_gaps"]:
             add("Largest un-dumped **code** runs in `SCUS_942.54` - this is a dump "
                 "worklist, not a defect list:")
@@ -461,17 +562,27 @@ def render(scus, overlays, amb_totals, data, unparsed, attributed):
             "extracted images "
             "(`scripts/ghidra-analysis/dump-extent-attribution.csv`); "
             f"**{residue}** remain unattributable and keep those rows an upper "
-            "bound. The residue is dominated by dump defects - windows too short "
-            "to sign, dumps carrying only decompiled C, gapped streams - so it is "
-            "repaired by re-dumping, not by extracting another overlay. See "
+            "bound. See "
             "[`dump-corpus-integrity.md`](../../docs/tooling/dump-corpus-integrity.md) "
             "and [`phantom-print-index.md`](../../docs/tooling/phantom-print-index.md).")
         add("")
-        add("The inner of two nested spans cannot be repaired this way at all. "
-            "Every extent in it falls in both spans by construction, so most of "
-            "what it loses is loss to the outer image and the same residue is a "
-            "much larger share of what remains. That is structural, not a corpus "
-            "gap, and no amount of dumping moves it.")
+        add("What the residue is decides what closes it, and re-dumping is no "
+            "longer the answer for most of it. Three shapes remain, in "
+            "descending size: windows a few instructions long that no image's "
+            "own content reproduces at that VA - too short to search for "
+            "elsewhere without inviting a coincidence; extents whose bytes are "
+            "in no extracted image at any VA, which need an *extraction* rather "
+            "than a dump, most of them dumped from live RAM captures of "
+            "overlays that have never been extracted statically; and extents "
+            "where two dumps genuinely disagree, which is several routines "
+            "sharing a range and is a real answer rather than a gap.")
+        add("")
+        add("The inner of two nested spans starts at total ambiguity, because "
+            "every extent in it falls in both spans by construction. That much "
+            "is structural. It is **not** a reason the row cannot be measured: "
+            "the bytes place most of those extents in one image or the other, "
+            "and what is structural is only the starting point, not the "
+            "outcome.")
         add("")
     elif overlays:
         add("### Overlay caveat")
@@ -490,9 +601,29 @@ def render(scus, overlays, amb_totals, data, unparsed, attributed):
             "(`scripts/ghidra-analysis/dump-extent-attribution.csv` absent); "
             "overlay rows are attributed by address alone.")
         add("")
-    add("`%d` dump file(s) carried no parseable `size=` header (typically the "
-        "ones that report `0 instructions` and hold only decompiled C). They are "
-        "excluded - such a dump is not evidence of coverage." % unparsed)
+    add("### Files excluded from the numerator")
+    add("")
+    answers = sum(n for k, n in rejects.items()
+                  if REJECT_TEXT.get(k, ("defect",))[0] == "answer")
+    defects = sum(rejects.values()) - answers
+    add("`%d` file(s) in the dump directory are not counted as evidence. They "
+        "are not one population: **%d** are the corpus storing an *answer* "
+        "rather than a dump, and only **%d** are defective dumps. A single "
+        "count over the two invites the wrong reading of what is left to "
+        "repair." % (sum(rejects.values()), answers, defects))
+    add("")
+    add("| class | files | kind | what it is |")
+    add("|---|---:|---|---|")
+    for k, n in sorted(rejects.items(), key=lambda r: -r[1]):
+        kind, why = REJECT_TEXT.get(k, ("defect", "unclassified"))
+        add("| `%s` | %d | %s | %s |" % (k, n, kind, why))
+    add("")
+    add("Header parsing is shared with the attribution sweep "
+        "(`scripts/ghidra-analysis/dump_header.py`) so the two agree about what "
+        "a dump is. The corpus spells every header field more than one way, and "
+        "an instrument with its own regex rejects a different subset of real "
+        "dumps as unparseable - which reads as a corpus gap and is really a "
+        "parser one.")
     add("")
 
     add("## Data")
@@ -566,7 +697,7 @@ def main():
         print("[disc-coverage] Both are gitignored; this gate only measures locally.")
         return 0
 
-    extents, unparsed = read_dump_extents(args.funcs)
+    extents, rejects = read_dump_extents(args.funcs)
     if not extents:
         print("[disc-coverage] SKIPPED - dump corpus present but empty.")
         return 0
@@ -583,7 +714,7 @@ def main():
         print("[disc-coverage] SKIPPED - no extractable images found.")
         return 0
 
-    report = render(scus, overlays, amb_totals, data, unparsed, bool(attrib))
+    report = render(scus, overlays, amb_totals, data, rejects, bool(attrib))
     os.makedirs(args.out, exist_ok=True)
     md_path = os.path.join(args.out, "disc-coverage.md")
     with open(md_path, "w") as fh:

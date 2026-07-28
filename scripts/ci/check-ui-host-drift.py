@@ -45,6 +45,40 @@ They are validated in both directions, which is what keeps the file honest:
 So the waiver file cannot rot into a lie: it only compiles as long as it
 describes the real state of the two hosts.
 
+## The second question: do both hosts feed the builder the same model?
+
+Reachability is only half of "shared". Two hosts can call one builder with
+divergently-constructed arguments and everything above stays green forever -
+same screen, different geometry, no diff to look at. That blind spot is
+structural: the checks above ask whether a host's source *names* a builder,
+never what it passes.
+
+The general form of the second question is not decidable from source text -
+"does `assets.pen(id)` equal `self.menu_window_pen(id)` at runtime" is a
+question about two programs, not two token streams. So this file does not
+attempt it. What it does instead is pin the one part of the divergence that
+*is* exactly decidable, and which is where the duplication actually sits:
+**geometry constants that exist twice, once per host.**
+
+`crates/web-viewer/src/play_menu.rs` carries a 23-row pinned window-rect
+table whose doc comment says it is "byte-identical to the native window's
+`MENU_WINDOW_FALLBACK`". That sentence is the entire guarantee - a prose
+assertion of the kind this repo has already watched go false in the waiver
+file, where a bucket is re-derived from source every run but a *reason* is
+not. [`CONSTANT_PAIRS`] turns those sentences into a check: each pair names a
+constant on each host, and the two initialisers must normalise to the same
+token stream.
+
+Be precise about what that does and does not establish:
+
+* it DOES prove two named constants carry equal values, and that neither was
+  renamed or deleted out from under the pairing;
+* it does NOT prove the two hosts *use* the constants the same way, that they
+  build the same model, or that any un-paired literal agrees.
+
+A narrow check that says so is worth more than a broad one that implies more
+than it measured. Adding a pair is how the covered set grows.
+
 Usage:
 
     python3 scripts/ci/check-ui-host-drift.py            # check, exit 1 on drift
@@ -52,7 +86,8 @@ Usage:
     python3 scripts/ci/check-ui-host-drift.py --list     # full surface table
     python3 scripts/ci/check-ui-host-drift.py --selftest # detector control suite
 
-Exit status: 0 = clean, 1 = drift / stale waiver, 2 = self-test failed.
+Exit status: 0 = clean, 1 = drift / stale waiver / constant mismatch,
+2 = self-test failed.
 """
 
 import argparse
@@ -112,6 +147,177 @@ DRAW_RET_RE = re.compile(r"->[^;{]*(?:TextDraw|SpriteDraw)")
 TRANSFORM_PARAM_RE = re.compile(r"\b(?:SpriteRequest|TextDraw|SpriteDraw)\b")
 
 LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
+
+# Host source files the paired-constant check reads. Named here rather than
+# discovered, because a pair is a claim about two specific declarations.
+NATIVE_WINDOW = "crates/engine-shell/src/bin/legaia-engine/window.rs"
+NATIVE_HUD = "crates/engine-shell/src/bin/legaia-engine/window/hud.rs"
+WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
+WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
+
+# Geometry constants that exist once per host and must agree. See the module
+# docstring for the scope of the claim: equal values, nothing about use.
+#
+# A pair earns its place by being a number the two hosts each hand to the
+# SAME engine-ui builder. That is what makes a divergence a screen that
+# renders differently on the two hosts rather than an unrelated coincidence
+# of two equal integers - `hud.rs`'s `BATTLE_HUD_PEN` is also `(8, 60)` and
+# is deliberately NOT paired with the level-up pen, because nothing says the
+# battle HUD and the level-up banner must move together.
+CONSTANT_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "pinned menu window-descriptor rects (fallback when the disc "
+        "table is absent) - fed to menu_window_chrome_draws_for / tab_banner_draws "
+        "and to every *_draws_for pen on the pause screens",
+        "native": (NATIVE_WINDOW, "MENU_WINDOW_FALLBACK"),
+        "web": (WEB_PLAY_MENU, "WINDOW_FALLBACK"),
+    },
+    {
+        "what": "near-fullscreen content rect for the sub-screens whose retail "
+        "window set is not capture-pinned (Items / Magic / Arts generic frame)",
+        "native": (NATIVE_WINDOW, "MENU_SUBWINDOW_CONTENT"),
+        "web": (WEB_PLAY_MENU, "SUBWINDOW_CONTENT"),
+    },
+    {
+        "what": "field shop / inn overlay pen - shop_draws_for's `pen` argument",
+        "native": (NATIVE_HUD, "SHOP_OVERLAY_PEN"),
+        "web": (WEB_PLAY_SHOP, "SHOP_PEN"),
+    },
+    {
+        "what": "level-up banner pen - level_up_draws_for's `pen` argument",
+        "native": (NATIVE_HUD, "LEVEL_UP_BANNER_PEN"),
+        "web": (WEB_PLAY_SHOP, "LEVEL_UP_PEN"),
+    },
+    {
+        "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
+        "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
+        "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
+    },
+]
+
+BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+USE_STMT_RE = re.compile(r"\buse\s+[^;]*;")
+CONST_DECL_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?const\s+{}\b", re.MULTILINE)
+
+
+def const_initialiser(text: str, name: str) -> str | None:
+    """The source of `const NAME ... = <here>;`, or None if not declared.
+
+    Scans for the terminating `;` at nesting depth zero rather than taking the
+    line, because these initialisers are multi-line array and block
+    expressions. String and char literals are skipped so a `;` inside one
+    cannot end the scan early.
+    """
+    m = CONST_DECL_RE.pattern.format(re.escape(name))
+    decl = re.search(m, text, re.MULTILINE)
+    if not decl:
+        return None
+    eq = text.find("=", decl.end())
+    if eq < 0:
+        return None
+    i, depth, n = eq + 1, 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            nl = text.find("\n", i)
+            i = n if nl < 0 else nl
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+            continue
+        if c == "'":
+            lit = re.match(r"'(?:\\.|[^\\'])'", text[i:])
+            if lit:
+                i += lit.end()
+                continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            return text[eq + 1 : i]
+        i += 1
+    return None
+
+
+def normalise_value(src: str) -> str:
+    """Reduce an initialiser to its value tokens.
+
+    Drops comments, drops `use ...;` (both tables open with an alias import
+    whose spelling is a host's own business), drops trailing commas before a
+    closer, and collapses whitespace - so formatting, rustfmt directives and
+    import aliasing cannot read as a value change, while a single changed
+    digit always does.
+    """
+    src = BLOCK_COMMENT_RE.sub(" ", src)
+    src = LINE_COMMENT_RE.sub(" ", src)
+    src = USE_STMT_RE.sub(" ", src)
+    src = re.sub(r",\s*(?=[)\]}])", "", src)
+    src = re.sub(r"\s+", "", src)
+    return src
+
+
+def check_constant_pairs() -> list[str]:
+    """Compare every [`CONSTANT_PAIRS`] entry; return one message per problem."""
+    problems: list[str] = []
+    for pair in CONSTANT_PAIRS:
+        values: dict[str, str] = {}
+        missing = False
+        for host in ("native", "web"):
+            rel, name = pair[host]  # type: ignore[index]
+            path = REPO / rel
+            if not path.is_file():
+                problems.append(f"CONSTANT {name}: host source {rel} is missing.")
+                missing = True
+                continue
+            raw = const_initialiser(path.read_text(encoding="utf-8"), name)
+            if raw is None:
+                problems.append(
+                    f"CONSTANT {name}: no `const {name}` in {rel}. Renamed or "
+                    f"deleted? Update CONSTANT_PAIRS in "
+                    f"{Path(__file__).name} - an unresolvable pair checks nothing."
+                )
+                missing = True
+                continue
+            values[host] = normalise_value(raw)
+        if missing or len(values) != 2:
+            continue
+        if values["native"] != values["web"]:
+            nrel, nname = pair["native"]  # type: ignore[index]
+            wrel, wname = pair["web"]  # type: ignore[index]
+            nat, web = values["native"], values["web"]
+            problems.append(
+                f"CONSTANT DRIFT {nname} != {wname} ({pair['what']}):\n"
+                f"      native {nrel}:\n        {first_difference(nat, web)}\n"
+                f"      web    {wrel}:\n        {first_difference(web, nat)}\n"
+                f"      Both hosts feed these to the same engine-ui builder, so "
+                f"the screen now renders differently on the two hosts. Make them "
+                f"agree, or move the value into a crate both hosts depend on."
+            )
+    return problems
+
+
+def first_difference(this: str, other: str, window: int = 60) -> str:
+    """`this` windowed around where it first departs from `other`.
+
+    A 23-row table printed from its start is unreadable and, worse, useless:
+    the two renderings agree for hundreds of characters, so a head-truncated
+    dump shows two identical-looking lines and leaves the reader to diff by
+    eye. The divergence is the only part worth printing.
+    """
+    i = 0
+    while i < min(len(this), len(other)) and this[i] == other[i]:
+        i += 1
+    lo = max(0, i - window // 2)
+    hi = min(len(this), i + window)
+    return ("..." if lo else "") + this[lo:hi] + ("..." if hi < len(this) else "")
 
 # A host "has" a screen when its *shipped* code draws it. Both native roots
 # carry `#[cfg(test)]` modules inside `src/` - `engine-render/src/tests/` is a
@@ -361,6 +567,47 @@ SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
 ]
 
 
+# Control suite for the constant-pair normaliser. A normaliser that collapsed
+# everything to "" would report every pair equal and the check would be
+# theatre, so both directions are pinned: noise must vanish, values must not.
+#
+# Each case is `(label, source_a, source_b, should_match)`.
+SELFTEST_CONSTANTS: list[tuple[str, str, str, bool]] = [
+    (
+        "formatting and import aliasing are noise",
+        "{ use legaia_asset::menu_windows::window_ids as w;\n"
+        "  [ (w::TAB_ITEMS, (16, 12, 60, 12)),\n"
+        "    (w::TAB_MAGIC, (16, 12, 60, 12)) ] }",
+        "{use foo::bar as w; [(w::TAB_ITEMS,(16,12,60,12)),(w::TAB_MAGIC,(16,12,60,12)),]}",
+        True,
+    ),
+    (
+        "comments are noise",
+        "(18, 18, 284, 200) // the near-fullscreen stage rect",
+        "(18, 18, 284, 200) /* same rect, different note */",
+        True,
+    ),
+    (
+        "one changed digit is a value change",
+        "(8, 140)",
+        "(8, 141)",
+        False,
+    ),
+    (
+        "a dropped table row is a value change",
+        "[(w::A, (1, 2, 3, 4)), (w::B, (5, 6, 7, 8))]",
+        "[(w::A, (1, 2, 3, 4))]",
+        False,
+    ),
+    (
+        "a reordered table is a value change (id order is the table)",
+        "[(w::A, (1, 2, 3, 4)), (w::B, (5, 6, 7, 8))]",
+        "[(w::B, (5, 6, 7, 8)), (w::A, (1, 2, 3, 4))]",
+        False,
+    ),
+]
+
+
 def run_selftest() -> int:
     failures = 0
     for name, sig in SELFTEST_SCREENS:
@@ -375,7 +622,15 @@ def run_selftest() -> int:
             failures += 1
         else:
             print(f"  ok    {name}: excluded as a draw-list transform")
-    total = len(SELFTEST_SCREENS) + len(SELFTEST_TRANSFORMS)
+    for label, a, b, want in SELFTEST_CONSTANTS:
+        got = normalise_value(a) == normalise_value(b)
+        if got == want:
+            print(f"  ok    constants: {label}")
+        else:
+            verdict = "matched" if got else "differed"
+            print(f"  FAIL  constants: {label} - normaliser {verdict}")
+            failures += 1
+    total = len(SELFTEST_SCREENS) + len(SELFTEST_TRANSFORMS) + len(SELFTEST_CONSTANTS)
     if failures:
         print(
             f"\nself-test: {failures} of {total} case(s) failed - the surface this "
@@ -417,6 +672,15 @@ def main() -> int:
             print(
                 "ERROR: built-in transform control failed; the builder surface is not "
                 "trustworthy. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, a, b, want in SELFTEST_CONSTANTS:
+        if (normalise_value(a) == normalise_value(b)) != want:
+            print(
+                "ERROR: built-in constant-pair control failed; a normaliser that "
+                "cannot tell a value change from formatting proves nothing about "
+                "the pairs below. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -501,11 +765,19 @@ def main() -> int:
         if not str(entry.get("reason", "")).strip():
             problems.append(f"WAIVER {name}: needs a non-empty `reason`.")
 
+    # The model half: paired host constants must carry equal values.
+    problems.extend(check_constant_pairs())
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
             f"({len(both)} on both hosts, {len(drift)} native-only, "
             f"{len(web_ahead)} web-only, {len(orphan)} unused)"
+        )
+        print(
+            f"[ui-drift] paired host geometry constants: {len(CONSTANT_PAIRS)} "
+            f"(value equality only - see the module docstring for what this "
+            f"does not prove)"
         )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")

@@ -274,12 +274,17 @@ pub struct RedirectQuery {
 /// NOT WIRED: retail calls this from the turn picker `FUN_801DABA4` - itself
 /// ported, as `World::next_combatant_by_initiative` - at `0x801DAF14` (party
 /// arm) and `0x801DAF50` (monster arm). The gates the port does not carry are
-/// the **command-flow byte `ctx[+0x06] == 0xFF`** on the party arm and the
+/// the **command-flow byte `ctx[+0x06] == 0xFF`** on the party arm
+/// (`lbu v1,0x6(a0)` / `bne v1,v0` at `0x801DAF04..0x801DAF0C`) and the
 /// enemy-AI pick `FUN_801E9FD4` that precedes the monster arm.
 /// (`ctx[+0x276]`, the outer gate, *is* modelled - it is
-/// `BattleActionCtx::menu_open`.) Adding the re-roll without `ctx[+0x06]`
-/// would spend RNG draws retail does not always make, which is a simulation
-/// change rather than a wiring fix.
+/// `BattleActionCtx::menu_open`.) The `ctx[+0x06]` gate is not merely
+/// unwritten but **unrepresentable**: `engine-core::battle_flow`'s
+/// `BattleFlowState` deliberately folds retail's `0x00..=0x14`, `0xFE` and
+/// `0xFF` into one `Idle` variant, so the port cannot tell `0xFF` from the
+/// other idle values. Adding the re-roll without that gate would spend RNG
+/// draws retail does not always make, which is a simulation change rather
+/// than a wiring fix.
 ///
 /// PORT: FUN_801DB124
 pub fn redirect_dead_target(
@@ -463,14 +468,27 @@ pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
     slot
 }
 
-/// The lowest pool slot that is a valid action *target* / turn participant.
-/// `FUN_801DBA04`.
+/// Roster character id that marks the **AI-controlled companion** seat.
+///
+/// `DAT_8007BD10` is the 3-byte per-slot roster character id (`01 02 03` =
+/// Vahn / Noa / Gala; the array is indexed past its own length by every retail
+/// scan that walks monster slots, which is retail's own over-read into the
+/// adjacent globals). Id `4` is the AI-controlled companion seat - see
+/// `docs/subsystems/battle-action.md`, where the same `== 4` test appears in
+/// the RunBegin arm and in `FUN_801EED1C`'s auto-fight block.
+///
+/// It is **not** an "action state" and `4` is not "removed / done"; an earlier
+/// reading of the two scans below said so and was wrong.
+pub const AI_COMPANION_CHAR_ID: u8 = 4;
+
+/// The lowest pool slot the **player** may still command. `FUN_801DBA04`.
 ///
 /// Scans slots `0..actor_count` and returns the first `i` where all three hold:
-/// the per-slot action-state byte `action_state[i] != 4` (`4` = removed / done),
-/// the actor is alive (`+0x14C`), and it carries no can't-select ailment
-/// (`+0x16E & 0xF84 == 0`). Returns `actor_count` when none qualifies, and `0`
-/// when `actor_count == 0` (retail's `uVar1` seed).
+/// the slot's roster character id is not [`AI_COMPANION_CHAR_ID`]
+/// (`(&DAT_8007BD10)[i] != 4`, `0x801DBA44`), the actor is alive (`+0x14C`,
+/// `0x801DBA54`), and it carries no can't-select ailment
+/// (`+0x16E & 0xF84 == 0`, `0x801DBA64`). Returns `actor_count` when none
+/// qualifies, and `0` when `actor_count == 0` (retail's `uVar1` seed).
 ///
 /// NOT WIRED: a leaf of the battle **command / menu** SM `FUN_801D0748`. That
 /// SM is not "unported" - an earlier note here said so and was wrong: its
@@ -478,20 +496,25 @@ pub fn first_live_monster_slot(pool: &[PoolActor]) -> u8 {
 /// `ctx[+0x06]` cursor, target select = `0x5A`) and its menu half is split
 /// across `battle_input` / `battle_arts` / `battle_magic` / `target_picker`.
 /// What the split does not carry is any per-state *body* - `battle_flow` is a
-/// state model with no leaf calls - and the picker rows it recomposes hold
-/// occupancy plus a validator bit and no `action_state[i] != 4` array or
-/// `+0x16E` ailment word, which is what these three predicates read. The
-/// prerequisite is those two per-slot arrays on the picker's slot state, not
-/// a new port.
+/// state model with no leaf calls.
+///
+/// The **data** prerequisite an earlier note claimed here is withdrawn: it
+/// named "an `action_state[i] != 4` array" the engine would have to grow, and
+/// no such array exists in retail either. Both inputs are already modelled -
+/// the ailment word is
+/// [`crate::battle_action::BattleActor::field_flags`] (`+0x16E`) on the world
+/// actors, and the roster id is per-slot character identity, which
+/// `engine-core` carries as its battle seating. What is genuinely missing is
+/// only a per-state body on `battle_flow` to call this from.
 ///
 /// PORT: FUN_801DBA04
-pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_count: u8) -> u8 {
+pub fn first_selectable_target(pool: &[PoolActor], roster_char_ids: &[u8], actor_count: u8) -> u8 {
     if actor_count == 0 {
         return 0;
     }
     let mut i = 0u8;
     while (i as usize) < actor_count as usize {
-        if action_state[i as usize] != 4
+        if roster_char_ids[i as usize] != AI_COMPANION_CHAR_ID
             && pool[i as usize].alive
             && (pool[i as usize].status & 0xf84) == 0
         {
@@ -511,19 +534,20 @@ pub fn first_selectable_target(pool: &[PoolActor], action_state: &[u8], actor_co
 ///
 /// NOT WIRED: same prerequisite as [`first_selectable_target`] - both are
 /// leaves of the command / menu SM `FUN_801D0748`, whose engine port is a
-/// state model without per-state bodies, and both index per-slot state
-/// (`action_state[]`, `+0x16E`) the engine's picker rows do not carry.
+/// state model without per-state bodies. The inputs are not the blocker:
+/// see that function's note for why the "per-slot arrays the picker does not
+/// carry" reading is withdrawn.
 ///
 /// PORT: FUN_801DB81C
 pub fn next_selectable_actor(
     pool: &[PoolActor],
-    action_state: &[u8],
+    roster_char_ids: &[u8],
     actor_count: u8,
     current_index: u8,
 ) -> u8 {
     let mut i = current_index.wrapping_add(1);
     while (i as usize) < actor_count as usize {
-        if action_state[i as usize] != 4
+        if roster_char_ids[i as usize] != AI_COMPANION_CHAR_ID
             && pool[i as usize].alive
             && (pool[i as usize].status & 0xf84) == 0
         {
@@ -919,15 +943,16 @@ mod tests {
         for p in pool.iter_mut() {
             p.alive = true;
         }
-        // Slot 1 afflicted (0x004 in the 0xF84 mask); slot 2 marked done in the
-        // action-state array; slot 3 is the first fully-selectable one.
+        // Slot 1 afflicted (0x004 in the 0xF84 mask); slot 2 seats the
+        // AI-controlled companion (roster char id 4); slot 3 is the first
+        // fully-selectable one.
         pool[1].status = 0x004;
-        let action_state = [0u8, 0, 4, 0, 0, 0, 0, 0];
-        assert_eq!(first_selectable_target(&pool, &action_state, 6), 0);
-        pool[0].alive = false; // slot 0 out -> skip 1 (ailment), 2 (done) -> 3.
-        assert_eq!(first_selectable_target(&pool, &action_state, 6), 3);
+        let roster = [1u8, 2, AI_COMPANION_CHAR_ID, 3, 3, 3, 3, 3];
+        assert_eq!(first_selectable_target(&pool, &roster, 6), 0);
+        pool[0].alive = false; // slot 0 out -> skip 1 (ailment), 2 (AI) -> 3.
+        assert_eq!(first_selectable_target(&pool, &roster, 6), 3);
         // count == 0 returns the 0 seed.
-        assert_eq!(first_selectable_target(&pool, &action_state, 0), 0);
+        assert_eq!(first_selectable_target(&pool, &roster, 0), 0);
     }
 
     #[test]
@@ -936,16 +961,16 @@ mod tests {
         for p in pool.iter_mut() {
             p.alive = true;
         }
-        let action_state = [0u8; 8];
+        let roster = [1u8; 8];
         // From current index 2, the next is 3.
-        assert_eq!(next_selectable_actor(&pool, &action_state, 6, 2), 3);
+        assert_eq!(next_selectable_actor(&pool, &roster, 6, 2), 3);
         // current+1 already >= count -> returns current+1 unscanned.
-        assert_eq!(next_selectable_actor(&pool, &action_state, 4, 5), 6);
+        assert_eq!(next_selectable_actor(&pool, &roster, 4, 5), 6);
         // No qualifying slot after current -> returns count.
         pool[3].alive = false;
         pool[4].status = 0x080;
-        let action_state2 = [0u8, 0, 0, 0, 0, 4, 0, 0];
-        assert_eq!(next_selectable_actor(&pool, &action_state2, 6, 2), 6);
+        let roster2 = [1u8, 1, 1, 1, 1, AI_COMPANION_CHAR_ID, 1, 1];
+        assert_eq!(next_selectable_actor(&pool, &roster2, 6, 2), 6);
     }
 
     #[test]

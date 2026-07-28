@@ -387,6 +387,29 @@ be inert. What was scanned and why the row is preferred over code is on
 the other two claim kinds a row can make is in
 [`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim).
 
+**Unreferenced is not by itself a reason to exclude.** Being unreachable says
+the port cannot be *wired*; it says nothing about whether the routine is worth
+reproducing. `unreferenced_transport_and_runtime` excludes four such routines
+on what they *are* - drive transport and PsyQ runtime-lib tiers the port
+replaces wholesale - while game-mode handlers and a camera preset from the same
+sweep stay on the worklist, unreferenced and all. A row moves to the ignore
+list on its subject matter, never on its reference count.
+
+### Why this worklist is not zero, and should not be
+
+The port worklist is denominated in addresses this project cites, so it can only
+see code something already pointed at. [`disc-coverage.md`](disc-coverage.md)'s
+denominator is the game's own bytes, and it surfaces routines **no reference of
+any form reaches on the disc** - which means Ghidra built no function record,
+nothing cited them, and no citation-denominated worklist could ever list them.
+
+Documenting one moves it into `dumped + documented, not ported` and the worklist
+rises. That is the two measurements composing correctly: the byte denominator
+finds the work, the citation denominator tracks it. A worklist that stays at
+zero while the byte sweep is still finding code is reporting on its own
+denominator, not on the disc. Never hold the number down by declining to
+document a function, and never park one in the ignore list to hide it.
+
 Default behaviour:
 
 - `--missing-ports` excludes ignored entries. The summary line breaks the

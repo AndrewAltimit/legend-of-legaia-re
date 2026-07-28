@@ -1095,6 +1095,17 @@ pub struct World {
     /// ([`World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
 
+    /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
+    /// [`Self::money`] and [`Self::casino_coins`]. A shop buy credits 5% of
+    /// the gold spent while the party holds the Point Card
+    /// ([`crate::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
+    /// Items screen's "Points Left" line and the shop's window-31 toast
+    /// print, and it is clamped to [`crate::shop::POINT_CARD_CAP`].
+    ///
+    /// See [`crate::shop::point_card_credit`] for the accrual and
+    /// `docs/subsystems/shop.md` for the retail chain.
+    pub point_card: i32,
+
     /// The op-`0x49` sub-screen the submode driver actor is running, if any.
     /// See [`crate::field_submode_screen`]; ticked by
     /// [`World::tick_handler_actors`].
@@ -2414,6 +2425,7 @@ impl World {
             muscle_dome: None,
             muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
+            point_card: 0,
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
             minigame_scene_backup: None,
             minigame_winnings: 0,
@@ -2615,6 +2627,7 @@ impl World {
         self.story_flags = 0;
         self.story_flag_bits.clear();
         self.money = NEW_GAME_STARTING_GOLD;
+        self.point_card = 0;
         self.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
@@ -2646,5 +2659,46 @@ impl World {
         // engine's New Game is that boot.
         self.system_flag_set(0x52F);
         self.mode = SceneMode::Field;
+    }
+
+    /// Does the party hold the **Point Card** (item
+    /// [`crate::shop::POINT_CARD_ITEM_ID`])?
+    ///
+    /// Retail asks the bag-slot scan `FUN_80042F4C(0xFE)` and tests the
+    /// returned count's low halfword (`sll 16` / `beq`), so a slot present
+    /// with count `0` reads as not held - which the `> 0` here matches. The
+    /// gate guards both the accrual and the toast beat: the buy commit
+    /// (`FUN_801DB7F4` case 3) returns straight to the buy list when it is
+    /// closed.
+    ///
+    /// REF: FUN_80042F4C
+    pub fn point_card_held(&self) -> bool {
+        self.inventory
+            .get(&crate::shop::POINT_CARD_ITEM_ID)
+            .is_some_and(|c| *c > 0)
+    }
+
+    /// Credit one buy commit's Point Card accrual and return what was
+    /// added, or `None` when the party does not hold the card.
+    ///
+    /// `(price / 20) * qty`, clamped into [`crate::shop::POINT_CARD_CAP`] -
+    /// the arithmetic the Point Card's own on-disc description states as
+    /// "5% of the price". Retail runs this **before** the gold debit; the
+    /// engine's caller does the same.
+    ///
+    /// PORT: FUN_801DB7F4 (the case-2 accrual arm at
+    /// `0x801dbac8..0x801dbb4c`: the `0xCCCCCCCD` reciprocal divide, the
+    /// `mult` by the quantity, and the `0x0098967F` clamp)
+    ///
+    /// Wired: `crate::menu_runtime`'s `ShopConfirm` buy commit and the
+    /// buy-recipient picker's two purchase arms both call it, and each then
+    /// arms the window-31 toast when it returns `Some`.
+    pub fn credit_point_card(&mut self, price: u16, qty: i32) -> Option<i32> {
+        if !self.point_card_held() {
+            return None;
+        }
+        let credit = crate::shop::point_card_credit(price, qty);
+        self.point_card = crate::shop::apply_point_card(self.point_card, credit);
+        Some(credit)
     }
 }

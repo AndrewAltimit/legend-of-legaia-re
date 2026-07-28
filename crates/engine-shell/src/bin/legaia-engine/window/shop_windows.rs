@@ -44,8 +44,8 @@ use super::*;
 use legaia_engine_core::shop::ShopSession;
 use legaia_engine_render::MenuWindowPainter;
 use legaia_engine_render::ui_menu_window_painters::{
-    counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
-    sell_quantity_draws_for,
+    POINT_CARD_HEADING, POINT_CARD_UNIT_LABEL, amount_prompt_draws_for, counter_panel_draws_for,
+    item_description_draws_for, record_title_tab_draws_for, sell_quantity_draws_for,
 };
 
 /// Vendor-name plate (`0x21`): the record-sourced title tab.
@@ -56,6 +56,8 @@ const WIN_PURSE: usize = 32;
 const WIN_ITEM_INFO: usize = 34;
 /// Sell quantity (`0x25`): quantity, held count, halved total.
 const WIN_SELL_QUANTITY: usize = 37;
+/// Point Card toast (`0x1F`): heading, 8-digit bank, unit label, cursor.
+const WIN_POINT_CARD: usize = 31;
 
 impl PlayWindowApp {
     /// The live shop's vendor name.
@@ -229,6 +231,35 @@ impl PlayWindowApp {
                 out.extend(self.painter_cursor_stand_in(cur));
             }
         }
+
+        // Window 31 - the Point Card toast. Retail's buy commit hands the
+        // widget VM a one-command script (`0x801E4EDC` from the quantity
+        // commit, `0x801E4EA8` from the recipient picker; both decode to
+        // `[open 0x1F]` + terminator) and then stalls for a press, so this
+        // draws exactly while `MenuRuntime` reports the beat.
+        let toast = self
+            .menu_runtime
+            .point_card_toast()
+            .and_then(|_| {
+                legaia_engine_render::painter_at(
+                    table,
+                    WIN_POINT_CARD,
+                    MenuWindowPainter::AmountPrompt,
+                )
+            })
+            .map(|(d, _)| legaia_engine_render::painter_rect(d));
+        if let Some(rect) = toast {
+            let points = world.point_card.max(0) as u64;
+            let (text, cur) = amount_prompt_draws_for(
+                &self.font,
+                rect,
+                POINT_CARD_HEADING,
+                points,
+                POINT_CARD_UNIT_LABEL,
+            );
+            out.extend(text);
+            out.extend(self.painter_cursor_stand_in(cur));
+        }
         out
     }
 
@@ -240,8 +271,15 @@ impl PlayWindowApp {
     /// | Id | Renderer | Content |
     /// |---|---|---|
     /// | 36 (`0x24`) | `FUN_801D56FC` | bag row + one row per member, greyed by the character mask |
-    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare |
+    /// | 25 (`0x19`) | `FUN_801D1290` | the highlighted member's stat compare - **an engine addition**, see below |
     /// | 41 (`0x29`) | `FUN_801D4C28` | the party-wide ATK / UDF / LDF compare |
+    ///
+    /// Retail's picker script `0x801E4E84` opens window 36 and nothing else,
+    /// over the shop set the entry script `0x801E4E64` already put up - which
+    /// includes window 41 but not 25. Window `0x19` is named by one open
+    /// command in the whole menu overlay, the Equip screen's, so this host
+    /// paints one panel more than retail does; the divergence is recorded on
+    /// `engine-ui::recipient_picker_draws_for` and is symmetric across hosts.
     ///
     /// The layout is [`legaia_engine_render::recipient_picker_draws_for`],
     /// the same shared composition the browser play page calls
@@ -254,8 +292,8 @@ impl PlayWindowApp {
         };
         /// Equip-target recipient list (`0x24`).
         const WIN_EQUIP_TARGET: usize = 36;
-        /// Active-character stat compare (`0x19`).
-        const WIN_COMPARE_ACTIVE: usize = 25;
+        // Window 25 (`0x19`, the active-character stat compare) is not a shop
+        // window: its only opener in the menu overlay is the Equip screen's.
         /// Party-wide stat compare (`0x29`).
         const WIN_COMPARE_PARTY: usize = 41;
 
@@ -347,12 +385,8 @@ impl PlayWindowApp {
         let rects = RecipientWindowRects {
             target_list: painter_at(table, WIN_EQUIP_TARGET, MenuWindowPainter::EquipTargetList)
                 .map(|(d, _)| painter_rect(d)),
-            active_compare: painter_at(
-                table,
-                WIN_COMPARE_ACTIVE,
-                MenuWindowPainter::ActiveStatCompare,
-            )
-            .map(|(d, _)| painter_rect(d)),
+            // No window 25: retail's picker script opens only window 36, and
+            // the shop's stat compare is window 41 below.
             party_compare: painter_at(
                 table,
                 WIN_COMPARE_PARTY,
@@ -454,3 +488,8 @@ impl PlayWindowApp {
 /// engine-authored line in the same slot so the translation layer owns the
 /// text.
 const SELL_QUANTITY_HEADING: &str = "How many?";
+
+// Window 31's heading + unit label are `engine-ui`'s
+// `POINT_CARD_HEADING` / `POINT_CARD_UNIT_LABEL` (imported above): both hosts
+// draw this window, so a host-local copy here would be exactly the kind of
+// silent divergence `check-ui-host-drift.py` has to pair constants to catch.

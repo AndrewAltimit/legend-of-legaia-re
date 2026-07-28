@@ -462,66 +462,39 @@ pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
 
 /// A save block is exactly one memory-card block ([`CARD_BLOCK_BYTES`] =
 /// `0x2000` bytes), read as `0x800` little-endian u32 words.
-pub const SAVE_BLOCK_WORDS: usize = 0x800;
+pub const SAVE_BLOCK_WORDS: usize = legaia_save::SC_BLOCK_WORDS;
 
 /// Word index of the stored checksum inside a save block: the last word,
 /// at byte offset `0x1FFC`. The checksum covers only the words *before*
 /// it (`0..SAVE_BLOCK_CHECKSUM_WORD`).
-pub const SAVE_BLOCK_CHECKSUM_WORD: usize = 0x7FF;
+pub const SAVE_BLOCK_CHECKSUM_WORD: usize = legaia_save::SC_BLOCK_CHECKSUM_WORD;
 
 /// Additive checksum over a save block, matching retail's `FUN_801E38D8`.
 ///
-/// The retail routine walks `0x7FF` (2047) little-endian u32 words from
-/// the block base, wrapping the running total (`addu`), and returns it:
+/// The kernel itself lives in `legaia-save`, beside the SC-block bytes it
+/// has to stay consistent with - a save the engine writes and a save the
+/// `save-tool` / card-rack path writes must agree on this word, and one
+/// copy is how that stays true. This is the word-slice face of it for
+/// engine callers that already hold a block as `u32`s.
 ///
-/// ```text
-/// 801e38d8  clear a1            ; sum = 0
-/// 801e38dc  move  v1,a1         ; i   = 0
-/// 801e38e0  lw    v0,0x0(a0)    ; w   = block[i]
-/// 801e38e4  addiu v1,v1,0x1     ; i  += 1
-/// 801e38e8  addu  a1,a1,v0      ; sum = sum +. w   (wrapping)
-/// 801e38ec  slti  v0,v1,0x7ff   ; loop while i < 0x7ff
-/// 801e38f0  bne   v0,zero,...
-/// 801e38f4  _addiu a0,a0,0x4    ; block ptr += 4  (delay slot, always)
-/// 801e38f8  jr    ra
-/// 801e38fc  _move v0,a1         ; return sum
-/// ```
-///
-/// The word it stops before ([`SAVE_BLOCK_CHECKSUM_WORD`], byte `0x1FFC`)
-/// is where the write path stores this value; the load path
-/// (`FUN_801DD35C` body at `0x801df888`) reloads that word and compares it
-/// against a fresh sum to decide block validity - see
-/// [`save_block_checksum_valid`]. Words past index `0x7FF` in a full
-/// `0x800`-word block are ignored.
-// PORT: FUN_801E38D8
-//
-// NOT WIRED: the browser card rack now reads real `0x2000`-byte blocks
-// (`web-viewer::cards`), so the missing backend is no longer the blocker -
-// a **corpus contradiction** is. `legaia-save`'s card layer documents "the
-// SC payload itself has no checksum" (`card::encode_dir_frame`, citing the
-// `FUN_8001A8B0(SC_base, staging, 0x1A18)` copy, which stops short of the
-// `0x1FFC` word this sum is stored at), and its in-place SC edits
-// (`SaveFile::write_into_retail_sc_block`) never recompute the word - so
-// gating the card grid on this sum would caption the engine's own writes
-// as corrupt. Until the `0x801df888` compare is re-verified against a
-// retail-written card (does retail enforce it on load, and over which
-// buffer?), wiring the gate would encode one of two contradictory claims.
+/// REF: FUN_801E38D8 (the `PORT:` is on `legaia_save::card::sc_block_checksum`,
+/// the byte form - retail's argument is a byte pointer, and the byte form is
+/// the one a real card path runs)
 pub fn save_block_checksum(block: &[u32]) -> u32 {
-    block
-        .iter()
-        .take(SAVE_BLOCK_CHECKSUM_WORD)
-        .fold(0u32, |sum, &w| sum.wrapping_add(w))
+    legaia_save::sc_block_checksum_words(block)
 }
 
 /// Whether a save block's stored checksum word matches a fresh
 /// [`save_block_checksum`], the retail load-validity test.
 ///
 /// Retail loads the stored word at byte `0x1FFC` and branches on
-/// `stored == computed` (`0x801df888`: `lw v1,0x1ffc(s1); beq v1,v0`);
-/// a match routes the slot to the "valid save" state, a mismatch to the
-/// "corrupt" state. A block too short to hold the checksum word can never
-/// be valid.
-// REF: FUN_801DD35C (0x801df888 stored-vs-computed compare)
+/// `stored == computed` (`FUN_801DD35C` state 5 at `0x801df888`:
+/// `lw v1,0x1ffc(s1); beq v1,v0`); a match advances to sub-state `0x16`
+/// and the block is copied into live RAM, a mismatch routes to `0x13`,
+/// the "Damaged data." arm. A block too short to hold the checksum word
+/// can never be valid.
+///
+/// REF: FUN_801DD35C (state 5 stored-vs-computed compare)
 pub fn save_block_checksum_valid(block: &[u32]) -> bool {
     block.len() > SAVE_BLOCK_CHECKSUM_WORD
         && save_block_checksum(block) == block[SAVE_BLOCK_CHECKSUM_WORD]

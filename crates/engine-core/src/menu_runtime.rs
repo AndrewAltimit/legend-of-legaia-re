@@ -109,6 +109,20 @@ pub struct MenuRuntime {
     /// the recipient-picker hand both keep the hand on the confirmed row;
     /// the VM's route reset would drop it to row 0).
     stay_cursor: Option<u8>,
+    /// The live **Point Card toast**: `Some(credit)` while retail's window
+    /// `0x1F` is up, holding the points this purchase earned.
+    ///
+    /// Retail's buy commit (`FUN_801DB7F4` case 2 / `FUN_801DB380`) credits
+    /// the Point Card, hands the widget VM the one-command script
+    /// `0x801E4EDC` / `0x801E4EA8` - both are literally `[open window 0x1F]`
+    /// followed by the terminator - and then stalls in a phase that returns
+    /// to the buy list only on a confirm / cancel press. The beat exists
+    /// **only** while the party holds the Point Card: case 3 short-circuits
+    /// straight back to sub-screen `0x1B` when `FUN_80042F4C(0xFE)` is zero.
+    ///
+    /// A host paints window 31 (`engine-ui`'s `amount_prompt_draws_for`)
+    /// while this is `Some`.
+    point_card_toast: Option<i32>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -135,8 +149,17 @@ impl MenuRuntime {
             retail_equipment_buy: false,
             recipient_session: None,
             stay_cursor: None,
+            point_card_toast: None,
             pending: None,
         }
+    }
+
+    /// The live Point Card toast's credit, or `None` when window 31 is not
+    /// up. A host paints the window while this is `Some`; the number it
+    /// prints is the **bank** (`World::point_card`), not this delta - retail
+    /// hands `_DAT_800845B4` to the renderer.
+    pub fn point_card_toast(&self) -> Option<i32> {
+        self.point_card_toast
     }
 
     /// Install the disc-pinned equip restrictions the retail buy dispatch
@@ -235,9 +258,26 @@ impl MenuRuntime {
     /// While a [`BuyRecipientSession`] is live the tick drives *it* instead
     /// of the menu VM - the retail shape, where sub-screen `0x1C` owns the
     /// pad and the buy list stays parked behind it.
+    ///
+    /// The **Point Card toast** takes precedence over the menu VM: retail's
+    /// quantity commit parks in `FUN_801DB7F4` case 4 with window `0x1F`
+    /// open and consumes the next confirm / cancel press itself before
+    /// dropping back to the buy list, so the VM sees neither the frame nor
+    /// the press. The recipient picker owns its own copy of that beat
+    /// ([`BuyRecipientSession`]'s `ToastWait`), so while a picker is live it
+    /// still drives - the toast is only what the host paints.
     pub fn tick(&mut self, world: &mut World, input: MenuInput) -> MenuTickEvent {
         if self.recipient_session.is_some() {
             self.tick_recipient(world, input);
+            return MenuTickEvent::Stepped;
+        }
+        if self.point_card_toast.is_some() {
+            // `FUN_801DB7F4` case 4: `_DAT_800846D0 | _DAT_800846D4` - the
+            // confirm and cancel masks - then SFX `0x20` and sub-screen
+            // `0x1B`. Nothing else on the pad dismisses it.
+            if input.cross || input.circle || input.triangle {
+                self.point_card_toast = None;
+            }
             return MenuTickEvent::Stepped;
         }
         let mut host = MenuRuntimeHost {
@@ -253,6 +293,7 @@ impl MenuRuntime {
             retail_equipment_buy: self.retail_equipment_buy,
             recipient_session: &mut self.recipient_session,
             stay_cursor: &mut self.stay_cursor,
+            point_card_toast: &mut self.point_card_toast,
         };
         step(&mut host, &mut self.ctx, input);
         // A stay-route (refused buy / recipient open) keeps the hand on the
@@ -287,10 +328,12 @@ impl MenuRuntime {
     /// a party row buys **and equips immediately**, returning the displaced
     /// piece to the bag - both then drop back to the buy list.
     ///
-    /// The Point Card accrual the retail commit runs stays out: `World`
-    /// keeps no Point Card counter (see the window-31 waiver in
-    /// `scripts/ci/ui-host-drift-waivers.toml`), so the session is opened
-    /// with `point_card_held = false` and the toast beat never arms.
+    /// Both purchase arms carry the retail commit's **Point Card accrual**
+    /// (`FUN_801DB380` at `0x801db4dc` / `0x801db73c`, the same
+    /// `(price / 20) * 1` credit the quantity commit runs): the session is
+    /// opened with the live gate ([`World::point_card_held`]), so a party
+    /// carrying the card credits the bank and holds the window-31 toast for
+    /// a press before the picker closes.
     fn tick_recipient(&mut self, world: &mut World, input: MenuInput) {
         let Some(session) = self.recipient_session.as_mut() else {
             return;
@@ -303,35 +346,63 @@ impl MenuRuntime {
         );
         let event = session.tick(buttons);
         let done = session.is_done();
-        match event {
-            BuyRecipientEvent::BoughtToBag { item_id, cost, .. } => {
-                Self::apply_recipient_bag_buy(world, item_id, cost);
-            }
+        // The credit only exists once the purchase actually landed - a
+        // refusal (short purse, full stack, no equip record) must bank
+        // nothing and show no window.
+        let landed_credit = match event {
+            BuyRecipientEvent::BoughtToBag {
+                item_id,
+                cost,
+                point_credit,
+            } => Self::apply_recipient_bag_buy(world, item_id, cost).then_some(point_credit),
             BuyRecipientEvent::BoughtAndEquipped {
                 party_index,
                 item_id,
                 cost,
-                ..
-            } => {
-                self.apply_recipient_equip_buy(world, party_index, item_id, cost);
-            }
-            _ => {}
+                point_credit,
+            } => self
+                .apply_recipient_equip_buy(world, party_index, item_id, cost)
+                .then_some(point_credit),
+            _ => None,
+        };
+        if let Some(credit) = landed_credit {
+            self.arm_point_card_toast(world, credit);
         }
         if done || self.recipient_session.as_ref().is_some_and(|s| s.is_done()) {
             self.recipient_session = None;
+            // The picker's own `ToastWait` already consumed the press that
+            // dismissed window 31; the paint flag goes with the session.
+            self.point_card_toast = None;
         }
+    }
+
+    /// Credit the Point Card for a landed recipient-picker purchase and arm
+    /// the window-31 paint flag.
+    ///
+    /// Gated on **holding** the card, not on the credit being non-zero:
+    /// retail's toast is `FUN_80042F4C(0xFE) != 0`, so a sub-20-gold buy
+    /// still shows the window with the bank unchanged. `credit` is the
+    /// session's own `(price / 20) * 1`.
+    fn arm_point_card_toast(&mut self, world: &mut World, credit: i32) {
+        if !world.point_card_held() {
+            return;
+        }
+        world.point_card = crate::shop::apply_point_card(world.point_card, credit);
+        self.point_card_toast = Some(credit);
     }
 
     /// Row-0 commit of the recipient picker: one copy into the bag plus the
     /// gold debit (retail `FUN_800421D4(id, 1)` + the purse store), refused
-    /// past the 99-per-id stack cap the buy paths share.
-    fn apply_recipient_bag_buy(world: &mut World, item_id: u8, cost: i32) {
+    /// past the 99-per-id stack cap the buy paths share. `false` when the
+    /// refusal fired and nothing changed.
+    fn apply_recipient_bag_buy(world: &mut World, item_id: u8, cost: i32) -> bool {
         let owned = *world.inventory.get(&item_id).unwrap_or(&0);
         if owned >= crate::shop::SHOP_HELD_CAP || world.money < cost {
-            return;
+            return false;
         }
         world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
         *world.inventory.entry(item_id).or_insert(0) += 1;
+        true
     }
 
     /// Party-row commit: the buy **equips directly** - the piece never
@@ -339,20 +410,22 @@ impl MenuRuntime {
     /// disc category names returns to the bag (`FUN_801DB380` at
     /// `0x801db6a4`), then the gold debit runs and the ability bits rebuild
     /// (`FUN_80042558` - engine side `World::refresh_party_ability_bits`).
+    /// `false` when the item has no disc equip record, the purse is short,
+    /// or the party index is out of range - nothing changed in each case.
     fn apply_recipient_equip_buy(
         &self,
         world: &mut World,
         party_index: u8,
         item_id: u8,
         cost: i32,
-    ) {
+    ) -> bool {
         use crate::equipment::EquipSlot;
         use legaia_asset::equip_stats::EquipSlot as Disc;
         let Some(entry) = self.equip_info.as_ref().and_then(|i| i.entry(item_id)) else {
-            return;
+            return false;
         };
         if world.money < cost {
-            return;
+            return false;
         }
         let slot = match entry.category {
             Disc::Weapon => EquipSlot::Weapon,
@@ -362,7 +435,7 @@ impl MenuRuntime {
         };
         let idx = slot.as_index() as usize;
         let Some(record) = world.roster.members.get_mut(party_index as usize) else {
-            return;
+            return false;
         };
         let mut equip = record.equipment();
         let displaced = equip.slots[idx];
@@ -373,6 +446,7 @@ impl MenuRuntime {
         }
         world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
         world.refresh_party_ability_bits();
+        true
     }
 
     /// Build the `<save_dir>/slot_NN.bin` path for `slot`.
@@ -535,6 +609,7 @@ struct MenuRuntimeHost<'a> {
     retail_equipment_buy: bool,
     recipient_session: &'a mut Option<BuyRecipientSession>,
     stay_cursor: &'a mut Option<u8>,
+    point_card_toast: &'a mut Option<i32>,
 }
 
 impl MenuRuntimeHost<'_> {
@@ -580,8 +655,9 @@ impl MenuRuntimeHost<'_> {
 
     /// Open the buy-recipient picker for the confirmed buy-list row (retail
     /// sub-screen `0x1C`): `party_count + 1` rows, per-member equippability
-    /// off the equip record's character mask. The Point Card gate stays
-    /// closed - `World` carries no Point Card counter.
+    /// off the equip record's character mask. The Point Card gate is the
+    /// live bag test ([`World::point_card_held`]), so a party carrying the
+    /// card gets the accrual and the toast beat the retail commit runs.
     fn open_recipient_picker(&mut self, slot: u8) {
         let Some(session) = self.shop_session.as_ref() else {
             return;
@@ -596,11 +672,12 @@ impl MenuRuntimeHost<'_> {
             .map(|i| info.can_equip(item.item_id, i as u8))
             .collect();
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
+        let point_card_held = self.world.point_card_held();
         *self.recipient_session = Some(BuyRecipientSession::new(
             item.item_id,
             price,
             can_equip,
-            false,
+            point_card_held,
         ));
     }
 
@@ -647,6 +724,15 @@ impl MenuRuntimeHost<'_> {
         }
     }
 
+    /// Run the Point Card accrual for one purchase and arm the window-31
+    /// toast when it landed. A closed gate (no Point Card in the bag) is
+    /// retail's short-circuit: no credit, no window, no extra press.
+    fn credit_point_card(&mut self, price: u16, qty: i32) {
+        if let Some(credit) = self.world.credit_point_card(price, qty) {
+            *self.point_card_toast = Some(credit);
+        }
+    }
+
     /// `ShopSell` commit: select the picked bag item for sale against the
     /// id-sorted inventory snapshot.
     fn commit_shop_sell(&mut self, slot: u8) {
@@ -668,12 +754,28 @@ impl MenuRuntimeHost<'_> {
 
     /// `ShopConfirm` (Yes) commit: run the buy grant kernel or apply a sell
     /// against the live inventory.
+    ///
+    /// A buy that lands also runs the **Point Card accrual** - retail's
+    /// `FUN_801DB7F4` case 2, which credits `(price / 20) * qty` into
+    /// `_DAT_800845B4` while the party holds item `0xFE`, then opens window
+    /// `0x1F` and stalls for a press (case 4). This engine screen is the
+    /// port of that sub-screen, so the accrual belongs here rather than in
+    /// [`World::buy_from_shop`]: the grant kernel is also the randomizer
+    /// oracles' entry point, and retail's kernel-equivalent (`FUN_800421D4`
+    /// + the purse store, case 3) carries no accrual either.
     fn commit_shop_confirm(&mut self) {
         if let Some(session) = self.shop_session.as_ref() {
             if session.pending_is_buying {
+                let unit_price = session
+                    .pending_item_id
+                    .and_then(|id| session.inventory.find(id))
+                    .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX));
                 // Shared grant kernel (also driven by the shop / casino
                 // randomizer runtime oracles).
-                self.world.buy_from_shop(session);
+                let bought = self.world.buy_from_shop(session);
+                if let (Some((_, qty, _)), Some(price)) = (bought, unit_price) {
+                    self.credit_point_card(price, i32::from(qty));
+                }
             } else if let Some(item_id) = session.pending_item_id {
                 let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
                 if let Some((item_id, qty, delta)) = session.try_sell(held) {
@@ -1289,6 +1391,106 @@ mod tests {
         assert_eq!(world.money, 400, "100 gold deducted");
         assert_eq!(world.inventory.get(&10), Some(&1), "one item 10 granted");
         assert!(runtime.shop_session.is_some(), "still shopping");
+    }
+
+    /// The buy commit's Point Card accrual (`FUN_801DB7F4` case 2) and the
+    /// window-31 beat that follows it (cases 3 + 4): a party carrying item
+    /// `0xFE` banks 5% of the gold spent and the runtime holds the toast
+    /// until a press, which the menu VM never sees.
+    #[test]
+    fn shop_buy_credits_the_point_card_and_holds_the_window_31_toast() {
+        use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.money = 500;
+        world.inventory.insert(POINT_CARD_ITEM_ID, 1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 10,
+                price: 100,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+
+        runtime.tick(&mut world, cross()); // ShopBuy -> ShopQuantity
+        runtime.tick(&mut world, cross()); // ShopQuantity -> ShopConfirm
+        runtime.tick(&mut world, cross()); // ShopConfirm (yes): the commit
+
+        assert_eq!(world.money, 400, "the gold debit still runs");
+        assert_eq!(world.point_card, 5, "100 / 20 * 1 banked");
+        assert_eq!(
+            runtime.point_card_toast(),
+            Some(5),
+            "the toast is up with this purchase's credit"
+        );
+
+        // While the toast is up the VM is frozen: a d-pad frame moves
+        // nothing, because retail's case 4 only tests the confirm / cancel
+        // masks.
+        let state_before = runtime.ctx.state;
+        runtime.tick(&mut world, down());
+        assert!(runtime.point_card_toast().is_some(), "d-pad does not clear");
+        assert_eq!(runtime.ctx.state, state_before);
+
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.point_card_toast(), None, "a press dismisses it");
+    }
+
+    /// Without the card in the bag the accrual short-circuits and so does
+    /// the beat - retail's case 3 returns straight to sub-screen `0x1B`.
+    #[test]
+    fn shop_buy_without_the_point_card_neither_credits_nor_toasts() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.money = 500;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 10,
+                price: 100,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+        runtime.tick(&mut world, cross());
+        runtime.tick(&mut world, cross());
+
+        assert_eq!(world.inventory.get(&10), Some(&1), "the buy still lands");
+        assert_eq!(world.point_card, 0);
+        assert_eq!(runtime.point_card_toast(), None);
+        assert_eq!(
+            runtime.ctx.state,
+            MenuState::ShopBuy.as_byte(),
+            "and the list is reachable on the very next frame"
+        );
+    }
+
+    /// A refused buy (short purse) must not bank points: retail's case 2
+    /// is only reached from the quantity screen a affordable row opened.
+    #[test]
+    fn a_refused_buy_banks_no_points() {
+        use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.money = 50;
+        world.inventory.insert(POINT_CARD_ITEM_ID, 1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 10,
+                price: 100,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+
+        assert_eq!(world.point_card, 0);
+        assert_eq!(runtime.point_card_toast(), None);
     }
 
     #[test]

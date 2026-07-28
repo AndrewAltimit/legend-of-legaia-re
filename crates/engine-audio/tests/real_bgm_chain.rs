@@ -122,23 +122,38 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
     );
 
     let mut sequencer = Sequencer::new(seq, bank);
-    // Drive 200 ms of music. Real SEQ tempos sit around 120 BPM
-    // (500_000 us/qn) - 200 ms is enough for at least one ProgramChange
-    // + NoteOn to fire.
-    for _ in 0..40 {
-        sequencer.tick_us(&mut spu, 5_000.0);
-    }
-
+    // Drive four whole notes at the track's OWN tempo, not a fixed
+    // wall-clock slice. This used to be a flat 200 ms justified as "real
+    // SEQ tempos sit around 120 BPM, enough for a ProgramChange + NoteOn" -
+    // but this entry's body tempo is 70 BPM, where a single quarter note is
+    // 857 ms, so the window closed before the first note and the chain
+    // rendered pure silence on every run. Deriving the span from
+    // `first_tempo` is what makes the bar below reachable for any track.
+    let us_per_qn = first_tempo.unwrap_or(500_000) as f64;
+    let steps = ((us_per_qn * 16.0) / 5_000.0).ceil() as usize;
+    // Sample the SPU *across* the drive rather than in one window at the
+    // end: a fixed end-window can land in a rest between phrases and read
+    // silent even on a healthy chain, which would make the assertion below
+    // depend on where the music happens to be rather than on whether it
+    // plays at all.
     let mut max_abs: i32 = 0;
-    for _ in 0..1024 {
-        let (l, r) = spu.tick();
-        max_abs = max_abs.max((l as i32).abs()).max((r as i32).abs());
+    for _ in 0..steps {
+        sequencer.tick_us(&mut spu, 5_000.0);
+        for _ in 0..64 {
+            let (l, r) = spu.tick();
+            max_abs = max_abs.max((l as i32).abs()).max((r as i32).abs());
+        }
     }
-    eprintln!("[real-bgm] post-render max |sample| = {max_abs}");
-    // Acceptance bar: SEQ + VAB parse without panic, the sequencer ticks,
-    // the SPU renders 1024 samples without panic. Whether those samples
-    // are audible depends on real-game program/tone routing - the
-    // synthetic chain test asserts non-silence with a known-amplitude
-    // VAG; here the real SEQ may take a measure or two of silent rests
-    // before NoteOn, so the bar is correctness-of-wiring.
+    eprintln!("[real-bgm] peak |sample| over {steps} steps = {max_abs}");
+    // Acceptance bar: the REAL bank and the REAL sequence produce audible
+    // PCM. The old bar was "renders 1024 samples without panic", which the
+    // silent window above made vacuous - a wholly broken synthesis path
+    // passed it. Non-silence on the real chain is the property the
+    // synthetic known-amplitude test could only assert about itself.
+    assert!(
+        max_abs > 0,
+        "real SEQ + VAB rendered silence after {steps} sequencer steps \
+         ({:.1} BPM); the chain parsed but produced no PCM",
+        60_000_000.0 / us_per_qn
+    );
 }

@@ -409,10 +409,15 @@ def dump(addr_str):
     print("wrote {}".format(out_path))
 
 
-# DUMP_ONLY=<addr> dumps just that one function (fast one-off); otherwise
-# the whole TARGETS catalog is re-dumped.
+# DUMP_ONLY=<addr>[,<addr>...] dumps just those functions (fast one-off);
+# otherwise the whole TARGETS catalog is re-dumped. A list is accepted because
+# the disc-denominated gap worklist
+# (`scripts/ci/disc-coverage.py`, docs/tooling/disc-coverage.md) arrives as a
+# batch of un-dumped code runs, and one `analyzeHeadless` invocation per address
+# costs a project open each time.
 _only = os.environ.get("DUMP_ONLY")
-for t in ([_only] if _only else TARGETS):
+_targets = [t for t in _only.replace(",", " ").split()] if _only else TARGETS
+for t in _targets:
     dump(t)
 
 print("done")

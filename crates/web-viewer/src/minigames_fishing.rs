@@ -811,6 +811,11 @@ fn card_patch_fishing_core(
     wr(SC_FISHING_BEST_FISH, best_fish);
     wr(SC_FISHING_CASTS, casts.max(0) as u32);
     wr(SC_FISHING_PURCHASED, purchased);
+    // The SC payload carries its own additive checksum at
+    // `RETAIL_BLOCK_CHECKSUM_OFFSET`; retail's load path re-sums the block and
+    // routes a mismatch to "Damaged data.", so an in-place edit that skips the
+    // restamp produces a card the game refuses.
+    legaia_save::restamp_sc_block_checksum(sc);
     Ok(out)
 }
 
@@ -823,8 +828,9 @@ pub fn card_fishing_json(bytes: Vec<u8>, block: u8) -> Result<String, JsValue> {
 }
 
 /// Write the fishing block back into save block `block`, returning the whole
-/// container with only those seven dwords changed - the same in-place edit
-/// shape as `card_patch_coins`, so the card still loads in an emulator.
+/// container with only those seven dwords changed plus the block checksum
+/// word - the same in-place edit shape as `card_patch_coins`, so the card
+/// still loads in an emulator and retail still accepts it.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn card_patch_fishing(
@@ -868,6 +874,12 @@ mod tests {
         wr(&mut card, SC_FISHING_BEST_FISH, 5);
         wr(&mut card, SC_FISHING_CASTS, 77);
         wr(&mut card, SC_FISHING_PURCHASED, 0b101);
+        // Retail stamps the SC payload's additive checksum on every write, so a
+        // fixture without one models a card the game refuses. Stamp it, and the
+        // no-op-patch assertion below compares two blocks that are both valid
+        // rather than two that are equally rejected.
+        let sc = &mut card[b..b + legaia_save::BLOCK_SIZE];
+        legaia_save::restamp_sc_block_checksum(sc);
         card
     }
 
@@ -904,10 +916,19 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         assert!(!diff.is_empty());
+        // The restamped checksum word moves with them: an in-place edit that
+        // left it stale would produce a block retail rejects as damaged.
+        let ck = base + legaia_save::RETAIL_BLOCK_CHECKSUM_OFFSET;
         assert!(
-            diff.iter()
-                .all(|&i| (base + SC_FISHING_POINTS..base + SC_FISHING_PURCHASED + 4).contains(&i)),
-            "only the fishing block may change: {diff:?}"
+            diff.iter().all(
+                |&i| (base + SC_FISHING_POINTS..base + SC_FISHING_PURCHASED + 4).contains(&i)
+                    || (ck..ck + 4).contains(&i)
+            ),
+            "only the fishing block and its checksum may change: {diff:?}"
+        );
+        assert!(
+            diff.iter().any(|&i| (ck..ck + 4).contains(&i)),
+            "the checksum word must be restamped"
         );
     }
 }

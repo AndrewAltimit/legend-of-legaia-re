@@ -330,19 +330,34 @@ pub fn counter_panel_draws_for(
 /// character's **learned-magic id list**, whose length byte sits one earlier
 /// at `+0x13C` - the same byte the records page prints under "Magic"
 /// (`crate::ui_menu::records_screen`, whose own rebase table pins the pair).
-/// So `DAT_8007BB78` is a list index and the substituted byte is a spell id:
-/// window 7 is a prompt about one of the selected character's spells, which
-/// narrows "which flow opens it" to the magic-side flows even though the
-/// exact one is still unpinned.
+/// So `DAT_8007BB78` is a list index and the substituted byte is a spell id.
+///
+/// **Which flow opens it is pinned**, and it is narrower than "the magic
+/// side": the two magic-cast sub-screens `FUN_801D9280` (all-targets) and
+/// `FUN_801D9594` (single target), menu sub-screens `0x0F` / `0x10`. Both
+/// run the same three beats - seed `_DAT_8007BB70` and `_DAT_8007BB78` to
+/// `0xFF`, debit MP, call the effect-apply handler `FUN_800402F4`, and then
+/// open this window (scripts `0x801E4D50` / `0x801E4D78`, each one command:
+/// `01 07`) **only if the sentinel changed**, holding for a confirm /
+/// cancel press before closing it again.
+///
+/// What changes the sentinel is a **spell level-up**. The apply handler's
+/// two HP-heal arms compare a per-spell u16 threshold against the caster's
+/// `+0x5D0` accumulator, bump the level byte at record `+0x161 + index` and
+/// call the notification setter `FUN_80035C00(slot, index)`, which is the
+/// pair `(gp+0x858, gp+0x860)` = `(_DAT_8007BB70, _DAT_8007BB78)`. So the
+/// window says *this spell of this character went up a level*, and the
+/// substituted glyph is that spell's id.
 ///
 /// PORT: FUN_801DCCB4
-/// NOT WIRED: what must exist first is a **magic-side screen that carries a
-/// NOT WIRED: learned-magic list index**. The substituted glyph is
-/// NOT WIRED: `record[0x13D + DAT_8007BB78]`, an entry of the selected
-/// NOT WIRED: character's learned-magic id list; no engine session models that
-/// NOT WIRED: index (`spell_menu_draws_for`'s cursor selects a catalog row, not
-/// NOT WIRED: a record-list slot), so a host has nothing to substitute. Which
-/// NOT WIRED: magic flow opens window 7 is still unpinned. Waived in
+/// REF: FUN_80035C00 - the `(slot, list index)` notification setter
+/// NOT WIRED: what must exist first is **spell level-up on cast**. The
+/// NOT WIRED: engine models per-spell levels (`legaia_save::SpellList::levels`,
+/// NOT WIRED: record `+0x161`) but nothing raises one: no engine cast path
+/// NOT WIRED: runs the apply handler's threshold test, so nothing ever
+/// NOT WIRED: produces the `(caster slot, list index)` pair this window
+/// NOT WIRED: exists to announce. A host wiring it today would have to
+/// NOT WIRED: invent both the trigger and the pair. Waived in
 /// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
@@ -370,9 +385,34 @@ pub fn char_prompt_draws_for(
 /// the accent pen, and puts the unit label `0x40` to its right back in the
 /// default pen.
 ///
+/// **Which flow opens it** is on the disc, not a guess: the retail buy
+/// commits hand the widget VM a script whose whole body is `01 1F` +
+/// terminator - "open window `0x1F`" - immediately after crediting the
+/// counter. `0x801E4EDC` is the quantity commit's (`FUN_801DB7F4` case 2),
+/// `0x801E4EA8` the recipient picker's (`FUN_801DB380`), and both stall in
+/// a following phase that returns to the buy list only on a confirm /
+/// cancel press.
+///
 /// PORT: FUN_801DCE20
-/// NOT WIRED: the engine models no Point Card total, so there is nothing to
-/// NOT WIRED: print; waived in scripts/ci/ui-host-drift-waivers.toml
+///
+/// Wired: `engine-core::World::point_card` is the counter and
+/// `MenuRuntime::point_card_toast` the beat; both hosts paint this window
+/// while the toast is up, off the same disc-parsed rect as the shop's other
+/// descriptor windows, and both label it with [`POINT_CARD_HEADING`] /
+/// [`POINT_CARD_UNIT_LABEL`] below.
+/// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
+/// character-substitution token the dialog codec resolves at draw time; the
+/// port stages an engine-authored line in the same slot.
+///
+/// Both hosts draw this window, so the label lives beside the builder rather
+/// than once per host - two host-local copies would be a divergence the
+/// drift gate could only catch by pairing them.
+pub const POINT_CARD_HEADING: &str = "Points earned";
+
+/// The unit label window 31 puts `0x40` right of its number field
+/// (`0x801CEA50`). Shared for the same reason as [`POINT_CARD_HEADING`].
+pub const POINT_CARD_UNIT_LABEL: &str = "point(s).";
+
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -426,17 +466,26 @@ pub fn amount_prompt_draws_for(
 /// its port is folded into [`crate::items_screen_draws_for`], which carries
 /// the `FUN_801D0F1C` tag, rather than standing alone as a rect painter.
 ///
+/// **The screen is pinned.** Window 24's rect is byte-identical to window
+/// 17's, so which screen opens it could not be read off the geometry - but
+/// it can be read off the open scripts. Exactly one command in the whole
+/// menu overlay opens window `0x18`, and the same script opens windows `2`
+/// and `0x19` with it: `0x801E4DC8`, run by menu sub-screen `0x13`
+/// (`FUN_801D9C14`). Window 2 is the **Equip** title tab and window 25 the
+/// active-character stat compare, so window 24 is the Equip screen's
+/// item panel, not a second Items screen.
+///
 /// PORT: FUN_801DCC20
 /// REF: FUN_801d0f1c - the shared item-info panel this painter is the delta
 /// over. Ported in `crate::ui_menu::pause_lists`, not here.
-/// NOT WIRED: two things must exist first, and neither is a call site. The
-/// NOT WIRED: painter is only the **delta** over the shared item-info panel
-/// NOT WIRED: (`jal 0x801D0F1C`), so a host adopting it has to draw that panel
-/// NOT WIRED: into the same rect first - this alone is not a screen. And
-/// NOT WIRED: window 24's rect is byte-identical to window 17's, so the two
-/// NOT WIRED: are the same box in different screens; which screen opens 24
-/// NOT WIRED: rather than 17 is unpinned, and picking one would invent a flow.
-/// NOT WIRED: Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is the **Equip screen's item panel**,
+/// NOT WIRED: and this painter is only its delta: the gated body opens with
+/// NOT WIRED: `jal 0x801D0F1C`, the shared item-info panel window 17 also
+/// NOT WIRED: draws, so a host adopting window 24 draws that panel into the
+/// NOT WIRED: same rect first and adds this count on top. The engine's equip
+/// NOT WIRED: screen (`engine-ui::ui_menu::equipment`) is a slot list with no
+/// NOT WIRED: item-info panel at all, so there is no rect to add a count to
+/// NOT WIRED: yet. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -535,16 +584,25 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// choice block's marker column at `WX + 0x30` with its first row one
 /// `0x10` step below the heading.
 ///
+/// **This is the casino prize counter's Yes/No confirm**, not an options
+/// screen. Exactly one command in the menu overlay opens window `0x2E`:
+/// script `0x801E4F2C`, run from sub-screen `0x20` (`FUN_801DC1CC`, the
+/// prize exchange) at the point where a chosen prize passes the coin and
+/// held-cap gates. The sibling script `0x801E4F34` closes it again on No or
+/// cancel, and the exchange seeds the cursor to row `1` first - retail's
+/// "No is the default" convention.
+///
 /// PORT: FUN_801D603C
-/// NOT WIRED: what must exist first is a **two-row choice screen whose state
-/// NOT WIRED: is the `DAT_801E46D0` flags word**. The options screen both hosts
-/// NOT WIRED: draw (`crate::options_draws_for`) is a multi-row label/value
-/// NOT WIRED: list, so adopting windows 46 / 5 replaces its layout wholesale
-/// NOT WIRED: rather than filling a hole in it; and the confirm prompts that do
-/// NOT WIRED: exist carry no flags word (`confirm_prompt_draws` takes no
-/// NOT WIRED: selection, `confirm_dialog_text_draws_for` a plain 0/1 cursor),
-/// NOT WIRED: so two of [`ChoiceFlags`]'s three marker arms would stay
-/// NOT WIRED: unreachable. Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is a **host that mounts the prize
+/// NOT WIRED: exchange**. The session is ported and complete
+/// NOT WIRED: (`engine-core::prize_exchange::PrizeExchangeSession`, whose
+/// NOT WIRED: state 2 is exactly this confirm), but no host opens it, so
+/// NOT WIRED: nothing reaches the confirm beat. The flags word is **not** a
+/// NOT WIRED: gap: it is the shared cursor word `FUN_801D688C` maintains,
+/// NOT WIRED: and its four-way decode is already ported live as
+/// NOT WIRED: `engine-core::shop::shop_cursor_mode` - the same three bits,
+/// NOT WIRED: the same arms as [`ChoiceFlags::marker_variant`]. Waived in
+/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -575,11 +633,25 @@ pub fn choice_panel_draws_for(
 /// `WX + 0x3C` rather than `WX + 0x30`. Everything below that is the same
 /// branch chain as window 46.
 ///
+/// Its screen is a different one from window 46's. Script `0x801E4BD4`
+/// (`05 00`, `01 05`) is the only opener, and it belongs to menu sub-screen
+/// `3` (`FUN_801D6D38`): a two-row confirm seeded to row `1` = No, whose
+/// Yes routes to sub-screen `0` (leave the menu) and whose No returns to
+/// the pause root. The pause root reaches it from **cancel**, and only
+/// under one condition - `_DAT_8007B450` non-null with its first byte
+/// `0x0D`, the entry-context kind (`0x801d6cf8..0x801d6d18`). So this is
+/// the "really leave?" gate on a scripted menu, not a general confirm.
+///
 /// PORT: FUN_801D61B0
-/// NOT WIRED: same missing prerequisite as [`choice_panel_draws_for`] - a
-/// NOT WIRED: two-row choice screen driven by the `DAT_801E46D0` flags word -
-/// NOT WIRED: plus a second heading line no engine screen has a model for.
-/// NOT WIRED: Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is the **entry-context kind**. Retail
+/// NOT WIRED: keeps one global pointer whose first byte says which flow
+/// NOT WIRED: opened the menu, and the port deliberately replaced it with a
+/// NOT WIRED: per-context tagged park, so nothing holds a byte to compare
+/// NOT WIRED: against `0x0D` - the same gap that gates the pause root's
+/// NOT WIRED: entry-context row (see docs/tooling/live-audit-triage.md).
+/// NOT WIRED: Until the op-`0x49` arm records its sub-op there is no
+/// NOT WIRED: condition under which this screen opens. Waived in
+/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn two_line_choice_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -616,14 +688,23 @@ pub fn two_line_choice_panel_draws_for(
 /// other painter here anchors on the origin alone, so this one is the only
 /// one whose cursor moves when a window is resized.
 ///
+/// The screen it belongs to is menu sub-screen `4` (`FUN_801DD1B8`, script
+/// `0x801E4BE0`, the only opener of window `0x06`): it opens the window,
+/// waits for a confirm / cancel press and routes back to the pause root.
+/// That is a **notice panel**, which is why its only cursor is the corner
+/// advance hand. `FUN_801DC6B4` selects sub-screen `4` as the menu's
+/// *entry* screen when the entry-context byte is `0x0D`
+/// (`0x801dc8d0..0x801dc8e4`) - the same kind whose exit confirm is
+/// [`two_line_choice_panel_draws_for`]'s window 5.
+///
 /// PORT: FUN_801D6360
-/// NOT WIRED: what must exist first is the **screen window 6 belongs to**, and
-/// NOT WIRED: the one candidate is ruled out: the pause command list both hosts
-/// NOT WIRED: draw (`crate::field_menu_draws_for`) takes its geometry from
-/// NOT WIRED: window 50, so this is not that list under another id. No other
-/// NOT WIRED: engine screen is a flat six-label stack, and the extent-anchored
-/// NOT WIRED: cursor means a host cannot borrow the rect from a neighbour - it
-/// NOT WIRED: would move. Waived in scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: same missing prerequisite as window 5 - the **entry-context
+/// NOT WIRED: kind**. The port replaced retail's single entry-context
+/// NOT WIRED: pointer with a per-context tagged park, so no byte exists to
+/// NOT WIRED: match against `0x0D`, and nothing selects this screen. The
+/// NOT WIRED: six labels are also content the entry-context record owns, so
+/// NOT WIRED: a host has neither the trigger nor the text. Waived in
+/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
@@ -1136,6 +1217,36 @@ mod tests {
     }
 
     // -- FUN_801DCCB4 / FUN_801DCE20 -----------------------------------
+
+    /// Window 31's three pens, off `FUN_801DCE20`: the heading at the
+    /// content origin, the 8-cell bank one row pitch below it in the
+    /// accent pen, the unit label `0x40` right of that, and the corner
+    /// cursor at the fixed `(+0xE6, +0xD)` inset the whole notify family
+    /// shares with window 7.
+    #[test]
+    fn amount_prompt_puts_its_number_a_row_below_the_heading() {
+        let font = legaia_font::Font::placeholder();
+        let (draws, cur) = amount_prompt_draws_for(&font, W32, "earned", 12, "pt");
+        assert_eq!((cur.x, cur.y), (W32.x + 0xE6, W32.y + 0x0D));
+        let row1 = W32.y + PAINTER_ROW_PITCH;
+        // The 8-cell field is right-aligned, so "12" inks the last two
+        // cells - never the field origin.
+        let digits: Vec<i32> = draws
+            .iter()
+            .filter(|d| d.dst.1 == row1 && d.color == PAINTER_INK_ACCENT)
+            .map(|d| d.dst.0)
+            .collect();
+        assert_eq!(digits.len(), 2);
+        assert!(digits.iter().all(|x| *x > W32.x));
+        // The unit label shares the number's row but keeps the default pen.
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.1 == row1 && d.dst.0 >= W32.x + 0x40 && d.color == MENU_TEXT_WHITE)
+        );
+        // The heading is the only thing on the origin row.
+        assert!(draws.iter().any(|d| d.dst.1 == W32.y));
+    }
 
     // -- FUN_801D4A80 --------------------------------------------------
 

@@ -71,6 +71,26 @@ The correction moves anchors in one direction only. Every anchor the corrected
 audit calls inert was called inert before it, so nothing became a *newly*
 claimed wiring gap and `--not-live` stayed a floor.
 
+### Which crate an anchor sits in decides whether it can be wired at all
+
+`engine-core` has no `[[bin]]` and no `#[wasm_bindgen]` entry point, and
+neither does `engine-vm`, `engine-ui` or `legaia-asset`. Reachability is
+measured from *host* roots - `engine-shell`, `web-viewer`, `asset-viewer` - so
+an anchor in a library crate can only become live through an edit in a crate
+that has a root. There is no arrangement of library-side code that makes one
+reachable.
+
+Two consequences worth carrying into how work is scoped. A pass scoped to
+library files can produce `CORRECT` and `DELETE` verdicts but structurally
+cannot produce a `WIRE`; if it reports one, check what it actually edited.
+And a wiring effort should be partitioned by the **host** whose flow is
+missing rather than by the crate the port happens to live in - the same
+partition-by-call-site rule the feature views use, applied one level up.
+
+The exception is a port whose natural home *is* a rooted crate. The SC block
+checksum below is one: it was reproduced in `legaia-save`, which `save-tool`
+roots, so it wired the moment it existed.
+
 ## Analysis defects this triage found
 
 Four classes of audit false negative, each verified against a positive control,
@@ -798,6 +818,33 @@ and honest (it reads what the world can answer) but cannot reach the blocking
 kind until the op-`0x49` arm records its sub-op. A disclosure that lumps the
 two together as "both inputs are missing" reads as one piece of work and is
 two.
+
+### The card cluster's second re-read: the block carries a checksum
+
+The cluster's "one gap, an asynchronous card backend" reading held, but a
+re-read of the *byte* half found the port writing blocks retail refuses. The
+SC payload carries an **additive checksum** at
+[`RETAIL_BLOCK_CHECKSUM_OFFSET`](../formats/save-record.md): the composer
+`FUN_801E1934` sums the block and stores at `+0x1FFC`, and the load path's
+state 5 (`FUN_801DD35C` at `0x801df880`) re-sums and routes a mismatch to the
+"Damaged data." arm. `legaia-save` had asserted in four places that no such
+word existed, so every in-place edit it performed left the word stale.
+
+Two things generalise from it. The claim was **negative** - "there is no
+checksum" - and a negative is not settled by reading the writer, only by
+reading the *reader*; nothing had looked at the load path. And the cluster's
+inert-ness hid it: because no host ran the card flow, no test round-tripped a
+real block through both directions, so the defect sat behind the same wall the
+wiring worklist describes. **An inert cluster's disclosures can be right about
+the wiring and wrong about the bytes** - re-read both halves.
+
+Four further claims fell with it, all corrected in
+[`save-screen.md`](../subsystems/save-screen.md): `DAT_80084140` is the live
+game-state window the block is composed *from*, not a save-block existence
+table (the array walked at `+0x1818` is the item bag); the read and compose
+buffers are two distinct `0x2000` regions (`0x801E5120` / `0x801E7120`), not
+one used both ways; and `FUN_801DAFD4` is the shop's Buy/Sell/Quit picker
+rather than a save-slot confirm.
 
 ### A latent duplicate-free-function-name landmine, defused
 

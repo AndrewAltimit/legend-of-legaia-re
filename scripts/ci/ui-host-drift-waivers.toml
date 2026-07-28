@@ -156,79 +156,103 @@ is an opt-in only the person running the program can take.
 builder = "char_prompt_draws_for"
 kind = "orphan"
 reason = """
-Window id 7 (`FUN_801DCCB4`). The `renderer_va` dispatch resolves it, so that
-is no longer the blocker; the blocker is content plus a screen. The prompt is
-a scratch string at `0x801E46E4` whose byte `+1` retail overwrites with
-`record[0x13D + DAT_8007BB78]` - the disassembly scales `DAT_8007BB70` by the
-`0x414` character-record stride and adds `DAT_8007BB78` as a plain byte
-offset off the `0x80084708` record base. No host knows what that field holds
-(it is not the name, whose field is `+0x2A7`), and which flow opens window 7
-is unknown: the save/load confirm both hosts draw is `ui_title_save`, a
-different window family.
+Window id 7 (`FUN_801DCCB4`), the **spell level-up notice**. The flow that
+opens it is pinned, not open: the two magic-cast sub-screens `FUN_801D9280`
+(all targets) and `FUN_801D9594` (single target) seed `_DAT_8007BB70` /
+`_DAT_8007BB78` to `0xFF`, run the effect-apply handler, and open this window
+(one-command scripts `0x801E4D50` / `0x801E4D78`) only when the sentinel
+changed - then hold for a press. What changes it is a level-up: the apply
+handler's HP-heal arms compare a per-spell threshold against the caster's
+`+0x5D0` accumulator, bump the level byte at record `+0x161 + index`, and call
+`FUN_80035C00(slot, index)` - the setter for exactly that pair.
+
+The blocking capability is therefore **spell level-up on cast**, not a screen.
+The engine already models per-spell levels (`legaia_save::SpellList::levels`),
+but no cast path raises one, so the `(caster slot, list index)` pair the window
+announces is never produced and the prompt has nothing to substitute. Close it
+by growing the cast path, not by adding a draw call.
 """
 
-[[waiver]]
-builder = "amount_prompt_draws_for"
-kind = "orphan"
-reason = """
-Window id 31 (`FUN_801DCE20`): heading, wide number field in the accent pen,
-trailing unit label, corner cursor. Dispatch-resolved; what is missing is the
-number and its beat. The renderer prints `_DAT_800845B4`, the **Point Card**
-counter the retail buy handler credits before the gold debit (see
-`docs/subsystems/shop.md`). The engine has the *kernels* - `shop.rs` carries
-`point_card_credit` / `apply_point_card` / `POINT_CARD_ITEM_ID`, and
-`BuyQuantitySession`'s `ToastWait` phase is the beat that shows this window -
-but both are disclosed NOT WIRED: `World` keeps no live Point Card counter
-(`money` and `casino_coins` are its only purses) and the hosts' quantity flow
-is `menu_runtime`'s `ShopQuantity` -> `World::buy_from_shop`, which has no
-toast beat. Wiring window 31 means landing the counter on `World` plus the
-retail-shaped quantity session in `menu_runtime`, on both hosts - a shop-flow
-re-plumb, not a draw call.
-"""
+# `amount_prompt_draws_for` (window 31, the Point Card toast) and
+# `item_points_panel_draws` (the item-info panel's `0xFE` arm) were waived here
+# as `web_missing`, each with its closing call spelled out. Both calls are made
+# and both waivers are gone. `World` carries the `point_card` bank (retail
+# `_DAT_800845B4`), `MenuRuntime` accrues on the `ShopConfirm` buy commit and
+# holds `point_card_toast` until a press, and each host resolves id 31 off the
+# same disc-parsed window table - `window/shop_windows.rs` and
+# `web-viewer/src/play_shop.rs`, with the Items-screen arm in
+# `window/menu_draws.rs` and `web-viewer/src/play_menu.rs`.
+#
+# Which window the beat opens was disc-sourced rather than inferred: both retail
+# buy commits hand the widget VM a script whose entire body is `01 1F` plus the
+# terminator - "open window `0x1F`" - `0x801E4EDC` from the quantity commit
+# (`FUN_801DB7F4` case 2) and `0x801E4EA8` from the recipient picker
+# (`FUN_801DB380`). The heading and unit label live beside the builder in
+# `engine-ui` rather than once per host, so the two cannot drift on the content
+# without the shared builder changing under both at once.
 
 [[waiver]]
 builder = "count_panel_draws_for"
 kind = "orphan"
 reason = """
 Window id 24 (`FUN_801DCC20`): a two-digit count in the accent pen over a
-reserved sub-rect, guarded on the staged item id. Dispatch-resolved. Two
-things still block it. The painter is only the **delta**: the renderer's
-gated body opens with `jal 0x801D0F1C`, the shared item-info panel window
-17's `FUN_801DCB60` also calls, so a host adopting window 24 draws the info
-panel into the same rect first. And window 24's rect `(14, 108, 144, 40)` is
-byte-identical to window 17's, so the two are the same box in different
-screens - which screen opens 24 rather than 17 is unknown.
+reserved sub-rect, guarded on the staged item id. This was waived on "window
+24's rect is byte-identical to window 17's, so which screen opens 24 rather
+than 17 is unknown". The geometry could not answer it; the open scripts can.
+Exactly one command in the menu overlay opens window `0x18` - script
+`0x801E4DC8`, run by sub-screen `0x13` (`FUN_801D9C14`) - and the same script
+opens windows `2` and `0x19` beside it, the **Equip** title tab and the
+active-character stat compare. Window 24 is the Equip screen's item panel.
+
+What still blocks it is the other half of the old reason, which stands: the
+painter is only the **delta**. The renderer's gated body opens with
+`jal 0x801D0F1C`, the shared item-info panel window 17 also draws, so a host
+adopting window 24 draws that panel into the same rect and adds this count on
+top. The engine's equip screen is a slot list with no item-info panel at all,
+so there is no rect to add a count to yet.
 """
 
 [[waiver]]
 builder = "choice_panel_draws_for"
 kind = "orphan"
 reason = """
-Window id 46 (`FUN_801D603C`): one heading over a two-row choice group whose
-markers come from the `DAT_801E46D0` branch chain. Dispatch-resolved, so what
-remains is not a mechanism.
+Window id 46 (`FUN_801D603C`). This was waived as needing "a two-row choice
+screen whose state is the `DAT_801E46D0` flags word", with the options screen
+named as the screen it would have to replace. Both halves were wrong.
 
-What must exist first is a **two-row choice screen whose state is the
-`DAT_801E46D0` flags word**. The engine has neither half. The options screen
-both hosts draw is `options_draws_for` - a multi-row label/value list fed from
-the config sub-session's own rows, not a two-choice group - so adopting this
-window replaces that screen's layout wholesale rather than filling a hole in
-it. And no engine state models the flags word: `confirm_prompt_draws` takes no
-selection at all, `confirm_dialog_text_draws_for` takes a plain 0/1 cursor, so
-nothing stages the `0x4000` suppress or `0x2000` mid-change arms and a host
-wiring this today would exercise one of the three marker arms and leave the
-other two unreachable. The branch chain itself is unit-tested here.
+It is the **casino prize counter's Yes/No confirm**. Script `0x801E4F2C` is the
+only command in the overlay that opens window `0x2E`, and it runs from
+sub-screen `0x20` (`FUN_801DC1CC`, the prize exchange) at the point where a
+chosen prize clears the coin and held-cap gates; `0x801E4F34` closes it again
+on No or cancel, and the cursor is seeded to row 1 - retail's "No is the
+default". And the flags word is not unmodelled state: it is the shared cursor
+word `FUN_801D688C` maintains, whose four-way decode is already ported and
+**live** as `engine-core::shop::shop_cursor_mode` - the same three bits and the
+same arms as this crate's `ChoiceFlags::marker_variant`.
+
+The blocking capability is a **host that mounts the prize exchange**. The
+session is ported and complete (`engine-core::prize_exchange`, whose state 2 is
+this confirm); nothing opens it, so nothing reaches the beat.
 """
 
 [[waiver]]
 builder = "two_line_choice_panel_draws_for"
 kind = "orphan"
 reason = """
-Window id 5 (`FUN_801D61B0`): the two-heading sibling of
-`choice_panel_draws_for`, sharing its marker branch chain and differing only
-in the marker column and first-row offset. Same prerequisite - a two-row
-choice screen driven by the `DAT_801E46D0` flags word - and the same absence
-of one, plus a second heading line no engine screen has a model for.
+Window id 5 (`FUN_801D61B0`). It shares window 46's marker branch chain, which
+is why it was waived for the same reason - but it belongs to a different
+screen. Script `0x801E4BD4` is its only opener, from sub-screen `3`
+(`FUN_801D6D38`): a two-row confirm seeded to No whose Yes routes to
+sub-screen `0` (leave the menu) and whose No returns to the pause root. The
+root reaches it from **cancel**, under one condition only - the entry-context
+pointer `_DAT_8007B450` non-null with first byte `0x0D`
+(`0x801d6cf8..0x801d6d18`). It is the "really leave?" gate on a scripted menu.
+
+The blocking capability is the **entry-context kind**. Retail keeps one global
+whose first byte says which flow opened the menu; the port replaced it with a
+per-context tagged park, so no byte exists to compare against `0x0D` and no
+condition selects this screen. Same gap as the pause root's entry-context row -
+see docs/tooling/live-audit-triage.md.
 """
 
 [[waiver]]
@@ -236,10 +260,18 @@ builder = "label_list_draws_for"
 kind = "orphan"
 reason = """
 Window id 6 (`FUN_801D6360`): six stacked labels with the only cursor in this
-block anchored to the window *extent* rather than its origin.
-Dispatch-resolved; no host opens window 6 and which flow does is unknown. The
-pause command list both hosts draw is `field_menu_draws_for`, whose geometry
-comes from window 50, so this is not that list under another id.
+block anchored to the window *extent*. Waived as "no host opens window 6 and
+which flow does is unknown" - the flow is now known. Script `0x801E4BE0` is its
+only opener, from sub-screen `4` (`FUN_801DD1B8`), which opens the window,
+waits for a confirm / cancel press and returns to the pause root. That makes it
+a **notice panel**, which is what the corner advance hand is for.
+`FUN_801DC6B4` selects sub-screen `4` as the menu's entry screen when the
+entry-context byte is `0x0D` (`0x801dc8d0..0x801dc8e4`) - the same kind whose
+exit confirm is window 5 above.
+
+Same blocking capability as window 5, then: the **entry-context kind** the port
+replaced with a per-context tagged park. The six labels are content that record
+owns, so a host has neither the trigger nor the text.
 """
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`

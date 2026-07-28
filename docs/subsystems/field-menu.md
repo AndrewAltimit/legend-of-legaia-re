@@ -30,6 +30,7 @@ resolved through the window-descriptor table below.
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
 - [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [Inn stay](#inn-stay-there-is-no-inn-screen)
+- [Which screen opens a window](#which-screen-opens-a-window)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed) · [Overlay identity + VA-aliasing](#overlay-identity--va-aliasing)
 
@@ -751,11 +752,17 @@ phase 0. Items-screen slots of the table: 5 = command window
 list (`FUN_801D8734`), 9 = the all-party apply (`FUN_801D7FF8` - its
 picker runs with count 0, confirm/cancel only), 0xA = the single-target
 apply (`FUN_801D8308`), 0xB/0xC/0xD = the Door of Light / Door of Wind /
-Incense special routes; 0xE/0xF = the Magic screen's caster/list
-handlers, 0x10/0x11 = the group-cast and single-target Magic apply flows
-(spell-stat byte `+2` bit `0x20` picks between them), 0x12/0x13/0x14 =
-the Equip screen chain (character picker → slot browse → candidate
-list; the `DAT_801E46A4 == 0x13` gate of `FUN_801D21C0`).
+Incense special routes; 0xE = the Magic screen's caster/list handler
+(`FUN_801D9110`, the only writer that routes on to 0xF / 0x10 / 0x11),
+0xF/0x10 = the group-cast and single-target Magic apply flows
+(`FUN_801D9280` / `FUN_801D9594` - both call the effect-apply handler
+`FUN_800402F4`, and they differ in the one argument that decides scope:
+the shared cursor primitive gets row count `0` for the group cast and
+the live party count for the single-target one, the same split items use
+at 9 / 0xA); 0x12/0x13/0x14 = the Equip screen chain (character picker →
+slot browse → candidate list; the `DAT_801E46A4 == 0x13` gate of
+`FUN_801D21C0`). The table runs `0x00..=0x20` and ends on a `0` word;
+`0x20` is the casino prize counter (`FUN_801DC1CC`).
 
 The list windows themselves (descriptor kind 4) are paged by the
 SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the
@@ -992,6 +999,17 @@ always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
 0x90, 0x28)` under its own window - the empty lower-left box of the
 capture; the passive / points lines land inside it. See
 `overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
+
+The Point Card arm is a **branch, not an addition**: the id test at
+`0x801d0fd0` jumps to the routine's tail once it has drawn those two
+lines, so the passive block and the scope icon never run on that row. On
+the retail disc the exclusion is belt-and-braces - the Point Card's effect
+descriptor carries the `0x41` no-passive sentinel, so the passive block
+would draw nothing anyway. That is why the port keeps it as a separate
+builder (`engine-ui::item_points_panel_draws`) layered over
+`items_screen_draws_for` rather than as a field inside the info view: the
+condition is on the staged **id**, and the number is world state
+(`World::point_card`) the screen model does not carry.
 
 ### Command sub-flows (Use / Throw Out / Arrange)
 
@@ -1307,15 +1325,27 @@ that takes the window rect `a0` and hangs its content off
 | **Exchange tab `FUN_801DCFE4`** | the "Exchange" label STR (overlay rodata `0x801CEC6C`) at `(WX, WY)` CLUT 7 - title-tab content, no frame. `overlay_menu_801dcfe4.txt` |
 | **Gold box `FUN_801DCF84`** | money pictogram ICO `0x62` at `(WX, WY+2)` + the 8-digit party gold `_DAT_8008459C` at `(WX+0x28, WY)` CLUT 7 - the same money global the top-level id-49 box draws. `overlay_menu_801dcf84.txt` |
 | **Coin box `FUN_801DD028`** | casino-coin pictogram ICO `0x66` at `(WX, WY+2)` + the 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` CLUT 7. `overlay_menu_801dd028.txt` |
-| **Points box `FUN_801DCE20`** | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
+| **Points box `FUN_801DCE20`** (window 31) | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
 | **Item-info `FUN_801DCC20`** | when a prize id is staged (`DAT_801E46B0 > 0`): the shared item-info panel `FUN_801D0F1C` (name/desc), then CLUT 6 + the 2-digit bag count (`FUN_80042F4C(id)`) at `(WX+0x80, WY)`; always a `0x90 x 0x28` shade box `FUN_8002C69C(WX, WY+0x38)` under it - the Items id-17 `FUN_801DCB60` shape. `overlay_menu_801dcc20.txt` |
 | **Prompt line `FUN_801DCF14`** | the armed record's trailing string (`_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count the record owns - see [below](#these-window-ids-are-shared-not-exchange-only)) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
 | **Message box `FUN_801DCCB4`** | refills operand byte `0x801E46E5` in place from the staged character record byte (`record + 0x705`, record `_DAT_8007BB78 + _DAT_8007BB70*0x414`), draws the template STR `0x801E46E4` at `(WX, WY)` CLUT 7, then the advance hand at `(WX+0xE6, WY+0xD)` - the notify shape of the Items `FUN_801DCD58`. `overlay_menu_801dccb4.txt` |
 
-The exchange **session drivers** are `FUN_801DB380` / `FUN_801DB510` /
-`FUN_801DB7F4` (menu overlay; each runs the descriptor-window scripts and
-polls the list kernel like the Items sub-screens -
-`ghidra/scripts/funcs/overlay_menu_801db380.txt` and siblings).
+The Points box is the clearest case of the shared pool: it is listed here
+because it appears in this screen's window set, but the one caller on the
+disc that *opens* window 31 is the town shop's buy commit - a one-command
+widget script `[open 0x1F]` at `0x801E4EDC` / `0x801E4EA8` run right after
+the Point Card accrual. See [shop.md](shop.md#point-card).
+
+The exchange's own **session drivers** are not pinned. `FUN_801DB380` /
+`FUN_801DB7F4` were cited here as the drivers, and they are the town shop's
+sub-screens instead: `FUN_801DB380` debits the gold purse `0x8008459C` and
+writes equipment into the party records, `FUN_801DB7F4` debits the same purse
+and credits the Point Card - neither touches the coin bank a prize counter
+prices against. A third address cited beside them, `0x801DB510`, is not a
+function at all: it is interior to `FUN_801DB380`, whose entry is `0x801DB380`
+and whose body runs 1140 bytes to `0x801DB7F4`. What is shared with the
+exchange is the **window pool**, not the code - which is the point of the
+section below.
 
 ### These window ids are shared, not exchange-only
 
@@ -1510,7 +1540,58 @@ them whenever the equipment-buy recipient sub-screen is up: that screen is one
 shared composition (`engine-ui::recipient_picker_draws_for`) rather than three
 separate host-side draws, so its row order and cursor rows are the same on both.
 
-The painters for windows no host **opens** yet - 5, 6, 7, 24, 31, 46 - stay
+### Which screen opens a window
+
+The descriptor table says what a window *looks like*; it never says which
+screen puts it on the glass. That is the **open script** - the 4-byte
+`[opcode, window_id, p0, p1]` command list a sub-screen hands the widget VM
+`FUN_801D6628`, terminated by opcode `0`, with opcode `1` = open/slide-in,
+`4` = close/slide-away, `6` / `0xA` = hide / re-show an already-created
+window (see [shop.md](shop.md#mode-select-panel-buy--sell--quit)).
+
+That makes "which screen opens window N" a decidable question over the
+overlay's own bytes rather than a guess, and it is worth walking whenever a
+painter looks orphaned. Every `jal 0x801D6628` in the image carries its
+script address in `a0`; decoding those, walking each script, and mapping the
+call site back through the sub-screen table at `0x801E4F40` gives a complete
+window → screen map. Two properties make the result trustworthy: a window
+that no `01` command names is never created at all, and the recovered map
+agrees with every sub-screen id this page pinned independently (5, 7, 0xB,
+0xD, the shop's 0x1B..0x1F, the exchange's 0x20).
+
+What it settles for the windows whose painters had no screen:
+
+| Window | Script | Sub-screen | Screen |
+|---|---|---|---|
+| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | leave-confirm, reached only from the pause root's cancel with entry-context byte `0x0D` |
+| 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
+| 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
+| 24 + 25 | `0x801E4DC8` | `0x13` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
+| 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
+| 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
+
+Two of those rows correct a reading this page used to carry. Window 25 is an
+**Equip** window - its id appears in exactly one `01` command in the whole
+overlay, the Equip screen's - so a shop screen does not open it; the shop's
+own stat compare is window 41. Both hosts had been drawing window 25 over the
+shop's equipment-buy recipient picker, one panel more than retail shows;
+`RecipientWindowRects` no longer carries a rect for it, which is what made
+removing the draw a single change both hosts had to follow rather than one
+either could keep. And windows 5 / 6 are not options-screen or
+pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
+`FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
+and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).
+
+**Window 31** joins the dispatch-drawn set on the shop's Point Card beat. Which flow opens it
+is settled by the disc rather than inferred: both retail buy commits hand
+the widget VM a script whose entire body is `01 1F` plus the terminator -
+one command, "open window `0x1F`" (`0x801E4EDC` from the quantity commit
+`FUN_801DB7F4`, `0x801E4EA8` from the recipient picker `FUN_801DB380`) -
+and then park in a phase that only a confirm / cancel press releases. The
+engine keeps the bank on `World::point_card` and the beat on
+`MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
+
+The painters for windows no host **opens** yet - 5, 6, 7, 24, 46 - stay
 unreached by a screen rather than by a mechanism; each one's remaining blocker
 is recorded per builder in `scripts/ci/ui-host-drift-waivers.toml`.
 

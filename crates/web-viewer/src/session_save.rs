@@ -427,9 +427,17 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         assert!(!diff.is_empty());
+        // Plus the restamped block checksum: retail re-sums the SC payload on
+        // load and rejects a stale word as damaged data.
+        let ck = legaia_save::BLOCK_SIZE + legaia_save::RETAIL_BLOCK_CHECKSUM_OFFSET;
         assert!(
-            diff.iter().all(|&i| (base..base + 4).contains(&i)),
-            "only the coin dword may change: {diff:?}"
+            diff.iter()
+                .all(|&i| (base..base + 4).contains(&i) || (ck..ck + 4).contains(&i)),
+            "only the coin dword and its checksum may change: {diff:?}"
+        );
+        assert!(
+            diff.iter().any(|&i| (ck..ck + 4).contains(&i)),
+            "the checksum word must be restamped"
         );
 
         // Import into a runtime: party + gold land in the world.

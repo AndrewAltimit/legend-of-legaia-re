@@ -91,20 +91,23 @@ Internal step counter in `DAT_801E46AC`:
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.
 
-### `FUN_801DAFD4` - save-slot confirm / saving-in-progress (584 bytes)
+### `FUN_801DAFD4` - Buy / Sell / Quit mode select (584 bytes)
 
 Internal step counter in `DAT_801E46AC`:
 
 | Step | Action |
 |---|---|
 | 0 | Clear `_DAT_8007BB98/90/88`; set `_DAT_8007BB94 = 4` (3-slot scrolling list param); run actor VM with `&DAT_801E4E38`; mask `DAT_801E46BC &= 0xFFF`. |
-| 1 | Call `FUN_801D688C(&DAT_801E46BC, 3, 1)` (3-item slot list + confirm). Button result: slot 0 → sub-screen 0x1B (card-full/error); slot 1 → validate then run actor VM `&DAT_801E4E54` (advance to step 2); slot 2 → cancel SFX; return 2 → close. |
-| 2 | Clear state vars; set `DAT_801E46A4 = 0x1E` (advance to write sub-screen). |
+| 1 | Call `FUN_801D688C(&DAT_801E46BC, 3, 1)` (3-item row list + confirm). Button result: row 0 → sub-screen 0x1B (buy list); row 1 → validate then run actor VM `&DAT_801E4E54` (advance to step 2); row 2 → cancel SFX; return 2 → close. |
+| 2 | Clear state vars; set `DAT_801E46A4 = 0x1E` (advance to the sell list). |
 
-**Save slot validation** (step 1, slot 1 path): scans the save-block existence
-table at `&DAT_80084140 + slot * 2 + 0x1818` (byte 0 = slot present,
-byte 1 = slot valid) over the range `_DAT_8007B5EA.._DAT_8007B5EC`. A fully
-absent table yields error SFX (`func_0x80035bd0(0x23)`).
+**Row-1 validation** (step 1): walks `&DAT_80084140 + 0x1818 + slot*2` over
+the range `_DAT_8007B5EA.._DAT_8007B5EC`, and an all-empty walk buzzes
+`func_0x80035bd0(0x23)`. That array is the **item bag** at `0x80085958`
+(stride 2 = `[item id, count]`, [`battle.md`](battle.md)), so the test is
+"own anything to sell" - it is **not** a save-block existence table, and
+this screen is the shop's mode picker rather than a slot confirm. The row
+in the sub-screen table below carries the same correction.
 
 ### `FUN_801D688C` - shared list-cursor navigator
 
@@ -157,7 +160,7 @@ call site).
 | `_DAT_8007BB80` | Menu-active flag; step 1 waits while zero. |
 | `_DAT_8007B5EA` | Save-slot scan start index. |
 | `_DAT_8007B5EC` | Save-slot scan end index. |
-| `DAT_80084140` | Save-block existence table; stride 2 bytes per slot. Bytes `+0x1818/+0x1819` = present/valid flags. |
+| `DAT_80084140` | Base of the **live game-state window** - the `0x1A18` bytes a save block is composed from. Character records at `+0x5C8`, gold `+0x45C`, coins `+0x464`, story flags `+0x14C0`, item bag `+0x1818`. |
 | `DAT_801E46A4` | Sub-screen function index (into pointer table at `0x801E4F40`). |
 | `DAT_801E46AC` | Sub-screen internal step counter. |
 | `DAT_801E46BC/B0/B4` | Per-column save-slot state / pad-input buffer. |
@@ -200,7 +203,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x1C` | `FUN_801DB380` | shop **buy recipient picker** (equipment buys; port `engine-core::shop`) |
 | `0x1D` | `FUN_801DB7F4` | shop **buy quantity + commit** (port `shop::BuyQuantitySession`; quantity law `min(gold/price, 99, 99-held)`) |
 | `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 raises flag `0x1000` on `DAT_801E46BC` + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits `_DAT_8007BB80 == 0`, sets `_DAT_8007BB94 = 1` and falls into state 2. States 1-settling and 2 **share** the staging read of the two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` into `DAT_801E46B0/B4`, then branch on `_DAT_8007BB94`: `3` re-runs actor `&DAT_801E4EFC` and parks at state 3, `2` advances to `0x1F`. State 3 waits `_DAT_8007BB80 == 0`, then returns to `0x1A`. In context this is the shop **sell list** - the "inventory bytes" it stages are the bag slot `[id, count]` the sell-quantity screen consumes |
-| `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
+| `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below), and the block staging copy is `FUN_8001A8B0` against the live game-state window `0x80084140` (`0x1A18` bytes, a different block buffer per direction - see [the checksum section](#which-buffer-the-sum-runs-over)) |
 | `0x20` | `FUN_801DC1CC` | **casino prize-exchange session** (entry-context `*ptr == '\x07'`; `ptr+1` = prize block). 4-state SM: build visible rows from the `0x801E4518` table (walk stops at the first zero id; a non-zero gate flag already set hides the one-shot row), browse (`FUN_801D688C`; confirm gated on coin bank `0x800845A4 >= price` and held `< 0x63`, buzz `0x23`), Yes/No with **No default** (`DAT_801E46D0 = 1`), commit (SFX `0x25`, grant 1, debit coins, `FUN_8003CE08(gate)`, rebuild). Port `engine-core::prize_exchange`. The earlier "auto-save path" label is falsified - nothing here touches the card |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
@@ -314,8 +317,10 @@ Both install `_DAT_8007B44C = DAT_801C6EA0` (PSX libC card handle) on state 0,
 so the same global handle is used in both directions. On success both return
 to sub-screen `0x01` (the slot picker). Both directions share the same
 saving-overlay state machine; the load branch's bulk memcpy
-`FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is the
-post-libcd-read copy (staging buffer → SC RAM).
+`FUN_8001A8B0(0x80084140, 0x801E5120, 0x1A18)` at `0x801dfa98` is the
+post-libcd-read copy - the card read buffer back into the live game-state
+window. The save branch is its mirror with the *other* block buffer as the
+destination; see [Which buffer the sum runs over](#which-buffer-the-sum-runs-over).
 
 #### Which op is which direction
 
@@ -579,14 +584,32 @@ route the slot to the valid or the corrupt state. Ported as
 `save_select::save_block_checksum` with the compose helper
 `save_block_checksum_valid` mirroring that load-path compare.
 
-An open tension worth knowing before wiring the gate anywhere:
-`legaia-save`'s card layer models the SC payload as checksum-free (its
-in-place block edits copy `0x1A18` bytes and never touch `0x1FFC`, citing
-the `FUN_8001A8B0` staging copy), while the compare above reads `0x1FFC`
-on load. Which buffer the `0x801df888` compare really runs over - and
-whether retail enforces it against a card-written block - has not been
-re-verified against a retail-written card, so no engine host gates a
-card read on this sum yet.
+##### Which buffer the sum runs over
+
+The two block buffers are distinct and neither is the live game state:
+
+| Buffer | Role | Installed by |
+|---|---|---|
+| `0x801E5120` | card **read** destination, `0x2000` bytes | `FUN_801DD35C` writes it to `DAT_801EF174` alongside the length `DAT_801F01B8 = 0x2000` |
+| `0x801E7120` | save **compose** buffer, `0x2000` bytes | `FUN_801E1934` writes it to `DAT_801EF178` on entry |
+
+The compose direction memsets its whole `0x2000` buffer, copies `0x1A18`
+bytes of live game state from `0x80084140` over the front, sums the
+buffer and stores the result at `+0x1FFC`
+(`0x801e1bc0..0x801e1bf0`). `FUN_801E13B8` then hands all `0x2000` bytes
+- checksum word included - to `FUN_801E3D68`. The read direction fills
+`0x801E5120` from byte 0 of the block, and state `5` sums *that* buffer
+before comparing its `+0x1FFC`. So the sum covers the block as stored on
+the card, starting at the `SC` magic, and the `0x1A18`-byte staging copy
+is one region inside it rather than the whole payload.
+
+An earlier reading recorded this as an open tension, on the grounds that
+`legaia-save`'s card layer modelled the SC payload as checksum-free. That
+reading is **falsified**: the checksum exists, retail stamps it on save
+and enforces it on load, and every real retail-written card satisfies it.
+`legaia-save`'s `write_retail_*` writers now restamp the word, which is
+what keeps an in-place field edit (banked casino coins, a patched
+inventory) loadable rather than "Damaged data."
 
 ### Equip-candidate list handler (`FUN_801D9C14`, sub-screen `0x14`)
 

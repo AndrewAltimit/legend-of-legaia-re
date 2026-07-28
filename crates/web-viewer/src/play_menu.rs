@@ -1473,6 +1473,22 @@ impl LegaiaRuntime {
                 ui::scale_stage_text_draws(&mut d, origin, scale);
                 texts.extend(d);
                 if let Some((_, rects)) = assets.chrome.as_ref() {
+                    // The screen's window set for this beat is
+                    // `[TAB_ITEMS, 14]` - the tab stays and the item list is
+                    // replaced. The tab wears the carved plaque like every
+                    // other pause tab (ids <= TAB_OPTIONS take
+                    // `tab_banner_draws`, not the 9-slice frame); without it
+                    // the label floats over bare scene while the native
+                    // window draws the plaque, which is the whole reason the
+                    // set is a set and not just window 14.
+                    let (_, _, tab_w, _) = assets.window_rect(window_ids::TAB_ITEMS);
+                    sprites.extend(ui::tab_banner_draws(
+                        rects,
+                        assets.pen(window_ids::TAB_ITEMS),
+                        tab_w,
+                        origin,
+                        scale,
+                    ));
                     // Frame window 14 itself, not the generic near-fullscreen
                     // overlay the stand-in used.
                     let (_, _, w, h) = ui::TARGET_PANEL_RECT;
@@ -1539,6 +1555,22 @@ impl LegaiaRuntime {
             assets.pen(window_ids::ITEMS_LIST),
             assets.pen(window_ids::ITEMS_INFO),
         );
+        // The shared info panel's Point Card arm, the browser twin of the
+        // native host's (`window/menu_draws.rs`): retail branches on the staged
+        // id being `0xFE` and prints the live bank instead of the passive lines
+        // (`FUN_801D0F1C` at `0x801d0fd0`).
+        if model.info.as_ref().is_some_and(|i| i.is_point_card) {
+            let points = self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.point_card.max(0) as u32)
+                .unwrap_or(0);
+            d.extend(ui::item_points_panel_draws(
+                font,
+                assets.pen(window_ids::ITEMS_INFO),
+                points,
+            ));
+        }
         d.extend(ui::tab_label_draws(
             font,
             "Items",

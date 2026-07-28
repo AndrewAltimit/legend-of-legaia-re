@@ -126,10 +126,17 @@ pub const MOVE_POWER_STRIDE: usize = 0x1A;
 /// impossible - the single-slot form always runs once.
 ///
 /// NOT WIRED: classified only from [`step_effect_script`]'s terminator arm,
-/// which no engine host drives. Its input is the acting actor's `+0x1DD` scope byte -
-/// engine battle actors carry a typed target selection
+/// which no engine host drives - and *that* is the whole blocker. An earlier
+/// note here added a second one: "its input is the acting actor's `+0x1DD`
+/// scope byte - engine battle actors carry a typed target selection
 /// ([`crate::target_picker::TargetKind`]) instead, so nothing produces the raw
-/// byte this reads.
+/// byte this reads". Withdrawn. `+0x1DD` is
+/// `legaia_engine_vm::battle_action::BattleActor::active_target`, written and
+/// read across the live action SM (the attack band, the spirit band, the
+/// target cursor, `battle_round`), and its group codes `8` / `9` are exactly
+/// the ones `battle_action::magic`'s cast-begin retarget pass and
+/// `battle_target_group` deal in. The typed picker is what *produces* the
+/// byte, not a replacement for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetBand {
     /// First slot index the sweep visits.
