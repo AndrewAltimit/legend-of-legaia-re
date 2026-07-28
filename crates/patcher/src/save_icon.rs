@@ -202,6 +202,50 @@ fn encode_tile(
     Ok((palette, pixels, quantized))
 }
 
+/// What a replacement *would* do, without touching the disc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotPreview {
+    /// The portrait as it will display in game: 16x16 RGBA8 after the PSX
+    /// 15-bit rounding and any quantization. What the user sees here is what
+    /// the game gets.
+    pub rgba: Vec<u8>,
+    /// Palette slots whose colour would change.
+    pub palette_entries_changed: usize,
+    /// Pixels that would be mapped to a nearest palette colour.
+    pub quantized_pixels: usize,
+}
+
+/// Encode a replacement for `slot` and render it back, writing nothing.
+///
+/// The browser patcher's side-by-side preview runs on this, so the preview
+/// and the write share one encoder and cannot disagree.
+pub fn preview_slot(
+    sheet: &SaveIconSheet,
+    slot: usize,
+    rgba: &[u8],
+    quantize: bool,
+) -> Result<SlotPreview> {
+    check_slot(slot)?;
+    let before = sheet.tile_clut(slot)?;
+    let (palette, pixels, quantized_pixels) = encode_tile(rgba, &before, quantize)?;
+    let palette_entries_changed = palette
+        .iter()
+        .zip(before.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    let mut out = Vec::with_capacity(TILE_SIZE * TILE_SIZE * 4);
+    for byte in pixels.iter() {
+        for nib in [byte & 0x0F, byte >> 4] {
+            out.extend_from_slice(&legaia_tim::bgr555_to_rgba8(palette[nib as usize]));
+        }
+    }
+    Ok(SlotPreview {
+        rgba: out,
+        palette_entries_changed,
+        quantized_pixels,
+    })
+}
+
 /// Replace one slot's portrait in place on the disc.
 ///
 /// `rgba` is 16x16 row-major RGBA8. Every write is same-size and goes through

@@ -32,6 +32,10 @@
  * text. The editors serialize back to the exact `fishing_prices` /
  * `location_renames` strings the raw (advanced) inputs feed, so the wire
  * format into patch_rom is unchanged.
+ * Save-slot portraits ride the same panel on a fourth export,
+ * `preview_save_icon_replace(image, slot, png, quantize)`; their rows carry
+ * `tier: 'save-icon'` and `apply_texture_replacements` routes them by tier.
+ *
  * Texture replacement rides three more exports: `scan_textures(image,
  * thumbMax) -> { raw_count, lzs_count, textures }` (every TIM on the disc,
  * with thumbnails), `preview_texture_replace(image, entry, section, offset,
@@ -696,6 +700,12 @@ function setupArtBuilder(container, addBtn, onEdit) {
 }
 
 // --- Texture replacement ----------------------------------------------------
+// Rows whose `tier` is this are save-slot portraits: tiles of one shared TIM
+// with a palette each, addressed by slot (`section`) rather than byte offset,
+// and written by their own patcher path. Fifteen exist - tile 15 of the strip
+// is blank padding nothing in game selects, so it is never offered.
+const SAVE_ICON_TIER = 'save-icon';
+
 // Client-side texture swap over the WASM API: `scan_textures(image, thumbMax)`
 // catalogs every TIM on the disc (raw tier + inside LZS sections) with
 // thumbnails, `preview_texture_replace(image, entry, section, offset, png,
@@ -711,8 +721,11 @@ function drawRgba(canvas, img) {
   ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.w, img.h), 0, 0);
 }
 
-// Human-readable coordinate string for a scan row / queue item.
+// Human-readable coordinate string for a scan row / queue item. Save-slot
+// portraits are addressed by slot, not by byte offset, so they name the save
+// number a player would actually see.
 function texDesc(t) {
+  if (t.tier === SAVE_ICON_TIER) return `save icon · slot ${t.section} (save ${t.section + 1})`;
   const off = '0x' + t.offset.toString(16).toUpperCase();
   const where = t.entry < 0 ? `gap +${off}`
     : t.section >= 0 ? `entry ${t.entry} sec ${t.section} +${off}`
@@ -810,7 +823,10 @@ function setupTextureReplacer(wasm, discBytes) {
       const r = mod.scan_textures(buf, 48);
       rows = r.textures;
       browser.hidden = false;
-      setNote(`${r.raw_count} raw + ${r.lzs_count} compressed textures found. Click one to edit it.`);
+      const icons = r.save_icon_count
+        ? ` + ${r.save_icon_count} save-slot portraits`
+        : '';
+      setNote(`${r.raw_count} raw + ${r.lzs_count} compressed textures${icons} found. Click one to edit it.`);
       renderGrid(true);
     } catch (e) {
       setNote('Error: ' + (e && e.message ? e.message : e), 'err');
@@ -846,7 +862,9 @@ function setupTextureReplacer(wasm, discBytes) {
       const mod = await wasm();
       const buf = await discBytes();
       const png = sel.pngBytes || new Uint8Array(0);
-      const r = mod.preview_texture_replace(buf, t.entry, t.section, t.offset, png, quantizeChk.checked);
+      const r = t.tier === SAVE_ICON_TIER
+        ? mod.preview_save_icon_replace(buf, t.section, png, quantizeChk.checked)
+        : mod.preview_texture_replace(buf, t.entry, t.section, t.offset, png, quantizeChk.checked);
       sel.origImg = r.original;
       drawRgba(origCanvas, r.original);
       if (!sel.pngBytes) {
@@ -885,8 +903,10 @@ function setupTextureReplacer(wasm, discBytes) {
     const c = document.createElement('canvas');
     drawRgba(c, sel.origImg);
     const t = sel.row;
-    const name = `legaia-tex-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
-      `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}.png`;
+    const name = t.tier === SAVE_ICON_TIER
+      ? `legaia-save-icon-slot${t.section}.png`
+      : `legaia-tex-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
+        `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}.png`;
     c.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
@@ -925,9 +945,10 @@ function setupTextureReplacer(wasm, discBytes) {
     if (!sel || !sel.pngBytes) return;
     const t = sel.row;
     // One queued edit per texture: re-adding replaces the earlier one.
-    const key = (q) => `${q.entry}/${q.section}/${q.offset}`;
+    const key = (q) => `${q.tier}/${q.entry}/${q.section}/${q.offset}`;
     const spec = {
       desc: `${texDesc(t)} (${t.width}×${t.height}${t.label ? ', ' + t.label : ''})`,
+      tier: t.tier,
       entry: t.entry, section: t.section, offset: t.offset,
       png: sel.pngBytes, quantize: quantizeChk.checked,
     };
@@ -945,6 +966,7 @@ function setupTextureReplacer(wasm, discBytes) {
   return {
     specs() {
       return queue.map((q) => ({
+        tier: q.tier,
         entry: q.entry, section: q.section, offset: q.offset,
         png: q.png, quantize: q.quantize,
       }));

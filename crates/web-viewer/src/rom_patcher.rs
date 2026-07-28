@@ -1429,7 +1429,15 @@ pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValu
 // scanned in WASM memory, the edited PNG is validated + encoded here, and the
 // patched image is downloaded locally. Nothing is uploaded.
 
+use legaia_patcher::save_icon;
 use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture};
+
+/// `tier` value marking a save-slot portrait row / spec.
+const SAVE_ICON_TIER: &str = "save-icon";
+/// Save-icon portraits are always 16x16.
+const SAVE_ICON_SIZE: usize = legaia_asset::save_icon::TILE_SIZE;
+/// PROT entry the portrait sheet lives in.
+const SAVE_ICON_PROT_ENTRY: u32 = legaia_asset::save_icon::PROT_ENTRY as u32;
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba, encode_replacement};
 
 /// Nearest-neighbour downscale of an RGBA8 image to fit in `max` on the long
@@ -1607,6 +1615,45 @@ pub fn scan_textures(image: Vec<u8>, thumb_max: u32) -> Result<JsValue, JsValue>
         i = end;
     }
 
+    // Save-slot portraits ride the same grid but their own tier: they are
+    // tiles of one TIM, each with its own palette, so they are addressed by
+    // slot rather than by byte offset. Fifteen rows, not sixteen - tile 15
+    // is blank padding nothing selects.
+    let mut save_icon_count = 0usize;
+    if let Some(&(off, len, _)) = spans
+        .iter()
+        .find(|&&(_, _, idx)| idx == SAVE_ICON_PROT_ENTRY)
+        && let Some(entry_bytes) = prot.get(off as usize..(off + len) as usize)
+        && let Ok(sheet) = legaia_asset::save_icon::parse_entry(entry_bytes)
+    {
+        for slot in 0..legaia_asset::save_icon::USABLE_TILE_COUNT {
+            let Ok(rgba) = sheet.tile_rgba(slot) else {
+                continue;
+            };
+            let thumb = if thumb_max == 0 {
+                JsValue::NULL
+            } else {
+                rgba_js(SAVE_ICON_SIZE, SAVE_ICON_SIZE, &rgba)?
+            };
+            let row = push_row(
+                SAVE_ICON_TIER,
+                SAVE_ICON_PROT_ENTRY as i64,
+                slot as i64,
+                sheet.tile_clut_offset(slot) as u64,
+                SAVE_ICON_SIZE as u32,
+                SAVE_ICON_SIZE as u32,
+                4,
+                1,
+                legaia_asset::save_icon::TILE_BLOCK_BYTES
+                    + legaia_asset::save_icon::TILE_CLUT_BYTES,
+                Some("save-slot portrait"),
+                thumb,
+            )?;
+            textures.push(&row);
+            save_icon_count += 1;
+        }
+    }
+
     let out = Object::new();
     Reflect::set(
         &out,
@@ -1618,7 +1665,94 @@ pub fn scan_textures(image: Vec<u8>, thumb_max: u32) -> Result<JsValue, JsValue>
         &"lzs_count".into(),
         &JsValue::from_f64(deep.len() as f64),
     )?;
+    Reflect::set(
+        &out,
+        &"save_icon_count".into(),
+        &JsValue::from_f64(save_icon_count as f64),
+    )?;
     Reflect::set(&out, &"textures".into(), &textures)?;
+    Ok(out.into())
+}
+
+/// Validate one save-slot portrait replacement. Never writes. Same result
+/// shape as [`preview_texture_replace`] so the page's preview panel needs no
+/// second code path: `{ ok, error, original, preview, width, height, bpp,
+/// cluts, new_palette_entries, quantized_pixels }`.
+#[wasm_bindgen]
+pub fn preview_save_icon_replace(
+    image: Vec<u8>,
+    slot: u32,
+    png: &[u8],
+    quantize: bool,
+) -> Result<JsValue, JsValue> {
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let sheet = save_icon::read_sheet(&patcher).map_err(|e| err(format!("read sheet: {e:#}")))?;
+    let slot = slot as usize;
+
+    let out = Object::new();
+    let num = JsValue::from_f64;
+    Reflect::set(&out, &"width".into(), &num(SAVE_ICON_SIZE as f64))?;
+    Reflect::set(&out, &"height".into(), &num(SAVE_ICON_SIZE as f64))?;
+    Reflect::set(&out, &"bpp".into(), &num(4.0))?;
+    Reflect::set(&out, &"cluts".into(), &num(1.0))?;
+
+    let original = match save_icon::export_slot(&sheet, slot) {
+        Ok(rgba) => rgba,
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &format!("{e:#}").into())?;
+            return Ok(out.into());
+        }
+    };
+    Reflect::set(
+        &out,
+        &"original".into(),
+        &rgba_js(SAVE_ICON_SIZE, SAVE_ICON_SIZE, &original)?,
+    )?;
+
+    let (w, h, rgba) = match decode_png_rgba(png) {
+        Ok(v) => v,
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &format!("read PNG: {e}").into())?;
+            return Ok(out.into());
+        }
+    };
+    if (w, h) != (SAVE_ICON_SIZE, SAVE_ICON_SIZE) {
+        Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+        Reflect::set(
+            &out,
+            &"error".into(),
+            &format!("a save-slot portrait must be {SAVE_ICON_SIZE}x{SAVE_ICON_SIZE}, got {w}x{h}")
+                .into(),
+        )?;
+        return Ok(out.into());
+    }
+    match save_icon::preview_slot(&sheet, slot, &rgba, quantize) {
+        Ok(p) => {
+            Reflect::set(
+                &out,
+                &"preview".into(),
+                &rgba_js(SAVE_ICON_SIZE, SAVE_ICON_SIZE, &p.rgba)?,
+            )?;
+            Reflect::set(
+                &out,
+                &"new_palette_entries".into(),
+                &num(p.palette_entries_changed as f64),
+            )?;
+            Reflect::set(
+                &out,
+                &"quantized_pixels".into(),
+                &num(p.quantized_pixels as f64),
+            )?;
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+            Reflect::set(&out, &"error".into(), &"".into())?;
+        }
+        Err(e) => {
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(false))?;
+            Reflect::set(&out, &"error".into(), &format!("{e:#}").into())?;
+        }
+    }
     Ok(out.into())
 }
 
@@ -1732,6 +1866,32 @@ pub fn apply_texture_replacements(image: Vec<u8>, specs: JsValue) -> Result<JsVa
             .as_bool()
             .unwrap_or(false);
         let png = Uint8Array::from(Reflect::get(&spec, &"png".into())?).to_vec();
+        // Save-slot portraits share the queue but not the writer: the sheet
+        // has one palette per tile and stores a tile as 16 scattered runs,
+        // so the generic texture path would repaint every portrait.
+        if Reflect::get(&spec, &"tier".into())?.as_string().as_deref() == Some(SAVE_ICON_TIER) {
+            let slot = section.max(0) as usize;
+            let (w, h, rgba) = decode_png_rgba(&png)
+                .map_err(|e| err(format!("save-icon {i} (slot {slot}): {e}")))?;
+            if (w, h) != (SAVE_ICON_SIZE, SAVE_ICON_SIZE) {
+                return Err(err(format!(
+                    "save-icon {i} (slot {slot}): portrait must be                      {SAVE_ICON_SIZE}x{SAVE_ICON_SIZE}, got {w}x{h}"
+                )));
+            }
+            let outcome = save_icon::replace_slot(&mut patcher, slot, &rgba, quantize)
+                .map_err(|e| err(format!("save-icon {i} (slot {slot}): {e:#}")))?;
+            summary.push_str(&format!(
+                "save icon: slot {} (save number {}) replaced{}\n",
+                outcome.slot,
+                outcome.slot + 1,
+                if outcome.quantized_pixels > 0 {
+                    format!(", {} pixel(s) quantized", outcome.quantized_pixels)
+                } else {
+                    String::new()
+                },
+            ));
+            continue;
+        }
         let target = texture_target(entry, section, offset);
         let (w, h, rgba) =
             decode_png_rgba(&png).map_err(|e| err(format!("texture {i} ({target}): {e}")))?;
