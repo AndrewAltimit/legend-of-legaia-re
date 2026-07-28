@@ -55,13 +55,17 @@
    * file held two of the columns.
    *
    * So the page reads the binding table out of the engine instead
-   * (`legaia_engine_core::input::Mapping::default` through
+   * (`legaia_engine_core::input::Mapping::web_default` through
    * `pad_bindings_json`). A rebind now lands on every host at once and a
    * disagreement can no longer be written down.
    *
-   * Consequence worth knowing: the arrow keys walk, and WASD does not. The
-   * engine layout binds A / S / W to Triangle / Circle / R1, which is what
-   * the native window has always done. */
+   * `web_default`, not `default`: this page walks on WASD as well as the
+   * arrows, and the desktop layout spends A / S / W on Triangle / Circle /
+   * R1. One `HashMap<key, button>` cannot hold both `S -> Down` and
+   * `S -> Circle`, so the engine carries two *named layouts* rather than one
+   * layout plus an override table here - which is the whole point, since an
+   * override table in this file is the thing that drifted last time. The face
+   * buttons move to Z / X / C / V and the shoulders to Q / E. */
   let PAD = null;
   let PAD_BTN = null;
   let SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);

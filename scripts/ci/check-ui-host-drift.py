@@ -314,17 +314,16 @@ WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "
-        "off the same battle-formula kernel on both hosts, or the same card "
-        "deals different numbers in the window and in the browser",
+        "off the same battle-formula kernel on both hosts, or the same command "
+        "deals different numbers in the window and in the browser. Both hosts "
+        "install a `DomeDamageModel` and resolve through it, so the assertion "
+        "is on the shared entry point, not on the formula leaf underneath it",
         "sites": {
             "native": (NATIVE_FRAME_TICK, "tick_muscle_dome"),
             "web": (WEB_MINIGAMES_MUSCLE, "muscle_resolve"),
         },
         "mode": "symbols_all",
-        "symbols": ["damage_finish_lazy"],
-        "blocked_on": "the concurrent Muscle Dome lane is moving the native "
-        "tick onto `battle_formulas::damage_finish_lazy`; the browser host "
-        "already calls it. Delete this marker when the native side lands.",
+        "symbols": ["resolve_turn_retail"],
     },
     {
         "what": "save-select model - whether the slot rack is put in card-slots "

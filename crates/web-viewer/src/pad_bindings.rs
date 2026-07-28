@@ -21,6 +21,14 @@
 //! rebind lands on every host at once and a disagreement can no longer be
 //! written down.
 //!
+//! The layout served here is `Mapping::web_default`, not `Mapping::default`.
+//! The browser page binds `WASD` to the d-pad and the desktop layout spends
+//! those keys on Triangle / Circle / R1, so the two cannot be one table - a
+//! `HashMap<key, button>` holds either `S -> Down` or `S -> Circle`, never
+//! both. They are two *named layouts in the engine* rather than one layout
+//! plus a page-side override, which keeps the single-source-of-truth property
+//! that made the tables above deletable.
+//!
 //! A free function rather than a [`crate::runtime::LegaiaRuntime`] method
 //! because the title screen's key loop runs before a runtime exists, and it
 //! needs the same table.
@@ -39,7 +47,7 @@ use wasm_bindgen::prelude::*;
 /// `Mapping::dom_code_bindings`. Ordering is stable across calls.
 #[wasm_bindgen]
 pub fn pad_bindings_json() -> String {
-    let mapping = legaia_engine_core::input::Mapping::default();
+    let mapping = legaia_engine_core::input::Mapping::web_default();
     let mut out = String::from("{");
     for (i, (code, bit)) in mapping.dom_code_bindings().into_iter().enumerate() {
         if i > 0 {
@@ -104,7 +112,7 @@ mod tests {
         let json = pad_bindings_json();
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON object");
         let obj = v.as_object().expect("object");
-        let want = legaia_engine_core::input::Mapping::default().dom_code_bindings();
+        let want = legaia_engine_core::input::Mapping::web_default().dom_code_bindings();
         assert_eq!(obj.len(), want.len());
         for (code, bit) in want {
             assert_eq!(obj.get(code).and_then(|b| b.as_u64()), Some(u64::from(bit)));
