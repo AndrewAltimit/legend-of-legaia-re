@@ -4,7 +4,7 @@
 //!
 //! The overlay's per-frame update drives a set of counters, scales each
 //! frame's step through [`step_scale`], and keys one rotating SPU voice
-//! through [`sfx_cue`]; the visible half is the sprite/decimal HUD ported in
+//! through [`arena_voice_cue`]; the visible half is the sprite/decimal HUD in
 //! `legaia_engine_ui::other_game_hud`.
 //!
 //! Provenance: `ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`
@@ -130,8 +130,15 @@ pub fn cue_volume(word: u32) -> i32 {
 /// `counter` is `DAT_801D1AE4`, which retail increments on every call and
 /// masks with `3` only when picking the voice, so it is a free-running u32.
 ///
+/// Named `arena_voice_cue` rather than `sfx_cue` on purpose:
+/// `MenuInput::sfx_cue` in `crate::menu_input` already holds that name, and a
+/// free function sharing a name with anything else is never receiver-gated by
+/// the reachability pass - the collision would eventually manufacture a false
+/// live edge onto this inert port. See
+/// `docs/tooling/stale-not-wired-triage.md`.
+///
 /// PORT: FUN_801d1288
-pub fn sfx_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
+pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     let voice = CUE_VOICE_BASE | (*counter & (CUE_VOICE_SLOTS - 1));
     let v = cue_volume(volume_word);
     *counter = counter.wrapping_add(1);
@@ -178,7 +185,7 @@ mod tests {
     #[test]
     fn the_voice_slot_rotates_over_four() {
         let mut c = 0;
-        let got: Vec<u32> = (0..6).map(|_| sfx_cue(&mut c, 0).voice).collect();
+        let got: Vec<u32> = (0..6).map(|_| arena_voice_cue(&mut c, 0).voice).collect();
         assert_eq!(got, vec![0x10, 0x11, 0x12, 0x13, 0x10, 0x11]);
         assert_eq!(c, 6, "the counter itself keeps counting past the mask");
     }
@@ -209,7 +216,7 @@ mod tests {
     #[test]
     fn the_cue_carries_the_hard_coded_argument_slots() {
         let mut c = 7;
-        let cue = sfx_cue(&mut c, 8);
+        let cue = arena_voice_cue(&mut c, 8);
         assert_eq!(cue.voice, 0x13);
         assert_eq!(cue.level_program_tone, (CUE_LEVEL, CUE_PROGRAM, CUE_TONE));
         assert_eq!(cue.note_and_arg6, (CUE_NOTE, CUE_ARG6));

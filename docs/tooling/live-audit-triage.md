@@ -859,6 +859,26 @@ The transferable rule: when a reason names an artefact, check the artefact
 before checking the caller. Four of these six named artefacts were already in
 the tree, two of them cited by name three files away.
 
+### One more latent name collision, defused
+
+`other_game_overlay`'s free `sfx_cue` shared its name with
+`MenuInput::sfx_cue`. Nothing had fired - the free function is inert and the
+method is a method - but it is the
+[`description_source`](#a-latent-duplicate-free-function-name-landmine-defused)
+shape exactly, and the first bare `sfx_cue(..)` call anywhere would have turned
+a correct disclosure into a false accusation. Renamed to `arena_voice_cue`,
+which also says what it builds.
+
+### Two rows that read as dead code and are not
+
+`mirrored_sprite_pass` (`801d49e8`) and `editor_tick` (`801d4fc8`) have no
+`jal` anywhere, which invites the `project_segment` verdict. Both are wrong for
+it: each address is the callback word of a `0x18`-byte actor prototype in the
+Baka overlay's rodata (`0x801D7688` and `0x801D7670`, adjacent records). They
+are spawnable; what never happens for the editor is its *band* gate. "No `jal`"
+is not "unreachable" until the literal-word form has been checked too - which
+is the whole point of sweeping five reference forms rather than one.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the
