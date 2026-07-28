@@ -667,6 +667,9 @@ pub const COMPARE_LABELS_SPD: [&str; 3] = ["SPD", "INT", "AGL"];
 /// A host fills this from the menu-overlay window table through
 /// `ui_menu_window_dispatch::painter_at`, so an id whose descriptor names a
 /// different routine is skipped rather than mis-drawn.
+///
+/// REF: FUN_801d56fc - window 36's renderer, ported as
+/// [`crate::ui_menu_window_painters::equip_target_list_draws_for`]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RecipientWindowRects {
     /// Window 36 (`FUN_801D56FC`) - the recipient row list.
