@@ -102,11 +102,12 @@ would not find a gap - it would manufacture eighty, because the minigames page
 is a different screen set rather than a second copy of the play page. The real
 cost of that collapse is a *model* question, which tier 3 answers.
 
-## Tier 2 - geometry constants: do paired values agree?
+## Tier 2 - paired constants: do paired values agree?
 
 `CONSTANT_PAIRS` in the same script. Each row names a constant on each host
-that both feed to the *same* engine-ui builder, and the two initialisers must
-normalise to one token stream. Formatting, comments and import aliasing are
+that both feed to the *same* shared kernel - an `engine-ui` builder for the
+screen rows, `swap_bgm` for the BGM transition row - and the two initialisers
+must normalise to one token stream. Formatting, comments and import aliasing are
 noise; a changed digit, a dropped row and a reordered table are all value
 changes. The normaliser's control suite pins both directions, because a
 normaliser that collapsed everything to `""` would report every pair equal.
@@ -348,7 +349,7 @@ transition from being written twice.
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
-- a geometry constant joins tier 2 by being added to `CONSTANT_PAIRS`;
+- a paired constant joins tier 2 by being added to `CONSTANT_PAIRS`;
 - a feature joins tier 3 by being added to `SIM_PAIRS` with its two sites;
 - a trait joins tier 4 by having a default method body and two implementers.
 

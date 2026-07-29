@@ -257,16 +257,19 @@ NATIVE_WINDOW = "crates/engine-shell/src/bin/legaia-engine/window.rs"
 NATIVE_HUD = "crates/engine-shell/src/bin/legaia-engine/window/hud.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
+NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
+WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
 #
 # A pair earns its place by being a number the two hosts each hand to the
-# SAME engine-ui builder. That is what makes a divergence a screen that
-# renders differently on the two hosts rather than an unrelated coincidence
-# of two equal integers - `hud.rs`'s `BATTLE_HUD_PEN` is also `(8, 60)` and
-# is deliberately NOT paired with the level-up pen, because nothing says the
-# battle HUD and the level-up banner must move together.
+# SAME shared kernel - an engine-ui builder for the screen rows, an
+# engine-audio one for the transition row. That is what makes a divergence a
+# feature that behaves differently on the two hosts rather than an unrelated
+# coincidence of two equal integers - `hud.rs`'s `BATTLE_HUD_PEN` is also
+# `(8, 60)` and is deliberately NOT paired with the level-up pen, because
+# nothing says the battle HUD and the level-up banner must move together.
 CONSTANT_PAIRS: list[dict[str, object]] = [
     {
         "what": "pinned menu window-descriptor rects (fallback when the disc "
@@ -295,6 +298,15 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
         "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
         "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
+    },
+    {
+        "what": "BGM transition click-guard ramp - the `fade_in_samples` "
+        "argument each host's BGM director hands to swap_bgm. Long enough and "
+        "the incoming track's intro is inaudible, which on a cutscene sting is "
+        "the whole cue; the browser held a 22050-sample serial cross-fade here "
+        "long after the native host had measured that down to two frames",
+        "native": (NATIVE_BGM, "TRANSITION_FADE_IN_SAMPLES"),
+        "web": (WEB_RUNTIME, "TRANSITION_FADE_IN_SAMPLES"),
     },
 ]
 

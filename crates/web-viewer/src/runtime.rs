@@ -644,9 +644,14 @@ impl LegaiaRuntime {
     ///   "actors": 12, "npcs": 9,
     ///   "player": { "x": 2688, "y": -256, "z": 2432, "facing": 2048,
     ///               "walking": true },
-    ///   "dialog": { "text": "...", "options": ["Yes", "No"], "cursor": 0 } }
+    ///   "dialog": { "text": "...", "options": ["Yes", "No"], "cursor": 0 },
+    ///   "bgm": { "requested": 2019, "playing": 2019 } }
     /// ```
-    /// `dialog` is `null` when no box is up.
+    /// `dialog` is `null` when no box is up. `bgm.requested` is the id the
+    /// simulation's last op-`0x35` selected and `bgm.playing` is the id the
+    /// audio output holds - equal on a healthy frame, and the one externally
+    /// visible signal that a music change resolved without reaching the
+    /// sequencer.
     pub fn state_json(&self) -> String {
         let Some(h) = self.scene_host.as_ref() else {
             return serde_json::json!({
@@ -657,6 +662,7 @@ impl LegaiaRuntime {
                 "npcs": 0,
                 "player": serde_json::Value::Null,
                 "dialog": serde_json::Value::Null,
+                "bgm": self.bgm_value(),
             })
             .to_string();
         };
@@ -682,8 +688,34 @@ impl LegaiaRuntime {
             "npcs": self.npcs.as_ref().map(|n| n.pack.entries.len()).unwrap_or(0),
             "player": player,
             "dialog": self.dialog_value(),
+            "bgm": self.bgm_value(),
         })
         .to_string()
+    }
+
+    /// `{ "requested": id|null, "playing": id|null }` - what the simulation's
+    /// last op-`0x35` selected versus what the audio output is actually
+    /// sounding.
+    ///
+    /// The two are the same value on a healthy frame, and their *drift* is the
+    /// only external symptom of a BGM change that resolved but never reached
+    /// the sequencer. `playing` is `null` whenever audio is not up, which is
+    /// the ordinary state before the first user gesture.
+    fn bgm_value(&self) -> serde_json::Value {
+        let requested = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.current_bgm)
+            .map(serde_json::Value::from)
+            .unwrap_or(serde_json::Value::Null);
+        #[cfg(target_arch = "wasm32")]
+        let playing = self
+            .bgm_last_started
+            .map(serde_json::Value::from)
+            .unwrap_or(serde_json::Value::Null);
+        #[cfg(not(target_arch = "wasm32"))]
+        let playing = serde_json::Value::Null;
+        serde_json::json!({ "requested": requested, "playing": playing })
     }
 
     /// Field pause-menu model: the party (battle order) + inventory + gold the
@@ -1419,7 +1451,8 @@ impl LegaiaRuntime {
 /// Scene-local starts (`bgm_id < 2000`) play their SEQ through the pre-staged
 /// scene bank (`bank`); global-pool tracks (`>= 2000`) carry their own
 /// `[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the path most
-/// real Legaia music takes. Both loop to the start and cross-fade in.
+/// real Legaia music takes. Both loop to the start and land through
+/// [`Self::play`]'s immediate swap.
 #[cfg(target_arch = "wasm32")]
 struct WebBgmDirector<'a> {
     out: &'a WebAudioOut,
@@ -1429,14 +1462,24 @@ struct WebBgmDirector<'a> {
 
 #[cfg(target_arch = "wasm32")]
 impl WebBgmDirector<'_> {
-    /// Cross-fade in a freshly-built, looping sequencer over ~0.5 s at the
-    /// SPU's 44.1 kHz rate. When nothing is playing, `crossfade_to` installs it
-    /// immediately - so this is also the plain first-start path.
+    /// Install a freshly-built, looping sequencer and let it sound from its
+    /// own first event, behind a click-guard ramp of ~2 frames at the SPU's
+    /// 44.1 kHz rate - the same `swap_bgm` call, with the same constant, the
+    /// native `AudioBgmDirector::start_inner` makes.
+    ///
+    /// Not `crossfade_to`. That one is a serial fade: with a track already
+    /// playing it parks the incoming sequencer in `pending_seq` and rolls the
+    /// outgoing one down to silence first, so the new track has not begun a
+    /// fade-length after the script asked for it. Retail BGM changes are hard
+    /// cuts, and a cutscene sting is mostly intro - half a second of the old
+    /// track fading is the whole hook gone.
     fn play(&mut self, bgm_id: u16, seq: legaia_seq::Seq, bank: legaia_engine_audio::VabBank) {
-        const CROSSFADE_SAMPLES: u32 = 22_050;
+        // ~2 frames at 60 Hz (44100 / 60 * 2): long enough to guard an onset
+        // pop, far too short to hide an intro.
+        const TRANSITION_FADE_IN_SAMPLES: u32 = 1_470;
         let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
         sequencer.set_loop_to(0);
-        self.out.crossfade_to(sequencer, CROSSFADE_SAMPLES);
+        self.out.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
         *self.last_started = Some(bgm_id);
     }
 

@@ -223,4 +223,23 @@ impl WebAudioOut {
             s.fade_step = 1.0 / fade_samples.max(1) as f32;
         }
     }
+
+    /// Swap the active sequencer for `new_seq` **immediately** - the twin of
+    /// [`crate::AudioOut::swap_bgm`], and the same
+    /// [`StreamResampler::swap_bgm`] underneath, so both hosts hear one
+    /// model.
+    ///
+    /// This is the hook a BGM *change* takes. [`Self::crossfade_to`] is a
+    /// serial fade: it holds the incoming track in `pending_seq` and rolls
+    /// the outgoing one down to silence first, so the new track's intro is
+    /// still unplayed a fade-length after the script asked for it. Retail's
+    /// changes are hard cuts, and a cutscene sting is mostly intro - which is
+    /// why the browser had to reach this and not the crossfade.
+    ///
+    /// `fade_in_samples` is a short click-guard ramp on the SPU master (a
+    /// couple of frames at most) that only ever rises, so the incoming track
+    /// is audible from its first sample. Pass `0` for a true hard cut.
+    pub fn swap_bgm(&self, new_seq: Sequencer, fade_in_samples: u32) {
+        self.state.borrow_mut().swap_bgm(new_seq, fade_in_samples);
+    }
 }
