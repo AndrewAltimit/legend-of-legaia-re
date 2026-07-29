@@ -153,7 +153,37 @@ kernel-path, single-target and party-wide kills: every assign hit
 |---|---|---|
 | `FUN_80068D94` as "`SsSepOpen` / SEP loader" (with `FUN_80068B98` as "`SsSeqOpen`") | falsified (it is the VAB-open head) | The plausible part: it validates a magic, reads a count at `+0x12`, `SsSpuMalloc`s, and patches a pointer table - the shape of a SEP/track loader, with the magic read as 'VAP'. The disassembly refutes it: the compare is `0x564142` against `word >> 8` plus low byte `0x70` - `pBAV`, the **VAB** magic - and `+0x12` is `ps`. The "per-track pointer table" is the ProgAtr table receiving the program → packed-tone-page rank map ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); the mislabel hid that map, and with it the engine's tone collapse on sparse banks. Correct roles: [`audio.md`](../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |
 | The entry that matches "`[u32 format == 2][u16 spu_addr[256]]`, every address `>= 0x8000`" is `monster.snd` | falsified (it is `summon.dat`; `monster.snd` is a multi-bank VAB two entries away) | [details ↓](#the-256-slot-spu-address-run-that-was-really-a-clut) |
+| Op-`0x35` sub-op 9 is a **queue**, triggered by the next scene entry | falsified (it is a start behind an asset-load barrier) | [details ↓](#op-0x35-sub-op-9-was-never-a-queue) |
 | `_DAT_8007B910` is the live screen brightness | falsified (it is the live **audio level**) | The reading fit the behaviour: the cell ramps down during a summon and back up when the action ends, and a summon does visibly dim the screen. But no reader supports it - all 26 dumped read sites end in a volume setter, none in a draw primitive. The dim rides the separate accumulator `_DAT_8007B440` (`FUN_801ED308` → the wipe emitter `FUN_8003479C`); the two ramp together, which is what made one look like the other. Answer: [`re-settled-threads.md`](re-settled-threads.md#_dat_8007b910-is-the-live-audio-level-not-screen-brightness). |
+
+### Op-`0x35` sub-op 9 was never a queue
+
+**Falsified:** that field-VM op `0x35` sub-op 9 stashes a BGM track for some
+later trigger, and that scene entry is that trigger.
+
+The word "Queue" sat in the sub-op table with no body behind it, and it is a
+reasonable guess: the op appears next to the pause / resume / stop control
+words, it is never the op a scene's *entry* script uses, and its arm does
+begin by comparing two globals - which reads as "is a slot free yet?".
+
+The arm at `0x801E0224` refutes it. The comparison is
+`*0x8007BAB8` (the index the resolver produced) against `*0x8007BA9C` (the
+index actually loaded); the mismatch branch goes to `0x801DEE4C`, which is
+`move s8,s4` - the dispatcher's restore-PC idiom, so the script re-runs this
+same instruction next frame. That is a **wait on the asynchronous asset
+load**. When it clears, `sw v0,-0x4538(a1)` writes `*0x8007BAC8 = id`, the
+identical store sub-op 1 makes. Sub-op 11 (`_DAT_8007BA9C = -1`) is the
+barrier's arming half.
+
+So sub-op 9 is sub-op 1 plus a wait, and it is what a **cutscene** changes
+music with mid-scene. Two things kept the wrong reading alive: a scene-corpus
+BGM sweep only runs prescripts, which emit sub-op 1 exclusively, and the
+sweep's recording director folded its start and queue hooks into one list -
+so a deferred track and a playing one produced identical output. The audible
+symptom is narrow and easy to attribute elsewhere: the cutscene plays silent,
+and its score starts over the *next* scene the player walks into.
+
+Full arm + the port's routing: [`script-vm.md`](../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue).
 
 ### The 256-slot SPU-address run that was really a CLUT
 

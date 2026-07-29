@@ -1033,6 +1033,14 @@ SELFTEST_PAGE_KEYS: list[tuple[str, str, bool]] = [
      "const k = kbd.dataset.key;", False),
     ("resolving through the engine table is the fix",
      "const b = window.legaiaPadButtonOf(e.code); if (b === 'Circle') cast();", False),
+    ("a bindable code in a set membership test is a page-side table",
+     "const startEdge = p.has('Enter');", True),
+    ("...including the key this rule was written for",
+     "if (held.has('Space')) pause();", True),
+    ("a non-key literal in a set test is fine",
+     "if (seenScenes.has('town01')) skip();", False),
+    ("testing the pad bit is the fix",
+     "const startEdge = (padMaskOf(p) & window.legaiaPadButton('Start')) !== 0;", False),
 ]
 
 
@@ -1040,9 +1048,10 @@ def _selftest_page_key_case(src: str) -> bool:
     """Run the tier-5 detectors over one synthetic source; True when flagged."""
     if EVENT_KEY_RE.search(src):
         return True
-    return any(
-        m.group(1) not in NON_PAD_CODES for m in EVENT_CODE_LITERAL_RE.finditer(src)
-    )
+    if any(m.group(1) not in NON_PAD_CODES for m in EVENT_CODE_LITERAL_RE.finditer(src)):
+        return True
+    codes = bindable_dom_codes()
+    return any(m.group(1) in codes for m in KEY_SET_LITERAL_RE.finditer(src))
 
 
 def _selftest_sim_case(mode: str, a: str, b: str, extra: object) -> bool:
@@ -1246,6 +1255,32 @@ EVENT_CODE_LITERAL_RE = re.compile(
     r"\b(?:e|ev|evt|event)\.code\s*[=!]==?\s*['\"]([^'\"]*)['\"]"
 )
 
+# A page may also stash key codes in a Set and later ask `held.has('Enter')`.
+# The literal never touches `event.code`, so the two detectors above are blind
+# to it - and that is not hypothetical: the play page decided whether Start was
+# pressed with `p.has('Enter')`, which meant binding Start to Space bound it
+# everywhere except the one handler that opens the pause menu. Dispatch must go
+# through the pad BUTTON, so a bindable code in a set membership test is the
+# same defect wearing a different shape.
+KEY_SET_LITERAL_RE = re.compile(r"\.(?:has|includes)\(\s*['\"]([^'\"]+)['\"]\s*\)")
+
+
+def bindable_dom_codes() -> set[str]:
+    """The `KeyboardEvent.code`s the engine's own vocabulary binds.
+
+    Parsed from `KEY_NAME_DOM_CODES` in `crates/engine-core/src/input.rs` rather
+    than restated here, so this gate cannot drift from the table it polices.
+    An unreadable table yields an empty set, which disables only this detector.
+    """
+    src = REPO / "crates" / "engine-core" / "src" / "input.rs"
+    if not src.is_file():
+        return set()
+    text = src.read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"KEY_NAME_DOM_CODES[^=]*=\s*\[(.*?)\];", text, re.DOTALL)
+    if not m:
+        return set()
+    return {c for _, c in re.findall(r"\(\s*\"([^\"]+)\"\s*,\s*\"([^\"]+)\"\s*\)", m.group(1))}
+
 # Keys with no PSX pad button, so a page-side comparison against one cannot
 # disagree with a binding. Kept short on purpose: every addition is a key the
 # engine then may not bind.
@@ -1306,6 +1341,19 @@ def check_page_key_tables() -> tuple[list[str], int]:
                 f"`legaiaPadButtonOf` and dispatch on the button, or - if it "
                 f"really is not a pad control - use a key the pad has no "
                 f"button for (NON_PAD_CODES in this gate)."
+            )
+        codes = bindable_dom_codes()
+        for m in KEY_SET_LITERAL_RE.finditer(text):
+            code = m.group(1)
+            if code not in codes:
+                continue
+            line = text.count("\n", 0, m.start()) + 1
+            problems.append(
+                f"PAGE KEY TABLE {rel}:{line}: tests set membership of "
+                f"{code!r}, a key the engine binds. Dispatch on the pad BUTTON "
+                f"instead - e.g. `padMaskOf(pulse) & legaiaPadButton('Start')` "
+                f"- so a key bound to that button anywhere reaches this handler "
+                f"too, and a rebinding follows it."
             )
     return problems, len(sources)
 

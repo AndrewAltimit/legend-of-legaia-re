@@ -23,9 +23,16 @@ pub enum SceneTickEvent {
 ///
 /// Sub-op semantics mirror retail field-VM op `0x35` - see
 /// [`docs/subsystems/script-vm.md`] for the full table. The hook only
-/// receives sub-ops that change playback state (1 = start, 2 = pause,
-/// 3 = resume, 4 = stop, 9 = queue); other sub-ops are control words
+/// receives sub-ops that change playback state (1 and 9 = start, 2 = pause,
+/// 3 = resume, 4 = stop, 8 = re-attach); other sub-ops are control words
 /// that the host can route without sequencer state.
+///
+/// **There is no deferred start.** Sub-op 9 - the op a cutscene changes
+/// music with mid-scene - is a start behind an asset-load barrier this host
+/// never waits on, so it lands on [`BgmDirector::start`] /
+/// [`BgmDirector::start_owned_vab`] like sub-op 1. The reasoning, with the
+/// retail arm quoted, is on [`SceneHost::route_bgm_events`]; a director that
+/// stashes a track for a later trigger silences every cutscene score.
 pub trait BgmDirector {
     /// Start playing the given SEQ bytes for `bgm_id`. The bytes have
     /// already been resolved by the host through
@@ -36,11 +43,6 @@ pub trait BgmDirector {
     fn pause(&mut self) {}
     fn resume(&mut self) {}
     fn stop(&mut self) {}
-    /// Sub-op 9 - queue a BGM for later trigger. The bytes are pre-resolved
-    /// like [`BgmDirector::start`].
-    fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        let _ = (bgm_id, seq_bytes);
-    }
     /// Start a **global-pool** track (`bgm_id >= 2000`) that carries its own
     /// VAB: `entry_bytes` is the whole `music_01` bank entry (a chunk-header,
     /// a `pBAV` VAB body, then a `pQES` score - see
@@ -49,13 +51,8 @@ pub trait BgmDirector {
     /// entry's own VAB before playing its SEQ, because global tracks (every
     /// real music cue - field, battle, minigame) don't live in the scene's
     /// sound bank. The default is a no-op so stub directors that only model
-    /// scene-local BGM stay valid. Sub-op 9 counterpart:
-    /// [`BgmDirector::queue_owned_vab`].
+    /// scene-local BGM stay valid.
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
-        let _ = (bgm_id, entry_bytes);
-    }
-    /// Sub-op 9 queue counterpart of [`BgmDirector::start_owned_vab`].
-    fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
         let _ = (bgm_id, entry_bytes);
     }
     /// Sub-op 8 - re-attach the BGM sound source and re-apply the field

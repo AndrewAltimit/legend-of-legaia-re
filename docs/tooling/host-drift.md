@@ -224,6 +224,17 @@ web UI and out of scope):
 - `KeyboardEvent.code` may be compared to a literal only for a key the PSX pad
   has no button for (`NON_PAD_CODES` in the gate). Those cannot contradict a
   binding - the pad has no Escape.
+- A **set membership test** on a bindable code - `held.has('Enter')`,
+  `pulse.includes('Space')` - is the same defect in a third shape. The literal
+  never touches `event.code`, so the two rules above are blind to it. The
+  bindable set is parsed from `KEY_NAME_DOM_CODES` in the engine rather than
+  restated here, so the gate cannot drift from the table it polices.
+
+That third rule exists because the first two passed a live bug. The play page
+decided whether Start was pressed with `p.has('Enter')`, so binding Start to
+Space bound it on both hosts and in the engine's served table - and in every
+handler except the one that opens the pause menu. The page read the engine's
+table correctly and then dispatched on a key name anyway.
 
 The fix a finding asks for is always the same: resolve the code through
 `legaiaPadButtonOf` and dispatch on the pad **button**. Printed key labels go

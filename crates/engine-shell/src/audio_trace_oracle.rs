@@ -173,7 +173,6 @@ pub struct TraceBgmDirector {
     /// the retail field-BGM default; `None` plays once.
     pub loop_to: Option<usize>,
     paused: bool,
-    pending: Option<(u16, Vec<u8>)>,
     /// Last BGM id passed to `start`. Used to suppress duplicate starts
     /// when the field VM re-emits op `0x35` without a state change.
     pub last_started: Option<u16>,
@@ -187,7 +186,6 @@ impl TraceBgmDirector {
             master_vol: 100,
             loop_to: Some(0),
             paused: false,
-            pending: None,
             last_started: None,
         }
     }
@@ -218,16 +216,6 @@ impl TraceBgmDirector {
     /// called since.
     pub fn is_paused(&self) -> bool {
         self.paused
-    }
-
-    /// Drain any [`BgmDirector::queue`] pending bytes and start them
-    /// playing. Returns `true` if a pending sequencer was attached.
-    pub fn flush_queue(&mut self) -> Result<bool> {
-        let Some((id, bytes)) = self.pending.take() else {
-            return Ok(false);
-        };
-        self.start_inner(id, &bytes)?;
-        Ok(true)
     }
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
@@ -264,10 +252,6 @@ impl BgmDirector for TraceBgmDirector {
         if let Err(e) = self.start_inner(bgm_id, seq_bytes) {
             log::warn!("TraceBgmDirector::start({bgm_id}) failed: {e:#}");
         }
-    }
-
-    fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        self.pending = Some((bgm_id, seq_bytes.to_vec()));
     }
 
     fn pause(&mut self) {
@@ -876,18 +860,16 @@ mod tests {
         assert!(first_audio_trace_divergence_multi(&[], &retail).is_none());
     }
 
-    /// `queue` stashes pending bytes for a later `flush_queue` call. Calling
-    /// `flush_queue` without a bank consumes the pending entry but doesn't
-    /// attach a sequencer (parity with `start_without_bank`).
+    /// A start without a staged bank consumes the request and attaches
+    /// nothing - and there is no second, deferred way in. Field-VM op `0x35`
+    /// sub-op 9 routes here too (it is a start behind a load barrier this
+    /// host never waits on), so the trace director models one entry point,
+    /// not two.
     #[test]
-    fn trace_director_queue_then_flush_consumes_pending() {
+    fn trace_director_start_without_bank_attaches_nothing() {
         let mut d = TraceBgmDirector::new();
-        BgmDirector::queue(&mut d, 42, &[1, 2, 3]);
-        assert!(d.pending.is_some());
-        let drained = d.flush_queue().unwrap();
-        assert!(drained);
-        assert!(d.pending.is_none());
-        // No bank → no sequencer attached after the flush.
+        BgmDirector::start(&mut d, 42, &[1, 2, 3]);
         assert!(d.sequencer().is_none());
+        assert!(!d.is_playing());
     }
 }

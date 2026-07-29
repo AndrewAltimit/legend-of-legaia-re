@@ -107,10 +107,36 @@ impl SceneHost {
     /// each `Bgm{text_id, sub_op}` into the right director hook. Mirrors
     /// the field-VM op `0x35` sub-op table: `1` = start (resolve SEQ
     /// bytes), `2` = pause, `3` = resume, `4` = stop, `8` = re-attach +
-    /// volume re-apply (`FUN_80019898`), `9` = queue.
+    /// volume re-apply (`FUN_80019898`), `9` = start behind a load barrier.
     /// Other sub-ops are passed through as no-ops (the host already
     /// surfaced them on the world's event queue for richer engines to
     /// consume).
+    ///
+    /// # Sub-op 9 is a start, not a queue
+    ///
+    /// Sub-op 9 is the op a cutscene changes music with part-way through a
+    /// scene, and its retail arm (field overlay `0x801E0224`) is a load
+    /// barrier followed by sub-op 1's own track select:
+    ///
+    /// ```text
+    /// 801e022c  lw a0,-0x4548(v0)     ; a0 = *0x8007BAB8  (resolved PROT index)
+    /// 801e0230  lw v0,-0x4564(v1)     ; v0 = *0x8007BA9C  (index actually loaded)
+    /// 801e0238  bne a0,v0,0x801dee4c  ; not settled -> `move s8,s4`, i.e. re-run this PC
+    /// 801e0240  jal 0x8003ce9c        ; read the u16 operand
+    /// 801e0254  sw v0,-0x4538(a1)     ; *0x8007BAC8 = id   <-- sub-op 1's store, verbatim
+    /// ```
+    ///
+    /// So the barrier stalls the *script* until the previously requested
+    /// asset has landed, and then the track is selected exactly as sub-op 1
+    /// selects it. This host resolves BGM bytes synchronously
+    /// ([`SceneHost::music_bank_entry_bytes`] is a plain PROT read), so
+    /// nothing is ever in flight and the barrier is satisfied on arrival -
+    /// which leaves sub-op 9 as a plain start.
+    ///
+    /// Reading it instead as "queue for the next scene entry" is silent in a
+    /// corpus sweep (a scene's *entry* music uses sub-op 1) and audible only
+    /// inside a cutscene: the score never plays where it belongs and then
+    /// starts over whatever scene the player walks into next.
     ///
     /// Returns the number of events that the director acted on. Call once
     /// per frame after [`SceneHost::tick`].
@@ -120,22 +146,15 @@ impl SceneHost {
         for ev in self.world.drain_field_events() {
             match ev {
                 crate::field_events::FieldEvent::Bgm { text_id, sub_op } => match sub_op {
-                    1 => {
+                    // 1 = start; 9 = start behind a load barrier this host
+                    // never has to wait on (see the doc comment above).
+                    1 | 9 => {
                         if let Some(bytes) = self.bgm_seq_bytes(text_id)? {
                             director.start(text_id, &bytes);
                             acted += 1;
                         } else if let Some(entry) = self.music_bank_entry_bytes(text_id)? {
                             // Global-pool track: it brings its own VAB.
                             director.start_owned_vab(text_id, &entry);
-                            acted += 1;
-                        }
-                    }
-                    9 => {
-                        if let Some(bytes) = self.bgm_seq_bytes(text_id)? {
-                            director.queue(text_id, &bytes);
-                            acted += 1;
-                        } else if let Some(entry) = self.music_bank_entry_bytes(text_id)? {
-                            director.queue_owned_vab(text_id, &entry);
                             acted += 1;
                         }
                     }

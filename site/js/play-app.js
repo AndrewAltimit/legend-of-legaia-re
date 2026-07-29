@@ -849,7 +849,10 @@
     _updateFieldMenu() {
       const rt = this.rt;
       const p = this.pulse;
-      const startEdge = p.has('Enter');
+      /* Test the Start *bit*, not a key name: Start answers to Enter and
+       * Space, and a rebinding moves it again. Keying off the literal made
+       * this handler the one place the engine's table did not reach. */
+      const startEdge = (padMaskOf(p) & window.legaiaPadButton('Start')) !== 0;
       let open;
       try { open = rt.play_menu_is_open(); } catch (e) { return false; }
       if (!open) {

@@ -48,9 +48,6 @@ pub struct AudioBgmDirector {
     /// redundant `start(same_id)` calls (the field VM occasionally re-emits
     /// op `0x35` without a state change).
     pub last_started: Option<u16>,
-    /// Optional pending BGM bytes - used by `queue` to defer playback until
-    /// the engine signals a transition (typically the next field-VM tick).
-    pending: Option<(u16, Vec<u8>)>,
     /// Sound-effect descriptor bank (decoded from the executable's
     /// `DAT_8006F198` table, see `sfx-table.md`). Empty until
     /// [`Self::set_sfx_bank`]; play requests against an empty bank no-op.
@@ -99,7 +96,6 @@ impl AudioBgmDirector {
             loop_to: Some(0),
             paused: false,
             last_started: None,
-            pending: None,
             sfx_bank: SfxBank::new(),
             sfx_cue_slots: BTreeMap::new(),
             sfx_vabs: BTreeMap::new(),
@@ -260,17 +256,6 @@ impl AudioBgmDirector {
         self.audio.sequencer_progress().is_some() && !self.paused
     }
 
-    /// Drain whatever was queued by the most recent [`BgmDirector::queue`]
-    /// call. Engines call this when transitioning into the scene that
-    /// should play the queued track.
-    pub fn flush_queue(&mut self) -> Result<bool> {
-        let Some((id, bytes)) = self.pending.take() else {
-            return Ok(false);
-        };
-        self.start_inner(id, &bytes)?;
-        Ok(true)
-    }
-
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
     /// upload the entry's **own** VAB into the SPU BGM region (capped below
     /// the resident SFX bank, exactly like `stage_scene_vab`), stash it as the
@@ -347,10 +332,6 @@ impl BgmDirector for AudioBgmDirector {
         }
     }
 
-    fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        self.pending = Some((bgm_id, seq_bytes.to_vec()));
-    }
-
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
         // Suppress a redundant re-emit of the same global track (the field VM
         // occasionally re-fires op 0x35): re-uploading the VAB + restarting
@@ -367,14 +348,6 @@ impl BgmDirector for AudioBgmDirector {
         };
         if let Err(e) = self.start_inner(bgm_id, &seq) {
             log::warn!("AudioBgmDirector::start_owned_vab({bgm_id}) failed: {e:#}");
-        }
-    }
-
-    fn queue_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
-        // Upload the VAB now (so the bank is ready) and defer the SEQ start to
-        // the next `flush_queue`.
-        if let Some(seq) = self.stage_owned_vab(entry_bytes) {
-            self.pending = Some((bgm_id, seq));
         }
     }
 
@@ -465,23 +438,17 @@ mod tests {
         }
     }
 
-    /// Director without an audio handle - exercises queue / pause / resume
-    /// state machines without opening a cpal stream (CI has no audio
-    /// device). We can't construct AudioOut without a device, so the start
-    /// / stop tests live as integration tests in environments where audio
-    /// is available.
+    /// The director exposes no deferred-start slot at all: field-VM op
+    /// `0x35` sub-op 9 is a start behind a load barrier this host never
+    /// waits on, so `BgmDirector` carries `start` / `start_owned_vab` and
+    /// nothing that stashes a track for a later trigger. Kept as a
+    /// compile-time pin: adding a queue back would need a caller, and the
+    /// only caller a queue ever had was a scene entry - which is the wrong
+    /// trigger for a mid-cutscene music change.
     #[test]
-    fn queue_then_flush_replays_pending_bytes_or_logs_warning() {
-        // Quick offline test: the queue / flush plumbing doesn't touch
-        // audio when there's no bank. We simulate by directly setting the
-        // pending field.
-        struct Stub {
-            pending: Option<(u16, Vec<u8>)>,
-        }
-        let mut s = Stub { pending: None };
-        s.pending = Some((42, vec![1, 2, 3]));
-        let drained = s.pending.take();
-        assert_eq!(drained, Some((42, vec![1, 2, 3])));
+    fn director_has_no_deferred_start_slot() {
+        fn assert_director<T: BgmDirector>() {}
+        assert_director::<AudioBgmDirector>();
         let _ = empty_bank(); // touch path so unused-import lint stays clean
     }
 }

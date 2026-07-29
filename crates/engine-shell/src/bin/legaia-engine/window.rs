@@ -1231,10 +1231,39 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::KeyQ => "Q",
         KeyCode::KeyW => "W",
         KeyCode::Enter => "Enter",
+        KeyCode::Space => "Space",
         KeyCode::ShiftRight => "RShift",
         KeyCode::Digit1 => "1",
         KeyCode::Digit2 => "2",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod key_binding_tests {
+    use super::keycode_to_name;
+    use legaia_engine_core::input::{Mapping, PadButton};
+    use winit::keyboard::KeyCode;
+
+    /// Start answers to Enter and Space on the desktop build too.
+    ///
+    /// The native path has two halves that can disagree silently: this file
+    /// turns a winit `KeyCode` into a key *name*, and `Mapping` turns that name
+    /// into a button. A name missing from `keycode_to_name` resolves to `""`,
+    /// which binds to nothing - so the binding can be correct in the shared
+    /// table and still dead in the window, with neither file looking wrong.
+    #[test]
+    fn start_answers_to_both_enter_and_space() {
+        let m = Mapping::default();
+        for code in [KeyCode::Enter, KeyCode::Space] {
+            let name = keycode_to_name(code);
+            assert!(!name.is_empty(), "{code:?} must resolve to a key name");
+            assert_eq!(
+                m.pad_button_for_key(name),
+                Some(PadButton::Start),
+                "{code:?} -> {name} must be Start"
+            );
+        }
     }
 }
 
