@@ -444,8 +444,11 @@ pub enum TileStep {
 ///
 /// PORT: FUN_801D0E54
 ///
-/// NOT WIRED: called only by [`tick_tile_grid`], which is itself inert - see
-/// the tag there.
+/// WIRED, without a draw. [`tick_tile_grid`] calls this for every record on
+/// every frame of the shatter transition the native window runs, so the
+/// integration and the retire gate are live; the packet the record would be
+/// drawn with is the part that has no consumer. See the tag on
+/// [`tick_tile_grid`].
 pub fn step_tile(rec: &mut TileRecord, frame_step: u8, scaled_clock: i32) -> TileStep {
     if rec.progress >= TILE_PROGRESS_LIMIT {
         return TileStep::Retired;

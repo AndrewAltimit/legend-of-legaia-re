@@ -207,6 +207,25 @@ in the file has a caller. The moment one item is wired, the blanket asserts
 something false about it and cannot be narrowed, because per-anchor disclosure
 reads the module doc unconditionally.
 
+## What the stale tags are
+
+The FALSE-EDGE mechanisms above are properties of *names*. A STALE-TAG has its
+own recurring shape, and it is worth stating separately because the fix is not
+a rename.
+
+**A disclosure that delegates to a sibling's tag.** A leaf kernel called from
+exactly one place often discloses by pointing at that caller - "called only by
+`X`, which is itself inert, see the tag there". The sentence is true when it is
+written and becomes false the moment `X` is wired, silently: nothing in `X`'s
+edit touches the leaf, and the leaf's own text still reads as a careful,
+sourced disclosure. Five of the battle-intro anchors were exactly this. When a
+tag's reason is *another tag*, wiring the cited item is an edit to both.
+
+The transferable rule is the same one the anchor-granularity section states from
+the other side: **wiring a caller is not done until every disclosure that named
+it has been re-read.** Grep the file set for the wired symbol's name before
+closing that work, not after the next audit.
+
 ## Rows
 
 None open.
@@ -246,6 +265,12 @@ so a recurrence is recognisable rather than re-derived.
 | `801d4a60` | `engine-core/src/field_actor_program.rs` | FALSE-EDGE | `step` renamed `step_scene_program`. A free `fn step` is never receiver-gated and collected edges from the live `motion_vm::step` and from every reachable function naming a local `step` (`fishing_advance_cast(&mut self, step: i32)` fired it). Exposed `entry_successor` / `lift_step`, which then needed their own disclosures. |
 | `801dd0c0` | `engine-core/src/menu_item_category.rs` | Wired, inert at runtime | Statically reached via `EquipSession::best_equipment_now`'s `weapon_category_score` closure. Nothing calls `with_weapon_category`, so the table is always empty and the `is_empty()` arm short-circuits. Rewritten in the `emit_horizon` idiom. |
 | `801ddc20` | `engine-core/src/field_actor_kernels.rs` | Wired, inert at runtime | `World::tick_handler_actors` dispatches it every tick, but no host installs `ActorHandler::ColourTween`, so the `a.colour_tween` guard is always `None`. The tag said as much already; only the token had to go. |
+| `801cf1b0` | `engine-vm/src/battle_intro_transition.rs` | STALE-TAG | `build_intro_quad`'s only caller `tick_curtain` draws end to end. Its reason - the PROT 0979 descriptor table "which the engine never loads" - was falsified by `IntroQuadTable::parse_overlay`, which the caller's own tag already recorded. |
+| `801cfbb4`, `801d0164` | `engine-vm/src/battle_intro_particles.rs` | STALE-TAG | `BattleIntro::new` seeds the grid on every particle-style transition. The module blanket came off; the file is wholly wired, so nothing in it needed a per-item line. What survives as prose is the two real gaps: no packet consumer, and computed trig standing in for the overlay's height tables. |
+| `801cfda0`, `801d0370` | `engine-vm/src/battle_intro_styles.rs` | STALE-TAG | `step_particle` is reached from `tick_particle_field`, whose own tag had already been rewritten to `NOT DRAWN`. The sibling-delegation shape above. |
+| `801d0e54` | `engine-vm/src/battle_intro_tiles.rs` | STALE-TAG | Same shape: `step_tile` cited `tick_tile_grid`, which by then read `WIRED, without a draw`. |
+| `801d1a20` | `engine-vm/src/battle_intro_swirl.rs` | STALE-TAG | Same shape: `swirl_band_draw` cited `tick_swirl`, likewise already `WIRED, without a draw`. |
+| `801e1934` | `engine-core/src/card_flow.rs` | FALSE-EDGE | `save_title_digits` renamed `block_title_digits`; the live copy is `legaia_save::card::save_title_digits`, which the browser card rack writes through. A duplicate free-function name across two crates, never receiver-gated. Its own caller `save_block_summary` has no non-test call site. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the

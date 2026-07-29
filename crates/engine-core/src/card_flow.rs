@@ -81,7 +81,7 @@
 //!   stamps only the two-byte `SC`, leaving `+2` / `+3` at whatever the
 //!   block held.
 //! * retail writes the slot's two title digits
-//!   ([`save_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the
+//!   ([`block_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the
 //!   BIOS card browser renders full-width numerals). The composer writes
 //!   no title at all.
 //!
@@ -607,8 +607,16 @@ pub struct SaveBlockSummary {
 /// retail code reaches the tens digit through the `0x66666667` reciprocal
 /// multiply, which is an exact `/10` for the range in play.
 ///
+/// Named `block_title_digits` and not `save_title_digits`: `legaia_save`'s
+/// `card::save_title_digits` is the copy the browser card rack actually
+/// writes through, and a free function is never receiver-gated in the
+/// reachability pass - two free functions of one name share every bare call
+/// site, so the live one lifted this inert one and made the module's
+/// disclosure read stale. See
+/// [`stale-not-wired-triage.md`](../../../docs/tooling/stale-not-wired-triage.md).
+///
 /// PORT: FUN_801e1934 (`0x801E1974..0x801E19EC`)
-pub fn save_title_digits(slot: u32) -> [u8; 2] {
+pub fn block_title_digits(slot: u32) -> [u8; 2] {
     let n = slot.wrapping_add(1);
     let tens = (n / 10) as u8;
     let ones = (n % 10) as u8;
@@ -635,7 +643,7 @@ pub fn save_block_summary(
 ) -> SaveBlockSummary {
     SaveBlockSummary {
         slot,
-        title_digits: save_title_digits(slot),
+        title_digits: block_title_digits(slot),
         party_count: members.len() as u8,
         members: members.to_vec(),
         world_pos,
@@ -972,10 +980,10 @@ mod tests {
 
     #[test]
     fn title_digits_are_one_based_and_biased_to_full_width() {
-        assert_eq!(save_title_digits(0), [0x4F, 0x50]);
-        assert_eq!(save_title_digits(8), [0x4F, 0x58]);
-        assert_eq!(save_title_digits(9), [0x50, 0x4F]);
-        assert_eq!(save_title_digits(14), [0x50, 0x54]);
+        assert_eq!(block_title_digits(0), [0x4F, 0x50]);
+        assert_eq!(block_title_digits(8), [0x4F, 0x58]);
+        assert_eq!(block_title_digits(9), [0x50, 0x4F]);
+        assert_eq!(block_title_digits(14), [0x50, 0x54]);
     }
 
     #[test]

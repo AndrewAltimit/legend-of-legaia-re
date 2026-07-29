@@ -119,6 +119,13 @@ pub const TIMED_FIGHT_TURN_LIMIT: u32 = 4;
 /// arithmetic, not a rule any dome session is subject to.
 ///
 /// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
+///
+/// NOT WIRED: deliberately. [`MuscleDomeSession`] does not read it and must
+/// not - the strip is Koru's timed fight, gated on formation slot 0 being
+/// [`TIMED_FIGHT_MONSTER_ID`], and a dome round is an ordinary battle that
+/// ends on a knockout. A caller appears when a host draws that one fight's
+/// `Turns Left / HP Left` HUD strip, which needs the formation-cell gate the
+/// engine does not carry.
 pub fn timed_fight_turns_left(turn: u32) -> u32 {
     TIMED_FIGHT_TURN_LIMIT.saturating_sub(turn)
 }

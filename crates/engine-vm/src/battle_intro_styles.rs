@@ -496,8 +496,10 @@ fn shr_toward_zero(v: i32, bits: u32) -> i32 {
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// NOT WIRED: called only by [`tick_particle_field`], which is itself inert -
-/// see the tag there.
+/// NOT DRAWN: [`tick_particle_field`] calls this for every particle on every
+/// transition frame the native window runs, so the integration is live; what
+/// no host consumes is the per-particle packet it decides. See the tag on
+/// [`tick_particle_field`] for the emit half.
 pub fn step_particle(
     p: &mut IntroParticle,
     style: &ParticleTickStyle,
