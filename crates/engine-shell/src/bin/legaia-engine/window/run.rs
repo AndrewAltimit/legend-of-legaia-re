@@ -805,6 +805,7 @@ pub(super) fn cmd_play_window_with_record(
         cpu_vram_base: None,
         battle_vram: None,
         battle_intro: None,
+        battle_intro_vram: None,
         battle_vram_generation: None,
         battle_tex_slots_used: 0,
         battle_faces: Vec::new(),

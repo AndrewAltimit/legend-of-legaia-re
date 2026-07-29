@@ -167,7 +167,6 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | Battle ground grid's depth cue - the far colour | partial - `DQA` / `DQB` pinned; the far colour `FC` is not | [details ↓](#battle-ground-grids-depth-cue---the-far-colour) |
-| Battle-intro tile shatter - the side-face shade page | open - the page is live only during a transition, and no capture is | [details ↓](#battle-intro-tile-shatter---the-side-face-shade-page) |
 
 ### Battle ground grid's depth cue - the far colour
 
@@ -213,30 +212,6 @@ Until then the grid stays unfogged, which is a visible but bounded
 divergence - and preferable to fogging it toward a guessed colour, which would
 be wrong in a way nothing downstream could detect.
 
-### Battle-intro tile shatter - the side-face shade page
-
-*Status:* three of four emitter inputs pinned; the port ticks the style but does not draw it
-
-The tile shatter is the style the **ordinary random encounter** takes, so it is
-the most-seen transition in the game and the port draws none of it. The
-emitter is fully specified - see
-[`cutscene.md`](../subsystems/cutscene.md#what-style-2s-emitter-builds-and-the-one-input-still-missing)
-for the ten-primitive face table, the reject chain and the OT depth - and the
-corner table (`[0, 1, 17, 18]`, off PROT 0979) and the GTE screen centre
-(`OFX = 160`, `OFY = 114`) are both pinned.
-
-**What is missing** is the content of the 4bpp page at VRAM `(448, 0)` that the
-four semi-transparent side faces stretch over. Its CLUT at `(16, 473)` reads
-as a 16-entry black-to-white brightness ramp in a battle-load state, which is
-what a shade texture's palette should look like, but the page itself is sparse
-there - and every catalogued state is captured before or after a transition,
-never during one, which is the only window where the page is live.
-
-**What would close it.** One save state taken *inside* a field-to-battle
-transition, then `mednafen-state vram-dump` over `(448, 0)` for 64x64 texels at
-4bpp. The style runs for a known, short number of frames, so the capture wants
-a scripted pause rather than a human reflex - a PCSX-Redux breakpoint on
-`FUN_801D0D24` with a state dump on the first hit would land it directly.
 
 ## Audio / BGM
 

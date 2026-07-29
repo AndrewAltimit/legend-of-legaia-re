@@ -27,9 +27,9 @@
 //! | Style | Working set ticks | Emits primitives |
 //! |---|---|---|
 //! | [`IntroStyle::Curtain`] | yes | **yes** - complete |
+//! | [`IntroStyle::TileShatter`] | yes | **yes** - complete |
 //! | [`IntroStyle::ScatterParticles`] | yes | no - see below |
 //! | [`IntroStyle::SpinUpParticles`] | yes | no |
-//! | [`IntroStyle::TileShatter`] | yes | no |
 //! | [`IntroStyle::Swirl`] | yes | no |
 //!
 //! The curtain is complete because it is the one style whose packet builder is
@@ -41,21 +41,34 @@
 //! passes name decode to exactly the rects [`crate::vram_capture`] captures
 //! into.
 //!
-//! The other four end in a GTE/GPU packet emitter that is documented but not
+//! The tile shatter - the style the **ordinary random encounter** takes - is
+//! complete because every input its emitter needs is now pinned: the packet
+//! is [`legaia_engine_vm::battle_intro_tiles::tile_face_quads`], the corner
+//! table decodes off PROT 0979 ([`parse_tile_corner_table`]), the projection
+//! chain is the FT4 handler's ([`emit_tile`]'s doc has the accept chain), and
+//! the 4bpp shade page its side faces sample turned out to be **disc data
+//! already parsed by the engine** - `legaia_asset::field_char_textures` entry
+//! 0 (PROT 0874 §2), which [`BattleIntro::capture_field_frame`] lands in the
+//! transition's cloned page. One retail nuance is *not* carried: the
+//! dispatcher runs a moving tile's opaque faces through the depth-cue alpha
+//! bank (fade toward a zeroed far colour), which the screen overlay has no
+//! channel for - receding tiles keep their face grey instead of also dimming
+//! with distance.
+//!
+//! The other three end in a GTE/GPU packet emitter that is documented but not
 //! ported (`docs/subsystems/cutscene.md` § "Per-style emitters"): the particle
-//! styles project sprite quads through the sprite projector, the tiles project
-//! eight-corner boxes, and the swirl submits 32 primitives per band half from a
-//! 198-vertex fan. Two further inputs are missing for three of them - the
-//! `0x801CE8BC` corner table (tiles) and the trig tables `_DAT_8007B7F8` /
-//! `_DAT_8007B81C` (tiles, swirl, both particle styles) - and the swirl's fan
-//! is triangles, which [`ScreenPrim`] has no variant for at all.
+//! styles project sprite quads through the sprite projector, and the swirl
+//! submits 32 primitives per band half from a 198-vertex fan. The trig tables
+//! `_DAT_8007B7F8` / `_DAT_8007B81C` are no longer a blocker (the tile draw
+//! reproduces them via [`crate::billboard::psx_sin`]); the swirl's fan is
+//! triangles, which [`ScreenPrim`] has no variant for at all.
 //!
 //! Ticking their working sets anyway is deliberate and is not an inert
 //! allocation: the fade ramp and the transition's own completion arm both read
-//! the same clock, so a battle opened on any of the four still fades and still
-//! hands off on the retail frame. What it does not do is draw the style, and
-//! [`IntroFrame::style_drawn`] reports that per frame rather than leaving a
-//! caller to infer it from an empty list.
+//! the same clock, so a battle opened on any of the three still fades and
+//! still hands off on the retail frame. What it does not do is draw the style,
+//! and [`IntroFrame::style_drawn`] reports that per frame rather than leaving
+//! a caller to infer it from an empty list.
 //!
 //! # The capture is a two-rect affair, and both rects are used
 //!
@@ -66,6 +79,8 @@
 //! capture at [`FIELD_CAPTURE_ROWS`] and the column pass an identical copy at
 //! [`FIELD_CAPTURE_COLS`]. [`BattleIntro::capture_field_frame`] writes both.
 
+use crate::billboard::{psx_cos, psx_sin};
+use crate::gte::{GteMat3, GteVec3, ScreenXY, avsz4_with_scale, gte_divide, gte_persp_term, nclip};
 use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
 use crate::vram_capture::{
     CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
@@ -112,6 +127,165 @@ pub fn capture_rects_for(style: IntroStyle) -> &'static [VramRect] {
     match style {
         IntroStyle::TileShatter => &COLS_ONLY,
         _ => &BOTH,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The tile shatter's projection (the dispatcher work around `FUN_801D0E54`)
+// ---------------------------------------------------------------------------
+
+/// GTE screen-centre offsets during the transition, in whole pixels.
+/// `OFY = 114` is **not** `240 / 2` - pinned by the GTE control file of nine
+/// save states (`crates/mednafen/tests/gte_projection_real.rs`).
+pub const INTRO_OFX: i32 = 160;
+/// See [`INTRO_OFX`].
+pub const INTRO_OFY: i32 = 114;
+
+/// GTE focal length the tile tick loads (`li a0,0x80` at `0x801D0D30` into
+/// `FUN_8003D254`).
+pub const INTRO_H: u16 = 0x80;
+
+/// The FT4 handler's near cutoff: a primitive whose `AVSZ4` OT depth lands
+/// below this is dropped (`sub v1,s2,t4; bltz` at `0x80043AF0`). The value
+/// is the scratch halfword `0x1F80037E`, read as `0x10` on every frame of a
+/// live shatter capture.
+pub const INTRO_NEAR_OTZ: i32 = 0x10;
+
+/// `ZSF4` during the transition: the dispatcher writes
+/// `0x400 >> (_DAT_1F8003A4 & 0x1F)` and the shift is `0` in the live
+/// capture, so `AVSZ4` yields `(sz0+sz1+sz2+sz3) >> 2` - the plain average.
+pub const INTRO_ZSF4: i32 = 0x400;
+
+/// Overlay VA of the tile seeder's corner-offset table (`0x801CE8BC`, four
+/// words) inside PROT 0979. `parse_tile_corner_table` reads it; the values
+/// decode to `[0, 1, 17, 18]` - one step right / one row down in the
+/// `17 x 17` vertex grid.
+pub const TILE_CORNER_TABLE_VA: u32 = 0x801C_E8BC;
+
+/// Read the tile corner-offset table out of a PROT 0979 image relocated to
+/// its load base. `None` when the image is too short.
+pub fn parse_tile_corner_table(as_loaded: &[u8], base_va: u32) -> Option<[i32; 4]> {
+    let off = TILE_CORNER_TABLE_VA.checked_sub(base_va)? as usize;
+    let bytes = as_loaded.get(off..off + 16)?;
+    Some(std::array::from_fn(|i| {
+        i32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
+    }))
+}
+
+/// The SCUS Euler-triple → GTE rotation kernel `FUN_80026988`, exactly as
+/// the disassembly composes it: `Rx(x) * Ry(y) * Rz(z)` with every product
+/// truncated to q3.12 **per term** (each `mult` is followed by its own
+/// `sra 12`; the mixed second-row/third-row terms are two-step products, so
+/// they truncate twice). Angles are 12-bit (`& 0xFFF`), sin/cos from the
+/// same table [`psx_sin`] reproduces.
+///
+/// PORT: FUN_80026988
+pub fn euler_rot_psx(angles: (i16, i16, i16)) -> GteMat3 {
+    let ang = |a: i16| (a as u16) & 0xFFF;
+    let (cx, sx) = (psx_cos(ang(angles.0)), psx_sin(ang(angles.0)));
+    let (cy, sy) = (psx_cos(ang(angles.1)), psx_sin(ang(angles.1)));
+    let (cz, sz) = (psx_cos(ang(angles.2)), psx_sin(ang(angles.2)));
+    let q = |v: i32| v >> 12;
+    // The two shared two-step products (`iVar3` / `iVar2` in the decomp).
+    let a = q(cz * -sy);
+    let b = q(sz * -sy);
+    let e = |v: i32| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+    GteMat3 {
+        m: [
+            [e(q(cz * cy)), e(q(-(sz * cy))), e(sy)],
+            [
+                e(q(sz * cx) - q(a * sx)),
+                e(q(cz * cx) + q(b * sx)),
+                e(q(-(cy * sx))),
+            ],
+            [
+                e(q(sz * sx) + q(a * cx)),
+                e(q(cz * sx) - q(b * cx)),
+                e(q(cy * cx)),
+            ],
+        ],
+    }
+}
+
+/// One projected corner: the saturated SXY plus the SZ depth bucket.
+#[derive(Debug, Clone, Copy)]
+struct ProjCorner {
+    xy: ScreenXY,
+    sz: i32,
+}
+
+/// `RTPS` for one tile corner: rotate by the tile's own matrix, translate by
+/// the record position (the per-tile MVMVA result - the transition's view
+/// matrix is identity rotation with zero translation from the second frame
+/// on, pinned live), perspective-divide through the UNR reciprocal at
+/// [`INTRO_H`], and offset by the transition's screen centre.
+fn project_tile_corner(rot: &GteMat3, tr: GteVec3, c: (i16, i16, i16)) -> ProjCorner {
+    let v = rot.mul_vec(GteVec3::new(i32::from(c.0), i32::from(c.1), i32::from(c.2)));
+    let (x, y, z) = (v.x + tr.x, v.y + tr.y, v.z + tr.z);
+    // SZ3 saturates to 0..0xFFFF; the divide then saturates at the
+    // behind-camera bound exactly as hardware does.
+    let sz = z.clamp(0, 0xFFFF);
+    let (recip, _overflow) = gte_divide(INTRO_H, sz as u16);
+    let ir = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX));
+    let sx = INTRO_OFX + gte_persp_term(ir(x), recip) as i32;
+    let sy = INTRO_OFY + gte_persp_term(ir(y), recip) as i32;
+    ProjCorner {
+        xy: ScreenXY::new(sx, sy).saturate_sxy(),
+        sz,
+    }
+}
+
+/// Project one tile's ten-face packet and append the survivors to `prims`.
+///
+/// The accept chain is the FT4 handler's (`FUN_800439E4`, the slot-17 leaf
+/// `FUN_80043390` dispatches this packet to): `NCLIP` over corners 0-2, a
+/// second `NCLIP` over 1-3 after the fourth `RTPS`, **accept unless
+/// `nclip1 <= 0 && nclip2 >= 0`**. A planar quad's two strip triangles wind
+/// oppositely, so the straight orientation (`n1 > 0`) passes and the reversed
+/// one (`n1 < 0, n2 > 0`) rejects - the faces are single-sided, which is why
+/// the packet's back face reverses its corner order relative to the front:
+/// each culls exactly when it faces away. Then `AVSZ4` for the OT depth
+/// and the [`INTRO_NEAR_OTZ`] cutoff. Faces are appended in packet order;
+/// [`crate::screen_overlay::order_primitives`]'s tie-break (later-submitted
+/// draws first) then reproduces `AddPrim`'s prepend, which is what lands the
+/// shade set on top of its opaque siblings within a bucket.
+pub fn emit_tile(
+    rec: &legaia_engine_vm::battle_intro_tiles::TileRecord,
+    prims: &mut Vec<ScreenPrim>,
+) {
+    use legaia_engine_vm::battle_intro_tiles::tile_face_quads;
+    let Some(quads) = tile_face_quads(rec) else {
+        return;
+    };
+    let rot = euler_rot_psx(rec.angles);
+    let tr = GteVec3::new(
+        i32::from(rec.pos.0),
+        i32::from(rec.pos.1),
+        i32::from(rec.pos.2),
+    );
+    for q in &quads {
+        let p: [ProjCorner; 4] =
+            std::array::from_fn(|i| project_tile_corner(&rot, tr, q.corners[i]));
+        let n1 = nclip(p[0].xy, p[1].xy, p[2].xy);
+        let n2 = nclip(p[1].xy, p[2].xy, p[3].xy);
+        if n1 <= 0 && n2 >= 0 {
+            continue;
+        }
+        let otz = avsz4_with_scale(p[0].sz, p[1].sz, p[2].sz, p[3].sz, INTRO_ZSF4);
+        if otz < INTRO_NEAR_OTZ {
+            continue;
+        }
+        let grey = u32::from(q.grey);
+        prims.push(ScreenPrim::Textured(ScreenQuad {
+            xy: std::array::from_fn(|i| (p[i].xy.x as i16, p[i].xy.y as i16)),
+            uv: q.uv,
+            clut: q.clut,
+            tpage: q.tpage,
+            color: grey << 16 | grey << 8 | grey,
+            gouraud: None,
+            semi_transparent: q.semi_transparent,
+            ot_index: otz as u32,
+        }));
     }
 }
 
@@ -218,6 +392,15 @@ pub struct BattleIntro {
     /// written back into the host's page because the capture is transient: it
     /// exists for the transition and the field base must survive it unedited.
     captured: Option<Vram>,
+    /// The field-character texture pack (PROT 0874 §2), whose **entry 0** is
+    /// the tile shatter's shade page: a 256x256 4bpp TIM at `(448, 0)` with
+    /// its 16-CLUT block landing as a 256x1 strip on row 473. Retail keeps it
+    /// resident for the whole field session; the engine's field VRAM
+    /// deliberately does not (its extra pages would clobber rects the town
+    /// meshes sample), so the capture re-lands it in the **cloned** page the
+    /// transition draws against. `None` = no disc access; the shade faces
+    /// then sample whatever the base page holds.
+    shade_pack: Option<legaia_asset::field_char_textures::FieldCharTextures>,
 }
 
 impl BattleIntro {
@@ -289,7 +472,18 @@ impl BattleIntro {
             clock: 0,
             total_duration,
             captured: None,
+            shade_pack: None,
         }
+    }
+
+    /// Attach the field-character texture pack whose entry 0 is the shade
+    /// page (see the `shade_pack` field). Only the tile shatter consults it.
+    pub fn with_shade_pack(
+        mut self,
+        pack: Option<legaia_asset::field_char_textures::FieldCharTextures>,
+    ) -> Self {
+        self.shade_pack = pack;
+        self
     }
 
     /// The style this emitter is running.
@@ -334,6 +528,11 @@ impl BattleIntro {
     ) -> anyhow::Result<&Vram> {
         let img = renderer.capture_rgba(target)?;
         let style = self.style;
+        let shade = if style == IntroStyle::TileShatter {
+            self.shade_pack.as_ref()
+        } else {
+            None
+        };
         let page = self.captured.insert(base.clone());
         let opts = CaptureOpts { set_mask_bit: true };
         // Only the rects this style samples - see `capture_rects_for`. The
@@ -343,6 +542,15 @@ impl BattleIntro {
             crate::vram_capture::blit_rgba_into_vram(
                 &img.rgba, img.width, img.height, page, *rect, opts,
             );
+        }
+        // The shade page + its row-473 CLUT strip (see `shade_pack`). Entry 0
+        // only: the pack's character-atlas entries are already in the base
+        // page via the host's field upload, and its other shared pages land
+        // on rects the scene meshes sample.
+        if let Some(pack) = shade {
+            let mut entry0 = pack.clone();
+            entry0.textures.retain(|t| t.index == 0);
+            entry0.upload_to_vram(page, false);
         }
         Ok(page)
     }
@@ -363,7 +571,22 @@ impl BattleIntro {
                 styles::tick_particle_field(grid, style, &mut self.clock, frame_step);
             }
             WorkingSet::Tiles(grid) => {
-                tiles::tick_tile_grid(grid, &mut self.clock, frame_step);
+                // Retail's first shatter frame projects through the field
+                // camera's stale view matrix (the transition setup rewrites
+                // the scratch matrix only after it), which puts every tile
+                // behind the near plane - so frame one draws no tiles, and
+                // `not_first_frame` (`_DAT_8007B6CC`) is the same signal.
+                // From frame two the view is identity rotation + zero
+                // translation (pinned live), which is what `emit_tile`
+                // hard-codes.
+                let emit = self.clock != 0;
+                let before = out.prims.len();
+                tiles::tick_tile_grid_emit(grid, &mut self.clock, frame_step, |rec| {
+                    if emit {
+                        emit_tile(rec, &mut out.prims);
+                    }
+                });
+                out.style_drawn = out.prims.len() > before;
             }
             WorkingSet::Curtain(table) => {
                 let tick = styles::tick_curtain(&mut table.0, &mut self.clock, frame_step);

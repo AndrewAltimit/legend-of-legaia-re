@@ -1690,15 +1690,21 @@ impl PlayWindowApp {
             // the rest of this frame against that page. Retail gets it for
             // free - on the console the framebuffer *is* VRAM - so the port
             // re-renders this scene offscreen and blits the readback in.
-            let intro_vram = Self::capture_battle_intro_frame(
+            if let Some(v) = Self::capture_battle_intro_frame(
                 battle_intro.as_mut(),
                 r,
                 &scene,
                 self.cpu_vram_base.as_ref(),
-            );
-            let scene = match intro_vram.as_ref() {
-                Some(v) => RenderScene { vram: v, ..scene },
-                None => scene,
+            ) {
+                // Keep the captured page GPU-resident for the whole
+                // transition: the capture is a one-shot, but every
+                // transition frame's primitives sample it (the curtain
+                // strips, and the tile shatter's pages + shade page).
+                self.battle_intro_vram = Some(v);
+            }
+            let scene = match (battle_intro.as_ref(), self.battle_intro_vram.as_ref()) {
+                (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
+                _ => scene,
             };
             // The intro's primitives composite *over* the scene in one frame.
             // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame

@@ -285,20 +285,17 @@ pub use crate::battle_intro_particles::ParticleEnv;
 /// PORT: FUN_801D081C
 /// REF: FUN_80019B28 (heading), FUN_8005AF0C (sqrt), FUN_80056798 (rand)
 ///
-/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
-/// owns the [`TileGrid`] between frames and ticks it from the live transition
-/// clock, and [`select_intro_style`] makes this the style the **ordinary
-/// random encounter** takes - so this working set runs on most battles.
+/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// [`TileGrid`] between frames, ticks it from the live transition clock, and
+/// **draws it**: [`tile_face_quads`] resolves each record's ten-primitive
+/// packet and the render side projects it through the ported FT4-handler
+/// chain (`battle_intro::emit_tile`). [`select_intro_style`] makes this the
+/// style the **ordinary random encounter** takes - so this path runs on most
+/// battles. The native host decodes the `0x801CE8BC` corner table off PROT
+/// 0979 (`battle_intro::parse_tile_corner_table`), with the pinned
+/// `[0, 1, 17, 18]` as the disc-free fallback.
 ///
 /// [`select_intro_style`]: crate::battle_intro_styles::select_intro_style
-///
-/// NOT DRAWN: two inputs are still missing, and neither is the ordering table.
-/// The `0x801CE8BC` corner table is overlay data nothing decodes (the host
-/// passes a shape-only stand-in), and the retail packet assembly that projects
-/// a tile's eight corners through the GTE is at the clean-room boundary. The
-/// tiles' own texture pages sample the captured field frame, which
-/// `vram_capture` does now produce - so the missing piece is the projection,
-/// not the source texels.
 pub fn seed_tile_grid(
     sub_style: TileSubStyle,
     allocated: bool,
@@ -416,6 +413,189 @@ fn shr4_toward_zero(v: i32) -> i32 {
     if v < 0 { v + 0xF } else { v }.wrapping_shr(4)
 }
 
+// ---------------------------------------------------------------------------
+// The emitter's ten-primitive packet (`FUN_801D0E54`'s descriptor build)
+// ---------------------------------------------------------------------------
+
+/// Texture-page word of the four semi-transparent **shade** faces
+/// (`lui a1,0x27; ori a1,a1,0x40` - the `0x0027` high half of the prim's
+/// `+0x08` word): 4bpp page at VRAM `(448, 0)`, ABR bits `01` = additive.
+///
+/// The page is the top-left 64x64 texel corner of the **field-character
+/// texture pack's entry 0** (`legaia_asset::field_char_textures`, PROT 0874
+/// section 2) - a 256x256 4bpp TIM whose declared destination is `(448, 0)`,
+/// resident for the whole field session. Pinned by mid-transition capture:
+/// the VRAM rect is byte-identical to that TIM before the encounter, on the
+/// first shatter frame and on the 24th, across two different scenes.
+pub const SHADE_TPAGE: u16 = 0x0027;
+
+/// CLUT word of the shade faces (`lui a2,0x7641`): `(x, y) = (16, 473)` -
+/// CLUT index 1 of the same pack entry's 16-CLUT block, which the field
+/// uploader lands as a 256x1 strip on row 473. A 16-entry black-to-bright
+/// ramp (dark half black, bright half a slightly blue-tinted grey ladder),
+/// every entry STP-set in the TIM itself.
+pub const SHADE_CLUT: u16 = 0x7641;
+
+/// The shade faces' four UV pairs (`0x76410000` / `0x270040` / `0x40404000`
+/// unpack to `uv0..uv3`): the full 64x64 corner of the shade page, stretched
+/// across each side face.
+pub const SHADE_UVS: [(u8, u8); 4] = [(0, 0), (0x40, 0), (0, 0x40), (0x40, 0x40)];
+
+/// One row of the emitter's ten-primitive face table.
+///
+/// `corners` index the record's 8-vector array (0..3 = front corners,
+/// 4..7 = back corners; the packet stores them as byte offsets two per word
+/// at prim `+0x10`/`+0x14`, low half first). `grey` is the flat colour byte
+/// replicated across RGB; `semi_transparent` is bit 1 of the GP0 code
+/// (`0x2E` vs `0x2C`); `shade` selects the fixed shade-page UV/tpage/CLUT
+/// over the record's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TileFace {
+    /// Corner indices in `v0..v3` order.
+    pub corners: [usize; 4],
+    /// GP0 code bit 1 - `0x2E` (set) vs `0x2C` (clear).
+    pub semi_transparent: bool,
+    /// Flat colour byte (RGB all equal).
+    pub grey: u8,
+    /// `true` = shade-page UV set, `false` = record UV set.
+    pub shade: bool,
+}
+
+/// The ten primitives `FUN_801D0E54` assembles, in packet order. Six box
+/// faces become ten because the four sides are emitted twice: once
+/// semi-transparent (additive) over the shade page, once opaque with the
+/// tile's own captured-frame UVs. Packet order matters: the dispatcher links
+/// the prims into their OT buckets in this order, and `AddPrim` prepends -
+/// so within one bucket the *earlier* packet entry draws later, which is
+/// what lands the shade set on top of its opaque siblings.
+///
+/// Read off the store sequence at `0x801D0F60..0x801D10A8` (colour words
+/// `0x2E606060` / `0x2E404040` / `0x2E303030` / `0x2E202020` /
+/// `0x2C808080` / `0x2C606060` x4 / `0x2C202020`; corner-pair words as
+/// tabulated in `docs/subsystems/cutscene.md`).
+pub const TILE_FACES: [TileFace; 10] = [
+    // 0..3 - the four sides, semi-transparent over the shade page.
+    TileFace {
+        corners: [1, 5, 3, 7],
+        semi_transparent: true,
+        grey: 0x60,
+        shade: true,
+    },
+    TileFace {
+        corners: [4, 0, 6, 2],
+        semi_transparent: true,
+        grey: 0x40,
+        shade: true,
+    },
+    TileFace {
+        corners: [4, 5, 0, 1],
+        semi_transparent: true,
+        grey: 0x30,
+        shade: true,
+    },
+    TileFace {
+        corners: [2, 3, 6, 7],
+        semi_transparent: true,
+        grey: 0x20,
+        shade: true,
+    },
+    // 4 - the front face, opaque, full brightness.
+    TileFace {
+        corners: [0, 1, 2, 3],
+        semi_transparent: false,
+        grey: 0x80,
+        shade: false,
+    },
+    // 5..8 - the four sides again, opaque with the record's UVs.
+    TileFace {
+        corners: [1, 5, 3, 7],
+        semi_transparent: false,
+        grey: 0x60,
+        shade: false,
+    },
+    TileFace {
+        corners: [4, 0, 6, 2],
+        semi_transparent: false,
+        grey: 0x60,
+        shade: false,
+    },
+    TileFace {
+        corners: [4, 5, 0, 1],
+        semi_transparent: false,
+        grey: 0x60,
+        shade: false,
+    },
+    TileFace {
+        corners: [2, 3, 6, 7],
+        semi_transparent: false,
+        grey: 0x60,
+        shade: false,
+    },
+    // 9 - the back face, opaque, darkest.
+    TileFace {
+        corners: [6, 7, 4, 5],
+        semi_transparent: false,
+        grey: 0x20,
+        shade: false,
+    },
+];
+
+/// One face of one tile, resolved against a record: local corner positions
+/// (the tile's own `SVECTOR`s - world placement comes from the record's
+/// `pos`/`angles` at projection time), the four UV pairs, and the texture
+/// words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TileFaceQuad {
+    /// Local corner positions in `v0..v3` order.
+    pub corners: [(i16, i16, i16); 4],
+    /// UV pairs in `v0..v3` order, as raw texel bytes.
+    pub uv: [(u8, u8); 4],
+    /// GP0 texpage word.
+    pub tpage: u16,
+    /// GP0 CLUT word (`0` for the record-UV faces, matching the packet).
+    pub clut: u16,
+    /// Flat colour byte.
+    pub grey: u8,
+    /// GP0 code bit 1.
+    pub semi_transparent: bool,
+}
+
+/// Resolve the ten-face packet for one record. `FUN_801D0E54`'s descriptor
+/// build, minus the GTE work its dispatcher does afterwards: corner `k`
+/// reads `front[k]` / `back[k - 4]`, every record-UV face shares the
+/// record's four stored UV pairs (`+0x54..+0x5B` - `front[j].uv` here), and
+/// the shade faces take the three literals above.
+///
+/// Returns `None` for a retired record (`+0x00 >= `[`TILE_PROGRESS_LIMIT`],
+/// the same gate [`step_tile`] applies) - retail's emitter builds no packet
+/// for those.
+pub fn tile_face_quads(rec: &TileRecord) -> Option<[TileFaceQuad; 10]> {
+    if rec.progress >= TILE_PROGRESS_LIMIT {
+        return None;
+    }
+    let corner = |i: usize| -> (i16, i16, i16) {
+        let c = if i < 4 { rec.front[i] } else { rec.back[i - 4] };
+        (c.x, c.y, c.z)
+    };
+    let record_uv: [(u8, u8); 4] =
+        std::array::from_fn(|j| (rec.front[j].uv.0 as u8, rec.front[j].uv.1 as u8));
+    Some(std::array::from_fn(|f| {
+        let face = &TILE_FACES[f];
+        TileFaceQuad {
+            corners: std::array::from_fn(|j| corner(face.corners[j])),
+            uv: if face.shade { SHADE_UVS } else { record_uv },
+            tpage: if face.shade {
+                SHADE_TPAGE
+            } else {
+                rec.tpage as u16
+            },
+            clut: if face.shade { SHADE_CLUT } else { 0 },
+            grey: face.grey,
+            semi_transparent: face.semi_transparent,
+        }
+    }))
+}
+
 /// What one [`step_tile`] call decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TileStep {
@@ -457,11 +637,11 @@ pub enum TileStep {
 ///
 /// PORT: FUN_801D0E54
 ///
-/// WIRED, without a draw. [`tick_tile_grid`] calls this for every record on
-/// every frame of the shatter transition the native window runs, so the
-/// integration and the retire gate are live; the packet the record would be
-/// drawn with is the part that has no consumer. See the tag on
-/// [`tick_tile_grid`].
+/// WIRED. [`tick_tile_grid`] calls this for every record on every frame of
+/// the shatter transition the native window runs, and the packet half of the
+/// same retail function is [`tile_face_quads`] + the render-side projection
+/// ([`tick_tile_grid_emit`]'s hook) - so both the integration and the draw
+/// are live.
 pub fn step_tile(rec: &mut TileRecord, frame_step: u8, scaled_clock: i32) -> TileStep {
     if rec.progress >= TILE_PROGRESS_LIMIT {
         return TileStep::Retired;
@@ -521,15 +701,35 @@ pub struct TileTick {
 ///
 /// PORT: FUN_801D0D24
 ///
-/// WIRED, without a draw - see [`seed_tile_grid`] for what the emitter does
-/// with this and what still has to exist before a tile reaches the screen.
+/// WIRED - the native window's transition emitter drives the
+/// [`tick_tile_grid_emit`] form with a projecting hook, so the walk both
+/// integrates and draws. During the transition the `0x1F8003C8` view matrix
+/// is identity rotation with zero translation (pinned live from the second
+/// frame on; frame one still holds the field camera's value and every tile
+/// projects behind the near plane, so retail's first frame draws no tiles).
 pub fn tick_tile_grid(grid: &mut TileGrid, elapsed: &mut i16, frame_step: u8) -> TileTick {
+    tick_tile_grid_emit(grid, elapsed, frame_step, |_| {})
+}
+
+/// [`tick_tile_grid`] with a per-record emit hook, called with each record's
+/// **pre-integration** state - the same ordering retail has, where
+/// `FUN_801D0E54` builds and dispatches the packet from the record as loaded
+/// and only then integrates it. The hook receives every record (including
+/// retired ones); [`tile_face_quads`] applies the retire gate itself, so a
+/// consumer that goes through it reproduces the emitter's skip.
+pub fn tick_tile_grid_emit(
+    grid: &mut TileGrid,
+    elapsed: &mut i16,
+    frame_step: u8,
+    mut emit: impl FnMut(&TileRecord),
+) -> TileTick {
     let mut out = TileTick {
         not_first_frame: *elapsed != 0,
         ..Default::default()
     };
     let scaled_clock = i32::from(*elapsed) * TILE_DELAY_SCALE;
     for rec in grid.tiles.iter_mut() {
+        emit(rec);
         match step_tile(rec, frame_step, scaled_clock) {
             TileStep::Retired => {}
             TileStep::Drawn { moved } => {
@@ -760,6 +960,116 @@ mod tests {
         let mut elapsed: i16 = 0;
         assert!(!tick_tile_grid(&mut g, &mut elapsed, 1).not_first_frame);
         assert!(tick_tile_grid(&mut g, &mut elapsed, 1).not_first_frame);
+    }
+}
+
+#[cfg(test)]
+mod face_table {
+    use super::*;
+
+    /// The documented ten-primitive table: shade sides first (code `0x2E`,
+    /// descending grey), then front / opaque sides / back.
+    #[test]
+    fn the_packet_shape_matches_the_emitter() {
+        assert_eq!(TILE_FACES.len(), 10);
+        // 0..3: shade set - semi-transparent, shade page.
+        for f in &TILE_FACES[0..4] {
+            assert!(f.semi_transparent && f.shade);
+        }
+        assert_eq!(
+            [0, 1, 2, 3].map(|i| TILE_FACES[i].grey),
+            [0x60, 0x40, 0x30, 0x20]
+        );
+        // 4..9: record set - opaque, record UVs.
+        for f in &TILE_FACES[4..10] {
+            assert!(!f.semi_transparent && !f.shade);
+        }
+        assert_eq!(TILE_FACES[4].corners, [0, 1, 2, 3], "front");
+        assert_eq!(TILE_FACES[9].corners, [6, 7, 4, 5], "back");
+        assert_eq!(TILE_FACES[4].grey, 0x80);
+        assert_eq!(TILE_FACES[9].grey, 0x20);
+        // The opaque sides repeat the shade sides' corner rows.
+        for k in 0..4 {
+            assert_eq!(TILE_FACES[5 + k].corners, TILE_FACES[k].corners);
+            assert_eq!(TILE_FACES[5 + k].grey, 0x60);
+        }
+    }
+
+    /// Every corner index appears in the table, and each face mixes front
+    /// (0..3) and back (4..7) only on the sides.
+    #[test]
+    fn side_faces_span_front_and_back() {
+        for face in &TILE_FACES[0..4] {
+            let c = face.corners;
+            assert!(c.iter().any(|&i| i < 4) && c.iter().any(|&i| i >= 4));
+        }
+        assert!(TILE_FACES[4].corners.iter().all(|&i| i < 4));
+        assert!(TILE_FACES[9].corners.iter().all(|&i| i >= 4));
+    }
+
+    #[test]
+    fn resolved_quads_carry_the_three_shade_literals() {
+        let mut rec = TileRecord {
+            tpage: TILE_TPAGE_LEFT,
+            ..Default::default()
+        };
+        for (k, c) in rec.front.iter_mut().enumerate() {
+            c.x = k as i16;
+            c.y = 10 + k as i16;
+            c.z = TILE_FRONT_Z;
+            c.uv = (k as i8 * 2, k as i8 * 3);
+        }
+        for (k, c) in rec.back.iter_mut().enumerate() {
+            c.x = k as i16;
+            c.y = 10 + k as i16;
+            c.z = TILE_BACK_Z;
+            c.uv = (k as i8 * 2, k as i8 * 3);
+        }
+        let quads = tile_face_quads(&rec).expect("not retired");
+        // Shade face 0 = corners (1,5,3,7): front1, back1, front3, back3.
+        let q0 = &quads[0];
+        assert_eq!(q0.tpage, SHADE_TPAGE);
+        assert_eq!(q0.clut, SHADE_CLUT);
+        assert_eq!(q0.uv, SHADE_UVS);
+        assert_eq!(q0.corners[0], (1, 11, TILE_FRONT_Z));
+        assert_eq!(q0.corners[1], (1, 11, TILE_BACK_Z));
+        assert_eq!(q0.corners[2], (3, 13, TILE_FRONT_Z));
+        assert_eq!(q0.corners[3], (3, 13, TILE_BACK_Z));
+        // Record face 5 shares q0's corners but takes the record's UVs,
+        // tpage, and CLUT 0 - the four stored pairs in v0..v3 order,
+        // independent of which corners the face uses.
+        let q5 = &quads[5];
+        assert_eq!(q5.corners, q0.corners);
+        assert_eq!(q5.tpage, TILE_TPAGE_LEFT as u16);
+        assert_eq!(q5.clut, 0);
+        assert_eq!(q5.uv, [(0, 0), (2, 3), (4, 6), (6, 9)]);
+    }
+
+    #[test]
+    fn a_retired_record_builds_no_packet() {
+        let rec = TileRecord {
+            progress: TILE_PROGRESS_LIMIT,
+            ..Default::default()
+        };
+        assert_eq!(tile_face_quads(&rec), None);
+    }
+
+    /// The emit hook sees the record before the integration moves it.
+    #[test]
+    fn the_emit_hook_runs_on_the_pre_step_state() {
+        let mut rec = TileRecord::default();
+        rec.front[2].pad = 0x60; // pos-z rate
+        let mut grid = TileGrid {
+            vertices: Vec::new(),
+            tiles: vec![rec],
+        };
+        let mut elapsed: i16 = 1; // past the delay gate at scale 0x3C
+        let mut seen_z = None;
+        tick_tile_grid_emit(&mut grid, &mut elapsed, 1, |r| {
+            seen_z = Some(r.pos.2);
+        });
+        assert_eq!(seen_z, Some(0), "hook sees the pre-integration position");
+        assert_eq!(grid.tiles[0].pos.2, 0x60, "the step still ran after it");
     }
 }
 

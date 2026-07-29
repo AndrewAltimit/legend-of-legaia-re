@@ -556,6 +556,11 @@ struct PlayWindowApp {
     /// `take_battle_intro_prims` on the first transition frame and dropped when
     /// the phase ends. See `legaia_engine_render::battle_intro`.
     battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
+    /// GPU upload of the intro's captured VRAM page, kept for the whole
+    /// transition so every frame's strips / tiles sample the captured field
+    /// frame (and the shatter's shade page), not just the capture frame's.
+    /// Dropped with `battle_intro`.
+    battle_intro_vram: Option<legaia_engine_render::UploadedVram>,
     /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
     /// reused for every battle so each transition doesn't re-decompress 16 MB.
     monster_archive: Option<std::sync::Arc<Vec<u8>>>,

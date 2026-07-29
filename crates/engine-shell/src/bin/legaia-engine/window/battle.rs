@@ -1190,6 +1190,7 @@ impl PlayWindowApp {
             .map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
             self.battle_intro = None;
+            self.battle_intro_vram = None;
             return (None, Vec::new());
         };
         let Some(entity) = self.session.host.world.battle_intro else {
@@ -1251,6 +1252,25 @@ impl PlayWindowApp {
         let seed = self.session.host.world.rng_state;
         let mut env = IntroEnv::new(seed);
         let mut trig = IntroEnv::new(seed);
+        // The tile seeder's corner table, decoded off PROT 0979 at
+        // `0x801CE8BC`; the documented `[0, 1, 17, 18]` is the disc-free
+        // fallback, so a host without the entry seeds the same grid.
+        let corners = self
+            .intro_overlay_loaded()
+            .and_then(|(img, base)| {
+                legaia_engine_render::battle_intro::parse_tile_corner_table(&img, base)
+            })
+            .unwrap_or([0, 1, 0x11, 0x12]);
+        // The shade page the shatter's side faces sample (field-character
+        // texture pack entry 0) - parsed from the disc so the capture can
+        // land it in the transition's cloned VRAM page.
+        let shade = self
+            .session
+            .host
+            .index
+            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .ok()
+            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
         BattleIntro::new(
             choice.style,
             choice.sub_style,
@@ -1258,10 +1278,24 @@ impl PlayWindowApp {
             table,
             &mut env,
             &mut trig,
-            // The `0x801CE8BC` corner table is overlay data nothing decodes;
-            // the tile seeder only needs a shape, and its style does not draw.
-            [0, 1, 0x11, 0x12],
+            corners,
         )
+        .with_shade_pack(shade)
+    }
+
+    /// The PROT 0979 intro overlay relocated to its load base, for the two
+    /// in-overlay data tables ([`IntroQuadTable`], the tile corner table).
+    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
+        const INTRO_OVERLAY_PROT: u32 = 979;
+        let raw = self
+            .session
+            .host
+            .index
+            .entry_bytes_extended(INTRO_OVERLAY_PROT)
+            .ok()?;
+        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
+        Some((as_loaded, rec.base_va))
     }
 
     /// The scene index `select_intro_style`'s two scene-conditional overrides
@@ -1281,16 +1315,8 @@ impl PlayWindowApp {
     /// it, in which case the emitter falls back to a neutral table - the
     /// strips then carry the capture unmodulated instead of not drawing.
     fn intro_quad_table(&self) -> Option<legaia_engine_render::battle_intro::IntroQuadTable> {
-        const INTRO_OVERLAY_PROT: u32 = 979;
-        let raw = self
-            .session
-            .host
-            .index
-            .entry_bytes_extended(INTRO_OVERLAY_PROT)
-            .ok()?;
-        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
-        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, rec.base_va)
+        let (as_loaded, base_va) = self.intro_overlay_loaded()?;
+        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, base_va)
     }
 
     /// Land the field frame in VRAM for the transition to texture itself with,
