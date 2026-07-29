@@ -308,8 +308,9 @@ fn every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell() {
     assert_eq!(classified, total, "every entry's object 0 carries vertices");
     assert!(
         full_surround.is_empty(),
-        "these backdrops are not half-authored, which would break the \
-         draw-once rule the engine relies on: {full_surround:?}"
+        "these backdrops are not half-authored, so the second copy retail \
+         draws would overlap the first instead of completing it: \
+         {full_surround:?}"
     );
     // No backdrop opens toward +Z: retail seats the party on the +Z side and
     // points the camera down it, so the open side is never behind the seats.

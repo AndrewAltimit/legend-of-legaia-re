@@ -303,6 +303,27 @@ PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 089
 .BIN>` (`--json` emits the matrix + per-character + summon-power tables). See
 [`battle-formulas.md`](../../docs/subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8).
 
+### `battle_backdrop`
+
+How retail *places* a `scene_tmd_stream` battle-stage shell, which is not
+"every object, once". `FUN_800513F0` registers the TMD once and links **two**
+background actors to it, drops object **1** from both draw lists, and gives the
+second actor a per-stage transform that closes the authored half.
+
+- `MirrorXTable::from_scus` parses the zero-terminated `u16` stage table at
+  `DAT_80078B50` (`SCUS_942.54` file `0x69350`);
+  `second_copy_for_prot_index` resolves an entry to `SecondCopy::HalfTurn`
+  (`actor+0x26 = 0x800`) or `SecondCopy::MirrorX` (`actor+0x5A = 2`).
+- `SecondCopy::scale` / `flips_winding` give the transform as an exact integer
+  diagonal plus its determinant sign - pair with
+  `legaia_tmd::mesh::VramMesh::append_scaled`.
+- `drawn_object_indices` / `drawn_objects_tmd` apply the object-1 drop;
+  `runtime_stage_id` converts between the table's id space and PROT
+  extraction indices.
+
+Corpus sweep in `crates/asset/tests/battle_backdrop_real.rs`. See
+[`battle.md`](../../docs/subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
+
 ### `battle_camera_table`
 
 Per-character **battle-camera height** table (runtime VA `0x801F4D2C`), the

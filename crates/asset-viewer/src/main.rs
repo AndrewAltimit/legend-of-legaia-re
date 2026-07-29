@@ -177,6 +177,11 @@ enum Cmd {
         /// CDNAME.TXT for nicer entry titles. Optional.
         #[arg(long)]
         cdname: Option<PathBuf>,
+        /// `SCUS_942.54` to read the per-stage battle-backdrop mirror
+        /// table from, so `scene_tmd_stream` previews place their second
+        /// copy the way retail does. Defaults to a sibling of PROT_DAT.
+        #[arg(long)]
+        scus: Option<PathBuf>,
         /// Start at this entry index.
         #[arg(long, default_value_t = 0)]
         start: u32,
@@ -352,6 +357,37 @@ enum Cmd {
 
 /// Restore the default SIGPIPE disposition so piping log/stdout output into
 /// `head` terminates quietly instead of panicking on a broken pipe.
+/// Resolve the per-stage battle-backdrop mirror table out of
+/// `SCUS_942.54`, so a `scene_tmd_stream` preview can place its second
+/// copy the way retail does.
+///
+/// `explicit` wins; otherwise look for the executable beside the archive,
+/// which is where `legaia-extract` puts it. A miss is not an error - the
+/// preview falls back to the default half-turn placement and says so.
+fn load_backdrop_mirror_table(
+    explicit: Option<&std::path::Path>,
+    prot_dat: &std::path::Path,
+) -> Option<legaia_asset::battle_backdrop::MirrorXTable> {
+    let path = match explicit {
+        Some(p) => p.to_path_buf(),
+        None => prot_dat.parent()?.join("SCUS_942.54"),
+    };
+    let bytes = std::fs::read(&path).ok()?;
+    let table = legaia_asset::battle_backdrop::MirrorXTable::from_scus(&bytes);
+    match &table {
+        Some(t) => log::info!(
+            "battle-backdrop mirror table: {} stage(s) from {}",
+            t.ids().len(),
+            path.display()
+        ),
+        None => log::warn!(
+            "{} is not a recognised SCUS_942.54 - backdrop second copies default to a half turn",
+            path.display()
+        ),
+    }
+    table
+}
+
 fn reset_sigpipe() {
     #[cfg(unix)]
     unsafe {
@@ -704,6 +740,7 @@ fn main() -> Result<()> {
         Cmd::Prot {
             prot_dat,
             cdname: cdname_path,
+            scus,
             start,
         } => {
             let archive =
@@ -713,6 +750,7 @@ fn main() -> Result<()> {
             } else {
                 None
             };
+            let backdrop_mirror = load_backdrop_mirror_table(scus.as_deref(), &prot_dat);
             log::info!(
                 "PROT {}: {} entries, starting at {}",
                 prot_dat.display(),
@@ -724,6 +762,7 @@ fn main() -> Result<()> {
                 Some(Browser {
                     archive,
                     cdname,
+                    backdrop_mirror,
                     current: start,
                     last_count: 0,
                 }),

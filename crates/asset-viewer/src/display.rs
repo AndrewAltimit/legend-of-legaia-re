@@ -86,7 +86,17 @@ impl MeshView {
 /// Try to produce a [`Display`] for one PROT entry by walking the known
 /// sub-formats in priority order. Returns `None` if nothing renderable
 /// could be extracted (caller advances past it).
-pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display> {
+///
+/// `backdrop_second_copy` is the transform retail applies to a
+/// `scene_tmd_stream` backdrop's second copy, resolved from the per-stage
+/// table in `SCUS_942.54`. `None` means the executable wasn't available,
+/// in which case the preview uses retail's default (a half turn) and the
+/// status line says the transform is unresolved rather than asserting one.
+pub(crate) fn display_for_prot_entry(
+    name: &str,
+    bytes: &[u8],
+    backdrop_second_copy: Option<legaia_asset::battle_backdrop::SecondCopy>,
+) -> Option<Display> {
     let report = legaia_asset::categorize::classify(bytes);
     let title = format!("{}  ({}, {} bytes)", name, report.class.name(), bytes.len());
 
@@ -159,27 +169,34 @@ pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display
     // no sibling TIM dir means no texturing, but the geometry is the
     // distinctive visual signal.
     //
-    // The mesh will look like *half* a bowl, and that is retail-correct: the
-    // entry is a battle-stage backdrop shell whose object 0 is authored
-    // entirely on one side of X=0 or Z=0, drawn once, with the open side
-    // facing the camera. `shell_shape` measures which side from the vertex
-    // pool so the status line says so - an unlabelled half dome reads as a
-    // broken parse, and has been mistaken for one (see
-    // docs/reference/re-do-not-re-walk.md).
+    // Placed the way retail places it, which is *not* "every object, once":
+    // the backdrop actor drops object 1, and a second actor draws the same
+    // mesh under a per-stage transform that closes the shell. Drawing the
+    // raw file instead shows a half bowl with a stray prop in it, which has
+    // repeatedly been misread as a broken parse. See
+    // `legaia_asset::battle_backdrop`.
     if report.class == legaia_asset::categorize::Class::SceneTmdStream
         && let Some(s) = legaia_asset::scene_tmd_stream::detect(bytes)
         && let Ok(tmd) = legaia_tmd::parse(&bytes[s.tmd_range()])
     {
-        let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &bytes[s.tmd_range()]);
+        use legaia_asset::battle_backdrop as backdrop;
+        let drawn = backdrop::drawn_objects_tmd(&tmd);
+        let mut mesh = legaia_tmd::mesh::tmd_to_mesh(&drawn, &bytes[s.tmd_range()]);
+        let second = backdrop_second_copy.unwrap_or(backdrop::SecondCopy::HalfTurn);
+        let copy = mesh.clone();
+        mesh.append_scaled(&copy, second.scale());
         if !mesh.indices.is_empty() {
-            let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd)
-                .map(|sh| format!(" - {}", sh.describe()))
-                .unwrap_or_default();
+            let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
+            let placement = format!(
+                " - {}",
+                backdrop::describe_placement(shape.as_ref(), backdrop_second_copy)
+            );
             return Some(Display {
                 title: format!(
-                    "{} [scene_tmd_stream: {} obj, {} verts, {} tris{}{}]",
+                    "{} [scene_tmd_stream: {} obj ({} drawn x2), {} verts, {} tris{}{}]",
                     title,
                     tmd.objects.len(),
+                    drawn.objects.len(),
                     mesh.positions.len(),
                     mesh.indices.len() / 3,
                     if s.tail_chunks.is_empty() {
@@ -187,7 +204,7 @@ pub(crate) fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display
                     } else {
                         format!(", +{} tail chunks", s.tail_chunks.len())
                     },
-                    shape,
+                    placement,
                 ),
                 image: None,
                 audio: None,

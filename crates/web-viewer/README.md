@@ -418,6 +418,21 @@ a space key), the confirm prompt opens on **No**, and Vahn's scripted walk-out
 (scene-ANM records 47/48) plays post-confirm. Disc-gated oracle:
 `tests/new_game_flow_parity.rs`.
 
+## Battle-stage backdrops in the entry viewer
+
+A `scene_tmd_stream` entry is a battle-stage shell, and retail does not draw it
+the way the file lays it out: object **1** never draws, and the shell is drawn
+**twice**, the second copy under a per-stage transform that closes the
+authored half. `build_current_vram_mesh` places it that way through
+`legaia_asset::battle_backdrop`, and `tmd_note` labels the entry with the
+transform it resolved.
+
+The transform comes from the stage table in `SCUS_942.54`, decoded during
+`load_disc` alongside the item / spell / steal tables and kept as
+`backdrop_mirror`. A raw `PROT.DAT` load has no executable, so the preview
+falls back to retail's default (a half turn) and the note says the transform
+is unresolved rather than asserting one.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene

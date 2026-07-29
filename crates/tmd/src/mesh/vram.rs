@@ -82,6 +82,46 @@ impl VramMesh {
         }
         (lo, hi)
     }
+
+    /// Append a second instance of `src`, scaled per axis. UVs, CBA/TSB
+    /// and modulation colours are copied verbatim - only positions,
+    /// normals and winding change.
+    ///
+    /// A negative-determinant scale reverses triangle winding, so the
+    /// appended indices are emitted in reverse corner order and the copied
+    /// normals are negated, keeping the copy's facing and shading
+    /// consistent with the original. This is the mesh-side equivalent of
+    /// the draw-mode swap retail performs for the same case (see
+    /// `legaia_asset::battle_backdrop`).
+    pub fn append_scaled(&mut self, src: &VramMesh, scale: [f32; 3]) {
+        let base = self.positions.len() as u32;
+        let flip = scale[0] * scale[1] * scale[2] < 0.0;
+        self.positions.extend(
+            src.positions
+                .iter()
+                .map(|p| [p[0] * scale[0], p[1] * scale[1], p[2] * scale[2]]),
+        );
+        self.normals.extend(src.normals.iter().map(|n| {
+            let s = if flip { -1.0 } else { 1.0 };
+            [
+                n[0] * scale[0] * s,
+                n[1] * scale[1] * s,
+                n[2] * scale[2] * s,
+            ]
+        }));
+        self.uvs.extend_from_slice(&src.uvs);
+        self.cba_tsb.extend_from_slice(&src.cba_tsb);
+        self.colors.extend_from_slice(&src.colors);
+        for t in src.indices.chunks_exact(3) {
+            if flip {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[2], base + t[1]]);
+            } else {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[1], base + t[2]]);
+            }
+        }
+    }
 }
 
 /// Build a VRAM mesh from a parsed TMD. Each prim contributes its own

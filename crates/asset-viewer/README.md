@@ -17,7 +17,7 @@ asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle
 asset-viewer stage <PATH>                       # wireframe stage geometry
 asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
 asset-viewer seq   <file.seq> <file.vab> [--vab-offset H] [--looped]
-asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>]
+asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>] [--scus <SCUS_942.54>]
 asset-viewer field <SCENE> [--record N] [--cycle-records]
 asset-viewer dialog <MES_blob> [--message N]    # typewriter-paced dialog box
 asset-viewer battle-scene [--queued-action N]   # battle-action SM driver
@@ -90,6 +90,12 @@ supported via `asset stage` proper.
 Walks `PROT.DAT` end-to-end and pages through every entry, showing
 classifier output (TIM hits, TMD hits, scene-bundle membership) and
 naming each entry from `CDNAME.TXT`.
+
+A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
+drawn raw: object 1 dropped, and a second copy under the stage's transform
+(`legaia_asset::battle_backdrop`). The transform comes from `SCUS_942.54`,
+found beside `PROT.DAT` or named with `--scus`; without it the preview uses
+retail's default and the status line says the transform is unresolved.
 
 ### `field` - field-VM scene runner
 

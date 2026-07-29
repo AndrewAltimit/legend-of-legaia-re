@@ -170,7 +170,8 @@ re-derived by accident.
 | The battle-form character pack holds seven atlases inside PROT `1204`, the last truncated, with CLUT row 496 skipped | falsified (eight whole atlases in PROT `1205`; 496 is the eighth, not a gap) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | The title TIM ships as three multi-bank duplicates in PROT `0888` / `0889` / `0890` | falsified (one copy, in `0890` at `0x14228`) | [details ↓](#assets-named-by-the-entry-the-over-read-window-started-in) |
 | `scene_tmd_stream` entries can hold two or more concatenated sub-streams (the "two-list" shape) | falsified (one stream per entry; 0 of 182 hold a second) | [details ↓](#concatenated-sub-streams-in-a-scene_tmd_stream-entry) |
-| The stage backdrop renders as half a bowl, so something drops the other half - mirror it to complete the circle | falsified (the half shell is the authored shape; 182 of 182 backdrops are half) | [details ↓](#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it) |
+| The stage backdrop renders as half a bowl because bytes are missing - mirror it to recover them | falsified (the half is authored; 182 of 182, and nothing is unread) | [details ↓](#the-backdrop-shell-is-drawn-once-so-no-completion-exists) |
+| ...and therefore nothing completes it, so drawing a second copy is a regression | falsified (retail links **two** backdrop actors; the second carries a per-stage transform) | [details ↓](#the-backdrop-shell-is-drawn-once-so-no-completion-exists) |
 | PROT 0968 is a 4 KB module (pointer-table head, 10/11 self-pointers, 2+8 spawn calls) | falsified (its own content is 2600 bytes; the rest is stale buffer) | The entry really is 2 sectors, but only file `0x00..0xA28` is 0968's. The trailing 1496 bytes are 0967's bytes at the *same* file offsets, cut mid-string at the sector boundary, and **nothing in 0968's own window references them** - no `jal`, no `j`, no materialisation. Every structural figure ever quoted for the entry was measured across both modules at once, which is why they never cohered. Full accounting on [`re-settled-threads.md`](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay). |
 | The literal `0x801F69D8` in `SCUS_942.54` is a cross-image reference naming 0968's loader callsite | falsified (it is the slot-B base constant) | The only literal-word hit outside the shared-base band, and therefore the only one an aliasing argument could not dismiss - which made it read as the last live lead. It is the SCUS global `0x80010390` holding the **slot-B overlay load address**, twin of `0x8001038C` for slot A, read by `FUN_8003EC70` and never written. A reference to a shared load base names the *slot*, not a tenant. Meanwhile the real callsite was never findable that way: the stage-overlay parameter is **computed** (`stage_id + 0x47`), so the constant `0x49` occurs nowhere. |
 | Battle `DAT_8007BD0C == 0xB5` at `0x801E6D04` is a test on the Lapis Wave **spell** id | falsified (it is the **formation monster** id - Cort) | Two id spaces collide on `0xB5`: spell `0xB5` is Lapis Wave, formation `0xB5` is monster-archive 181, Cort. The byte the branch reads is `*(u8 *)0x8007BD0C`, which is the formation id array, and its guard is an HP-reached-zero test on the first enemy actor - a form-transition trigger, not a cast. The wrong reading was self-consistent because Cort is also the caster of Lapis Wave. |
@@ -290,75 +291,88 @@ detectors for exactly this, with disc-gated coverage in
 See [`scene-bundles.md`](../formats/scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape)
 for the corrected layout.
 
-### The half-authored backdrop shell, and the mirror that was supposed to complete it
+### "The backdrop shell is drawn once, so no completion exists"
 
-*Status:* falsified - the half shape is what the disc holds; the "completion"
-is the regression
+*Status:* falsified - retail draws the shell **twice**. The authored half is
+real; "therefore nothing completes it" does not follow
 
 Open any `scene_tmd_stream` PROT entry in a mesh viewer and you get half a
 bowl: a sky dome, a distant mountain ring and a far ground ring, all sheared
-off along a plane through the origin. The reading that follows is almost
-irresistible - *a whole map got halved, so find the logic that makes it
-whole* - and it has been reached independently more than once, from the
-viewers and from the engine. The obvious repair is equally natural: draw the
-shell a second time under `Ry(180deg)` and close the circle.
+off along a plane through the origin. Two readings of that have now been
+tried, and **both** were wrong.
 
-**The half shape is authored.** Measured over object 0 - the shell retail
-actually links as the background actor - all **182** `scene_tmd_stream`
-entries put at most **8%** of the shell's X or Z extent on the far side of
-`X = 0` / `Z = 0`; the widest overhang in the whole corpus is `0.079`
-(`0048_vell`, `Z` in `[-877, 10254]` against a symmetric `X`). The open side
-is `-X` in 129 entries, `-Z` in 49 and `+X` in 4. **None** opens toward `+Z`,
-which is the side retail seats the party on - the hole is always where the
-camera is, never behind it. `0007_town01` is the plain case: `X` in
-`[0, 10751]`, `Z` symmetric at `+-10751`, open toward the sea.
+The first was "a whole map got halved, so find the missing bytes". That one
+stays falsified, and its measurements stand: the half shape is authored, and
+nothing is dropped on the way in. Measured over object 0 all **182**
+`scene_tmd_stream` entries put at most **8%** of the shell's X or Z extent on
+the far side of `X = 0` / `Z = 0` (widest `0.079`, `0048_vell`); the open side
+is `-X` in 129 entries, `-Z` in 49 and `+X` in 4, and never `+Z`, the side the
+party is seated on. Every one of the 378 objects has
+`vert_top + n_vert * 8 == normal_top` exactly and the parsed body accounts for
+the whole declared chunk0 size. There is no unread vertex block, no second
+primitive list, no second sub-stream.
 
-**Nothing is being dropped**, which is the part a "halved" reading needs and
-does not have. Every one of the 378 objects across those entries has
-`vert_top + n_vert * 8 == normal_top` exactly, and the parsed body accounts
-for the whole declared chunk0 size. There is no unread vertex block, no
-second primitive list, and (per the row above) no second sub-stream: the
-missing half was never in the file.
+The second reading was the inference drawn *from* that: since the file holds a
+complete half and the runtime links one background actor, no completion exists
+and drawing one is a regression. That is the claim this row now retracts.
+`FUN_800513F0` registers the backdrop TMD **once** and allocates **two**
+actors from the same descriptor, and the second carries a transform. What the
+port had wrong was never *whether* to complete the shell - it was *how*, and
+for which stage. Mechanism, evidence and the per-stage table:
+[`battle.md`](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
 
-**What the mirror broke.** `legaia-engine play-window` shipped the
-`Ry(180deg)` duplicate for a while. For `town01` that planted a second copy
-of the village wall straight across the open `-X` side - the side that in
-retail is open sea. The mirror is a plausible fix only while the shell is
-believed to be radially symmetric, and it is not: these are *scenes*, with a
-sea on one side and a village on the other. Removed; the engine draws object
-0 once, at raw coordinates
-([`battle.md`](../subsystems/battle.md#backdrop-dome---sky--distant-mountains-prot-88-for-map01)).
+**Why the counterexample misled.** The engine once shipped a `Ry(180deg)`
+duplicate, and for `town01` it planted a second village wall straight across
+the open `-X` side - the side that in retail is open sea. That artifact was
+real and correctly observed. But `town01` (stage id 4) is **on** the mirror
+list: retail completes it by reflecting in the YZ plane, not by turning it
+half around. `Ry(180deg)` is the right transform for `town01`'s siblings
+`0006` / `0009` and the wrong one for `0007` / `0008`. A wrong transform on
+one stage was read as evidence that no transform was wanted anywhere - the
+experiment falsified the transform it tested, and the conclusion generalised
+past it.
 
-**The retail captures agree**, and they are what makes this terminal rather
-than an inference from the bytes. Across a four-angle stage-battle capture
-set the distant mountains cover **44-81%** of the horizon columns depending
-on camera angle - peaking when the orbit camera looks into the arc, troughing
-along its edge. A ring would hold roughly constant. The remaining horizon is
-open sky and grass, drawn by the flat procedural ground grid, exactly as the
-half shell predicts.
+**Why the retail captures seemed to agree.** The same four-angle stage-battle
+capture set was quoted as terminal: the distant mountains cover "44-81% of the
+horizon columns, not a ring". Two separate things are wrong with that.
 
-Two things this is *not*. It is not the `+0x10` mesh puzzle - the
-walk-visible `.MAP` cells that name a pack mesh no layer draws, and so look
-like a candidate missing half until you read the flags. That family is
-`0x0011`, i.e. `FLAG_MESH_DRAWN` **clear**, and stamping it was separately
-falsified against retail: it draws a wall down every river
-(`FLAG_MESH_DRAWN` in `crates/asset/src/field_objects.rs`). And it is not the
-site's assembled map view or the engine's field renderer - those exclude
-`scene_tmd_stream` entries entirely and build the scene from the environment
-mesh pack plus the `.MAP` placements, whose draws resolve in range
-(`crates/web-viewer/tests/field_scene_assembly.rs`).
+The number measured the wrong thing. Re-measured for *presence* of a mountain
+band above the horizon, the four angles read **98 / 100 / 100 / 100%** of
+columns. The 44-81% spread is what a band-*thickness* threshold of 9-18 px
+produces, because the ring's height varies from a few pixels to ~45 across the
+arc - and "a ring would hold roughly constant" was the premise that failed.
 
-**The durable lesson is about presentation, not bytes.** Every measurement
-here was already available, and the correct behaviour was already
-documented - the reading kept reopening because the *viewer* offered no way
-to tell an authored half shell from a truncated parse. A format whose correct
-output looks broken needs the tool to say so at the point of viewing, or the
-falsification has to be re-derived by whoever looks next. Both viewers now
-label these entries from the vertex pool
-(`scene_tmd_stream::shell_shape` / `ShellShape::describe`, e.g. "battle-stage
-backdrop (half shell, open toward -X)"), and the corpus sweep is pinned by
-`every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in
-`crates/asset/tests/scene_tmd_stream_real.rs`.
+Then the corrected number settles it the other way. Project `map01`'s drawn
+objects through the exact camera of each capture - yaw `_DAT_8007B792`, pitch
+`32`, `TR = (0, 1280, 7680)`, `H = 256`, all read out of the save state - and
+one copy covers 100 / **71.9** / 100 / 99.7% of the 320 columns against two
+copies' 100% throughout. Three of the four yaws cannot separate the models;
+one copy already fills the frame there, which is why a single-copy render
+looks plausible if you happen to sample those angles. Capture **b**, at yaw
+334.7deg, separates them: a single copy leaves columns `0..89` with no
+mountain geometry, and retail has a mountain band in **90 of those 90**. The
+capture set does not merely permit the second copy - it refutes its absence.
+
+**What this is still not.** Not the `+0x10` mesh puzzle - the walk-visible
+`.MAP` cells that name a pack mesh no layer draws. That family is `0x0011`,
+i.e. `FLAG_MESH_DRAWN` **clear**, and stamping it was separately falsified
+against retail: it draws a wall down every river (`FLAG_MESH_DRAWN` in
+`crates/asset/src/field_objects.rs`). And not the site's assembled map view or
+the engine's field renderer - those exclude `scene_tmd_stream` entries
+entirely and build the scene from the environment mesh pack plus the `.MAP`
+placements (`crates/web-viewer/tests/field_scene_assembly.rs`).
+
+**The durable lesson is about what a measurement is *of*.** Every number in
+the falsified version was correct. The half-shell sweep measured the file and
+said the file holds a half - true, and silent about the runtime. The capture
+measurement counted columns above a thickness threshold and was quoted as
+counting columns with mountains in them - two different questions with very
+different answers on the same pixels. And the four captures were treated as
+four samples of one question when three of them cannot answer it at all: at
+those yaws both models predict a full frame, so only the fourth carried any
+information. A statistic pooled over angles hid that. Before a capture
+statistic closes a thread, state the reading it would have refuted, and check
+that the samples can tell the two readings apart.
 
 ## Field / locomotion
 
