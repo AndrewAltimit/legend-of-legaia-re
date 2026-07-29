@@ -2560,7 +2560,7 @@ nothing here. The full accounting:
   [band's own settled row](#slot-b-capture-module-band-09350966-per-entry-identity).
 - **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep);
   battle-stage id `1`.
-- **0968** = the **Cort battle's stage overlay**, battle-stage id `2` -
+- **0968** = the **evolved-Cort battle's stage overlay**, battle-stage id `2` -
   [details ↓](#prot-0968---the-cort-battle-stage-overlay).
 - **0969** = the STR-path table the STR-mode init pages
   (`FUN_8003EC70(0x4A)`; [`boot.md`](../subsystems/boot.md)). An overlay-resident
@@ -2625,12 +2625,32 @@ addiu v0, zero, 2       ; delay slot
 sb    v0, -0x49b6(at)   ; *(u8 *)0x8007B64A = 2 - the battle-stage id
 ```
 
-Formation id `0xB5` is monster-archive id **181 = Cort**, read straight off
-PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param `0x49` →
-extraction entry **968**, and the Cort fight is its only gate. The same byte
-against the same constant is what pages **0969** mid-battle when a Cort form's
-HP reaches zero, which is the corroboration: one boss, two modules, one
-formation-id test each.
+Formation id `0xB5` is monster-archive id **181 = Cort's evolved second form**
+(HP 65535; the first-form fight is a separate formation whose head is `0xB4`,
+id 180, HP 50000 - both slots carry the display name "Cort"), read straight
+off PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param
+`0x49` → extraction entry **968**, and the evolved-form Cort fight is its
+only gate. The same byte against the same constant is what pages **0969**
+mid-battle when a Cort form's HP reaches zero, which is the corroboration:
+one boss, two modules, one formation-id test each.
+
+**The selector byte is capture-confirmed; residency is not.** A sweep of the
+six catalogued `cort_*_mid_cast` mednafen states
+([`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py);
+labels + fingerprints in [`scenarios.toml`](../../scripts/scenarios.toml))
+reads `*(u8 *)0x8007BD0C = 0xB4` in the four first-form states and `0xB5` in
+the two evolved-form states - the selector's constant, live, and only in the
+evolved-form phase. The same sweep shows why those states cannot carry the
+residency observation itself: in every one, the slot-B page at `0x801F69D8`
+is 100% byte-identical over all `0x1000` bytes to the state's documented cast
+stager (0938 / 0940 / 0944 / 0961 / 0962 / 0966) with the loader-B tracker
+`0x8007BC4C` reading that stager's id, while 0968's own `0xA28` window
+matches at chance level (10.5-12.1%). A cast stager is a full slot-B page:
+the first special attack or summon of the fight evicts the stage overlay,
+so the pending capture must be taken at the evolved-form battle entry,
+before any cast. The stage-id byte `_DAT_8007B64A` reads `0x00` in all six
+mid-fight states - the byte is transient around the load, not a persistent
+mid-battle marker.
 
 **Its real extent is 2600 bytes, not 4096.** The entry is 2 sectors, but only
 file `0x00..0xA28` is 0968's own content - a 7-entry dispatch table at offset 0
