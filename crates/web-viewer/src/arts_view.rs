@@ -132,6 +132,11 @@ struct LoadedCharacter {
     vram: legaia_tim::Vram,
     /// Idle loop (record[0] slot 0), expanded per object.
     idle: Option<MonsterAnimation>,
+    /// The full battle action bank (record[0] slots incl. the idle) plus the
+    /// four equipment-spliced weapon swings, each labeled
+    /// (`battle_char_assembly::action_slot_label`) and expanded per object.
+    /// Feeds the `.glb` export; the canvas keeps using `idle` + `arts`.
+    actions: Vec<(String, MonsterAnimation)>,
     arts: Vec<ArtSlot>,
     /// The character's decoded arts-voice channels (every decoded channel of
     /// its [`VOICE_XA_FILE`], keyed by `DecodedXa::ch_no`), each trimmed of its
@@ -459,6 +464,31 @@ fn build_character(
         }
     };
 
+    // ---- Full battle action bank + weapon swings (for the .glb export) ----
+    let mut actions: Vec<(String, MonsterAnimation)> = Vec::new();
+    match bca::battle_animations(raw) {
+        Ok(anims) => {
+            for a in &anims {
+                actions.push((
+                    bca::action_slot_label_or_hex(a.action_id as usize),
+                    bca::expand_animation_for_objects(a, &asm.anm_bones),
+                ));
+            }
+        }
+        Err(e) => arts_log(&format!("arts: char {cslot} action-bank decode: {e}")),
+    }
+    match bca::swing_battle_animations(raw, &pack, &equipped) {
+        Ok(swings) => {
+            for s in &swings {
+                actions.push((
+                    bca::action_slot_label_or_hex(s.slot as usize),
+                    bca::expand_animation_for_objects(&s.anim, &asm.anm_bones),
+                ));
+            }
+        }
+        Err(e) => arts_log(&format!("arts: char {cslot} swing decode: {e}")),
+    }
+
     // ---- Art-animation bank through the readef "ME" archives ----
     let mut arts = Vec::new();
     match bca::decode_record0(raw).and_then(|r0| bca::art_animation_bank(&r0)) {
@@ -507,6 +537,7 @@ fn build_character(
         object_ids,
         vram,
         idle,
+        actions,
         arts,
         voice: match VOICE_XA_FILE.get(cslot) {
             Some(Some(name)) => decode_xa_bank(voice_files, name),
@@ -624,6 +655,17 @@ impl LegaiaArts {
                         })
                     })
                     .collect();
+                let actions: Vec<serde_json::Value> = c
+                    .actions
+                    .iter()
+                    .map(|(label, a)| {
+                        serde_json::json!({
+                            "label": label,
+                            "frames": a.frame_count,
+                            "rate": a.rate,
+                        })
+                    })
+                    .collect();
                 let json = serde_json::json!({
                     "ok": true,
                     "character": CHARACTER_LABELS[c.cslot],
@@ -632,6 +674,10 @@ impl LegaiaArts {
                         "frames": i.frame_count,
                         "rate": i.rate,
                     })),
+                    // The labeled battle action set (record[0] slots +
+                    // weapon swings) the .glb export bakes alongside the
+                    // arts - see `export_character_glb`.
+                    "actions": actions,
                     "arts": arts,
                     // The character's arts-voice bank (null on a raw PROT.DAT
                     // load, for Terra, or if the file didn't demux): its XA
@@ -815,11 +861,17 @@ impl LegaiaArts {
     /// one node per rigid TMD object (the engine's `R . v + T` pose model
     /// expressed as native TRS keyframe channels), textured from the same
     /// runtime VRAM the canvas renders (every sampled `(cba, tsb-page)` pair
-    /// baked into one RGBA atlas). Animation 0 is the battle idle; every
-    /// art-bank record whose keyframe stream decoded follows, named by its
-    /// inline HUD art name where the record carries one, else by its
-    /// `anim_id` in hex (duplicated names get the hex id appended). Each
-    /// clip's timeline runs at its retail rate byte (`7.5 * rate`).
+    /// baked into one RGBA atlas).
+    ///
+    /// The clip list is the **complete battle action set**: every populated
+    /// `record[0]` action slot under its pinned label (Idle, Walk / Approach,
+    /// the flinches, Knockdown, Get Up, Ready / Recover / Defeat, Block -
+    /// `battle_char_assembly::action_slot_label`), the four equipment-spliced
+    /// weapon swings (Swing L/R/D/U), and then every art-bank record whose
+    /// keyframe stream decoded, named by its inline HUD art name where the
+    /// record carries one, else by its `anim_id` in hex (duplicated names get
+    /// the hex id appended). Each clip's timeline runs at its retail rate
+    /// byte (`7.5 * rate`).
     ///
     /// Everything is baked client-side off the visitor's own disc; nothing
     /// is uploaded. Empty until [`Self::set_character`] (or if the mesh has
@@ -836,9 +888,20 @@ impl LegaiaArts {
             }
         };
         let mut clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = Vec::new();
-        if let Some(idle) = &c.idle {
+        for (label, anim) in &c.actions {
             clips.push(legaia_asset::character_gltf::CharacterClip {
-                name: "battle idle".to_string(),
+                name: label.clone(),
+                fps: fps_for_rate(anim.rate),
+                anim,
+            });
+        }
+        if clips.is_empty()
+            && let Some(idle) = &c.idle
+        {
+            // Action bank failed to decode: fall back to the idle alone so
+            // the export still carries the rest pose.
+            clips.push(legaia_asset::character_gltf::CharacterClip {
+                name: "Idle".to_string(),
                 fps: fps_for_rate(idle.rate),
                 anim: idle,
             });

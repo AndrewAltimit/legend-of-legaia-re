@@ -1,6 +1,114 @@
 //! Player-ANM corpus + record decode exports.
 use super::*;
 
+/// PROT entry of the party locomotion bundle (`befect_data` §1). Its
+/// descriptor type byte is `0x02`, not the `0x05` the corpus detector
+/// filters on, so it needs the dedicated `character_pack` parser rather than
+/// `player_anm::find_in_entry`.
+const LOCOMOTION_PROT_INDEX: u32 = legaia_asset::character_pack::PROT_ENTRY_INDEX;
+
+/// PROT entry of the battle-form (Baka Fighter) 30-record ANM bank whose
+/// per-character banks + slot roles are pinned
+/// (`legaia_asset::baka_opponents::party_bank_record_label`).
+const BATTLE_BANK_PROT_INDEX: u32 = 1203;
+
+/// The per-record display metadata the corpus can attach where the bundle's
+/// bank structure is pinned: `(label, character slot, bank-relative slot)`.
+/// `None` for the per-scene NPC pools (their record roles are unpinned).
+pub fn corpus_record_meta(prot_index: u32, i: usize) -> Option<(String, Option<u32>, Option<u32>)> {
+    use legaia_asset::{baka_opponents, character_pack};
+    match prot_index {
+        LOCOMOTION_PROT_INDEX => {
+            let stride = character_pack::LOCOMOTION_BANK_STRIDE;
+            let (ch, slot) = if i < stride * 3 {
+                ((i / stride) as u32, (i % stride) as u32)
+            } else {
+                return Some((character_pack::locomotion_record_label(i), None, None));
+            };
+            Some((
+                character_pack::locomotion_record_label(i),
+                Some(ch),
+                Some(slot),
+            ))
+        }
+        BATTLE_BANK_PROT_INDEX => {
+            let per = baka_opponents::ACTIONS_PER_FIGHTER;
+            let (ch, slot) = if i < per * 3 {
+                (Some((i / per) as u32), Some((i % per) as u32))
+            } else {
+                (None, None)
+            };
+            Some((baka_opponents::party_bank_record_label(i), ch, slot))
+        }
+        _ => None,
+    }
+}
+
+/// Serialize one decoded bundle for the corpus JSON (records + per-record
+/// stillness score + labels where the bank structure is pinned).
+pub fn bundle_json(
+    prot_index: u32,
+    source: &str,
+    b: &legaia_asset::player_anm::PlayerAnmBundle,
+) -> serde_json::Value {
+    let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
+        .map(|i| {
+            let bytes = b.record_bytes(i);
+            let rec = b.record(i).ok();
+            // Stillness score for frame 0: sum of each bone's rotation
+            // distance from a **90° cardinal** (multiples of 1024 in PSX
+            // angle units). Rest-pose anims for characters whose TMD has
+            // Z-mirrored limbs (Vahn's field form) use an ry≈180° flip on
+            // one shin to unmirror it; measuring against cardinals (not
+            // just 0/360°) keeps those records scoring low. Lower =
+            // closer to an idle.
+            let stillness = if let Some(r) = rec.as_ref() {
+                let mut score: i64 = 0;
+                for bone in 0..(r.bone_count as usize) {
+                    if let Some(t) = b.bone_transform(i, 0, bone) {
+                        for r_ang in [t.r_x, t.r_y, t.r_z] {
+                            let m = r_ang.rem_euclid(1024);
+                            score += m.min(1024 - m) as i64;
+                        }
+                    }
+                }
+                score
+            } else {
+                i64::MAX
+            };
+            let meta = corpus_record_meta(prot_index, i);
+            serde_json::json!({
+                "index": i,
+                "offset": b.record_offsets[i],
+                "size": bytes.len(),
+                "marker_1": b.record_marker_1(i).unwrap_or(0),
+                "a": rec.as_ref().map(|r| r.a).unwrap_or(0),
+                "b": rec.as_ref().map(|r| r.b).unwrap_or(0),
+                "flag": rec.as_ref().map(|r| r.flag).unwrap_or(0),
+                "bone_count": rec.as_ref().map(|r| r.bone_count).unwrap_or(0),
+                "frame_count": rec.as_ref().map(|r| r.frame_count).unwrap_or(0),
+                "stillness": stillness,
+                // Display metadata, present only where the bundle's bank
+                // structure is pinned (locomotion / battle-bank sources).
+                "label": meta.as_ref().map(|(l, _, _)| l.clone()),
+                "character": meta.as_ref().and_then(|(_, c, _)| *c),
+                "bank_slot": meta.as_ref().and_then(|(_, _, s)| *s),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "prot_index": prot_index,
+        // What this bundle is: "party_locomotion" (PROT 0874 §1, the walk /
+        // idle set the field engine poses the party with), "battle_bank"
+        // (PROT 1203, the per-character battle-form banks), or "scene" (a
+        // per-scene NPC / scene-actor pool).
+        "source": source,
+        "record_count": b.record_count,
+        "decoded_bytes": b.decoded.len(),
+        "records": recs,
+    })
+}
+
 #[wasm_bindgen]
 impl LegaiaViewer {
     // ------------------------------------------------------------------
@@ -12,10 +120,12 @@ impl LegaiaViewer {
     ///   "bundles": [
     ///     {
     ///       "prot_index": 4,
+    ///       "source": "scene",
     ///       "record_count": 69,
     ///       "decoded_bytes": 96448,
     ///       "records": [
-    ///         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C },
+    ///         { "index": 0, "offset": 0x118, "size": 496, "marker_1": 0x080C,
+    ///           "label": null, "character": null, "bank_slot": null, ... },
     ///         ...
     ///       ]
     ///     }, ...
@@ -24,7 +134,13 @@ impl LegaiaViewer {
     /// ```
     /// Surveys the corpus by walking each scene's first PROT slot
     /// (parse_player_lzs descriptor count = 6, the canonical scene-bundle
-    /// shape) and emitting one entry per cleanly-decoded type-0x05 section.
+    /// shape) and emitting one entry per cleanly-decoded type-0x05 section -
+    /// plus the **party locomotion bundle** (PROT 0874 §1,
+    /// `source: "party_locomotion"`), which ships under descriptor type
+    /// `0x02` and is therefore invisible to the type-`0x05` detector.
+    /// Records of the two pinned-bank sources (locomotion + the PROT 1203
+    /// battle bank) carry a display `label` and their character / bank-slot
+    /// association; the per-scene NPC pools stay unlabeled.
     pub fn player_anm_corpus_json(&self) -> String {
         let toc = match parse_prot_toc(&self.disc) {
             Some(t) => t,
@@ -37,61 +153,28 @@ impl LegaiaViewer {
             let Some(buf) = self.disc.get(off..end) else {
                 continue;
             };
+            if meta.index == LOCOMOTION_PROT_INDEX {
+                // The locomotion section's descriptor type byte is 0x02
+                // (TMD), so the 0x05 detector below can never see it - route
+                // it through its own parser.
+                if let Ok(b) = legaia_asset::character_pack::field_locomotion_anm(buf) {
+                    bundles.push(bundle_json(meta.index, "party_locomotion", &b));
+                }
+                continue;
+            }
             // The vast majority of scene bundles use 6 descriptors; that's the
             // detector spread the disc-gated test pins. Lower counts catch a
             // handful of `befect_data` / `other5` variants.
             for desc_count in [6, 3, 5, 7] {
                 let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
                 if !found.is_empty() {
+                    let source = if meta.index == BATTLE_BANK_PROT_INDEX {
+                        "battle_bank"
+                    } else {
+                        "scene"
+                    };
                     for b in found {
-                        let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
-                            .map(|i| {
-                                let bytes = b.record_bytes(i);
-                                let rec = b.record(i).ok();
-                                // Stillness score for frame 0: sum of
-                                // each bone's rotation distance from a
-                                // **90° cardinal** (multiples of 1024 in
-                                // PSX angle units). Rest-pose anims for
-                                // characters whose TMD has Z-mirrored
-                                // limbs (Vahn's field form) use an
-                                // ry≈180° flip on one shin to unmirror
-                                // it; measuring against cardinals (not
-                                // just 0/360°) keeps those records
-                                // scoring low. Lower = closer to an idle.
-                                let stillness = if let Some(r) = rec.as_ref() {
-                                    let mut score: i64 = 0;
-                                    for bone in 0..(r.bone_count as usize) {
-                                        if let Some(t) = b.bone_transform(i, 0, bone) {
-                                            for r_ang in [t.r_x, t.r_y, t.r_z] {
-                                                let m = r_ang.rem_euclid(1024);
-                                                score += m.min(1024 - m) as i64;
-                                            }
-                                        }
-                                    }
-                                    score
-                                } else {
-                                    i64::MAX
-                                };
-                                serde_json::json!({
-                                    "index": i,
-                                    "offset": b.record_offsets[i],
-                                    "size": bytes.len(),
-                                    "marker_1": b.record_marker_1(i).unwrap_or(0),
-                                    "a": rec.as_ref().map(|r| r.a).unwrap_or(0),
-                                    "b": rec.as_ref().map(|r| r.b).unwrap_or(0),
-                                    "flag": rec.as_ref().map(|r| r.flag).unwrap_or(0),
-                                    "bone_count": rec.as_ref().map(|r| r.bone_count).unwrap_or(0),
-                                    "frame_count": rec.as_ref().map(|r| r.frame_count).unwrap_or(0),
-                                    "stillness": stillness,
-                                })
-                            })
-                            .collect();
-                        bundles.push(serde_json::json!({
-                            "prot_index": meta.index,
-                            "record_count": b.record_count,
-                            "decoded_bytes": b.decoded.len(),
-                            "records": recs,
-                        }));
+                        bundles.push(bundle_json(meta.index, source, &b));
                     }
                     break;
                 }
@@ -102,6 +185,9 @@ impl LegaiaViewer {
 
     /// Find a single player-ANM bundle by its PROT entry index and return
     /// the LZS-decoded bytes. Empty if the entry doesn't carry a bundle.
+    /// PROT 0874 resolves to the **party locomotion bundle** (§1, descriptor
+    /// type `0x02` - see [`Self::player_anm_corpus_json`]); every record
+    /// accessor below therefore works on it too.
     pub fn player_anm_decoded(&self, prot_index: u32) -> Vec<u8> {
         let toc = match parse_prot_toc(&self.disc) {
             Some(t) => t,
@@ -115,6 +201,11 @@ impl LegaiaViewer {
         let Some(buf) = self.disc.get(off..end) else {
             return Vec::new();
         };
+        if prot_index == LOCOMOTION_PROT_INDEX {
+            return legaia_asset::character_pack::field_locomotion_anm(buf)
+                .map(|b| b.decoded)
+                .unwrap_or_default();
+        }
         for desc_count in [6, 3, 5, 7] {
             let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
             if let Some(b) = found.into_iter().next() {

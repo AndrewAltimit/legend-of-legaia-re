@@ -32,7 +32,7 @@ pub mod play_name_entry;
 pub mod play_sfx;
 pub mod play_shop;
 pub mod play_tile_board;
-mod player_anm;
+pub mod player_anm;
 mod prot_locate;
 pub mod rom_patcher;
 pub mod runtime;
