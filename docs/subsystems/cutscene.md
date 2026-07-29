@@ -1404,7 +1404,8 @@ the error counter `_DAT_8007B828` by ten.
 #### Which style a battle gets
 
 `DAT_801D2460` is **not** an input from outside the overlay: the style-selection block of the
-transition init `FUN_801CE8C0` (`0x801CE97C`..`0x801CEB38`) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
+transition init `FUN_801ce8cc` (`0x801CE97C`..`0x801CEB38`; the entry is `0x801CE8CC` - `0x801CE8C0..0x801CE8C8` are
+three data words, so the historical `FUN_801CE8C0` name was mis-rounded) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
 the resolved formation cell's first monster id `DAT_8007BD0C`, and - for two arms - the
 current map/scene index `DAT_80084540`. The default is style 2, so the ordinary random
 encounter shatters; style 3 is reached by three formations and style 4 by one. Port:
