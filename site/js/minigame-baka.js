@@ -56,13 +56,14 @@
     ARROW_L: 48, ARROW_R: 49,
   };
 
-  /* Anim record slots within a fighter's bank. The bank mirrors the 9-record
-   * action table: record 0 is the idle (docs/formats/character-mesh.md) and
-   * the damage kernel indexes attacks at records 1..3, the special at 4
-   * (legaia_asset::baka_opponents ACTION_ATTACK_BASE / ACTION_SPECIAL); the
-   * knockdown slots after them are Inferred from the display-id fold in
-   * FUN_801d3f44. */
-  const ACT = { IDLE: 0, ATTACK1: 1, ATTACK2: 2, ATTACK3: 3, SPECIAL: 4, HIT: 5 };
+  /* Anim record slots within a fighter's bank - the RECORD index space,
+   * pinned (not inferred): the display id at actor+0x5c resolves through the
+   * ANM container header (word 0 = record count), so display base+k = bank
+   * record k-1. Record 0 IS the idle (display base+1), 1..3 the attacks,
+   * 4 the special, 5..7 the hit/knockdown family, 8 the win flourish.
+   * Full derivation + disasm cites:
+   * legaia_asset::baka_opponents::action_slot_label. */
+  const ACT = { IDLE: 0, ATTACK1: 1, ATTACK2: 2, ATTACK3: 3, SPECIAL: 4, HIT: 5, WIN: 8 };
 
   class MinigameBakaView {
     constructor(glCanvas, hudCanvas) {

@@ -338,6 +338,57 @@ impl PlayerAnmBundle {
         }
         Some(BoneTransform::decode(bf))
     }
+
+    /// Adapt record `index` into the battle-side clip type
+    /// ([`crate::monster_archive::MonsterAnimation`]) so consumers built on
+    /// that shape - the glTF baker `crate::character_gltf::build_character_glb`
+    /// foremost - can carry field / bank clips too.
+    ///
+    /// Lossless by construction: a [`BoneTransform`]'s translations are
+    /// sign-extended 12-bit values (`-2048..=2047`, exactly the
+    /// [`crate::monster_archive::PartPose`] `i16` domain) and its rotations
+    /// are `u8 << 4` 12-bit PSX angles (`0..=4080`, within the pose's
+    /// unsigned 12-bit domain) - both index spaces mean the same thing in
+    /// both types (actor-local T, `4096 = 360°` R, Z·Y·X composition).
+    /// `action_id` is the record index (truncated to the byte the clip type
+    /// carries); `rate` is set to `2` - the nominal retail rate byte, giving
+    /// the `7.5 * rate = 15` fps timeline closest to the field animator's
+    /// observed ~14 fps playback (the ANM container has no per-record rate
+    /// byte of its own). `None` when the record fails its size invariant.
+    pub fn record_to_monster_animation(
+        &self,
+        index: usize,
+    ) -> Option<crate::monster_archive::MonsterAnimation> {
+        let rec = self.record(index).ok()?;
+        let part_count = rec.bone_count as usize;
+        let frame_count = rec.frame_count as usize;
+        if part_count == 0 || frame_count == 0 {
+            return None;
+        }
+        let mut frames = Vec::with_capacity(frame_count);
+        for f in 0..frame_count {
+            let mut parts = Vec::with_capacity(part_count);
+            for b in 0..part_count {
+                let t = self.bone_transform(index, f, b)?;
+                parts.push(crate::monster_archive::PartPose {
+                    tx: t.t_x as i16,
+                    ty: t.t_y as i16,
+                    tz: t.t_z as i16,
+                    rx: (t.r_x & 0xFFF) as u16,
+                    ry: (t.r_y & 0xFFF) as u16,
+                    rz: (t.r_z & 0xFFF) as u16,
+                });
+            }
+            frames.push(parts);
+        }
+        Some(crate::monster_archive::MonsterAnimation {
+            action_id: index as u8,
+            rate: 2,
+            part_count,
+            frame_count,
+            frames,
+        })
+    }
 }
 
 /// Per-(bone, frame) transform decoded from one 8-byte entry. `t*` are the
@@ -653,6 +704,52 @@ mod tests {
         assert_eq!(t.r_x, 0xC00);
         assert_eq!(t.r_y, 0xFD0);
         assert_eq!(t.r_z, 0x430);
+    }
+
+    #[test]
+    fn record_to_monster_animation_round_trips_every_bone_transform() {
+        let buf = synthetic_two_records();
+        let bundle = parse(&buf).unwrap();
+        for rec_idx in 0..2 {
+            let anim = bundle
+                .record_to_monster_animation(rec_idx)
+                .expect("record adapts");
+            assert_eq!(anim.action_id, rec_idx as u8);
+            assert_eq!(anim.part_count, 2);
+            assert_eq!(anim.frame_count, 3);
+            for f in 0..3 {
+                for b in 0..2 {
+                    let t = bundle.bone_transform(rec_idx, f, b).unwrap();
+                    let p = anim.frames[f][b];
+                    // Same actor-local T + 12-bit R in both shapes.
+                    assert_eq!(p.tx as i32, t.t_x);
+                    assert_eq!(p.ty as i32, t.t_y);
+                    assert_eq!(p.tz as i32, t.t_z);
+                    assert_eq!(p.rx as i32, t.r_x & 0xFFF);
+                    assert_eq!(p.ry as i32, t.r_y & 0xFFF);
+                    assert_eq!(p.rz as i32, t.r_z & 0xFFF);
+                }
+            }
+        }
+        // Negative translations survive the i32 -> i16 narrowing: bone
+        // entry `E6 AB FF FE 0F ...` decodes to T=(-26, -85, -2) (the
+        // known-good runtime decode above).
+        let mut buf2 = Vec::new();
+        buf2.extend_from_slice(&1u32.to_le_bytes());
+        buf2.extend_from_slice(&8u32.to_le_bytes());
+        buf2.extend_from_slice(&1u16.to_le_bytes()); // a: 1 bone
+        buf2.extend_from_slice(&1u16.to_le_bytes()); // b: 1 frame
+        buf2.extend_from_slice(&ANM_MARKER_1.to_le_bytes());
+        buf2.extend_from_slice(&0x0002u16.to_le_bytes());
+        buf2.extend_from_slice(&[0xE6, 0xAB, 0xFF, 0xFE, 0x0F, 0xC0, 0xFD, 0x43]);
+        buf2.extend_from_slice(&[0u8; 8]);
+        let b2 = parse(&buf2).unwrap();
+        let anim = b2.record_to_monster_animation(0).unwrap();
+        let p = anim.frames[0][0];
+        assert_eq!((p.tx, p.ty, p.tz), (-26, -85, -2));
+        assert_eq!((p.rx, p.ry, p.rz), (0xC00, 0xFD0, 0x430));
+        // Out-of-range record refuses.
+        assert!(b2.record_to_monster_animation(1).is_none());
     }
 
     #[test]

@@ -1383,9 +1383,11 @@ items are disassembly-grounded and ported. See
 Each style is a direct GTE/GPU packet emitter: it builds primitives straight into the
 ordering-table cursor `_DAT_1F8003A0`, transforms vertices through the GTE (`FUN_80026988`
 RotMatrix, `FUN_8005BAC8` RotTransPers-class, `FUN_8003D2C4` / `FUN_8003D344` /
-`FUN_8003D1A4` primitive helpers) and screen-clips before linking. The **packet assembly**
-stays at the clean-room boundary; the per-record simulation each style runs around it -
-seeding, gating and integration - is ported, inert, into `legaia-engine-vm`.
+`FUN_8003D1A4` primitive helpers) and screen-clips before linking. The per-record
+simulation each style runs - seeding, gating and integration - is ported into
+`legaia-engine-vm`; styles 3 (the strip curtain) and 2 (the tile shatter) also **draw**
+through the engine's screen-overlay path, while the packet assembly of the remaining
+three stays at the clean-room boundary.
 
 Every style is a **(init, tick)** pair, and the allocation sizes are what pair them:
 
@@ -1404,7 +1406,8 @@ the error counter `_DAT_8007B828` by ten.
 #### Which style a battle gets
 
 `DAT_801D2460` is **not** an input from outside the overlay: the style-selection block of the
-transition init `FUN_801CE8C0` (`0x801CE97C`..`0x801CEB38`) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
+transition init `FUN_801ce8cc` (`0x801CE97C`..`0x801CEB38`; the entry is `0x801CE8CC` - `0x801CE8C0..0x801CE8C8` are
+three data words, so the historical `FUN_801CE8C0` name was mis-rounded) picks it, from the battle flags byte `DAT_8007BD60` bit `0x80`,
 the resolved formation cell's first monster id `DAT_8007BD0C`, and - for two arms - the
 current map/scene index `DAT_80084540`. The default is style 2, so the ordinary random
 encounter shatters; style 3 is reached by three formations and style 4 by one. Port:
@@ -1462,7 +1465,7 @@ bucket.
 > an emitter consumes the semantics - at which point it inverts silently. `battle_intro_tiles`
 > names the fields `pos` / `angles` and pins both directions in `record_semantics`.
 
-#### What style 2's emitter builds, and the one input still missing
+#### What style 2's emitter builds
 
 The descriptor it hands `FUN_80043390` is a synthetic TMD object at
 `_DAT_8007B85C + 0x5DC00`: 8 vertices (the record's `+0x14` corner array), 10 primitives at
@@ -1488,24 +1491,58 @@ Record UVs come from `+0x54..+0x5B` (corner `k` at `+0x54 + 2k`), `tpage` from `
 `0x1F80037E`, and `AVSZ4` for a per-primitive OT slot. The emitter never writes the record; the
 integration in the same function does.
 
-**Three of the four inputs a port needs are now pinned:**
+**All four inputs a port needs are pinned:**
 
 | Input | Value | Pinned by |
 |---|---|---|
 | Corner table `0x801CE8BC` | `[0, 1, 17, 18]` | PROT 0979 at `+0xA4`; word 4 is `addiu sp,sp,-0x48`, which bounds it |
 | GTE `OFX` / `OFY` | `160` / **`114`**, in 16.16 | the GTE control file of nine save states, across field, battle, load and minigame |
 | GTE `H` | `0x80` | `0x801D0D30`: `li a0,0x80` into `FUN_8003D254` |
+| The `(448, 0)` shade page | `field_char_textures` entry 0 (below) | mid-transition capture (`autorun_tile_shatter_page.lua`) |
 
 `OFY = 114` is the one worth flagging: it is **not** `240 / 2`, so a port that assumes the
 naive centre puts every screen-space primitive six pixels low. Oracle:
 `crates/mednafen/tests/gte_projection_real.rs`.
 
-**The fourth is not pinned, and that is what still blocks the port.** The side faces sample a
-4bpp page at VRAM `(448, 0)` whose CLUT at `(16, 473)` reads as a convincing 16-entry
-black-to-white brightness ramp in a battle-load state - but the page itself is sparse there
-(180 of 1024 halfwords non-zero), and no catalogued state is captured *during* a transition,
-which is the only window in which the page is live. Until a mid-transition capture exists, the
-side faces would have to be drawn over guessed texels.
+**The shade page is disc data the engine already parses.** The 4bpp page at VRAM `(448, 0)`
+that the four semi-transparent side faces stretch over is the top-left `64 x 64` texel corner
+of the **field-character texture pack's entry 0** (`legaia_asset::field_char_textures`, PROT
+0874 section 2): a `256 x 256` 4bpp TIM whose declared destination is `(448, 0)`, uploaded at
+field init and resident for the whole field session. `clut 0x7641` decodes to `(16, 473)` -
+CLUT index 1 of that entry's 16-CLUT block, which the field uploader lands as a `256 x 1`
+strip on row 473: a 16-entry black-to-bright ramp (dark half black, bright half a
+blue-tinted grey ladder), every entry STP-set in the TIM itself. Since `tpage 0x0027`
+carries ABR mode 1, the side faces **add** those ramped texels over their opaque siblings -
+a glint cut from the resident player-texture page, not a dedicated transition asset.
+
+The old "live only during a transition" framing is retired: the page is resident whenever a
+field scene is - the earlier "sparse" reading came from a *battle*-load state, whose VRAM
+lays those columns out differently. Pinned by a scripted mid-transition capture
+(`scripts/pcsx-redux/autorun_tile_shatter_page.lua`: breakpoint on `FUN_801D0D24`, save
+states on shatter frames 1 / 8 / 24, LoadImage/MoveImage rect log): the rect and CLUT row
+are byte-identical to the pack entry before the encounter, mid-shatter, and across two
+different field scenes, and **no upload touches them during the transition window**.
+
+The same capture pins three more per-frame facts. The scratch view matrix `0x1F8003C8` the
+per-tile loop loads is **identity rotation with zero translation** from the second shatter
+frame on - so the per-tile GTE translation is the record's position verbatim; on frame one
+it still holds the field camera's last value, which puts every tile behind the near plane -
+retail's first shatter frame draws no tiles, and `_DAT_8007B6CC` (`elapsed != 0`) is that
+same "not the first frame" signal. The FT4 handler's near cutoff reads scratch `0x1F80037E
+= 0x10`, applied to the `AVSZ4` result. And `ZSF4` is `0x400` (shift word zero), so a
+primitive's OT depth is the plain four-corner SZ average. One more nuance sits in the
+NCLIP pair: accept-unless-`nclip1 <= 0 && nclip2 >= 0` is **single-sided** - a planar
+quad's two strip triangles wind oppositely, so the straight orientation passes and the
+reversed one rejects, which is why the packet's back face reverses its corner order
+relative to the front (each culls exactly when it faces away).
+
+Engine side, the style now draws: `battle_intro_tiles::tile_face_quads` is the
+ten-primitive packet, `engine-render::battle_intro::emit_tile` the projection + accept
+chain (with `euler_rot_psx` as the `FUN_80026988` port), and the capture path re-lands
+pack entry 0 in the transition's cloned VRAM page. The one retail nuance not carried: a
+moving tile's record (`progress != 0`) dispatches through the depth-cue alpha bank (fade
+toward a zeroed far colour), which the screen-overlay path has no channel for - receding
+tiles keep their face grey instead of also dimming with depth.
 
 **Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
 corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).

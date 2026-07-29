@@ -186,6 +186,12 @@
 }
 .play-volume input[type="range"] { width: 5.5rem; }
 #play-volume-value { min-width: 2.4rem; text-align: right; color: var(--text); }
+.play-dev-menu {
+  display: flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.2rem 0.5rem; font-family: var(--font-mono); font-size: 0.74rem;
+  color: var(--text-muted);
+}
 
 /* Saves card (export / import / block chooser status line). */
 .play-save-import { display: block; margin-top: 0.45rem; font-size: 0.74rem; color: var(--text-muted); }
@@ -310,6 +316,10 @@
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
             &#9834; <input type="range" id="play-volume" min="0" max="12" step="0.5" value="5">
             <span id="play-volume-value">5x</span>
+          </label>
+          <label class="play-dev-menu"
+                 title="Overlay the retail developer menu on the running scene (the native window's LEGAIA_DEV_MENU opt-in). Edits your own session only; off every page load by design - nothing in a link or in storage can carry it.">
+            <input type="checkbox" id="play-dev-menu"> Dev menu
           </label>
         </div>
       </div>
@@ -612,6 +622,7 @@
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
+      if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       setSaveUi(true);
       /* The disc is up: re-render the save bar so it decodes the party
        * portrait faces + card icons now that WASM + disc bytes are available. */
@@ -875,6 +886,7 @@
       fresh.load_disc(discBytes, '');
       runtime = fresh;
       window.__playRuntime = runtime;
+      if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
 
       /* Too many failures in a short window -> the scene itself is the problem;
        * retreat to the opening scene, and if even that keeps failing, stop and
@@ -1443,6 +1455,23 @@
   }
   volEl.addEventListener('input', applyVolume);
   window.__playApplyVolume = applyVolume;
+
+  /* Developer menu (the browser twin of the native window's LEGAIA_DEV_MENU
+   * opt-in). Session-only by design: the checkbox starts unchecked on every
+   * page load, is never persisted and is never read from the URL, so only a
+   * deliberate click by the person at the keyboard enables it. The engine
+   * ticks the session off the same pad words the simulation reads - no keys
+   * are handled here. Re-applied whenever the runtime is rebuilt (a WASM
+   * trap makes a fresh instance with the flag off). */
+  const devMenuEl = document.getElementById('play-dev-menu');
+  function applyDevMenu() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.play_dev_menu_set_enabled === 'function') {
+      try { rt.play_dev_menu_set_enabled(!!devMenuEl.checked); } catch (e) {}
+    }
+  }
+  devMenuEl.addEventListener('change', () => { applyDevMenu(); canvas.focus(); });
+  window.__playApplyDevMenu = applyDevMenu;
 
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own

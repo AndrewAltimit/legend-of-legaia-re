@@ -1,23 +1,16 @@
 //! Screen-space billboard / sprite-quad corner projector.
 //!
-//! PORT: FUN_800195a8
+//! REF: FUN_800195a8 - the projector itself is ported (and disclosed) on
+//! [`project_billboard`]; this module block carries the shared per-step
+//! mapping so the helpers can cite it.
 //!
 //! **Wiring status.** Split, so read it per item. [`psx_sin`] / [`psx_cos`]
 //! (the clean-room trig LUT) are live: the disc-gated oracle
 //! `crates/engine-shell/tests/gte_sin_lut_real.rs` pins them entry-for-entry
-//! against the retail table, and other GTE matrix builders reuse them.
-//!
-//! NOT WIRED: [`project_billboard`] and its `rot_z_psx` / `apply_rot_z`
-//! helpers. Its non-test callers are all ports of retail riders that are
-//! themselves inert - [`crate::afterimage::project_streak_corners`] and
-//! [`crate::afterimage::project_ribbon_corners`] (the streak has no
-//! per-frame emitter; see that module's NOT WIRED note for the two gaps)
-//! and [`crate::battle_on_screen::battle_actor_on_screen`] (no battle actor
-//! pool in this crate). The remaining retail riders of `FUN_800195a8`
-//! (cutscene and world-map sprite emitters such as `FUN_800485BC`) are not
-//! ported, and engine-shell draws its live effect billboards as 3D meshes
-//! (`effect_billboard_mesh`) rather than through a projected screen quad,
-//! so nothing else reaches for it. Exercised by unit tests; do not delete.
+//! against the retail table, and the GTE matrix builders - including the
+//! battle-intro transition's rotation chain - reuse them. The projector
+//! [`project_billboard`] and its `rot_z_psx` / `apply_rot_z` helpers are
+//! not reached; the disclosure lives on the function.
 //!
 //! The retail SCUS helper `FUN_800195a8` projects a sprite quad about a 3D
 //! center point and hands the four screen-space corners back through caller
@@ -182,6 +175,17 @@ pub struct BillboardCorners {
 /// retail instruction stream. `h`/`ofx`/`ofy` are the ambient GTE projection
 /// registers (battle uses `H = 256` with the orbit camera); `ot_shift` is
 /// the scratchpad OT-resolution byte `DAT_1F8003A4` (`0` collapses the shift).
+///
+/// NOT WIRED: the non-test callers are all ports of retail riders that are
+/// themselves inert - [`crate::afterimage::project_streak_corners`] and
+/// [`crate::afterimage::project_ribbon_corners`] (the streak has no
+/// per-frame emitter; see that module's NOT WIRED note for the two gaps)
+/// and [`crate::battle_on_screen::battle_actor_on_screen`] (no battle actor
+/// pool in this crate). The remaining retail riders of `FUN_800195a8`
+/// (cutscene and world-map sprite emitters such as `FUN_800485BC`) are not
+/// ported, and engine-shell draws its live effect billboards as 3D meshes
+/// (`effect_billboard_mesh`) rather than through a projected screen quad,
+/// so nothing else reaches for it. Exercised by unit tests; do not delete.
 #[allow(clippy::too_many_arguments)]
 pub fn project_billboard(
     rot: &GteMat3,

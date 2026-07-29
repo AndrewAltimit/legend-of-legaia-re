@@ -305,15 +305,22 @@ builder is ported rather than effort:
 | Style | Ticks | Emits |
 |---|---|---|
 | Curtain | yes | yes - complete |
-| Scatter / spin-up particles, tile shatter, swirl | yes | no |
+| Tile shatter | yes | yes - complete |
+| Scatter / spin-up particles, swirl | yes | no |
 
 The curtain is complete because its packet builder is itself ported and
 produces screen-space corners, so there is no projection step to invent; its
 descriptor table is disc data that parses, and its texture pages decode to
-the capture rects above. The other four end in a GTE/GPU packet emitter that
-is documented but not ported, and the swirl's fan is triangles, which
-`ScreenPrim` has no variant for at all. Their working sets still tick,
-because the fade and the battle handoff both ride the same clock.
+the capture rects above. The tile shatter - the default random-encounter
+style - is complete because all of its inputs are pinned: the ten-face packet
+is `engine-vm`'s `tile_face_quads`, the projection + accept chain is the FT4
+handler's (`emit_tile`, with `euler_rot_psx` as the `FUN_80026988` port), and
+the 4bpp shade page its side faces sample is `field_char_textures` entry 0,
+re-landed in the transition's cloned page at capture time. The other three
+end in a GTE/GPU packet emitter that is documented but not ported, and the
+swirl's fan is triangles, which `ScreenPrim` has no variant for at all. Their
+working sets still tick, because the fade and the battle handoff both ride
+the same clock.
 
 ## GTE register-transfer + memory ops
 

@@ -125,7 +125,9 @@ reserved/authoring data with no live consumer.
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
+| Battle-intro tile shatter - the side-face shade page | resolved (a resident field asset, not a transition upload) | `capture` | [details ↓](#battle-intro-tile-shatter---the-side-face-shade-page) |
 | Which stage-dome objects does the battle backdrop draw? | resolved (drop index 1, not "keep index 0") | `disassembly` + `capture` | The registration edits the object list rather than truncating it: each backdrop actor owns a private `0x9c` part table at `+0x44` (allocated at `0x80021184`), and `0x80051ad4..0x80051bac` applies one `count -= 1` plus one `entry[i] = entry[i+1]` shift from index 1 to each. Object **1** is dropped and everything else kept, gated on `_DAT_8007b64b == 0`. Indistinguishable from "draw object 0" on the two-object shells; on the seven four-object domes it keeps sky, mountains and the ground ring. See [battle.md](../subsystems/battle.md#object-1-is-dropped). |
+| Battle ground grid depth cue - the far colour | resolved (captured at the draw; port fogs the grid) | `capture` | [details ↓](#battle-ground-grid-depth-cue---the-far-colour) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
@@ -173,6 +175,86 @@ reserved/authoring data with no live consumer.
 | How an NPC's facing changes **after** spawn - snap vs ramp, and which writer wins | resolved (two laws; order-of-execution priority) | `disassembly` | [details ↓](#npc-dynamic-facing---two-laws-and-an-execution-order) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | `capture` | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
 | kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | `disassembly` | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
+
+### Battle-intro tile shatter - the side-face shade page
+
+*Status:* resolved - a resident field asset, not a transition upload; the style draws.
+
+The 4bpp page at VRAM `(448, 0)` the shatter's four semi-transparent side
+faces stretch over is the top-left `64 x 64` texel corner of
+`legaia_asset::field_char_textures` **entry 0** (PROT 0874 §2): a `256 x 256`
+4bpp TIM whose declared destination is `(448, 0)`, uploaded at field init and
+resident for the whole field session. `clut 0x7641` decodes to `(16, 473)` -
+CLUT index 1 of the same entry's 16-CLUT block, landed as a `256 x 1` strip on
+row 473: a black-to-bright, STP-set brightness ramp. `tpage 0x0027` carries
+ABR mode 1, so the side faces **add** the ramped texels over their opaque
+siblings - a glint cut from the resident player-texture page, not a dedicated
+transition asset.
+
+Pinned by a scripted mid-transition capture
+(`scripts/pcsx-redux/autorun_tile_shatter_page.lua`: walk the
+`karisto_sol_pre_encounter` state into a random encounter, exec-break on the
+style-2 tick `FUN_801D0D24`, write save states on shatter frames 1 / 8 / 24,
+and log every `LoadImage` / `MoveImage` rect): the `(448, 0)` rect and the
+row-473 CLUT are byte-identical to the pack entry before the encounter,
+mid-shatter, and across two different field scenes - and **no upload touches
+them in the transition window**. The earlier "live only during a transition /
+sparse in a battle-load state" framing was battle VRAM layout misread as
+sparseness.
+
+The same capture pins the emitter's remaining runtime inputs: the per-tile
+view matrix at scratch `0x1F8003C8` is identity rotation with **zero**
+translation from the second shatter frame on (frame one still holds the field
+camera's last value, so every tile projects behind the near plane and retail's
+first frame draws no tiles - the `_DAT_8007B6CC` "not the first frame" flag is
+that same signal); the FT4 handler's near cutoff `0x1F80037E` reads `0x10`;
+and `ZSF4` is `0x400`, so a primitive's OT depth is the plain four-corner SZ
+average. Full spec + engine wiring:
+[`cutscene.md`](../subsystems/cutscene.md#what-style-2s-emitter-builds).
+
+### Battle ground grid depth cue - the far colour
+
+*Status:* resolved - the far colour is the backdrop's staged far colour,
+read off the live GTE at the grid draw; the port's grid now fogs.
+
+The emitter `func_0x801d02c0` runs `DPCS` per projected lattice vertex with
+`IR0 = SZ >> 2` loaded bare (`srl` + `mtc2`, so no saturation - past
+`SZ = 0x4000` the blend extrapolates until the DPCS output clamp bounds it),
+and contains **zero `ctc2`**: the far colour it consumes is whatever the
+control file holds on entry. A save-state read cannot attribute that value
+to the grid pass, which is why the thread sat open on `(0, 0, 0)`-vs-
+`(4096, 4096, 4096)` snapshot noise.
+
+The probe `scripts/pcsx-redux/autorun_grid_far_colour.lua` attributes it by
+construction - exec breakpoints on the emitter entry and its first `DPCS`
+site (`0x801d061c`) dump control regs 21-23 at the draw:
+
+- Every battle hit shows `FC` = the **backdrop far-colour staging word at
+  `0x8007BB48`, times 16** into the 28.4 control registers. The grid shares
+  the backdrop's per-battle far colour; there is no separate grid base.
+- Settled values: `(0x40, 0x40, 0x40)` on ordinary stages (two town01
+  battles, stage ids `0x15` / `0x0C`) and `(0xFE, 0xFE, 0xFE)` on an
+  overworld battle (stage id `0x55`, on the 13-id `DAT_80078C1C` outdoor
+  table at SCUS file `0x6941C`). Both are exactly the neutral base
+  `0x808080` through `FUN_80050120`'s two derivation arms - `>> 1` indoor,
+  `(c - 0x010101) * 2` outdoor - so the missing "base" is the neutral grey.
+- The battle-intro fade ramps the staged word up from near-black at
+  `+0x020202` per frame for ~28 frames before it settles: an early Queen
+  Bee sample reading `(6, 6, 6)` was frame 1 of that ramp, not a per-stage
+  ambience.
+- `DQA = -64` / `DQB = 320 << 16` re-confirmed live at every hit, and a
+  field state never enters the emitter (the aliased field-overlay code at
+  the same VA idles at the white `(4096)^3` field FC - the source of the
+  old snapshot confusion).
+
+Port: `legaia_engine_vm::battle_ground_grid` carries the laws (`grid_ir0`,
+`grid_far_colour`, `OutdoorCueTable`, the ramp constants) with the SCUS
+table pinned by `crates/engine-vm/tests/battle_grid_cue_scus_real.rs`;
+`engine-render` gained the per-draw `DrawCue` staging (retail sets the DPCS
+inputs per drawn object), and the play-window battle grid draws under the
+`SZ >> 2` ramp toward the per-stage far colour. The browser play page draws
+no battle 3D layer at all (a disclosed render gap in `play_battle.rs`), so
+there is no second host to wire until that layer exists.
 
 ### Who calls the battle on-screen test `FUN_8005126C`?
 
@@ -1757,6 +1839,64 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | `_DAT_8007B910` is the live audio level, not screen brightness | resolved (both hosts' labels corrected) | `disassembly` | [details ↓](#_dat_8007b910-is-the-live-audio-level-not-screen-brightness) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved (writer pinned statically; census in `audio.md`) | `disassembly` | [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 | Hyper Arts fanfare selector - what audio fires when a Hyper executes | resolved (per-(char, art) coin flip over a fixed channel pair of the even-slot fanfare bank) | `disassembly` | [details ↓](#hyper-arts-fanfare-selector) |
+| Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | resolved (it is the track-swap commit; both globals pinned; ported) | `disassembly` | [details ↓](#op-0x35-sub-op-0xa-is-the-track-swap-commit) |
+
+### Op-`0x35` sub-op `0xA` is the track-swap commit
+
+*Status:* resolved - the arm's two inputs are pinned by writer census, and the
+op is ported.
+
+The arm (`0x801E0264`, field overlay 0897) was read long ago; what was open
+was who feeds it. A store-offset writer census over SCUS + every based
+overlay image (the `lui`+load/store form the literal-word sweep cannot see;
+[`address-reference-scan.md`](../tooling/address-reference-scan.md)) answers
+all three questions:
+
+1. **Nothing writes `_DAT_8007B868`.** Its only store anywhere in the static
+   corpus is a read-modify-write **clearing** bit 1, at `0x8001E008` in the
+   boot mode-init `FUN_8001DCF8`; a raw byte sweep over all 1233 PROT entries
+   adds only one incidental data word (`0392_map03.BIN +0x2bc40`, surrounded
+   by non-code). So the word can never go non-zero in retail play - it is the
+   same dev/dual-mode gate the whole actor-sound family
+   (`FUN_800266E0`/`80026520`/`26740`/`26478`/`26410`) checks, and the arm's
+   early-return when it is set just mirrors its callees, which would all
+   no-op anyway.
+2. **`_DAT_8007B750` bit 3 has exactly one setter**: `ori v1,v0,0x8` at
+   `0x800246D0` inside `FUN_800243F0` - the BGM resolver/poller's
+   load-settle stage, reached only while a track swap is in flight, after
+   the settle countdown at `gp+0x768` (armed to `0x1E` frames at load
+   start, `0x3C` when master mode is 2) hits zero. Immediately after
+   setting it the poller stalls its own install while bit 0 (sub-op 9's
+   "script-owned start") is up and bit 4 is not (`0x800246E0..E8`): the
+   swap waits for the script's commit.
+3. **`FUN_80026520` closes what `FUN_800266E0` only detaches**: `800266E0`
+   resets the pan state and rewinds/stops the bound sequence
+   (`FUN_80064370`, the `SsSeqRewind` wrapper) leaving the source active;
+   `80026520` VSyncs, clears the source's active flag (`+0x8`), rewinds
+   **and closes** the handle (`FUN_80061E94`, the `SsSeqClose` shim). The
+   pair together is a full slot release, which is why the poller's own
+   teardown path calls both.
+
+So sub-op `0xA` is not a toggle: it is the **commit** half of the sub-op
+9 / `0xA` swap handshake - wait until the incoming track is staged, release
+the slot's paused occupant, ack with bit 4 (which unstalls the poller's
+install), clear the pause bit 1. Full protocol + the flag word's bit map:
+[`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa);
+the arm quoted:
+[`script-vm.md`](../subsystems/script-vm.md#sub-op-0xa-is-the-swap-commit).
+An incidental yield of the same census: sub-op 2's pause **sets** flag bit 1
+where sub-op 3 also sets it (calling the voice-stop `FUN_80026740`) and
+sub-op 4 clears it (calling the re-attach `FUN_80026478`) - the legacy
+Resume/Stop labels on 3/4 describe each other's arm.
+
+Port: `SceneHost::route_bgm_events` routes sub-op 10 to
+`BgmDirector::unhalt_pause` (release the source only while the pause latch
+is set, then clear the latch unconditionally), overridden by the native
+`AudioBgmDirector` and the browser `WebBgmDirector`; both starts also clear
+the pause gate, as retail's sub-op 1 arm does. Pinned disc-side by
+`crates/engine-core/tests/bgm_midscene_change_disc.rs` (town01's cutscene
+records carry the op). `see ghidra/scripts/funcs/800243f0.txt`,
+`800266e0.txt`, `80026520.txt`, `8001dcf8.txt`.
 
 ### Hyper Arts fanfare selector
 

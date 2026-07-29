@@ -915,6 +915,7 @@ impl ApplicationHandler for FieldApp {
                         .map(|(slot, m)| SceneDraw {
                             mesh: &m.mesh,
                             mvp: cam * self.actor_model(slot),
+                            cue: None,
                         })
                         .collect();
                     let hud = self.build_hud();

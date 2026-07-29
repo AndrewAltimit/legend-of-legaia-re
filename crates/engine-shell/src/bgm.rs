@@ -310,6 +310,12 @@ impl AudioBgmDirector {
         } else {
             self.audio.attach_sequencer(sequencer);
         }
+        // Retail's start arm (op 0x35 sub-op 1, `0x801E0104`) clears the
+        // pause bit alongside the track select, so a start issued while
+        // paused must reopen the sequencer gate too - attaching behind a
+        // closed gate leaves the new track silent until an explicit
+        // resume/unhalt.
+        self.audio.set_sequencer_paused(false);
         self.paused = false;
         self.last_started = Some(bgm_id);
         Ok(())
@@ -365,6 +371,26 @@ impl BgmDirector for AudioBgmDirector {
         self.audio.detach_sequencer();
         self.paused = false;
         self.last_started = None;
+    }
+
+    /// Sub-op `0xA` - the unhalt-pause swap-commit (retail `0x801E0264`).
+    /// When the pause latch is still set no start intervened, so the
+    /// director is holding the track sub-op 2 paused: release it the way
+    /// retail's `FUN_800266E0` + `FUN_80026520` pair detaches and closes
+    /// the slot. When a start already landed (the paired sub-op 9 precedes
+    /// the commit in script order), the swap is done and the occupant is
+    /// the incoming track - leave it alone. Either way the pause gate is
+    /// cleared unconditionally, mirroring retail clearing `_DAT_8007B750`
+    /// bit 1 on every pass through the arm - without this, a start issued
+    /// while paused attaches its sequencer behind a still-closed gate and
+    /// the score stays silent after the cutscene.
+    fn unhalt_pause(&mut self) {
+        if self.paused {
+            self.audio.detach_sequencer();
+            self.paused = false;
+            self.last_started = None;
+        }
+        self.audio.set_sequencer_paused(false);
     }
 }
 

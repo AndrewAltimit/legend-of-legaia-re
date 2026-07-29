@@ -219,14 +219,26 @@ impl PlayWindowApp {
             None
         }
     }
+}
 
-    pub(super) fn build_battle_stage(
-        &self,
-    ) -> Option<(
-        legaia_tim::Vram,
-        (legaia_tmd::Tmd, Vec<u8>),
-        legaia_asset::battle_backdrop::SecondCopy,
-    )> {
+/// The loaded battle-stage backdrop bundle `build_battle_stage` returns.
+pub(super) struct BattleStage {
+    /// Scene + stage-dome textures resident - becomes the battle VRAM base.
+    pub(super) vram: legaia_tim::Vram,
+    /// The backdrop shell TMD plus the raw bytes it was parsed from.
+    pub(super) dome: (legaia_tmd::Tmd, Vec<u8>),
+    /// The second backdrop copy's per-stage transform (`DAT_80078B50`).
+    pub(super) second: legaia_asset::battle_backdrop::SecondCopy,
+    /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
+    /// colour per stage class (`DAT_80078C1C` outdoor table).
+    pub(super) grid_far: [f32; 3],
+}
+
+impl PlayWindowApp {
+    /// Build the current scene's battle-stage backdrop bundle: the stage
+    /// VRAM, the dome TMD (with its raw bytes), the second-copy transform
+    /// and the ground grid's depth-cue far colour.
+    pub(super) fn build_battle_stage(&self) -> Option<BattleStage> {
         let scene = self.session.host.scene.as_ref()?;
         let scene_name = scene.name.clone();
         // Not the block's first stage stream: a scene bundle carries one per
@@ -265,23 +277,37 @@ impl PlayWindowApp {
         // cosmetic: `town01` IS on the mirror list, so half-turning it plants
         // a second village wall across the open sea side. With no readable
         // SCUS the default is the safer of the two - it never reflects.
-        let second = self
-            .scus_bytes()
+        let scus = self.scus_bytes();
+        let second = scus
             .as_deref()
             .and_then(legaia_asset::battle_backdrop::MirrorXTable::from_scus)
             .map(|t| t.second_copy_for_prot_index(stage_entry))
             .unwrap_or(legaia_asset::battle_backdrop::SecondCopy::HalfTurn);
+        // The ground grid's depth-cue far colour: the backdrop far colour
+        // retail derives per stage class (`FUN_80050120`) - the sibling
+        // SCUS table at `DAT_80078C1C` picks the brightened outdoor arm on
+        // the 13 wide-open stages, everything else takes the indoor `>> 1`
+        // arm. With no readable SCUS the indoor grey covers the vast
+        // majority of the stage corpus. Capture provenance:
+        // `scripts/pcsx-redux/autorun_grid_far_colour.lua`.
+        let grid_far_bytes = scus
+            .as_deref()
+            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .map(|t| t.far_colour_for_prot_index(stage_entry))
+            .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
+        let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
              ({} objects, drawn twice, {} second copy)",
             dome.tmd.objects.len(),
             second.label()
         );
-        Some((
-            res.vram.clone(),
-            (dome.tmd.clone(), dome.raw.clone()),
+        Some(BattleStage {
+            vram: res.vram.clone(),
+            dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
-        ))
+            grid_far,
+        })
     }
 
     pub(super) fn enter_battle_render(&mut self) {
@@ -307,7 +333,7 @@ impl PlayWindowApp {
         // fall back to the field VRAM when the scene has no stage.
         let stage = self.build_battle_stage();
         let base = match &stage {
-            Some((sv, _, _)) => sv.clone(),
+            Some(s) => s.vram.clone(),
             None => field_base,
         };
         let Some(r) = self.win.renderer.as_ref() else {
@@ -339,7 +365,13 @@ impl PlayWindowApp {
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`.
-        if let Some((_, (tmd, raw), second)) = &stage {
+        if let Some(BattleStage {
+            dome: (tmd, raw),
+            second,
+            grid_far,
+            ..
+        }) = &stage
+        {
             // Retail's backdrop registration edits the object list rather
             // than truncating it: it drops index 1 and keeps the rest
             // (`legaia_asset::battle_backdrop`, ported from `FUN_800513f0`).
@@ -379,6 +411,7 @@ impl PlayWindowApp {
                 // VRAM holds that scene's own ground tile there (see
                 // `build_battle_ground_grid`).
                 self.battle_ground_mesh = None;
+                self.battle_ground_cue_far = None;
                 let grid = build_battle_ground_grid();
                 match r.upload_vram_mesh(
                     &grid.positions,
@@ -390,6 +423,11 @@ impl PlayWindowApp {
                 ) {
                     Ok(gm) => {
                         self.battle_ground_mesh = Some(self.meshes.len());
+                        // The grid's GTE depth cue: far colour per stage
+                        // class (resolved in `build_battle_stage`), ramped
+                        // by the emitter's per-vertex `SZ >> 2` law at draw
+                        // time (see the redraw grid push).
+                        self.battle_ground_cue_far = Some(*grid_far);
                         self.meshes.push(gm);
                         self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
                     }
@@ -1190,6 +1228,7 @@ impl PlayWindowApp {
             .map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
             self.battle_intro = None;
+            self.battle_intro_vram = None;
             return (None, Vec::new());
         };
         let Some(entity) = self.session.host.world.battle_intro else {
@@ -1251,6 +1290,25 @@ impl PlayWindowApp {
         let seed = self.session.host.world.rng_state;
         let mut env = IntroEnv::new(seed);
         let mut trig = IntroEnv::new(seed);
+        // The tile seeder's corner table, decoded off PROT 0979 at
+        // `0x801CE8BC`; the documented `[0, 1, 17, 18]` is the disc-free
+        // fallback, so a host without the entry seeds the same grid.
+        let corners = self
+            .intro_overlay_loaded()
+            .and_then(|(img, base)| {
+                legaia_engine_render::battle_intro::parse_tile_corner_table(&img, base)
+            })
+            .unwrap_or([0, 1, 0x11, 0x12]);
+        // The shade page the shatter's side faces sample (field-character
+        // texture pack entry 0) - parsed from the disc so the capture can
+        // land it in the transition's cloned VRAM page.
+        let shade = self
+            .session
+            .host
+            .index
+            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .ok()
+            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
         BattleIntro::new(
             choice.style,
             choice.sub_style,
@@ -1258,10 +1316,24 @@ impl PlayWindowApp {
             table,
             &mut env,
             &mut trig,
-            // The `0x801CE8BC` corner table is overlay data nothing decodes;
-            // the tile seeder only needs a shape, and its style does not draw.
-            [0, 1, 0x11, 0x12],
+            corners,
         )
+        .with_shade_pack(shade)
+    }
+
+    /// The PROT 0979 intro overlay relocated to its load base, for the two
+    /// in-overlay data tables ([`IntroQuadTable`], the tile corner table).
+    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
+        const INTRO_OVERLAY_PROT: u32 = 979;
+        let raw = self
+            .session
+            .host
+            .index
+            .entry_bytes_extended(INTRO_OVERLAY_PROT)
+            .ok()?;
+        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
+        Some((as_loaded, rec.base_va))
     }
 
     /// The scene index `select_intro_style`'s two scene-conditional overrides
@@ -1281,16 +1353,8 @@ impl PlayWindowApp {
     /// it, in which case the emitter falls back to a neutral table - the
     /// strips then carry the capture unmodulated instead of not drawing.
     fn intro_quad_table(&self) -> Option<legaia_engine_render::battle_intro::IntroQuadTable> {
-        const INTRO_OVERLAY_PROT: u32 = 979;
-        let raw = self
-            .session
-            .host
-            .index
-            .entry_bytes_extended(INTRO_OVERLAY_PROT)
-            .ok()?;
-        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
-        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, rec.base_va)
+        let (as_loaded, base_va) = self.intro_overlay_loaded()?;
+        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, base_va)
     }
 
     /// Land the field frame in VRAM for the transition to texture itself with,
@@ -1372,6 +1436,7 @@ impl PlayWindowApp {
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_ground_mesh = None;
+        self.battle_ground_cue_far = None;
         self.battle_faces.clear();
     }
 

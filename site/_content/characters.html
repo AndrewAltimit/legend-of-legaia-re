@@ -174,7 +174,7 @@ table.arts-list .cmd-tag {
           <button id="char-spin-btn" type="button">⏸ stop spin</button>
           <button id="char-reset-btn" type="button">↺ reset view</button>
           <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
-          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model, posed as shown">⬇ .glb</button>
+          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (field: the party walk/idle locomotion bank; battle / Baka Fighter: the character's 9-record battle bank)">⬇ .glb</button>
         </div>
         <div class="char-fun" id="char-fun"></div>
 
@@ -193,8 +193,11 @@ table.arts-list .cmd-tag {
             <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled>
             <span id="char-anm-frame-label" class="char-anm-readout">-</span>
           </div>
+          <label class="char-info-note" title="The default view lists only the clips that apply to the shown model (the party's own locomotion bank in field form, the character's battle bank in battle / Baka forms, bone-count-matching records elsewhere). Tick to browse every bundle and record on the disc - the page doubles as an RE tool.">
+            <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
+          </label>
           <div class="char-info-note" id="char-anm-info">
-            The real animation clips shipped on the disc - one bundle per scene, each record one clip. Pick a bundle and a record, then press play; encoding: <a href="formats/anm.html">ANM format</a>.
+            The real animation clips shipped on the disc, filtered to the ones that apply to the shown model: in field form the party's own <strong>walk / idle locomotion bank</strong> (with the per-scene NPC pools browsable as a secondary group), in battle and Baka Fighter forms the character's labeled 9-record battle bank. Pick a clip and press play; encoding: <a href="formats/anm.html">ANM format</a>.
           </div>
         </div>
       </div>
@@ -228,7 +231,7 @@ table.arts-list .cmd-tag {
   </div>
 
   <h2>The animations are the real in-game clips</h2>
-  <p>Every clip in the Animation panel comes off your disc - field walk/idle cycles, per-scene NPC pools, and battle-stance clips. The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
+  <p>Every clip in the Animation panel comes off your disc, and the list is scoped to the shown model. In <strong>field form</strong> the default source is the party's own <strong>locomotion bank</strong> (PROT 0874 §1): the capture-pinned <em>Walk</em> and <em>Idle</em> clips plus the not-yet-pinned rest of each character's 7-clip bank, with the per-scene NPC pools still browsable as a secondary group. In <strong>battle / Baka Fighter</strong> forms it is the character's labeled 9-record battle bank (Idle, the three attacks, Special, the hit reactions, Win). The animation data assembles the character's separate body pieces each frame exactly as the game's renderer does, so playback matches what you see in-game. The <strong>.glb</strong> download bakes the same clips as named glTF animations. Encoding: <a href="formats/anm.html">ANM format</a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/anm.html">ANM animation format</a>
@@ -274,7 +277,18 @@ table.arts-list .cmd-tag {
   // pack's bundled (authoring) palette.
   const isBattlePackForm = (f) => f === 'battle' || f === 'baka';
   let curAnmBundleIdx = 0;   // index into anmCorpus.bundles
-  let curAnmRecordIdx = 0;
+  let curAnmRecordIdx = 0;   // ABSOLUTE record index inside the bundle
+  let showAllAnm = false;    // escape hatch: browse every bundle / record
+  let anmFiltered = [];      // absolute record indices the slider addresses
+
+  // What a corpus bundle is (the WASM surface tags them): the party
+  // locomotion bank (PROT 0874 §1), the battle-form bank (PROT 1203), or a
+  // per-scene NPC / scene-actor pool.
+  const SRC_LOCOMOTION = 'party_locomotion';
+  const SRC_BATTLE_BANK = 'battle_bank';
+  function bundleSource(b) {
+    return b.source || ((b.prot_index | 0) === 1203 ? SRC_BATTLE_BANK : 'scene');
+  }
   // Per-form last-selected bundle index, so swapping forms preserves each
   // side's scrubber state instead of snapping back to the default.
   // Initialised to -1 ("never picked"); on form switch we fall back to the
@@ -419,26 +433,92 @@ table.arts-list .cmd-tag {
     return `PROT ${String(protIdx).padStart(4, '0')}`;
   }
 
+  // The bundle dropdown, scoped per form: field form leads with the party
+  // locomotion bank and keeps the per-scene NPC pools browsable as a
+  // secondary optgroup; battle / Baka forms list only the PROT 1203 battle
+  // bank. The "browse all" escape hatch reveals everything everywhere.
   function renderAnmPanel() {
     if (!anmCorpus || !anmBundleSel) return;
-    const opts = anmCorpus.bundles.map((b, i) => {
-      const label = findCdnameLabel(b.prot_index);
-      const isBattle = b.prot_index === 1203;
-      const tag = isBattle ? ' [battle]' : '';
-      return `<option value="${i}">${label} - ${b.record_count} records, ${b.decoded_bytes.toLocaleString()} bytes${tag}</option>`;
-    }).join('');
-    anmBundleSel.innerHTML = opts;
-    anmBundleSel.value = String(Math.min(curAnmBundleIdx, anmCorpus.bundles.length - 1));
+    const opt = (i) => {
+      const b = anmCorpus.bundles[i];
+      const src = bundleSource(b);
+      const label = src === SRC_LOCOMOTION
+        ? `Party locomotion (walk / idle) · PROT ${String(b.prot_index).padStart(4, '0')}`
+        : findCdnameLabel(b.prot_index);
+      const tag = src === SRC_BATTLE_BANK ? ' [battle bank]' : '';
+      return `<option value="${i}">${label} - ${b.record_count} records${tag}</option>`;
+    };
+    const primary = [];
+    const scenes = [];
+    for (let i = 0; i < anmCorpus.bundles.length; i++) {
+      const src = bundleSource(anmCorpus.bundles[i]);
+      if (isBattlePackForm(curForm)) {
+        if (src === SRC_BATTLE_BANK) primary.push(i);
+        else if (showAllAnm) scenes.push(i);
+      } else {
+        if (src === SRC_LOCOMOTION) primary.push(i);
+        else if (src === SRC_BATTLE_BANK) { if (showAllAnm) scenes.push(i); }
+        else scenes.push(i);
+      }
+    }
+    let html = primary.map(opt).join('');
+    if (scenes.length) {
+      html += `<optgroup label="NPC / scene animation pools">${scenes.map(opt).join('')}</optgroup>`;
+    }
+    anmBundleSel.innerHTML = html;
+    // Keep the selection if it's still listed; otherwise snap to the form's
+    // primary bundle (or the first listed one).
+    const listed = primary.concat(scenes);
+    if (!listed.includes(curAnmBundleIdx)) {
+      curAnmBundleIdx = primary[0] !== undefined ? primary[0] : (listed[0] || 0);
+      curAnmRecordIdx = 0;
+    }
+    anmBundleSel.value = String(curAnmBundleIdx);
     syncAnmSlider();
+  }
+
+  // The absolute record indices the slider should walk for the current
+  // (bundle, slot, form): the character's own bank where the bundle has
+  // pinned banks, bone-count-matching records elsewhere, everything under
+  // the escape hatch.
+  function filteredRecordIndices() {
+    const bundle = anmCorpus && anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle || !bundle.records) return [];
+    const all = bundle.records.map((_, i) => i);
+    const p = activePack();
+    if (showAllAnm || selectedSlot === null || !p || !p.slots[selectedSlot]) return all;
+    const src = bundleSource(bundle);
+    if (src === SRC_LOCOMOTION) {
+      if (selectedSlot <= 2) {
+        return all.filter(i => (bundle.records[i].character | 0) === selectedSlot
+          && bundle.records[i].character !== null);
+      }
+      const want = selectedSlot === 3 ? 'Savepoint' : 'Aux actor';
+      const own = all.filter(i => bundle.records[i].label === want);
+      return own.length ? own : all;
+    }
+    if (src === SRC_BATTLE_BANK && selectedSlot <= 2) {
+      return all.filter(i => bundle.records[i].character !== null
+        && (bundle.records[i].character | 0) === selectedSlot);
+    }
+    const want = animatedBoneCountFor(selectedSlot, p);
+    const matching = all.filter(i => (bundle.records[i].bone_count | 0) === want);
+    return matching.length ? matching : all;
   }
 
   function syncAnmSlider() {
     if (!anmCorpus) return;
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle) return;
+    anmFiltered = filteredRecordIndices();
     anmRecordSlider.min = '0';
-    anmRecordSlider.max = String(Math.max(0, bundle.record_count - 1));
-    anmRecordSlider.value = String(Math.min(curAnmRecordIdx, bundle.record_count - 1));
+    anmRecordSlider.max = String(Math.max(0, anmFiltered.length - 1));
+    let pos = anmFiltered.indexOf(curAnmRecordIdx);
+    if (pos < 0) {
+      pos = 0;
+      curAnmRecordIdx = anmFiltered.length ? anmFiltered[0] : 0;
+    }
+    anmRecordSlider.value = String(pos);
     updateAnmReadout();
   }
 
@@ -451,7 +531,11 @@ table.arts-list .cmd-tag {
       anmRecordLabel.textContent = '-';
       return;
     }
-    anmRecordLabel.textContent = `rec ${curAnmRecordIdx}/${bundle.record_count - 1}  ·  ${rec.size}B`;
+    const pos = anmFiltered.indexOf(curAnmRecordIdx);
+    const n = anmFiltered.length || bundle.record_count;
+    const name = rec.label ? rec.label : `rec ${curAnmRecordIdx}`;
+    anmRecordLabel.textContent =
+      `${name} · ${(pos >= 0 ? pos : curAnmRecordIdx) + 1}/${n} · ${rec.frame_count}f`;
   }
 
   // Build the equip-state toggle: only field-form active-party slots get a
@@ -485,22 +569,26 @@ table.arts-list .cmd-tag {
               data-val="${b.val}" title="${escapeHtml(b.hint)}">${b.label}</button>`).join('');
   }
 
-  // Index of the per-scene player ANM bundle a field-form character should
-  // animate against by default (the corpus walks every scene, so we pick a
-  // common-purpose one - town01 (PROT 0004) - by lowest PROT index that
-  // isn't the battle bundle). Computed lazily on first form swap.
+  // Default field-form bundle: the party's OWN locomotion bank (PROT 0874
+  // §1) - the clips retail actually poses the party with. Falls back to the
+  // lowest-index scene pool on a corpus that predates the locomotion
+  // surface. Computed lazily on first form swap.
   let _fieldBundleIdxCache = -1;
   function defaultFieldBundleIdx() {
     if (!anmCorpus || !anmCorpus.bundles) return 0;
     if (_fieldBundleIdxCache >= 0) return _fieldBundleIdxCache;
-    let best = 0, bestProt = Infinity;
+    let best = -1, bestProt = Infinity;
     for (let i = 0; i < anmCorpus.bundles.length; i++) {
+      if (bundleSource(anmCorpus.bundles[i]) === SRC_LOCOMOTION) {
+        _fieldBundleIdxCache = i;
+        return i;
+      }
       const pi = anmCorpus.bundles[i].prot_index | 0;
       if (pi === 1203) continue; // battle-form bundle
       if (pi < bestProt) { bestProt = pi; best = i; }
     }
-    _fieldBundleIdxCache = best;
-    return best;
+    _fieldBundleIdxCache = best >= 0 ? best : 0;
+    return _fieldBundleIdxCache;
   }
 
   // Index of the battle-form bundle (PROT 1203 other5). Returns -1 if the
@@ -557,12 +645,13 @@ table.arts-list .cmd-tag {
       if (targetIdx >= 0 && targetIdx !== curAnmBundleIdx) {
         curAnmBundleIdx = targetIdx;
         curAnmRecordIdx = 0;
-        if (anmBundleSel) anmBundleSel.value = String(curAnmBundleIdx);
-        syncAnmSlider();
       }
     }
     renderFormToggle();
     updateAnmVisibility();
+    // The dropdown's option set is form-scoped - rebuild it (this also
+    // validates the selection and re-syncs the record slider).
+    renderAnmPanel();
     // Re-render the grid + equip toggle against the active form's pack;
     // re-load the currently-selected slot's mesh.
     if (selectedSlot !== null) {
@@ -672,6 +761,20 @@ table.arts-list .cmd-tag {
     const bundle = anmCorpus.bundles[curAnmBundleIdx];
     if (!bundle || !bundle.records) return 0;
     const want = animatedBoneCountFor(slot, p);
+
+    // Party locomotion bank: the capture-pinned Idle slot (bank slot 1) is
+    // the rest-pose default; the two non-bank actors have one record each.
+    if (bundleSource(bundle) === SRC_LOCOMOTION) {
+      if (slot <= 2) {
+        const idle = bundle.records.findIndex(r =>
+          r.character !== null && (r.character | 0) === slot && (r.bank_slot | 0) === 1);
+        if (idle >= 0) return idle;
+      }
+      const own = bundle.records.findIndex(r =>
+        r.label === (slot === 3 ? 'Savepoint' : 'Aux actor'));
+      if (own >= 0 && slot >= 3) return own;
+      return 0;
+    }
 
     // Battle form: the 30 records in PROT 1203 are organised in per-character
     // banks. Empirically (bone_count grouped against PROT 1204 slot order):
@@ -1012,10 +1115,22 @@ table.arts-list .cmd-tag {
   }
   if (anmRecordSlider) {
     anmRecordSlider.addEventListener('input', () => {
-      const idx = Number(anmRecordSlider.value);
-      if (!Number.isFinite(idx)) return;
-      curAnmRecordIdx = idx;
+      const pos = Number(anmRecordSlider.value);
+      if (!Number.isFinite(pos)) return;
+      // The slider walks the FILTERED record list; map back to the
+      // absolute record index inside the bundle.
+      curAnmRecordIdx = anmFiltered.length
+        ? anmFiltered[Math.max(0, Math.min(pos | 0, anmFiltered.length - 1))]
+        : (pos | 0);
       updateAnmReadout();
+      maybeLoadCurrentAnim();
+    });
+  }
+  const anmShowAll = document.getElementById('char-anm-show-all');
+  if (anmShowAll) {
+    anmShowAll.addEventListener('change', () => {
+      showAllAnm = !!anmShowAll.checked;
+      renderAnmPanel();
       maybeLoadCurrentAnim();
     });
   }
@@ -1081,22 +1196,58 @@ table.arts-list .cmd-tag {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  // .glb: unlike the .tmd download (the raw disc blob), this bakes what's on
-  // screen - the assembled figure at the current animation frame, textured from
-  // the VRAM the active form uploaded. See MeshView.exportGlb.
-  window.MeshView.attachGlbButton(
-    document.getElementById('char-glb-btn'),
-    () => meshView,
-    () => viewer,
-    () => {
-      const p = activePack();
-      if (!p || selectedSlot === null) return 'legaia-character';
-      const meta = p.slots[selectedSlot];
-      const formTag = isBattlePackForm(curForm)
-        ? (curForm === 'baka' ? 'baka' : 'battle')
-        : 'field';
-      return `legaia-${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${formTag}`;
+  // .glb: unlike the .tmd download (the raw disc blob), this bakes the
+  // ANIMATED character - the form's applicable clip set as named glTF
+  // animations (field: the party locomotion bank; battle / Baka: the
+  // character's 9-record PROT 1203 bank) via the WASM `character_glb`
+  // exporter. A stale wasm bundle without it falls back to the static
+  // posed bake (MeshView.exportGlb).
+  const glbName = () => {
+    const p = activePack();
+    if (!p || selectedSlot === null) return 'legaia-character';
+    const meta = p.slots[selectedSlot];
+    const formTag = isBattlePackForm(curForm)
+      ? (curForm === 'baka' ? 'baka' : 'battle')
+      : 'field';
+    return `legaia-${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${formTag}`;
+  };
+  const glbBtn = document.getElementById('char-glb-btn');
+  if (glbBtn) {
+    glbBtn.addEventListener('click', async () => {
+      if (!viewer || selectedSlot === null) return;
+      const prev = glbBtn.textContent;
+      glbBtn.disabled = true;
+      glbBtn.textContent = 'baking…';
+      await new Promise(r => setTimeout(r, 30));
+      let msg = null;
+      try {
+        const name = glbName();
+        let glb = null;
+        if (typeof viewer.character_glb === 'function') {
+          const formCode = curForm === 'field' ? 0 : (curForm === 'battle' ? 1 : 2);
+          const equip = curForm === 'field' ? curEquip : -1;
+          glb = viewer.character_glb(selectedSlot, equip, formCode);
+        }
+        if ((!glb || !glb.length) && meshView) {
+          glb = meshView.exportGlb(viewer, name); // static posed fallback
+        }
+        if (!glb || !glb.length) {
+          msg = 'no mesh';
+        } else {
+          const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+          const a = document.createElement('a');
+          a.href = url; a.download = `${name}.glb`; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }
+      } catch (err) {
+        console.warn('glb export failed:', err);
+        msg = 'export failed';
+      }
+      glbBtn.textContent = msg || prev;
+      glbBtn.disabled = false;
+      if (msg) setTimeout(() => { glbBtn.textContent = prev; }, 1500);
     });
+  }
 
   // The single-model orbit view + animation player lives in js/mesh-view.js
   // (window.MeshView), shared with the NPC catalog: same TmdRenderer paletted-
@@ -1185,6 +1336,9 @@ table.arts-list .cmd-tag {
         const ac = JSON.parse(viewer.player_anm_corpus_json());
         if (ac && Array.isArray(ac.bundles) && ac.bundles.length > 0) {
           anmCorpus = ac;
+          // Default to the party's own locomotion bank (field form opens
+          // first), not whichever scene pool the corpus lists first.
+          curAnmBundleIdx = defaultFieldBundleIdx();
         }
       } catch (e) {
         console.debug('[characters] ANM corpus walk failed:', e);

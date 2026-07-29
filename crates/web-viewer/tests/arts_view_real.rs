@@ -625,7 +625,47 @@ fn export_character_glb_carries_the_whole_animation_bank() {
         let parts = st["part_count"].as_u64().unwrap() as usize;
         let bank = st["arts"].as_array().unwrap();
         let decoded = bank.iter().filter(|a| a["ok"] == true).count();
-        let has_idle = !st["idle"].is_null();
+        let actions = st["actions"].as_array().unwrap();
+        assert!(
+            !actions.is_empty(),
+            "{name}: battle action set decoded for the export"
+        );
+        let action_labels: Vec<&str> = actions
+            .iter()
+            .map(|a| a["label"].as_str().unwrap())
+            .collect();
+        // The pinned slot roles are present in every player file...
+        for want in ["Idle", "Walk / Approach", "Knockdown", "Get Up", "Block"] {
+            assert!(
+                action_labels.contains(&want),
+                "{name}: action set carries {want:?} ({action_labels:?})"
+            );
+        }
+        // ...and the four equipment-spliced weapon swings.
+        for want in ["Swing L", "Swing R", "Swing D", "Swing U"] {
+            assert!(
+                action_labels.contains(&want),
+                "{name}: action set carries {want:?} ({action_labels:?})"
+            );
+        }
+
+        // The page's action-chip player: every non-empty action slot's pose
+        // frames decode through `action_pose_frames`, sized to the JSON's own
+        // frame count x parts x 6 (tx,ty,tz,rx,ry,rz per object).
+        for (i, a) in actions.iter().enumerate() {
+            let frames = a["frames"].as_u64().unwrap() as usize;
+            let poses = arts.action_pose_frames(i as u32);
+            assert_eq!(
+                poses.len(),
+                frames * parts * 6,
+                "{name}: action {i} ({:?}) pose frames",
+                a["label"]
+            );
+        }
+        assert!(
+            arts.action_pose_frames(actions.len() as u32).is_empty(),
+            "{name}: out-of-range action index is empty"
+        );
 
         let glb = arts.export_character_glb();
         assert!(
@@ -648,17 +688,17 @@ fn export_character_glb_carries_the_whole_animation_bank() {
         assert_eq!(nodes.len(), parts + 1, "{name}: node count");
         assert_eq!(nodes[parts]["name"].as_str(), Some(name.as_str()));
 
-        // Every decoded bank record + the idle became a named animation.
+        // Every action-set clip + every decoded art-bank record became a
+        // named animation.
         let anims = root["animations"].as_array().unwrap();
         assert_eq!(
             anims.len(),
-            decoded + usize::from(has_idle),
+            actions.len() + decoded,
             "{name}: animation count"
         );
         assert!(anims.len() > 1, "{name}: more than one animation");
-        if has_idle {
-            assert_eq!(anims[0]["name"].as_str(), Some("battle idle"));
-        }
+        // The idle leads (its frame 0 is the exported rest pose).
+        assert_eq!(anims[0]["name"].as_str(), Some("Idle"));
         // Names are unique; durations are plausible (retail clips run
         // fractions of a second up to a few seconds at 7.5 * rate fps).
         let mut names: Vec<&str> = anims.iter().map(|a| a["name"].as_str().unwrap()).collect();

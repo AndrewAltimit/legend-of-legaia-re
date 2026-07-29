@@ -444,6 +444,35 @@ pub enum RenderTarget<'a> {
 pub struct SceneDraw<'a> {
     pub mesh: &'a UploadedVramMesh,
     pub mvp: Mat4,
+    /// Per-draw GTE depth cue. `None` (the ordinary case) leaves the draw
+    /// on the frame-global constant cue / ramp; `Some` stages this draw's
+    /// own far colour + view-depth `IR0` ramp, the way retail sets the
+    /// DPCS inputs per drawn object. See [`DrawCue`].
+    pub cue: Option<DrawCue>,
+}
+
+/// A single draw's GTE depth-cue staging - the DPCS far colour
+/// (cr21-23) plus a linear view-depth `IR0` ramp.
+///
+/// `ir0(z) = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0`,
+/// evaluated per fragment on the projected view depth. Unlike the
+/// frame-global [`Renderer::set_depth_cue_ramp`], `max_ir0` may exceed
+/// `1.0`: retail loads `IR0` with a bare `mtc2` (no saturation - the
+/// battle ground grid's `SZ >> 2` does exactly this), and the DPCS
+/// *output* clamp is what bounds the blended colour, which
+/// `psx_depth_cue`'s extrapolate-then-clamp mirrors.
+///
+/// [`Renderer::set_depth_cue_ramp`]: super::Renderer::set_depth_cue_ramp
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawCue {
+    /// Far colour (GTE `RFC`/`GFC`/`BFC`) in display `0..1` units.
+    pub far: [f32; 3],
+    /// View depth where the ramp starts (`IR0 = 0`).
+    pub near_z: f32,
+    /// View depth where the ramp reaches `max_ir0`.
+    pub far_z: f32,
+    /// `IR0` at `far_z`, in `1.0 = 0x1000` units. May exceed `1.0`.
+    pub max_ir0: f32,
 }
 
 /// An untextured, vertex-coloured mesh draw inside a [`Scene`] (the `F*`/`G*`

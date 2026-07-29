@@ -849,15 +849,42 @@ impl Renderer {
         } else {
             None
         };
-        let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
+        let push = |bytes: &mut [u8], slot: usize, mvp: Mat4, cue: Option<crate::DrawCue>| {
             let model = match inv_vp {
                 Some(inv) => model_rows(&(inv * mvp)),
                 None => MODEL_ROWS_IDENTITY,
             };
+            // A per-draw cue overrides both the far colour and the
+            // view-depth ramp for this slot only (retail stages the DPCS
+            // far colour + IR0 per drawn object, so one draw fogging says
+            // nothing about the others - the battle ground grid's SZ >> 2
+            // cue is the worked case). `max_ir0` is deliberately NOT
+            // clamped to 1: retail's manual `mtc2` IR0 load never
+            // saturates, the DPCS output clamp does (see `psx_depth_cue`).
+            let (depth_cue, cue_ramp) = match cue {
+                Some(c) => {
+                    let inv_range = if c.far_z > c.near_z {
+                        1.0 / (c.far_z - c.near_z)
+                    } else {
+                        0.0
+                    };
+                    let global = self.depth_cue.get();
+                    (
+                        [
+                            c.far[0].clamp(0.0, 1.0),
+                            c.far[1].clamp(0.0, 1.0),
+                            c.far[2].clamp(0.0, 1.0),
+                            global[3],
+                        ],
+                        [c.near_z, inv_range, c.max_ir0.max(0.0), 1.0],
+                    )
+                }
+                None => (self.depth_cue.get(), cue_ramp),
+            };
             let u = MeshUniforms {
                 // Reversed-Z applied centrally (see `reverse_z`).
                 mvp: reverse_z(mvp).to_cols_array_2d(),
-                depth_cue: self.depth_cue.get(),
+                depth_cue,
                 psx_params,
                 tex_window,
                 grade,
@@ -873,15 +900,15 @@ impl Renderer {
             bytes[off..off + n].copy_from_slice(bytemuck::bytes_of(&u));
         };
         for (i, draw) in scene.draws.iter().enumerate() {
-            push(&mut bytes, i, draw.mvp);
+            push(&mut bytes, i, draw.mvp, draw.cue);
         }
         if let Some((_, mvp)) = scene.overlay_lines {
-            push(&mut bytes, scene.draws.len(), mvp);
+            push(&mut bytes, scene.draws.len(), mvp, None);
         }
         // Colour-mesh slots follow the draws + the optional overlay-lines slot.
         let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
         for (i, draw) in scene.color_draws.iter().enumerate() {
-            push(&mut bytes, color_base + i, draw.mvp);
+            push(&mut bytes, color_base + i, draw.mvp, None);
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();
         let buf: &wgpu::Buffer = &buf_borrow;

@@ -388,3 +388,34 @@ fn relocate_leaves_untextured_groups_alone() {
         "untextured prim payload untouched"
     );
 }
+
+#[test]
+fn action_slot_labels_follow_the_tag_space() {
+    // The identity-ordered player-file slots (tag == index): the reaction
+    // family + the ready/recover/defeat poses + block.
+    assert_eq!(action_slot_label(0), Some("Idle"));
+    assert_eq!(action_slot_label(1), Some("Walk / Approach"));
+    assert_eq!(action_slot_label(4), Some("Knockdown"));
+    assert_eq!(action_slot_label(5), Some("Get Up"));
+    assert_eq!(action_slot_label(9), Some("Defeat"));
+    assert_eq!(action_slot_label(0xB), Some("Block"));
+    // The loader-spliced weapon swings, in SWING_SLOT_BASE + L/R/D/U order.
+    assert_eq!(action_slot_label(SWING_SLOT_BASE as usize), Some("Swing L"));
+    assert_eq!(action_slot_label(0xD), Some("Swing R"));
+    assert_eq!(action_slot_label(0xE), Some("Swing D"));
+    assert_eq!(action_slot_label(0xF), Some("Swing U"));
+    // Unpopulated / dynamic slots have no pinned role.
+    assert_eq!(action_slot_label(6), None);
+    assert_eq!(action_slot_label(0xA), None);
+    assert_eq!(action_slot_label(0x10), None);
+    assert_eq!(action_slot_label_or_hex(0x10), "Action 0x10");
+    assert_eq!(action_slot_label_or_hex(0), "Idle");
+    // Populated-slot labels are unique (glTF animation names key on them).
+    let labels: Vec<_> = (0..ACTION_SLOT_COUNT)
+        .filter_map(action_slot_label)
+        .collect();
+    let mut dedup = labels.clone();
+    dedup.sort_unstable();
+    dedup.dedup();
+    assert_eq!(dedup.len(), labels.len());
+}

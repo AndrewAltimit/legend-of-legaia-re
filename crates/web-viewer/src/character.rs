@@ -630,6 +630,167 @@ impl LegaiaViewer {
     }
 
     // ------------------------------------------------------------------
+    // Animated .glb export - the characters page's download.
+    // ------------------------------------------------------------------
+
+    /// Bake the character at pack slot `slot` into a **animated** binary glTF
+    /// with the animation set that actually applies to the chosen form:
+    ///
+    /// * `form == 0` (**field**): the PROT 0874 §0 mesh (equipment swap per
+    ///   `equip_byte`, `< 0` = disc form), textured from the §2 atlas with
+    ///   the untextured body prims as vertex-coloured geometry, carrying the
+    ///   character's own 7-clip **locomotion bank** (Walk / Idle + the
+    ///   neutral-named rest; PROT 0874 §1). Slot 3 gets the savepoint clip,
+    ///   slot 4 the aux clip.
+    /// * `form == 1` (**battle**): the PROT 1204 mesh with the true
+    ///   in-battle palette, carrying the character's 9-record PROT 1203 bank
+    ///   (Idle / attacks / special / hit reactions / win).
+    /// * `form == 2` (**Baka Fighter**): same mesh + clips with the pack's
+    ///   bundled (minigame) palette.
+    ///
+    /// Only clips whose bone count matches the mesh's animated object count
+    /// are included (retail's own `FUN_8001B964` draw gate). Empty when the
+    /// disc / slot / form has nothing to export.
+    pub fn character_glb(&self, slot: u32, equip_byte: i32, form: u32) -> Vec<u8> {
+        let slot = slot as usize;
+        let clip_fps = 14.0; // the observed field/duel playback rate
+        if form == 0 {
+            // ---- Field form: hybrid mesh + locomotion bank ----
+            let equip = (equip_byte >= 0).then_some(equip_byte as u8);
+            let Some((tmd, bytes)) = self.build_character_mesh(slot, equip) else {
+                return Vec::new();
+            };
+            let (mesh, object_ids, shading) =
+                legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
+            let Some(raw) = self.character_pack_slice() else {
+                return Vec::new();
+            };
+            let mut vram = legaia_tim::Vram::new();
+            if let Ok(texpack) = legaia_asset::field_char_textures::parse(raw) {
+                texpack.upload_to_vram(&mut vram, false);
+            }
+            let nobj = tmd.objects.len();
+            // The character's own bank: Idle leads (frame 0 = the rest pose
+            // a non-autoplaying viewer shows), then Walk, then the
+            // neutral-labeled rest of the bank.
+            let mut picks: Vec<usize> = Vec::new();
+            use legaia_asset::character_pack as cp;
+            if slot < 3 {
+                picks.push(cp::locomotion_record_index(slot, cp::LOCOMOTION_IDLE_SLOT));
+                picks.push(cp::locomotion_record_index(slot, cp::LOCOMOTION_WALK_SLOT));
+                for k in 0..cp::LOCOMOTION_BANK_STRIDE {
+                    if k != cp::LOCOMOTION_IDLE_SLOT && k != cp::LOCOMOTION_WALK_SLOT {
+                        picks.push(cp::locomotion_record_index(slot, k));
+                    }
+                }
+            } else if slot == 3 {
+                picks.push(cp::LOCOMOTION_SAVEPOINT_RECORD);
+            } else if slot == 4 {
+                picks.push(cp::LOCOMOTION_AUX_RECORD);
+            }
+            let mut anims: Vec<(String, legaia_asset::monster_archive::MonsterAnimation)> =
+                Vec::new();
+            if let Ok(bundle) = cp::field_locomotion_anm(raw) {
+                for rec in picks {
+                    if let Some(anim) = bundle.record_to_monster_animation(rec)
+                        && anim.part_count == nobj
+                    {
+                        // Single-character file: bank-slot labels for the
+                        // party banks, role labels for the two actors.
+                        let label = if slot < 3 {
+                            cp::locomotion_slot_label(rec % cp::LOCOMOTION_BANK_STRIDE)
+                        } else {
+                            cp::locomotion_record_label(rec)
+                        };
+                        anims.push((label, anim));
+                    }
+                }
+            }
+            let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+                .iter()
+                .map(|(name, anim)| legaia_asset::character_gltf::CharacterClip {
+                    name: name.clone(),
+                    fps: clip_fps,
+                    anim,
+                })
+                .collect();
+            let name = format!("{}_field", cp::slot_label(slot).replace(' ', "_"));
+            return legaia_asset::character_gltf::build_character_glb_hybrid(
+                &name,
+                &mesh,
+                &object_ids,
+                &vram,
+                &clips,
+                Some(&shading),
+            )
+            .unwrap_or_default();
+        }
+
+        // ---- Battle / Baka Fighter forms: PROT 1204 mesh + PROT 1203 bank ----
+        let Some((tmd, bytes)) = self.build_battle_char_mesh(slot) else {
+            return Vec::new();
+        };
+        let (mesh, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, &bytes);
+        let vram_bytes = if form == 1 {
+            self.battle_char_vram_bytes_battle()
+        } else {
+            self.battle_char_vram_bytes()
+        };
+        if vram_bytes.is_empty() {
+            return Vec::new();
+        }
+        let mut vram = legaia_tim::Vram::new();
+        // Rebuild the Vram from the flat byte image (row-major u16 halfwords).
+        vram.write_block(0, 0, 1024, 512, &vram_bytes);
+        let nobj = tmd.objects.len();
+        use legaia_asset::baka_opponents as bo;
+        let decoded = self.player_anm_decoded(1203);
+        let mut anims: Vec<(String, legaia_asset::monster_archive::MonsterAnimation)> = Vec::new();
+        if let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) {
+            let picks: Vec<usize> = if slot < 3 {
+                (0..bo::ACTIONS_PER_FIGHTER)
+                    .map(|k| slot * bo::ACTIONS_PER_FIGHTER + k)
+                    .collect()
+            } else {
+                // The extra slots have no dedicated bank; offer the 10-bone
+                // rig records where they fit the mesh.
+                (bo::ACTIONS_PER_FIGHTER * 3..bundle.record_count as usize).collect()
+            };
+            for rec in picks {
+                if let Some(anim) = bundle.record_to_monster_animation(rec)
+                    && anim.part_count == nobj
+                {
+                    // Single-character file: bank-slot labels for the party
+                    // banks, the neutral bank label otherwise.
+                    let label = if slot < 3 {
+                        bo::action_slot_label(rec % bo::ACTIONS_PER_FIGHTER)
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("Record {rec}"))
+                    } else {
+                        bo::party_bank_record_label(rec)
+                    };
+                    anims.push((label, anim));
+                }
+            }
+        }
+        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+            .iter()
+            .map(|(name, anim)| legaia_asset::character_gltf::CharacterClip {
+                name: name.clone(),
+                fps: clip_fps,
+                anim,
+            })
+            .collect();
+        let form_tag = if form == 1 { "battle" } else { "baka" };
+        let name = format!(
+            "{}_{form_tag}",
+            legaia_asset::battle_char_pack::slot_label(slot).replace(' ', "_")
+        );
+        legaia_asset::character_gltf::build_character_glb(&name, &mesh, &object_ids, &vram, &clips)
+            .unwrap_or_default()
+    }
+
+    // ------------------------------------------------------------------
     // Player ANM bundles - per-scene asset bundle, section 2, type 0x05
     // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
     // See `legaia_asset::player_anm` + docs/formats/anm.md.

@@ -137,6 +137,8 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007B824` | u32 | Party base index into `DAT_8007C018` (see the fuller entry below); read by `FUN_8001EBEC` to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]`. (Earlier "sound mode index" reading was wrong.) |
 | `0x8007B840` | MOVE2 buffer base. |
 | `0x8007B888` | MOVE buffer base. |
+| `0x8007B750` | u32 | Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 3 = load settled, bit 4 = release ack); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
+| `0x8007B868` | u32 | Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). No static writer sets it - its only store, in `FUN_8001DCF8` (`0x8001E008`), clears bit 1. |
 | `0x8007B8D0` | u32 | `bse.dat` master bank pointer (0x1800-byte buffer). |
 | `0x8007BAC8` | u16 | BGM ID written by field-VM op 0x35 sub-1. |
 | `0x8007BC64` | u16 | Global BGM pool base for IDs ≥ 2000. |

@@ -47,15 +47,47 @@
 //! `tile = sub_row * 2 + sub_col`, u rising with the column and v with the row.
 //! Nothing about the choice is random and no cell picks a single sub-tile.
 //!
-//! # NOT WIRED
+//! ## Depth cue
 //!
-//! Nothing in `engine-vm` draws the battle floor - the engine's mirror of this
-//! grid is `build_battle_ground_grid` in `engine-shell`'s `play-window`, which
-//! builds its own vertex buffer for wgpu and predates this port. Wiring means
-//! `engine-shell` calling [`GroundGrid`] for the cell extents, the visibility
-//! classes and the sub-tile UVs instead of recomputing them, which is a change
-//! in another crate. The GTE half (`RTPS`/`RTPT` and the ordering-table link)
-//! stays outside this crate either way: `engine-vm` holds no projection matrix.
+//! The emitter runs **`DPCS`** (`cop2 0x780010`) once per projected lattice
+//! vertex - four sites, `0x801d061c` / `0x801d063c` / `0x801d0654` /
+//! `0x801d0688` - and immediately before each it loads `IR0` by hand:
+//! `srl` of the vertex's `SZ` by 2, then `mtc2 .., IR0` (`0x801d0608..14`).
+//! So the grid's blend factor is [`grid_ir0_raw`]`= SZ >> 2` in the GTE's
+//! `0x1000 = 1.0` scale, **not** the `RTPS`-computed `IR0` the `DQA`/`DQB`
+//! pair would produce - and `mtc2` does not saturate, so past `SZ = 0x4000`
+//! the blend extrapolates beyond the far colour until the DPCS *output*
+//! clamp catches it.
+//!
+//! The far colour (`RFC`/`GFC`/`BFC`, control regs 21-23) is **not written
+//! here** - the function contains zero `ctc2` - so the grid draws with the
+//! battle backdrop's staged far colour: the word at `0x8007BB48`, times 16
+//! into the 28.4 control registers. Capture-pinned by exec breakpoints on
+//! the emitter entry + the first DPCS site
+//! (`scripts/pcsx-redux/autorun_grid_far_colour.lua`) across three battles:
+//! the settled value is `(0x40, 0x40, 0x40)` on ordinary stages and
+//! `(0xFE, 0xFE, 0xFE)` on the wide-open outdoor stages named by the SCUS
+//! table at `DAT_80078C1C` - exactly [`grid_far_colour`] of the neutral
+//! base `0x808080` through the two `FUN_80050120` derivation arms (`>> 1`
+//! indoor at `0x800507fc`, `(c - 0x010101) * 2` outdoor at `0x80050834`).
+//! The battle-intro fade ramps the staged word up from near-black over the
+//! first ~28 frames before it settles. The field never runs the emitter
+//! (zero entry hits on a field state - the negative control).
+//!
+//! # Wiring
+//!
+//! The drawn mesh is the shared builder `legaia_asset::battle_backdrop::
+//! build_ground_grid` (re-exported by `engine-shell`'s `play-window` as
+//! `build_battle_ground_grid` and drawn under the battle camera). This
+//! module carries the emitter's *laws* the hosts consume: the play-window
+//! battle draw fogs the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
+//! and the [`grid_far_colour`] resolved through [`OutdoorCueTable`]. The
+//! visibility culls ([`classify_cell`] / [`quad_on_screen`]) stay reference
+//! kernels: under a depth-buffered projection they are visually neutral,
+//! and applying them to the once-uploaded mesh would wrongly freeze the
+//! entry-pose cull (see `build_ground_grid`'s doc). The GTE half
+//! (`RTPS`/`RTPT` and the ordering-table link) stays outside this crate:
+//! `engine-vm` holds no projection matrix.
 
 /// World-space pitch of one grid cell (`0x200`).
 pub const CELL_PITCH: i32 = 0x200;
@@ -220,6 +252,150 @@ pub const fn sub_quad_lattice(sub_row: usize, sub_col: usize) -> [(usize, usize)
         (sub_row + 1, sub_col),
         (sub_row + 1, sub_col + 1),
     ]
+}
+
+/// The GTE `IR0` the emitter loads before each of its four `DPCS` sites:
+/// the vertex's projected `SZ` shifted right by [`GRID_IR0_SZ_SHIFT`]
+/// (`srl s5, s5, 0x2` + `mtc2 s5, IR0` at `0x801d0608..0x801d060c`).
+///
+/// The value is in the GTE's `0x1000 = 1.0` blend scale and is **not**
+/// saturated - `mtc2` writes the raw register, so depths past `0x4000`
+/// yield `IR0 > 0x1000` and the blend extrapolates past the far colour
+/// until the DPCS colour-FIFO clamp bounds the output.
+pub fn grid_ir0_raw(sz: i32) -> i32 {
+    sz >> GRID_IR0_SZ_SHIFT
+}
+
+/// Shift applied to `SZ` to form the grid's `IR0`.
+pub const GRID_IR0_SZ_SHIFT: u32 = 2;
+
+/// One (full blend) on the GTE's `IR0` scale.
+pub const GRID_IR0_ONE: i32 = 0x1000;
+
+/// [`grid_ir0_raw`] as a `0..` fraction of full blend: `sz / 0x4000`.
+/// Deliberately unclamped above 1 - see [`grid_ir0_raw`].
+pub fn grid_ir0(sz: i32) -> f32 {
+    grid_ir0_raw(sz) as f32 / GRID_IR0_ONE as f32
+}
+
+/// The view depth at which the grid's cue reaches exactly 1.0
+/// (`GRID_IR0_ONE << GRID_IR0_SZ_SHIFT`).
+pub const GRID_IR0_FULL_DEPTH: i32 = GRID_IR0_ONE << GRID_IR0_SZ_SHIFT;
+
+/// The deepest unbiased view depth a drawn cell can have - the far cull is
+/// on the biased depth ([`classify_cell`]), so the world-space cutoff is
+/// `FAR_LIMIT - NEAR_BIAS`.
+pub const GRID_CUE_FAR_Z: i32 = FAR_LIMIT - NEAR_BIAS;
+
+/// End point of the equivalent linear ramp a host stages: the ramp's far
+/// depth. With [`grid_cue_max_ir0`] at this depth, `ir0(z) = z / 0x4000`
+/// holds across the whole drawable range `0..=GRID_CUE_FAR_Z` - i.e. the
+/// per-vertex `SZ >> 2` law expressed as `(near_z, far_z, max_ir0) =
+/// (0, GRID_CUE_FAR_Z, GRID_CUE_FAR_Z / 0x4000)`.
+pub fn grid_cue_far_z() -> f32 {
+    GRID_CUE_FAR_Z as f32
+}
+
+/// `IR0` at [`grid_cue_far_z`] - above 1.0, because retail's manual `mtc2`
+/// load never saturates (the DPCS output clamp is what bounds the pixel).
+pub fn grid_cue_max_ir0() -> f32 {
+    GRID_CUE_FAR_Z as f32 / GRID_IR0_FULL_DEPTH as f32
+}
+
+/// The neutral far-colour *base* every capture shows an ordinary battle
+/// settling on (`ctx + 0x890` after the intro fade): `0x808080`.
+pub const GRID_FAR_BASE_NEUTRAL: [u8; 3] = [0x80; 3];
+
+/// The far colour the grid (and backdrop) draw with, per stage class:
+/// `FUN_80050120` derives the staged word at `0x8007BB48` from the base as
+/// `c >> 1` per channel on ordinary stages (`0x800507fc`) and
+/// `(c - 0x010101) * 2` per channel on the [`OutdoorCueTable`] stages
+/// (`0x80050834`); the GTE control regs get that word times 16.
+///
+/// Channel arithmetic saturates here; retail's packed-word form can borrow
+/// across channels when a channel is below the subtrahend, which the
+/// observed neutral base never exercises.
+pub fn grid_far_colour(base: [u8; 3], outdoor: bool) -> [u8; 3] {
+    base.map(|c| {
+        if outdoor {
+            c.saturating_sub(1).saturating_mul(2)
+        } else {
+            c >> 1
+        }
+    })
+}
+
+/// Capture-pinned settled far colour on ordinary (indoor) stages.
+pub const GRID_FAR_INDOOR: [u8; 3] = [0x40; 3];
+
+/// Capture-pinned settled far colour on the outdoor-table stages.
+pub const GRID_FAR_OUTDOOR: [u8; 3] = [0xFE; 3];
+
+/// Virtual address of the outdoor depth-cue stage table in `SCUS_942.54` -
+/// the sibling of the mirror-X table, scanned at `0x80051c1c..0x80051c6c`
+/// into the flag byte `0x8007BDA8`.
+pub const OUTDOOR_CUE_TABLE_VA: u32 = 0x8007_8C1C;
+
+/// Byte offset of [`OUTDOOR_CUE_TABLE_VA`] inside the `SCUS_942.54` file
+/// image (same `va - 0x8000F800` mapping as
+/// `legaia_asset::battle_backdrop::MIRROR_X_TABLE_SCUS_OFFSET`).
+pub const OUTDOOR_CUE_TABLE_SCUS_OFFSET: usize = 0x6_941C;
+
+/// Upper bound on the zero-terminated table walk, so a mis-aimed offset
+/// cannot scan the whole executable.
+const OUTDOOR_CUE_TABLE_MAX_SLOTS: usize = 64;
+
+/// The `SCUS_942.54` table of wide-open outdoor stages whose backdrop far
+/// colour takes the brightening `(c - 0x010101) * 2` arm (and whose
+/// backdrop cue ceiling is `0xC00` rather than `0x800`). 13 ids on the
+/// retail disc: the nine kingdom-overworld variants plus `retona`,
+/// `deene`, `kor5` and `rikuroa`.
+#[derive(Debug, Clone, Default)]
+pub struct OutdoorCueTable {
+    ids: Vec<u16>,
+}
+
+impl OutdoorCueTable {
+    /// Parse the zero-terminated `u16` table out of a `SCUS_942.54` image.
+    /// `None` when the buffer is short or unterminated - not the retail
+    /// USA executable; fall back to the indoor arm rather than trust a
+    /// garbage list.
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        let mut ids = Vec::new();
+        let mut off = OUTDOOR_CUE_TABLE_SCUS_OFFSET;
+        for _ in 0..OUTDOOR_CUE_TABLE_MAX_SLOTS {
+            let raw = scus.get(off..off + 2)?;
+            let v = u16::from_le_bytes([raw[0], raw[1]]);
+            if v == 0 {
+                return Some(Self { ids });
+            }
+            ids.push(v);
+            off += 2;
+        }
+        None
+    }
+
+    /// Table slots in file order.
+    pub fn ids(&self) -> &[u16] {
+        &self.ids
+    }
+
+    /// Whether this runtime stage id takes the outdoor (brightened) arm.
+    pub fn contains_runtime_id(&self, id: u16) -> bool {
+        self.ids.contains(&id)
+    }
+
+    /// [`Self::contains_runtime_id`] keyed by PROT extraction index
+    /// (`runtime id + 3`, the `battle_backdrop` mapping).
+    pub fn contains_prot_index(&self, prot_index: u32) -> bool {
+        legaia_asset::battle_backdrop::runtime_stage_id(prot_index)
+            .is_some_and(|id| self.contains_runtime_id(id))
+    }
+
+    /// The settled far colour for the stage at this PROT extraction index.
+    pub fn far_colour_for_prot_index(&self, prot_index: u32) -> [u8; 3] {
+        grid_far_colour(GRID_FAR_BASE_NEUTRAL, self.contains_prot_index(prot_index))
+    }
 }
 
 /// Sub-quads emitted per visible cell (2x2).
@@ -403,6 +579,96 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 9, "all nine lattice points are used");
+    }
+
+    /// The `DPCS` kernel, as this crate's test-local mirror of
+    /// `engine_render::psx_light::depth_cue` (extrapolate, then clamp -
+    /// the GTE's colour-FIFO saturation).
+    fn dpcs(c: f32, fc: f32, ir0: f32) -> f32 {
+        (c + (fc - c) * ir0).clamp(0.0, 255.0)
+    }
+
+    #[test]
+    fn ir0_is_sz_over_four_on_the_gte_scale() {
+        assert_eq!(grid_ir0_raw(0), 0);
+        assert_eq!(grid_ir0_raw(0x1000), 0x400);
+        // Full blend at SZ = 0x4000...
+        assert_eq!(grid_ir0_raw(GRID_IR0_FULL_DEPTH), GRID_IR0_ONE);
+        assert!((grid_ir0(GRID_IR0_FULL_DEPTH) - 1.0).abs() < 1e-6);
+        // ...and deliberately unsaturated past it, like the mtc2 load.
+        assert!(grid_ir0_raw(0x6500) > GRID_IR0_ONE);
+        assert!((grid_ir0(0x6500) - (0x6500 as f32 / 0x4000 as f32)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn cue_ramp_constants_reproduce_the_per_vertex_law() {
+        // The linear ramp a host stages - ir0(z) = clamp(z / far_z, 0, 1)
+        // * max_ir0 - must equal SZ >> 2 (as a fraction of 0x1000) across
+        // the whole drawable depth range.
+        let far_z = grid_cue_far_z();
+        let max = grid_cue_max_ir0();
+        assert!(max > 1.0, "the grid's cue extrapolates past the far colour");
+        for z in (0..=GRID_CUE_FAR_Z).step_by(0x100) {
+            let ramp = (z as f32 / far_z).clamp(0.0, 1.0) * max;
+            let law = grid_ir0(z & !0x3); // the srl truncates the low bits
+            assert!(
+                (ramp - law).abs() < 1.5e-3,
+                "z={z:#x}: ramp {ramp} != law {law}"
+            );
+        }
+    }
+
+    #[test]
+    fn far_colour_arms_reproduce_the_captured_values() {
+        // Settled captures: indoor (Queen Bee / Gimard, town01 stages) and
+        // outdoor (vs Gobu Gobu, stage id 0x55 = map01).
+        assert_eq!(
+            grid_far_colour(GRID_FAR_BASE_NEUTRAL, false),
+            GRID_FAR_INDOOR
+        );
+        assert_eq!(
+            grid_far_colour(GRID_FAR_BASE_NEUTRAL, true),
+            GRID_FAR_OUTDOOR
+        );
+        // The battle-intro fade sample: the same indoor arm over the
+        // ramping base (captured (6,6,6) at base 0x0C0C0C, frame 1).
+        assert_eq!(grid_far_colour([0x0C; 3], false), [0x06; 3]);
+    }
+
+    #[test]
+    fn dpcs_at_the_captured_far_colours_pins_the_drawn_packet_colour() {
+        let neutral = 0x80 as f32; // the grid quads' packet colour
+        // Indoor: full blend lands exactly on the far colour...
+        assert_eq!(dpcs(neutral, 0x40 as f32, 1.0), 0x40 as f32);
+        // ...and the far cull edge extrapolates darker (SZ = 0x6500).
+        let edge = dpcs(neutral, 0x40 as f32, grid_ir0(0x6500));
+        assert!((edge - 27.0).abs() < 1.0, "edge = {edge}");
+        // Outdoor: brightens toward 0xFE and saturates just past full
+        // blend rather than overshooting.
+        assert_eq!(dpcs(neutral, 0xFE as f32, 1.0), 0xFE as f32);
+        assert_eq!(dpcs(neutral, 0xFE as f32, grid_ir0(0x6500)), 255.0);
+        // ir0 = 0 is the identity - the near edge draws unfogged.
+        assert_eq!(dpcs(neutral, 0x40 as f32, 0.0), neutral);
+    }
+
+    #[test]
+    fn outdoor_table_parses_and_classifies() {
+        let mut scus = vec![0u8; OUTDOOR_CUE_TABLE_SCUS_OFFSET + 16];
+        scus[OUTDOOR_CUE_TABLE_SCUS_OFFSET..OUTDOOR_CUE_TABLE_SCUS_OFFSET + 6]
+            .copy_from_slice(&[0x55, 0x00, 0x9E, 0x00, 0x00, 0x00]);
+        let t = OutdoorCueTable::from_scus(&scus).expect("table");
+        assert_eq!(t.ids(), &[0x55, 0x9E]);
+        assert!(t.contains_runtime_id(0x55));
+        assert!(!t.contains_runtime_id(0x15));
+        // PROT keying: runtime id + 3 (0x55 -> PROT 88 = map01's stage).
+        assert!(t.contains_prot_index(88));
+        assert!(!t.contains_prot_index(24)); // 0x15 + 3, the Queen Bee stage
+        assert_eq!(t.far_colour_for_prot_index(88), GRID_FAR_OUTDOOR);
+        assert_eq!(t.far_colour_for_prot_index(24), GRID_FAR_INDOOR);
+        // Unterminated / short buffers refuse rather than fabricate.
+        assert!(OutdoorCueTable::from_scus(&[0u8; 16]).is_none());
+        let junk = vec![0x11u8; OUTDOOR_CUE_TABLE_SCUS_OFFSET + 4096];
+        assert!(OutdoorCueTable::from_scus(&junk).is_none());
     }
 
     #[test]

@@ -1095,6 +1095,26 @@
       const ov = this.menuOverlay;
       if (!ov) return;
       const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
+      this._drawOverlayBase(ctx, ov);
+      /* Developer-menu overlay (the visitor's explicit opt-in - the browser
+       * twin of the native LEGAIA_DEV_MENU surface). Painted last so it rides
+       * whatever the base layers drew, the same way the native window folds
+       * its dev draws into the field HUD's list; the engine returns
+       * `open:false` while the opt-in is off or the pause menu owns the
+       * screen, so this is a no-op on the shipped default. */
+      if (typeof this.rt.play_dev_menu_draws_json === 'function') {
+        let dev = null;
+        try { dev = JSON.parse(this.rt.play_dev_menu_draws_json(ov.width, ov.height)); }
+        catch (e) { dev = null; }
+        if (dev && dev.open) {
+          this._ensureMenuBlitters();
+          if (this._menuFont) this._menuFont.blit(ctx, dev.texts);
+          this._overlayActive = true;
+        }
+      }
+    }
+
+    _drawOverlayBase(ctx, ov) {
       /* PSX UI is nearest-neighbour: the native wgpu overlay samples the atlas
        * with no filtering, so the integer-scaled tiles butt edge-to-edge. Canvas
        * 2D defaults to bilinear (`imageSmoothingEnabled` true), which bleeds a
@@ -1285,6 +1305,9 @@
          * would silently override wherever the page's volume slider is sitting
          * (and does, after a trap-recovery rebuild). Re-assert the control. */
         if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
+        /* Same for the dev-menu opt-in: a rebuilt runtime starts with it off,
+         * so re-assert whatever the page checkbox says. */
+        if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       } catch (e) { console.warn('play audio enable', e); }
     }
 

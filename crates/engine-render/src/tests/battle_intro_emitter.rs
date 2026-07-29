@@ -289,7 +289,7 @@ fn the_fade_rides_the_same_clock_and_arrives_as_a_full_screen_quad() {
 }
 
 #[test]
-fn the_four_unported_styles_tick_their_working_set_and_draw_nothing() {
+fn the_three_unported_styles_tick_their_working_set_and_draw_nothing() {
     // Not a wire and not claimed as one: their retail packet builders are not
     // ported. What they must still do is advance, because the fade and the
     // handoff both ride the same clock - so a battle opened on any of them
@@ -297,7 +297,6 @@ fn the_four_unported_styles_tick_their_working_set_and_draw_nothing() {
     for style in [
         IntroStyle::ScatterParticles,
         IntroStyle::SpinUpParticles,
-        IntroStyle::TileShatter,
         IntroStyle::Swirl,
     ] {
         let total = 100;
@@ -307,7 +306,6 @@ fn the_four_unported_styles_tick_their_working_set_and_draw_nothing() {
         assert!(early.prims.is_empty(), "{style:?} emitted geometry");
         // The fade still arrives on schedule.
         let lead = match style {
-            IntroStyle::TileShatter => 0x1C,
             IntroStyle::Swirl => 0x20,
             _ => 0x18,
         };
@@ -320,6 +318,224 @@ fn the_four_unported_styles_tick_their_working_set_and_draw_nothing() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The tile shatter's emitter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_tile_shatter_skips_its_first_frame_and_draws_from_the_second() {
+    // Retail's first shatter frame projects through the field camera's stale
+    // view matrix and every tile lands behind the near plane (pinned live);
+    // the emitter reproduces the outcome by gating on the same
+    // `not_first_frame` signal the retail tick derives.
+    let mut it = intro(IntroStyle::TileShatter, 200);
+    let first = it.tick(0, 1);
+    assert!(!first.style_drawn, "frame one draws no tiles in retail");
+    assert!(first.prims.is_empty());
+
+    let second = it.tick(1, 1);
+    assert!(second.style_drawn);
+    // 256 tiles, ten faces each, minus NCLIP rejects - at the seeded pose
+    // every front face survives, so at minimum the full 16x16 sheet draws.
+    assert!(
+        second.prims.len() >= 256,
+        "{} prims for 256 tiles",
+        second.prims.len()
+    );
+}
+
+#[test]
+fn the_seeded_sheet_projects_to_the_retail_screen_rect() {
+    // The projection constants under test are the pinned trio OFX=160,
+    // OFY=114, H=0x80, *and* the seeder's deliberate stored-vs-pivot offset:
+    // a tile's corners are made relative to a pivot 0xA0 *below* the stored
+    // position, so the whole sheet projects 10 px lower than the raw lattice
+    // would. Lattice x -0xA00..0xA00 at view z 0x800 maps to x 0..320;
+    // lattice y -0x800..0x800 plus the 0xA0 lift maps to y -4..252 - the
+    // OFY=114 six-up and the pivot ten-down nearly cancelling is what centres
+    // the retail sheet on the display.
+    let mut it = intro(IntroStyle::TileShatter, 200);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
+    for p in &f.prims {
+        let ScreenPrim::Textured(q) = p else { continue };
+        for &(x, y) in &q.xy {
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+        }
+    }
+    // The UNR reciprocal tracks the exact divide to within one step.
+    assert!(min_x.abs() <= 1, "left edge at {min_x}");
+    assert!((max_x - 320).abs() <= 1, "right edge at {max_x}");
+    assert!((min_y - -4).abs() <= 1, "top edge at {min_y}");
+    assert!((max_y - 252).abs() <= 1, "bottom edge at {max_y}");
+}
+
+#[test]
+fn the_shade_faces_carry_the_three_literals_and_blend_additively() {
+    use legaia_engine_vm::battle_intro_tiles::{SHADE_CLUT, SHADE_TPAGE, SHADE_UVS};
+    let mut it = intro(IntroStyle::TileShatter, 200);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    let shade: Vec<_> = f
+        .prims
+        .iter()
+        .filter_map(|p| match p {
+            ScreenPrim::Textured(q) if q.tpage == SHADE_TPAGE => Some(q),
+            _ => None,
+        })
+        .collect();
+    assert!(!shade.is_empty(), "no shade faces drawn");
+    for q in &shade {
+        assert_eq!(q.clut, SHADE_CLUT);
+        assert_eq!(q.uv, SHADE_UVS);
+        assert!(q.semi_transparent);
+        // tpage 0x0027 bits 5..=6 = 01: ABR mode 1, additive - the glint adds
+        // over the opaque side underneath it.
+        assert_eq!(q.abr_mode(), 1);
+    }
+}
+
+#[test]
+fn a_shade_face_draws_on_top_of_its_opaque_sibling() {
+    use crate::screen_overlay::order_primitives;
+    use legaia_engine_vm::battle_intro_tiles::SHADE_TPAGE;
+    let mut it = intro(IntroStyle::TileShatter, 200);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    // Find a shade face and the opaque record face with identical corners
+    // (packet rows 0 and 5 share the corner table row). Same corners = same
+    // AVSZ4 = same OT bucket, so only the tie-break separates them.
+    let order = order_primitives(&f.prims);
+    let mut pos_of = vec![0usize; f.prims.len()];
+    for (draw_pos, &idx) in order.iter().enumerate() {
+        pos_of[idx] = draw_pos;
+    }
+    let mut checked = 0;
+    for (i, p) in f.prims.iter().enumerate() {
+        let ScreenPrim::Textured(q) = p else { continue };
+        if q.tpage != SHADE_TPAGE {
+            continue;
+        }
+        for (j, p2) in f.prims.iter().enumerate() {
+            let ScreenPrim::Textured(q2) = p2 else {
+                continue;
+            };
+            if q2.tpage == SHADE_TPAGE || q2.xy != q.xy || q2.ot_index != q.ot_index {
+                continue;
+            }
+            assert!(
+                pos_of[i] > pos_of[j],
+                "shade prim {i} must draw after opaque sibling {j}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no shade/opaque sibling pair found");
+}
+
+#[test]
+fn the_euler_kernel_matches_the_cardinal_rotations() {
+    use crate::battle_intro::euler_rot_psx;
+    // FUN_80026988 composes Rx * Ry * Rz. At the cardinals the q12
+    // truncation is exact, so the axis matrices come out clean.
+    let id = euler_rot_psx((0, 0, 0));
+    assert_eq!(id.m, [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]]);
+    // Pure Z quarter turn: [c -s 0; s c 0; 0 0 1].
+    let rz = euler_rot_psx((0, 0, 0x400));
+    assert_eq!(rz.m, [[0, -4096, 0], [4096, 0, 0], [0, 0, 4096]]);
+    // Pure Y quarter turn: [c 0 s; 0 1 0; -s 0 c].
+    let ry = euler_rot_psx((0, 0x400, 0));
+    assert_eq!(ry.m, [[0, 0, 4096], [0, 4096, 0], [-4096, 0, 0]]);
+    // Pure X quarter turn: [1 0 0; 0 c -s; 0 s c].
+    let rx = euler_rot_psx((0x400, 0, 0));
+    assert_eq!(rx.m, [[4096, 0, 0], [0, 0, -4096], [0, 4096, 0]]);
+    // Angles fold at 12 bits, exactly the `& 0xFFF` masks in the kernel.
+    assert_eq!(euler_rot_psx((0x1400, 0, 0)).m, rx.m);
+    // A mixed rotation agrees with the generic q12 product to within the
+    // kernel's own per-term truncation (each element one step at most).
+    let m = euler_rot_psx((0x100, 0x200, 0x300));
+    let composed = crate::billboard::rot_z_psx(0); // identity in q12
+    let _ = composed;
+    let rx = euler_rot_psx((0x100, 0, 0));
+    let ry = euler_rot_psx((0, 0x200, 0));
+    let rz = euler_rot_psx((0, 0, 0x300));
+    let want = rx.mul(&ry).mul(&rz);
+    for r in 0..3 {
+        for c in 0..3 {
+            assert!(
+                (i32::from(m.m[r][c]) - i32::from(want.m[r][c])).abs() <= 2,
+                "element ({r},{c}): {} vs {}",
+                m.m[r][c],
+                want.m[r][c]
+            );
+        }
+    }
+}
+
+/// A tile with the seeded local shape at an arbitrary `pos.z`.
+fn boxy_tile(pos_z: i16) -> legaia_engine_vm::battle_intro_tiles::TileRecord {
+    use legaia_engine_vm::battle_intro_tiles::TileRecord;
+    let mut rec = TileRecord::default();
+    for k in 0..4 {
+        let (x, y) = [(-0xA0, -0xA0), (0xA0, -0xA0), (-0xA0, 0xA0), (0xA0, 0xA0)][k];
+        rec.front[k].x = x;
+        rec.front[k].y = y;
+        rec.front[k].z = -0x80;
+        rec.back[k].x = x;
+        rec.back[k].y = y;
+        rec.back[k].z = 0x80;
+    }
+    rec.pos = (0, 0, pos_z);
+    rec
+}
+
+#[test]
+fn the_backface_cull_is_single_sided() {
+    use crate::battle_intro::emit_tile;
+    // At the resting pose the front face passes NCLIP and the back face -
+    // whose packet row reverses the corner order - rejects. Front is the one
+    // 0x80-grey opaque quad; back would be the 0x20-grey one.
+    let mut prims = Vec::new();
+    emit_tile(&boxy_tile(0x880), &mut prims);
+    let greys: Vec<u32> = prims
+        .iter()
+        .filter_map(|p| match p {
+            ScreenPrim::Textured(q) if !q.semi_transparent => Some(q.color & 0xFF),
+            _ => None,
+        })
+        .collect();
+    assert!(greys.contains(&0x80), "the front face draws");
+    assert!(!greys.contains(&0x20), "the back face culls at rest");
+}
+
+#[test]
+fn the_near_cutoff_drops_a_face_hugging_the_camera() {
+    use crate::battle_intro::emit_tile;
+    // Control: at the seeded depth the front face (OTZ 0x800) draws.
+    let mut far = Vec::new();
+    emit_tile(&boxy_tile(0x880), &mut far);
+    let front = |prims: &[ScreenPrim]| {
+        prims.iter().any(|p| match p {
+            ScreenPrim::Textured(q) => !q.semi_transparent && q.color & 0xFF == 0x80,
+            _ => false,
+        })
+    };
+    assert!(front(&far));
+    // Hugging the camera: pos.z = 0x8C puts the front corners at view z 0xC,
+    // whose AVSZ4 average lands below the 0x10 cutoff - the face is dropped,
+    // and nothing that survives may sit below the cutoff either.
+    let mut near = Vec::new();
+    emit_tile(&boxy_tile(0x8C), &mut near);
+    assert!(!front(&near), "the front face must fall to the near cutoff");
+    for p in &near {
+        assert!(p.ot_index() >= 0x10);
+    }
+}
+
 #[test]
 fn the_capture_is_a_one_shot() {
     let mut it = intro(IntroStyle::Curtain, 200);
@@ -329,6 +545,68 @@ fn the_capture_is_a_one_shot() {
     it.tick(0, 1);
     it.tick(1, 1);
     assert!(it.needs_capture());
+}
+
+#[test]
+fn the_tile_sheet_covers_the_display_on_the_gpu() {
+    // End-to-end for the shatter's draw path: real overlay pipeline, real
+    // 4bpp CLUT sampling of the shade page, on a headless device. At clock 1
+    // every tile still rests on the grid plane, so the opaque front faces
+    // tile the whole display - clear to magenta and require that almost none
+    // of it survives. (The curtain's identity-frame twin below pins exact
+    // pixels; a resting tile sheet is not pixel-identity - the seeder's 0xA0
+    // pivot offset shifts it - so this case pins coverage, not equality.)
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("no GPU adapter; skipping the tile-shatter end-to-end frame");
+        return;
+    };
+    let mut vram = vram_with_capture();
+    // A synthetic shade page at (448,0): texel index = row nibble, and the
+    // (16,473) CLUT strip as a grey ramp - enough for the additive side
+    // faces to sample real data through the real decode.
+    let page_rows: Vec<u8> = (0..64u16)
+        .flat_map(|row| {
+            let n = (row % 16) as u8;
+            std::iter::repeat_n(n | n << 4, 32)
+        })
+        .collect();
+    vram.write_block(448, 0, 16, 64, &page_rows);
+    let clut: Vec<u8> = (0..16u16)
+        .flat_map(|i| (0x8000u16 | i << 10 | i << 5 | i).to_le_bytes())
+        .collect();
+    vram.write_clut_row(16, 473, &clut);
+
+    let h = build_harness_vram(
+        device,
+        queue,
+        &vram,
+        (PSX_SCREEN_WIDTH as u32, PSX_SCREEN_HEIGHT as u32),
+    );
+    let mut it = intro(IntroStyle::TileShatter, 200);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    assert!(f.style_drawn);
+    let drawn = render_frame_rgba(&h, &f.prims, [1.0, 0.0, 1.0, 1.0]);
+    let (w, hpx) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
+    let mut magenta = 0usize;
+    let mut black = 0usize;
+    for px in drawn.chunks_exact(4) {
+        if px[0] > 200 && px[1] < 50 && px[2] > 200 {
+            magenta += 1;
+        }
+        if px[0] == 0 && px[1] == 0 && px[2] == 0 {
+            black += 1;
+        }
+    }
+    let total = w * hpx;
+    assert!(
+        magenta * 20 < total,
+        "{magenta} of {total} pixels undrawn - the sheet is not covering the display"
+    );
+    assert!(
+        black * 2 < total,
+        "{black} of {total} pixels black - the tiles drew but sampled nothing"
+    );
 }
 
 // ---------------------------------------------------------------------------

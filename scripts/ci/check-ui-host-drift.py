@@ -255,6 +255,8 @@ LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)
 # discovered, because a pair is a claim about two specific declarations.
 NATIVE_WINDOW = "crates/engine-shell/src/bin/legaia-engine/window.rs"
 NATIVE_HUD = "crates/engine-shell/src/bin/legaia-engine/window/hud.rs"
+NATIVE_DEV_MENU = "crates/engine-shell/src/bin/legaia-engine/window/dev_menu.rs"
+WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
 NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
@@ -298,6 +300,28 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "what": "capture banner pen - capture_banner_draws_for's `pen` argument",
         "native": (NATIVE_HUD, "CAPTURE_BANNER_PEN"),
         "web": (WEB_PLAY_SHOP, "CAPTURE_PEN"),
+    },
+    {
+        "what": "dev-menu list pen - the origin both hosts hand to "
+        "dev_menu_list_draws_for / dev_menu_cursor_xy for the developer row "
+        "list",
+        "native": (NATIVE_DEV_MENU, "DEV_MENU_PEN"),
+        "web": (WEB_PLAY_DEV_MENU, "DEV_MENU_PEN"),
+    },
+    {
+        "what": "dev-records pen - the origin both hosts hand to "
+        "records_screen_draws_for; the page's footprint only fits the 320x240 "
+        "stage from this exact origin",
+        "native": (NATIVE_DEV_MENU, "DEV_RECORDS_PEN"),
+        "web": (WEB_PLAY_DEV_MENU, "DEV_RECORDS_PEN"),
+    },
+    {
+        "what": "records-page heading strings - the `RecordsLabels` each host "
+        "hands to records_screen_draws_for (kept out of engine-ui so no game "
+        "text lives there, which is exactly what makes them a per-host "
+        "duplicate)",
+        "native": (NATIVE_DEV_MENU, "RECORDS_LABELS"),
+        "web": (WEB_PLAY_DEV_MENU, "RECORDS_LABELS"),
     },
     {
         "what": "BGM transition click-guard ramp - the `fade_in_samples` "
@@ -423,6 +447,35 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["swap_bgm"],
+    },
+    {
+        "what": "dev-menu tick - both hosts drive the shared `DevMenuSession` "
+        "off their world's pad pump, and three pieces are each a silent "
+        "cross-wire if one host drops them: the raw-to-packed pad conversion "
+        "(`retail_packed` - without it Up arrives as PACK_TRIANGLE and Cross "
+        "as PACK_DOWN), the EQUIP row's bag commit (`commit_equip_row` - "
+        "without it the row steps an id and never equips), and the Square "
+        "records-page swap (`RECORDS_TOGGLE`)",
+        "sites": {
+            "native": (NATIVE_DEV_MENU, "tick_dev_menu"),
+            "web": (WEB_PLAY_DEV_MENU, "tick_dev_menu"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["retail_packed", "commit_equip_row", "RECORDS_TOGGLE"],
+    },
+    {
+        "what": "dev-records model - both hosts assemble the records page "
+        "from the same two kernels: the record-relative counter reads "
+        "(`record_counters`, the save-block rebase) and the retail "
+        "clamp/decompose model (`records_screen`). A host that reads the "
+        "record fields itself, or skips the clamp, shows different numbers "
+        "for the same save",
+        "sites": {
+            "native": (NATIVE_DEV_MENU, "dev_records_model"),
+            "web": (WEB_PLAY_DEV_MENU, "dev_records_model"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["record_counters", "records_screen"],
     },
     {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "

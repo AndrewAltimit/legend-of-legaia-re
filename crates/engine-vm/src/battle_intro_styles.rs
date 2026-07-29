@@ -199,7 +199,10 @@ pub struct IntroStyleChoice {
 /// it with `2`. That is why the "flags set, not in range" row is
 /// [`IntroStyle::SpinUpParticles`] and not the default.
 ///
-/// PORT: FUN_801CE8C0 (the style-selection block of the transition init)
+/// PORT: FUN_801ce8cc (the style-selection block of the transition init;
+/// the historical `FUN_801CE8C0` name was mis-rounded - `0x801CE8C0..0x801CE8C8`
+/// are three data words and the prologue is at `0x801CE8CC`, see
+/// `ghidra/scripts/funcs/overlay_field_battle_intro_801ce8cc.txt`)
 pub fn select_intro_style(inputs: &IntroStyleInputs) -> IntroStyleChoice {
     let IntroStyleInputs {
         battle_flags,

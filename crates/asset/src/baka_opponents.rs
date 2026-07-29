@@ -42,10 +42,13 @@
 //! (positive `+0x18` power corpus-wide) and **4 is the special** (power 0 -
 //! its payoff is the full-charge round win, gated on the `+0x1c` keyframe
 //! count). The *display*-anim id space (`actor+0x5c = char*9 + frame`) sits
-//! one higher (attacks `+2..+4`, special `+5`, knockdowns `+6..+8`); don't
-//! conflate the two. Per record the fight code reads `+0x18` (base attack
-//! power) and `+0x1c` (sub-keyframe count). [`parse_actions`] decodes the 17
-//! tables.
+//! one higher (attacks `+2..+4`, special `+5`, knockdowns `+6..+8`) because
+//! the anim player resolves it through the ANM container header, whose word 0
+//! is the record count - so display id `base+k` is bank record `k-1` and the
+//! two index spaces are record-aligned (see [`action_slot_label`] for the
+//! resolved layout + disasm provenance); don't conflate the two. Per record
+//! the fight code reads `+0x18` (base attack power) and `+0x1c`
+//! (sub-keyframe count). [`parse_actions`] decodes the 17 tables.
 //!
 //! ## Extent - 17 fighters
 //!
@@ -120,7 +123,10 @@ pub const ROUND_WIN_TARGET: u32 = 2;
 /// (`PTR_DAT_801db8b8`).
 pub const ACTION_PTR_TABLE_VA: u32 = 0x801D_B8B8;
 
-/// Action records per fighter (idle, walk, 3 attacks, special, 3 knockdowns).
+/// Action records per fighter: idle (0), the three attacks (1..=3), the
+/// special (4), the hit / knockdown reactions (5..=7) and the win flourish
+/// (8). There is **no walk record** - an earlier reading listed one, but the
+/// display-id folds pin the layout (see [`action_slot_label`]).
 pub const ACTIONS_PER_FIGHTER: usize = 9;
 
 /// Byte stride of one action record.
@@ -138,6 +144,73 @@ pub const ACTION_ATTACK_BASE: usize = 1;
 
 /// Action record of the special / guard-break attack (type 4).
 pub const ACTION_SPECIAL: usize = 4;
+
+/// First of the three hit / knockdown reaction records (5..=7): the loser's
+/// launch playback after a lost exchange (`FUN_801d4df8` spawns it off the
+/// display ids `base + 6..base + 8`).
+pub const ACTION_HIT_BASE: usize = 5;
+
+/// The win-flourish record (8): the winner's post-match punch pose. The
+/// match-result state `0x6d` and the tally screen both seed
+/// `actor + 0x5c = base + 9` (`overlay_baka_fighter_801d0fe4.txt`), which
+/// resolves to bank record 8 (see [`action_slot_label`]).
+pub const ACTION_WIN: usize = 8;
+
+/// Display label for one slot of a fighter's 9-record action/animation bank
+/// (both the `0x60`-stride power table and the ANM bank use this index
+/// space - the two are index-aligned). `None` past the bank.
+///
+/// ## Why the display id sits one higher (the off-by-one, resolved)
+///
+/// The combat tick stores **display anim ids** at `actor + 0x5c`:
+/// `base + 1` idle (`overlay_baka_fighter_801d3f44.txt` `0x801d4144..50`,
+/// `overlay_baka_fighter_801d0fe4.txt` round start), `base + 2..base + 4`
+/// the attacks, `base + 5` the special, and `base + 9` the win flourish -
+/// where `base` is `fighter_id * 9` for the party/roster banks in PROT 1203
+/// (`_DAT_801dbfd0 = DAT_801dbf70 * 9`) or `0x400` for a ladder fighter's
+/// own pack bank. The anim player then resolves the id **through the ANM
+/// container header**: at `0x801d4794..0x801d47b4` it reads
+/// `word = container[(anim & 0x3ff) * 4]` and takes `container + word` as
+/// the record pointer. The container layout is `[u32 count]
+/// [u32 offsets[count]] [records]`, so word index 0 is the **count**, word
+/// index `d` is `offsets[d - 1]`, and display id `base + k` lands on bank
+/// **record `k - 1`**. Record 0 therefore *is* the idle (display `base+1`),
+/// records 1..=3 the attacks (identity with the damage kernel's
+/// `record[+0x10] = anim - base - 1` attack type), record 4 the special,
+/// 5..=7 the hit/knockdown family (display `base+6..+8`) and record 8 the
+/// win flourish (display `base+9`).
+pub fn action_slot_label(slot: usize) -> Option<&'static str> {
+    Some(match slot {
+        0 => "Idle",
+        1 => "Attack 1 (Square)",
+        2 => "Attack 2 (Circle)",
+        3 => "Attack 3 (Cross)",
+        4 => "Special",
+        5 => "Hit / Knockdown 1",
+        6 => "Hit / Knockdown 2",
+        7 => "Hit / Knockdown 3",
+        8 => "Win",
+        _ => return None,
+    })
+}
+
+/// Display label for one record of the PROT 1203 battle-form ANM bank
+/// (30 records: Vahn `0..=8`, Noa `9..=17`, Gala `18..=26` - the
+/// `fighter_id * 9` banks the duel indexes - plus the three 10-bone-rig
+/// records `27..=29`, whose actor is untriaged).
+pub fn party_bank_record_label(record: usize) -> String {
+    const NAMES: [&str; 3] = ["Vahn", "Noa", "Gala"];
+    let bank = record / ACTIONS_PER_FIGHTER;
+    if bank < NAMES.len() {
+        let slot = record % ACTIONS_PER_FIGHTER;
+        match action_slot_label(slot) {
+            Some(l) => format!("{} - {l}", NAMES[bank]),
+            None => format!("{} - record {slot}", NAMES[bank]),
+        }
+    } else {
+        format!("10-bone rig {}", record - 27)
+    }
+}
 
 /// One decoded Baka Fighter roster record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -624,6 +697,45 @@ mod tests {
         chunk(&mut short, FIGHTER_CHUNK_TIM, &[0x10]);
         short.extend_from_slice(&[0u8; 4]);
         assert!(parse_fighter_pack(&short).is_none());
+    }
+
+    #[test]
+    fn action_slot_labels_cover_the_bank() {
+        // Record space (display id - base - 1): idle 0, attacks 1..=3,
+        // special 4 (= ACTION_SPECIAL), hits 5..=7, win 8. No walk record.
+        assert_eq!(action_slot_label(0), Some("Idle"));
+        assert_eq!(
+            action_slot_label(ACTION_ATTACK_BASE),
+            Some("Attack 1 (Square)")
+        );
+        assert_eq!(action_slot_label(3), Some("Attack 3 (Cross)"));
+        assert_eq!(action_slot_label(ACTION_SPECIAL), Some("Special"));
+        assert_eq!(
+            action_slot_label(ACTION_HIT_BASE),
+            Some("Hit / Knockdown 1")
+        );
+        assert_eq!(action_slot_label(ACTION_WIN), Some("Win"));
+        assert_eq!(action_slot_label(ACTIONS_PER_FIGHTER), None);
+        // Every in-bank label exists and is unique.
+        let labels: Vec<_> = (0..ACTIONS_PER_FIGHTER)
+            .map(|s| action_slot_label(s).expect("in-bank slot has a label"))
+            .collect();
+        let mut dedup = labels.clone();
+        dedup.sort_unstable();
+        dedup.dedup();
+        assert_eq!(dedup.len(), labels.len(), "labels must be unique");
+    }
+
+    #[test]
+    fn party_bank_record_labels_follow_the_9_record_banks() {
+        assert_eq!(party_bank_record_label(0), "Vahn - Idle");
+        assert_eq!(party_bank_record_label(4), "Vahn - Special");
+        assert_eq!(party_bank_record_label(9), "Noa - Idle");
+        assert_eq!(party_bank_record_label(17), "Noa - Win");
+        assert_eq!(party_bank_record_label(18), "Gala - Idle");
+        assert_eq!(party_bank_record_label(26), "Gala - Win");
+        assert_eq!(party_bank_record_label(27), "10-bone rig 0");
+        assert_eq!(party_bank_record_label(29), "10-bone rig 2");
     }
 
     #[test]

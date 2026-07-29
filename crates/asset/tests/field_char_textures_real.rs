@@ -106,6 +106,48 @@ fn field_texture_pack_shape_from_prot_0874() {
 }
 
 #[test]
+fn entry_0_is_the_tile_shatter_shade_page() {
+    // The battle-intro tile shatter's side faces sample `tpage 0x0027`
+    // (the 4bpp page at VRAM (448, 0)) with `clut 0x7641` ((16, 473)).
+    // Both decode into THIS pack's entry 0: the page is its 256x256 image
+    // (the emitter's UVs cover the top-left 64x64 texels) and the CLUT is
+    // index 1 of its 16-CLUT block, landed as a flat strip on row 473.
+    // Pinned by mid-transition capture: the VRAM rect and CLUT row are
+    // byte-identical to this entry before the encounter, on shatter frames
+    // 1 and 24, and across two different field scenes.
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let buf = read_prot_0874(&prot);
+    let pack = field_char_textures::parse(&buf).expect("parse PROT 874 §2");
+    let t0 = &pack.textures[0];
+
+    // `clut 0x7641` decodes to (x, y) = ((cba & 0x3F) * 16, cba >> 6).
+    let cba = 0x7641u16;
+    assert_eq!(((cba & 0x3F) * 16, cba >> 6), (16, 473));
+    // ...which is strip columns 16..31 = CLUT index 1 of entry 0's block.
+    let clut = t0.tim.clut.as_ref().expect("entry 0 has a CLUT block");
+    assert_eq!((clut.fb_x, clut.fb_y), (0, 473));
+    let ramp = &clut.entries[16..32];
+
+    // The shade ramp: every entry STP-set in the TIM itself (so the upload
+    // needs no forcing), dark half black, brightness monotonic.
+    let lum = |c: u16| (c & 31) + ((c >> 5) & 31) + ((c >> 10) & 31);
+    for (i, &c) in ramp.iter().enumerate() {
+        assert_ne!(c & 0x8000, 0, "ramp entry {i} carries STP");
+        if i > 0 {
+            assert!(
+                lum(c) >= lum(ramp[i - 1]),
+                "ramp entry {i} darker than its predecessor"
+            );
+        }
+    }
+    assert_eq!(lum(ramp[0]), 0, "the ramp starts at black");
+    assert!(lum(ramp[15]) > 60, "the ramp ends bright");
+}
+
+#[test]
 fn field_texture_upload_matches_pinned_vram() {
     let Some(prot) = prot_dat() else {
         eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");

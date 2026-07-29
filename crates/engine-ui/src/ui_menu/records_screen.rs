@@ -50,11 +50,13 @@
 //!
 //! # Wiring status
 //!
-//! The native window draws this page from its developer-menu host
-//! (`window/dev_menu.rs`, the `LEGAIA_DEV_MENU` opt-in - the engine's stand-in
-//! for the retail world-map dev menu the records page is a row of), feeding
-//! the six per-character counters through [`RecordCounters`] and the play
-//! clock from `World::play_time_seconds`. The lifetime battle and escape
+//! Both play hosts draw this page from their developer-menu host - the
+//! engine's stand-in for the retail world-map dev menu the records page is a
+//! row of: the native window behind the `LEGAIA_DEV_MENU` opt-in
+//! (`window/dev_menu.rs`) and the browser play page behind its session-only
+//! Dev-menu checkbox (`web-viewer/src/play_dev_menu.rs`). Both feed the six
+//! per-character counters through [`RecordCounters`] and the play clock from
+//! `World::play_time_seconds`. The lifetime battle and escape
 //! counters and the treasure census are state the engine does not keep yet,
 //! so those two fields read zero and the treasure line stays hidden - which
 //! is also what retail draws on a save that has never incremented them.
