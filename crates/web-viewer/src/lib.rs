@@ -24,6 +24,7 @@ pub mod pad_bindings;
 pub mod play;
 pub mod play_battle;
 pub mod play_cutscene;
+pub mod play_dev_menu;
 pub mod play_dialog;
 pub mod play_fishing;
 pub mod play_menu;

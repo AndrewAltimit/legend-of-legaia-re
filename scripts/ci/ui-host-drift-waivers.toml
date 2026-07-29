@@ -88,46 +88,25 @@ hosts, plus a wasm binding for `KeyRebindSession` - not adding a draw call.
 # a transform over a draw list, not a projection of a model), so the surface
 # no longer contains it and there is nothing left to waive.
 
-[[waiver]]
-builder = "records_screen_draws_for"
-kind = "web_missing"
-reason = """
-The retail world-map Records screen renderer (`FUN_801ED710`). The state
-behind it is host-agnostic - the dev-menu model is `engine-core`'s
-`dev_menu_host` and the save-block-to-record rebase is this crate's
-`RecordCounters` - so the missing piece is not a model. It is the **gate**.
-
-The blocking capability, named precisely: a **process-scoped opt-in**. The
-records page is a row of the retail developer menu, and the native window
-mounts that whole surface behind `std::env::var_os("LEGAIA_DEV_MENU")`
-(`window/dev_menu.rs`), which is set by whoever launches the binary and
-reaches nobody else. A public web page has no such person. Every browser-side
-equivalent is either link-shareable (a query parameter, a hash, a stored flag)
-or discoverable in the shipped bundle (a key chord), so mounting the surface
-there ships a state-editing debug console to every visitor - a different
-security posture, not the same screen ported.
-
-The play page does host the overworld walk (`enter_world_map_scene`); what it
-deliberately does not host is the dev-menu surface this page is a row of. The
-only close that does not move the gate is a **player-facing** records screen,
-which is new design rather than a port: retail reaches these counters through
-the developer menu and nowhere else this project has pinned.
-"""
-
-[[waiver]]
-builder = "dev_menu_list_draws_for"
-kind = "web_missing"
-reason = """
-The world-map dev-menu list renderer (`FUN_801EAD98` row-loop geometry), the
-list sibling of `records_screen_draws_for` above and behind the same
-process-scoped `LEGAIA_DEV_MENU` gate in `window/dev_menu.rs`. Same blocking
-capability, and sharper for this one: the records page only *reads*, while
-this list's rows **edit** live state (map id, encounter rate, character
-parameters, event flags - `engine-core::dev_menu_host`). A browser mount
-therefore hands every visitor a cheat console, not just a stats page. The
-engine model compiles on both targets; what does not exist in a browser tab
-is an opt-in only the person running the program can take.
-"""
+# `records_screen_draws_for` / `dev_menu_list_draws_for` were waived here as
+# `web_missing`, blocked on a "process-scoped opt-in" - the native window
+# mounts the developer-menu surface behind `LEGAIA_DEV_MENU`, an environment
+# variable "set by whoever launches the binary", and the waiver held that a
+# public web page has no such person. That premise mistook who runs a
+# client-side page: the visitor IS the person running the program - the game
+# is single-player, the disc never leaves the tab, and everything the menu
+# edits is the visitor's own session (the same site already ships a
+# client-side ROM patcher). What the env var actually provides is "an
+# explicit, deliberate act by the person at the keyboard that a link cannot
+# carry", and the browser twin of that exists: the play page's Dev-menu
+# checkbox, which starts unchecked on every load, is never persisted and is
+# never read from the URL (`crates/web-viewer/src/play_dev_menu.rs`). Both
+# hosts now drive the same `DevMenuSession` off the same packed pad words
+# (shared `engine-core::dev_menu::retail_packed`), commit the EQUIP row
+# through the same `WorldEquipHost`, and draw both pages at the paired pens -
+# the tick and records-model injection sites are `SIM_PAIRS` rows and the
+# pens + heading strings are `CONSTANT_PAIRS` rows, so the two hosts cannot
+# quietly diverge on the model that made this pair worth wiring.
 
 
 # The shop's four retail descriptor windows - 33 (vendor plate), 32 (purse),

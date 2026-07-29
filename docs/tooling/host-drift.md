@@ -146,11 +146,13 @@ is reached at runtime.
 
 | feature | assertion |
 |---|---|
-| Muscle Dome damage | `symbols_all` on the shared `resolve_turn_retail` entry point. |
+| Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
 | save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
 | pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
 | game-over panel | `pattern_same` over the `game_over_draws_for` argument list. |
+| dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
+| dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
 
 The last three exist because each named a divergence the reachability tier

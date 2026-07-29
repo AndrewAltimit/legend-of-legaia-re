@@ -118,10 +118,17 @@ for where the records live, and the port in `legaia_engine_core`.
 
 ### Reaching the menus in the engine
 
-The Rust port carries all four kernel families, and `legaia-engine`'s
-`play-window` hosts them behind an explicit opt-in: set `LEGAIA_DEV_MENU=1`
-and a row list is drawn and driven once a frame. Nothing runs and no draw is
-produced without the variable, so a default build is unchanged.
+The Rust port carries all four kernel families, and both play hosts mount
+them behind an explicit opt-in. `legaia-engine`'s `play-window` keys on
+`LEGAIA_DEV_MENU=1`; the browser play page keys on its Dev-menu checkbox
+(`crates/web-viewer/src/play_dev_menu.rs`), which starts unchecked on every
+load and is deliberately neither persisted nor URL-readable, so it is the
+same shape of opt-in - a deliberate act by the person running the program
+that a shared link cannot carry. With the opt-in taken, a row list is drawn
+and driven once a frame off the same packed pad words retail's dev code
+reads; without it nothing runs and no draw is produced, so a default
+build/page is unchanged. Square swaps the list for the battle-records page
+on both hosts.
 
 The engine's list carries the subset of retail's rows whose backing state the
 engine owns - `MAP_CHANGE`, `ENCOUNT`, `EVENT_FLAG`, `PLAYER_PARAM`, `EQUIP` -

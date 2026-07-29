@@ -184,6 +184,17 @@ pub struct LegaiaRuntime {
     /// PROT.DAT-only load, where offers fall back to `Seru NN` exactly as the
     /// native window's do.
     pub(crate) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    /// The live developer-menu screen, when the visitor's explicit opt-in
+    /// has raised one ([`crate::play_dev_menu`]) - the browser twin of the
+    /// native window's `LEGAIA_DEV_MENU` session. `None` while the opt-in is
+    /// off, which is the shipped default.
+    pub(crate) dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    /// Whether the dev menu's Records page (Square from the row list) is up.
+    pub(crate) dev_menu_records: bool,
+    /// The visitor's session-only dev-menu opt-in
+    /// ([`LegaiaRuntime::play_dev_menu_set_enabled`]). Deliberately not
+    /// persisted and not URL-readable - see [`crate::play_dev_menu`].
+    pub(crate) dev_menu_enabled: bool,
     /// Live settings the pause menu's Options screen edits. The native window
     /// keeps the same state on `PlayWindowApp` and persists it to
     /// `legaia-options.toml`; this host keeps it for the session, which is
@@ -258,6 +269,9 @@ impl LegaiaRuntime {
             fishing_venues: None,
             equip_stats: None,
             seru_names: None,
+            dev_menu: None,
+            dev_menu_records: false,
+            dev_menu_enabled: false,
             options_state: load_persisted_options(),
             play_clock_secs: 0,
             play_clock_origin_ms: None,
@@ -607,6 +621,10 @@ impl LegaiaRuntime {
         // Party wipe: raise the game-over panel on the `World::game_over`
         // edge, the same probe the native window's redraw loop runs.
         self.poll_game_over();
+        // Developer menu (the visitor's explicit opt-in): ticked exactly
+        // where the native window's redraw loop ticks its own, off the same
+        // world pad words. A no-op while the opt-in is off.
+        self.tick_dev_menu();
         // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
         // the scene's music, started/queued/paused/stopped by the same events
         // the native `AudioBgmDirector` consumes. The `host` borrow above is

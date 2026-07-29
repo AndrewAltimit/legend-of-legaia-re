@@ -30,7 +30,9 @@
 //! - the same page retail draws off a save that never incremented them.
 
 use super::*;
+use legaia_engine_core::dev_menu::retail_packed;
 use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage, WorldEquipHost};
+use legaia_engine_render::RecordsLabels;
 
 /// Pen the dev-menu list draws from - clear of the field HUD's own rows.
 const DEV_MENU_PEN: (i32, i32) = (16, 24);
@@ -46,20 +48,21 @@ const RECORDS_TOGGLE: u16 = legaia_engine_core::dev_menu::PACK_SQUARE;
 
 /// The page's heading strings. Retail keeps them in the world-map overlay's
 /// data segment; the builder takes them from the caller so no game text
-/// lives in `engine-ui`.
-const RECORDS_LABELS: legaia_engine_render::RecordsLabels<'static> =
-    legaia_engine_render::RecordsLabels {
-        battles: "No. of Battles",
-        escapes: "No. of Escapes",
-        max_hits: "Maximum Hits",
-        max_damage: "Maximum Damage",
-        knockouts: "Knockouts",
-        monsters_defeated: "Monsters",
-        hyper_arts: "Hyper Arts",
-        magic: "Magic",
-        treasure: "Treasure",
-        percent: "%",
-    };
+/// lives in `engine-ui`. Paired with the browser play page's copy by
+/// `check-ui-host-drift.py`'s `CONSTANT_PAIRS`, so the two hosts cannot
+/// drift on the headings without the gate failing.
+const RECORDS_LABELS: RecordsLabels<'static> = RecordsLabels {
+    battles: "No. of Battles",
+    escapes: "No. of Escapes",
+    max_hits: "Maximum Hits",
+    max_damage: "Maximum Damage",
+    knockouts: "Knockouts",
+    monsters_defeated: "Monsters",
+    hyper_arts: "Hyper Arts",
+    magic: "Magic",
+    treasure: "Treasure",
+    percent: "%",
+};
 
 impl PlayWindowApp {
     /// Whether the developer menu is enabled for this run.
@@ -210,26 +213,6 @@ impl PlayWindowApp {
         }
         out
     }
-}
-
-/// Convert the host's raw PSX pad word into the **packed** layout the retail
-/// pump publishes and every `PACK_*` constant names.
-///
-/// The two words hold the same 16 buttons with the byte halves swapped:
-/// `FUN_8001822C` builds `~((b2 << 8) | b3)`, which puts the face/shoulder
-/// libpad byte in bits 0-7 and the dpad/system byte in bits 8-15, while
-/// [`legaia_engine_core::input::PadButton`] keeps them the other way round.
-/// Two fixed points documented on both sides pin the direction: Cross is
-/// `0x4000` raw and `0x40` packed, Start is `0x0008` raw and `0x0800` packed.
-///
-/// The host has to do this itself because `World::set_pad` forwards its raw
-/// argument straight into the retail pump, so `InputState::retail_pad()`
-/// republishes the raw word under packed field names for every host that does
-/// not decode real libpad reports. Reading it here unconverted cross-wires the
-/// whole dev menu - Up arrives as `PACK_TRIANGLE`, Cross as `PACK_DOWN` - which
-/// is what the Records-page toggle first ran into.
-fn retail_packed(raw: u16) -> u16 {
-    raw.swap_bytes()
 }
 
 /// Build the records model for up to three character records and the world's

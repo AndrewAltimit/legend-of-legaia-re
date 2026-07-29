@@ -29,11 +29,13 @@
 //!
 //! # Wiring
 //!
-//! `legaia-engine`'s opt-in developer menu (`LEGAIA_DEV_MENU=1`, host module
-//! `window/dev_menu.rs`) builds its row list through
-//! [`dev_menu_list_draws_for`] and places its cursor with
+//! Both play hosts build their opt-in developer menu through
+//! [`dev_menu_list_draws_for`] and place its cursor with
 //! [`dev_menu_cursor_xy`], over the row model in
-//! `legaia_engine_core::dev_menu_host`. That screen carries the subset of
+//! `legaia_engine_core::dev_menu_host`: `legaia-engine`'s native window
+//! behind `LEGAIA_DEV_MENU=1` (host module `window/dev_menu.rs`) and the
+//! browser play page behind its session-only Dev-menu checkbox
+//! (`web-viewer/src/play_dev_menu.rs`). That screen carries the subset of
 //! retail's 24 rows whose backing state the engine owns; the rest of the
 //! retail list (party warps, story-flag pokes, the equip pager) still has no
 //! engine counterpart, so the geometry here is exercised by fewer rows than

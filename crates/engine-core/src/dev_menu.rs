@@ -68,6 +68,30 @@ pub const PACK_DOWN: u16 = 0x4000;
 /// Packed-pad Left.
 pub const PACK_LEFT: u16 = 0x8000;
 
+/// Convert a **raw** PSX pad word into the packed layout the retail pump
+/// publishes and every [`PACK_*`](PACK_UP) constant names.
+///
+/// The two words hold the same 16 buttons with the byte halves swapped:
+/// `FUN_8001822C` builds `~((b2 << 8) | b3)`, which puts the face/shoulder
+/// libpad byte in bits 0-7 and the dpad/system byte in bits 8-15, while
+/// [`crate::input::PadButton`] keeps them the other way round. Two fixed
+/// points documented on both sides pin the direction: Cross is `0x4000` raw
+/// and `0x40` packed, Start is `0x0008` raw and `0x0800` packed.
+///
+/// Every host that drives [`crate::dev_menu_host::DevMenuSession`] must run
+/// its pad words through this before handing them over, because
+/// `World::set_pad` forwards the raw argument straight into the retail pump,
+/// so `InputState::retail_pad()` republishes the raw word under packed field
+/// names for hosts that do not decode real libpad reports. Feeding the
+/// session unconverted words cross-wires the whole dev menu - Up arrives as
+/// `PACK_TRIANGLE`, Cross as `PACK_DOWN` - which is what the native window's
+/// Records-page toggle first ran into. Shared here so the two hosts cannot
+/// each answer the byte-swap question differently.
+// REF: FUN_8001822C
+pub fn retail_packed(raw: u16) -> u16 {
+    raw.swap_bytes()
+}
+
 /// Fine value step (Up/Down without the Triangle modifier).
 pub const FLAG_STEP_FINE: i32 = 0x8;
 /// Coarse value step (Up/Down while Triangle is held).
