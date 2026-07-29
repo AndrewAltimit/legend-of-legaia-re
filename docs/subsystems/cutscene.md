@@ -1427,6 +1427,38 @@ velocity rather than as the sprite size and flag word an earlier reading of the 
 assigned. Style 1 additionally ramps each particle's spin by `1.375x` per frame and decays
 its colour by `-0x50505`.
 
+#### Style 2's emitter is not a GTE emitter
+
+`FUN_801D0E54` contains **zero** coprocessor instructions and exactly one `jal`, to
+`0x80043390`. It is a *packet-descriptor builder*: it assembles a synthetic 8-vertex,
+10-primitive Legaia TMD object in the scratch block at `_DAT_8007B85C + 0x5DC00` and hands it
+to the generic per-prim dispatcher. All projection, culling, depth cue and OT linking happen
+inside the SCUS dispatch handler, which the engine already models
+(`engine-vm::prim_dispatch` + `engine-render::gte`). So "the packet assembly stays at the
+clean-room boundary" is the wrong frame for this style - the boundary it actually sits behind
+is a dispatcher that is already ported.
+
+The synthetic object's group header carries `flags = 0x22`, i.e. dispatch kind
+`0x22 >> 1 = 17` and TMD descriptor row 4 - a **flat textured quad**, emitted as `POLY_FT4`
+(tag `0x09000000`, 10 words). Ten primitives cover six box faces because the four side faces
+are emitted twice: once opaque with the tile's own UVs, once semi-transparent over a fixed
+64×64 shade page, and the semi-transparent set links last so it lands on top within its OT
+bucket.
+
+> **Correction: the record's `+0x04` and `+0x0C` vectors are the opposite way round** from how
+> `engine-vm::battle_intro_tiles` names them (`rot` / `trans`). The tick's per-tile call order
+> at `0x801D0DA0..0x801D0DD8` is: load the view matrix from `0x1F8003C8`, push `rec+0x04`
+> through `MVMVA` (`cop2 0x480012`, rotation / `V0` / `+TR`) into `0x1F800348`, then run
+> `RotMatrix` on `rec+0x0C` into `0x1F800334`. `0x1F800348` is `0x1F800334 + 0x14`, which is
+> `MATRIX.t[0]` - so `+0x04` is the tile's **world position** (it becomes the translation) and
+> `+0x0C` is its **Euler angle triple** (it becomes the rotation). The seeder agrees: it stores
+> the tile's grid `(x, y, 0x880)` at `+0x04`, and `0x880 = GRID_Z + 0x80` puts the front face
+> exactly on the grid plane. Consequently the pads at `+0x1A` / `+0x22` / `+0x2A` are **linear**
+> velocities and those at `+0x3A` / `+0x42` are **angular** rates - the reverse of the current
+> names, and of the claim that the doubling of `+0x1A` / `+0x22` makes a tile's *spin*
+> accelerate. It accelerates its radial *drift*. The offsets the ported integration writes are
+> right; only the labels are wrong, so nothing misbehaves until the emitter lands.
+
 **Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
 corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).
 A tile record carries eight `SVECTOR` corners - a front face at z `-0x80` and a back face at
