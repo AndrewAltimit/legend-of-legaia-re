@@ -24,9 +24,12 @@ file verified against its manifest fingerprint before use). All six are
 mid-cast states, so all six show a cast stager 100% resident and CANNOT
 show 0968 - the negative half of the measurement. Point it at a fresh
 state taken at the evolved-Cort battle entry (before any special-attack
-or summon cast) to close the thread:
+or summon cast) to close the thread. Both emulators' states work: a
+`.sstate` file is read through `pcsxr-state extract` (PCSX-Redux),
+anything else through `mednafen-state extract`:
 
     scripts/mednafen/check-0968-residency.py /path/to/new-state.mc7
+    scripts/mednafen/check-0968-residency.py /path/to/cort-entry.sstate
 
 Exit status: 0 if every examined state was read successfully (whether or
 not 0968 was resident); the verdict is in the output.
@@ -41,6 +44,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPO_ROOT / "target" / "release" / "mednafen-state"
+PCSXR_CLI = REPO_ROOT / "target" / "release" / "pcsxr-state"
 MANIFEST = REPO_ROOT / "scripts" / "scenarios.toml"
 LIBRARY = REPO_ROOT / "saves" / "library" / "mednafen"
 PROT_DIR = REPO_ROOT / "extracted" / "PROT"
@@ -62,9 +66,10 @@ CORT_LABELS = [
 
 
 def extract(state: Path, start: int, end: int) -> bytes:
+    cli = PCSXR_CLI if state.suffix == ".sstate" else CLI
     with tempfile.NamedTemporaryFile(suffix=".bin") as tmp:
         subprocess.run(
-            [str(CLI), "extract", str(state),
+            [str(cli), "extract", str(state),
              "--start", hex(start), "--end", hex(end), "--out", tmp.name],
             check=True, capture_output=True)
         return Path(tmp.name).read_bytes()
@@ -108,6 +113,9 @@ def resolve_scenarios(labels):
 def main() -> int:
     if not CLI.exists():
         sys.exit("build first: cargo build --release -p legaia-mednafen")
+    if any(Path(a).suffix == ".sstate" for a in sys.argv[1:]) \
+            and not PCSXR_CLI.exists():
+        sys.exit("build first: cargo build --release -p legaia-pcsxr")
     e968 = (PROT_DIR / "0968_xxx_dat.BIN").read_bytes()
     band = band_entries()
 

@@ -229,7 +229,14 @@ the second form), showing entry 968's bytes resident in the slot-B buffer at
 `0x801F69D8` over its own `0xA28` extent and the loader-B current-id tracker
 `gp+0x934` (`0x8007BC4C`) reading `0x49` - the same pair of observations
 that pinned 0967 for the Tetsu tutorial. `check-0968-residency.py` pointed
-at the new state performs exactly this test.
+at the new state performs exactly this test, and either emulator's state
+works: it reads mednafen states through `mednafen-state extract` and
+PCSX-Redux `.sstate` files through `pcsxr-state extract`, dispatching on
+the file extension. A state parked *outside* the battle (a doorway save)
+is a staging point, not the observation - the stage overlay pages in
+during battle load, so the capture itself must be taken inside the
+evolved-form fight, at the first command menu, before anyone (Cort
+included - all six existing states are enemy-cast stagers) casts.
 
 ## Adding a thread
 

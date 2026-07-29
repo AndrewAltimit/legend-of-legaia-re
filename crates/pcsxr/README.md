@@ -28,6 +28,13 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 position fields are read as `i16` - the facing word at `player+0x16` sits between
 `+0x14` (X) and `+0x18` (Z), so a `u32` read would fold it into the coordinate.
 
+The **`pcsxr-state`** binary is the CLI face: `info` prints the scene /
+game-mode / player anchors, and `extract` mirrors `mednafen-state extract`
+(same `--start`/`--end`/`--out` flags, same KSEG0 VA semantics) so a
+state-reading script can dispatch on file extension and accept either
+emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
+that.
+
 ## How it composes
 
 Disc-gated oracle tests load `saves/library/pcsx-redux/<fingerprint>.sstate`
