@@ -170,18 +170,23 @@ pub(crate) fn parse_arts_ap_cost(s: &str) -> Result<legaia_patcher::arts_ap_gran
     })
 }
 
-/// Parse a `--rename-location` entry: `INDEX=NAME` (`3=Ancient Fire Cave`).
-/// The index is a landmark slot (0..16, decimal); the name is the new ASCII
-/// string. Errors on a malformed pair (name validity is checked at apply time).
-pub(crate) fn parse_location_rename(s: &str) -> Result<(usize, String)> {
-    let (idx_str, name) = s
+/// Parse a `--rename-location` entry: `TARGET=NAME`, where `TARGET` is either a
+/// landmark cell index (`3=Ancient Fire Cave`) or the place's current name
+/// (`Hunter's Spring=Hunter's Well`). A purely numeric target is always read as
+/// an index. Errors on a malformed pair; name validity is checked at apply time.
+pub(crate) fn parse_location_rename(
+    s: &str,
+) -> Result<(legaia_patcher::apply::RenameTarget, String)> {
+    let (target, name) = s
         .split_once('=')
-        .with_context(|| format!("invalid location rename {s:?} (expected INDEX=NAME)"))?;
-    let index = idx_str
-        .trim()
-        .parse::<usize>()
-        .with_context(|| format!("invalid landmark index in {s:?} (expected a number)"))?;
-    Ok((index, name.to_string()))
+        .with_context(|| format!("invalid location rename {s:?} (expected TARGET=NAME)"))?;
+    if target.trim().is_empty() {
+        anyhow::bail!("invalid location rename {s:?} (empty target before `=`)");
+    }
+    Ok((
+        legaia_patcher::apply::RenameTarget::parse(target),
+        name.to_string(),
+    ))
 }
 
 pub(crate) fn clock_seed() -> u64 {

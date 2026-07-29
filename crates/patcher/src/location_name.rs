@@ -1,16 +1,34 @@
 //! **Location / landmark name renaming.**
 //!
-//! The 16 place names shown on the world-map quick-travel menu and echoed by
-//! the save / load / pause location display live in a fixed table in
-//! `SCUS_942.54`: [`legaia_asset::worldmap_menu::NAME_TABLE_ADDR`] = `0x80073B18`,
-//! [`legaia_asset::worldmap_menu::NAME_COUNT`] = 16 slots of
-//! [`legaia_asset::worldmap_menu::NAME_STRIDE`] = `0x20` bytes each, every slot
-//! a NUL-terminated ASCII string zero-padded to 32 bytes.
+//! A place name is shown in three places, and each reads its **own** copy of
+//! the string off the disc. Renaming a town therefore means editing three
+//! carriers, not one:
 //!
-//! Renaming is a same-size in-place edit of one slot: write the new ASCII name
-//! and zero-pad the remainder of the 32-byte slot (so no stale tail bytes
-//! remain), keeping at least one trailing NUL - i.e. a new name is at most 31
-//! bytes. This is the same overwrite mechanism the item / spell name tables use.
+//! | Site | Display | Carrier |
+//! |---|---|---|
+//! | 1 | quick-travel / Door-of-Wind destination list | `SCUS_942.54` `0x80073B18`, 16 fixed `0x20`-byte cells |
+//! | 2 | the labels drawn over the world map at each place's map position | the **world-map location table** trailing every kingdom MAN (`map01` / `map02` / `map03`) |
+//! | 3 | the banner on entering the scene (and the save-screen location row) | each scene MAN's **section 2** display name |
+//!
+//! Sites 2 and 3 are parsed by [`legaia_asset::place_names`], which carries
+//! the byte layout and the provenance for both.
+//!
+//! ## What an edit costs
+//!
+//! - **Site 1** is a same-size overwrite of a 32-byte slot, zero-padded so no
+//!   stale tail survives - the same mechanism the item / spell name tables use.
+//! - **Site 2** is a same-size overwrite of a record's fixed 24-byte name
+//!   field, then an LZS re-pack of the kingdom MAN.
+//! - **Site 3** is *not* padded: the section body is exactly `strlen + 1`, so a
+//!   longer name resizes the section. That is safe because every later section
+//!   is reached by walking the chain, but it changes the MAN's decompressed
+//!   size, so the scene bundle's descriptor size word is rewritten alongside
+//!   the re-packed stream.
+//!
+//! The shared cap is therefore the tightest of the three, **23 characters**
+//! ([`MAX_NAME_LEN`]) - the world-map record's 24-byte name field minus its
+//! NUL. Retail's longest name ("Zora's Floating Castle") is 22.
+//!
 //! No Sony bytes are embedded; only the user's own disc strings are rewritten.
 //!
 //! The default table (element caves at idx 3/4, "Vidna" at 6, "Conkram" at 14)
@@ -20,11 +38,20 @@
 use anyhow::{Result, bail};
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_asset::place_names::{
+    self, PlaceNameError, SceneName, WORLD_MAP_NAME_CAPACITY, WorldMapTable,
+};
+use legaia_asset::scene_asset_table;
 use legaia_asset::worldmap_menu::{NAME_COUNT, NAME_STRIDE, NAME_TABLE_ADDR};
 
-/// Max bytes a renamed slot's string can use (31 chars + a terminating NUL in
-/// the 32-byte slot).
-pub const MAX_NAME_LEN: usize = NAME_STRIDE - 1;
+/// Max bytes a renamed name can use across **all three** carriers: the
+/// world-map record's 24-byte name field is the tightest of them, so 23
+/// characters plus a terminating NUL. (The SCUS cell would hold 31, but a name
+/// that only fits there would rename site 1 and desync the other two.)
+pub const MAX_NAME_LEN: usize = WORLD_MAP_NAME_CAPACITY - 1;
+
+/// The MAN asset-type byte in a [`scene_asset_table`] bundle.
+const MAN_TYPE: u8 = 0x03;
 
 /// One planned rename: the SCUS file offset of a name slot and the new 32-byte
 /// slot contents (ASCII + NUL padding).
@@ -67,23 +94,34 @@ pub fn list_names(scus: &[u8]) -> Result<Vec<(usize, String)>> {
     Ok(out)
 }
 
+/// Guard a replacement name against the shared three-carrier budget. Public so
+/// the world-map / scene-banner paths refuse exactly what the SCUS path does.
+pub fn validate_name(new_name: &str) -> Result<()> {
+    if new_name.is_empty() {
+        bail!("a location name may not be empty");
+    }
+    if new_name.len() > MAX_NAME_LEN {
+        bail!(
+            "name {new_name:?} is {} bytes; a location name holds at most {MAX_NAME_LEN} \
+             (the world-map record's 24-byte name field, minus its NUL)",
+            new_name.len()
+        );
+    }
+    if !new_name.is_ascii() || new_name.bytes().any(|b| !(0x20..0x7F).contains(&b)) {
+        bail!("name {new_name:?} has non-ASCII bytes (the menu font renders ASCII only here)");
+    }
+    Ok(())
+}
+
 /// Plan a rename of landmark `index` to `new_name`. Fails on an out-of-range
-/// index, a name that doesn't fit the 32-byte slot, a non-ASCII name (the
-/// dialog font only renders the ASCII set here), or an unresolvable table.
+/// index, a name past [`MAX_NAME_LEN`], a non-ASCII name (the dialog font only
+/// renders the ASCII set here), or an unresolvable table.
 /// Returns `Ok(None)` when the name already matches (idempotent no-op).
 pub fn plan_rename(scus: &[u8], index: usize, new_name: &str) -> Result<Option<RenameEdit>> {
     if index >= NAME_COUNT {
         bail!("landmark index {index} out of range (0..{NAME_COUNT})");
     }
-    if new_name.len() > MAX_NAME_LEN {
-        bail!(
-            "name {new_name:?} is {} bytes; the slot holds at most {MAX_NAME_LEN} (plus a NUL)",
-            new_name.len()
-        );
-    }
-    if !new_name.is_ascii() {
-        bail!("name {new_name:?} has non-ASCII bytes (the menu font renders ASCII only here)");
-    }
+    validate_name(new_name)?;
     let off = slot_offset(scus, index)
         .ok_or_else(|| anyhow::anyhow!("landmark slot {index} unresolvable"))?;
     let old_name = current_name(scus, index).unwrap_or_default();
@@ -99,6 +137,170 @@ pub fn plan_rename(scus: &[u8], index: usize, new_name: &str) -> Result<Option<R
         new_name: new_name.to_string(),
         slot,
     }))
+}
+
+/// A scene bundle's MAN together with whichever of the two MAN-resident place
+/// name carriers it holds: the scene's own display name (section 2) and, for
+/// the three kingdom bundles, the world-map location table (the section-5
+/// trailer). Mutate through [`Self::rename`], then [`Self::repack`].
+#[derive(Debug, Clone)]
+pub struct ManPlaceNames {
+    /// PROT entry index of the scene bundle.
+    pub entry_idx: usize,
+    /// Byte offset of the compressed MAN stream within the entry.
+    pub man_offset: usize,
+    /// Byte offset, within the entry, of the MAN descriptor's
+    /// `(type<<24)|size` word. Rewritten whenever the decompressed size moves.
+    pub man_descriptor_off: usize,
+    /// Bytes the recompressed MAN may occupy: the gap to the next asset's
+    /// data, clamped to the entry's **true on-disc footprint** so a growing
+    /// MAN can use the entry's sector padding but never a neighbour's bytes.
+    pub compressed_budget: usize,
+    /// Decompressed MAN.
+    pub decoded: Vec<u8>,
+    /// Section-2 display name, when the MAN carries a printable one.
+    pub scene_name: Option<SceneName>,
+    /// The world-map location table, when this is a kingdom MAN.
+    pub world_map: Option<WorldMapTable>,
+}
+
+/// What one [`ManPlaceNames::rename`] changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ManRenameCounts {
+    /// `1` when the scene's own banner name was rewritten.
+    pub scene_banners: usize,
+    /// World-map location records rewritten.
+    pub world_map_records: usize,
+}
+
+impl ManRenameCounts {
+    /// `true` when nothing matched.
+    pub fn is_empty(&self) -> bool {
+        self.scene_banners == 0 && self.world_map_records == 0
+    }
+}
+
+impl ManPlaceNames {
+    /// Locate the place-name carriers in one PROT entry. `footprint` is the
+    /// entry's true on-disc size in bytes (`DiscPatcher::entry_true_footprint_sectors`
+    /// x 2048) - `entry` itself may be the over-reading indexed read, so the
+    /// growth budget is clamped to the footprint rather than to `entry.len()`.
+    ///
+    /// `None` when the entry isn't a scene bundle, has no MAN, the MAN doesn't
+    /// decode, or it carries neither place-name field.
+    pub fn locate(entry: &[u8], entry_idx: usize, footprint: usize) -> Option<Self> {
+        // The strict detector's count allow-list (6/7) excludes two count-5
+        // bundles that do carry a MAN - one of them `bubu1`, half of Buma - so
+        // fall back to the lenient walk the runtime itself uses. Everything
+        // below re-confirms the find far more strongly than the header could:
+        // the stream must LZS-decode to exactly its declared size, walk as a
+        // MAN, and yield a printable place name.
+        let descriptors = match scene_asset_table::detect(entry) {
+            Some(table) => table.used().to_vec(),
+            None => scene_asset_table::lenient_descriptor_walk(entry)?,
+        };
+        let man_idx = descriptors.iter().position(|d| d.type_byte == MAN_TYPE)?;
+        let man = descriptors[man_idx];
+        if man.size == 0 || man.data_offset == 0 {
+            return None;
+        }
+        let man_offset = man.data_offset as usize;
+        if man_offset >= footprint {
+            return None;
+        }
+        let body = entry.get(man_offset..)?;
+        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        if decoded.len() != man.size as usize {
+            return None;
+        }
+        let parsed = legaia_asset::man_section::parse(&decoded).ok()?;
+        let scene_name = place_names::scene_name_of(&parsed, &decoded);
+        let world_map = place_names::world_map_table_of(&parsed, &decoded);
+        if scene_name.is_none() && world_map.is_none() {
+            return None;
+        }
+        // Growth room: up to the next asset's data, else to the end of the
+        // entry's own footprint (the tail is sector padding). Never below the
+        // stream we actually consumed.
+        let limit = descriptors
+            .iter()
+            .map(|d| d.data_offset as usize)
+            .filter(|&o| o > man_offset)
+            .min()
+            .unwrap_or(footprint)
+            .min(footprint);
+        Some(Self {
+            entry_idx,
+            man_offset,
+            man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
+            compressed_budget: limit.saturating_sub(man_offset).max(consumed),
+            decoded,
+            scene_name,
+            world_map,
+        })
+    }
+
+    /// Every place name this MAN carries, for listing.
+    pub fn names(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(s) = &self.scene_name {
+            out.push(s.name.clone());
+        }
+        if let Some(t) = &self.world_map {
+            out.extend(t.locations.iter().map(|l| l.name.clone()));
+        }
+        out
+    }
+
+    /// Rewrite every carrier whose current name is exactly `old_name`.
+    /// Returns what changed; the buffer is left untouched when nothing matched.
+    pub fn rename(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<ManRenameCounts, PlaceNameError> {
+        let mut counts = ManRenameCounts::default();
+        if let Some(table) = &self.world_map {
+            let hits: Vec<_> = table
+                .locations
+                .iter()
+                .filter(|l| l.name == old_name)
+                .cloned()
+                .collect();
+            for loc in &hits {
+                place_names::set_world_map_name(&mut self.decoded, loc, new_name)?;
+                counts.world_map_records += 1;
+            }
+        }
+        // The scene name resizes the buffer, so it goes last and every cached
+        // offset is re-derived from the rebuilt bytes.
+        if self.scene_name.as_ref().is_some_and(|s| s.name == old_name) {
+            self.decoded = place_names::rewrite_scene_name(&self.decoded, new_name)?;
+            counts.scene_banners += 1;
+        }
+        if !counts.is_empty() {
+            self.rescan();
+        }
+        Ok(counts)
+    }
+
+    /// Re-walk the (possibly resized) buffer so the cached carrier offsets stay
+    /// truthful after an edit.
+    fn rescan(&mut self) {
+        if let Ok(parsed) = legaia_asset::man_section::parse(&self.decoded) {
+            self.scene_name = place_names::scene_name_of(&parsed, &self.decoded);
+            self.world_map = place_names::world_map_table_of(&parsed, &self.decoded);
+        }
+    }
+
+    /// Recompress the edited MAN. Returns `(stream, decompressed_size)`, or
+    /// `None` when the stream would overflow the footprint - never a silent
+    /// write into the neighbouring asset.
+    pub fn repack(&self) -> Option<(Vec<u8>, u32)> {
+        let stream = legaia_lzs::compress(&self.decoded);
+        let size = self.decoded.len() as u32;
+        (stream.len() <= self.compressed_budget).then_some((stream, size))
+    }
 }
 
 #[cfg(test)]

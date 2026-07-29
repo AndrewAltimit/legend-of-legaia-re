@@ -30,7 +30,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`battle_camera_table`](#battle_camera_table)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
-  - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
+  - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`, `place_names`
   - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`, `menu_windows`, `save_icon`
   - [SCUS static tables](#scus-static-tables) - `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
   - [Cutscene / FMV / summon](#cutscene--fmv--summon) - `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
@@ -363,6 +363,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `ocean` | Ocean tile texture (4bpp 64×256) + its 13-frame CLUT animation from the kingdom bundles. |
 | `clut_walk` | The type-6 CLUT-walk `MoveImage` walker table + its parked source strips. Not kingdom-only: `from_scene_bundle` / `scene_park_strips` resolve any bundle's slot by type byte (12 carriers, incl. 9 water/waterfall field scenes - [`field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)). |
 | `worldmap_menu` | The quick-travel landmark menu out of `SCUS_942.54`: 16-entry name table (`DAT_80073B18`) + 6-byte placement records (`DAT_80073A98`). CLI `asset worldmap-menu` (`--json` = the web-viewer shape). |
+| `place_names` | The two **MAN-resident** place-name carriers `worldmap_menu` is not: section 2 = the scene's display name (the on-entry banner, `_DAT_801C6EA0`), and the section-5 trailer = the 29-record world-map location table the label pass walks (`DAT_80073EE0`, region + map x/y + discovery flag + name). See [`place-names.md`](../../docs/formats/place-names.md). |
 
 ### Boot / title / menu UI
 

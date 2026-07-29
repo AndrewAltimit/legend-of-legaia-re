@@ -15,6 +15,7 @@ below to jump within this page.
 - [Overlay structure](#overlay-structure)
 - [Panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) - the script interpreter, the shared list cursor, the dev-menu row dispatcher
 - [Panel actor state machines](#the-panel-actor-state-machines) - the six `ctx[+0x54]` phase machines, the field party HUD, and the engine host under them
+- [Place-label pass](#the-place-label-pass---0x801cebb60x801cec30) - the named markers drawn over the map
 - [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
@@ -121,6 +122,30 @@ which retail leaves clear.
 Port: `legaia_engine_vm::world_map_dim::emit_screen_dim`, gated by
 `WorldMapController::run_screen_dim` and called once per frame from the
 world-map tick.
+
+### The place-label pass - `0x801CEBB6..0x801CEC30`
+
+The named markers drawn over the map ("Rim Elm", "Sol Tower", ...) come from a
+per-frame loop over the **world-map location table**, which is not a static
+table at all: it is the trailing data of the kingdom scene MAN, reached through
+the section pointer `DAT_80073EE0` the MAN walker installs. Byte layout and the
+other two carriers a place name has are on
+[`place-names.md`](../formats/place-names.md).
+
+Per record (`0x20` bytes: region, map x, map y, discovery flag, 24-byte name):
+
+| Step | Call | Note |
+|---|---|---|
+| Kingdom filter | `record.region == uRam8007b970` | all three kingdom MANs carry the *whole* 29-record table; `region` is what selects the visible subset |
+| Discovery gate | `FUN_8003CE64(record.discovery_flag)` | `_DAT_8007B868` (debug show-all) bypasses it |
+| Place | `FUN_8003D368((x << 7, y << 7))` | the record's map cell projected to screen |
+| Draw | `FUN_80036888(&record.name, 0, 0, screen)` | the shared glyph renderer |
+| Underline | `FUN_8002C69C(x, y, FUN_80035F04(&name), 8)` | width measured off the same string |
+
+So a marker's label, its position and whether it shows at all are one record;
+renaming a place is a same-size overwrite of its 24-byte name field, and the
+[randomizer](../tooling/randomizer.md#location-names) does exactly that in all
+three kingdom MANs at once. `see ghidra/scripts/funcs/overlay_world_map_top_801ce9c4.txt`.
 
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 

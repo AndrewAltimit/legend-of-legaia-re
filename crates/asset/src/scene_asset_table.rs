@@ -340,11 +340,19 @@ pub fn decode_slot_by_type(entry: &[u8], type_byte: u8) -> Option<Result<Vec<u8>
 }
 
 /// Lenient count-prefixed descriptor walk for the table variants the strict
-/// [`detect`] anchor excludes (retail: the count-4 MAN-less form). Accepts
-/// counts `2..=7` with every type byte known, sizes plausible, and the first
-/// descriptor anchored at the header end - the same anchor law the strict
-/// detector applies to counts 6/7.
-fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
+/// [`detect`] anchor excludes (retail: the count-4 MAN-less form and the four
+/// count-5 bundles, two of which do carry a MAN). Accepts counts `2..=7` with
+/// every type byte known, sizes plausible, and the first descriptor anchored at
+/// the header end - the same anchor law the strict detector applies to counts
+/// 6/7, and closer to the runtime walker `FUN_80020224`, which reads the count
+/// and loops with no count constraint at all.
+///
+/// The count allow-list in [`detect`] exists so an arbitrary PROT entry with a
+/// small leading word can't be *classified* as a scene bundle. A caller that
+/// confirms what it found downstream - decodes the slot, checks its magic,
+/// walks its structure - has a stronger signal than the header alone, and
+/// should use this instead of widening [`detect`] for everyone.
+pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
     let count = legaia_bytes::u32_le(entry, 0)? as usize;
     if !(2..=7).contains(&count) {
         return None;
