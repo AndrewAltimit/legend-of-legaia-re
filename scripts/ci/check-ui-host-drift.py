@@ -409,6 +409,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         "pattern": r"game_over_draws_for\(\s*[^,]+,\s*(.*?),\s*(?:ui::|legaia_engine_render::)?GAME_OVER_PEN",
     },
     {
+        "what": "BGM start - a music change must install the incoming track "
+        "immediately. `swap_bgm` does; `crossfade_to` is a serial fade that "
+        "parks the new sequencer and rolls the old one down to silence first, "
+        "so the track has not begun a fade-length after the script asked for "
+        "it. The browser held the crossfade long after the native host had "
+        "measured it out, and the two calls live in different crates, so the "
+        "difference is invisible in a diff - audible only on a cutscene sting, "
+        "which is nearly all intro",
+        "sites": {
+            "native": (NATIVE_BGM, "start_inner"),
+            "web": (WEB_RUNTIME, "play"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["swap_bgm"],
+    },
+    {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "
         "`World::play_time_seconds`, and that counter only moves if a host "
         "drives `advance_play_time`. The browser substituted `world.frame / 60` "
