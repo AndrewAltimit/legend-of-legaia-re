@@ -929,10 +929,13 @@ use record::{RecordLog, RecordTarget};
 // items so the sibling window submodules (which `use super::*`) still see
 // them at the same effective scope they had before the split.
 pub(crate) use geometry::{
-    LineGeometry, build_battle_ground_grid, effect_billboard_mesh, effect_sprite_line_geometry,
-    heightfield_to_vram_mesh, world_map_entity_line_geometry, world_map_player_line_geometry,
-    world_map_slot4_line_geometry,
+    LineGeometry, effect_billboard_mesh, effect_sprite_line_geometry, heightfield_to_vram_mesh,
+    world_map_entity_line_geometry, world_map_player_line_geometry, world_map_slot4_line_geometry,
 };
+// The procedural battle ground grid lives in `legaia-asset` so all three
+// hosts share one implementation (the native window, the asset-viewer and
+// the browser play page) rather than forking the kernel per host.
+pub(crate) use legaia_asset::battle_backdrop::build_ground_grid as build_battle_ground_grid;
 pub(crate) use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules

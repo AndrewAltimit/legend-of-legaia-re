@@ -14,7 +14,6 @@ pub mod baka_fighter;
 pub mod baka_fighter_chrome;
 pub mod battle_anim;
 pub mod battle_arts;
-pub mod battle_backdrop;
 pub mod battle_events;
 pub mod battle_flow;
 pub mod battle_hud;

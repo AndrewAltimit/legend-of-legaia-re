@@ -178,14 +178,14 @@ fn town01_battle_build_surfaces_the_stage_mesh() {
 /// Which objects of a stage TMD the backdrop actually draws.
 ///
 /// Retail's registration drops object index 1 and keeps the rest
-/// (`FUN_800513f0`, ported as `battle_backdrop::backdrop_object_indices`), so
+/// (`FUN_800513f0`, ported as `legaia_asset::battle_backdrop::drawn_object_indices`), so
 /// the two stage shapes on the disc resolve differently: the two-object shells
 /// keep object 0 alone, and the four-object overworld domes keep 0, 2 and 3.
 /// Drawing object 0 alone - the port's old behaviour - is right for the shells
 /// and loses the mountains and the ground ring on the domes.
 #[test]
 fn backdrop_object_selection_matches_the_two_stage_shapes() {
-    use legaia_engine_core::battle_backdrop::backdrop_object_indices;
+    use legaia_asset::battle_backdrop::drawn_object_indices;
 
     let Some(extracted) = extracted_dir() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
@@ -197,12 +197,12 @@ fn backdrop_object_selection_matches_the_two_stage_shapes() {
     // which is why the Tetsu ground truth cannot regress.
     let (rim_objs, _) = dome_shape(&host, 7);
     assert_eq!(rim_objs, 2);
-    assert_eq!(backdrop_object_indices(rim_objs), vec![0]);
+    assert_eq!(drawn_object_indices(rim_objs), vec![0]);
 
     // map01 overworld dome: 4 objects -> sky, mountains, ground ring.
     let (map_objs, _) = dome_shape(&host, 88);
     assert_eq!(map_objs, 4);
-    assert_eq!(backdrop_object_indices(map_objs), vec![0, 2, 3]);
+    assert_eq!(drawn_object_indices(map_objs), vec![0, 2, 3]);
 
     // Object 3 of the overworld dome is the flat ground ring at Y = 0 - the
     // piece the truncation was dropping, and the reason an overworld battle
