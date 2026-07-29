@@ -351,14 +351,17 @@ pub fn counter_panel_draws_for(
 ///
 /// PORT: FUN_801DCCB4
 /// REF: FUN_80035C00 - the `(slot, list index)` notification setter
-/// NOT WIRED: what must exist first is **spell level-up on cast**. The
-/// NOT WIRED: engine models per-spell levels (`legaia_save::SpellList::levels`,
-/// NOT WIRED: record `+0x161`) but nothing raises one: no engine cast path
-/// NOT WIRED: runs the apply handler's threshold test, so nothing ever
-/// NOT WIRED: produces the `(caster slot, list index)` pair this window
-/// NOT WIRED: exists to announce. A host wiring it today would have to
-/// NOT WIRED: invent both the trigger and the pair. Waived in
-/// NOT WIRED: scripts/ci/ui-host-drift-waivers.toml
+/// NOT WIRED: what must exist first is the **menu-cast leveling arm**. The
+/// NOT WIRED: battle summon cast levels spells now
+/// NOT WIRED: (`World::accrue_summon_spell_xp` -> `World::magic_level_ups`)
+/// NOT WIRED: and presents through the shared banner channel on both hosts -
+/// NOT WIRED: but that is the battle event, not this window's. Window 7
+/// NOT WIRED: belongs to the pause menu's two cast sub-screens, whose
+/// NOT WIRED: leveling is the `+0x5D0` accumulator the effect-apply handler
+/// NOT WIRED: `FUN_800402F4` tests; the engine's menu cast
+/// NOT WIRED: (`field_menu_dispatch::apply_spell_outcome`) neither accrues
+/// NOT WIRED: nor levels, so the menu beat that opens this window never
+/// NOT WIRED: occurs. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
