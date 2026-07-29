@@ -169,7 +169,7 @@ material the game does not call.
 Subtracting the dumps leaves a remainder, and the obvious reading - "these are
 the routines nobody has looked at" - is right for most of the bytes and wrong for
 the tail. The report therefore classifies each code gap by *shape*, and only one
-of the four shapes is work:
+of the six shapes is work:
 
 | Shape | What it is |
 |---|---|
@@ -177,13 +177,27 @@ of the four shapes is work:
 | `padding` | every word is `nop`: inter-function alignment |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of |
 | `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk |
+| `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules |
+| `constant_table` | every word one repeated non-`nop` constant: a data table resident in the text segment |
 
-The last three are properties of **where a function body ends**, not of what has
-been analysed, so they persist however much is dumped. `bios_thunk_slot` is the
-clearest case: a BIOS-call thunk is `addiu $t2, $zero, 0xA0; jr $t2; addiu $t1,
-$zero, N`, and because the jump target is a register the analysed body ends at
-the `jr` with the delay slot outside it. The thunk is fully understood and its
-last instruction still shows up as a gap.
+The first three non-`code` shapes are properties of **where a function body
+ends**, not of what has been analysed, so they persist however much is dumped.
+`bios_thunk_slot` is the clearest case: a BIOS-call thunk is `addiu $t2, $zero,
+0xA0; jr $t2; addiu $t1, $zero, N`, and because the jump target is a register
+the analysed body ends at the `jr` with the delay slot outside it. The thunk is
+fully understood and its last instruction still shows up as a gap.
+
+The last two shapes are **data the linker left inside the text segment**, riding
+the tiny-gap fiat: a gap under eight words counts as code without a statistical
+test, so an 8-byte stamp or a four-word table reads as a 2-4 instruction
+"routine" no dump can ever cover. Creating a Ghidra function over one would
+assert an entry point the bytes do not support - a `zero_insns` defect
+manufactured to move a number - so the honest closure is recognising the bytes.
+`SCUS_942.54` carries exactly these instances: three `Ps` stamps in the code
+band (ten exist image-wide; the other seven sit in the data segment) and one
+`constant_table`, `crt0`'s stack-pointer table at `0x80026CD4`. Both are
+documented per-window in
+[`runtime-libs.md`](../reference/functions/runtime-libs.md#what-is-left-of-the-scus_94254-code-gap-is-not-code).
 
 Together they are why the figure asymptotes short of 100%, and saying so on the
 report is what stops the last fraction of a percent reading as a worklist. The
