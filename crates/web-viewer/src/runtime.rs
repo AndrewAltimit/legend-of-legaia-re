@@ -168,6 +168,13 @@ pub struct LegaiaRuntime {
     /// scene change cannot stomp the SFX samples.
     #[cfg(target_arch = "wasm32")]
     pub(crate) sfx_vabs: std::collections::BTreeMap<u8, legaia_engine_audio::VabBank>,
+    /// The live game-over panel, when a party wipe raised one. The browser
+    /// used to draw the panel from a pinned `(cursor = 1, continue_enabled =
+    /// false)` and route every confirm key to a bare Retry, so it was a
+    /// picture of a menu rather than a menu; this is the same
+    /// [`legaia_engine_core::game_over::GameOverSession`] the native window
+    /// builds, seeded from the same save scan.
+    pub(crate) game_over: Option<legaia_engine_core::game_over::GameOverSession>,
     /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
@@ -191,11 +198,21 @@ pub struct LegaiaRuntime {
     /// rebuilt from `OptionsState::default()` and every change was discarded
     /// on close - the screen looked wired and did nothing.
     ///
-    /// Persistence across page reloads is not wired: there is no filesystem
-    /// here and the page has no handle on this state, so a reload starts from
-    /// [`Default`]. The native window's TOML round-trip has no browser twin
-    /// yet.
+    /// Persisted across page reloads in `localStorage` under
+    /// [`OPTIONS_STORAGE_KEY`] - the browser twin of the native window's
+    /// `OPTIONS_CONFIG_FILE` TOML round-trip, through the same serde impl.
+    /// The commit path is [`Self::persist_and_apply_options`], mirroring the
+    /// native `persist_and_apply_options` leg for leg: apply the live audio
+    /// side effects, then write the state out.
     pub(crate) options_state: legaia_engine_core::options::OptionsState,
+    /// High-water mark of the play clock, in whole seconds since the page's
+    /// wall clock origin. [`Self::tick_play_clock`] deltas against it so a
+    /// loaded save's accumulated total survives - the browser twin of the
+    /// native window's `play_clock_secs`.
+    play_clock_secs: u32,
+    /// Wall-clock origin (ms) the play clock counts from, seeded on the first
+    /// tick. `None` until then.
+    play_clock_origin_ms: Option<f64>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -248,7 +265,9 @@ impl LegaiaRuntime {
             fishing_venues: None,
             equip_stats: None,
             seru_names: None,
-            options_state: legaia_engine_core::options::OptionsState::default(),
+            options_state: load_persisted_options(),
+            play_clock_secs: 0,
+            play_clock_origin_ms: None,
             live_battles: true,
             battle_bgm: None,
             #[cfg(target_arch = "wasm32")]
@@ -259,6 +278,7 @@ impl LegaiaRuntime {
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
             sfx_vabs: Default::default(),
+            game_over: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             #[cfg(target_arch = "wasm32")]
@@ -569,9 +589,21 @@ impl LegaiaRuntime {
         if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
             host.world.finish_cutscene();
         }
-        // Fishing HUD one-shot banners ride the sim clock, not the page's
-        // animation frame, so a heavy scene does not slow them down. The `host`
+        // Advance the world's play clock off the page's wall clock, the same
+        // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
+        self.tick_play_clock();
+        // Effect scene-graphs, ticked exactly where the native window ticks
+        // them: drain the two production spawn requests (a player Seru-magic
+        // cast, and a non-summon move whose power record carries a spawnable
+        // effect list), then advance the summon / move-FX / field-FX
+        // scene-graphs through the move VM. All three self-gate to a no-op
+        // when nothing is live, and all three are host-agnostic simulation -
+        // leaving them unticked in the browser meant a cast spawned an effect
+        // that then never moved.
+        self.tick_world_effects();
+        // Fishing HUD one-shot banners ride the sim clock, not the page's
+        // animation frame, so a heavy scene does not slow them down.
         self.tick_fishing_banners();
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
@@ -584,6 +616,9 @@ impl LegaiaRuntime {
         // edge, battle-event fold, HUD row refresh, popup aging
         // ([`crate::play_battle`]). Cheap no-op outside battle.
         self.tick_battle_presentation();
+        // Party wipe: raise the game-over panel on the `World::game_over`
+        // edge, the same probe the native window's redraw loop runs.
+        self.poll_game_over();
         // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
         // the scene's music, started/queued/paused/stopped by the same events
         // the native `AudioBgmDirector` consumes. The `host` borrow above is
@@ -1535,5 +1570,152 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
 impl Default for LegaiaRuntime {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// `localStorage` key the play page's options live under - the browser twin
+/// of the native window's `OPTIONS_CONFIG_FILE`.
+///
+/// The two hosts persist through the *same* serde impl on
+/// [`legaia_engine_core::options::OptionsState`]; only the byte store
+/// differs, because a browser has no filesystem. Before this the browser had
+/// no store at all: the Sound row was decorative and every setting was lost
+/// on reload, which reads as "the options screen does nothing" rather than as
+/// a missing capability.
+pub const OPTIONS_STORAGE_KEY: &str = "legaia.options";
+
+/// Read the persisted options, falling back to [`Default`] when nothing is
+/// stored, the store is unavailable (private mode, non-browser target) or the
+/// stored JSON no longer parses. Mirrors `OptionsState::load_or_default`.
+fn load_persisted_options() -> legaia_engine_core::options::OptionsState {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(raw) = options_storage().and_then(|s| s.get_item(OPTIONS_STORAGE_KEY).ok())
+            && let Some(raw) = raw
+            && let Ok(state) = serde_json::from_str(&raw)
+        {
+            return state;
+        }
+    }
+    legaia_engine_core::options::OptionsState::default()
+}
+
+/// The page's `localStorage`, when this target has one and the browser lets
+/// us reach it (it throws in private mode on some engines).
+#[cfg(target_arch = "wasm32")]
+fn options_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+
+/// Milliseconds since a fixed origin, from whatever clock this target has.
+/// Only ever consumed as a delta ([`LegaiaRuntime::tick_play_clock`]), so the
+/// origin itself is irrelevant.
+fn wall_clock_ms() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0)
+    }
+}
+
+impl LegaiaRuntime {
+    /// Tick the world's effect scene-graphs - the browser twin of the native
+    /// window's per-frame effects block.
+    ///
+    /// Three of the four halves are pure simulation and are run here:
+    /// [`World::spawn_move_fx`](legaia_engine_core::world::World::spawn_move_fx)
+    /// off the production `take_pending_move_fx_spawn` request, then
+    /// `tick_summon` / `tick_move_fx` / `tick_field_fx` at the retail
+    /// `0x0400` anim-speed step. Each self-gates to a no-op when nothing is
+    /// live.
+    ///
+    /// The fourth, `take_pending_summon_spawn`, is deliberately **not**
+    /// drained here. Its faithful render is the namesake battle creature drawn
+    /// through the enemy animation pipeline, and the browser has no battle 3D
+    /// layer to draw it into (a recorded host gap, not wiring); draining the
+    /// request would turn "the summon does not appear" into "the summon was
+    /// silently discarded", which is strictly less recoverable for whichever
+    /// host wires that layer.
+    fn tick_world_effects(&mut self) {
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        let world = &mut host.world;
+        if let Some((move_id, origin)) = world.take_pending_move_fx_spawn() {
+            world.spawn_move_fx(move_id, origin);
+            // Classify-only, like the native path: move-FX cue playback is
+            // not wired to the SFX ring on either host.
+            let _ = world.take_pending_move_fx_cue();
+        }
+        world.tick_summon(0x0400);
+        world.tick_move_fx(0x0400);
+        world.tick_field_fx(0x0400);
+    }
+
+    /// Advance the world's play clock off the page's wall clock - the browser
+    /// twin of the native window's `tick_play_clock`, called once per
+    /// [`LegaiaRuntime::tick_frame`].
+    ///
+    /// Whole seconds only, and by delta rather than absolutely, so a loaded
+    /// save keeps its accumulated total. The page used to substitute
+    /// `world.frame / 60` at the one place the clock was *drawn*, which left
+    /// [`legaia_engine_core::world::World::play_time_seconds`] frozen at
+    /// whatever a load put there - so the H:MM:SS box reset on every page
+    /// load, ignored a loaded save's hours, and, worse, a save written from
+    /// the browser recorded the *loaded* play time rather than the played one.
+    pub(crate) fn tick_play_clock(&mut self) {
+        let now_ms = wall_clock_ms();
+        let origin = *self.play_clock_origin_ms.get_or_insert(now_ms);
+        let now = ((now_ms - origin) / 1000.0).max(0.0) as u32;
+        if now > self.play_clock_secs {
+            let delta = now - self.play_clock_secs;
+            self.play_clock_secs = now;
+            if let Some(host) = self.scene_host.as_mut() {
+                host.world.advance_play_time(delta);
+            }
+        }
+    }
+
+    /// Apply the live side effects of [`Self::options_state`] and persist it -
+    /// the browser twin of the native window's `persist_and_apply_options`,
+    /// called from the same place (an Options sub-session closing).
+    pub(crate) fn persist_and_apply_options(&mut self) {
+        self.apply_options_side_effects();
+        #[cfg(target_arch = "wasm32")]
+        if let Some(store) = options_storage()
+            && let Ok(json) = serde_json::to_string(&self.options_state)
+            && store.set_item(OPTIONS_STORAGE_KEY, &json).is_err()
+        {
+            crate::console_log("options: localStorage write failed");
+        }
+    }
+
+    /// Push the current options into their live consumers without touching
+    /// the store (also called once when audio comes up, so a persisted
+    /// Monaural / muted state applies to a fresh `AudioContext`).
+    ///
+    /// The same two audio knobs the native window applies - the retail
+    /// options screen's Stereo / Monaural row and the engine-only master
+    /// mute - plus the one simulation knob (`precise_movement`).
+    /// `bgm_volume` / `sfx_volume` are read by neither host today: that is a
+    /// host-identical gap, not drift.
+    pub(crate) fn apply_options_side_effects(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(audio) = self.audio_out.as_ref() {
+            audio.set_mono(matches!(
+                self.options_state.audio,
+                legaia_engine_core::options::AudioMode::Mono
+            ));
+            audio.set_muted(self.options_state.muted);
+        }
+        if let Some(host) = self.scene_host.as_mut() {
+            host.world.precise_movement = self.options_state.precise_movement;
+        }
     }
 }

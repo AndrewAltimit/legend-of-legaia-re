@@ -203,10 +203,15 @@ installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
   commit kernel. Retail has no such screen and the reachable path does not pass
   through one, so wiring a host into it would *replace* faithful innkeeper
   dialogue with an invented panel rather than fill a gap. It stays as the
-  direct entry for tests and tooling; the native window's `InnConfirm` /
-  `InnSleep` draws are reachable only from there, and the browser play page
-  deliberately mirrors that by not drawing them either. Deleting it is a
-  legitimate future call; inventing a caller for it is not.
+  direct entry for tests and tooling. Both hosts **draw** the `InnConfirm` /
+  `InnSleep` panels when that entry opens one - the native window in
+  `window/hud.rs`, the browser play page in `play_shop.rs`'s
+  `inn_stage_draws`. This page used to record that the browser "deliberately
+  mirrors" the native window by not drawing them, which was false in the
+  direction that matters: the native window does draw them, so the browser was
+  one host short of a screen rather than in agreement with it. Deleting the
+  prompt outright is a legitimate future call; inventing a caller for it is
+  not.
 - **The `DREAM` hand-off is not mirrored.** Some inns append a story-flag-gated
   tail that warps to a `DREAM` scene after the restore. The restore runs first
   and unconditionally, so a stay is complete without it, but the dream scenes

@@ -45,89 +45,14 @@
   const VR_FP_EYE_HEIGHT_M = 1.6;
   const VR_FP_FALLBACK_MESH_HEIGHT = 130;
 
-  /* Keyboard -> PSX pad bits. Deliberately NOT a table in this file.
-   *
-   * There used to be one here and another in play.html's title loop, and
-   * neither agreed with the engine's own default layout or with each other:
-   * `X` was Square in the native window and Circle in both page tables, `S`
-   * was Circle natively and Down here, and Select / L1 / R1 / L2 / R2 had no
-   * binding on the page at all. None of that shows up in a diff, because no
-   * file held two of the columns.
-   *
-   * So the page reads the binding table out of the engine instead
-   * (`legaia_engine_core::input::Mapping::web_default` through
-   * `pad_bindings_json`). A rebind now lands on every host at once and a
-   * disagreement can no longer be written down.
-   *
-   * `web_default`, not `default`: this page walks on WASD as well as the
-   * arrows, and the desktop layout spends A / S / W on Triangle / Circle /
-   * R1. One `HashMap<key, button>` cannot hold both `S -> Down` and
-   * `S -> Circle`, so the engine carries two *named layouts* rather than one
-   * layout plus an override table here - which is the whole point, since an
-   * override table in this file is the thing that drifted last time. The face
-   * buttons move to Z / X / C / V and the shoulders to Q / E. */
-  let PAD = null;
-  let PAD_BTN = null;
-  let SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+  /* Keyboard -> PSX pad bits: the shared table in `js/pad-bindings.js`, read
+   * out of the engine (`Mapping::web_default` through `pad_bindings_json`).
+   * Not a table in this file, and not a table in any page file - see that
+   * module's header for what happened the last time it was. */
+  const adoptPadBindings = window.legaiaAdoptPadBindings;
+  const padMaskOf = window.legaiaPadMaskOf;
+  const padTable = () => window.legaiaPadTable();
 
-  /* Bindings of last resort, used only against a cached wasm bundle that
-   * predates the export. Deliberately a bare minimum - walk, confirm, cancel,
-   * menu - because this is a degraded mode, not a second layout to maintain.
-   * The console line is the point: a silent fallback here is how the tables
-   * diverged the first time. */
-  const PAD_STALE_FALLBACK = {
-    ArrowUp: 0x0010, ArrowRight: 0x0020, ArrowDown: 0x0040, ArrowLeft: 0x0080,
-    KeyZ: 0x4000, KeyX: 0x2000, Enter: 0x0008,
-  };
-
-  /* Adopt the engine's binding table. `src` is a LegaiaRuntime or the wasm
-   * module namespace - both export the same two calls. Idempotent. */
-  function adoptPadBindings(src) {
-    if (PAD) return PAD;
-    let table = null, buttons = null;
-    try {
-      if (src && typeof src.pad_bindings_json === 'function') {
-        table = JSON.parse(src.pad_bindings_json());
-        buttons = JSON.parse(src.pad_buttons_json());
-      }
-    } catch (e) { table = null; }
-    if (!table || !Object.keys(table).length) {
-      console.warn('[play] engine pad bindings unavailable (stale wasm bundle?) - '
-        + 'falling back to arrows + Z/X/Enter only. Rebuild site/wasm/.');
-      table = PAD_STALE_FALLBACK;
-      buttons = null;
-    }
-    PAD = table;
-    PAD_BTN = buttons;
-    /* Keys the canvas swallows so the page doesn't scroll under the player. */
-    SWALLOW = new Set(Object.keys(PAD).concat(['ArrowUp', 'ArrowDown',
-      'ArrowLeft', 'ArrowRight', 'Space']));
-    return PAD;
-  }
-  /* PSX digital-pad word layout. Hardware, not a binding choice: these bits
-   * are the same in the engine, the recomp and the console, and the runtime's
-   * `set_pad` doc lists them. Used only to answer `legaiaPadButton` against a
-   * stale bundle that has no button table to serve. */
-  const PAD_BITS = {
-    Select: 0x0001, L3: 0x0002, R3: 0x0004, Start: 0x0008,
-    Up: 0x0010, Right: 0x0020, Down: 0x0040, Left: 0x0080,
-    L2: 0x0100, R2: 0x0200, L1: 0x0400, R1: 0x0800,
-    Triangle: 0x1000, Circle: 0x2000, Cross: 0x4000, Square: 0x8000,
-  };
-
-  /* Exposed so play.html's title loop, which runs before any PlayView exists,
-   * shares this one table instead of keeping a third. */
-  window.legaiaAdoptPadBindings = adoptPadBindings;
-  window.legaiaPadTable = () => PAD;
-  window.legaiaPadMaskOf = padMaskOf;
-  window.legaiaPadButton = (name) => (PAD_BTN && PAD_BTN[name]) || PAD_BITS[name] || 0;
-
-  /* Fold a set of key codes into a pad word. */
-  function padMaskOf(keys) {
-    let mask = 0;
-    for (const k of keys) mask |= (PAD && PAD[k]) || 0;
-    return mask;
-  }
 
   /* The retail menu's own clock. Its timers (the save screen's "Now checking"
    * beat, every slide-in) are counted in 60 Hz frames, so the menu ticks on
@@ -557,6 +482,14 @@
       const state = JSON.parse(this.rt.enter_field(label));
       this._rebuild();
       this.scene = state.scene || label;
+      /* Demo tile board (`?tileboard=1`): the browser's twin of the native
+       * window's `LEGAIA_TILE_BOARD_DEMO=1`, which no browser can set. No
+       * retail scene installs a board, so without a trigger the per-cell
+       * draw pass is unreachable on this host. */
+      if (/[?&]tileboard=1\b/.test(location.search)
+          && typeof this.rt.play_install_demo_tile_board === 'function') {
+        try { this.rt.play_install_demo_tile_board(); } catch (e) {}
+      }
       if (this.vr) {
         this.vr.setReady(true);
         /* A live session survives a scene swap (same canvas / GL context) - just
@@ -788,8 +721,9 @@
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
-        if (!PAD || PAD[e.code] === undefined) return;
-        if (SWALLOW.has(e.code)) e.preventDefault();
+        const table = padTable();
+        if (!table || table[e.code] === undefined) return;
+        if (window.legaiaPadSwallows(e.code)) e.preventDefault();
         if (down) { this.held.add(e.code); this.pulse.add(e.code); }
         else this.held.delete(e.code);
         this._repack();
@@ -1438,19 +1372,25 @@
             }
           }
           /* Party wipe: the engine raises game over and the overlay draws the
-           * panel; a confirm press stands the party back up and returns to
-           * the field. Retail's destination on a wipe is unpinned, so the
-           * panel is an engine presentation - see docs/subsystems/battle.md.
-           * Handled before the pad is fed in so the same press does not also
-           * walk the player. */
+           * panel. This used to swallow every confirm key into a bare Retry,
+           * with the drawn cursor pinned to row 1 - a picture of a menu. The
+           * panel is a live `GameOverSession` on both hosts now, so the pad
+           * edge routes into it and the picked row comes back out. Retail's
+           * destination on a wipe is unpinned, so the panel itself is an
+           * engine presentation - see docs/subsystems/battle.md. Handled
+           * before the pad is fed in so the same press does not also walk the
+           * player. */
           if (typeof rt.is_game_over === 'function' && rt.is_game_over()) {
-            const confirmed = this.pulse.has('KeyZ') || this.pulse.has('Enter')
-              || this.pulse.has('Space');
+            const edge = padMaskOf(this.pulse);
             this.pulse.clear();
             this._repack();
-            if (confirmed && typeof rt.game_over_retry === 'function') {
-              try { rt.game_over_retry(); } catch (e) {}
-            }
+            let picked = '';
+            try { picked = rt.game_over_input(edge); } catch (e) {}
+            /* Continue opened the retail save-select on the card rack (the
+             * shared pause-menu Load row); the menu loop below drives it from
+             * the next frame. Quit hands back to the page, which re-runs the
+             * boot title. */
+            if (picked === 'quit' && this.opts.onQuit) this.opts.onQuit();
             break;
           }
           /* VR first-person owns the azimuth (the gaze) and merges its stick

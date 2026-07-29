@@ -44,6 +44,7 @@ features = [
     "HtmlCanvasElement",
     "CanvasRenderingContext2d",
     "ImageData",
+    "Storage",
 ]
 
 [dev-dependencies]

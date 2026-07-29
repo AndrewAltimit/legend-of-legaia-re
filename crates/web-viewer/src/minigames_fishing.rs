@@ -100,12 +100,25 @@ impl LegaiaMinigames {
         let Some(species) = self.fishing_species.clone() else {
             return false;
         };
-        self.fishing = Some(FishingSession::new(
-            species,
-            WEB_ROD_STAT,
-            FishingRecord::default(),
-        ));
+        // Seed from the page's persistent record, the way the play page and
+        // the native window seed from `World::fishing_points`. A fresh
+        // `FishingRecord::default()` here zeroed the points on every start,
+        // which is a different game from the one the other two hosts run.
+        let record = self.fishing_record;
+        self.fishing = Some(FishingSession::new(species, WEB_ROD_STAT, record));
         true
+    }
+
+    /// Bank the live session's record back onto the page so the next
+    /// `fishing_start` resumes from it - the tab widget's twin of
+    /// `play_fishing_stop`'s `world.fishing_points` bank. Returns the banked
+    /// point total (`-1` when no session was live).
+    pub fn fishing_stop(&mut self) -> i32 {
+        let Some(s) = self.fishing.take() else {
+            return -1;
+        };
+        self.fishing_record = s.record();
+        self.fishing_record.points
     }
 
     /// Advance the cast-power oscillator by `step` (no-op outside casting). The

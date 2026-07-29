@@ -287,6 +287,45 @@ impl LegaiaRuntime {
         ))
     }
 
+    /// The **inn** overlay's stage draws: the cost prompt with its Yes / No
+    /// cursor (`InnConfirm`) and the resting caption (`InnSleep`), or `None`
+    /// when no inn session is up.
+    ///
+    /// A leg-for-leg port of the native window's inn arm in `window/hud.rs`,
+    /// down to the pen and the title format. `docs/subsystems/inn.md` used to
+    /// record that the browser page "deliberately mirrors" the native window
+    /// by not drawing these - which was false in the direction that matters,
+    /// because the native window does draw them. `InnSession` still has no
+    /// production caller on either host (the reachable retail inn is an
+    /// ordinary field-VM dialogue), so this is the same test / tooling entry
+    /// on both, not a new invented path.
+    fn inn_stage_draws(&self, font: &legaia_font::Font) -> Option<Vec<TextDraw>> {
+        let cost = self.menu.inn_session.as_ref()?.cost;
+        let state = MenuState::from_byte(self.menu.ctx_state());
+        let cursor = self.menu.cursor() as usize;
+        match state {
+            Some(MenuState::InnConfirm) => {
+                let gold = self.scene_host.as_ref().map(|h| h.world.money).unwrap_or(0);
+                let title = format!("INN  Rest for {cost}G?");
+                let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
+                Some(ui::shop_draws_for(
+                    font,
+                    &title,
+                    &rows,
+                    cursor,
+                    Some(gold),
+                    SHOP_PEN,
+                ))
+            }
+            Some(MenuState::InnSleep) => Some(ui::text_draws_for(
+                &font.layout_ascii("Resting..."),
+                SHOP_PEN,
+                ui::MENU_TEXT_WHITE,
+            )),
+            _ => None,
+        }
+    }
+
     /// The shop menu's **seru-trade** screens: the offer list (`ShopTrade`)
     /// or the yes/no confirm (`ShopTradeConfirm`).
     ///
@@ -1136,7 +1175,13 @@ impl LegaiaRuntime {
         let chrome = assets.chrome_rects();
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
 
-        let shop = self.shop_stage_draws(font);
+        // Shop first, inn second: the two are mutually exclusive (one menu
+        // context byte) and both draw through `shop_draws_for` at the same
+        // pen, which is what the native window's `if shop … else if inn …`
+        // arm expresses.
+        let shop = self
+            .shop_stage_draws(font)
+            .or_else(|| self.inn_stage_draws(font));
         // The retail descriptor windows ride alongside the engine's own
         // interactive list, exactly as they do in the native window: the list
         // is the control, these are the readouts around it.
