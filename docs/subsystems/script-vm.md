@@ -338,8 +338,8 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | 7 | Target-sound-set (`_DAT_8007B880`). |
 | 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
 | 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
-| 10 | Unhalt-pause toggle. |
-| 11 | `_DAT_8007BA9C = -1`. |
+| 10 | Unhalt-pause toggle - waits on flag bit 3, then clears the pause bit sub-op 2 sets. What arms it is still open; no port. See [open threads](../reference/open-rev-eng-threads.md#op-0x35-sub-op-0xa---what-it-waits-on). |
+| 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
 
 PC += 4.
 

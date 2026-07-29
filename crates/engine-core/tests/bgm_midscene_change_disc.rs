@@ -138,6 +138,12 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
         ops.len(),
     );
 
+    // The whole claim is about *timing*, so nothing below may tick the host:
+    // the scene the request arrives in is the scene it must sound in, and this
+    // is what says so if `route_bgm_events` ever grows a transition side
+    // effect.
+    let scene_at_request = host.scene.as_ref().map(|s| s.name.clone());
+
     for id in &sub9 {
         let mut d = SplitDirector::default();
         host.world.pending_field_events.push(FieldEvent::Bgm {
@@ -160,6 +166,11 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
                 .iter()
                 .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 9, .. })),
             "sub-op 9 event survived routing",
+        );
+        assert_eq!(
+            host.scene.as_ref().map(|s| s.name.clone()),
+            scene_at_request,
+            "the track started only because the scene changed under it",
         );
     }
 

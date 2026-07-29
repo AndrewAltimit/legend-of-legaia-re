@@ -95,6 +95,13 @@ cheapest place to look for a claim that is still wrong.
   Wave; formation `0xB5` is Cort. The branch at `0x801E6D04` reads the
   formation-id byte, and the wrong reading survived because Cort casts Lapis
   Wave - the two spaces agreeing on the answer is what hid the error.
+- **Op-`0x35` sub-op 9 was recorded as "Queue".** It is a *start* behind an
+  asset-load barrier - the arm at `0x801E0224` waits on
+  `_DAT_8007BAB8 == _DAT_8007BA9C` and then makes sub-op 1's own
+  `_DAT_8007BAC8` store. The one-word entry had no body under it, and it is
+  what a **cutscene** changes music with, so a scene-corpus BGM sweep (which
+  only runs prescripts, and those emit sub-op 1) could not see the difference.
+  Falsification: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#op-0x35-sub-op-9-was-never-a-queue).
 - **"Retail shots rarely roll the camera" was false, and so was the row that
   replaced it.** Retail authors a non-zero op-`0x45` slot-2 roll in eight
   scenes. The renderer's dropped `RotMatrixZ` factor was a real divergence,
@@ -230,6 +237,31 @@ transition, then `mednafen-state vram-dump` over `(448, 0)` for 64x64 texels at
 4bpp. The style runs for a known, short number of frames, so the capture wants
 a scripted pause rather than a human reflex - a PCSX-Redux breakpoint on
 `FUN_801D0D24` with a state dump on the first hit would land it directly.
+
+## Audio / BGM
+
+| Thread | Status | What would close it |
+|---|---|---|
+| Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | open - the arm is read, its two inputs are not | [details ↓](#op-0x35-sub-op-0xa---what-it-waits-on) |
+
+### Op-`0x35` sub-op `0xA` - what it waits on
+
+*Status: open.* The arm at `0x801E0264` is legible instruction by instruction
+and still unnamed as a behaviour. It returns immediately when `_DAT_8007B868`
+is non-zero; otherwise it **waits** (branch to `0x801DEE4C`, the restore-PC
+idiom) until bit 3 of the sound flag word `_DAT_8007B750` is set, then calls
+`FUN_800266E0` and `FUN_80026520` on the BGM slot `0x8007052C`, sets bit 4 of
+the flag word and **clears bit 1** - the pause bit sub-op 2 sets.
+
+What is not pinned: what writes `_DAT_8007B868`, what sets flag bit 3, and what
+`FUN_80026520` does that `FUN_800266E0` does not. Until those are answered the
+op has no port, which is visible on the disc: a scene's cutscene records pair
+sub-op 2 with a later sub-op `0xA`, so a port that honours the pause and drops
+the toggle leaves the music paused after that cutscene.
+
+Closing it wants a writer sweep for the two globals
+(`scripts/ghidra-analysis/find-address-word-refs.py`) plus a live capture over
+a scene that runs the `2` / `0xA` pair.
 
 ## Title / boot / overlays
 
