@@ -107,6 +107,9 @@
 --   (a save-load / scene-init dump, not a beat) tags every one of its flag rows
 --   note=bulkload, so analyze_state_poll.py auto-filters the noise that
 --   otherwise buries the organic in-scene sets carrying the play-order signal.
+--   A load whose delta is SMALLER than the threshold still mixes flagclr rows
+--   into it; such mixed multi-flip frames are tagged note=loadish and never
+--   trigger a P2 flag snapshot (an organic beat only SETs).
 --
 -- VERSION GUARD: refuses to run unless the loaded game fingerprints as the
 -- USA SCUS_942.54 build (probe/version.lua). Lock the fingerprint before
@@ -434,8 +437,13 @@ local function emit_battle()
             f0, f1, f2, f3, batt_enter_mode))
     batt_pending = false
     -- Lone non-zero formation slot = a solo enemy = almost always a scripted
-    -- boss (or a solo-strong random) - snapshot it.
-    if f0 ~= 0 and f1 == 0 and f2 == 0 and f3 == 0 then
+    -- boss (or a solo-strong random) - snapshot it. Only when the latch armed
+    -- on a real field->battle load edge (0x08/0x09): a save-state load landing
+    -- directly in an active battle mode latches with the PREVIOUS fight's
+    -- formation still in the cell, and those stale re-reads used to snapshot
+    -- as fresh bosses.
+    if f0 ~= 0 and f1 == 0 and f2 == 0 and f3 == 0
+        and (batt_enter_mode == 0x08 or batt_enter_mode == 0x09) then
         autosnap(string.format("boss%02X", f0))
     end
 end
@@ -786,7 +794,16 @@ local function snapshot_and_diff()
         if baselined then
             local events = collect_flag_flips(flags)
             local bulk = #events >= BULK_FLAGS
-            local note = bulk and "bulkload" or ""
+            -- A save-state load whose delta is BELOW the bulk threshold still
+            -- mixes flagclr rows into it (an organic beat only SETs; retail
+            -- clears are rare singletons), so a mixed multi-flip frame is
+            -- load-shaped: tag it and never treat it as a snapshot beat.
+            local clears = 0
+            for _, e in ipairs(events) do
+                if not e.set then clears = clears + 1 end
+            end
+            local loadish = (not bulk) and clears > 0 and #events >= 3
+            local note = bulk and "bulkload" or (loadish and "loadish" or "")
             for _, e in ipairs(events) do
                 if e.set then
                     row("flagset", e.idx, 1, 1, note)
@@ -795,7 +812,7 @@ local function snapshot_and_diff()
                 end
             end
             -- P2: first-time target-set flag (real beats only, not load dumps).
-            if not bulk then
+            if not bulk and not loadish then
                 for _, e in ipairs(events) do
                     if e.set and SNAP_FLAGS[e.idx] and not snap_flags[e.idx] then
                         snap_flags[e.idx] = true
