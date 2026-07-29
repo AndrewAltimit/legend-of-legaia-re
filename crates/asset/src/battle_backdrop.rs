@@ -69,6 +69,15 @@
 //! [`RUNTIME_ID_TO_PROT_OFFSET`]. Every one of the table's distinct ids
 //! resolves to a `scene_tmd_stream` entry under that offset, which is what
 //! pins it.
+//!
+//! # The sibling table
+//!
+//! `80051c1c..80051c6c` scans a **second** table at `DAT_80078C1C` the same
+//! way and against the same id, but it touches neither actor - it sets a
+//! byte at `0x8007BDA8`, which `FUN_80050120` reads to pick the backdrop's
+//! depth-cue ceiling (`0x800` vs `0xC00`) and far-colour scaling. Its 13
+//! ids are the wide-open outdoor stages. It is deliberately not modelled
+//! here: it is a fog parameter, not a placement one.
 
 use crate::scene_tmd_stream;
 
@@ -203,10 +212,25 @@ pub fn prot_index_for_runtime_id(id: u16) -> u32 {
 /// The TMD object indices a backdrop actor draws, in draw order: object 0
 /// then everything from index 2 up. Object 1 is dropped.
 ///
+/// This is the `DAT_8007B64B == 0` arm, which is what every catalogued
+/// battle takes. For the other arm see [`drawn_object_indices_gated`].
+///
 /// A one-object TMD would leave the actor with a zero count, so it draws
 /// nothing; the retail corpus has no such entry (every `scene_tmd_stream`
 /// backdrop carries either 2 or 4 objects).
 pub fn drawn_object_indices(object_count: usize) -> Vec<usize> {
+    drawn_object_indices_gated(object_count, false)
+}
+
+/// [`drawn_object_indices`] with retail's gate exposed.
+///
+/// `keep_object_1` is `DAT_8007B64B != 0` - bit 5 of byte `+8` of the field
+/// scene's encounter-region record. Set, `80051abc` / `80051acc` branch
+/// past the whole object edit, so every object stays in the draw list.
+pub fn drawn_object_indices_gated(object_count: usize, keep_object_1: bool) -> Vec<usize> {
+    if keep_object_1 {
+        return (0..object_count).collect();
+    }
     if object_count == 0 {
         return Vec::new();
     }
@@ -258,6 +282,20 @@ mod tests {
         assert_eq!(drawn_object_indices(2), vec![0]);
         assert_eq!(drawn_object_indices(1), vec![0]);
         assert!(drawn_object_indices(0).is_empty());
+    }
+
+    #[test]
+    fn the_gated_arm_keeps_every_object() {
+        assert_eq!(drawn_object_indices_gated(4, true), vec![0, 1, 2, 3]);
+        assert_eq!(drawn_object_indices_gated(2, true), vec![0, 1]);
+        assert!(drawn_object_indices_gated(0, true).is_empty());
+        // Default arm agrees with the convenience wrapper.
+        for n in 0..6 {
+            assert_eq!(
+                drawn_object_indices_gated(n, false),
+                drawn_object_indices(n)
+            );
+        }
     }
 
     #[test]

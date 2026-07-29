@@ -334,15 +334,24 @@ past it.
 
 **Why the retail captures seemed to agree.** The same four-angle stage-battle
 capture set was quoted as terminal: the distant mountains cover "44-81% of the
-horizon columns, not a ring". Re-measured for *presence* of a mountain band
-above the horizon, the four angles read **98 / 100 / 100 / 100%** of columns.
-The old spread is what a *thickness* threshold produces - the band's height
-varies from a few pixels to ~45 across the arc, so requiring 9-18 px of it
-sweeps the figure across exactly that range. The premise "a ring would hold
-roughly constant" is what failed: the ring's height is not constant. The
-captures do not merely permit two copies, they require them - one copy of
-`0088_map01`'s drawn objects spans azimuths `0deg..180deg` and **nothing** in
-the other half, so a single shell cannot fill a horizon at every angle.
+horizon columns, not a ring". Two separate things are wrong with that.
+
+The number measured the wrong thing. Re-measured for *presence* of a mountain
+band above the horizon, the four angles read **98 / 100 / 100 / 100%** of
+columns. The 44-81% spread is what a band-*thickness* threshold of 9-18 px
+produces, because the ring's height varies from a few pixels to ~45 across the
+arc - and "a ring would hold roughly constant" was the premise that failed.
+
+Then the corrected number settles it the other way. Project `map01`'s drawn
+objects through the exact camera of each capture - yaw `_DAT_8007B792`, pitch
+`32`, `TR = (0, 1280, 7680)`, `H = 256`, all read out of the save state - and
+one copy covers 100 / **71.9** / 100 / 99.7% of the 320 columns against two
+copies' 100% throughout. Three of the four yaws cannot separate the models;
+one copy already fills the frame there, which is why a single-copy render
+looks plausible if you happen to sample those angles. Capture **b**, at yaw
+334.7deg, separates them: a single copy leaves columns `0..89` with no
+mountain geometry, and retail has a mountain band in **90 of those 90**. The
+capture set does not merely permit the second copy - it refutes its absence.
 
 **What this is still not.** Not the `+0x10` mesh puzzle - the walk-visible
 `.MAP` cells that name a pack mesh no layer draws. That family is `0x0011`,
@@ -358,9 +367,12 @@ the falsified version was correct. The half-shell sweep measured the file and
 said the file holds a half - true, and silent about the runtime. The capture
 measurement counted columns above a thickness threshold and was quoted as
 counting columns with mountains in them - two different questions with very
-different answers on the same pixels. A measurement that cannot fail is not
-evidence; before a capture statistic closes a thread, state the reading it
-would have refuted.
+different answers on the same pixels. And the four captures were treated as
+four samples of one question when three of them cannot answer it at all: at
+those yaws both models predict a full frame, so only the fourth carried any
+information. A statistic pooled over angles hid that. Before a capture
+statistic closes a thread, state the reading it would have refuted, and check
+that the samples can tell the two readings apart.
 
 ## Field / locomotion
 

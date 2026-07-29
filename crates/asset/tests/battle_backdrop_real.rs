@@ -164,6 +164,7 @@ fn the_dropped_object_is_never_the_only_one() {
     // path, so a single-object backdrop would end up drawing nothing at
     // all. No such entry exists.
     let mut counts = std::collections::BTreeMap::<usize, usize>::new();
+    let mut multi = Vec::new();
     for b in corpus(&root) {
         assert!(
             b.objects >= 2,
@@ -174,9 +175,19 @@ fn the_dropped_object_is_never_the_only_one() {
         let drawn = legaia_asset::battle_backdrop::drawn_object_indices(b.objects);
         assert_eq!(drawn.len(), b.objects - 1);
         assert!(!drawn.contains(&1));
+        // The other arm of the `DAT_8007B64B` gate keeps everything.
+        let kept = legaia_asset::battle_backdrop::drawn_object_indices_gated(b.objects, true);
+        assert_eq!(kept.len(), b.objects);
+        if b.objects > 2 {
+            multi.push(b.prot_index);
+        }
         *counts.entry(b.objects).or_default() += 1;
     }
-    eprintln!("backdrop object-count histogram: {counts:?}");
+    // The only backdrops with more than two objects are the nine kingdom
+    // overworld shells' populated variants - the ones whose draw list is
+    // `0, 2, 3` rather than `0` alone.
+    assert_eq!(multi, vec![88, 89, 90, 247, 248, 249, 394]);
+    eprintln!("backdrop object-count histogram: {counts:?}; >2 objects: {multi:?}");
 }
 
 #[test]

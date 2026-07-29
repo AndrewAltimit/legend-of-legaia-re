@@ -394,6 +394,25 @@ Z extent past `X = 0` / `Z = 0`, and every object satisfies
 `vert_top + n_vert * 8 == normal_top` exactly. What closes the circle is a
 second draw of the same mesh.
 
+**What the second copy is worth, measured.** Project `map01`'s drawn objects
+through the exact camera each of the four angle captures was taken at (yaw
+`_DAT_8007B792`, pitch `32`, `TR = (0, 1280, 7680)`, `H = 256`, all read from
+the save state) and count the 320 screen columns the mountain ring covers:
+
+| Capture | Camera yaw | One copy | Two copies | Retail pixels |
+|---|---|---|---|---|
+| a | 19.7° | 100.0 % | 100.0 % | 98.1 % |
+| b | 334.7° | **71.9 %** | 100.0 % | **100.0 %** |
+| c | 275.6° | 100.0 % | 100.0 % | 100.0 % |
+| d | 231.3° | 99.7 % | 100.0 % | 100.0 % |
+
+Three of the four yaws cannot tell the models apart - one copy already fills
+the frame. Capture **b** can: a single copy leaves columns `0..89` with no
+mountain geometry at all, and the retail framebuffer has a mountain band in
+**90 of those 90 columns** (mean thickness 15.3 px). The second copy is not an
+embellishment the captures merely tolerate; without it those pixels have no
+source.
+
 #### Two actors, one registered mesh
 
 `FUN_800513F0` registers the TMD **once** - `80051a60 jal 0x80026b4c`, slot
@@ -403,6 +422,12 @@ stashed at the descriptor `0x8007680c + 4` = `DAT_80076810` - and then calls
 `battle_ctx + 0x106C` (copy A) and `+0x1070` (copy B). Both are ordinary
 battle actors on the normal draw path, which is why `DAT_80076810` has no
 resolved reader: the actor list is walked pointer-indirect.
+
+They are two genuine draw entries, not one entry visited twice: each actor
+gets its **own** `0x9C`-byte part table at `+0x44`, zeroed in `actor_alloc`
+(`80020f04`) and allocated in the link pass (`80021184`). Live battle states
+read two distinct table pointers, and the object-count edit below is applied
+to each separately.
 
 `FUN_80050120` drives the pair in lockstep - the depth-cue ramp at `+0x78` and
 the draw-mode selector at `+0x56` are written to both on the same path
@@ -451,6 +476,30 @@ reflection, not a half turn. Applying the half turn there instead plants a
 second village wall across the open sea side, which is the artifact that once
 read as "no completion exists" (see
 [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)).
+
+#### The sibling table at `DAT_80078C1C` - a depth-cue selector, not geometry
+
+`80051c1c`..`80051c6c` scans a **second** zero-terminated `u16` table the same
+way and against the same backdrop id, setting a byte flag at `0x8007BDA8`
+(`gp + 0xA90`, `gp = 0x8007B318`) instead of touching either actor.
+
+Its 13 ids are the outdoor stages: the three variants of each kingdom
+overworld (`map01` / `map02` / `map03`) plus `retona`, `deene`, `kor5` and
+`rikuroa`. Note the 7 four-object shells are all inside the overworld nine.
+
+The flag is read twice, both times in `FUN_80050120` and both times on the
+**depth-cue** value the two backdrop actors share:
+
+- `800505b8`..`800505c8` picks the ramp ceiling clamped into both actors'
+  `+0x78` - `0x800` when clear, `0xC00` when set (either way forced to
+  `0x1000` when `ctx+0x278 > 1` or `ctx+0x243 > 1`).
+- `800507fc`..`80050834` picks how the far colour at `0x8007BB48` is derived
+  from `ctx+0x890` - `>> 1` when clear, `(c - 0x010101) * 2` when set.
+
+So it brightens the far-fog ramp on wide-open stages. It adds no third
+geometric behaviour, and the completion is unaffected. Live-confirmed across
+15 battle save states: the flag is `1` in exactly the captures whose stage id
+is in the table and `0` in every other.
 
 #### Object 1 is dropped
 
