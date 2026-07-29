@@ -202,9 +202,31 @@ impl PlayWindowApp {
     /// scene in `SceneLoadKind::Battle` makes that dome TMD + its textures
     /// resident (the Field build excludes them). `None` when the scene has no
     /// stage entry.
+    /// Read `SCUS_942.54` from whichever boot source this window opened, if it
+    /// is reachable. Used to resolve the backdrop's second-copy transform;
+    /// `None` just means the port falls back to the default half turn.
+    fn scus_bytes(&self) -> Option<Vec<u8>> {
+        use legaia_engine_core::Vfs;
+        if let Some(root) = self.extracted_root.as_deref() {
+            legaia_engine_core::DirVfs::new(root)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else if let Some(disc) = self.disc_path.as_deref() {
+            legaia_engine_core::DiscVfs::open(disc)
+                .ok()
+                .and_then(|v| v.read("SCUS_942.54").ok())
+        } else {
+            None
+        }
+    }
+
     pub(super) fn build_battle_stage(
         &self,
-    ) -> Option<(legaia_tim::Vram, (legaia_tmd::Tmd, Vec<u8>))> {
+    ) -> Option<(
+        legaia_tim::Vram,
+        (legaia_tmd::Tmd, Vec<u8>),
+        legaia_asset::battle_backdrop::SecondCopy,
+    )> {
         let scene = self.session.host.scene.as_ref()?;
         let scene_name = scene.name.clone();
         // Not the block's first stage stream: a scene bundle carries one per
@@ -237,12 +259,29 @@ impl PlayWindowApp {
         .ok()?;
         // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
         let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+        // Which transform retail gives the SECOND backdrop copy. The default
+        // is a half turn about Y; the stages named by the `SCUS_942.54` table
+        // at `DAT_80078B50` get an X mirror instead. Getting this wrong is not
+        // cosmetic: `town01` IS on the mirror list, so half-turning it plants
+        // a second village wall across the open sea side. With no readable
+        // SCUS the default is the safer of the two - it never reflects.
+        let second = self
+            .scus_bytes()
+            .as_deref()
+            .and_then(legaia_asset::battle_backdrop::MirrorXTable::from_scus)
+            .map(|t| t.second_copy_for_prot_index(stage_entry))
+            .unwrap_or(legaia_asset::battle_backdrop::SecondCopy::HalfTurn);
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
-             ({} objects)",
-            dome.tmd.objects.len()
+             ({} objects, drawn twice, {} second copy)",
+            dome.tmd.objects.len(),
+            second.label()
         );
-        Some((res.vram.clone(), (dome.tmd.clone(), dome.raw.clone())))
+        Some((
+            res.vram.clone(),
+            (dome.tmd.clone(), dome.raw.clone()),
+            second,
+        ))
     }
 
     pub(super) fn enter_battle_render(&mut self) {
@@ -268,7 +307,7 @@ impl PlayWindowApp {
         // fall back to the field VRAM when the scene has no stage.
         let stage = self.build_battle_stage();
         let base = match &stage {
-            Some((sv, _)) => sv.clone(),
+            Some((sv, _, _)) => sv.clone(),
             None => field_base,
         };
         let Some(r) = self.win.renderer.as_ref() else {
@@ -297,18 +336,27 @@ impl PlayWindowApp {
         // resident). Appended after `battle_mesh_base`, so battle exit truncates
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
-        if let Some((_, (tmd, raw))) = &stage {
-            // Draw the stage's object 0 only (the arena walls / beach / sky
-            // shell). Object 1 is a small ground-level ribbon mesh (near
-            // props / ground mist) that NO retail battle capture shows on
-            // screen - drawing it painted an engine-only white streak
-            // across the arena floor (the "swirl FX" divergence in the
-            // Tetsu ground truth).
-            let tmd0 = legaia_tmd::Tmd {
-                header: tmd.header.clone(),
-                objects: tmd.objects.first().cloned().into_iter().collect(),
-            };
-            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
+        if let Some((_, (tmd, raw), second)) = &stage {
+            // Retail's backdrop registration edits the object list rather
+            // than truncating it: it drops index 1 and keeps the rest
+            // (`legaia_asset::battle_backdrop`, ported from `FUN_800513f0`).
+            // On the two-object stage shells that is object 0 alone - object 1
+            // is the ground-level ribbon of near props no retail capture shows,
+            // and drawing it painted an engine-only white streak across the
+            // Tetsu arena floor. On the four-object overworld domes it keeps
+            // objects 0 (sky), 2 (mountains) and 3 (the flat ground ring).
+            let tmd0 = legaia_asset::battle_backdrop::drawn_objects_tmd(tmd);
+            // ...and it draws that shell TWICE, the second copy under a
+            // per-stage diagonal transform. The shell on the disc is an
+            // authored HALF (open toward -X, -Z or +X, never +Z); the second
+            // copy is what closes the horizon, so a single-copy backdrop is a
+            // half dome no matter how the camera orbits. `append_scaled`
+            // reverses winding and flips normals when the transform has
+            // negative determinant, which is the mesh-level analogue of
+            // retail's `0x40000000 -> 0x48000000` draw-mode swap.
+            let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
+            let first = vmesh.clone();
+            vmesh.append_scaled(&first, second.scale());
             if !vmesh.indices.is_empty()
                 && let Ok(m) = r.upload_vram_mesh(
                     &vmesh.positions,

@@ -1427,6 +1427,86 @@ velocity rather than as the sprite size and flag word an earlier reading of the 
 assigned. Style 1 additionally ramps each particle's spin by `1.375x` per frame and decays
 its colour by `-0x50505`.
 
+#### Style 2's emitter is not a GTE emitter
+
+`FUN_801D0E54` contains **zero** coprocessor instructions and exactly one `jal`, to
+`0x80043390`. It is a *packet-descriptor builder*: it assembles a synthetic 8-vertex,
+10-primitive Legaia TMD object in the scratch block at `_DAT_8007B85C + 0x5DC00` and hands it
+to the generic per-prim dispatcher. All projection, culling, depth cue and OT linking happen
+inside the SCUS dispatch handler, which the engine already models
+(`engine-vm::prim_dispatch` + `engine-render::gte`). So "the packet assembly stays at the
+clean-room boundary" is the wrong frame for this style - the boundary it actually sits behind
+is a dispatcher that is already ported.
+
+The synthetic object's group header carries `flags = 0x22`, i.e. dispatch kind
+`0x22 >> 1 = 17` and TMD descriptor row 4 - a **flat textured quad**, emitted as `POLY_FT4`
+(tag `0x09000000`, 10 words). Ten primitives cover six box faces because the four side faces
+are emitted twice: once opaque with the tile's own UVs, once semi-transparent over a fixed
+64×64 shade page, and the semi-transparent set links last so it lands on top within its OT
+bucket.
+
+> **The record's `+0x04` vector is a position and its `+0x0C` a rotation**, not the reverse.
+> A reading that had them swapped is corrected here. The tick's per-tile call order
+> at `0x801D0DA0..0x801D0DD8` is: load the view matrix from `0x1F8003C8`, push `rec+0x04`
+> through `MVMVA` (`cop2 0x480012`, rotation / `V0` / `+TR`) into `0x1F800348`, then run
+> `RotMatrix` on `rec+0x0C` into `0x1F800334`. `0x1F800348` is `0x1F800334 + 0x14`, which is
+> `MATRIX.t[0]` - so `+0x04` is the tile's **world position** (it becomes the translation) and
+> `+0x0C` is its **Euler angle triple** (it becomes the rotation). The seeder agrees: it stores
+> the tile's grid `(x, y, 0x880)` at `+0x04`, and `0x880 = GRID_Z + 0x80` puts the front face
+> exactly on the grid plane. Consequently the pads at `+0x1A` / `+0x22` / `+0x2A` are **linear**
+> velocities and those at `+0x3A` / `+0x42` are **angular** rates, and the doubling of `+0x1A` /
+> `+0x22` accelerates a tile's radial *drift* rather than its *spin*.
+>
+> The offsets a swapped reading writes are still the right ones, which is what makes this worth
+> stating: the integration's arithmetic looks correct either way, and nothing misbehaves until
+> an emitter consumes the semantics - at which point it inverts silently. `battle_intro_tiles`
+> names the fields `pos` / `angles` and pins both directions in `record_semantics`.
+
+#### What style 2's emitter builds, and the one input still missing
+
+The descriptor it hands `FUN_80043390` is a synthetic TMD object at
+`_DAT_8007B85C + 0x5DC00`: 8 vertices (the record's `+0x14` corner array), 10 primitives at
+`0x18` stride, group header `count = 10`, `flags = 0x22`, `ilen = 6`, `mode = 0x2C`. Ten words
+past the body are zeroed - the group-chain terminator, since the dispatcher re-reads a header
+at `body_end + 0x18` and bails on `count == 0`.
+
+Six box faces become ten primitives because the four sides are emitted twice - once opaque with
+the tile's own UVs, once semi-transparent over a fixed shade page. Corner indices are byte
+offsets into the 8-vector array, packed two per word at `+0x10` / `+0x14`:
+
+| # | corners | code | rgb | UV source |
+|---:|---|---|---|---|
+| 0-3 | `1,5,3,7` / `4,0,6,2` / `4,5,0,1` / `2,3,6,7` | `0x2E` | `0x60` / `0x40` / `0x30` / `0x20` | shade page |
+| 4 | `0,1,2,3` (front) | `0x2C` | `0x80` | record |
+| 5-8 | the four sides again | `0x2C` | `0x60` | record |
+| 9 | `6,7,4,5` (back) | `0x2C` | `0x20` | record |
+
+Record UVs come from `+0x54..+0x5B` (corner `k` at `+0x54 + 2k`), `tpage` from `+0x02`, `clut`
+`0`. The shade set is three literals: `uv0 = (0,0)` .. `uv3 = (0x40,0x40)`, `tpage 0x0027`,
+`clut 0x7641`. The dispatcher then runs `RTPT` on corners 0-2, `NCLIP`, `RTPS` on corner 3,
+`NCLIP` again - accepting unless `nclip1 <= 0 && nclip2 >= 0` - a near cutoff against
+`0x1F80037E`, and `AVSZ4` for a per-primitive OT slot. The emitter never writes the record; the
+integration in the same function does.
+
+**Three of the four inputs a port needs are now pinned:**
+
+| Input | Value | Pinned by |
+|---|---|---|
+| Corner table `0x801CE8BC` | `[0, 1, 17, 18]` | PROT 0979 at `+0xA4`; word 4 is `addiu sp,sp,-0x48`, which bounds it |
+| GTE `OFX` / `OFY` | `160` / **`114`**, in 16.16 | the GTE control file of nine save states, across field, battle, load and minigame |
+| GTE `H` | `0x80` | `0x801D0D30`: `li a0,0x80` into `FUN_8003D254` |
+
+`OFY = 114` is the one worth flagging: it is **not** `240 / 2`, so a port that assumes the
+naive centre puts every screen-space primitive six pixels low. Oracle:
+`crates/mednafen/tests/gte_projection_real.rs`.
+
+**The fourth is not pinned, and that is what still blocks the port.** The side faces sample a
+4bpp page at VRAM `(448, 0)` whose CLUT at `(16, 473)` reads as a convincing 16-entry
+black-to-white brightness ramp in a battle-load state - but the page itself is sparse there
+(180 of 1024 halfwords non-zero), and no catalogued state is captured *during* a transition,
+which is the only window in which the page is live. Until a mid-transition capture exists, the
+side faces would have to be drawn over guessed texels.
+
 **Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
 corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).
 A tile record carries eight `SVECTOR` corners - a front face at z `-0x80` and a back face at

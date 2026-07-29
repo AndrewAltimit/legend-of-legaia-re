@@ -333,11 +333,51 @@ TMD walk:
   there (`town01` = warm sandy pebbles; an earlier engine heuristic that
   borrowed the dome's nearest "grass vertex" sampled a blue texel region in
   `town01` and painted the floor sky-blue). Engine mirror:
-  `build_battle_ground_grid` in `play-window`.
+  `build_battle_ground_grid` in `play-window`, over the kernels in
+  `engine-core::battle_backdrop`.
   The historical overlay capture filed under the `0896` label (a mislabeled
   slot-A window image; PROT 0896 itself is neither the battle background nor
   an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
   buffer - it is battle-overlay code seen through that capture.
+
+#### The grid's own constants, read off the emitter
+
+The sub-tile UVs are not derived - they are sixteen literal words the prologue
+builds into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit
+loop reads back one group per quad, advancing `0x10` each time
+(`0x801d0660` / `0x801d06c8`). Decoding them as `POLY_GT4` UV words gives four
+fixed 32×32 blocks of the `(192..=255)²` window:
+
+| Quad | Words | `u` | `v` |
+|---:|---|---|---|
+| 0 | `77c0c0c0 000dc0df 0000dfc0 0000dfdf` | `0xC0..=0xDF` | `0xC0..=0xDF` |
+| 1 | `77c0c0e0 000dc0ff 0000dfe0 0000dfff` | `0xE0..=0xFF` | `0xC0..=0xDF` |
+| 2 | `77c0e0c0 000de0df 0000ffc0 0000ffdf` | `0xC0..=0xDF` | `0xE0..=0xFF` |
+| 3 | `77c0e0e0 000de0ff 0000ffe0 0000ffff` | `0xE0..=0xFF` | `0xE0..=0xFF` |
+
+The `clut` half of word 0 and the `tpage` half of word 1 are where the `0x77C0`
+/ `0x000D` address above comes from. No corner is ever mirrored: the four UVs
+are copied into the packet verbatim.
+
+**Grid origin.** `0x801d03b4..0x801d03d8` computes `x0 = -((w >> 1) << 9)` and
+`z0 = -((h >> 1) << 9) - 0x200`. The `z` axis carries an extra cell of bias, so
+the grid is not symmetric about the origin - at the live 28×28 it spans
+`x ∈ [-7168, +7168]` but `z ∈ [-7680, +6656]`.
+
+**The two culls.** Pass 1 transforms each cell *centre* by the view matrix
+(`cop2 0x0480012` = `MVMVA` rotation/`V0`/`+TR`/`sf=1`), reads `IR3` back, and
+writes `-1` / `0` / `1` per cell: `-1` when `z + 0x200 <= 0`, `0` when
+`z > 0x6500`, else `1`. Only `1` emits - pass 2 skips on both the `bltz` and
+the `beq zero` (`0x801d04b0` / `0x801d04b8`). There is **no screen-space test
+in pass 1**; the screen-rect reject is separate, in pass 2
+(`0x801d052c..0x801d05e8`), and drops a cell only when all four outer corners
+fall past the same edge of the `0x140 × 0xF0` display.
+
+Both are ported and tested (`battle_backdrop::classify_cell` /
+`cell_offscreen`) and neither is applied by the port's builder: they remove
+only geometry that is off-screen or behind the camera, which a depth-buffered
+projection discards anyway, and the port uploads the grid once while the
+camera orbits over it.
 
 > **Correction.** An earlier reading called the backdrop the *world-map continent
 > heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
@@ -616,9 +656,33 @@ their stage translations - draw at 4× under the same `Rx(32)·Ry(yaw)` /
 `TR=(0,1280,7680)` / `H=256` camera the backdrop uses at 1×. The 4× is what
 makes the small battle meshes read at retail size against the deep
 translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster). The
-engine mirrors the split in `play-window`: the dome + grid draw through the
-exact 1× `retail_battle_mvp` projection, and the actor + battle-FX draws
-compose `BATTLE_WORLD_SCALE = 4.0` under it.
+engine mirrors the split in `play-window`: the dome + grid draw at 1× and the
+actor + battle-FX draws compose `BATTLE_WORLD_SCALE = 4.0` under the same
+camera.
+
+The function that camera comes from is **`battle_dome_camera_mvp`**, not
+`retail_battle_mvp`. The two are not interchangeable and only one is live:
+
+| | `retail_battle_mvp` | `battle_dome_camera_mvp` |
+|---|---|---|
+| Pose | the fixed `TR = (0, 1280, 7680)` | the live phase-scripted pose |
+| Role | camera-RE reference + regression target | every battle draw |
+| Reached by | nothing (`#[allow(dead_code)]`) | the play-window battle path |
+
+`retail_battle_mvp` pins the *static* composition to 0.0002 px against the
+savestate framebuffer, which is what makes it the regression target; it holds
+the backdrop's own translation fixed, so it cannot express the phase glides the
+[camera section](#battle-camera-exact) traces. `battle_dome_camera_mvp` takes pitch /
+yaw / TR / focus from the live `battle_cam` pose each frame and falls back to
+the far framing at its minimum depth on the first frame. Both build on the
+shared `battle_mvp_with_tr`, which is why the pinned projection stays a valid
+oracle for the live one.
+
+Note also that the 4× is sourced from `DAT_8007BF10 = 16384 * I` - the actor
+pass's base matrix - and not from the actor field `+0x78`, which
+`FUN_8001ADA4` passes as `FUN_80043390`'s IR0 depth-cue argument
+([`renderer.md`](renderer.md)). Two different quantities; reading `+0x78` as
+the world scale would be a different claim with different evidence.
 
 ### Battle party meshes (assembled)
 
