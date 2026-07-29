@@ -699,14 +699,8 @@ pub struct TileTick {
 ///
 /// REF: FUN_80043390 - the object dispatcher the tile emitter delegates to.
 ///
-/// PORT: FUN_801D0D24
-///
-/// WIRED - the native window's transition emitter drives the
-/// [`tick_tile_grid_emit`] form with a projecting hook, so the walk both
-/// integrates and draws. During the transition the `0x1F8003C8` view matrix
-/// is identity rotation with zero translation (pinned live from the second
-/// frame on; frame one still holds the field camera's value and every tile
-/// projects behind the near plane, so retail's first frame draws no tiles).
+/// [`tick_tile_grid_emit`] without an emit hook - the walk-only convenience
+/// the unit tests drive; the live consumer is the hooked form.
 pub fn tick_tile_grid(grid: &mut TileGrid, elapsed: &mut i16, frame_step: u8) -> TileTick {
     tick_tile_grid_emit(grid, elapsed, frame_step, |_| {})
 }
@@ -717,6 +711,15 @@ pub fn tick_tile_grid(grid: &mut TileGrid, elapsed: &mut i16, frame_step: u8) ->
 /// and only then integrates it. The hook receives every record (including
 /// retired ones); [`tile_face_quads`] applies the retire gate itself, so a
 /// consumer that goes through it reproduces the emitter's skip.
+///
+/// PORT: FUN_801D0D24
+///
+/// WIRED - the native window's transition emitter drives this form with a
+/// projecting hook, so the walk both integrates and draws. During the
+/// transition the `0x1F8003C8` view matrix is identity rotation with zero
+/// translation (pinned live from the second frame on; frame one still holds
+/// the field camera's value and every tile projects behind the near plane,
+/// so retail's first frame draws no tiles).
 pub fn tick_tile_grid_emit(
     grid: &mut TileGrid,
     elapsed: &mut i16,
