@@ -123,7 +123,7 @@ with the instruction evidence cited.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 
 ### Region story-flag gate families
 
@@ -137,13 +137,26 @@ opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth,
 Conkram, and the `0x7`/`0xF` variant-discriminator pattern) lives on
 [`re-settled-threads.md` § Region story-flag gate families](re-settled-threads.md#region-story-flag-gate-families).
 
-**Residual.** The families for the dungeons the capture corpus never walked
-(`taiku`/`doman`/`rayman`, `station`, `dohaty`/`retock`, the Karisto spokes)
-are proven as structure, but their in-game play order is not yet confirmed
-against a live capture. `ropeway`/`ropeway2`/`jiji` are the only spokes walked
-organically, and Nivora's `0x370` has one live organic SET confirming its
-play order. The generic C1/C2 seeder already drives every family, so one
-dungeon-walk capture per region would close the residual.
+**Residual.** Poll-tier playthrough captures
+(`captures/state_poll/2026-07-29T20-20-05Z` / `2026-07-29T22-21-04Z` /
+`2026-07-29T22-53-56Z`, mined with save-state-load frames screened out by
+their mode-churn + inventory-rewrite signature) confirm live play order for
+`retona`, `dohaty`, `taiku`, the Sebucus teien→tower→geremi spine, `korb3`,
+the `kor5` chain head (`0x43A → 0x436`) and the `map03` hub latch — the
+observed orders live in the settled page's play-order-captures paragraph,
+alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
+`0x370` SET. Still owed:
+
+- **never walked:** `rayman`/`rayman2`, `station`/`station3`, and the Karisto
+  spokes `bubu2` + `deroa`/`chitei2`;
+- **walked without an organic family SET** (the beats were already latched in
+  the loaded state, or the region was entered mid-arc): `retock`/`retockin`
+  (`0x502` never fired; `0x357` pre-latched), `doman` (`0x3FB` did not fire),
+  `nilboa`'s entry family, `son`, and the `kor5` tail `0x6C4`.
+
+The generic C1/C2 seeder already drives every family. One more session from
+an early-enough save (before the retock/doman/nilboa beats) closes the
+walked-but-latched set; the never-walked set needs the walks themselves.
 
 *What this needs is capture time, not a new instrument.*
 [`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
