@@ -561,7 +561,14 @@ pub struct MuscleDomeCourse {
     pub name: String,
     /// Per-attempt fee in coins.
     pub entry_fee: u32,
-    /// Coin payout for winning.
+    /// Whether [`Self::entry_fee`] has been confirmed against the disc. It has
+    /// not: the arena overlay contains no writer for the coin bank or for
+    /// gold, so a fee - if one is charged - is charged outside it.
+    #[serde(default)]
+    pub entry_fee_verified: bool,
+    /// Coin payout for winning: the arena's own per-`(course, round)` score
+    /// table summed over the course, which is what the run banks and settles
+    /// into coins.
     pub reward_coins: u32,
     /// First-clear bonus item (Master gives a War God Icon once).
     #[serde(default)]

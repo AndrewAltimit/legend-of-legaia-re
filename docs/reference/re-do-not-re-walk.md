@@ -37,6 +37,37 @@ below.
 | Gaza 2 `0x51` park: clamp asymmetry as a standalone retail generator | falsified (amplifier only; its exhibit was a phased mid-action state) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Muscle Dome as a **card battle** with a per-fighter "score out of 108" | falsified (it is a 4-turn battle; the readout is the opponent's HP percentage) | [details ↓](#muscle-dome-was-never-a-card-battle) |
+| Muscle Dome awards a **Seru** on a win | falsified (a leg pays nothing; a contest pays casino coins) | [details ↓](#the-dome-victory-caption-is-not-a-prize) |
+
+### The dome victory caption is not a prize
+
+`FUN_801D8DE8` case `0x59` composes a victory line out of a per-character
+label from the table at `0x801F4DFC` plus a spell name from the shared
+spell-name table at `ctx[+0x269] + 0x80` - the player Seru-magic block. Read
+on its own that is a very convincing award message, and the port acted on it:
+a won dome leg credited a Seru capture against the registry.
+
+Two things falsify it.
+
+The table is **shared**. `0x801F4DFC` is the battle-family per-character label
+table, byte-identical across the battle-action, magic-capture, magic-level-up
+and dome overlays, and the composer that reads it is the ordinary cast-caption
+builder reached by *any* cast in *any* battle. Its presence in the dome
+overlay is residency, not a dome feature - the same trap the `0x801F4D34` /
+`0x801F4B8C` sibling tables sit next to.
+
+And the arena grants nothing of the kind. The whole reward path in PROT 0977
+is `FUN_801D0F60`: it settles the score tally and, once per save on the
+Master-course final fight, hands over item `0xCD`. The tally is then paid by
+the *shared* minigame-exit routine `FUN_80026018` into the casino coin bank
+`0x800845A4`, saturating at 9,999,999. Item and coins are the only two things
+that move. There is no `record_capture` analogue anywhere in the overlay.
+
+**Lesson:** a caption that names a reward is not a reward. Before crediting
+anything a message mentions, find the *writer* of the thing being credited -
+and check whether the table the message reads is resident in ten overlays.
+
+See [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#contest-settlement--the-one-shot-prize).
 
 ### Muscle Dome was never a card battle
 

@@ -317,13 +317,19 @@ SIM_PAIRS: list[dict[str, object]] = [
         "off the same battle-formula kernel on both hosts, or the same command "
         "deals different numbers in the window and in the browser. Both hosts "
         "install a `DomeDamageModel` and resolve through it, so the assertion "
-        "is on the shared entry point, not on the formula leaf underneath it",
+        "is on the shared entry point, not on the formula leaf underneath it. "
+        "It is `pattern_same` over the whole `resolve_turn*` family, not a "
+        "name check on one of them: both hosts once named `resolve_turn_retail` "
+        "and passed, while only the native side handled the kernel-absent "
+        "return - so the browser contest hung in `Resolve` forever with the "
+        "gate green. Naming the same resolvers is the property that matters, "
+        "and it does not need the right set stated up front",
         "sites": {
             "native": (NATIVE_FRAME_TICK, "tick_muscle_dome"),
             "web": (WEB_MINIGAMES_MUSCLE, "muscle_resolve"),
         },
-        "mode": "symbols_all",
-        "symbols": ["resolve_turn_retail"],
+        "mode": "pattern_same",
+        "pattern": r"(resolve_turn\w*)",
     },
     {
         "what": "save-select model - which rack a host declares decides how "

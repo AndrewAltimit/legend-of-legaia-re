@@ -131,18 +131,35 @@ cost_coins = 50
 
 # ---- Muscle Dome courses ----
 #
-# Each course is a fixed enemy sequence with a flat entry fee + clear reward
-# in coins. `restrictions` captures the equipment / item / magic gating
-# enforced at course entry. The per-round roster lives in
-# `[[muscle_dome_round]]` below; per-enemy stats in `[[muscle_dome_boss]]`.
+# Each course is a fixed enemy sequence with a clear reward in coins.
+# `restrictions` captures the equipment / item / magic gating enforced at
+# course entry. The per-round roster lives in `[[muscle_dome_round]]` below;
+# per-enemy stats in `[[muscle_dome_boss]]`.
+#
+# Three rows here were checked against the disc and two of them lost. See
+# docs/subsystems/minigame-muscle-dome.md.
+#
+#   * `reward_coins` IS the arena's own per-(course, round) score table
+#     (`DAT_801D1860`, PROT 0977) summed over the course. Beginner (818) and
+#     Expert (1532) match it exactly; Master did not, and the disc's 13830
+#     replaced the walkthrough's 13856.
+#   * "No equipment" is Expert/Master only. The strip is four stores in
+#     `FUN_801D0ED8` behind a `bnez` on the course index, so course 0 keeps
+#     its gear.
+#   * `entry_fee` is unverified: PROT 0977 contains no writer for the casino
+#     coin bank (`0x800845A4`) or for gold (`0x8008459C`) at all, so if a fee
+#     is charged it is charged outside the arena overlay - probably by the
+#     scene MAN's own field-VM script. Kept rather than deleted, because
+#     absence in this one overlay does not disprove it.
 
 [[muscle_dome_course]]
 key = "beginner"
 name = "Beginner"
 entry_fee = 100
+entry_fee_verified = false
 reward_coins = 818
-restrictions = ["No equipment", "No items"]
-allowed = ["Magic", "Accessories"]
+restrictions = ["No items"]
+allowed = ["Equipment", "Magic", "Accessories"]
 enemies = [
     "Red Piura",
     "Skeleton",
@@ -158,6 +175,7 @@ enemies = [
 key = "expert"
 name = "Expert"
 entry_fee = 100
+entry_fee_verified = false
 reward_coins = 1532
 restrictions = ["No equipment", "No items"]
 allowed = ["Magic", "Accessories"]
@@ -176,7 +194,10 @@ enemies = [
 key = "master"
 name = "Master"
 entry_fee = 100
-reward_coins = 13856
+entry_fee_verified = false
+# The disc's own Master score row sums to 13830; the 13856 this carried is
+# the walkthrough figure and does not match the table.
+reward_coins = 13830
 reward_first_clear = "war_god_icon"
 reward_first_clear_requires = "Jette must be defeated in Absolute Fortress before the War God Icon is awarded."
 restrictions = ["No equipment", "No items", "No magic"]

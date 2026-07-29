@@ -627,7 +627,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <label for="muscle-level"><strong>at level</strong></label>
           <input type="number" id="muscle-level" class="mg-select" style="min-width: 4.5rem;"
                  min="1" max="99" value="30">
-          <label for="muscle-foe"><strong>vs</strong></label>
+          <label for="muscle-course"><strong>on course</strong></label>
+          <select id="muscle-course" class="mg-select" style="min-width: 7rem;">
+            <option value="0" selected>Beginner</option>
+            <option value="1">Expert</option>
+            <option value="2">Master</option>
+          </select>
+          <label for="muscle-foe"><strong>or one foe</strong></label>
           <select id="muscle-foe" class="mg-select"></select>
           <button class="mg-btn mg-primary" type="button" id="muscle-restart">New contest</button>
         </div>
@@ -659,11 +665,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Fight / Next<span class="mg-key">SPACE</span></button>
         </div>
         <div class="mg-hud">
+          <span>Round <b id="muscle-round">1</b>/<b id="muscle-length">8</b></span>
+          <span>Banked <b id="muscle-tally">0</b></span>
+          <span>Coins <b id="muscle-coins">0</b></span>
           <span>Turn <b id="muscle-turn">0</b></span>
           <span>HP Left <b id="muscle-hp-left">100</b>%</span>
           <span>Your AP <b id="muscle-budget">0</b></span>
           <span>Entered <b id="muscle-queue">0</b></span>
-          <span>Reward <b id="muscle-reward">&mdash;</b></span>
+          <span>Caption <b id="muscle-reward">&mdash;</b></span>
         </div>
         <div class="mg-note" id="muscle-note">
           <p>
@@ -3154,7 +3163,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       catch (e) { ladder = []; }
       if (!ladder.length) return false;
       const COURSE = ['Beginner', 'Expert', 'Master'];
-      let html = '';
+      let html = '<option value="0" selected>&mdash; run the course ladder &mdash;</option>';
       for (const c of ladder) {
         const rows = c.rounds.map((rd) => {
           const rec = byId.get(rd.id);
@@ -3172,7 +3181,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       return true;
     };
     const fill = (courses) => {
-      let html = '';
+      let html = '<option value="0" selected>&mdash; run the course ladder &mdash;</option>';
       const seen = new Set();
       for (const c of (courses || [])) {
         const rows = [];
@@ -3197,10 +3206,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   function muscleOpts() {
+    /* Picking a foe explicitly is free play against one monster; leaving it
+     * on the blank row runs the CONTEST, which stages its own foe per
+     * (course, round) the way the arena does. */
+    const monster = parseInt($('muscle-foe').value, 10) || 0;
     return {
       char: parseInt($('muscle-char').value, 10) || 0,
       level: Math.max(1, Math.min(99, parseInt($('muscle-level').value, 10) || 30)),
-      monster: parseInt($('muscle-foe').value, 10) || 0,
+      course: parseInt($('muscle-course').value, 10) || 0,
+      monster,
+      pinMonster: monster > 0,
     };
   }
 
@@ -3254,8 +3269,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     $('muscle-budget').textContent = st.budget[0];
     $('muscle-queue').textContent = st.queue[0].length;
     const rn = api.muscle_spell_name ? api.muscle_spell_name(st.reward_spell) : '';
+    /* The victory CAPTION's spell name. It names a string, not a prize: the
+     * table behind it is the shared battle-family cast-caption table, and
+     * the arena grants no Seru. A run's reward is coins. */
     $('muscle-reward').textContent =
       rn || ('spell 0x' + st.reward_spell.toString(16).toUpperCase());
+
+    /* The contest layer: where the leg sits on the ladder and what the run
+     * has banked. */
+    const run = muscleR.contest ? muscleR.contest() : null;
+    if (run) {
+      $('muscle-round').textContent = run.round + 1;
+      $('muscle-length').textContent = run.length;
+      $('muscle-tally').textContent = run.tally;
+      $('muscle-coins').textContent = run.coins;
+    }
 
     /* Verdict per phase transition (the canvas carries the banners; this is
      * the accessible text mirror). */
@@ -3268,10 +3296,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         `${st.names ? st.names[1] : 'the opponent'} took ${st.last_damage[1]}. ` +
         `${st.hp_left}% of the opponent is left.`, '');
       else if (st.phase === 'won') verdict($('muscle-verdict'),
-        `You win!${rn ? ' The power of ' + rn + ' is yours.' : ''} ` +
-        'Space for a rematch.', 'good');
+        run
+          ? `Round cleared — ${run.tally} coins banked so far. ` +
+            `Space for round ${run.round + 1} of ${run.length}.`
+          : 'You win! Space for a rematch.', 'good');
       else if (st.phase === 'lost') verdict($('muscle-verdict'),
-        'You lost. Space for a rematch.', 'bad');
+        'You lost — the run banks half of what it had. Space to start again.',
+        'bad');
       muscleLastPhase = st.phase;
     }
   }
@@ -3282,7 +3313,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const restart = $('muscle-restart');
     if (restart) restart.addEventListener('click', () => { if (api) muscleReset(); });
     /* Re-rolling the matchup restarts the contest with the new picks. */
-    for (const id of ['muscle-char', 'muscle-level', 'muscle-foe']) {
+    for (const id of ['muscle-char', 'muscle-level', 'muscle-foe', 'muscle-course']) {
       const el = $(id);
       if (el) el.addEventListener('change', () => { if (api && muscleR) muscleReset(); });
     }
@@ -3414,6 +3445,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                            ? JSON.parse(api.muscle_arts_list_json()) : null),
                          hud: () => (api && api.muscle_hud_json
                            ? JSON.parse(api.muscle_hud_json()) : null),
+                         /* The contest layer (the ladder above a leg). */
+                         contest: () => muscleR && muscleR.contest(),
+                         startContest: (c) => muscleR && muscleR.startContest(c),
+                         reportLeg: (surv, out, turns, hp, u, g) =>
+                           api && api.muscle_report_leg(surv, out, turns, hp, u, g),
+                         settleContest: (u, g, p) =>
+                           api && api.muscle_contest_settle(u, g, !!p),
+                         contestJson: (u, g) => (api && api.muscle_contest_json
+                           ? JSON.parse(api.muscle_contest_json(u, g)) : null),
                          sceneOk: () => !!(muscleR && muscleR.sceneOk()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });

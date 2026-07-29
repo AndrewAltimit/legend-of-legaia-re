@@ -683,6 +683,21 @@ impl PlayWindowApp {
             && let Some(s) = &self.session.host.world.muscle_dome
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
+            // Line 0 is the *contest*: which leg of which course this is and
+            // what the run has banked. A leg pays nothing; the contest pays
+            // coins, so the tally is the number that matters.
+            if let Some(c) = &self.session.host.world.muscle_contest {
+                let flags = self.session.host.world.muscle_contest_flags();
+                let ml0 = format!(
+                    "Course {}  Round {}/{}   Coins banked: {}",
+                    c.course() + 1,
+                    c.round() + 1,
+                    c.staged_course_length(&flags),
+                    c.tally(),
+                );
+                let ly0 = self.font.layout_ascii(&ml0);
+                out.extend(text_draws_for(&ly0, (8, 44), white));
+            }
             let ml1 = format!("      Turn: {}         HP Left: {}", s.turn(), s.hp_left());
             let ly1 = self.font.layout_ascii(&ml1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
@@ -704,11 +719,13 @@ impl PlayWindowApp {
                     let [taken, dealt] = s.last_turn_damage();
                     format!("turn: dealt {dealt}, took {taken}  (Cross = next turn)")
                 }
+                // The caption names a spell; it awards nothing. The contest's
+                // payout lands when the ladder settles.
                 MusclePhase::Won => format!(
-                    "YOU WIN! Seru spell {:#x} awarded  (Cross/M = leave)",
+                    "LEG WON! caption spell {:#x}  (Cross/M = next leg)",
                     s.reward_spell_id()
                 ),
-                MusclePhase::Lost => "you lose the contest  (Cross/M = leave)".to_string(),
+                MusclePhase::Lost => "you lose the leg  (Cross/M = leave)".to_string(),
             };
             let ml2 = format!(
                 "{status}   you {}hp  foe {}hp  time {}/{}   (M = quit)",

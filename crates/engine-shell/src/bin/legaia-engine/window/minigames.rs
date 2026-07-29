@@ -58,6 +58,29 @@ impl PlayWindowApp {
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
     }
 
+    /// Settle the open Muscle Dome contest if it has reached its end, paying
+    /// the tally into the casino coin bank and awarding the one-shot
+    /// Master-course prize when it is due.
+    ///
+    /// Called wherever a leg can close: the pad path in `tick_muscle_dome`
+    /// and the window's own `M` abort. A contest that is still mid-ladder
+    /// settles nothing.
+    pub(super) fn settle_muscle_contest_if_over(&mut self) {
+        let Some(out) = self.session.host.world.settle_muscle_contest() else {
+            return;
+        };
+        log::info!(
+            "muscle: contest settled - {} coins paid, bank now {}{}",
+            out.score,
+            self.session.host.world.casino_coins,
+            if out.award_prize {
+                " (War God Icon awarded)"
+            } else {
+                ""
+            },
+        );
+    }
+
     /// Advance the Muscle Dome contest's round **time meter** one frame.
     ///
     /// Retail runs the meter from the arena's per-frame driver with the frame
@@ -787,21 +810,41 @@ impl PlayWindowApp {
         // The opponent is the *real* one: PROT 0977's course ladder names a
         // monster id per (course, round) and `FUN_801D1510` stores it into
         // formation slot 0, so the arena's foe is an ordinary battle monster
-        // with an ordinary PROT 867 record. The window has no course UI, so
-        // it walks course 0 one round per contest.
+        // with an ordinary PROT 867 record.
+        //
+        // Which `(course, round)` is staged is the **contest's** to say, not
+        // this launcher's: the course comes from the arena's own story-flag
+        // unlock seeds and the round walks the ladder as legs are cleared.
+        // Opening the contest here is the arena entry retail runs when the
+        // sub-id word is still zero.
         const STANDIN_BUDGET: u16 = 120;
         const STANDIN_HP: i32 = 400;
-        let ladder = self
+        let arena_raw = self
             .session
             .host
             .index
             .entry_bytes_extended(legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
-            .ok()
-            .and_then(|raw| legaia_engine_core::muscle_dome::parse_course_ladder(&raw));
+            .ok();
+        let ladder = arena_raw
+            .as_deref()
+            .and_then(legaia_engine_core::muscle_dome::parse_course_ladder);
+        if self.session.host.world.muscle_contest.is_none() {
+            let flags = self.session.host.world.muscle_contest_flags();
+            self.session.host.world.muscle_contest = arena_raw.as_deref().and_then(|raw| {
+                legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags)
+            });
+        }
+        let (course, round) = self
+            .session
+            .host
+            .world
+            .muscle_contest
+            .as_ref()
+            .map_or((0usize, 0u32), |c| (c.course(), c.round()));
         let opponent_round = ladder.as_ref().and_then(|l| {
-            let rounds = &l.first()?.rounds;
-            let n = self.muscle_ladder_round as usize % rounds.len();
-            Some((n, rounds[n]))
+            let rounds = &l.get(course)?.rounds;
+            let n = (round as usize).min(rounds.len().saturating_sub(1));
+            Some((n, *rounds.get(n)?))
         });
         let opponent_record = opponent_round.and_then(|(_, r)| {
             let archive = self.monster_archive_bytes()?;
@@ -867,12 +910,16 @@ impl PlayWindowApp {
                 }
             })
             .unwrap_or(STANDIN_OPPONENT);
+        // The victory caption's Seru index. It names a *string*, not a prize:
+        // a contest pays casino coins, and nothing in the arena grants a
+        // Seru. See `legaia_engine_core::muscle_dome::reward_spell_id`.
+        const CAPTION_SERU_INDEX: u8 = 1;
         let mut session = MuscleDomeSession::new(
             player_hand,
             opp_hand,
             [player_budget, opponent_budget],
             [player_hp, opponent_hp],
-            1,
+            CAPTION_SERU_INDEX,
         );
         let seed = 0x4D55_5343 ^ self.session.host.world.frame as u32;
         match legaia_engine_core::muscle_dome::DomeDamageModel::from_battle_overlay(
@@ -889,19 +936,24 @@ impl PlayWindowApp {
         }
         match opponent_round {
             Some((n, r)) => log::info!(
-                "muscle: Beginner round {} vs monster {:#04x} ({} HP), deck {commands:02x?}, \
-                 player costs {player_costs:?}, player {player_hp} HP on a {player_budget} \
-                 AP pool",
+                "muscle: course {course} round {} vs monster {:#04x} ({} HP), tally {}, \
+                 deck {commands:02x?}, player costs {player_costs:?}, player {player_hp} HP \
+                 on a {player_budget} AP pool",
                 n + 1,
                 r.monster_id,
                 opponent_hp,
+                self.session
+                    .host
+                    .world
+                    .muscle_contest
+                    .as_ref()
+                    .map_or(0, |c| c.tally()),
             ),
             None => log::warn!(
                 "muscle: PROT 0977 course ladder did not decode - fighting the \
                  disclosed stand-in opponent instead"
             ),
         }
-        self.muscle_ladder_round = self.muscle_ladder_round.wrapping_add(1);
         self.session.host.world.enter_muscle_dome(session);
         // The arena loads no track of its own - it reuses the battle engine,
         // so it plays a battle theme. Use the standard random-battle theme

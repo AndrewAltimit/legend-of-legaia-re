@@ -550,7 +550,10 @@ Per game: `<g>_start` / a step or input method
 `slot_collect` / `fishing_advance_cast` + `fishing_lock_cast` +
 `fishing_reel` + `fishing_recast` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
-`<g>_state_json`. `load_disc` returns a status object naming which games'
+`<g>_state_json`. The dome adds a second tier for the contest above a leg
+(`muscle_contest_start` / `muscle_report_leg` / `muscle_contest_settle` /
+`muscle_contest_json`), so the browser walks the same ladder the native
+window does off the same `DomeContest` kernel. `load_disc` returns a status object naming which games'
 overlays resolved, so a disc that can't feed one game still plays the
 others. `dance_state_json` deliberately surfaces **both** halves of retail's
 split chart lookup - `judged` (what the hit judge matches, the step to
@@ -568,7 +571,11 @@ reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
 hand with the native launcher's flat favored per-card cost (the browser has
 no player battle file for the per-command `+0x74` swing bytes) and a
 battle-path damage stand-in matching the native `tick_muscle_dome`
-constants (`docs/subsystems/minigame-muscle-dome.md`).
+constants, and [`legaia_engine_core::muscle_dome::DomeContest`] for the
+ladder above the leg (`docs/subsystems/minigame-muscle-dome.md`). Having no
+save file to read a flag bank out of, the page passes the course-unlock and
+Master-gate flags it wants open and the shared kernel applies the same rule
+to them.
 
 `minigames_baka.rs` adds the Baka Fighter duel's **presentation** exports so
 the page draws with the cabinet's own assets: per-side fighter mesh buffers
