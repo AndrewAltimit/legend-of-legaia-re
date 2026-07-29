@@ -256,6 +256,20 @@ Two deliberate divergences from the native window: input is **edge**-triggered
 held pad), and the buy/sell rows carry **real item names** off the SCUS table
 the page already parses, where the native rows are placeholder labels.
 
+## Developer menu (`play_dev_menu`)
+
+The retail developer menu - the same `engine-core`
+`dev_menu_host::DevMenuSession` the native window mounts behind
+`LEGAIA_DEV_MENU` - behind the play page's session-only **Dev menu**
+checkbox: unchecked on every load, never persisted, never read from the URL,
+so only a deliberate click by the visitor (who *is* the person running a
+client-side program) enables it. Ticked from `tick_frame` off the world's own
+pad words through the shared `dev_menu::retail_packed` conversion; the row
+list draws through `dev_menu_list_draws_for` and Square swaps in the
+battle-records page (`records_screen_draws_for`), both at the same pens as
+the native window. `check-ui-host-drift.py` pins the pens, the records
+headings and the tick/records-model injection sites to the native host's.
+
 ## Fishing minigame (`play_fishing`)
 
 `LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
