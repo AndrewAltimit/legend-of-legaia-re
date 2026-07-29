@@ -1852,8 +1852,13 @@ flag for them):
 
 This dissolves the "boss battle-id global" hypothesis for these fights: the
 formation is the scene's own MAN encounter-section row, selected by index from
-script bytes (live-capture pinned for Zeto - the formation writer `ra` sits in
-`FUN_801DA51C`'s record-copy body while `0x8007B7FC` stays silent).
+script bytes. Live-capture pinned twice over: the Zeto capture pins the
+*writer* (the formation-store `ra` sits in `FUN_801DA51C`'s record-copy body
+while `0x8007B7FC` stays silent), and poll-tier playthrough captures pin the
+*values* - at battle entry the formation cell `0x8007BD0C` reads exactly the
+lone id for all three rows (`0x49` in `rikuroa`, `0x4C` then `0x4B` in
+`garmel`), with `0x8007B7FC` never observed non-zero across whole-chapter
+sessions spanning a dozen scripted boss entries.
 
 #### `DAT_8007b7fc` is a writer-less debug forced-battle id
 
