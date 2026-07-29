@@ -239,8 +239,58 @@
         this.api.mesh_indices(),
         this.api.mesh_bounds(),
         this.api.mesh_object_ids());
+      this._renderActions();
       this.playIdle();
       return true;
+    }
+
+    /* Chip row for the battle action bank (record[0] slots + weapon swings) -
+     * the clips the .glb also bakes. Hex-labeled slots (dev / unmapped tags)
+     * stay export-only to keep the row readable; the semantic set is
+     * Idle, Walk / Approach, the flinches, Knockdown, Get Up,
+     * Ready / Recover / Defeat, Block and the four Swings. Retail has no
+     * separate run clip - Walk / Approach IS the battle locomotion. */
+    _renderActions() {
+      const host = this.els.actions;
+      if (!host) return;
+      host.textContent = '';
+      const list = (this.charState && this.charState.actions) || [];
+      list.forEach((a, i) => {
+        if (!a.frames || /^0x/i.test(a.label)) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'arts-action-btn';
+        b.textContent = a.label;
+        b.dataset.actionIndex = String(i);
+        b.title = `${a.frames} keyframes @ rate ${a.rate}`;
+        host.appendChild(b);
+      });
+    }
+
+    /* Play battle-action clip `index` (position in charState.actions).
+     * No voice / fanfare / trail / strike cues - those are art-record
+     * machinery; an action slot is plain locomotion or reaction. */
+    playAction(index) {
+      if (!this.ready || !this.view) return;
+      const a = (this.charState.actions || [])[index];
+      const frames = this.api.action_pose_frames ? this.api.action_pose_frames(index) : [];
+      if (!a || !frames.length) return;
+      this.currentArt = null;
+      this._armCues(null);
+      this._trailCfg = null;
+      this.view.setTrail(null);
+      const parts = this.charState.part_count;
+      this.view.setAnimation({
+        partCount: parts,
+        frameCount: frames.length / (parts * 6),
+        frames,
+        fps: fpsForRate(a.rate),
+        /* Walk / knockdown clips translate the actor: frame the whole clip. */
+        fitAll: true,
+      });
+      this.view.setPlaying(true);
+      this.els.now.textContent = `${this.charName} - ${a.label}`;
+      this.els.note.textContent = `action bank clip, ${a.frames} keyframes @ rate ${a.rate}`;
     }
 
     /* Fire the art strike cue on the clip frames `frames` (a Set).
@@ -438,6 +488,7 @@
       canvas: $(ids.canvas), status: $(ids.status), stage: $(ids.stage),
       now: $(ids.now), note: $(ids.note),
       glbBtn: ids.glb ? $(ids.glb) : null,
+      actions: ids.actions ? $(ids.actions) : null,
     };
     const app = new ArtsViewerApp(els);
     /* Trail toggle: reflect the persisted preference, flip live on change. */
@@ -491,6 +542,19 @@
     if (window.LegaiaSound && fileInput && fileInput.parentElement) {
       LegaiaSound.attach(fileInput.parentElement);
     }
+    /* Action-chip clicks: play the battle-action clip, highlight the chip. */
+    if (els.actions) {
+      els.actions.addEventListener('click', (e) => {
+        const btn = e.target.closest('.arts-action-btn[data-action-index]');
+        if (!btn || !app.ready) return;
+        app.playAction(Number(btn.dataset.actionIndex));
+        document.querySelectorAll('.art-card-playing')
+          .forEach((el) => el.classList.remove('art-card-playing'));
+        els.actions.querySelectorAll('.arts-action-playing')
+          .forEach((el) => el.classList.remove('arts-action-playing'));
+        btn.classList.add('arts-action-playing');
+      });
+    }
     const panels = $(ids.panels);
     if (panels) {
       const activate = (card) => {
@@ -499,6 +563,8 @@
           app.playArt(JSON.parse(card.dataset.art));
           document.querySelectorAll('.art-card-playing')
             .forEach((el) => el.classList.remove('art-card-playing'));
+          document.querySelectorAll('.arts-action-playing')
+            .forEach((el) => el.classList.remove('arts-action-playing'));
           card.classList.add('art-card-playing');
           els.stage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } catch (err) { console.warn('arts: bad card payload', err); }

@@ -806,6 +806,18 @@ impl LegaiaArts {
             .unwrap_or_default()
     }
 
+    /// Battle-action clip `index`'s pose frames (the position in
+    /// `set_character`'s `actions` array - the labeled record[0] slot bank
+    /// plus the four weapon swings). Same layout as
+    /// [`Self::idle_pose_frames`]; empty when the index is out of range.
+    pub fn action_pose_frames(&self, index: u32) -> Vec<i32> {
+        self.current
+            .as_ref()
+            .and_then(|c| c.actions.get(index as usize))
+            .map(|(_, anim)| flatten_pose_frames(anim))
+            .unwrap_or_default()
+    }
+
     /// Art clip `index`'s pose frames (the position in `set_character`'s
     /// `arts` array). Empty when the index is out of range or that record's
     /// stream did not decode - the page falls back to the idle pose.

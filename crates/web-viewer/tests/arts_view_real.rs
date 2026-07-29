@@ -649,6 +649,24 @@ fn export_character_glb_carries_the_whole_animation_bank() {
             );
         }
 
+        // The page's action-chip player: every non-empty action slot's pose
+        // frames decode through `action_pose_frames`, sized to the JSON's own
+        // frame count x parts x 6 (tx,ty,tz,rx,ry,rz per object).
+        for (i, a) in actions.iter().enumerate() {
+            let frames = a["frames"].as_u64().unwrap() as usize;
+            let poses = arts.action_pose_frames(i as u32);
+            assert_eq!(
+                poses.len(),
+                frames * parts * 6,
+                "{name}: action {i} ({:?}) pose frames",
+                a["label"]
+            );
+        }
+        assert!(
+            arts.action_pose_frames(actions.len() as u32).is_empty(),
+            "{name}: out-of-range action index is empty"
+        );
+
         let glb = arts.export_character_glb();
         assert!(
             glb.len() > 100_000,
