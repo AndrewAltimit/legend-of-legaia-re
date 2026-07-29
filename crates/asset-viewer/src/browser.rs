@@ -82,6 +82,10 @@ impl MeshBrowser {
 pub(crate) struct Browser {
     pub(crate) archive: Archive,
     pub(crate) cdname: Option<cdname::IndexMap>,
+    /// Per-stage battle-backdrop mirror table from `SCUS_942.54`, when the
+    /// executable was found. `None` falls the preview back to the default
+    /// half-turn second copy.
+    pub(crate) backdrop_mirror: Option<legaia_asset::battle_backdrop::MirrorXTable>,
     pub(crate) current: u32,
     pub(crate) last_count: u32,
 }
@@ -194,9 +198,13 @@ impl App {
         let cursor = b.current.min(count.saturating_sub(1));
         let entry = b.archive.entries[cursor as usize].clone();
         let name = b.name_for(cursor);
+        let second_copy = b
+            .backdrop_mirror
+            .as_ref()
+            .map(|t| t.second_copy_for_prot_index(cursor));
         let mut buf = Vec::new();
         let display = match b.archive.read_entry(&entry, &mut buf) {
-            Ok(()) => display_for_prot_entry(&name, &buf)
+            Ok(()) => display_for_prot_entry(&name, &buf, second_copy)
                 .unwrap_or_else(|| Display::empty(format!("{} (read failed)", name))),
             Err(e) => Display::empty(format!("{} (io error: {e})", name)),
         };

@@ -23,6 +23,7 @@ impl LegaiaViewer {
             item_names: None,
             spell_names: None,
             steal_table: None,
+            backdrop_mirror: None,
             tim_catalog: Vec::new(),
             tim_deep_catalog: Vec::new(),
             deep_section_cache: std::cell::RefCell::new(None),
@@ -122,6 +123,19 @@ impl LegaiaViewer {
                     self.steal_table = Some(table);
                 } else {
                     console_log("steal_table::from_scus skipped: table not found in SCUS");
+                }
+                // Decode the per-stage battle-backdrop mirror table so a
+                // `scene_tmd_stream` preview can place its second copy the
+                // way retail does - a half turn by default, a YZ-plane
+                // reflection for the stages this table names.
+                if let Some(table) = legaia_asset::battle_backdrop::MirrorXTable::from_scus(&scus) {
+                    console_log(&format!(
+                        "Decoded battle-backdrop mirror table from SCUS ({} stage slots)",
+                        table.ids().len()
+                    ));
+                    self.backdrop_mirror = Some(table);
+                } else {
+                    console_log("battle_backdrop::from_scus skipped: table not found in SCUS");
                 }
             }
             extracted

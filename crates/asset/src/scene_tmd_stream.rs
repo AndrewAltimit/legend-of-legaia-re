@@ -438,11 +438,13 @@ fn round_up_4(v: usize) -> usize {
 ///
 /// A `scene_tmd_stream` entry's object 0 is the stage shell - sky dome +
 /// distant mountain ring + far ground ring - and retail authors it as a
-/// **half** shell hugging one side of the `X = 0` or `Z = 0` plane, drawn
-/// once. The missing side is where the camera looks *from*; retail never
-/// mirrors or completes it. See `docs/subsystems/battle.md` and the falsified
-/// "mirror it to complete the circle" row in
-/// `docs/reference/re-do-not-re-walk.md`.
+/// **half** shell hugging one side of the `X = 0` or `Z = 0` plane. The
+/// half is complete as authored; nothing is truncated on the way in. What
+/// closes the circle is a **second draw of the same mesh** under a
+/// per-stage transform, which is why this measurement names the authored
+/// half rather than a missing one. See
+/// [`battle_backdrop`](crate::battle_backdrop) for the placement, and
+/// `docs/subsystems/battle.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum OpenSide {
     NegX,
@@ -495,10 +497,21 @@ impl ShellShape {
     }
 
     /// One-line human description for a viewer status line.
+    ///
+    /// Names the **completion**, not a missing half: retail draws this mesh
+    /// twice, and the second copy fills the open side. A viewer that showed
+    /// only the authored half and labelled it "half shell" has repeatedly
+    /// been read as a broken parse - and, once the second copy was known,
+    /// as a viewer bug. Callers that can resolve the per-stage transform
+    /// from `SCUS_942.54` should prefer
+    /// [`battle_backdrop::describe_placement`], which names which of the
+    /// two it is.
+    ///
+    /// [`battle_backdrop::describe_placement`]: crate::battle_backdrop::describe_placement
     pub fn describe(&self) -> String {
         if self.is_half_shell() {
             format!(
-                "battle-stage backdrop (half shell, open toward {})",
+                "battle-stage backdrop (drawn twice; authored half open toward {})",
                 self.open.label()
             )
         } else {
@@ -923,7 +936,7 @@ mod tests {
         assert!(s.is_half_shell());
         assert_eq!(
             s.describe(),
-            "battle-stage backdrop (half shell, open toward -X)"
+            "battle-stage backdrop (drawn twice; authored half open toward -X)"
         );
     }
 
