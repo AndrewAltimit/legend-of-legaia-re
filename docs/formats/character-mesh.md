@@ -396,7 +396,12 @@ keyframe stream `[u8 parts][u8 frames][9-byte TRS records]`
 ([`monster-animation.md`](monster-animation.md), shared decoder), reached
 through the u32 action-offset table at the head of the decoded `record[0]`
 (slot 0 = the idle loop) with the stream at **entry `+0xAC`** (the monster
-archive's sibling entries keep theirs at `+0x8C`). `parts` equals the
+archive's sibling entries keep theirs at `+0x8C`). The populated slots
+follow the action-tag space (identity with the slot index in the player
+files: idle, walk/approach, the flinches, knockdown, get-up, the
+ready/recover/defeat poses, block, plus the four loader-spliced weapon
+swings at `0xC..=0xF`) - display labels at
+`legaia_asset::battle_char_assembly::action_slot_label`. `parts` equals the
 **skeleton bone count** (15 Vahn / 16 Noa / 15 Gala / 17 Terra): channel `i`
 drives assembled object `i` (post-sort, object index == bone tag), and the
 equipment extras past `parts` ride their **attach bone's** channel via the

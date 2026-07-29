@@ -371,7 +371,11 @@ meshes that count is the **runtime-capped 10** (the disc pack ships
 rendered - see [`character-mesh.md`](character-mesh.md)).
 
 Parser: `legaia_asset::character_pack::field_locomotion_anm` (+ the
-`LOCOMOTION_*` bank constants).
+`LOCOMOTION_*` bank constants). Display labels follow the same pinning
+discipline: `locomotion_slot_label` names only the two capture-pinned
+slots ("Walk" / "Idle") and keeps the unpinned family neutral
+("Locomotion N"); `locomotion_record_label` adds the character banks and
+the savepoint / aux records.
 
 ## Disc source - per-scene ANM bundle
 
@@ -423,6 +427,24 @@ TRS streams in `record[0]` of their player file
 no 1203 record is resident in a mid-battle capture). Other scenes either share
 an ANM blob with one of these via runtime caching, or have a smaller per-scene
 player-ANM section.
+
+### PROT 1203 bank layout - record roles
+
+The 30 records lay out as three 9-record character banks (Vahn `0..=8`
+15-bone, Noa `9..=17` 16-bone, Gala `18..=26` 15-bone - bone counts
+matching the PROT 1204 `nobj`s) plus three 10-bone-rig records `27..=29`
+(actor untriaged). The per-slot roles are pinned through the Baka Fighter
+duel's display-anim ids: the combat tick stores `base + k` at
+`actor + 0x5c` (`base = fighter_id * 9`) and the anim player resolves the
+id **through the ANM container header** - `container + id*4` reads word
+`id`, where word 0 is the record *count* and word `d` is `offsets[d-1]`,
+so display id `base + k` lands on bank **record `k - 1`**. That fixes the
+record space as: `0` idle (display `base+1`), `1..=3` the three attacks,
+`4` the special, `5..=7` the hit / knockdown family, `8` the win flourish
+(display `base+9`, the match-result / tally pose). Full derivation +
+disasm cites: `legaia_asset::baka_opponents::action_slot_label`
+(`party_bank_record_label` for the absolute-record view) and
+[`minigame-baka-fighter.md` § Player input + actions](../subsystems/minigame-baka-fighter.md#player-input--actions).
 
 Parser: `legaia_asset::player_anm` (CLI sweep + per-entry detector).
 

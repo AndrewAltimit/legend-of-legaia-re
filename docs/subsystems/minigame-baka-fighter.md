@@ -393,10 +393,25 @@ same value. Debug strings emitted under
 [Impact, cue and mirror](#impact-cue-and-mirror)), and `FUN_801d49e8` is the
 mirrored sprite pass that draws it.
 
+**How a display id becomes an ANM bank record.** The anim play path
+resolves `actor + 0x5c` **through the ANM container header**: at
+`0x801d4744..0x801d47b4` it picks the bank base for the id band (`< 0x400`
+= the party/roster container at `_DAT_8007b888`, `>= 0x400` = the ladder
+fighter's own pack bank), reads `word = container[(anim & 0x3ff) * 4]` and
+takes `container + word` as the record pointer. The container layout is
+`[u32 count][u32 offsets[count]][records]`, so word `d` is
+`offsets[d - 1]` - display id `base + k` is bank **record `k - 1`**, and
+record 0 *is* the idle (display `base + 1`: the idle reset at
+`0x801d4144..50` and both round-start seeds in
+`overlay_baka_fighter_801d0fe4.txt` store `base + 1`; the party base is
+`_DAT_801dbfd0 = DAT_801dbf70 * 9`). The match-result state `0x6d` and the
+tally screen store `base + 9` - bank record 8, the **win flourish**.
+Record-space labels: `legaia_asset::baka_opponents::action_slot_label`.
+
 Confidence: **Confirmed** the button-bit → type mapping, the named physical
 buttons (Square/Circle/Cross from the slot-0 branch of
-`overlay_baka_fighter_801d3f44.txt`), and the special-attack auto-finisher
-gate.
+`overlay_baka_fighter_801d3f44.txt`), the display-id → bank-record
+resolution above, and the special-attack auto-finisher gate.
 
 ## Opponent + scoring
 
