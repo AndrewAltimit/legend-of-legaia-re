@@ -925,24 +925,48 @@ the browser patcher, the same edits live in the **Manual value edits** group as
 
 ### Location names
 
-The 16 world-map **location / landmark names** (shown on the quick-travel menu
-and echoed by the save / load / pause location display) live in a fixed table
-in `SCUS_942.54` (`0x80073B18`, 16 slots of 32 NUL-padded bytes;
-`legaia_asset::worldmap_menu`). `--rename-location INDEX=NAME` overwrites one
-slot in place with a new ASCII name (up to 31 characters) - e.g.
-`--rename-location "3=Ancient Fire Cave"` renames the Ancient Wind Cave to match
-a re-elemented party. The slot is zero-padded (no stale tail), a name already
-matching is a no-op, and an out-of-range index / oversized / non-ASCII name is
-refused. `legaia-patcher locations` lists all 16 with their indices (3 = Ancient
-Wind Cave, 4 = Ancient Water Cave, 6 = Vidna, 14 = Conkram, ...). In the browser
-patcher the same edits live in the **Manual value edits** group, one
-`index=name` per line.
+A place name is shown in **three** places and each reads its own copy off the
+disc, so renaming a town means editing three carriers - the well-known
+`SCUS_942.54` table alone leaves the world map and the entry banner saying the
+old name. The three, their byte layouts and their consumers are on
+[`place-names.md`](../formats/place-names.md):
 
-> Verified by the `location_name_real` disc oracle: the pinned names decode at
-> their coordinates (idx 3/4 = the element caves at `0x64378`/`0x64398`), a
-> rename lands as a same-size 32-byte slot overwrite that re-parses to the new
-> (NUL-terminated) name, only the targeted slots change, re-applying is a no-op,
-> and an oversized / non-ASCII / out-of-range name is refused.
+| Site | Display | Carrier |
+|---|---|---|
+| 1 | quick-travel / Door-of-Wind destination list | `SCUS_942.54` `0x80073B18`, 16 fixed `0x20`-byte cells |
+| 2 | the label drawn over the world map at the place's map position | the 29-record location table trailing every kingdom MAN |
+| 3 | the banner on entering the scene (and the save-screen location row) | that scene MAN's section-2 display name |
+
+`--rename-location TARGET=NAME` rewrites all three. `TARGET` is either a
+landmark cell index or the place's **current name** - the latter is how the 13
+places with a world-map label but no quick-travel cell (Hunter's Spring,
+Snowdrift Cave, Sol Tower, Mt. Letona, ...) are addressable. Matching is exact,
+so renaming `Conkram` leaves `Conkram (Past)` alone and renaming the `Sol` cell
+does not touch the `Sol Tower` scenes. `legaia-patcher locations` lists all
+three sites. In the browser patcher the same editor lists every target with its
+current name, and the raw list under **Manual value edits** takes one
+`target=name` per line.
+
+Names are ASCII, up to **23** characters - the tightest of the three carriers
+(site 2's 24-byte name field minus its NUL). Sites 1 and 2 are same-size
+overwrites; site 3 is not padded (`strlen + 1`), so a longer name resizes the
+section, which re-packs that scene MAN and rewrites its descriptor size word.
+Since that moves MAN bytes, run this in the same slot as the door randomizer -
+**after** a language pack, whose dialog edits are keyed by byte offsets into the
+same buffers.
+
+> Verified by the `location_name_real` + `place_names_real` disc oracles: the
+> pinned SCUS names decode at their coordinates (idx 3/4 = the element caves at
+> `0x64378`/`0x64398`), the three kingdom MANs carry one identical 29-record
+> table, `town01`'s section 2 is `"Rim Elm"` at exactly `strlen + 1` bytes, a
+> two-place rename lands 1 landmark cell + 6 world-map records + 20 banners
+> across 23 bundles, near-miss names and every unrelated banner are untouched,
+> every sector stays EDC/ECC-valid, re-applying is a no-op, and an
+> oversized / non-ASCII / out-of-range name is refused without a write. The
+> banner and world-map halves are additionally runtime-verified on a patched
+> disc under PCSX-Redux (`autorun_location_banner_source.lua`): the on-entry
+> draw arrives with the new name, and the live table the label pass walks
+> carries it too.
 
 ### Earth Egg coin threshold
 

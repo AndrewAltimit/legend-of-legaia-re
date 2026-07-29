@@ -52,6 +52,7 @@ The three pack formats are unrelated despite the shared name - `pack.md` (inside
 | [Player-character meshes](character-mesh.md) | Confirmed | Field form = PROT 0874 §0 (low-poly). Battle form = **assembled per character** from the player battle files' equipment-id sections; PROT 1204 `other5` is the sibling default-equipment pack. |
 | [Monster animation](monster-animation.md) | Confirmed | Per-object rigid-transform keyframes inside the monster archive (PROT 867). Per-action stream at entry `+0x8c`: `[u8 parts][u8 frames][parts×frames × 9-byte TRS]`. Action 0 = idle. |
 | [MDT move table](mdt.md) | Confirmed | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
+| [Place names](place-names.md) | Confirmed | The three carriers one place name has - the SCUS quick-travel cells, the world-map label table trailing each kingdom MAN, and each scene MAN's section-2 banner name. Editing one changes one display. |
 | [Save-slot portraits](save-icon.md) | Confirmed | Sixteen 16x16 character tiles row-interleaved across one 256x16 4bpp strip, a 16-colour palette each. Tile N is save N+1's memory-card icon; tile 15 is blank. |
 | [Art data](art-data.md) | Inferred | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 | [Per-character save record](save-record.md) | Confirmed | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |

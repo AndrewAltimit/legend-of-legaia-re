@@ -25,7 +25,8 @@
  * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
  * when no language pack was chosen).
  * The structured "Prices & names" editors ride `read_manual_edit_tables(image)
- * -> { max_name_len, locations: [name x16], fishing: [{ page, row, item, name,
+ * -> { max_name_len, locations: [name x16], world_map_only: [name], fishing:
+ * [{ page, row, item, name,
  * price, one_time }] }` - the disc's own location-name slots and fishing
  * prize rows (with item names resolved from the disc's SCUS table), decoded
  * client-side after the user picks their disc so the site itself ships no game
@@ -245,7 +246,9 @@ function setupManualTables(wasm, fileInput, discBytes) {
     return { clear() {}, collect() { return { fishing: '', locations: '', error: '' }; } };
   }
 
-  let maxNameLen = 31;
+  // Overwritten from the disc read; the shared three-carrier cap is 23
+  // (the world-map record's name field), which the WASM export reports.
+  let maxNameLen = 23;
 
   const setNote = (msg) => { if (statusEl) statusEl.textContent = msg; };
   const showEmpty = (el, msg) => {
@@ -312,7 +315,7 @@ function setupManualTables(wasm, fileInput, discBytes) {
     }
   }
 
-  function renderLocations(names) {
+  function renderLocations(names, extra) {
     locRowsEl.textContent = '';
     if (!names || !names.length) {
       showEmpty(locRowsEl, 'No location-name table found on this disc.');
@@ -331,6 +334,26 @@ function setupManualTables(wasm, fileInput, discBytes) {
       input.spellcheck = false;
       input.autocomplete = 'off';
       input.dataset.index = String(i);
+      input.dataset.cur = cur;
+      input.addEventListener('input', () => markEdited(input));
+      row.appendChild(name);
+      row.appendChild(input);
+      locRowsEl.appendChild(row);
+    });
+    // Places with a world-map label and an entry banner but no quick-travel
+    // cell. Same editor, keyed by the current name instead of a cell index.
+    (extra || []).forEach((cur) => {
+      const row = document.createElement('label');
+      row.className = 'rom-edit-row';
+      const name = document.createElement('span');
+      name.className = 'rom-edit-name';
+      name.textContent = cur;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = maxNameLen;
+      input.placeholder = 'new name (blank = keep)';
+      input.spellcheck = false;
+      input.autocomplete = 'off';
       input.dataset.cur = cur;
       input.addEventListener('input', () => markEdited(input));
       row.appendChild(name);
@@ -356,9 +379,9 @@ function setupManualTables(wasm, fileInput, discBytes) {
       }
       const buf = await discBytes();
       const t = mod.read_manual_edit_tables(buf);
-      maxNameLen = t.max_name_len || 31;
+      maxNameLen = t.max_name_len || 23;
       renderFish(t.fishing);
-      renderLocations(t.locations);
+      renderLocations(t.locations, t.world_map_only);
       loadedFor = key;
       setNote("Current values read from your disc. Leave a box empty to keep the disc's value.");
     } catch (e) {
@@ -406,7 +429,9 @@ function setupManualTables(wasm, fileInput, discBytes) {
         if (v.length > maxNameLen) {
           return fail(`Location name ${JSON.stringify(v)} is over ${maxNameLen} characters.`);
         }
-        locations.push(`${input.dataset.index}=${v}`);
+        // Quick-travel cells are keyed by index; the world-map-only places
+        // have no cell, so they are keyed by their current name.
+        locations.push(`${input.dataset.index || input.dataset.cur}=${v}`);
       }
       return { fishing: fishing.join(', '), locations: locations.join('\n'), error: '' };
     },

@@ -279,7 +279,7 @@
 
         <div class="rom-edit-block">
           <h4 class="rom-edit-title">Location names
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Renames the 16 world-map location names shown on the quick-travel menu and the save / load / pause display. Type a new name next to any current one (plain ASCII, up to 31 characters). Handy for matching dungeon names to a re-elemented party - e.g. rename the Ancient Wind Cave to &ldquo;Ancient Fire Cave&rdquo;.</span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Renames a place <strong>everywhere the game shows it</strong>: the quick-travel / Door-of-Wind list, the label drawn over the world map at that place&rsquo;s position, and the banner that flashes on entering the scene (which is also the save-screen location row). Type a new name next to any current one (plain ASCII, up to 23 characters). The list covers the 16 quick-travel destinations plus the 14 places that only have a world-map label - Hunter&rsquo;s Spring, Sol Tower, Snowdrift Cave and the rest. Matching is exact, so renaming &ldquo;Conkram&rdquo; leaves &ldquo;Conkram (Past)&rdquo; alone. Handy for matching dungeon names to a re-elemented party - e.g. rename the Ancient Wind Cave to &ldquo;Ancient Fire Cave&rdquo;.</span></span>
           </h4>
           <div id="rom-loc-rows" class="rom-edit-rows rom-loc-grid"><p class="rom-edit-empty">Waiting for a disc image ...</p></div>
         </div>
@@ -303,8 +303,8 @@
           </div>
           <div class="rom-opt">
             <label class="rom-opt-label" for="rom-rename-location">Location names</label>
-            <span class="rom-opt-note">One <code>index=name</code> per line (ASCII, up to 31 chars) - e.g. <code>3=Ancient Fire Cave</code>. The CLI <code>legaia-patcher locations</code> lists all 16 slots. Merged with the rows above.</span>
-            <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;4=Ancient Ice Cave" spellcheck="false" autocomplete="off"></textarea>
+            <span class="rom-opt-note">One <code>target=name</code> per line (ASCII, up to 23 chars), where <code>target</code> is a quick-travel slot index or the place&rsquo;s current name - e.g. <code>3=Ancient Fire Cave</code> or <code>Sol Tower=Helios Spire</code>. Each line renames all three places the game shows the name. The CLI <code>legaia-patcher locations</code> lists every target. Merged with the rows above.</span>
+            <textarea id="rom-rename-location" rows="3" placeholder="3=Ancient Fire Cave&#10;Sol Tower=Helios Spire" spellcheck="false" autocomplete="off"></textarea>
           </div>
         </details>
       </div>

@@ -789,16 +789,18 @@ pub(crate) struct RandomizeArgs {
     /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
     #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_cost)]
     pub(crate) arts_ap_cost: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
-    /// **Rename a world-map location** (the names shown on the quick-travel
-    /// menu and the save / load / pause location display). Repeatable
-    /// `INDEX=NAME` entries; the index is a landmark slot (`legaia-patcher
-    /// locations` lists them - e.g. 3 = "Ancient Wind Cave", 4 = "Ancient Water
-    /// Cave", 6 = "Vidna", 14 = "Conkram"). The new name is ASCII, up to 31
-    /// characters (same-size slot overwrite). Useful to match renamed
-    /// dungeons to a re-elemented party, e.g. `--rename-location "3=Ancient
-    /// Fire Cave"`.
-    #[arg(long, value_name = "INDEX=NAME", value_parser = parse_location_rename)]
-    pub(crate) rename_location: Vec<(usize, String)>,
+    /// **Rename a place everywhere the game shows it**: the quick-travel /
+    /// Door-of-Wind list, the label drawn over the world map at its map
+    /// position, and the banner shown on entering the scene (which is also the
+    /// save-screen location row). Repeatable `TARGET=NAME` entries, where
+    /// `TARGET` is either a landmark cell index or the place's current name
+    /// (`legaia-patcher locations` lists both - the 14 places with a world-map
+    /// label but no quick-travel cell, e.g. "Hunter's Spring" or "Sol Tower",
+    /// are addressable only by name). Matching is exact, so renaming "Conkram"
+    /// leaves "Conkram (Past)" alone. The new name is ASCII, up to 23
+    /// characters. E.g. `--rename-location "3=Ancient Fire Cave"`.
+    #[arg(long, value_name = "TARGET=NAME", value_parser = parse_location_rename)]
+    pub(crate) rename_location: Vec<(legaia_patcher::apply::RenameTarget, String)>,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers

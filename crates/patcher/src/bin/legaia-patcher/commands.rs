@@ -132,10 +132,23 @@ pub(crate) fn cmd_earth_egg(input: &Path) -> Result<()> {
 pub(crate) fn cmd_locations(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .context("read SCUS_942.54")?;
-    for (idx, name) in legaia_patcher::location_name::list_names(&scus)? {
-        println!("{idx:>2}  {name}");
+    let inv = legaia_patcher::apply::list_locations(&patcher).context("read place names")?;
+
+    println!("Quick-travel landmark cells (SCUS_942.54; --rename-location INDEX=NAME)");
+    for (idx, name) in &inv.landmarks {
+        println!("  {idx:>2}  {name}");
+    }
+
+    println!("\nWorld-map labels (kingdom MANs; --rename-location \"NAME=NEW\")");
+    const KINGDOM: [&str; 3] = ["Drake", "Sebucus", "Karisto"];
+    for (region, x, y, name) in &inv.world_map {
+        let kingdom = KINGDOM.get(*region as usize).copied().unwrap_or("?");
+        println!("  {kingdom:<8} ({x:>3},{y:>3})  {name}");
+    }
+
+    println!("\nScene-entry banners (per-scene MANs; scenes carrying each name)");
+    for (name, count) in &inv.scene_banners {
+        println!("  {count:>2}x  {name}");
     }
     Ok(())
 }

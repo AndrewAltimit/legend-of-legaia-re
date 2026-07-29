@@ -67,13 +67,13 @@
 //! |-------|-------------------------------|----------------------------------|
 //! | 0     | `_DAT_801C6EA4[+0x20]`         | Encounter / formation tables. The first three bytes after this pointer are the strides FUN_8003A110 uses to carve `+0x20/+0x24/+0x28` into formation / condition / region table bases. See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md). |
 //! | 1     | `_DAT_801C6EA4[+0x00]`         | **Motion-VM script table** - the per-actor `FUN_80038158` bytecode streams `FUN_8003A9D4` installs at actor `+0x80` at scene entry (player = id `0xF8`, world-map entity = `0xFB`, else field-actor `+0x50` match). Decoder: [`crate::man_motion`]. The pointer is advanced past its 3-byte length prefix immediately after walking. |
-//! | 2     | `_DAT_801C6EA0`                | (Open) - same advance-by-3 treatment as section 1. |
+//! | 2     | `_DAT_801C6EA0`                | **Scene display name** - the NUL-terminated string the on-entry banner draws (and the save-screen location row). Exactly `strlen + 1` bytes, unpadded. See [`crate::place_names`] and [`docs/formats/place-names.md`](../../../docs/formats/place-names.md). |
 //! | 3     | `_DAT_801C6EA4[+0x04]`         | Zone / camera-region records (18-byte, count-prefixed; queried per tile by `FUN_801DBA20`) - same advance-by-3 treatment. |
 //! | 4     | `DAT_80073ED8`                 | (Open) - advances by 4 (skipping length + 1 byte); the byte at `+3` is copied into `DAT_80073EDC` and a zero terminator there detaches the pointer (`DAT_80073ED8 = NULL`). |
-//! | 5     | `DAT_80073EE0`                 | Universally a zero-length terminator in the retail corpus; reserved-but-unused / sentinel. |
+//! | 5     | `DAT_80073EE0`                 | Chain terminator (length 0) in every scene MAN - but the pointer is live: the **kingdom** MANs park the [world-map location table](../../../docs/formats/place-names.md) in the trailing bytes, and the world-map label pass walks it from here. See [`crate::place_names`]. |
 //!
-//! Cracking sections 1..4 in full is downstream of having this header
-//! walker. This module provides the byte-exact section locator so engines
+//! Cracking the remaining open sections in full is downstream of having this
+//! header walker. This module provides the byte-exact section locator so engines
 //! and scripts can lift each section's bytes by name without re-reading
 //! the disassembly.
 

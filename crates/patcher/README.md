@@ -61,7 +61,7 @@ full design.
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
-  - [Location names](#location-names-location_name-module)
+  - [Place names](#place-names-location_name-module)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold-earth_egg-module)
   - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
@@ -370,16 +370,29 @@ already-matching prices (idempotent), and refuses an item no prize grants.
 `legaia-patcher fishing` lists the current prizes/prices. Disc oracle:
 `fishing_price_real`.
 
-## Location names (`location_name` module)
+## Place names (`location_name` module)
 
-`--rename-location INDEX=NAME` renames a world-map location (the strings shown
-on the quick-travel menu and echoed by the save / load / pause location
-display). The 16 names live in a fixed `SCUS_942.54` table (`0x80073B18`, 16 ×
-32-byte NUL-padded slots; `legaia_asset::worldmap_menu`); a rename overwrites
-one slot in place with new ASCII (≤ 31 chars), zero-padding the tail. Idempotent
-(a matching name is a no-op) and validated (out-of-range index / oversized /
-non-ASCII refused). `legaia-patcher locations` lists all 16. Disc oracle:
-`location_name_real`.
+`--rename-location TARGET=NAME` renames a place **everywhere the game shows
+it**. A name is carried three times on the disc and each carrier drives one
+display, so a rename that touches only the well-known SCUS table leaves two of
+them stale:
+
+| Site | Display | Carrier |
+|---|---|---|
+| 1 | quick-travel / Door-of-Wind list | `SCUS_942.54` `0x80073B18`, 16 × 32-byte NUL-padded cells (`legaia_asset::worldmap_menu`) |
+| 2 | the label over the world map at the place's map position | the 29-record location table trailing every kingdom MAN (`legaia_asset::place_names`) |
+| 3 | the banner on entering the scene, and the save-screen location row | that scene MAN's section-2 display name (same module) |
+
+`TARGET` is a landmark cell index or the place's current name; the latter reaches
+the 14 places that have a world-map label but no quick-travel cell. Matching is
+exact, so "Conkram" doesn't drag "Conkram (Past)" along. Names are ASCII up to
+**23** characters (the tightest carrier). Sites 1 and 2 are same-size
+overwrites; site 3 is unpadded, so a longer name resizes the section, re-packs
+that scene MAN and rewrites its descriptor size word - run this alongside the
+door randomizer, after any language pack. Idempotent and validated (a refused
+name aborts before the first write). `legaia-patcher locations` lists all three
+sites. Byte layout + provenance: [`docs/formats/place-names.md`](../../docs/formats/place-names.md).
+Disc oracles: `location_name_real`, `place_names_real`.
 
 ## Earth Egg coin threshold (`earth_egg` module)
 

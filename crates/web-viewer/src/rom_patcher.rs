@@ -617,39 +617,51 @@ pub fn patch_rom(
         }
     }
 
-    // Location renames: newline-separated `index=name` lines (name may contain
-    // spaces, so only the newline splits entries). Each is a same-size SCUS
-    // slot overwrite; a bad entry is reported and skipped.
+    // Place renames: newline-separated `target=name` lines (a name may contain
+    // spaces, so only the newline splits entries). `target` is a landmark index
+    // or the place's current name. Each rename propagates to all three carriers
+    // - the SCUS quick-travel cell, the world-map labels, and the scene-entry
+    // banners - so one line changes every place the game shows the name. A bad
+    // entry is reported and skipped.
     let location_renames = location_renames.trim();
     if location_renames.is_empty() {
         summary.push_str("rename-location: untouched\n");
     } else {
+        let mut targets = Vec::new();
         for line in location_renames.lines().filter(|l| !l.trim().is_empty()) {
             match line.split_once('=') {
-                Some((idx_str, name)) => match idx_str.trim().parse::<usize>() {
-                    Ok(index) => {
-                        match apply::rename_locations(&mut patcher, &[(index, name.to_string())]) {
-                            Ok(rep) if rep.renames.is_empty() => summary.push_str(&format!(
-                                "rename-location: {index} already has that name\n"
-                            )),
-                            Ok(rep) => {
-                                for (i, old, new) in &rep.renames {
-                                    summary.push_str(&format!(
-                                        "rename-location: {i} {old:?} -> {new:?}\n"
-                                    ));
-                                }
-                            }
-                            Err(e) => summary.push_str(&format!("rename-location: {e}\n")),
-                        }
-                    }
-                    Err(_) => {
-                        summary.push_str(&format!("rename-location: bad index in {line:?}\n"))
-                    }
-                },
-                None => summary.push_str(&format!(
+                Some((target, name)) if !target.trim().is_empty() => {
+                    targets.push((apply::RenameTarget::parse(target), name.to_string()));
+                }
+                _ => summary.push_str(&format!(
                     "rename-location: skipped malformed entry {line:?}\n"
                 )),
             }
+        }
+        match apply::rename_locations_by_target(&mut patcher, &targets) {
+            Ok(rep) => {
+                for (i, old, new) in &rep.renames {
+                    summary.push_str(&format!(
+                        "rename-location: landmark {i} {old:?} -> {new:?}\n"
+                    ));
+                }
+                summary.push_str(&format!(
+                    "rename-location: {} world-map label(s), {} scene banner(s)\n",
+                    rep.world_map_records, rep.scene_banners
+                ));
+                for name in &rep.unmatched {
+                    summary.push_str(&format!("rename-location: {name:?} matched no place\n"));
+                }
+                for idx in &rep.skipped {
+                    summary.push_str(&format!(
+                        "rename-location: scene bundle {idx} left vanilla (would not fit)\n"
+                    ));
+                }
+                if rep.is_empty() {
+                    summary.push_str("rename-location: nothing changed (names already match)\n");
+                }
+            }
+            Err(e) => summary.push_str(&format!("rename-location: {e}\n")),
         }
     }
 
@@ -1128,6 +1140,13 @@ pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
         .map_err(|e| err(format!("read fishing overlay: {e}")))?;
     let prizes = legaia_patcher::fishing_price::list_prizes(&overlay)
         .map_err(|e| err(format!("fishing prize table: {e}")))?;
+    // The world-map label table names 14 places the 16 quick-travel cells have
+    // no room for; those are renamed by name, not by cell index.
+    let world_map_only: Vec<String> = legaia_patcher::apply::list_world_map_labels(&patcher)
+        .into_iter()
+        .map(|(_, _, _, name)| name)
+        .filter(|name| !locations.iter().any(|(_, cell)| cell == name))
+        .collect();
     drop(patcher);
 
     let num = JsValue::from_f64;
@@ -1142,6 +1161,15 @@ pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
         locs.push(&JsValue::from_str(name));
     }
     Reflect::set(&out, &"locations".into(), &locs)?;
+    // The 14 places that have a world-map label + an entry banner but no
+    // quick-travel cell ("Hunter's Spring", "Sol Tower", ...). They are keyed
+    // by their current name, so the editor sends `Old=New` rather than
+    // `index=New`.
+    let extra = js_sys::Array::new();
+    for name in world_map_only {
+        extra.push(&JsValue::from_str(&name));
+    }
+    Reflect::set(&out, &"world_map_only".into(), &extra)?;
     let fish = js_sys::Array::new();
     for p in &prizes {
         // All-zero rows are structural padding in the 6-row page, not prizes.

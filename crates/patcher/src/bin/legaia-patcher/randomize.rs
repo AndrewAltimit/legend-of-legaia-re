@@ -393,20 +393,38 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         }
     }
 
-    // Location renames: same-size overwrites of the SCUS world-map name table.
+    // Place renames: the SCUS landmark cell, the world-map label records, and
+    // every scene MAN whose entry banner carries the name.
     if !args.rename_location.is_empty() {
-        let report = apply::rename_locations(&mut patcher, &args.rename_location)?;
-        for (idx, old, new) in &report.renames {
-            println!("rename-location: {idx} {old:?} -> {new:?}");
-            manifest.push(format!("rename_location {idx} = {new:?}"));
+        // Manifest the *requests*, not the per-cell outcome: a name-keyed
+        // rename has no cell index, and the request is what reproduces the run.
+        for (target, new) in &args.rename_location {
+            let key = match target {
+                apply::RenameTarget::Index(i) => i.to_string(),
+                apply::RenameTarget::Name(n) => format!("{n:?}"),
+            };
+            manifest.push(format!("rename_location {key} = {new:?}"));
         }
-        // Report requested-but-unchanged (already-matching) entries too.
-        let changed: std::collections::BTreeSet<usize> =
-            report.renames.iter().map(|(i, _, _)| *i).collect();
-        for (idx, _) in &args.rename_location {
-            if !changed.contains(idx) {
-                println!("rename-location: {idx} already has that name");
-            }
+        let report = apply::rename_locations_by_target(&mut patcher, &args.rename_location)?;
+        for (idx, old, new) in &report.renames {
+            println!("rename-location: landmark {idx} {old:?} -> {new:?}");
+        }
+        println!(
+            "rename-location: {} world-map label(s), {} scene banner(s), {} scene bundle(s) rewritten",
+            report.world_map_records,
+            report.scene_banners,
+            report.entries_changed.len()
+        );
+        for name in &report.unmatched {
+            println!("rename-location: {name:?} matched no place on this disc");
+        }
+        for idx in &report.skipped {
+            println!(
+                "rename-location: PROT entry {idx} left vanilla (re-packed MAN would not fit)"
+            );
+        }
+        if report.is_empty() {
+            println!("rename-location: nothing changed (names already match)");
         }
     }
 
