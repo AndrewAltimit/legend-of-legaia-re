@@ -1524,6 +1524,7 @@ name = "legaia-pcsxr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "flate2",
  "legaia-art",
  "legaia-mednafen",

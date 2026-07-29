@@ -181,62 +181,18 @@ No open threads. The most recent one - op-`0x35` sub-op `0xA`, the
 
 ## Title / boot / overlays
 
-| Thread | Status | What would close it |
-|---|---|---|
-| PROT 0968 identity - the one unidentified slot-B cluster entry | mostly resolved - it is the evolved-Cort battle's stage overlay; only a residency capture is missing, and the existing mid-cast library measurably cannot supply it | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
-
-### PROT 0968 identity - the one unidentified slot-B cluster entry
-
-*Status:* mostly resolved. The loader chain, the selector, the module's real
-extent and its call profile are all pinned from the disassembly and the disc
-bytes; what is unconfirmed is a live capture showing it resident. The full
-write-up is on
-[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay).
-
-In short: `formation monster id 0xB5` (archive id 181, the **evolved
-second-form Cort** - the first-form fight runs with head `0xB4`, id 180) sets
-the battle-stage id byte to `2`, and the stage-overlay path loads
-`FUN_8003EC70(stage_id + 0x47)` - loader param `0x49`, extraction entry 968.
-The old "`0x49` appears at no static SCUS callsite" statement was true and
-uninformative: the parameter is **computed**, so no constant-parameter scan
-can ever produce it.
-
-*What the mid-cast library already shows.* Running
-[`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py)
-over the six catalogued `cort_*_mid_cast` mednafen states (labels +
-fingerprints in [`scenarios.toml`](../../scripts/scenarios.toml); each state
-file is sha256-verified against its manifest fingerprint before use):
-
-- the formation-head byte `*(u8*)0x8007BD0C` reads `0xB4` in the four
-  first-form states and `0xB5` in the two evolved-form states
-  (`cort_evolved_ultra_charge_mid_cast`, `cort_evolved_final_crisis_mid_cast`) -
-  a live confirmation of the selector byte, and the refinement that the
-  `0xB5` gate belongs to the **evolved-form** battle;
-- in every state the slot-B page at `0x801F69D8` is **100% byte-identical
-  over all `0x1000` bytes** to the documented cast stager (0938 / 0940 /
-  0944 / 0961 / 0962 / 0966) and the tracker `0x8007BC4C` reads that
-  stager's id, while 0968's own `0xA28` window matches at chance level
-  (10.5-12.1%). A cast stager is a full slot-B page, so **any mid-cast
-  state has the stage overlay already evicted** - this library cannot close
-  the thread, only sharpen where the capture must be taken;
-- the stage-id byte `_DAT_8007B64A` reads `0x00` mid-fight in all six
-  states, evolved forms included, so the byte is transient - readable near
-  battle load, not later.
-
-*What would close it:* a save state taken at the **evolved-Cort battle
-entry, before any special attack or summon is cast** (first command menu of
-the second form), showing entry 968's bytes resident in the slot-B buffer at
-`0x801F69D8` over its own `0xA28` extent and the loader-B current-id tracker
-`gp+0x934` (`0x8007BC4C`) reading `0x49` - the same pair of observations
-that pinned 0967 for the Tetsu tutorial. `check-0968-residency.py` pointed
-at the new state performs exactly this test, and either emulator's state
-works: it reads mednafen states through `mednafen-state extract` and
-PCSX-Redux `.sstate` files through `pcsxr-state extract`, dispatching on
-the file extension. A state parked *outside* the battle (a doorway save)
-is a staging point, not the observation - the stage overlay pages in
-during battle load, so the capture itself must be taken inside the
-evolved-form fight, at the first command menu, before anyone (Cort
-included - all six existing states are enemy-cast stagers) casts.
+No open threads. The last one - PROT 0968 identity, the one slot-B cluster
+entry without a residency capture - closed by capture: the
+`cort_evolved_battle_first_menu` PCSX-Redux state (first command menu of the
+evolved-Cort fight, before any cast) shows the loader-B tracker `0x8007BC4C`
+reading `0x49` and entry 968 100% byte-resident at `0x801F69D8` over its own
+`0xA28` extent, with the field-side ladder states bracketing the page-in to
+the battle load. See
+[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay);
+the instrument is
+[`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py),
+which reads either emulator's states (mednafen via `mednafen-state`,
+PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 ## Adding a thread
 

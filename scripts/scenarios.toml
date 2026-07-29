@@ -1857,6 +1857,42 @@ description = "Enemy boss Cort casting Evil Seru Magic (Juggernaut) mid-cast. Lo
 topics = ["battle", "Cort", "boss", "stager", "loader-B", "Evil Seru Magic", "Juggernaut", "enemy cast"]
 
 # ----------------------------------------------------------------------
+# Evolved-Cort battle-entry ladder. Three PCSX-Redux states walking into
+# the final fight, captured to close the PROT 0968 residency thread: the
+# mid-cast corpus above proved a cast stager always evicts the stage
+# overlay, so the closing observation needed the first command menu,
+# before any cast. Slot-3 is that observation (tracker 0x49 + 0968
+# byte-resident); slots 1-2 are the field-side contrast (0900, the
+# general slot-B co-resident, holds the buffer until battle load).
+
+[[scenarios]]
+slot = 255
+label = "cort_evolved_approach_cutscene"
+backup_fingerprint = "e7042fc438e784c0c64367af7203ffc13e6ec42bfe529b7005314f782666ca28"
+phase = "field"
+expected_game_mode = 0x03
+description = "Mid-cutscene on the approach to the final fight (scene jouind, field engine). Slot B still holds the 0900 co-resident library (100% byte match), loader-B tracker 0x8007BC4C = 0x05. Staging point: cinematics separate this from the pre-battle and in-battle sibling states."
+topics = ["field", "Cort", "boss", "cutscene", "loader-B", "jouind"]
+
+[[scenarios]]
+slot = 255
+label = "cort_evolved_pre_battle"
+backup_fingerprint = "7a8266530955d4442f32b0e1f6a4b4d1e1f7c61f22683b2c2e0dafcf519b8598"
+phase = "field"
+expected_game_mode = 0x03
+description = "Scene jouine about half a second before the evolved-Cort battle kicks off (field engine, pre-load). Slot B: 0900 co-resident at 100%, tracker 0x05 - the stage overlay is NOT yet paged; contrast with cort_evolved_battle_first_menu taken across the battle load."
+topics = ["field", "Cort", "boss", "pre-battle", "loader-B", "jouine"]
+
+[[scenarios]]
+slot = 255
+label = "cort_evolved_battle_first_menu"
+backup_fingerprint = "ef0b72d6dc6901185d08255846d763dba46f09f0a6c2028aa710337629820058"
+phase = "battle"
+expected_game_mode = 0x15
+description = "Evolved-Cort battle (scene jouine) at the first command-input screen, before any special attack or summon. THE PROT 0968 residency capture: loader-B tracker 0x8007BC4C = 0x49, formation head 0x8007BD0C = 0xB5, entry 0968 100% byte-resident at slot B 0x801F69D8 over its own 0xA28 extent (check-0968-residency.py). Closed the last Title/boot/overlays RE thread."
+topics = ["battle", "Cort", "boss", "stage overlay", "loader-B", "PROT 0968", "jouine"]
+
+# ----------------------------------------------------------------------
 # Weapon-specialty / arts-bar arm-width corpus. Three PCSX-Redux states,
 # all at the in-battle arts command-input screen (game_mode 0x15), each
 # with a different character holding a weapon whose favored-class status

@@ -2198,7 +2198,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative) | `capture` + `disassembly` | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay-loader index off-by-2 - remaining ripple | resolved (slot A reconciled; slot-B per-spell identity capture-pinned) | `capture` + `disassembly` | [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved for every entry | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
-| PROT 0968 - what it is, who loads it, and how big it really is | resolved (residency capture still owed - on the open page) | `disassembly` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
+| PROT 0968 - what it is, who loads it, and how big it really is | resolved - identity and extent by disassembly, residency by capture | `capture` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
 | `0x80010390` - the SCUS word that looked like a lead on 0968 | resolved: it is the slot-B overlay destination pointer, shared by every slot-B entry | `disassembly` | [details ↓](#0x80010390-is-the-slot-b-overlay-destination-pointer) |
 
 ### `_DAT_8007B98F` is byte +3 of the debug-mode word `_DAT_8007B98C`
@@ -2519,7 +2519,7 @@ constant 0. Ports: `engine-core::muscle_dome`
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
-*Status:* resolved for every entry except **0968**, whose identity hunt stays on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#title--boot--overlays)
+*Status:* resolved for every entry, **0968** included - its residency capture is the [section below](#prot-0968---the-cort-battle-stage-overlay)
 
 The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` blobs; static
 extraction at the link base is the clean path, each base cross-checked by in-file
@@ -2604,8 +2604,8 @@ base, a reference to that base is a reference to the slot, not to a tenant.**
 
 ### PROT 0968 - the Cort battle stage overlay
 
-*Status:* resolved except for a residency capture, which stays on
-[`open-rev-eng-threads.md`](open-rev-eng-threads.md#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry)
+*Status:* resolved, residency capture included - grade `capture` on the
+residency leg, `disassembly` on the loader chain and extent
 
 **Why the callsite hunt kept failing.** The search was for loader param `0x49`
 as a *constant*, and no constant produces it. Stage overlays are paged by a
@@ -2634,22 +2634,33 @@ only gate. The same byte against the same constant is what pages **0969**
 mid-battle when a Cort form's HP reaches zero, which is the corroboration:
 one boss, two modules, one formation-id test each.
 
-**The selector byte is capture-confirmed; residency is not.** A sweep of the
-six catalogued `cort_*_mid_cast` mednafen states
-([`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py);
-labels + fingerprints in [`scenarios.toml`](../../scripts/scenarios.toml))
-reads `*(u8 *)0x8007BD0C = 0xB4` in the four first-form states and `0xB5` in
-the two evolved-form states - the selector's constant, live, and only in the
-evolved-form phase. The same sweep shows why those states cannot carry the
-residency observation itself: in every one, the slot-B page at `0x801F69D8`
-is 100% byte-identical over all `0x1000` bytes to the state's documented cast
+**Residency is capture-confirmed.** The
+`cort_evolved_battle_first_menu` PCSX-Redux state (evolved-Cort battle,
+scene `jouine`, first command-input screen, before any cast; fingerprint in
+[`scenarios.toml`](../../scripts/scenarios.toml)) shows the closing pair
+exactly ([`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py)):
+the loader-B current-id tracker `0x8007BC4C` reads **`0x49`** and entry 968
+is **100% byte-resident** at the slot-B base `0x801F69D8` over its own
+`0xA28` extent, with the formation head `*(u8 *)0x8007BD0C = 0xB5` - the
+same observation pair that pinned 0967 for the Tetsu tutorial. The
+field-side ladder states bracketing the fight
+(`cort_evolved_approach_cutscene`, `cort_evolved_pre_battle`) both show the
+general co-resident library **0900** at 100% with tracker `0x05` instead,
+so the page-in is bracketed to the battle load itself.
+
+**Why the mid-cast library could never show it.** A sweep of the six
+catalogued `cort_*_mid_cast` mednafen states with the same script reads
+`*(u8 *)0x8007BD0C = 0xB4` in the four first-form states and `0xB5` in the
+two evolved-form states - the selector's constant, live, and only in the
+evolved-form phase. In every one, the slot-B page at `0x801F69D8` is 100%
+byte-identical over all `0x1000` bytes to the state's documented cast
 stager (0938 / 0940 / 0944 / 0961 / 0962 / 0966) with the loader-B tracker
 `0x8007BC4C` reading that stager's id, while 0968's own `0xA28` window
 matches at chance level (10.5-12.1%). A cast stager is a full slot-B page:
 the first special attack or summon of the fight evicts the stage overlay,
-so the pending capture must be taken at the evolved-form battle entry,
-before any cast. The stage-id byte `_DAT_8007B64A` reads `0x00` in all six
-mid-fight states - the byte is transient around the load, not a persistent
+which is why the closing capture had to be the battle's first command menu.
+The stage-id byte `_DAT_8007B64A` reads `0x00` in all nine mid-fight /
+bracketing states - the byte is transient around the load, not a persistent
 mid-battle marker.
 
 **Its real extent is 2600 bytes, not 4096.** The entry is 2 sectors, but only
