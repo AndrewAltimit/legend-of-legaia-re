@@ -169,6 +169,55 @@ scene X play" has more than one answer per scene, and a defect confined to
 the sub-op 9 path is invisible here - see
 [`script-vm.md`](script-vm.md#sub-op-9-is-a-start-not-a-queue).
 
+### The track-swap handshake (`FUN_800243F0` + op-`0x35` sub-op `0xA`)
+
+The resolver above is one stage of a staged swap protocol. `FUN_800243F0`
+runs a stage counter at `gp+0x744` through a 7-entry jump table
+(`0x800108C8`), entered only while `_DAT_8007BAB8 != _DAT_8007BA9C` (a track
+change is in flight). The stages: wait for CD idle and arm a 30-frame settle
+delay (`gp+0x768 = 0x1E`); tear down + close the BGM slot `0x8007052C`
+(`FUN_800266E0` + `FUN_80026520`) **unless** `_DAT_8007B750` bit 0 is set,
+then kick the async payload load (`FUN_8001FC00`); count the settle delay
+down; install the SEQ (`FUN_8001E54C`); re-attach the slot
+(`FUN_80026478`) **unless** bit 1 (pause) is set; latch
+`_DAT_8007BA9C = _DAT_8007BAB8`.
+
+The sound flag word `_DAT_8007B750` coordinates it with the script. The full
+writer census (SCUS + every based overlay image; store-offset scan, see
+[`../tooling/address-reference-scan.md`](../tooling/address-reference-scan.md)):
+
+| Bit | Meaning | Set by | Cleared by |
+|---|---|---|---|
+| 0 | script-owned start pending (defer the slot teardown to the script) | sub-op 9 (`0x801E0260`) | poller commit (`0x8002472C` clears 0/3/4), scene entry `FUN_8003AEB0` |
+| 1 | BGM slot paused / detached | sub-op 2 (`0x801E0150`), sub-op 3 (`0x801E0174`), dance overlay `0x801CF328` | sub-op 1, sub-op 4, sub-op `0xA`, scene entry, game-over `FUN_8003C7EC` |
+| 2 | script flag (opaque to the sound side) | sub-op 6 (`0x801E01D8`) | field overlay `0x801D7348` |
+| 3 | **load settled** - payload staged and the settle delay elapsed | the poller, one site only: `0x800246D0` (`\| 8`) | poller commit `0x8002472C` |
+| 4 | **release-ack** - script has released the old slot occupant | sub-op `0xA` (`0x801E02B8`) | poller commit `0x8002472C` |
+
+Bits 3 / 4 / 0 are the handshake: after setting bit 3 the poller **stalls**
+(`0x800246E0..E8`) while bit 0 is set and bit 4 is not - i.e. when the swap
+was started by sub-op 9, the old track keeps its slot until the *script*
+commits. Sub-op `0xA` (arm `0x801E0264`) is that commit: it waits for bit 3,
+releases the paused occupant (`FUN_800266E0` detach + `FUN_80026520` close -
+the close is what the poller's own teardown also does; `FUN_80026520`
+additionally clears the source's active flag and `SsSeqClose`s the handle
+where `FUN_800266E0` only rewinds and detaches), then sets bit 4 and clears
+bit 1. So a cutscene picks the exact beat the outgoing score dies on, and a
+port that honours the sub-op 2 pause but drops the `0xA` commit leaves the
+music paused after the cutscene. The arm's early-return when
+`_DAT_8007B868 != 0` mirrors the whole actor-sound family (`FUN_800266E0` /
+`FUN_80026520` / `FUN_80026478` all no-op behind the same gate): that word
+has **no setter in SCUS or any based overlay** - its only store is a bit-1
+clear in the boot mode-init `FUN_8001DCF8` - so it reads as the dev/dual-mode
+flag it is everywhere else, zero in retail play.
+
+Engine side: the host resolves BGM bytes synchronously, so bit 3's wait is
+satisfied on arrival (the same reasoning as sub-op 9's barrier) and
+`SceneHost::route_bgm_events` routes sub-op `0xA` straight to
+`BgmDirector::unhalt_pause` - release the source only if the pause latch is
+still set, then clear the latch unconditionally. `see
+ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
+
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.
 
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so

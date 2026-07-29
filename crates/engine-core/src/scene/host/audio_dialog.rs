@@ -107,10 +107,11 @@ impl SceneHost {
     /// each `Bgm{text_id, sub_op}` into the right director hook. Mirrors
     /// the field-VM op `0x35` sub-op table: `1` = start (resolve SEQ
     /// bytes), `2` = pause, `3` = resume, `4` = stop, `8` = re-attach +
-    /// volume re-apply (`FUN_80019898`), `9` = start behind a load barrier.
-    /// Other sub-ops are passed through as no-ops (the host already
-    /// surfaced them on the world's event queue for richer engines to
-    /// consume).
+    /// volume re-apply (`FUN_80019898`), `9` = start behind a load barrier,
+    /// `10` = the unhalt-pause swap-commit
+    /// ([`BgmDirector::unhalt_pause`]). Other sub-ops are passed through
+    /// as no-ops (the host already surfaced them on the world's event
+    /// queue for richer engines to consume).
     ///
     /// # Sub-op 9 is a start, not a queue
     ///
@@ -176,8 +177,23 @@ impl SceneHost {
                         director.reattach_volume(super::bgm_reattach_volume(self.bgm_volume_raw));
                         acted += 1;
                     }
+                    // Sub-op 0xA - the unhalt-pause swap-commit (retail arm
+                    // 0x801E0264: wait on _DAT_8007B750 bit 3, release the
+                    // paused slot via FUN_800266E0 + FUN_80026520, set the
+                    // release-ack bit 4, clear the pause bit 1). The wait is
+                    // on the resolver's load-settle bit, which this
+                    // synchronous host satisfies on arrival - same reasoning
+                    // as sub-op 9's barrier above - so the commit routes
+                    // immediately.
+                    // PORT: FUN_800266E0 (the detach half of the commit)
+                    // PORT: FUN_80026520 (the close half; both are subsumed by
+                    // the director's release of its paused source)
+                    10 => {
+                        director.unhalt_pause();
+                        acted += 1;
+                    }
                     _ => {
-                        // Other sub-ops (5/6/7/10/11) are control words -
+                        // Other sub-ops (5/6/7/11) are control words -
                         // surface them back on the queue for richer engines.
                         leftover.push(crate::field_events::FieldEvent::Bgm { text_id, sub_op });
                     }

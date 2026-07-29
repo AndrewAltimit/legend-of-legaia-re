@@ -203,6 +203,15 @@ impl WebAudioOut {
         self.state.borrow_mut().sequencer_paused = paused;
     }
 
+    /// Whether the sequencer gate is currently closed
+    /// ([`Self::set_sequencer_paused`]). The browser BGM director keys the
+    /// op-`0x35` sub-`0xA` unhalt-pause commit on this - the native
+    /// director keeps its own latch, but here the gate is the only pause
+    /// state there is.
+    pub fn sequencer_paused(&self) -> bool {
+        self.state.borrow().sequencer_paused
+    }
+
     /// Cross-fade from the current sequencer to `new_seq` over
     /// `fade_samples` SPU-rate (44.1 kHz) samples. If no sequencer is
     /// active, `new_seq` is installed immediately at full volume.

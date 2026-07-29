@@ -1498,6 +1498,10 @@ impl WebBgmDirector<'_> {
         let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
         sequencer.set_loop_to(0);
         self.out.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
+        // Retail's start arm (op 0x35 sub-op 1, `0x801E0104`) clears the
+        // pause bit alongside the track select - a start issued while the
+        // gate is closed must reopen it, or the new track sits silent.
+        self.out.set_sequencer_paused(false);
         *self.last_started = Some(bgm_id);
     }
 
@@ -1571,6 +1575,21 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
     fn stop(&mut self) {
         self.out.detach_sequencer();
         *self.last_started = None;
+    }
+
+    /// Sub-op `0xA` - the unhalt-pause swap-commit (retail `0x801E0264`):
+    /// if the gate is still closed no start intervened, so the paused
+    /// track is released the way retail's `FUN_800266E0` + `FUN_80026520`
+    /// pair detaches and closes the slot; the gate is then reopened
+    /// unconditionally (retail clears `_DAT_8007B750` bit 1 on every pass
+    /// through the arm). The browser twin of
+    /// `AudioBgmDirector::unhalt_pause`.
+    fn unhalt_pause(&mut self) {
+        if self.out.sequencer_paused() {
+            self.out.detach_sequencer();
+            *self.last_started = None;
+        }
+        self.out.set_sequencer_paused(false);
     }
 }
 

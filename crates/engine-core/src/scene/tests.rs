@@ -565,6 +565,89 @@ fn route_bgm_handles_control_subops_without_scene() {
     assert_eq!(d.log, vec!["pause", "resume", "stop"]);
 }
 
+/// A director with the pause-latch contract real directors carry (the
+/// native `AudioBgmDirector` / browser `WebBgmDirector` shape): `pause`
+/// closes a gate, `start` swaps the occupant and reopens it, and the
+/// sub-op `0xA` commit releases the occupant only while the gate is
+/// still closed - then reopens it unconditionally (retail arm
+/// `0x801E0264`: `FUN_800266E0` + `FUN_80026520` on the paused slot,
+/// then `_DAT_8007B750 = (flags | 0x10) & ~2`).
+#[derive(Default)]
+struct PauseLatchBgm {
+    paused: bool,
+    /// The slot occupant, `None` when released/detached.
+    playing: Option<u16>,
+}
+impl BgmDirector for PauseLatchBgm {
+    fn start(&mut self, id: u16, _bytes: &[u8]) {
+        self.playing = Some(id);
+        // Retail's start arm (sub-op 1, `0x801E0104`) clears the pause bit
+        // alongside the track select.
+        self.paused = false;
+    }
+    fn pause(&mut self) {
+        self.paused = true;
+    }
+    fn unhalt_pause(&mut self) {
+        if self.paused {
+            // No start intervened: release the paused occupant the way
+            // retail detaches + closes the slot.
+            self.playing = None;
+        }
+        self.paused = false;
+    }
+}
+
+/// The disc-visible pairing the sub-op `0xA` port exists for: a cutscene
+/// pauses with sub-op 2 and unhalts with sub-op `0xA`. Whatever else
+/// happens in between, the score must not be left paused afterwards.
+#[test]
+fn bgm_pause_then_unhalt_pair_does_not_leave_music_paused() {
+    // Pause -> swap-commit with no intervening start: the paused track is
+    // released (retail closes the slot; the pending track would attach
+    // next) and the pause latch is clear.
+    let mut d = PauseLatchBgm {
+        paused: false,
+        playing: Some(7),
+    };
+    d.pause();
+    d.unhalt_pause();
+    assert!(!d.paused, "sub-op 0xA must clear the pause latch");
+    assert_eq!(
+        d.playing, None,
+        "with no start intervening, the commit releases the paused source"
+    );
+
+    // Pause -> start (the paired sub-op 9 select) -> swap-commit: the swap
+    // already happened, so the commit must NOT kill the incoming track -
+    // retail released the *old* occupant before the install, never the new
+    // one.
+    let mut d = PauseLatchBgm {
+        paused: false,
+        playing: Some(7),
+    };
+    d.pause();
+    d.start(9, &[]);
+    d.unhalt_pause();
+    assert!(!d.paused);
+    assert_eq!(
+        d.playing,
+        Some(9),
+        "the commit after a start leaves the incoming track playing"
+    );
+}
+
+/// The trait default is a no-op, so stub directors with no pause latch
+/// (recording directors, `NullBgmDirector`) stay valid without an
+/// override - and the routing still counts the event as acted on.
+#[test]
+fn bgm_unhalt_default_is_noop_for_stub_directors() {
+    let mut d = RecordingBgm::default();
+    d.unhalt_pause();
+    assert!(d.log.is_empty());
+    NullBgmDirector.unhalt_pause();
+}
+
 /// `bgm_reattach_volume` (FUN_80019898) - the `(raw << 15) >> 16` level
 /// arithmetic: bits [16:1] of the raw global, sign-extended.
 #[test]

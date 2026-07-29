@@ -240,28 +240,9 @@ a scripted pause rather than a human reflex - a PCSX-Redux breakpoint on
 
 ## Audio / BGM
 
-| Thread | Status | What would close it |
-|---|---|---|
-| Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | open - the arm is read, its two inputs are not | [details ↓](#op-0x35-sub-op-0xa---what-it-waits-on) |
-
-### Op-`0x35` sub-op `0xA` - what it waits on
-
-*Status: open.* The arm at `0x801E0264` is legible instruction by instruction
-and still unnamed as a behaviour. It returns immediately when `_DAT_8007B868`
-is non-zero; otherwise it **waits** (branch to `0x801DEE4C`, the restore-PC
-idiom) until bit 3 of the sound flag word `_DAT_8007B750` is set, then calls
-`FUN_800266E0` and `FUN_80026520` on the BGM slot `0x8007052C`, sets bit 4 of
-the flag word and **clears bit 1** - the pause bit sub-op 2 sets.
-
-What is not pinned: what writes `_DAT_8007B868`, what sets flag bit 3, and what
-`FUN_80026520` does that `FUN_800266E0` does not. Until those are answered the
-op has no port, which is visible on the disc: a scene's cutscene records pair
-sub-op 2 with a later sub-op `0xA`, so a port that honours the pause and drops
-the toggle leaves the music paused after that cutscene.
-
-Closing it wants a writer sweep for the two globals
-(`scripts/ghidra-analysis/find-address-word-refs.py`) plus a live capture over
-a scene that runs the `2` / `0xA` pair.
+No open threads. The most recent one - op-`0x35` sub-op `0xA`, the
+"unhalt-pause toggle" - resolved as the track-swap **commit** and moved to
+[`re-settled-threads.md`](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit).
 
 ## Title / boot / overlays
 

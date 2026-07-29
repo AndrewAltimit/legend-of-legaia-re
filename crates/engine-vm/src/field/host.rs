@@ -74,9 +74,11 @@ pub trait FieldHost {
     /// (LE). `sub_op` selects the action: 1 = start field BGM, 2 = pause,
     /// 3 = resume, 4 = stop, 5 = volume, 6 = flag-set (`_DAT_8007b750 |= 4`),
     /// 7 = target sound set (`_DAT_8007B880`), 8 = `func_0x80019898`,
-    /// 9 = queue (`_DAT_8007bac8 = text_id` if not already loaded), 10 =
-    /// pause-toggle, 11 = `_DAT_8007ba9c = -1`. The VM only knows how to
-    /// advance the PC; per-sub-op state is host-side.
+    /// 9 = start behind a load barrier (`_DAT_8007bac8 = text_id`), 10 =
+    /// unhalt-pause swap-commit (waits on `_DAT_8007B750` bit 3, releases
+    /// the paused slot, sets ack bit 4, clears pause bit 1), 11 =
+    /// `_DAT_8007ba9c = -1`. The VM only knows how to advance the PC;
+    /// per-sub-op state is host-side.
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
         let _ = (text_id, sub_op);
     }

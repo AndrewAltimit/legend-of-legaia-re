@@ -329,16 +329,16 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 
 | Sub | Effect |
 |---|---|
-| 1 | Start field BGM - sets `_DAT_8007BAC8 = signed16(operand0, operand1)` then debug-prints `"Field BGM %d"`. The BGM-id-to-PROT mapping is asynchronous in `FUN_800243F0` (see [BGM lookup](#bgm-lookup-table)). |
-| 2 | Pause (`func_0x800266E0(0x8007052C)`). |
-| 3 | Resume (`func_0x80026740`). |
-| 4 | Stop (`func_0x80026478`). |
+| 1 | Start field BGM - sets `_DAT_8007BAC8 = signed16(operand0, operand1)` and clears flag bit 1 (`0x801E0104`), then debug-prints `"Field BGM %d"`. The BGM-id-to-PROT mapping is asynchronous in `FUN_800243F0` (see [BGM lookup](#bgm-lookup-table)). |
+| 2 | Pause - sets flag bit 1, detaches the BGM slot (`func_0x800266E0(0x8007052C)`, arm `0x801E0150`). |
+| 3 | Sets flag bit 1 and stops the bound voice (`func_0x80026740`, arm `0x801E0174`) - by callee behaviour a harder pause, not the "Resume" its legacy label claims. |
+| 4 | Clears flag bit 1 and re-attaches the slot (`func_0x80026478`, arm `0x801E019C`) - by callee behaviour a resume, not the "Stop" its legacy label claims. |
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
 | 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
 | 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
-| 10 | Unhalt-pause toggle - waits on flag bit 3, then clears the pause bit sub-op 2 sets. What arms it is still open; no port. See [open threads](../reference/open-rev-eng-threads.md#op-0x35-sub-op-0xa---what-it-waits-on). |
+| 10 | **Swap-commit** - waits on flag bit 3 (the resolver's load-settle bit), releases the paused BGM slot (`FUN_800266E0` + `FUN_80026520`), sets ack bit 4, clears pause bit 1. [Detail](#sub-op-0xa-is-the-swap-commit). Port: `BgmDirector::unhalt_pause` via `SceneHost::route_bgm_events`. |
 | 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
 
 PC += 4.
@@ -378,6 +378,45 @@ instead is invisible to a corpus sweep of scene prescripts (which only ever
 emit sub-op 1) and audible only inside a cutscene, where it leaves the score
 silent where it belongs and starts it over whichever scene the player enters
 next.
+
+##### Sub-op 0xA is the swap-commit
+
+Sub-op 9 selects; sub-op `0xA` commits. Its arm at `0x801E0264`:
+
+```text
+801e0268  lw v0,-18328(v0)      ; _DAT_8007B868 != 0 -> whole op is a no-op
+801e027c  lw v0,-18608(s1)      ; flag word _DAT_8007B750
+801e0284  andi v0,v0,0x8        ; bit 3 clear ->
+801e0288  beq v0,zero,0x801dee4c ;   restore-PC: re-run this op next frame
+801e0294  jal 0x800266e0        ; detach the BGM slot 0x8007052C
+801e029c  jal 0x80026520        ; close it (SsSeqClose the handle)
+801e02ac  ori v0,v0,0x0010      ; set bit 4  (release-ack)
+801e02b0  and v0,v0,v1          ; clear bit 1 (the pause bit sub-op 2 set)
+801e02b8  sw v0,-18608(s1)
+```
+
+Bit 3 has exactly one setter in the whole static corpus: `0x800246D0` inside
+`FUN_800243F0`, the BGM resolver/poller - it fires when a track swap's
+payload is staged and the settle delay has elapsed. And after setting it,
+the poller **stalls its own install** while bit 0 (set by sub-op 9) is up and
+bit 4 is not (`0x800246E0..E8`) - so under a scripted swap the old, paused
+track holds the slot until this op releases it. That is the whole design:
+the cutscene decides the exact beat the outgoing score dies on. The full
+protocol, the flag word's bit map, and the `FUN_800266E0`-vs-`FUN_80026520`
+split live in [`audio.md`](audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa).
+
+The `_DAT_8007B868` early-return mirrors the callees: the entire actor-sound
+family no-ops behind the same gate, and no static writer ever sets that word
+non-zero (its lone store, in `FUN_8001DCF8`, clears a bit) - it is the
+dev/dual-mode flag, zero in retail play.
+
+The engine port: the host is synchronous, so the bit-3 wait is satisfied on
+arrival and `route_bgm_events` routes the op to `BgmDirector::unhalt_pause` -
+release the source only if the pause latch is still set (no start
+intervened), then clear the latch unconditionally. Dropping the op instead
+leaves the score paused after every cutscene that pairs sub-op 2 with a
+later sub-op `0xA` (`town01`'s opening records carry the op;
+`crates/engine-core/tests/bgm_midscene_change_disc.rs` pins the pairing).
 
 #### 0x36 SOUND_CUE
 

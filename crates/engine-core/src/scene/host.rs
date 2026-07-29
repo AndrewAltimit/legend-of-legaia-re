@@ -24,8 +24,9 @@ pub enum SceneTickEvent {
 /// Sub-op semantics mirror retail field-VM op `0x35` - see
 /// [`docs/subsystems/script-vm.md`] for the full table. The hook only
 /// receives sub-ops that change playback state (1 and 9 = start, 2 = pause,
-/// 3 = resume, 4 = stop, 8 = re-attach); other sub-ops are control words
-/// that the host can route without sequencer state.
+/// 3 = resume, 4 = stop, 8 = re-attach, `0xA` = unhalt-pause swap-commit);
+/// other sub-ops are control words that the host can route without
+/// sequencer state.
 ///
 /// **There is no deferred start.** Sub-op 9 - the op a cutscene changes
 /// music with mid-scene - is a start behind an asset-load barrier this host
@@ -63,6 +64,26 @@ pub trait BgmDirector {
     fn reattach_volume(&mut self, level: i16) {
         let _ = level;
     }
+    /// Sub-op `0xA` - the **swap-commit** of the BGM track-change
+    /// handshake (retail arm `0x801E0264` in `FUN_801DE840`): once the
+    /// resolver has staged the incoming track (`_DAT_8007B750` bit 3, set
+    /// only by `FUN_800243F0`'s load-settle stage), the script tears down
+    /// **and closes** the slot's current occupant - the track sub-op 2
+    /// paused - via `FUN_800266E0` + `FUN_80026520`, then sets the
+    /// release-ack bit 4 and clears the pause bit 1. The resolver stalls
+    /// its install on that ack, so a cutscene picks the exact beat the old
+    /// score dies on.
+    ///
+    /// This host resolves BGM synchronously, so by the time the commit
+    /// routes, the paired sub-op 9 start (which precedes it in script
+    /// order) has already replaced the track. The residual contract for a
+    /// director: **if the pause latch is still set** (no start intervened),
+    /// release the paused source the way retail does; **always** clear the
+    /// pause latch so the slot's occupant sounds. A director that drops
+    /// this op leaves the score paused after every cutscene that pairs
+    /// sub-op 2 with sub-op `0xA`. Default is a no-op for stub directors
+    /// with no pause latch to clear.
+    fn unhalt_pause(&mut self) {}
 }
 
 /// PORT: FUN_80019898

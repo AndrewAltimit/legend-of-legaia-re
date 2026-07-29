@@ -190,3 +190,105 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
         sub9.len()
     );
 }
+
+/// A director with the pause latch real directors carry (the
+/// `AudioBgmDirector` / `WebBgmDirector` shape), for the sub-op `0xA` pair
+/// below.
+#[derive(Default)]
+struct LatchDirector {
+    paused: bool,
+    /// Set when the unhalt commit released a still-paused source.
+    released_paused_source: bool,
+    started: Vec<u16>,
+}
+
+impl BgmDirector for LatchDirector {
+    fn start(&mut self, bgm_id: u16, _seq: &[u8]) {
+        self.started.push(bgm_id);
+        self.paused = false;
+    }
+    fn start_owned_vab(&mut self, bgm_id: u16, _entry: &[u8]) {
+        self.started.push(bgm_id);
+        self.paused = false;
+    }
+    fn pause(&mut self) {
+        self.paused = true;
+    }
+    fn unhalt_pause(&mut self) {
+        if self.paused {
+            self.released_paused_source = true;
+        }
+        self.paused = false;
+    }
+}
+
+/// Op-`0x35` sub-op `0xA` (the unhalt-pause swap-commit, retail arm
+/// `0x801E0264`) is carried by real cutscene records on the disc, and the
+/// `2` / `0xA` pause-unhalt pairing routed through `route_bgm_events` must
+/// not leave the director paused. A port that honours sub-op 2 and drops
+/// sub-op `0xA` leaves the score paused after every such cutscene - which is
+/// exactly what happened while `route_bgm_events` pushed sub-op 10 back onto
+/// the leftover queue.
+#[test]
+fn cutscene_pause_unhalt_pair_does_not_leave_music_paused() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+
+    // Disc-anchored non-vacuity: find a scene whose cutscene records carry
+    // sub-op 0xA at all (the walker-decoded op stream, not a raw byte scan).
+    let names = host.index.cdname_scene_names();
+    let mut carrier_scene = None;
+    for name in &names {
+        if host.load_scene(name).is_err() {
+            continue;
+        }
+        let ops = cutscene_bgm_ops(&host);
+        if ops.iter().any(|&(_, sub)| sub == 10) {
+            let paired = ops.iter().any(|&(_, sub)| sub == 2);
+            carrier_scene = Some((name.clone(), ops.len(), paired));
+            break;
+        }
+    }
+    let Some((name, op_count, has_pause_too)) = carrier_scene else {
+        panic!(
+            "no scene's cutscene records carry op-0x35 sub-op 0xA - the test lost its subject \
+             (searched {} scenes)",
+            names.len()
+        );
+    };
+
+    // Drive the pause -> unhalt pair through the real routing.
+    let mut d = LatchDirector::default();
+    host.world.pending_field_events.push(FieldEvent::Bgm {
+        text_id: 0,
+        sub_op: 2,
+    });
+    host.world.pending_field_events.push(FieldEvent::Bgm {
+        text_id: 0,
+        sub_op: 10,
+    });
+    let acted = host.route_bgm_events(&mut d).expect("route");
+    assert_eq!(acted, 2, "both the pause and the unhalt commit must act");
+    assert!(
+        !d.paused,
+        "the 2 / 0xA pair left the director paused - the unhalt commit was dropped"
+    );
+    assert!(
+        d.released_paused_source,
+        "with no start intervening, the commit must release the paused source"
+    );
+    assert!(
+        !host
+            .world
+            .pending_field_events
+            .iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 10, .. })),
+        "sub-op 0xA event survived routing as a leftover"
+    );
+
+    eprintln!(
+        "[ok] {name}: cutscene records carry sub-op 0xA \
+         ({op_count} BGM ops decoded, sub-op 2 present in same partition: {has_pause_too})"
+    );
+}

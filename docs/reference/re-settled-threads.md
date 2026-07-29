@@ -1757,6 +1757,64 @@ The port was never wrong here: `player_anm.rs` has always decoded `bytes[4] & 0x
 | `_DAT_8007B910` is the live audio level, not screen brightness | resolved (both hosts' labels corrected) | `disassembly` | [details ↓](#_dat_8007b910-is-the-live-audio-level-not-screen-brightness) |
 | XA clip-table writer + `(clip_id, chan)` cue census | resolved (writer pinned statically; census in `audio.md`) | `disassembly` | [details ↓](#xa-clip-table-writer--clip_id-chan-cue-census) |
 | Hyper Arts fanfare selector - what audio fires when a Hyper executes | resolved (per-(char, art) coin flip over a fixed channel pair of the even-slot fanfare bank) | `disassembly` | [details ↓](#hyper-arts-fanfare-selector) |
+| Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | resolved (it is the track-swap commit; both globals pinned; ported) | `disassembly` | [details ↓](#op-0x35-sub-op-0xa-is-the-track-swap-commit) |
+
+### Op-`0x35` sub-op `0xA` is the track-swap commit
+
+*Status:* resolved - the arm's two inputs are pinned by writer census, and the
+op is ported.
+
+The arm (`0x801E0264`, field overlay 0897) was read long ago; what was open
+was who feeds it. A store-offset writer census over SCUS + every based
+overlay image (the `lui`+load/store form the literal-word sweep cannot see;
+[`address-reference-scan.md`](../tooling/address-reference-scan.md)) answers
+all three questions:
+
+1. **Nothing writes `_DAT_8007B868`.** Its only store anywhere in the static
+   corpus is a read-modify-write **clearing** bit 1, at `0x8001E008` in the
+   boot mode-init `FUN_8001DCF8`; a raw byte sweep over all 1233 PROT entries
+   adds only one incidental data word (`0392_map03.BIN +0x2bc40`, surrounded
+   by non-code). So the word can never go non-zero in retail play - it is the
+   same dev/dual-mode gate the whole actor-sound family
+   (`FUN_800266E0`/`80026520`/`26740`/`26478`/`26410`) checks, and the arm's
+   early-return when it is set just mirrors its callees, which would all
+   no-op anyway.
+2. **`_DAT_8007B750` bit 3 has exactly one setter**: `ori v1,v0,0x8` at
+   `0x800246D0` inside `FUN_800243F0` - the BGM resolver/poller's
+   load-settle stage, reached only while a track swap is in flight, after
+   the settle countdown at `gp+0x768` (armed to `0x1E` frames at load
+   start, `0x3C` when master mode is 2) hits zero. Immediately after
+   setting it the poller stalls its own install while bit 0 (sub-op 9's
+   "script-owned start") is up and bit 4 is not (`0x800246E0..E8`): the
+   swap waits for the script's commit.
+3. **`FUN_80026520` closes what `FUN_800266E0` only detaches**: `800266E0`
+   resets the pan state and rewinds/stops the bound sequence
+   (`FUN_80064370`, the `SsSeqRewind` wrapper) leaving the source active;
+   `80026520` VSyncs, clears the source's active flag (`+0x8`), rewinds
+   **and closes** the handle (`FUN_80061E94`, the `SsSeqClose` shim). The
+   pair together is a full slot release, which is why the poller's own
+   teardown path calls both.
+
+So sub-op `0xA` is not a toggle: it is the **commit** half of the sub-op
+9 / `0xA` swap handshake - wait until the incoming track is staged, release
+the slot's paused occupant, ack with bit 4 (which unstalls the poller's
+install), clear the pause bit 1. Full protocol + the flag word's bit map:
+[`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa);
+the arm quoted:
+[`script-vm.md`](../subsystems/script-vm.md#sub-op-0xa-is-the-swap-commit).
+An incidental yield of the same census: sub-op 2's pause **sets** flag bit 1
+where sub-op 3 also sets it (calling the voice-stop `FUN_80026740`) and
+sub-op 4 clears it (calling the re-attach `FUN_80026478`) - the legacy
+Resume/Stop labels on 3/4 describe each other's arm.
+
+Port: `SceneHost::route_bgm_events` routes sub-op 10 to
+`BgmDirector::unhalt_pause` (release the source only while the pause latch
+is set, then clear the latch unconditionally), overridden by the native
+`AudioBgmDirector` and the browser `WebBgmDirector`; both starts also clear
+the pause gate, as retail's sub-op 1 arm does. Pinned disc-side by
+`crates/engine-core/tests/bgm_midscene_change_disc.rs` (town01's cutscene
+records carry the op). `see ghidra/scripts/funcs/800243f0.txt`,
+`800266e0.txt`, `80026520.txt`, `8001dcf8.txt`.
 
 ### Hyper Arts fanfare selector
 
