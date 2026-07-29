@@ -298,15 +298,24 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         if let Some((_, (tmd, raw))) = &stage {
-            // Draw the stage's object 0 only (the arena walls / beach / sky
-            // shell). Object 1 is a small ground-level ribbon mesh (near
-            // props / ground mist) that NO retail battle capture shows on
-            // screen - drawing it painted an engine-only white streak
-            // across the arena floor (the "swirl FX" divergence in the
-            // Tetsu ground truth).
+            // Retail's backdrop registration edits the object list rather
+            // than truncating it: it drops index 1 and keeps the rest
+            // (`legaia_engine_core::battle_backdrop::backdrop_object_indices`,
+            // ported from `FUN_800513f0`). On the two-object stage shells
+            // that is object 0 alone - object 1 is the ground-level ribbon of
+            // near props no retail capture shows, and drawing it painted an
+            // engine-only white streak across the Tetsu arena floor. On the
+            // four-object overworld domes (map01/map02/map03) it keeps
+            // objects 0 (sky), 2 (mountains) and 3 (the flat ground ring),
+            // which drawing object 0 alone was losing.
+            let keep =
+                legaia_engine_core::battle_backdrop::backdrop_object_indices(tmd.objects.len());
             let tmd0 = legaia_tmd::Tmd {
                 header: tmd.header.clone(),
-                objects: tmd.objects.first().cloned().into_iter().collect(),
+                objects: keep
+                    .iter()
+                    .filter_map(|i| tmd.objects.get(*i).cloned())
+                    .collect(),
             };
             let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
             if !vmesh.indices.is_empty()
