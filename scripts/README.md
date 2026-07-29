@@ -51,6 +51,7 @@ in the hook, and must self-skip everywhere else.
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
 - `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.
+- `check-site-generated-freshness.py` - generated `site/*.html` vs its `_content` fragment: every asset the fragment references must reach the generated page. Catches a `_content` edit that was never re-rendered, which the link gate cannot see because the defect is a *missing* reference, not a broken one.
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
 - `disc-coverage.py` (+ `disc-coverage-baseline.json`) - **hard gate**: coverage measured against the disc's own bytes rather than against our citations, ratcheted against a committed baseline. Self-skips without `extracted/` and the dump corpus, so it also runs in CI as a SKIPPED step. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
 - `update-progress-metrics.py` - refresh `progress-metrics.json` from `disc-coverage.py` + `port-catalog.py`. Run locally on a machine with disc data and commit the result; the site build has none and can only render what is committed.
