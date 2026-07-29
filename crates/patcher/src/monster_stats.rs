@@ -152,6 +152,7 @@ pub const STORY_BOSS_MONSTER_IDS: &[u16] = &[
     165, 166, // Gaza
     169, // Zora
     170, // Jette
+    182, // Koru (the muscle-dome strip arm's 0xB6 gate names it; scripted nilboa fight)
     180, 181, 183, 184, 185, 186, // Cort
 ];
 
@@ -182,6 +183,7 @@ pub const PROTECTED_MONSTER_IDS: &[u16] = &[
     165, 166, // Gaza
     169, // Zora
     170, // Jette
+    182, // Koru (the muscle-dome strip arm's 0xB6 gate names it; scripted nilboa fight)
     180, 181, 183, 184, 185, 186, // Cort
 ];
 
