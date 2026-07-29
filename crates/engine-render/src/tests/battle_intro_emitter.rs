@@ -420,3 +420,68 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
         &source[o..o + 3]
     );
 }
+
+/// The capture must not overwrite a texture page the style itself samples.
+///
+/// `FIELD_CAPTURE_ROWS` spans VRAM `320..640` x `0..240`, which contains the
+/// tile shatter's 4bpp side-face shade page at `(448, 0)`. Blitting the rows
+/// rect for that style destroys an input it depends on and gains it nothing -
+/// its own pages (`0x135` / `0x137`) are both inside the columns rect. The
+/// curtain does sample the rows rect, so it must keep both.
+mod capture_rects {
+    use crate::battle_intro::{TILE_SHADE_PAGE, capture_rects_for};
+    use crate::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
+    use legaia_engine_vm::battle_intro_styles::IntroStyle;
+
+    /// Halfword-rect overlap, the relation that makes the clobber a clobber.
+    fn overlaps(a: VramRect, b: VramRect) -> bool {
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    }
+
+    #[test]
+    fn the_rows_rect_really_does_cover_the_shade_page() {
+        // If this ever stops being true the whole guard below is vacuous.
+        assert!(
+            overlaps(FIELD_CAPTURE_ROWS, TILE_SHADE_PAGE),
+            "the premise of the fix: rows {FIELD_CAPTURE_ROWS:?} covers the \
+             shade page {TILE_SHADE_PAGE:?}"
+        );
+        // ...and the columns rect does not, which is why columns-only is safe.
+        assert!(!overlaps(FIELD_CAPTURE_COLS, TILE_SHADE_PAGE));
+    }
+
+    #[test]
+    fn tile_shatter_captures_columns_only() {
+        let rects = capture_rects_for(IntroStyle::TileShatter);
+        assert_eq!(rects, [FIELD_CAPTURE_COLS]);
+        assert!(
+            !rects.iter().any(|r| overlaps(*r, TILE_SHADE_PAGE)),
+            "the tile style must not blit over its own shade page"
+        );
+    }
+
+    #[test]
+    fn the_curtain_keeps_both_rects() {
+        // Its row pass samples pages at (320, 0) / (512, 0); dropping the rows
+        // rect would leave that pass reading whatever the scene left there.
+        assert_eq!(
+            capture_rects_for(IntroStyle::Curtain),
+            [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS]
+        );
+    }
+
+    #[test]
+    fn styles_with_unestablished_sampling_stay_conservative() {
+        for s in [
+            IntroStyle::ScatterParticles,
+            IntroStyle::SpinUpParticles,
+            IntroStyle::Swirl,
+        ] {
+            assert_eq!(
+                capture_rects_for(s),
+                [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS],
+                "{s:?} sampling is not established; keep both rects"
+            );
+        }
+    }
+}

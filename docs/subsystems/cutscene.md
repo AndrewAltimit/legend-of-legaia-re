@@ -1445,8 +1445,8 @@ are emitted twice: once opaque with the tile's own UVs, once semi-transparent ov
 64×64 shade page, and the semi-transparent set links last so it lands on top within its OT
 bucket.
 
-> **Correction: the record's `+0x04` and `+0x0C` vectors are the opposite way round** from how
-> `engine-vm::battle_intro_tiles` names them (`rot` / `trans`). The tick's per-tile call order
+> **The record's `+0x04` vector is a position and its `+0x0C` a rotation**, not the reverse.
+> A reading that had them swapped is corrected here. The tick's per-tile call order
 > at `0x801D0DA0..0x801D0DD8` is: load the view matrix from `0x1F8003C8`, push `rec+0x04`
 > through `MVMVA` (`cop2 0x480012`, rotation / `V0` / `+TR`) into `0x1F800348`, then run
 > `RotMatrix` on `rec+0x0C` into `0x1F800334`. `0x1F800348` is `0x1F800334 + 0x14`, which is
@@ -1454,10 +1454,13 @@ bucket.
 > `+0x0C` is its **Euler angle triple** (it becomes the rotation). The seeder agrees: it stores
 > the tile's grid `(x, y, 0x880)` at `+0x04`, and `0x880 = GRID_Z + 0x80` puts the front face
 > exactly on the grid plane. Consequently the pads at `+0x1A` / `+0x22` / `+0x2A` are **linear**
-> velocities and those at `+0x3A` / `+0x42` are **angular** rates - the reverse of the current
-> names, and of the claim that the doubling of `+0x1A` / `+0x22` makes a tile's *spin*
-> accelerate. It accelerates its radial *drift*. The offsets the ported integration writes are
-> right; only the labels are wrong, so nothing misbehaves until the emitter lands.
+> velocities and those at `+0x3A` / `+0x42` are **angular** rates, and the doubling of `+0x1A` /
+> `+0x22` accelerates a tile's radial *drift* rather than its *spin*.
+>
+> The offsets a swapped reading writes are still the right ones, which is what makes this worth
+> stating: the integration's arithmetic looks correct either way, and nothing misbehaves until
+> an emitter consumes the semantics - at which point it inverts silently. `battle_intro_tiles`
+> names the fields `pos` / `angles` and pins both directions in `record_semantics`.
 
 **Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
 corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).
