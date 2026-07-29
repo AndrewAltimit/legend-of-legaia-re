@@ -675,13 +675,20 @@ impl PlayWindowApp {
                 }
                 draws
             }
-            BootUiState::GameOver(s) => legaia_engine_render::game_over_draws_for(
-                &self.font,
-                s.cursor(),
-                s.continue_enabled,
-                (96, 100),
-            ),
+            BootUiState::GameOver(s) => self.game_over_draws(s),
         }
+    }
+
+    /// The game-over panel's draws, off the live session.
+    ///
+    /// A named site rather than an inline arm so the browser host can be
+    /// paired against it: both hosts must project the *session* here (cursor
+    /// and the save-scan `continue_enabled`), not a pinned pair of literals,
+    /// and the pen is the shared `engine-ui` constant so the panel cannot
+    /// land in two places.
+    fn game_over_draws(&self, s: &legaia_engine_core::game_over::GameOverSession) -> Vec<TextDraw> {
+        use legaia_engine_render::{GAME_OVER_PEN, game_over_draws_for};
+        game_over_draws_for(&self.font, s.cursor(), s.continue_enabled, GAME_OVER_PEN)
     }
 
     /// Drain world field events and route them to whichever subsystem

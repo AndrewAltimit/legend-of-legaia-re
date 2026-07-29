@@ -308,6 +308,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
+NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 
@@ -361,6 +362,56 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["arm_live_loop"],
+    },
+    {
+        "what": "pause-menu open - retail gates the root list's last two rows "
+        "on two scene-scoped values (the op-`0x49` entry context and the MAN "
+        "header's save-allow bit) and suspends the field while the menu owns "
+        "the frame. A host that opens the menu without sampling them into a "
+        "`FieldMenuGate` draws every row white and opens every row, so a "
+        "player can Save in one of the 96 scenes whose header forbids it; a "
+        "host that does not switch the world into `SceneMode::Menu` leaves "
+        "field dispatch running under the menu. Both are invisible in a diff, "
+        "because the two open sites live in different crates",
+        "sites": {
+            "native": (NATIVE_BOOT, "open_field_menu"),
+            "web": (WEB_PLAY_MENU, "play_menu_open"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
+    },
+    {
+        "what": "game-over panel - both hosts must project the live "
+        "`GameOverSession` (its cursor, and the save-scan `continue_enabled`), "
+        "not a pinned pair of literals. The browser drew `(1, false)` for a "
+        "long time, which is a picture of a menu: the cursor never moved and "
+        "Continue was permanently greyed on a host that could already load "
+        "saves. `pattern_same` over the argument list says the two calls must "
+        "agree without saying what they must agree on, so it keeps working if "
+        "the arguments change",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "game_over_draws"),
+            "web": (WEB_PLAY_BATTLE, "game_over_draws"),
+        },
+        "mode": "pattern_same",
+        "pattern": r"game_over_draws_for\(\s*[^,]+,\s*(.*?),\s*(?:ui::|legaia_engine_render::)?GAME_OVER_PEN",
+    },
+    {
+        "what": "play clock - the H:MM:SS box the pause menu draws reads "
+        "`World::play_time_seconds`, and that counter only moves if a host "
+        "drives `advance_play_time`. The browser substituted `world.frame / 60` "
+        "at the draw site instead, which reset on every page load, ignored a "
+        "loaded save's hours, and - because the *save* writes the world's "
+        "counter, not the drawn proxy - recorded the LOADED play time in every "
+        "save taken from the browser. Asserted across the two "
+        "`field_menu_draws_for` call sites, so the reader and the writer are "
+        "pinned together",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, None),
+            "web": (WEB_PLAY_MENU, None),
+        },
+        "mode": "symbols_same",
+        "symbols": ["advance_play_time"],
     },
 ]
 
@@ -965,6 +1016,35 @@ SELFTEST_SIM: list[tuple[str, str, str, str, object, bool]] = [
 ]
 
 
+# Control suite for the page-key detector (tier 5), over synthetic page
+# sources. `(label, source, should_flag)`. Both directions matter: a detector
+# that flagged every `.key` would fail the play page's scene-group records,
+# and one that flagged nothing would have passed the minigames page's real
+# `{a:1,s:2,d:3}` table for as long as it existed.
+SELFTEST_PAGE_KEYS: list[tuple[str, str, bool]] = [
+    ("e.key read is a page-side table", "const k = e.key.toLowerCase();", True),
+    ("event.key read is a page-side table", "if (event.key === 'a') go();", True),
+    ("e.code against a bindable key is a page-side table",
+     "if (e.code === 'KeyA') go();", True),
+    ("e.code against a non-pad key is fine", "if (e.code === 'Escape') close();", False),
+    ("a plain object's .key field is not a KeyboardEvent",
+     "scenes.filter(s => s.category === g.key);", False),
+    ("dataset.key is an attribute, not a KeyboardEvent",
+     "const k = kbd.dataset.key;", False),
+    ("resolving through the engine table is the fix",
+     "const b = window.legaiaPadButtonOf(e.code); if (b === 'Circle') cast();", False),
+]
+
+
+def _selftest_page_key_case(src: str) -> bool:
+    """Run the tier-5 detectors over one synthetic source; True when flagged."""
+    if EVENT_KEY_RE.search(src):
+        return True
+    return any(
+        m.group(1) not in NON_PAD_CODES for m in EVENT_CODE_LITERAL_RE.finditer(src)
+    )
+
+
 def _selftest_sim_case(mode: str, a: str, b: str, extra: object) -> bool:
     """Run one synthetic sim-pair comparison; True when it diverges."""
     hosts = ["native", "web"]
@@ -1092,6 +1172,13 @@ def run_selftest() -> int:
         else:
             print(f"  FAIL  sim pair: {label}")
             failures += 1
+    for label, src, want in SELFTEST_PAGE_KEYS:
+        if _selftest_page_key_case(src) == want:
+            print(f"  ok    page keys: {label}")
+        else:
+            verdict = "flagged" if not want else "passed"
+            print(f"  FAIL  page keys: {label} - detector {verdict}")
+            failures += 1
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1099,6 +1186,7 @@ def run_selftest() -> int:
         + len(SELFTEST_CONSTANTS)
         + len(SELFTEST_SIGNATURES)
         + len(SELFTEST_SIM)
+        + len(SELFTEST_PAGE_KEYS)
     )
     if failures:
         print(
@@ -1108,6 +1196,118 @@ def run_selftest() -> int:
         return 2
     print(f"\nself-test: all {total} cases pass")
     return 0
+
+
+# --------------------------------------------------------------------------
+# Tier 5 - no page-side keyboard table
+# --------------------------------------------------------------------------
+#
+# The three hosts share one keyboard layout, served out of the engine by
+# `pad_bindings_json` (`legaia_engine_core::input::Mapping::web_default`).
+# The whole point of serving it is that a page cannot write a second one down
+# - and a page that writes one down does not look like a table: it looks like
+# a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.
+# The minigames page carried exactly that for a long time, binding A / S / D
+# to the three face buttons while the engine binds them to Left / Down /
+# Right, and printing labels that said so. Nothing failed, because no gate
+# asked.
+#
+# The rule, on the pages that drive pad input:
+#
+#   * `KeyboardEvent.key` may not be read at all. It is the layout-dependent
+#     character property - the engine's table is keyed by `code`, so a `key`
+#     comparison cannot be reconciled with a binding even in principle.
+#   * `KeyboardEvent.code` may be compared to a literal only for keys the PSX
+#     pad has no button for. Those cannot contradict a binding, and the pad
+#     has no Escape.
+#
+# Scoped to pad-driving sources: a file that mentions an engine input entry
+# point. `main.js` closing a dialog on Escape is ordinary web UI and is not
+# in scope - the gate is about pad bindings, not about keyboards.
+SITE_ROOT = REPO / "site"
+
+# A source is in scope when it reaches the engine's pad surface at all.
+PAD_HOST_MARKERS = (
+    "pad_bindings_json",
+    "legaiaPad",
+    "legaiaAdoptPadBindings",
+    ".set_pad(",
+    "_menu_input(",
+    "_shop_input(",
+    "boot_title_step(",
+    "game_over_input(",
+)
+
+# `KeyboardEvent` accesses: an event-shaped identifier, not `g.key` on a
+# plain object (the play page's scene-group records have a `key` field, and
+# `kbd.dataset.key` is an attribute).
+EVENT_KEY_RE = re.compile(r"\b(?:e|ev|evt|event)\.key\b")
+EVENT_CODE_LITERAL_RE = re.compile(
+    r"\b(?:e|ev|evt|event)\.code\s*[=!]==?\s*['\"]([^'\"]*)['\"]"
+)
+
+# Keys with no PSX pad button, so a page-side comparison against one cannot
+# disagree with a binding. Kept short on purpose: every addition is a key the
+# engine then may not bind.
+NON_PAD_CODES = {
+    "Escape",
+    "Backspace",
+    "Tab",
+    "Delete",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    *(f"F{n}" for n in range(1, 13)),
+}
+
+
+def pad_host_sources() -> list[Path]:
+    """Every `site/` source that reaches the engine's pad surface."""
+    if not SITE_ROOT.is_dir():
+        return []
+    out = []
+    for path in sorted(SITE_ROOT.rglob("*")):
+        if path.suffix not in (".js", ".html") or not path.is_file():
+            continue
+        if "wasm" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if any(m in text for m in PAD_HOST_MARKERS):
+            out.append(path)
+    return out
+
+
+def check_page_key_tables() -> tuple[list[str], int]:
+    """Tier 5. Returns `(problems, files_scanned)`."""
+    problems: list[str] = []
+    sources = pad_host_sources()
+    for path in sources:
+        rel = path.relative_to(REPO)
+        text = strip_comments(BLOCK_COMMENT_RE.sub(" ", path.read_text(encoding="utf-8")))
+        for m in EVENT_KEY_RE.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            problems.append(
+                f"PAGE KEY TABLE {rel}:{line}: reads `KeyboardEvent.key`. "
+                f"A pad-driving page must resolve `event.code` through the "
+                f"engine's table (`pad_bindings_json` / `legaiaPadButtonOf`) "
+                f"and dispatch on the pad BUTTON - `.key` is the "
+                f"layout-dependent character and cannot be reconciled with a "
+                f"binding."
+            )
+        for m in EVENT_CODE_LITERAL_RE.finditer(text):
+            code = m.group(1)
+            if code in NON_PAD_CODES:
+                continue
+            line = text.count("\n", 0, m.start()) + 1
+            problems.append(
+                f"PAGE KEY TABLE {rel}:{line}: compares `event.code` to "
+                f"{code!r}, which the engine may bind. Resolve it through "
+                f"`legaiaPadButtonOf` and dispatch on the button, or - if it "
+                f"really is not a pad control - use a key the pad has no "
+                f"button for (NON_PAD_CODES in this gate)."
+            )
+    return problems, len(sources)
 
 
 def main() -> int:
@@ -1177,6 +1377,15 @@ def main() -> int:
                 "ERROR: built-in sim-pair control failed; a comparator that cannot "
                 "tell agreement from divergence proves nothing about the pairs "
                 "below. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, src, want in SELFTEST_PAGE_KEYS:
+        if _selftest_page_key_case(src) != want:
+            print(
+                "ERROR: built-in page-key control failed; a detector that cannot "
+                "tell a page-side keyboard table from an ordinary object field "
+                "proves nothing about the pages below. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -1272,6 +1481,10 @@ def main() -> int:
     sim_problems, sim_pending = check_sim_pairs()
     problems.extend(sim_problems)
 
+    # The input half: no page may carry its own keyboard table.
+    key_problems, key_files = check_page_key_tables()
+    problems.extend(key_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -1286,6 +1499,10 @@ def main() -> int:
         print(
             f"[ui-drift] paired simulation injection sites: {len(SIM_PAIRS)} "
             f"({len(sim_pending)} disclosed as blocked)"
+        )
+        print(
+            f"[ui-drift] pad-driving site sources scanned for page-side "
+            f"keyboard tables: {key_files}"
         )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")

@@ -31,6 +31,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::tile_board;
+use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
 /// A tile-actor mesh staged for upload: `(slot, mesh, per-vertex object ids,
@@ -45,8 +46,54 @@ impl LegaiaRuntime {
     ///
     /// Empty when no board is installed, which is every retail scene shipped
     /// so far - the op-`0x49` census found no scene MAN that installs one, so
-    /// this path is reached today through the same demo trigger the native
-    /// window uses.
+    /// this path is reached today only through a demo trigger. The native
+    /// window's is `LEGAIA_TILE_BOARD_DEMO=1`, which a browser cannot set;
+    /// the page's is [`Self::play_install_demo_tile_board`], which installs
+    /// the same 7x7 board through the same `try_install_tile_board` bytecode.
+    /// This module claimed to share the native trigger for a while, and did
+    /// not - `std::env::var_os` is unreachable in a browser, so the whole
+    /// module was dead code wearing a "wired" comment.
+    /// Install the demo tile board - the browser's twin of the native
+    /// window's `LEGAIA_TILE_BOARD_DEMO=1` env trigger, which no browser can
+    /// set. Same 7x7 board centred on the player, installed through the same
+    /// op-`0x49` bytecode (`World::try_install_tile_board`), so the page
+    /// exercises the identical install path rather than a second one.
+    ///
+    /// Returns `false` off the field, with a board already up, or when the
+    /// install is refused. No retail scene installs a board, so this is the
+    /// only way either host reaches the per-cell draw pass today.
+    pub fn play_install_demo_tile_board(&mut self) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let world = &mut host.world;
+        if world.mode != SceneMode::Field || world.tile_board.is_some() || world.tile_board_armed {
+            return false;
+        }
+        let Some(pslot) = world.player_actor_slot else {
+            return false;
+        };
+        let (px, pz) = {
+            let a = &world.actors[pslot as usize];
+            (a.move_state.world_x as i32, a.move_state.world_z as i32)
+        };
+        // 7x7 board with the player's tile at its centre - byte-identical to
+        // the native window's `maybe_install_demo_tile_board` instruction.
+        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
+        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
+        let instr: [u8; 14] = [
+            0x49, 0x05, // op, sub-op
+            origin_x, origin_z, // +1/+2 tile origin
+            7, 7, // +3/+4 width x height
+            5, // +5 draw radius
+            0, // +6 mode flag (full-board draw)
+            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
+            0, // +0xb player template (character-mesh head)
+            3, // +0xc tile template base (effect-model library)
+        ];
+        world.try_install_tile_board(&instr)
+    }
+
     pub fn play_tile_board_slots(&self) -> Vec<u32> {
         let Some(h) = self.scene_host.as_ref() else {
             return Vec::new();

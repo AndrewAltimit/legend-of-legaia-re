@@ -35,13 +35,26 @@ const ROW_LOAD: usize = 5;
 const ROW_SAVE: usize = 6;
 
 fn loaded_in_town() -> Option<LegaiaRuntime> {
+    loaded_in("town01")
+}
+
+/// The same, in an arbitrary scene. The **Save** row is scene-gated on both
+/// hosts (`World::scene_save_allowed`, seeded from the MAN header bit retail
+/// copies into `_DAT_8007B6A8`), and across the disc that bit is set only on
+/// the three kingdom world maps - so a test that needs to reach the save
+/// screen through the menu has to stand in one of them, exactly as a player
+/// does. See `docs/subsystems/save-screen.md`.
+fn loaded_in(scene: &str) -> Option<LegaiaRuntime> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
     let bytes = std::fs::read(&disc).ok()?;
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).ok()?;
-    rt.enter_field("town01").ok()?;
+    rt.enter_field(scene).ok()?;
     Some(rt)
 }
+
+/// A kingdom world map - the only scene family whose MAN permits a menu save.
+const SAVE_ALLOWED_SCENE: &str = "map01";
 
 /// `(sprite_count, text_count)` of the current menu draw list at a 320x240
 /// identity stage.
@@ -127,11 +140,26 @@ fn every_pause_menu_row_renders_full_retail_content() {
 
     // Load / Save render the real retail save-select screen against the
     // memory-card rack - the panel + SLOT pills, not a generic frame.
-    for (row, name) in [(5usize, "Load"), (6, "Save")] {
-        rt.play_menu_close();
-        rt.play_menu_open();
-        open_row(&mut rt, row);
-        let (sprites, texts) = draw_counts(&rt);
+    //
+    // Save has to be measured in a scene whose MAN permits it: this test's
+    // `town01` is a field scene, so retail (and now this host) buzzes that
+    // row. Measuring it here would pass on the ROOT list's own draws, which
+    // clear both thresholds - a vacuous assertion dressed as a screen check.
+    // `the_save_row_is_greyed_and_buzzes_in_a_field_scene` owns the gate.
+    let mut save_rt = loaded_in(SAVE_ALLOWED_SCENE);
+    for (row, name) in [(ROW_LOAD, "Load"), (ROW_SAVE, "Save")] {
+        let host = if row == ROW_SAVE {
+            match save_rt.as_mut() {
+                Some(r) => r,
+                None => continue,
+            }
+        } else {
+            &mut rt
+        };
+        host.play_menu_close();
+        host.play_menu_open();
+        open_row(host, row);
+        let (sprites, texts) = draw_counts(host);
         eprintln!("{name}: sprites={sprites} texts={texts}");
         // The retail panel alone is 14 9-slice tiles + interior; the old
         // placeholder frame was a bare box.
@@ -142,16 +170,19 @@ fn every_pause_menu_row_renders_full_retail_content() {
         );
         // The panel title is drawn per-glyph from the dialog font.
         assert!(texts >= 4, "{name}: panel title glyphs (got {texts})");
-        rt.play_menu_input(CIRCLE);
+        host.play_menu_input(CIRCLE);
     }
 
-    // Cursor navigation wraps (Up from Items lands on Save).
-    rt.play_menu_close();
-    rt.play_menu_open();
-    rt.play_menu_input(UP);
-    rt.play_menu_input(CROSS);
-    let (sprites, _) = draw_counts(&rt);
-    assert!(sprites > 0, "wrapped cursor opens the Save row");
+    // Cursor navigation wraps (Up from Items lands on Save) - measured where
+    // Save opens, for the same reason.
+    if let Some(r) = save_rt.as_mut() {
+        r.play_menu_close();
+        r.play_menu_open();
+        r.play_menu_input(UP);
+        r.play_menu_input(CROSS);
+        let (sprites, _) = draw_counts(r);
+        assert!(sprites > 14, "wrapped cursor opens the Save row");
+    }
 }
 
 /// The live session's gold, read back through the public save round-trip
@@ -312,10 +343,15 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
 /// needs to resume in their emulator.
 #[test]
 fn save_screen_writes_the_session_into_the_inserted_card() {
-    let Some(mut rt) = loaded_in_town() else {
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
+    assert!(
+        rt.play_scene_save_allowed(),
+        "{SAVE_ALLOWED_SCENE}'s MAN sets the save-allow bit - without it the \
+         row buzzes and the rest of this test walks an unopened screen"
+    );
     let original = card_with_save(3, "Vahn", 1234);
     rt.insert_card(0, original.clone(), "card A".into())
         .expect("insert");
@@ -524,5 +560,51 @@ fn the_options_screen_remembers_an_edit_across_opens() {
         rt.debug_open_options_json().as_deref(),
         Some(edited.as_str()),
         "reopening Options must seed from the runtime's state"
+    );
+}
+
+/// The Save row is **scene-gated** on the browser host too.
+///
+/// Retail reads the per-scene save-allow byte (`_DAT_8007B6A8`, seeded from
+/// the MAN header bit) at every draw of the root list and again on confirm,
+/// so a field scene's Save row draws grey and buzzes. The browser page used
+/// to build its own root list with `enabled: true` on every row and route
+/// confirms off its own cursor, which meant a player could save in Rim Elm -
+/// a scene whose own data forbids it. Both halves come off one
+/// `FieldMenuGate` now, so the ink and the confirm cannot disagree.
+#[test]
+fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(
+        !rt.play_scene_save_allowed(),
+        "town01 is a field scene; its MAN clears the save-allow bit"
+    );
+
+    // The ink: opening the row must be refused outright.
+    assert!(!rt.play_menu_open_row("Save"), "a gated row does not open");
+    // And Load, beside it, must still open - or the gate is a blanket refusal
+    // rather than retail's per-row routing.
+    assert!(rt.play_menu_open_row("Load"), "Load is not gated here");
+    rt.play_menu_close();
+
+    // The confirm: walking the cursor onto Save and pressing Cross buzzes and
+    // stays on the picker, so the menu is still showing the root list.
+    rt.play_menu_open();
+    open_row(&mut rt, ROW_SAVE);
+    assert!(rt.play_menu_is_open(), "a buzz does not close the menu");
+    let json: serde_json::Value =
+        serde_json::from_str(&rt.play_menu_draws_json(320, 240)).expect("draws json");
+    assert_eq!(json["open"], true);
+    // The root list draws the money/time box; a save screen does not.
+    let top = draw_counts(&rt);
+    rt.play_menu_close();
+    rt.play_menu_open();
+    assert_eq!(
+        draw_counts(&rt),
+        top,
+        "the buzzed confirm left the root list exactly as it was"
     );
 }
