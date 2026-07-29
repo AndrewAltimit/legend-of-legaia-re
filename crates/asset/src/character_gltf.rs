@@ -43,7 +43,14 @@ struct ObjectGeom {
     object_id: u32,
     positions: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
+    /// Per-vertex linear RGB for the untextured prims (white on textured
+    /// verts). Only populated on the hybrid path.
+    colors: Vec<[f32; 3]>,
+    /// Triangles whose prim samples VRAM (material 0).
     indices: Vec<u32>,
+    /// Triangles whose prim is flat / gouraud vertex-coloured (material 1).
+    /// Empty on the pure-textured path.
+    flat_indices: Vec<u32>,
 }
 
 /// Assemble the `.glb` for an assembled character + its animation bank.
@@ -55,19 +62,47 @@ pub fn build_character_glb(
     vram: &Vram,
     clips: &[CharacterClip<'_>],
 ) -> Option<Vec<u8>> {
+    build_character_glb_hybrid(name, mesh, object_ids, vram, clips, None)
+}
+
+/// [`build_character_glb`] with the **field-form hybrid shading** the
+/// low-poly character meshes need: `shading` (from
+/// `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid`) carries the per-vertex
+/// textured flag + flat/gouraud RGB, and the untextured body prims land in a
+/// second, texture-free vertex-coloured material (`COLOR_0`) instead of
+/// sampling a texture they never reference. Pass `None` for the pure
+/// textured path (battle meshes).
+pub fn build_character_glb_hybrid(
+    name: &str,
+    mesh: &legaia_tmd::mesh::VramMesh,
+    object_ids: &[u32],
+    vram: &Vram,
+    clips: &[CharacterClip<'_>],
+    shading: Option<&legaia_tmd::mesh::VertexShading>,
+) -> Option<Vec<u8>> {
     if mesh.indices.is_empty() || mesh.positions.len() < 3 {
         return None;
     }
 
-    // --- Distinct (cba, tsb-page) tiles the vertices sample -> atlas. ---
+    // --- Distinct (cba, tsb-page) tiles the textured vertices sample -> atlas. ---
+    let textured_vert =
+        |v: usize| -> bool { shading.is_none_or(|s| s.textured.get(v).copied().unwrap_or(1) != 0) };
     let mut tiles: BTreeMap<(u16, u16), usize> = BTreeMap::new();
-    for ct in &mesh.cba_tsb {
+    for (v, ct) in mesh.cba_tsb.iter().enumerate() {
+        if !textured_vert(v) {
+            continue;
+        }
         let key = tile_key(ct[0], ct[1]);
         let next = tiles.len();
         tiles.entry(key).or_insert(next);
     }
     if tiles.is_empty() {
-        return None;
+        // A pure-textured mesh sampling nothing has nothing to export; an
+        // all-flat hybrid mesh instead bakes one placeholder tile so the
+        // texture / material-0 plumbing stays well-formed (nothing
+        // references it).
+        shading?;
+        tiles.insert((0, 0), 0);
     }
     let cols = (tiles.len() as f64).sqrt().ceil() as usize;
     let cols = cols.clamp(1, 16);
@@ -91,14 +126,18 @@ pub fn build_character_glb(
     let mut by_object: BTreeMap<u32, ObjectGeom> = BTreeMap::new();
     let mut local_of = vec![u32::MAX; mesh.positions.len()];
     for tri in mesh.indices.chunks_exact(3) {
-        // All three corners of a prim share one object id; key on the first.
+        // All three corners of a prim share one object id (and one textured
+        // flag); key on the first.
         let oid = object_ids.get(tri[0] as usize).copied().unwrap_or(0);
         let geom = by_object.entry(oid).or_insert_with(|| ObjectGeom {
             object_id: oid,
             positions: Vec::new(),
             uvs: Vec::new(),
+            colors: Vec::new(),
             indices: Vec::new(),
+            flat_indices: Vec::new(),
         });
+        let tri_textured = textured_vert(tri[0] as usize);
         for &gv in tri {
             let gv = gv as usize;
             if local_of[gv] == u32::MAX {
@@ -110,10 +149,20 @@ pub fn build_character_glb(
                 // +0.5 texel centre, matching the shader's point sampling.
                 geom.uvs
                     .push(uv_of(slot, uv[0] as f32 + 0.5, uv[1] as f32 + 0.5));
+                if let Some(s) = shading {
+                    let c = s.colors.get(gv).copied().unwrap_or([255, 255, 255]);
+                    geom.colors.push([
+                        f32::from(c[0]) / 255.0,
+                        f32::from(c[1]) / 255.0,
+                        f32::from(c[2]) / 255.0,
+                    ]);
+                }
                 local_of[gv] = li;
-                geom.indices.push(li);
-            } else {
+            }
+            if tri_textured {
                 geom.indices.push(local_of[gv]);
+            } else {
+                geom.flat_indices.push(local_of[gv]);
             }
         }
     }
@@ -127,16 +176,33 @@ pub fn build_character_glb(
     let mut meshes: Vec<Value> = Vec::new();
     let mut object_node_for: BTreeMap<u32, usize> = BTreeMap::new();
     let mut child_nodes: Vec<usize> = Vec::new();
+    let mut any_flat = false;
     for geom in &objects {
         let pos = b.push_vec3(&geom.positions, Some(TARGET_ARRAY), true);
         let uv = b.push_vec2(&geom.uvs, Some(TARGET_ARRAY));
-        let idx = b.push_indices(&geom.indices);
-        meshes.push(json!({
-            "primitives": [{
+        let color =
+            (!geom.colors.is_empty()).then(|| b.push_vec3(&geom.colors, Some(TARGET_ARRAY), false));
+        let mut prims: Vec<Value> = Vec::new();
+        if !geom.indices.is_empty() {
+            let idx = b.push_indices(&geom.indices);
+            prims.push(json!({
                 "attributes": { "POSITION": pos, "TEXCOORD_0": uv },
                 "indices": idx, "material": 0, "mode": 4
-            }]
-        }));
+            }));
+        }
+        if !geom.flat_indices.is_empty() {
+            any_flat = true;
+            let idx = b.push_indices(&geom.flat_indices);
+            let mut attrs = json!({ "POSITION": pos });
+            if let Some(color) = color {
+                attrs["COLOR_0"] = json!(color);
+            }
+            prims.push(json!({
+                "attributes": attrs,
+                "indices": idx, "material": 1, "mode": 4
+            }));
+        }
+        meshes.push(json!({ "primitives": prims }));
         let mut node = json!({
             "name": format!("object_{}", geom.object_id),
             "mesh": meshes.len() - 1
@@ -224,19 +290,31 @@ pub fn build_character_glb(
     }
 
     // --- Assemble the JSON. ---
+    let mut materials = vec![json!({
+        "pbrMetallicRoughness": {
+            "baseColorTexture": { "index": 0 },
+            "metallicFactor": 0.0, "roughnessFactor": 1.0
+        },
+        "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
+    })];
+    if any_flat {
+        // The hybrid path's untextured body prims: plain vertex colour
+        // (COLOR_0 multiplies the white base factor).
+        materials.push(json!({
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                "metallicFactor": 0.0, "roughnessFactor": 1.0
+            },
+            "doubleSided": true
+        }));
+    }
     let mut root = json!({
         "asset": { "version": "2.0", "generator": "legend-of-legaia-re character exporter" },
         "scene": 0,
         "scenes": [{ "nodes": [root_index] }],
         "nodes": nodes,
         "meshes": meshes,
-        "materials": [{
-            "pbrMetallicRoughness": {
-                "baseColorTexture": { "index": 0 },
-                "metallicFactor": 0.0, "roughnessFactor": 1.0
-            },
-            "alphaMode": "MASK", "alphaCutoff": 0.5, "doubleSided": true
-        }],
+        "materials": materials,
         "images": [{ "bufferView": png_view, "mimeType": "image/png" }],
         // NEAREST + clamp, matching the PSX point-sampled pages.
         "samplers": [{ "magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071 }],
@@ -337,6 +415,50 @@ mod tests {
         assert!((max_t - 7.0 / 30.0).abs() < 1e-4, "max_t = {max_t}");
         // Root node reorients PSX -> glTF.
         assert_eq!(root["nodes"][2]["rotation"][0], 1.0);
+    }
+
+    #[test]
+    fn hybrid_glb_splits_flat_prims_into_a_vertex_colour_material() {
+        let (mesh, ids) = two_object_mesh();
+        let vram = Vram::new();
+        let idle = clip(2);
+        let clips = [CharacterClip {
+            name: "idle".into(),
+            fps: 15.0,
+            anim: &idle,
+        }];
+        // Object 0's tri textured, object 1's tri flat-coloured red.
+        let shading = legaia_tmd::mesh::VertexShading {
+            colors: vec![
+                [255, 255, 255],
+                [255, 255, 255],
+                [255, 255, 255],
+                [255, 0, 0],
+                [255, 0, 0],
+                [255, 0, 0],
+            ],
+            textured: vec![1, 1, 1, 0, 0, 0],
+        };
+        let glb =
+            build_character_glb_hybrid("Vahn", &mesh, &ids, &vram, &clips, Some(&shading)).unwrap();
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+        let root: Value = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
+        // Two materials: the atlas + the vertex-colour one.
+        assert_eq!(root["materials"].as_array().unwrap().len(), 2);
+        // Object 0 keeps the textured primitive; object 1 is flat.
+        let m0 = root["meshes"][0]["primitives"].as_array().unwrap();
+        assert_eq!(m0.len(), 1);
+        assert_eq!(m0[0]["material"], 0);
+        assert!(m0[0]["attributes"]["TEXCOORD_0"].is_number());
+        let m1 = root["meshes"][1]["primitives"].as_array().unwrap();
+        assert_eq!(m1.len(), 1);
+        assert_eq!(m1[0]["material"], 1);
+        assert!(m1[0]["attributes"]["COLOR_0"].is_number());
+        // The pure-textured path is unchanged: one material, no COLOR_0.
+        let glb2 = build_character_glb("Vahn", &mesh, &ids, &vram, &clips).unwrap();
+        let json_len2 = u32::from_le_bytes(glb2[12..16].try_into().unwrap()) as usize;
+        let root2: Value = serde_json::from_slice(&glb2[20..20 + json_len2]).unwrap();
+        assert_eq!(root2["materials"].as_array().unwrap().len(), 1);
     }
 
     #[test]

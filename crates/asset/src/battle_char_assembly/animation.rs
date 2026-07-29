@@ -31,6 +31,44 @@ pub const ACTION_SLOT_COUNT: usize = 22;
 /// block) - the key space of the actor `+0x1EF..+0x1F3` reaction map.
 pub const PLAYER_ANIM_STREAM_OFFSET: usize = 0xAC;
 
+/// Display label for a player battle-file action slot, or `None` for a slot
+/// with no pinned role (unpopulated on disc, or the dynamically-materialized
+/// art slots `0x10`/`0x11`). The named slots follow the action-tag space of
+/// the [`PLAYER_ANIM_STREAM_OFFSET`] doc (identity with the slot index in the
+/// player files): `0` idle, `1` walk/approach, `2`/`3` light flinches, `4`
+/// knockdown, `5` get-up, `7`/`8`/`9` ready/recover/defeat poses, `0x0B`
+/// block - the key space of the actor `+0x1EF..+0x1F3` reaction map - plus
+/// the four loader-spliced direction-command weapon swings at `0xC..=0xF`
+/// (L/R/D/U, [`super::SWING_SLOT_BASE`]).
+pub fn action_slot_label(slot: usize) -> Option<&'static str> {
+    Some(match slot {
+        0x0 => "Idle",
+        0x1 => "Walk / Approach",
+        0x2 => "Flinch 1",
+        0x3 => "Flinch 2",
+        0x4 => "Knockdown",
+        0x5 => "Get Up",
+        0x7 => "Ready",
+        0x8 => "Recover",
+        0x9 => "Defeat",
+        0xB => "Block",
+        0xC => "Swing L",
+        0xD => "Swing R",
+        0xE => "Swing D",
+        0xF => "Swing U",
+        _ => return None,
+    })
+}
+
+/// Like [`action_slot_label`] but always display-ready: unpinned slots come
+/// back as `"Action 0xNN"`.
+pub fn action_slot_label_or_hex(slot: usize) -> String {
+    match action_slot_label(slot) {
+        Some(l) => l.to_string(),
+        None => format!("Action 0x{slot:02X}"),
+    }
+}
+
 /// LZS-decode a player file's `record[0]` (header
 /// `[desc_off][clut_a][clut_b][budget]`, LZS stream at `+0x10`). Scans
 /// 4-byte-aligned offsets for a plausible header (skipping any `"pochi"`

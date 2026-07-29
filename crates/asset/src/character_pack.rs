@@ -269,6 +269,46 @@ pub const LOCOMOTION_WALK_SLOT: usize = 0;
 /// loop matching pack slot 3's `nobj=3` mesh.
 pub const LOCOMOTION_SAVEPOINT_RECORD: usize = 21;
 
+/// Record index of the aux slot-4 actor's clip (a 2-bone loop matching pack
+/// slot 4's `nobj=2` mesh).
+pub const LOCOMOTION_AUX_RECORD: usize = 22;
+
+/// Total records in the locomotion bundle: three 7-record character banks +
+/// the savepoint + aux records.
+pub const LOCOMOTION_RECORD_COUNT: usize = 23;
+
+/// Display label for one bank-relative locomotion slot. Only the two
+/// capture-pinned slots get semantic names - [`LOCOMOTION_WALK_SLOT`]
+/// ("Walk") and [`LOCOMOTION_IDLE_SLOT`] ("Idle"); the rest of the bank is
+/// the run / interaction family whose per-slot roles are **not yet pinned**
+/// (see `docs/formats/anm.md`), so they get honest neutral names.
+pub fn locomotion_slot_label(bank_slot: usize) -> String {
+    match bank_slot {
+        LOCOMOTION_WALK_SLOT => "Walk".to_string(),
+        LOCOMOTION_IDLE_SLOT => "Idle".to_string(),
+        s if s < LOCOMOTION_BANK_STRIDE => format!("Locomotion {s}"),
+        s => format!("Slot {s}"),
+    }
+}
+
+/// Display label for one **absolute** record of the 23-record locomotion
+/// bundle: `"<character> - <slot label>"` for the three banks, the two
+/// non-bank actors by role, and a neutral `"Record N"` past the bundle.
+pub fn locomotion_record_label(record: usize) -> String {
+    if record == LOCOMOTION_SAVEPOINT_RECORD {
+        return "Savepoint".to_string();
+    }
+    if record == LOCOMOTION_AUX_RECORD {
+        return "Aux actor".to_string();
+    }
+    if record < LOCOMOTION_BANK_STRIDE * 3 {
+        let character = slot_label(record / LOCOMOTION_BANK_STRIDE);
+        let slot = record % LOCOMOTION_BANK_STRIDE;
+        return format!("{character} - {}", locomotion_slot_label(slot));
+    }
+    format!("Record {record}")
+}
+
 /// Decode the party field-locomotion ANM bundle from the raw bytes of PROT
 /// entry 874 (`parse_player_lzs(buf, 3)` → section 1 → LZS →
 /// [`crate::player_anm::parse`]). The bundle's per-(bone, frame) entries
@@ -402,6 +442,34 @@ pub mod equipment_swap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn locomotion_labels_pin_walk_and_idle_only() {
+        // The two capture-pinned slots get semantic names...
+        assert_eq!(locomotion_slot_label(LOCOMOTION_WALK_SLOT), "Walk");
+        assert_eq!(locomotion_slot_label(LOCOMOTION_IDLE_SLOT), "Idle");
+        // ...the unpinned run/interaction family stays neutral.
+        for s in 2..LOCOMOTION_BANK_STRIDE {
+            assert_eq!(locomotion_slot_label(s), format!("Locomotion {s}"));
+        }
+        // Absolute record labels follow the three banks + the two actors.
+        assert_eq!(locomotion_record_label(0), "Vahn - Walk");
+        assert_eq!(locomotion_record_label(1), "Vahn - Idle");
+        assert_eq!(locomotion_record_label(8), "Noa - Idle");
+        assert_eq!(locomotion_record_label(14), "Gala - Walk");
+        assert_eq!(locomotion_record_label(20), "Gala - Locomotion 6");
+        assert_eq!(
+            locomotion_record_label(LOCOMOTION_SAVEPOINT_RECORD),
+            "Savepoint"
+        );
+        assert_eq!(locomotion_record_label(LOCOMOTION_AUX_RECORD), "Aux actor");
+        assert_eq!(LOCOMOTION_RECORD_COUNT, 23);
+        // Bank math round-trips through locomotion_record_index.
+        assert_eq!(
+            locomotion_record_label(locomotion_record_index(1, LOCOMOTION_WALK_SLOT)),
+            "Noa - Walk"
+        );
+    }
 
     #[test]
     fn patch_slots_match_fun_8001ebec_table() {
