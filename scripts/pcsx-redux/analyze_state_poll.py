@@ -65,6 +65,17 @@ DEFAULT_BULK_THRESHOLD = 20
 BOOT_SCENE = "?"
 # note the probe stamps on flag rows it classified as a bulk load/init dump (P3).
 BULK_NOTE = "bulkload"
+# note newer probes stamp on flag rows of a SUB-threshold save-state load frame
+# (mixed flagset+flagclr with >= 3 flips). Older CSVs predate the tag, so the
+# analyzer also detects the signature itself (see LOAD_ITEM_BURST).
+LOAD_NOTE = "loadish"
+# a save-state load that flips FEWER flags than the bulk threshold still
+# re-keys the whole inventory in the same tick (the poll re-baselines every
+# item slot on a load), so a tick carrying BOTH flagset and flagclr rows plus
+# an item-row burst is a load frame, not a story beat. Genuine multi-flag
+# cutscene commits do not rewrite inventory in the same tick (observed maximum
+# across the capture corpus: 3 item rows; loads carry 48+).
+LOAD_ITEM_BURST = 10
 
 # P6: known story-flag labels. A `flagset` beat whose idx is here is annotated;
 # a sticky beat with NO label is surfaced as a NEW LEAD (an unmapped gate worth
@@ -165,6 +176,176 @@ KNOWN_FLAGS = {
     # man_variant_carrier_census_disc.rs::stone_0x32a_and_0x590_are_real_local_progress_gates.
     0x32A: "stone: code-clue discovered (SET+TEST gate)",
     0x590: "stone: scene-entry progress gate (local)",
+    # --- Labels grounded in the disc-static system-flag census
+    # (`legaia-engine man-scripts --system-flag-census`, incl. VARIANT-MAN
+    # streaming carriers) + the settled-page gate families
+    # (docs/reference/re-settled-threads.md) + the chapter-1 oracles
+    # (crates/engine-shell/tests/chapter1_*.rs). Labels state the pinned
+    # writer/reader sites; no semantics beyond that are claimed. NB geremi
+    # P1[1] is a dev flag-toggle record (sets/clears many flags) and is never
+    # cited as a writer.
+    # low system flags
+    0x7: "low chapter/variant-state global (gates rayman2/retockin/town0d renditions; ch3 soldier-group C1)",
+    0xA: "low record-busy bit (beat records SET then CLEAR it corpus-wide; census shape, not a story gate)",
+    0x10: "party-recompose low flag (0x10..0x12 written beside PartyAdd; 0x11/0x12 pinned in uru P2[30])",
+    0x11: "party-presence low flag (char 1; set beside PartyAdd - uru P2[30])",
+    0x12: "party-presence low flag (char 2; set beside PartyAdd - uru P2[30])",
+    0x1F: "entry-script housekeeping bit (scene P1[0] SET+CLEAR corpus-wide; not a story gate)",
+    0x35: "battle-victory low flag (SET at battle end FUN_8004E568, cleared by the entity SM; churns per fight)",
+    # entry-script scratch-shape band (P1[0] SET+CLEAR corpus-wide; churns on
+    # scene transitions, not story gates)
+    0x19D: "entry-script scratch-shape bit (P1[0] SET+CLEAR corpus-wide)",
+    0x19E: "entry-script scratch-shape bit (P1[0] SET+CLEAR corpus-wide)",
+    0x19F: "entry-script scratch-shape bit (P1[0] SET+CLEAR corpus-wide)",
+    0x1A4: "entry-script scratch-shape bit (P1[0] SET+CLEAR corpus-wide)",
+    0x59E: "entry-script scratch-shape bit (jiji/kor-cluster P1[0] SET+CLEAR)",
+    # treasure chests outside tunnela (same TEST-own-flag chest shape; all in
+    # the edlast P2[1] completion battery; chest SET is census-desync-blind)
+    0x41: "keikoku treasure chest (TEST keikoku P1[7] + edlast battery; tunnela-chest shape)",
+    0x42: "keikoku treasure chest (TEST keikoku P1[8] + edlast battery)",
+    0x4B: "bylon treasure chest (TEST bylon P1[51] + edlast battery)",
+    0xA7: "tunnelc treasure chest (TEST tunnelc P1[10]/P1[11] + edlast battery)",
+    0xA8: "tunnelc treasure chest (TEST tunnelc P1[12]/P1[13] + edlast battery)",
+    0xBB: "retona treasure chest (TEST retona P1[17] + edlast battery)",
+    # 0x48x scene-visited entry-script band (each carrier's P1[0] SETs its
+    # own; map02 P2[13] bulk-sets the band)
+    0x484: "scene-visited latch (0x48x band; SET by town01/map01 P1[0])",
+    0x487: "scene-visited latch (0x48x band; SET by dolk2 variant P1[0] + suimon P1[0])",
+    0x488: "scene-visited latch (0x48x band; SET by bylon P1[0])",
+    0x48E: "scene-visited latch (0x48x band; SET by jiji P1[0])",
+    # chapter-1 opening / Rim Elm
+    0x20: "town01 opening-record latch (SET in P2[3], TEST P1[51]; ASCII-space operand - census reads aliased)",
+    0x226: "Rim Elm opening chain step (549 -> 0x226 -> 0x227; SET by town01 P2[4])",
+    0x234: "Rim Elm opening latch (SET by town01 P2[3] + P1[40])",
+    0x235: "Rim Elm opening latch (SET by town01 P2[3]; read by P1[40])",
+    0x566: "opdeene entry-script one-shot (Test+Set in opdeene P1[0]; cleared by retock P1[1])",
+    # rikuroa (streaming VARIANT-MAN, PROT 0157)
+    0x287: "rikuroa scene-state band 0x281..0x287 (mirrored Set/Clear pairs P1[10..12]; SET by P2[49])",
+    0x288: "rikuroa Caruban-stager co-latch (SET by variant P1[3] beside the 0x289 staged marker)",
+    0x28A: "rikuroa variant P2[53] beat latch (read by P0[2] + P1[17]/[18])",
+    # dolk / dolk2 / suimon / map01
+    0x178: "dolk2 castle-state latch (SET dolk2 variant P1[1]/P2[7]; TESTed by dolk P0 walk-ons; cleared by dolk P1[26])",
+    0x179: "dolk2 variant P2[7] co-latch (0x178 group; ASCII-alias-prone census reads)",
+    0x26A: "dolk2 variant P2[7] co-latch, read by izumi P1 records (cross-scene)",
+    0x26F: "dolk2 variant P2[7] co-latch (0x178/0x179/0x26A group; alias-prone reads)",
+    0x27C: "dolk2 market-swap one-shot (P2[11] C1 latch, SET at body +0x14 with 0x27D; script-vm.md)",
+    0x27E: "dolk2 castle-state band member (cleared by dolk P1[26] reset + dolk2 variant P1[1]; SET census-blind)",
+    0x2FE: "dolk2 P1[2] SpawnRecord-ladder latch (44 72/73/74 follow-up chain; with 0x2FF)",
+    0x2FF: "dolk2 P1[2] SpawnRecord-ladder latch (with 0x2FE; cleared by geremi P1[28])",
+    0x27B: "suimon entry-script latch (SET by suimon P1[0]; cleared by dolk P1[26])",
+    0x23: "map01 overworld beat group (each of map01 P2[10..12] SETs it)",
+    0x24: "map01 overworld beat group (each of map01 P2[10..12] SETs it)",
+    0x25: "map01 overworld beat group (each of map01 P2[10..12] SETs it)",
+    0x2FA: "map01 overworld beat latch (SET by map01 P2[31]/P2[32])",
+    0x308: "map01 overworld beat latch (SET by map01 P2[29]/P2[33])",
+    # bylon
+    0x17F: "bylon scene-state flag (writers bylon P0[5]/P2[3] + map01 P2[10]/[12])",
+    0x180: "bylon scene-state flag (writers bylon P0[12]/[19] + map01 P2[11]/[12])",
+    0x181: "bylon scene-state flag (writers bylon P0[13] + map01 P2[10]/[11])",
+    0x183: "bylon P2[3] beat latch (co-set with 0x28C; wide cross-scene NPC TEST family)",
+    0x28C: "bylon P2[3] beat latch (co-set with 0x183)",
+    0x293: "bylon P2[8] beat latch",
+    0x294: "bylon beat latch (SET by bylon P2[9]/P2[10])",
+    0x2A8: "bylon P2[16] beat latch (read by vozz P1[2]/P1[3]; cross-scene)",
+    0x2AB: "bylon P2[17] beat latch (read by map01 P1[0])",
+    # vozz / keikoku / garmel / jiji (chapter-1 hub spokes)
+    0x193: "keikoku Ravine portal gate (map01 C1; only SET = vozz P1[7] - chapter1_hub_depth_oracle)",
+    0x2AC: "vozz P1[7] one-shot guard (companion SET beside the 0x193 Ravine SET; C1 of vozz P2[18])",
+    0x2B3: "vozz arrival one-shot (P2[12] self-latch; 0x2B2..0x2B4 group)",
+    0x2B4: "vozz arrival one-shot (P2[13] self-latch; 0x2B2..0x2B4 group)",
+    0x2B6: "vozz P2[14] beat latch (read by vozz P1[2]/[3]/[7])",
+    0x2B9: "keikoku beat latch (SET by keikoku P2[5]/P2[8])",
+    0x2BE: "keikoku P2[7] beat latch (with 0x2BF)",
+    0x2BF: "keikoku P2[7] beat latch (with 0x2BE)",
+    0x195: "garmel Songi-beat latch (SET by P2[11], the Songi stager record)",
+    0x198: "garmel Zeto-stager walk-on one-shot (P2[12] C1 latch)",
+    0x19A: "garmel/map01 post-boss latch (SET garmel P2[15] + map01 P2[32]; read by both entry scripts)",
+    0x28D: "garmel P2[15] beat latch (wide cross-scene NPC TEST family; cleared by izumi P1[11])",
+    0x2AD: "garmel P2[15] beat latch (co-set with 0x28D)",
+    0x301: "jiji P1[1] latch (co-written with 0x305)",
+    0x305: "jiji one-shot beat (P2[2] C1 gate; SET by jiji P1[1])",
+    0x30A: "jiji walk-on latch (SET by jiji P0[1])",
+    0x207: "jiji P0[4] walk-on one-shot pair (with 0x208; Set site DESYNC-tagged in census)",
+    0x208: "jiji P0[4] walk-on one-shot pair (with 0x207)",
+    # chapter-2 Sebucus additions
+    0x1C8: "teien arc step 1 (SET by teien P2[1]; Sebucus spine 0x1C8 -> 0x1C9 -> 0x332)",
+    0x1C9: "teien arc step 2 (SET by teien P2[2]; gates tower P2[2])",
+    0x332: "teien arc completion (SET by teien P2[5]; mirrored by map02 P2[9])",
+    0x1C7: "tower clear flag (tower P2[2] beat, C2 on teien 0x1C9; read by geremi P2[1])",
+    0x1BF: "geremi post-tower beat latch (SET by geremi P2[1], the C2=[0x1C7] record)",
+    0x1D4: "Sebucus arc flag (SET by dohaty P2[13]; balden P2[0] C1 member; very wide TEST family)",
+    0x51A: "map02 P2[9] teien-mirror co-latch (set beside 0x332)",
+    0x51C: "map02 P2[10] retock-mirror co-latch (set beside 0x357)",
+    0x51D: "map02 P2[11] co-latch (set beside 0x320; read by stone P2[4] + rayman2 P2[15])",
+    0x320: "map02 hub beat latch (SET by map02 P2[11]; ASCII-space operand - census reads aliased)",
+    0x5D2: "balden NPC-record latch (SET by balden P1[24]/P1[25])",
+    0x34A: "tunnelc P2[6] one-shot latch (tunnels family)",
+    0x34B: "tunnelc P2[5] one-shot latch (sibling of 0x34A)",
+    0x35F: "tunnelc P2[14] beat latch",
+    0x3DE: "tunnelc local latch (SET tunnelc P1[4]/P2[29]; cleared by P2[30])",
+    # retona / dohaty / retock / retockin
+    0x354: "retona ladder step (0x353..0x357; SET by retona P2[10], read by rugi)",
+    0x355: "retona ladder step (C1 self-latch of P2[15]; 0x353..0x357)",
+    0x356: "retona ladder step (C2 of P2[17]/P2[18]; 0x353..0x357)",
+    0x357: "retona ladder tail = Jeremi-arc cross-scene gate (SET by retona P2[18] + P1[0] backstop; read retock/retockin/map02/geremi/edretoin)",
+    0x3AD: "retona pre-arc marker (SET by retona P2[17]; C2 of map02 P2[10]; P1[0] normalization reads it)",
+    0x3C2: "retona P2[5] beat latch (cleared by P2[4])",
+    0x343: "dohaty P2[9] beat latch (co-set with 0x63D)",
+    0x344: "dohaty P2[10] one-shot (C1 latch)",
+    0x39F: "dohaty P2[10] beat latch (co-set with 0x344)",
+    0x345: "dohaty latch (SET by dohaty P1[0] + P2[12])",
+    0x65A: "dohaty P2[12] beat latch (co-set with 0x345)",
+    0x63D: "dohaty self-latch pair (P2[14] sets / P2[15] consumes)",
+    0x340: "retockin per-NPC one-shot head (Test+Set in P1[30]/P1[31])",
+    0x341: "retockin per-NPC one-shot head (Test+Set in P1[28]/P1[29])",
+    0x567: "retockin P2[43] beat latch (cleared widely by cutscene records)",
+    0x5AF: "retock P1[22] NPC-record latch",
+    0x63C: "retock P2[16] beat latch (read by retock P1[31]/[32])",
+    0x6B0: "retock P2[16] + retockin P0[14] co-latch (cleared by retockin P0[15..17] + map02 P1[0])",
+    # chapter-3 Karisto additions
+    0x378: "map03 P2[15] hub latch (read by doman + map03)",
+    0x38F: "taiku area-progress self-latch (P2[10] C1; gates station P2[24] + station3 P2[2])",
+    0x380: "taiku P2[16] beat pair (with 0x382)",
+    0x382: "taiku P2[16] cross-chapter gate (read by son P1[14]; census spans doman/retockin/ropeway/map03/koin2/korout)",
+    0x395: "taiku variant P2[17] beat latch (cleared by P1[29])",
+    0x517: "taiku variant P2[24] one-shot (0x505..0x519 dungeon-local band)",
+    0x519: "taiku variant P2[12] latch (read by taiku P0[5] + entry; 0x505..0x519 band tail)",
+    0x520: "map03 P2[9] hub one-shot (ASCII-space operand - census reads aliased)",
+    0x526: "scene-transition scratch band bit (0x522..0x531 one-hot exit selector; script-vm.md)",
+    0x51E: "map03 P2[11] co-latch (set beside 0x403)",
+    0x403: "korb3 collection 'all done' latch (C1 of korb3 P2[5..13]; SET by map03 P2[11])",
+    0x41D: "korb3 P2[2] one-shot (C2=[0x41B,0x41C,0x436] requires-all cluster)",
+    0x41E: "korb3 entry-script latch (SET by korb3 P1[0])",
+    0x41F: "korb3 P2[14] beat latch",
+    0x43E: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[3]; 0x403 family)",
+    0x43F: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[4]; 0x403 family)",
+    0x440: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[5]; 0x403 family)",
+    0x441: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[6]; 0x403 family)",
+    0x442: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[7]; 0x403 family)",
+    0x443: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[8]; 0x403 family)",
+    0x444: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[9]; 0x403 family)",
+    0x459: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[24]; 0x403 family)",
+    0x45C: "korb3 collection flag (P2[5..13] C2 member; SET by walk-on P0[23]; 0x403 family)",
+    0x43A: "kor5 chain step 1 (P2[3] self-latch; 0x43A -> 0x436 -> 0x6C4)",
+    0x436: "kor5 chain step 2 (P2[5] self-latch; also in korb3 P2[2] C2)",
+    0x6C4: "kor5 chain tail (P2[8] self-latch, C2=[0x436])",
+    0x619: "kor5 local set/clear toggle (SET P1[2]/P2[3]/P2[8]; CLEAR P1[9]/P2[3]/P2[4])",
+    0x428: "koin3 P2[10] / other7 P2[6] co-latch (castle beat family with 0x430)",
+    0x42F: "koin3 P1[2] latch",
+    0x430: "koin3 P2[8] / other7 P2[5] co-latch, read by edlast (epilogue-visible castle beat)",
+    0x56E: "map03 P1[1] latch (ASCII-alias-prone census reads)",
+    0x56F: "map03 P1[1] co-latch (with 0x56E)",
+    # nilboa (Nivora Ravine)
+    0xD: "low nilboa entry-group gate (C1 of nilboa P2[0] with 0x456; C2 of P2[4]; cleared by P2[7]/P2[28])",
+    0x472: "nilboa 0x47x puzzle-cluster member (Test/Set/Clear in P2[17]; non-nilboa census reads are dialogue aliases)",
+    0x452: "nilboa beat latch (SET by nilboa P2[2]/[3]/[28]; cleared by P2[0])",
+    0x453: "nilboa beat latch (SET by nilboa P2[2]/[3]/[28]; cleared by P2[0])",
+    0x456: "nilboa entry-group shared flag (P2[11] SETs+CLEARs it; entry records' C1)",
+    0x474: "nilboa 0x47x puzzle-cluster member (SET by P2[17])",
+    0x480: "nilboa beat latch (SET by nilboa P2[2]/[3])",
+    0x50C: "nilboa P2[1] latch (cleared by P2[0]; read by P2[40])",
+    0x50D: "nilboa P2[2] latch (cleared by P2[0]; read by P2[39])",
+    0x50E: "nilboa P2[3] latch (cleared by P2[0]; read by P2[38])",
 }
 
 
@@ -263,6 +444,9 @@ class FlagBeat:
 class FlagCensus:
     beats: list[FlagBeat] = field(default_factory=list)
     bulk_ticks: list[tuple[int, str, int]] = field(default_factory=list)  # (tick, scene, n_flags)
+    # subset of bulk_ticks screened as sub-threshold save-state LOAD frames
+    # (note=loadish from the probe, or the flagset+flagclr+item-burst signature)
+    load_ticks: list[int] = field(default_factory=list)
 
 
 def parse_rows(lines) -> list[Row]:
@@ -440,25 +624,43 @@ def flag_census(rows: list[Row], bulk_threshold: int = DEFAULT_BULK_THRESHOLD) -
 
     A tick is treated as a bulk write (save-load / scene-init / new-game zero)
     when it flips >= bulk_threshold flags OR the probe already tagged its flag
-    rows note=bulkload (P3). Bulk ticks are excluded from the beat list and
-    reported separately. Remaining flag events aggregate per flag idx: churn
+    rows note=bulkload (P3). A SUB-threshold tick is additionally screened as a
+    save-state LOAD frame when the probe tagged it note=loadish, or (older
+    CSVs) when it carries a flagset+flagclr mix co-occurring with an item-row
+    burst (>= LOAD_ITEM_BURST inventory re-key rows at the same tick) - a real
+    cutscene commit never rewrites the inventory in the same tick. Bulk ticks
+    are excluded from the beat list and reported separately (load-screened
+    ticks also land in `load_ticks`). Remaining flag events aggregate per flag idx: churn
     count, the last SET tick+scene, sticky-ness. Only sticky flags are returned
     as beats. Each beat is annotated with the player tile it fired at (P1) and
     a known-flag label (P6, None => a new lead).
     """
-    # count flag events per tick to find bulk frames
+    # count flag events per tick to find bulk frames; item rows per tick feed
+    # the sub-threshold load-frame signature.
     per_tick: dict[int, list[Row]] = {}
+    items_per_tick: dict[int, int] = {}
     for r in rows:
         if r.kind in ("flagset", "flagclr"):
             per_tick.setdefault(r.tick, []).append(r)
+        elif r.kind == "item":
+            items_per_tick[r.tick] = items_per_tick.get(r.tick, 0) + 1
 
     bulk_ticks_set: set[int] = set()
     bulk_ticks: list[tuple[int, str, int]] = []
+    load_ticks: list[int] = []
     for tick, evs in sorted(per_tick.items()):
         note_bulk = any(BULK_NOTE in e.note for e in evs)
-        if len(evs) >= bulk_threshold or note_bulk:
+        note_load = any(LOAD_NOTE in e.note for e in evs)
+        kinds = {e.kind for e in evs}
+        sig_load = (
+            kinds >= {"flagset", "flagclr"}
+            and items_per_tick.get(tick, 0) >= LOAD_ITEM_BURST
+        )
+        if len(evs) >= bulk_threshold or note_bulk or note_load or sig_load:
             bulk_ticks_set.add(tick)
             bulk_ticks.append((tick, evs[0].scene, len(evs)))
+            if note_load or sig_load:
+                load_ticks.append(tick)
 
     churn: dict[int, int] = {}
     last_set_tick: dict[int, int] = {}
@@ -495,7 +697,7 @@ def flag_census(rows: list[Row], bulk_threshold: int = DEFAULT_BULK_THRESHOLD) -
             )
         )
     beats.sort(key=lambda b: b.set_tick)
-    return FlagCensus(beats=beats, bulk_ticks=bulk_ticks)
+    return FlagCensus(beats=beats, bulk_ticks=bulk_ticks, load_ticks=load_ticks)
 
 
 def item_changes(rows: list[Row]) -> list[Row]:
@@ -676,9 +878,13 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
 
     if "flags" in want:
         cen = flag_census(rows, bulk_threshold)
-        lines.append(f"\n## bulk flag frames (>= {bulk_threshold} flags/tick = load/init)")
+        lines.append(
+            f"\n## bulk flag frames (>= {bulk_threshold} flags/tick = load/init;"
+            " [load] = sub-threshold save-state load frame, screened)"
+        )
         for tick, scene, n in cen.bulk_ticks:
-            lines.append(f"  tick {tick:>7}  scene {scene:<8}  {n} flags")
+            load = "  [load]" if tick in cen.load_ticks else ""
+            lines.append(f"  tick {tick:>7}  scene {scene:<8}  {n} flags{load}")
         lines.append("\n## story-flag beats (sticky, per-frame, load frames excluded)")
         lines.append("##   [lead] = unlabeled sticky flag (a candidate new gate)")
         for b in cen.beats:
@@ -860,7 +1066,8 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
             for s in battle_starts(rows)
         ],
         "flag_bulk_frames": [
-            {"tick": t, "scene": s, "flags": n} for (t, s, n) in cen.bulk_ticks
+            {"tick": t, "scene": s, "flags": n, "load_frame": t in cen.load_ticks}
+            for (t, s, n) in cen.bulk_ticks
         ],
         "flag_beats": [
             {
