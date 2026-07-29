@@ -1462,6 +1462,51 @@ bucket.
 > an emitter consumes the semantics - at which point it inverts silently. `battle_intro_tiles`
 > names the fields `pos` / `angles` and pins both directions in `record_semantics`.
 
+#### What style 2's emitter builds, and the one input still missing
+
+The descriptor it hands `FUN_80043390` is a synthetic TMD object at
+`_DAT_8007B85C + 0x5DC00`: 8 vertices (the record's `+0x14` corner array), 10 primitives at
+`0x18` stride, group header `count = 10`, `flags = 0x22`, `ilen = 6`, `mode = 0x2C`. Ten words
+past the body are zeroed - the group-chain terminator, since the dispatcher re-reads a header
+at `body_end + 0x18` and bails on `count == 0`.
+
+Six box faces become ten primitives because the four sides are emitted twice - once opaque with
+the tile's own UVs, once semi-transparent over a fixed shade page. Corner indices are byte
+offsets into the 8-vector array, packed two per word at `+0x10` / `+0x14`:
+
+| # | corners | code | rgb | UV source |
+|---:|---|---|---|---|
+| 0-3 | `1,5,3,7` / `4,0,6,2` / `4,5,0,1` / `2,3,6,7` | `0x2E` | `0x60` / `0x40` / `0x30` / `0x20` | shade page |
+| 4 | `0,1,2,3` (front) | `0x2C` | `0x80` | record |
+| 5-8 | the four sides again | `0x2C` | `0x60` | record |
+| 9 | `6,7,4,5` (back) | `0x2C` | `0x20` | record |
+
+Record UVs come from `+0x54..+0x5B` (corner `k` at `+0x54 + 2k`), `tpage` from `+0x02`, `clut`
+`0`. The shade set is three literals: `uv0 = (0,0)` .. `uv3 = (0x40,0x40)`, `tpage 0x0027`,
+`clut 0x7641`. The dispatcher then runs `RTPT` on corners 0-2, `NCLIP`, `RTPS` on corner 3,
+`NCLIP` again - accepting unless `nclip1 <= 0 && nclip2 >= 0` - a near cutoff against
+`0x1F80037E`, and `AVSZ4` for a per-primitive OT slot. The emitter never writes the record; the
+integration in the same function does.
+
+**Three of the four inputs a port needs are now pinned:**
+
+| Input | Value | Pinned by |
+|---|---|---|
+| Corner table `0x801CE8BC` | `[0, 1, 17, 18]` | PROT 0979 at `+0xA4`; word 4 is `addiu sp,sp,-0x48`, which bounds it |
+| GTE `OFX` / `OFY` | `160` / **`114`**, in 16.16 | the GTE control file of nine save states, across field, battle, load and minigame |
+| GTE `H` | `0x80` | `0x801D0D30`: `li a0,0x80` into `FUN_8003D254` |
+
+`OFY = 114` is the one worth flagging: it is **not** `240 / 2`, so a port that assumes the
+naive centre puts every screen-space primitive six pixels low. Oracle:
+`crates/mednafen/tests/gte_projection_real.rs`.
+
+**The fourth is not pinned, and that is what still blocks the port.** The side faces sample a
+4bpp page at VRAM `(448, 0)` whose CLUT at `(16, 473)` reads as a convincing 16-entry
+black-to-white brightness ramp in a battle-load state - but the page itself is sparse there
+(180 of 1024 halfwords non-zero), and no catalogued state is captured *during* a transition,
+which is the only window in which the page is live. Until a mid-transition capture exists, the
+side faces would have to be drawn over guessed texels.
+
 **Style 2** shatters the screen into a `16 x 16` grid of tiles cut from a jittered `17 x 17`
 corner lattice (only interior vertices are jittered, so the outline stays a clean rectangle).
 A tile record carries eight `SVECTOR` corners - a front face at z `-0x80` and a back face at
