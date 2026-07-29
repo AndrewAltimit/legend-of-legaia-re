@@ -311,3 +311,71 @@ fn posed_mesh_empty_offsets_matches_unposed() {
         assert_eq!(u, p, "empty offsets should not move vertices");
     }
 }
+
+#[test]
+fn append_scaled_half_turn_keeps_winding_and_mirrors_positions() {
+    let buf = synth_pyramid_tmd();
+    let tmd = parse(&buf).unwrap();
+    let base = tmd_to_vram_mesh(&tmd, &buf);
+    let mut both = base.clone();
+    both.append_scaled(&base, [-1.0, 1.0, -1.0]);
+
+    let n = base.positions.len();
+    assert_eq!(both.positions.len(), 2 * n);
+    assert_eq!(both.indices.len(), 2 * base.indices.len());
+    assert_eq!(both.uvs.len(), both.positions.len());
+    assert_eq!(both.cba_tsb.len(), both.positions.len());
+    assert_eq!(both.colors.len(), both.positions.len());
+    assert_eq!(both.normals.len(), both.positions.len());
+    for (i, p) in base.positions.iter().enumerate() {
+        assert_eq!(both.positions[n + i], [-p[0], p[1], -p[2]]);
+    }
+    // Determinant +1: corner order is preserved.
+    let k = base.indices.len();
+    for (i, t) in base.indices.chunks_exact(3).enumerate() {
+        assert_eq!(
+            &both.indices[k + i * 3..k + i * 3 + 3],
+            &[t[0] + n as u32, t[1] + n as u32, t[2] + n as u32]
+        );
+    }
+}
+
+#[test]
+fn append_scaled_mirror_reverses_winding() {
+    let buf = synth_pyramid_tmd();
+    let tmd = parse(&buf).unwrap();
+    let base = tmd_to_vram_mesh(&tmd, &buf);
+    let mut both = base.clone();
+    both.append_scaled(&base, [-1.0, 1.0, 1.0]);
+
+    let n = base.positions.len() as u32;
+    let k = base.indices.len();
+    // Determinant -1: corners 1 and 2 swap so the copy still faces out.
+    for (i, t) in base.indices.chunks_exact(3).enumerate() {
+        assert_eq!(
+            &both.indices[k + i * 3..k + i * 3 + 3],
+            &[t[0] + n, t[2] + n, t[1] + n]
+        );
+    }
+    for (i, nrm) in base.normals.iter().enumerate() {
+        assert_eq!(
+            both.normals[base.positions.len() + i],
+            [nrm[0], -nrm[1], -nrm[2]]
+        );
+    }
+}
+
+#[test]
+fn basic_mesh_append_scaled_offsets_indices() {
+    let buf = synth_pyramid_tmd();
+    let tmd = parse(&buf).unwrap();
+    let base = tmd_to_mesh(&tmd, &buf);
+    let mut both = base.clone();
+    both.append_scaled(&base, [-1.0, 1.0, -1.0]);
+    assert_eq!(both.vertex_count(), 2 * base.vertex_count());
+    assert_eq!(both.triangle_count(), 2 * base.triangle_count());
+    let n = base.positions.len();
+    for (i, p) in base.positions.iter().enumerate() {
+        assert_eq!(both.positions[n + i], [-p[0], p[1], -p[2]]);
+    }
+}

@@ -182,7 +182,7 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
 /// written into a previously-free card block carries a valid payload and a
 /// valid checksum behind a header the BIOS browser reads as junk. Retail's
 /// own rule is ported and sitting right there unused - `SAVE_HEADER_MAGIC`
-/// is the full four bytes and `save_title_digits` is the slot's two
+/// is the full four bytes and `block_title_digits` is the slot's two
 /// full-width numerals.
 ///
 /// The gap this test was written to characterise is **closed**: the composer
@@ -198,7 +198,7 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
 /// original gap had.
 #[test]
 fn the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner() {
-    use legaia_engine_core::card_flow::{SAVE_HEADER_MAGIC, save_title_digits};
+    use legaia_engine_core::card_flow::{SAVE_HEADER_MAGIC, block_title_digits};
 
     let mut block = dirty_block();
     let pristine = dirty_block();
@@ -224,6 +224,6 @@ fn the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner() {
     }
 
     // Slot 0 shows as "01", biased into the Shift-JIS full-width range.
-    assert_eq!(save_title_digits(0), [0x4F, 0x50]);
-    assert_eq!(save_title_digits(11), [0x50, 0x51]);
+    assert_eq!(block_title_digits(0), [0x4F, 0x50]);
+    assert_eq!(block_title_digits(11), [0x50, 0x51]);
 }

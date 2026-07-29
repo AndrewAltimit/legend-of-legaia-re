@@ -1,17 +1,19 @@
 //! The field-to-battle transition overlay's two particle-grid seeders.
 //!
 //! Both `PORT` tags live on [`seed_particle_grid`], which is the one body they
-//! share; the disclosure below applies to both.
+//! share; the wiring note below applies to both.
 //!
-//! NOT WIRED: the transition state machine itself is now driven from
-//! `legaia_engine_core::World::tick_encounter`, but these two are the style-0
-//! and style-1 *render* buffers - 1280 sprite records apiece, consumed only by
-//! the per-style GTE/GPU packet emitters in PROT 0979, which are
-//! documented-not-ported at the clean-room boundary. Wiring them needs a
-//! battle-intro particle renderer on the engine side plus the sine / cosine
-//! height tables `_DAT_8007B7F8` / `_DAT_8007B81C` the [`ParticleEnv`] trait
-//! abstracts; seeding a grid nothing draws would be an inert call with a cost.
-//! Neither has a *dumped* retail caller either - see "Callers" below.
+//! WIRED, without a draw. The seeder runs on every particle-style transition
+//! the native window opens: `BattleIntro::new` in
+//! `legaia_engine_render::battle_intro` seeds the grid, and the per-frame
+//! integration [`crate::battle_intro_styles::tick_particle_field`] walks it.
+//! What no host consumes is the *packet* - these are the style-0 and style-1
+//! render buffers, 1280 sprite records apiece, and the GTE/GPU emitters that
+//! turn a record into a primitive sit at the clean-room boundary. The grid is
+//! also plausible rather than retail-identical: the host implements
+//! [`ParticleEnv`] over computed sine and cosine instead of the overlay's
+//! `_DAT_8007B7F8` / `_DAT_8007B81C` height tables. Neither address has a
+//! *dumped* retail caller - see "Callers" below.
 //!
 //! Both routines do the same job with different constants: allocate one
 //! `0xDC00`-byte block, then fill it as a **32 x 40 grid of 1280 particle

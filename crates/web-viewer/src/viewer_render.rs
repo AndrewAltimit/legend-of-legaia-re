@@ -69,7 +69,19 @@ impl LegaiaViewer {
             return None;
         }
         let buf = &self.disc[off..end];
-        let needs = self.tmd_prim_targets();
+        let mut needs = self.tmd_prim_targets();
+        // The battle ground grid is emitted by code, not carried in the TMD,
+        // so nothing in `needs` asks for the page it samples. Left out, the
+        // targeted upload skips the one block the floor reads and the grid
+        // draws untextured - the failure is invisible in the mesh build and
+        // only shows on screen. An empty `needs` means "upload everything",
+        // which already covers the tile, so only a targeting run needs this.
+        if !needs.is_empty() && self.backdrop_second_copy(entry).is_some() {
+            needs.push(PrimTarget {
+                clut: legaia_asset::battle_backdrop::ground_clut_rect(),
+                page: legaia_asset::battle_backdrop::ground_page_rect(),
+            });
+        }
         let mut vram = legaia_tim::Vram::new();
         let scan = tim_scan::scan_entry(buf);
         for (source, hit) in &scan.hits {
@@ -150,20 +162,70 @@ impl LegaiaViewer {
         out
     }
 
+    /// The second-copy transform for a `scene_tmd_stream` entry, and
+    /// whether it was resolved from `SCUS_942.54` or defaulted.
+    ///
+    /// `None` for entries that are not battle-stage backdrops. For
+    /// backdrops the transform is always applied - retail always draws the
+    /// second copy - but without the executable we cannot say *which* of
+    /// the two it is, so the flag lets the status line be honest about it.
+    pub(crate) fn backdrop_second_copy(
+        &self,
+        entry: &ViewerEntry,
+    ) -> Option<(legaia_asset::battle_backdrop::SecondCopy, bool)> {
+        if !matches!(entry.tmd_source, Some(TmdSource::SceneTmdStream { .. })) {
+            return None;
+        }
+        Some(match &self.backdrop_mirror {
+            Some(t) => (t.second_copy_for_prot_index(entry.meta.index), true),
+            None => (legaia_asset::battle_backdrop::SecondCopy::HalfTurn, false),
+        })
+    }
+
     /// Build the current entry's mesh, dropped down to just the primitives
     /// whose texture pages have data in the entry's VRAM. Returns `None`
     /// if the entry has no parseable TMD.
+    ///
+    /// A `scene_tmd_stream` entry is placed the way retail places it rather
+    /// than drawn raw: object 1 is dropped, and a second copy of what
+    /// remains is appended under the per-stage transform that closes the
+    /// shell. See [`legaia_asset::battle_backdrop`].
     pub(crate) fn build_current_vram_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
         let (tmd, tmd_buf) = self.parse_current_tmd()?;
+        let second = self
+            .viewable
+            .get(self.current)
+            .and_then(|e| self.backdrop_second_copy(e));
+        let tmd = match second {
+            Some(_) => legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd),
+            None => tmd,
+        };
         let vram = self.build_current_vram();
-        Some(match vram {
+        let mut mesh = match &vram {
             Some(v) => {
                 legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, &tmd_buf, |cba, tsb, uvs| {
                     v.prim_has_texture_data(cba, tsb, uvs)
                 })
             }
             None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf),
-        })
+        };
+        if let Some((copy, _)) = second {
+            let first = mesh.clone();
+            mesh.append_scaled(&first, copy.scale());
+            // Order matters: the grid is retail's own world-fixed floor, not
+            // part of the shell. Appended before the second copy it would be
+            // handed to the transform and drawn twice, once upside-down in Z.
+            if vram
+                .as_ref()
+                .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+            {
+                mesh.append_scaled(
+                    &legaia_asset::battle_backdrop::build_ground_grid(),
+                    [1.0, 1.0, 1.0],
+                );
+            }
+        }
+        Some(mesh)
     }
 
     /// Parse the current entry's TMD if it has one. Returns the parsed TMD
@@ -378,6 +440,9 @@ impl LegaiaViewer {
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, tmd_buf))
     }
 
+    /// Triangle + vertex counts for the status line. Counts what the viewer
+    /// actually draws, so a backdrop reports both of its copies and not the
+    /// object it drops.
     pub(crate) fn tmd_stats(&self, entry: &ViewerEntry) -> (usize, usize) {
         let Some(tmd_buf) = self.tmd_bytes_for(entry) else {
             return (0, 0);
@@ -385,32 +450,59 @@ impl LegaiaViewer {
         let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
             return (0, 0);
         };
-        let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &tmd_buf);
-        (mesh.triangle_count(), mesh.vertex_count())
+        match self.backdrop_second_copy(entry) {
+            Some(_) => {
+                let drawn = legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd);
+                let mesh = legaia_tmd::mesh::tmd_to_mesh(&drawn, &tmd_buf);
+                (mesh.triangle_count() * 2, mesh.vertex_count() * 2)
+            }
+            None => {
+                let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &tmd_buf);
+                (mesh.triangle_count(), mesh.vertex_count())
+            }
+        }
     }
 
     /// Human note describing what an entry's mesh *is*, for the status line.
     ///
     /// Only `scene_tmd_stream` entries get one, and it is the reason the note
     /// exists: their leading TMD is a battle-stage backdrop shell authored as
-    /// **half** a bowl, open toward whichever side the retail camera looks
-    /// from. Rendered bare and unlabelled that reads as a truncated parse, and
-    /// has repeatedly been mistaken for one (see
-    /// `docs/reference/re-do-not-re-walk.md`). The open side is measured from
-    /// the object-0 vertex pool, never hardcoded.
+    /// **half** a bowl, and retail closes it by drawing the same mesh a
+    /// second time under a per-stage transform. Rendered raw and unlabelled
+    /// it reads as a truncated parse, and has repeatedly been mistaken for
+    /// one. The open side is measured from the object-0 vertex pool, never
+    /// hardcoded; the transform comes from `SCUS_942.54` when the viewer has
+    /// it, and the note says so when it does not.
     pub(crate) fn tmd_note(&self, entry: &ViewerEntry) -> String {
-        if !matches!(entry.tmd_source, Some(TmdSource::SceneTmdStream { .. })) {
+        let Some((copy, resolved)) = self.backdrop_second_copy(entry) else {
             return String::new();
-        }
+        };
         let Some(tmd_buf) = self.tmd_bytes_for(entry) else {
             return String::new();
         };
         let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
             return String::new();
         };
-        legaia_asset::scene_tmd_stream::shell_shape(&tmd)
-            .map(|s| s.describe())
-            .unwrap_or_default()
+        let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
+        let mut note = legaia_asset::battle_backdrop::describe_placement(
+            shape.as_ref(),
+            resolved.then_some(copy),
+        );
+        // Say whether the floor is there, and say it from the same predicate
+        // the mesh build uses - a note that claimed a floor the build then
+        // skipped would be worse than no note. `status()` only ever asks
+        // about the current entry, which is what makes this VRAM build the
+        // right one, and it runs on entry change rather than per frame.
+        if self
+            .build_current_vram()
+            .as_ref()
+            .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+        {
+            note.push_str(", over retail's tiled ground grid");
+        } else {
+            note.push_str("; no ground tile in this entry, so no floor is drawn");
+        }
+        note
     }
 
     pub(crate) fn render_tim_at(

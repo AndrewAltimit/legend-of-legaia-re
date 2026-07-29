@@ -174,3 +174,89 @@ fn town01_battle_build_surfaces_the_stage_mesh() {
         "the Rim Elm backdrop is the 2-object dome"
     );
 }
+
+/// Which objects of a stage TMD the backdrop actually draws.
+///
+/// Retail's registration drops object index 1 and keeps the rest
+/// (`FUN_800513f0`, ported as `legaia_asset::battle_backdrop::drawn_object_indices`), so
+/// the two stage shapes on the disc resolve differently: the two-object shells
+/// keep object 0 alone, and the four-object overworld domes keep 0, 2 and 3.
+/// Drawing object 0 alone - the port's old behaviour - is right for the shells
+/// and loses the mountains and the ground ring on the domes.
+#[test]
+fn backdrop_object_selection_matches_the_two_stage_shapes() {
+    use legaia_asset::battle_backdrop::drawn_object_indices;
+
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+
+    // Rim Elm: 2 objects -> object 0 only. Unchanged from the old truncation,
+    // which is why the Tetsu ground truth cannot regress.
+    let (rim_objs, _) = dome_shape(&host, 7);
+    assert_eq!(rim_objs, 2);
+    assert_eq!(drawn_object_indices(rim_objs), vec![0]);
+
+    // map01 overworld dome: 4 objects -> sky, mountains, ground ring.
+    let (map_objs, _) = dome_shape(&host, 88);
+    assert_eq!(map_objs, 4);
+    assert_eq!(drawn_object_indices(map_objs), vec![0, 2, 3]);
+
+    // Object 3 of the overworld dome is the flat ground ring at Y = 0 - the
+    // piece the truncation was dropping, and the reason an overworld battle
+    // had sky but no floor behind the procedural grid.
+    let bytes = host.index.entry_bytes(88).expect("read stage entry");
+    let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
+    let tmd = legaia_tmd::parse(&bytes[s.tmd_range()]).expect("parse dome TMD");
+    let ys: Vec<i16> = tmd.objects[3].vertices.iter().map(|v| v.y).collect();
+    assert!(
+        ys.iter().all(|y| *y == 0),
+        "map01 object 3 is the flat Y=0 ground ring"
+    );
+    // ...and object 2 is the mountain band, which reaches well above it.
+    let min_y2 = tmd.objects[2].vertices.iter().map(|v| v.y).min().unwrap();
+    assert!(
+        min_y2 < -2000,
+        "map01 object 2 is the mountain ring, got min y {min_y2}"
+    );
+}
+
+/// The four-object domes are a small, closed set: only the three overworld
+/// maps have them, and every other stage stream on the disc is a two-object
+/// shell (or smaller). This is what makes "drop index 1" a one-line rule
+/// rather than a per-scene table.
+#[test]
+fn four_object_stages_are_only_the_overworld_domes() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+
+    let mut multi = Vec::new();
+    let mut counts = std::collections::BTreeMap::<usize, usize>::new();
+    for idx in 0..host.index.entry_count() as u32 {
+        let Ok(bytes) = host.index.entry_bytes(idx) else {
+            continue;
+        };
+        let Some(s) = legaia_asset::scene_tmd_stream::detect(&bytes) else {
+            continue;
+        };
+        let Ok(tmd) = legaia_tmd::parse(&bytes[s.tmd_range()]) else {
+            continue;
+        };
+        *counts.entry(tmd.objects.len()).or_default() += 1;
+        if tmd.objects.len() > 2 {
+            multi.push(idx);
+        }
+    }
+    eprintln!("stage stream object-count histogram: {counts:?}");
+    eprintln!("stage streams with >2 objects: {multi:?}");
+    assert_eq!(
+        multi,
+        vec![88, 89, 90, 247, 248, 249, 394],
+        "only the map01/map02/map03 overworld domes carry more than two objects"
+    );
+}

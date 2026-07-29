@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [dome](#backdrop-dome---sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -333,11 +333,72 @@ TMD walk:
   there (`town01` = warm sandy pebbles; an earlier engine heuristic that
   borrowed the dome's nearest "grass vertex" sampled a blue texel region in
   `town01` and painted the floor sky-blue). Engine mirror:
-  `build_battle_ground_grid` in `play-window`.
+  `build_battle_ground_grid` in `play-window`, over the kernels in
+  `engine-core::battle_backdrop`.
   The historical overlay capture filed under the `0896` label (a mislabeled
   slot-A window image; PROT 0896 itself is neither the battle background nor
   an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
   buffer - it is battle-overlay code seen through that capture.
+
+#### The grid's own constants, read off the emitter
+
+The sub-tile UVs are not derived - they are sixteen literal words the prologue
+builds into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit
+loop reads back one group per quad, advancing `0x10` each time
+(`0x801d0660` / `0x801d06c8`). Decoding them as `POLY_GT4` UV words gives four
+fixed 32×32 blocks of the `(192..=255)²` window:
+
+| Quad | Words | `u` | `v` |
+|---:|---|---|---|
+| 0 | `77c0c0c0 000dc0df 0000dfc0 0000dfdf` | `0xC0..=0xDF` | `0xC0..=0xDF` |
+| 1 | `77c0c0e0 000dc0ff 0000dfe0 0000dfff` | `0xE0..=0xFF` | `0xC0..=0xDF` |
+| 2 | `77c0e0c0 000de0df 0000ffc0 0000ffdf` | `0xC0..=0xDF` | `0xE0..=0xFF` |
+| 3 | `77c0e0e0 000de0ff 0000ffe0 0000ffff` | `0xE0..=0xFF` | `0xE0..=0xFF` |
+
+The `clut` half of word 0 and the `tpage` half of word 1 are where the `0x77C0`
+/ `0x000D` address above comes from. No corner is ever mirrored: the four UVs
+are copied into the packet verbatim.
+
+**Grid origin.** `0x801d03b4..0x801d03d8` computes `x0 = -((w >> 1) << 9)` and
+`z0 = -((h >> 1) << 9) - 0x200`. The `z` axis carries an extra cell of bias, so
+the grid is not symmetric about the origin - at the live 28×28 it spans
+`x ∈ [-7168, +7168]` but `z ∈ [-7680, +6656]`.
+
+**The two culls.** Pass 1 transforms each cell *centre* by the view matrix
+(`cop2 0x0480012` = `MVMVA` rotation/`V0`/`+TR`/`sf=1`), reads `IR3` back, and
+writes `-1` / `0` / `1` per cell: `-1` when `z + 0x200 <= 0`, `0` when
+`z > 0x6500`, else `1`. Only `1` emits - pass 2 skips on both the `bltz` and
+the `beq zero` (`0x801d04b0` / `0x801d04b8`). There is **no screen-space test
+in pass 1**; the screen-rect reject is separate, in pass 2
+(`0x801d052c..0x801d05e8`), and drops a cell only when all four outer corners
+fall past the same edge of the `0x140 × 0xF0` display.
+
+Both are ported and tested (`battle_backdrop::classify_cell` /
+`cell_offscreen`) and neither is applied by the port's builder: they remove
+only geometry that is off-screen or behind the camera, which a depth-buffered
+projection discards anyway, and the port uploads the grid once while the
+camera orbits over it.
+
+**Where the tile comes from.** The two addresses are constant for the whole
+game, but the pixels behind them are not: each `scene_tmd_stream` entry carries
+its own TIM at framebuffer `(832, 0)` with a palette at `(0, 479)`, so the
+floor changes per stage while the emitter never does. 178 of the 182 backdrop
+entries carry that pair, and **no** entry fills that page under a different
+palette - which is what pins the constants against the corpus rather than
+against one stage. The four that carry neither must draw no floor at all: an
+untextured grid is a flat slab across the whole stage, which is a worse artifact
+than an absent one. `battle_backdrop::ground_grid_drawable` is that decision,
+shared so the two viewers cannot answer it differently, and the sweep is
+`the_ground_tile_is_addressed_by_the_emitters_own_constants`.
+
+The asset-viewer PROT browser and the browser entry viewer both draw the grid
+under a backdrop. Two traps sit on that path. The grid is appended **after** the
+shell's second copy, because it is world-fixed rather than part of the shell and
+handing it to the transform would draw it twice, once flipped in `Z`. And the
+browser viewer's VRAM upload is *targeted* - it uploads only the blocks the
+TMD's own primitives sample - so the grid's page has to be added to that request
+by name (`ground_page_rect` / `ground_clut_rect`); left out, the mesh builds
+fine and the floor draws untextured, a failure visible only on screen.
 
 > **Correction.** An earlier reading called the backdrop the *world-map continent
 > heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
@@ -377,69 +438,196 @@ Engine mirror: `ProtIndex::battle_stage_entry_for_scene`, consumed by
 `crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
 `crates/engine-shell/tests/battle_stage_live.rs` (save library).
 
-### Backdrop dome - sky + distant mountains (PROT 88 for `map01`)
+### Backdrop shell - two copies of one mesh
 
-The sky hemisphere + distant mountain ring come from the map's `scene_tmd_stream`
-dome (PROT `88` for `map01`) - the `POLY_GT3` prims (116 in angle-a):
+The sky hemisphere, distant mountain ring and far ground ring come from the
+scene's `scene_tmd_stream` entry (PROT `88` for `map01`) - `POLY_GT3` prims,
+116 of them on screen in the angle-a capture. The entry is loaded by the
+type-`0x01` chunk walker `FUN_8001FE70` into `_DAT_8007b864` and lands
+contiguously in battle RAM (base `0x800A8B34` for PROT 88, byte-matched across
+the four angle saves; leading TMD magic `0x80000002` at file `+4`,
+uncompressed). PROT 88/89/90 share identical geometry and differ only in
+texture payload.
 
-- PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-matched
-  across all four saves; leading TMD magic `0x80000002` at file `+4`,
-  uncompressed). Loaded by the type-`0x01` chunk walker `FUN_8001FE70` into
-  `_DAT_8007b864`. It is a 4-object, 968-vertex TMD + two `TimList` texture
-  chunks (obj0 = sky `Y` to `-10522`, obj2 = mountains `Y` to `-2257`,
-  obj3 = flat ground `Y = 0`, obj1 = near detail); PROT 88/89/90 share identical
-  geometry and differ only in texture payload.
-- **The dome is drawn as a background ACTOR.** `FUN_800513F0` does
-  `tmd_register(_DAT_8007b864)` → installs the TMD pointer into the mesh table
-  `DAT_8007C018[idx]` (returning the slot `idx`, stashed at the dome descriptor
-  `0x8007680c + 4` = `DAT_80076810`), then `FUN_80020de0` (`actor_alloc`)
-  allocates a battle actor whose mesh index is that slot and `FUN_80020f88`
-  links it into the actor list. So the dome is rendered by the **normal battle
-  actor path** (`FUN_80048A08`) - same as monsters/party - with no special
-  dome-draw function (which is why `DAT_80076810` has no resolved reader: the
-  actor list is walked pointer-indirect).
-- **No full surround.** The dome geometry is a **front half** (`X ∈ [-12155,
-  12155]`, `Z ∈ [-1260, +12155]` open toward `-Z`, all 4 objects `Z ≥ 0`), drawn
-  **once**, world-fixed. As the orbit camera sweeps, different portions of the
-  front arc come into view and the rest of the horizon is open sky/grass. The
-  retail captures confirm this: mountains cover only **44–81 % of the horizon
-  columns** depending on angle (peak when the camera looks into the arc, trough
-  along its edge) - *not* a ring. The dome's own ground ring (inner radius
-  `2889`) is the far grass behind the flat grid.
+The shell is authored as **half** a bowl. That is the real shape, not a
+truncated parse: across all 182 entries object 0 puts at most 8 % of its X or
+Z extent past `X = 0` / `Z = 0`, and every object satisfies
+`vert_top + n_vert * 8 == normal_top` exactly. What closes the circle is a
+second draw of the same mesh.
 
-The half-shape holds per scene, along different axes: `town01`'s stage TMD
-(extraction 7) is a **half arena authored entirely at `X ≥ 0`** (obj0
-`X ∈ [0, 10751]`, `Z ± 10751`), open side facing `-X` - the sea horizon in
-the retail Tetsu close-up. Only **object 0** (the arena shell) is on screen
-in the retail captures; object 1 (a small ground-level ribbon of near
-props / ground mist) never is.
+**What the second copy is worth, measured.** Project `map01`'s drawn objects
+through the exact camera each of the four angle captures was taken at (yaw
+`_DAT_8007B792`, pitch `32`, `TR = (0, 1280, 7680)`, `H = 256`, all read from
+the save state) and count the 320 screen columns the mountain ring covers:
 
-It holds for the whole class, not just these two. Measured over object 0, all
-**182** `scene_tmd_stream` entries put at most 8 % of the shell's X or Z
-extent past `X = 0` / `Z = 0`; the open side is `-X` in 129, `-Z` in 49 and
-`+X` in 4, and never `+Z` - the hole is always where the camera is. Classifier
-`legaia_asset::scene_tmd_stream::shell_shape`; sweep in
-`crates/asset/tests/scene_tmd_stream_real.rs`. **The half shape is authored,
-so "complete the circle" is a regression, not a fix** - the falsified reading
-and what the mirror broke are recorded in
-[`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-half-authored-backdrop-shell-and-the-mirror-that-was-supposed-to-complete-it).
+| Capture | Camera yaw | One copy | Two copies | Retail pixels |
+|---|---|---|---|---|
+| a | 19.7° | 100.0 % | 100.0 % | 98.1 % |
+| b | 334.7° | **71.9 %** | 100.0 % | **100.0 %** |
+| c | 275.6° | 100.0 % | 100.0 % | 100.0 % |
+| d | 231.3° | 99.7 % | 100.0 % | 100.0 % |
 
-**Engine status.** `legaia-engine play-window` renders stage battles as a
-faithful scene: the phase-scripted camera (below), the stage TMD's object 0
-drawn **once** at raw coords (an earlier build added a `Ry(180°)` mirror
-copy to "complete the circle"; for `town01` that planted a duplicate
-village wall across the open sea side, so the mirror is removed - one
-instance, like retail), the flat tiled ground grid under the actors (the
-`func_0x801d02c0` grid + constant texture address above), a sky-blue clear
-so the open horizon reads as sky, the real **assembled** battle party (see
-below), and animated monsters. Monster actors compose a half-turn so they
-face the party (`-Z` from the `+Z` seats - the retail Tetsu dialogue
-close-up shows the monster's face while the archive meshes rest facing
-`+Z`). The actors draw through the exact `tr.z = 7680` camera with the
-retail **4× actor world scale** composed under the rotation (see below) -
-the battle meshes are small (party 134–284 units, monsters 77–368), and the
-4× base is what makes them read at retail size against the deep
-translation.
+Three of the four yaws cannot tell the models apart - one copy already fills
+the frame. Capture **b** can: a single copy leaves columns `0..89` with no
+mountain geometry at all, and the retail framebuffer has a mountain band in
+**90 of those 90 columns** (mean thickness 15.3 px). The second copy is not an
+embellishment the captures merely tolerate; without it those pixels have no
+source.
+
+#### Two actors, one registered mesh
+
+`FUN_800513F0` registers the TMD **once** - `80051a60 jal 0x80026b4c`, slot
+stashed at the descriptor `0x8007680c + 4` = `DAT_80076810` - and then calls
+`actor_alloc` (`FUN_80020DE0`) **twice** from that same descriptor
+(`80051a7c`, `80051aa8`), parking the two actor pointers at
+`battle_ctx + 0x106C` (copy A) and `+0x1070` (copy B). Both are ordinary
+battle actors on the normal draw path, which is why `DAT_80076810` has no
+resolved reader: the actor list is walked pointer-indirect.
+
+They are two genuine draw entries, not one entry visited twice: each actor
+gets its **own** `0x9C`-byte part table at `+0x44`, zeroed in `actor_alloc`
+(`80020f04`) and allocated in the link pass (`80021184`). Live battle states
+read two distinct table pointers, and the object-count edit below is applied
+to each separately.
+
+`FUN_80050120` drives the pair in lockstep - the depth-cue ramp at `+0x78` and
+the draw-mode selector at `+0x56` are written to both on the same path
+(`80050848..80050880`). `+0x56 = 3` selects case 3 of `FUN_8001ADA4`'s jump
+table (`8001ae60 lhu v0,0x56(s0)`, table at `0x8001042C`) - **not**
+`FUN_80048A08`.
+
+Copy A draws at raw coordinates. Copy B gets one of two transforms:
+
+| Selector | Written by | Effect | Determinant |
+|---|---|---|---|
+| `+0x26 = 0x800` (default) | `80051bc0`/`80051bc4` | half turn about world Y | `+1` |
+| `+0x5A = 2` (exception) | `80051cc4`..`80051ce4` | X scale `-1` - reflection in the YZ plane | `-1` |
+
+`+0x26` is the second of the three half-words `FUN_80026988` reads at
+`actor + 0x24`; that kernel writes `sin` of it bare into matrix element
+`[0][2]` and `cos` into `[2][2]`, which only a Y rotation does. `0x800` of the
+`0x1000` full turn is exactly 180 degrees. The exception path routes through
+`FUN_8001ADA4` case 3, which turns `+0x5A & 2` into `_DAT_1F800348 = -0x1000`
+(`8001af28`..`8001af34`) and calls `FUN_8005B4E8` (`ScaleMatrix`, column
+scaling - so the reflection is in model space, under the rotation). The same
+predicate `+0x5A & 0xE` (`8001afd8`) negates the per-object rotation argument
+and swaps the draw-call mode word from `0x40000000` to `0x48000000` - the
+winding compensation a negative-determinant transform needs.
+
+#### The per-stage table
+
+Which transform a stage gets comes from the zero-terminated `u16` table at
+`DAT_80078B50` (`SCUS_942.54` file `0x69350`, 99 slots naming 98 distinct
+stages), walked at `80051bc8`..`80051c18` against the backdrop id
+`word[0x80084540] + byte[0x8007BD60] & 0x7F`. A hit takes the mirror; a miss
+takes the half turn. Stage id + 3 is the PROT extraction index, and every one
+of the 98 distinct ids resolves to a `scene_tmd_stream` entry under that
+offset.
+
+**The table respects one geometric constraint.** A shell whose open side faces
+`-Z` is symmetric about `X = 0`, so reflecting it in the YZ plane reproduces it
+in place and fills nothing - only a half turn closes it. Of the 49 `-Z`-open
+shells in the corpus, **zero** are on the mirror list; of the 133 X-open
+shells, 98 are. Parser `legaia_asset::battle_backdrop`; the disjointness sweep
+is `no_z_open_shell_takes_the_mirror_transform` in
+`crates/asset/tests/battle_backdrop_real.rs`.
+
+`0007_town01` (stage id 4) is on the list - the Tetsu arena is completed by a
+reflection, not a half turn. Applying the half turn there instead plants a
+second village wall across the open sea side, which is the artifact that once
+read as "no completion exists" (see
+[`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)).
+
+#### The choice is authorial, not derivable
+
+Beyond that one constraint the table is hand-maintained per-stage data, and a
+viewer that tries to infer it from the mesh will be wrong. 39 backdrop meshes
+are carried by more than one PROT entry, byte for byte, and retail's table
+splits **12** of those groups across the two transforms.
+
+The clearest case is the Conkram family. `0730_concend` and `0736_conc3` are
+identical files - `concend` carries `conc3`'s three stage meshes in reverse
+slot order - and the table names `conc3`'s variants while naming none of
+`concend`'s. So the same mesh is half-turned in one scene and mirrored in the
+other, and the two renders differ visibly in where the colonnade and the
+stairs sit around the ring. Neither is a port defect. `conc` and `conc2` take
+the mirror alongside `conc3`; `urudre2` takes the half turn alongside
+`concend`.
+
+One group is split **inside a single scene**: `0321_balden2` is mirrored and
+`0322_balden2` is half-turned on identical bytes. That rules out any per-scene
+rule as well as any per-mesh one. It also shows what the choice costs where it
+does not matter - that shell's cut section is exactly symmetric in `z`, and a
+`z`-symmetric half is carried to the same point set by both transforms, so the
+two draws are indistinguishable. Retail can differ freely wherever that holds.
+
+Sweep: `the_second_copy_transform_is_not_a_function_of_the_mesh`.
+
+#### The sibling table at `DAT_80078C1C` - a depth-cue selector, not geometry
+
+`80051c1c`..`80051c6c` scans a **second** zero-terminated `u16` table the same
+way and against the same backdrop id, setting a byte flag at `0x8007BDA8`
+(`gp + 0xA90`, `gp = 0x8007B318`) instead of touching either actor.
+
+Its 13 ids are the outdoor stages: the three variants of each kingdom
+overworld (`map01` / `map02` / `map03`) plus `retona`, `deene`, `kor5` and
+`rikuroa`. Note the 7 four-object shells are all inside the overworld nine.
+
+The flag is read twice, both times in `FUN_80050120` and both times on the
+**depth-cue** value the two backdrop actors share:
+
+- `800505b8`..`800505c8` picks the ramp ceiling clamped into both actors'
+  `+0x78` - `0x800` when clear, `0xC00` when set (either way forced to
+  `0x1000` when `ctx+0x278 > 1` or `ctx+0x243 > 1`).
+- `800507fc`..`80050834` picks how the far colour at `0x8007BB48` is derived
+  from `ctx+0x890` - `>> 1` when clear, `(c - 0x010101) * 2` when set.
+
+So it brightens the far-fog ramp on wide-open stages. It adds no third
+geometric behaviour, and the completion is unaffected. Live-confirmed across
+15 battle save states: the flag is `1` in exactly the captures whose stage id
+is in the table and `0` in every other.
+
+#### Object 1 is dropped
+
+Immediately after allocating the pair, `80051ad4`..`80051bac` decrements each
+actor's object count at `**(actor + 0x44)` and left-shifts the pointer array
+by one **from index 1** (`A[i] = B[i+1]`, `B[i] = B[i+1]`, `i >= 1`). The
+surviving draw list is objects `0, 2, 3, ...`; object 1 stays resident in the
+relocated object table, unreferenced. So the 175 two-object stages draw object
+0 alone, and the 7 four-object overworld shells draw 0, 2 and 3. For `map01`
+that is obj0 = sky (`Y` to `-10522`), obj2 = mountains (`Y` to `-2257`),
+obj3 = flat far ground (`Y = 0`, inner radius `2889`); obj1 is a near-detail
+prop that never appears on screen.
+
+The whole block is gated on `DAT_8007B64B == 0` (`80051abc` / `80051acc`).
+That byte is bit 5 of byte `+8` of the field scene's encounter-region record
+(`801DA09C`..`801DA0AC` in the field battle-intro overlay) - the same byte
+whose low 5 bits pick which of a scene's stage variants to use. Set, it keeps
+object 1.
+
+#### Port
+
+`legaia_asset::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
+parses the table, `drawn_objects_tmd` applies the object-1 drop, and
+`SecondCopy::scale` / `flips_winding` give the second copy's transform (both
+are exact integer diagonals, so no trigonometry is involved). Mesh side,
+`Mesh::append_scaled` / `VramMesh::append_scaled` in `legaia_tmd::mesh` append
+the transformed copy and reverse triangle winding when the determinant is
+negative - the mesh-level equivalent of retail's mode-word swap. The
+asset-viewer PROT browser and the browser entry viewer both place backdrops
+this way and label them from the resolved transform.
+
+The rest of the stage scene in `legaia-engine play-window`: the phase-scripted
+camera (below), the flat tiled ground grid under the actors (the
+`func_0x801d02c0` grid + constant texture address above), a sky-blue clear so
+open horizon reads as sky, the real **assembled** battle party (see below),
+and animated monsters. Monster actors compose a half-turn so they face the
+party (`-Z` from the `+Z` seats - the retail Tetsu dialogue close-up shows the
+monster's face while the archive meshes rest facing `+Z`). The actors draw
+through the exact `tr.z = 7680` camera with the retail **4× actor world
+scale** composed under the rotation (see below) - the battle meshes are small
+(party 134–284 units, monsters 77–368), and the 4× base is what makes them
+read at retail size against the deep translation.
 
 ### Battle camera (exact)
 
@@ -514,9 +702,33 @@ their stage translations - draw at 4× under the same `Rx(32)·Ry(yaw)` /
 `TR=(0,1280,7680)` / `H=256` camera the backdrop uses at 1×. The 4× is what
 makes the small battle meshes read at retail size against the deep
 translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster). The
-engine mirrors the split in `play-window`: the dome + grid draw through the
-exact 1× `retail_battle_mvp` projection, and the actor + battle-FX draws
-compose `BATTLE_WORLD_SCALE = 4.0` under it.
+engine mirrors the split in `play-window`: the dome + grid draw at 1× and the
+actor + battle-FX draws compose `BATTLE_WORLD_SCALE = 4.0` under the same
+camera.
+
+The function that camera comes from is **`battle_dome_camera_mvp`**, not
+`retail_battle_mvp`. The two are not interchangeable and only one is live:
+
+| | `retail_battle_mvp` | `battle_dome_camera_mvp` |
+|---|---|---|
+| Pose | the fixed `TR = (0, 1280, 7680)` | the live phase-scripted pose |
+| Role | camera-RE reference + regression target | every battle draw |
+| Reached by | nothing (`#[allow(dead_code)]`) | the play-window battle path |
+
+`retail_battle_mvp` pins the *static* composition to 0.0002 px against the
+savestate framebuffer, which is what makes it the regression target; it holds
+the backdrop's own translation fixed, so it cannot express the phase glides the
+[camera section](#battle-camera-exact) traces. `battle_dome_camera_mvp` takes pitch /
+yaw / TR / focus from the live `battle_cam` pose each frame and falls back to
+the far framing at its minimum depth on the first frame. Both build on the
+shared `battle_mvp_with_tr`, which is why the pinned projection stays a valid
+oracle for the live one.
+
+Note also that the 4× is sourced from `DAT_8007BF10 = 16384 * I` - the actor
+pass's base matrix - and not from the actor field `+0x78`, which
+`FUN_8001ADA4` passes as `FUN_80043390`'s IR0 depth-cue argument
+([`renderer.md`](renderer.md)). Two different quantities; reading `+0x78` as
+the world scale would be a different claim with different evidence.
 
 ### Battle party meshes (assembled)
 

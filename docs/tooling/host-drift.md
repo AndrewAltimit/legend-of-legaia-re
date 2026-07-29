@@ -19,7 +19,7 @@ Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 
 ## Where the gates run
 
-The four host-drift tiers below all run in the `gates` job of
+The five host-drift tiers below all run in the `gates` job of
 [`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) and from
 [`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) as a fast
 local mirror. CI is the authority: a gate that lives only in a hook is one
@@ -102,11 +102,12 @@ would not find a gap - it would manufacture eighty, because the minigames page
 is a different screen set rather than a second copy of the play page. The real
 cost of that collapse is a *model* question, which tier 3 answers.
 
-## Tier 2 - geometry constants: do paired values agree?
+## Tier 2 - paired constants: do paired values agree?
 
 `CONSTANT_PAIRS` in the same script. Each row names a constant on each host
-that both feed to the *same* engine-ui builder, and the two initialisers must
-normalise to one token stream. Formatting, comments and import aliasing are
+that both feed to the *same* shared kernel - an `engine-ui` builder for the
+screen rows, `swap_bgm` for the BGM transition row - and the two initialisers
+must normalise to one token stream. Formatting, comments and import aliasing are
 noise; a changed digit, a dropped row and a reordered table are all value
 changes. The normaliser's control suite pins both directions, because a
 normaliser that collapsed everything to `""` would report every pair equal.
@@ -141,6 +142,40 @@ Proves the two sites mention (or omit) the same kernels. Does not prove the
 arguments are equal, that the calls run in the same order, or that either site
 is reached at runtime.
 
+### Rows on the surface today
+
+| feature | assertion |
+|---|---|
+| Muscle Dome damage | `symbols_all` on the shared `resolve_turn_retail` entry point. |
+| save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
+| live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
+| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
+| game-over panel | `pattern_same` over the `game_over_draws_for` argument list. |
+| play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
+
+The last three exist because each named a divergence the reachability tier
+could not see, and each divergence was a *model* one rather than a missing
+screen.
+
+**Pause-menu open.** Retail gates the root list's last two rows on two
+scene-scoped values - the op-`0x49` entry context and the MAN header's
+save-allow bit - and suspends field dispatch while the menu owns the frame. A
+host that opens the menu without sampling them into a `FieldMenuGate` draws
+every row white and opens every row, which lets a player Save in one of the
+scenes whose header forbids it (see [`save-screen.md`](../subsystems/save-screen.md)).
+Both open sites call the same builder, so tier 1 was green throughout.
+
+**Game-over panel.** The assertion is that both hosts project the live
+`GameOverSession` - its cursor, and the save-scan `continue_enabled` - rather
+than a pinned pair of literals. `pattern_same` is the right mode because it
+does not have to name what the arguments should be.
+
+**Play clock.** The H:MM:SS box reads `World::play_time_seconds`, and that
+counter only moves if a host drives `advance_play_time`. Substituting a frame
+count at the *draw* site looks identical on screen and is not: the save writes
+the world's counter, so a save taken from a host that never advanced it
+records the play time it was loaded with.
+
 ## Tier 4 - trait-override symmetry
 
 [`scripts/ci/check-trait-override-symmetry.py`](../../scripts/ci/check-trait-override-symmetry.py),
@@ -164,6 +199,54 @@ Proves that a defaulted hook one implementer overrides is overridden by all of
 them. Does not prove the overrides *do* the same thing, nor say anything about
 a hook every host leaves defaulted - that is a host-identical gap, not drift,
 and reachability of it is the [port catalog's](port-catalog.md) question.
+
+## Tier 5 - input: does any page carry its own keyboard table?
+
+`check_page_key_tables` in the same script.
+
+The three hosts share one keyboard layout, served out of the engine by
+`pad_bindings_json`
+([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-core/src/input.rs)),
+and the whole point of serving it is that a page cannot write a second one
+down. A page that does write one down never looks like a table: it looks like
+a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.
+The minigames page carried exactly that, binding `A` / `S` / `D` to the three
+face buttons while the engine binds them to Left / Down / Right, and printing
+labels that said so - so the page and the engine contradicted each other key
+for key on the same three buttons, and a rebind reached neither.
+
+The rule, on **pad-driving** sources only (a `site/` file that reaches an
+engine input entry point - `main.js` closing a dialog on Escape is ordinary
+web UI and out of scope):
+
+- `KeyboardEvent.key` may not be read at all. It is the layout-dependent
+  character property; the engine's table is keyed by `code`, so a `key`
+  comparison cannot be reconciled with a binding even in principle.
+- `KeyboardEvent.code` may be compared to a literal only for a key the PSX pad
+  has no button for (`NON_PAD_CODES` in the gate). Those cannot contradict a
+  binding - the pad has no Escape.
+- A **set membership test** on a bindable code - `held.has('Enter')`,
+  `pulse.includes('Space')` - is the same defect in a third shape. The literal
+  never touches `event.code`, so the two rules above are blind to it. The
+  bindable set is parsed from `KEY_NAME_DOM_CODES` in the engine rather than
+  restated here, so the gate cannot drift from the table it polices.
+
+That third rule exists because the first two passed a live bug. The play page
+decided whether Start was pressed with `p.has('Enter')`, so binding Start to
+Space bound it on both hosts and in the engine's served table - and in every
+handler except the one that opens the pause menu. The page read the engine's
+table correctly and then dispatched on a key name anyway.
+
+The fix a finding asks for is always the same: resolve the code through
+`legaiaPadButtonOf` and dispatch on the pad **button**. Printed key labels go
+the same way, through `legaiaPadKeysFor`, so a rebind relabels the page rather
+than making it lie. Both live in
+[`site/js/pad-bindings.js`](../../site/js/pad-bindings.js), the one place any
+page adopts the engine's table.
+
+There is deliberately **no waiver file** for this tier. A waiver names a
+blocking capability, and no capability is missing here: the table is exported,
+the adoption helper ships, and the answer is always to type the lookup.
 
 ## What a waiver may say
 
@@ -266,7 +349,7 @@ transition from being written twice.
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
-- a geometry constant joins tier 2 by being added to `CONSTANT_PAIRS`;
+- a paired constant joins tier 2 by being added to `CONSTANT_PAIRS`;
 - a feature joins tier 3 by being added to `SIM_PAIRS` with its two sites;
 - a trait joins tier 4 by having a default method body and two implementers.
 

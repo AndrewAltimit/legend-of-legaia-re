@@ -337,11 +337,47 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
 | 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
-| 9 | Queue. |
-| 10 | Unhalt-pause toggle. |
-| 11 | `_DAT_8007BA9C = -1`. |
+| 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
+| 10 | Unhalt-pause toggle - waits on flag bit 3, then clears the pause bit sub-op 2 sets. What arms it is still open; no port. See [open threads](../reference/open-rev-eng-threads.md#op-0x35-sub-op-0xa---what-it-waits-on). |
+| 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
 
 PC += 4.
+
+##### Sub-op 9 is a start, not a queue
+
+Sub-op 9 is the op a **cutscene** changes music with part-way through a
+scene - the scene's *entry* track is sub-op 1. Its arm at `0x801E0224` is two
+halves:
+
+```text
+801e022c  lw a0,-0x4548(v0)     ; a0 = *0x8007BAB8  (index the resolver produced)
+801e0230  lw v0,-0x4564(v1)     ; v0 = *0x8007BA9C  (index actually loaded)
+801e0238  bne a0,v0,0x801dee4c  ; not settled -> `move s8,s4`, i.e. re-run this same PC
+801e0240  jal 0x8003ce9c        ; read the u16 operand
+801e024c  lw a0,-0x48b0(v1)     ; flag word 0x8007B750
+801e0254  sw v0,-0x4538(a1)     ; *0x8007BAC8 = id
+801e0258  ori a0,a0,0x1         ; ... | 1
+```
+
+`0x801DEE4C` is `move s8,s4` - the dispatcher's restore-PC idiom, so the
+mismatch arm re-executes this instruction next frame rather than advancing.
+That is a **wait barrier** on the asynchronous asset load, not a hand-off to
+some later trigger. Once it clears, `sw v0,-0x4538(a1)` is byte-for-byte the
+store sub-op 1 makes: the track is selected there and then. The only other
+difference from sub-op 1 is the flag word - sub-op 1 clears bit 1 (the pause
+bit), sub-op 9 sets bit 0.
+
+Sub-op 11 is the barrier's arming half: `_DAT_8007BA9C = -1` can never equal a
+resolved index, so a following sub-op 9 blocks until a load completes.
+
+The engine port resolves BGM bytes synchronously (`SceneHost::music_bank_entry_bytes`
+is a plain PROT read), so nothing is ever in flight and the barrier is
+satisfied on arrival - `route_bgm_events` therefore routes sub-ops 1 and 9 to
+the same director start. Reading sub-op 9 as "queue for the next scene entry"
+instead is invisible to a corpus sweep of scene prescripts (which only ever
+emit sub-op 1) and audible only inside a cutscene, where it leaves the score
+silent where it belongs and starts it over whichever scene the player enters
+next.
 
 #### 0x36 SOUND_CUE
 

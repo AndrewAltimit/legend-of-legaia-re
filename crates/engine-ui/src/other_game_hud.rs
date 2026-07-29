@@ -777,7 +777,12 @@ pub fn hub_screen_quads(
 /// six decimal values, in retail's two-pass order.
 ///
 /// `brightness` is per row - each row fades in on its own lane counter (see
-/// `legaia_engine_core::other_game_overlay::ScoreTally`).
+/// `legaia_engine_core::other_game_overlay`, whose `step_scale` is the ramp
+/// each lane counts up by).
+///
+/// `values` are the contest's own rows: the four lanes
+/// `legaia_engine_core::muscle_dome::LegScoreRows` carries, then the running
+/// tally and the coin bank they settle into.
 pub fn score_tally_quads(
     table: &mut [HudSprite],
     values: [i32; SCORE_TALLY_ROWS],

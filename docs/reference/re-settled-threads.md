@@ -125,6 +125,8 @@ reserved/authoring data with no live consumer.
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
+| Which stage-dome objects does the battle backdrop draw? | resolved (drop index 1, not "keep index 0") | `disassembly` + `capture` | The registration edits the object list rather than truncating it: each backdrop actor owns a private `0x9c` part table at `+0x44` (allocated at `0x80021184`), and `0x80051ad4..0x80051bac` applies one `count -= 1` plus one `entry[i] = entry[i+1]` shift from index 1 to each. Object **1** is dropped and everything else kept, gated on `_DAT_8007b64b == 0`. Indistinguishable from "draw object 0" on the two-object shells; on the seven four-object domes it keeps sky, mountains and the ground ring. See [battle.md](../subsystems/battle.md#object-1-is-dropped). |
+| Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
@@ -151,6 +153,7 @@ reserved/authoring data with no live consumer.
 | MP-cost ability-bit priority (half vs quarter) | resolved (dump-confirmed) | `disassembly` | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
 | Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | resolved | `capture` | All three residuals are now derived from disc bytes: the formation-row selection is the standard scripted-battle op `3E FF 04` in `P1[10]` (same case-`0x3E` install arm as Zeto/Caruban; row 4 = lone Tetsu), the sparring-partner reposition is `P1[10]`'s `4C 51 15 0E 07 22` NpcRun→tile `(21,14)` = `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly, and the spar Yes/No is a MES-embedded option picker (`0x29` open + N×2 signed relative-jump table, handler `FUN_80038050`; port `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice`), not a field-VM opcode. [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) |
 | Battle stage backdrop: which `scene_tmd_stream` a scene fights in | resolved | `capture` | A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - `map01` uses bundle slot 5 (entry 88), Rim Elm `town01` slot 6 (entry **7**). Engine `ProtIndex::battle_stage_entry_for_scene`. [details ↓](../subsystems/battle.md#which-stage-stream-a-scene-fights-in) |
+| Battle stage backdrop: is the authored half completed, and how | resolved (two actors; per-stage transform; object 1 dropped) | `capture` + `disassembly` | `FUN_800513F0` registers the shell TMD once and allocates **two** actors from it (`ctx+0x106C` / `+0x1070`), both drawn. Copy B takes a half turn unless the stage is on the `DAT_80078B50` table, which mirrors it in X instead. Confirmed live in 15 battle saves: both pointers non-null and distinct, object lists identical, the split matching the table every time. Retracts "drawn once, so nothing completes it" ([re-do-not-re-walk.md](re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)). [details ↓](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh). |
 | Battle-stage overlay band (`+0x47`) | resolved | `disassembly` | `FUN_800520F0` pages a per-stage slot-B overlay via `FUN_8003EC70(_DAT_8007B64A + 0x47)`, skipped when the id is `0` (which every catalogued battle but the Tetsu tutorial reads). Engine `engine-core::overlay_loader::battle_stage_overlay_entry`. [details ↓](../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band) |
 | Battle-intro tutorial boxes (Tetsu sparring fight) | resolved (machine pinned, ported and wired) | `disassembly` (exclusivity `inference`) | The prompts are resident in stage overlay 967, so porting the battle SM alone could never emit them - though "**only** in 967" is corpus-exhaustiveness, not an instruction claim, and is graded separately. `FUN_801F6B70` is a 91-entry jump-table hook on the flow-state byte `ctx[+0x06]` with just **nine** live slots; each switches on `ctx[+0x28A]` - the battle-mode counter, read here as a lesson index - making the script a `(state × lesson)` cross-product. Port `engine-core::battle_tutorial` reads the prompt text off the user's disc. [details ↓](../subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967) |
 | Battle command-flow byte `ctx[+0x06]` | resolved | `disassembly` | The *other* battle SM - `FUN_801D0748`, the menu half, distinct from the action SM's `ctx[+0x07]` and overlapping its value space. Its selection band is regular decimal tens `30..120` (turn prompt / category menu / escape / item / magic / arts entry / target / target confirm / commit / attack-mode), which is what identifies it as the tutorial hook table's key: the nine live hook slots are that band minus the magic window. Engine mirror `engine-core::battle_flow`. [details ↓](../subsystems/battle.md#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) |
@@ -2313,6 +2316,39 @@ trail: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#muscle-dome-was-never-a-car
 Ports: `engine-core::muscle_dome` (`parse_course_ladder` /
 `course_score_cell` / `resolve_turn` playing whole strings per actor /
 `DomeDamageModel`, the one retail damage kernel both hosts resolve through).
+
+### The dome runs two state machines; the outer one is the contest
+
+*Status:* resolved (disassembly) -
+[`minigame-muscle-dome.md § Two state machines`](../subsystems/minigame-muscle-dome.md#two-state-machines-not-one)
+
+The battle round driver `FUN_801D0748` is the *inner* machine and has exactly
+one contest-gated arm (`0x801D322C`, the flee path). The **contest** - which
+`(course, round)` is staged, whether the run continues, what a cleared leg is
+worth and what the run pays - is a second machine living wholly in PROT 0977:
+`FUN_801CEA6C` re-entered after every leg, and the hub `FUN_801CF870`
+dispatching `DAT_801D1A78` through a 51-entry jump table at `0x801CE990`.
+
+Course and round are packed in the low byte of the mode-24 sub-id word
+`_DAT_8007BAC0` (`course = ((w-1) & 0xFF) >> 4`, `round = (w-1) & 0xF`); a
+finished leg is `w += 1`. Which course opens is picked by story flags
+`0x536`/`0x537`/`0x538`, and only the Master course's length is clamped, by
+`0x378`/`0x382`/`0x471`.
+
+Two things this settles that had been open. **"Which arm decides a leg was
+survived"** is neither of the two `FUN_801D0CD4` / `FUN_801D0068` arms it was
+hunted in: it is `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the
+battle's own `0x5A` party-wipe scan. So `settle_contest`'s `continuing` input
+is derived, not prompted. And **what the six tally rows hold** - three of them
+are HP recovery (`round*2`, `min(turns,8)`, `[8,12,4,2][outcome]`, each
+`× max_hp / 100`) draining into the restore accumulator `DAT_801D1AC8`; only
+the `(course, round)` score cell reaches the coin tally.
+
+A cleared course therefore banks its whole score row, which is the join that
+corrected the curated Master reward from 13856 to the disc's **13830**. Port:
+`engine-core::muscle_dome::DomeContest`, driven by `World::report_muscle_leg`
+/ `World::settle_muscle_contest` and the browser's `muscle_contest_*`
+bindings.
 
 ### Battle arts-input UI decomposition (dome = standard battle input)
 

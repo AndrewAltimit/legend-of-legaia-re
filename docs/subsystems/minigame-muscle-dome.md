@@ -70,20 +70,187 @@ across them).
 Port: `engine-vm::move_no_effect_guard` (`queued_magic_message` /
 `follow_up_hook_install`). `see ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
+## Two state machines, not one
+
+The dome runs **two** state machines stacked, and confusing them for one is
+what makes a port of it feel wrong.
+
+The inner one is the battle: `FUN_801D0748` in the battle-action overlay
+(PROT 0898), the shared round driver, which plays a leg out and ends it on a
+knockout ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)).
+Almost nothing in it is dome-specific - it has exactly **one** contest-gated
+arm, at `0x801D322C`, where a `lw` of the mode-24 sub-id word `_DAT_8007BAC0`
+and a `beq …, zero` skip the whole block unless a contest is running. That
+block is the flee arm: on action state 5 (`actor+0x1DE == 5`) and a formation
+monster that is not one of the four unfleeable ids, it stores
+`_DAT_80084448 = 4`, which is how running reaches the arena.
+
+The outer one is the **contest** - the ladder run above the legs - and it
+lives entirely in the arena roster/init overlay (PROT 0977, slot-A base
+`0x801CE818`):
+
+- `FUN_801CEA6C` is its entry, and is re-entered after **every** leg. A
+  zero sub-id word means a fresh contest; a non-zero one means a leg just
+  finished, and the only thing that arm does before the common tail is
+  `word += 1` (`0x801CEC00`).
+- `FUN_801CF870` is its per-frame hub, dispatching `DAT_801D1A78` through a
+  **51-entry jump table at `0x801CE990`**. Fourteen states are real - `0`,
+  `1`..`6`, `0x0A`..`0x0C`, `0x14`..`0x16` and `0x32`; the other 37 route to
+  the table's default arm. Every state but `0x32` falls through the same tail
+  at `0x801D00B8`, which re-packs `(course, round)` into the word.
+
+### The cursor: `(course, round)` packed in one word
+
+Both the course and the round live in the low byte of the mode-24 sub-id word
+`_DAT_8007BAC0`:
+
+| Quantity | Expression | Site |
+|---|---|---|
+| course | `((word - 1) & 0xFF) >> 4` | `0x801CEBD4`, `0x801CEC30` |
+| round | `(word - 1) & 0xF` | `0x801CEC18` |
+| next leg | `word + 1` | `0x801CEC00` |
+| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `0x801D00B8` |
+
+The re-pack leaves every byte above the low one alone, which is why the three
+course-entry seeds can carry `0x100` / `0x300` in them and survive a whole
+contest untouched. Decoded course/round land in `DAT_801D1A90` /
+`DAT_801D1A94`, which is the same pair `FUN_801D1510` indexes the ladder with.
+
+### Which course opens
+
+`FUN_801CEA6C` seeds the word `1` and then lets three story flags overwrite it
+in order, so the highest unlocked course wins:
+
+| Flag | Seed | Course |
+|---|---|---|
+| *(none set)* | `0x001` | 0 - Beginner |
+| `0x536` | `0x101` | 0 - Beginner |
+| `0x537` | `0x111` | 1 - Expert |
+| `0x538` | `0x321` | 2 - Master |
+
+The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not this.
+
+### How long a course runs
+
+The course descriptor's own round count is the length - 8 / 8 / 13 - except on
+the **Master course**, and only there: the whole clamp block at
+`0x801CED28..0x801CEDA4` sits behind `bne course, 2`. Three story flags each
+shorten it, and each is consulted only once the run has actually reached its
+threshold:
+
+| Reached round | Missing flag | Course stops at |
+|---|---|---|
+| 8 | `0x378` | 8 |
+| 11 | `0x382` | 11 |
+| 12 | `0x471` | 12 |
+
+Retail applies them in that order and lets a later one overwrite an earlier
+one, so a run missing all three stops at 12 rather than at 8. That is
+reproduced rather than tidied. "Course exhausted" is then `round >= cap`
+(`0x801CEDB8`).
+
+### Which arm decides a leg was survived
+
+Neither of the two this page used to guess at. It is a single byte test at
+`0x801CEDD8` (and again at `0x801CEE1C`): `DAT_8007BD60 & 0x80`. The battle's
+own state-`0x5A` party-wipe scan clears the bit, and the shared minigame-exit
+routine `FUN_80026018` re-raises it (`ori 0x80`, `0x800260A4`) on the way back
+out - so on arena re-entry the bit reads "the party is still standing".
+
+That settles the last open input of `settle_contest`: `continuing`
+(`DAT_801D1ADC`) is **derived**, not prompted. The latch has exactly three
+writers - zeroed on every arena entry (`0x801CECE0`), zeroed at settlement
+(`0x801D1058`), and raised at `0x801CEE08` on the one path that reaches it,
+which is *course exhausted **and** survived*. There is no continue prompt to
+build.
+
+The resulting hub routing after a leg:
+
+| Leg | Next hub state |
+|---|---|
+| survived, course not exhausted | `0x0A` - the between-leg tally screen |
+| survived, course exhausted | `0x32` - settle, latch **up** |
+| not survived | `0x32` - settle, latch down |
+| ran (`_DAT_80084448 == 4`) | `0x32` - settle, latch down, `DAT_801D1A74 = 1` |
+
+## What a cleared leg is worth
+
+`FUN_801D1184` computes four count-up rows, and they do **not** all mean the
+same thing. Three are scaled `× max_hp / 100` (retail's `0x51EB851F`
+reciprocal multiply); the fourth is not scaled at all:
+
+| Row | Value | Global |
+|---|---|---|
+| round | `round * 2 * max_hp / 100` | `DAT_801D1ACC` |
+| turns | `min(turns_taken, 8) * max_hp / 100` | `DAT_801D1AD0` |
+| outcome | `DAT_801D1A5C[min(outcome, 3)] * max_hp / 100` | `DAT_801D1AD4` |
+| score | `score_table[course][round - 1]` | `DAT_801D1AAC` |
+
+`DAT_801D1A5C` is `[8, 12, 4, 2]`. `turns_taken` is `_DAT_80084444` and
+`outcome` is `_DAT_80084448` - the same word the flee arm sets to 4.
+
+The tally screen `FUN_801CF074` then drains all four, one `step_scale` step
+per lane per frame with a voice blip per step - and the *sinks* are what makes
+this one mechanism instead of two. The first three lanes
+(`0x801CF0DC` / `0x801CF150` / `0x801CF1C8`) all drain into the **same**
+accumulator `DAT_801D1AC8`, which hub state `0x0C` then adds to the fighter's
+HP. Only the fourth (`0x801CF244`) drains into the coin tally `_DAT_80084440`.
+
+So three of the six rows on that screen are healing, not score, and a dome
+contest costs no permanent HP.
+
+### The between-leg restore
+
+Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
+`hp_cur = min(hp_max, hp_cur + DAT_801D1AC8)` on the `+0x6CC` / `+0x6CE` pair
+of the game-state window `0x80084140`. That pair is the lead party record's
+own `+0x104` / `+0x106` HP fields (`0x80084708 - 0x80084140 = 0x5C8`).
+
+`FUN_801D0ED8` does the wider restores. It refills HP/MP/SP to their maxima at
+contest start, and - only when `course != 0`, behind a `bnez` at `0x801D0EE8`
+- first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`.
+So "no equipment" is an **Expert/Master** rule; the Beginner course keeps its
+gear. Settlement (`0x801D0FDC`) restores the whole saved SC block.
+
 ## Contest settlement + the one-shot prize
 
-The `0977` door/init slot (a slot-A overlay at base `0x801CE818` - the base is pinned by string anchors into its own monster-name roster) carries the **contest settlement** routine `FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from a `0x801C0000`-band import). After a contest leg it restores the SC block (`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
+The `0977` door/init slot carries the **contest settlement** routine
+`FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from
+a `0x801C0000`-band import). After a contest leg it restores the SC block
+(`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
 
 - **Not continuing** halves the tally (signed `/2`); continuing keeps it and adds the per-`(course, round)` score-table cell `DAT_801d1860 + course*0x40 + (round-1)*4`.
-- **Contest over** zeroes the tally and drops the continue latch `DAT_801d1adc`.
+- **Gave up** (`DAT_801D1A74`, raised only by the flee path) zeroes the tally and drops the continue latch `DAT_801d1adc`. When the give-up landed on **round 1** it also sets flag `0x130 + course` - the three flags curated lore knows as the Muscle Paradise / Chicken King trigger ("run from the first battle in all three difficulties").
+- Continuing sets flag `0x50A`; giving up sets flag `0x35`. Both are cleared at the top of every settlement.
 - On the **Master-course final fight** (round counter `DAT_801d1a94 >= 0xD`) with the one-shot flag-bank bit `FUN_8003CE64(0x6CB)` still clear, it awards item `0xCD` (the **War God Icon**) via `FUN_800421D4(0xCD, 1)` - the once-per-save first-clear prize.
 
-Engine port: `engine-core::muscle_dome::settle_contest`. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
+The tally is then paid by the tail call to `FUN_80026018`, the **shared**
+minigame-exit routine - nothing dome-specific: `casino_coins += tally`
+saturating at `0x0098967F` (9,999,999), on the coin bank `0x800845A4`
+(`0x80026058..0x80026078`).
+
+That closes the reward question. A dome **leg** pays nothing at all; a dome
+**contest** pays coins. The victory caption's spell id (`ctx+0x269 + 0x80`) is
+a *string* index into `0x801F4DFC`, the shared battle-family cast-caption
+label table resident in every battle overlay and read by any cast - it is not
+a Seru award, and treating it as one put an invented capture on a dome win.
+
+Engine port: `engine-core::muscle_dome::{DomeContest, settle_contest}`, driven
+by `World::report_muscle_leg` / `World::settle_muscle_contest` on the native
+host and by the `muscle_contest_*` bindings on the browser host - one shared
+model, no per-host ladder rule. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
 
 The score table's shape follows from that expression: three courses of sixteen
 `i32` cells, at file offset `0x3048` of the raw `0977` entry
 (`0x801D1860 - 0x801CE818`), reachable with the same fixed-offset read
 `engine-ui::other_game_hud::parse_sprite_table` already performs on that entry.
+Parser `engine-core::muscle_dome::parse_score_table`.
+
+A course's row summed is what a cleared run banks - each cell exactly once,
+the non-final legs through the tally screen and the last one at settlement.
+That is the join the curated `casino.toml` `reward_coins` column belongs to:
+Beginner 818 and Expert 1532 match the disc exactly, and the Master course's
+row sums to **13830**, correcting the 13856 the walkthrough table carried.
 
 ### The arena's per-frame voice cue (`FUN_801D1288`)
 
@@ -593,7 +760,7 @@ Every other `elem_id` falls to the shared layout tail (sprite emit + optional ba
 - The opponent itself is not chosen by the match code at all - it is a monster id staged into the ordinary formation cell before the battle starts, per (course, round); see [Course ladder](#course-ladder-the-opponent-per-course-round).
 - A leg ends on the fighter HP fields, which the win/lose phases (`0x64`/`0x65`/`0x66`/`0x67`) branch on, and on nothing else ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)). The `4 - ctx[+0x28a]` / opponent-HP-percentage strip is **not** part of that - it is the Koru fight's ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)).
 - Separately, the shared status plate draws each fighter's own HP/MP `cur`/`max` from record fields `+0x172`/`+0x14e`/`+0x174`/`+0x152` (`FUN_801d8de8`) - unrelated numbers, no percentage. **(Superseded: an earlier revision of this line put the readout in phase `0x6e`, scaled it by `108`, sourced it from the fighter's own record, and glossed `func_0x8003563c` as "the bar/gauge primitive". All four are wrong; the strip section has the disassembly.)**
-- **Reward:** `FUN_801d8de8` case `0x59` composes a victory message from a victory-message string-pointer table at `0x801f4dfc` plus a spell/seru name looked up in the static spell-name table `DAT_800754d0` (12-byte stride, indexed by `ctx+0x269 + 0x80`). This matches Muscle Dome awarding a Seru / magic on a win. **(Confirmed: the message pulls a name from the shared spell-name table at the player Seru-magic block `0x80+`.)**
+- **Caption, not reward:** `FUN_801d8de8` case `0x59` composes a victory *message* from the label table at `0x801f4dfc` plus a spell name from the static spell-name table `DAT_800754d0` (12-byte stride, indexed by `ctx+0x269 + 0x80`). Reading that as "the dome awards a Seru" is **falsified**: `0x801F4DFC` is the shared battle-family cast-caption label table, byte-identical across the battle-action / magic-capture / magic-level-up / dome overlays and reached by any cast, and nothing in the arena overlay grants an item but the one-shot War God Icon. A leg pays nothing; a contest pays coins - see [Contest settlement](#contest-settlement--the-one-shot-prize).
 
 ## RAM state
 
@@ -749,7 +916,7 @@ to the emitter it names).
   (see [Arena backdrop](#arena-backdrop-extraction-1225)); a candidate is a
   phase-gated effect draw, unpinned.
 - The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
-- Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived* - the `continuing` input `settle_contest` needs, and the last thing between the port and a real course run.
+- ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 

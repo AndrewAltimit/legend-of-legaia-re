@@ -99,9 +99,14 @@ pub const TILE_PIVOT_Y_ORIGIN: i32 = -0x780;
 /// Row step shared by [`TILE_STORED_Y_ORIGIN`] and [`TILE_PIVOT_Y_ORIGIN`].
 pub const TILE_Y_STEP: i32 = 0x100;
 
-/// The `+0x08` word every tile record is seeded with - the z component of the
-/// rotation vector `FUN_801D0D24` feeds `RotMatrix` (`li v0,0x880`).
-pub const TILE_ROT_Z_SEED: i16 = 0x880;
+/// The `+0x08` word every tile record is seeded with (`li v0,0x880`) - the z
+/// component of the tile's world **position**.
+///
+/// `0x880` is [`GRID_Z`] plus `0x80`, which is exactly the front face's local
+/// z offset - so the seeded position puts each tile's front face flat on the
+/// grid plane. That arithmetic only works if `+0x04..+0x08` is a position,
+/// which is what pins the reading.
+pub const TILE_POS_Z_SEED: i16 = 0x880;
 
 /// Texture-page word for tile columns `0..=8` (`li v0,0x135`).
 pub const TILE_TPAGE_LEFT: i16 = 0x135;
@@ -197,13 +202,21 @@ pub struct TileRecord {
     pub tpage: i16,
     /// `+0x04` / `+0x06` / `+0x08` - the rotation vector `FUN_801D0D24` hands
     /// `RotMatrix`. Seeded from the tile's own grid position plus
-    /// [`TILE_ROT_Z_SEED`], which is what gives every tile a different resting
+    /// [`TILE_POS_Z_SEED`], which is what gives every tile a different resting
     /// orientation before it starts to spin.
-    pub rot: (i16, i16, i16),
+    pub pos: (i16, i16, i16),
     /// `+0x0A` - spawn delay, held against `elapsed * `[`TILE_DELAY_SCALE`].
     pub delay: i16,
-    /// `+0x0C` / `+0x0E` / `+0x10` - translation, seeded to zero.
-    pub trans: (i16, i16, i16),
+    /// `+0x0C` / `+0x0E` / `+0x10` - the tile's **Euler angle triple**, seeded
+    /// to zero.
+    ///
+    /// REF: FUN_80026988 - the `RotMatrix` wrapper the angles feed.
+    ///
+    /// `FUN_801D0D24` hands this to `RotMatrix` (`FUN_80026988`, which masks
+    /// each angle `& 0xFFF`), and the matrix it builds becomes the per-tile
+    /// **rotation**. `+0x10` is never integrated, so a tile only ever tumbles
+    /// about x and y.
+    pub angles: (i16, i16, i16),
     /// `+0x14..+0x33` - the four front corners.
     pub front: [TileCorner; 4],
     /// `+0x34..+0x53` - the four back corners.
@@ -211,24 +224,24 @@ pub struct TileRecord {
 }
 
 impl TileRecord {
-    /// Angular velocity about x - corner `front[0]`'s pad (`+0x1A`).
-    pub fn spin_x(&self) -> i16 {
+    /// Linear velocity along x - corner `front[0]`'s pad (`+0x1A`).
+    pub fn vel_x(&self) -> i16 {
         self.front[0].pad
     }
-    /// Angular velocity about y - corner `front[1]`'s pad (`+0x22`).
-    pub fn spin_y(&self) -> i16 {
+    /// Linear velocity along y - corner `front[1]`'s pad (`+0x22`).
+    pub fn vel_y(&self) -> i16 {
         self.front[1].pad
     }
-    /// Angular velocity about z - corner `front[2]`'s pad (`+0x2A`).
-    pub fn spin_z(&self) -> i16 {
+    /// Linear velocity along z - corner `front[2]`'s pad (`+0x2A`).
+    pub fn vel_z(&self) -> i16 {
         self.front[2].pad
     }
-    /// Linear velocity along x - corner `back[0]`'s pad (`+0x3A`).
-    pub fn vel_x(&self) -> i16 {
+    /// Angular rate about x - corner `back[0]`'s pad (`+0x3A`).
+    pub fn spin_x(&self) -> i16 {
         self.back[0].pad
     }
-    /// Linear velocity along y - corner `back[1]`'s pad (`+0x42`).
-    pub fn vel_y(&self) -> i16 {
+    /// Angular rate about y - corner `back[1]`'s pad (`+0x42`).
+    pub fn spin_y(&self) -> i16 {
         self.back[1].pad
     }
 }
@@ -331,9 +344,9 @@ pub fn seed_tile_grid(
                 } else {
                     TILE_TPAGE_LEFT
                 },
-                rot: (x as i16, stored_y as i16, TILE_ROT_Z_SEED),
+                pos: (x as i16, stored_y as i16, TILE_POS_Z_SEED),
                 delay: 0,
-                trans: (0, 0, 0),
+                angles: (0, 0, 0),
                 ..Default::default()
             };
             let u_bias = if right { TILE_RIGHT_U_BIAS } else { 0 };
@@ -433,7 +446,7 @@ pub enum TileStep {
 /// |---|---|
 /// | `+0x00` | `+= frame_step * `[`TILE_PROGRESS_STEP`] |
 /// | `+0x04` / `+0x06` | `+= (spin * frame_step) >> 4` |
-/// | `+0x08` | `+= spin_z * frame_step` (no shift) |
+/// | `+0x08` | `+= vel_z * frame_step` (no shift) |
 /// | `+0x0C` / `+0x0E` | `+= vel * frame_step` (no shift) |
 /// | `+0x1A` / `+0x22` | `<<= 1` |
 ///
@@ -444,8 +457,11 @@ pub enum TileStep {
 ///
 /// PORT: FUN_801D0E54
 ///
-/// NOT WIRED: called only by [`tick_tile_grid`], which is itself inert - see
-/// the tag there.
+/// WIRED, without a draw. [`tick_tile_grid`] calls this for every record on
+/// every frame of the shatter transition the native window runs, so the
+/// integration and the retire gate are live; the packet the record would be
+/// drawn with is the part that has no consumer. See the tag on
+/// [`tick_tile_grid`].
 pub fn step_tile(rec: &mut TileRecord, frame_step: u8, scaled_clock: i32) -> TileStep {
     if rec.progress >= TILE_PROGRESS_LIMIT {
         return TileStep::Retired;
@@ -456,19 +472,19 @@ pub fn step_tile(rec: &mut TileRecord, frame_step: u8, scaled_clock: i32) -> Til
     }
     rec.progress = (rec.progress as u16).wrapping_add((step * TILE_PROGRESS_STEP) as u16) as i16;
 
-    let spin_x = i32::from(rec.spin_x());
-    let spin_y = i32::from(rec.spin_y());
-    let spin_z = i32::from(rec.spin_z());
     let vel_x = i32::from(rec.vel_x());
     let vel_y = i32::from(rec.vel_y());
+    let vel_z = i32::from(rec.vel_z());
+    let spin_x = i32::from(rec.spin_x());
+    let spin_y = i32::from(rec.spin_y());
 
-    rec.rot.0 = (rec.rot.0 as u16).wrapping_add(((spin_x * step) >> 4) as u16) as i16;
-    rec.rot.1 = (rec.rot.1 as u16).wrapping_add(((spin_y * step) >> 4) as u16) as i16;
-    rec.rot.2 = (rec.rot.2 as u16).wrapping_add((spin_z * step) as u16) as i16;
-    rec.trans.0 = (rec.trans.0 as u16).wrapping_add((vel_x * step) as u16) as i16;
+    rec.pos.0 = (rec.pos.0 as u16).wrapping_add(((vel_x * step) >> 4) as u16) as i16;
+    rec.pos.1 = (rec.pos.1 as u16).wrapping_add(((vel_y * step) >> 4) as u16) as i16;
+    rec.pos.2 = (rec.pos.2 as u16).wrapping_add((vel_z * step) as u16) as i16;
+    rec.angles.0 = (rec.angles.0 as u16).wrapping_add((spin_x * step) as u16) as i16;
     rec.front[0].pad = ((rec.front[0].pad as u16) << 1) as i16;
     rec.front[1].pad = ((rec.front[1].pad as u16) << 1) as i16;
-    rec.trans.1 = (rec.trans.1 as u16).wrapping_add((vel_y * step) as u16) as i16;
+    rec.angles.1 = (rec.angles.1 as u16).wrapping_add((spin_y * step) as u16) as i16;
 
     TileStep::Drawn { moved: true }
 }
@@ -493,10 +509,15 @@ pub struct TileTick {
 /// clock scaled by [`TILE_DELAY_SCALE`], computed **once** before the loop -
 /// so every tile in a frame is measured against the same instant.
 ///
-/// The per-record GPU work retail does around [`step_tile`] - `SetRotMatrix`
-/// on the record's `+0x04` vector, `SetTransMatrix` on `+0x0C`, and the
-/// `FUN_80043390` mesh submit over the eight corner vectors - is the
-/// clean-room boundary and stays with the renderer.
+/// The per-record GPU work retail does around [`step_tile`] is the transform
+/// staging plus the submit: load the view matrix from `0x1F8003C8`, push the
+/// record's `+0x04` **position** through `MVMVA` into the matrix translation,
+/// build the rotation from the `+0x0C` **angles** with `RotMatrix`, load that,
+/// then hand the eight corner vectors to `FUN_80043390`. `FUN_801D0E54`
+/// itself contains no coprocessor instructions - it assembles a synthetic
+/// 10-primitive TMD object and delegates.
+///
+/// REF: FUN_80043390 - the object dispatcher the tile emitter delegates to.
 ///
 /// PORT: FUN_801D0D24
 ///
@@ -622,8 +643,8 @@ mod tests {
         let g = seeded_tile_grid(TileSubStyle::NegSpinRandomDelay);
         // Tile (0,0): rot.y is the stored origin, and its corner 0 is relative
         // to the pivot, which is 0xA0 lower.
-        assert_eq!(g.tiles[0].rot.1 as i32, TILE_STORED_Y_ORIGIN);
-        assert_eq!(g.tiles[0].rot.2, TILE_ROT_Z_SEED);
+        assert_eq!(g.tiles[0].pos.1 as i32, TILE_STORED_Y_ORIGIN);
+        assert_eq!(g.tiles[0].pos.2, TILE_POS_Z_SEED);
         assert_eq!(
             g.tiles[0].front[0].y as i32,
             GRID_Y_ORIGIN - TILE_PIVOT_Y_ORIGIN
@@ -650,23 +671,23 @@ mod tests {
         ] {
             let g = seeded_tile_grid(style);
             assert!(
-                g.tiles.iter().all(|t| t.spin_x() == 0 && t.spin_y() == 0),
+                g.tiles.iter().all(|t| t.vel_x() == 0 && t.vel_y() == 0),
                 "the dead stores at 801d0bac/801d0bb0 win"
             );
-            assert!(g.tiles.iter().all(|t| t.spin_z() != 0));
+            assert!(g.tiles.iter().all(|t| t.vel_z() != 0));
         }
         let g = seeded_tile_grid(TileSubStyle::RadialDelayWithTumble);
-        assert!(g.tiles.iter().any(|t| t.spin_x() != 0 || t.spin_y() != 0));
-        assert!(g.tiles.iter().all(|t| t.spin_z() == -0x20));
+        assert!(g.tiles.iter().any(|t| t.vel_x() != 0 || t.vel_y() != 0));
+        assert!(g.tiles.iter().all(|t| t.vel_z() == -0x20));
     }
 
     #[test]
     fn the_unhandled_sub_style_leaves_the_spin_and_delay_alone() {
         let g = seeded_tile_grid(TileSubStyle::None);
-        assert!(g.tiles.iter().all(|t| t.spin_z() == 0 && t.delay == 0));
+        assert!(g.tiles.iter().all(|t| t.vel_z() == 0 && t.delay == 0));
         // The linear velocities are written before the sub-style switch, so
         // they survive.
-        assert!(g.tiles.iter().any(|t| t.vel_x() != 0 || t.vel_y() != 0));
+        assert!(g.tiles.iter().any(|t| t.spin_x() != 0 || t.spin_y() != 0));
     }
 
     #[test]
@@ -678,14 +699,14 @@ mod tests {
         rec.front[2].pad = 0x60;
         assert_eq!(step_tile(&mut rec, 1, 0), TileStep::Drawn { moved: false });
         assert_eq!(rec.progress, 0, "the progress counter waits too");
-        assert_eq!(rec.rot.2, 0);
+        assert_eq!(rec.pos.2, 0);
 
         assert_eq!(
             step_tile(&mut rec, 1, 6000),
             TileStep::Drawn { moved: true }
         );
         assert_eq!(rec.progress, TILE_PROGRESS_STEP as i16);
-        assert_eq!(rec.rot.2, 0x60);
+        assert_eq!(rec.pos.2, 0x60);
     }
 
     #[test]
@@ -706,15 +727,15 @@ mod tests {
         for _ in 0..3 {
             step_tile(&mut rec, 1, i32::MAX);
         }
-        assert_eq!(rec.spin_x(), 24);
-        assert_eq!(rec.spin_y(), -40);
+        assert_eq!(rec.vel_x(), 24);
+        assert_eq!(rec.vel_y(), -40);
         // A zero rate stays zero no matter how long it doubles - which is what
         // makes sub-styles 0 and 1 pure z-spinners.
         let mut flat = TileRecord::default();
         for _ in 0..64 {
             step_tile(&mut flat, 1, i32::MAX);
         }
-        assert_eq!((flat.spin_x(), flat.spin_y()), (0, 0));
+        assert_eq!((flat.vel_x(), flat.vel_y()), (0, 0));
     }
 
     #[test]
@@ -739,5 +760,65 @@ mod tests {
         let mut elapsed: i16 = 0;
         assert!(!tick_tile_grid(&mut g, &mut elapsed, 1).not_first_frame);
         assert!(tick_tile_grid(&mut g, &mut elapsed, 1).not_first_frame);
+    }
+}
+
+#[cfg(test)]
+mod record_semantics {
+    use super::*;
+
+    /// The seeded `+0x08` word puts each tile's FRONT face exactly on the
+    /// grid plane. That only balances if `+0x04..+0x08` is a world position,
+    /// which is the arithmetic pinning the field's meaning independently of
+    /// the call order in `FUN_801D0D24`.
+    #[test]
+    fn the_seeded_position_lands_the_front_face_on_the_grid_plane() {
+        assert_eq!(TILE_POS_Z_SEED, GRID_Z - TILE_FRONT_Z);
+        assert_eq!(TILE_POS_Z_SEED + TILE_FRONT_Z, GRID_Z);
+        // ...and the back face sits one full box depth behind it.
+        assert_eq!(
+            TILE_POS_Z_SEED + TILE_BACK_Z - (TILE_POS_Z_SEED + TILE_FRONT_Z),
+            TILE_BACK_Z - TILE_FRONT_Z
+        );
+    }
+
+    /// The velocity accessors read the FRONT corner pads and the angular
+    /// accessors the BACK ones. Swapping them is the specific latent trap
+    /// this naming closes: the offsets are identical either way, so nothing
+    /// misbehaves until an emitter consumes the semantics.
+    #[test]
+    fn linear_rates_come_from_the_front_pads_and_angular_from_the_back() {
+        let mut rec = TileRecord::default();
+        rec.front[0].pad = 11;
+        rec.front[1].pad = 22;
+        rec.front[2].pad = 33;
+        rec.back[0].pad = 44;
+        rec.back[1].pad = 55;
+        assert_eq!((rec.vel_x(), rec.vel_y(), rec.vel_z()), (11, 22, 33));
+        assert_eq!((rec.spin_x(), rec.spin_y()), (44, 55));
+    }
+
+    /// The integration moves the POSITION by the linear rates and the ANGLES
+    /// by the angular ones - and only the linear x/y pads double.
+    #[test]
+    fn the_step_moves_position_by_linear_and_angles_by_angular() {
+        let mut rec = TileRecord {
+            pos: (0, 0, 0),
+            angles: (0, 0, 0),
+            ..Default::default()
+        };
+        rec.front[0].pad = 0x100; // linear x
+        rec.front[2].pad = 7; // linear z
+        rec.back[0].pad = 9; // angular x
+        let before = (rec.front[0].pad, rec.back[0].pad);
+        assert_eq!(step_tile(&mut rec, 1, 1), TileStep::Drawn { moved: true });
+        assert_eq!(rec.pos.0, 0x10, "position x moves by the linear rate >> 4");
+        assert_eq!(
+            rec.pos.2, 7,
+            "position z moves by the linear rate, unshifted"
+        );
+        assert_eq!(rec.angles.0, 9, "angles x moves by the angular rate");
+        assert_eq!(rec.front[0].pad, before.0 << 1, "linear x pad doubles");
+        assert_eq!(rec.back[0].pad, before.1, "the angular pad does not");
     }
 }

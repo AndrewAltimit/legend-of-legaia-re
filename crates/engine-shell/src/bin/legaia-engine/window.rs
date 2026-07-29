@@ -559,10 +559,6 @@ struct PlayWindowApp {
     /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
     /// reused for every battle so each transition doesn't re-decompress 16 MB.
     monster_archive: Option<std::sync::Arc<Vec<u8>>>,
-    /// Which round of the arena's Beginner course the next Muscle Dome
-    /// contest fights. The window has no course-select screen, so each `M`
-    /// walks one round further down the disc's own ladder.
-    muscle_ladder_round: u32,
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
@@ -929,10 +925,13 @@ use record::{RecordLog, RecordTarget};
 // items so the sibling window submodules (which `use super::*`) still see
 // them at the same effective scope they had before the split.
 pub(crate) use geometry::{
-    LineGeometry, build_battle_ground_grid, effect_billboard_mesh, effect_sprite_line_geometry,
-    heightfield_to_vram_mesh, world_map_entity_line_geometry, world_map_player_line_geometry,
-    world_map_slot4_line_geometry,
+    LineGeometry, effect_billboard_mesh, effect_sprite_line_geometry, heightfield_to_vram_mesh,
+    world_map_entity_line_geometry, world_map_player_line_geometry, world_map_slot4_line_geometry,
 };
+// The procedural battle ground grid lives in `legaia-asset` so all three
+// hosts share one implementation (the native window, the asset-viewer and
+// the browser play page) rather than forking the kernel per host.
+pub(crate) use legaia_asset::battle_backdrop::build_ground_grid as build_battle_ground_grid;
 pub(crate) use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
@@ -1232,10 +1231,39 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
         KeyCode::KeyQ => "Q",
         KeyCode::KeyW => "W",
         KeyCode::Enter => "Enter",
+        KeyCode::Space => "Space",
         KeyCode::ShiftRight => "RShift",
         KeyCode::Digit1 => "1",
         KeyCode::Digit2 => "2",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod key_binding_tests {
+    use super::keycode_to_name;
+    use legaia_engine_core::input::{Mapping, PadButton};
+    use winit::keyboard::KeyCode;
+
+    /// Start answers to Enter and Space on the desktop build too.
+    ///
+    /// The native path has two halves that can disagree silently: this file
+    /// turns a winit `KeyCode` into a key *name*, and `Mapping` turns that name
+    /// into a button. A name missing from `keycode_to_name` resolves to `""`,
+    /// which binds to nothing - so the binding can be correct in the shared
+    /// table and still dead in the window, with neither file looking wrong.
+    #[test]
+    fn start_answers_to_both_enter_and_space() {
+        let m = Mapping::default();
+        for code in [KeyCode::Enter, KeyCode::Space] {
+            let name = keycode_to_name(code);
+            assert!(!name.is_empty(), "{code:?} must resolve to a key name");
+            assert_eq!(
+                m.pad_button_for_key(name),
+                Some(PadButton::Start),
+                "{code:?} -> {name} must be Start"
+            );
+        }
     }
 }
 

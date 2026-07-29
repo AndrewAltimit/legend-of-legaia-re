@@ -495,7 +495,7 @@ fn null_bgm_director_swallows_every_call() {
     // Compiles + every default impl is a no-op.
     let mut d = NullBgmDirector;
     d.start(1, &[]);
-    d.queue(2, &[]);
+    d.start_owned_vab(2, &[]);
     d.pause();
     d.resume();
     d.stop();
@@ -510,9 +510,6 @@ impl BgmDirector for RecordingBgm {
     fn start(&mut self, id: u16, bytes: &[u8]) {
         self.log.push(format!("start({id},{})", bytes.len()));
     }
-    fn queue(&mut self, id: u16, bytes: &[u8]) {
-        self.log.push(format!("queue({id},{})", bytes.len()));
-    }
     fn pause(&mut self) {
         self.log.push("pause".into());
     }
@@ -525,10 +522,6 @@ impl BgmDirector for RecordingBgm {
     fn start_owned_vab(&mut self, id: u16, bytes: &[u8]) {
         self.log
             .push(format!("start_owned_vab({id},{})", bytes.len()));
-    }
-    fn queue_owned_vab(&mut self, id: u16, bytes: &[u8]) {
-        self.log
-            .push(format!("queue_owned_vab({id},{})", bytes.len()));
     }
 }
 

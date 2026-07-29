@@ -1095,6 +1095,17 @@ pub struct World {
     /// ([`World::enter_muscle_dome`] snapshots the interrupted mode).
     pub muscle_return_mode: SceneMode,
 
+    /// The Muscle Dome **contest** - the ladder run above the individual
+    /// legs: which `(course, round)` is staged, the running coin tally, and
+    /// whether the run continues. `Some` for as long as a contest is open,
+    /// which outlives any one `muscle_dome` session. See
+    /// [`crate::muscle_dome::DomeContest`].
+    pub muscle_contest: Option<crate::muscle_dome::DomeContest>,
+
+    /// The last Muscle Dome contest's settlement, kept after the contest
+    /// itself is gone so a host can put the payout on screen.
+    pub muscle_settlement: Option<crate::muscle_dome::ContestSettlement>,
+
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -2458,6 +2469,8 @@ impl World {
             baka_return_mode: SceneMode::Field,
             muscle_dome: None,
             muscle_return_mode: SceneMode::Field,
+            muscle_contest: None,
+            muscle_settlement: None,
             casino_coins: 0,
             point_card: 0,
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),

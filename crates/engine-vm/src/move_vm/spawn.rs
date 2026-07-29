@@ -215,3 +215,74 @@ pub fn spawn_move_actor<H: MoveSpawnHost + ?Sized>(
     host.mirror_world_y(actor);
     Some(actor)
 }
+
+// ---------------------------------------------------------------------------
+// Part-actor pool teardown: FUN_80050E74.
+//
+// REF: FUN_80050ed4 - the allocator that seats a part into this pool.
+// REF: FUN_800480d8 - the battle-scene teardown loop over the same table,
+//                     ported as legaia_engine_render::battle_actor_tick.
+// ---------------------------------------------------------------------------
+
+/// Slots in the part-actor pool `DAT_801C90F0` (`slti a1, 0x80`).
+///
+/// The same table `FUN_80050ED4` allocates into: it hands back the first null
+/// slot, stores the actor `FUN_80021B04` produced, and the summon / special-
+/// attack stagers then own that seat for the length of the attack.
+pub const PART_POOL_SLOTS: usize = 0x80;
+
+/// The flag bit the pool flush raises on every actor it retires - the same
+/// `+0x10` bit `0x8` move-VM op `0x08` `HALT` sets, and the same bit the
+/// battle-scene teardown pass (`FUN_800480D8`) then tests before releasing a
+/// seat it did not raise itself.
+pub const PART_ACTOR_HALT_FLAG: u32 = 0x8;
+
+/// Retire one seated part-actor: the three writes the flush makes per slot.
+///
+/// Clearing the wait timer and the `0x18`/`0x19` loop counter matters as much
+/// as the flag does. `move_vm::actor_tick` skips an actor whose timer has not
+/// expired, so a part parked in a long `WAIT_SET` would outlive the flush;
+/// and an actor sitting inside an open loop-back would re-enter it. Zeroing
+/// both means the actor's very next tick reaches the halt bit.
+///
+/// PORT: FUN_80050e74 (`0x80050E90..0x80050EB8`)
+///
+/// NOT WIRED: the engine has no `DAT_801C90F0`. Its part actors live in the
+/// world's own generational actor vec and its field-FX list is emptied
+/// wholesale at scene install (`World::install_field_stagers`) rather than by
+/// halting the actors a stager seated, so no engine caller holds the seat set
+/// this walks. Same prerequisite as [`spawn_move_actor`] above: the retail
+/// pool has to exist before either half of its protocol has a caller.
+pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
+    actor.wait_timer = 0;
+    actor.field_8c = 0;
+    actor.flags |= PART_ACTOR_HALT_FLAG;
+}
+
+/// Empty the part-actor pool: [`halt_part_actor`] every seated slot, then
+/// null it. Returns how many seats were retired.
+///
+/// Retail is unconditional - every non-null slot, with no test on the actor.
+/// That is what separates it from the battle-scene teardown loop inside
+/// `FUN_800480D8`, which walks the same table and releases only the seats
+/// whose actor **already** carries [`PART_ACTOR_HALT_FLAG`]. The two are the
+/// raise and the collect of one protocol, not two copies of it.
+///
+/// The 89 `jal` sites are all in the summon / stager overlays, PROT 0911..0969
+/// (the `summon.dat` / `readef.DAT` per-special-attack band), which is what
+/// fixes the meaning: a special attack flushes the parts it spawned when its
+/// sequence ends.
+///
+/// PORT: FUN_80050e74
+///
+/// NOT WIRED: no engine caller, for the reason on [`halt_part_actor`].
+pub fn flush_part_actor_pool(slots: &mut [Option<&mut crate::move_vm::ActorState>]) -> usize {
+    let mut retired = 0;
+    for slot in slots.iter_mut().take(PART_POOL_SLOTS) {
+        if let Some(actor) = slot.take() {
+            halt_part_actor(actor);
+            retired += 1;
+        }
+    }
+    retired
+}

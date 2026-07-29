@@ -69,8 +69,20 @@ impl WebAudioOut {
                 let mut right = vec![0.0f32; length];
                 {
                     let mut s = state_cb.borrow_mut();
+                    // The monaural downmix is applied here rather than inside
+                    // `next_frame`, exactly as the cpal callback applies it -
+                    // the mute gate is in `next_frame` and reaches both
+                    // backends for free, but the downmix is a per-callback
+                    // channel decision and each backend has to make it.
+                    let mono = s.mono;
                     for i in 0..length {
                         let (l, r) = s.next_frame();
+                        let (l, r) = if mono {
+                            let m = ((l as i32 + r as i32) / 2) as i16;
+                            (m, m)
+                        } else {
+                            (l, r)
+                        };
                         left[i] = l as f32 / i16::MAX as f32;
                         right[i] = r as f32 / i16::MAX as f32;
                     }
@@ -127,6 +139,27 @@ impl WebAudioOut {
         self.ctx
             .resume()
             .unwrap_or_else(|_| js_sys::Promise::resolve(&JsValue::UNDEFINED))
+    }
+
+    /// Toggle the monaural downmix (the retail options screen's
+    /// "Sound: Stereo / Monaural" row) - the twin of
+    /// [`crate::AudioOut::set_mono`]. Without it the browser hosts had no
+    /// reader for that row at all, so the option was decorative on one host
+    /// and live on the other.
+    pub fn set_mono(&self, mono: bool) {
+        self.state.borrow_mut().mono = mono;
+    }
+
+    /// Master mute gate - the twin of [`crate::AudioOut::set_muted`]. The
+    /// producers keep ticking while muted (the gate lives in `next_frame`),
+    /// so unmuting resumes mid-track in sync.
+    pub fn set_muted(&self, muted: bool) {
+        self.state.borrow_mut().muted = muted;
+    }
+
+    /// Current state of the master mute gate.
+    pub fn is_muted(&self) -> bool {
+        self.state.borrow().muted
     }
 
     /// Run a closure with mutable access to the underlying SPU model.
@@ -189,5 +222,24 @@ impl WebAudioOut {
             s.fade_target = 0.0;
             s.fade_step = 1.0 / fade_samples.max(1) as f32;
         }
+    }
+
+    /// Swap the active sequencer for `new_seq` **immediately** - the twin of
+    /// [`crate::AudioOut::swap_bgm`], and the same
+    /// [`StreamResampler::swap_bgm`] underneath, so both hosts hear one
+    /// model.
+    ///
+    /// This is the hook a BGM *change* takes. [`Self::crossfade_to`] is a
+    /// serial fade: it holds the incoming track in `pending_seq` and rolls
+    /// the outgoing one down to silence first, so the new track's intro is
+    /// still unplayed a fade-length after the script asked for it. Retail's
+    /// changes are hard cuts, and a cutscene sting is mostly intro - which is
+    /// why the browser had to reach this and not the crossfade.
+    ///
+    /// `fade_in_samples` is a short click-guard ramp on the SPU master (a
+    /// couple of frames at most) that only ever rises, so the incoming track
+    /// is audible from its first sample. Pass `0` for a true hard cut.
+    pub fn swap_bgm(&self, new_seq: Sequencer, fade_in_samples: u32) {
+        self.state.borrow_mut().swap_bgm(new_seq, fade_in_samples);
     }
 }

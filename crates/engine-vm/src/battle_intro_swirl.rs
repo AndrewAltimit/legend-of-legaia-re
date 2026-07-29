@@ -362,10 +362,12 @@ pub struct SwirlBandDraw {
 ///
 /// PORT: FUN_801D1A20
 ///
-/// NOT WIRED: called only by [`tick_swirl`], which is itself inert - see the
-/// tag there. The packet body it builds (32 primitives from the half's texels
-/// into `_DAT_8007B85C + 0x5DC00`) is renderer work and stays out of the
-/// kernel; what is ported is the addressing and the path choice.
+/// WIRED, without a draw. [`tick_swirl`] calls this for both halves of every
+/// drawing band on every frame of the swirl transition the native window
+/// runs, so the addressing and the path choice are live. The packet body
+/// (32 primitives from the half's texels into `_DAT_8007B85C + 0x5DC00`) is
+/// renderer work and stays out of the kernel, so nothing submits the result
+/// yet.
 pub fn swirl_band_draw(half: SwirlHalf, band: usize, clock: i32) -> SwirlBandDraw {
     let (offset, tpage) = match half {
         SwirlHalf::Primary => (0, TPAGE_PRIMARY),

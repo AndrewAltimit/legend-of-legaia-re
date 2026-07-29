@@ -27,6 +27,10 @@ use legaia_engine_core::scene::BgmDirector;
 const FRAMES: u32 = 240;
 
 /// Records every id the host routes, and which resolution path it took.
+///
+/// Only the two start hooks exist: op `0x35` sub-ops 1 and 9 both land on
+/// them (sub-op 9 is a start behind a load barrier this host never waits on),
+/// so a track cannot reach the director by a path this sweep is blind to.
 #[derive(Default)]
 struct RecordingDirector {
     /// `(bgm_id, used_owned_vab)` - `true` means the id resolved through the
@@ -40,12 +44,6 @@ impl BgmDirector for RecordingDirector {
         self.starts.push((bgm_id, false));
     }
     fn start_owned_vab(&mut self, bgm_id: u16, _entry_bytes: &[u8]) {
-        self.starts.push((bgm_id, true));
-    }
-    fn queue(&mut self, bgm_id: u16, _seq_bytes: &[u8]) {
-        self.starts.push((bgm_id, false));
-    }
-    fn queue_owned_vab(&mut self, bgm_id: u16, _entry_bytes: &[u8]) {
         self.starts.push((bgm_id, true));
     }
 }

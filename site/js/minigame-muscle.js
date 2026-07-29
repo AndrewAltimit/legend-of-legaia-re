@@ -183,6 +183,83 @@ window.MgMuscle = (function () {
     let meter = 0;             /* round time meter 0..0xC (FUN_801d3444) */
     let tally = null;          /* {attacker, total} - playback damage tally */
 
+    /* --------------------------------------------------- the contest layer
+     *
+     * A leg is one battle and ends on a KO; the CONTEST is the ladder above
+     * it - which (course, round) is staged, what a cleared leg banks, and
+     * what the run finally pays. All of that lives in the shared engine
+     * kernel (legaia_engine_core::muscle_dome::DomeContest, PROT 0977's
+     * FUN_801CEA6C + FUN_801CF870); this page only drives it, exactly as the
+     * native play-window does. Nothing here decides a rule.
+     *
+     * The browser has no save file to read a flag bank out of, so it asks
+     * for the gates it wants open and the same kernel rule is applied to it.
+     * `unlock` picks the course (its three bits are story flags 0x536 /
+     * 0x537 / 0x538); `gates` are the Master course-length flags. */
+    let contest = null;        /* muscle_contest_json snapshot, or null */
+    let contestFlags = { unlock: 0b001, gates: 0b111 };
+    let ladder = null;         /* muscle_course_ladder_json rows (lazy) */
+    let settlement = null;     /* the last settled payout, for the card */
+
+    function loadLadder() {
+      if (!ladder) {
+        try { ladder = JSON.parse(api.muscle_course_ladder_json()); }
+        catch (e) { ladder = []; }
+      }
+      return ladder;
+    }
+
+    /* Re-read the contest snapshot. Cheap enough to do per transition. */
+    function cst() {
+      if (!api.muscle_contest_json) return null;
+      try {
+        const c = JSON.parse(
+          api.muscle_contest_json(contestFlags.unlock, contestFlags.gates));
+        contest = c && c.live ? c : null;
+        if (c && c.settlement) settlement = c.settlement;
+        return contest;
+      } catch (e) { contest = null; return null; }
+    }
+
+    /* The monster the ladder stages at (course, round). */
+    function stagedMonster(course, round) {
+      const rows = loadLadder();
+      const c = rows.find((r) => r.course === course);
+      if (!c || !c.rounds.length) return 0;
+      const r = c.rounds[Math.min(round, c.rounds.length - 1)];
+      return r ? r.id : 0;
+    }
+
+    /* Open a contest on `course` (0 Beginner / 1 Expert / 2 Master). The
+     * unlock mask is cumulative because retail's three flags overwrite one
+     * seed in order and the highest set one wins. */
+    function startContest(course) {
+      if (!api.muscle_contest_start) return false;
+      contestFlags.unlock = (1 << ((course | 0) + 1)) - 1;
+      settlement = null;
+      const ok = api.muscle_contest_start(contestFlags.unlock, contestFlags.gates);
+      cst();
+      return ok;
+    }
+
+    /* Hand a finished leg to the contest, then either stage the next leg or
+     * settle the run. Returns 'next' | 'settled' | 'none'. */
+    function reportLeg(survived, outcome, turns, hpMax) {
+      if (!api.muscle_report_leg || !contest) return 'none';
+      api.muscle_report_leg(
+        !!survived, outcome | 0, turns | 0, hpMax | 0,
+        contestFlags.unlock, contestFlags.gates);
+      cst();
+      if (!contest || contest.over) {
+        if (api.muscle_contest_settle) {
+          api.muscle_contest_settle(contestFlags.unlock, contestFlags.gates, false);
+        }
+        cst();
+        return 'settled';
+      }
+      return 'next';
+    }
+
     /* ------------------------------------------------ roster + spell names */
 
     function loadRoster() {
@@ -798,7 +875,20 @@ window.MgMuscle = (function () {
      * fresh per contest so replays differ (pass opts.seed to pin one). */
     function start(opts) {
       lastOpts = Object.assign({ char: 0, level: 30, monster: 0 }, opts || {});
+      /* A fresh `start` opens a fresh contest unless one is mid-ladder and
+       * the caller asked to continue it (`opts.continueRun`), which is what
+       * leg-to-leg progression uses. */
+      if (!lastOpts.continueRun || !contest) {
+        startContest(lastOpts.course | 0);
+      }
       let monster = lastOpts.monster | 0;
+      /* Which foe is the CONTEST's to say: the ladder names one per
+       * (course, round) and retail's `FUN_801D1510` stages exactly that. An
+       * explicit `monster` is a page override for the free-play picker. */
+      if (contest && !lastOpts.pinMonster) {
+        const staged = stagedMonster(contest.course, contest.round);
+        if (staged) { monster = staged; lastOpts.monster = staged; }
+      }
       if (!monster) {
         const r = loadRoster();
         monster = r.length ? r[0].id : 1;
@@ -840,11 +930,14 @@ window.MgMuscle = (function () {
       return true;
     }
 
-    /* Leave the intro card for round 1's command menu. */
+    /* Leave the intro card for this leg's command menu. The banner counts
+     * the CONTEST's round, not the battle turn - a leg can run many turns
+     * and it is still one round of the ladder. */
     function beginSelect() {
       mode = 'select';
       selectSub = 'menu';
-      setBanner('ROUND 1', null, 70);
+      const n = contest ? contest.round + 1 : 1;
+      setBanner('ROUND ' + n, null, 70);
     }
 
     function commit(slot) {
@@ -1018,10 +1111,20 @@ window.MgMuscle = (function () {
         if (s2.phase === 'select') {
           mode = 'select';
           selectSub = 'menu';
-          setBanner('ROUND ' + (s2.turn + 1), null, 70);
+          /* Between TURNS of one leg the contest round does not move; the
+           * banner stays on the round the ladder staged. */
+          setBanner('ROUND ' + (contest ? contest.round + 1 : s2.turn + 1),
+            null, 70);
         }
       } else if (mode === 'decided') {
-        if (lastOpts) start(lastOpts);
+        /* A contest still mid-ladder stages its NEXT leg rather than
+         * restarting: the ladder has already advanced, so `continueRun`
+         * keeps it and lets `start` read the staged foe off it. */
+        if (lastOpts) {
+          const opts = Object.assign({}, lastOpts,
+            { continueRun: !!contest, pinMonster: false, monster: 0 });
+          start(opts);
+        }
       }
     }
 
@@ -1098,11 +1201,26 @@ window.MgMuscle = (function () {
             const spell = api.muscle_spell_name ? api.muscle_spell_name(state.reward_spell) : '';
             sub = spell ? state.names[0] + ' — ' + spell : '';
           }
-          setBanner('YOU WIN!', sub
-            ? sub + ' — SPACE for a rematch'
-            : 'SPACE for a rematch', 100000, 'good');
+          /* The caption names a spell; it awards nothing. What the leg is
+           * worth is the CONTEST's score cell, banked below. */
+          const step = reportLeg(true, 0, state.turn, state.hp_max[0]);
+          if (step === 'next') {
+            setBanner('ROUND CLEARED',
+              'banked ' + contest.rows.score + ' coins  ·  total ' +
+              contest.tally + ' — SPACE for round ' + (contest.round + 1),
+              100000, 'good');
+          } else {
+            setBanner('COURSE CLEARED!',
+              (settlement ? settlement.score + ' coins paid' : 'contest over') +
+              (settlement && settlement.prize ? '  ·  War God Icon!' : '') +
+              ' — SPACE to start again', 100000, 'good');
+          }
         } else {
-          setBanner('YOU LOSE', 'SPACE for a rematch', 100000, 'bad');
+          reportLeg(false, 0, state.turn, state.hp_max[0]);
+          setBanner('YOU LOSE',
+            (settlement
+              ? 'half the run banked: ' + settlement.score + ' coins'
+              : '') + ' — SPACE to start again', 100000, 'bad');
         }
       } else {
         mode = 'select';
@@ -1840,7 +1958,15 @@ window.MgMuscle = (function () {
         160, 138, 7, '#aeb6c4', 'center', '');
       text('AP reseeds from your AGL pool next turn',
         160, 154, 6, '#aeb6c4', 'center', '');
-      text('SPACE: next turn', 160, 172, 8, '#2dcca7', 'center');
+      /* Where the leg sits in the CONTEST, and what the run has banked.
+       * A leg pays nothing; the contest pays coins when it settles. */
+      if (contest) {
+        text('course ' + (contest.course + 1) +
+          '  ·  round ' + (contest.round + 1) + '/' + contest.length +
+          '  ·  banked ' + contest.tally + ' coins',
+          160, 164, 7, '#ffd166', 'center', '');
+      }
+      text('SPACE: next turn', 160, 176, 8, '#2dcca7', 'center');
     }
 
     function drawBanner() {
@@ -2061,6 +2187,10 @@ window.MgMuscle = (function () {
     return {
       loadRoster, start, commit, confirm, frame, key,
       state: st,
+      /* The contest layer (course / round / tally / settlement), so the page
+       * can put the ladder and the payout on screen. */
+      contest: () => cst(),
+      startContest,
       mode: () => mode,
       selectSub: () => selectSub,
       sceneOk: () => !!scene,

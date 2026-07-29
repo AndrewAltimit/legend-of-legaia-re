@@ -18,6 +18,9 @@
 //! REF: FUN_80048a08 - TMD draw pass (`BattleDrawStep::Draw`).
 //! REF: FUN_80049348 - arts after-image walk (`BattleDrawStep::Afterimage`).
 //! REF: FUN_8005112c - per-character signature effect trigger.
+//! REF: FUN_80050e74 - the raise half of the same teardown protocol
+//! (`legaia_engine_vm::move_vm::flush_part_actor_pool`); the loop below is
+//! the collect half.
 //!
 //! # The colour word is RGB, not a flag
 //!

@@ -1522,34 +1522,134 @@ impl World {
         self.mode = SceneMode::MuscleDome;
     }
 
-    /// Leave the Muscle Dome and restore the interrupted mode. On a won
-    /// contest - the opponent knocked out, the only way a leg ends - the
-    /// reward Seru is credited through the capture kernel
-    /// ([`crate::seru_learning::record_capture`] against the installed
-    /// registry, resolved by the reward spell id) - the engine's stand-in
-    /// for the retail outright award message. Returns the session so the
-    /// host can read the final state.
+    /// Leave the Muscle Dome and restore the interrupted mode.
+    ///
+    /// **A leg pays nothing.** The finished leg is reported to the open
+    /// contest ([`World::report_muscle_leg`]), which is what decides whether
+    /// the ladder carries on and what the run is eventually worth; a contest
+    /// that has reached its end settles here and pays into the coin bank
+    /// ([`World::settle_muscle_contest`]).
+    ///
+    /// It used to credit a Seru capture on a won leg, keyed off the victory
+    /// caption's spell id. That was a misattribution: the caption table the
+    /// id indexes is the shared battle-family cast-caption table, reached by
+    /// any cast in any battle overlay, and the arena grants no Seru at all.
+    ///
+    /// Returns the session so the host can read the final state.
     pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
         if self.mode == SceneMode::MuscleDome {
             self.mode = self.muscle_return_mode;
         }
-        let session = self.muscle_dome.take();
-        if let Some(s) = session.as_ref()
-            && s.phase() == crate::muscle_dome::MusclePhase::Won
-            && let Some(seru) = self
-                .seru_registry
-                .seru_for_spell(s.reward_spell_id())
-                .map(|d| d.id)
-        {
-            let party: Vec<u8> = (0..self.roster.members.len() as u8).collect();
-            crate::seru_learning::record_capture(
-                &self.seru_registry,
-                &mut self.seru_log,
-                seru,
-                &party,
-            );
+        self.muscle_dome.take()
+    }
+
+    /// Report the finished leg to the open contest and step the between-leg
+    /// hub, applying the HP the recovery lanes hand back to the lead fighter.
+    ///
+    /// This is the arena's own re-entry: the ladder advances one leg, the new
+    /// `(course, round)` decodes out of the sub-id word, and the hub decides
+    /// between staging another leg and settling. Returns the contest state it
+    /// landed in, or `None` when no contest is open.
+    ///
+    /// PORT: FUN_801cea6c (contest re-entry) / FUN_801cf870 states 0x0A..0x0C
+    pub fn report_muscle_leg(
+        &mut self,
+        report: crate::muscle_dome::LegReport,
+    ) -> Option<crate::muscle_dome::ContestState> {
+        use crate::muscle_dome::ContestState;
+        let flags = self.muscle_contest_flags();
+        let hp_max = self
+            .roster
+            .members
+            .first()
+            .map(|r| r.hp_mp_sp().hp_max)
+            .filter(|&hp| hp > 0)
+            .unwrap_or(500);
+        let contest = self.muscle_contest.as_mut()?;
+        contest.finish_leg(report, hp_max, &flags);
+        // The three recovery lanes drain, then the restore state hands the
+        // total back to the fighter - a dome contest costs no permanent HP.
+        while matches!(
+            contest.state(),
+            ContestState::LegScore | ContestState::Tally | ContestState::Restore
+        ) {
+            let restoring = contest.state() == ContestState::Restore;
+            contest.advance();
+            if restoring {
+                // The retail store is the game-state window's `+0x6CC` /
+                // `+0x6CE` pair, which is the lead party record's own
+                // `+0x104` / `+0x106` HP pair (`0x80084708 - 0x80084140 =
+                // 0x5C8`).
+                let mut hms = match self.roster.members.first() {
+                    Some(r) => r.hp_mp_sp(),
+                    None => break,
+                };
+                hms.hp_cur = self
+                    .muscle_contest
+                    .as_mut()?
+                    .take_hp_restore(hms.hp_cur, hp_max);
+                if let Some(rec) = self.roster.members.first_mut() {
+                    rec.set_hp_mp_sp(hms);
+                }
+                return Some(self.muscle_contest.as_ref()?.state());
+            }
         }
-        session
+        Some(contest.state())
+    }
+
+    /// The story-flag reads the contest rules need, sampled off the system
+    /// flag bank.
+    pub fn muscle_contest_flags(&self) -> crate::muscle_dome::ContestFlags {
+        use crate::muscle_dome as md;
+        let mut flags = md::ContestFlags::default();
+        for (i, &(id, _)) in md::COURSE_UNLOCK_FLAGS.iter().enumerate() {
+            flags.course_unlock[i] = self.system_flag_test(id);
+        }
+        for (i, &(_, id)) in md::MASTER_LENGTH_GATES.iter().enumerate() {
+            flags.master_gates[i] = self.system_flag_test(id);
+        }
+        flags.prize_awarded = self.system_flag_test(md::CONTEST_PRIZE_FLAG);
+        flags
+    }
+
+    /// Settle the open contest: pay the tally into the casino coin bank,
+    /// apply the flags the settlement names, and hand over the one-shot
+    /// Master-course prize when it is due.
+    ///
+    /// The tally is the contest's whole reward. Returns the settlement, or
+    /// `None` when no contest is open or it has not reached its end.
+    ///
+    /// PORT: FUN_801d0f60 / FUN_80026018 (the coin credit)
+    pub fn settle_muscle_contest(&mut self) -> Option<crate::muscle_dome::ContestSettlement> {
+        use crate::muscle_dome as md;
+        let flags = self.muscle_contest_flags();
+        let contest = self.muscle_contest.as_mut()?;
+        if !contest.over() {
+            return None;
+        }
+        let out = contest.settle(&flags);
+        self.muscle_contest = None;
+        self.muscle_settlement = Some(out);
+        self.casino_coins = md::credit_casino_coins(self.casino_coins, out.score);
+        if out.set_continue_flag {
+            self.system_flag_set(md::CONTEST_CONTINUE_FLAG);
+        } else {
+            self.system_flag_clear(md::CONTEST_CONTINUE_FLAG);
+        }
+        if out.set_gave_up_flag {
+            self.system_flag_set(md::CONTEST_GAVE_UP_FLAG);
+        } else {
+            self.system_flag_clear(md::CONTEST_GAVE_UP_FLAG);
+        }
+        if let Some(id) = out.set_ran_first_flag {
+            self.system_flag_set(id);
+        }
+        if out.award_prize {
+            self.system_flag_set(md::CONTEST_PRIZE_FLAG);
+            let slot = self.inventory.entry(md::CONTEST_PRIZE_ITEM_ID).or_insert(0);
+            *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
+        }
+        Some(out)
     }
 
     /// Advance the Muscle Dome one frame, reading this frame's pad:
@@ -1610,12 +1710,11 @@ impl World {
                 }
             }
             MusclePhase::Resolve => {
-                if let Some(s) = self.muscle_dome.as_mut()
-                    && !s.resolve_turn_retail()
-                {
-                    // No disc tables staged: close the turn without damage
-                    // rather than substitute invented numbers for them.
-                    s.resolve_turn(|_, _| 0);
+                if let Some(s) = self.muscle_dome.as_mut() {
+                    // With no disc tables staged this closes the turn without
+                    // damage rather than substituting invented numbers - and
+                    // rather than parking the leg in `Resolve` forever.
+                    s.resolve_turn_or_zero();
                 }
             }
             MusclePhase::TurnOver => {
@@ -1625,7 +1724,16 @@ impl World {
             }
             MusclePhase::Won | MusclePhase::Lost => {
                 if confirm {
+                    let report = crate::muscle_dome::LegReport {
+                        survived: phase == MusclePhase::Won,
+                        outcome: 0,
+                        turns_taken: self.muscle_dome.as_ref().map_or(0, |s| s.turn()),
+                    };
                     self.exit_muscle_dome();
+                    self.report_muscle_leg(report);
+                    // A contest that has run out settles on the spot: the
+                    // payout is the contest's, not the leg's.
+                    self.settle_muscle_contest();
                 }
             }
         }

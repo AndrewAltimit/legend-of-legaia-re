@@ -100,6 +100,20 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Generated-page staleness. The link gate above proves every reference RESOLVES;
+# it cannot see a reference that is absent. Editing a _content fragment to pull
+# in a new asset and not re-running site/_gen.py leaves the served page loading
+# the new consumer without its dependency -- which took out keyboard input, the
+# pause menu and the scene picker at once, with no console error naming a cause.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-site-generated-freshness.py" ]]; then
+    printf '[pre-commit] generated site page freshness\n'
+    if ! python3 scripts/ci/check-site-generated-freshness.py; then
+        printf '[pre-commit] stale generated page(s) above -- run python3 site/_gen.py (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Shell observer-trap gate. Three defect shapes -- a pipeline whose exit status
 # is read off the wrong stage, a pkill/pgrep pattern that matches the caller's
 # own command line, and an unguarded grep whose no-match exit-1 is the clean

@@ -229,7 +229,10 @@ impl LegaiaRuntime {
             .entry_bytes(legaia_asset::save_icon::PROT_ENTRY as u32)
             .ok()?;
         let sheet = legaia_asset::save_icon::parse_entry(&entry).ok()?;
-        let tile = slot as usize;
+        // The slot -> tile mapping is retail's own (`0x3C0 + slot * 4`
+        // halfwords), so it goes through the port rather than being
+        // open-coded here even though the map is the identity.
+        let tile = legaia_asset::save_icon::tile_for_slot(slot as usize);
         if tile >= legaia_asset::save_icon::USABLE_TILE_COUNT {
             return None;
         }

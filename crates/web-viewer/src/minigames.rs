@@ -117,6 +117,12 @@ pub struct LegaiaMinigames {
     /// Live venue-faithful pond session (the retail cast/band/strike/fight
     /// loop; see `minigames_fishing.rs`).
     fishing_pond: Option<legaia_engine_core::fishing::PondSession>,
+    /// The page's persistent fishing record - the tab widget's stand-in for
+    /// `World::fishing_points`, which the play page and the native window both
+    /// seed a session from. Without it every `fishing_start` began from
+    /// `FishingRecord::default()`, so the points counter reset on every cast
+    /// series and the prize exchange could never be reached from this page.
+    fishing_record: legaia_engine_core::fishing::FishingRecord,
     /// Parsed per-venue species-spawn tables (PROT 0972 rodata pages).
     fishing_spawn: Option<[Vec<[u32; 8]>; 2]>,
     /// Parsed reel-cadence gesture templates (PROT 0972 rodata).
@@ -135,9 +141,20 @@ pub struct LegaiaMinigames {
     /// point-exchange prize rows.
     item_names: Option<legaia_asset::item_names::ItemNameTable>,
 
-    /// Live Muscle Dome contest (see `minigames_muscle.rs`): the rules session
+    /// Live Muscle Dome **leg** (see `minigames_muscle.rs`): the rules session
     /// plus the disc-derived fighter stats, RNG cursor and round play log.
     muscle: Option<muscle_web::MuscleContest>,
+    /// The Muscle Dome **contest** the legs belong to - the ladder run that
+    /// decides which `(course, round)` is staged, banks the coin tally and
+    /// settles the payout. Shared kernel
+    /// ([`legaia_engine_core::muscle_dome::DomeContest`]), so the browser and
+    /// the native window run one model rather than two.
+    muscle_run: Option<legaia_engine_core::muscle_dome::DomeContest>,
+    /// The player's casino coin bank, so a settled contest has somewhere to
+    /// pay into (the native host banks into `World::casino_coins`).
+    muscle_coins: u32,
+    /// The last settled contest, kept so the page can show the payout.
+    muscle_settlement: Option<legaia_engine_core::muscle_dome::ContestSettlement>,
     /// The Muscle Dome's cached battle tables (deck hand ids, move-power table
     /// + id map, element-affinity matrix - all PROT 0898 rodata), decoded once
     /// per disc so each fresh contest rebuilds without re-decoding.
@@ -214,6 +231,7 @@ impl LegaiaMinigames {
             fishing_species: None,
             fishing_overlay: None,
             fishing_pond: None,
+            fishing_record: Default::default(),
             fishing_spawn: None,
             fishing_cadence: None,
             fishing_exchange: None,
@@ -222,6 +240,9 @@ impl LegaiaMinigames {
             fishing_scene: None,
             item_names: None,
             muscle: None,
+            muscle_run: None,
+            muscle_coins: 0,
+            muscle_settlement: None,
             muscle_tables: None,
             scus: None,
         }

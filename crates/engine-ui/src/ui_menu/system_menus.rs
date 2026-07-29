@@ -1,5 +1,14 @@
 use crate::*;
 
+/// Surface-pixel pen the game-over panel is laid out from.
+///
+/// Shared rather than paired: both hosts draw this panel over a frozen frame
+/// with no stage transform, so there is nothing host-specific for the two to
+/// disagree about - and they did disagree, the browser centring it off the
+/// live surface size while the native window pinned it here, so the same
+/// screen sat in two different places.
+pub const GAME_OVER_PEN: (i32, i32) = (96, 100);
+
 /// Build [`TextDraw`]s for the game-over panel.
 pub fn game_over_draws_for(
     font: &legaia_font::Font,

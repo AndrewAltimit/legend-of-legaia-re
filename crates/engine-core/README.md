@@ -345,10 +345,16 @@ presentation left to the host:
 - `dance` - Noa's dance rhythm minigame, driven by the parsed step chart.
 - `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
   action tables.
-- `muscle_dome` - the Muscle Dome: an ordinary battle fought to a KO, staged from
-  `0xB6`. Direction-command ids + swing-record AP costs, a budget-gated
-  queue commit, the `Turns Left / HP Left` readouts, and `DomeDamageModel`
-  - the one retail damage kernel both hosts resolve turns through.
+- `muscle_dome` - the Muscle Dome, in two layers because retail has two state
+  machines. `MuscleDomeSession` is one **leg**: an ordinary battle fought to a
+  KO, direction-command ids + swing-record AP costs, a budget-gated queue
+  commit, and `DomeDamageModel` - the one retail damage kernel both hosts
+  resolve turns through. `DomeContest` is the **ladder above it**: the
+  `(course, round)` cursor packed in the mode-24 sub-id word, story-flag
+  course selection and Master-course length gating, per-leg scoring, the
+  between-leg HP restore, and settlement into casino coins. A leg pays
+  nothing; a contest pays. Driven by `World::report_muscle_leg` /
+  `World::settle_muscle_contest`.
 
 ## Smaller modules worth knowing
 

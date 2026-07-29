@@ -69,6 +69,7 @@
 use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
 use crate::vram_capture::{
     CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
+    VramRect,
 };
 use legaia_engine_vm::battle_intro_styles::{
     self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B,
@@ -77,6 +78,42 @@ use legaia_engine_vm::battle_intro_swirl::{self as swirl, SwirlMesh};
 use legaia_engine_vm::battle_intro_tiles::{self as tiles, TileGrid};
 use legaia_engine_vm::battle_intro_transition::{INTRO_QUAD_DESC_STRIDE, IntroQuad, IntroQuadDesc};
 use legaia_tim::Vram;
+
+/// The 4bpp "edge shade" texture page the tile shatter stretches over each
+/// box side face: `tpage 0x0027` = VRAM `(448, 0)`, 64x64 texels, so 16
+/// halfwords wide and 64 rows tall.
+///
+/// It matters here because it lies **inside** [`FIELD_CAPTURE_ROWS`]
+/// (`320..640` x `0..240`). Capturing the field frame into that rect
+/// overwrites the page, so a style that needs the shade texture must not have
+/// the rows rect written under it - see [`capture_rects_for`].
+pub const TILE_SHADE_PAGE: VramRect = VramRect::new(448, 0, 16, 64);
+
+/// Which capture rects a style's own primitives actually sample.
+///
+/// The capture is not free of consequences: it writes over whatever else
+/// lives in the destination rect, and the two rects are not equally safe.
+///
+/// | Style | Samples | Rects written |
+/// |---|---|---|
+/// | [`IntroStyle::Curtain`] | row pass `0x105`/`0x108` at `(320,0)`/`(512,0)`; column pass `0x115`/`0x118` at `(320,256)`/`(512,256)` | both |
+/// | [`IntroStyle::TileShatter`] | `0x135`/`0x137` at `(320,256)`/`(448,256)`, plus the 4bpp [`TILE_SHADE_PAGE`] at `(448,0)` | **columns only** |
+/// | the rest | not established | both |
+///
+/// The tile row is the one that has to differ. Its own pages are wholly
+/// inside the column rect, and the shade page it also needs is inside the row
+/// rect - so writing the rows would destroy an input it depends on while
+/// gaining it nothing. The styles whose sampling is not established keep both
+/// rects: that is the conservative choice, and it costs nothing today because
+/// none of them reaches a primitive.
+pub fn capture_rects_for(style: IntroStyle) -> &'static [VramRect] {
+    const BOTH: [VramRect; 2] = [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS];
+    const COLS_ONLY: [VramRect; 1] = [FIELD_CAPTURE_COLS];
+    match style {
+        IntroStyle::TileShatter => &COLS_ONLY,
+        _ => &BOTH,
+    }
+}
 
 /// Overlay VA of the transition sprite descriptor table, inside PROT 0979
 /// `field_battle_intro`.
@@ -296,11 +333,15 @@ impl BattleIntro {
         base: &Vram,
     ) -> anyhow::Result<&Vram> {
         let img = renderer.capture_rgba(target)?;
+        let style = self.style;
         let page = self.captured.insert(base.clone());
         let opts = CaptureOpts { set_mask_bit: true };
-        for rect in [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS] {
+        // Only the rects this style samples - see `capture_rects_for`. The
+        // rows rect covers the tile shatter's own shade page, so writing it
+        // unconditionally destroys an input the style needs.
+        for rect in capture_rects_for(style) {
             crate::vram_capture::blit_rgba_into_vram(
-                &img.rgba, img.width, img.height, page, rect, opts,
+                &img.rgba, img.width, img.height, page, *rect, opts,
             );
         }
         Ok(page)

@@ -11,6 +11,7 @@
 #   -process overlay_0899_xxx_dat.bin     ...
 #   -process overlay_0896_bat_back_dat.bin ...
 #   -process overlay_0977_other_game.bin  ...
+#   -process overlay_field_battle_intro.bin ...
 #   -process overlay_0971.bin             ...
 #   -process overlay_battle_action_0898.bin ...
 #   -process 0967_xxx_dat.BIN             ...
@@ -101,6 +102,15 @@ PROGRAM_TARGETS = {
     "overlay_0971.bin": [
         "801c0f18",
     ],
+    # RAM capture taken while PROT 0979 was resident, so its printed VAs are
+    # real addresses (the static map records the byte match at base
+    # 0x801CE818). 801ce8c0 is the transition init, file +0xA8, whose
+    # style-selection block engine-vm's select_intro_style ports - a
+    # provenance gap: ported but never dumped. Do NOT read this VA out of a
+    # 0897-resident capture; that image carries the field overlay there.
+    "overlay_field_battle_intro.bin": [
+        "801ce8c0",
+    ],
     "overlay_battle_action_0898.bin": [
         "801ce844", "801ecc00", "801f6b24",
     ],
@@ -127,6 +137,12 @@ PROGRAM_TARGETS = {
         "801d08ec", "801d1288", "801d1308", "801d14b0",
         # second-level: cited by 801d1308
         "801d050c",
+        # provenance gap: ported but never dumped. 801d02f0 / 801d15c8 are
+        # the ROUND banner + its digit glyph (engine-ui other_game_hud);
+        # 801d1510 is the arena opponent installer (engine-core muscle_dome).
+        # All three are documented in docs/reference/functions/minigames-debug.md
+        # from the sibling dumps, so only the byte evidence is missing.
+        "801d02f0", "801d1510", "801d15c8",
     ],
     "0978_other_game.BIN": [
         "801f6b24",

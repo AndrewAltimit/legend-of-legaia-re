@@ -407,7 +407,11 @@ impl Default for Mapping {
             ("W", "R1"),
             ("1", "L2"),
             ("2", "R2"),
+            // Start takes Enter and Space. Two keys on one button is what the
+            // `key_name -> button_name` shape is for, and Space is the key a
+            // keyboard player reaches for on a pause button.
             ("Enter", "Start"),
+            ("Space", "Start"),
             ("RShift", "Select"),
         ] {
             b.insert(key.to_string(), btn.to_string());
@@ -437,7 +441,7 @@ impl Default for Mapping {
 /// see) resolves to `None` and is skipped by [`Mapping::dom_code_bindings`],
 /// which is the honest answer: the browser cannot report a key it has no
 /// code for.
-pub const KEY_NAME_DOM_CODES: [(&str, &str); 18] = [
+pub const KEY_NAME_DOM_CODES: [(&str, &str); 19] = [
     ("Up", "ArrowUp"),
     ("Down", "ArrowDown"),
     ("Left", "ArrowLeft"),
@@ -455,6 +459,7 @@ pub const KEY_NAME_DOM_CODES: [(&str, &str); 18] = [
     ("1", "Digit1"),
     ("2", "Digit2"),
     ("Enter", "Enter"),
+    ("Space", "Space"),
     ("RShift", "ShiftRight"),
 ];
 
@@ -486,7 +491,7 @@ impl Mapping {
     /// Z                         -> Cross      X -> Circle
     /// C                         -> Triangle   V -> Square
     /// Q -> L1   E -> R1   1 -> L2   2 -> R2
-    /// Enter                     -> Start
+    /// Enter, Space              -> Start
     /// RShift                    -> Select
     /// ```
     pub fn web_default() -> Self {
@@ -509,7 +514,9 @@ impl Mapping {
             ("E", "R1"),
             ("1", "L2"),
             ("2", "R2"),
+            // Start takes Enter and Space on both hosts - see `Mapping::default`.
             ("Enter", "Start"),
+            ("Space", "Start"),
             ("RShift", "Select"),
         ] {
             b.insert(key.to_string(), btn.to_string());
@@ -673,6 +680,35 @@ mod tests {
         let before = codes.len();
         codes.dedup();
         assert_eq!(before, codes.len(), "two key names share one DOM code");
+    }
+
+    /// Start answers to Enter *and* Space, on every host, and Space survives
+    /// the trip through the browser vocabulary.
+    ///
+    /// Two keys on one button is the shape `key_name -> button_name` already
+    /// supports; the risk is not the mapping but the bridge, since a key the
+    /// browser has no `KeyboardEvent.code` for is silently dropped from
+    /// `dom_code_bindings` - which is how a binding can be live on the desktop
+    /// build and absent in the tab with nothing in either file to show it.
+    #[test]
+    fn start_answers_to_both_enter_and_space_on_both_hosts() {
+        for m in [Mapping::default(), Mapping::web_default()] {
+            for key in ["Enter", "Space"] {
+                assert_eq!(
+                    m.pad_button_for_key(key),
+                    Some(PadButton::Start),
+                    "{key} must be Start"
+                );
+            }
+            let dom = m.dom_code_bindings();
+            for code in ["Enter", "Space"] {
+                assert!(
+                    dom.iter()
+                        .any(|(c, b)| *c == code && *b == PadButton::Start.mask()),
+                    "{code} must reach the browser table as Start"
+                );
+            }
+        }
     }
 
     /// A rebinding to a key the browser has no code for is dropped, not

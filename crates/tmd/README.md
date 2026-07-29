@@ -71,6 +71,14 @@ the caller can pair it with `legaia_tim::Vram::prim_has_texture_data`
 (or any other heuristic) so the mesh upload doesn't include prims that
 would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 
+`Mesh::append_scaled` / `VramMesh::append_scaled` append a second,
+per-axis-scaled instance of a mesh to itself. A negative-determinant scale
+reverses triangle winding, so the appended indices go in reversed corner order
+and the copied normals flip - which is what lets a caller place a mesh retail
+draws more than once (see `legaia_asset::battle_backdrop`, where the
+battle-stage backdrop's second copy is either `diag(-1, 1, -1)` or
+`diag(-1, 1, 1)`).
+
 ## Targeted VRAM upload + per-prim diagnostics
 
 `vram_targeted::collect_prim_targets` collects the VRAM rectangles every

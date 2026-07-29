@@ -316,6 +316,14 @@
     mode a <strong>VR</strong> button presents the town over WebXR
     (<a href="subsystems/vr-mode.html">VR mode</a>; needs Chrome/Edge with SteamVR and a secure
     context).</p>
+  <p><strong>Battle stages are not shown raw.</strong> A <code>scene_tmd_stream</code> entry holds
+    half a backdrop shell; the game draws that mesh <em>twice</em>, the second copy either
+    half-turned or reflected, and lays its tiled floor underneath. The viewer places them the same
+    way, and the status line names which transform the executable picked for that stage. Two
+    entries can be the same bowl byte for byte and still be placed differently - the choice is
+    per-stage data the game carries in a table, not something the mesh implies, so a stage that
+    looks rotated against its twin elsewhere is showing you the table
+    (<a href="subsystems/battle.html#battle-background">why</a>).</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -857,6 +865,24 @@
    * handle identically. */
   /* Headless-verification entry point (see `__fsState` below). */
   window.__fsLoad = (label) => startFullSceneLoop(label);
+
+  /* Headless verification of what the current entry actually *draws*, as
+   * opposed to what the status line says about it. The two can disagree: a
+   * battle backdrop's floor is a separate mesh appended after the shell, and
+   * both the "is the tile resident" test and the mesh append have to fire for
+   * it to reach the screen. `groundPlaneVerts` counts vertices sitting exactly
+   * on the grid's own plane, which nothing in a TMD does. */
+  window.__entryMesh = () => {
+    if (!viewer) return null;
+    const pos = viewer.mesh_positions();
+    let onGridPlane = 0;
+    for (let i = 1; i < pos.length; i += 3) if (pos[i] === 1) onGridPlane++;
+    return {
+      verts: pos.length / 3,
+      tris: viewer.mesh_indices().length / 3,
+      groundPlaneVerts: onGridPlane,
+    };
+  };
   function startFullSceneLoop(label) {
     if (!viewer) return;
     stopRaf();

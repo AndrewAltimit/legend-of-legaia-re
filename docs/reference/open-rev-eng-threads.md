@@ -95,6 +95,13 @@ cheapest place to look for a claim that is still wrong.
   Wave; formation `0xB5` is Cort. The branch at `0x801E6D04` reads the
   formation-id byte, and the wrong reading survived because Cort casts Lapis
   Wave - the two spaces agreeing on the answer is what hid the error.
+- **Op-`0x35` sub-op 9 was recorded as "Queue".** It is a *start* behind an
+  asset-load barrier - the arm at `0x801E0224` waits on
+  `_DAT_8007BAB8 == _DAT_8007BA9C` and then makes sub-op 1's own
+  `_DAT_8007BAC8` store. The one-word entry had no body under it, and it is
+  what a **cutscene** changes music with, so a scene-corpus BGM sweep (which
+  only runs prescripts, and those emit sub-op 1) could not see the difference.
+  Falsification: [`re-do-not-re-walk.md`](re-do-not-re-walk.md#op-0x35-sub-op-9-was-never-a-queue).
 - **"Retail shots rarely roll the camera" was false, and so was the row that
   replaced it.** Retail authors a non-zero op-`0x45` slot-2 roll in eight
   scenes. The renderer's dropped `RotMatrixZ` factor was a real divergence,
@@ -154,6 +161,107 @@ process hangs indefinitely
 process-matching helpers in
 [`shell-observer-traps.md`](../tooling/shell-observer-traps.md) exist because
 `pgrep -f` matches the caller's own command line.
+
+## Battle / rendering
+
+| Thread | Status | What would close it |
+|---|---|---|
+| Battle ground grid's depth cue - the far colour | partial - `DQA` / `DQB` pinned; the far colour `FC` is not | [details ↓](#battle-ground-grids-depth-cue---the-far-colour) |
+| Battle-intro tile shatter - the side-face shade page | open - the page is live only during a transition, and no capture is | [details ↓](#battle-intro-tile-shatter---the-side-face-shade-page) |
+
+### Battle ground grid's depth cue - the far colour
+
+*Status:* two of three inputs pinned; the port draws the grid unfogged
+
+Retail's ground-grid emitter runs **`DPCS`** per vertex (`cop2 0x780010` at
+`0x801d061c` / `0x801d063c` / `0x801d0654` / `0x801d0688`, with `IR0` loaded
+from `SZ >> 2` immediately before each), so the battle floor **fades with
+distance**. The port's `build_ground_grid` emits `MODULATION_NEUTRAL` and no
+cue at all, which is why its grass reads at full brightness all the way to the
+horizon while retail's washes out.
+
+`DPCS` is `out = c + (fc - c) * ir0`, and the port already has the kernel -
+`engine_render::psx_light::depth_cue`, with a `psx_depth_cue` WGSL twin. Three
+control values feed it. Two are now pinned across nine save states spanning
+field, battle, battle-load and minigame phases
+(`crates/mednafen/tests/gte_projection_real.rs`):
+
+| Input | Value | Status |
+|---|---|---|
+| `DQA` | `-64` | pinned, and invariant across every phase measured |
+| `DQB` | `320 << 16` | pinned, likewise invariant |
+| `FC` (`RFC`/`GFC`/`BFC`, control regs 21-23) | **not pinned** | varies by phase; reads `(0,0,0)` in battle states and `(4096,4096,4096)` in field ones |
+
+**What would close it.** `FC` is a *snapshot* value: a save state captures
+whatever the last GTE setup left, and in a battle state that is as likely to
+be the UI pass as the grid pass. So reading it out of a state is not enough -
+the reading has to be attributed to the grid draw. Two routes, either
+sufficient:
+
+- A PCSX-Redux exec breakpoint on `func_0x801d02c0` that dumps control regs
+  21-23 on entry. That attributes the value to the grid pass by construction,
+  which a save state cannot.
+- The static writer: whatever calls `FUN_8003D268`-class far-colour setters
+  ahead of the mode-`0x15` render `FUN_80026f50`. The sibling stage table
+  `DAT_80078C1C` is already decoded and is part of this picture - it selects
+  the backdrop's depth-cue ceiling (`0x800` vs `0xC00`) and a far-colour
+  scaling arm (`>>1` versus `(c - 0x010101) * 2`) via `0x8007BDA8`, read in
+  `FUN_80050120` at `0x800505b8` and `0x800507fc`. Those are the arms that
+  *modify* a far colour; the base it starts from is the missing piece.
+
+Until then the grid stays unfogged, which is a visible but bounded
+divergence - and preferable to fogging it toward a guessed colour, which would
+be wrong in a way nothing downstream could detect.
+
+### Battle-intro tile shatter - the side-face shade page
+
+*Status:* three of four emitter inputs pinned; the port ticks the style but does not draw it
+
+The tile shatter is the style the **ordinary random encounter** takes, so it is
+the most-seen transition in the game and the port draws none of it. The
+emitter is fully specified - see
+[`cutscene.md`](../subsystems/cutscene.md#what-style-2s-emitter-builds-and-the-one-input-still-missing)
+for the ten-primitive face table, the reject chain and the OT depth - and the
+corner table (`[0, 1, 17, 18]`, off PROT 0979) and the GTE screen centre
+(`OFX = 160`, `OFY = 114`) are both pinned.
+
+**What is missing** is the content of the 4bpp page at VRAM `(448, 0)` that the
+four semi-transparent side faces stretch over. Its CLUT at `(16, 473)` reads
+as a 16-entry black-to-white brightness ramp in a battle-load state, which is
+what a shade texture's palette should look like, but the page itself is sparse
+there - and every catalogued state is captured before or after a transition,
+never during one, which is the only window where the page is live.
+
+**What would close it.** One save state taken *inside* a field-to-battle
+transition, then `mednafen-state vram-dump` over `(448, 0)` for 64x64 texels at
+4bpp. The style runs for a known, short number of frames, so the capture wants
+a scripted pause rather than a human reflex - a PCSX-Redux breakpoint on
+`FUN_801D0D24` with a state dump on the first hit would land it directly.
+
+## Audio / BGM
+
+| Thread | Status | What would close it |
+|---|---|---|
+| Op-`0x35` sub-op `0xA` - what the "unhalt-pause toggle" waits on | open - the arm is read, its two inputs are not | [details ↓](#op-0x35-sub-op-0xa---what-it-waits-on) |
+
+### Op-`0x35` sub-op `0xA` - what it waits on
+
+*Status: open.* The arm at `0x801E0264` is legible instruction by instruction
+and still unnamed as a behaviour. It returns immediately when `_DAT_8007B868`
+is non-zero; otherwise it **waits** (branch to `0x801DEE4C`, the restore-PC
+idiom) until bit 3 of the sound flag word `_DAT_8007B750` is set, then calls
+`FUN_800266E0` and `FUN_80026520` on the BGM slot `0x8007052C`, sets bit 4 of
+the flag word and **clears bit 1** - the pause bit sub-op 2 sets.
+
+What is not pinned: what writes `_DAT_8007B868`, what sets flag bit 3, and what
+`FUN_80026520` does that `FUN_800266E0` does not. Until those are answered the
+op has no port, which is visible on the disc: a scene's cutscene records pair
+sub-op 2 with a later sub-op `0xA`, so a port that honours the pause and drops
+the toggle leaves the music paused after that cutscene.
+
+Closing it wants a writer sweep for the two globals
+(`scripts/ghidra-analysis/find-address-word-refs.py`) plus a live capture over
+a scene that runs the `2` / `0xA` pair.
 
 ## Title / boot / overlays
 

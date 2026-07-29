@@ -476,19 +476,31 @@ impl PlayWindowApp {
         {
             if self.session.host.world.mode == SceneMode::MuscleDome {
                 if let Some(s) = self.session.host.world.exit_muscle_dome() {
-                    use legaia_engine_core::muscle_dome::MusclePhase;
-                    match s.phase() {
-                        MusclePhase::Won => log::info!(
-                            "muscle: contest WON - reward Seru spell id {:#x} credited",
-                            s.reward_spell_id()
-                        ),
-                        MusclePhase::Lost => log::info!("muscle: contest lost"),
+                    use legaia_engine_core::muscle_dome::{LegReport, MusclePhase};
+                    let phase = s.phase();
+                    match phase {
+                        MusclePhase::Won => log::info!("muscle: leg won"),
+                        MusclePhase::Lost => log::info!("muscle: leg lost"),
                         _ => log::info!(
-                            "muscle: contest aborted after {} turns - opponent left on {}% HP",
+                            "muscle: leg abandoned after {} turns - opponent left on {}% HP",
                             s.turn(),
                             s.hp_left()
                         ),
                     }
+                    // Leaving mid-leg is the arena's run/give-up path: it
+                    // ends the contest and voids the tally, exactly as
+                    // retail's `_DAT_80084448 = 4` arm does.
+                    let report = LegReport {
+                        survived: phase != MusclePhase::Lost,
+                        outcome: if matches!(phase, MusclePhase::Won | MusclePhase::Lost) {
+                            0
+                        } else {
+                            legaia_engine_core::muscle_dome::LEG_OUTCOME_RAN
+                        },
+                        turns_taken: s.turn(),
+                    };
+                    self.session.host.world.report_muscle_leg(report);
+                    self.settle_muscle_contest_if_over();
                     self.session.restore_field_bgm();
                 }
             } else if self.start_muscle_minigame() {

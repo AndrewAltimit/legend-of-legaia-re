@@ -354,6 +354,32 @@ blocker is a table is the same error this page records for the panel painters.
 The four battle-camera rows were unsettleable while that lane held the files;
 see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
 
+## The two rows the audit's undisclosed section was last down to
+
+Both closed, and they closed in opposite directions - which is the point of
+keeping them together. Neither could be settled from the audit row itself.
+
+**`timed_fight_turns_left`** (`801d0748`,
+`crates/engine-core/src/muscle_dome.rs`) is `DISCLOSE`, and the reason is a
+*deliberate* non-read rather than a missing host. The strip it feeds is Koru's
+timed fight, gated on the formation cell holding
+`TIMED_FIGHT_MONSTER_ID`; a dome round is an ordinary battle that ends on a
+knockout, so `MuscleDomeSession` must not consult a turn limit. The row is the
+counter-example to reading an undisclosed inert port as work: the wire would be
+a bug. Its prerequisite is a host that draws that one fight's `Turns Left /
+HP Left` strip, which needs the formation-cell gate the engine does not carry.
+
+**`tile_for_slot`** (`801e1934`, `crates/asset/src/save_icon.rs`) is `WIRE`,
+and the audit is not scoped to say so - it sits in `legaia-asset`, outside this
+page's two crates, and reached it only because the browser card rack was
+open-coding the mapping it ports. `Runtime::save_block_icon` in
+`web-viewer::cards` wrote `slot as usize` where retail's VRAM x is
+`0x3C0 + slot * 4` halfwords. The map is the identity, which is exactly why it
+had been open-coded and why the port read inert; routing the call through it
+costs nothing and makes the sheet's slot arithmetic have one owner. **An
+identity-valued port is the easiest kind to leave unwired and the cheapest kind
+to wire.**
+
 ## `FALSE INERT` evidence
 
 Grouped by which defect hid the edge. None of these want a source change, and

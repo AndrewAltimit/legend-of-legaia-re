@@ -151,7 +151,18 @@ impl PlayWindowApp {
                 self.prev_pad = self.pad;
                 continue;
             }
-            if pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
+            // Start opens the pause menu **in the field only**. Retail's
+            // Start handler is the field controller's; in battle Start is
+            // inert, and on the world map the controller has its own. The
+            // guard used to be `!menu_runtime.is_open()` alone, so Start
+            // mid-battle opened the menu and froze the fight - the boot-UI
+            // arm above skips the scene tick, so nothing advanced until the
+            // player backed out. The browser play page already required
+            // Field here; this is the native side catching up.
+            if pressed_edge & 0x0008 != 0
+                && self.session.host.world.mode == SceneMode::Field
+                && !self.menu_runtime.is_open()
+            {
                 // Start: open the BootSession-hosted pause menu (the
                 // retail CARD pair, game_mode 0x17 - the world holds
                 // SceneMode::Menu while it is open) and route the

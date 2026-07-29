@@ -96,10 +96,38 @@ const MUSCLE_HIT_CUE_ROW: u8 = 0x09;
 /// when the character's swing records don't decode.
 const FAVORED_COST: u16 = 0x1E;
 
-/// The Seru index awarded on a win (`ctx+0x269`); reward spell id is
-/// `REWARD_SPELL_ID_BASE + index`. The arena init's per-contest write is not
-/// table-pinned - documented approximation.
-const WEB_REWARD_SERU: u8 = 1;
+/// The Seru index the victory **caption** names (`ctx+0x269`); the captioned
+/// spell id is `REWARD_SPELL_ID_BASE + index`.
+///
+/// It is a string index, not a prize. The table it reaches (`0x801F4DFC`) is
+/// the shared battle-family cast-caption label table, resident in every
+/// battle overlay and read by any cast; the arena grants no Seru. A contest's
+/// reward is casino coins - see
+/// [`legaia_engine_core::muscle_dome::DomeContest`].
+const WEB_CAPTION_SERU: u8 = 1;
+
+/// PROT entry the arena roster/init overlay lives in - the contest layer's
+/// course ladder and score table both come off it.
+const ARENA_OVERLAY_PROT_INDEX: u32 =
+    legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32;
+
+/// Lift the page's two flag bitmasks into the shared
+/// [`ContestFlags`](legaia_engine_core::muscle_dome::ContestFlags) the rules
+/// kernel takes. The browser has no save file to read a flag bank out of, so
+/// the page states what it wants open and the kernel applies the same rule to
+/// it that the native host's real bank gets.
+fn web_contest_flags(
+    unlock: u32,
+    gates: u32,
+    prize_awarded: bool,
+) -> legaia_engine_core::muscle_dome::ContestFlags {
+    let bit = |m: u32, i: usize| m & (1 << i) != 0;
+    legaia_engine_core::muscle_dome::ContestFlags {
+        course_unlock: [bit(unlock, 0), bit(unlock, 1), bit(unlock, 2)],
+        master_gates: [bit(gates, 0), bit(gates, 1), bit(gates, 2)],
+        prize_awarded,
+    }
+}
 
 /// Non-elemental element id (`element_affinity` id space).
 const ELEMENT_NEUTRAL: u8 = 7;
@@ -686,7 +714,7 @@ impl LegaiaMinigames {
             opp_hand,
             [player.budget_pool, opponent.budget_pool],
             hp,
-            WEB_REWARD_SERU,
+            WEB_CAPTION_SERU,
         );
         // Damage resolves through the shared retail kernel - the same
         // `DomeDamageModel` the native play-window host installs, so neither
@@ -735,9 +763,15 @@ impl LegaiaMinigames {
     /// then the opponent's, not interleaved. The native play-window host
     /// resolves through the same kernel; this method holds no damage rule of
     /// its own. No-op unless the turn is in the resolve phase.
+    ///
+    /// The kernel-absent arm is shared too
+    /// ([`MuscleDomeSession::resolve_turn_or_zero`]): with no disc tables
+    /// installed the turn still closes, at zero damage. Dropping that arm on
+    /// one host only is what left the browser contest parked in
+    /// `MusclePhase::Resolve` forever while the window's advanced.
     pub fn muscle_resolve(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
-            c.session.resolve_turn_retail();
+            c.session.resolve_turn_or_zero();
         }
     }
 
@@ -748,6 +782,151 @@ impl LegaiaMinigames {
         if let Some(c) = self.muscle.as_mut() {
             c.session.next_turn();
         }
+    }
+
+    /// Open a **contest** on the arena's course ladder - the ladder run a leg
+    /// belongs to. `unlock` is the three course-unlock story flags
+    /// (`0x536` / `0x537` / `0x538`) as a bitmask, `gates` the three Master
+    /// course-length flags (`0x378` / `0x382` / `0x471`); a page with no save
+    /// to read them from passes `0b111` for both to mean "everything open".
+    ///
+    /// Returns `false` when PROT 0977 does not decode.
+    pub fn muscle_contest_start(&mut self, unlock: u32, gates: u32) -> bool {
+        let Some(raw) = entry_bytes(&self.prot, &self.entries, ARENA_OVERLAY_PROT_INDEX) else {
+            return false;
+        };
+        let flags = web_contest_flags(unlock, gates, false);
+        match legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags) {
+            Some(c) => {
+                self.muscle_run = Some(c);
+                self.muscle_settlement = None;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The `(course, round)` the open contest stages next, as
+    /// `[course, round]`. `[0, 0]` with no contest open, which is also the
+    /// first leg of a fresh one.
+    pub fn muscle_contest_cursor(&self) -> Vec<u32> {
+        self.muscle_run
+            .as_ref()
+            .map_or(vec![0, 0], |c| vec![c.course() as u32, c.round()])
+    }
+
+    /// Report the finished leg to the open contest: the ladder advances, the
+    /// leg's four rows are computed and drained, and the between-leg HP
+    /// recovery is returned.
+    ///
+    /// `outcome` is the battle's own outcome code -
+    /// [`legaia_engine_core::muscle_dome::LEG_OUTCOME_RAN`] gives the contest
+    /// up. `hp_max` scales every recovery lane. Returns the HP the fighter
+    /// gets back (capped at `hp_max`), or `-1` when no contest is open.
+    ///
+    /// This is the same kernel the native host reaches through
+    /// `World::report_muscle_leg`; the browser holds no ladder rule of its
+    /// own. The page has no persistent party record to carry HP across legs -
+    /// each leg re-seeds from the fighter's full stats - so the returned
+    /// figure is what the ladder *would* hand back, reported rather than
+    /// applied.
+    pub fn muscle_report_leg(
+        &mut self,
+        survived: bool,
+        outcome: u32,
+        turns_taken: u32,
+        hp_max: u16,
+        unlock: u32,
+        gates: u32,
+    ) -> i32 {
+        use legaia_engine_core::muscle_dome::{ContestState, LegReport};
+        let flags = web_contest_flags(unlock, gates, false);
+        let Some(run) = self.muscle_run.as_mut() else {
+            return -1;
+        };
+        run.finish_leg(
+            LegReport {
+                survived,
+                outcome,
+                turns_taken,
+            },
+            hp_max,
+            &flags,
+        );
+        while matches!(
+            run.state(),
+            ContestState::LegScore | ContestState::Tally | ContestState::Restore
+        ) {
+            run.advance();
+        }
+        run.take_hp_restore(0, hp_max) as i32
+    }
+
+    /// Settle the open contest if it has run out: pay the tally into the
+    /// page's coin bank and latch the one-shot Master-course prize.
+    ///
+    /// Returns `true` when a settlement happened. `prize_awarded` is the
+    /// `0x6CB` one-shot flag as the page knows it.
+    pub fn muscle_contest_settle(&mut self, unlock: u32, gates: u32, prize_awarded: bool) -> bool {
+        use legaia_engine_core::muscle_dome as md;
+        let flags = web_contest_flags(unlock, gates, prize_awarded);
+        let Some(run) = self.muscle_run.as_mut() else {
+            return false;
+        };
+        if !run.over() {
+            return false;
+        }
+        let out = run.settle(&flags);
+        self.muscle_run = None;
+        self.muscle_settlement = Some(out);
+        self.muscle_coins = md::credit_casino_coins(self.muscle_coins, out.score);
+        true
+    }
+
+    /// The contest layer's state for the page's chrome:
+    ///
+    /// ```json
+    /// { "live": true, "course": 0, "round": 2, "length": 8, "tally": 8,
+    ///   "over": false, "gave_up": false, "state": 20, "coins": 0,
+    ///   "rows": { "round": 30, "turns": 25, "outcome": 20, "score": 5 },
+    ///   "settlement": { "score": 818, "prize": false } }
+    /// ```
+    ///
+    /// `rows` is the between-leg tally screen's four count-up lanes: the
+    /// first three are HP recovery scaled by max HP, and only `score` is
+    /// money.
+    pub fn muscle_contest_json(&self, unlock: u32, gates: u32) -> String {
+        let settlement = self.muscle_settlement.as_ref().map(|s| {
+            serde_json::json!({ "score": s.score, "prize": s.award_prize,
+                                "continuing": s.continuing })
+        });
+        let Some(run) = self.muscle_run.as_ref() else {
+            return serde_json::json!({
+                "live": false, "coins": self.muscle_coins, "settlement": settlement,
+            })
+            .to_string();
+        };
+        let flags = web_contest_flags(unlock, gates, false);
+        let rows = run.rows();
+        serde_json::json!({
+            "live": true,
+            "course": run.course(),
+            "round": run.round(),
+            "length": run.staged_course_length(&flags),
+            "tally": run.tally(),
+            "over": run.over(),
+            "gave_up": run.gave_up(),
+            "state": run.state() as u32,
+            "coins": self.muscle_coins,
+            "rows": {
+                "round": rows.round_lane,
+                "turns": rows.turns_lane,
+                "outcome": rows.outcome_lane,
+                "score": rows.score_cell,
+            },
+            "settlement": settlement,
+        })
+        .to_string()
     }
 
     /// The last resolved turn's play-by-play, for the page's 3D playback:
@@ -1906,11 +2085,28 @@ impl LegaiaMinigames {
             1 => hud::hub_screen_quads(&mut table, hud::HUB_TITLE_ART, hud::TITLE_ART_BRIGHTNESS),
             2 => hud::hub_screen_quads(&mut table, hud::HUB_INTERVAL_HEADING, brightness),
             3 => hud::hub_screen_quads(&mut table, &hud::round_banner_draws(round), brightness),
-            _ => hud::score_tally_quads(
-                &mut table,
-                [round, 0, 0, 0, 0, 0],
-                [brightness; hud::SCORE_TALLY_ROWS],
-            ),
+            // The six rows are the contest's, not placeholders: the four
+            // lanes `FUN_801D1184` computes, then the running tally and the
+            // coin bank they drain into. With no contest open the screen
+            // still draws, showing the bank alone.
+            _ => {
+                let (rows, tally) = self
+                    .muscle_run
+                    .as_ref()
+                    .map_or((Default::default(), 0), |run| (run.rows(), run.tally()));
+                hud::score_tally_quads(
+                    &mut table,
+                    [
+                        rows.round_lane,
+                        rows.turns_lane,
+                        rows.outcome_lane,
+                        rows.score_cell,
+                        tally,
+                        self.muscle_coins as i32,
+                    ],
+                    [brightness; hud::SCORE_TALLY_ROWS],
+                )
+            }
         };
         let rows: Vec<serde_json::Value> = quads
             .iter()

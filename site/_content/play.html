@@ -465,7 +465,8 @@
 <script src="js/webgl-math.js?v=zfight-1"></script>
 <script src="js/webgl-tmd.js?v=zfight-1"></script>
 <script src="js/field-scene-view.js?v=play-3"></script>
-<script src="js/play-app.js?v=play-8"></script>
+<script src="js/pad-bindings.js?v=pad-1"></script>
+<script src="js/play-app.js?v=play-10"></script>
 <script>
 (function () {
   'use strict';
@@ -560,9 +561,19 @@
       /* Boot chain: show the retail title card (New Game / Continue) off the
        * disc's own title art, then run the prologue cutscene chain (falling
        * back to Rim Elm directly if the cutscene scene fails to enter).
-       * Continue has no browser save-slot grid yet, so every confirmed outcome
-       * proceeds to New Game. */
-      runBootTitle(() => {
+       *
+       * Continue and Options are live rows: the engine routes them to the
+       * retail save-select and options screens (the shared pause-menu rows),
+       * and a Continue that loads a card block hands this callback the scene
+       * the save was written in - retail resumes there. The rows used to be
+       * dead, with every confirmed outcome falling through to New Game on a
+       * host that could already load and persist saves. */
+      runBootTitle((outcome) => {
+        if (outcome && outcome !== 'new_game' && sceneKnown(outcome)) {
+          enter(outcome);
+          saveMsg('Continued from a memory-card save.');
+          return;
+        }
         enter(OPENING_CUTSCENE_SCENE);
         if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
           enter(OPENING_SCENE);
@@ -642,6 +653,20 @@
             try { runtime.play_menu_close(); } catch (e) {}
             saveMsg(`Loaded from memory card${scene ? ` - ${scene}` : ''}.`);
             if (sceneKnown(scene) && scene !== active) enter(scene);
+          },
+          /* Game over -> Quit: retail returns to the title card. The panel
+           * is a live session on both hosts, so the row actually reaches
+           * here now (it used to be a bare Retry whatever the player
+           * picked). */
+          onQuit: () => {
+            try { view.stop(); } catch (e) {}
+            runBootTitle((outcome) => {
+              if (outcome && outcome !== 'new_game' && sceneKnown(outcome)) {
+                enter(outcome);
+                return;
+              }
+              enter(OPENING_CUTSCENE_SCENE);
+            });
           },
           onError: (msg) => {
             /* A WASM trap poisons the engine instance; rebuild it from the
@@ -740,10 +765,68 @@
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
       try { then(outcome); } catch (e) { console.warn('boot title -> then', e); }
     };
+    /* Chrome blitter for the Continue / Options sub-screens: they are the
+     * pause menu's own Load and Options rows (the engine opens them off the
+     * title outcome), so they draw off the same two atlases the in-game menu
+     * uses. */
+    let chromeBlit = null;
+    try {
+      if (runtime.play_menu_has_chrome()) {
+        const cd = runtime.play_menu_chrome_dims();
+        if (cd[0] > 0)
+          chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1]);
+      }
+    } catch (e) { console.warn('boot title chrome', e); }
+    /* Non-empty once Continue / Options handed off to a pause-menu row; the
+     * loop then drives that menu instead of the title card, and finishes when
+     * it closes. Continue finishes with the loaded save's scene when there is
+     * one, so a Continue lands where the save was written. */
+    let handoff = '';
+    let loadedScene = '';
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
       const edge = padMaskOf(pulse);
       pulse.clear();
+      if (handoff) {
+        /* Continue / Options: the retail save-select and options screens,
+         * reached through the shared pause-menu rows rather than a second
+         * copy on this page. Same 60 Hz catch-up rule as play-app.js: the
+         * save screen's card-read dialog counts down a frame timer. */
+        let ticks = 1;
+        const now = performance.now();
+        if (!frame._clock) frame._clock = now;
+        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._clock) / 16.667)));
+        frame._clock += ticks * 16.667;
+        for (let i = 0; i < ticks; i++) {
+          try { runtime.play_menu_input(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
+        }
+        try { loadedScene = runtime.play_menu_take_load_scene() || loadedScene; } catch (e) {}
+        let md = null;
+        try { md = JSON.parse(runtime.play_menu_draws_json(menuCanvas.width, menuCanvas.height)); }
+        catch (e) { md = null; }
+        ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (md && md.open) {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+          if (chromeBlit) chromeBlit.blit(ctx, md.sprites);
+          if (fontBlit) fontBlit.blit(ctx, md.texts);
+        }
+        let stillOpen = false;
+        try { stillOpen = runtime.play_menu_is_open(); } catch (e) {}
+        if (loadedScene) {
+          try { runtime.play_menu_close(); } catch (e) {}
+          return finish(loadedScene);
+        }
+        if (!stillOpen) {
+          /* Options closed, or Continue backed out without loading: retail
+           * returns to the title card. */
+          handoff = '';
+          frame._clock = 0;
+          try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
+          statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+        }
+        return;
+      }
       let outcome = '';
       try { outcome = runtime.boot_title_step(edge); } catch (e) { return finish('new_game'); }
       /* Draw the card: black backdrop, title bands, then any text stand-in. */
@@ -758,7 +841,15 @@
         if (glyphBlit && draws.glyphs) glyphBlit.blit(ctx, draws.glyphs);
         if (fontBlit) fontBlit.blit(ctx, draws.texts);
       }
-      if (outcome) finish(outcome);   /* new_game / continue / options */
+      if (outcome === 'continue' || outcome === 'options') {
+        handoff = outcome;
+        frame._clock = 0;
+        statusEl.textContent = outcome === 'continue'
+          ? 'Pick a memory-card port, then a save block. Z confirms, X backs out.'
+          : 'Options. Up/Down picks a row, Z opens it, X returns to the title.';
+        return;
+      }
+      if (outcome) finish(outcome);   /* new_game */
     };
     bootTitleRAF = requestAnimationFrame(frame);
   }

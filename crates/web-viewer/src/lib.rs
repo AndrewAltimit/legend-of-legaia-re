@@ -116,9 +116,10 @@ enum TmdSource {
     /// scene_tmd_stream wrapper: 4-byte chunk0 header + bare TMD.
     ///
     /// These are battle-stage backdrop shells, and every one is authored as
-    /// **half** a bowl (see `docs/reference/re-do-not-re-walk.md`) - which is
-    /// why this variant is the one `LegaiaViewer::tmd_note` labels, so the
-    /// shape does not read as a broken parse.
+    /// **half** a bowl that retail closes by drawing the same mesh a second
+    /// time under a per-stage transform (`legaia_asset::battle_backdrop`).
+    /// This variant is therefore both the one `LegaiaViewer::tmd_note`
+    /// labels and the one whose mesh gets placed rather than drawn raw.
     SceneTmdStream { offset: usize, len: usize },
     /// TMD packed inside one of the entry's LZS-decompressed sections.
     /// Field/town scene_asset_table entries store their environment-geometry
@@ -223,6 +224,12 @@ pub struct LegaiaViewer {
     /// load time. Resolves what the Evil God Icon steals from each monster (item
     /// + chance) for the enemy table. `None` on raw PROT.DAT loads (no SCUS).
     steal_table: Option<legaia_asset::steal_table::StealTable>,
+    /// Per-stage battle-backdrop mirror table (`DAT_80078B50`) decoded from
+    /// `SCUS_942.54` at load time. Selects which of the two transforms a
+    /// `scene_tmd_stream` backdrop's **second** copy gets. `None` on raw
+    /// PROT.DAT loads - the preview then uses retail's default (half turn)
+    /// and says the transform is unresolved.
+    backdrop_mirror: Option<legaia_asset::battle_backdrop::MirrorXTable>,
     /// Flat catalog of every standard PSX TIM in the loaded PROT.DAT image,
     /// built at load time from the TOC (see [`tim_catalog`]). Drives the
     /// "TIM Catalog" browse mode: page through every TIM by id with its CLUT

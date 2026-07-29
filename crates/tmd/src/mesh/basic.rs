@@ -42,6 +42,32 @@ impl Mesh {
         }
         (lo, hi)
     }
+
+    /// Append a second instance of `src`, scaled per axis.
+    ///
+    /// A negative-determinant scale reverses triangle winding, so the
+    /// appended indices are emitted in reverse corner order to keep the
+    /// copy's facing consistent with the original. This is the mesh-side
+    /// equivalent of the draw-mode swap retail performs for the same case
+    /// (see `legaia_asset::battle_backdrop`).
+    pub fn append_scaled(&mut self, src: &Mesh, scale: [f32; 3]) {
+        let base = self.positions.len() as u32;
+        self.positions.extend(
+            src.positions
+                .iter()
+                .map(|p| [p[0] * scale[0], p[1] * scale[1], p[2] * scale[2]]),
+        );
+        let flip = scale[0] * scale[1] * scale[2] < 0.0;
+        for t in src.indices.chunks_exact(3) {
+            if flip {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[2], base + t[1]]);
+            } else {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[1], base + t[2]]);
+            }
+        }
+    }
 }
 
 /// Build a triangulated mesh from a parsed TMD plus the original buffer

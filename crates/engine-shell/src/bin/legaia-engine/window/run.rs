@@ -446,7 +446,25 @@ pub(super) fn cmd_play_window_with_record(
                         a.battle.hp = 100;
                     }
                 }
-                log::info!("play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight");
+                // Tag the monster seat with an id. `enter_battle` only seats
+                // actors; the id is what a step-driven encounter would have
+                // written from its resolved formation, and the whole battle
+                // RENDER path keys on it - `battle_monster_slots()` is empty
+                // without it, so `enter_battle_render` returns before it
+                // builds the stage backdrop or the ground grid. Without this
+                // the forced fight showed the field scene behind its HUD.
+                // `LEGAIA_BATTLE_TUTORIAL_MONSTER` picks the id.
+                let mid: u16 = std::env::var("LEGAIA_BATTLE_TUTORIAL_MONSTER")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1);
+                if let Some(a) = world.actors.get_mut(pc as usize) {
+                    a.battle_monster_id = Some(mid);
+                }
+                log::info!(
+                    "play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight \
+                     (monster id {mid})"
+                );
             }
         }
     }
@@ -820,7 +838,6 @@ pub(super) fn cmd_play_window_with_record(
         battle_ground_mesh: None,
         prev_scene_mode: None,
         monster_archive: None,
-        muscle_ladder_round: 0,
         battle_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,

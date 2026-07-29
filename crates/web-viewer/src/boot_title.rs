@@ -8,8 +8,18 @@
 //! MainMenu, and the page blits the title-TIM bands (wordmark, Press Start,
 //! NEW GAME / CONTINUE rows, copyright lines) onto the same overlay canvas the
 //! pause menu uses, over black. Picking New Game hands control back to the page,
-//! which seeds the retail new-game defaults and enters the opening scene exactly
-//! as before. Publisher logos + the Continue save-slot grid are not yet wired.
+//! which seeds the retail new-game defaults and enters the opening scene.
+//!
+//! **All three rows are live.** Continue is enabled off a save scan (the
+//! memory-card rack, this host's save store) exactly as the native window
+//! picks `TitleSession::new()` vs `::without_save_data()` off `scan_save_dir`,
+//! and Continue / Options route to the retail save-select and options
+//! screens through the pause menu's own rows
+//! ([`LegaiaRuntime::play_menu_open_row`]) rather than through a second copy
+//! of either screen. The page used to call `without_save_data()`
+//! unconditionally and then discard the outcome, so both rows were dead on a
+//! host that could already load and persist saves. Publisher logos are still
+//! not wired.
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
@@ -89,9 +99,17 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
-    /// Start the boot title screen. No-op with no disc loaded. Continue is left
-    /// disabled (the browser boot does not preload an engine save); the fade-in
-    /// is skipped so the card shows immediately.
+    /// Start the boot title screen. No-op with no disc loaded. The fade-in is
+    /// skipped so the card shows immediately.
+    ///
+    /// **Continue is enabled off a live save scan**, the way the native
+    /// window picks `TitleSession::new()` vs `::without_save_data()` from
+    /// `scan_save_dir`. The browser's save store is the memory-card rack
+    /// ([`crate::cards`]) - the same rack the pause menu's Load / Save rows
+    /// write through - so the scan is "does any inserted card hold a readable
+    /// block". The page used to call `without_save_data()` unconditionally and
+    /// then discard the outcome, which left both non-New-Game rows dead on a
+    /// host that could already load and persist saves.
     pub fn boot_title_start(&mut self) {
         if self.scene_host.is_none() {
             return;
@@ -100,9 +118,21 @@ impl LegaiaRuntime {
         let _ = self.ensure_menu_assets();
         self.ensure_title_atlas();
         self.ensure_menu_glyph_atlas();
-        let mut session = TitleSession::without_save_data();
+        let mut session = if self.boot_title_has_save_data() {
+            TitleSession::new()
+        } else {
+            TitleSession::without_save_data()
+        };
         session.skip_fade_in();
         self.boot_title = Some(session);
+    }
+
+    /// Whether the page holds any loadable save - the browser twin of the
+    /// native boot's `scan_save_dir(..).any(|s| s.present)`. Public so the
+    /// page can label the Continue row honestly before the title even opens.
+    pub fn boot_title_has_save_data(&self) -> bool {
+        (0..crate::cards::CARD_SLOTS)
+            .any(|port| self.card_block_snapshots(port).iter().any(|b| b.present))
     }
 
     pub fn boot_title_is_active(&self) -> bool {
@@ -137,8 +167,26 @@ impl LegaiaRuntime {
                 self.boot_title = None;
                 match o {
                     TitleOutcome::NewGame => "new_game".to_string(),
-                    TitleOutcome::Continue => "continue".to_string(),
-                    TitleOutcome::Options => "options".to_string(),
+                    // Continue and Options route to the same two screens the
+                    // native window routes them to - the retail save-select
+                    // and the retail options screen - reached here through
+                    // the pause menu's own rows rather than through a second
+                    // copy of either. The page then drives `play_menu_input`
+                    // / `play_menu_draws_json` until the menu closes.
+                    TitleOutcome::Continue => {
+                        if self.play_menu_open_row("Load") {
+                            "continue".to_string()
+                        } else {
+                            "new_game".to_string()
+                        }
+                    }
+                    TitleOutcome::Options => {
+                        if self.play_menu_open_row("Options") {
+                            "options".to_string()
+                        } else {
+                            "new_game".to_string()
+                        }
+                    }
                 }
             }
             None => String::new(),

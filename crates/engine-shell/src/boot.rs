@@ -917,16 +917,12 @@ impl BootSession {
             if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
                 log::warn!("BGM bank not staged after scene enter: {e:#}");
             }
-            // Op-`0x35` sub-op 9 (`BgmDirector::queue`) is a DEFERRED start:
-            // the director stashes the resolved bytes and something has to
-            // trigger them. Scene entry is that trigger - and until now
-            // `flush_queue` had no caller in the binary at all, so every
-            // queued track was resolved, stored and silently dropped.
-            match bgm.flush_queue() {
-                Ok(true) => log::info!("BGM: flushed the queued track on scene enter"),
-                Ok(false) => {}
-                Err(e) => log::warn!("BGM queued track not started: {e:#}"),
-            }
+            // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
+            // changes music with - is a *start* behind a load barrier, not a
+            // queue for the next scene; it plays the moment
+            // `route_bgm_events` hands it over, one call above. Deferring it
+            // to this point is what left every Biron Monastery cutscene
+            // silent and then started its score over the next scene.
         }
         self.frames += 1;
         Ok(event)
