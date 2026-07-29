@@ -379,6 +379,27 @@ only geometry that is off-screen or behind the camera, which a depth-buffered
 projection discards anyway, and the port uploads the grid once while the
 camera orbits over it.
 
+**Where the tile comes from.** The two addresses are constant for the whole
+game, but the pixels behind them are not: each `scene_tmd_stream` entry carries
+its own TIM at framebuffer `(832, 0)` with a palette at `(0, 479)`, so the
+floor changes per stage while the emitter never does. 178 of the 182 backdrop
+entries carry that pair, and **no** entry fills that page under a different
+palette - which is what pins the constants against the corpus rather than
+against one stage. The four that carry neither must draw no floor at all: an
+untextured grid is a flat slab across the whole stage, which is a worse artifact
+than an absent one. `battle_backdrop::ground_grid_drawable` is that decision,
+shared so the two viewers cannot answer it differently, and the sweep is
+`the_ground_tile_is_addressed_by_the_emitters_own_constants`.
+
+The asset-viewer PROT browser and the browser entry viewer both draw the grid
+under a backdrop. Two traps sit on that path. The grid is appended **after** the
+shell's second copy, because it is world-fixed rather than part of the shell and
+handing it to the transform would draw it twice, once flipped in `Z`. And the
+browser viewer's VRAM upload is *targeted* - it uploads only the blocks the
+TMD's own primitives sample - so the grid's page has to be added to that request
+by name (`ground_page_rect` / `ground_clut_rect`); left out, the mesh builds
+fine and the floor draws untextured, a failure visible only on screen.
+
 > **Correction.** An earlier reading called the backdrop the *world-map continent
 > heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
 > positive** (3 degenerate `clut=0` `POLY_FT4` prims stride-1 flooding that
@@ -503,9 +524,9 @@ takes the half turn. Stage id + 3 is the PROT extraction index, and every one
 of the 98 distinct ids resolves to a `scene_tmd_stream` entry under that
 offset.
 
-**The table is a geometric decision.** A shell whose open side faces `-Z` is
-symmetric about `X = 0`, so reflecting it in the YZ plane reproduces it in
-place and fills nothing - only a half turn closes it. Of the 49 `-Z`-open
+**The table respects one geometric constraint.** A shell whose open side faces
+`-Z` is symmetric about `X = 0`, so reflecting it in the YZ plane reproduces it
+in place and fills nothing - only a half turn closes it. Of the 49 `-Z`-open
 shells in the corpus, **zero** are on the mirror list; of the 133 X-open
 shells, 98 are. Parser `legaia_asset::battle_backdrop`; the disjointness sweep
 is `no_z_open_shell_takes_the_mirror_transform` in
@@ -516,6 +537,31 @@ reflection, not a half turn. Applying the half turn there instead plants a
 second village wall across the open sea side, which is the artifact that once
 read as "no completion exists" (see
 [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)).
+
+#### The choice is authorial, not derivable
+
+Beyond that one constraint the table is hand-maintained per-stage data, and a
+viewer that tries to infer it from the mesh will be wrong. 39 backdrop meshes
+are carried by more than one PROT entry, byte for byte, and retail's table
+splits **12** of those groups across the two transforms.
+
+The clearest case is the Conkram family. `0730_concend` and `0736_conc3` are
+identical files - `concend` carries `conc3`'s three stage meshes in reverse
+slot order - and the table names `conc3`'s variants while naming none of
+`concend`'s. So the same mesh is half-turned in one scene and mirrored in the
+other, and the two renders differ visibly in where the colonnade and the
+stairs sit around the ring. Neither is a port defect. `conc` and `conc2` take
+the mirror alongside `conc3`; `urudre2` takes the half turn alongside
+`concend`.
+
+One group is split **inside a single scene**: `0321_balden2` is mirrored and
+`0322_balden2` is half-turned on identical bytes. That rules out any per-scene
+rule as well as any per-mesh one. It also shows what the choice costs where it
+does not matter - that shell's cut section is exactly symmetric in `z`, and a
+`z`-symmetric half is carried to the same point set by both transforms, so the
+two draws are indistinguishable. Retail can differ freely wherever that holds.
+
+Sweep: `the_second_copy_transform_is_not_a_function_of_the_mesh`.
 
 #### The sibling table at `DAT_80078C1C` - a depth-cue selector, not geometry
 

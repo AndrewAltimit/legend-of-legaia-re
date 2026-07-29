@@ -1,19 +1,27 @@
 //! Disc-gated sweep pinning [`legaia_asset::battle_backdrop`] against the
 //! retail corpus.
 //!
-//! Two properties carry the weight here, and both are corpus-level - no
-//! single entry proves either.
+//! Four properties carry the weight here, and all are corpus-level - no
+//! single entry proves any of them.
 //!
 //! 1. **The id space.** The mirror table holds runtime stage ids; the
 //!    viewers hold PROT extraction indices. The mapping is a constant
 //!    offset, and the evidence for it is that *every* distinct id in the
 //!    table lands on a `scene_tmd_stream` entry under it. A wrong offset
 //!    leaves misses.
-//! 2. **The table is a geometric decision, not a list.** A shell whose
-//!    open side faces `-Z` is symmetric about `X = 0`, so mirroring in X
-//!    maps it onto itself and fills nothing; only a half turn closes it.
-//!    Retail never puts such a shell on the mirror list. That the two
-//!    partitions are exactly disjoint is what rules out coincidence.
+//! 2. **The table respects one geometric constraint.** A shell whose open
+//!    side faces `-Z` is symmetric about `X = 0`, so mirroring in X maps it
+//!    onto itself and fills nothing; only a half turn closes it. Retail
+//!    never puts such a shell on the mirror list.
+//! 3. **...but it is not otherwise derivable from the mesh.** Many backdrop
+//!    meshes are shared verbatim between scenes, and the table splits a
+//!    quarter of those groups across the two transforms. So a viewer must
+//!    read the table, and two entries that are the same place can be placed
+//!    differently without either being wrong.
+//! 4. **The ground tile is per-entry and all-or-nothing.** The grid emitter
+//!    hardcodes one page and one CLUT address for the whole game; nearly
+//!    every backdrop entry carries a TIM at exactly those addresses, and
+//!    none carries that page under a different palette.
 //!
 //! Skips silently when `LEGAIA_DISC_BIN` is unset or the extracted files
 //! aren't on disk.
@@ -44,6 +52,37 @@ struct Backdrop {
     open: OpenSide,
     tmd: legaia_tmd::Tmd,
     tmd_bytes: Vec<u8>,
+    raw: Vec<u8>,
+}
+
+impl Backdrop {
+    /// The scene name the extractor's `NNNN_<name>.BIN` label carries.
+    fn scene(&self) -> &str {
+        self.name
+            .split_once('_')
+            .map_or("", |(_, rest)| rest.trim_end_matches(".BIN"))
+    }
+
+    /// The entry's own VRAM, built the way a viewer builds it: every TIM the
+    /// entry carries, uploaded to the framebuffer slot its header names.
+    fn vram(&self) -> legaia_tim::Vram {
+        let mut vram = legaia_tim::Vram::new();
+        let scan = legaia_asset::tim_scan::scan_entry(&self.raw);
+        for (source, hit) in &scan.hits {
+            let buf: Option<&[u8]> = match source {
+                legaia_asset::tim_scan::Source::Raw => self.raw.get(hit.offset..),
+                legaia_asset::tim_scan::Source::Lzs(i) => {
+                    scan.lzs_sections.get(*i).and_then(|s| s.get(hit.offset..))
+                }
+            };
+            if let Some(b) = buf
+                && let Ok(tim) = legaia_tim::parse(b)
+            {
+                vram.upload_tim(&tim);
+            }
+        }
+        vram
+    }
 }
 
 fn corpus(root: &std::path::Path) -> Vec<Backdrop> {
@@ -70,6 +109,7 @@ fn corpus(root: &std::path::Path) -> Vec<Backdrop> {
             open: shape.open,
             tmd_bytes: raw[stream.tmd_range()].to_vec(),
             tmd,
+            raw,
         });
     }
     out
@@ -232,4 +272,206 @@ fn the_second_copy_closes_every_shell() {
     }
     let (f, name) = worst.expect("at least one backdrop");
     eprintln!("least-symmetric placed backdrop: {name} at {f:.4} (0.5 = perfect)");
+}
+
+/// The ground tile is per-entry data, and it is either wholly there or
+/// wholly absent.
+///
+/// The grid emitter hardcodes one page address and one CLUT address for
+/// every stage in the game, which reads like a guess until you check what
+/// the entries carry: a large majority put a TIM at exactly that page with
+/// its palette at exactly that row, and **no** entry puts one at that page
+/// under a different palette. That disjointness is the evidence - a wrong
+/// page constant would land on entries that palette it elsewhere.
+///
+/// It is also what lets a viewer decide honestly whether to draw a floor:
+/// an untextured grid is a flat slab across the whole stage, so an entry
+/// without the tile has to draw none.
+#[test]
+fn the_ground_tile_is_addressed_by_the_emitters_own_constants() {
+    let Some(root) = extracted_dir() else {
+        eprintln!("[skip] extracted/ incomplete");
+        return;
+    };
+    use legaia_asset::battle_backdrop as bd;
+    let (page_x, page_y) = bd::ground_page_xy();
+    let (clut_x, clut_y) = bd::ground_clut_xy();
+
+    let (win_x, win_y, win_w, win_h) = bd::ground_page_rect();
+    let mut drawable = 0usize;
+    let mut page_without_clut = Vec::new();
+    let mut lost_to_prim_heuristic = Vec::new();
+    for b in corpus(&root) {
+        let vram = b.vram();
+        let has_page = vram.region_has_data(
+            win_x as usize,
+            win_y as usize,
+            win_w as usize,
+            win_h as usize,
+        );
+        let has_clut = vram.region_has_data(clut_x as usize, clut_y as usize, 16, 1);
+        assert_eq!(
+            bd::ground_grid_drawable(&vram),
+            has_page && has_clut,
+            "{}: the drawability predicate disagrees with the two regions it is made of",
+            b.name
+        );
+        if has_page && !has_clut {
+            page_without_clut.push(b.name.clone());
+        }
+        if has_page && has_clut {
+            drawable += 1;
+        }
+        // The predicate carries a second rule the two region checks do not:
+        // it rejects a 4bpp prim whose CLUT scanline is populated past 256
+        // entries, as a row that wide is more likely a texture misread as a
+        // palette. Row 479 is the shared NPC CLUT row, so that could in
+        // principle fire here. On the retail corpus it never does - and the
+        // day it starts to, this is the arm that says so rather than a floor
+        // quietly disappearing from one scene.
+        if has_page && has_clut && !bd::ground_grid_drawable(&vram) {
+            lost_to_prim_heuristic.push(b.name.clone());
+        }
+    }
+    assert!(
+        page_without_clut.is_empty(),
+        "these entries fill the ground page but palette it somewhere other than \
+         row {clut_y}, which the page constant should have made impossible: {page_without_clut:?}"
+    );
+    // Non-vacuity: both sides of the split have to be populated, or the
+    // predicate is untested in one direction.
+    assert!(
+        drawable > BACKDROP_ENTRIES / 2 && drawable < BACKDROP_ENTRIES,
+        "{drawable} of {BACKDROP_ENTRIES} backdrops carry the ground tile - \
+         a split this lopsided means the constants or the scan changed"
+    );
+    assert!(
+        lost_to_prim_heuristic.is_empty(),
+        "these entries carry the tile and its palette but the wide-CLUT-row \
+         heuristic suppresses the floor anyway - decide deliberately whether \
+         row 479 is a palette row here before letting it drop: \
+         {lost_to_prim_heuristic:?}"
+    );
+    eprintln!(
+        "{drawable} of {BACKDROP_ENTRIES} backdrops carry the ground tile at \
+         page ({page_x},{page_y}) / CLUT ({clut_x},{clut_y}); \
+         {} do not and so draw no floor",
+        BACKDROP_ENTRIES - drawable
+    );
+}
+
+/// The mirror table is authorial per-stage data, **not** a property of the
+/// mesh - so a viewer cannot derive it, and two entries that look like the
+/// same place can legitimately be placed differently.
+///
+/// This is the shape of a recurring bug report: a stage renders with its
+/// far half rotated where a byte-identical stage elsewhere renders it
+/// reflected, and the difference reads as a port defect. It is not. Many
+/// backdrop meshes are shared verbatim between scenes, and retail's table
+/// splits several of those groups across the two transforms - including
+/// one pair of byte-identical entries **inside a single scene**, which no
+/// geometric rule could ever separate.
+///
+/// The reason it costs retail nothing is in the second half of the check:
+/// where the split is within one scene, the shell's cut section is exactly
+/// symmetric in `z`, and a `z`-symmetric half is mapped to the same set by
+/// both transforms. The choice is only visible where the halves differ.
+#[test]
+fn the_second_copy_transform_is_not_a_function_of_the_mesh() {
+    let Some(root) = extracted_dir() else {
+        eprintln!("[skip] extracted/ incomplete");
+        return;
+    };
+    let scus = std::fs::read(root.join("SCUS_942.54")).expect("read SCUS");
+    let table = MirrorXTable::from_scus(&scus).expect("mirror table");
+
+    // Group the corpus by exact mesh bytes.
+    let mut by_mesh: std::collections::BTreeMap<Vec<u8>, Vec<Backdrop>> = Default::default();
+    for b in corpus(&root) {
+        by_mesh.entry(b.tmd_bytes.clone()).or_default().push(b);
+    }
+    let shared: Vec<&Vec<Backdrop>> = by_mesh.values().filter(|g| g.len() > 1).collect();
+    let mut split = Vec::new();
+    let mut split_within_one_scene = Vec::new();
+    for g in &shared {
+        let verdicts: Vec<SecondCopy> = g
+            .iter()
+            .map(|b| table.second_copy_for_prot_index(b.prot_index))
+            .collect();
+        if verdicts.windows(2).all(|w| w[0] == w[1]) {
+            continue;
+        }
+        split.push(
+            g.iter()
+                .map(|b| {
+                    format!(
+                        "{}={:?}",
+                        b.name,
+                        table.second_copy_for_prot_index(b.prot_index)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        // A group spanning several scenes can still be split *inside* one of
+        // them, and that is the case worth having: it is the one no per-scene
+        // rule could explain. Test each scene's own members, not the group's.
+        let mut per_scene: std::collections::BTreeMap<&str, Vec<SecondCopy>> = Default::default();
+        for b in g.iter() {
+            per_scene
+                .entry(b.scene())
+                .or_default()
+                .push(table.second_copy_for_prot_index(b.prot_index));
+        }
+        if per_scene
+            .values()
+            .any(|v| !v.windows(2).all(|w| w[0] == w[1]))
+        {
+            split_within_one_scene.push(g);
+        }
+    }
+    assert!(
+        !shared.is_empty() && !split.is_empty(),
+        "sweep is vacuous: {} shared-mesh groups, {} split",
+        shared.len(),
+        split.len()
+    );
+    assert!(
+        !split_within_one_scene.is_empty(),
+        "no byte-identical pair inside one scene is split across the two \
+         transforms - without one, 'the table is not a mesh property' rests \
+         only on cross-scene pairs and a per-scene rule could still explain it"
+    );
+    for g in &split_within_one_scene {
+        // Both transforms agree on a z-symmetric half, which is why retail
+        // can differ here without it showing.
+        let cut: BTreeSet<(i16, i16)> = g[0]
+            .tmd
+            .objects
+            .first()
+            .expect("object 0")
+            .vertices
+            .iter()
+            .filter(|v| v.x.unsigned_abs() <= 250)
+            .map(|v| (v.y, v.z))
+            .collect();
+        assert!(!cut.is_empty(), "{}: no cut-plane vertices", g[0].name);
+        let flipped: BTreeSet<(i16, i16)> = cut.iter().map(|&(y, z)| (y, -z)).collect();
+        assert_eq!(
+            cut, flipped,
+            "{} is split within one scene on a half that is NOT z-symmetric, so \
+             the two transforms give visibly different rings - that would make \
+             retail's own data self-contradictory rather than merely redundant",
+            g[0].name
+        );
+    }
+    eprintln!(
+        "{} backdrop meshes are shared by more than one entry; retail's table \
+         splits {} of those groups across the two transforms ({} of them inside \
+         a single scene): {:?}",
+        shared.len(),
+        split.len(),
+        split_within_one_scene.len(),
+        split
+    );
 }

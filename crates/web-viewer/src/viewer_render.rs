@@ -69,7 +69,19 @@ impl LegaiaViewer {
             return None;
         }
         let buf = &self.disc[off..end];
-        let needs = self.tmd_prim_targets();
+        let mut needs = self.tmd_prim_targets();
+        // The battle ground grid is emitted by code, not carried in the TMD,
+        // so nothing in `needs` asks for the page it samples. Left out, the
+        // targeted upload skips the one block the floor reads and the grid
+        // draws untextured - the failure is invisible in the mesh build and
+        // only shows on screen. An empty `needs` means "upload everything",
+        // which already covers the tile, so only a targeting run needs this.
+        if !needs.is_empty() && self.backdrop_second_copy(entry).is_some() {
+            needs.push(PrimTarget {
+                clut: legaia_asset::battle_backdrop::ground_clut_rect(),
+                page: legaia_asset::battle_backdrop::ground_page_rect(),
+            });
+        }
         let mut vram = legaia_tim::Vram::new();
         let scan = tim_scan::scan_entry(buf);
         for (source, hit) in &scan.hits {
@@ -189,7 +201,7 @@ impl LegaiaViewer {
             None => tmd,
         };
         let vram = self.build_current_vram();
-        let mut mesh = match vram {
+        let mut mesh = match &vram {
             Some(v) => {
                 legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, &tmd_buf, |cba, tsb, uvs| {
                     v.prim_has_texture_data(cba, tsb, uvs)
@@ -200,6 +212,18 @@ impl LegaiaViewer {
         if let Some((copy, _)) = second {
             let first = mesh.clone();
             mesh.append_scaled(&first, copy.scale());
+            // Order matters: the grid is retail's own world-fixed floor, not
+            // part of the shell. Appended before the second copy it would be
+            // handed to the transform and drawn twice, once upside-down in Z.
+            if vram
+                .as_ref()
+                .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+            {
+                mesh.append_scaled(
+                    &legaia_asset::battle_backdrop::build_ground_grid(),
+                    [1.0, 1.0, 1.0],
+                );
+            }
         }
         Some(mesh)
     }
@@ -460,7 +484,25 @@ impl LegaiaViewer {
             return String::new();
         };
         let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
-        legaia_asset::battle_backdrop::describe_placement(shape.as_ref(), resolved.then_some(copy))
+        let mut note = legaia_asset::battle_backdrop::describe_placement(
+            shape.as_ref(),
+            resolved.then_some(copy),
+        );
+        // Say whether the floor is there, and say it from the same predicate
+        // the mesh build uses - a note that claimed a floor the build then
+        // skipped would be worse than no note. `status()` only ever asks
+        // about the current entry, which is what makes this VRAM build the
+        // right one, and it runs on entry change rather than per frame.
+        if self
+            .build_current_vram()
+            .as_ref()
+            .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+        {
+            note.push_str(", over retail's tiled ground grid");
+        } else {
+            note.push_str("; no ground tile in this entry, so no floor is drawn");
+        }
+        note
     }
 
     pub(crate) fn render_tim_at(

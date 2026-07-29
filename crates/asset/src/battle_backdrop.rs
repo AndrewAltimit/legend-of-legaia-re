@@ -330,6 +330,74 @@ pub const GRID_SUB_TILES_PER_SIDE: i32 = 2;
 /// foreground.
 pub const GRID_PLANE_Y: f32 = 1.0;
 
+/// Framebuffer `(x, y)` of the ground tile's texture page, decoded from
+/// [`GROUND_TSB`] rather than restated - the two must not be able to drift.
+pub const fn ground_page_xy() -> (u16, u16) {
+    ((GROUND_TSB & 0xF) * 64, ((GROUND_TSB >> 4) & 1) * 256)
+}
+
+/// Framebuffer `(x, y)` of the ground tile's 16-entry CLUT row, decoded from
+/// [`GROUND_CBA`].
+pub const fn ground_clut_xy() -> (u16, u16) {
+    ((GROUND_CBA & 0x3F) * 16, (GROUND_CBA >> 6) & 0x1FF)
+}
+
+/// The ground tile's CLUT row as a VRAM rectangle `(x, y, w, h)` in 16-bit
+/// words - what a targeted upload has to be asked for by name.
+pub const fn ground_clut_rect() -> (u16, u16, u16, u16) {
+    let (x, y) = ground_clut_xy();
+    (x, y, 16, 1)
+}
+
+/// The window of the ground tile's page the emitter actually samples, as a
+/// VRAM rectangle `(x, y, w, h)` in 16-bit words.
+///
+/// The UVs are texel coordinates and the page is 4bpp, so four texels share
+/// one word and the `u` span divides by 4; `v` is one row per texel either
+/// way. The `(192..=255)^2` window therefore lands 48 words into the page
+/// and is 16 words wide by 64 rows tall.
+pub const fn ground_page_rect() -> (u16, u16, u16, u16) {
+    let (px, py) = ground_page_xy();
+    let span = (0xFF - GROUND_UV_BASE as u16) + 1;
+    (
+        px + GROUND_UV_BASE as u16 / 4,
+        py + GROUND_UV_BASE as u16,
+        span / 4,
+        span,
+    )
+}
+
+/// Corners of the sampled UV window, for a host asking "is the ground tile
+/// resident?" through the same per-primitive predicate it uses for the mesh.
+///
+/// A backdrop entry that does not carry the tile must draw **no** floor at
+/// all: an untextured grid is a flat slab across the whole stage, which is
+/// far more wrong than an absent one. Of the retail backdrops, 141 carry the
+/// page and its CLUT together and none carries the page under a different
+/// CLUT, so the predicate is a clean split rather than a guess.
+pub const GROUND_UV_PROBE: [(u8, u8); 4] = [
+    (GROUND_UV_BASE, GROUND_UV_BASE),
+    (0xFF, GROUND_UV_BASE),
+    (GROUND_UV_BASE, 0xFF),
+    (0xFF, 0xFF),
+];
+
+/// Whether the ground grid can be drawn against this VRAM - the window the
+/// emitter samples **and** its CLUT row both have to be resident.
+///
+/// Lives here rather than in a host so the two viewers cannot answer it
+/// differently: a floor is either textured from the entry's own tile or it
+/// is not drawn.
+///
+/// This is the same predicate the shell's own primitives are filtered
+/// through, so the floor and the walls cannot disagree about what is
+/// resident. Note the window: the tile occupies only the last quarter of
+/// its page in each axis, and asking about the whole page instead answers
+/// yes for entries whose page holds something else entirely.
+pub fn ground_grid_drawable(vram: &legaia_tim::Vram) -> bool {
+    vram.prim_has_texture_data(GROUND_CBA, GROUND_TSB, &GROUND_UV_PROBE)
+}
+
 /// One sub-tile's UV window as `(u_lo, v_lo, u_hi, v_hi)`, inclusive.
 ///
 /// These are the emitter's own UV word table, built by the `lui`/`ori` block
@@ -737,6 +805,40 @@ mod ground_grid_tests {
     fn every_quad_uses_the_pinned_page_and_clut() {
         let m = build_ground_grid();
         assert!(m.cba_tsb.iter().all(|c| *c == [GROUND_CBA, GROUND_TSB]));
+    }
+
+    /// The tile lives where the retail attribute words say, and the decode
+    /// runs off those words rather than beside them.
+    #[test]
+    fn the_tile_address_decodes_to_the_retail_framebuffer_slots() {
+        assert_eq!(ground_page_xy(), (832, 0));
+        assert_eq!(ground_clut_xy(), (0, 479));
+        assert_eq!(ground_clut_rect(), (0, 479, 16, 1));
+        // 4bpp: the (192..=255)^2 texel window is 16 words wide, 64 rows tall,
+        // starting 48 words into the page.
+        assert_eq!(ground_page_rect(), (832 + 48, 192, 16, 64));
+    }
+
+    /// The residency probe has to sit inside the window the emitter samples,
+    /// or a host could upload a page the grid never reads and still believe
+    /// the floor is textured.
+    #[test]
+    fn the_probe_corners_bound_the_sampled_window() {
+        let us: Vec<u8> = GROUND_UV_PROBE.iter().map(|c| c.0).collect();
+        let vs: Vec<u8> = GROUND_UV_PROBE.iter().map(|c| c.1).collect();
+        assert_eq!(us.iter().copied().min(), Some(GROUND_UV_BASE));
+        assert_eq!(vs.iter().copied().min(), Some(GROUND_UV_BASE));
+        assert_eq!(
+            (us.iter().max(), vs.iter().max()),
+            (Some(&0xFF), Some(&0xFF))
+        );
+        // ...and the grid never samples outside those corners.
+        let m = build_ground_grid();
+        assert!(
+            m.uvs
+                .iter()
+                .all(|uv| uv[0] >= GROUND_UV_BASE && uv[1] >= GROUND_UV_BASE)
+        );
     }
 }
 

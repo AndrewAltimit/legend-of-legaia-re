@@ -185,6 +185,16 @@ pub(crate) fn display_for_prot_entry(
         let second = backdrop_second_copy.unwrap_or(backdrop::SecondCopy::HalfTurn);
         let copy = mesh.clone();
         mesh.append_scaled(&copy, second.scale());
+        // Retail's procedural floor, appended after the second copy so the
+        // shell transform never reaches it. This preview is untextured, so
+        // the tile-residency gate the textured host applies would say
+        // nothing here - the grid is drawn for its geometry, which is what
+        // the flat preview shows anyway.
+        let grid = backdrop::build_ground_grid();
+        let (shell_verts, shell_tris) = (mesh.positions.len(), mesh.indices.len() / 3);
+        let base = mesh.positions.len() as u32;
+        mesh.positions.extend_from_slice(&grid.positions);
+        mesh.indices.extend(grid.indices.iter().map(|i| i + base));
         if !mesh.indices.is_empty() {
             let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
             let placement = format!(
@@ -193,12 +203,14 @@ pub(crate) fn display_for_prot_entry(
             );
             return Some(Display {
                 title: format!(
-                    "{} [scene_tmd_stream: {} obj ({} drawn x2), {} verts, {} tris{}{}]",
+                    "{} [scene_tmd_stream: {} obj ({} drawn x2), {} verts, {} tris \
+                     + {} ground-grid tris{}{}]",
                     title,
                     tmd.objects.len(),
                     drawn.objects.len(),
-                    mesh.positions.len(),
-                    mesh.indices.len() / 3,
+                    shell_verts,
+                    shell_tris,
+                    grid.indices.len() / 3,
                     if s.tail_chunks.is_empty() {
                         String::new()
                     } else {
