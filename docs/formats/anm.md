@@ -359,7 +359,16 @@ tick) shows the pointer switch record 1 → record 0 while moving and back
 on stop, in both walk directions (no separate turn clip fires). The
 remaining bank slots (10 / 8 / 8 / 4 / 3-frame clips) are the
 run / interaction family; their per-slot roles are not yet
-capture-pinned.
+capture-pinned. A longer sibling capture
+(`scripts/pcsx-redux/autorun_locomotion_run_pin.lua` - 15 s of
+continuous held-pad walking in town01 free-roam, plus direction +
+Square / Circle chords) never moves the pointer off the walk record, so
+none of them is reachable as a held-pad "run" there; the select byte at
+`player+0x5C` reads only `1` (walking, record 0) / `2` (idle, record 1)
+across the capture - one higher than the record index, the same
+`id = record + 1` shape as the battle bank's display ids. Whatever
+triggers the remaining clips, it is not plain field locomotion, so they
+keep neutral labels.
 
 The consuming actor's object-pointer table at `actor[+0x44]`
 (`[u32 count][ptr × count]`, built by `FUN_80024D78` straight off the pool
