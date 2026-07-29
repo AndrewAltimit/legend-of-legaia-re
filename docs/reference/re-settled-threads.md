@@ -127,6 +127,7 @@ reserved/authoring data with no live consumer.
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
 | Battle-intro tile shatter - the side-face shade page | resolved (a resident field asset, not a transition upload) | `capture` | [details ↓](#battle-intro-tile-shatter---the-side-face-shade-page) |
 | Which stage-dome objects does the battle backdrop draw? | resolved (drop index 1, not "keep index 0") | `disassembly` + `capture` | The registration edits the object list rather than truncating it: each backdrop actor owns a private `0x9c` part table at `+0x44` (allocated at `0x80021184`), and `0x80051ad4..0x80051bac` applies one `count -= 1` plus one `entry[i] = entry[i+1]` shift from index 1 to each. Object **1** is dropped and everything else kept, gated on `_DAT_8007b64b == 0`. Indistinguishable from "draw object 0" on the two-object shells; on the seven four-object domes it keeps sky, mountains and the ground ring. See [battle.md](../subsystems/battle.md#object-1-is-dropped). |
+| Battle ground grid depth cue - the far colour | resolved (captured at the draw; port fogs the grid) | `capture` | [details ↓](#battle-ground-grid-depth-cue---the-far-colour) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
 | Endless camera orbit (Gaza 2 softlock) - the `0x19` attack-approach park | resolved (caught live; root-caused; disc fix shipped) | `capture` + `disassembly` | [details ↓](#endless-camera-orbit---the-0x19-attack-approach-park) |
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
@@ -210,6 +211,50 @@ that same signal); the FT4 handler's near cutoff `0x1F80037E` reads `0x10`;
 and `ZSF4` is `0x400`, so a primitive's OT depth is the plain four-corner SZ
 average. Full spec + engine wiring:
 [`cutscene.md`](../subsystems/cutscene.md#what-style-2s-emitter-builds).
+
+### Battle ground grid depth cue - the far colour
+
+*Status:* resolved - the far colour is the backdrop's staged far colour,
+read off the live GTE at the grid draw; the port's grid now fogs.
+
+The emitter `func_0x801d02c0` runs `DPCS` per projected lattice vertex with
+`IR0 = SZ >> 2` loaded bare (`srl` + `mtc2`, so no saturation - past
+`SZ = 0x4000` the blend extrapolates until the DPCS output clamp bounds it),
+and contains **zero `ctc2`**: the far colour it consumes is whatever the
+control file holds on entry. A save-state read cannot attribute that value
+to the grid pass, which is why the thread sat open on `(0, 0, 0)`-vs-
+`(4096, 4096, 4096)` snapshot noise.
+
+The probe `scripts/pcsx-redux/autorun_grid_far_colour.lua` attributes it by
+construction - exec breakpoints on the emitter entry and its first `DPCS`
+site (`0x801d061c`) dump control regs 21-23 at the draw:
+
+- Every battle hit shows `FC` = the **backdrop far-colour staging word at
+  `0x8007BB48`, times 16** into the 28.4 control registers. The grid shares
+  the backdrop's per-battle far colour; there is no separate grid base.
+- Settled values: `(0x40, 0x40, 0x40)` on ordinary stages (two town01
+  battles, stage ids `0x15` / `0x0C`) and `(0xFE, 0xFE, 0xFE)` on an
+  overworld battle (stage id `0x55`, on the 13-id `DAT_80078C1C` outdoor
+  table at SCUS file `0x6941C`). Both are exactly the neutral base
+  `0x808080` through `FUN_80050120`'s two derivation arms - `>> 1` indoor,
+  `(c - 0x010101) * 2` outdoor - so the missing "base" is the neutral grey.
+- The battle-intro fade ramps the staged word up from near-black at
+  `+0x020202` per frame for ~28 frames before it settles: an early Queen
+  Bee sample reading `(6, 6, 6)` was frame 1 of that ramp, not a per-stage
+  ambience.
+- `DQA = -64` / `DQB = 320 << 16` re-confirmed live at every hit, and a
+  field state never enters the emitter (the aliased field-overlay code at
+  the same VA idles at the white `(4096)^3` field FC - the source of the
+  old snapshot confusion).
+
+Port: `legaia_engine_vm::battle_ground_grid` carries the laws (`grid_ir0`,
+`grid_far_colour`, `OutdoorCueTable`, the ramp constants) with the SCUS
+table pinned by `crates/engine-vm/tests/battle_grid_cue_scus_real.rs`;
+`engine-render` gained the per-draw `DrawCue` staging (retail sets the DPCS
+inputs per drawn object), and the play-window battle grid draws under the
+`SZ >> 2` ramp toward the per-stage far colour. The browser play page draws
+no battle 3D layer at all (a disclosed render gap in `play_battle.rs`), so
+there is no second host to wire until that layer exists.
 
 ### Who calls the battle on-screen test `FUN_8005126C`?
 

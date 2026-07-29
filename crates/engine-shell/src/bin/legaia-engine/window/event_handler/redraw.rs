@@ -958,6 +958,7 @@ impl PlayWindowApp {
                     draws.push(SceneDraw {
                         mesh: hf_mesh,
                         mvp: cam,
+                        cue: None,
                     });
                 }
                 for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
@@ -965,6 +966,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * *model,
+                            cue: None,
                         });
                     }
                 }
@@ -973,7 +975,11 @@ impl PlayWindowApp {
                 // blank.
                 if self.ground_heightfield.is_none() && self.world_map_terrain_draws.is_empty() {
                     for mesh in &self.meshes {
-                        draws.push(SceneDraw { mesh, mvp: cam });
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam,
+                            cue: None,
+                        });
                     }
                 }
             } else {
@@ -1015,6 +1021,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
+                            cue: None,
                         });
                     }
                 } else {
@@ -1049,6 +1056,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh: hf_mesh,
                             mvp: cam,
+                            cue: None,
                         });
                     }
                     // Then the terrain / decor tile layer (drawn under
@@ -1064,6 +1072,7 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1109,6 +1118,7 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1121,6 +1131,7 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1128,6 +1139,7 @@ impl PlayWindowApp {
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * *model,
+                                cue: None,
                             });
                         }
                     }
@@ -1213,12 +1225,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,
+                                cue: None,
                             }),
                             (None, Some(mi)) => {
                                 if let Some(mesh) = self.meshes.get(mi) {
                                     draws.push(SceneDraw {
                                         mesh,
                                         mvp: cam * model,
+                                        cue: None,
                                     });
                                 }
                             }
@@ -1269,6 +1283,7 @@ impl PlayWindowApp {
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,
+                                cue: None,
                             });
                         }
                     }
@@ -1293,14 +1308,31 @@ impl PlayWindowApp {
                 // party stands on it and the foreground reads as grass
                 // instead of the bare clear colour. `cam` bakes in the
                 // Y-flip, so `* flip` recovers the raw PSX y=0 plane.
+                // The per-draw cue is the emitter's own DPCS depth cue:
+                // `IR0 = SZ >> 2` per vertex (unsaturated - `max_ir0`
+                // rides past 1.0 exactly like retail's bare `mtc2`),
+                // blending toward the battle's staged far colour, so the
+                // floor washes out with distance the way retail's does.
+                // The grid draws at raw PSX world units (no
+                // BATTLE_WORLD_SCALE), so its view depths are on the same
+                // scale as retail's SZ.
                 if in_battle
                     && let Some(gi) = self.battle_ground_mesh
                     && let Some(gmesh) = self.meshes.get(gi)
                 {
+                    use legaia_engine_vm::battle_ground_grid as grid;
                     let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                     draws.push(SceneDraw {
                         mesh: gmesh,
                         mvp: cam * flip,
+                        cue: self
+                            .battle_ground_cue_far
+                            .map(|far| legaia_engine_render::DrawCue {
+                                far,
+                                near_z: 0.0,
+                                far_z: grid::grid_cue_far_z(),
+                                max_ir0: grid::grid_cue_max_ir0(),
+                            }),
                     });
                 }
                 for (i, actor) in self.session.host.world.actors.iter().enumerate() {
@@ -1349,6 +1381,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: actor_cam * self.actor_model(i),
+                            cue: None,
                         });
                     }
                 }
@@ -1491,7 +1524,11 @@ impl PlayWindowApp {
             // docs/subsystems/effect-vm.md.
             let (effect_billboard, effect_lines) = self.build_effect_billboards(r, cam);
             if let Some(mesh) = effect_billboard.as_ref() {
-                draws.push(SceneDraw { mesh, mvp: cam });
+                draws.push(SceneDraw {
+                    mesh,
+                    mvp: cam,
+                    cue: None,
+                });
             }
             // World-map overlay lines: a kind-coded upright marker for
             // each placed entity (portal / NPC / encounter zone, from
@@ -1534,6 +1571,7 @@ impl PlayWindowApp {
                 draws.push(SceneDraw {
                     mesh,
                     mvp: fx_cam * *model,
+                    cue: None,
                 });
             }
 
@@ -1548,6 +1586,7 @@ impl PlayWindowApp {
                 draws.push(SceneDraw {
                     mesh,
                     mvp: fx_cam * *model,
+                    cue: None,
                 });
             }
             // Field move-VM effect parts (op 0x34 sub-3 stagers): resolve
@@ -1566,6 +1605,7 @@ impl PlayWindowApp {
                 draws.push(SceneDraw {
                     mesh,
                     mvp: fx_cam * *model,
+                    cue: None,
                 });
             }
             // Screen-effect widget overlays (the PROT-0900 mask /
@@ -1586,6 +1626,7 @@ impl PlayWindowApp {
                 draws.push(SceneDraw {
                     mesh: m,
                     mvp: screen_fx_mvp,
+                    cue: None,
                 });
             }
             if let Some(m) = &screen_fx_solid {

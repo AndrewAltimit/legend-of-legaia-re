@@ -164,53 +164,13 @@ process-matching helpers in
 
 ## Battle / rendering
 
-| Thread | Status | What would close it |
-|---|---|---|
-| Battle ground grid's depth cue - the far colour | partial - `DQA` / `DQB` pinned; the far colour `FC` is not | [details ↓](#battle-ground-grids-depth-cue---the-far-colour) |
-
-### Battle ground grid's depth cue - the far colour
-
-*Status:* two of three inputs pinned; the port draws the grid unfogged
-
-Retail's ground-grid emitter runs **`DPCS`** per vertex (`cop2 0x780010` at
-`0x801d061c` / `0x801d063c` / `0x801d0654` / `0x801d0688`, with `IR0` loaded
-from `SZ >> 2` immediately before each), so the battle floor **fades with
-distance**. The port's `build_ground_grid` emits `MODULATION_NEUTRAL` and no
-cue at all, which is why its grass reads at full brightness all the way to the
-horizon while retail's washes out.
-
-`DPCS` is `out = c + (fc - c) * ir0`, and the port already has the kernel -
-`engine_render::psx_light::depth_cue`, with a `psx_depth_cue` WGSL twin. Three
-control values feed it. Two are now pinned across nine save states spanning
-field, battle, battle-load and minigame phases
-(`crates/mednafen/tests/gte_projection_real.rs`):
-
-| Input | Value | Status |
-|---|---|---|
-| `DQA` | `-64` | pinned, and invariant across every phase measured |
-| `DQB` | `320 << 16` | pinned, likewise invariant |
-| `FC` (`RFC`/`GFC`/`BFC`, control regs 21-23) | **not pinned** | varies by phase; reads `(0,0,0)` in battle states and `(4096,4096,4096)` in field ones |
-
-**What would close it.** `FC` is a *snapshot* value: a save state captures
-whatever the last GTE setup left, and in a battle state that is as likely to
-be the UI pass as the grid pass. So reading it out of a state is not enough -
-the reading has to be attributed to the grid draw. Two routes, either
-sufficient:
-
-- A PCSX-Redux exec breakpoint on `func_0x801d02c0` that dumps control regs
-  21-23 on entry. That attributes the value to the grid pass by construction,
-  which a save state cannot.
-- The static writer: whatever calls `FUN_8003D268`-class far-colour setters
-  ahead of the mode-`0x15` render `FUN_80026f50`. The sibling stage table
-  `DAT_80078C1C` is already decoded and is part of this picture - it selects
-  the backdrop's depth-cue ceiling (`0x800` vs `0xC00`) and a far-colour
-  scaling arm (`>>1` versus `(c - 0x010101) * 2`) via `0x8007BDA8`, read in
-  `FUN_80050120` at `0x800505b8` and `0x800507fc`. Those are the arms that
-  *modify* a far colour; the base it starts from is the missing piece.
-
-Until then the grid stays unfogged, which is a visible but bounded
-divergence - and preferable to fogging it toward a guessed colour, which would
-be wrong in a way nothing downstream could detect.
+No open threads. The two most recent both closed by capture: the ground
+grid's depth-cue far colour - captured at the draw by an exec-breakpoint
+probe and wired into the port - see
+[`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up) -
+and the battle-intro tile shatter's side-face shade page, which resolved as
+a resident field asset and now draws - see
+[`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
 
 ## Audio / BGM

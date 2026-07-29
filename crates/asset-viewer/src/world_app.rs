@@ -323,6 +323,7 @@ impl ApplicationHandler for WorldApp {
                         .map(|(slot, m)| SceneDraw {
                             mesh: &m.mesh,
                             mvp: cam * self.actor_model(slot),
+                            cue: None,
                         })
                         .collect();
                     let scene = RenderScene {

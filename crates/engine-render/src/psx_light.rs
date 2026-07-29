@@ -207,6 +207,33 @@ mod tests {
         approx(depth_cue([0.0; 3], [1.0, 1.0, 1.0], 0.5), [0.5; 3]);
     }
 
+    /// The battle ground grid's capture-pinned cue, through this kernel:
+    /// the grid emitter (`func_0x801d02c0`) loads `IR0 = SZ >> 2` bare (no
+    /// saturation) and DPCS-blends its neutral `0x80` packet colour toward
+    /// the far colour read off the live GTE at the draw -
+    /// `(0x40, 0x40, 0x40)` on ordinary stages, `(0xFE, 0xFE, 0xFE)` on the
+    /// `DAT_80078C1C` outdoor stages (probe
+    /// `scripts/pcsx-redux/autorun_grid_far_colour.lua`; law + derivation in
+    /// `legaia_engine_vm::battle_ground_grid`). `ir0 > 1` extrapolates and
+    /// the output clamp bounds it, exactly like the GTE colour FIFO.
+    #[test]
+    fn depth_cue_pins_the_battle_grid_far_colours() {
+        let c = [128.0 / 255.0; 3]; // the grid quads' neutral packet colour
+        let indoor = [64.0 / 255.0; 3];
+        let outdoor = [254.0 / 255.0; 3];
+        // Full blend lands on the far colour.
+        approx(depth_cue(c, indoor, 1.0), indoor);
+        approx(depth_cue(c, outdoor, 1.0), outdoor);
+        // The far-cull edge (SZ = 0x6500 -> ir0 = 0x6500 / 0x4000): indoor
+        // keeps darkening past the far colour; outdoor saturates white.
+        let edge_ir0 = 0x6500 as f32 / 0x4000 as f32;
+        approx(
+            depth_cue(c, indoor, edge_ir0),
+            [(128.0 - 64.0 * edge_ir0) / 255.0; 3], // ~27/255
+        );
+        approx(depth_cue(c, outdoor, edge_ir0), [1.0; 3]);
+    }
+
     /// The palette-collapse law's fixed points and shape: black and the
     /// STP-only word are unchanged (transparency judgements survive the law),
     /// a pure green entry collapses to the warm `(L, L-1, L/2)` gold, and a
