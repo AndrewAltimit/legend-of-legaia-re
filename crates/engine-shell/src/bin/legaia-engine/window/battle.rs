@@ -336,6 +336,9 @@ impl PlayWindowApp {
         // resident). Appended after `battle_mesh_base`, so battle exit truncates
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
+        // REF: FUN_800513f0 - the backdrop registration whose object-list edit
+        // and second-copy transform this host consumes through
+        // `legaia_asset::battle_backdrop`.
         if let Some((_, (tmd, raw), second)) = &stage {
             // Retail's backdrop registration edits the object list rather
             // than truncating it: it drops index 1 and keeps the rest

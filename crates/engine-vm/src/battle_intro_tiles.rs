@@ -210,6 +210,8 @@ pub struct TileRecord {
     /// `+0x0C` / `+0x0E` / `+0x10` - the tile's **Euler angle triple**, seeded
     /// to zero.
     ///
+    /// REF: FUN_80026988 - the `RotMatrix` wrapper the angles feed.
+    ///
     /// `FUN_801D0D24` hands this to `RotMatrix` (`FUN_80026988`, which masks
     /// each angle `& 0xFFF`), and the matrix it builds becomes the per-tile
     /// **rotation**. `+0x10` is never integrated, so a tile only ever tumbles
@@ -514,6 +516,8 @@ pub struct TileTick {
 /// then hand the eight corner vectors to `FUN_80043390`. `FUN_801D0E54`
 /// itself contains no coprocessor instructions - it assembles a synthetic
 /// 10-primitive TMD object and delegates.
+///
+/// REF: FUN_80043390 - the object dispatcher the tile emitter delegates to.
 ///
 /// PORT: FUN_801D0D24
 ///
