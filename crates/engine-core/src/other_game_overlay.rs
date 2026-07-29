@@ -10,30 +10,34 @@
 //! Provenance: `ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`
 //! and `..._801d1288.txt`; ported from the disassembly.
 //!
+//! # What the tally screen counts
+//!
+//! Both kernels belong to one tick: `FUN_801CF074` (true VA; the `801c085c`
+//! dump is mis-based by `+0xE818`), the contest **score-tally screen**. It
+//! rolls four pending lanes into their sinks, one [`step_scale`] step per
+//! lane per frame with an [`arena_voice_cue`] blip per step.
+//!
+//! The lanes are [`crate::muscle_dome::LegScoreRows`], and they do not all
+//! mean the same thing. Three of them - `round * 2`, `min(turns, 8)` and
+//! the outcome-table cell, each scaled `× max_hp / 100` - drain into the
+//! **same** accumulator `DAT_801D1AC8`, which the hub's restore state then
+//! adds to the fighter's HP: they are between-leg healing, not score. Only
+//! the fourth, the `(course, round)` score-table cell, drains into the
+//! running tally `_DAT_80084440` that [`crate::muscle_dome::settle_contest`]
+//! settles into casino coins.
+//!
+//! So the scoring and the healing are one mechanism, which is why a dome
+//! contest costs no permanent HP. The values are computed by
+//! [`crate::muscle_dome::leg_score_rows`] and carried by
+//! [`crate::muscle_dome::DomeContest`]; the screen's geometry is
+//! `other_game_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
+//!
 //! # NOT WIRED
 //!
-//! The overlay's *data* is reachable, and so are its screens: the browser
-//! dome page draws PROT 0977's hub screens through
-//! `legaia_engine_ui::other_game_hud`. What has no analogue is the one
-//! **tick** these two kernels belong to, and it is now identified rather
-//! than merely missing.
-//!
-//! Their caller is `FUN_801CF074` (true VA; the `801c085c` dump is mis-based
-//! by `+0xE818`), the contest **score-tally screen** - four count-up lanes
-//! that roll pending values into a sink, one [`step_scale`] step per lane
-//! per frame with an [`arena_voice_cue`] blip per step, lane 3's sink being
-//! the running score tally `_DAT_80084440` that
-//! [`crate::muscle_dome::settle_contest`] settles. The screen's layout is
-//! decoded (`other_game_hud::HUB_SCORE_TALLY_LABELS` /
-//! `score_tally_quads`), so the geometry half is done.
-//!
-//! What is missing is what the six rows *hold*. Retail fills them from a
-//! per-leg score breakdown the port does not compute: the session is a
-//! single fight with no course id, no round progression and no per-round
-//! scoring, so a tally driven today would be counting invented numbers up.
-//! The blocker is the course run, the same one
-//! [`crate::muscle_dome::settle_contest`] waits on - not another parser and
-//! not a renderer.
+//! What is still absent is the per-frame *ramp*: both hosts drain a leg's
+//! lanes in one step rather than counting them up over frames, so nothing
+//! calls [`step_scale`] or [`arena_voice_cue`] yet. That is presentation on
+//! top of a model that now exists, not a missing rule.
 
 /// Threshold above which the unslowed step is divided by five.
 pub const STEP_FAST_MIN: i32 = 6;

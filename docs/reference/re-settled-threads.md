@@ -2315,6 +2315,39 @@ Ports: `engine-core::muscle_dome` (`parse_course_ladder` /
 `course_score_cell` / `resolve_turn` playing whole strings per actor /
 `DomeDamageModel`, the one retail damage kernel both hosts resolve through).
 
+### The dome runs two state machines; the outer one is the contest
+
+*Status:* resolved (disassembly) -
+[`minigame-muscle-dome.md § Two state machines`](../subsystems/minigame-muscle-dome.md#two-state-machines-not-one)
+
+The battle round driver `FUN_801D0748` is the *inner* machine and has exactly
+one contest-gated arm (`0x801D322C`, the flee path). The **contest** - which
+`(course, round)` is staged, whether the run continues, what a cleared leg is
+worth and what the run pays - is a second machine living wholly in PROT 0977:
+`FUN_801CEA6C` re-entered after every leg, and the hub `FUN_801CF870`
+dispatching `DAT_801D1A78` through a 51-entry jump table at `0x801CE990`.
+
+Course and round are packed in the low byte of the mode-24 sub-id word
+`_DAT_8007BAC0` (`course = ((w-1) & 0xFF) >> 4`, `round = (w-1) & 0xF`); a
+finished leg is `w += 1`. Which course opens is picked by story flags
+`0x536`/`0x537`/`0x538`, and only the Master course's length is clamped, by
+`0x378`/`0x382`/`0x471`.
+
+Two things this settles that had been open. **"Which arm decides a leg was
+survived"** is neither of the two `FUN_801D0CD4` / `FUN_801D0068` arms it was
+hunted in: it is `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the
+battle's own `0x5A` party-wipe scan. So `settle_contest`'s `continuing` input
+is derived, not prompted. And **what the six tally rows hold** - three of them
+are HP recovery (`round*2`, `min(turns,8)`, `[8,12,4,2][outcome]`, each
+`× max_hp / 100`) draining into the restore accumulator `DAT_801D1AC8`; only
+the `(course, round)` score cell reaches the coin tally.
+
+A cleared course therefore banks its whole score row, which is the join that
+corrected the curated Master reward from 13856 to the disc's **13830**. Port:
+`engine-core::muscle_dome::DomeContest`, driven by `World::report_muscle_leg`
+/ `World::settle_muscle_contest` and the browser's `muscle_contest_*`
+bindings.
+
 ### Battle arts-input UI decomposition (dome = standard battle input)
 
 *Status:* resolved (capture) - the input screen's full piece decomposition +
