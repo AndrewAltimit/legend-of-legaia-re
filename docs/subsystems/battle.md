@@ -1816,11 +1816,26 @@ The HUD is fed by `World` events:
 
 Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
 
-Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives both a row's Y and a popup's anchor from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
+Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives monster-row Y and popup anchors from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
 
-HP and MP readouts are tinted by the four-tier retail colour law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+### The drawn surface
 
-Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`.
+`battle_hud_draws_for` renders party slots as per-character panels across the bottom of the 320x240 stage, with filled HP and MP bars. The panel X anchors and width are pinned from the battle overlay (`FUN_801D84C0`'s per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio `0x0C`/`0x72` with the third anchor `0xD8` inferred from the pinned `0x66` stride - and `FUN_801DBC30`'s `0x40`-px label strip; canonical port `engine-vm::battle_party_panel`). The panel Y band and in-panel bar rects are engine approximations and say so in the builder. Monster slots draw as compact rows with a thin HP bar - an enhancement; retail draws no monster gauge.
+
+The filled rects need no dedicated pipeline: `font_solid_src` locates a solid-white texel in the dialog-font atlas and every bar is a `TextDraw` stretching that 1x1 source under a colour tint, through the same textured-quad pass both hosts already run for glyphs.
+
+Two retail colour laws drive the surface, both fed the **displayed** (ramping) HP - `BattleActor::hp_display`, retail actor `+0x172`, walked by the quarter-step ramp `FUN_80047430` so damage drains the bar over frames instead of snapping:
+
+- **Numerals** take the readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`).
+- **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`, port of `FUN_80046A20`): death greys the whole track, an active status forces both fills to the override colour, otherwise each bar bands independently on its floored half/quarter thresholds. The index-to-RGB map (`gauge_fill_color`) is approximate - retail resolves the index through unpinned font-CLUT rows.
+
+MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+
+### Enemy target strip
+
+While a target picker's cursor is on the enemy row, both hosts draw retail's deduplicated monster-name strip instead of a debug label: `battle_hud::battle_enemy_target_rows` builds the rows off the live monster slots (identical adjacent monsters collapse into one run whose label takes the dedup-glyph suffix, `FUN_801D9D3C`), and each host runs the retail centre/relax/clamp layout (`target_picker::layout_enemy_menu_rows`) with its font as the measurer. The projected screen X the layout averages (battle actor `+0x34`) is renderer-owned and not plumbed into the HUD layer, so rows centre at `0xA0` and the retail overlap-relaxation pass spreads them - an approximation of retail's over-the-monster placement with the pass structure exact.
+
+Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser play page runs the same fold in `web-viewer`'s `play_battle.rs`.
 
 ## SFX bank + scheduler
 
