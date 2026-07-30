@@ -182,82 +182,28 @@ impl PlayWindowApp {
     /// outside stage-dome battles so the next battle re-snaps.
     /// See [`super::battle_cam`] for the measured phase law + provenance.
     pub(super) fn tick_battle_camera(&mut self) {
-        use super::battle_cam::{BattleCamPhase, BattleCamera};
         let world = &self.session.host.world;
-        if world.mode != SceneMode::Battle || self.battle_stage_mesh.is_none() {
-            self.battle_camera = None;
-            return;
-        }
-        let phase = if world.current_dialog.is_some() || world.inline_dialogue.is_some() {
-            BattleCamPhase::Dialogue
-        } else if world.battle_command.is_some()
-            || world.battle_arts_menu.is_some()
-            || world.battle_spell_menu.is_some()
-            || world.battle_item_menu.is_some()
-        {
-            BattleCamPhase::Submenu
-        } else {
-            BattleCamPhase::Menu
-        };
-        let frames = world.field_frames;
-        // Retail rebuilds the submenu close-up from the acting actor's own
-        // record on every open (`FUN_801D5854` case 0), so the framing has to
-        // follow whoever owns the menu rather than staying pinned to the
-        // measured solo-Vahn pose: facing drives the yaw, the character id
-        // keys the per-model height table, and the actor's world position is
-        // the focus the camera orbits.
-        let acting = world.battle_command.as_ref().and_then(|c| {
-            let a = world.actors.get(c.actor as usize)?;
-            // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
-            // party-record selector; the engine's party rows are that record
-            // order, so the row index + 1 is the same id.
-            let height = world
-                .battle_camera_heights
-                .as_ref()
-                .and_then(|t| t.height_for_char_id(c.party_slot + 1))
-                .map(|h| h as f32);
-            Some(super::battle_cam::BattleCamActor {
-                // The port's actors carry their heading in `render_26` (the
-                // retail `+0x26` 12-bit angle); it stands in for the battle
-                // actor record's `+0x46` the framing formula subtracts.
-                facing: (a.move_state.render_26 as u16 & 0xFFF) as i32,
-                world: [
-                    a.move_state.world_x as f32,
-                    a.move_state.world_y as f32,
-                    a.move_state.world_z as f32,
-                ],
-                height,
-            })
-        });
-        // The far menu framing sizes its depth to - and centres on - the live
-        // formation's X/Z bounding box (`FUN_801D5854` case 9).
-        let formation = Self::battle_formation_box(world);
-        // Entry snap: a battle that opens on dialogue starts in the held
-        // close-up; anything else starts at the far menu framing (retail's
-        // loading pose resolves there) and glides out to whichever menu
-        // phase is already live.
-        let entry = if phase == BattleCamPhase::Dialogue {
-            BattleCamPhase::Dialogue
-        } else {
-            BattleCamPhase::Menu
-        };
-        let cam = self
-            .battle_camera
-            .get_or_insert_with(|| BattleCamera::new(entry, frames));
-        if let Some(actor) = acting {
-            cam.set_actor(actor);
-        }
-        cam.set_formation(formation);
-        cam.set_phase(phase);
-        cam.advance_to(frames);
+        let active = world.mode == SceneMode::Battle && self.battle_stage_mesh.is_some();
+        let (phase, acting, formation) = battle_cam_inputs(world);
+        // The create / retarget / phase-change / step ordering is the shared
+        // `drive` - the browser play page runs the identical call, so the two
+        // hosts cannot diverge on the phase script.
+        legaia_engine_vm::battle_cam_script::drive(
+            &mut self.battle_camera,
+            active,
+            phase,
+            acting,
+            formation,
+            world.field_frames,
+        );
     }
 
     /// The X/Z bounding box of the actors the far battle framing encloses -
     /// retail's `min`/`max` walk over `actor[+0x34]` / `actor[+0x38]` for
     /// every **present** actor (`FUN_801D5854` case 9 gates on the presence
-    /// halfword `actor[+0x14c]`; the port's equivalent is an active actor
-    /// that is either a party row or a mesh-bound monster). `None` when no
-    /// actor qualifies, which is retail's un-entered accumulator case.
+    /// halfword `actor[+0x14c]`; this host's equivalent is an actor that is
+    /// either a party row or a mesh-bound monster). `None` when no actor
+    /// qualifies, which is retail's un-entered accumulator case.
     fn battle_formation_box(
         world: &legaia_engine_core::world::World,
     ) -> Option<super::battle_cam::FormationBox> {
@@ -267,21 +213,11 @@ impl PlayWindowApp {
             if !(i < pc || a.tmd_binding.is_some()) {
                 continue;
             }
-            let (x, z) = (a.move_state.world_x as f32, a.move_state.world_z as f32);
-            match &mut bbox {
-                None => {
-                    bbox = Some(super::battle_cam::FormationBox {
-                        min: [x, z],
-                        max: [x, z],
-                    })
-                }
-                Some(b) => {
-                    b.min[0] = b.min[0].min(x);
-                    b.min[1] = b.min[1].min(z);
-                    b.max[0] = b.max[0].max(x);
-                    b.max[1] = b.max[1].max(z);
-                }
-            }
+            super::battle_cam::FormationBox::extend(
+                &mut bbox,
+                a.move_state.world_x as f32,
+                a.move_state.world_z as f32,
+            );
         }
         bbox
     }
@@ -407,13 +343,15 @@ impl PlayWindowApp {
     /// (and its "separate close actor matrix" reading).
     pub(super) fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-        let pose = self.battle_camera.as_ref().map(|c| c.pose());
-        let (pitch, yaw, tr, focus) = match pose {
-            Some(p) => (p.pitch, p.yaw, Vec3::from(p.tr), Vec3::from(p.focus)),
-            // First frame before the tick armed the state: the far framing at
-            // its minimum depth, on the origin.
-            None => (32.0, 0.0, Vec3::new(0.0, 1280.0, 3276.0), Vec3::ZERO),
-        };
+        // First frame before the tick armed the state: the shared BOOT_POSE
+        // (far framing at its minimum depth, on the origin) - the same
+        // fallback the browser host renders.
+        let p = self
+            .battle_camera
+            .as_ref()
+            .map(|c| c.pose())
+            .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE);
+        let (pitch, yaw, tr, focus) = (p.pitch, p.yaw, Vec3::from(p.tr), Vec3::from(p.focus));
         // The focus trio is the world point the camera orbits (retail stores
         // it negated at `0x80089118/1C/20`). Retail folds the battle world
         // scale into the camera rotation, so the focus is scaled with the
@@ -591,6 +529,62 @@ impl PlayWindowApp {
     }
 }
 
+/// Derive the shared battle-camera drive inputs from the live world state -
+/// phase, acting actor, formation box. Kept as a free function so the
+/// cross-host invariant test can feed it a constructed `World`; the browser
+/// play page's `derive_battle_cam` (`web-viewer::play_battle_render`) is the
+/// same derivation over the same `World` type, pinned to the same expected
+/// pose by its mirror test.
+///
+/// Retail rebuilds the submenu close-up from the acting actor's own record
+/// on every open (`FUN_801D5854` case 0), so the framing follows whoever
+/// owns the menu rather than staying pinned to the measured solo-Vahn pose:
+/// facing drives the yaw, the character id keys the per-model height table,
+/// and the actor's world position is the focus the camera orbits.
+pub(super) fn battle_cam_inputs(
+    world: &legaia_engine_core::world::World,
+) -> (
+    legaia_engine_vm::battle_cam_script::BattleCamPhase,
+    Option<legaia_engine_vm::battle_cam_script::BattleCamActor>,
+    Option<legaia_engine_vm::battle_cam_script::FormationBox>,
+) {
+    use legaia_engine_vm::battle_cam_script as script;
+    let phase = script::phase_for(
+        world.current_dialog.is_some() || world.inline_dialogue.is_some(),
+        world.battle_command.is_some()
+            || world.battle_arts_menu.is_some()
+            || world.battle_spell_menu.is_some()
+            || world.battle_item_menu.is_some(),
+    );
+    let acting = world.battle_command.as_ref().and_then(|c| {
+        let a = world.actors.get(c.actor as usize)?;
+        // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
+        // party-record selector; the engine's party rows are that record
+        // order, so the row index + 1 is the same id.
+        let height = world
+            .battle_camera_heights
+            .as_ref()
+            .and_then(|t| t.height_for_char_id(c.party_slot + 1))
+            .map(|h| h as f32);
+        Some(script::BattleCamActor {
+            // The port's actors carry their heading in `render_26` (the
+            // retail `+0x26` 12-bit angle); it stands in for the battle
+            // actor record's `+0x46` the framing formula subtracts.
+            facing: (a.move_state.render_26 as u16 & 0xFFF) as i32,
+            world: [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ],
+            height,
+        })
+    });
+    // The far menu framing sizes its depth to - and centres on - the live
+    // formation's X/Z bounding box (`FUN_801D5854` case 9).
+    let formation = PlayWindowApp::battle_formation_box(world);
+    (phase, acting, formation)
+}
+
 #[cfg(test)]
 mod follow_compass_tests {
     use super::*;
@@ -654,6 +648,133 @@ mod follow_compass_tests {
             );
             let _ = yr;
         }
+    }
+}
+
+#[cfg(test)]
+mod battle_cam_shared_tests {
+    use super::*;
+    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_vm::battle_cam_script as script;
+
+    /// The shared projection's far plane must stay paired with the native
+    /// renderer's `SCENE_FAR` (the script crate cannot take the wgpu link,
+    /// so the constant is duplicated there by design - this is the pin).
+    #[test]
+    fn scene_far_paired_with_renderer() {
+        assert_eq!(script::SCENE_FAR, legaia_engine_render::window::SCENE_FAR);
+    }
+
+    /// The shared `battle_vp` must reproduce the native glam composition
+    /// (`battle_dome_camera_mvp` = `psx_camera_mvp(pitch, yaw, 0, H=256,
+    /// tr, focus * BATTLE_WORLD_SCALE)`) element-for-element: the browser
+    /// projects through `battle_vp`, the native window through glam, and
+    /// this is what keeps them the same camera.
+    #[test]
+    fn battle_vp_matches_the_native_glam_composition() {
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        let poses = [
+            script::BOOT_POSE,
+            script::BattleCamPose {
+                pitch: 32.0,
+                yaw: 224.0,
+                tr: [0.0, 1280.0, 7680.0],
+                focus: [100.0, 0.0, -50.0],
+            },
+            script::BattleCamPose {
+                pitch: 32.0,
+                yaw: 2288.0,
+                tr: [-512.0, 1152.0, 2457.0],
+                focus: [0.0, 0.0, -800.0],
+            },
+            script::BattleCamPose {
+                pitch: 256.0,
+                yaw: 4064.0,
+                tr: [0.0, 1536.0, 3276.0],
+                focus: [-700.0, 0.0, -900.0],
+            },
+        ];
+        for aspect in [4.0f32 / 3.0, 16.0 / 9.0, 1.0] {
+            for p in &poses {
+                let native = PlayWindowApp::psx_camera_mvp(
+                    to_rad(p.pitch),
+                    to_rad(p.yaw),
+                    0.0,
+                    256.0,
+                    Vec3::from(p.tr),
+                    Vec3::from(p.focus) * BATTLE_WORLD_SCALE,
+                    aspect,
+                )
+                .to_cols_array();
+                let shared = script::battle_vp(p, BATTLE_WORLD_SCALE, aspect);
+                for (i, (a, b)) in shared.iter().zip(native.iter()).enumerate() {
+                    assert!(
+                        (a - b).abs() <= 1e-3 * b.abs().max(1.0),
+                        "pose {p:?} aspect {aspect} elem {i}: shared {a} vs native {b}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Cross-host single-model pin, native half.** One battle world state
+    /// (solo Vahn at the tutorial seat, command menu open, one bound
+    /// monster) driven through THIS host's derivation + the shared drive
+    /// must land on the literal measured close-up. The browser host's
+    /// mirror test (`web_pose_matches_the_native_recipe` in
+    /// `web-viewer::play_battle_render`) runs the identical world recipe to
+    /// the identical literals, so the two hosts' poses are equal to each
+    /// other by transitivity.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn native_pose_matches_the_shared_recipe() {
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        vahn.move_state.world_x = 0;
+        vahn.move_state.world_y = 0;
+        vahn.move_state.world_z = -800;
+        vahn.move_state.render_26 = 0;
+        let mut tetsu = legaia_engine_core::world::Actor::default();
+        tetsu.active = true;
+        tetsu.move_state.world_z = 800;
+        tetsu.battle_monster_id = Some(1);
+        tetsu.tmd_binding = Some(0);
+        world.actors = vec![vahn, tetsu];
+        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+            0, 0,
+        ));
+
+        let (phase, acting, formation) = battle_cam_inputs(&world);
+        assert_eq!(phase, script::BattleCamPhase::Submenu);
+        assert_eq!(
+            acting,
+            Some(script::BattleCamActor {
+                facing: 0,
+                world: [0.0, 0.0, -800.0],
+                height: None,
+            })
+        );
+        assert_eq!(
+            formation,
+            Some(script::FormationBox {
+                min: [0.0, -800.0],
+                max: [0.0, 800.0],
+            })
+        );
+        let mut slot = None;
+        for f in 0..=6u64 {
+            script::drive(&mut slot, true, phase, acting, formation, f * 2);
+        }
+        let pose = slot.as_ref().unwrap().pose();
+        // The measured solo-Vahn submenu close-up, arrived after the 6-step
+        // glide - the SAME literals the web mirror test asserts.
+        assert_eq!(pose.pitch, 32.0);
+        assert_eq!(pose.yaw.rem_euclid(4096.0), 2288.0);
+        assert_eq!(pose.tr, [-512.0, 1152.0, 2457.0]);
+        assert_eq!(pose.focus, [0.0, 0.0, -800.0]);
     }
 }
 
