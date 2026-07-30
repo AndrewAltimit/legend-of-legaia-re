@@ -295,8 +295,8 @@
                   title="Start the fishing minigame here (Z casts and reels, V reels harder)">Fish here</button>
           <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
-            &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="0.5">
-            <span id="play-volume-value">0.5x</span>
+            &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
+            <span id="play-volume-value">1x</span>
           </label>
           <label class="play-dev-menu"
                  title="Overlay the retail developer menu on the running scene (the native window's LEGAIA_DEV_MENU opt-in). Edits your own session only; off every page load by design - nothing in a link or in storage can carry it.">
@@ -1445,11 +1445,13 @@
   });
 
   /* BGM volume. The engine's SPU mixer feeds a WebAudio `GainNode` inside
-   * `WebAudioOut`; `audio_set_gain` is the live handle on it. The slider's
-   * HTML `value` is the same number the engine parks on the node at
-   * `audio_init` (`BGM_DEFAULT_GAIN`), so the control starts where the audio
-   * actually is instead of jumping on first drag. Re-applied whenever the
-   * runtime is rebuilt (a WASM trap makes a fresh instance at unity). */
+   * `WebAudioOut`; `audio_set_gain` is the live handle on it, in SLIDER
+   * units - what "1x" is worth on the node (`BGM_SLIDER_UNIT_GAIN`) lives
+   * WASM-side, so this page never holds the loudness number. The slider's
+   * HTML `value` is the same number the engine parks at `audio_init`
+   * (`BGM_DEFAULT_GAIN`), so the control starts where the audio actually is
+   * instead of jumping on first drag. Re-applied whenever the runtime is
+   * rebuilt (a WASM trap makes a fresh instance at the default). */
   const volEl    = document.getElementById('play-volume');
   const volValEl = document.getElementById('play-volume-value');
   function applyVolume() {

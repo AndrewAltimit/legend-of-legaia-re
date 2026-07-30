@@ -326,9 +326,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-verdict" id="dance-verdict"></div>
         <div class="mg-row">
-          <button class="mg-btn mg-throw" type="button" data-dance="1"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Square<span class="mg-key" data-pad-key="Square">V</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="2"><svg class="mg-psbtn"><use href="#btn-circle"/></svg>Circle<span class="mg-key" data-pad-key="Circle">X</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="3"><svg class="mg-psbtn"><use href="#btn-triangle"/></svg>Triangle<span class="mg-key" data-pad-key="Triangle">C</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="1"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Square<span class="mg-key">Z</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="2"><svg class="mg-psbtn"><use href="#btn-circle"/></svg>Circle<span class="mg-key">C</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="3"><svg class="mg-psbtn"><use href="#btn-triangle"/></svg>Triangle<span class="mg-key">X</span></button>
           <button class="mg-btn mg-primary" type="button" id="dance-start">Start</button>
         </div>
         <div class="mg-row" id="dance-jukebox-row" hidden>
@@ -466,11 +466,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-reels" id="slot-reels" hidden></div>
         <div class="mg-verdict" id="slot-verdict"></div>
         <p class="mg-controls">
-          <b><kbd data-pad-key="Cross">Z</kbd> is the whole machine.</b> Press it to spin, then press it once
+          <b><kbd>Space</kbd> is the whole machine.</b> Press it to spin, then press it once
           more per reel to stop them left to right &mdash; three presses, three reels, which is
           exactly what the cabinet's three stop buttons do. A win banks itself, so there is
           nothing to collect; when the coins run out, a press racks a fresh machine.
-          Clicking the machine counts as a press, for want of a spacebar.
+          Clicking the machine counts as a press too, and <kbd data-pad-key="Cross">Z</kbd>
+          (Cross) still lands for pad players.
         </p>
         <div class="mg-hud">
           <span>Coins <b class="mg-big" id="slot-balance">0</b></span>
@@ -1862,6 +1863,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     return slotAudio;
   }
 
+  /* Page-level trim on every slot cue (spin motor included): the machine's
+   * effects sat well above the page's BGM, so they play at a quarter of
+   * their per-cue levels. The per-call `gain` args keep the cues' RELATIVE
+   * balance (reel_stop over reach etc.); this scales the whole machine. */
+  const SLOT_SFX_SCALE = 0.25;
+
   function slotPlay(name, gain = 0.5) {
     if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
     const a = slotAudioReady();
@@ -1869,7 +1876,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const src = a.ctx.createBufferSource();
     src.buffer = a.buffers[name];
     const g = a.ctx.createGain();
-    g.gain.value = gain;
+    g.gain.value = gain * SLOT_SFX_SCALE;
     src.connect(g).connect(a.ctx.destination);
     src.start();
   }
@@ -1887,7 +1894,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     src.loop = true;
     const g = a.ctx.createGain();
     /* Retail keys it at volume 0x28 of 0x7F - noticeably under the cues. */
-    g.gain.value = 0.3;
+    g.gain.value = 0.3 * SLOT_SFX_SCALE;
     src.connect(g).connect(a.ctx.destination);
     src.start();
     slotSpinSrc = src;
@@ -2808,7 +2815,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const digit = /^Digit([1-9])$/.exec(e.code);
     const n = digit ? Number(digit[1]) : 0;
     if (active === 'dance') {
-      const m = FACE_LANES[b] <= 3 ? FACE_LANES[b] : undefined;
+      /* Dance-local key row: Z / X / C are the three throws in one hand,
+       * laid out Z = Square, X = Triangle, C = Circle. This deliberately
+       * overrides the pad-binding resolution (which would put Circle on X
+       * and Triangle on C) - the row is a rhythm-game layout choice, and
+       * the printed labels on the dance buttons are static to match. */
+      const DANCE_KEYS = { KeyZ: 1, KeyX: 3, KeyC: 2 };
+      const m = DANCE_KEYS[e.code] || (FACE_LANES[b] <= 3 ? FACE_LANES[b] : undefined);
       if (m) { e.preventDefault(); dancePress(m); }
       else if (n >= 1 && n <= 3) { e.preventDefault(); dancePress(n); }
     } else if (active === 'baka') {
@@ -2834,7 +2847,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         else if (n >= 1 && n <= 4) { e.preventDefault(); bakaChoose(n); }
       }
     } else if (active === 'slot') {
-      if (b === 'Cross' && slotOnScreen()) { e.preventDefault(); slotPress(); }
+      /* Space is the machine's advertised button (every prompt on the panel
+       * says "press space"). It arrives here through its Start binding -
+       * the engine's default table answers Start to both Space and Enter -
+       * so the dispatch stays on pad buttons and a rebind follows it.
+       * Cross still lands for pad-consistency with the other games. */
+      if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
       /* Retail pad map: Circle casts, Cross (reel bit 0x40) = reel A, Square
        * (reel bit 0x80) = reel B; every FRESH press also feeds the strike

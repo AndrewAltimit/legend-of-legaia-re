@@ -607,6 +607,20 @@
   const keysDown = new Set();
   const PAN_SPEED = 1.5;  /* unit-radii per second at distance=2.5 */
 
+  /* Per-model home zoom. `cam.distance` is normalized to the model's bounding
+   * radius, so one constant cannot serve both a 60-unit prop and a whole town
+   * whose sky dome IS most of that radius - at 2.5 radii a scene opens as a
+   * ball of sky with the map hidden inside. Scene-scale models (radius in the
+   * thousands of world units - the range where sky shells and horizon planes
+   * live) therefore open INSIDE the dome; fly-through below 1.0 is supported
+   * by the camera (the near plane scales with distance). Applied on every
+   * entry load and by reset, while yaw/pitch/pan stay sticky across entries. */
+  const SCENE_SCALE_RADIUS = 2000;   /* world units */
+  let curRadius = 1;                 /* bounding radius of the loaded model */
+  function homeDistanceFor(radius) {
+    return radius > SCENE_SCALE_RADIUS ? 0.32 : 2.5;
+  }
+
   function stopRaf() {
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
@@ -651,7 +665,7 @@
   function resetCamera() {
     cam.yaw = 0;
     cam.pitch = 0.25;
-    cam.distance = 2.5;
+    cam.distance = homeDistanceFor(curRadius);
     cam.panX = 0;
     cam.panY = 0;
     cam.autoRotate = true;
@@ -1000,6 +1014,8 @@
 
     const center = [bounds[0], bounds[1], bounds[2]];
     const radius = bounds[3];
+    curRadius = radius > 0 ? radius : 1;
+    cam.distance = homeDistanceFor(curRadius);
 
     attachCameraControls(fresh);
     let last = performance.now();
@@ -1028,6 +1044,13 @@
     fresh.height = h;
     oldCanvas.replaceWith(fresh);
     const ctx = fresh.getContext('2d');
+
+    /* Same per-model home zoom as the textured path; bounds may be empty for
+     * flat-only TMDs, in which case the prop default (2.5 radii) stands. */
+    let fb = null;
+    try { fb = viewer.mesh_bounds(); } catch (e) { /* keep defaults */ }
+    curRadius = fb && fb[3] > 0 ? fb[3] : 1;
+    cam.distance = homeDistanceFor(curRadius);
 
     attachCameraControls(fresh);
     let last = performance.now();
