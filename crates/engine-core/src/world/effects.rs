@@ -704,6 +704,64 @@ impl World {
         staged_scene || spawned_alt
     }
 
+    /// Live table-form effect-script scenes [`Self::spawn_action_table_effect`]
+    /// keeps at once. Retail allocates from a `0x60`-slot pool shared with
+    /// every other effect actor; a battle action's script names at most eight
+    /// records, so a small cap keeps the honest shape without the pool.
+    const ACTION_FX_CAP: usize = 8;
+
+    /// Spawn one **table-form effect-script record**: effect id `0x00..=0x31`
+    /// indexes the `0x801F6324` prototype table for a summon-format move-VM
+    /// part record, staged as its own small scene at `origin` - the engine
+    /// analogue of the effect-script walk's `FUN_80050ED4` arm
+    /// (`FUN_801DEA50`, `0x801df168..0x801df194`: `a2 = 0x801F6324[id*4]`).
+    /// The per-effect SFX byte the same arm queues (`0x801F6418[id]`,
+    /// `0x801df0ec..0x801df134`) is parsed
+    /// ([`legaia_asset::move_power::EffectAuxTables::effect_sfx`]) but not
+    /// fired here - its `FUN_80058490` ring lane has no engine model yet.
+    ///
+    /// No-op (returns `false`) without an installed move-power catalog /
+    /// overlay (disc-free battles), for an id outside the prototype table,
+    /// or at the concurrency cap. Ticked by [`Self::tick_move_fx`]; drawn
+    /// through [`Self::active_move_fx_part_draws`].
+    // PORT: FUN_801DEA50 (the table-form spawn arm; the pool allocator it
+    // calls, FUN_80050ED4, is modeled by the scene list + cap).
+    pub fn spawn_action_table_effect(&mut self, effect_id: u8, origin: [i16; 3]) -> bool {
+        if self.active_action_fx.len() >= Self::ACTION_FX_CAP {
+            return false;
+        }
+        let Some(off) = self
+            .move_power
+            .as_ref()
+            .and_then(|cat| cat.aux_tables())
+            .and_then(|aux| aux.proto_record_offset(effect_id))
+        else {
+            return false;
+        };
+        let Some(overlay) = self.move_power_overlay.clone() else {
+            return false;
+        };
+        use legaia_asset::move_power;
+        let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
+            return false;
+        };
+        let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+            .into_iter()
+            .filter(|p| p.record_off == off)
+            .collect();
+        if parts.is_empty() {
+            return false;
+        }
+        self.active_action_fx
+            .push(crate::summon::SummonScene::spawn_parts(
+                &parts,
+                &overlay,
+                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                origin,
+            ));
+        true
+    }
+
     /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
     /// this step. The host routes it through `legaia_engine_audio::classify_cue`
     /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
@@ -723,6 +781,22 @@ impl World {
     /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
+        // Effect-script table-form scenes advance on the same clock. Take
+        // the list, tick each, keep the unfinished.
+        let mut action_fx = std::mem::take(&mut self.active_action_fx);
+        for scene in &mut action_fx {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
+            };
+            scene.tick(&mut host, frame_delta);
+        }
+        action_fx.retain(|s| !s.finished());
+        self.active_action_fx = action_fx;
+
         let Some(mut scene) = self.active_move_fx.take() else {
             return;
         };
@@ -745,13 +819,21 @@ impl World {
     }
 
     /// Per-part render draws for the active move-FX scene's mesh-bearing parts
-    /// (empty when none is playing). Each draw's `model_index` indexes
-    /// [`Self::global_tmd_pool`] (the PROT 0871 effect-model library).
+    /// plus the live effect-script table-form scenes
+    /// ([`Self::active_action_fx`]) - one render seam so hosts that already
+    /// draw move FX draw the effect-script spawns too. Empty when nothing is
+    /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
+    /// (the PROT 0871 effect-model library).
     pub fn active_move_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
-        self.active_move_fx
+        let mut out = self
+            .active_move_fx
             .as_ref()
             .map(|s| s.part_draws())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        for scene in &self.active_action_fx {
+            out.extend(scene.part_draws());
+        }
+        out
     }
 
     /// Take the pending production summon-spawn request, if a player Seru-magic

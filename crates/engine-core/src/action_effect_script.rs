@@ -32,8 +32,9 @@
 //! [`docs/formats/move-power.md`](../../../docs/formats/move-power.md) for the
 //! record the terminator installs.
 //!
-//! NOT WIRED (whole module). **The caller is not the blocker, and is not the
-//! battle-action SM.** A five-form reference scan
+//! ## Retail wiring (all three former input gaps are closed)
+//!
+//! **The caller is not the battle-action SM.** A five-form reference scan
 //! ([`docs/tooling/address-reference-scan.md`](../../../docs/tooling/address-reference-scan.md))
 //! over `SCUS_942.54`, the based overlay images and the raw PROT entries finds
 //! no reference of any form to `0x801DEA50` inside the battle-action overlay
@@ -46,22 +47,48 @@
 //! itself reached by function pointer from the actor-list iterator
 //! `FUN_8002519C`, which is live-pinned mid-battle.
 //!
-//! That caller is ported and live: `FUN_80047430`'s HP-bar arm is
-//! `legaia_engine_vm::battle_hp_bar`, driven from `World::tick_battle_hp_bars`.
-//! What is missing is the stepper's **inputs**, and there are three:
+//! The three inputs, each pinned:
 //!
-//! 1. the active move's 8-byte effect-script block, loaded onto the acting
-//!    actor - the disc side is closer than the runtime side, since
-//!    `legaia_asset::move_power` already parses the record the terminator
-//!    installs;
-//! 2. the actor `+0x1F5` cursor and the `ctx[+0x1014]` / per-target `+0x1144`
-//!    homing block the walk writes into;
-//! 3. a [`RotationLut`] pair, which no `engine-core` host holds.
+//! 1. **The script block is the action's anim record itself.** The stepper's
+//!    second argument is `node[+0x4C]` (`FUN_80047430` passes `s3 =
+//!    *(node+0x4C)` at both `jal` sites), and `node[+0x4C]` is installed from
+//!    `actor[+0x234 + i*4]` (`FUN_80049348`, `0x800494C8..D0`) - the committed
+//!    per-action entry the anim commit `FUN_8004AD80` selects. On disc that
+//!    entry is a monster-archive action entry / a player record[0] action
+//!    entry, and its `+0x14..+0x53` region is exactly this record stream -
+//!    carried by `legaia_asset::monster_archive::MonsterAnimation::effect_script`.
+//! 2. **The cursor is per-actor state** (`+0x1F5`), zeroed when a new anim
+//!    record commits (`FUN_8004AD80`, `0x8004B060`) - the engine mirror is
+//!    `world::Actor::battle_effect_cursor`, reset by the anim commit.
+//! 3. **The [`RotationLut`] pair is one SCUS-resident sine table.**
+//!    `FUN_80026BE0` sets `_DAT_8007B81C = 0x80070A2C` and `_DAT_8007B7F8 =
+//!    0x80070A2C + 0x800`. The table at `0x80070A2C` is 5120 `i16` entries of
+//!    `trunc(sin(i * 2pi / 4096) * 4096)` (disc-verified byte-exact, zero
+//!    mismatches, truncation toward zero; the final 1024 entries repeat the
+//!    first 1024 so the `+0x400`-entry cos read never wraps). So `b()` = sin
+//!    and `a()` = cos of the 12-bit angle - [`RetailRotationLut`] generates
+//!    the same table from the formula.
+//!
+//! Engine wiring: `World::tick_battle_animations` steps each battle actor's
+//! committed clip through [`step_effect_script`] and queues the resulting
+//! [`EffectSpawn`]s as `world::BattleEffectSpawn`s (drained via
+//! `World::drain_battle_effect_spawns`, consumed by the native window's
+//! battle FX layer). The terminator's two context writes remain **disclosed,
+//! not wired**: the engine has no `ctx[+0x1014]` staged move-power slot and no
+//! per-target `+0x1144` homing block (its damage path resolves move-power
+//! records by move id through `crate::move_power::MovePowerCatalog` instead),
+//! so [`EffectScriptStep::move_power_offset`] / `homing_band` are computed
+//! and surfaced but nothing consumes them yet. The same applies to the
+//! stepper's function-head sibling: retail's `0x801DEA50..0x801DEBEC` prologue
+//! integrates the in-flight homing projectile (`ctx[+0x1028]`) each call,
+//! which this module does not model.
 //!
 //! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
 //! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.
 //! REF: FUN_801EC3E4 - the sibling call the caller pairs this with.
 //! REF: FUN_8002519C - the actor-list iterator that dispatches the tick.
+//! REF: FUN_80049348 - shadows `actor[+0x234+i*4]` into `node[+0x4C]`.
+//! REF: FUN_8004AD80 - the anim commit that installs the entry + zeroes `+0x1F5`.
 //! REF: FUN_801E295C - the action SM that stages the move. It is *not* a
 //! caller of this routine: a five-form reference sweep finds no `jal`, `j`,
 //! literal word or `lui`+`addiu` pair for `FUN_801DEA50` anywhere inside the
@@ -125,18 +152,15 @@ pub const MOVE_POWER_STRIDE: usize = 0x1A;
 /// Retail's loop is `for (i = 0; first + i <= last; i++)`, so an empty band is
 /// impossible - the single-slot form always runs once.
 ///
-/// NOT WIRED: classified only from [`step_effect_script`]'s terminator arm,
-/// which no engine host drives - and *that* is the whole blocker. An earlier
-/// note here added a second one: "its input is the acting actor's `+0x1DD`
-/// scope byte - engine battle actors carry a typed target selection
-/// ([`crate::target_picker::TargetKind`]) instead, so nothing produces the raw
-/// byte this reads". Withdrawn. `+0x1DD` is
+/// The scope byte is `+0x1DD` =
 /// `legaia_engine_vm::battle_action::BattleActor::active_target`, written and
 /// read across the live action SM (the attack band, the spirit band, the
-/// target cursor, `battle_round`), and its group codes `8` / `9` are exactly
-/// the ones `battle_action::magic`'s cast-begin retarget pass and
-/// `battle_target_group` deal in. The typed picker is what *produces* the
-/// byte, not a replacement for it.
+/// target cursor, `battle_round`); its group codes `8` / `9` are exactly the
+/// ones `battle_action::magic`'s cast-begin retarget pass and
+/// `battle_target_group` deal in. The band is computed on every terminator
+/// [`step_effect_script`] reaches from the live tick, but its **consumer** is
+/// still missing: the engine models no per-target `+0x1144` homing block for
+/// the seed to write into (see the module note).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetBand {
     /// First slot index the sweep visits.
@@ -184,14 +208,12 @@ pub struct EffectRecord {
 }
 
 impl EffectRecord {
-    /// Decode the record at `cursor` from a script block.
+    /// Decode the record at `cursor` from a script block. The block is the
+    /// action's anim-record head
+    /// (`legaia_asset::monster_archive::MonsterAnimation::effect_script`),
+    /// whose records sit at [`RECORD_BASE`]` + cursor * `[`RECORD_STRIDE`].
     ///
     /// PORT: FUN_801DEA50 (`0x801dec84..0x801ded48`).
-    ///
-    /// NOT WIRED: reached only from [`step_effect_script`], which has no
-    /// caller. The missing input is the script block itself - no engine path
-    /// loads a move's 8-byte effect-script stream, which is the same gap the
-    /// module note names.
     pub fn at(block: &[u8], cursor: u8) -> Option<Self> {
         let o = RECORD_BASE + usize::from(cursor) * RECORD_STRIDE;
         let r = block.get(o..o + RECORD_STRIDE)?;
@@ -228,6 +250,65 @@ pub trait RotationLut {
     fn b(&self, angle: i32) -> i32;
 }
 
+/// The retail LUT pair, reconstructed from its mathematical definition.
+///
+/// PORT: FUN_80026BE0 (installs the pair: `_DAT_8007B81C = 0x80070A2C`,
+/// `_DAT_8007B7F8 = 0x80070A2C + 0x800`).
+///
+/// Both pointers land in **one** static `SCUS_942.54` sine table at
+/// `0x80070A2C`: 5120 `i16` entries of `trunc(sin(i * 2pi / 4096) * 4096)`
+/// (12-bit angle space, `1 << 12` fixed point, truncation toward zero -
+/// disc-verified byte-exact over all 5120 entries). The `+0x800`-**byte**
+/// offset between the two pointers is `+0x400` entries = a quarter
+/// revolution, and the table's final 1024 entries repeat its first 1024 so
+/// the offset read never needs a mask: `b(angle)` is sine, `a(angle)` is
+/// cosine. This type generates the table from the same formula (the values
+/// are a mathematical function of the index, not creative content), so any
+/// engine host can hold a byte-exact pair without disc access.
+pub struct RetailRotationLut {
+    /// One revolution of `trunc(sin) * 4096`, indexed by 12-bit angle.
+    sin: [i16; 4096],
+}
+
+impl RetailRotationLut {
+    /// Build the table. `trunc` (toward zero), not `round` - the retail
+    /// bytes match truncation exactly and differ from rounding in 2510 of
+    /// the 5120 entries.
+    pub fn new() -> Self {
+        let mut sin = [0i16; 4096];
+        for (i, slot) in sin.iter_mut().enumerate() {
+            let a = (i as f64) * std::f64::consts::TAU / 4096.0;
+            *slot = (a.sin() * 4096.0) as i16; // `as` truncates toward zero
+        }
+        Self { sin }
+    }
+}
+
+impl Default for RetailRotationLut {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The process-wide [`RetailRotationLut`], built once on first use - the
+/// engine analogue of retail's boot-time pointer install (`FUN_80026BE0`).
+pub fn retail_rotation_lut() -> &'static RetailRotationLut {
+    static LUT: std::sync::OnceLock<RetailRotationLut> = std::sync::OnceLock::new();
+    LUT.get_or_init(RetailRotationLut::new)
+}
+
+impl RotationLut for RetailRotationLut {
+    fn a(&self, angle: i32) -> i32 {
+        // The `+0x800`-byte pointer offset = +0x400 entries (cosine). The
+        // retail read relies on the table's repeated tail instead of a mask;
+        // over the stepper's `0..=0xFFF` domain the two are identical.
+        i32::from(self.sin[((angle + 0x400) & ANGLE_MASK) as usize])
+    }
+    fn b(&self, angle: i32) -> i32 {
+        i32::from(self.sin[(angle & ANGLE_MASK) as usize])
+    }
+}
+
 /// Rotate a local-frame `(x, z)` offset into world space by an actor facing.
 ///
 /// PORT: FUN_801DEA50 (`0x801dedd4..0x801dee7c` and the sibling block at
@@ -248,12 +329,9 @@ pub trait RotationLut {
 /// branch takes `facing & 0xFFF` ([`FacingBias::None`]) and the table branch
 /// takes `(facing + 0x800) & 0xFFF` ([`FacingBias::Half`]).
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
-/// It also needs a [`RotationLut`] the engine does not hold - retail's pair of
-/// `i16` LUTs behind `_DAT_8007B7F8` / `_DAT_8007B81C` are disc-resident tables
-/// the battle overlay dereferences, and `engine-core` has no loader for them
-/// (`engine-vm::battle_formulas` does its trig in floating point instead). A
-/// caller must supply both the script block and the LUT pair.
+/// The retail LUT pair behind `_DAT_8007B7F8` / `_DAT_8007B81C` is pinned as
+/// one SCUS sine table (see [`RetailRotationLut`]), which is what the live
+/// battle tick supplies.
 pub fn rotate_offset<L: RotationLut>(
     lut: &L,
     facing: u16,
@@ -304,10 +382,10 @@ impl FacingBias {
 /// biased by `0xFFF` when negative before the `>> 12`, i.e. it truncates
 /// toward zero rather than flooring.
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
-/// Its own missing input is narrower than the stepper's: the **mesh-header
-/// scale** at `actor[+0x22C][+0x72]`. Engine battle actors carry a typed pose
-/// and no mesh-header pointer, so nothing can supply it.
+/// Input caveat (narrower than a missing caller): engine battle actors carry
+/// a typed pose and no mesh-header pointer, so the live tick substitutes the
+/// q12 unit (`0x1000`) for the retail `actor[+0x22C][+0x72]` word - offsets
+/// are unscaled until the per-actor render-node scale is modeled.
 pub fn scale_offset(off: i16, scale: u16) -> i32 {
     let p = i32::from(off) * i32::from(scale);
     let p = if p < 0 { p + 0xFFF } else { p };
@@ -326,13 +404,12 @@ pub fn scale_offset(off: i16, scale: u16) -> i32 {
 /// Returns `None` for action `0` (no queued action - the read would run off the
 /// front of the map).
 ///
-/// NOT WIRED: reached only from [`step_effect_script`], which no engine host drives.
-/// The map it indexes *is* reachable - `legaia_asset::move_power` parses the
-/// same table this offset addresses - so the missing input here is only the
-/// caller, not the data. A battle-action path that carried the acting actor's
-/// `+0x1DF` queued-action byte alongside the parsed table could call this
-/// directly; note the off-by-one (`map[action - 1]`, not `map[action]`), which
-/// is the part worth having pinned before anyone wires it.
+/// The map is `legaia_asset::move_power::parse_id_index_map`'s table (runtime
+/// VA `0x801F4E64`), which the live tick passes when a
+/// `crate::move_power::MovePowerCatalog` is installed. Note the off-by-one:
+/// `map[action - 1]`, not `map[action]` (`0x801df25c`). The resulting record
+/// offset is surfaced on [`EffectScriptStep`] but has no consumer yet - the
+/// engine has no `ctx[+0x1014]` staged-record slot (see the module note).
 pub fn move_power_record_offset(map: &[u8], action: u8) -> Option<usize> {
     let idx = usize::from(action).checked_sub(1)?;
     let id = usize::from(*map.get(idx)?);
@@ -407,21 +484,17 @@ pub struct EffectScriptActor {
 /// gate on the zero-filled tail. The port keeps that structure, so a script
 /// with two terminators installs twice - which is what the bytes do.
 ///
-/// NOT WIRED: the blocker is the call's *arguments*, not its caller. Retail
-/// reaches `FUN_801DEA50` from exactly two `jal` sites, `0x800478B8` and
-/// `0x80047C08`, both inside `FUN_80047430` - the battle per-frame anim-node
-/// tick, which is ported **and live** (itself function-pointer-dispatched from
-/// `FUN_8002519C`). So the caller exists on a production path already; what the
-/// port cannot supply is the state that call passes: `engine-core` has no
-/// `ctx[+0x1014]` move-power slot, no per-target `+0x1144` homing block, and no
-/// actor `+0x1F5` cursor to advance. Wiring this needs the battle action path
-/// to carry the disc effect-script block for the active move (the block is
-/// reachable - `legaia_asset::move_power` already parses the record the
-/// terminator installs).
-///
-/// Both call sites sit behind a `_DAT_8007BD71 == 0xFF` gate whose arms have
-/// not been checked against the port's model of that byte; treat the argument
-/// list above as the settled part and that gate as open.
+/// Wired: `World::tick_battle_animations` drives this once per battle frame
+/// per actor with a committed clip, mirroring the retail cadence (the two
+/// `jal` sites `0x800478B8` / `0x80047C08` inside `FUN_80047430`, the
+/// per-frame anim-node tick dispatched from `FUN_8002519C`). The block is the
+/// committed clip's disc entry head, the cursor persists on
+/// `world::Actor::battle_effect_cursor`, and the spawns queue as
+/// `world::BattleEffectSpawn`s for the host FX layer. Still open: the retail
+/// call sites' `_DAT_8007BD71 == 0xFF` effect-VM-ready gate has no checked
+/// engine model (the engine steps whenever a clip is committed), and the
+/// terminator's two context installs surface without a consumer (module
+/// note).
 pub fn step_effect_script<L: RotationLut>(
     lut: &L,
     block: &[u8],
@@ -529,6 +602,34 @@ mod tests {
             b[o + 6..o + 8].copy_from_slice(&z.to_le_bytes());
         }
         b
+    }
+
+    #[test]
+    fn retail_lut_is_the_truncated_sine_pair() {
+        let lut = retail_rotation_lut();
+        // Cardinal points of the 12-bit angle space.
+        assert_eq!(lut.b(0), 0);
+        assert_eq!(lut.b(1024), 4096); // sin(90 deg) at 1<<12 fixed point
+        assert_eq!(lut.b(2048), 0);
+        assert_eq!(lut.b(3072), -4096);
+        // `a` is `b` advanced a quarter revolution (the retail +0x800-byte
+        // pointer offset): cosine.
+        assert_eq!(lut.a(0), 4096);
+        assert_eq!(lut.a(1024), 0);
+        assert_eq!(lut.a(2048), -4096);
+        for angle in [1, 7, 100, 2047, 4095] {
+            assert_eq!(lut.a(angle), lut.b((angle + 1024) & 0xFFF), "{angle}");
+        }
+        // Truncation toward zero, not rounding: entry 1 is
+        // trunc(sin(2pi/4096)*4096) = trunc(6.283) = 6 (rounding would give
+        // the same here, but entry 3 separates them: trunc(18.849) = 18).
+        assert_eq!(lut.b(1), 6);
+        assert_eq!(lut.b(3), 18);
+        // A retail-LUT rotation preserves length like the synthetic one.
+        let r = rotate_offset(lut, 300, FacingBias::Half, 1000, 250);
+        let len = ((r.0 * r.0 + r.1 * r.1) as f64).sqrt();
+        let src = ((1000.0f64 * 1000.0) + (250.0 * 250.0)).sqrt();
+        assert!((len - src).abs() <= 4.0, "{r:?}");
     }
 
     #[test]

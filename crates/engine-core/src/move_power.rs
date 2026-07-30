@@ -114,6 +114,16 @@ impl MovePowerCatalog {
         self.aux.as_ref()
     }
 
+    /// The raw 128-byte id → power-index map bytes, based at the parse VA
+    /// `0x801F4E63` (`map[move_id]` = table index). Callers that mirror the
+    /// effect-script terminator's read
+    /// ([`crate::action_effect_script::move_power_record_offset`], whose map
+    /// argument is documented against the `0x801F4E64` base) pass
+    /// `&bytes[1..]` - the two conventions address the same bytes.
+    pub fn id_index_map_bytes(&self) -> &[u8] {
+        &self.id_index_map
+    }
+
     /// The `0x801f53d4` impact-effect packed-config table, when present.
     pub fn impact_table(&self) -> Option<&[u32; IMPACT_EFFECT_TABLE_LEN]> {
         self.impact_table.as_ref()

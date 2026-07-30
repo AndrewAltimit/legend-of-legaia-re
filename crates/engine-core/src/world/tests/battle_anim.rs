@@ -428,3 +428,100 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
         "terminator -> recovery, got {out:?}"
     );
 }
+
+// --- effect-script walk (FUN_801DEA50 via the animation tick) ---------------
+
+/// A clip whose entry head carries one effect-script record at cursor 0:
+/// `[frame_gate, effect, x, y, z]` at `+0x14` (RECORD_BASE).
+fn scripted_clip(action_id: u8, effect: (u8, u8, i16, i16, i16)) -> MonsterAnimation {
+    use crate::action_effect_script::{RECORD_BASE, RECORD_STRIDE};
+    let mut clip = pose_test_clip(action_id, 4, 0);
+    let mut head = vec![0u8; RECORD_BASE + 2 * RECORD_STRIDE];
+    let (frame, id, x, y, z) = effect;
+    head[RECORD_BASE] = frame;
+    head[RECORD_BASE + 1] = id;
+    head[RECORD_BASE + 2..RECORD_BASE + 4].copy_from_slice(&x.to_le_bytes());
+    head[RECORD_BASE + 4..RECORD_BASE + 6].copy_from_slice(&y.to_le_bytes());
+    head[RECORD_BASE + 6..RECORD_BASE + 8].copy_from_slice(&z.to_le_bytes());
+    clip.effect_script = head;
+    clip
+}
+
+#[test]
+fn committed_clip_effect_script_queues_a_positioned_spawn() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    // Slot 0 (party, seat (0, -800), facing 0 = +Z): a swing at slot 0xC
+    // whose script fires effect 0x86 (direct form) at local (0, 300, 250)
+    // once the clip reaches frame 1.
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[0x0C] = Some(scripted_clip(0x0C, (1, 0x86, 0, 300, 250)));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+
+    // Stage + commit the swing.
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(
+        world.actors[0].battle_effect_cursor, 0,
+        "commit resets +0x1F5"
+    );
+    assert!(world.actors[0].battle_effect_script.is_some());
+
+    world.tick_battle_animations();
+    let spawns = world.drain_battle_effect_spawns();
+    assert_eq!(spawns.len(), 1, "one record, one spawn");
+    let s = spawns[0];
+    assert_eq!(s.actor_slot, 0);
+    assert_eq!(s.effect, 0x06, "direct bit stripped");
+    assert!(s.direct);
+    // Facing 0 through the retail LUT pair: the direct branch uses the
+    // unbiased angle, so sin(0)=0 / cos(0)=4096 pass the local offset
+    // through: x' = x, z' = z. Y is subtracted from the seat Y (0).
+    assert_eq!(s.at, (0, -300, -800 + 250));
+    assert_eq!(s.facing, 0);
+    // The cursor advanced past the consumed record and holds - the next
+    // frame does not re-fire it.
+    assert_eq!(world.actors[0].battle_effect_cursor, 1);
+    world.tick_battle_animations();
+    assert!(world.drain_battle_effect_spawns().is_empty());
+
+    // A new commit resets the walk (retail FUN_8004AD80 `sb zero,0x1f5`).
+    world.actors[0].battle.queued_anim = 0;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle_effect_cursor, 0);
+}
+
+#[test]
+fn monster_facing_rotates_the_spawn_offset_half_a_turn() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    // Slot 1 is the monster (seat (0, 800), seeded facing 0x800 = -Z). The
+    // same local (0, 0, 250) record must land on the OTHER side of the
+    // monster: the direct-form rotation by facing 0x800 negates the local Z.
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 8];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[6] = Some(scripted_clip(6, (1, 0x86, 0, 0, 250)));
+    world.set_actor_battle_action_clips(1, std::sync::Arc::new(clips));
+    world.actors[1].battle.queued_anim = 6;
+    world.commit_staged_battle_anim(1);
+    world.tick_battle_animations();
+    let spawns = world.drain_battle_effect_spawns();
+    assert_eq!(spawns.len(), 1);
+    // sin(0x800) = 0, cos(0x800) = -4096: z' = -250, toward the party.
+    assert_eq!(spawns[0].at, (0, 0, 800 - 250));
+    assert_eq!(spawns[0].facing, 0x800);
+}
+
+#[test]
+fn empty_effect_script_clips_step_nothing() {
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    assert!(world.actors[0].battle_effect_script.is_none());
+    world.tick_battle_animations();
+    assert!(world.drain_battle_effect_spawns().is_empty());
+}

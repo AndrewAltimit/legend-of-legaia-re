@@ -150,6 +150,41 @@ pub struct BattleShoutCue {
     pub action: u8,
 }
 
+/// One battle **effect-script spawn request** - a record the per-actor
+/// effect-script walk consumed this frame
+/// ([`crate::action_effect_script::step_effect_script`], the `FUN_801DEA50`
+/// port driven from the battle animation tick). Cosmetic, in the
+/// [`BattleHitFx`] "drain and present" pattern: `at` is already the
+/// world-space position (the record's local offset scaled and rotated by the
+/// acting actor's facing), so the host only routes the spawn.
+///
+/// The two forms mirror retail's two spawn entry points:
+///
+/// - `direct` (`effect & 0x80` set): `FUN_801DFDF0` - the 2D effect pool;
+///   the engine analogue is `World::try_spawn_effect(effect & 0x7F, at,
+///   facing)` (the id space identity with the pool's ui ids is the same one
+///   the move-power `+0x12` effect lists' `AltEffect` entries already use).
+/// - table (`direct == false`): `FUN_80050ED4` over the `0x801F6324`
+///   prototype table - the engine analogue is
+///   `World::spawn_action_table_effect(effect, at)` (a move-VM scene-graph
+///   part, the same record family `World::spawn_move_fx` stages).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleEffectSpawn {
+    /// Acting actor's slot (0..=2 party, 3.. monsters).
+    pub actor_slot: u8,
+    /// The record's effect selector with the direct bit stripped
+    /// (`effect & 0x7F`).
+    pub effect: u8,
+    /// `true` for the `0x80`-flagged direct form (2D pool), `false` for the
+    /// table form (`0x801F6324` scene-graph prototype).
+    pub direct: bool,
+    /// World-space spawn position (battle-world units).
+    pub at: (i32, i32, i32),
+    /// The acting actor's facing at spawn time (12-bit PSX angle) - retail
+    /// passes it as the direct form's spawn angle (`0x801dee98`).
+    pub facing: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleSfxCue {
     /// SfxBank cue id (the art `HitCue::kind`).

@@ -203,6 +203,20 @@ impl World {
         std::mem::take(&mut self.battle_sfx_cues)
     }
 
+    /// Drain the battle **effect-script spawn requests** queued this frame -
+    /// one per effect record the per-actor effect-script walk consumed
+    /// ([`crate::action_effect_script::step_effect_script`], driven from
+    /// [`World::tick_battle_animations`]). Cosmetic: each carries a world
+    /// position already rotated by the acting actor's facing. The host routes
+    /// the `direct` form into the 2D effect pool
+    /// ([`World::try_spawn_effect`]) and the table form into the
+    /// `0x801F6324` scene-graph spawner
+    /// ([`World::spawn_action_table_effect`]); nothing here mutates gameplay
+    /// state. Returns them in walk order.
+    pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
+        std::mem::take(&mut self.battle_effect_spawns)
+    }
+
     /// Drain the Tactical-Arts shout cues queued this frame (one per executed
     /// party art with a real action constant, pushed at art start). The host
     /// resolves each against its arts-voice bank and plays the CD-XA shout
