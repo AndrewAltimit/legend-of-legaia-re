@@ -180,7 +180,8 @@ table.arts-list .cmd-tag {
         <div class="char-section-label" id="char-anm-section-label">Animation</div>
         <div class="char-anm-wrap" id="char-anm-wrap">
           <select id="char-anm-bundle" class="char-anm-select"></select>
-          <div class="char-anm-row">
+          <div class="char-arts-kinds" id="char-anm-clips"></div>
+          <div class="char-anm-row" id="char-anm-record-row">
             <input type="range" id="char-anm-record" min="0" max="0" value="0">
             <span id="char-anm-record-label" class="char-anm-readout">-</span>
           </div>
@@ -196,7 +197,7 @@ table.arts-list .cmd-tag {
             <input type="checkbox" id="char-anm-show-all"> browse all bundles / records
           </label>
           <div class="char-info-note" id="char-anm-info">
-            The real animation clips shipped on the disc, filtered to the ones that apply to the shown model: in field form the party's own <strong>walk / idle locomotion bank</strong> (with the per-scene NPC pools browsable as a secondary group), in battle and Baka Fighter forms the character's labeled 9-record battle bank. Pick a clip and press play; encoding: <a href="formats/anm.html">ANM format</a>.
+            The real animation clips shipped on the disc, filtered to the ones that apply to the shown model: in field form the party's own <strong>walk / idle locomotion bank</strong>, in battle and Baka Fighter forms the character's labeled 9-record battle bank. Click a clip to play it; the per-scene NPC pools and every other bundle are under &ldquo;browse all&rdquo;. Encoding: <a href="formats/anm.html">ANM format</a>.
           </div>
         </div>
       </div>
@@ -517,6 +518,37 @@ table.arts-list .cmd-tag {
     }
     anmRecordSlider.value = String(pos);
     updateAnmReadout();
+    syncAnmControlsMode();
+  }
+
+  // Default view: one button per clip, arts-page style - the scoped list is
+  // a handful of labeled records (the party locomotion bank in field form,
+  // the battle bank in battle / Baka forms), so a slider over it and the
+  // bundle dropdown (a single relevant entry) are browse-all-only chrome.
+  const anmClipsEl = document.getElementById('char-anm-clips');
+  const anmRecordRow = document.getElementById('char-anm-record-row');
+  function syncAnmControlsMode() {
+    if (!anmClipsEl || !anmRecordRow) return;
+    const buttons = !showAllAnm;
+    anmBundleSel.style.display = buttons ? 'none' : '';
+    anmRecordRow.style.display = buttons ? 'none' : '';
+    anmClipsEl.style.display = buttons ? '' : 'none';
+    if (buttons) renderAnmClipButtons();
+  }
+  function renderAnmClipButtons() {
+    const bundle = anmCorpus && anmCorpus.bundles[curAnmBundleIdx];
+    if (!bundle || !bundle.records) { anmClipsEl.innerHTML = ''; return; }
+    anmClipsEl.innerHTML = anmFiltered.map((idx, pos) => {
+      const rec = bundle.records[idx];
+      // The filtered list is already scoped to the shown character, so the
+      // "Vahn - " prefix on every bank label is noise here.
+      const name = rec && rec.label
+        ? rec.label.replace(/^(Vahn|Noa|Gala) - /, '')
+        : `Clip ${pos + 1}`;
+      const hint = rec ? `${rec.frame_count} frames` : '';
+      return `<button class="char-arts-kind${idx === curAnmRecordIdx ? ' is-active' : ''}"
+        data-rec="${idx}" title="${hint}">${escapeHtml(name)}</button>`;
+    }).join('');
   }
 
   function updateAnmReadout() {
@@ -1121,6 +1153,23 @@ table.arts-list .cmd-tag {
         : (pos | 0);
       updateAnmReadout();
       maybeLoadCurrentAnim();
+    });
+  }
+  if (anmClipsEl) {
+    // A clip button both selects and PLAYS - the arts-page interaction: one
+    // click, the character performs it.
+    anmClipsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-rec]');
+      if (!btn) return;
+      const idx = Number(btn.dataset.rec);
+      if (!Number.isFinite(idx)) return;
+      curAnmRecordIdx = idx;
+      syncAnmSlider();
+      maybeLoadCurrentAnim();
+      if (meshView && meshView.anim) {
+        meshView.setPlaying(true);
+        anmPlayBtn.textContent = '⏸ pause';
+      }
     });
   }
   const anmShowAll = document.getElementById('char-anm-show-all');
