@@ -1911,8 +1911,34 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // mode == 0: spawn/reset. Route directly into the effect pool so
         // the VM's state machine drives the effect lifecycle while engines
         // also receive the event for visual dispatch.
+        //
+        // Retail seeds the spawn position from the ACTING actor's own world
+        // position and facing, never the world origin: the effect-script
+        // spawn arm copies `actor+0x34..0x3B` into the position buffer,
+        // rotates the per-effect offsets by the facing's sin/cos, and passes
+        // `actor+0x46` as the spawn angle (`FUN_8004998C` spawn sites
+        // `0x8004A634..0x8004A81C` -> `FUN_801DFDF0(id, sp+0x10, +0x46)`,
+        // disassembly-graded). The engine equivalents are the actor's battle
+        // seat on `move_state` (the retail `+0x34/+0x38` pair
+        // `BattleActionHost::actor_position` already reads) and
+        // `BattleActor::facing_angle` (`+0x46`).
         if mode == 0 {
-            self.world.try_spawn_effect(effect_id, [0, 0, 0], 0);
+            let (at, angle) = self
+                .world
+                .actors
+                .get(self.world.battle_ctx.active_actor as usize)
+                .map(|a| {
+                    (
+                        [
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        ],
+                        a.battle.facing_angle & 0xFFF,
+                    )
+                })
+                .unwrap_or(([0, 0, 0], 0));
+            self.world.try_spawn_effect(effect_id, at, angle);
         }
     }
     fn camera_bounds(&mut self) {

@@ -292,12 +292,35 @@ impl PlayWindowApp {
             if let Some((move_id, origin)) = self.session.host.world.take_pending_move_fx_spawn()
                 && self.session.host.world.spawn_move_fx(move_id, origin)
             {
-                // Route the move's sound cue the same way the field-FX /
-                // debug path does (classify only; move-FX cue playback is
-                // not yet wired to the SFX ring).
+                // Route the move's sound cue through the retail dispatch
+                // decode (`classify_cue` = FUN_8004FCC8) and PLAY it: a
+                // Ring cue's `ring_value` is the SfxBank descriptor id
+                // (docs/formats/sfx-table.md), enqueued into the same
+                // per-frame SFX scheduler the art-strike cues ride
+                // (`AudioBgmDirector::enqueue_sfx` -> `tick_sfx_frame`,
+                // which resolves the cue's own `+4` category bank).
+                // Voice cues (`id >= 0x100`) are streamed XA triggers
+                // with no engine lane yet - logged, not dropped silently.
                 if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
-                    let dispatch = legaia_engine_audio::classify_cue(cue as u32);
-                    log::debug!("battle move-FX cue {cue:#04x} -> {dispatch:?}");
+                    match legaia_engine_audio::classify_cue(cue as u32) {
+                        legaia_engine_audio::CueDispatch::Ring { ring_value, .. } => {
+                            if let Some(bgm) = self.session.bgm.as_mut() {
+                                bgm.enqueue_sfx(ring_value, 0, 0, 0);
+                                log::debug!(
+                                    "battle move-FX cue {cue:#04x} enqueued as SFX {ring_value:#04x}"
+                                );
+                            } else {
+                                log::debug!(
+                                    "battle move-FX cue {cue:#04x} -> SFX {ring_value:#04x} (no audio)"
+                                );
+                            }
+                        }
+                        dispatch @ legaia_engine_audio::CueDispatch::Voice { .. } => {
+                            log::debug!(
+                                "battle move-FX cue {cue:#04x} -> {dispatch:?} (voice lane unmodeled)"
+                            );
+                        }
+                    }
                 }
             }
             // Advance an active Seru-magic summon scene-graph (the cast
@@ -1378,10 +1401,55 @@ impl PlayWindowApp {
                         .and_then(|o| o.as_ref())
                         .or_else(|| self.meshes.get(tmd_idx));
                     if let Some(mesh) = mesh {
+                        // Target-select cursor: while the command picker
+                        // points at an enemy row, the ported FUN_801DA6B4
+                        // (`engine-vm::battle_action::target_cursor_highlight`)
+                        // stamps three render words across the monster slots -
+                        // `render_flag` 5 on the pointed-at monster / 200 on
+                        // the rest, the bright/dim colour words, and the q12
+                        // `render_scale` (0x1000 = neutral, 0 = cursor down).
+                        // Render them here: the scale word composes onto the
+                        // model about the actor origin, and the tint rides the
+                        // per-draw GTE depth-cue seam (a saturated `DrawCue`
+                        // ramp = a flat blend toward the cue colour) - the
+                        // pointed-at monster pulses bright, the others dim.
+                        // The retail tint pass's own per-frame colour-word
+                        // stepping (FUN_8004A908) is not modeled; the pulse
+                        // phase is the host tick.
+                        let mut model = self.actor_model(i);
+                        let mut cue = None;
+                        if in_battle {
+                            use legaia_engine_vm::battle_action as ba;
+                            let b = &actor.battle;
+                            if b.render_scale != 0 && b.render_scale != 0x1000 {
+                                model *=
+                                    Mat4::from_scale(Vec3::splat(b.render_scale as f32 / 4096.0));
+                            }
+                            match b.render_flag {
+                                ba::CURSOR_FLAG_SELECTED => {
+                                    let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
+                                    cue = Some(legaia_engine_render::DrawCue {
+                                        far: [1.0, 1.0, 1.0],
+                                        near_z: -1.0,
+                                        far_z: 0.0,
+                                        max_ir0: pulse,
+                                    });
+                                }
+                                ba::CURSOR_FLAG_DIMMED => {
+                                    cue = Some(legaia_engine_render::DrawCue {
+                                        far: [0.0, 0.0, 0.0],
+                                        near_z: -1.0,
+                                        far_z: 0.0,
+                                        max_ir0: 0.55,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: actor_cam * self.actor_model(i),
-                            cue: None,
+                            mvp: actor_cam * model,
+                            cue,
                         });
                     }
                 }
@@ -1523,6 +1591,25 @@ impl PlayWindowApp {
             } else {
                 None
             };
+            // FX model matrices pair with the active render frame:
+            // battle cameras carry no world negation (keep the
+            // per-model Y-flip); the field cameras compose
+            // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
+            let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
+            let fx_model_flip = if fx_in_battle {
+                Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            } else {
+                Mat4::IDENTITY
+            };
+            // Battle FX ride the actor camera composition (the retail
+            // 4x world-scale base under the shared rotation) so
+            // effects land on the scaled actor stage; field FX use
+            // the field camera as-is.
+            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
+                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+            } else {
+                cam
+            };
             // Effect-pool billboards: bridge live effect child sprites
             // into the renderer as faithful camera-facing quads sized
             // and UV-addressed from the effect bundle's inline atlas
@@ -1532,12 +1619,18 @@ impl PlayWindowApp {
             // invisible while the texel-source upload is unpinned, real
             // once it lands), plus a tinted outline through the Lines
             // pipeline so the spawn is visible now. See
-            // docs/subsystems/effect-vm.md.
-            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, cam);
+            // docs/subsystems/effect-vm.md. The billboards ride `fx_cam`
+            // like every other battle FX layer: in a stage-dome battle
+            // the pool positions are actor-stage coordinates, so drawing
+            // them under the unscaled `cam` landed each quad 4x too
+            // small at the wrong stage position. The camera-facing basis
+            // derives from the same matrix, so the quads face the camera
+            // that actually draws them.
+            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, fx_cam);
             if let Some(mesh) = effect_billboard.as_ref() {
                 draws.push(SceneDraw {
                     mesh,
-                    mvp: cam,
+                    mvp: fx_cam,
                     cue: None,
                 });
             }
@@ -1558,25 +1651,6 @@ impl PlayWindowApp {
             // has a model assigned (same per-frame model-matrix
             // convention as `actor_model`). Held in a local Vec so the
             // meshes outlive the render borrow.
-            // FX model matrices pair with the active render frame:
-            // battle cameras carry no world negation (keep the
-            // per-model Y-flip); the field cameras compose
-            // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
-            let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
-            let fx_model_flip = if fx_in_battle {
-                Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-            } else {
-                Mat4::IDENTITY
-            };
-            // Battle FX ride the actor camera composition (the retail
-            // 4x world-scale base under the shared rotation) so
-            // effects land on the scaled actor stage; field FX use
-            // the field camera as-is.
-            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
-                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
-            } else {
-                cam
-            };
             let effect_model_draws = self.build_effect_model_draws(r, fx_model_flip, in_world_map);
             for (mesh, model) in &effect_model_draws {
                 draws.push(SceneDraw {
@@ -1656,10 +1730,13 @@ impl PlayWindowApp {
                 vram,
                 draws: &draws,
                 color_draws: &color_draws,
+                // Effect outlines share the billboards' `fx_cam` (the two
+                // sources are mutually exclusive, and off the battle stage
+                // `fx_cam == cam`, so the world-map markers are unaffected).
                 overlay_lines: world_map_entity_lines
                     .as_ref()
                     .or(effect_lines.as_ref())
-                    .map(|m| (m, cam)),
+                    .map(|m| (m, fx_cam)),
                 overlay_sprites: sprites_slot_1,
                 overlay_sprites_2: sprites_slot_2,
                 overlay_text: Some(&overlay),
