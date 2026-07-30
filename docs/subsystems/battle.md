@@ -685,10 +685,17 @@ Tetsu seats. Per-seat variation lives in the **focus trio**, which a solo
 trace cannot distinguish from a constant. Both framing laws, the per-character
 height table `0x801F4D2C`, and the focus trio are covered under
 [`battle-action.md`](battle-action.md#case-0---the-submenu-close-up-framing).
-Engine mirror: `window/battle_cam.rs` in `play-window` (phase derived from the
-live dialogue / command-session state, stepped on the retail display-frame
-clock), with the glide-table kernel port at `legaia_engine_vm::battle_camera`
-(`FUN_801D829C`).
+Engine mirror: the phase script lives ONCE, in
+`legaia_engine_vm::battle_cam_script` (phases, poses, glides, plus
+`battle_vp` - the retail GTE view-projection as one matrix), and both hosts
+drive it: the native `play-window` (`window/battle_cam.rs` adapter;
+`battle_cam_inputs` derives phase / acting actor / formation from the live
+dialogue / command-session state) and the browser play page
+(`web-viewer::play_battle_render`, same derivation, handing the page a ready
+view-projection via `play_battle_camera_vp`), each stepping on the retail
+display-frame clock. The glide-table kernel port stays at
+`legaia_engine_vm::battle_camera` (`FUN_801D829C`); a cross-host recipe test
+in each host pins both derivations to the same literal pose.
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix
 `DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0 → a **4.0× uniform
