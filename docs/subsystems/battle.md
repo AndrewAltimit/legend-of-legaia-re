@@ -35,7 +35,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 **Runtime-memory captures + tests**
 - [Encounter trigger memory layout](#encounter-trigger---runtime-memory-layout) · [scene-init residency](#battle-scene-init-residency-window) · [item-use residency](#item-use-battle-event-residency) · [stat-growth observations](#captured-stat-growth-observations)
 - [CDNAME → MV STR cutscene routing](#cdname--mv-str-cutscene-routing) · [end-to-end gameplay loop test](#end-to-end-gameplay-loop-integration-test)
-- [Field-to-battle intro presentation](#field-to-battle-intro-presentation) - [what blocks the styles](#what-actually-blocks-the-styles)
+- [Field-to-battle intro presentation](#field-to-battle-intro-presentation)
 
 ## Battle scene loader (`FUN_800520F0`)
 
@@ -2392,47 +2392,32 @@ by `World::tick_battle_intro` for as long as the encounter session sits in its
 advancing, and bit 0 comes from the post-switch spin test, so `ready == 3` is
 the completion state.
 
-The **visual** half is not. Five style kernels are ported and none is reached
-by a host:
+The **visual** half is live end to end. The five style kernels are ported in
+`engine-vm` and drawn by `engine-render::battle_intro`, the per-frame
+working-set owner the native play window arms for every encounter (the browser
+hosts have no screen-space primitive path - see
+[`host-drift.md`](../tooling/host-drift.md)):
 
-| Style | Retail | Port |
-|---|---|---|
-| Scatter particles | `FUN_801CFDA0` | `battle_intro_styles::tick_particle_field` (`PARTICLE_TICK_A`) |
-| Scatter with spin-up | `FUN_801D0370` | same, `PARTICLE_TICK_B` |
-| Tile shatter | `FUN_801D0D24` | `battle_intro_tiles::tick_tile_grid` |
-| Swirl fan | `FUN_801D1888` | `battle_intro_swirl::tick_swirl` |
-| Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` |
+| Style | Retail tick | Simulation port | Packet builder port |
+|---|---|---|---|
+| Scatter particles | `FUN_801CFDA0` | `battle_intro_styles::tick_particle_field` (`PARTICLE_TICK_A`) | `battle_intro::emit_particle_field` |
+| Scatter with spin-up | `FUN_801D0370` (+ ring tail `FUN_801D1CFC`) | same, `PARTICLE_TICK_B` | same + `emit_spinup_ring` |
+| Tile shatter | `FUN_801D0D24` | `battle_intro_tiles::tick_tile_grid` | `battle_intro::emit_tile` |
+| Swirl fan | `FUN_801D1888` / `FUN_801D1A20` | `battle_intro_swirl::tick_swirl` | `battle_intro::emit_swirl_band` |
+| Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` | `battle_intro::intro_quad_to_screen` |
 
-### What actually blocks the styles
-
-Two things, and neither is the screen-space draw path - a point worth stating
-plainly because the modules' own notes previously claimed otherwise.
-
-1. **No working-set owner.** `World::battle_intro` is a `TransitionEntity`
-   (`phase` / `elapsed` / `ready`). Nothing holds a particle block, tile grid
-   or swirl mesh between frames.
-2. **No captured field frame.** Every style textures itself with the field
-   image retail left in VRAM. The engine never lands its drawn 3D scene in the
-   software PSX VRAM: the VRAM texture is created `TEXTURE_BINDING |
-   COPY_DST`, and only TIM / CLUT / texture-page uploads ever reach it.
-
-What is **not** missing: `engine-render` has the screen-space textured
-primitive path these styles draw through - `RenderTarget::ScreenOverlay` over
-per-primitive tpage / CLUT with `screen_overlay::order_primitives` as the
-ordering table, and `billboard::project_billboard` (a port of `FUN_800195A8`)
-as the sprite projector the particle field rides, returning the OT bucket
-`particle_quad_accepted` consumes. A frame capture also exists
-(`Renderer::capture_rgba`), and `legaia_tim::Vram` is a persistent re-readable
-framebuffer whose `move_image` is a port of retail's own capture primitive.
-
-The curtain has a third input missing: its descriptor table at overlay VA
-`0x801D1EC4`. That is a parse rather than a discovery - PROT 0979 is already
-identified and base-pinned in `crates/asset/data/static-overlays.toml`, so the
-bytes are reachable; nothing decodes the `0x14`-stride records yet.
-
-`crates/engine-vm/tests/battle_intro_chain.rs` pins the half that is done: all
-four working sets seed and tick from the live transition clock, each advancing
-one step per frame, with no gap in the arithmetic.
+The chain: `BattleIntro` holds the style's working set between frames and
+synchronises its clock from the live transition entity; the one-shot field
+frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
+field in the texture pages each style's packets name; and the emitted
+`ScreenPrim`s composite over the scene through
+`RenderTarget::SceneWithScreenPrims`. Per-style packet detail - what each
+emitter builds, the dispatcher flag decode, and the two nuances the port
+leaves un-carried - is on
+[`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu);
+`crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
+counts, geometry and OT linkage, and `crates/engine-vm/tests/battle_intro_chain.rs`
+the working-set arithmetic.
 
 ## See also
 

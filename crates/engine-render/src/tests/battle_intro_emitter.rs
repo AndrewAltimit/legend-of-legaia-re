@@ -289,11 +289,10 @@ fn the_fade_rides_the_same_clock_and_arrives_as_a_full_screen_quad() {
 }
 
 #[test]
-fn the_three_unported_styles_tick_their_working_set_and_draw_nothing() {
-    // Not a wire and not claimed as one: their retail packet builders are not
-    // ported. What they must still do is advance, because the fade and the
-    // handoff both ride the same clock - so a battle opened on any of them
-    // still fades and still hands off on the retail frame.
+fn every_style_skips_its_first_frame_and_keeps_its_fade_schedule() {
+    // Frame one projects through the field camera's stale view matrix in
+    // retail, so no style draws it; and whatever a style draws, the fade and
+    // the handoff ride the same clock.
     for style in [
         IntroStyle::ScatterParticles,
         IntroStyle::SpinUpParticles,
@@ -302,9 +301,12 @@ fn the_three_unported_styles_tick_their_working_set_and_draw_nothing() {
         let total = 100;
         let mut it = intro(style, total);
         let early = it.tick(0, 1);
-        assert!(!early.style_drawn, "{style:?} must not claim a draw");
-        assert!(early.prims.is_empty(), "{style:?} emitted geometry");
-        // The fade still arrives on schedule.
+        assert!(!early.style_drawn, "{style:?} must not draw frame one");
+        assert!(
+            early.prims.is_empty(),
+            "{style:?} emitted frame-one geometry"
+        );
+        // The fade still arrives on schedule, over the style's own draws.
         let lead = match style {
             IntroStyle::Swirl => 0x20,
             _ => 0x18,
@@ -314,8 +316,245 @@ fn the_three_unported_styles_tick_their_working_set_and_draw_nothing() {
             late.fade.is_some(),
             "{style:?} lost its fade because the clock did not reach it"
         );
-        assert_eq!(late.prims.len(), 1, "{style:?}: the fade quad only");
+        let ScreenPrim::Flat(f) = late.prims.last().copied().unwrap() else {
+            panic!("{style:?}: the fade quad must be last");
+        };
+        assert!(f.semi_transparent, "{style:?}: fade quad is blended");
     }
+}
+
+// ---------------------------------------------------------------------------
+// The particle fields' emitters (FUN_801CFDA0 / FUN_801D0370)
+// ---------------------------------------------------------------------------
+
+/// Prims of one frame split into (wash, textured particle quads, flat ring
+/// quads, fade).
+fn split_particle_frame(
+    f: &crate::battle_intro::IntroFrame,
+) -> (usize, Vec<crate::screen_overlay::ScreenQuad>, usize) {
+    let mut washes = 0;
+    let mut quads = Vec::new();
+    let mut flats = 0;
+    for p in &f.prims {
+        match p {
+            ScreenPrim::Textured(q) => quads.push(*q),
+            ScreenPrim::Flat(q) if q.ot_index == u32::MAX => washes += 1,
+            ScreenPrim::Flat(q) if q.semi_transparent && f.fade.is_none() => flats += 1,
+            ScreenPrim::Flat(_) => flats += 1,
+        }
+    }
+    (washes, quads, flats)
+}
+
+#[test]
+fn the_scatter_field_reconstructs_the_screen_as_8px_patches_at_rest() {
+    use legaia_engine_vm::battle_intro_styles::{PARTICLE_TICK_COUNT, PARTICLE_TPAGE_BIAS};
+    let mut it = intro(IntroStyle::ScatterParticles, 400);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    assert!(f.style_drawn);
+    let (washes, quads, _) = split_particle_frame(&f);
+    // FUN_801CFDA0 washes near-black behind the confetti from frame two on.
+    assert_eq!(washes, 1, "the 0x101010 wash");
+    // All 0x488 visited records are on screen at the seeded rest pose.
+    assert_eq!(quads.len(), PARTICLE_TICK_COUNT);
+    // Particle 0 is the top-left 8x8 patch of the captured frame: page 0x135
+    // (the capture's own column 320), texel (0, 4), projected to its source
+    // cell. At z 0x1000 under H 0x80 the projection is a 1/32 scale, so the
+    // 0x100-unit quad is 8 px.
+    let q0 = quads[0];
+    assert_eq!(q0.tpage, PARTICLE_TPAGE_BIAS as u16);
+    assert_eq!(q0.uv, [(0, 4), (8, 4), (0, 12), (8, 12)]);
+    let w = q0.xy[1].0 - q0.xy[0].0;
+    assert!((w - 8).abs() <= 1, "an 8-px patch, got {w}");
+    // The whole sheet tiles the display.
+    let max_x = quads.iter().map(|q| q.xy[3].0).max().unwrap();
+    let max_y = quads.iter().map(|q| q.xy[3].1).max().unwrap();
+    assert!((i32::from(max_x) - 320).abs() <= 8, "right edge at {max_x}");
+    assert!(max_y >= 220, "bottom edge at {max_y}");
+    // Retail links every scatter quad at OT word 100 (byte 400).
+    assert!(
+        quads
+            .iter()
+            .all(|q| q.ot_index == crate::battle_intro::PARTICLE_OT)
+    );
+    // At clock 1 the diagonal delay ramp (`(col + row) * 0x40`) has released
+    // the cells within `1 * 0x6E`: (0,0) at delay 0 and (0,1)/(1,0) at 0x40.
+    // A moved particle turns semi-transparent (the `|= 2` on the packet code
+    // byte); cell (0,2) at delay 0x80 has not moved yet.
+    assert!(quads[0].semi_transparent, "cell (0,0) has moved");
+    assert!(quads[1].semi_transparent, "cell (0,1) has moved");
+    assert!(!quads[2].semi_transparent, "cell (0,2)'s delay is 0x80");
+}
+
+#[test]
+fn the_spinup_field_draws_confetti_and_the_expanding_ring() {
+    use legaia_engine_vm::battle_intro_styles::PARTICLE_TICK_COUNT;
+    let mut it = intro(IntroStyle::SpinUpParticles, 400);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    assert!(f.style_drawn);
+    let (washes, quads, ring) = split_particle_frame(&f);
+    assert_eq!(washes, 0, "FUN_801D0370 never washes");
+    assert_eq!(quads.len(), PARTICLE_TICK_COUNT);
+    // The FUN_801D1CFC tail: a 96-segment ring, phase 0xA0 at clock 1.
+    assert_eq!(ring, crate::battle_intro::SPINUP_RING_SEGMENTS);
+    // Style B's rest pose also reconstructs the frame: the `>> 3` position
+    // pre-divide against the doubled seed constants lands the same 8-px
+    // cells (x = -0x500 + col * 0x40 at view z 0x400 is a 1/8 scale).
+    let q0 = quads[0];
+    let w = q0.xy[1].0 - q0.xy[0].0;
+    assert!((w - 8).abs() <= 1, "an 8-px patch, got {w}");
+}
+
+#[test]
+fn a_moved_spinup_particle_links_one_ot_word_nearer() {
+    use crate::battle_intro::{PARTICLE_OT, PARTICLE_OT_MOVED};
+    let mut it = intro(IntroStyle::SpinUpParticles, 400);
+    it.tick(0, 1);
+    // Run the clock far enough that the radial delays start expiring but not
+    // so far that everything has flown off screen.
+    it.tick(1, 1);
+    let f = it.tick(6, 1);
+    let (_, quads, _) = split_particle_frame(&f);
+    let moved: Vec<_> = quads.iter().filter(|q| q.semi_transparent).collect();
+    let still: Vec<_> = quads.iter().filter(|q| !q.semi_transparent).collect();
+    assert!(!moved.is_empty(), "no particle moved by clock 6");
+    assert!(!still.is_empty(), "every particle moved by clock 6");
+    assert!(moved.iter().all(|q| q.ot_index == PARTICLE_OT_MOVED));
+    assert!(still.iter().all(|q| q.ot_index == PARTICLE_OT));
+}
+
+#[test]
+fn the_spinup_ring_expands_fades_and_expires() {
+    use crate::battle_intro::emit_spinup_ring;
+    // Phase 0: not started. Phase past 0x1000: expired (clock 26 on).
+    let mut none = Vec::new();
+    assert!(!emit_spinup_ring(0, &mut none));
+    assert!(!emit_spinup_ring(0x1001, &mut none));
+    assert!(none.is_empty());
+
+    let radius = |prims: &Vec<ScreenPrim>| -> i32 {
+        prims
+            .iter()
+            .filter_map(|p| match p {
+                ScreenPrim::Flat(q) => Some(i32::from(q.xy[0].0)),
+                _ => None,
+            })
+            .max()
+            .unwrap()
+    };
+    let mut early = Vec::new();
+    assert!(emit_spinup_ring(0xA0, &mut early));
+    let mut later = Vec::new();
+    assert!(emit_spinup_ring(0x500, &mut later));
+    assert!(
+        radius(&later) > radius(&early),
+        "the ring must expand with the phase"
+    );
+    // The depth-cue fade toward the staged black ambient: the colour level
+    // falls as the phase grows.
+    let level = |prims: &Vec<ScreenPrim>| match prims[0] {
+        ScreenPrim::Flat(q) => q.color[0],
+        _ => panic!(),
+    };
+    assert!(level(&later) < level(&early));
+}
+
+// ---------------------------------------------------------------------------
+// The swirl's emitter (FUN_801D1888 / FUN_801D1A20)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_swirl_draws_both_halves_of_every_drawing_band() {
+    use legaia_engine_vm::battle_intro_swirl::{
+        BANDS_DRAWN, COLUMNS, TPAGE_MIRRORED, TPAGE_PRIMARY,
+    };
+    let mut it = intro(IntroStyle::Swirl, 400);
+    it.tick(0, 1);
+    let f = it.tick(1, 1);
+    assert!(f.style_drawn);
+    let quads: Vec<_> = f
+        .prims
+        .iter()
+        .filter_map(|p| match p {
+            ScreenPrim::Textured(q) => Some(*q),
+            _ => None,
+        })
+        .collect();
+    // 12 bands x 2 halves x 32 column pairs x 2 quads (ring + wall), all
+    // accepted: the dispatch is double-sided (flag bit 27), so the mirrored
+    // half's reversed winding does not cull, and every band sits past the
+    // near cutoff at its seeded depth.
+    assert_eq!(quads.len(), BANDS_DRAWN * 2 * (COLUMNS - 1) * 2);
+    // The two halves sample the two capture pages - the right and left
+    // 320-column halves of the captured frame.
+    let primary = quads.iter().filter(|q| q.tpage == TPAGE_PRIMARY as u16);
+    let mirrored = quads.iter().filter(|q| q.tpage == TPAGE_MIRRORED as u16);
+    assert_eq!(primary.count(), quads.len() / 2);
+    assert_eq!(mirrored.count(), quads.len() / 2);
+    // Ring quads carry the neutral colour word, wall quads the darker one,
+    // and the whole packet is opaque (code 0x2C, no |2 anywhere).
+    for q in &quads {
+        assert!(!q.semi_transparent);
+        assert!(
+            q.color == crate::battle_intro::SWIRL_RING_RGB
+                || q.color == crate::battle_intro::SWIRL_WALL_RGB
+        );
+    }
+}
+
+#[test]
+fn swirl_bands_fly_along_z_and_wind_down_bands_stop_drawing() {
+    // The band scalar is a view depth, not a rotation angle: bands with
+    // negative rates fly toward the camera and drop below the 0x80 draw
+    // threshold, after which their quads stop appearing.
+    let mut it = intro(IntroStyle::Swirl, 400);
+    it.tick(0, 1);
+    let first = it.tick(1, 1);
+    // Band 0's rate is -0x6E00 >> 8 per frame ~ -110/frame from 0xA00: it
+    // crosses 0x80 within ~21 frames.
+    let mut clock = 2i16;
+    let mut later = it.tick(clock, 1);
+    while clock < 40 {
+        clock += 1;
+        later = it.tick(clock, 1);
+    }
+    let count = |f: &crate::battle_intro::IntroFrame| {
+        f.prims
+            .iter()
+            .filter(|p| matches!(p, ScreenPrim::Textured(_)))
+            .count()
+    };
+    assert!(
+        count(&later) < count(&first),
+        "wound-down bands must stop drawing: {} vs {}",
+        count(&later),
+        count(&first)
+    );
+}
+
+#[test]
+fn the_swirl_washes_once_the_late_phase_arrives() {
+    use legaia_engine_vm::battle_intro_swirl::LATE_PHASE_FRAME;
+    let mut it = intro(IntroStyle::Swirl, 400);
+    it.tick(0, 1);
+    // The wash reads the previous frame's clock, so it lags the crossing.
+    let at = it.tick(LATE_PHASE_FRAME as i16, 1);
+    let washes = |f: &crate::battle_intro::IntroFrame| {
+        f.prims
+            .iter()
+            .filter(|p| matches!(p, ScreenPrim::Flat(q) if q.ot_index == u32::MAX))
+            .count()
+    };
+    assert_eq!(washes(&at), 0, "the wash lags the late-phase crossing");
+    // `DAT_801D2470` takes this frame's clock *after* the wash test reads the
+    // previous one, so the wash needs the stored clock to have passed the
+    // bound - two frames after the crossing.
+    let next = it.tick(LATE_PHASE_FRAME as i16 + 1, 1);
+    assert_eq!(washes(&next), 0, "the stored clock is exactly the bound");
+    let after = it.tick(LATE_PHASE_FRAME as i16 + 2, 1);
+    assert_eq!(washes(&after), 1, "the 0x101010 wash");
 }
 
 // ---------------------------------------------------------------------------
@@ -749,17 +988,23 @@ mod capture_rects {
     }
 
     #[test]
-    fn styles_with_unestablished_sampling_stay_conservative() {
+    fn the_particle_and_swirl_pages_live_wholly_in_the_columns_rect() {
+        // Particle pages 0x135..=0x139 and swirl pages 0x115/0x117 all carry
+        // the y=256 texpage bit, so their sampling sits inside the columns
+        // rect and the rows blit would buy them nothing.
         for s in [
             IntroStyle::ScatterParticles,
             IntroStyle::SpinUpParticles,
             IntroStyle::Swirl,
         ] {
-            assert_eq!(
-                capture_rects_for(s),
-                [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS],
-                "{s:?} sampling is not established; keep both rects"
-            );
+            assert_eq!(capture_rects_for(s), [FIELD_CAPTURE_COLS]);
+        }
+        // The page decode behind that claim: 15bpp texpage x/y from the TSB.
+        for tpage in [0x135u16, 0x139, 0x115, 0x117] {
+            let x = u32::from(tpage & 0xF) * 64;
+            let y = u32::from((tpage >> 4) & 1) * 256;
+            assert_eq!(y, 256, "page {tpage:#x} carries the y=256 bit");
+            assert!((320..640).contains(&x), "page {tpage:#x} at x {x}");
         }
     }
 }

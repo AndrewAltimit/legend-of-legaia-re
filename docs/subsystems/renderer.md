@@ -570,21 +570,22 @@ between the transition state machine (live in `engine-core`, driven by
 working set, advances it off the transition entity's own `+0x1A` clock rather
 than counting for itself, and emits `ScreenPrim`s plus the per-style fade.
 
-**Coverage is not uniform, and the split is which retail packet builder is
-ported.** The curtain draws end to end: `FUN_801CF1B0` emits *screen-space*
-corners with texture page, CLUT, UVs and a top/bottom colour pair, so there is
-no projection step to invent; its `0x14`-stride descriptor table parses out of
-PROT 0979, and its texture pages decode to the capture rects above. The other
-four styles - the two particle fields, the tile shatter and the swirl - end in
-a GTE/GPU packet emitter that is documented but not ported, and the swirl's fan
-is triangles, for which `ScreenPrim` has no variant at all. Their working sets
-still tick, because the fade ramp and the transition's own completion arm both
-ride the same clock.
+**All five styles draw**, each through its own retail packet builder. The
+curtain's builder (`FUN_801CF1B0`) emits *screen-space* corners with texture
+page, CLUT, UVs and a top/bottom colour pair, so it needs no projection step;
+its `0x14`-stride descriptor table parses out of PROT 0979, and its texture
+pages decode to the capture rects above. The other four end in the same GTE
+projection the module reproduces (the FT4 handler's NCLIP-pair / `AVSZ4` /
+near-cutoff accept chain): the tile shatter and the swirl assemble synthetic
+Legaia-TMD objects for the per-prim dispatcher (`FUN_801D0E54` /
+`FUN_801D1A20` - the swirl dispatches double-sided via flag bit 27, which is
+what lets its x-mirrored half draw), and the two particle fields write
+`POLY_FT4` patches of the captured frame straight into the ordering table
+(`FUN_801CFDA0` / `FUN_801D0370`, plus the spin-up style's expanding-ring tail
+`FUN_801D1CFC`).
 
-What this means in play: **every** battle now runs its retail fade ramp, and
-the formations retail gives the curtain to open with the actual curtain. The
-ordinary random encounter takes style 2, the tile shatter, which the port does
-not draw - see
+What this means in play: every battle opens with the transition retail gives
+it - the ordinary random encounter's tile shatter included - see
 [`cutscene.md`](cutscene.md#which-style-a-battle-gets) for how a battle's style
 is selected.
 
