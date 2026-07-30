@@ -210,26 +210,22 @@ impl World {
     pub(in crate::world) fn accrue_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
         // Battle ordinal -> the occupying character's record (the XP holder).
         let char_slot = self.party_roster_slot(caster as usize);
+        let thresholds = self.magic_xp_thresholds;
         let Some(record) = self.roster.members.get_mut(char_slot) else {
             return;
         };
-        let Some(slot) = crate::magic_xp::spell_slot(record, spell_id) else {
-            // Retail falls through with slot 0x20 and touches bytes past the
-            // arrays; the engine skips a spell the roster doesn't carry.
-            return;
-        };
-        crate::magic_xp::add_spell_xp(record, slot, gain);
-
-        let Some(thresholds) = self.magic_xp_thresholds else {
-            return;
-        };
-        let mut list = record.spell_list();
-        let level = list.levels[slot];
-        let xp = crate::magic_xp::spell_xp(record, slot);
-        if vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, &thresholds) {
-            list.levels[slot] = level + 1;
-            record.set_spell_list(list);
-            self.magic_level_ups.push((caster, spell_id, level + 1));
+        // Shared accrue-then-level kernel (`magic_xp::accrue_and_level`) -
+        // the same accumulator + threshold walk the pause-menu cast runs
+        // (REF: FUN_800402F4); a spell the roster doesn't carry accrues
+        // nothing (retail falls through with slot 0x20 and touches bytes
+        // past the arrays; the engine skips).
+        if let Some(up) = crate::magic_xp::accrue_and_level(
+            record,
+            spell_id,
+            gain,
+            thresholds.as_ref().map(|t| t.as_slice()),
+        ) {
+            self.magic_level_ups.push((caster, spell_id, up.new_level));
             // Retail composes "<spell>'s magic level increased." into the
             // shared message buffer and raises UI element 0x65
             // (`FUN_801F452C`). The engine has one banner channel; the line

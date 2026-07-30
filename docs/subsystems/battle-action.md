@@ -11,6 +11,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
+- [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
 - [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
 
@@ -2135,6 +2136,55 @@ The clip's finish is the engine's anim-end signal: `ADVANCE_DONE` clears (openin
 
 Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
 Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. The art records' `rate_alt` (`+0x84`) byte is used only as the base-archive marker; playback stepping follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)). Engine assumption: the loop-vs-once bit retail derives from the record kind isn't modelled - staged id `1` (the approach walk) loops, every other staged id plays once.
+
+## The per-action effect script (`FUN_801DEA50`)
+
+Every battle action places its visual effects through a small per-frame
+walker that is **not** part of this state machine: `FUN_801DEA50`, called
+only from the per-frame anim-node tick `FUN_80047430` (`jal` sites
+`0x800478B8` / `0x80047C08`, both gated on the effect-VM ready byte
+`DAT_8007BD71 == 0xFF` and paired with `FUN_801EC3E4` on the same
+arguments). A five-form reference scan finds no other caller in the corpus -
+in particular none inside the battle-action overlay itself.
+
+Its inputs resolve entirely out of state this page already names:
+
+- **block** = the committed anim record (`node[+0x4C]`, shadowed from
+  `actor[+0x234 + i*4]` by `FUN_80049348`) - on disc, the action entry whose
+  `+0x14..+0x53` region holds the script. Layout:
+  [`monster-animation.md` § Effect-script records](../formats/monster-animation.md#effect-script-records-entry-0x140x53).
+- **cursor** = actor `+0x1F5`, zeroed by every anim commit
+  (`FUN_8004AD80`, `0x8004B060`).
+- **frame** = the node's 12.4 anim cursor (`node[+0x68] >> 4`).
+- **facing** = actor `+0x46`, the SM's bearing writes
+  ([the cast-begin facing store](#the-cast-begin-facing-store) and the
+  attack-band's `FUN_80019B28 + 0x800` stores).
+- **rotation LUTs** = `_DAT_8007B81C` / `_DAT_8007B7F8`, both into the one
+  SCUS sine table at `0x80070A2C` (`FUN_80026BE0`; 5120 `i16` of
+  `trunc(sin(i*2pi/4096)*4096)`, the second pointer a quarter revolution in).
+- On a `0x7F` terminator record it installs the acting actor's
+  [move-power record](../formats/move-power.md) at `ctx[+0x1014]`
+  (`map[0x801F4E64 + action - 1]`, stride `0x1A` into `0x801F4F5C`) and seeds
+  every targeted slot's homing state (`+0x24E` phase, `+0x1144` launch
+  position, `+0x1166` bearing, `+0x252` target index) over the `+0x1DD`
+  scope band.
+
+Spawn routing splits on the record's effect byte: bit `0x80` set goes to the
+battle overlay's 2D spawn `FUN_801DFDF0` with the actor's facing; otherwise
+`0x801F6324[effect]` names a move-VM part prototype spawned through the
+effect-actor pool allocator `FUN_80050ED4`, with an SFX cue from
+`0x801F6418[effect]` queued alongside
+([`move-power.md`](../formats/move-power.md) documents both tables).
+
+Engine port: kernel `engine-core::action_effect_script` (stepper, rotation,
+terminator maths, `RetailRotationLut`), driven per battle frame by
+`World::tick_battle_animations`; spawn requests drain via
+`World::drain_battle_effect_spawns` and route into the effect pool (direct
+form) / `World::spawn_action_table_effect` (table form). Not yet modeled:
+the terminator's `ctx[+0x1014]` install + per-target homing block (computed,
+unconsumed), the `0x801F6418` SFX lane, the mesh-header scale
+(`actor[+0x22C][+0x72]` - the engine substitutes the q12 unit), and the
+walker prologue's in-flight homing-projectile integration (`ctx[+0x1028]`).
 
 ## Action validator (`FUN_8003FB10`)
 

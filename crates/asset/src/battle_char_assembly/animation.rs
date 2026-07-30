@@ -132,6 +132,7 @@ pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::Mons
             slot as u8,
             rate,
             entry_off + PLAYER_ANIM_STREAM_OFFSET,
+            crate::monster_archive::effect_script_head(&block, entry_off),
         ) {
             out.push(anim);
         }
@@ -160,5 +161,6 @@ pub fn idle_battle_animation(
         0,
         rate,
         entry_off + PLAYER_ANIM_STREAM_OFFSET,
+        crate::monster_archive::effect_script_head(&block, entry_off),
     ))
 }

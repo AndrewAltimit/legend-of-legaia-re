@@ -100,6 +100,47 @@ impl PlayWindowApp {
             }
         }
 
+        // Battle effect-script spawn requests: one per effect record the
+        // per-actor effect-script walk consumed this tick (the FUN_801DEA50
+        // port driven from the animation tick). Route each into the world's
+        // matching spawn path - the render layers this window already
+        // composes then draw them: the direct (0x80-flagged) form lands in
+        // the 2D effect pool (effect billboards / outline markers), the
+        // table form stages a 0x801F6324 prototype scene whose parts ride
+        // the move-FX part-draw seam.
+        let fx_spawns = self.session.host.world.drain_battle_effect_spawns();
+        for s in &fx_spawns {
+            let at = [
+                s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                s.at.1.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            ];
+            if s.direct {
+                self.session
+                    .host
+                    .world
+                    .try_spawn_effect(s.effect, at, s.facing);
+                log::debug!(
+                    "effect-script spawn (direct) effect {:#04x} actor {} at {:?}",
+                    s.effect,
+                    s.actor_slot,
+                    at
+                );
+            } else {
+                let staged = self
+                    .session
+                    .host
+                    .world
+                    .spawn_action_table_effect(s.effect, at);
+                log::debug!(
+                    "effect-script spawn (table) effect {:#04x} actor {} at {:?} staged={staged}",
+                    s.effect,
+                    s.actor_slot,
+                    at
+                );
+            }
+        }
+
         // Refresh per-slot rows + status icons, then age the popups one frame.
         if self.session.host.world.mode == SceneMode::Battle {
             self.sync_battle_hud_rows();

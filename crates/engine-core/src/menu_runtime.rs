@@ -123,6 +123,20 @@ pub struct MenuRuntime {
     /// A host paints window 31 (`engine-ui`'s `amount_prompt_draws_for`)
     /// while this is `Some`.
     point_card_toast: Option<i32>,
+    /// The live **spell level-up notice**: `Some` while retail's window 7 is
+    /// up, holding the `(caster, spell index)` pair `FUN_80035C00` set plus
+    /// the assembled prompt line.
+    ///
+    /// Retail's magic-cast sub-screens (`FUN_801D9280` / `FUN_801D9594`)
+    /// seed `_DAT_8007BB70` / `_DAT_8007BB78` to `0xFF`, run the effect
+    /// apply, and hand the widget VM the one-command script `0x801E4D50` /
+    /// `0x801E4D78` (`[open window 7]` + terminator) only when the sentinel
+    /// changed - then stall for a confirm / cancel press. The engine arms
+    /// this from [`crate::field_menu_dispatch::apply_spell_outcome`]'s
+    /// return; a host paints window 7 (`engine-ui`'s
+    /// `char_prompt_draws_for`) while this is `Some` and holds the pad
+    /// until a press clears it.
+    spell_level_notice: Option<crate::magic_xp::SpellLevelNotice>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -150,6 +164,7 @@ impl MenuRuntime {
             recipient_session: None,
             stay_cursor: None,
             point_card_toast: None,
+            spell_level_notice: None,
             pending: None,
         }
     }
@@ -160,6 +175,41 @@ impl MenuRuntime {
     /// hands `_DAT_800845B4` to the renderer.
     pub fn point_card_toast(&self) -> Option<i32> {
         self.point_card_toast
+    }
+
+    /// The live spell level-up notice (retail window 7), or `None` when no
+    /// menu cast leveled a spell. A host paints the window while this is
+    /// `Some` and routes the pad through
+    /// [`Self::dismiss_spell_level_notice`] instead of the screen below.
+    pub fn spell_level_notice(&self) -> Option<&crate::magic_xp::SpellLevelNotice> {
+        self.spell_level_notice.as_ref()
+    }
+
+    /// Park a menu-cast level-up on the window-7 beat - the engine's
+    /// `FUN_80035C00` (hosts arm it with
+    /// [`crate::field_menu_dispatch::apply_spell_outcome`]'s return).
+    pub fn arm_spell_level_notice(&mut self, notice: crate::magic_xp::SpellLevelNotice) {
+        self.spell_level_notice = Some(notice);
+    }
+
+    /// One frame of the window-7 hold: retail's cast sub-screens stall
+    /// until the confirm or cancel mask fires, then close the window and
+    /// return to the list. Returns `true` while the notice owns the pad
+    /// (whether or not this press dismissed it) so the caller skips the
+    /// screen below.
+    pub fn dismiss_spell_level_notice(
+        &mut self,
+        cross: bool,
+        circle: bool,
+        triangle: bool,
+    ) -> bool {
+        if self.spell_level_notice.is_none() {
+            return false;
+        }
+        if cross || circle || triangle {
+            self.spell_level_notice = None;
+        }
+        true
     }
 
     /// Install the disc-pinned equip restrictions the retail buy dispatch
@@ -278,6 +328,11 @@ impl MenuRuntime {
             if input.cross || input.circle || input.triangle {
                 self.point_card_toast = None;
             }
+            return MenuTickEvent::Stepped;
+        }
+        if self.dismiss_spell_level_notice(input.cross, input.circle, input.triangle) {
+            // Window 7 (spell level-up): the cast sub-screens stall on the
+            // same confirm | cancel masks before returning to the list.
             return MenuTickEvent::Stepped;
         }
         let mut host = MenuRuntimeHost {
@@ -1436,6 +1491,37 @@ mod tests {
 
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.point_card_toast(), None, "a press dismisses it");
+    }
+
+    /// The window-7 beat: an armed spell level-up notice freezes the menu
+    /// VM (a d-pad frame moves nothing) and holds until a confirm / cancel
+    /// press - the same stall the retail cast sub-screens run after the
+    /// widget-VM `[open window 7]` script.
+    #[test]
+    fn spell_level_notice_holds_until_a_press() {
+        let mut world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open();
+        runtime.arm_spell_level_notice(crate::magic_xp::SpellLevelNotice {
+            caster_slot: 0,
+            spell_index: 0,
+            spell_id: 0x83,
+            new_level: 2,
+            line: "Gimard's magic level increased.".into(),
+        });
+        assert!(runtime.spell_level_notice().is_some());
+
+        let state_before = runtime.ctx.state;
+        runtime.tick(&mut world, down());
+        assert!(
+            runtime.spell_level_notice().is_some(),
+            "d-pad does not clear"
+        );
+        assert_eq!(runtime.ctx.state, state_before, "the VM is frozen");
+
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.spell_level_notice(), None, "a press dismisses it");
+        assert_eq!(runtime.ctx.state, state_before, "the press is consumed");
     }
 
     /// Without the card in the bag the accrual short-circuits and so does

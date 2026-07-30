@@ -210,7 +210,7 @@ pub const fn rand_mod4(r: i32) -> i32 {
 /// which is the standard planar rotation `(ox*cos + oz*sin, -ox*sin + oz*cos)`,
 /// `sin[0xfff-a]` standing in for `sin(-a)`. Each product is shifted **before**
 /// the two halves are summed, so the port keeps the two shifts separate.
-pub fn rotate_offset(
+pub fn scatter_rotate_offset(
     env: &impl ScatterEnv,
     angle: i16,
     off_x: i16,
@@ -406,14 +406,14 @@ pub fn spawn_particle(p: &mut Particle, e: &Emitter, env: &mut impl ScatterEnv) 
     let off_z = env.script_i16(e.cursor.wrapping_add(6));
     p.pos[1] = p.pos[1].wrapping_sub((off_y as i32).wrapping_shl(8));
 
-    let (dx, dz) = rotate_offset(env, e.angle, off_x, off_z, POS_ROT_SHIFT);
+    let (dx, dz) = scatter_rotate_offset(env, e.angle, off_x, off_z, POS_ROT_SHIFT);
     p.pos[0] = p.pos[0].wrapping_add(dx);
     p.pos[2] = p.pos[2].wrapping_add(dz);
 
     let vel_x = env.script_i16(e.cursor.wrapping_add(8));
     let vel_y = env.script_i16(e.cursor.wrapping_add(10));
     let vel_z = env.script_i16(e.cursor.wrapping_add(12));
-    let (vx, vz) = rotate_offset(env, e.angle, vel_x, vel_z, VEL_ROT_SHIFT);
+    let (vx, vz) = scatter_rotate_offset(env, e.angle, vel_x, vel_z, VEL_ROT_SHIFT);
     p.vel = [vx as i16, vel_y, vz as i16];
 
     p.cursor = def.wrapping_add(2);
@@ -654,10 +654,10 @@ mod tests {
     fn rotation_at_zero_heading_is_the_identity_up_to_the_shift() {
         let env = Env::new(vec![]);
         // cos(0) = 0x1000, sin(0) = 0 -> each axis keeps its own offset.
-        let (x, z) = rotate_offset(&env, 0, 100, 0, VEL_ROT_SHIFT);
+        let (x, z) = scatter_rotate_offset(&env, 0, 100, 0, VEL_ROT_SHIFT);
         near(x, 100);
         near(z, 0);
-        let (x, z) = rotate_offset(&env, 0, 0, 100, VEL_ROT_SHIFT);
+        let (x, z) = scatter_rotate_offset(&env, 0, 0, 100, VEL_ROT_SHIFT);
         near(x, 0);
         near(z, 100);
     }
@@ -666,12 +666,12 @@ mod tests {
     fn rotation_at_a_quarter_turn_swaps_the_axes() {
         let env = Env::new(vec![]);
         // 1024 units = 90 degrees: cos = 0, sin = 0x1000.
-        let (x, z) = rotate_offset(&env, 1024, 4096, 0, VEL_ROT_SHIFT);
+        let (x, z) = scatter_rotate_offset(&env, 1024, 4096, 0, VEL_ROT_SHIFT);
         near(x, 0);
         // sin[0xfff - 1024] = sin(-1024) = -0x1000 -> z = -ox.
         near(z, -4096);
         // And the other input axis maps the other way round.
-        let (x, z) = rotate_offset(&env, 1024, 0, 4096, VEL_ROT_SHIFT);
+        let (x, z) = scatter_rotate_offset(&env, 1024, 0, 4096, VEL_ROT_SHIFT);
         near(x, 4096);
         near(z, 0);
     }
@@ -681,7 +681,7 @@ mod tests {
         let env = Env::new(vec![]);
         for step in 0..16 {
             let angle = (step * 256) as i16;
-            let (x, z) = rotate_offset(&env, angle, 4096, 0, VEL_ROT_SHIFT);
+            let (x, z) = scatter_rotate_offset(&env, angle, 4096, 0, VEL_ROT_SHIFT);
             let mag = ((x * x + z * z) as f64).sqrt();
             assert!(
                 (mag - 4096.0).abs() < 8.0,

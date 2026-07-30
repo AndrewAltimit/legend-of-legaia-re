@@ -205,6 +205,7 @@ mod tests {
         MonsterAnimation {
             action_id: 0,
             rate: 2,
+            effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -233,6 +234,7 @@ mod tests {
         let a = MonsterAnimation {
             action_id: 0,
             rate: 2,
+            effect_script: Vec::new(),
             part_count: 0,
             frame_count: 0,
             frames: vec![],
@@ -273,6 +275,7 @@ mod tests {
         let anim = MonsterAnimation {
             action_id: 0,
             rate: 2,
+            effect_script: Vec::new(),
             part_count: 1,
             frame_count: 2,
             frames: vec![
@@ -312,6 +315,7 @@ mod one_shot_tests {
         MonsterAnimation {
             action_id: 8,
             rate: 2,
+            effect_script: Vec::new(),
             part_count: 1,
             frame_count: frames,
             frames: (0..frames)

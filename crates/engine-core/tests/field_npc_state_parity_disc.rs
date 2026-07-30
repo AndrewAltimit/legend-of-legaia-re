@@ -167,6 +167,43 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "c",
         note: "sibling of vis:3 - same staging cohort",
     },
+    KnownDivergence {
+        label: "cort_evolved_approach_cutscene",
+        key: "vis:1",
+        class: "b",
+        note: "mid-cutscene capture by its own catalog entry (the approach cinematic to \
+               the final fight): the cutscene choreography seats this actor at the \
+               tableau mark, a cold jouind entry parks it",
+    },
+    KnownDivergence {
+        label: "cort_evolved_approach_cutscene",
+        key: "vis:2",
+        class: "b",
+        note: "sibling of vis:1 - both retail nodes sit on the same tableau mark \
+               (13184,2048), the same cutscene seat",
+    },
+    KnownDivergence {
+        label: "cort_evolved_pre_battle",
+        key: "vis:2",
+        class: "c",
+        note: "pre-battle staging places this cohort around the player half a second \
+               before the evolved-Cort load (the capture's own catalog framing); cold \
+               entry parks them. Same open question as garmel pre-Zeto: needs the \
+               jouine staging record traced (or a fresh-entry jouine capture) to decide \
+               whether a beat or the prologue seats them",
+    },
+    KnownDivergence {
+        label: "cort_evolved_pre_battle",
+        key: "vis:3",
+        class: "c",
+        note: "sibling of vis:2 - same pre-battle staging cohort",
+    },
+    KnownDivergence {
+        label: "cort_evolved_pre_battle",
+        key: "vis:4",
+        class: "c",
+        note: "sibling of vis:2 - same pre-battle staging cohort",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {

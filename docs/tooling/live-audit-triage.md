@@ -1149,16 +1149,21 @@ naming the composition pass points at the camera that has to exist first.
 half-width was disclosed as a word `engine-core` "does not model". It does:
 both of the streak's projection inputs are battle-context words
 (`ctx[+0x1144]`, `ctx[+0x6C6]`) written by `FUN_801DEA50`, which is ported as
-`engine-core::action_effect_script` and carries its own `NOT WIRED` note. When
-a disclosure says a value has no source, check whether the retail *writer* is
-already ported and inert - that turns an open-ended reason into a named one.
+`engine-core::action_effect_script`. When a disclosure says a value has no
+source, check whether the retail *writer* is already ported and inert - that
+turns an open-ended reason into a named one.
 
 That row said "the prerequisite is that module's caller". **It is not** - see
 [the infrastructure cluster](#the-infrastructure--leaf-kernel-cluster) below,
 which measured `FUN_801DEA50`'s references: the caller is `FUN_80047430`, it
-is ported, and it is live. What the streak is waiting on is the same thing
-`action_effect_script` is waiting on, which is the effect-script block and the
-actor cursor the stepper walks.
+is ported, and it is live. The stepper is since wired (the effect-script block
+rides the disc action entries as
+`MonsterAnimation::effect_script`, the cursor lives on the world actor, and
+`World::tick_battle_animations` drives the walk - see
+[`battle-action.md`](../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50));
+what the streak is still waiting on is narrower: the terminator's
+`ctx[+0x1014]` install and per-target `+0x1144` homing block are computed by
+the kernel but have no engine-side context words to land in yet.
 
 ## The infrastructure / leaf-kernel cluster
 

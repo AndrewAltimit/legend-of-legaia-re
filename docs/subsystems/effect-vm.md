@@ -104,6 +104,8 @@ keep a fixed budget, but they live outside the pool
 
 The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the action SM's `ui_element` spawns (`FUN_801D8DE8 → FUN_801DFDF8`, ported as `World::try_spawn_effect`) resolve to real effect scripts. The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.
 
+A second producer feeds the same two spawn seams per battle frame: the per-action **effect-script walk** (`FUN_801DEA50`, see [`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)). Its `0x80`-flagged records route into the pool via `World::try_spawn_effect`; its table-form records stage a `0x801F6324` prototype scene via `World::spawn_action_table_effect` (a small move-VM scene-graph in `World::active_action_fx`, ticked by `World::tick_move_fx` and drawn through `World::active_move_fx_part_draws`).
+
 ### Render snapshots
 
 Two render-agnostic seams expose the live pool:

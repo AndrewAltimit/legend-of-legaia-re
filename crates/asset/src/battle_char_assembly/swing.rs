@@ -69,6 +69,7 @@ fn parse_action_entry(
         action_id,
         rate,
         off + PLAYER_ANIM_STREAM_OFFSET,
+        crate::monster_archive::effect_script_head(block, off),
     )
 }
 

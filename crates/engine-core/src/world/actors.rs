@@ -235,9 +235,103 @@ impl World {
                 self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
             }
             let actor = &mut self.actors[i];
-            if let Some(player) = &mut actor.battle_animation {
+            let frame = if let Some(player) = &mut actor.battle_animation {
+                let before = player.current_frame();
                 actor.pose_frame = Some(player.tick());
+                let after = player.current_frame();
+                if after < before {
+                    // Looping clip wrapped: refire the effect script next
+                    // cycle (engine cadence choice - see the cursor's docs).
+                    actor.battle_effect_cursor = 0;
+                }
+                Some(after)
+            } else {
+                None
+            };
+            // Per-frame effect-script walk for the committed record - the
+            // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
+            // pair (frame argument = the node's 12.4 anim cursor in whole
+            // keyframes, which is `MonsterAnimPlayer::current_frame`).
+            if let Some(frame) = frame {
+                self.step_actor_effect_script(i, frame);
             }
+        }
+    }
+
+    /// Walk actor `i`'s committed effect script for one frame and queue the
+    /// resulting spawn requests (drained via
+    /// [`World::drain_battle_effect_spawns`]). The engine seat of the retail
+    /// per-frame call `FUN_80047430` -> `FUN_801DEA50`: the block is the
+    /// committed clip's disc entry head, the cursor persists at
+    /// [`Actor::battle_effect_cursor`], the facing comes from the SM's
+    /// bearing writes (`BattleActor::facing_angle`), and the move-power map
+    /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
+    /// map when present.
+    ///
+    /// The terminator's move-power offset / homing band are computed by the
+    /// kernel but consumed by nothing here - the engine has no
+    /// `ctx[+0x1014]` slot and no per-target homing block (see
+    /// [`crate::action_effect_script`]'s module note).
+    // REF: FUN_80047430 (the retail caller this substitutes for)
+    fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
+        use crate::action_effect_script as fx;
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        let Some(script) = actor.battle_effect_script.as_ref() else {
+            return;
+        };
+        if actor.battle_effect_cursor >= fx::MAX_CURSOR {
+            return;
+        }
+        let frame = u8::try_from(frame.max(0)).unwrap_or(u8::MAX);
+        let script_actor = fx::EffectScriptActor {
+            cursor: actor.battle_effect_cursor,
+            facing: actor.battle.facing_angle,
+            world: (
+                i32::from(actor.move_state.world_x),
+                i32::from(actor.move_state.world_y),
+                i32::from(actor.move_state.world_z),
+            ),
+            // Retail scales offsets by the render node's mesh-header scale
+            // (`actor[+0x22C][+0x72]`); the engine actor carries no render
+            // node, so the q12 unit stands in (see `fx::scale_offset`).
+            scale: 1 << 12,
+            scope: actor.battle.active_target,
+            action: actor.battle.params.first().copied().unwrap_or(0),
+            suppressed: actor
+                .battle
+                .flag_bits
+                .has(vm::battle_action::ActorFlags::FX_SUPPRESSED),
+        };
+        // The catalog's map is based at 0x801F4E63 (`map[move_id]`); the
+        // stepper's terminator reads the 0x801F4E64-based view (`map[action
+        // - 1]`), so skip the first byte - same bytes, reconciled bases.
+        let map = self
+            .move_power
+            .as_ref()
+            .and_then(|cat| cat.id_index_map_bytes().get(1..))
+            .unwrap_or(&[]);
+        let step = fx::step_effect_script(
+            crate::action_effect_script::retail_rotation_lut(),
+            script,
+            script_actor,
+            frame,
+            map,
+        );
+        let cursor = step.cursor;
+        for s in &step.spawns {
+            self.battle_effect_spawns
+                .push(crate::battle_events::BattleEffectSpawn {
+                    actor_slot: i as u8,
+                    effect: s.effect & !fx::EFFECT_DIRECT_BIT,
+                    direct: s.direct,
+                    at: s.at,
+                    facing: script_actor.facing,
+                });
+        }
+        if let Some(actor) = self.actors.get_mut(i) {
+            actor.battle_effect_cursor = cursor;
         }
     }
 
@@ -344,6 +438,14 @@ impl World {
                 // marker is released by the next staged id (AttackShortStep
                 // clears the queue to 0 on arrival).
                 a.battle_staged_anim = Some(committed);
+                // Anim record committed: install its effect script and zero
+                // the effect-script cursor (retail FUN_8004AD80,
+                // `sb zero,0x1f5` right after the record install).
+                a.battle_effect_script = clip
+                    .as_ref()
+                    .map(|c| c.effect_script.clone())
+                    .filter(|s| !s.is_empty());
+                a.battle_effect_cursor = 0;
             }
             None => {
                 // No usable clip: a zero-length swing - fire the anim-end
@@ -406,6 +508,10 @@ impl World {
         actor.battle_animation = Some(player);
         actor.battle_reaction = Some(key);
         actor.battle_pose = None;
+        // Reaction record committed: swap in its effect script + zero the
+        // cursor (retail FUN_8004AD80, `sb zero,0x1f5` on every commit).
+        actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
+        actor.battle_effect_cursor = 0;
         true
     }
 
@@ -492,18 +598,22 @@ impl World {
         } else {
             pose_id as usize
         };
-        let player = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
+        let selected = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
             Some(clip) if clip_slot != 0 => {
-                crate::battle_anim::MonsterAnimPlayer::new_one_shot(clip)
+                crate::battle_anim::MonsterAnimPlayer::new_one_shot(clip).map(|p| (p, clip))
             }
-            _ => clips
-                .first()
-                .and_then(|c| c.as_ref())
-                .and_then(crate::battle_anim::MonsterAnimPlayer::new),
+            _ => clips.first().and_then(|c| c.as_ref()).and_then(|clip| {
+                crate::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
+            }),
         };
-        if let Some(player) = player {
+        if let Some((player, clip)) = selected {
+            // Anim record swapped: install its effect script and zero the
+            // effect-script cursor (retail FUN_8004AD80, `sb zero,0x1f5`).
+            let script = Some(clip.effect_script.clone()).filter(|s| !s.is_empty());
             actor.battle_animation = Some(player);
             actor.battle_pose = Some(pose_id);
+            actor.battle_effect_script = script;
+            actor.battle_effect_cursor = 0;
         }
     }
 
@@ -700,6 +810,10 @@ impl World {
             actor.move_state.world_y = s.y;
             actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
+            // Seated facing: the party faces the monster row (+Z = heading
+            // 0 in the FUN_80019B28 convention). Overwritten by the SM's
+            // per-action bearing writes once actions run.
+            actor.battle.facing_angle = 0;
         }
         for i in (self.party_count as usize)..actor_count {
             let s = crate::battle_seats::monster_seat(
@@ -712,6 +826,8 @@ impl World {
             actor.move_state.world_y = s.y;
             actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
+            // Monsters face the party row (-Z = heading 0x800).
+            actor.battle.facing_angle = 0x800;
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.

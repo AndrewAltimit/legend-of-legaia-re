@@ -103,6 +103,46 @@ packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
 character's skeleton bone count. See
 [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
 
+## Effect-script records (entry `+0x14..+0x53`)
+
+Every per-action entry's head carries the action's **battle effect script**:
+up to eight 8-byte records the battle anim-node tick walks once per frame to
+place the action's visual effects. The walker is `FUN_801DEA50`, reached only
+from the per-frame anim-node tick `FUN_80047430` (`jal` sites `0x800478B8` /
+`0x80047C08`); its block argument is the committed anim record itself
+(`node[+0x4C]`, shadowed from `actor[+0x234 + i*4]` by `FUN_80049348`), so
+"the effect script" is simply this region of the entry - record `cursor` sits
+at `entry + 0x14 + cursor*8` (`0x801deca8`), cursor bound `8`.
+
+```
++0x00  u8   frame_gate   // skip while anim frame+1 < gate; 0 ends the walk
++0x01  u8   effect       // & 0x7F == 0x7F terminates (installs move power);
+                         // & 0x80 selects the direct spawn (FUN_801DFDF0),
+                         // else 0x801F6324[effect] via FUN_80050ED4
++0x02  i16  off_x        // actor-local offsets, scaled by the render node's
++0x04  i16  off_y        //   mesh scale (+0x72) and rotated by the actor's
++0x06  i16  off_z        //   facing (+0x46); Y is SUBTRACTED
+```
+
+The rotation reads the sin/cos pair `_DAT_8007B81C` / `_DAT_8007B7F8` -
+both point into **one** static SCUS sine table at `0x80070A2C` (5120 `i16`
+entries of `trunc(sin(i*2pi/4096)*4096)`, installed by `FUN_80026BE0`; the
+`+0x800`-byte second pointer is the quarter-revolution cosine view, and the
+table's last 1024 entries repeat its first 1024 so that read never wraps).
+
+The same region exists on the player battle files' record[0] entries, the
+equipment swing records, and the art-bank records' embedded entries
+([`battle-data-pack.md`](battle-data-pack.md#battle-animations-record0)) -
+retail walk clips carry per-footfall dust records, hit reactions carry impact
+flashes, and monster casts carry per-frame emitter trains. Terminator
+(`0x7F`) records appear only on entries that install a move-power record
+([`move-power.md`](move-power.md)).
+
+Parser: the region rides `legaia_asset::monster_archive::MonsterAnimation::effect_script`
+(the entry head `+0x00..+0x54`); the walker port is
+`legaia_engine_core::action_effect_script::step_effect_script`.
+`see ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`.
+
 ## Packed stream (entry `+0x8c`)
 
 ```

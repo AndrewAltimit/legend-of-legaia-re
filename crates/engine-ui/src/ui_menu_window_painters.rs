@@ -351,17 +351,20 @@ pub fn counter_panel_draws_for(
 ///
 /// PORT: FUN_801DCCB4
 /// REF: FUN_80035C00 - the `(slot, list index)` notification setter
-/// NOT WIRED: what must exist first is the **menu-cast leveling arm**. The
-/// NOT WIRED: battle summon cast levels spells now
-/// NOT WIRED: (`World::accrue_summon_spell_xp` -> `World::magic_level_ups`)
-/// NOT WIRED: and presents through the shared banner channel on both hosts -
-/// NOT WIRED: but that is the battle event, not this window's. Window 7
-/// NOT WIRED: belongs to the pause menu's two cast sub-screens, whose
-/// NOT WIRED: leveling is the `+0x5D0` accumulator the effect-apply handler
-/// NOT WIRED: `FUN_800402F4` tests; the engine's menu cast
-/// NOT WIRED: (`field_menu_dispatch::apply_spell_outcome`) neither accrues
-/// NOT WIRED: nor levels, so the menu beat that opens this window never
-/// NOT WIRED: occurs. Waived in scripts/ci/ui-host-drift-waivers.toml
+///
+/// Wired: the menu-cast leveling arm exists now -
+/// `field_menu_dispatch::apply_spell_outcome` accrues the `FUN_800402F4`
+/// heal grants into the caster record's per-spell XP accumulator (the same
+/// `+0x8` array the battle summon path trains; `+0x5D0` off the
+/// `0x80084140` save-context window is that array), runs the shared
+/// threshold kernel (`magic_xp::accrue_and_level`) and returns the
+/// `FUN_80035C00` pair as a `magic_xp::SpellLevelNotice`.
+/// `MenuRuntime::arm_spell_level_notice` holds the beat; both hosts paint
+/// this window off the disc-parsed id-7 rect while it is up and hold the
+/// pad for a confirm / cancel press, exactly like the window-31 toast
+/// below. The prompt line is engine-composed (the pinned battle-banner
+/// sentence around the spell's name) - retail's own rodata sentence at
+/// `0x801E46E4` is Sony bytes and stays on the disc.
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

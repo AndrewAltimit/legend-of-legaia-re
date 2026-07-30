@@ -71,6 +71,13 @@ pub struct ArtAnimRecord {
     pub face: Option<crate::face_anim::FaceTracks>,
     /// record[0]-image byte offset of the record's action-entry header.
     pub entry_offset: usize,
+    /// The embedded entry's head bytes (`+0x00..+0x54` of the entry = record
+    /// `+0x24..+0x78`) - the action's battle **effect script** region (see
+    /// [`crate::monster_archive::MonsterAnimation::effect_script`]). While
+    /// the materialized art clip plays, the render node's anim context is
+    /// this entry, so the per-frame effect-script walker (`FUN_801DEA50`)
+    /// reads these records.
+    pub effect_script: Vec<u8>,
 }
 
 impl ArtAnimRecord {
@@ -143,6 +150,7 @@ pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
             rate_alt: entry[0x84],
             face: crate::face_anim::FaceTracks::from_entry(rec, ART_ENTRY_OFFSET),
             entry_offset: base + ART_ENTRY_OFFSET,
+            effect_script: crate::monster_archive::effect_script_head(rec, ART_ENTRY_OFFSET),
         });
     }
     Ok(out)
@@ -187,14 +195,20 @@ pub fn art_animation(
     let stream = archive
         .entry(record.stream_source as usize)
         .with_context(|| format!("art record {} stream", record.index))?;
-    crate::monster_archive::parse_animation_stream(&stream, record.anim_id, record.rate, 0)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "art record {} stream (source {}) is not a valid keyframe stream",
-                record.index,
-                record.stream_source
-            )
-        })
+    crate::monster_archive::parse_animation_stream(
+        &stream,
+        record.anim_id,
+        record.rate,
+        0,
+        record.effect_script.clone(),
+    )
+    .ok_or_else(|| {
+        anyhow::anyhow!(
+            "art record {} stream (source {}) is not a valid keyframe stream",
+            record.index,
+            record.stream_source
+        )
+    })
 }
 
 /// Re-index an animation's pose channels **per assembled object**: output
@@ -223,5 +237,6 @@ pub fn expand_animation_for_objects(
         part_count: anm_bones.len(),
         frame_count: anim.frame_count,
         frames,
+        effect_script: anim.effect_script.clone(),
     }
 }

@@ -312,6 +312,9 @@ impl ActorFlags {
     pub const WINDUP_DONE: u8 = 0x01;
     pub const ADVANCE_DONE: u8 = 0x02;
     pub const EXIT: u8 = 0x04;
+    /// "This actor's effects are suppressed": the per-frame effect-script
+    /// walk (`FUN_801DEA50`, `0x801decd0..dc`) is a no-op while set.
+    pub const FX_SUPPRESSED: u8 = 0x08;
 
     pub const fn empty() -> Self {
         Self(0)

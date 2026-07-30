@@ -26,6 +26,7 @@ use crate::equip_session::{EquipInput, EquipOutcome, EquipSession};
 use crate::field_menu::FieldMenuRow;
 use crate::input::PadButton;
 use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as InvTargetRow};
+use crate::magic_xp::SpellLevelNotice;
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
 use crate::pause_screens::{PauseItemRow, PauseItemsSession};
 use crate::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
@@ -274,8 +275,33 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
 
 /// Apply a finished [`SpellMenuSession`] cast to the world. For
 /// `Cast { caster_slot, spell_id, target_slot, outcome }`, mutates the
-/// matching roster MP and target HP.
-pub fn apply_spell_outcome(session: &SpellMenuSession, world: &mut World) {
+/// matching roster MP and target HP, then runs the **menu-cast leveling
+/// arm** and returns the window-7 notification when the cast leveled the
+/// spell.
+///
+/// PORT: FUN_800402F4 (effect-apply handler, HP-heal arms) - a menu heal
+/// accrues a flat grant into the caster record's per-spell XP accumulator
+/// (`+0x5D0` off the `0x80084140` save-context window = record `+0x8`,
+/// [`crate::magic_xp::SPELL_XP_OFFSET`]): `+12` when the target's deficit
+/// covered the full heal, `+4` when the heal was clipped (`+3` / `+1` per
+/// member on the multi-target arm). Outside battle the same handler then
+/// tests the `0x8007656C` threshold table against the accumulator, bumps
+/// the `+0x161 + slot` level byte (cap 9) and calls the notification
+/// setter `FUN_80035C00(slot, index)` - the `(_DAT_8007BB70,
+/// _DAT_8007BB78)` pair that opens window 7. The accrual + threshold walk
+/// is the shared kernel [`crate::magic_xp::accrue_and_level`] (the battle
+/// summon path drives the same one); the returned
+/// [`SpellLevelNotice`] is retail's setter pair plus the assembled prompt
+/// line, for the host to park on
+/// [`crate::menu_runtime::MenuRuntime::arm_spell_level_notice`].
+///
+/// Both writes land in the roster's [`legaia_save::CharacterRecord`] raw
+/// bytes, so the accumulator and the level round-trip through LGSF saves
+/// unchanged.
+pub fn apply_spell_outcome(
+    session: &SpellMenuSession,
+    world: &mut World,
+) -> Option<SpellLevelNotice> {
     let Some(SpellMenuOutcome::Cast {
         caster_slot,
         spell_id,
@@ -283,23 +309,22 @@ pub fn apply_spell_outcome(session: &SpellMenuSession, world: &mut World) {
         outcome,
     }) = session.outcome().cloned()
     else {
-        return;
+        return None;
     };
-    let mp_cost = session
-        .catalog()
-        .get(spell_id)
-        .map(|d| d.mp_cost)
-        .unwrap_or(0);
+    let def = session.catalog().get(spell_id).cloned();
+    let mp_cost = def.as_ref().map(|d| d.mp_cost).unwrap_or(0);
     if let Some(caster) = world.roster.members.get_mut(caster_slot as usize) {
         let mut hms = caster.hp_mp_sp();
         hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost as u16);
         caster.set_hp_mp_sp(hms);
     }
+    let mut healed: Option<u16> = None;
     if let Some(target) = world.roster.members.get_mut(target_slot as usize) {
         let mut hms = target.hp_mp_sp();
         match outcome {
             crate::spells::SpellOutcome::Heal { amount, .. } => {
                 hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
+                healed = Some(amount);
             }
             crate::spells::SpellOutcome::Revive { hp, .. } => {
                 hms.hp_cur = hp.min(hms.hp_max);
@@ -308,6 +333,37 @@ pub fn apply_spell_outcome(session: &SpellMenuSession, world: &mut World) {
         }
         target.set_hp_mp_sp(hms);
     }
+    // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
+    // (FUN_800402F4's revive / cure / MP arms carry no `+0x5D0` code).
+    let healed = healed?;
+    let (nominal, group_cast) = match def.as_ref().map(|d| &d.effect) {
+        Some(crate::spells::SpellEffect::Heal { amount }) => (*amount, false),
+        Some(crate::spells::SpellEffect::HealAll { amount }) => (*amount, true),
+        _ => return None,
+    };
+    // Retail "full power": the deficit covered the spell's whole heal cap;
+    // a clipped heal is the partial grant. The engine's cap analogue is the
+    // catalog's nominal amount ([`crate::spells::cast_spell`] returns
+    // `min(nominal, deficit)`).
+    let gain = crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal);
+    let thresholds = world.magic_xp_thresholds;
+    let record = world.roster.members.get_mut(caster_slot as usize)?;
+    let up = crate::magic_xp::accrue_and_level(
+        record,
+        spell_id,
+        gain,
+        thresholds.as_ref().map(|t| t.as_slice()),
+    )?;
+    let spell_name = def
+        .map(|d| d.name)
+        .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+    Some(SpellLevelNotice {
+        caster_slot,
+        spell_index: up.spell_slot as u8,
+        spell_id,
+        new_level: up.new_level,
+        line: crate::magic_xp::magic_level_increased_message(&spell_name),
+    })
 }
 
 /// Apply a finished [`ChainEditor`] outcome to a [`ChainLibrary`].

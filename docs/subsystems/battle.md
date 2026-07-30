@@ -17,7 +17,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle context struct](#battle-context-struct)
 - [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
-- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver) · [charm at the end-of-action gate](#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)
+- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [browser battle render](#browser-play-page-battle-render) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver) · [charm at the end-of-action gate](#enemy-ally-charm-at-the-end-of-action-gate-the-charm-battle-softlock)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout) - [why the pair order is `(max, cur)`](#why-the-pair-order-is-max-cur)
@@ -1140,6 +1140,32 @@ archive, so the host resolves each id to a `MonsterMesh`, injects it, and binds
 the relocated mesh to the actor. `play-window` does this on each
 `Field → Battle` transition (against a throwaway clone of the
 field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
+
+### Browser play-page battle render
+
+The browser play page runs the same `Field → Battle` edge through
+`legaia_web_viewer::play_battle_render` (`LegaiaRuntime::enter_battle_render`
+/ `exit_battle_render`), reusing the shared kernels above rather than a
+second implementation: the scene's battle-kind resource build
+(`SceneLoadKind::Battle`) makes the stage dome + its textures resident, the
+dome takes `drawn_objects_tmd` + the `MirrorXTable` second copy
+(pre-appended via `VramMesh::append_scaled` so the page uploads one mesh),
+the ground grid comes from `build_ground_grid` with the `DAT_80078C1C` far
+colour, the flame atlas + per-slot monster injection + assembled party bands
+land in a throwaway battle VRAM the page swaps in for the fight, and each
+actor's idle / action / swing / art-bank clips are installed on the world so
+the shared battle SM poses them (`pose_frame`, read back per frame through
+`play_battle_actor_pose`). Actor draws compose the same enemy half-turn and
+retail 4× world scale as the native window.
+
+Host differences, disclosed rather than approximated silently: the camera is
+the retail far "menu" framing (`FUN_801D5854` case 9, formation-sized depth,
+idle orbit) mapped onto the page's orbit projection - the native
+phase-scripted dialogue / submenu close-ups and measured glides are not
+ported; the ground grid draws without its per-draw GTE depth cue (the page
+renderer's cue uniform is global); and the per-tick facial-animation VRAM
+re-stamps, mid-battle summon-creature spawn and battle-intro screen-prim
+emitter remain native-only.
 
 ### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
 

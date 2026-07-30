@@ -466,7 +466,9 @@ impl PlayWindowApp {
     }
 
     /// ASCII stand-in for a painter's cursor / marker sprite request.
-    fn painter_cursor_stand_in(
+    /// (`pub(super)`: the window-7 spell level-up notice in `menu_draws`
+    /// shares it.)
+    pub(super) fn painter_cursor_stand_in(
         &self,
         sprite: legaia_engine_render::ui_menu_window_painters::PainterSprite,
     ) -> Vec<TextDraw> {

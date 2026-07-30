@@ -581,6 +581,17 @@ pub struct World {
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
 
+    /// Battle effect-script spawn requests queued this frame - one per
+    /// effect record the per-actor effect-script walk consumed
+    /// ([`crate::action_effect_script::step_effect_script`], driven by
+    /// [`World::tick_battle_animations`]). Cosmetic: each names an effect id
+    /// and a world position already rotated by the acting actor's facing;
+    /// the host routes them into its battle FX layer (the direct form into
+    /// the 2D effect pool, the table form into the `0x801F6324` scene-graph
+    /// spawner). Drained via [`World::drain_battle_effect_spawns`]; cleared
+    /// on battle exit.
+    pub battle_effect_spawns: Vec<crate::battle_events::BattleEffectSpawn>,
+
     /// Tactical-Arts **shout** cues queued this frame - one per executed
     /// party art carrying a real action constant, pushed on the art's
     /// animation-start frame (see [`crate::battle_events::BattleShoutCue`]).
@@ -1467,6 +1478,17 @@ pub struct World {
     /// renders it. Separate from [`active_summon`](Self::active_summon) so a
     /// move's FX and a summon don't clobber each other.
     pub active_move_fx: Option<crate::summon::SummonScene>,
+
+    /// Live battle **effect-script** table-form scenes - one small
+    /// `0x801F6324`-prototype scene-graph per table-form record the per-actor
+    /// effect-script walk spawned ([`World::spawn_action_table_effect`],
+    /// retail `FUN_801DEA50` -> `FUN_80050ED4`). Retail allocates these from
+    /// the same `0x60`-slot effect-actor pool as everything else; the engine
+    /// keeps them in their own small list (capped) so concurrent records
+    /// don't clobber [`Self::active_move_fx`]. Ticked by
+    /// [`World::tick_move_fx`]; drawn through
+    /// [`World::active_move_fx_part_draws`].
+    pub active_action_fx: Vec<crate::summon::SummonScene>,
 
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
@@ -2397,6 +2419,7 @@ impl World {
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
             battle_sfx_cues: Vec::new(),
+            battle_effect_spawns: Vec::new(),
             battle_shout_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,
@@ -2512,6 +2535,7 @@ impl World {
             move_power: None,
             move_power_overlay: None,
             active_move_fx: None,
+            active_action_fx: Vec::new(),
             active_move_fx_trail_texpage: None,
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),

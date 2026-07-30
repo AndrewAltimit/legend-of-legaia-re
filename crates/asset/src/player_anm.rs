@@ -387,6 +387,9 @@ impl PlayerAnmBundle {
             part_count,
             frame_count,
             frames,
+            // Field ANM records are bone streams only - the battle
+            // effect-script region exists only on battle action entries.
+            effect_script: Vec::new(),
         })
     }
 }

@@ -217,6 +217,7 @@ The consumers (`FUN_80047430`, `FUN_80049348`, `FUN_8004AD80`,
 |---|---|---|
 | `+0x00` | `u8` kind | Kind byte (see table above). The captured `u32 0x18` header word is `kind=0x18` plus three padding bytes. |
 | `+0x0E` | `i16` | Movement-scaling factor. `FUN_80047430` integrates per-frame translation as `(angle_lookup * +0x0E * frame_index) / frame_count` (where `frame_count` is the byte at `*(+0x88) + 1`). |
+| `+0x14..+0x53` | 8 x 8 B | The action's **effect script**: per-frame visual-effect placement records walked by `FUN_801DEA50` (called from `FUN_80047430` with this struct as its block argument). Layout + spawn routing: [`monster-animation.md` § Effect-script records](monster-animation.md#effect-script-records-entry-0x140x53). |
 | `+0x34` / `+0x38` | vec | Position vec A (copied into render-ctx `+0x14` / `+0x18`). |
 | `+0x44` / `+0x48` | vec | Position vec B (copied into render-ctx `+0x24` / `+0x28`). |
 | `+0x56` | `u16` | Sub-state counter; ticked during `0x02 -> 0x04` transition. |

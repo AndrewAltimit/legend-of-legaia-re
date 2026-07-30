@@ -557,6 +557,23 @@ pub struct Actor {
     /// converges back to idle `0`.
     pub battle_staged_anim: Option<u8>,
 
+    /// The committed battle clip's **effect-script block** - the disc action
+    /// entry's head bytes
+    /// ([`legaia_asset::monster_archive::MonsterAnimation::effect_script`])
+    /// whose `+0x14..+0x53` region the per-frame effect-script walk reads
+    /// ([`crate::action_effect_script::step_effect_script`]). Installed by
+    /// the anim commit alongside the player (retail: `node[+0x4C]` =
+    /// `actor[+0x234+i*4]`, `FUN_80049348`); `None` when the clip carries no
+    /// script or no clip is committed.
+    pub battle_effect_script: Option<Vec<u8>>,
+
+    /// Effect-script record cursor - the engine mirror of actor `+0x1F5`.
+    /// Advanced by the per-frame walk, zeroed when a new anim record commits
+    /// (retail `FUN_8004AD80`, `0x8004B060`) and when a looping clip wraps
+    /// (engine cadence choice so a walk clip's footstep effects refire per
+    /// cycle).
+    pub battle_effect_cursor: u8,
+
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
     /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).

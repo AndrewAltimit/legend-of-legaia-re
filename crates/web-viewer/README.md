@@ -103,12 +103,14 @@ render path is exercised by the media page (`audio_api`) and the native
 
 `BGM_DEFAULT_GAIN` is the gain the runtime parks on `WebAudioOut`'s post-mixer
 `GainNode` at `audio_init`, and the play page's volume slider is a live handle
-on the same node through `audio_set_gain`. It is a judgement about this page,
-not a constant shared with the media page's BGM auditioner: that page renders
-PCM offline and plays it through an `AudioBufferSourceNode` behind its own
-1x-10x slider defaulting to `1`, so quoting its level as this one's
-justification argued for a default several times hotter than the mixer needs -
-which is how the page came to clip on peaks.
+on the same node through `audio_set_gain`. It is **unity** - the level the
+native cpal path runs at, and the same default the media page's BGM auditioner
+hands its listener. An earlier revision baked in `5.0` on the claim that the
+mixer is near-inaudible at unity; listening said the opposite (unity is
+already on the loud side), and the hot default is how the page came to clip on
+peaks. Any further lift belongs to the listener: the slider spans 0x (mute) to
+10x, and its HTML `value` stays equal to the constant so the control starts
+where the audio actually is.
 
 ## Retail dialog reading box (`play_dialog`)
 
@@ -217,10 +219,34 @@ the shared `BattleHud` model via `engine_core::battle_hud::sync_battle_hud_rows`
 (the same fold the native window uses), arms the ENCOUNTER! banner on the mode
 edge, and mirrors the native window's battle HUD block - `battle_hud_draws_for`
 rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
-text - into `play_overlay_draws_json`, in surface pixels. The battle's 3D
-layer (monster / party battle meshes, stage dome) remains native-only; the
-field scene keeps rendering behind the overlay. Disc-gated oracle:
+text - into `play_overlay_draws_json`, in surface pixels. Disc-gated oracle:
 `tests/battle_overlay_parity.rs`.
+
+## Battle 3D scene (`play_battle_render`)
+
+The battle's 3D layer under that overlay - the browser twin of the native
+window's `enter_battle_render` / `build_battle_stage` (`window/battle.rs`).
+On the `Field -> Battle` edge it builds a **battle VRAM** (the scene rebuilt
+with `SceneLoadKind::Battle` so the stage dome + its textures are resident,
+plus the PROT 870 flame atlas, per-slot monster texture injection and the
+party texture bands) and the meshes the page draws while the fight runs: the
+stage **backdrop** (`legaia_asset::battle_backdrop::drawn_objects_tmd`
+object-list edit, drawn twice - the second copy pre-appended under the SCUS
+`DAT_80078B50` mirror-table transform with `append_scaled`'s winding flip),
+the **ground grid** (`build_ground_grid` + the `DAT_80078C1C` depth-cue far
+colour, exported though the page renderer cannot yet apply a per-draw cue),
+**monster meshes** (`monster_archive::battle_render_mesh`) and the
+**assembled party battle forms** (`legaia_asset::battle_char_assembly`, real
+texture pools + battle palette; PROT 1204 mesh + PROT 1203 rest pose as the
+fallback ladder). Idle / action / swing / art-bank clips are installed on
+the world so the engine's own battle SM poses every actor; the page reads
+`play_battle_actor_pose` per frame and re-poses positions in place. The
+exported camera is the retail far "menu" framing (`FUN_801D5854` case 9,
+formation-sized depth) with the idle orbit - the native phase-scripted
+close-ups, facial-animation VRAM stamps, summon-creature spawn and
+battle-intro emitter are not ported to this host (disclosed in
+`docs/subsystems/battle.md`). Battle exit drops the state and the page
+restores the untouched field VRAM.
 
 ## Field merchant + banners (`play_shop`)
 

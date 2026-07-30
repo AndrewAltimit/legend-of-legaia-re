@@ -26,6 +26,8 @@
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
+  /* Battle 3D layer: 930000 backdrop, +1 ground grid, +16+i actor meshes. */
+  const BATTLE_MESH_BASE = 930000;
   /* Wall-clock NPC anim fallback rate, used ONLY against a cached WASM
    * without the engine clip-state API. The live path reads each clip's
    * current frame from the engine, whose playhead advances in sim-tick time
@@ -270,6 +272,11 @@
        * mesh instance so its clip advances independently; re-posed per frame
        * from the engine's live prop-bank cursor. See `_frame`. */
       this.animProps = [];   /* [{ meshId, i, slot, anim, lastFrame }] */
+      /* Battle 3D scene, `{ gen, scale, backdrop, ground, actors }` while the
+       * engine is in a battle whose render state built (see `_battleFrame`);
+       * null otherwise. `_camBeforeBattle` restores the field framing after. */
+      this._battle = null;
+      this._camBeforeBattle = null;
       /* Retail pause menu (Start): the state + navigation live in the engine
        * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
        * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
@@ -526,6 +533,7 @@
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
       this.tileActorSlots = new Set();   /* every board-owned slot, drawn or not */
       this.animProps = [];
+      this._battle = null;   /* scene swap invalidates the battle upload */
       /* Scene-owned caption image (the prologue's baked TIM): re-resolve on
        * the next draw that needs it. */
       this._captionBlit = undefined;
@@ -1470,6 +1478,17 @@
        * uncaught and freeze the loop without ever reaching recovery. Guard the
        * whole draw-build so any engine trap routes through `onError`. */
       try {
+      /* Battle 3D scene: while a random encounter owns the world, the battle
+       * layer (backdrop dome drawn twice, ground grid, monster + party
+       * battle forms under the retail menu framing + idle orbit) replaces
+       * the field draw list - the browser twin of the native redraw's
+       * battle branch. `_battleFrame` returns false outside battle (and
+       * restores the field VRAM texture on the exit edge), handing the
+       * frame back to the field path in the `else`. The text HUD overlay
+       * further below runs either way, on top. */
+      if (this._battleFrame(rt, skipDraw)) {
+        /* Battle owns the 3D frame; FPS/HUD/overlay below still run. */
+      } else {
       /* Live VRAM effects - water CLUT-walk shimmer, jou's ambient palette
        * cyclers + lightning, scripted CLUT fx. The engine mutated the scene
        * VRAM during the ticks above; re-upload the texture only when texels
@@ -1667,6 +1686,7 @@
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
       if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      }
       } catch (e) {
         this._onEngineTrap('engine draw', e);
         return;
@@ -1692,6 +1712,159 @@
        * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
        * presents. */
       if (!skipDraw) this._drawOverlay();
+    }
+
+    /* ---------- battle 3D scene ---------- */
+
+    /* One battle frame: upload the battle scene on its generation edge, pose
+     * each bound actor from the engine's live battle-animation `pose_frame`,
+     * aim the camera from the exported retail menu framing, and draw. Returns
+     * `false` outside battle (restoring the field VRAM texture on the exit
+     * edge) so `_frame` runs its normal field path; `false` too when the
+     * engine built no battle render (no monsters decoded) - the field scene
+     * then keeps drawing behind the battle HUD, the old behaviour. Guarded
+     * against a cached WASM without the battle exports. */
+    _battleFrame(rt, skipDraw) {
+      if (typeof rt.play_battle_active !== 'function') return false;
+      let active = false;
+      try { active = !!rt.play_battle_active(); } catch (e) { return false; }
+      if (!active) {
+        if (this._battle) {
+          /* Battle just ended: drop the battle scene and restore the field
+           * VRAM texture. The engine's field-side VRAM was never touched -
+           * the battle worked on a throwaway copy, the native exit contract. */
+          this._battle = null;
+          this.renderer.uploadVram(rt.field_vram_bytes());
+          /* Hand the orbit camera back the way the fight found it. */
+          if (this._camBeforeBattle) {
+            Object.assign(this.cam, this._camBeforeBattle);
+            this._camBeforeBattle = null;
+          }
+        }
+        return false;
+      }
+      const gen = rt.play_battle_generation();
+      if (!this._battle || this._battle.gen !== gen) this._uploadBattleScene(rt, gen);
+      const b = this._battle;
+      if (!b) return false;
+
+      const draws = [];
+      /* Backdrop (both copies pre-appended engine-side) + ground grid draw
+       * at raw battle world coordinates; actors compose the retail 4x world
+       * scale (base matrix 0x8007BF10), pre-scaled here because the page's
+       * per-draw `scale` only scales the mesh, not its translation. */
+      if (b.backdrop) draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      if (b.ground) draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      const S = b.scale;
+      const tf = rt.play_battle_actor_transforms();
+      for (let i = 0; i < b.actors.length; i++) {
+        const a = b.actors[i];
+        const o = i * 5;
+        if (!a || o + 4 >= tf.length || tf[o + 4] < 0.5) continue;   /* inactive */
+        if (a.objectIds.length) {
+          /* Live battle pose (idle loop / hit reaction / staged swing), the
+           * same per-bone R.v+T composition every other animator here runs. */
+          const pose = rt.play_battle_actor_pose(i);
+          if (pose.length) {
+            poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
+            this.renderer.updateSceneMeshPositions(a.meshId, a.out);
+          }
+        }
+        draws.push({
+          meshId: a.meshId,
+          x: tf[o] * S, y: -tf[o + 1] * S, z: tf[o + 2] * S,
+          /* Enemy meshes rest facing +Z; the enemy side carries the
+           * half-turn toward the party (the native actor_model rule). */
+          rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+          scale: S,
+        });
+      }
+
+      /* Camera: the exported retail far "menu" framing + idle orbit, mapped
+       * onto the page's orbit projection the same way the cutscene camera
+       * is: focus -> orbit target (scaled with the actors), yaw negated for
+       * the projection's screen-X mirror, framing half-height from the
+       * eye-space depth over the GTE focal length (half-screen 120 px / H).
+       * The orbit pitch is measured from vertical, retail's from horizontal,
+       * hence the complement. */
+      try {
+        const bc = JSON.parse(rt.play_battle_camera_json());
+        if (bc && bc.active) {
+          this.cam.centerX = bc.focus[0] * S;
+          this.cam.centerY = -bc.focus[1] * S + 60;
+          this.cam.centerZ = bc.focus[2] * S;
+          this.cam.yaw = -bc.yaw * A2R;
+          this.cam.pitch = Math.max(0.12, Math.min(1.35, Math.PI / 2 - bc.pitch * A2R));
+          this.cam.roll = 0;
+          const half = Math.abs(bc.tr[2]) * 120 / Math.max(bc.h, 1);
+          this.cam.halfWidth = Math.max(220, Math.min(12000, half));
+          this.cam.halfHeight = this.cam.halfWidth;
+        }
+      } catch (e) { /* keep the previous camera */ }
+
+      this._draws = draws;
+      if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
+      return true;
+    }
+
+    /* Upload the freshly-built battle scene: the battle VRAM (stage + flame
+     * atlas + monster/party texture bands), the backdrop, the ground grid
+     * and one mesh per bound battle actor. Actor slots that fail to decode
+     * keep a null placeholder so the array stays index-parallel with the
+     * engine's transform/pose exports. */
+    _uploadBattleScene(rt, gen) {
+      this._battle = null;
+      const vram = rt.play_battle_vram_bytes();
+      if (!vram.length) return;
+      this.renderer.uploadVram(vram);
+      const up = (meshId, pos, uvs, ct, idx, flat) => {
+        if (!pos.length || !idx.length) return 0;
+        this.renderer.uploadSceneMesh(meshId, pos, uvs, ct, idx,
+          (flat && flat.length) ? flat : null);
+        return meshId;
+      };
+      const b = {
+        gen,
+        scale: (typeof rt.play_battle_world_scale === 'function')
+          ? rt.play_battle_world_scale() : 4.0,
+        backdrop: 0, ground: 0, actors: [],
+      };
+      b.backdrop = up(BATTLE_MESH_BASE, rt.play_battle_backdrop_positions(),
+        rt.play_battle_backdrop_uvs(), rt.play_battle_backdrop_cba_tsb(),
+        rt.play_battle_backdrop_indices(), rt.play_battle_backdrop_flat_rgba());
+      b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
+        rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
+        rt.play_battle_ground_indices(), null);
+      const n = rt.play_battle_actor_count();
+      for (let i = 0; i < n; i++) {
+        const base = rt.play_battle_actor_positions(i);
+        const idx = rt.play_battle_actor_indices(i);
+        if (!base.length || !idx.length) { b.actors.push(null); continue; }
+        const meshId = BATTLE_MESH_BASE + 16 + i;
+        this.renderer.uploadSceneMesh(meshId, base, rt.play_battle_actor_uvs(i),
+          rt.play_battle_actor_cba_tsb(i), idx, null);
+        const rec = {
+          meshId, base,
+          objectIds: rt.play_battle_actor_object_ids(i),
+          out: new Float32Array(base.length),
+        };
+        /* Pose to the rest/idle frame immediately: an unposed multi-part
+         * character is a heap of limbs at the origin. (Empty objectIds =
+         * the engine uploaded a statically-posed fallback mesh.) */
+        if (rec.objectIds.length) {
+          const pose = rt.play_battle_actor_pose(i);
+          if (pose.length) {
+            poseInto(rec.out, rec.base, rec.objectIds, pose, pose.length / 6, 0);
+            this.renderer.updateSceneMeshPositions(meshId, rec.out);
+          }
+        }
+        b.actors.push(rec);
+      }
+      /* Remember the field camera so battle exit can restore its framing. */
+      if (!this._camBeforeBattle) {
+        this._camBeforeBattle = Object.assign({}, this.cam);
+      }
+      this._battle = b;
     }
 
     /* Where the shared orbit projection puts the eye for the current camera

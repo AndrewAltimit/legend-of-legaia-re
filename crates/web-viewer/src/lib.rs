@@ -23,6 +23,7 @@ mod nav_disc;
 pub mod pad_bindings;
 pub mod play;
 pub mod play_battle;
+pub mod play_battle_render;
 pub mod play_cutscene;
 pub mod play_dev_menu;
 pub mod play_dialog;
