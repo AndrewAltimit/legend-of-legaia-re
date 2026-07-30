@@ -611,11 +611,12 @@ pub struct EnemyMenuRow {
 /// `+0x34` word); the builder accumulates it per row so
 /// [`layout_enemy_menu_rows`] can average it.
 ///
-/// NOT WIRED: its only caller is `BattleSession::rebuild_enemy_menu_rows`,
-/// which is itself off every host path - `BattleSession::open_target_picker`
-/// exists but nothing in production calls it (the hosts that open a picker
-/// build a [`TargetPickerSession`] directly). See that method's note for the
-/// specific missing link.
+/// Wired: both hosts' targeting UI reaches this each battle frame through
+/// [`crate::battle_hud::battle_enemy_target_rows`] (native
+/// `window/hud.rs`, browser `play_battle.rs`), which stands occupancy in
+/// for the retail id table and leaves the projected-X accumulator at `0`.
+/// `BattleSession::rebuild_enemy_menu_rows` is a second, session-side
+/// caller that remains off every host path - see its own note.
 pub fn enemy_menu_rows(
     formation: [u8; FORMATION_SLOTS],
     dedup_glyph: u8,
@@ -691,14 +692,17 @@ pub fn enemy_menu_rows(
 ///
 /// `text_width_of` measures a row's label in pixels (retail's `FUN_80035F04`).
 ///
-/// NOT WIRED: nothing calls this. Two inputs are missing and both live outside
-/// `engine-core`. The **projected screen X** each row averages is the battle
-/// actor's `+0x34` - a GTE projection result the renderer owns, and this crate
-/// is renderer-free, so [`enemy_menu_rows`] leaves the accumulator at `0`. The
-/// **text measurer** is retail's proportional `FUN_80035F04` over the
-/// `legaia-font` atlas, which `engine-ui` holds. The layout is therefore a pure
-/// kernel awaiting a caller that has both; it takes them as parameters for
-/// exactly that reason.
+/// Wired: both hosts' targeting UI runs this over
+/// [`crate::battle_hud::battle_enemy_target_rows`]'s output each battle
+/// frame, supplying the **text measurer** as the `legaia-font` layout's
+/// advance (the engine's stand-in for retail's proportional
+/// `FUN_80035F04`). The **projected screen X** each row averages is the
+/// battle actor's `+0x34` - a GTE projection result the renderer owns, and
+/// neither host currently plumbs it into the HUD layer - so the accumulator
+/// arrives at `0`, every row centres at [`MENU_CENTRE_X`], and the retail
+/// relaxation pass below spreads them. That is an approximation of retail's
+/// placement (rows cluster around centre instead of over their monsters);
+/// the pass structure itself is exact.
 pub fn layout_enemy_menu_rows(
     rows: &mut [EnemyMenuRow],
     mut text_width_of: impl FnMut(&str) -> i16,

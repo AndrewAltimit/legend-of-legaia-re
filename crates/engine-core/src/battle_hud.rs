@@ -666,6 +666,58 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     }
 }
 
+/// Build the deduplicated enemy target-menu rows straight off the live
+/// world's monster slots - the host-facing entry to
+/// [`crate::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`).
+///
+/// The engine seats a formation's monsters directly after the party
+/// (`World::enter_battle`), and the pickers the hosts drive index enemies
+/// the same way (`CursorRow::Enemy` slot `i` = actor `party_count + i`), so
+/// a row's `first_slot` compares directly against the picker's cursor slot.
+///
+/// Occupancy stands in for retail's `_DAT_8007BD0C` monster-id table: a
+/// dead or unseeded slot contributes `0` (retail's "no monster here"), and
+/// distinct catalog names get distinct synthetic ids so identical adjacent
+/// monsters collapse into one labelled run exactly as retail's identical-id
+/// runs do. Names come from the same live catalog the HUD rows use.
+///
+/// The projected screen X each row averages is the battle actor's `+0x34` -
+/// a GTE projection result the renderer owns - so the accumulator is left
+/// at `0` here: every row then centres at `MENU_CENTRE_X` and the retail
+/// overlap-relaxation pass in
+/// [`crate::target_picker::layout_enemy_menu_rows`] spreads them. Callers
+/// run that layout with their own text measurer before drawing.
+pub fn battle_enemy_target_rows(
+    world: &crate::world::World,
+) -> Vec<crate::target_picker::EnemyMenuRow> {
+    use crate::target_picker::{DEDUP_GLYPH_FALLBACK, FORMATION_SLOTS, enemy_menu_rows};
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let mut ids = [0u8; FORMATION_SLOTS];
+    let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
+    for i in 0..FORMATION_SLOTS {
+        let Some(a) = world.actors.get(pc + i) else {
+            continue;
+        };
+        if a.battle.max_hp == 0 || a.battle.hp == 0 {
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", i + 1));
+        let pos = names[..i].iter().position(|n| !n.is_empty() && n == &name);
+        ids[i] = (pos.unwrap_or(i) + 1) as u8;
+        names[i] = name;
+    }
+    enemy_menu_rows(
+        ids,
+        DEDUP_GLYPH_FALLBACK,
+        |slot| names[slot as usize].clone(),
+        |_| 0,
+    )
+}
+
 /// Formation label for the encounter-transition banner, reusing the battle
 /// HUD's monster naming: the live catalog name when the formation resolved
 /// one, `M<n>` otherwise. Slots with `max_hp == 0` (unseeded / cleared) are
@@ -1071,6 +1123,48 @@ mod tests {
         assert_eq!(s.gauge_fill_indices(), (2, 2));
         s.status_icons.clear();
         assert_eq!(s.gauge_fill_indices(), (2, 2));
+    }
+
+    /// Identical adjacent monsters must collapse into one dedup-labelled
+    /// retail row (FUN_801D9D3C via `target_picker::enemy_menu_rows`), and a
+    /// dead slot must contribute nothing (retail's zero id).
+    #[test]
+    fn enemy_target_rows_collapse_runs_and_skip_dead_slots() {
+        use crate::monster_catalog::MonsterDef;
+        use crate::world::{Actor, World};
+        let mut w = World::new();
+        while w.actors.len() < 8 {
+            w.actors.push(Actor::default());
+        }
+        w.party_count = 1;
+        w.monster_catalog
+            .insert(MonsterDef::new(7, "Gimard", 40, 5));
+        w.monster_catalog
+            .insert(MonsterDef::new(9, "Zenoir", 40, 5));
+        // Slots 1..=3: Gimard, Gimard, Zenoir. Slot 2's twin is dead.
+        for (i, (id, hp)) in [(7u16, 40u16), (7, 40), (9, 40)].iter().enumerate() {
+            let a = &mut w.actors[1 + i];
+            a.battle.hp = *hp;
+            a.battle.max_hp = 40;
+            a.battle.liveness = 1;
+            a.battle_monster_id = Some(*id);
+        }
+        let rows = battle_enemy_target_rows(&w);
+        assert_eq!(rows.len(), 2, "the Gimard pair collapses into one row");
+        assert_eq!(rows[0].first_slot, 0);
+        assert_eq!(rows[0].members, 2);
+        // The second member overwrites the label's final character with the
+        // dedup glyph (fallback 'A'), keeping the byte length.
+        assert_eq!(rows[0].label, "GimarA");
+        assert_eq!(rows[1].label, "Zenoir");
+        assert_eq!(rows[1].first_slot, 2);
+
+        // Kill the second Gimard: the run breaks and no dedup glyph remains.
+        w.actors[2].battle.hp = 0;
+        let rows = battle_enemy_target_rows(&w);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].label, "Gimard");
+        assert_eq!(rows[0].members, 1);
     }
 
     /// The HUD row must carry the **ramping** HP (`BattleActor::hp_display`,

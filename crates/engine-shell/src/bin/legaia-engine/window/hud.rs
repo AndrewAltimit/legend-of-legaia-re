@@ -1047,22 +1047,25 @@ impl PlayWindowApp {
                         }
                     }
                     ArtsPhase::Targeting { picker, .. } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("art -> target M{}", slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("art -> target P{}", slot + 1),
-                            _ => "art -> select target".to_string(),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        // Enemy cursor: the retail dedup name strip
+                        // (FUN_801D9D3C rows + layout). Ally / sweep states
+                        // keep the text line.
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("art -> target P{}", slot + 1),
+                                _ => "art -> select target".to_string(),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         out.extend(text_draws_for(
                             &self
@@ -1114,22 +1117,22 @@ impl PlayWindowApp {
                         }
                     }
                     SpellPhase::Targeting { picker, .. } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("cast -> target M{}", slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("cast -> target P{}", slot + 1),
-                            _ => "cast -> select target".to_string(),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("cast -> target P{}", slot + 1),
+                                _ => "cast -> select target".to_string(),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         out.extend(text_draws_for(
                             &self
@@ -1179,22 +1182,22 @@ impl PlayWindowApp {
                         }
                     }
                     CommandPhase::Targeting { command, picker } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("{} -> target M{}", command.label(), slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("{} -> target P{}", command.label(), slot + 1),
-                            _ => format!("{} -> select target", command.label()),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("{} -> target P{}", command.label(), slot + 1),
+                                _ => format!("{} -> select target", command.label()),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         let hint = "Left/Right=move  Cross=confirm  Circle=back";
                         out.extend(text_draws_for(
@@ -1659,6 +1662,47 @@ impl PlayWindowApp {
         static SOLID: OnceLock<Option<(u32, u32, u32, u32)>> = OnceLock::new();
         *SOLID.get_or_init(|| legaia_engine_render::font_solid_src(&self.font))
     }
+
+    /// The retail enemy target-name strip for a picker parked on the enemy
+    /// row: rows deduplicated + labelled by the ported `FUN_801D9D3C`
+    /// (`battle_enemy_target_rows`), placed by its centre/relax/clamp layout
+    /// with this window's font as the measurer, cursor row highlighted.
+    /// `None` when the cursor is not on the enemy row (ally / sweep states
+    /// keep their text line) or no monster is up.
+    pub(super) fn enemy_target_strip_draws(
+        &self,
+        picker: &legaia_engine_core::target_picker::TargetPickerSession,
+        w: u32,
+        h: u32,
+    ) -> Option<Vec<TextDraw>> {
+        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
+        let PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot,
+        } = picker.state()
+        else {
+            return None;
+        };
+        let mut rows =
+            legaia_engine_core::battle_hud::battle_enemy_target_rows(&self.session.host.world);
+        if rows.is_empty() {
+            return None;
+        }
+        layout_enemy_menu_rows(&mut rows, |s| self.font.layout_ascii(s).advance_x as i16);
+        let views: Vec<legaia_engine_render::EnemyTargetRowView<'_>> = rows
+            .iter()
+            .map(|r| legaia_engine_render::EnemyTargetRowView {
+                label: &r.label,
+                x: r.x,
+                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
+            })
+            .collect();
+        Some(legaia_engine_render::enemy_target_menu_draws_for(
+            &self.font,
+            &views,
+            (w, h),
+        ))
+    }
 }
 
 /// Project the HUD model's slot array into the shared builder's view type.
@@ -1764,10 +1808,7 @@ mod battle_hud_wiring_tests {
     fn native_battle_hud_draws_filled_bars() {
         let hud = hud_with_party_row(250, 300, 12, 30);
         let out = draws(&hud);
-        let rects: Vec<_> = out
-            .iter()
-            .filter(|d| d.src == SOLID)
-            .collect();
+        let rects: Vec<_> = out.iter().filter(|d| d.src == SOLID).collect();
         assert!(
             rects.len() >= 4,
             "expected panel chrome + bar rects, got {}",
@@ -1801,15 +1842,17 @@ mod battle_hud_wiring_tests {
         let caution = [1.0, 0.95, 0.4, 1.0]; // builder's yellow
         let danger = [1.0, 0.4, 0.4, 1.0]; // builder's red
         assert!(
-            !glyph_colors(90).iter().any(|c| *c == caution || *c == danger),
+            !glyph_colors(90)
+                .iter()
+                .any(|c| *c == caution || *c == danger),
             "normal tier numerals took a warning tint"
         );
         assert!(
-            glyph_colors(40).iter().any(|c| *c == caution),
+            glyph_colors(40).contains(&caution),
             "caution tier numerals not yellow"
         );
         assert!(
-            glyph_colors(20).iter().any(|c| *c == danger),
+            glyph_colors(20).contains(&danger),
             "danger tier numerals not red"
         );
         // And the bar fill follows the gauge law into the danger band.

@@ -605,7 +605,12 @@ pub fn battle_hud_draws_for(
     };
     // Text laid out at a stage-pixel pen, upscaled with the stage transform
     // (same shape as `scale_stage_text_draws`, applied per burst).
-    let stage_text = |out: &mut Vec<TextDraw>, font: &legaia_font::Font, s: &str, x: i32, y: i32, c: [f32; 4]| {
+    let stage_text = |out: &mut Vec<TextDraw>,
+                      font: &legaia_font::Font,
+                      s: &str,
+                      x: i32,
+                      y: i32,
+                      c: [f32; 4]| {
         let layout = font.layout_ascii(s);
         let mut draws = text_draws_for(&layout, (x, y), c);
         scale_stage_text_draws(&mut draws, origin, scale as u32);
@@ -654,9 +659,23 @@ pub fn battle_hud_draws_for(
             // Backdrop + 1-px frame.
             stage_rect(&mut out, px, py, PANEL_STAGE_W, PANEL_STAGE_H, panel_bg);
             stage_rect(&mut out, px, py, PANEL_STAGE_W, 1, panel_frame);
-            stage_rect(&mut out, px, py + PANEL_STAGE_H - 1, PANEL_STAGE_W, 1, panel_frame);
+            stage_rect(
+                &mut out,
+                px,
+                py + PANEL_STAGE_H - 1,
+                PANEL_STAGE_W,
+                1,
+                panel_frame,
+            );
             stage_rect(&mut out, px, py, 1, PANEL_STAGE_H, panel_frame);
-            stage_rect(&mut out, px + PANEL_STAGE_W - 1, py, 1, PANEL_STAGE_H, panel_frame);
+            stage_rect(
+                &mut out,
+                px + PANEL_STAGE_W - 1,
+                py,
+                1,
+                PANEL_STAGE_H,
+                panel_frame,
+            );
 
             let base = if slot.alive { white } else { dim };
             stage_text(&mut out, font, slot.name, px + 4, py + 2, base);
@@ -679,7 +698,14 @@ pub fn battle_hud_draws_for(
             stage_rect(&mut out, px + 4, py + 16, 56, 5, hp_track);
             let fill_w = (56.0 * hp_frac).round() as i32;
             let fill_w = if slot.hp > 0 { fill_w.max(1) } else { fill_w };
-            stage_rect(&mut out, px + 4, py + 16, fill_w, 5, gauge_fill_color(slot.hp_fill));
+            stage_rect(
+                &mut out,
+                px + 4,
+                py + 16,
+                fill_w,
+                5,
+                gauge_fill_color(slot.hp_fill),
+            );
             let hp_color = if !slot.alive {
                 dim
             } else {
@@ -748,7 +774,14 @@ pub fn battle_hud_draws_for(
             // Status strip above the panel.
             for (k, letter) in slot.status_letters.iter().enumerate() {
                 let s = (*letter as char).to_string();
-                stage_text(&mut out, font, &s, px + 4 + k as i32 * STATUS_STEP, py - 12, yellow);
+                stage_text(
+                    &mut out,
+                    font,
+                    &s,
+                    px + 4 + k as i32 * STATUS_STEP,
+                    py - 12,
+                    yellow,
+                );
             }
 
             if !slot.alive {
@@ -852,6 +885,68 @@ pub fn battle_hud_draws_for(
         out.extend(text_draws_for(&layout, (ax, ay), popup_color));
     }
 
+    out
+}
+
+/// One laid-out row of the enemy target-selection strip.
+///
+/// Hosts build these from `engine-core::battle_hud::battle_enemy_target_rows`
+/// after running `target_picker::layout_enemy_menu_rows` with their font's
+/// measurer: `label` is the retail dedup-labelled monster name, `x` the
+/// layout's stage-pixel left edge (320-wide stage), `selected` whether the
+/// picker's cursor slot falls inside this row's formation run.
+pub struct EnemyTargetRowView<'a> {
+    pub label: &'a str,
+    pub x: i16,
+    pub selected: bool,
+}
+
+/// Stage Y of the enemy target strip. An approximation: retail's row Y comes
+/// from the caller-side text-actor placement, not from the row builder
+/// `FUN_801D9D3C` itself; the band sits above the party panels.
+const ENEMY_MENU_STAGE_Y: i32 = 166;
+
+/// Build [`TextDraw`]s for the enemy target-selection name strip.
+///
+/// The row *content* is retail's: dedup labels from `FUN_801D9D3C` and the
+/// centre/relax/clamp X layout from its second half
+/// (`target_picker::layout_enemy_menu_rows`), both run by the caller. This
+/// builder only projects the laid-out rows onto the surface: each label at
+/// its stage X (integer-upscaled + centred, the same transform as the battle
+/// HUD panels), the selected row in white behind a `>` cursor, the rest
+/// dimmed.
+pub fn enemy_target_menu_draws_for(
+    font: &legaia_font::Font,
+    rows: &[EnemyTargetRowView<'_>],
+    surface: (u32, u32),
+) -> Vec<TextDraw> {
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.62, 0.62, 0.66, 1.0];
+    let scale = (surface.0 / BOOT_UI_STAGE_W)
+        .min(surface.1 / BOOT_UI_STAGE_H)
+        .clamp(1, 4);
+    let origin = (
+        (surface.0 as i32 - BOOT_UI_STAGE_W as i32 * scale as i32) / 2,
+        (surface.1 as i32 - BOOT_UI_STAGE_H as i32 * scale as i32) / 2,
+    );
+    let mut out = Vec::new();
+    for row in rows {
+        let color = if row.selected { white } else { dim };
+        let mut draws = text_draws_for(
+            &font.layout_ascii(row.label),
+            (i32::from(row.x), ENEMY_MENU_STAGE_Y),
+            color,
+        );
+        if row.selected {
+            draws.extend(text_draws_for(
+                &font.layout_ascii(">"),
+                (i32::from(row.x) - 9, ENEMY_MENU_STAGE_Y),
+                white,
+            ));
+        }
+        scale_stage_text_draws(&mut draws, origin, scale);
+        out.extend(draws);
+    }
     out
 }
 

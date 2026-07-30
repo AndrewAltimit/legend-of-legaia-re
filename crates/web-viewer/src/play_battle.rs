@@ -102,6 +102,49 @@ fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
 }
 
 impl LegaiaRuntime {
+    /// The retail enemy target-name strip for a picker parked on the enemy
+    /// row - the browser twin of the native window's
+    /// `enemy_target_strip_draws`: rows deduplicated + labelled by the
+    /// ported `FUN_801D9D3C` (`battle_enemy_target_rows`), placed by its
+    /// centre/relax/clamp layout with the page font as the measurer, cursor
+    /// row highlighted. `None` when the cursor is not on the enemy row or no
+    /// monster is up.
+    fn enemy_target_strip_draws(
+        &self,
+        font: &legaia_font::Font,
+        picker: &legaia_engine_core::target_picker::TargetPickerSession,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Option<Vec<TextDraw>> {
+        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
+        let PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot,
+        } = picker.state()
+        else {
+            return None;
+        };
+        let world = &self.scene_host.as_ref()?.world;
+        let mut rows = legaia_engine_core::battle_hud::battle_enemy_target_rows(world);
+        if rows.is_empty() {
+            return None;
+        }
+        layout_enemy_menu_rows(&mut rows, |s| font.layout_ascii(s).advance_x as i16);
+        let views: Vec<ui::EnemyTargetRowView<'_>> = rows
+            .iter()
+            .map(|r| ui::EnemyTargetRowView {
+                label: &r.label,
+                x: r.x,
+                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
+            })
+            .collect();
+        Some(ui::enemy_target_menu_draws_for(
+            font,
+            &views,
+            (surface_w, surface_h),
+        ))
+    }
+
     /// Arm the live gameplay loop on the freshly-entered scene, the browser
     /// twin of `BootSession::enter_field_live`'s live-loop block:
     /// `enter_field_scene` already installed the scene MAN's own encounter
@@ -364,22 +407,27 @@ impl LegaiaRuntime {
                     }
                 }
                 ArtsPhase::Targeting { picker, .. } => {
-                    let line = match picker.state() {
-                        PickerState::Cursor {
-                            row: CursorRow::Enemy,
-                            slot,
-                        } => format!("art -> target M{}", slot + 1),
-                        PickerState::Cursor {
-                            row: CursorRow::Ally,
-                            slot,
-                        } => format!("art -> target P{}", slot + 1),
-                        _ => "art -> select target".to_string(),
-                    };
-                    out.extend(ui::text_draws_for(
-                        &font.layout_ascii(&line),
-                        (MENU_X, my),
-                        white,
-                    ));
+                    // Enemy cursor: the retail dedup name strip
+                    // (FUN_801D9D3C rows + layout). Ally / sweep states keep
+                    // the text line.
+                    if let Some(strip) =
+                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                    {
+                        out.extend(strip);
+                    } else {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("art -> target P{}", slot + 1),
+                            _ => "art -> select target".to_string(),
+                        };
+                        out.extend(ui::text_draws_for(
+                            &font.layout_ascii(&line),
+                            (MENU_X, my),
+                            white,
+                        ));
+                    }
                     my += 14;
                     out.extend(ui::text_draws_for(
                         &font.layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
@@ -428,22 +476,24 @@ impl LegaiaRuntime {
                     }
                 }
                 SpellPhase::Targeting { picker, .. } => {
-                    let line = match picker.state() {
-                        PickerState::Cursor {
-                            row: CursorRow::Enemy,
-                            slot,
-                        } => format!("cast -> target M{}", slot + 1),
-                        PickerState::Cursor {
-                            row: CursorRow::Ally,
-                            slot,
-                        } => format!("cast -> target P{}", slot + 1),
-                        _ => "cast -> select target".to_string(),
-                    };
-                    out.extend(ui::text_draws_for(
-                        &font.layout_ascii(&line),
-                        (MENU_X, my),
-                        white,
-                    ));
+                    if let Some(strip) =
+                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                    {
+                        out.extend(strip);
+                    } else {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("cast -> target P{}", slot + 1),
+                            _ => "cast -> select target".to_string(),
+                        };
+                        out.extend(ui::text_draws_for(
+                            &font.layout_ascii(&line),
+                            (MENU_X, my),
+                            white,
+                        ));
+                    }
                     my += 14;
                     out.extend(ui::text_draws_for(
                         &font.layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
@@ -490,22 +540,24 @@ impl LegaiaRuntime {
                     }
                 }
                 CommandPhase::Targeting { command, picker } => {
-                    let line = match picker.state() {
-                        PickerState::Cursor {
-                            row: CursorRow::Enemy,
-                            slot,
-                        } => format!("{} -> target M{}", command.label(), slot + 1),
-                        PickerState::Cursor {
-                            row: CursorRow::Ally,
-                            slot,
-                        } => format!("{} -> target P{}", command.label(), slot + 1),
-                        _ => format!("{} -> select target", command.label()),
-                    };
-                    out.extend(ui::text_draws_for(
-                        &font.layout_ascii(&line),
-                        (MENU_X, my),
-                        white,
-                    ));
+                    if let Some(strip) =
+                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                    {
+                        out.extend(strip);
+                    } else {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("{} -> target P{}", command.label(), slot + 1),
+                            _ => format!("{} -> select target", command.label()),
+                        };
+                        out.extend(ui::text_draws_for(
+                            &font.layout_ascii(&line),
+                            (MENU_X, my),
+                            white,
+                        ));
+                    }
                     my += 14;
                     let hint = "Left/Right=move  Cross=confirm  Circle=back";
                     out.extend(ui::text_draws_for(

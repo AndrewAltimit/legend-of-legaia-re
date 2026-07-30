@@ -76,7 +76,11 @@ fn battle_hud_draws_for_party_row_includes_glyphs_and_bars() {
     // Panel chrome + HP/MP bar rects sample the solid texel.
     assert!(draws.iter().filter(|d| d.src == SOLID).count() >= 4);
     // The HP fill takes the HIGH gauge colour (250 > 300/2 -> index 7).
-    assert!(draws.iter().any(|d| d.src == SOLID && d.color == gauge_fill_color(7)));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.src == SOLID && d.color == gauge_fill_color(7))
+    );
 }
 
 #[test]
@@ -96,7 +100,11 @@ fn battle_hud_draws_for_dead_slot_shows_ko_overlay() {
     let red = [1.0, 0.4, 0.4, 1.0];
     assert!(draws.iter().any(|d| d.src != SOLID && d.color == red));
     // Dead gauge fill (index 2) reaches the bar surface.
-    assert!(draws.iter().any(|d| d.src == SOLID && d.color == gauge_fill_color(2)));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.src == SOLID && d.color == gauge_fill_color(2))
+    );
 }
 
 #[test]
@@ -109,7 +117,11 @@ fn battle_hud_draws_for_low_hp_uses_red_color() {
         .iter()
         .any(|d| d.src != SOLID && d.color[0] > d.color[1]);
     assert!(any_red, "low HP should produce a red-tinted glyph");
-    assert!(draws.iter().any(|d| d.src == SOLID && d.color == gauge_fill_color(9)));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.src == SOLID && d.color == gauge_fill_color(9))
+    );
 }
 
 #[test]
