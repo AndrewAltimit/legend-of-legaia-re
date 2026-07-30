@@ -175,6 +175,58 @@ fn player_walk_clip_effect_script_steps_to_positioned_spawns() {
 }
 
 #[test]
+fn world_tick_emits_spawns_from_a_real_committed_walk_clip() {
+    use legaia_asset::battle_char_assembly;
+    use legaia_engine_core::world::World;
+    // End-to-end producer chain on real data: install Vahn's disc action
+    // clips on a battle actor, stage the walk (anim id 1), and drive the
+    // world's battle animation tick - the effect-script walk must surface
+    // positioned BattleEffectSpawn requests through the drain.
+    let Some(bytes) = prot_file("0863_edstati3.BIN") else {
+        eprintln!("[skip] extracted/PROT/0863_edstati3.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let anims = battle_char_assembly::battle_animations(&bytes).expect("record[0] decodes");
+    let max_slot = anims.iter().map(|a| a.action_id as usize).max().unwrap();
+    let mut clips = vec![None; max_slot + 1];
+    for a in anims {
+        let slot = a.action_id as usize;
+        clips[slot] = Some(a);
+    }
+
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 1; // walk / approach
+    world.commit_staged_battle_anim(0);
+    assert!(
+        world.actors[0].battle_effect_script.is_some(),
+        "walk clip carries an effect script"
+    );
+
+    let mut spawns = Vec::new();
+    for _ in 0..600 {
+        world.tick_battle_animations();
+        spawns.extend(world.drain_battle_effect_spawns());
+    }
+    assert!(
+        spawns.len() >= 2,
+        "walk footfalls should fire (looping clip re-arms per cycle), got {}",
+        spawns.len()
+    );
+    for s in &spawns {
+        assert_eq!(s.actor_slot, 0);
+        // Positioned near the actor's seat (0, 0, -800).
+        assert!(
+            s.at.0.abs() < 0x800 && (s.at.2 + 800).abs() < 0x800,
+            "spawn at {:?} implausibly far",
+            s.at
+        );
+    }
+    eprintln!("[world_walk] {} spawns over 600 frames", spawns.len());
+}
+
+#[test]
 fn retail_lut_rotation_matches_the_synthetic_expectation_on_real_angles() {
     // Sanity for the LUT identity independent of disc data content: a full
     // revolution of quarter turns returns a unit offset near its origin.
