@@ -196,7 +196,6 @@ body { padding-top: var(--topbar-h); }
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   align-items: start;
 }
-.zone-explore .content { margin: 0 auto; }
 .page-home .content { max-width: 1400px; }
 
 /* ---------- Sidebar ---------- */
@@ -428,6 +427,10 @@ body { padding-top: var(--topbar-h); }
   max-width: calc(var(--max-content-w) + 4.8rem);
   width: 100%;
   min-width: 0;
+  /* Centered in BOTH zones: the explore zone's full-width surface and the
+   * docs zone's middle grid cell (between sidebar and TOC). Without this,
+   * docs pages hug the left of their cell on wide monitors. */
+  margin: 0 auto;
 }
 
 /* Wide-mode for multi-pane interactive pages (shops, world, minigames,
