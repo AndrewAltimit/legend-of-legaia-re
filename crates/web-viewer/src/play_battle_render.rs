@@ -88,6 +88,16 @@ const READEF_PROT_INDEX: u32 = 894;
 /// yaw units per camera step of 2 vsyncs, i.e. `-2` per 60 Hz tick.
 const ORBIT_STEP_PER_TICK: f32 = 2.0;
 
+/// Host-safe log: the browser console on wasm, stderr on the native test
+/// build (`crate::console_log` is a hard wasm-only stub that panics off-web,
+/// and this module runs under the disc-gated native oracles).
+fn web_log(s: &str) {
+    #[cfg(target_arch = "wasm32")]
+    crate::console_log(s);
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{s}");
+}
+
 /// One page-uploadable battle mesh in the play page's scene-mesh shape.
 struct BattleMesh {
     mesh: legaia_tmd::mesh::VramMesh,
@@ -282,7 +292,7 @@ impl LegaiaRuntime {
         if let Err(e) =
             legaia_engine_core::scene::upload_flame_atlas_into_vram(&host.index, &mut vram, true)
         {
-            crate::console_log(&format!("play battle: flame-atlas upload skipped: {e:#}"));
+            web_log(&format!("play battle: flame-atlas upload skipped: {e:#}"));
         }
 
         let mut backdrop = None;
@@ -335,7 +345,7 @@ impl LegaiaRuntime {
                 Ok(Some(m)) => m,
                 Ok(None) => continue,
                 Err(e) => {
-                    crate::console_log(&format!(
+                    web_log(&format!(
                         "play battle: monster {monster_id} mesh decode: {e:#}"
                     ));
                     continue;
@@ -463,7 +473,7 @@ impl LegaiaRuntime {
         }
 
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
-        crate::console_log(&format!(
+        web_log(&format!(
             "play battle: 3D render built ({} actor meshes, backdrop {}, grid {})",
             actors.len(),
             backdrop.is_some(),
@@ -633,7 +643,7 @@ impl LegaiaRuntime {
         // Fallback: the static PROT 1204 mesh, statically posed from the
         // PROT 1203 bank's idle record (identity object->bone). Uploaded
         // pre-posed, so it is never re-posed per frame (empty object_ids).
-        crate::console_log(&format!(
+        web_log(&format!(
             "play battle: party {cslot} assembly failed - PROT 1204 fallback"
         ));
         let slot = pack.slot(cslot)?;
