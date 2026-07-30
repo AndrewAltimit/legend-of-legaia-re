@@ -103,15 +103,14 @@ canvas.npc-canvas:active { cursor: grabbing; }
   </p>
 </header>
 
-<section class="doc-section">
-  <h2>Open a disc image</h2>
-  <div class="npc-shell">
-    <div class="file-input-group">
-      <label for="npc-file"><strong>Choose file:</strong></label>
-      <input type="file" id="npc-file" accept=".bin,.DAT,.dat">
-      <span class="npc-status" id="npc-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
-    </div>
+<div class="disc-bar">
+  <label for="npc-file">Disc:</label>
+  <input type="file" id="npc-file" accept=".bin,.DAT,.dat">
+  <span class="npc-status" id="npc-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
+</div>
 
+<section class="doc-section">
+  <div class="npc-shell">
     <div id="npc-main" style="display: none;">
       <div class="npc-picker">
         <label for="npc-scene"><strong>Location:</strong></label>
@@ -154,8 +153,10 @@ canvas.npc-canvas:active { cursor: grabbing; }
   </div>
 </section>
 
-<section class="doc-section">
-  <h2>How an NPC is put together</h2>
+<details class="about-data">
+  <summary>About this data — how an NPC is put together, naming, provenance</summary>
+  <div class="about-body">
+  <h3>How an NPC is put together</h3>
   <p>
     There is no "NPC file" on the disc: an NPC is an entry in the scene's placement list - a model in the scene's own mesh pool, an animation clip, a tile, and the script it runs when you talk to it (see the <a href="subsystems/script-vm.html">field script VM</a>). Its only real "name" is the first line it says to you, which is what this page labels them with.
   </p>
@@ -169,7 +170,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
     <a href="formats/character-mesh.html">Character mesh</a>
     <a href="world.html">Game world</a>
   </div>
-</section>
+  </div>
+</details>
 
 <script src="js/webgl-shaders.js?v=zfight-1"></script>
 <script src="js/webgl-math.js?v=zfight-1"></script>

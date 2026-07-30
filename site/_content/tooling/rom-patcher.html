@@ -1,11 +1,10 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ROM patcher</div>
   <h1>ROM patcher (in browser)</h1>
-  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine - the patch runs as WebAssembly locally, nothing is uploaded.</p>
+  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser - pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine: the patch runs as WebAssembly locally, nothing is uploaded.</p>
 </header>
 
 <section class="doc-section" id="patch">
-  <h2>Patch a disc</h2>
   <div class="rom-form">
 
     <div class="rom-top">
@@ -626,11 +625,16 @@
   </div>
 
   <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code>. Keep them together and point your emulator at the <code>.cue</code>; to reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
-  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching needs a desktop browser with enough RAM and the download is the same size. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong> - sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.</p>
 </section>
 
+<details class="about-data">
+  <summary>About this patcher - what each option does, and the fine print</summary>
+  <div class="about-body">
+
+  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching needs a desktop browser with enough RAM and the download is the same size. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong> - sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.</p>
+
 <section class="doc-section" id="how">
-  <h2>What it does</h2>
+  <h3>What it does</h3>
   <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit; every randomizable category offers <strong>Shuffle</strong> (redistributes the existing set, difficulty preserved) or <strong>Randomize</strong> (draws fresh from the whole valid pool). Per-feature mechanics, table locations, and the code-injection details live on the <a href="randomizer.html">randomizer page</a>.</p>
   <ul class="bullets">
     <li><strong>Monster drops</strong> - reassigns the item each monster drops (and its chance).</li>
@@ -662,6 +666,9 @@
   </ul>
   <p>The same seed always produces the same patched image, and the post-patch summary is spoiler-safe. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>
+
+  </div>
+</details>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>

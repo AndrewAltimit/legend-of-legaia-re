@@ -5,37 +5,49 @@
    neutral terminal grey. No animations, no gradients, no pulses.
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg:            #0d1117;
-  --bg-raised:     #11161e;
-  --bg-card:       #131922;
-  --bg-card-hi:    #19212d;
-  --bg-code:       #0a0e15;
+  --bg:            #0f1115;    /* shell */
+  --bg-raised:     #14171d;    /* topbar / rail / sidebar */
+  --bg-card:       #1a1e26;    /* tiles + cards */
+  --bg-card-hi:    #20252f;
+  --bg-code:       #0c0f14;
 
-  --border:        #1f2630;
-  --border-hi:     #2a323e;
+  --border:        #272c37;
+  --border-hi:     #333a48;
+  --line-soft:     #20242e;
 
-  --text:          #c9d1d9;
-  --text-muted:    #8b949e;
-  --text-dim:      #636b76;
+  --text:          #c6cdd9;
+  --text-bright:   #e8ebf1;
+  --text-muted:    #8d95a5;
+  --text-dim:      #6b7383;
 
-  --accent:        #58c4b3;     /* cyan, single emphasis colour */
-  --accent-hi:     #7ad3c4;
-  --accent-soft:   #1c2a2a;
-  --done:          #58c4b3;
+  --accent:        #6ba3ff;    /* electric blue - links, active states */
+  --accent-hi:     #8fb8ff;
+  --acc:           #3d84ff;    /* saturated step - buttons, fills */
+  --accent-soft:   rgba(61,132,255,.13);
+  --accent-line:   rgba(61,132,255,.38);
+  --ok:            #46c98d;
+  --ok-soft:       rgba(70,201,141,.12);
+  --warn:          #d9a862;
+  --warn-soft:     rgba(217,168,98,.12);
+  --done:          #46c98d;
   --mostly:        #77b851;
   --partial:       #c19a4d;
   --open:          #b56b6b;
   --planned:       #6e7681;
 
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
 
-  --sidebar-w:     264px;
+  --topbar-h:      56px;
+  --rail-w:        76px;
+  --sidebar-w:     260px;
   --toc-w:         220px;
   --max-content-w: 780px;
+  --radius:        10px;
   --transition:    0.12s ease;
 }
 
@@ -71,10 +83,10 @@ img, svg { max-width: 100%; height: auto; display: block; }
 ul, ol { list-style: none; }
 
 h1, h2, h3, h4 {
-  color: #e6edf3;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  color: var(--text-bright);
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.3;
 }
 
@@ -163,33 +175,54 @@ hr {
 
 ::selection { background: var(--accent-soft); color: var(--text); }
 
-/* ---------- App shell: 3-column grid ---------- */
+/* ---------- App shell: fixed top bar + icon rail, zone-dependent body ---------- */
+body { padding-top: var(--topbar-h); }
 .app {
+  margin-left: var(--rail-w);
+  min-height: calc(100vh - var(--topbar-h));
+}
+/* Docs zone: sidebar | article | TOC */
+.zone-docs .app {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
-  min-height: 100vh;
   align-items: start;
 }
-
-/* No TOC rail when not needed - fall back to 2-column */
-.app.no-toc {
+.zone-docs .app.no-toc {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
 }
+/* Explore zone: page-list sidebar | full-width app surface (no TOC rail) */
+.zone-explore .app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  align-items: start;
+}
+.page-home .content { max-width: 1400px; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
   position: sticky;
-  top: 0;
+  top: var(--topbar-h);
   align-self: start;
-  height: 100vh;
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
-  padding: 1rem 0.85rem 2rem;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
+  padding: 0.9rem 0.85rem 2rem;
+  font-family: var(--font-body);
+  font-size: 0.855rem;
   display: flex;
   flex-direction: column;
+}
+
+.sidebar-head {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+  padding: 0.3rem 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.6rem;
 }
 
 .sidebar-brand {
@@ -338,9 +371,9 @@ hr {
 .sidebar-toggle {
   display: none;
   position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 50;
+  top: calc(var(--topbar-h) + 10px);
+  left: 10px;
+  z-index: 55;
   background: var(--bg-raised);
   color: var(--text);
   border: 1px solid var(--border);
@@ -362,21 +395,24 @@ hr {
 
 @media (max-width: 1100px) {
   /* Drop TOC rail */
-  .app, .app.no-toc {
+  .zone-docs .app, .zone-docs .app.no-toc {
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   }
   .toc-rail { display: none; }
 }
 
 @media (max-width: 880px) {
-  .app, .app.no-toc {
+  .app { margin-left: 0; }
+  .rail { display: none; }
+  .zone-docs .app, .zone-docs .app.no-toc,
+  .zone-explore .app {
     grid-template-columns: 1fr;
   }
   .sidebar {
     position: fixed;
-    top: 0; bottom: 0; left: 0;
+    top: var(--topbar-h); bottom: 0; left: 0;
     width: var(--sidebar-w);
-    z-index: 40;
+    z-index: 45;
     transform: translateX(-100%);
     transition: transform var(--transition);
   }
@@ -391,10 +427,14 @@ hr {
   max-width: calc(var(--max-content-w) + 4.8rem);
   width: 100%;
   min-width: 0;
+  /* Centered in BOTH zones: the explore zone's full-width surface and the
+   * docs zone's middle grid cell (between sidebar and TOC). Without this,
+   * docs pages hug the left of their cell on wide monitors. */
+  margin: 0 auto;
 }
 
 /* Wide-mode for multi-pane interactive pages (shops, world, minigames,
- * viewer, architecture). Prose / reference / format pages stay narrow
+ * viewer). Prose / reference / format pages stay narrow
  * for readability. */
 .content.wide-page {
   max-width: 1480px;
@@ -1238,7 +1278,7 @@ kbd {
 
 .toc-rail {
   position: sticky;
-  top: 0;
+  top: var(--topbar-h);
   align-self: start;
   height: 100vh;
   overflow-y: auto;
@@ -2770,3 +2810,568 @@ kbd {
 @media (max-width: 560px) {
   .progress-head { flex-direction: column; gap: 0.1rem; }
 }
+
+/* ===================================================================
+   App shell chrome: top bar, icon rail, disc chip
+   (injected by layout.js on every page)
+   =================================================================== */
+
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--topbar-h);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0 1.1rem 0 0.9rem;
+  background: rgba(20, 23, 29, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+
+.tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-bright);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.tb-brand:hover { text-decoration: none; color: var(--text-bright); }
+.tb-mark {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--acc);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  letter-spacing: 0.02em;
+  flex: none;
+}
+.tb-name em { font-style: normal; color: var(--accent); font-weight: 800; margin-left: 0.15rem; }
+
+.tb-zones {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px;
+}
+.tb-zone {
+  padding: 0.32rem 0.95rem;
+  border-radius: 99px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.tb-zone:hover { color: var(--text); text-decoration: none; }
+.tb-zone.active { background: var(--acc); color: #fff; }
+.tb-zone.active:hover { color: #fff; }
+
+.tb-spacer { flex: 1; }
+
+.tb-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-code);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.4rem 0.7rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+.tb-search:hover { border-color: var(--border-hi); color: var(--text); }
+.tb-search .kbd {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  border: 1px solid var(--border-hi);
+  border-radius: 3px;
+  padding: 0 0.3rem;
+  color: var(--text-dim);
+}
+
+/* Disc chip: the ONE place disc state lives. Amber pulse when empty so the
+   requirement is visible site-wide without per-tile warning labels. */
+.disc-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 300px;
+  border-radius: 99px;
+  padding: 0.42rem 0.95rem;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-code);
+  color: var(--text-muted);
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.disc-chip .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disc-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex: none; }
+.disc-chip.empty {
+  border-color: rgba(217, 168, 98, 0.55);
+  background: var(--warn-soft);
+  color: #e8c68f;
+}
+.disc-chip.empty .dot { background: var(--warn); animation: chip-pulse 2.2s ease-in-out infinite; }
+.disc-chip.empty:hover { border-color: var(--warn); color: #f2d8a8; }
+.disc-chip.loaded { border-color: rgba(70, 201, 141, 0.4); color: var(--text); }
+.disc-chip.loaded .dot { background: var(--ok); }
+.disc-chip.loaded:hover { border-color: var(--ok); }
+@keyframes chip-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 168, 98, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(217, 168, 98, 0); }
+}
+
+.tb-gh { color: var(--text-muted); display: flex; align-items: center; }
+.tb-gh:hover { color: var(--text); }
+.tb-gh svg { width: 19px; height: 19px; }
+
+/* ---------- Icon rail ---------- */
+.rail {
+  position: fixed;
+  top: var(--topbar-h); bottom: 0; left: 0;
+  width: var(--rail-w);
+  z-index: 50;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.7rem 0.55rem;
+  gap: 0.35rem;
+}
+.rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.55rem 0.2rem 0.5rem;
+  border-radius: 9px;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  position: relative;
+  transition: background var(--transition), color var(--transition);
+}
+.rail-item:hover { background: var(--bg-card); color: var(--text); text-decoration: none; }
+.rail-item svg { width: 21px; height: 21px; }
+.rail-item.active { color: var(--accent); background: var(--accent-soft); }
+.rail-item.active::before {
+  content: "";
+  position: absolute;
+  left: -0.55rem; top: 22%; bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--acc);
+}
+
+@media (max-width: 880px) {
+  .tb-name { display: none; }
+  .tb-search .label { display: none; }
+  .disc-chip { max-width: 190px; }
+  .tb-zones { padding: 2px; }
+}
+
+/* ===================================================================
+   Home launcher: hero tile, disc slot, stat strip, tile grid, stories
+   =================================================================== */
+
+.hero-tile {
+  display: grid;
+  grid-template-columns: minmax(360px, 44fr) 56fr;
+  background: linear-gradient(160deg, #1c2230 0%, #171b23 55%, #161a22 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  margin-top: 0.4rem;
+}
+.hero-copy { padding: 2.4rem 2.3rem 2.1rem; display: flex; flex-direction: column; justify-content: center; }
+.hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.9rem;
+}
+.hero-copy h1 {
+  font-size: 2.05rem;
+  font-weight: 800;
+  letter-spacing: -0.022em;
+  line-height: 1.15;
+  margin-bottom: 0.8rem;
+}
+.hero-copy .hero-sub-line {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 1.05rem;
+  max-width: 46ch;
+}
+.legal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.35rem 0.75rem;
+  border-radius: 99px;
+  margin-bottom: 1.3rem;
+  border: 1px solid rgba(217, 168, 98, 0.3);
+  background: var(--warn-soft);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  font-weight: 500;
+  color: #e8c68f;
+}
+.cta-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.72rem 1.25rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--acc);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(61, 132, 255, 0.35);
+}
+.btn-primary:hover { background: #4d90ff; color: #fff; text-decoration: none; }
+.btn-ghost { border-color: var(--border); color: var(--text); background: rgba(255, 255, 255, 0.02); }
+.btn-ghost:hover { border-color: var(--border-hi); color: var(--text-bright); text-decoration: none; }
+.cta-tertiary { font-weight: 600; font-size: 0.85rem; }
+
+.hero-media { position: relative; min-height: 320px; border-left: 1px solid var(--line-soft); background: #0b0e13; }
+.hero-media video, .hero-media img.poster {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: 70% 40%;
+}
+.hero-media .caption {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding: 0.65rem 1.2rem 1.4rem;
+  background: linear-gradient(to bottom, rgba(10, 12, 16, 0.8), transparent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #b9c2d2;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Disc slot: THE prominent global "insert your .bin" affordance. One place,
+   instead of a NEEDS-DISC label repeated on every tile. */
+.disc-slot {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+  border: 1.5px dashed rgba(217, 168, 98, 0.5);
+  border-radius: 12px;
+  padding: 0.95rem 1.25rem;
+  background: var(--warn-soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.disc-slot svg { width: 26px; height: 26px; stroke: var(--warn); fill: none; stroke-width: 1.6; stroke-linecap: round; flex: none; }
+.disc-slot b { color: var(--text-bright); font-weight: 650; }
+.disc-slot .sub { display: block; color: var(--text-muted); font-size: 0.8rem; margin-top: 0.15rem; }
+.disc-slot .browse {
+  margin-left: auto;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  flex: none;
+  border: 0;
+  background: var(--warn);
+  color: #1a1206;
+  font-weight: 700;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.disc-slot .browse:hover { filter: brightness(1.08); }
+.disc-slot.loaded {
+  border-style: solid;
+  border-color: rgba(70, 201, 141, 0.4);
+  background: var(--ok-soft);
+}
+.disc-slot.loaded svg { stroke: var(--ok); }
+.disc-slot.loaded .browse { background: transparent; border: 1px solid var(--border-hi); color: var(--text-muted); font-weight: 600; }
+
+/* ---------- Stat strip (replaces the paragraph-heavy progress meter) ---------- */
+.stats-block { margin-top: 1.6rem; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+}
+.stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.05rem 1.2rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+}
+.stat .num { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-bright); line-height: 1; }
+.stat .num small { font-size: 0.95rem; font-weight: 600; color: var(--text-muted); margin-left: 1px; }
+.stat .lbl { margin: 0.45rem 0 0.85rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+.stat .meter { margin-top: auto; height: 4px; border-radius: 4px; background: #262c38; overflow: hidden; }
+.stat .meter i { display: block; height: 100%; border-radius: 4px; background: var(--acc); }
+.stats-foot { margin-top: 0.55rem; text-align: right; font-size: 0.82rem; font-weight: 600; }
+@media (max-width: 1000px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .stats { grid-template-columns: 1fr; } }
+
+/* ---------- Launcher tile grid ---------- */
+.group { margin-top: 2.2rem; }
+.group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  margin-bottom: 0.85rem;
+}
+.group-head h2 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.group-head .rule { flex: 1; height: 1px; background: var(--line-soft); align-self: center; }
+.group-head .count { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-dim); }
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; }
+.tiles.cols3 { grid-template-columns: repeat(3, 1fr); }
+.tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  transition: transform var(--transition), border-color var(--transition), background var(--transition);
+}
+.tile:hover { transform: translateY(-2px); border-color: var(--border-hi); background: var(--bg-card-hi); text-decoration: none; color: var(--text); }
+.tile:hover h3 { color: var(--accent); }
+
+.tile .shot {
+  height: 150px;
+  position: relative;
+  background: #0b0e13;
+  border-bottom: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+.tile .shot > img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+.tile:hover .shot > img { transform: scale(1.04); }
+.tile .shot::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(13, 16, 22, 0) 55%, rgba(16, 19, 26, 0.55) 100%);
+}
+.tile .glyph {
+  position: absolute; left: 10px; bottom: 10px;
+  z-index: 2;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: rgba(9, 12, 17, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.tile .glyph svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tile-body { padding: 0.8rem 0.95rem 0.95rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+.tile-body h3 { font-size: 0.92rem; font-weight: 600; margin: 0; transition: color var(--transition); }
+.tile-body p { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin: 0; }
+
+/* Large tiles (Play group): collage of one main + two stacked shots */
+.tile.lg { grid-column: span 2; }
+.tile.lg .shot, .tile.lg .collage { height: 190px; }
+.tile.lg .tile-body h3 { font-size: 1rem; }
+.collage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.1fr 1fr;
+  gap: 2px;
+  background: var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  align-items: stretch;
+  justify-items: stretch;
+  overflow: hidden;
+}
+.collage .cell { position: relative; overflow: hidden; background: #0b0e13; }
+.collage .cell img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.25s ease; }
+.tile:hover .collage .cell img { transform: scale(1.04); }
+.collage .side { display: grid; grid-template-rows: 1fr 1fr; gap: 2px; }
+.collage .cell.main::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(13, 16, 22, 0) 55%, rgba(16, 19, 26, 0.5) 100%);
+}
+
+/* Wide banner tile (single-tool group) */
+.tile.wide { grid-column: 1 / -1; flex-direction: row; align-items: stretch; }
+.tile.wide .shot { width: 260px; height: auto; min-height: 118px; flex: none; border-bottom: none; border-right: 1px solid var(--line-soft); }
+.tile.wide .tile-body { justify-content: center; gap: 0.4rem; padding: 1.1rem 1.4rem; }
+.tile.wide .tile-body h3 { font-size: 1rem; }
+.tile.wide .tile-body p { max-width: 70ch; font-size: 0.85rem; }
+
+@media (max-width: 1180px) {
+  .tiles, .tiles.cols3 { grid-template-columns: repeat(2, 1fr); }
+  .tile.lg { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .tiles, .tiles.cols3 { grid-template-columns: 1fr; }
+  .tile.lg { grid-column: auto; }
+  .tile.wide { flex-direction: column; }
+  .tile.wide .shot { width: 100%; height: 150px; border-right: none; border-bottom: 1px solid var(--line-soft); }
+  .hero-tile { grid-template-columns: 1fr; }
+  .hero-media { min-height: 240px; border-left: none; border-top: 1px solid var(--line-soft); }
+}
+
+/* ---------- Stories shelf ---------- */
+.stories { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; }
+.story {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--acc);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem 1.05rem;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: background var(--transition), border-color var(--transition);
+}
+.story:hover { background: var(--bg-card-hi); border-color: var(--border-hi); border-left-color: var(--accent); text-decoration: none; color: var(--text); }
+.story .kicker {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.story h3 { font-family: var(--font-serif); font-size: 1.08rem; font-weight: 600; margin: 0; }
+.story p { font-size: 0.82rem; color: var(--text-muted); line-height: 1.55; margin: 0; flex: 1; }
+@media (max-width: 900px) { .stories { grid-template-columns: 1fr; } }
+
+/* ---------- Docs entry tiles (home) ---------- */
+.doc-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem; }
+.doc-tile {
+  display: flex;
+  gap: 0.9rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  color: var(--text);
+  transition: background var(--transition), border-color var(--transition);
+}
+.doc-tile:hover { background: var(--bg-card-hi); border-color: var(--border-hi); text-decoration: none; color: var(--text); }
+.doc-tile .ico {
+  width: 36px; height: 36px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+}
+.doc-tile .ico svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.doc-tile h3 { font-size: 0.92rem; font-weight: 600; margin: 0 0 0.25rem; }
+.doc-tile p { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin: 0; }
+.doc-tile .meta { display: inline-block; margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.68rem; color: var(--accent); }
+@media (max-width: 800px) { .doc-tiles { grid-template-columns: 1fr; } }
+
+/* ---------- Docs reader typography ---------- */
+.zone-docs .content > .page-header h1,
+.zone-docs .content section.doc-section h2 {
+  font-family: var(--font-serif);
+  letter-spacing: 0;
+}
+.zone-docs .content > .page-header h1 { font-size: 1.85rem; font-weight: 700; }
+
+/* ===================================================================
+   Explore pages: compact disc bar + demoted explainer disclosure
+   (the tool-first restructure pattern used across interactive pages)
+   =================================================================== */
+
+/* Slim per-page disc chooser: sits under the lede, not as its own H2
+   section. rom-cache's status chip renders inside it. */
+.disc-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  border: 1px dashed rgba(217, 168, 98, 0.4);
+  border-radius: 9px;
+  padding: 0.55rem 0.9rem;
+  margin: 0.7rem 0 1.1rem;
+  background: rgba(217, 168, 98, 0.05);
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+.disc-bar label { color: var(--text); font-weight: 600; }
+
+/* "About this data" - the explanatory prose that used to sit above the
+   tool, collapsed below it instead. */
+details.about-data {
+  margin-top: 1.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+details.about-data > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.8rem 1.05rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  transition: color var(--transition);
+}
+details.about-data > summary::before {
+  content: "▸";
+  color: var(--text-dim);
+  font-size: 0.8em;
+  transition: transform var(--transition);
+}
+details.about-data[open] > summary::before { transform: rotate(90deg); }
+details.about-data > summary:hover { color: var(--text); }
+details.about-data[open] > summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+details.about-data > .about-body { padding: 0.4rem 1.2rem 1.1rem; }
+details.about-data > .about-body > h2:first-child,
+details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }

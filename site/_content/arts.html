@@ -108,23 +108,16 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <p class="lede">
     Every character's Arts - the direction-input combos they chain together in battle. Load your own disc image and watch each one performed by the character's real battle model, animated in your browser.
   </p>
-  <p>
-    Four kinds: <strong>Regular</strong> (learned by use), <strong>Hyper</strong> (longer combos),
-    <strong>Super</strong> (story-unlocked), and one <strong>Miracle Art</strong> apiece.
-  </p>
 </header>
+
+<div class="disc-bar">
+  <label for="arts-file">Disc:</label>
+  <input type="file" id="arts-file" accept=".bin,.DAT,.dat">
+  <span class="arts-status" id="arts-status">No disc loaded - the cards below stay a static reference until you provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+</div>
 
 <section class="doc-section" id="arts-motion">
   <h2>Watch the arts</h2>
-  <p>
-    With a disc loaded, every art card below becomes clickable: the canvas plays that art on the character's battle model, posed from the on-disc keyframes, with the voice shout riding along as in retail. Each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>); retail rolls a random channel from the art's candidate pool every fire, and this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
-    <strong>Hyper Arts play no shout at all in retail</strong> - instead each fires a stereo <em>fanfare</em> from the character's fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>), coin-flipped between the art's own pair of channels; Super and Miracle Arts open with the same bank's generic fanfare. Those are the cues this page plays on a Hyper, Super or Miracle card - every per-art channel capture-verified against a live instrumented battle. Retail also draws a tinted after-image trail behind the character (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>) - it starts off here for a clean view of the model; tick the box below to switch it on. The <strong>.glb</strong> button bakes the selected character's assembled battle model with its <em>entire</em> battle-animation set as named glTF animations - the full action bank (Idle, Walk / Approach, the flinches, Knockdown, Get Up, Ready / Recover / Defeat, Block), the four direction-command weapon swings, and every art - ready for Blender or three.js. The chip row under the model plays each action clip directly, the same way an art card does. (Retail has no separate <em>run</em> clip - Walk / Approach is the battle locomotion, and a live capture confirmed the field engine likewise never leaves its walk record.) Nothing is uploaded; the disc never leaves your machine.
-  </p>
-  <div class="file-input-group">
-    <label for="arts-file"><strong>Choose file:</strong></label>
-    <input type="file" id="arts-file" accept=".bin,.DAT,.dat">
-    <span class="arts-status" id="arts-status">No disc loaded - the cards below stay a static reference until you provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
-  </div>
   <div class="arts-controls">
     <label class="arts-trail-label" title="The tinted delayed after-image drawn behind the character during an art (retail-faithful). Untick to draw the animation clean.">
       <input type="checkbox" id="arts-trail-toggle"> after-image trail
@@ -177,8 +170,22 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   </p>
 </section>
 
+<details class="about-data">
+  <summary>About this data &mdash; the four kinds, shouts &amp; fanfares, the .glb export</summary>
+  <div class="about-body">
+  <h3>The four kinds</h3>
+  <p>
+    Four kinds: <strong>Regular</strong> (learned by use), <strong>Hyper</strong> (longer combos),
+    <strong>Super</strong> (story-unlocked), and one <strong>Miracle Art</strong> apiece.
+  </p>
+  <h3>How the playback works</h3>
+  <p>
+    With a disc loaded, every art card becomes clickable: the canvas plays that art on the character's battle model, posed from the on-disc keyframes, with the voice shout riding along as in retail. Each shout is a CD-XA channel from the character's own voice bank (Vahn <code>XA2.XA</code>, Noa <code>XA4.XA</code>, Gala <code>XA6.XA</code>); retail rolls a random channel from the art's candidate pool every fire, and this page plays the channel a live instrumented battle was captured firing for that art where one is pinned, else a fixed member of the same pool.
+    <strong>Hyper Arts play no shout at all in retail</strong> - instead each fires a stereo <em>fanfare</em> from the character's fanfare bank (Vahn <code>XA1.XA</code>, Noa <code>XA3.XA</code>, Gala <code>XA5.XA</code>), coin-flipped between the art's own pair of channels; Super and Miracle Arts open with the same bank's generic fanfare. Those are the cues this page plays on a Hyper, Super or Miracle card - every per-art channel capture-verified against a live instrumented battle. Retail also draws a tinted after-image trail behind the character (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>) - it starts off here for a clean view of the model; tick the box to switch it on. The <strong>.glb</strong> button bakes the selected character's assembled battle model with its <em>entire</em> battle-animation set as named glTF animations - the full action bank (Idle, Walk / Approach, the flinches, Knockdown, Get Up, Ready / Recover / Defeat, Block), the four direction-command weapon swings, and every art - ready for Blender or three.js. The chip row under the model plays each action clip directly, the same way an art card does. (Retail has no separate <em>run</em> clip - Walk / Approach is the battle locomotion, and a live capture confirmed the field engine likewise never leaves its walk record.) Nothing is uploaded; the disc never leaves your machine.
+  </p>
+
 <section class="doc-section" id="related">
-  <h2>Under the hood</h2>
+  <h3>Under the hood</h3>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="formats/art-data.html">Art-data format</a>
@@ -188,6 +195,8 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
     <a href="reference/gamedata.html">Arts gamedata</a>
   </div>
 </section>
+  </div>
+</details>
 
 <script>
 /* arts.html - per-character art list, driven by arts.json.

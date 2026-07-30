@@ -82,32 +82,18 @@ canvas.world-canvas {
   <h1>Game world</h1>
   <p class="lede">
     Every town, dungeon, and battlefield in the game, rebuilt in 3D from your own copy of it.
-  </p>
-  <p>
-    Pick a location from the navigator and its full map assembles in your browser, textured from
-    reconstructed PlayStation video memory, alongside its enemy roster, bosses, and shops. Nothing is
-    uploaded; your disc image never leaves your machine.
-  </p>
-  <p>
-    Each location ties back to the short scene label the disc uses internally (like
-    <code>town0d</code>) via the <a href="formats/cdname.html">CDNAME name map</a>.
+    Pick a location from the navigator and its full map assembles in your browser - nothing is uploaded.
   </p>
 </header>
 
-<section class="doc-section" id="map">
-  <h2>Explore the maps</h2>
-  <p class="hint">
-    With a VR headset, the <strong>VR</strong> button lets you step inside the assembled map over
-    WebXR (Chrome/Edge with SteamVR as the OpenXR runtime, page served over
-    <code>http://localhost</code> or https). If it can't start, the button explains what's missing.
-  </p>
-  <div class="world-shell">
-    <div class="file-input-group">
-      <label for="world-file"><strong>Choose file:</strong></label>
-      <input type="file" id="world-file" accept=".bin,.DAT,.dat">
-      <span class="world-status" id="world-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
-    </div>
+<div class="disc-bar">
+  <label for="world-file">Disc:</label>
+  <input type="file" id="world-file" accept=".bin,.DAT,.dat">
+  <span class="world-status" id="world-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
+</div>
 
+<section class="doc-section" id="map">
+  <div class="world-shell">
     <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
          session or minigame progress exists in this browser; Resume links
          to the play page, which hosts the engine runtime. -->
@@ -132,10 +118,32 @@ canvas.world-canvas {
       </div>
     </div>
   </div>
-  <p class="char-info-note" style="color: var(--text-dim); font-size: 0.78rem; line-height: 1.55;">
-    The map is assembled the way the game assembles it, from the scene's mesh pack, object grid, and heightfields - see <a href="formats/scene-bundles.html">scene bundles</a>. Sky domes are hidden (under this camera they'd cover the map). Drag to pan, right-drag to pivot, wheel to zoom.
-  </p>
 </section>
+
+<details class="about-data">
+  <summary>About the map viewer - assembly, controls, VR</summary>
+  <div class="about-body">
+    <p>
+      Pick a location from the navigator and its full map assembles in your browser, textured from
+      reconstructed PlayStation video memory, alongside its enemy roster, bosses, and shops. Nothing is
+      uploaded; your disc image never leaves your machine.
+    </p>
+    <p>
+      Each location ties back to the short scene label the disc uses internally (like
+      <code>town0d</code>) via the <a href="formats/cdname.html">CDNAME name map</a>.
+    </p>
+    <h3>How the map assembles</h3>
+    <p>
+      The map is assembled the way the game assembles it, from the scene's mesh pack, object grid, and heightfields - see <a href="formats/scene-bundles.html">scene bundles</a>. Sky domes are hidden (under this camera they'd cover the map). Drag to pan, right-drag to pivot, wheel to zoom.
+    </p>
+    <h3>VR</h3>
+    <p>
+      With a VR headset, the <strong>VR</strong> button lets you step inside the assembled map over
+      WebXR (Chrome/Edge with SteamVR as the OpenXR runtime, page served over
+      <code>http://localhost</code> or https). If it can't start, the button explains what's missing.
+    </p>
+  </div>
+</details>
 
 <section class="doc-section" id="towns">
   <h2>Towns</h2>

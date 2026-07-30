@@ -80,21 +80,20 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
 -->
-<header>
+<header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
   <h1>Enemy table</h1>
   <p class="lede">Every enemy's stat record and 3D battle model, decoded from your own disc image in the browser - click any row to spin its model. No game data ships with this site; your <code>.bin</code> never leaves your machine.</p>
 </header>
 
-<section class="doc-section">
-  <h2>Open a disc image</h2>
-  <div class="enemy-table-shell">
-    <div class="file-input-group">
-      <label for="enemy-table-file"><strong>Choose file:</strong></label>
-      <input type="file" id="enemy-table-file" accept=".bin,.DAT,.dat">
-      <span class="enemy-table-status" id="enemy-table-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
-    </div>
+<div class="disc-bar">
+  <label for="enemy-table-file">Disc:</label>
+  <input type="file" id="enemy-table-file" accept=".bin,.DAT,.dat">
+  <span class="enemy-table-status" id="enemy-table-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+</div>
 
+<section class="doc-section">
+  <div class="enemy-table-shell">
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
       <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats when a battle loads: ATK ×5/4, UDF/LDF ×2, INT ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
@@ -132,7 +131,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       </table>
     </div>
   </div>
+</section>
 
+<details class="about-data">
+  <summary>About this data — columns, the international stat boost, how it's decoded</summary>
+  <div class="about-body">
   <h3>Reading the columns</h3>
   <dl class="kv">
     <dt><strong>ATK</strong></dt>
@@ -167,10 +170,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="formats/battle-data-pack.html">Battle-data pack</a>
     <a href="formats/steal-table.html">Steal table</a>
   </div>
-</section>
 
-<section class="doc-section">
-  <h2>How it works</h2>
+  <h3>How it works</h3>
   <p>The whole roster lives in one LZS-compressed archive on the disc; each enemy id maps to a fixed slot holding a stat record, the 3D model, and its animations - decoded here by the same parser the native tools use, compiled to WebAssembly. Full layout: <a href="formats/battle-data-pack.html">battle-data pack</a>.</p>
   <p class="caption">Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload - use <em>Forget</em> to clear.</p>
   <div class="cli"><code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code></div>
@@ -180,7 +181,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="formats/lzs.html">Legaia LZS</a>
   </div>
 
-  <h2>The 3D model</h2>
+  <h3>The 3D model</h3>
   <p>Click any row to spin its <strong>battle model</strong> - textured and lit straight from your disc, the model the battle camera shows. 186 of the 194 enemies carry one (the rest are filler ids).</p>
   <div class="cli"><code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code></div>
   <div class="see-also">
@@ -190,7 +191,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="subsystems/renderer.html">Renderer</a>
   </div>
 
-  <h2>Animations</h2>
+  <h3>Animations</h3>
   <p>Every action an enemy can play - idle, move cycle, and each spell / special - ships as its own keyframe stream in the same archive; when a monster carries more than one, toggle buttons appear beside the model. Encoding: <a href="formats/monster-animation.html">monster animation</a>.</p>
   <div class="cli"><code>asset monster-archive … --id N --anim</code></div>
   <div class="see-also">
@@ -198,7 +199,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="formats/monster-animation.html">Monster animation</a>
   </div>
 
-  <h2>Download</h2>
+  <h3>Download</h3>
   <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy - mesh, baked texture, and all of its animations - into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file that drops straight into Blender, three.js, or any glTF tool. The same export is available offline from the CLI.</p>
   <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
   <div class="see-also">
@@ -206,7 +207,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <a href="formats/tmd.html">Legaia TMD</a>
     <a href="formats/monster-animation.html">Monster animation</a>
   </div>
-</section>
+  </div>
+</details>
 
 <script type="module">
 (() => {

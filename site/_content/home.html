@@ -1,145 +1,243 @@
-<header class="page-header" id="top">
-  <div class="breadcrumb">project &middot; NA SCUS-94254 &middot; 1998 &middot; sony psx</div>
-  <h1>Legend of Legaia <span class="hero-sub">reverse engineering &amp; clean-room engine port</span></h1>
+<header class="page-header visually-hidden-header" id="top" style="display:none">
+  <h1>Legend of Legaia RE</h1>
   <p class="lede">
-    <em>Legend of Legaia</em> is a 1998 PlayStation RPG, and this project has taken it apart end to end: browse its assets, hear its music, watch its cutscenes, patch its disc with a randomizer, and run a clean-room engine - right in this browser, from your own disc image. <strong>Bring your own disc; this site and repo ship zero Sony bytes.</strong> The engine port follows the same legal pattern as <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/openrct2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, and <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>.
+    <em>Legend of Legaia</em> (PSX, 1998) reverse engineered end to end: play the clean-room engine port in your browser, browse every asset on the disc, patch your disc with the randomizer, and read byte-level format docs. Bring your own disc image - no Sony data is distributed.
   </p>
 </header>
 
-<section class="doc-section" id="demo">
-  <h2>Demo</h2>
-  <p>The clean-room engine running real scenes, plus the asset viewers running off a disc image.</p>
-  <video controls preload="metadata" playsinline style="width: 100%; max-width: 960px; border-radius: 6px; background: #000;">
-    <source src="assets/legend-of-legaia-re-demo.mp4" type="video/mp4">
-    Your browser does not support embedded video.
-    <a href="assets/legend-of-legaia-re-demo.mp4">Download the demo video</a>.
-  </video>
-</section>
+<div class="hero-tile">
+  <div class="hero-copy">
+    <div class="hero-eyebrow">PSX &middot; SCUS-94254 &middot; 1998</div>
+    <h1>Legend of Legaia, taken apart and running again.</h1>
+    <p class="hero-sub-line">A 1998 PlayStation RPG reverse-engineered end to end &mdash; play the
+    clean-room engine port, browse everything on the disc, and read how it all works. All in your
+    browser.</p>
+    <span class="legal-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
+      Zero Sony bytes shipped &mdash; bring your own disc
+    </span>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="play.html">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l14-8z"/></svg>
+        Play in your browser
+      </a>
+      <a class="btn btn-ghost" href="viewer.html">Browse the disc</a>
+      <a class="cta-tertiary" href="architecture.html">Read the docs &rarr;</a>
+    </div>
+  </div>
+  <div class="hero-media">
+    <video controls preload="none" playsinline poster="img/tiles/hero.jpg">
+      <source src="assets/legend-of-legaia-re-demo.mp4" type="video/mp4">
+      Your browser does not support embedded video.
+      <a href="assets/legend-of-legaia-re-demo.mp4">Download the demo video</a>.
+    </video>
+    <div class="caption">2-minute demo &mdash; the engine running real scenes</div>
+  </div>
+</div>
+
+<!-- The one global disc affordance: everything interactive below reads from
+     the same cached image, so the requirement lives here (and in the top-bar
+     chip) instead of as a warning label repeated on every tile. -->
+<div class="disc-slot" id="disc-slot">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.4"/></svg>
+  <span class="slot-line"><b>Insert your disc image</b> &mdash; pick your <code>.bin</code> once and every
+  page on this site reads from it.<span class="sub">Read locally, cached in this browser, shared across
+  pages. Nothing is ever uploaded.</span></span>
+  <button type="button" class="browse">Choose .bin file</button>
+</div>
 
 <section class="doc-section" id="progress">
-  <h2>Progress</h2>
-  <p>Where the four tracks stand. The two families are measured differently and
-  are <strong>not comparable</strong>: the first two are denominated in the
-  game's own bytes, the last two in the set of functions the project has
-  identified &mdash; a measure that cannot see a subsystem nobody has looked at
-  yet. Each bar therefore carries its own denominator, and there is deliberately
-  no single headline number. See
-  <a href="tooling/disc-coverage.html">disc coverage</a> for how the byte-level
-  figures are derived.</p>
-
   <!--PROGRESS_METER-->
 </section>
 
 <section class="doc-section" id="explore">
-  <h2>Try it now</h2>
-  <p>Everything below runs client-side in this browser. No install; pick a disc image once and it's cached locally for every page.</p>
-  <div class="card-grid">
-    <a class="card" href="tooling/rom-patcher.html">
-      <div class="card-title">ROM patcher (randomizer)</div>
-      <div class="card-body">Randomize your disc in the browser: drops, encounters, chests, shops, doors, arts combos, and code-injected extras like the in-shop Seru-trading vendor. Outputs a patched image; nothing is uploaded.</div>
-    </a>
-    <a class="card" href="viewer.html">
-      <div class="card-title">Asset viewer</div>
-      <div class="card-body">Browse every 3D mesh and 2D texture on the disc, grouped by scene - plus a live engine panel that ticks the runtime VMs.</div>
-    </a>
-    <a class="card" href="media.html">
-      <div class="card-title">Media browser</div>
-      <div class="card-body">Play every music track and sound bank, and watch every FMV cutscene with synced video and audio.</div>
-    </a>
-    <a class="card" href="monsters.html">
-      <div class="card-title">Enemy table</div>
-      <div class="card-body">Every enemy's stats, drops, steals, and spells - click a row to spin its animated 3D battle model, or export it as glTF.</div>
-    </a>
-    <a class="card" href="characters.html">
-      <div class="card-title">Characters</div>
-      <div class="card-body">Vahn, Noa, and Gala in 3D - field and battle forms, equipment swaps, and real in-game animation playback.</div>
-    </a>
-    <a class="card" href="npcs.html">
-      <div class="card-title">NPCs</div>
-      <div class="card-body">The whole cast of every town and dungeon - villagers, shopkeepers, story figures - posed and animated from your disc.</div>
-    </a>
-    <a class="card" href="world.html">
-      <div class="card-title">Game world</div>
-      <div class="card-body">Every town and dungeon rendered in 3D on the page - pick a location from the navigator and its full map assembles, joined with enemy rosters, bosses, and shops.</div>
-    </a>
-    <a class="card" href="world-overview.html">
-      <div class="card-title">World overview (3D)</div>
-      <div class="card-body">Each kingdom's overworld assembled in real-time WebGL 3D - terrain, landmarks, ocean animation, fog.</div>
-    </a>
-    <a class="card" href="shops.html">
-      <div class="card-title">Shops &amp; vendors</div>
-      <div class="card-body">Town &rarr; vendor &rarr; priced inventory &rarr; item detail, across every shop in the game.</div>
-    </a>
-    <a class="card" href="minigames.html">
-      <div class="card-title">Minigames &amp; Sol Tower</div>
-      <div class="card-body">Sol Tower floor map, slot prize ladders, Muscle Dome courses, Baka Fighter rounds, and side-quest chains.</div>
-    </a>
-    <a class="card" href="arts.html">
-      <div class="card-title">Tactical Arts</div>
-      <div class="card-body">Per-character art lists with direction-token inputs and AP costs - and with your own disc, watch each art performed by the real battle model, or download it with every battle animation as a .glb.</div>
-    </a>
+  <div class="group">
+    <div class="group-head"><h2>Play</h2><span class="rule"></span><span class="count">2 tools</span></div>
+    <div class="tiles">
+      <a class="tile lg" href="play.html">
+        <div class="collage">
+          <div class="cell main"><img src="img/tiles/play-main.jpg" alt="The engine rendering Rim Elm - Vahn near the windmills" loading="lazy"></div>
+          <div class="side">
+            <div class="cell"><img src="img/tiles/play-side1.jpg" alt="The name-entry screen" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/play-side2.jpg" alt="The opening prologue" loading="lazy"></div>
+          </div>
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/></svg></span>
+        </div>
+        <div class="tile-body">
+          <h3>Play the port</h3>
+          <p>The clean-room engine running the real game &mdash; flat or in VR.</p>
+        </div>
+      </a>
+      <a class="tile lg" href="minigames.html">
+        <div class="collage">
+          <div class="cell main"><img src="img/tiles/mg-main.jpg" alt="Noa's dance minigame" loading="lazy"></div>
+          <div class="side">
+            <div class="cell"><img src="img/tiles/mg-side1.jpg" alt="The casino slot machine" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/mg-side2.jpg" alt="The fishing minigame" loading="lazy"></div>
+          </div>
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="5" height="14" rx="1"/><rect x="9.5" y="5" width="5" height="14" rx="1"/><rect x="15.5" y="5" width="5" height="14" rx="1"/><circle cx="6" cy="9.5" r="1"/><circle cx="12" cy="13" r="1"/><circle cx="18" cy="10.5" r="1"/></svg></span>
+        </div>
+        <div class="tile-body">
+          <h3>Minigames &amp; Sol Tower</h3>
+          <p>Slots, Noa's dance, Baka Fighter &mdash; playable with retail data.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-head"><h2>Modding</h2><span class="rule"></span><span class="count">1 tool</span></div>
+    <div class="tiles">
+      <a class="tile wide" href="tooling/rom-patcher.html">
+        <div class="shot"><img src="img/tiles/patcher.jpg" alt="Randomizer options: drops, chests, and shops set to shuffle or randomize" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/></svg></span></div>
+        <div class="tile-body">
+          <h3>ROM patcher (randomizer)</h3>
+          <p>Randomize drops, encounters, chests, shops, doors, arts combos, and code-injected extras
+          like the in-shop Seru-trading vendor. Outputs a patched image &mdash; nothing is uploaded.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+  <div class="group">
+    <div class="group-head"><h2>Browse the disc</h2><span class="rule"></span><span class="count">9 tools</span></div>
+    <div class="tiles cols3">
+      <a class="tile" href="viewer.html">
+        <div class="shot"><img src="img/tiles/viewer.jpg" alt="The TIM texture catalog decoded from the disc" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9 12 6l5 3v6l-5 3-5-3z"/><path d="M7 9l5 3 5-3M12 12v6"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Asset viewer</h3>
+          <p>Every 3D mesh and texture on the disc, grouped by scene.</p>
+        </div>
+      </a>
+      <a class="tile" href="media.html">
+        <div class="shot"><img src="img/tiles/media.jpg" alt="The sound-test track list with play controls" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2M19 12h2"/><path d="M5 12c1 0 1-4 2-4s1 7 2 7 1-9 2-9 1 11 2 11 1-7.5 2-7.5 1 2.5 2 2.5"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Media browser</h3>
+          <p>All the music, sound banks, FMVs, and voice audio.</p>
+        </div>
+      </a>
+      <a class="tile" href="world.html">
+        <div class="shot"><img src="img/tiles/world.jpg" alt="Vidna assembled in 3D" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15c-1.5-3 .7-6.7 3.7-7s3.7-3 6.7-2.6 5.2 3 4.4 6-3 3-3 5.2-3.7 3.7-6.7 3-3.9-2.2-5.1-4.6z"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Game world</h3>
+          <p>Every town and dungeon assembled in 3D, with enemy rosters.</p>
+        </div>
+      </a>
+      <a class="tile" href="world-overview.html">
+        <div class="shot"><img src="img/tiles/wo.jpg" alt="A kingdom's overworld rendered in WebGL" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/><ellipse cx="12" cy="12" rx="7.5" ry="3.2"/><path d="M12 4.5v15"/></svg></span></div>
+        <div class="tile-body">
+          <h3>World overview</h3>
+          <p>Each kingdom's overworld in real-time WebGL.</p>
+        </div>
+      </a>
+      <a class="tile" href="characters.html">
+        <div class="shot"><img src="img/tiles/chars.jpg" alt="A party battle model" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.5" r="2.5"/><path d="M12 9v5M12 10.5l-3.5 2.7M12 10.5l3.5 2.7M12 14l-2.7 5M12 14l2.7 5"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Characters</h3>
+          <p>Vahn, Noa, and Gala &mdash; field and battle forms, animated.</p>
+        </div>
+      </a>
+      <a class="tile" href="npcs.html">
+        <div class="shot"><img src="img/tiles/npcs.jpg" alt="A townsperson model" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="7.5" r="2"/><path d="M8.5 9.5v4M8.5 10.7l-2.3 2M8.5 10.7l2.3 2M8.5 13.5l-2 4M8.5 13.5l2 4"/><circle cx="16.5" cy="9" r="1.7"/><path d="M16.5 10.7v3.3M16.5 12l-2 1.6M16.5 12l2 1.6M16.5 14l-1.6 3.5M16.5 14l1.6 3.5"/></svg></span></div>
+        <div class="tile-body">
+          <h3>NPCs</h3>
+          <p>Every townsperson in 3D, posed straight from your disc.</p>
+        </div>
+      </a>
+      <a class="tile" href="monsters.html">
+        <div class="shot"><img src="img/tiles/monsters.jpg" alt="An enemy battle model" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 9.5h16M4 14h16M10 5v14"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Enemy table</h3>
+          <p>Stats, drops, steals &mdash; click a row to spin the 3D model.</p>
+        </div>
+      </a>
+      <a class="tile" href="shops.html">
+        <div class="shot"><img src="img/tiles/shops.jpg" alt="A vendor's priced inventory" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="13.5" r="3.7"/><circle cx="9" cy="13.5" r="1.6"/><path d="M13.5 6.5H18l1.5 1.5-6 6.5-3-3z"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Shops &amp; vendors</h3>
+          <p>Every shop's priced inventory, town by town.</p>
+        </div>
+      </a>
+      <a class="tile" href="arts.html">
+        <div class="shot"><img src="img/tiles/arts.jpg" alt="Vahn's battle model mid-art" loading="lazy">
+          <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l1.8 2.6h-3.6zM12 20l-1.8-2.6h3.6zM4 12l2.6-1.8v3.6zM20 12l-2.6 1.8v-3.6z"/><rect x="9.7" y="9.7" width="4.6" height="4.6" rx="0.8"/></svg></span></div>
+        <div class="tile-body">
+          <h3>Tactical Arts</h3>
+          <p>Inputs, AP costs &mdash; each art performed by the battle model.</p>
+        </div>
+      </a>
+    </div>
   </div>
 </section>
 
 <section class="doc-section" id="writeups">
-  <h2>Read the story</h2>
-  <div class="card-grid">
-    <a class="card" href="writeups/index.html">
-      <div class="card-title">Technical write-ups</div>
-      <div class="card-body">The narrative track: how a sealed retail disc gets modded with no source and no SDK, told as a ladder of injection techniques - from same-size byte edits up to hand-assembled MIPS hosted in an overlay's dead space.</div>
-    </a>
+  <div class="group">
+    <div class="group-head"><h2>Stories from the dig</h2><span class="rule"></span><span class="count">write-ups</span></div>
+    <div class="stories">
+      <a class="story" href="writeups/disc-patching/index.html">
+        <span class="kicker">6-part series</span>
+        <h3>Patching a sealed disc</h3>
+        <p>Modding a retail CD with no source and no SDK &mdash; a six-tier ladder from byte edits to
+        hand-assembled MIPS hosted in an overlay's dead space.</p>
+      </a>
+      <a class="story" href="writeups/gaza-orbit-softlock.html">
+        <span class="kicker">write-up</span>
+        <h3>The endless orbit</h3>
+        <p>A softlock 27 years old: why one Gaza Valley fight never ends, and the two-byte fix.</p>
+      </a>
+      <a class="story" href="writeups/spirit-fish.html">
+        <span class="kicker">write-up</span>
+        <h3>The Spirit fish gate</h3>
+        <p>The fish that couldn't be caught &mdash; tracing a minigame gate nobody understood.</p>
+      </a>
+    </div>
   </div>
 </section>
 
 <section class="doc-section" id="understand">
-  <h2>Understand the engine</h2>
-  <p>How the binary actually works - from raw sectors up through the runtime VMs. Start with <em>How it stacks</em> for the conceptual map.</p>
-  <div class="card-grid">
-    <a class="card" href="architecture.html">
-      <div class="card-title">How the layers stack</div>
-      <div class="card-body">Interactive layer diagram: disc &rarr; ISO9660 &rarr; PROT.DAT &rarr; per-entry containers &rarr; per-asset formats &rarr; engine VMs. Plus the five-runtime-VM grid + call graph.</div>
-    </a>
-    <a class="card" href="subsystems/index.html">
-      <div class="card-title">Subsystems</div>
-      <div class="card-body">How each subsystem works: boot path, asset loader, five runtime VMs, renderer, audio, battle, world map, save / shop / inn / level-up / cutscene.</div>
-    </a>
-    <a class="card" href="formats/index.html">
-      <div class="card-title">Formats</div>
-      <div class="card-body">Byte-level specs for everything on the disc - LZS, TIM, TMD, VAB, SEQ, MES, ANM, MDT, scene bundles, field-pack, effect bundles, save records. Each cites a Ghidra function dump.</div>
-    </a>
-    <a class="card" href="subsystems/engine.html">
-      <div class="card-title">Engine port</div>
-      <div class="card-body">Crate layering and clean-room boundaries for the Rust runtime: the ported VMs, how the retail-faithful mode stays testable, and the enhancement toggles that ride on top of it. Native binary + WASM build; legal posture (zero Sony bytes shipped).</div>
-    </a>
-  </div>
-</section>
-
-<section class="doc-section" id="build">
-  <h2>Build &amp; reference</h2>
-  <p>Set up the workspace, run the extraction pipeline, and look up the anchor data the documentation hangs on.</p>
-  <div class="card-grid">
-    <a class="card" href="quickstart.html">
-      <div class="card-title">Quick start</div>
-      <div class="card-body">Build the workspace, run the extraction pipeline, browse the assets, stand up Ghidra in Docker. Four steps; each depends on the one before it.</div>
-    </a>
-    <a class="card" href="tooling/index.html">
-      <div class="card-title">Tooling</div>
-      <div class="card-body">Per-stage extraction CLIs, headless-Ghidra-in-Docker workflow, mednafen save-state automation, PCSX-Redux Lua probes for closed-loop overlay capture.</div>
-    </a>
-    <a class="card" href="reference/index.html">
-      <div class="card-title">Reference</div>
-      <div class="card-body">Key Ghidra-traced functions, the PSX RAM map, cheat-database offsets, the curated game-data tables that ground-truth the binary records, and the three-page RE thread register: live hunts, settled answers with their evidence grade, and falsified readings kept with their reasoning.</div>
-    </a>
-  </div>
-</section>
-
-<section class="doc-section" id="status">
-  <h2>Status</h2>
-  <div class="status-strip">
-    <a class="status-pill status-done" href="formats/index.html">Asset preservation</a>
-    <a class="status-pill status-done" href="reference/functions.html">Static analysis</a>
-    <a class="status-pill status-done" href="subsystems/engine.html">Engine runtime</a>
-    <a class="status-pill status-done" href="viewer.html">WASM viewer</a>
-    <a class="status-pill status-open" href="reference/open-rev-eng-threads.html">Open threads</a>
+  <div class="group">
+    <div class="group-head"><h2>Read how it works</h2><span class="rule"></span><span class="count">docs zone</span></div>
+    <div class="doc-tiles">
+      <a class="doc-tile" href="architecture.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h10M4 18h7"/></svg></span>
+        <div>
+          <h3>Start here: how the game is put together</h3>
+          <p>The layer diagram from raw sectors to runtime VMs &mdash; disc &rarr; ISO9660 &rarr; PROT.DAT &rarr; containers &rarr; formats &rarr; engine.</p>
+          <span class="meta">Architecture &rarr;</span>
+        </div>
+      </a>
+      <a class="doc-tile" href="subsystems/index.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></span>
+        <div>
+          <h3>Subsystems</h3>
+          <p>Boot path, asset loader, the five runtime VMs, renderer, audio, battle, world map, save / shop / inn / level-up.</p>
+          <span class="meta">24 pages &rarr;</span>
+        </div>
+      </a>
+      <a class="doc-tile" href="formats/index.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15.5h5"/></svg></span>
+        <div>
+          <h3>Formats</h3>
+          <p>Byte-level specs for everything on the disc &mdash; each traced to a Ghidra function dump.</p>
+          <span class="meta">40+ pages &rarr;</span>
+        </div>
+      </a>
+      <a class="doc-tile" href="guides/getting-started.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C5.5 4.5 7.5 4 9 4s3 .5 3 .5V19s-1.5-.5-3-.5-3.5.5-5 1.5zM20 5.5C18.5 4.5 16.5 4 15 4s-3 .5-3 .5V19s1.5-.5 3-.5 3.5.5 5 1.5z"/></svg></span>
+        <div>
+          <h3>Guides, tooling &amp; reference</h3>
+          <p>Build the workspace, extract assets, mod and translate. Reference &mdash; RAM map, function directory, game-data tables.</p>
+          <span class="meta">Guides &rarr;</span>
+        </div>
+      </a>
+    </div>
   </div>
 </section>
