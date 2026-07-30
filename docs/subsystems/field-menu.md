@@ -1308,6 +1308,59 @@ character records, descriptions via `MenuTextTables` /
 Quarter bit `0x10` shaves 25%, Half winning when both are set) is applied to
 the displayed cost, matching the retail info window and the battle cast path.
 
+### Menu-cast spell leveling + the window-7 notice
+
+Casting a heal from the Magic screen trains the spell, exactly like the
+battle summon path - and it is the same counter. The effect-apply
+handler `FUN_800402F4` (SCUS; `ghidra/scripts/funcs/800402f4.txt`) is
+what both cast flows (`0x0F` group / `0x10` single) run, and its HP-heal
+arms carry an inline copy of the accrue-then-threshold-test loop:
+
+- **Accumulator.** The grant lands in the u32 at `0x80084140 +
+  char*0x414 + slot*4 + 0x5D0`. `0x80084140 + 0x5C8` is the
+  `0x80084708` character-record base, so `+0x5D0` off the save-context
+  window is the record's per-spell XP array at `+0x8` - the same array
+  the battle finisher `FUN_801ddb30` trains. One accumulator, not two.
+- **Grant.** Flat per cast, not damage-proportional: the single-target
+  arm (case body `0x80040470`) adds `+0xC` when the target's HP deficit
+  covered the spell's full level-scaled heal cap (`(level-1)*{32,64,128}
+  + {0x100,0x200,0x400}` by tier) and `+0x4` when the heal was clipped;
+  the multi-target arm (case body `0x80040908`) adds `+0x3` / `+0x1` per
+  member, skipping members with no deficit.
+- **Level test.** Only outside battle (`_DAT_8007B83C != 0x15`): with
+  the level byte `+0x729` (= record `+0x161 + slot`) below 9, a raw u16
+  entry of the `0x8007656C` threshold table (`[level-1]`) strictly below
+  the accumulator bumps the byte and calls `FUN_80035C00(char, slot)` -
+  a two-store setter for the pair `(_DAT_8007BB70, _DAT_8007BB78)`. The
+  raw-entry compare equals the battle check's default multiplier
+  (`FUN_801e70bc` computes `(entry*2)>>1`); none of that check's six
+  x1.5-threshold spell ids is a menu-heal id, so the two compares agree
+  on every input the menu arm can produce.
+- **Window 7.** The cast sub-screens seed the pair to `0xFF` before the
+  apply and, if it changed, hand the widget VM a one-command script
+  (`0x801E4D50` group / `0x801E4D78` single - each decodes to `[open
+  window 7]` + terminator), then stall for a confirm / cancel press. The
+  window's renderer `FUN_801DCCB4` patches byte `+1` of a scratch
+  sentence at `0x801E46E4` with `record[0x13D + _DAT_8007BB78]` - the
+  leveled spell's id - and draws it with the corner cursor.
+
+Engine port: the accrual + threshold walk is the shared kernel
+`engine-core::magic_xp::accrue_and_level` (the battle path
+`World::accrue_summon_spell_xp` drives the same one);
+`field_menu_dispatch::apply_spell_outcome` runs the menu arm with the
+`magic_xp::menu_heal_xp_gain` grants and returns the `FUN_80035C00` pair
+as a `SpellLevelNotice`. Both writes land in the roster's
+`legaia_save::CharacterRecord` bytes, so accumulator and level
+round-trip through saves. `MenuRuntime::arm_spell_level_notice` holds
+the beat; both hosts (`engine-shell` `window/menu_draws.rs`,
+`web-viewer` `play_menu.rs`) paint window 7 through `engine-ui`'s
+`char_prompt_draws_for` off the disc-parsed id-7 rect and hold the pad
+for the press. Two engine-side deltas: the prompt line is composed from
+the pinned battle-banner sentence around the spell name (retail's own
+rodata sentence stays on the disc), and the notice overlays the resumed
+menu rather than the still-open cast sub-screen (the engine's spell
+session closes on cast).
+
 ## Prize-exchange (ticket-counter) windows
 
 The casino / point ticket-counter (prize exchange) is hosted in this same
