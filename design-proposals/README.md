@@ -27,4 +27,12 @@ stat-strip progress, docs metadata strips. Each mockup file shows three
 sections: the homepage, the Enemy table page (interactive chrome), and the
 Legaia TMD spec page (docs chrome).
 
-No Sony imagery anywhere — thumbnails are abstract inline SVG placeholders.
+Variants A/B/C/E use abstract inline-SVG placeholder thumbnails. Variant D —
+the preferred direction — carries real screenshots in `img/`, captured from the
+live site pages running against a local disc image (engine field scenes,
+minigames, battle/NPC models, the TIM texture catalog, UI crops). These are
+engine-rendered captures, the same class of media as the committed demo video;
+deliberately avoided: raw FMV frames and the retail title-screen art. Shot-to-
+name pairings in the mock Enemy-table detail panel are illustrative, not
+factual. Capture scripts live in the session scratchpad, not the repo — tile
+art for the real implementation should be re-captured at final crop sizes.

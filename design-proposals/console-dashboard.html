@@ -176,7 +176,7 @@ svg{display:block}
 
 /* hero media */
 .hero-media{position:relative;min-height:340px;border-left:1px solid var(--line-soft)}
-.hero-media .poster{position:absolute;inset:0;width:100%;height:100%}
+.hero-media .poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:70% 40%}
 .hero-media .play-glyph{
   position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);
   width:76px;height:76px;border-radius:50%;
@@ -256,6 +256,34 @@ svg{display:block}
   background:radial-gradient(60% 80% at 50% 35%,rgba(61,132,255,.14),transparent 70%);
   pointer-events:none;
 }
+
+/* --- screenshot thumbs: real captures replace the icon-only treatment --- */
+.thumb.shot{height:150px;background:#0b0e13}
+.thumb.shot::after{background:linear-gradient(180deg,rgba(13,16,22,0) 55%,rgba(16,19,26,.55) 100%)}
+.thumb.shot > img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  transition:transform .25s ease;
+}
+.card:hover .thumb.shot > img{transform:scale(1.04)}
+.thumb .glyph{
+  position:absolute;left:10px;bottom:10px;z-index:2;
+  width:30px;height:30px;border-radius:8px;
+  background:rgba(9,12,17,.78);border:1px solid rgba(255,255,255,.1);
+  backdrop-filter:blur(4px);
+  display:flex;align-items:center;justify-content:center;
+}
+.thumb .glyph svg{width:16px;height:16px;stroke:var(--acc-bright);opacity:1}
+/* collage: one main shot + a stacked pair on the right */
+.thumb.multi{display:grid;grid-template-columns:2.1fr 1fr;gap:2px;background:var(--line-soft);padding:0;align-items:stretch;justify-items:stretch}
+.thumb.multi::after{display:none}
+.thumb.multi .shot-cell{position:relative;overflow:hidden;background:#0b0e13}
+.thumb.multi .shot-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .25s ease}
+.card:hover .thumb.multi .shot-cell img{transform:scale(1.04)}
+.thumb.multi .side{display:grid;grid-template-rows:1fr 1fr;gap:2px}
+.thumb.multi .shot-cell.main::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(13,16,22,0) 55%,rgba(16,19,26,.5) 100%);
+}
 .card-body{padding:13px 15px 15px;display:flex;flex-direction:column;gap:6px;flex:1}
 .card-title{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .card-title h3{font:600 14.5px/1.25 var(--font-ui);color:var(--ink)}
@@ -279,6 +307,8 @@ svg{display:block}
 /* big Play tile variant */
 .card.tile-lg{grid-column:span 2}
 .card.tile-lg .thumb{height:150px}
+.card.tile-lg .thumb.shot,.card.tile-lg .thumb.multi{height:190px}
+.card.wide .thumb.shot{width:250px;height:auto;min-height:120px}
 .card.tile-lg .thumb svg{width:70px;height:70px}
 .card.tile-lg .card-title h3{font-size:16px}
 .card.tile-lg p{font-size:13px}
@@ -398,6 +428,7 @@ tr.selected td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
   display:flex;align-items:center;justify-content:center;
 }
 .viewport svg{width:100%;height:100%}
+.viewport img{width:100%;height:100%;object-fit:cover;display:block}
 .viewport .hint{
   position:absolute;bottom:9px;left:0;right:0;text-align:center;
   font:500 10.5px/1 var(--font-mono);color:var(--mut-2);letter-spacing:.06em;
@@ -660,29 +691,7 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
           </div>
         </div>
         <div class="hero-media">
-          <svg class="poster" viewBox="0 0 640 400" preserveAspectRatio="xMidYMid slice">
-            <defs>
-              <linearGradient id="hsky" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#141b2a"/><stop offset=".55" stop-color="#182238"/><stop offset="1" stop-color="#101623"/>
-              </linearGradient>
-              <linearGradient id="hglow" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#3d84ff" stop-opacity=".28"/><stop offset="1" stop-color="#3d84ff" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <rect width="640" height="400" fill="url(#hsky)"/>
-            <circle cx="320" cy="180" r="130" fill="url(#hglow)"/>
-            <!-- perspective floor grid -->
-            <g stroke="#3d84ff" stroke-opacity=".22" fill="none">
-              <path d="M0 400 320 205 M80 400 320 205 M160 400 320 205 M240 400 320 205 M320 400 320 205 M400 400 320 205 M480 400 320 205 M560 400 320 205 M640 400 320 205"/>
-              <path d="M0 230 H640 M0 250 H640 M0 278 H640 M0 316 H640 M0 364 H640"/>
-            </g>
-            <!-- wireframe ridge line -->
-            <g stroke="#6ba3ff" stroke-opacity=".55" fill="none" stroke-width="1.4">
-              <path d="M40 205 110 150 168 190 232 118 300 178 366 132 430 186 500 148 600 205"/>
-              <path d="M40 205 110 150 M110 150 168 190 M168 190 148 205 M232 118 205 205 M232 118 268 205 M300 178 282 205 M366 132 336 205 M366 132 402 205 M430 186 418 205 M500 148 465 205 M500 148 540 205"/>
-            </g>
-            <line x1="0" y1="205" x2="640" y2="205" stroke="#6ba3ff" stroke-opacity=".5"/>
-          </svg>
+          <img class="poster" src="img/hero.jpg" alt="The engine rendering Rim Elm — Vahn by the windmills">
           <span class="play-glyph"><svg viewBox="0 0 24 24"><path d="M6 4v16l14-8z"/></svg></span>
           <div class="caption">2-minute demo — the engine running real scenes</div>
         </div>
@@ -727,13 +736,17 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
         <div class="group-head"><h2>Play</h2><span class="rule"></span><span class="count">2 tools</span></div>
         <div class="cards">
           <a class="card tile-lg" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb multi">
+              <div class="shot-cell main"><img src="img/play-main.jpg" alt="Rim Elm field scene running in the engine"></div>
+              <div class="side">
+                <div class="shot-cell"><img src="img/play-side1.jpg" alt="Name-entry screen"></div>
+                <div class="shot-cell"><img src="img/play-side2.jpg" alt="Opening prologue"></div>
+              </div>
+              <span class="glyph"><svg viewBox="0 0 64 64">
                 <rect x="8" y="22" width="48" height="22" rx="10"/>
                 <path d="M20 29v8M16 33h8"/>
                 <circle cx="44" cy="30.5" r="2.4"/><circle cx="50" cy="35.5" r="2.4"/>
-                <path d="M12 44l-3 7M52 44l3 7"/>
-              </svg>
+              </svg></span>
             </div>
             <div class="card-body">
               <div class="card-title"><h3>Play the port</h3><span class="badge disc">NEEDS DISC</span></div>
@@ -741,14 +754,18 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
             </div>
           </a>
           <a class="card tile-lg" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb multi">
+              <div class="shot-cell main"><img src="img/mg-main.jpg" alt="Noa's dance minigame"></div>
+              <div class="side">
+                <div class="shot-cell"><img src="img/mg-side1.jpg" alt="Casino slot machine"></div>
+                <div class="shot-cell"><img src="img/mg-side2.jpg" alt="Fishing minigame"></div>
+              </div>
+              <span class="glyph"><svg viewBox="0 0 64 64">
                 <rect x="10" y="14" width="13" height="36" rx="2.5"/>
                 <rect x="25.5" y="14" width="13" height="36" rx="2.5"/>
                 <rect x="41" y="14" width="13" height="36" rx="2.5"/>
                 <circle cx="16.5" cy="26" r="2.6"/><circle cx="32" cy="34" r="2.6"/><circle cx="47.5" cy="28" r="2.6"/>
-                <path d="M13 42h7M28.5 22h7M44 42h7"/>
-              </svg>
+              </svg></span>
             </div>
             <div class="card-body">
               <div class="card-title"><h3>Minigames</h3><span class="badge disc">NEEDS DISC</span></div>
@@ -763,78 +780,66 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
         <div class="group-head"><h2>Browse the disc</h2><span class="rule"></span><span class="count">6 tools</span></div>
         <div class="cards cols3">
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/viewer.jpg" alt="TIM texture catalog decoded from the disc"><span class="glyph"><svg viewBox="0 0 64 64">
                 <path d="M18 22 32 14l14 8v20l-14 8-14-8z"/>
                 <path d="M18 22l14 8 14-8M32 30v20"/>
                 <path d="M18 42l14-8 14 8" stroke-opacity=".45"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Asset viewer</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Every 3D mesh and texture on the disc, grouped by scene.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/media.jpg" alt="Sound-test track list with play controls"><span class="glyph"><svg viewBox="0 0 64 64">
                 <path d="M8 32h6M50 32h6"/>
                 <path d="M14 32c3 0 3-12 6-12s3 20 6 20 3-26 6-26 3 32 6 32 3-22 6-22 3 8 6 8"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Media browser</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>All the music, sound banks, FMVs, and voice audio.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/world.jpg" alt="Vidna assembled in 3D"><span class="glyph"><svg viewBox="0 0 64 64">
                 <path d="M12 40c-4-8 2-18 10-19s10-8 18-7 14 8 12 16-8 8-8 14-10 10-18 8-11-6-14-12z"/>
                 <path d="M20 38c-2-5 2-11 7-12s7-4 12-3 8 5 7 10-5 5-6 9-6 5-11 4-7-4-9-8z" stroke-opacity=".6"/>
                 <path d="M27 36c-1-2 1-5 3-5s4-2 6-1 3 2 2 4-2 3-3 4-4 2-6 1-2-1-2-3z" stroke-opacity=".35"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Game world</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Every town and dungeon assembled in 3D, with enemy rosters.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/wo.jpg" alt="A kingdom overworld rendered in WebGL"><span class="glyph"><svg viewBox="0 0 64 64">
                 <circle cx="32" cy="32" r="19"/>
                 <ellipse cx="32" cy="32" rx="19" ry="8"/>
                 <ellipse cx="32" cy="32" rx="8" ry="19"/>
                 <path d="M13 32h38M32 13v38" stroke-opacity=".45"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>World overview (3D)</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Each kingdom's overworld in real-time WebGL.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/chars.jpg" alt="Party battle model"><span class="glyph"><svg viewBox="0 0 64 64">
                 <circle cx="32" cy="17" r="6"/>
                 <path d="M32 23v13M32 27l-9 7M32 27l9 7M32 36l-7 13M32 36l7 13"/>
                 <circle cx="23" cy="34" r="1.8"/><circle cx="41" cy="34" r="1.8"/>
                 <circle cx="25" cy="49" r="1.8"/><circle cx="39" cy="49" r="1.8"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Characters</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Vahn, Noa, and Gala — field and battle models, animated.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/npcs.jpg" alt="A townsperson model"><span class="glyph"><svg viewBox="0 0 64 64">
                 <circle cx="22" cy="20" r="5"/><path d="M22 25v10M22 28l-6 5M22 28l6 5M22 35l-5 11M22 35l5 11"/>
                 <circle cx="43" cy="24" r="4.2"/><path d="M43 28.5v8.5M43 31l-5 4M43 31l5 4M43 37l-4 9M43 37l4 9"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>NPCs</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Every townsperson in 3D, posed straight from your disc.</p>
@@ -848,39 +853,33 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
         <div class="group-head"><h2>Game data</h2><span class="rule"></span><span class="count">3 tools</span></div>
         <div class="cards cols3">
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/monsters.jpg" alt="An enemy battle model"><span class="glyph"><svg viewBox="0 0 64 64">
                 <rect x="12" y="14" width="40" height="36" rx="2.5"/>
                 <path d="M12 23h40M12 32h40M12 41h40M26 14v36"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Enemy table</h3><span class="badge ready">READY</span></div>
               <p>Stats, drops, steals — click a row to spin the 3D model.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/shops.jpg" alt="Vendor inventory panel"><span class="glyph"><svg viewBox="0 0 64 64">
                 <circle cx="24" cy="36" r="10"/>
                 <circle cx="24" cy="36" r="4.5" stroke-opacity=".55"/>
                 <path d="M36 18h12l4 4v0L38 36l-8-8z"/>
                 <circle cx="45" cy="23" r="1.6"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Shops &amp; vendors</h3><span class="badge ready">READY</span></div>
               <p>Every shop's priced inventory, town by town.</p>
             </div>
           </a>
           <a class="card" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/arts.jpg" alt="Vahn battle model mid-art"><span class="glyph"><svg viewBox="0 0 64 64">
                 <path d="M32 10l5 7h-10zM32 54l-5-7h10zM10 32l7-5v10zM54 32l-7 5V27z"/>
                 <rect x="26" y="26" width="12" height="12" rx="2"/>
                 <path d="M32 17v9M32 38v9M17 32h9M38 32h9" stroke-opacity=".5"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>Tactical Arts</h3><span class="badge ready">READY</span></div>
               <p>Inputs, AP costs — each art performed by the battle model.</p>
@@ -894,13 +893,11 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
         <div class="group-head"><h2>Modding</h2><span class="rule"></span><span class="count">1 tool</span></div>
         <div class="cards">
           <a class="card wide" href="#">
-            <div class="thumb">
-              <svg viewBox="0 0 64 64">
+            <div class="thumb shot"><img src="img/patcher.jpg" alt="Randomizer presets"><span class="glyph"><svg viewBox="0 0 64 64">
                 <path d="M10 22h11c9 0 13 20 22 20h9"/>
                 <path d="M10 42h11c3.5 0 6-2.6 8.2-5.8M33 27.5c2.6-3.2 5.3-5.5 10-5.5h9"/>
                 <path d="M47 17l6 5-6 5M47 37l6 5-6 5"/>
-              </svg>
-            </div>
+              </svg></span></div>
             <div class="card-body">
               <div class="card-title"><h3>ROM patcher</h3><span class="badge disc">NEEDS DISC</span></div>
               <p>Randomize drops, shops, doors and more — nothing uploaded.</p>
@@ -1106,33 +1103,7 @@ article.doc ul.spec-list li b{color:var(--ink);font-weight:600}
             <h3>Caruban</h3>
             <span class="tag">#005 · boss</span>
           </div>
-          <div class="viewport">
-            <svg viewBox="0 0 330 230">
-              <defs>
-                <linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stop-color="#3d84ff" stop-opacity=".14"/>
-                  <stop offset="1" stop-color="#3d84ff" stop-opacity="0"/>
-                </linearGradient>
-              </defs>
-              <!-- floor grid -->
-              <g stroke="#2b3444" fill="none">
-                <path d="M30 200 H300 M55 188 H278 M75 178 H260 M90 170 H246"/>
-                <path d="M60 200 100 165 M110 200 133 165 M165 200 165 165 M220 200 197 165 M270 200 230 165"/>
-              </g>
-              <!-- wireframe creature -->
-              <g stroke="#6ba3ff" fill="url(#vg)" stroke-width="1.3" stroke-linejoin="round">
-                <path d="M165 42 130 62 118 96 132 128 120 158 150 172 182 168 208 150 200 120 214 92 196 60z"/>
-              </g>
-              <g stroke="#6ba3ff" stroke-opacity=".65" fill="none" stroke-width="1">
-                <path d="M165 42 148 88 132 128M165 42 176 90 200 120M148 88 176 90M148 88 118 96M176 90 214 92M132 128 156 132 200 120M156 132 150 172M156 132 182 168M120 158 156 132"/>
-              </g>
-              <!-- horns -->
-              <g stroke="#6ba3ff" stroke-opacity=".8" fill="none" stroke-width="1.2">
-                <path d="M130 62 108 40M196 60 222 38"/>
-              </g>
-              <circle cx="150" cy="74" r="2.4" fill="#6ba3ff"/>
-              <circle cx="182" cy="76" r="2.4" fill="#6ba3ff"/>
-            </svg>
+          <div class="viewport"><img src="img/panel-monster.jpg" alt="Rotating battle model">
             <span class="hint">drag to rotate · scroll to zoom</span>
           </div>
           <div class="detail-body">
