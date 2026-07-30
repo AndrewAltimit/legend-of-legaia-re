@@ -128,8 +128,9 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        // Mode-edge latch: arm the ENCOUNTER! banner entering battle, drop
-        // it (and any stale popups) leaving.
+        // Mode-edge latch: arm the ENCOUNTER! banner + build the battle 3D
+        // render entering battle; drop both (and any stale popups) leaving -
+        // the browser twin of the native `sync_battle_render` edge.
         let mode = host.world.mode;
         let prev = self.prev_scene_mode.replace(mode);
         if prev != Some(mode) {
@@ -137,14 +138,25 @@ impl LegaiaRuntime {
                 (_, SceneMode::Battle) => {
                     self.encounter_banner =
                         Some((ENCOUNTER_BANNER_FRAMES, encounter_banner_label(&host.world)));
+                    // 3D layer: battle VRAM + backdrop / grid / monster /
+                    // party meshes ([`crate::play_battle_render`]). Ends the
+                    // `host` borrow first - the build re-borrows the host.
+                    self.enter_battle_render();
                 }
                 (Some(SceneMode::Battle), _) => {
                     self.encounter_banner = None;
                     self.battle_hud.clear_popups();
+                    self.exit_battle_render();
                 }
                 _ => {}
             }
         }
+        // Step the battle camera's idle orbit one sim tick (no-op outside
+        // battle - the render state only exists while one is up).
+        self.tick_battle_camera_web();
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
         // Drain world battle events. **Observation only** - the live battle
         // loop owns the gameplay fold and re-publishes the stream, so folding
         // again here would apply an art strike's HP twice.

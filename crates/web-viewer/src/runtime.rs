@@ -149,6 +149,20 @@ pub struct LegaiaRuntime {
     /// Last observed scene mode, so battle enter / exit presentation runs on
     /// mode *edges* (the browser twin of the native `sync_battle_render` latch).
     pub(crate) prev_scene_mode: Option<SceneMode>,
+    /// The battle 3D render state (battle VRAM + backdrop / grid / actor
+    /// meshes), built on the `Field -> Battle` edge and dropped on exit -
+    /// the browser twin of the native `enter_battle_render` working set
+    /// ([`crate::play_battle_render`]). `None` outside battle.
+    pub(crate) battle_render: Option<crate::play_battle_render::BattleRender>,
+    /// Monotonic battle-render build counter; the page re-uploads the battle
+    /// scene when `play_battle_generation` changes.
+    pub(crate) battle_render_generation: u32,
+    /// Raw `SCUS_942.54` bytes (in the visitor's own browser, like the disc
+    /// itself), kept for the battle render's per-stage tables: the backdrop
+    /// second-copy mirror list (`DAT_80078B50`) and the ground-grid outdoor
+    /// cue table (`DAT_80078C1C`). `None` on a PROT.DAT-only load - the
+    /// battle render then takes the half-turn / indoor-grey fallbacks.
+    pub(crate) scus: Option<Vec<u8>>,
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
@@ -280,6 +294,9 @@ impl LegaiaRuntime {
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
             prev_scene_mode: None,
+            battle_render: None,
+            battle_render_generation: 0,
+            scus: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
             sfx_vabs: Default::default(),
@@ -449,11 +466,16 @@ impl LegaiaRuntime {
             host.world.item_shop_data = Some(shop_data);
         }
 
+        // Keep the executable bytes for the battle render's per-stage SCUS
+        // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
+        self.scus = scus;
+
         let count = host.index.entry_count() as u32;
         self.scene_host = Some(host);
         self.field = None;
         self.player = None;
         self.npcs = None;
+        self.battle_render = None;
         // A new disc means a new PROT: drop any cached menu chrome / open menu /
         // title art.
         self.menu_assets = None;
