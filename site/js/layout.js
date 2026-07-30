@@ -49,7 +49,7 @@ const NAV = [
       { href: 'monsters.html',                  text: 'Enemy table',              key: 'monsters' },
       { href: 'characters.html',                text: 'Characters',               key: 'characters' },
       { href: 'npcs.html',                      text: 'NPCs',                     key: 'npcs' },
-      { href: 'world-overview.html',            text: 'World overview (3D)',      key: 'world-overview' },
+      { href: 'world-overview.html',            text: 'World overview',           key: 'world-overview' },
     ],
   },
   {

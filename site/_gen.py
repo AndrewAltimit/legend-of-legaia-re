@@ -413,7 +413,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("monsters.html",              "Enemy table (WASM)",            "monsters",                   "monsters.html"),
     ("characters.html",            "Characters (WASM)",             "characters",                 "characters.html"),
     ("npcs.html",                  "NPCs (WASM)",                   "npcs",                       "npcs.html"),
-    ("world-overview.html",        "World overview (3D)",           "world-overview",             "world-overview.html"),
+    ("world-overview.html",        "World overview",                "world-overview",             "world-overview.html"),
     # depth = 1
     # User guides (release-binary walkthroughs, mirrored from docs/guides/)
     ("guides/getting-started.html", "Getting started (release tools)", "guides/getting-started",     "guides/getting-started.html"),
