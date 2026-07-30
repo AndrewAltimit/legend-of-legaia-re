@@ -1,12 +1,18 @@
-/* layout.js - shared layout for the multi-page site.
+/* layout.js - shared app-shell layout for the multi-page site.
  *
  * Each page calls injectLayout({ active: 'subsystems/script-vm' }).
- * This builds:
- *   - Left sidebar with collapsible sections, active highlight, search trigger.
- *   - In-page TOC rail (auto-built from h2/h3 inside .content).
- *   - Prev/next page footer derived from NAV order.
- *   - Search overlay (filters NAV + headings + page snippets).
- *   - Mobile sidebar toggle and overlay scrim.
+ * The site is split into two zones:
+ *   - EXPLORE: the interactive pages (play, viewers, tables, patcher).
+ *     App chrome only - top bar + icon rail, no sidebar, full width.
+ *   - DOCS: guides / write-ups / subsystems / formats / tooling / reference.
+ *     Same top bar + rail, plus a docs-scoped sidebar and the in-page TOC.
+ *
+ * injectLayout builds:
+ *   - Fixed top bar: brand, Explore/Docs zone pills, search, disc chip, GitHub.
+ *   - Fixed left icon rail (zone shortcuts).
+ *   - Docs pages only: collapsible docs sidebar + TOC rail + prev/next footer.
+ *   - Search overlay (filters NAV + headings + page snippets) on every page.
+ *   - Mobile drawer toggle for the docs sidebar.
  *
  * The structure of NAV below is the single source of truth for nav ordering.
  */
@@ -184,6 +190,36 @@ const NAV = [
   },
 ];
 
+/* ---------- Zones ---------- */
+/* Interactive pages get app chrome (no sidebar); everything else is docs. */
+const EXPLORE_KEYS = new Set([
+  'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'world', 'shops',
+  'minigames', 'arts', 'monsters', 'characters', 'npcs', 'world-overview',
+]);
+/* NAV sections rendered in the docs sidebar (order preserved). The 'explore'
+   section is deliberately absent - those pages live in the rail + home grid. */
+const DOCS_SECTIONS = new Set(['overview', 'guides', 'write-ups', 'subsystems', 'formats', 'tooling', 'reference']);
+
+function zoneForKey(key) {
+  return EXPLORE_KEYS.has(key || 'home') ? 'explore' : 'docs';
+}
+
+/* Icon rail: one entry per zone shortcut. `match` marks the entry active. */
+const RAIL = [
+  { label: 'Home',   href: 'index.html',              match: k => k === 'home',
+    icon: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V19h11v-8.5"/>' },
+  { label: 'Play',   href: 'play.html',               match: k => k === 'play' || k === 'minigames',
+    icon: '<rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/>' },
+  { label: 'Browse', href: 'viewer.html',             match: k => ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs'].includes(k),
+    icon: '<path d="M7 9 12 6l5 3v6l-5 3-5-3z"/><path d="M7 9l5 3 5-3M12 12v6"/>' },
+  { label: 'Data',   href: 'monsters.html',           match: k => ['monsters', 'shops', 'arts'].includes(k),
+    icon: '<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 9.5h16M4 14h16M10 5v14"/>' },
+  { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher',
+    icon: '<path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/>' },
+  { label: 'Docs',   href: 'architecture.html',       match: (k, zone) => zone === 'docs',
+    icon: '<path d="M4 6.5C5.5 5.5 7.5 5 9 5s3 .5 3 .5V19s-1.5-.5-3-.5-3.5.5-5 1.5zM20 6.5C18.5 5.5 16.5 5 15 5s-3 .5-3 .5V19s1.5-.5 3-.5 3.5.5 5 1.5z"/>' },
+];
+
 /* ---------- Helpers ---------- */
 function resolveHref(href, depth) {
   if (depth === 0) return href;
@@ -203,7 +239,13 @@ function flattenNav() {
 }
 
 function findSiblings(activeKey) {
-  const flat = flattenNav();
+  /* Prev/next stays within the docs zone: walking off the end of `formats`
+     into an interactive page (or vice versa) made no sense as reading order. */
+  const flat = [];
+  for (const section of NAV) {
+    if (!DOCS_SECTIONS.has(section.label)) continue;
+    for (const item of section.items) if (item.key !== 'home') flat.push(item);
+  }
   const idx = flat.findIndex(x => x.key === activeKey);
   if (idx < 0) return { prev: null, next: null };
   return {
@@ -216,31 +258,19 @@ function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Docs sidebar ---------- */
 function buildSidebar(active, depth) {
   const sidebar = document.createElement('aside');
   sidebar.className = 'sidebar';
   sidebar.id = 'sidebar';
 
-  const brand = document.createElement('a');
-  brand.href = resolveHref('index.html', depth);
-  brand.className = 'sidebar-brand';
-  brand.innerHTML = '<span class="prompt">$</span>legend-of-legaia-re';
-  sidebar.appendChild(brand);
-
-  /* Search trigger button */
-  const searchBtn = document.createElement('button');
-  searchBtn.type = 'button';
-  searchBtn.className = 'sidebar-search';
-  searchBtn.id = 'open-search';
-  searchBtn.setAttribute('aria-label', 'Open search');
-  searchBtn.innerHTML =
-    '<span class="icon">⌕</span>' +
-    '<span class="label">Search the site</span>' +
-    '<span class="kbd">/</span>';
-  sidebar.appendChild(searchBtn);
+  const head = document.createElement('div');
+  head.className = 'sidebar-head';
+  head.textContent = 'Documentation';
+  sidebar.appendChild(head);
 
   for (const section of NAV) {
+    if (!DOCS_SECTIONS.has(section.label)) continue;
     const sec = document.createElement('div');
     sec.className = 'sidebar-section';
     sec.dataset.section = section.label;
@@ -268,6 +298,7 @@ function buildSidebar(active, depth) {
     nav.className = 'sidebar-nav';
     nav.setAttribute('aria-label', section.label);
     for (const item of section.items) {
+      if (item.key === 'home') continue; /* Home lives in the rail, not the docs tree */
       const a = document.createElement('a');
       a.href = resolveHref(item.href, depth);
       a.textContent = item.text;
@@ -406,6 +437,163 @@ function buildMobileToggle() {
   return toggle;
 }
 
+/* ---------- Top bar ---------- */
+function railSvg(paths) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+
+function buildTopbar(active, zone, depth) {
+  const bar = document.createElement('header');
+  bar.className = 'topbar';
+  bar.innerHTML =
+    '<a class="tb-brand" href="' + resolveHref('index.html', depth) + '">' +
+      '<span class="tb-mark">LR</span>' +
+      '<span class="tb-name">Legend of Legaia <em>RE</em></span>' +
+    '</a>' +
+    '<nav class="tb-zones" aria-label="Site zones">' +
+      '<a class="tb-zone' + (zone === 'explore' ? ' active' : '') + '" href="' + resolveHref('index.html', depth) + '">Explore</a>' +
+      '<a class="tb-zone' + (zone === 'docs' ? ' active' : '') + '" href="' + resolveHref('architecture.html', depth) + '">Docs</a>' +
+    '</nav>' +
+    '<div class="tb-spacer"></div>' +
+    '<button type="button" class="tb-search" id="open-search" aria-label="Open search">' +
+      '<span class="icon">⌕</span><span class="label">Search</span><span class="kbd">/</span>' +
+    '</button>' +
+    '<button type="button" class="disc-chip" id="disc-chip" title="The disc is read locally and cached in this browser - nothing is uploaded.">' +
+      '<span class="dot"></span><span class="txt">Checking disc…</span>' +
+    '</button>' +
+    '<a class="tb-gh" href="https://github.com/AndrewAltimit/legend-of-legaia-re" target="_blank" rel="noopener" aria-label="GitHub">' +
+      railSvg('<path d="M12 3a9 9 0 0 0-2.85 17.55c.45.08.62-.2.62-.44v-1.7c-2.5.55-3.03-1.06-3.03-1.06-.41-1.04-1-1.32-1-1.32-.82-.56.06-.55.06-.55.9.06 1.38.93 1.38.93.8 1.38 2.11.98 2.63.75.08-.58.31-.98.57-1.2-2-.23-4.1-1-4.1-4.45 0-.98.35-1.78.93-2.41-.1-.23-.4-1.15.08-2.4 0 0 .76-.24 2.48.92a8.6 8.6 0 0 1 4.51 0c1.72-1.16 2.47-.92 2.47-.92.49 1.25.19 2.17.1 2.4.58.63.92 1.43.92 2.41 0 3.47-2.1 4.22-4.11 4.44.32.28.61.83.61 1.67v2.47c0 .24.16.53.62.44A9 9 0 0 0 12 3z"/>') +
+    '</a>';
+  return bar;
+}
+
+/* ---------- Disc chip: global cached-disc state, insertable from any page ----------
+ * The chip peeks at the shared IndexedDB cache (via RomCache when the page
+ * loads it, else a self-contained read of the same store) and doubles as a
+ * global "insert disc" control: clicking it picks a .bin and stores it, so
+ * every disc-driven page auto-loads from then on. */
+function peekDiscMeta() {
+  if (window.RomCache && window.RomCache.meta) return window.RomCache.meta();
+  return new Promise(function (resolve) {
+    if (typeof indexedDB === 'undefined') return resolve(null);
+    let req;
+    try { req = indexedDB.open('legaia-rom-cache', 1); } catch (e) { return resolve(null); }
+    req.onupgradeneeded = function () {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('disc')) db.createObjectStore('disc');
+    };
+    req.onerror = function () { resolve(null); };
+    req.onsuccess = function () {
+      const db = req.result;
+      try {
+        const get = db.transaction('disc', 'readonly').objectStore('disc').get('current');
+        get.onsuccess = function () {
+          const rec = get.result;
+          db.close();
+          resolve(rec ? { name: rec.name, size: rec.size } : null);
+        };
+        get.onerror = function () { db.close(); resolve(null); };
+      } catch (e) { db.close(); resolve(null); }
+    };
+  });
+}
+
+function storeDisc(file) {
+  if (window.RomCache && window.RomCache.put) return window.RomCache.put(file);
+  return new Promise(function (resolve, reject) {
+    let req;
+    try { req = indexedDB.open('legaia-rom-cache', 1); } catch (e) { return reject(e); }
+    req.onupgradeneeded = function () {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('disc')) db.createObjectStore('disc');
+    };
+    req.onerror = function () { reject(req.error); };
+    req.onsuccess = function () {
+      const db = req.result;
+      const t = db.transaction('disc', 'readwrite');
+      t.objectStore('disc').put({
+        name: file.name || 'disc.bin', size: file.size,
+        type: file.type || '', savedAt: Date.now(), blob: file,
+      }, 'current');
+      t.oncomplete = function () { db.close(); resolve(); };
+      t.onerror = function () { db.close(); reject(t.error); };
+    };
+  });
+}
+
+function wireDiscChip() {
+  const chip = document.getElementById('disc-chip');
+  if (!chip) return;
+  const dot = chip.querySelector('.dot');
+  const txt = chip.querySelector('.txt');
+
+  function render(meta) {
+    if (meta && meta.name) {
+      chip.classList.add('loaded');
+      chip.classList.remove('empty');
+      txt.textContent = meta.name;
+      chip.title = meta.name + ' is cached in this browser and feeds every page. Click to swap discs. Nothing is uploaded.';
+    } else {
+      chip.classList.add('empty');
+      chip.classList.remove('loaded');
+      txt.textContent = 'Insert disc image (.bin)';
+      chip.title = 'Pick your Legend of Legaia .bin once - it is cached locally and every page reads from it. Nothing is uploaded.';
+    }
+    /* The home page's prominent disc slot mirrors the same state. */
+    const slot = document.getElementById('disc-slot');
+    if (slot) {
+      slot.classList.toggle('loaded', !!(meta && meta.name));
+      const line = slot.querySelector('.slot-line');
+      const browse = slot.querySelector('.browse');
+      if (meta && meta.name) {
+        if (line) line.innerHTML = '<b>' + meta.name + '</b> is in the drive.' +
+          '<span class="sub">Cached in this browser - every page below reads from it. Nothing is uploaded.</span>';
+        if (browse) browse.textContent = 'Swap disc';
+      }
+    }
+  }
+
+  peekDiscMeta().then(render).catch(function () { render(null); });
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.bin,.img,.iso,.dat';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  chip.addEventListener('click', function () { input.click(); });
+  const slotBrowse = document.querySelector('#disc-slot .browse');
+  if (slotBrowse) slotBrowse.addEventListener('click', function () { input.click(); });
+  input.addEventListener('change', function () {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    txt.textContent = 'Caching…';
+    storeDisc(f).then(function () {
+      /* Reload so the page's own RomCache.attach auto-load path picks it up. */
+      window.location.reload();
+    }).catch(function (e) {
+      console.warn('disc chip: cache failed -', e);
+      render(null);
+    });
+  });
+}
+
+/* ---------- Icon rail ---------- */
+function buildRail(active, zone, depth) {
+  const rail = document.createElement('nav');
+  rail.className = 'rail';
+  rail.setAttribute('aria-label', 'Site areas');
+  for (const item of RAIL) {
+    const a = document.createElement('a');
+    a.className = 'rail-item';
+    a.href = resolveHref(item.href, depth);
+    if (item.match(active, zone)) a.classList.add('active');
+    a.innerHTML = railSvg(item.icon) + '<span>' + item.label + '</span>';
+    rail.appendChild(a);
+  }
+  return rail;
+}
+
 /* ---------- Search overlay ---------- */
 function buildSearchOverlay(depth) {
   const overlay = document.createElement('div');
@@ -460,58 +648,66 @@ function restoreSidebarScroll(sidebar) {
 function injectLayout(opts) {
   const { active } = opts || {};
   const depth = depthFromKey(active);
+  const zone = zoneForKey(active);
 
-  const sidebar = buildSidebar(active, depth);
-  const toggle = buildMobileToggle();
+  document.body.classList.add(zone === 'docs' ? 'zone-docs' : 'zone-explore');
+  if (active === 'home') document.body.classList.add('page-home');
+
+  /* Shell chrome on every page */
+  const topbar = buildTopbar(active, zone, depth);
+  const rail = buildRail(active, zone, depth);
   const overlay = buildSearchOverlay(depth);
-
-  /* Scrim for mobile sidebar */
-  const scrim = document.createElement('div');
-  scrim.className = 'sidebar-overlay';
-  scrim.id = 'sidebar-scrim';
-
-  toggle.addEventListener('click', () => {
-    const open = sidebar.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', String(open));
-    scrim.classList.toggle('show', open);
-  });
-  scrim.addEventListener('click', () => {
-    sidebar.classList.remove('open');
-    toggle.setAttribute('aria-expanded', 'false');
-    scrim.classList.remove('show');
-  });
-
-  /* Inject sidebar + scrim + toggle */
-  const app = document.querySelector('.app');
-  if (app) {
-    app.insertBefore(sidebar, app.firstChild);
-  } else {
-    document.body.insertBefore(sidebar, document.body.firstChild);
-  }
-  document.body.insertBefore(toggle, document.body.firstChild);
-  document.body.appendChild(scrim);
+  document.body.insertBefore(rail, document.body.firstChild);
+  document.body.insertBefore(topbar, document.body.firstChild);
   document.body.appendChild(overlay);
 
-  /* Keep the sidebar's scroll position across page navigations (restore now,
-     before paint, then track further scrolling). */
-  restoreSidebarScroll(sidebar);
+  const app = document.querySelector('.app');
 
-  /* Order matters: assign IDs first → build TOC (clean text) → add § anchors */
-  assignHeadingIds();
-  const toc = buildTocRail();
-  injectHeadingAnchors();
-  if (toc && app) {
-    app.appendChild(toc);
-  } else if (app) {
-    app.classList.add('no-toc');
+  /* Docs zone: sidebar + drawer toggle + TOC + prev/next */
+  if (zone === 'docs') {
+    const sidebar = buildSidebar(active, depth);
+    const toggle = buildMobileToggle();
+    const scrim = document.createElement('div');
+    scrim.className = 'sidebar-overlay';
+    scrim.id = 'sidebar-scrim';
+
+    toggle.addEventListener('click', () => {
+      const open = sidebar.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+      scrim.classList.toggle('show', open);
+    });
+    scrim.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      scrim.classList.remove('show');
+    });
+
+    if (app) app.insertBefore(sidebar, app.firstChild);
+    else document.body.insertBefore(sidebar, document.body.firstChild);
+    document.body.insertBefore(toggle, document.body.firstChild);
+    document.body.appendChild(scrim);
+    restoreSidebarScroll(sidebar);
+
+    assignHeadingIds();
+    const toc = buildTocRail();
+    injectHeadingAnchors();
+    if (toc && app) app.appendChild(toc);
+    else if (app) app.classList.add('no-toc');
+
+    const content = document.querySelector('.content');
+    if (content) {
+      const pn = buildPageNav(active, depth);
+      if (pn) content.appendChild(pn);
+    }
+  } else {
+    /* Explore zone: app chrome only. Headings still get ids + § anchors so
+       deep links keep working, but no sidebar / TOC / prev-next. */
+    if (app) app.classList.add('no-toc');
+    assignHeadingIds();
+    injectHeadingAnchors();
   }
 
-  /* Prev/next inside content */
-  const content = document.querySelector('.content');
-  if (content) {
-    const pn = buildPageNav(active, depth);
-    if (pn) content.appendChild(pn);
-  }
+  wireDiscChip();
 
   /* Wire search trigger */
   const openSearch = document.getElementById('open-search');

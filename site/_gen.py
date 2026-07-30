@@ -1138,33 +1138,42 @@ def build_progress_meter() -> str:
     if not tracks:
         return ""
 
+    # Compact stat strip: big number + one-line label + thin meter. The full
+    # methodology paragraph moves off the landing page - each tile links out
+    # via the strip's single "How these are measured" link, and the per-track
+    # detail survives as the tile's title (hover) text.
+    compact = {
+        "decompilation": ("{pct:.1f}<small>%</small>", "of the executable's code decompiled"),
+        "formats": ("{pct:.1f}<small>%</small>", "of disc bytes resolve to a documented format"),
+        "port": ("{count}", "retail functions ported to clean-room Rust"),
+        "wiring": ("{pct:.1f}<small>%</small>", "of ported code wired into the live engine"),
+    }
     rows = []
     for t in tracks:
         pct = max(0.0, min(100.0, float(t.get("pct", 0.0))))
+        key = str(t.get("key", ""))
         label = html.escape(str(t.get("label", "")))
-        headline = html.escape(str(t.get("headline", "")))
+        headline = str(t.get("headline", ""))
         detail = html.escape(str(t.get("detail", "")))
         denom = html.escape(str(t.get("denominator", "")))
-        href = t.get("href")
-        title = f'<a href="{html.escape(href)}">{label}</a>' if href else label
+        count = headline.split(" ", 1)[0] if headline else ""
+        num_tpl, lbl = compact.get(key, ("{pct:.1f}<small>%</small>", ""))
+        num = num_tpl.format(pct=pct, count=html.escape(count))
+        if not lbl:
+            lbl = f"{t.get('label', '')} — {t.get('denominator', '')}"
         rows.append(
-            f'  <div class="progress-track">\n'
-            f'    <div class="progress-head">\n'
-            f'      <span class="progress-label">{title}</span>\n'
-            f'      <span class="progress-pct">{pct:.1f}%</span>\n'
-            f'    </div>\n'
-            f'    <div class="progress-bar" role="img" '
+            f'  <div class="stat" title="{detail}" role="img" '
             f'aria-label="{label}: {pct:.1f} percent of {denom}">\n'
-            f'      <span class="progress-fill" style="width: {pct:.1f}%"></span>\n'
-            f'    </div>\n'
-            f'    <div class="progress-meta">\n'
-            f'      <span class="progress-headline">{headline}</span>\n'
-            f'      <span class="progress-denom">of {denom}</span>\n'
-            f'    </div>\n'
-            f'    <p class="progress-detail">{detail}</p>\n'
+            f'    <div class="num">{num}</div>\n'
+            f'    <div class="lbl">{html.escape(lbl)}</div>\n'
+            f'    <div class="meter"><i style="width: {pct:.1f}%"></i></div>\n'
             f'  </div>'
         )
-    return '<div class="progress-meter">\n' + "\n".join(rows) + '\n</div>'
+    return (
+        '<div class="stats-block">\n<div class="stats">\n' + "\n".join(rows) + "\n</div>\n"
+        '<div class="stats-foot"><a href="tooling/disc-coverage.html">'
+        "How these are measured →</a></div>\n</div>"
+    )
 
 
 def build_disc_patching_table() -> str:
