@@ -1480,7 +1480,7 @@
       try {
       /* Battle 3D scene: while a random encounter owns the world, the battle
        * layer (backdrop dome drawn twice, ground grid, monster + party
-       * battle forms under the retail menu framing + idle orbit) replaces
+       * battle forms under the shared phase-scripted retail camera) replaces
        * the field draw list - the browser twin of the native redraw's
        * battle branch. `_battleFrame` returns false outside battle (and
        * restores the field VRAM texture on the exit edge), handing the
@@ -1718,7 +1718,7 @@
 
     /* One battle frame: upload the battle scene on its generation edge, pose
      * each bound actor from the engine's live battle-animation `pose_frame`,
-     * aim the camera from the exported retail menu framing, and draw. Returns
+     * take the engine-built battle view-projection (cam.vp), and draw. Returns
      * `false` outside battle (restoring the field VRAM texture on the exit
      * edge) so `_frame` runs its normal field path; `false` too when the
      * engine built no battle render (no monsters decoded) - the field scene
@@ -1729,6 +1729,10 @@
       let active = false;
       try { active = !!rt.play_battle_active(); } catch (e) { return false; }
       if (!active) {
+        /* Drop the battle VP override whenever battle isn't drawing, so the
+         * field frame is back on the orbit projection even if the battle
+         * state was torn down elsewhere (scene swap, trap recovery). */
+        if (this.cam.vp) this.cam.vp = null;
         if (this._battle) {
           /* Battle just ended: drop the battle scene and restore the field
            * VRAM texture. The engine's field-side VRAM was never touched -
@@ -1772,7 +1776,10 @@
         }
         draws.push({
           meshId: a.meshId,
-          x: tf[o] * S, y: -tf[o + 1] * S, z: tf[o + 2] * S,
+          /* Raw retail translation (Y-down, like the native actor_model) -
+           * the battle VP carries no world negation, its trailing Y-flip
+           * cancels the placement model's, so world Y goes through as-is. */
+          x: tf[o] * S, y: tf[o + 1] * S, z: tf[o + 2] * S,
           /* Enemy meshes rest facing +Z; the enemy side carries the
            * half-turn toward the party (the native actor_model rule). */
           rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
@@ -1780,25 +1787,20 @@
         });
       }
 
-      /* Camera: the exported retail far "menu" framing + idle orbit, mapped
-       * onto the page's orbit projection the same way the cutscene camera
-       * is: focus -> orbit target (scaled with the actors), yaw negated for
-       * the projection's screen-X mirror, framing half-height from the
-       * eye-space depth over the GTE focal length (half-screen 120 px / H).
-       * The orbit pitch is measured from vertical, retail's from horizontal,
-       * hence the complement. */
+      /* Camera: the engine hands the page a READY view-projection - the
+       * shared retail phase script's live pose (dialogue close-up / far
+       * menu framing + idle orbit / per-character submenu close-up)
+       * projected through `battle_cam_script::battle_vp`, the exact matrix
+       * the native window renders with. `cam.vp` overrides the orbit
+       * construction in buildWorldOrbitVp (and still yields to the VR
+       * per-eye override), so the old orbit-remap fudge is gone. Guarded
+       * against a cached WASM without the export: the previous camera is
+       * kept rather than re-approximated. */
       try {
-        const bc = JSON.parse(rt.play_battle_camera_json());
-        if (bc && bc.active) {
-          this.cam.centerX = bc.focus[0] * S;
-          this.cam.centerY = -bc.focus[1] * S + 60;
-          this.cam.centerZ = bc.focus[2] * S;
-          this.cam.yaw = -bc.yaw * A2R;
-          this.cam.pitch = Math.max(0.12, Math.min(1.35, Math.PI / 2 - bc.pitch * A2R));
-          this.cam.roll = 0;
-          const half = Math.abs(bc.tr[2]) * 120 / Math.max(bc.h, 1);
-          this.cam.halfWidth = Math.max(220, Math.min(12000, half));
-          this.cam.halfHeight = this.cam.halfWidth;
+        if (typeof rt.play_battle_camera_vp === 'function') {
+          const c = this.renderer.canvas;
+          const vp = rt.play_battle_camera_vp(c.width / Math.max(c.height, 1));
+          if (vp && vp.length === 16) this.cam.vp = Float32Array.from(vp);
         }
       } catch (e) { /* keep the previous camera */ }
 

@@ -327,6 +327,15 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
  * which is harmless (renderAssembled disables CULL_FACE) and the FS
  * already compensates via u_normal_sign = -1. */
 function buildWorldOrbitVp(viewportW, viewportH, worldExtent, cam) {
+  /* Explicit view-projection override: a cam carrying a ready column-major
+   * `vp` matrix (Float32Array(16)) bypasses the orbit construction entirely.
+   * The play page's battle frame uses this to hand through the engine-built
+   * retail GTE battle camera (`battle_cam_script::battle_vp` - the same
+   * matrix the native window renders with) instead of remapping the pose
+   * onto this orbit model. Checked here rather than in renderAssembled so
+   * vr-mode.js's per-eye monkey-patch (which wraps AROUND this function)
+   * still wins while an XR session presents. */
+  if (cam && cam.vp) return cam.vp;
   const aspect = viewportW / viewportH;
   let hw = cam.halfWidth;
   let hh = cam.halfHeight;
