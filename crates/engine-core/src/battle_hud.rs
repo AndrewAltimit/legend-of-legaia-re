@@ -544,6 +544,14 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     // Party rows. `character_max_mp` is the only MP ceiling the world carries
     // (`BattleActor` has live `mp` but no max), and it is keyed by battle
     // ordinal - the same index `build_battle_item_session` uses.
+    //
+    // HP is the **displayed** value, not the live one: retail's readout draws
+    // actor `+0x172`, the bar the per-frame ramp `FUN_80047430` walks toward
+    // live HP a quarter of the debt at a time. The sim maintains that ramp in
+    // `BattleActor::hp_display` (`World::apply_battle_hp_delta` seeds it,
+    // `tick_battle_hp_bars` drains it); reading live `hp` here showed the
+    // ramp's end state instantly and left the animation computed but unseen.
+    // `None` means "never armed / settled at live HP".
     let mut rows: Vec<(u8, String, SlotRow)> = Vec::new();
     for (i, a) in world.actors.iter().take(pc).enumerate() {
         let name = party_names
@@ -557,7 +565,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
             SlotRow {
                 is_party: true,
                 alive: a.battle.liveness != 0,
-                hp: a.battle.hp,
+                hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: a.battle.mp,
                 mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
@@ -587,7 +595,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
             SlotRow {
                 is_party: false,
                 alive: a.battle.liveness != 0,
-                hp: a.battle.hp,
+                // Same displayed-HP read as the party rows; monster slots
+                // (>= 3) settle in one frame per FUN_80047430's slot split,
+                // so their display only ever lags by a single tick.
+                hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: 0,
                 mp_max: 0,
@@ -1003,6 +1014,40 @@ mod tests {
             log_accent_color(LogAccent::Highlight),
             log_accent_color(LogAccent::Heal)
         );
+    }
+
+    /// The HUD row must carry the **ramping** HP (`BattleActor::hp_display`,
+    /// retail actor `+0x172` / FUN_80047430), not the live value the sim
+    /// already settled - otherwise the drain animation is computed every
+    /// frame and never shown.
+    #[test]
+    fn sync_reads_ramped_display_hp_not_live_hp() {
+        use crate::world::{Actor, World};
+        let mut w = World::new();
+        while w.actors.len() < 4 {
+            w.actors.push(Actor::default());
+        }
+        w.party_count = 1;
+        w.actors[0].battle.hp = 100;
+        w.actors[0].battle.max_hp = 200;
+        w.actors[0].battle.liveness = 1;
+        // Mid-ramp: live HP already at 100, bar still showing 160.
+        w.actors[0].battle.hp_display = Some(160);
+        // Monster slot mid-ramp too.
+        w.actors[1].battle.hp = 10;
+        w.actors[1].battle.max_hp = 50;
+        w.actors[1].battle.liveness = 1;
+        w.actors[1].battle.hp_display = Some(30);
+
+        let mut hud = BattleHud::new();
+        sync_battle_hud_rows(&mut hud, &w);
+        assert_eq!(hud.slots[0].hp, 160, "party row shows the ramping bar");
+        assert_eq!(hud.slots[1].hp, 30, "monster row shows the ramping bar");
+
+        // Settled (`None`) falls back to live HP.
+        w.actors[0].battle.hp_display = None;
+        sync_battle_hud_rows(&mut hud, &w);
+        assert_eq!(hud.slots[0].hp, 100, "settled bar reads live HP");
     }
 
     #[test]
