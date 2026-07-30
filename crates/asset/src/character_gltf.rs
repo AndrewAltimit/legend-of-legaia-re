@@ -357,6 +357,7 @@ mod tests {
         MonsterAnimation {
             action_id: 0,
             rate: 2,
+            effect_script: Vec::new(),
             part_count: 2,
             frame_count: frames,
             frames: (0..frames)

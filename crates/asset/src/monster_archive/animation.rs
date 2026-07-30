@@ -60,6 +60,17 @@ pub struct MonsterAnimation {
     pub frame_count: usize,
     /// `frame_count` frames, each `part_count` [`PartPose`]s (`frames[f][p]`).
     pub frames: Vec<Vec<PartPose>>,
+    /// The per-action entry's head bytes (`+0x00..+0x54`,
+    /// [`EFFECT_SCRIPT_HEAD_BYTES`]), whose `+0x14..+0x53` region is the
+    /// action's **battle effect script**: up to eight 8-byte
+    /// `[frame_gate, effect_id, i16 x, i16 y, i16 z]` records the battle
+    /// anim-node tick walks each frame to place the action's visual effects
+    /// (`FUN_801DEA50`, reached from `FUN_80047430`; engine stepper
+    /// `legaia_engine_core::action_effect_script::step_effect_script`, which
+    /// reads records at `RECORD_BASE = 0x14` of exactly this slice). Empty
+    /// when the source carries no entry header (field ANM adapters, synthetic
+    /// clips) - the stepper then finds no records and does nothing.
+    pub effect_script: Vec<u8>,
 }
 
 impl MonsterAnimation {
@@ -71,6 +82,25 @@ impl MonsterAnimation {
 
 /// Offset of the packed animation stream inside a per-action entry.
 const ANIM_STREAM_OFFSET: usize = 0x8c;
+/// Bytes of a per-action entry's head that carry the battle effect script:
+/// the eight 8-byte records live at `+0x14..+0x53`, so `0x54` bytes cover the
+/// whole scriptable region (record base + 8 records; `FUN_801DEA50` scales
+/// its cursor by `8` and adds `0x14`, cursor bound `8`). Shared by the
+/// monster archive's entries and the player battle files' record[0] entries
+/// (whose keyframe stream sits at `+0xAC` instead of `+0x8C`, but whose head
+/// layout below `+0x8C` is the same family).
+pub const EFFECT_SCRIPT_HEAD_BYTES: usize = 0x54;
+
+/// Slice a per-action entry's effect-script head (`entry+0x00..+0x54`) out of
+/// its containing block, clamped to the block end. An entry cut short by the
+/// block boundary yields the truncated prefix (the engine stepper bounds every
+/// record read itself); an out-of-range offset yields an empty vec.
+pub(crate) fn effect_script_head(block: &[u8], entry_off: usize) -> Vec<u8> {
+    let end = entry_off
+        .saturating_add(EFFECT_SCRIPT_HEAD_BYTES)
+        .min(block.len());
+    block.get(entry_off..end).unwrap_or_default().to_vec()
+}
 /// Offset of the playback-rate byte inside a per-action entry (shared with
 /// the player battle files' record[0] entries).
 pub(crate) const ANIM_RATE_OFFSET: usize = 0x78;
@@ -114,7 +144,13 @@ fn parse_animation(block: &[u8], action_id: u8, entry_off: usize) -> Option<Mons
         .get(entry_off + ANIM_RATE_OFFSET)
         .copied()
         .unwrap_or(0);
-    parse_animation_stream(block, action_id, rate, entry_off + ANIM_STREAM_OFFSET)
+    parse_animation_stream(
+        block,
+        action_id,
+        rate,
+        entry_off + ANIM_STREAM_OFFSET,
+        effect_script_head(block, entry_off),
+    )
 }
 
 /// Parse a packed `[u8 parts][u8 frames][9-byte TRS records]` stream starting
@@ -127,6 +163,7 @@ pub(crate) fn parse_animation_stream(
     action_id: u8,
     rate: u8,
     s: usize,
+    effect_script: Vec<u8>,
 ) -> Option<MonsterAnimation> {
     let part_count = *block.get(s)? as usize;
     let frame_count = *block.get(s + 1)? as usize;
@@ -153,6 +190,7 @@ pub(crate) fn parse_animation_stream(
         part_count,
         frame_count,
         frames,
+        effect_script,
     })
 }
 
@@ -454,6 +492,33 @@ mod tests {
         assert_eq!(anim.frame(1).unwrap()[0].tx, 0x10);
         // Out-of-range / zero-count streams yield None.
         assert!(parse_animation(&[0u8; 0x8c + 2], 0, 0).is_none());
+    }
+
+    #[test]
+    fn parse_animation_captures_the_entry_effect_script_head() {
+        // The entry head +0x00..+0x54 rides along on the decoded animation:
+        // its +0x14..+0x53 region is the battle effect-script record block
+        // (FUN_801DEA50 reads records at cursor*8 + 0x14).
+        let mut block = vec![0u8; 0x8c + 2 + ANIM_PART_STRIDE + 4];
+        block[0x8c] = 1; // part_count
+        block[0x8c + 1] = 1; // frame_count
+        // One effect record at +0x14: frame gate 5, effect 0x86, x=100.
+        block[0x14] = 5;
+        block[0x15] = 0x86;
+        block[0x16..0x18].copy_from_slice(&100i16.to_le_bytes());
+        let anim = parse_animation(&block, 0x0C, 0).expect("animation parses");
+        assert_eq!(anim.effect_script.len(), EFFECT_SCRIPT_HEAD_BYTES);
+        assert_eq!(anim.effect_script[0x14], 5);
+        assert_eq!(anim.effect_script[0x15], 0x86);
+        assert_eq!(
+            i16::from_le_bytes([anim.effect_script[0x16], anim.effect_script[0x17]]),
+            100
+        );
+        // An entry cut short by the block end keeps the truncated prefix.
+        let head = effect_script_head(&block, block.len() - 8);
+        assert_eq!(head.len(), 8);
+        // An out-of-range offset yields an empty head.
+        assert!(effect_script_head(&block, block.len() + 1).is_empty());
     }
 
     #[test]
