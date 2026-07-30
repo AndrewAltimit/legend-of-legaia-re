@@ -43,14 +43,15 @@
 //! (rest pose fallback until the first battle tick lands), the same
 //! `R.v + T` composition every other site animator runs.
 //!
-//! The **battle camera** exported per frame is the retail far "menu" framing
-//! (`FUN_801D5854` case 9: pitch `0x20`, `TR = (0, 0x500, span*3)` with the
-//! `(z << 8) / 0xA0` projection prescale, focus = the live formation centre)
-//! with the idle orbit (`-2` yaw units per sim tick). The native window's
-//! phase-scripted dialogue / submenu close-ups and their measured glides
-//! (`window/battle_cam.rs`) are NOT ported here yet - one static-framing
-//! phase keeps the browser cut honest while covering the framing a battle
-//! spends most of its time in.
+//! The **battle camera** is the SAME phase-scripted retail camera the native
+//! window runs - [`legaia_engine_vm::battle_cam_script`] (`FUN_801D5854`
+//! framing cases, `FUN_801D829C` glides): the dialogue close-up, the far
+//! "menu" framing with the idle orbit, and the per-character submenu
+//! close-up, driven from the live world state by the shared `drive` on the
+//! retail 2-vsync step cadence. The page consumes a ready view-projection
+//! matrix ([`LegaiaRuntime::play_battle_camera_vp`], the shared
+//! `battle_vp` = the native `psx_camera_mvp` composition) instead of
+//! re-projecting the pose through its orbit camera.
 //!
 //! What the native battle render still has that this host lacks: the
 //! per-tick facial-animation VRAM re-stamps (`tick_battle_face_stamps`), the
@@ -84,9 +85,71 @@ const PLAYER_BATTLE_FILE_BASE: u32 = 863;
 /// the per-character art-animation "ME" archives.
 const READEF_PROT_INDEX: u32 = 894;
 
-/// Idle-orbit yaw decrement per sim tick: the native `battle_cam` steps `-4`
-/// yaw units per camera step of 2 vsyncs, i.e. `-2` per 60 Hz tick.
-const ORBIT_STEP_PER_TICK: f32 = 2.0;
+/// Derive the shared battle-camera drive inputs from the live world state -
+/// phase, acting actor, formation box. The browser mirror of the native
+/// window's `battle_cam_inputs` (`engine-shell` `window/camera.rs`) over the
+/// same `World` type: same phase booleans, same acting-actor formula
+/// (facing `render_26 & 0xFFF`, height keyed on `party_slot + 1` through the
+/// disc table, focus = the actor's world position), same case-9 min/max
+/// walk. The one host difference is the presence predicate: this host keys
+/// monsters on `battle_monster_id` (the world-side fact) where the native
+/// window keys on its own `tmd_binding` mesh bind - the two coincide for
+/// every monster whose mesh decodes. Pinned to the native derivation by
+/// `web_pose_matches_the_native_recipe`.
+fn derive_battle_cam(
+    world: &legaia_engine_core::world::World,
+) -> (
+    legaia_engine_vm::battle_cam_script::BattleCamPhase,
+    Option<legaia_engine_vm::battle_cam_script::BattleCamActor>,
+    Option<legaia_engine_vm::battle_cam_script::FormationBox>,
+) {
+    use legaia_engine_vm::battle_cam_script as script;
+    let phase = script::phase_for(
+        world.current_dialog.is_some() || world.inline_dialogue.is_some(),
+        world.battle_command.is_some()
+            || world.battle_arts_menu.is_some()
+            || world.battle_spell_menu.is_some()
+            || world.battle_item_menu.is_some(),
+    );
+    let acting = world.battle_command.as_ref().and_then(|c| {
+        let a = world.actors.get(c.actor as usize)?;
+        // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
+        // party-record selector; the engine's party rows are that record
+        // order, so the row index + 1 is the same id.
+        let height = world
+            .battle_camera_heights
+            .as_ref()
+            .and_then(|t| t.height_for_char_id(c.party_slot + 1))
+            .map(|h| h as f32);
+        Some(script::BattleCamActor {
+            // The port's actors carry their heading in `render_26` (the
+            // retail `+0x26` 12-bit angle); it stands in for the battle
+            // actor record's `+0x46` the framing formula subtracts.
+            facing: (a.move_state.render_26 as u16 & 0xFFF) as i32,
+            world: [
+                a.move_state.world_x as f32,
+                a.move_state.world_y as f32,
+                a.move_state.world_z as f32,
+            ],
+            height,
+        })
+    });
+    // The far menu framing sizes its depth to - and centres on - the live
+    // formation's X/Z bounding box (`FUN_801D5854` case 9).
+    let pc = world.party_count as usize;
+    let mut formation: Option<script::FormationBox> = None;
+    for (i, a) in world.actors.iter().enumerate() {
+        if !(i < pc || a.battle_monster_id.is_some()) {
+            continue;
+        }
+        script::FormationBox::extend(
+            &mut formation,
+            a.move_state.world_x as f32,
+            a.move_state.world_z as f32,
+        );
+    }
+    (phase, acting, formation)
+}
 
 /// Host-safe log: the browser console on wasm, stderr on the native test
 /// build (`crate::console_log` is a hard wasm-only stub that panics off-web,
@@ -150,8 +213,10 @@ pub(crate) struct BattleRender {
     /// renderer cannot apply a per-draw cue yet - see the module doc).
     grid_far: Option<[f32; 3]>,
     actors: Vec<BattleActorRender>,
-    /// Idle-orbit yaw of the far menu framing, 12-bit units.
-    cam_yaw: f32,
+    /// The shared phase-scripted battle camera - the SAME
+    /// [`legaia_engine_vm::battle_cam_script::BattleCamera`] the native
+    /// window steps, driven by [`LegaiaRuntime::tick_battle_camera_web`].
+    camera: Option<legaia_engine_vm::battle_cam_script::BattleCamera>,
     /// Bumped per battle entry so the page knows to re-upload.
     generation: u32,
 }
@@ -485,7 +550,7 @@ impl LegaiaRuntime {
             ground,
             grid_far,
             actors,
-            cam_yaw: 0.0,
+            camera: None,
             generation: self.battle_render_generation,
         });
     }
@@ -498,11 +563,33 @@ impl LegaiaRuntime {
         self.battle_render = None;
     }
 
-    /// Advance the battle camera's idle orbit one sim tick.
+    /// Drive the shared phase-scripted battle camera one sim tick: derive
+    /// the retail phase + acting actor + formation from the live world
+    /// state (the browser twin of the native `tick_battle_camera` /
+    /// `battle_cam_inputs`) and step the SAME
+    /// [`legaia_engine_vm::battle_cam_script::drive`] on the world's
+    /// display-frame counter (one camera step per 2 frames). No-op outside
+    /// battle - the render state only exists while one is up, and dropping
+    /// it drops the camera so the next battle re-snaps.
     pub(crate) fn tick_battle_camera_web(&mut self) {
-        if let Some(br) = self.battle_render.as_mut() {
-            br.cam_yaw = (br.cam_yaw - ORBIT_STEP_PER_TICK).rem_euclid(4096.0);
-        }
+        let Some(br) = self.battle_render.as_mut() else {
+            return;
+        };
+        let Some(host) = self.scene_host.as_ref() else {
+            br.camera = None;
+            return;
+        };
+        let world = &host.world;
+        let active = world.mode == SceneMode::Battle;
+        let (phase, acting, formation) = derive_battle_cam(world);
+        legaia_engine_vm::battle_cam_script::drive(
+            &mut br.camera,
+            active,
+            phase,
+            acting,
+            formation,
+            world.field_frames,
+        );
     }
 
     /// Assemble one party member's battle form: the browser port of the
@@ -1006,49 +1093,123 @@ impl LegaiaRuntime {
     /// "h":256}` - pitch/yaw in PSX 12-bit units, `tr` the eye-space
     /// translation trio (TR.z already through the `(z << 8) / 0xA0`
     /// projection prescale), `focus` the world point the camera orbits in
-    /// RAW battle units. This is retail's far "menu" framing
-    /// (`FUN_801D5854` case 9: formation-sized depth, formation-centre
-    /// focus) with the idle orbit; the native phase-scripted close-ups are
-    /// not ported to this host (see the module doc).
+    /// RAW battle units. The live pose of the SAME phase-scripted camera
+    /// the native window runs ([`legaia_engine_vm::battle_cam_script`]:
+    /// dialogue close-up / far menu framing with the idle orbit /
+    /// per-character submenu close-up, with the measured glides between).
+    /// Kept as a diagnostic/value-space export; the page's projection
+    /// consumes [`Self::play_battle_camera_vp`] instead.
     pub fn play_battle_camera_json(&self) -> String {
-        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
+        if !self.play_battle_active() {
             return r#"{"active":false}"#.to_string();
-        };
-        // Formation bbox: min/max world X/Z over the present battle actors
-        // (retail case 9's `actor[+0x34]` / `actor[+0x38]` walk).
-        let mut min = [f32::MAX; 2];
-        let mut max = [f32::MIN; 2];
-        let mut any = false;
-        for a in &br.actors {
-            if let Some(actor) = host.world.actors.get(a.actor_idx)
-                && actor.active
-            {
-                let (x, z) = (
-                    actor.move_state.world_x as f32,
-                    actor.move_state.world_z as f32,
-                );
-                min[0] = min[0].min(x);
-                min[1] = min[1].min(z);
-                max[0] = max[0].max(x);
-                max[1] = max[1].max(z);
-                any = true;
-            }
         }
-        let (focus, span) = if any {
-            (
-                [(min[0] + max[0]) * 0.5, 0.0, (min[1] + max[1]) * 0.5],
-                (max[0] - min[0]).max(max[1] - min[1]),
-            )
-        } else {
-            ([0.0; 3], 0.0)
-        };
-        // `TR.z = max(span * 3, 0x800)` in world units, then the tween
-        // builder's projection prescale `(z << 8) / 0xA0` (truncating).
-        let raw_z = ((span * 3.0) as i32).max(0x800);
-        let tr_z = ((raw_z << 8) / 0xA0) as f32;
+        let pose = self.battle_cam_pose();
         format!(
-            r#"{{"active":true,"pitch":32.0,"yaw":{},"tr":[0.0,1280.0,{}],"focus":[{},{},{}],"h":256.0}}"#,
-            br.cam_yaw, tr_z, focus[0], focus[1], focus[2]
+            r#"{{"active":true,"pitch":{},"yaw":{},"tr":[{},{},{}],"focus":[{},{},{}],"h":{}}}"#,
+            pose.pitch,
+            pose.yaw,
+            pose.tr[0],
+            pose.tr[1],
+            pose.tr[2],
+            pose.focus[0],
+            pose.focus[1],
+            pose.focus[2],
+            legaia_engine_vm::battle_cam_script::GTE_H,
         )
+    }
+
+    /// The battle view-projection matrix for this frame: 16 column-major
+    /// floats (WebGL `mat4` layout), or empty outside battle. The shared
+    /// [`legaia_engine_vm::battle_cam_script::battle_vp`] - the native
+    /// window's `psx_camera_mvp` composition - over the live phase-scripted
+    /// pose, with the retail 4x battle world scale folded into the focus
+    /// exactly like the native `battle_dome_camera_mvp`. The page hands
+    /// this straight to its renderer (`cam.vp`), so there is no JS-side
+    /// projection model to drift.
+    pub fn play_battle_camera_vp(&self, aspect: f32) -> Vec<f32> {
+        if !self.play_battle_active() {
+            return Vec::new();
+        }
+        let pose = self.battle_cam_pose();
+        legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect).to_vec()
+    }
+}
+
+impl LegaiaRuntime {
+    /// The live phase-scripted pose, or the shared BOOT_POSE on the first
+    /// frame before the camera tick armed the state (the same fallback the
+    /// native `battle_dome_camera_mvp` renders).
+    fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
+        self.battle_render
+            .as_ref()
+            .and_then(|b| b.camera.as_ref())
+            .map(|c| c.pose())
+            .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
+    }
+}
+
+#[cfg(test)]
+mod battle_cam_web_tests {
+    use super::*;
+    use legaia_engine_core::world::World;
+    use legaia_engine_vm::battle_cam_script as script;
+
+    /// **Cross-host single-model pin, browser half.** The identical world
+    /// recipe as the native `native_pose_matches_the_shared_recipe`
+    /// (`engine-shell` `window/camera.rs` tests) - solo Vahn at the
+    /// tutorial seat, command menu open, one bound monster - driven through
+    /// THIS host's derivation + the shared drive must land on the same
+    /// literal measured close-up, so the two hosts' poses are equal to each
+    /// other by transitivity.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn web_pose_matches_the_native_recipe() {
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        vahn.move_state.world_x = 0;
+        vahn.move_state.world_y = 0;
+        vahn.move_state.world_z = -800;
+        vahn.move_state.render_26 = 0;
+        let mut tetsu = legaia_engine_core::world::Actor::default();
+        tetsu.active = true;
+        tetsu.move_state.world_z = 800;
+        tetsu.battle_monster_id = Some(1);
+        tetsu.tmd_binding = Some(0);
+        world.actors = vec![vahn, tetsu];
+        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+            0, 0,
+        ));
+
+        let (phase, acting, formation) = derive_battle_cam(&world);
+        assert_eq!(phase, script::BattleCamPhase::Submenu);
+        assert_eq!(
+            acting,
+            Some(script::BattleCamActor {
+                facing: 0,
+                world: [0.0, 0.0, -800.0],
+                height: None,
+            })
+        );
+        assert_eq!(
+            formation,
+            Some(script::FormationBox {
+                min: [0.0, -800.0],
+                max: [0.0, 800.0],
+            })
+        );
+        let mut slot = None;
+        for f in 0..=6u64 {
+            script::drive(&mut slot, true, phase, acting, formation, f * 2);
+        }
+        let pose = slot.as_ref().unwrap().pose();
+        // The measured solo-Vahn submenu close-up - the SAME literals the
+        // native mirror test asserts.
+        assert_eq!(pose.pitch, 32.0);
+        assert_eq!(pose.yaw.rem_euclid(4096.0), 2288.0);
+        assert_eq!(pose.tr, [-512.0, 1152.0, 2457.0]);
+        assert_eq!(pose.focus, [0.0, 0.0, -800.0]);
     }
 }
