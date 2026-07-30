@@ -351,7 +351,6 @@ WIDE_PAGES: set[str] = {
     "npcs",
     "viewer",
     "media",
-    "architecture",
     "world-overview",
     "reference/music-tracks",
     "tooling/rom-patcher",

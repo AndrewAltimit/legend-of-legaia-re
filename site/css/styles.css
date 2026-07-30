@@ -434,7 +434,7 @@ body { padding-top: var(--topbar-h); }
 }
 
 /* Wide-mode for multi-pane interactive pages (shops, world, minigames,
- * viewer, architecture). Prose / reference / format pages stay narrow
+ * viewer). Prose / reference / format pages stay narrow
  * for readability. */
 .content.wide-page {
   max-width: 1480px;
