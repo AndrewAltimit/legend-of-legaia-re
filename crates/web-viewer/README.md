@@ -103,12 +103,14 @@ render path is exercised by the media page (`audio_api`) and the native
 
 `BGM_DEFAULT_GAIN` is the gain the runtime parks on `WebAudioOut`'s post-mixer
 `GainNode` at `audio_init`, and the play page's volume slider is a live handle
-on the same node through `audio_set_gain`. It is a judgement about this page,
-not a constant shared with the media page's BGM auditioner: that page renders
-PCM offline and plays it through an `AudioBufferSourceNode` behind its own
-1x-10x slider defaulting to `1`, so quoting its level as this one's
-justification argued for a default several times hotter than the mixer needs -
-which is how the page came to clip on peaks.
+on the same node through `audio_set_gain`. It is **unity** - the level the
+native cpal path runs at, and the same default the media page's BGM auditioner
+hands its listener. An earlier revision baked in `5.0` on the claim that the
+mixer is near-inaudible at unity; listening said the opposite (unity is
+already on the loud side), and the hot default is how the page came to clip on
+peaks. Any further lift belongs to the listener: the slider spans 0x (mute) to
+10x, and its HTML `value` stays equal to the constant so the control starts
+where the audio actually is.
 
 ## Retail dialog reading box (`play_dialog`)
 

@@ -35,15 +35,15 @@ use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 /// [`LegaiaRuntime::audio_init`] and retunable live through
 /// [`LegaiaRuntime::audio_set_gain`].
 ///
-/// Retail SEQ + clean-room SPU output really is quiet at unity, so some lift
-/// is needed. How much is a judgement about this page, **not** a number copied
-/// from the media page's BGM auditioner - the two are set differently on
-/// purpose. That page hands the choice to the listener (a 1x-10x slider
-/// defaulting to `1`, `site/media.html`); the play page bakes in a fixed level,
-/// picked by ear, deliberately on the loud side of comfortable because a track
-/// that is slightly hot is easier to live with than one that is inaudible.
+/// Unity, matching the native cpal path and the media page's BGM auditioner
+/// default. An earlier revision baked in `5.0` on the theory that the mixer is
+/// "near-inaudible at unity"; listening said the opposite - unity is already
+/// on the loud side - and the hot default is how the page came to clip on
+/// peaks. The page's slider (0x mute to 10x) hands any further lift to the
+/// listener; its HTML `value` must stay equal to this constant so the control
+/// starts where the audio actually is.
 #[cfg(target_arch = "wasm32")]
-const BGM_DEFAULT_GAIN: f32 = 5.0;
+const BGM_DEFAULT_GAIN: f32 = 1.0;
 
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
@@ -799,9 +799,10 @@ impl LegaiaRuntime {
     /// Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
     /// routes the field VM's op-`0x35` music events through the same clean-room
     /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
-    /// the current scene's VAB bank (so a scene-local track has a bank) and sets
-    /// a default output gain, since retail SEQ output is near-inaudible at
-    /// unity. Browsers often open the `AudioContext` suspended even inside a
+    /// the current scene's VAB bank (so a scene-local track has a bank) and
+    /// parks [`BGM_DEFAULT_GAIN`] (unity) on the output node so the level
+    /// matches the page's slider. Browsers often open the `AudioContext`
+    /// suspended even inside a
     /// gesture - call [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
@@ -837,9 +838,9 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Set the BGM output gain. `1.0` matches the native cpal path; the play
-    /// page defaults to [`BGM_DEFAULT_GAIN`] because retail SEQ+SPU output is
-    /// quiet. No-op when audio isn't up.
+    /// Set the BGM output gain. `1.0` matches the native cpal path and is the
+    /// page default ([`BGM_DEFAULT_GAIN`]); the slider spans 0x (mute) to 10x.
+    /// No-op when audio isn't up.
     #[cfg(target_arch = "wasm32")]
     pub fn audio_set_gain(&self, gain: f32) {
         if let Some(out) = self.audio_out.as_ref() {
