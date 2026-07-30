@@ -35,15 +35,16 @@ use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 /// [`LegaiaRuntime::audio_init`] and retunable live through
 /// [`LegaiaRuntime::audio_set_gain`].
 ///
-/// Unity, matching the native cpal path and the media page's BGM auditioner
-/// default. An earlier revision baked in `5.0` on the theory that the mixer is
-/// "near-inaudible at unity"; listening said the opposite - unity is already
-/// on the loud side - and the hot default is how the page came to clip on
-/// peaks. The page's slider (0x mute to 10x) hands any further lift to the
-/// listener; its HTML `value` must stay equal to this constant so the control
-/// starts where the audio actually is.
+/// Half of unity (the native cpal path's level). The history of this constant
+/// is a walk down the loudness curve by ear: an earlier revision baked in
+/// `5.0` on the theory that the mixer is "near-inaudible at unity", listening
+/// said the opposite and it clipped on peaks; unity itself then proved loud as
+/// a browser-tab default, so the shipped level is `0.5`. The page's slider
+/// (0x mute to 10x) hands any lift back to the listener; its HTML `value`
+/// must stay equal to this constant so the control starts where the audio
+/// actually is.
 #[cfg(target_arch = "wasm32")]
-const BGM_DEFAULT_GAIN: f32 = 1.0;
+const BGM_DEFAULT_GAIN: f32 = 0.5;
 
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
@@ -822,7 +823,7 @@ impl LegaiaRuntime {
     /// routes the field VM's op-`0x35` music events through the same clean-room
     /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
     /// the current scene's VAB bank (so a scene-local track has a bank) and
-    /// parks [`BGM_DEFAULT_GAIN`] (unity) on the output node so the level
+    /// parks [`BGM_DEFAULT_GAIN`] (half unity) on the output node so the level
     /// matches the page's slider. Browsers often open the `AudioContext`
     /// suspended even inside a
     /// gesture - call [`Self::audio_resume`] right after this to make it audible.
@@ -860,8 +861,8 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Set the BGM output gain. `1.0` matches the native cpal path and is the
-    /// page default ([`BGM_DEFAULT_GAIN`]); the slider spans 0x (mute) to 10x.
+    /// Set the BGM output gain. `1.0` matches the native cpal path; the page
+    /// default is [`BGM_DEFAULT_GAIN`] and the slider spans 0x (mute) to 10x.
     /// No-op when audio isn't up.
     #[cfg(target_arch = "wasm32")]
     pub fn audio_set_gain(&self, gain: f32) {
