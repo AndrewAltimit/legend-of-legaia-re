@@ -238,6 +238,7 @@ so a recurrence is recognisable rather than re-derived.
 | addr | site | verdict | resolution |
 |---|---|---|---|
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
+| `801e0080` | `engine-vm/src/battle_scatter.rs` | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-core::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
 | `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own `NOT WIRED:`; the file is live through `op43_sub12_calls`, which no tag covers. |
 | `80053cb8` | `engine-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
