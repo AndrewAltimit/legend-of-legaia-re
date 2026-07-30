@@ -286,6 +286,17 @@ impl PlayWindowApp {
                     self.boot_ui = BootUiState::Inactive;
                     return true;
                 }
+                // Window 7 (spell level-up notice) owns the pad while armed:
+                // retail's cast sub-screens stall on the confirm | cancel
+                // masks after the widget-VM `[open window 7]` script
+                // (`0x801E4D50` / `0x801E4D78`), and nothing else on the pad
+                // moves. The press both dismisses and is consumed.
+                if self
+                    .menu_runtime
+                    .dismiss_spell_level_notice(cross, circle, triangle)
+                {
+                    return true;
+                }
                 if let Some(active_sub) = sub.as_mut() {
                     // Engine extension: Triangle on the Status screen swaps
                     // it for the Tactical Arts chain editor (retail's seven
@@ -315,7 +326,14 @@ impl PlayWindowApp {
                                 );
                             }
                             FieldMenuSubsession::Spells(s) => {
-                                apply_spell_outcome(&s, &mut self.session.host.world);
+                                // A leveled menu cast returns the window-7
+                                // pair; the runtime holds the beat and this
+                                // arm's pre-empt above holds the pad.
+                                if let Some(notice) =
+                                    apply_spell_outcome(&s, &mut self.session.host.world)
+                                {
+                                    self.menu_runtime.arm_spell_level_notice(notice);
+                                }
                             }
                             FieldMenuSubsession::Arts(editor) => {
                                 // Persist the edit back into the world's saved
@@ -669,6 +687,9 @@ impl PlayWindowApp {
                     ));
                     d
                 };
+                // Window 7 - the spell level-up notice - overlays whichever
+                // menu screen is current while `MenuRuntime` holds the beat.
+                draws.extend(self.magic_level_notice_draws());
                 if !is_save_sub {
                     let (origin, scale) = self.save_select_stage(surface_w, surface_h);
                     legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);

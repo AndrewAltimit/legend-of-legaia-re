@@ -2,7 +2,45 @@
 
 use super::*;
 
+/// Menu-overlay descriptor id of the **spell level-up notice** window
+/// (renderer `FUN_801DCCB4` - `engine-ui`'s `CharPrompt` painter). Mirrored
+/// by the browser play page (`web-viewer::play_menu`).
+const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
+
 impl PlayWindowApp {
+    /// Window 7 - the spell level-up notice, drawn while
+    /// [`legaia_engine_core::menu_runtime::MenuRuntime`] holds the beat a
+    /// leveled menu cast armed (`apply_spell_outcome` ->
+    /// `arm_spell_level_notice`). Retail's cast sub-screens hand the widget
+    /// VM the one-command script `0x801E4D50` / `0x801E4D78` (`[open window
+    /// 7]`) when the `FUN_80035C00` sentinel pair changed, then stall for a
+    /// press - the input side of that stall lives in the field-menu arm of
+    /// `tick_boot_ui`. Content-only, off the disc-parsed id-7 rect: like
+    /// the shop's descriptor windows, it draws only when the real table is
+    /// present (the painter is dispatched on the descriptor's renderer).
+    pub(super) fn magic_level_notice_draws(&self) -> Vec<TextDraw> {
+        use legaia_engine_render::MenuWindowPainter;
+        use legaia_engine_render::ui_menu_window_painters::char_prompt_draws_for;
+        let Some(notice) = self.menu_runtime.spell_level_notice() else {
+            return Vec::new();
+        };
+        let Some((d, _)) = self.menu_window_table.as_ref().and_then(|t| {
+            legaia_engine_render::painter_at(
+                t,
+                WIN_MAGIC_LEVEL_NOTICE,
+                MenuWindowPainter::CharPrompt,
+            )
+        }) else {
+            return Vec::new();
+        };
+        let (mut out, cursor) = char_prompt_draws_for(
+            &self.font,
+            legaia_engine_render::painter_rect(d),
+            &notice.line,
+        );
+        out.extend(self.painter_cursor_stand_in(cursor));
+        out
+    }
     /// Title-tab label for a sub-screen's small banner window (descriptor
     /// ids 0..=4). Text-only: the carved plaque behind it is chrome,
     /// drawn from the UI-icon atlas by `field_menu_chrome_sprite_draws`

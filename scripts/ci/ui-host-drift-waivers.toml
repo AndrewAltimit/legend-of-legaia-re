@@ -124,37 +124,18 @@ hosts, plus a wasm binding for `KeyRebindSession` - not adding a draw call.
 # reason survives every re-derivation. All four now paint on the web host off
 # the same `painter_at` dispatch and the same disc-parsed rects.
 
-[[waiver]]
-builder = "char_prompt_draws_for"
-kind = "orphan"
-reason = """
-Window id 7 (`FUN_801DCCB4`), the **spell level-up notice**. The flow that
-opens it is pinned, not open: the two magic-cast sub-screens `FUN_801D9280`
-(all targets) and `FUN_801D9594` (single target) seed `_DAT_8007BB70` /
-`_DAT_8007BB78` to `0xFF`, run the effect-apply handler, and open this window
-(one-command scripts `0x801E4D50` / `0x801E4D78`) only when the sentinel
-changed - then hold for a press. What changes it is a level-up: the apply
-handler's HP-heal arms compare a per-spell threshold against the caster's
-`+0x5D0` accumulator, bump the level byte at record `+0x161 + index`, and call
-`FUN_80035C00(slot, index)` - the setter for exactly that pair.
-
-This waiver used to say "no cast path raises a spell level". That is no longer
-true, and the half that closed matters: the **battle** summon cast levels
-spells now (`World::accrue_summon_spell_xp`, the `FUN_801ddb30` XP tail +
-`FUN_801e70bc` threshold check), produces exactly the `(caster slot, spell,
-level)` triple (`World::magic_level_ups`), and its retail presentation is the
-shared banner channel (UI element `0x65`, `magic_level_increased_message`) -
-which both hosts already draw. That event is not this window's.
-
-What still blocks window 7 is the **menu-cast** half it belongs to: the two
-sub-screens above are pause-menu screens, and their leveling mechanism is the
-`+0x5D0` accumulator the effect-apply handler `FUN_800402F4` tests - a
-different counter from the battle XP array. The engine's menu cast
-(`field_menu_dispatch::apply_spell_outcome`) applies MP debit + heal only; it
-neither accrues that accumulator nor levels, so the menu beat that opens this
-window never occurs on either host. Close it by porting the menu-cast
-leveling arm, not by adding a draw call.
-"""
+# `char_prompt_draws_for` (window 7, the spell level-up notice) was waived
+# here as an orphan whose closing work was the **menu-cast leveling arm**,
+# not a draw call. That arm exists now: `apply_spell_outcome` accrues the
+# `FUN_800402F4` heal grants into the caster record's per-spell XP array
+# (the `+0x5D0` accumulator off the `0x80084140` save-context window IS the
+# record-`+0x8` array the battle summon path trains - one counter, not two,
+# since `0x80084140 + 0x5C8` is the `0x80084708` record base), levels
+# through the shared `magic_xp::accrue_and_level` kernel, and returns the
+# `FUN_80035C00` pair. `MenuRuntime` holds the beat and both hosts paint
+# window 7 off the disc-parsed rect - `window/menu_draws.rs` and
+# `web-viewer/src/play_menu.rs` - holding the pad for a confirm / cancel
+# press exactly like the window-31 toast below.
 
 # `amount_prompt_draws_for` (window 31, the Point Card toast) and
 # `item_points_panel_draws` (the item-info panel's `0xFE` arm) were waived here

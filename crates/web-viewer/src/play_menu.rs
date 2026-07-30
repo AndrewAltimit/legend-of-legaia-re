@@ -87,6 +87,11 @@ use legaia_engine_ui::{
 const STAGE_W: u32 = ui::BOOT_UI_STAGE_W;
 const STAGE_H: u32 = ui::BOOT_UI_STAGE_H;
 
+/// Menu-overlay descriptor id of the **spell level-up notice** window
+/// (renderer `FUN_801DCCB4` - `engine-ui`'s `CharPrompt` painter). Mirrors
+/// the native window's `WIN_MAGIC_LEVEL_NOTICE` (`window/menu_draws.rs`).
+const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
+
 /// Near-fullscreen content rect for the screens the native shell frames with a
 /// single window rather than a capture-pinned window set: Items / Magic (the
 /// generic frame behind `inventory_use_draws_for` / `spell_menu_draws_for`).
@@ -551,6 +556,18 @@ impl LegaiaRuntime {
         if self.play_menu.is_none() {
             return;
         }
+        // Window 7 (spell level-up notice) owns the pad while armed: retail's
+        // cast sub-screens stall on the confirm | cancel masks after the
+        // widget-VM `[open window 7]` script (`0x801E4D50` / `0x801E4D78`),
+        // and nothing else on the pad moves. Same pre-empt as the native
+        // window's field-menu arm.
+        if self.menu.dismiss_spell_level_notice(
+            pressed(edge, PadButton::Cross),
+            pressed(edge, PadButton::Circle),
+            pressed(edge, PadButton::Triangle),
+        ) {
+            return;
+        }
         // Sub-screen active: route to its session, then check for exit.
         let has_sub = self
             .play_menu
@@ -631,7 +648,15 @@ impl LegaiaRuntime {
                                         apply_inventory_outcome(&s.inner, world)
                                     }
                                     FieldMenuSubsession::Spells(s) => {
-                                        apply_spell_outcome(&s, world)
+                                        // A leveled menu cast returns the
+                                        // window-7 pair; the shared runtime
+                                        // holds the beat and the pre-empt at
+                                        // the top of this method holds the
+                                        // pad - same shape as the native
+                                        // window.
+                                        if let Some(notice) = apply_spell_outcome(&s, world) {
+                                            self.menu.arm_spell_level_notice(notice);
+                                        }
                                     }
                                     // Persist the edited chain back into the
                                     // world's saved chains so the next
@@ -771,6 +796,34 @@ impl LegaiaRuntime {
                     self.build_arts_editor(assets, s, &mut sprites, &mut texts, origin, scale)
                 }
             },
+        }
+
+        // Window 7 - the spell level-up notice - overlays whichever menu
+        // screen is current while the shared runtime holds the beat, the
+        // browser twin of the native window's `magic_level_notice_draws`.
+        // Content-only, off the disc-parsed id-7 rect: like the shop's
+        // descriptor windows it draws only when the real table parsed (the
+        // painter is dispatched on the descriptor's renderer).
+        if let Some(notice) = self.menu.spell_level_notice()
+            && let Some((d, _)) = assets.window_table().and_then(|t| {
+                ui::painter_at(t, WIN_MAGIC_LEVEL_NOTICE, ui::MenuWindowPainter::CharPrompt)
+            })
+        {
+            let font = assets.font_ref();
+            let (mut text, cursor) = ui::ui_menu_window_painters::char_prompt_draws_for(
+                font,
+                ui::painter_rect(d),
+                &notice.line,
+            );
+            // ASCII stand-in for the painter's corner cursor sprite, same
+            // substitution the native window makes.
+            text.extend(ui::text_draws_for(
+                &font.layout_ascii(">"),
+                (cursor.x, cursor.y),
+                ui::MENU_TEXT_GOLD,
+            ));
+            ui::scale_stage_text_draws(&mut text, origin, scale);
+            texts.extend(text);
         }
 
         serde_json::json!({
