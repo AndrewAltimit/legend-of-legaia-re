@@ -192,7 +192,7 @@ BIOS_VECTORS = (0xA0, 0xB0, 0xC0)
 
 
 def gap_shape(image, base_va, a, b):
-    """Why a code gap is a gap. Four shapes, and only one of them is work.
+    """Why a code gap is a gap. Six shapes, and only one of them is work.
 
     A gap is not automatically an un-analysed routine, and reporting the total
     as if it were makes the last percent read as a dump worklist when most of it
@@ -203,10 +203,16 @@ def gap_shape(image, base_va, a, b):
     | `padding` | every word is `nop`. Inter-function alignment; no function body will ever contain it. |
     | `return_tail` | `jr ra` (+ `nop`): a routine's exit that its analysed body stops short of. |
     | `bios_thunk_slot` | the delay slot of a `jr $t2` BIOS-call thunk. The body ends at the `jr` because the target is a register, so the slot falls outside it. |
+    | `psyq_lib_stamp` | an 8-byte record opening with ASCII `Ps`: the PSY-Q librarian's version stamp between link modules. Data the linker left in the text segment. |
+    | `constant_table` | every word one repeated non-`nop` constant: a data table resident in text (`crt0`'s stack-pointer table at `0x80026CD4`, four words of the 2 MB RAM size). |
     | `code` | genuinely un-dumped instructions. |
 
-    The three non-`code` shapes are properties of where a function *body* ends,
-    not of what has been analysed, so they persist however much is dumped.
+    The non-`code` shapes are properties of where a function *body* ends or of
+    data the linker placed between bodies, not of what has been analysed, so
+    they persist however much is dumped. The two data shapes exist because the
+    tiny-gap fiat in `classify_gap` counts every short gap as code, and the
+    text segment carries linker data records short enough to ride it - each
+    instance is documented in `docs/reference/functions/runtime-libs.md`.
     """
     n = (b - a) // 4
     start = a - base_va
@@ -224,6 +230,16 @@ def gap_shape(image, base_va, a, b):
                 and (pre[0] & 0xFFFF) in BIOS_VECTORS
                 and (pre[1] & 0xFC1FFFFF) == 0x00000008):
             return "bios_thunk_slot"
+    # PSY-Q librarian version stamp: 8 bytes, ASCII "Ps" + 2 id bytes + a word.
+    # Ten word-aligned instances exist in SCUS_942.54; the three in the code
+    # band sit exactly between link modules' function bodies.
+    if n == 2 and image[start:start + 2] == b"Ps":
+        return "psyq_lib_stamp"
+    # A run of one repeated non-nop constant is a data table, not reachable
+    # code: nothing enters it, and the one code-band instance is crt0's
+    # documented stack-pointer table (4 x 0x00200000).
+    if n >= 2 and words[0] != 0 and all(w == words[0] for w in words):
+        return "constant_table"
     return "code"
 
 
@@ -428,6 +444,12 @@ GAP_SHAPE_TEXT = {
                    "stops short of",
     "bios_thunk_slot": "the delay slot of a `jr $t2` PSX BIOS-call thunk; the "
                        "body ends at the `jr` because its target is a register",
+    "psyq_lib_stamp": "an 8-byte `Ps` + id + word record: the PSY-Q librarian's "
+                      "version stamp between link modules - linker data resident "
+                      "in the text segment",
+    "constant_table": "every word one repeated non-`nop` constant: a data table "
+                      "resident in text (`crt0`'s stack-pointer table, four "
+                      "words of the 2 MB RAM size)",
 }
 
 REJECT_TEXT = {
@@ -530,14 +552,16 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             add("### What the `SCUS_942.54` code gap is")
             add("")
             add("Not every gap is an un-analysed routine, and reading the total "
-                "as a worklist overstates what dumping can close. Three of the "
-                "four shapes are properties of where a function *body* ends "
-                "rather than of what has been analysed, so they persist however "
-                "much is dumped.")
+                "as a worklist overstates what dumping can close. The non-`code` "
+                "shapes are properties of where a function *body* ends, or of "
+                "data records the linker left between bodies, rather than of "
+                "what has been analysed, so they persist however much is "
+                "dumped.")
             add("")
             add("| shape | gaps | bytes | what it is |")
             add("|---|---:|---:|---|")
-            for key in ("code", "padding", "return_tail", "bios_thunk_slot"):
+            for key in ("code", "padding", "return_tail", "bios_thunk_slot",
+                        "psyq_lib_stamp", "constant_table"):
                 if key not in shapes:
                     continue
                 n, nb = shapes[key]
@@ -551,6 +575,11 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             add("|---|---:|---:|")
             for a, b in scus["top_code_gaps"]:
                 add("| `0x%08X`..`0x%08X` | %d | %d |" % (a, b, b - a, (b - a) // 4))
+            add("")
+        else:
+            add("No un-dumped **code** runs remain in `SCUS_942.54`: every "
+                "residual gap has one of the structural shapes above, so the "
+                "bytes-derived dump worklist for this image is empty.")
             add("")
     if overlays and attributed:
         add("### Overlay caveat")

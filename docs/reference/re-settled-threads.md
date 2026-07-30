@@ -1587,7 +1587,7 @@ Mixed meshes (some textured + some untextured prims) now render **both** halves:
 
 ### Region story-flag gate families
 
-*Status:* resolved as structure across the chapter-2/3 regions; the in-game play-order residual for the dungeons the capture corpus never walked is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
+*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
 
 Every field scene's MAN carries one **partition-2 record** per cutscene or story beat, and each record's *header* holds two flag lists that the spawn evaluator `FUN_8003BDE0` checks before running it: a **C1** one-shot list (the record is suppressed once any listed flag is set) and a **C2** requires-all list (the record spawns only when every listed flag is set). Regional progression is expressed almost entirely through these header gates.
 
@@ -1599,7 +1599,7 @@ Two reader-only flags first exposed the pattern. `0x1BE` (Jeremi's arrival at `g
 
 - **`taiku` / `doman` / `rayman`** — self-latch pairs plus a linear `0x201` → `0x1FB` → `0x200` → `0x1FC` chain in `rayman`; `rayman2` is the same MAN with a shared C1 on the low flag `0x7`, a variant discriminator. `rayman`'s streaming variant adds a `P2[18..20]` tail latching `0x34D`/`0x34C` (`P2[18]` body `+0x2C2`, at a `JmpRel` branch-arm after `0x1FE`/`0x1FF` tests). The taiku variant's `P2[16]` beat SETs the pair `0x380` + `0x382` at its head (body `+0x11`/`+0x21`, between `SceneFade` and the particle emitters) — `0x382` is a **cross-chapter gate**: `son P1[14]` branches its NPC dialogue on it (body `+0x4A`), and the clean census reads span `doman(V)`/`retockin`/`ropeway`/`ropeway2`/`map03`/`koin2`/`korout`. Anchor `chapter2_dungeon_gate_families`.
 - **`balden` / `balden2` / `station`** — `balden` is an arc around its reached-flag `0x1D5`; `balden2` is a sibling carrier with an identical gate family, so the variant is selected by the streaming slot rather than a flag. Cross-scene: `balden` gates on the `ropeway2` switches, and `station`/`station3` gate on `taiku`'s `0x38F`. Anchor `chapter2_balden_station_gate_families`.
-- **`ropeway` / `ropeway2` / `jiji`** — the only spokes the capture corpus walked organically, so their play order is confirmed. `ropeway2` hosts a four-bit switch puzzle (`0x3FF`–`0x402`); its payoff records `P2[31..=34]` are gated via C2 on all four switches plus the `0x359` commit, an internal consumer the inline census had earlier mistaken for an external one. `jiji P2[8]` latches `0x304` from three branch arms of one cutscene (each `4C CD` → `Set` → `JmpRel` to the shared tail; bodies `+0x912`/`+0xCD6`/..). Anchor `chapter2_ropeway_jiji_gate_families`.
+- **`ropeway` / `ropeway2` / `jiji`** — the first spokes the capture corpus walked organically, so their play order is confirmed. `ropeway2` hosts a four-bit switch puzzle (`0x3FF`–`0x402`); its payoff records `P2[31..=34]` are gated via C2 on all four switches plus the `0x359` commit, an internal consumer the inline census had earlier mistaken for an external one. `jiji P2[8]` latches `0x304` from three branch arms of one cutscene (each `4C CD` → `Set` → `JmpRel` to the shared tail; bodies `+0x912`/`+0xCD6`/..). Anchor `chapter2_ropeway_jiji_gate_families`.
 - **`retona`** — its own five-step ladder `0x353` → `0x354`/`0x355` → `0x356` → `0x357`: `P2[8..14]` gate on `0x353`/`0x354`/`0x356`, `P2[15]` chains C2=`0x354`/C1=`0x355`, `P2[17]` (C1=`0x357`, C2=`0x356`) is the pre-beat rendition and `P2[18]` (C2=`0x356`) the beat that SETs `0x357` (body `+0x5EF`, after the `4C 73` tile run + BGM cue).
   The entry script `P1[0]` carries a normalization backstop (`Test 0x357` → skip; `Test 0x3AD` → `Set 0x357` at `+0xF4`; `0x3AD` is also the C2 of `map02 P2[10]`, the overworld mirror `0x357` retires). **`0x357` is the Jeremi-arc cross-scene gate** — clean reads in `retock`/`retockin`/`map02`/`geremi`/`edretoin` — so the `0x357` half of retock's `0x357 → 0x502` chain is *retona's* output, not retock-internal. `P2[10]` separately latches `0x354` (`+0x673`), read by `rugi`.
 - **`dohaty` / `retock` / `retockin` / `stone`** — `dohaty` opens with a six-record `0xF` first-visit group; `retock`'s progression depends cross-scene on `balden`'s `0x1D5` and gates on retona's `0x357` before its own `0x502`; `retockin` is the `0x7`-gated interior variant, sharing `0x502`/`0x357` with `retock`; `stone` is a single one-shot whose partition-0 walk-on scripts also latch a local band — `P0[2]`→`0x32B`, `P0[3]`→`0x32A`, `P0[4]`→`0x32D`, `P0[5]`→`0x32C` (`+0xB7F`, then `SpawnRecord 0x1E`).
@@ -1680,6 +1680,20 @@ Anchor `chapter3_conkram_gate_families`.
 
 **Cross-cutting patterns.** Two low-numbered flags recur as variant discriminators, gating nearly every record of an alternate or interior carrier: `0x7` (`rayman2`, `retockin`, `town0d`) and `0xF` (`dohaty`, `nilboa`, `nilboa2`) — most likely party- or chapter-state globals that select which rendition of a scene is live. Region hubs hold little or no gate state of their own; the progression logic lives in the spoke dungeons.
 Two traps when reading the census against these families: the story-numbered band `0x522..0x531` is engine scratch (a one-hot exit selector + fade handshake repeated in nearly every scene's entry script — [script-vm.md](../subsystems/script-vm.md) § the `0x527..0x531` scene-transition scratch band), and clean-tagged rows over flags whose operand byte is printable ASCII can be dialogue bigrams (`ta`/`s,`/`Sp`) — the wide reader lists of `0x461` and `0x32C` dissolve entirely under that check ([script-vm.md](../subsystems/script-vm.md) § ASCII dialogue aliases).
+The poll corpus also pins the `0x7` discriminator's own SET: it latches inside the opening-commit beat (the opdeene→town01 handoff of a fresh new game, alongside `549`/`0x226` — `captures/state_poll/2026-07-29T20-20-05Z`), so the rendition selection is armed from the start of play, not by a mid-game chapter transition.
+
+**Play-order captures (poll-tier).** A poll-tier playthrough corpus (`captures/state_poll/2026-07-29T20-20-05Z` / `2026-07-29T22-21-04Z` / `2026-07-29T22-53-56Z`, mined via `analyze_state_poll.py --only flags`) confirms the live SET order for families previously proven as structure only. One screening rule applies throughout: a save-state load emits a sub-bulk flag delta the beat filter does not catch — its signature is a mode churn plus `flagclr` rows plus a full inventory re-key at one tick, with the destination scene registering ~43 ticks later — and every burst carrying that signature is excluded below.
+
+- **`retona`** — `0x354` @(67,80) → `0x355` @(69,78) → `0x356` @(68,80) → `0x3AD` @(66,79); `0x357` then latches during the *next* scene entry (mode-2 transition frame after an overworld round-trip) — the `P1[0]` backstop converting `0x3AD`, exactly as pinned — followed by `0x367` @(67,78). (`0x353` was already latched in the session's starting state.)
+- **`dohaty`** — one straight corridor walk: `0x343`+`0x63D` @(23,42) → `0x344` @(23,50) → `0x345` @(23,53), leads `0x39F`/`0x65A` interleaved; the `P2[10]` `0x344` one-shot and the `0x63D` pair both fire live. The walk's last beat @(23,56) latches `0x1D4` — a flag in `balden P2[0]`'s C1 list, a cross-scene edge captured live.
+- **`taiku`** — `0x517` @(54,17) → `0x519` @(54,7) → `0x38F` @(54,40) → the `P2[16]` pair `0x380`+`0x382` @(16,28), one beat one tick. The other self-latch pair `0x390` did not fire on this walk — branch/optional content, still unconfirmed.
+- **`kor5`** — the chain head in order: `0x43A` @(32,92) → `0x436` @(32,40). The `0x6C4` tail appears only inside a load delta, so the last step is not organically captured.
+- **`korb3`** — `0x41D` @(36,21) (its requires-all C2 includes kor5's `0x436`, satisfied organically beforehand) → `0x41E` @(36,23) → `0x41F` @(37,24). The collection group plays backwards from its gloss on this walk: `0x403` latches on the `map03` overworld at the castle-approach node (72,41) *before* any collection flag, and all nine C2 flags (`0x43E..=0x444`, `0x459`, `0x45C`) then mint together in a single korb3 arrival burst (BGM stop → nine sets → new BGM, no load signature) — the group's records were C1-retired before ever spawning, so the "all done" latch is armed first here, not accumulated.
+- **`map03` hub** — the `P2[15]` `0x378` latch fires live @(93,69).
+- **Sebucus spine** — teien `0x1C8` @(41,45) → `0x1C9` @(44,43) → `0x332` @(44,47) → tower `0x1C7` @(13,69) → geremi `0x1BF` @(34,117): the spine the disc oracles proved now has a live capture. `tunnelc`'s `P2[6]` `0x34A` fires @(23,45); its `P1[4]` `0x360`/`0x362` did not fire (branch arms). balden's reached-flag `0x1D5` latches at the tunnelc exit tile (60,16); its `0x5B3` self-latch did not fire on this walk.
+- **Rim Elm opening** — the `549` latch has a live organic SET at the opening commit, with `0x226` in the same beat.
+
+Regions walked in the corpus **without** an organic family SET stay play-order-unconfirmed: `retock`/`retockin` (entered with `0x357` already latched; `0x502` never fired), `doman` (only the unpinned lead `0x379` fired; `0x3FB` did not), `nilboa`/`nilboa2` and `son` (entered mid-arc from loaded states; the only nilboa flag burst is a load frame).
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a one-shot opening face-frame stamp, not a menu writer
 
@@ -2198,7 +2212,7 @@ So the blocker (the per-cue enable source) dissolves: there is nothing to trace.
 | New-Game opening chain + narration roller | resolved (chain + caption + roller + prologue gold grade; far-geometry residual resolved-negative) | `capture` + `disassembly` | [details ↓](#new-game-opening-chain--narration-roller) |
 | Overlay-loader index off-by-2 - remaining ripple | resolved (slot A reconciled; slot-B per-spell identity capture-pinned) | `capture` + `disassembly` | [details ↓](#overlay-loader-index-off-by-2---remaining-ripple) |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved for every entry | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
-| PROT 0968 - what it is, who loads it, and how big it really is | resolved (residency capture still owed - on the open page) | `disassembly` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
+| PROT 0968 - what it is, who loads it, and how big it really is | resolved - identity and extent by disassembly, residency by capture | `capture` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
 | `0x80010390` - the SCUS word that looked like a lead on 0968 | resolved: it is the slot-B overlay destination pointer, shared by every slot-B entry | `disassembly` | [details ↓](#0x80010390-is-the-slot-b-overlay-destination-pointer) |
 
 ### `_DAT_8007B98F` is byte +3 of the debug-mode word `_DAT_8007B98C`
@@ -2519,7 +2533,7 @@ constant 0. Ports: `engine-core::muscle_dome`
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity
 
-*Status:* resolved for every entry except **0968**, whose identity hunt stays on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#title--boot--overlays)
+*Status:* resolved for every entry, **0968** included - its residency capture is the [section below](#prot-0968---the-cort-battle-stage-overlay)
 
 The slot-B buffer (link base `0x801F69D8`) timeshares the `0900..0969` blobs; static
 extraction at the link base is the clean path, each base cross-checked by in-file
@@ -2560,7 +2574,7 @@ nothing here. The full accounting:
   [band's own settled row](#slot-b-capture-module-band-09350966-per-entry-identity).
 - **0967** = the battle sparring-tutorial overlay (capture-pinned, s5 needle-sweep);
   battle-stage id `1`.
-- **0968** = the **Cort battle's stage overlay**, battle-stage id `2` -
+- **0968** = the **evolved-Cort battle's stage overlay**, battle-stage id `2` -
   [details ↓](#prot-0968---the-cort-battle-stage-overlay).
 - **0969** = the STR-path table the STR-mode init pages
   (`FUN_8003EC70(0x4A)`; [`boot.md`](../subsystems/boot.md)). An overlay-resident
@@ -2604,8 +2618,8 @@ base, a reference to that base is a reference to the slot, not to a tenant.**
 
 ### PROT 0968 - the Cort battle stage overlay
 
-*Status:* resolved except for a residency capture, which stays on
-[`open-rev-eng-threads.md`](open-rev-eng-threads.md#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry)
+*Status:* resolved, residency capture included - grade `capture` on the
+residency leg, `disassembly` on the loader chain and extent
 
 **Why the callsite hunt kept failing.** The search was for loader param `0x49`
 as a *constant*, and no constant produces it. Stage overlays are paged by a
@@ -2625,12 +2639,43 @@ addiu v0, zero, 2       ; delay slot
 sb    v0, -0x49b6(at)   ; *(u8 *)0x8007B64A = 2 - the battle-stage id
 ```
 
-Formation id `0xB5` is monster-archive id **181 = Cort**, read straight off
-PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param `0x49` →
-extraction entry **968**, and the Cort fight is its only gate. The same byte
-against the same constant is what pages **0969** mid-battle when a Cort form's
-HP reaches zero, which is the corroboration: one boss, two modules, one
-formation-id test each.
+Formation id `0xB5` is monster-archive id **181 = Cort's evolved second form**
+(HP 65535; the first-form fight is a separate formation whose head is `0xB4`,
+id 180, HP 50000 - both slots carry the display name "Cort"), read straight
+off PROT 867 (`asset monster-archive --id 181`). So stage id `2` → param
+`0x49` → extraction entry **968**, and the evolved-form Cort fight is its
+only gate. The same byte against the same constant is what pages **0969**
+mid-battle when a Cort form's HP reaches zero, which is the corroboration:
+one boss, two modules, one formation-id test each.
+
+**Residency is capture-confirmed.** The
+`cort_evolved_battle_first_menu` PCSX-Redux state (evolved-Cort battle,
+scene `jouine`, first command-input screen, before any cast; fingerprint in
+[`scenarios.toml`](../../scripts/scenarios.toml)) shows the closing pair
+exactly ([`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py)):
+the loader-B current-id tracker `0x8007BC4C` reads **`0x49`** and entry 968
+is **100% byte-resident** at the slot-B base `0x801F69D8` over its own
+`0xA28` extent, with the formation head `*(u8 *)0x8007BD0C = 0xB5` - the
+same observation pair that pinned 0967 for the Tetsu tutorial. The
+field-side ladder states bracketing the fight
+(`cort_evolved_approach_cutscene`, `cort_evolved_pre_battle`) both show the
+general co-resident library **0900** at 100% with tracker `0x05` instead,
+so the page-in is bracketed to the battle load itself.
+
+**Why the mid-cast library could never show it.** A sweep of the six
+catalogued `cort_*_mid_cast` mednafen states with the same script reads
+`*(u8 *)0x8007BD0C = 0xB4` in the four first-form states and `0xB5` in the
+two evolved-form states - the selector's constant, live, and only in the
+evolved-form phase. In every one, the slot-B page at `0x801F69D8` is 100%
+byte-identical over all `0x1000` bytes to the state's documented cast
+stager (0938 / 0940 / 0944 / 0961 / 0962 / 0966) with the loader-B tracker
+`0x8007BC4C` reading that stager's id, while 0968's own `0xA28` window
+matches at chance level (10.5-12.1%). A cast stager is a full slot-B page:
+the first special attack or summon of the fight evicts the stage overlay,
+which is why the closing capture had to be the battle's first command menu.
+The stage-id byte `_DAT_8007B64A` reads `0x00` in all nine mid-fight /
+bracketing states - the byte is transient around the load, not a persistent
+mid-battle marker.
 
 **Its real extent is 2600 bytes, not 4096.** The entry is 2 sectors, but only
 file `0x00..0xA28` is 0968's own content - a 7-entry dispatch table at offset 0

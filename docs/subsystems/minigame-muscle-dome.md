@@ -514,6 +514,18 @@ banner's speed-line rays (retail draws untextured polys), the SUPER/MIRACLE
 word composition (atlas layout; only the HYPER strip's draw is
 packet-pinned), and the chips' glide-in motion.
 
+The **hub screens** draw on both hosts through the shared
+`engine-ui::other_game_hud` emitters. The browser dome page reaches them via
+`muscle_hub_quads_json` (screen-selected by the page); the native
+play-window bakes the two hub page TIMs per referenced sub-palette into a
+sprite atlas and runs the same builders itself (`window/minigames.rs`,
+`muscle_hub_sprite_draws`): the intro card + ROUND banner over an open leg,
+the INTERVAL heading + six-row score tally between legs, the tally fed the
+same `DomeContest` rows / tally / coin-bank model on both hosts. The retail
+hub controllers' fade / hold counters (`DAT_801D1A80` and siblings) are
+unported; the native host holds each screen at full brightness for a fixed
+frame count, and the browser page drives its own page-side timings.
+
 ## Sound
 
 **Cues.** The match SM fires its UI blips through the one-arg cue funnel

@@ -211,6 +211,44 @@ def test_flag_census_treats_bulkload_note_as_bulk():
     assert [b.idx for b in cen.beats] == [50]  # bulkload rows dropped
 
 
+def test_flag_census_screens_sub_threshold_load_frame_by_signature():
+    # tick 100: a save-state LOAD below the bulk threshold - 3 sets + 2 clears
+    # (5 flips < threshold 20) but the poll re-keys the inventory in the same
+    # tick (12 item rows >= LOAD_ITEM_BURST) -> screened as a load frame.
+    # tick 200: a genuine multi-flag cutscene commit (4 sets, NO item rewrite,
+    # no clears) -> kept as beats.
+    load = [f"100,flagset,{i},1,1,0x03,retona," for i in (0x340, 0x341, 0x567)]
+    load += [f"100,flagclr,{i},0,-1,0x03,retona," for i in (0x35, 0x19D)]
+    load += [f"100,item,{i},1,1,0x03,retona," for i in range(12)]
+    beat = [f"200,flagset,{i},1,1,0x03,vozz," for i in (0x900, 0x901, 0x902, 0x903)]
+    cen = asp.flag_census(_rows(*load, *beat), bulk_threshold=20)
+    assert cen.bulk_ticks == [(100, "retona", 5)]
+    assert cen.load_ticks == [100]
+    assert sorted(b.idx for b in cen.beats) == [0x900, 0x901, 0x902, 0x903]
+    txt = asp.render_report(_rows(*load, *beat), bulk_threshold=20, want={"flags"})
+    assert "[load]" in txt
+
+
+def test_flag_census_honors_loadish_note_without_item_burst():
+    # newer probes tag sub-threshold load frames note=loadish; honored even
+    # with no item rows at that tick. A same-shape untagged tick (set+clr mix,
+    # no item burst) is NOT screened - the signature stays conservative.
+    lines = [
+        "100,flagset,10,1,1,0x03,kor5,loadish",
+        "100,flagclr,11,0,-1,0x03,kor5,loadish",
+        "300,flagset,12,1,1,0x03,kor5,",
+        "300,flagclr,13,0,-1,0x03,kor5,",
+    ]
+    cen = asp.flag_census(_rows(*lines), bulk_threshold=20)
+    assert cen.bulk_ticks == [(100, "kor5", 2)]
+    assert cen.load_ticks == [100]
+    assert [b.idx for b in cen.beats] == [12]  # tick-300 set kept (13 ends clear)
+    js = asp.build_json(_rows(*lines), 20)
+    assert js["flag_bulk_frames"] == [
+        {"tick": 100, "scene": "kor5", "flags": 2, "load_frame": True}
+    ]
+
+
 def test_flag_beat_tile_and_label_annotation():
     # a pos crossing at tick 190 in garmel, then a KNOWN flag (0x142=322) and an
     # unlabeled flag (99) both set at tick 200 -> tile attached to both, label

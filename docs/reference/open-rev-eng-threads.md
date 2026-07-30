@@ -123,7 +123,7 @@ with the instruction evidence cited.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order for the dungeons the capture corpus never walked is still owed | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 
 ### Region story-flag gate families
 
@@ -137,13 +137,26 @@ opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth,
 Conkram, and the `0x7`/`0xF` variant-discriminator pattern) lives on
 [`re-settled-threads.md` § Region story-flag gate families](re-settled-threads.md#region-story-flag-gate-families).
 
-**Residual.** The families for the dungeons the capture corpus never walked
-(`taiku`/`doman`/`rayman`, `station`, `dohaty`/`retock`, the Karisto spokes)
-are proven as structure, but their in-game play order is not yet confirmed
-against a live capture. `ropeway`/`ropeway2`/`jiji` are the only spokes walked
-organically, and Nivora's `0x370` has one live organic SET confirming its
-play order. The generic C1/C2 seeder already drives every family, so one
-dungeon-walk capture per region would close the residual.
+**Residual.** Poll-tier playthrough captures
+(`captures/state_poll/2026-07-29T20-20-05Z` / `2026-07-29T22-21-04Z` /
+`2026-07-29T22-53-56Z`, mined with save-state-load frames screened out by
+their mode-churn + inventory-rewrite signature) confirm live play order for
+`retona`, `dohaty`, `taiku`, the Sebucus teien→tower→geremi spine, `korb3`,
+the `kor5` chain head (`0x43A → 0x436`) and the `map03` hub latch — the
+observed orders live in the settled page's play-order-captures paragraph,
+alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
+`0x370` SET. Still owed:
+
+- **never walked:** `rayman`/`rayman2`, `station`/`station3`, and the Karisto
+  spokes `bubu2` + `deroa`/`chitei2`;
+- **walked without an organic family SET** (the beats were already latched in
+  the loaded state, or the region was entered mid-arc): `retock`/`retockin`
+  (`0x502` never fired; `0x357` pre-latched), `doman` (`0x3FB` did not fire),
+  `nilboa`'s entry family, `son`, and the `kor5` tail `0x6C4`.
+
+The generic C1/C2 seeder already drives every family. One more session from
+an early-enough save (before the retock/doman/nilboa beats) closes the
+walked-but-latched set; the never-walked set needs the walks themselves.
 
 *What this needs is capture time, not a new instrument.*
 [`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
@@ -181,33 +194,18 @@ No open threads. The most recent one - op-`0x35` sub-op `0xA`, the
 
 ## Title / boot / overlays
 
-| Thread | Status | What would close it |
-|---|---|---|
-| PROT 0968 identity - the one unidentified slot-B cluster entry | mostly resolved - it is the Cort battle's stage overlay; only a residency capture is missing | [details ↓](#prot-0968-identity---the-one-unidentified-slot-b-cluster-entry) |
-
-### PROT 0968 identity - the one unidentified slot-B cluster entry
-
-*Status:* mostly resolved. The loader chain, the selector, the module's real
-extent and its call profile are all pinned from the disassembly and the disc
-bytes; what is unconfirmed is a live capture showing it resident. The full
-write-up is on
-[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay).
-
-In short: `formation monster id 0xB5` (archive id 181, **Cort**) sets the
-battle-stage id byte to `2`, and the stage-overlay path loads
-`FUN_8003EC70(stage_id + 0x47)` - loader param `0x49`, extraction entry 968.
-The old "`0x49` appears at no static SCUS callsite" statement was true and
-uninformative: the parameter is **computed**, so no constant-parameter scan
-can ever produce it.
-
-*What would close it:* a save state taken inside the Cort fight showing
-entry 968's bytes resident in the slot-B buffer at `0x801F69D8`, and the
-loader-B current-id tracker `gp+0x934` (`0x8007BC4C`) reading `0x49` - the
-same pair of observations that pinned 0967 for the Tetsu tutorial. Note the
-formation-table watch in
-[`autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
-already logs `DAT_8007BD0C[4]`, so one run through that fight confirms the
-`0xB5` selector and the residency together.
+No open threads. The last one - PROT 0968 identity, the one slot-B cluster
+entry without a residency capture - closed by capture: the
+`cort_evolved_battle_first_menu` PCSX-Redux state (first command menu of the
+evolved-Cort fight, before any cast) shows the loader-B tracker `0x8007BC4C`
+reading `0x49` and entry 968 100% byte-resident at `0x801F69D8` over its own
+`0xA28` extent, with the field-side ladder states bracketing the page-in to
+the battle load. See
+[`re-settled-threads.md` § PROT 0968](re-settled-threads.md#prot-0968---the-cort-battle-stage-overlay);
+the instrument is
+[`check-0968-residency.py`](../../scripts/mednafen/check-0968-residency.py),
+which reads either emulator's states (mednafen via `mednafen-state`,
+PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 ## Adding a thread
 

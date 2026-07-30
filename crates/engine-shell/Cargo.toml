@@ -20,6 +20,7 @@ legaia-engine-core = { path = "../engine-core" }
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-engine-audio = { path = "../engine-audio" }
 legaia-engine-render = { path = "../engine-render" }
+legaia-lzs = { path = "../lzs" }
 legaia-prot = { path = "../prot" }
 legaia-save = { path = "../save" }
 legaia-seq = { path = "../seq" }
@@ -46,9 +47,6 @@ libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
-# tile_board_draw_live decodes each scene's MAN (LZS in the scene bundle) for
-# the op-0x49 sub-5 board census.
-legaia-lzs = { path = "../lzs" }
 legaia-mes = { path = "../mes" }
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.

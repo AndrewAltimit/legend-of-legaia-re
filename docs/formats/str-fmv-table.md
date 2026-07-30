@@ -167,7 +167,13 @@ Which `fmv_id` each scene fires is **inline script data**, not a runtime value: 
 | `0435_uru`     | 7 | `MV5.STR`               | `uru2`    |
 | `0689_jouine`  | 8 | `MV6.STR`               | `town0e`  |
 
-One trigger op per scene; no other scene MAN carries one. `fmv_id 0` (the `MV1.STR` intro) fires from the title/new-game path rather than a scene script. `fmv_id 5` (the fourth `MV3.STR` segment, the "stay in mode 2" slot) appears in no scene MAN partition-1 script; the raw-byte `4C E2` candidate for it inside `taiku`'s uncompressed scene structures is the matching suspect (uncontextualized byte match, kept as a candidate). The earlier reading that the `town0d` / `uru` / `jouine` triggers are vestigial pointers at cut movies is **superseded** - under the correct table stride they play `MV4` / `MV5` / `MV6`.
+One trigger op per scene; no other scene MAN carries one. `fmv_id 0` (the `MV1.STR` intro) fires from the title/new-game path rather than a scene script.
+`fmv_id 5` (the fourth `MV3.STR` segment, the "stay in mode 2" slot) appears in no scene MAN partition-1 script, but its **scene attribution is live-confirmed**:
+a poll-tier playthrough capture observes `taiku` entering StrInit (game mode `0x1A`) with `_DAT_8007BA78 = 5` and, exactly per the slot-5 hand-off, returning to
+mode 2 with **no** scene-name write - play resumes in `taiku` itself. What remains only a byte match is the *carrier*: the raw `4C E2` candidate inside
+`taiku`'s uncompressed scene structures (outside partition 1) is the matching suspect for where the op lives. The same captures also observe the `garmel` → 2
+and `dohaty` → 4 firings at mode `0x1A` with their documented `map01` / `map02` returns. The earlier reading that the `town0d` / `uru` / `jouine` triggers are
+vestigial pointers at cut movies is **superseded** - under the correct table stride they play `MV4` / `MV5` / `MV6`.
 
 ## Rust API
 

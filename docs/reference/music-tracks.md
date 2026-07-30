@@ -96,6 +96,16 @@ this bank + the `sound_data2` banks (+ the `monster_test` dev bank and
 the play-window HUD names the playing track and the asset-viewer `seq`
 command names a bank slot's file.
 
+Poll-tier playthrough captures corroborate the same join **at runtime**, in
+the cases where the scene name itself names the track: the BGM global reads
+`2022` in `doman` (#22 `M21`, "Doctor Doman's laboratory"), `2054` in
+`nilboa` (#54 `M111`, ニルボア/"Nivora"), `2021` in `dolk2` (#21 `M20`,
+"Dolk Castle revived") against `2010` in mist-era `dolk` (#10 `M10`, "mist
+outbreak"), `2063` in `opdeene` (#63 `M118`, opening act 1), and `2038` in
+`taiku` after the Soren-flight FMV hand-off (#38 `M39`). Each live id lands
+on the track whose debug title describes that scene - independent of the
+script census, since these are the played values, not the op operands.
+
 ## Notable entries
 
 - **Borrowed placeholder cues.** `ALNDRA` (#72) is *Alundra*'s Zazzan battle

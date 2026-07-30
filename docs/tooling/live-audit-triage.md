@@ -446,6 +446,38 @@ wiring gaps either.
 
 ## `WIRE` rows: the call site that should exist
 
+**Every row in this section is landed.** The section stays because each row
+records the analysis that shaped its wire - what the call site had to be and
+why the obvious placement was wrong. Where each one lives now:
+
+- `minigame_return_warp` - both halves of the two-part wire exist in
+  `crates/engine-core/src/world/frame_tick.rs`: the Baka tally drains into
+  `World::minigame_winnings` and the warp pair (`arm_minigame_warp` /
+  `minigame_return_warp`) banks it into the casino coin bank on the
+  `enter_baka_fighter` / `exit_baka_fighter` path.
+- `fmv_post_play_handoff` - consumed by `apply_fmv_handoff` in
+  `crates/engine-shell/src/bin/legaia-engine/commands/run.rs`, with the
+  `CardInit` / `ModeZero` arms disclosed as modes the engine does not have.
+- `build_strip` - `build_reel` in `crates/engine-core/src/slot_machine.rs`
+  builds both permuted 20-slot strips per reel in retail's interleaved draw
+  order; `SlotMachine::new` builds all three reels and seeds the display
+  strip from the symbol half.
+- `field_actor_dir_blocked` - the actor arm sits in the per-axis step gate in
+  `crates/engine-core/src/world/field_movement.rs`, covered by the disc-gated
+  collision oracle.
+- `tick_walk_regen` - `World::tick_field_walk_regen` runs it from the field
+  frame tick in `frame_tick.rs`, gated on the retail `0x20` step cost.
+- `advance_battle_mode` - called from the battle loop driver
+  (`crates/engine-core/src/world/battle/loop_driver.rs`).
+- `validate_action` / `item_count_gate` - `WorldActionValidator` in
+  `crates/engine-core/src/world/battle/validator_host.rs` implements
+  `ActionValidatorHost`; `World::action_validity_mask` accumulates the
+  per-slot validity byte and the target pickers read it through
+  `battle_target_rows` in `command_flow.rs`.
+
+The `DELETE` row below is likewise applied: the free `symbol_pad_bit` is gone
+and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance.rs`.
+
 **`minigame_return_warp`** (`80026018`). **This row's original reasoning was wrong and
 is corrected here**, because acting on it as written produces a double credit.
 

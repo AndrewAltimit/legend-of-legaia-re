@@ -498,13 +498,298 @@ impl PlayWindowApp {
 
     /// Per-frame driver for every minigame side-channel this window hosts:
     /// the dance count-in + tutorial + effect spawns, the fishing venue
-    /// actors, the Baka round chrome, and the shared effect pool's ageing.
+    /// actors, the Baka round chrome, the Muscle Dome hub-screen timers, and
+    /// the shared effect pool's ageing.
     pub(super) fn tick_minigame_extras(&mut self) {
         self.tick_dance_countin();
         self.tick_dance_side();
         self.tick_fishing_actors();
         self.tick_baka_chrome();
+        self.tick_muscle_hub();
         self.minigame_fx.tick();
+    }
+
+    /// Advance the Muscle Dome hub-screen timers one frame, off the world's
+    /// own leg / contest edges (so both the pad path and the `M` abort arm
+    /// them):
+    ///
+    /// * a leg opening on a **fresh** contest arms the "Welcome to the
+    ///   Muscle Dome!" intro card, then the ROUND banner;
+    /// * a leg opening mid-ladder arms the ROUND banner alone;
+    /// * a leg closing while its contest is (or just was) open arms the
+    ///   between-legs INTERVAL + score-tally screen.
+    ///
+    /// Retail runs these screens on the hub controllers' own fade / hold
+    /// counters (`DAT_801D1A80` and siblings), which are unported; the host
+    /// holds each screen for a fixed frame count at full brightness instead.
+    pub(super) fn tick_muscle_hub(&mut self) {
+        const INTRO_FRAMES: i32 = 90;
+        const ROUND_BANNER_FRAMES: i32 = 120;
+        const INTERVAL_FRAMES: i32 = 240;
+        let world = &self.session.host.world;
+        let leg_open = world.muscle_dome.is_some();
+        let contest_open = world.muscle_contest.is_some();
+        if leg_open && !self.muscle_prev_leg_open {
+            let round = world
+                .muscle_contest
+                .as_ref()
+                .map_or(1, |c| c.round() as i32 + 1);
+            self.muscle_round_banner = Some((round, ROUND_BANNER_FRAMES));
+            if contest_open && !self.muscle_prev_contest_open {
+                self.muscle_intro_timer = INTRO_FRAMES;
+            }
+            self.muscle_interval_timer = 0;
+        }
+        if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
+            self.muscle_interval_timer = INTERVAL_FRAMES;
+            self.muscle_intro_timer = 0;
+            self.muscle_round_banner = None;
+        }
+        if self.muscle_intro_timer > 0 {
+            self.muscle_intro_timer -= 1;
+        } else if let Some((_, t)) = self.muscle_round_banner.as_mut() {
+            *t -= 1;
+            if *t <= 0 {
+                self.muscle_round_banner = None;
+            }
+        }
+        if self.muscle_interval_timer > 0 {
+            self.muscle_interval_timer -= 1;
+        }
+        self.muscle_prev_leg_open = leg_open;
+        self.muscle_prev_contest_open = contest_open;
+    }
+
+    /// Load the Muscle Dome hub-screen assets once: the two hub page TIMs
+    /// (the LZS payload of the dome's own data file, extraction 1220 /
+    /// `other6.lzs` slot 0 - the pages retail uploads at VRAM
+    /// (320,0)/(320,256)) baked to RGBA per referenced 16-colour sub-palette
+    /// and stacked into one sprite atlas, plus the PROT 0977 sprite
+    /// descriptor table the shared emitters place every hub screen from.
+    /// No-op when already loaded; logs and leaves `muscle_hub` empty when the
+    /// disc or renderer is absent.
+    pub(super) fn load_muscle_hub_assets(&mut self) {
+        use legaia_engine_render::other_game_hud as hud;
+        if self.muscle_hub.is_some() {
+            return;
+        }
+        /// PROT entry (extraction space) of the dome data container:
+        /// LZS section 0 carries the two hub-page TIMs back to back.
+        const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+        let Some(renderer) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let container = match self
+            .session
+            .host
+            .index
+            .entry_bytes_extended(HUB_CONTAINER_PROT_INDEX)
+        {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle hub: PROT {HUB_CONTAINER_PROT_INDEX} read failed: {e:#}");
+                return;
+            }
+        };
+        let Some((tim0, tim1)) =
+            legaia_lzs::decompress_container(&container)
+                .ok()
+                .and_then(|sections| {
+                    // Section 0 = `[12-byte header][TIM][TIM]`.
+                    let blob = sections.into_iter().next()?;
+                    let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
+                    let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
+                    Some((t0, t1))
+                })
+        else {
+            log::warn!("muscle hub: page TIMs did not decode from the dome container");
+            return;
+        };
+        let arena_raw =
+            match self.session.host.index.entry_bytes_extended(
+                legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
+            ) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("muscle hub: PROT 0977 read failed: {e:#}");
+                    return;
+                }
+            };
+        let table = hud::parse_sprite_table(&arena_raw);
+        if table.is_empty() {
+            log::warn!("muscle hub: PROT 0977 sprite table did not parse");
+            return;
+        }
+        // Every (page, sub-palette) pair the hub draws can reach: each
+        // record's own CLUT, its variant-2 sibling (`clut + 1` - the emitter
+        // bump), and the digit record's four tally palettes.
+        let mut wanted = std::collections::BTreeSet::new();
+        for (i, rec) in table.iter().enumerate() {
+            let sheet = u8::from(rec.tpage & 0x10 != 0);
+            let pal = (rec.clut & 0x3F) as u8;
+            wanted.insert((sheet, pal));
+            wanted.insert((sheet, pal + 1));
+            if i == hud::DIGIT_SPRITE_INDEX {
+                for p in 0..4u8 {
+                    wanted.insert((sheet, pal + p));
+                }
+            }
+        }
+        let tims = [&tim0, &tim1];
+        let atlas_w = tims.iter().map(|t| t.pixel_width()).max().unwrap_or(0) as u32;
+        if atlas_w == 0 {
+            return;
+        }
+        let mut blocks: Vec<(u8, u8, u32)> = Vec::new();
+        let mut rgba: Vec<u8> = Vec::new();
+        let mut atlas_h = 0u32;
+        for (sheet, pal) in wanted {
+            let tim = tims[sheet as usize];
+            // A palette past the sheet's CLUT bank simply isn't baked; the
+            // draw that would sample it is skipped at build time.
+            let Ok(px) = legaia_tim::decode_rgba8(tim, pal as usize) else {
+                continue;
+            };
+            let (tw, th) = (tim.pixel_width() as u32, tim.pixel_height() as u32);
+            for row in 0..th as usize {
+                let src = &px[row * tw as usize * 4..(row + 1) * tw as usize * 4];
+                rgba.extend_from_slice(src);
+                rgba.resize(rgba.len() + ((atlas_w - tw) * 4) as usize, 0);
+            }
+            blocks.push((sheet, pal, atlas_h));
+            atlas_h += th;
+        }
+        if blocks.is_empty() {
+            log::warn!("muscle hub: no page/palette block decoded");
+            return;
+        }
+        match renderer.upload_sprite_atlas(&rgba, atlas_w, atlas_h) {
+            Ok(atlas) => {
+                log::info!(
+                    "muscle hub: atlas uploaded ({atlas_w}x{atlas_h}, {} page/palette blocks)",
+                    blocks.len()
+                );
+                self.muscle_hub = Some(MuscleHubAssets {
+                    blocks,
+                    table,
+                    atlas,
+                });
+            }
+            Err(e) => log::warn!("muscle hub: atlas upload skipped: {e:#}"),
+        }
+    }
+
+    /// The Muscle Dome hub screens as retail-placed sprite draws, through the
+    /// shared `engine-ui` emitters both hosts draw with
+    /// ([`legaia_engine_render::other_game_hud::hub_screen_quads`] /
+    /// [`legaia_engine_render::other_game_hud::score_tally_quads`] - the browser
+    /// dome page reaches the same functions via
+    /// `minigames_muscle::muscle_hub_quads_json`): the intro card and ROUND
+    /// banner over an open leg, the INTERVAL heading + six-row score tally
+    /// between legs. Every quad's extent and screen seat come out of the
+    /// PROT 0977 descriptor table and recovered draw lists; the host places
+    /// nothing itself.
+    ///
+    /// The tally's six values are the contest's own rows - the four
+    /// `LegScoreRows` lanes, then the running tally and the coin bank they
+    /// settle into - the same model row set the browser page feeds the same
+    /// builder.
+    ///
+    /// Two disclosed stand-ins: the packet's vertical two-stop colour
+    /// gradient flattens to the stops' mean (the sprite pipeline is
+    /// one-colour), and semi-transparent packets draw with ordinary alpha
+    /// blending.
+    pub(super) fn muscle_hub_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_engine_render::other_game_hud as hud;
+        let Some(assets) = self.muscle_hub.as_ref() else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        let in_dome = world.mode == SceneMode::MuscleDome;
+        // The retail emitters mutate the shared table (variant write-back),
+        // so run them over a per-frame copy of the pristine parse.
+        let mut table = assets.table.clone();
+        // Full record brightness: retail ramps these screens on the hub
+        // controllers' unported fade counters; the host holds each screen at
+        // full brightness for a fixed frame count instead (`tick_muscle_hub`).
+        const FULL: i32 = 0x100;
+        let mut quads: Vec<hud::HudQuad> = Vec::new();
+        if in_dome {
+            if self.muscle_intro_timer > 0 {
+                quads.extend(hud::hub_screen_quads(&mut table, hud::HUB_INTRO_CARD, FULL));
+            } else if let Some((round, _)) = self.muscle_round_banner {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    &hud::round_banner_draws(round),
+                    FULL,
+                ));
+            }
+        } else if self.muscle_interval_timer > 0 {
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                hud::HUB_INTERVAL_HEADING,
+                FULL,
+            ));
+            // With the contest already settled the rows read zero and the
+            // tally screen shows the coin bank alone - the browser page's
+            // no-run arm does exactly the same.
+            let (rows, tally) = world
+                .muscle_contest
+                .as_ref()
+                .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
+            quads.extend(hud::score_tally_quads(
+                &mut table,
+                [
+                    rows.round_lane,
+                    rows.turns_lane,
+                    rows.outcome_lane,
+                    rows.score_cell,
+                    tally,
+                    world.casino_coins as i32,
+                ],
+                [FULL; hud::SCORE_TALLY_ROWS],
+            ));
+        }
+        if quads.is_empty() {
+            return Vec::new();
+        }
+        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        for q in &quads {
+            let sheet = u8::from(q.tpage & 0x10 != 0);
+            let pal = (q.clut & 0x3F) as u8;
+            let Some(&(_, _, block_y)) = assets
+                .blocks
+                .iter()
+                .find(|(s, p, _)| *s == sheet && *p == pal)
+            else {
+                continue;
+            };
+            let dw = (q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1).max(0) as u32;
+            let dh = (q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1).max(0) as u32;
+            let sw = (q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1).max(0) as u32;
+            let sh = (q.uv[2].1 as i32 - q.uv[0].1 as i32 + 1).max(0) as u32;
+            if dw == 0 || dh == 0 || sw == 0 || sh == 0 {
+                continue;
+            }
+            // PSX texture modulation is `texel * c / 128`; the per-vertex
+            // colours are a vertical two-stop gradient, flattened here to
+            // the stops' mean.
+            let tint = |k: usize| (q.rgb[0][k] as f32 + q.rgb[2][k] as f32) / 2.0 / 128.0;
+            out.push(legaia_engine_render::SpriteDraw {
+                dst: (q.xy[0].0 as i32, q.xy[0].1 as i32, dw, dh),
+                src: (q.uv[0].0 as u32, block_y + q.uv[0].1 as u32, sw, sh),
+                color: [tint(0), tint(1), tint(2), 1.0],
+            });
+        }
+        // The quads sit in the retail 320x240 frame; map them through the
+        // same stage transform every minigame chrome layer uses.
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
+        out
     }
 
     /// Load the fishing overlay (PROT 0972), decode its per-species table, and
@@ -955,6 +1240,9 @@ impl PlayWindowApp {
             ),
         }
         self.session.host.world.enter_muscle_dome(session);
+        // The hub-screen art (intro card / ROUND banner / INTERVAL + tally),
+        // drawn through the shared `other_game_hud` emitters.
+        self.load_muscle_hub_assets();
         // The arena loads no track of its own - it reuses the battle engine,
         // so it plays a battle theme. Use the standard random-battle theme
         // (global BGM 2026 = music_01 slot 26, M26B1); see

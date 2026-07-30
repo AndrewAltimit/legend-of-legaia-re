@@ -142,16 +142,17 @@ is unreferenced, which is what an entered-by-exception routine looks like.
 #### What is left of the `SCUS_942.54` code gap is not code
 
 With the payload blocks dumped, the executable's byte-denominated
-[code gap](../../tooling/disc-coverage.md) is four windows totalling 40 bytes,
-and none of them is an un-analysed routine. Each is short enough to fall under
-the gap classifier's tiny-gap rule, which calls a gap of fewer than eight words
-code **without reading the bytes** - so they are `code` by the instrument's
-default, not by evidence.
+[code gap](../../tooling/disc-coverage.md) leaves four windows totalling 40
+bytes that fall under the gap classifier's tiny-gap rule (a gap of fewer than
+eight words counts as code without a statistical test), and none of them is an
+un-analysed routine. The classifier recognises both shapes by their bytes and
+reports them as `constant_table` / `psyq_lib_stamp` rather than `code`, which
+is what empties the bytes-derived dump worklist for this image.
 
 | Window | What the words are |
 |---|---|
-| `0x80026CD4`..`0x80026CE4` | Four identical `0x00200000` words - the `crt0` stack-pointer table [described above](#the-entry-stub-80026c28). The stub reads `0x80026CD8` and ORs in `0x80000000`. |
-| `0x8005AFA8`, `0x8005DB94`, `0x80060498` | Two-word data records the linker left between functions. Word 0 decodes as a `jal` outside the 2 MB RAM window or a branch past the image, and word 1 as an invalid `SPECIAL` encoding (a `div` with a non-zero `rd`). The same two-word shape occurs seven more times inside the data segment, interleaved with the hardware-register address tables at `0x80078D04`..`0x8007B310`. |
+| `0x80026CD4`..`0x80026CE4` | Four identical `0x00200000` words (the 2 MB RAM size) - the `crt0` stack-pointer table [described above](#the-entry-stub-80026c28). The stub reads `0x80026CD8` and ORs in `0x80000000`. Shape `constant_table`. |
+| `0x8005AFA8`, `0x8005DB94`, `0x80060498` | **PSY-Q librarian version stamps**: 8-byte records opening with ASCII `Ps`, then two id bytes (module index + a byte shared per library), then one word shared per library - `50 73 09 0C  DA AE 37 00` at `0x8005AFA8`. Read as instructions, word 0 decodes as a `jal` outside the 2 MB RAM window or a branch past the image and word 1 as an invalid `SPECIAL` encoding, which is how they surfaced as a fake "code" gap. Ten word-aligned instances exist in the image: these three between link modules' function bodies, seven more inside the data segment interleaved with the hardware-register address tables at `0x80078D04`..`0x8007B310`. Shape `psyq_lib_stamp`. |
 
 Nothing closes these by dumping. Creating a function over either shape would
 assert an entry point the bytes do not support, which is the failure the

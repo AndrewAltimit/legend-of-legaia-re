@@ -408,7 +408,9 @@ typo'd symbol fails CI rather than the probe run.
   (`src/core/arguments.cc`: the flag's value sets both `m_portable` and
   `m_portablePath`). So `run_probe.sh --fast` (and `run_probe.ps1 -Fast`) now
   default to **isolation**: they write a minimal fast profile - `Dynarec` on,
-  `Debug` off, ship-default renderer, `Scaler` 100, auto-update off; every
+  `Debug` off, ship-default renderer, `Scaler` 100 (`LEGAIA_SCALER=N` overrides
+  the speed-scaler percent - 300 = 3x for a human-navigated poll-tier cruise;
+  BP-tier probes should stay at 100), auto-update off; every
   unset key falls back to the emulator's compile-time ship default
   (`src/core/psxemulator.h`), so nothing drifts from a volunteer's oddities -
   into `LEGAIA_PCSX_PROFILE_DIR` (default `captures/.pcsx-profile`) and launch

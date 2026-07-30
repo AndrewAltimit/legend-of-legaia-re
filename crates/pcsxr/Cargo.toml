@@ -8,8 +8,13 @@ license.workspace = true
 name = "legaia_pcsxr"
 path = "src/lib.rs"
 
+[[bin]]
+name = "pcsxr-state"
+path = "src/bin/pcsxr-state.rs"
+
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 flate2.workspace = true
 legaia-mednafen = { path = "../mednafen" }
 

@@ -1408,6 +1408,11 @@ impl PlayWindowApp {
             let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
             let title_draw_vec = self.title_screen_sprite_draws(w, h);
             let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
+            // Muscle Dome hub screens (intro card / ROUND banner / INTERVAL +
+            // score tally), placed by the shared `other_game_hud` emitters.
+            // Rides sprite slot 1: the boot-UI overlays that own it are all
+            // inactive while a dome leg or its between-legs beat is up.
+            let muscle_hub_draw_vec = self.muscle_hub_sprite_draws(w, h);
             // Slot-2 chrome samples the resident system-UI atlas.
             // Save-select pills/panel and the field-menu window
             // frame are mutually-exclusive boot states, so both
@@ -1437,6 +1442,10 @@ impl PlayWindowApp {
             let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
+            });
+            let muscle_hub_overlay = self.muscle_hub.as_ref().map(|m| TextOverlay {
+                atlas: &m.atlas,
+                draws: &muscle_hub_draw_vec,
             });
             // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
             // (`World::cutscene_caption`) blitted centered and faded
@@ -1502,6 +1511,8 @@ impl PlayWindowApp {
                 logo_overlay.as_ref()
             } else if !title_draw_vec.is_empty() {
                 title_overlay.as_ref()
+            } else if !muscle_hub_draw_vec.is_empty() {
+                muscle_hub_overlay.as_ref()
             } else {
                 None
             };

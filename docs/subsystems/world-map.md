@@ -1211,20 +1211,68 @@ screen = H * (R * (S*(v - focus)) + TR) / Ze     R = Rx(pitch) * Ry(azimuth)
   (the same negated-focus convention the field follow-cam uses), focus Y
   (`_DAT_8008911C`) = 0.
 - `TR` from the `_DAT_800840B8` trio: `(0, 536, 9139)` in the Sebucus
-  capture, `(0, 406, 11041)` in the Karisto capture - two pinned zoom
-  states along one axis (closer = shallower pitch).
+  capture, `(0, 406, 11041)` in the Karisto capture. The trajectory
+  captures below show these are each kingdom's *default walk pose*, not
+  two ends of one zoom axis.
 
 `play-window`'s walk view implements exactly this composition
 (`psx_camera_mvp` + the 6× scale + the player-focus translation), sliding
-between the two pinned zoom anchors on the controller's zoom input. The
-top-view debug camera keeps its synthetic framing.
+between the two pinned anchors on the controller's zoom input - an engine
+interpretation the trajectory captures do not reproduce (retail holds one
+of those poses per kingdom and eases per region; see below). The top-view
+debug camera keeps its synthetic framing.
 
-The retail pitch/TR path *between* the two anchors is not yet pinned. The
-community poll probe streams the full tuple on the overworld (`wmcam` rows:
-rotation trio + H + the TR low halves + view mode, on change;
-[pcsx-redux-automation.md](../tooling/pcsx-redux-automation.md) fast
-whole-playthrough capture), so any captured zoom/rotate session yields the
-trajectory.
+#### Captured walk-camera trajectories
+
+The community poll probe streams the full tuple on the overworld (`wmcam`
+rows: rotation trio + H + the TR low halves, on change - `diff_wmcam` in
+`scripts/pcsx-redux/autorun_state_poll.lua`;
+[pcsx-redux-automation.md](../tooling/pcsx-redux-automation.md)). Three
+whole-playthrough runs (`captures/state_poll/2026-07-29T20-20-05Z`,
+`…T22-21-04Z`, `…T22-53-56Z` - 1,581 rows spanning all three kingdom
+overworlds) pin the trajectories. This is trajectory data, not a mechanism
+pin: the writer routine and its easing curve still need a code trace.
+Observed regimes (roll is `0` in every captured row):
+
+- **Steady walk** (`H = 368`, yaw `0`): the camera holds a per-kingdom,
+  per-region pose (pitch + boom TR). Hold samples:
+
+  | Scene | pitch | ty | tz | rows |
+  |---|---|---|---|---|
+  | `map01` | 370 | 159..797 | two bands, ≈7557..7600 and ≈8500..8900 | 501 |
+  | `map01` | 550 | 360..775 | 9013..9188 | 83 |
+  | `map02` | 360 | 334..536 | 9097..9139 | 153 |
+  | `map03` | 386 / 428 / 447 | 301..819 | 11009..11150 | 3 |
+
+  The Sebucus RAM anchor sits exactly inside the `map02` 360 band; the
+  Karisto anchor (pitch 476, tz 11041) shares the `map03` tz band with
+  pitch slightly above the walked samples. At a held pitch, `ty` tracks
+  the terrain under the focus and `tz` is region-dependent - `tz` is
+  **not** a function of pitch, so the walk camera is not a 1-D zoom path.
+- **Pose eases**: crossing a region boundary runs a smooth ease
+  (~150 ticks, decelerating tail) between poses - e.g. `map01`
+  `(370, ty 584, tz 8835)` → `(550, 482, 9071)`. Two eases captured far
+  apart replay byte-identical TR trajectories, so the path is
+  position-keyed. One 370→550 ease follows a TRIANGLE press within 10
+  ticks, but a mirror 550→370 ease runs with no pad input at all - the
+  captures do not establish a player zoom input. Longer drifts hold pitch
+  while TR slides across a walked leg (`map02` pitch 300: ty 2342→1762,
+  tz 8033→11713; pitch 400: tz 9064→11624).
+- **Entry swoop**: (re)entering a kingdom overworld animates `H` itself
+  (336..892 observed against the walk value 368), with yaw sweeping
+  (-5467..3811 - the accumulator runs past ±4096, i.e. multi-turn) and
+  pitch transiently negative (-287). First arrivals also run survey pans
+  at `H = 368` outside the walk band (`map01` pitch up to 700 with ty
+  down to -2470; the `map03` arrival sweeps yaw -540..180).
+- **Straight-down far view** (`map03`, between the taiku and son story
+  beats): pitch 1024 (straight down), `tx = ty = 0`, tz easing
+  32767→21854 with `H` animating 760→543, then a held
+  `(H 768, yaw 1540, pitch 240, tz 27424)` pose - a scripted
+  flight/cinematic regime, mechanism unattributed.
+
+Yaw and roll stay `0` in every steady-walk row - retail never yaws or
+rolls the walk camera; non-zero yaw appears only in the entry/cinematic
+regimes above.
 
 ### Boot-path seeding
 

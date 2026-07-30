@@ -308,6 +308,25 @@ struct SaveMenuAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// Muscle Dome hub-screen assets: the two hub page TIMs (extraction 1220,
+/// `other6.lzs` slot 0 - the pages retail uploads at VRAM (320,0)/(320,256))
+/// baked per referenced 16-colour sub-palette into one GPU atlas, plus the
+/// PROT 0977 sprite descriptor table the shared quad emitters
+/// (`legaia_engine_render::other_game_hud`) place every screen from. Loaded on
+/// the first Muscle Dome entry; `None` without a disc.
+struct MuscleHubAssets {
+    /// `(sheet, sub-palette, atlas y offset)` of each baked page copy.
+    /// `sheet` 0/1 = the (320,0)/(320,256) hub page (tpage bit 4); the
+    /// sub-palette index is the packet CLUT's `& 0x3F` field, exactly the
+    /// mapping the browser dome page uses.
+    blocks: Vec<(u8, u8, u32)>,
+    /// Pristine parsed sprite table, cloned per frame - the retail emitters
+    /// write their variant back into the shared records.
+    table: Vec<legaia_engine_render::other_game_hud::HudSprite>,
+    /// GPU-resident atlas (vertically stacked `(sheet, sub-palette)` blocks).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// One placed NPC's skinned mesh halves for one clip frame: the textured
 /// (VRAM-sampled) half and the untextured (`F*`/`G*` vertex-colour) half.
 /// Either can be absent when the source TMD carries no prims of that class.
@@ -671,6 +690,22 @@ struct PlayWindowApp {
     /// `glyph_u`, plus the record's `v/w/h`) when the draw pages the glyph
     /// strip and the widget table is resident.
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
+    /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
+    muscle_hub: Option<MuscleHubAssets>,
+    /// Frames left on the "Welcome to the Muscle Dome!" intro card, armed
+    /// when a leg opens on a freshly staged contest.
+    muscle_intro_timer: i32,
+    /// The ROUND banner: `(displayed round number, frames left)`, armed on
+    /// every leg entry (after the intro card on a fresh contest).
+    muscle_round_banner: Option<(i32, i32)>,
+    /// Frames left on the between-legs INTERVAL + score-tally screen, armed
+    /// when a leg closes while its contest is (or just was) open.
+    muscle_interval_timer: i32,
+    /// Last frame's `world.muscle_dome.is_some()`, for the leg edges above.
+    muscle_prev_leg_open: bool,
+    /// Last frame's `world.muscle_contest.is_some()`, distinguishing a fresh
+    /// contest (intro card) from a mid-ladder re-entry (ROUND banner only).
+    muscle_prev_contest_open: bool,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,

@@ -138,11 +138,22 @@ handler's HP-heal arms compare a per-spell threshold against the caster's
 `+0x5D0` accumulator, bump the level byte at record `+0x161 + index`, and call
 `FUN_80035C00(slot, index)` - the setter for exactly that pair.
 
-The blocking capability is therefore **spell level-up on cast**, not a screen.
-The engine already models per-spell levels (`legaia_save::SpellList::levels`),
-but no cast path raises one, so the `(caster slot, list index)` pair the window
-announces is never produced and the prompt has nothing to substitute. Close it
-by growing the cast path, not by adding a draw call.
+This waiver used to say "no cast path raises a spell level". That is no longer
+true, and the half that closed matters: the **battle** summon cast levels
+spells now (`World::accrue_summon_spell_xp`, the `FUN_801ddb30` XP tail +
+`FUN_801e70bc` threshold check), produces exactly the `(caster slot, spell,
+level)` triple (`World::magic_level_ups`), and its retail presentation is the
+shared banner channel (UI element `0x65`, `magic_level_increased_message`) -
+which both hosts already draw. That event is not this window's.
+
+What still blocks window 7 is the **menu-cast** half it belongs to: the two
+sub-screens above are pause-menu screens, and their leveling mechanism is the
+`+0x5D0` accumulator the effect-apply handler `FUN_800402F4` tests - a
+different counter from the battle XP array. The engine's menu cast
+(`field_menu_dispatch::apply_spell_outcome`) applies MP debit + heal only; it
+neither accrues that accumulator nor levels, so the menu beat that opens this
+window never occurs on either host. Close it by porting the menu-cast
+leveling arm, not by adding a draw call.
 """
 
 # `amount_prompt_draws_for` (window 31, the Point Card toast) and
@@ -220,11 +231,16 @@ root reaches it from **cancel**, under one condition only - the entry-context
 pointer `_DAT_8007B450` non-null with first byte `0x0D`
 (`0x801d6cf8..0x801d6d18`). It is the "really leave?" gate on a scripted menu.
 
-The blocking capability is the **entry-context kind**. Retail keeps one global
-whose first byte says which flow opened the menu; the port replaced it with a
-per-context tagged park, so no byte exists to compare against `0x0D` and no
-condition selects this screen. Same gap as the pause root's entry-context row -
-see docs/tooling/live-audit-triage.md.
+The blocking capability is the **entry-context kind reaching `0x0D`**. The
+kind byte itself is modeled now: `World::menu_entry_context_kind` is the
+engine's read of retail `*_DAT_8007B450`, and the pause root already compares
+it against `ROOT_MENU_CONTEXT_LOCKED = 0x0D` (`pause_screens::
+root_menu_confirm_route`, live on both hosts). But no producer can yield the
+blocking value: the port tags each op-`0x49` park with its owning context
+(shop = sub-op `0`, tile board = `5`) and no path records the armed sub-op,
+so the kind resolves to `0`, `5` or `None` - all allow branches, and no
+condition ever selects this screen. Close it by making the op-`0x49` arm
+record its sub-op, not by adding a draw call.
 """
 
 [[waiver]]
@@ -241,9 +257,11 @@ a **notice panel**, which is what the corner advance hand is for.
 entry-context byte is `0x0D` (`0x801dc8d0..0x801dc8e4`) - the same kind whose
 exit confirm is window 5 above.
 
-Same blocking capability as window 5, then: the **entry-context kind** the port
-replaced with a per-context tagged park. The six labels are content that record
-owns, so a host has neither the trigger nor the text.
+Same blocking capability as window 5, then: the entry-context kind is modeled
+(`World::menu_entry_context_kind`, compared against `0x0D` at the pause root
+on both hosts) but no producer can yield `0x0D` - the op-`0x49` park never
+records its armed sub-op. The six labels are content that record owns, so a
+host has neither the trigger nor the text.
 """
 
 # `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`
@@ -270,10 +288,14 @@ owns, so a host has neither the trigger nor the text.
 # pause screen was covered. Thirteen builders arrived with the widening. Ten
 # were already reached on both hosts through methods the call graph now walks.
 # Of the remaining three gaps, the PROT 0977 arena-hub quad emitters
-# (`hud_quad_centred` / `hud_quad_corner` / `decimal_quads`) are now wired -
-# `minigames_muscle::muscle_hub_quads_json` runs them over the draw lists
-# recovered from that entry's own call sites and the dome page submits the
-# resulting rects - so only the one below is left.
+# (`hud_quad_centred` / `hud_quad_corner` / `decimal_quads`) are now wired on
+# BOTH hosts - `minigames_muscle::muscle_hub_quads_json` runs them over the
+# draw lists recovered from that entry's own call sites for the dome page,
+# and the native play-window draws the same screens through the same
+# builders (`window/minigames.rs::muscle_hub_sprite_draws`: intro card +
+# ROUND banner over an open leg, INTERVAL + score tally between legs, the
+# tally fed the same DomeContest rows/tally + coin-bank model) - so only the
+# one below is left.
 
 [[waiver]]
 builder = "equip_compare_panel_fields"

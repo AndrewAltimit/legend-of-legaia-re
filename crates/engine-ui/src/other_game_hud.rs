@@ -40,9 +40,12 @@
 //! 502/503), capture-verified against a live course-menu VRAM snapshot.
 //! Record 3 is the "Welcome to the Muscle Dome!" cursive strip, record 16
 //! the INTERVAL heading, records 0/1 the ROUND word + hub digit strip.
-//! The site's Muscle Dome page consumes the parsed records as the geometry
-//! source for its intro card and interval heading
-//! (`legaia-web-viewer::minigames_muscle::muscle_hud_json`).
+//! Both hosts consume the parsed records as their geometry source: the
+//! site's Muscle Dome page through
+//! `legaia-web-viewer::minigames_muscle::muscle_hud_json` /
+//! `muscle_hub_quads_json`, and the native play-window through its
+//! `muscle_hub_sprite_draws` builder (intro card + ROUND banner over an
+//! open leg, INTERVAL + score tally between legs).
 //!
 //! Where each quad goes is disc data too. The entry holds 40 emitter call
 //! sites - 9 centred, 19 corner, 12 decimal - all inside PROT 0977's own hub
@@ -298,9 +301,11 @@ fn corner_span(texels: u8, size: i32, scale: i32) -> i32 {
 /// a different primitive path, and not the dome's readout at all (see
 /// `docs/subsystems/minigame-muscle-dome.md`).
 ///
-/// Wired through [`hub_screen_quads`]: the dome page calls
+/// Wired through [`hub_screen_quads`] on both hosts: the dome page calls
 /// `minigames_muscle::muscle_hub_quads_json`, which runs this emitter over
-/// the recovered draw lists and hands the page finished screen rects.
+/// the recovered draw lists and hands the page finished screen rects, and
+/// the native play-window runs the same composition in its
+/// `muscle_hub_sprite_draws` builder.
 pub fn hud_quad_centred(
     rec: &mut HudSprite,
     x: i16,

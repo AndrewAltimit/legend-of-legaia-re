@@ -50,6 +50,10 @@
 #   --no-isolate-config  force the real persistent dir even under --fast
 #                        (env: LEGAIA_NO_ISOLATE=1). Use when you WANT your own
 #                        saved layout / memcards / settings.
+#                        Env LEGAIA_SCALER=N sets the isolated profile's speed
+#                        scaler percent (default 100 = 1x; 300 = 3x cruise).
+#                        Human-navigated poll-tier captures sustain 3x; the
+#                        BP-tier probes should stay at 100.
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
 #   --help               print this header and exit
 #
@@ -296,7 +300,7 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     "Xa": true,
     "SpuIrq": false,
     "FastBoot": true,
-    "Scaler": 100,
+    "Scaler": ${LEGAIA_SCALER:-100},
     "AutoUpdate": false,
     "Mcd1": "$LEGAIA_PCSX_REAL_CONFIG/memcard1.mcd",
     "Mcd2": "$LEGAIA_PCSX_REAL_CONFIG/memcard2.mcd",
