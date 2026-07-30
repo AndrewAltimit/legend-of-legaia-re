@@ -114,40 +114,16 @@
   <p class="lede">
     Hear every sound in <em>Legend of Legaia</em>, and watch every cutscene, straight from your own copy of the game.
   </p>
-  <p>
-    Load a <code>.bin</code> disc image once and flip between <strong>BGM</strong> music,
-    <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks - all
-    parsed, decoded, and played locally in WebAssembly. Nothing is uploaded; your disc is cached in
-    the browser and shared across pages (<em>Forget</em> clears it).
-  </p>
 </header>
 
-<section class="doc-section" id="load">
-  <h2>Load your disc image</h2>
-  <div class="audio-shell">
-    <div class="file-input-group">
-      <label for="audio-file"><strong>Choose file:</strong></label>
-      <input type="file" id="audio-file" accept=".bin">
-      <span class="viewer-status" id="audio-status">No disc loaded.</span>
-    </div>
-    <p class="hint" style="margin: 0; font-size: 0.82rem;">
-      Requires the full Mode2/2352 <code>.bin</code> - XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
-    </p>
-  </div>
-</section>
+<div class="disc-bar" id="load">
+  <label for="audio-file">Disc:</label>
+  <input type="file" id="audio-file" accept=".bin">
+  <span class="viewer-status" id="audio-status">No disc loaded.</span>
+</div>
 
 <section class="doc-section" id="browse" style="display: none;">
   <h2>Browse</h2>
-  <ul class="bullets">
-    <li><strong>BGM</strong> - not recorded audio but a score plus instrument bank
-      (<a href="formats/seq.html">SEQ</a> + <a href="formats/vab.html">VAB</a>), performed here by
-      the clean-room <a href="subsystems/audio.html">SPU recreation</a>.</li>
-    <li><strong>FMV</strong> - the <code>MV*.STR</code> cutscenes, decoded with video and audio in
-      sync (<a href="subsystems/cutscene.html">cutscene pipeline</a>).</li>
-    <li><strong>SE</strong> - the <code>XA*.XA</code> banks; each file holds several interleaved
-      voices, so clicking one lists what's inside.</li>
-  </ul>
-
   <div class="audio-tabs" role="tablist">
     <button class="audio-tab is-active" data-tab="bgm" role="tab">BGM (VAB + SEQ)</button>
     <button class="audio-tab"            data-tab="fmv" role="tab">FMV (MV*.STR)</button>
@@ -174,9 +150,6 @@
     </div>
     <ul class="audio-list" id="sound-test-list"></ul>
     <ul class="audio-list" id="bgm-list" style="display: none;"></ul>
-    <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      <strong>Sound Test</strong> lists the score the way the game's own debug menu does - by track name and sound-test number, from the curated <a href="reference/music-tracks.html">music-track table</a> joined structurally to the <code>music_01</code> bank. <strong>PROT entries</strong> is the raw view: every <code>VAB</code>+<code>SEQ</code> carrier on the disc, including the boot/battle duplicate copies that have no catalogued name. Playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
-    </p>
   </div>
 
   <!-- FMV panel: MV*.STR movies (interleaved MDEC video + XA audio) -->
@@ -208,21 +181,48 @@
   </div>
 </section>
 
-<section class="doc-section" id="legal">
-  <h2>Notes</h2>
-  <p>
-    All decoded media stays in your browser. The decoders are the project's own:
-    <a href="formats/vab.html">VAB</a>, <a href="formats/seq.html">SEQ</a>,
-    <a href="formats/xa.html">XA-ADPCM</a>, and the <a href="subsystems/cutscene.html">Iki MDEC</a>
-    cutscene video; the clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is
-    documented at <a href="subsystems/audio.html">subsystems / audio</a>.
-  </p>
-  <p>
-    Playback sounding wrong? The <code>.wav</code> button downloads a raw PCM dump, byte-equal to
-    the native <code>xa demux-disc</code> output. If that file sounds correct but the browser
-    doesn't, the disconnect is on the WebAudio side, not in the decoder.
-  </p>
-</section>
+<details class="about-data">
+  <summary>About this data — formats, the three tabs, caveats</summary>
+  <div class="about-body">
+    <p>
+      Load a <code>.bin</code> disc image once and flip between <strong>BGM</strong> music,
+      <strong>FMV</strong> cutscenes, and the <strong>SE</strong> sound-effect and voice banks - all
+      parsed, decoded, and played locally in WebAssembly. Nothing is uploaded; your disc is cached in
+      the browser and shared across pages (<em>Forget</em> clears it).
+    </p>
+    <p>
+      Requires the full Mode2/2352 <code>.bin</code> - XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
+    </p>
+    <h3>What each tab is</h3>
+    <ul class="bullets">
+      <li><strong>BGM</strong> - not recorded audio but a score plus instrument bank
+        (<a href="formats/seq.html">SEQ</a> + <a href="formats/vab.html">VAB</a>), performed here by
+        the clean-room <a href="subsystems/audio.html">SPU recreation</a>.</li>
+      <li><strong>FMV</strong> - the <code>MV*.STR</code> cutscenes, decoded with video and audio in
+        sync (<a href="subsystems/cutscene.html">cutscene pipeline</a>).</li>
+      <li><strong>SE</strong> - the <code>XA*.XA</code> banks; each file holds several interleaved
+        voices, so clicking one lists what's inside.</li>
+    </ul>
+    <p>
+      <strong>Sound Test</strong> lists the score the way the game's own debug menu does - by track name and sound-test number, from the curated <a href="reference/music-tracks.html">music-track table</a> joined structurally to the <code>music_01</code> bank. <strong>PROT entries</strong> is the raw view: every <code>VAB</code>+<code>SEQ</code> carrier on the disc, including the boot/battle duplicate copies that have no catalogued name. Playback drives the same clean-room SPU + SEQ stack the engine port uses - see <a href="subsystems/audio.html">audio</a>.
+    </p>
+    <div id="legal">
+      <h3>Notes</h3>
+      <p>
+        All decoded media stays in your browser. The decoders are the project's own:
+        <a href="formats/vab.html">VAB</a>, <a href="formats/seq.html">SEQ</a>,
+        <a href="formats/xa.html">XA-ADPCM</a>, and the <a href="subsystems/cutscene.html">Iki MDEC</a>
+        cutscene video; the clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is
+        documented at <a href="subsystems/audio.html">subsystems / audio</a>.
+      </p>
+      <p>
+        Playback sounding wrong? The <code>.wav</code> button downloads a raw PCM dump, byte-equal to
+        the native <code>xa demux-disc</code> output. If that file sounds correct but the browser
+        doesn't, the disconnect is on the WebAudio side, not in the decoder.
+      </p>
+    </div>
+  </div>
+</details>
 
 <script>
 (function () {

@@ -2,17 +2,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; shops &amp; vendors</div>
   <h1>Shops &amp; vendors</h1>
   <p class="lede">
-    Every merchant in the game and everything they sell - browsable by town, with each item's price, category, and what it actually does.
-  </p>
-  <p>
-    No disc image needed: this page runs off the project's
-    <a href="reference/gamedata.html">curated game-data tables</a>, mined from public walkthroughs.
-    Click any item for its detail panel.
-  </p>
-  <p>
-    These tables are <strong>ground truth</strong> for reverse engineering - a shop's on-disc
-    inventory is just item ids and prices, and a trustworthy human-readable table is what confirms a
-    decoded record. Each item's panel names the data anchor it validates.
+    Every merchant in the game and everything they sell - browsable by town, with each item's price, category, and what it actually does. No disc image needed - click any item for its detail panel.
   </p>
 </header>
 
@@ -44,8 +34,21 @@
   </div>
 </section>
 
+<details class="about-data">
+  <summary>About this data &mdash; where it comes from, and reading it off your own disc</summary>
+  <div class="about-body">
+  <p>
+    This page runs off the project's
+    <a href="reference/gamedata.html">curated game-data tables</a>, mined from public walkthroughs.
+  </p>
+  <p>
+    These tables are <strong>ground truth</strong> for reverse engineering - a shop's on-disc
+    inventory is just item ids and prices, and a trustworthy human-readable table is what confirms a
+    decoded record. Each item's panel names the data anchor it validates.
+  </p>
+
 <section class="doc-section" id="from-disc">
-  <h2>Read it off your own disc</h2>
+  <h3>Read it off your own disc</h3>
   <p>
     This page tells you what the shops sell. <code>asset shop-stock</code> tells you what the
     <em>disc</em> says they sell - and when the two agree, both are confirmed. That is the other half
@@ -79,11 +82,13 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 </section>
 
 <section class="doc-section" id="related">
-  <h2>Related</h2>
+  <h3>Related</h3>
   <p>
     Pricing &amp; effects come from <a href="reference/gamedata.html">curated game-data tables</a> (mined from public walkthroughs). The runtime mechanism - buying / inn / level-up flow, character-record equipment slots - lives on the <a href="subsystems/shop.html">Shop subsystem</a> and <a href="formats/save-record.html">per-character save record</a> pages.
   </p>
 </section>
+  </div>
+</details>
 
 <script>
 /* ------------------------------------------------------------------

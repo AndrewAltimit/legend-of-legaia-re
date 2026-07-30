@@ -219,38 +219,19 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
   <h1>Play the port</h1>
   <p class="lede">
-    Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game.
-  </p>
-  <p>
-    Not a video, and not an emulator: this is the project's clean-room
-    <a href="subsystems/engine.html">engine reimplementation</a>, compiled to WebAssembly and
-    actually running - the same <a href="subsystems/script-vm.html">field VM</a>,
-    <a href="subsystems/field-locomotion.html">movement controller</a>, and NPC motion VMs the
-    native build uses, with WebGL drawing what they simulate.
-  </p>
-  <p>
-    <strong>You supply the game.</strong> The site ships no game data. Pick a <code>.bin</code>
-    disc image of your own copy below; it is read locally in your browser and nothing is uploaded.
+    Walk around inside <em>Legend of Legaia</em>, in this browser, on your own copy of the game -
+    the clean-room engine reimplementation compiled to WebAssembly, not a video and not an emulator.
   </p>
 </header>
 
 <section class="doc-section" id="run">
-  <h2>Run it</h2>
-  <p class="hint">
-    Have a VR headset? The <strong>VR</strong> button under the canvas presents the running scene
-    over WebXR - a diorama you look into, or first-person from Vahn's own eyes
-    (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
-    active OpenXR runtime and a secure context (https or <code>localhost</code>); if it can't
-    start, the button says what is missing.
-  </p>
-
   <div class="play-shell">
-    <div class="play-load">
-      <label for="play-file"><strong>Disc image:</strong></label>
+    <div class="disc-bar">
+      <label for="play-file">Disc:</label>
       <input type="file" id="play-file" accept=".bin">
       <span class="play-status" id="play-status">
-        Provide a <code>.bin</code> Mode2/2352 image. If you have already loaded your disc on
-        another page here, it is cached in the browser and will be picked up automatically.
+        No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy. It is read
+        locally, nothing is uploaded; a disc loaded on another page here is picked up automatically.
       </span>
     </div>
 
@@ -367,8 +348,31 @@
   </div>
 </section>
 
+<details class="about-data">
+  <summary>About this page - what the engine is, what runs here, VR, and how it is wired</summary>
+  <div class="about-body">
+
+  <p>
+    Not a video, and not an emulator: this is the project's clean-room
+    <a href="subsystems/engine.html">engine reimplementation</a>, compiled to WebAssembly and
+    actually running - the same <a href="subsystems/script-vm.html">field VM</a>,
+    <a href="subsystems/field-locomotion.html">movement controller</a>, and NPC motion VMs the
+    native build uses, with WebGL drawing what they simulate.
+  </p>
+  <p>
+    <strong>You supply the game.</strong> The site ships no game data. Pick a <code>.bin</code>
+    disc image of your own copy above; it is read locally in your browser and nothing is uploaded.
+  </p>
+  <p>
+    <strong>VR.</strong> Have a headset? The <strong>VR</strong> button under the canvas presents
+    the running scene over WebXR - a diorama you look into, or first-person from Vahn's own eyes
+    (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
+    active OpenXR runtime and a secure context (https or <code>localhost</code>); if it can't
+    start, the button says what is missing.
+  </p>
+
 <section class="doc-section" id="what-works">
-  <h2>What actually works</h2>
+  <h3>What actually works</h3>
   <p>
     This is a partial reimplementation; the honest map matters more than a demo reel. Running in
     the browser today:
@@ -439,7 +443,7 @@
 </section>
 
 <section class="doc-section" id="how">
-  <h2>How this page is wired</h2>
+  <h3>How this page is wired</h3>
   <p>
     The WebAssembly bundle is the engine crates themselves, compiled for
     <code>wasm32-unknown-unknown</code>. The page only turns key state into a PSX pad word, calls
@@ -469,6 +473,9 @@
     <a href="world.html">Game world</a>
   </div>
 </section>
+
+  </div>
+</details>
 
 <script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=zfight-1"></script>

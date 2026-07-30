@@ -276,21 +276,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     your browser</a>, each one the game's own reverse-engineered logic playing against the real
     tables on your disc.
   </p>
-  <p>
-    You supply the disc image; it is read locally and nothing is uploaded. Load an emulator save
-    into the bar below and its <strong>casino coin bank funds the session</strong> across the coin
-    games (export writes the balance back). The rest of the page is reference: prize ladders,
-    Muscle Dome courses, and the Sol Tower side-quests (scene <code>town0d</code>).
-  </p>
 </header>
+
+<div class="disc-bar">
+  <label for="mg-file">Disc:</label>
+  <input type="file" id="mg-file" accept=".bin,.DAT,.dat">
+  <span class="mg-status" id="mg-status">No disc loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>) to play.</span>
+</div>
 
 <section class="doc-section" id="play">
   <h2>Play them</h2>
-  <p>
-    Each game below is the retail machinery - beat clock, duel resolver, reel RNGs - rewritten in
-    Rust, and the step chart, fighter roster and payout table are read out of the disc image you
-    load here. The odds you're beating are the odds the cabinet shipped with.
-  </p>
 
   <!-- The save bar (js/minigame-saves.js): the ALWAYS-VISIBLE rich strip of
        saves stored in this browser, sitting directly above the player so
@@ -305,12 +300,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <div id="mg-save-bar" style="margin-bottom: 1rem;"></div>
 
   <div class="mg-shell">
-    <div class="file-input-group">
-      <label for="mg-file"><strong>Choose file:</strong></label>
-      <input type="file" id="mg-file" accept=".bin,.DAT,.dat">
-      <span class="mg-status" id="mg-status">No disc loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>) to play.</span>
-    </div>
-
     <div id="mg-main" style="display: none;">
       <div class="mg-tabs" id="mg-tabs">
         <button class="mg-tab is-active" type="button" data-game="slot">Slot machine</button>
@@ -860,8 +849,23 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   </div>
 </section>
 
+<details class="about-data">
+  <summary>About this data &mdash; what runs where, saves &amp; coins, the traced internals</summary>
+  <div class="about-body">
+  <p>
+    You supply the disc image; it is read locally and nothing is uploaded. Load an emulator save
+    into the save bar and its <strong>casino coin bank funds the session</strong> across the coin
+    games (export writes the balance back). The rest of the page is reference: prize ladders,
+    Muscle Dome courses, and the Sol Tower side-quests (scene <code>town0d</code>).
+  </p>
+  <p>
+    Each playable game is the retail machinery - beat clock, duel resolver, reel RNGs - rewritten in
+    Rust, and the step chart, fighter roster and payout table are read out of the disc image you
+    load. The odds you're beating are the odds the cabinet shipped with.
+  </p>
+
 <section class="doc-section" id="internals">
-  <h2>Internals (reverse-engineered)</h2>
+  <h3>Internals (reverse-engineered)</h3>
   <p>
     Each minigame's runtime - per-frame state machine, scoring math, data tables - is traced from
     the captured overlay code and written up in the linked repo docs:
@@ -894,11 +898,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 </section>
 
 <section class="doc-section" id="related">
-  <h2>Related</h2>
+  <h3>Related</h3>
   <p>
     Curated tables drive every prize and stat block on this page - <a href="reference/gamedata.html#casino-schema">game-data reference</a> for schema + library access. Muscle Dome rosters cross-validate the <a href="formats/encounter.html">on-disc encounter records</a>; Master-course gating + the Sol Tower side-quest beats hit the <a href="subsystems/script-vm.html">field-VM flag banks</a>.
   </p>
 </section>
+  </div>
+</details>
 
 <script>
 /* ==================================================================
