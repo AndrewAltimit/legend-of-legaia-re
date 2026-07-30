@@ -282,7 +282,12 @@ records** - the same per-action entry family as the monster archive's
 rate byte at entry `+0x78`, and the entry's first byte its **action tag**
 (identity with the slot index in these files). Slot 0 is the neutral
 **idle** loop; its frame 0 is the combat-stance rest pose that sockets the
-assembled battle mesh.
+assembled battle mesh. Each entry's `+0x14..+0x53` region is the action's
+**effect script** - the per-frame visual-effect placement records
+`FUN_801DEA50` walks (per-footfall dust on the walk entry, impact flashes on
+the reactions, per-swing sparks on the equipment records) - see
+[`monster-animation.md` § Effect-script records](monster-animation.md#effect-script-records-entry-0x140x53);
+the region is shared by the swing records and the art-bank entries below.
 
 The **runtime action table** (rebased copies at `0x801C9360 + slot*4`,
 built by `FUN_80052FA0`) is wider than the 12 disc words:
