@@ -14,6 +14,10 @@ Also writes:
     that the interactive shops page consumes.
   - site/world.json: per-town summary (CDNAME labels, enemies, bosses,
     shops, casino, fishing) for the world page.
+  - site/sitemap.xml, site/robots.txt, site/404.html: SEO surface. Every
+    page also gets a meta description (curated for landing pages, derived
+    from the lede otherwise), a canonical URL, Open Graph / Twitter cards
+    pointing at img/social-card.png, and schema.org JSON-LD.
 
 Run from the repo root:
     python3 site/_gen.py
@@ -36,6 +40,232 @@ DISC_PATCHING_TOML = CONTENT / "writeups" / "disc-patching" / "mods.toml"
 # Base for linking a committed repo file (the `<repo>/blob/main/<path>` form the
 # pages already use for "full reference" links).
 REPO_BLOB = "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main"
+
+# ---------------------------------------------------------------------------
+# SEO / social metadata
+# ---------------------------------------------------------------------------
+# GitHub Pages project-site origin. Canonical URLs, the sitemap, and the
+# Open Graph tags are all absolute against this base.
+SITE_URL = "https://andrewaltimit.github.io/legend-of-legaia-re"
+SITE_NAME = "Legend of Legaia RE"
+SOCIAL_CARD = f"{SITE_URL}/img/social-card.png"
+THEME_COLOR = "#0d1117"
+
+# Site-wide fallback description (also the home page's og:description).
+DEFAULT_DESCRIPTION = (
+    "Legend of Legaia (PSX, 1998) reverse engineered end to end: play the "
+    "clean-room engine port in your browser via WebAssembly, browse every "
+    "asset, patch your disc with the randomizer, and read byte-level format "
+    "docs. Bring your own disc image - no Sony data is distributed."
+)
+
+# Hand-written <title> overrides for the landing pages search engines should
+# surface. Everything else gets "{title} - Legend of Legaia RE". The override
+# is the FULL title (no suffix appended), so it can lead with the game name.
+TITLE_OVERRIDES: dict[str, str] = {
+    "home": "Legend of Legaia Reverse Engineering - Playable Engine Port, Asset Viewers & Randomizer",
+    "play": "Play Legend of Legaia in the Browser - Clean-Room WASM Engine Port",
+    "viewer": "Legend of Legaia Asset Viewer - Textures, Models & Sound (WASM)",
+    "media": "Legend of Legaia Media Browser - Music, FMVs & Voice (WASM)",
+    "monsters": "Legend of Legaia Enemy Table - Stats, Drops & 3D Models",
+    "characters": "Legend of Legaia Characters - Field & Battle Models",
+    "npcs": "Legend of Legaia NPCs - Every Townsperson in 3D",
+    "minigames": "Play Legend of Legaia Minigames in the Browser",
+    "world": "Legend of Legaia World Guide - Towns, Enemies, Shops & Fishing",
+    "world-overview": "Legend of Legaia World Map in 3D - WebGL Viewer",
+    "shops": "Legend of Legaia Shops & Vendors - Full Inventories and Prices",
+    "arts": "Legend of Legaia Tactical Arts List - Inputs, AP & Damage",
+    "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
+}
+
+# Hand-written meta descriptions for the same landing pages. Everything else
+# derives its description from the page's own lede paragraph, falling back to
+# DEFAULT_DESCRIPTION when a page has no lede.
+DESCRIPTIONS: dict[str, str] = {
+    "home": DEFAULT_DESCRIPTION,
+    "play": (
+        "Play Legend of Legaia in your browser: a clean-room WebAssembly "
+        "engine port with retail movement, NPC dialogue, menus, and memory-"
+        "card saves, running from your own disc image. Works flat or in VR "
+        "(WebXR)."
+    ),
+    "viewer": (
+        "Browse Legend of Legaia's textures, 3D models, dialog, and sound "
+        "banks in your browser. The WASM asset viewer decodes everything "
+        "locally from your own disc image - nothing is uploaded."
+    ),
+    "media": (
+        "Listen to Legend of Legaia's music, watch its FMV cutscenes, and "
+        "hear the voice audio in your browser - decoded locally from your "
+        "own disc image."
+    ),
+    "monsters": (
+        "Every Legend of Legaia enemy with stats, item drops, steals, and "
+        "rotating 3D battle models, decoded from the disc's own data tables."
+    ),
+    "characters": (
+        "Legend of Legaia's party in 3D: Vahn, Noa, Gala and their Ra-Seru "
+        "forms, with field and battle meshes assembled the way the game "
+        "itself builds them."
+    ),
+    "npcs": (
+        "Every Legend of Legaia NPC rendered in 3D from the scene files: "
+        "townsfolk, shopkeepers, and story characters, browsable per town."
+    ),
+    "minigames": (
+        "Play Legend of Legaia's minigames in the browser: the casino slot "
+        "machine, Noa's dance, and Baka Fighter - with the retail step "
+        "charts, odds, and payout tables read from your disc."
+    ),
+    "world": (
+        "Town-by-town guide to Legend of Legaia's world, assembled from the "
+        "disc: enemies, bosses, shops, casino games, and fishing spots per "
+        "area."
+    ),
+    "world-overview": (
+        "Fly through Legend of Legaia's entire world in 3D: every kingdom, "
+        "town, and field scene rendered in WebGL from your own disc image, "
+        "with VR support."
+    ),
+    "shops": (
+        "Every shop and vendor in Legend of Legaia with full inventories and "
+        "prices, joined from the game's own item, weapon, and armor tables."
+    ),
+    "arts": (
+        "Complete Legend of Legaia Tactical Arts list with button inputs, AP "
+        "costs, and damage data, cross-checked against the game's own move "
+        "tables."
+    ),
+    "tooling/rom-patcher": (
+        "Randomize Legend of Legaia in your browser: drops, encounters, "
+        "chests, shops, doors, and more, patched client-side onto your own "
+        "disc image - which never leaves your machine."
+    ),
+    "quickstart": (
+        "Get started with the Legend of Legaia RE tools: extract every asset "
+        "from your disc, view them interactively, and boot the engine port "
+        "in minutes."
+    ),
+    "architecture": (
+        "How the Legend of Legaia RE project stacks from raw PSX disc "
+        "sectors to a running clean-room engine: formats, parsers, "
+        "subsystems, and the WASM port."
+    ),
+    "writeups/index": (
+        "Technical deep-dives from reverse engineering Legend of Legaia: a "
+        "retail softlock's anatomy, fishing's rarest catch, and six tiers of "
+        "patching a sealed disc."
+    ),
+}
+
+# Pages that are interactive WASM/WebGL applications rather than articles -
+# they get WebApplication JSON-LD and og:type=website.
+APP_PAGE_KEYS: set[str] = {
+    "play", "viewer", "media", "minigames", "monsters", "characters",
+    "npcs", "world-overview", "tooling/rom-patcher",
+}
+
+
+def canonical_url(out_path: str) -> str:
+    """Canonical URL for a generated page (directory indexes canonicalize to
+    the trailing-slash form GitHub Pages serves)."""
+    if out_path == "index.html":
+        return SITE_URL + "/"
+    if out_path.endswith("/index.html"):
+        return f"{SITE_URL}/{out_path[: -len('index.html')]}"
+    return f"{SITE_URL}/{out_path}"
+
+
+def _clip_description(text: str, limit: int = 220) -> str:
+    """Clip lede text to a meta-description length on a word boundary."""
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",;:")
+    return cut + "…"
+
+
+def _jsonld_for(active_key: str, page_title: str, description: str, canonical: str) -> str:
+    """Structured data: the home page declares the site + the application and
+    ties both to the original game; app pages are WebApplications; everything
+    else is a TechArticle."""
+    website = {"@type": "WebSite", "name": SITE_NAME, "url": SITE_URL + "/"}
+    if active_key == "home":
+        data: dict = {
+            "@context": "https://schema.org",
+            "@graph": [
+                {**website, "description": DEFAULT_DESCRIPTION},
+                {
+                    "@type": "SoftwareApplication",
+                    "name": SITE_NAME,
+                    "url": SITE_URL + "/",
+                    "description": DEFAULT_DESCRIPTION,
+                    "applicationCategory": "GameApplication",
+                    "operatingSystem": "Web browser (WebAssembly), Linux, Windows",
+                    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+                    "license": f"{REPO_BLOB}/LICENSE",
+                    "codeRepository": "https://github.com/AndrewAltimit/legend-of-legaia-re",
+                    "about": {
+                        "@type": "VideoGame",
+                        "name": "Legend of Legaia",
+                        "gamePlatform": "PlayStation",
+                        "datePublished": "1998",
+                    },
+                },
+            ],
+        }
+    elif active_key in APP_PAGE_KEYS:
+        data = {
+            "@context": "https://schema.org",
+            "@type": "WebApplication",
+            "name": page_title,
+            "url": canonical,
+            "description": description,
+            "applicationCategory": "GameApplication",
+            "browserRequirements": "Requires WebAssembly",
+            "isPartOf": website,
+        }
+    else:
+        data = {
+            "@context": "https://schema.org",
+            "@type": "TechArticle",
+            "headline": page_title,
+            "url": canonical,
+            "description": description,
+            "isPartOf": website,
+        }
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def seo_head(out_path: str, active_key: str, title: str, description: str) -> tuple[str, str]:
+    """Return (page_title, head-metadata block) for a generated page."""
+    page_title = TITLE_OVERRIDES.get(active_key, f"{title} - {SITE_NAME}")
+    canonical = canonical_url(out_path)
+    og_type = "website" if active_key == "home" or active_key in APP_PAGE_KEYS else "article"
+    esc_title = html.escape(page_title, quote=True)
+    esc_desc = html.escape(description, quote=True)
+    jsonld = _jsonld_for(active_key, page_title, description, canonical)
+    # </script> can't appear inside an inline script; escape defensively.
+    jsonld = jsonld.replace("</", "<\\/")
+    lines = [
+        f'<meta name="description" content="{esc_desc}">',
+        f'  <link rel="canonical" href="{canonical}">',
+        f'  <meta name="theme-color" content="{THEME_COLOR}">',
+        f'  <meta property="og:site_name" content="{SITE_NAME}">',
+        f'  <meta property="og:type" content="{og_type}">',
+        f'  <meta property="og:title" content="{esc_title}">',
+        f'  <meta property="og:description" content="{esc_desc}">',
+        f'  <meta property="og:url" content="{canonical}">',
+        f'  <meta property="og:image" content="{SOCIAL_CARD}">',
+        '  <meta property="og:image:width" content="1200">',
+        '  <meta property="og:image:height" content="630">',
+        '  <meta name="twitter:card" content="summary_large_image">',
+        f'  <meta name="twitter:title" content="{esc_title}">',
+        f'  <meta name="twitter:description" content="{esc_desc}">',
+        f'  <meta name="twitter:image" content="{SOCIAL_CARD}">',
+        f'  <script type="application/ld+json">{jsonld}</script>',
+    ]
+    return page_title, "\n".join(lines)
 
 
 def _committed_md_index() -> tuple[set[str], dict[str, str]]:
@@ -128,7 +358,7 @@ WIDE_PAGES: set[str] = {
 }
 
 
-def html_template(title: str, depth: int, active_key: str, body: str, extra_head: str = "") -> str:
+def html_template(page_title: str, depth: int, active_key: str, body: str, extra_head: str = "", head_meta: str = "") -> str:
     css = "../" * depth + "css/styles.css"
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
@@ -146,7 +376,8 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{title} - legend-of-legaia-re</title>
+  <title>{html.escape(page_title)}</title>
+  {head_meta}
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <link rel="stylesheet" href="{css}">
   {extra_head}
@@ -1207,23 +1438,82 @@ def main() -> int:
         if "<!--PROGRESS_METER-->" in body:
             body = body.replace("<!--PROGRESS_METER-->", progress_meter)
 
-        html = html_template(title, depth, active, body, extra_head)
+        # Build search index entries from body fragment (first entry carries
+        # the page's lede paragraph, which doubles as the meta description).
+        entries = build_search_entries(out_path, title, body, section_label_for(out_path))
+        search_index.extend(entries)
+
+        lede = entries[0]["snippet"] if entries else ""
+        description = DESCRIPTIONS.get(active) or _clip_description(lede) or DEFAULT_DESCRIPTION
+        page_title, head_meta = seo_head(out_path, active, title, description)
+
+        page = html_template(page_title, depth, active, body, extra_head, head_meta)
         out = ROOT / out_path
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(html)
+        out.write_text(page)
         written += 1
         generated.append(out_path)
         print(f"  wrote {out_path}")
-
-        # Build search index entries from body fragment
-        search_index.extend(
-            build_search_entries(out_path, title, body, section_label_for(out_path))
-        )
 
     # Write search-index.json
     idx_path = ROOT / "search-index.json"
     idx_path.write_text(json.dumps(search_index, ensure_ascii=False, separators=(",", ":")))
     generated.append("search-index.json")
+
+    # Write sitemap.xml over every generated page's canonical URL. GitHub
+    # Pages serves it at <SITE_URL>/sitemap.xml; submit that URL in Google
+    # Search Console (a project-site robots.txt is not at the domain root,
+    # so crawlers only find the sitemap when it is submitted or the site
+    # gains a custom domain).
+    urls = [canonical_url(p) for p in generated if p.endswith(".html")]
+    sitemap = ['<?xml version="1.0" encoding="UTF-8"?>',
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        sitemap.append(f"  <url><loc>{html.escape(u)}</loc></url>")
+    sitemap.append("</urlset>\n")
+    (ROOT / "sitemap.xml").write_text("\n".join(sitemap))
+    generated.append("sitemap.xml")
+
+    # robots.txt is only authoritative at a domain root, so on the project
+    # subpath it is inert for crawlers - kept anyway so the site is ready if
+    # it ever moves to a custom domain, and as a human-readable pointer.
+    (ROOT / "robots.txt").write_text(
+        "User-agent: *\n"
+        "Allow: /\n"
+        f"Sitemap: {SITE_URL}/sitemap.xml\n"
+    )
+    generated.append("robots.txt")
+
+    # 404.html - GitHub Pages serves this for any missing path, at any depth,
+    # so every asset reference must be absolute. noindex keeps it out of
+    # search results.
+    (ROOT / "404.html").write_text(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Page not found - {SITE_NAME}</title>
+  <link rel="icon" href="{SITE_URL}/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="{SITE_URL}/css/styles.css">
+</head>
+<body>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb">404</div>
+  <h1>Page not found</h1>
+  <p class="lede">That page doesn't exist (or moved). Head back to the
+  <a href="{SITE_URL}/">project home</a>, or try the
+  <a href="{SITE_URL}/viewer.html">asset viewer</a> /
+  <a href="{SITE_URL}/play.html">playable port</a>.</p>
+</header>
+</main>
+</div>
+</body>
+</html>
+""")
+    generated.append("404.html")
 
     # Write scenes.json (CDNAME -> category map for the asset viewer's
     # Scene filter).

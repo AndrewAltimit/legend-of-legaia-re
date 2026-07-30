@@ -3,6 +3,7 @@
 # Run `python3 site/_gen.py` for local file:// preview; CI regenerates
 # them on the GitHub Pages deploy. This manifest file is itself tracked.
 
+/404.html
 /architecture.html
 /arts.html
 /arts.json
@@ -77,10 +78,12 @@
 /reference/open-rev-eng-threads.html
 /reference/re-do-not-re-walk.html
 /reference/re-settled-threads.html
+/robots.txt
 /scenes.json
 /search-index.json
 /shops.html
 /shops.json
+/sitemap.xml
 /subsystems/actor-vm.html
 /subsystems/arts-command-gauge.html
 /subsystems/asset-loader.html
