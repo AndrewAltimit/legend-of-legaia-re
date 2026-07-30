@@ -408,8 +408,12 @@ presentation left to the host:
   tapering radius, plus the packet-chain layout its render half consumes.
   Geometry only; the GPU emit is render-track.
 - `action_effect_script` - the battle action's 8-byte **effect-script** record
-  walk (`FUN_801DEA50`): frame gates, facing rotation, the move-power record
-  index, and the target band the terminator's homing seed sweeps.
+  walk (`FUN_801DEA50`): frame gates, facing rotation via `RetailRotationLut`
+  (the `0x80070A2C` trunc-sine pair), the move-power record index, and the
+  target band the terminator's homing seed sweeps. Driven per battle frame by
+  `World::tick_battle_animations` over each actor's committed clip
+  (`MonsterAnimation::effect_script`); spawns drain via
+  `World::drain_battle_effect_spawns`.
 - `field_regions::window_rebuild_spawns` - the sub-area **window rebuild**
   placed-object sweep (`FUN_801D7B50`), complement of the scene-init sweep.
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
