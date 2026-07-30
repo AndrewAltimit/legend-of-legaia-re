@@ -159,6 +159,120 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
     record.raw[SPELL_XP_OFFSET..SPELL_XP_OFFSET + 4].copy_from_slice(&0u32.to_le_bytes());
 }
 
+// ---------------------------------------------------------------------------
+// Menu-cast (pause-menu Magic screen) leveling arm - FUN_800402F4
+// ---------------------------------------------------------------------------
+//
+// The pause menu's two magic-cast sub-screens (`FUN_801D9280` all-targets,
+// `FUN_801D9594` single target) apply their heal through the shared
+// effect-apply handler `FUN_800402F4`, whose HP-heal arms carry an inline
+// copy of the same accrue-then-threshold-test loop the battle summon path
+// runs (`ghidra/scripts/funcs/800402f4.txt`):
+//
+// - the accrual target is the SAME per-spell u32 XP array: the store is
+//   `sw v1, 0x5D0(0x80084140 + char*0x414 + slot*4)`, and `0x80084140 +
+//   0x5C8 = 0x80084708` (the record base), so `+0x5D0` off the save-context
+//   window is exactly [`SPELL_XP_OFFSET`] (`+0x8`) off the record - one
+//   accumulator, not two;
+// - the gain is a flat per-cast grant (see [`menu_heal_xp_gain`]), not the
+//   battle path's damage-proportional one;
+// - the threshold test runs only outside battle (`_DAT_8007B83C != 0x15`):
+//   level byte `+0x729` (= record `+0x161 + slot`) gated `< 9`, raw u16
+//   table entry `0x8007656C[level-1]` strictly less than the accumulator,
+//   then `level += 1` and the notification setter `FUN_80035C00(char, slot)`
+//   fires - the `(_DAT_8007BB70, _DAT_8007BB78)` pair window 7 reads.
+
+/// Menu-cast heal spell-XP grant - PORT: FUN_800402F4 (HP-heal arms).
+///
+/// Single-target arm (case body `0x80040470`): `+0xC` when the target's
+/// HP deficit covered the spell's full level-scaled heal cap, `+0x4` when
+/// the deficit was smaller (the heal was clipped). Multi-target arm (case
+/// body `0x80040908`): `+0x3` / `+0x1` per healed party member (a
+/// zero-deficit member accrues nothing, and the engine's cast flow refuses
+/// those targets earlier).
+pub fn menu_heal_xp_gain(group_cast: bool, full_power: bool) -> u32 {
+    match (group_cast, full_power) {
+        (false, true) => 12,
+        (false, false) => 4,
+        (true, true) => 3,
+        (true, false) => 1,
+    }
+}
+
+/// A spell level-up resolved by [`accrue_and_level`]: the spell-list slot
+/// that leveled and the level byte now in the record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpellLevelUp {
+    /// Index into the record's `+0x13D` spell-id list (retail's
+    /// `_DAT_8007BB78` notification half).
+    pub spell_slot: usize,
+    /// The bumped `+0x161 + slot` level byte's new value.
+    pub new_level: u8,
+}
+
+/// Shared accrue-then-level kernel - the one place the per-spell XP
+/// accumulator meets the `0x8007656C` threshold table. Both retail casters
+/// funnel here: the battle summon path (`World::accrue_summon_spell_xp`,
+/// REF: FUN_801e70bc) and the pause-menu cast (REF: FUN_800402F4, whose
+/// inline copy compares the raw table entry - byte-equal to the shared
+/// compare for every spell id the menu arms credit, since none of the
+/// [`legaia_engine_vm::battle_formulas::SUMMON_XP_TRIPLE_THRESHOLD_IDS`]
+/// is a menu-heal id).
+///
+/// Adds `gain` to the accumulator of `spell_id`'s slot, then (when a
+/// threshold table is installed) bumps the `+0x161` level byte if the
+/// accrued total strictly exceeds the level's threshold (`level < 9` cap).
+/// Returns the level-up, `None` when nothing leveled. A spell the record
+/// doesn't carry accrues nothing (retail would walk past the arrays; the
+/// engine skips).
+pub fn accrue_and_level(
+    record: &mut CharacterRecord,
+    spell_id: u8,
+    gain: u32,
+    thresholds: Option<&[u16]>,
+) -> Option<SpellLevelUp> {
+    let slot = spell_slot(record, spell_id)?;
+    add_spell_xp(record, slot, gain);
+    let table = thresholds?;
+    let mut list = record.spell_list();
+    let level = list.levels[slot];
+    let xp = spell_xp(record, slot);
+    if !legaia_engine_vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, table) {
+        return None;
+    }
+    list.levels[slot] = level + 1;
+    record.set_spell_list(list);
+    Some(SpellLevelUp {
+        spell_slot: slot,
+        new_level: level + 1,
+    })
+}
+
+/// The **window 7** notification beat: retail's `FUN_80035C00(slot, index)`
+/// pair (`_DAT_8007BB70` / `_DAT_8007BB78`) plus what the engine's painter
+/// call needs pre-resolved. Held by `crate::menu_runtime::MenuRuntime`
+/// until a confirm / cancel press, painted by both hosts through
+/// `engine-ui`'s `char_prompt_draws_for` (window id 7, `FUN_801DCCB4`).
+///
+/// REF: FUN_80035C00
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpellLevelNotice {
+    /// Roster slot of the caster (retail `_DAT_8007BB70`).
+    pub caster_slot: u8,
+    /// Index into the caster's spell-id list (retail `_DAT_8007BB78`).
+    pub spell_index: u8,
+    /// The spell id at that index - the byte retail's window 7 substitutes
+    /// into its prompt line (`record[0x13D + index]`).
+    pub spell_id: u8,
+    /// The leveled byte's new value.
+    pub new_level: u8,
+    /// The assembled prompt line the hosts draw. Retail patches one glyph
+    /// into a menu-overlay rodata sentence at `0x801E46E4` (not lifted -
+    /// Sony bytes); the engine composes the pinned battle-banner sentence
+    /// ([`magic_level_increased_message`]) with the spell's name instead.
+    pub line: String,
+}
+
 /// The banner suffix retail appends after the spell name (battle-action
 /// overlay rodata at `0x801F6840 + 4` - the `+4` skips a 4-byte glyph-prefix
 /// chain, leaving the possessive suffix).
@@ -279,6 +393,69 @@ mod tests {
         assert_eq!(spell_xp(&rec, 0), 0, "new spell starts at zero XP");
         assert_eq!(spell_xp(&rec, 1), 77, "old slot-0 XP moved with it");
         assert_eq!(spell_xp(&rec, 2), 33);
+    }
+
+    #[test]
+    fn menu_heal_xp_gain_matches_the_retail_grants() {
+        // FUN_800402F4: single-target heal arm +0xC / +0x4, multi-target
+        // loop +0x3 / +0x1.
+        assert_eq!(menu_heal_xp_gain(false, true), 12);
+        assert_eq!(menu_heal_xp_gain(false, false), 4);
+        assert_eq!(menu_heal_xp_gain(true, true), 3);
+        assert_eq!(menu_heal_xp_gain(true, false), 1);
+    }
+
+    fn record_with_spell(spell_id: u8, level: u8) -> CharacterRecord {
+        let mut rec = CharacterRecord::zeroed();
+        let mut list = rec.spell_list();
+        list.count = 1;
+        list.ids[0] = spell_id;
+        list.levels[0] = level;
+        rec.set_spell_list(list);
+        rec
+    }
+
+    #[test]
+    fn accrue_and_level_bumps_on_strict_threshold_cross() {
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        let mut rec = record_with_spell(0x83, 1);
+        // 12 XP: below the 17 threshold - accrued, no level.
+        assert_eq!(accrue_and_level(&mut rec, 0x83, 12, Some(&table)), None);
+        assert_eq!(spell_xp(&rec, 0), 12);
+        // +12 = 24 > 17: level 1 -> 2, XP keeps accumulating (no reset).
+        assert_eq!(
+            accrue_and_level(&mut rec, 0x83, 12, Some(&table)),
+            Some(SpellLevelUp {
+                spell_slot: 0,
+                new_level: 2
+            })
+        );
+        assert_eq!(rec.spell_list().levels[0], 2);
+        assert_eq!(spell_xp(&rec, 0), 24);
+    }
+
+    #[test]
+    fn accrue_and_level_without_thresholds_accrues_only() {
+        let mut rec = record_with_spell(0x83, 1);
+        assert_eq!(accrue_and_level(&mut rec, 0x83, 500, None), None);
+        assert_eq!(spell_xp(&rec, 0), 500);
+        assert_eq!(rec.spell_list().levels[0], 1, "no table, no level change");
+    }
+
+    #[test]
+    fn accrue_and_level_skips_a_spell_the_record_lacks() {
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        let mut rec = record_with_spell(0x83, 1);
+        assert_eq!(accrue_and_level(&mut rec, 0x89, 100, Some(&table)), None);
+        assert_eq!(spell_xp(&rec, 0), 0, "nothing accrued to the wrong slot");
+    }
+
+    #[test]
+    fn accrue_and_level_caps_at_level_nine() {
+        let table = [17u16, 50, 92, 144, 208, 288, 392, 536];
+        let mut rec = record_with_spell(0x83, 9);
+        assert_eq!(accrue_and_level(&mut rec, 0x83, 10_000, Some(&table)), None);
+        assert_eq!(rec.spell_list().levels[0], 9);
     }
 
     #[test]

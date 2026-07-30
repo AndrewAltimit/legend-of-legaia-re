@@ -280,6 +280,97 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
     }
 }
 
+/// The menu-cast leveling arm (`FUN_800402F4` HP-heal arms): a full-power
+/// menu heal accrues +12 spell XP into the caster record's `+0x8` array,
+/// crosses the `0x8007656C` threshold, bumps the `+0x161` level byte and
+/// returns the window-7 notice pair.
+#[test]
+fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
+    let mut world = fresh_world();
+    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    // Wound member 1 far past the vanilla Heal amount (60) so the heal runs
+    // at full power (deficit >= nominal -> the +12 grant).
+    let mut hms = world.roster.members[1].hp_mp_sp();
+    hms.hp_cur = 1;
+    world.roster.members[1].set_hp_mp_sp(hms);
+    // Caster carries the vanilla Heal (id 0x10) at level 1 with 12 XP
+    // already accrued - one more full-power cast lands 24 > 17.
+    let mut spells = world.roster.members[0].spell_list();
+    spells.count = 1;
+    spells.ids[0] = 0x10;
+    spells.levels[0] = 1;
+    world.roster.members[0].set_spell_list(spells);
+    legaia_engine_core::magic_xp::add_spell_xp(&mut world.roster.members[0], 0, 12);
+
+    let cast = |world: &mut World| -> Option<legaia_engine_core::magic_xp::SpellLevelNotice> {
+        let mut sub = build(FieldMenuRow::Magic, world, &OptionsState::default());
+        sub.tick_pad_edge(PadButton::Cross.mask()); // pick caster 0
+        sub.tick_pad_edge(PadButton::Cross.mask()); // pick the Heal row
+        sub.tick_pad_edge(PadButton::Down.mask()); // cursor to member 1
+        sub.tick_pad_edge(PadButton::Cross.mask()); // confirm target
+        let FieldMenuSubsession::Spells(s) = &sub else {
+            panic!("expected Spells sub");
+        };
+        assert!(s.is_done(), "the cast should have resolved");
+        apply_spell_outcome(s, world)
+    };
+
+    let notice = cast(&mut world).expect("24 XP > threshold 17: the spell levels");
+    assert_eq!(notice.caster_slot, 0);
+    assert_eq!(notice.spell_index, 0);
+    assert_eq!(notice.spell_id, 0x10);
+    assert_eq!(notice.new_level, 2);
+    assert_eq!(notice.line, "Heal's magic level increased.");
+    // Both writes are in the SAVED record bytes (LGSF round-trips them):
+    // the +0x8 XP accumulator and the +0x161 level byte.
+    let rec = &world.roster.members[0];
+    assert_eq!(legaia_engine_core::magic_xp::spell_xp(rec, 0), 24);
+    assert_eq!(rec.spell_list().levels[0], 2);
+    assert_eq!(rec.raw[0x161], 2);
+
+    // A second cast accrues (24 + 12 = 36 < 50) but does not level - no
+    // notice, no window 7.
+    let mut hms = world.roster.members[1].hp_mp_sp();
+    hms.hp_cur = 1;
+    world.roster.members[1].set_hp_mp_sp(hms);
+    assert!(cast(&mut world).is_none());
+    assert_eq!(
+        legaia_engine_core::magic_xp::spell_xp(&world.roster.members[0], 0),
+        36
+    );
+    assert_eq!(world.roster.members[0].spell_list().levels[0], 2);
+}
+
+/// A clipped heal (the target's deficit is smaller than the spell's nominal
+/// amount) accrues the partial grant (+4), mirroring `FUN_800402F4`'s
+/// deficit-below-cap arm.
+#[test]
+fn menu_heal_cast_accrues_partial_grant_when_clipped() {
+    let mut world = fresh_world();
+    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    // Deficit 50 < the vanilla Heal's 60 -> partial power.
+    let mut spells = world.roster.members[0].spell_list();
+    spells.count = 1;
+    spells.ids[0] = 0x10;
+    spells.levels[0] = 1;
+    world.roster.members[0].set_spell_list(spells);
+
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask()); // caster 0
+    sub.tick_pad_edge(PadButton::Cross.mask()); // Heal
+    sub.tick_pad_edge(PadButton::Down.mask()); // member 1 (50/100)
+    sub.tick_pad_edge(PadButton::Cross.mask()); // cast
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(s.is_done());
+    assert!(apply_spell_outcome(s, &mut world).is_none(), "4 < 17");
+    assert_eq!(
+        legaia_engine_core::magic_xp::spell_xp(&world.roster.members[0], 0),
+        4
+    );
+}
+
 #[test]
 fn apply_arts_outcome_writes_through_chain_library() {
     let _world = fresh_world();
