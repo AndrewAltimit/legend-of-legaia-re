@@ -66,6 +66,7 @@ fn battle_hud_slot_views<'a>(hud: &'a BattleHud, letters: &'a [Vec<u8>]) -> Vec<
         .iter()
         .enumerate()
         .map(|(i, s)| {
+            let (hp_fill, mp_fill) = s.gauge_fill_indices();
             let meta = HudSlotMeta {
                 is_party: s.is_party,
                 alive: s.alive,
@@ -75,6 +76,8 @@ fn battle_hud_slot_views<'a>(hud: &'a BattleHud, letters: &'a [Vec<u8>]) -> Vec<
                 mp_max: s.mp_max,
                 ap_filled: s.ap_filled,
                 ap_max: s.ap_max,
+                hp_fill,
+                mp_fill,
             };
             let name = if s.active { s.name.as_str() } else { "" };
             let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -277,11 +280,15 @@ impl LegaiaRuntime {
         let down_color = [0.6f32, 0.6, 0.6, 1.0];
         let mut out: Vec<TextDraw> = Vec::new();
 
-        // Per-slot rows, status strip and floating popups all come from the
-        // shared builder, which carries the ported retail HP / MP colour law
+        // Per-slot panels (party, retail-shaped with filled bars) + monster
+        // rows, status strips and floating popups all come from the shared
+        // builder, which carries the ported retail HP / MP readout-tint law
         // (`hp_bar_color_index` / `mp_bar_color_index`, FUN_800349EC /
-        // FUN_80035EA8). Rows are fed from the `BattleHud` model, refreshed
-        // each tick by the shared `sync_battle_hud_rows` fold.
+        // FUN_80035EA8) and the gauge-fill law (`battle_gauge::gauge_colors`,
+        // FUN_80046A20). Rows are fed from the `BattleHud` model, refreshed
+        // each tick by the shared `sync_battle_hud_rows` fold. The filled
+        // rects sample a solid-white font-atlas texel, which the page's
+        // canvas blitter stretches + tints like any other glyph quad.
         let letters: Vec<Vec<u8>> = self
             .battle_hud
             .slots
@@ -290,9 +297,13 @@ impl LegaiaRuntime {
             .collect();
         out.extend(ui::battle_hud_draws_for(
             font,
-            &battle_hud_slot_views(&self.battle_hud, &letters),
-            &battle_hud_popup_views(&self.battle_hud),
-            &[],
+            &ui::BattleHudFrame {
+                slots: &battle_hud_slot_views(&self.battle_hud, &letters),
+                popups: &battle_hud_popup_views(&self.battle_hud),
+                log: &[],
+                solid_src: ui::font_solid_src(font),
+                surface: (surface_w, surface_h),
+            },
             BATTLE_HUD_PEN,
         ));
 

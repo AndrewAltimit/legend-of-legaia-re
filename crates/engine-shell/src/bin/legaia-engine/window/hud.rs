@@ -962,17 +962,25 @@ impl PlayWindowApp {
             // Magic / Item submenus below for a K.O.'d target.
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
 
-            // Per-slot rows, status strip and floating popups all come from
+            // Per-slot panels (party, retail-shaped with filled bars) +
+            // monster rows, status strips and floating popups all come from
             // the shared builder, which carries the ported retail HP / MP
-            // colour law (`hp_bar_color_index` / `mp_bar_color_index`,
-            // FUN_800349EC / FUN_80035EA8). The rows are fed from the
-            // `BattleHud` model, refreshed each tick by
-            // `sync_battle_hud_rows`.
+            // readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`,
+            // FUN_800349EC / FUN_80035EA8) and the gauge-fill law
+            // (`battle_gauge::gauge_colors`, FUN_80046A20). Rows are fed from
+            // the `BattleHud` model, refreshed each tick by
+            // `sync_battle_hud_rows`; the filled rects ride a solid-white
+            // font-atlas texel so no new render pipeline is involved.
+            let letters = self.battle_hud_status_letters();
             out.extend(battle_hud_draws_for(
                 &self.font,
-                &battle_hud_slot_views(&self.battle_hud, &self.battle_hud_status_letters()),
-                &battle_hud_popup_views(&self.battle_hud),
-                &[],
+                &legaia_engine_render::BattleHudFrame {
+                    slots: &battle_hud_slot_views(&self.battle_hud, &letters),
+                    popups: &battle_hud_popup_views(&self.battle_hud),
+                    log: &[],
+                    solid_src: self.battle_hud_solid_src(),
+                    surface: (w, h),
+                },
                 BATTLE_HUD_PEN,
             ));
 
@@ -1642,6 +1650,15 @@ impl PlayWindowApp {
             .map(|s| s.status_letters())
             .collect()
     }
+
+    /// The solid-white font-atlas texel the battle HUD's filled rects sample
+    /// (`font_solid_src`). Scanned once per process - the window's font never
+    /// changes after startup.
+    pub(super) fn battle_hud_solid_src(&self) -> Option<(u32, u32, u32, u32)> {
+        use std::sync::OnceLock;
+        static SOLID: OnceLock<Option<(u32, u32, u32, u32)>> = OnceLock::new();
+        *SOLID.get_or_init(|| legaia_engine_render::font_solid_src(&self.font))
+    }
 }
 
 /// Project the HUD model's slot array into the shared builder's view type.
@@ -1659,6 +1676,7 @@ pub(super) fn battle_hud_slot_views<'a>(
         .iter()
         .enumerate()
         .map(|(i, s)| {
+            let (hp_fill, mp_fill) = s.gauge_fill_indices();
             let meta = HudSlotMeta {
                 is_party: s.is_party,
                 alive: s.alive,
@@ -1668,6 +1686,8 @@ pub(super) fn battle_hud_slot_views<'a>(
                 mp_max: s.mp_max,
                 ap_filled: s.ap_filled,
                 ap_max: s.ap_max,
+                hp_fill,
+                mp_fill,
             };
             let name = if s.active { s.name.as_str() } else { "" };
             let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -1697,7 +1717,11 @@ pub(super) fn battle_hud_popup_views(
 mod battle_hud_wiring_tests {
     use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
     use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
-    use legaia_engine_render::battle_hud_draws_for;
+    use legaia_engine_render::{BattleHudFrame, battle_hud_draws_for, gauge_fill_color};
+
+    /// A recognisable 1x1 solid src for the filled-rect draws.
+    const SOLID: (u32, u32, u32, u32) = (7, 3, 1, 1);
+    const SURFACE: (u32, u32) = (640, 480);
 
     fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
         let mut hud = BattleHud::new();
@@ -1717,76 +1741,102 @@ mod battle_hud_wiring_tests {
         hud
     }
 
-    /// The window's battle block must produce an MP field. The hand-rolled HUD
-    /// this replaced printed HP only, so this assertion is what pins the MP
-    /// readout as wired rather than merely available.
-    ///
-    /// MP is drawn at `pen.x + 140`; HP at `pen.x + 70`. Counting glyphs at or
-    /// past the MP column is therefore a positional test that cannot pass off
-    /// an HP-only row as an MP one.
-    #[test]
-    fn native_battle_hud_draws_an_mp_field() {
-        let font = legaia_font::synthetic_for_tests();
-        let hud = hud_with_party_row(250, 300, 12, 30);
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
+    fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
+        let letters: Vec<Vec<u8>> = hud.slots.iter().map(|s| s.status_letters()).collect();
+        battle_hud_draws_for(
+            &legaia_font::synthetic_for_tests(),
+            &BattleHudFrame {
+                slots: &battle_hud_slot_views(hud, &letters),
+                popups: &battle_hud_popup_views(hud),
+                log: &[],
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+            },
             BATTLE_HUD_PEN,
-        );
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        )
+    }
+
+    /// The window's battle block must produce a **drawn bar surface**: solid
+    /// rects sampling the white texel, with the HP fill taking the retail
+    /// gauge index (FUN_80046A20) through `gauge_fill_color`. A text-only
+    /// list cannot pass - the bar draws are the ones whose `src` is `SOLID`.
+    #[test]
+    fn native_battle_hud_draws_filled_bars() {
+        let hud = hud_with_party_row(250, 300, 12, 30);
+        let out = draws(&hud);
+        let rects: Vec<_> = out
+            .iter()
+            .filter(|d| d.src == SOLID)
+            .collect();
         assert!(
-            draws.iter().any(|d| d.dst.0 >= mp_x),
-            "no glyph reached the MP column at x={mp_x}"
+            rects.len() >= 4,
+            "expected panel chrome + bar rects, got {}",
+            rects.len()
+        );
+        // 250/300 > half -> gauge HIGH (7); 12/30 in (1/4, 1/2] -> MID (6).
+        assert!(
+            rects.iter().any(|d| d.color == gauge_fill_color(7)),
+            "no HP fill at the HIGH gauge colour"
+        );
+        assert!(
+            rects.iter().any(|d| d.color == gauge_fill_color(6)),
+            "no MP fill at the MID gauge colour"
         );
     }
 
-    /// The four-tier retail HP colour law has to reach the surface, not just
-    /// exist in engine-ui. Normal / caution / danger / K.O. must produce three
-    /// distinct tints plus the dim K.O. row.
+    /// The four-tier retail readout-tint law has to reach the surface, not
+    /// just exist in engine-ui: normal / caution / danger numerals must
+    /// produce three distinct glyph tints, and the gauge fill must move
+    /// through the matching FUN_80046A20 bands.
     #[test]
-    fn native_battle_hud_hp_tints_span_all_four_retail_tiers() {
-        let font = legaia_font::synthetic_for_tests();
-        let letters = vec![Vec::new(); 8];
-        let hp_x = BATTLE_HUD_PEN.0 + 70;
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
-        // First glyph of the HP field, per HP value.
-        let hp_tint = |hp: u16| -> [f32; 4] {
+    fn native_battle_hud_hp_tints_span_the_retail_tiers() {
+        let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
             let hud = hud_with_party_row(hp, 100, 0, 0);
-            let draws = battle_hud_draws_for(
-                &font,
-                &battle_hud_slot_views(&hud, &letters),
-                &[],
-                &[],
-                BATTLE_HUD_PEN,
-            );
-            draws
+            draws(&hud)
                 .iter()
-                .filter(|d| d.dst.0 >= hp_x && d.dst.0 < mp_x)
+                .filter(|d| d.src != SOLID)
                 .map(|d| d.color)
-                .next()
-                .expect("HP field produced no glyph")
+                .collect()
         };
-        let normal = hp_tint(90); // > max/2  -> index 7
-        let caution = hp_tint(40); // <= max/2 -> index 6
-        let danger = hp_tint(20); // <= max/4 -> index 9
-        assert_ne!(
-            normal, caution,
-            "caution tier not distinguished from normal"
-        );
-        assert_ne!(
-            caution, danger,
-            "danger tier not distinguished from caution"
-        );
-        assert_ne!(normal, danger, "danger tier not distinguished from normal");
-        // Caution is yellow (r ~= g, both high); danger is red (r > g).
-        assert!(danger[0] > danger[1], "danger tier is not red-dominant");
+        let caution = [1.0, 0.95, 0.4, 1.0]; // builder's yellow
+        let danger = [1.0, 0.4, 0.4, 1.0]; // builder's red
         assert!(
-            caution[1] > danger[1],
-            "caution tier is not the lighter tint"
+            !glyph_colors(90).iter().any(|c| *c == caution || *c == danger),
+            "normal tier numerals took a warning tint"
         );
+        assert!(
+            glyph_colors(40).iter().any(|c| *c == caution),
+            "caution tier numerals not yellow"
+        );
+        assert!(
+            glyph_colors(20).iter().any(|c| *c == danger),
+            "danger tier numerals not red"
+        );
+        // And the bar fill follows the gauge law into the danger band.
+        let hud = hud_with_party_row(20, 100, 0, 0);
+        assert!(
+            draws(&hud)
+                .iter()
+                .any(|d| d.src == SOLID && d.color == gauge_fill_color(9)),
+            "danger-band HP fill not at the LOW gauge colour"
+        );
+    }
+
+    /// The engine-ui panel anchors are literal mirrors of the canonical
+    /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits
+    /// below engine-vm in the crate graph, so it cannot import them). This
+    /// is the tie that keeps the mirror honest.
+    #[test]
+    fn panel_anchor_mirror_matches_the_engine_vm_port() {
+        use legaia_engine_vm::battle_party_panel::panel_anchors;
+        // Solo: one panel at 0x72.
+        assert_eq!(panel_anchors(1), Some((0x72, None)));
+        // Pair: 0x3F / 0xA5. Trio: 0x0C / 0x72 (third inferred at 0xD8).
+        assert_eq!(panel_anchors(2), Some((0x3F, Some(0xA5))));
+        assert_eq!(panel_anchors(3), Some((0x0C, Some(0x72))));
+        // The inferred third anchor continues the pinned 0x66 stride.
+        assert_eq!(0x72 - 0x0C, 0x66);
+        assert_eq!(0xA5 - 0x3F, 0x66);
     }
 
     /// The end-to-end wiring: a live `World` battle state must reach the
@@ -1820,19 +1870,15 @@ mod battle_hud_wiring_tests {
             "MP ceiling did not reach the model"
         );
 
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
-            BATTLE_HUD_PEN,
-        );
-        assert!(!draws.is_empty(), "synced battle state produced no draws");
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        let out = draws(&hud);
+        let _ = font;
+        assert!(!out.is_empty(), "synced battle state produced no draws");
+        // MP 12/30 lands in the MID gauge band (30>>2 = 7 < 12 <= 15): the
+        // live world state must surface an MP fill rect at that colour.
         assert!(
-            draws.iter().any(|d| d.dst.0 >= mp_x),
-            "live world state produced no MP field"
+            out.iter()
+                .any(|d| d.src == SOLID && d.color == gauge_fill_color(6)),
+            "live world state produced no MP fill"
         );
     }
 
@@ -1858,21 +1904,14 @@ mod battle_hud_wiring_tests {
             },
         );
         hud.push_popup(DamagePopup::damage(3, 25));
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
-            BATTLE_HUD_PEN,
-        );
-        // Row stride is 14; slot 3's row sits at pen.y + 42, popups 16 above.
+        let out = draws(&hud);
+        let _ = font;
+        // Row stride is 14; monster slot 3's row sits at pen.y + 42, popups
+        // 16 above (monster rows keep the index-anchored surface layout).
         let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;
         let popup_x = BATTLE_HUD_PEN.0 + 80;
         assert!(
-            draws
-                .iter()
-                .any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
+            out.iter().any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
             "no popup glyph at slot 3's anchor (y={want_y})"
         );
     }

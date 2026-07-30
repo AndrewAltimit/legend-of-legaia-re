@@ -290,6 +290,14 @@ pub struct HudSlotView<'a> {
     pub ap_filled: u8,
     /// Maximum AP for the slot this turn.
     pub ap_max: u8,
+    /// Gauge fill-colour index for the drawn HP bar - retail's
+    /// `FUN_80046A20` code space (`2` dead, `3` status override, `7` high,
+    /// `6` mid, `9` low). Engines derive it with
+    /// `legaia_engine_core::battle_hud::BattleSlotHud::gauge_fill_indices`;
+    /// [`gauge_fill_color`] maps it to RGBA.
+    pub hp_fill: u8,
+    /// Gauge fill-colour index for the drawn MP bar (same code space).
+    pub mp_fill: u8,
     /// One-letter abbreviations for active status icons. Engines pick the
     /// mapping (e.g. 'B' = Toxic, 'P' = Venom, 'S' = Curse, …).
     pub status_letters: &'a [u8],
@@ -334,6 +342,8 @@ impl<'a> HudSlotView<'a> {
             mp_max: meta.mp_max,
             ap_filled: meta.ap_filled,
             ap_max: meta.ap_max,
+            hp_fill: meta.hp_fill,
+            mp_fill: meta.mp_fill,
             status_letters,
         }
     }
@@ -351,6 +361,9 @@ pub struct HudSlotMeta {
     pub mp_max: u16,
     pub ap_filled: u8,
     pub ap_max: u8,
+    /// See [`HudSlotView::hp_fill`] / [`HudSlotView::mp_fill`].
+    pub hp_fill: u8,
+    pub mp_fill: u8,
 }
 
 /// Retail HP-bar text colour index for a battle slot.
@@ -365,10 +378,9 @@ pub struct HudSlotMeta {
 /// `*(short *)(char*0x414 - 0x7ff7b7ca)`), which forces the caution tier even
 /// above half HP; the engine approximates it with "any active status icon".
 ///
-// Reached on native through [`battle_hud_draws_for`], which
-// `engine-shell/.../window/hud.rs` calls for every battle frame. The browser
-// play page has no battle host, so this law does not reach that host - see the
-// `battle_hud_draws_for` entry in `scripts/ci/ui-host-drift-waivers.toml`.
+// Reached on both hosts through [`battle_hud_draws_for`]: the native window
+// (`engine-shell/.../window/hud.rs`) and the browser play page
+// (`web-viewer/src/play_battle.rs`) call it every battle frame.
 pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
     if cur == 0 {
         return 2;
@@ -403,68 +415,151 @@ pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     }
 }
 
+/// Locate a solid-white, fully-opaque texel in the font atlas and return it
+/// as a 1x1 `src` rect for [`TextDraw`].
+///
+/// This is what gives both hosts a **filled-rect primitive** without any new
+/// pipeline: every HUD draw already samples the font atlas with a colour
+/// multiply (`texel * color` on native, the canvas multiply-tint blit on the
+/// play page), so a quad whose source is one pure-white texel is a solid
+/// rect of the draw's own colour at any destination size. Safe under nearest
+/// sampling too - a 1x1 source spans exactly one texel, so no fragment can
+/// reach a neighbour.
+///
+/// Both the extracted retail font (fill texels whitewashed to `0xFF`) and
+/// the placeholder font (white 5x7 strokes) carry such a texel; `None` only
+/// on a custom atlas with no opaque white anywhere, in which case the bar
+/// builders degrade to text-only output.
+pub fn font_solid_src(font: &legaia_font::Font) -> Option<(u32, u32, u32, u32)> {
+    let (w, h) = font.atlas_dimensions();
+    let rgba = font.atlas_rgba();
+    for y in 0..h {
+        for x in 0..w {
+            let off = ((y * w + x) * 4) as usize;
+            if rgba[off] == 0xFF
+                && rgba[off + 1] == 0xFF
+                && rgba[off + 2] == 0xFF
+                && rgba[off + 3] == 0xFF
+            {
+                return Some((x, y, 1, 1));
+            }
+        }
+    }
+    None
+}
+
+/// RGBA for a retail gauge fill-colour index.
+///
+/// The **index space** is retail's (`FUN_80046A20` / the readout-tint pair
+/// `FUN_800349EC` / `FUN_80035EA8`: `2` dead, `3` status override, `7` high,
+/// `6` mid, `9` low). The **RGB values are approximations** - retail resolves
+/// each index through a font-CLUT row whose entries are not pinned; these are
+/// chosen to read the same way (green = healthy, amber = caution, red =
+/// danger, violet = status-locked, grey = dead).
+pub fn gauge_fill_color(idx: u8) -> [f32; 4] {
+    match idx {
+        2 => [0.30, 0.30, 0.34, 1.0],
+        3 => [0.72, 0.45, 0.95, 1.0],
+        6 => [1.0, 0.78, 0.15, 1.0],
+        9 => [1.0, 0.28, 0.22, 1.0],
+        _ => [0.25, 0.92, 0.40, 1.0],
+    }
+}
+
+/// Everything one battle-HUD frame draws, plus the two chrome inputs the
+/// retail-shaped panels need. Bundled so [`battle_hud_draws_for`] stays under
+/// clippy's argument-count threshold as the surface grows.
+pub struct BattleHudFrame<'a> {
+    /// Per-slot rows, indexed by **absolute actor-table slot** (party
+    /// `0..party_count`, monsters above). Inactive slots are empty-name
+    /// entries the builder skips - compacting would mis-anchor popups.
+    pub slots: &'a [HudSlotView<'a>],
+    pub popups: &'a [HudPopupView],
+    pub log: &'a [HudLogView<'a>],
+    /// 1x1 solid-white atlas rect from [`font_solid_src`]. `None` degrades
+    /// the panels to text-only (no filled bars / panel chrome).
+    pub solid_src: Option<(u32, u32, u32, u32)>,
+    /// Surface size in pixels. The party panels are laid out on the retail
+    /// 320x240 stage and integer-upscaled + centred into this surface, the
+    /// same transform the boot/menu stage uses.
+    pub surface: (u32, u32),
+}
+
+/// Party-panel stage geometry. Pinned values come from the battle-overlay
+/// disassembly; the rest are engine approximations and say so.
+///
+/// **Pinned (disassembly):** the per-party-size X anchors are retail's
+/// `FUN_801D84C0` panel-anchor table (solo `0x72`; pair `0x3F`/`0xA5`; trio
+/// `0x0C`/`0x72`), and the panel width is the `0x40`-px label-strip blit of
+/// `FUN_801DBC30`. Canonical port + provenance:
+/// `legaia_engine_vm::battle_party_panel` (`panel_anchors`, `label_strip`);
+/// mirrored here as literals because `engine-ui` sits below `engine-vm` in
+/// the crate graph. `engine-shell`'s HUD tests pin the two sets equal.
+///
+/// **Inferred:** the trio's third anchor `0xD8` - retail's table stores two
+/// positioned panels per arm; both pinned pairs sit `0x66` apart, and
+/// `0x72 + 0x66 = 0xD8` continues that stride.
+///
+/// **Approximate:** the panel Y band, panel height, and every in-panel bar /
+/// pip rect - retail's vertical placement lives in the text-actor open call
+/// (`FUN_8003541C` layout args), which is not fully decoded.
+const PANEL_STAGE_W: i32 = 0x40;
+/// Stage Y of the panel band (approximation - see [`PANEL_STAGE_W`]).
+const PANEL_STAGE_Y: i32 = 186;
+/// Stage height of one panel (approximation).
+const PANEL_STAGE_H: i32 = 52;
+
+/// Stage X of party panel `ordinal` (0-based) for `count` live party members.
+/// See [`PANEL_STAGE_W`] for what is pinned vs inferred here.
+fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
+    match (count, ordinal) {
+        (1, _) => 0x72,
+        (2, 0) => 0x3F,
+        (2, _) => 0xA5,
+        (_, 0) => 0x0C,
+        (_, 1) => 0x72,
+        (_, _) => 0xD8,
+    }
+}
+
 /// Build [`TextDraw`]s for the battle HUD.
 ///
-/// Layout (anchored at `pen`):
-/// ```text
-/// pen.x     +78         +161       +240        +319  +359
-///   ┌──────────────────────────────────────────────────────┐
-///   │ Vahn      HP 250/300  MP  10/30  APoooo----       T C│
-///   │ Noa       HP 180/220  MP   5/20  APoooo----          │
-///   │ Gala      HP  90/280  MP   0/15  AP--------          │
-///   │                                                      │
-///   │ Goblin    HP  50/100                                 │
-///   │ Goblin    HP   0/100                         K.O.    │
-///   └──────────────────────────────────────────────────────┘
+/// Two surfaces in one list:
 ///
-/// pen.y + 80   [popup]  -25
-///              [popup]  HEAL +50
-/// ```
+/// * **Party panels** - retail-shaped per-character panels across the bottom
+///   of the 320x240 stage (X anchors + width pinned from the battle overlay,
+///   see [`PANEL_STAGE_W`]): a bordered backdrop, the character name, a
+///   filled HP bar + `cur/max` numerals, a filled MP bar + numerals, the AP
+///   pip row, the status-letter strip, and a "K.O." overlay. Bar fills take
+///   the retail gauge index carried in [`HudSlotView::hp_fill`] /
+///   [`HudSlotView::mp_fill`] (`FUN_80046A20`) through
+///   [`gauge_fill_color`]; numerals take the retail readout-tint law
+///   ([`hp_bar_color_index`] / [`mp_bar_color_index`]).
+/// * **Monster rows** - compact `name  cur/max` rows with a thin HP bar,
+///   anchored at `pen` in raw surface pixels, one row per actor-table slot.
+///   An engine enhancement: retail's HUD draws no monster gauge at all, but
+///   hiding them would lose information the debug HUD already showed.
 ///
-/// The log column uses `pen.x` and stacks downward from `pen.y +
-/// slot_count * LINE_H`. Popups are drawn over each slot's row.
-///
-/// ## Column offsets
-///
-/// The columns are sized from **measured advances of the retail dialog font**
-/// (`legaia_font::Font::load_from_extracted`), not guessed - every field is
-/// given its widest realistic string plus an 8 px gutter:
-///
-/// | Field | Widest case | Measured px |
-/// |---|---|---|
-/// | name | longest monster name (`"Juggernaut"`) | 69 |
-/// | HP | `"HP 250/300"` | 75 |
-/// | MP | `"MP  10/ 30"` | 71 |
-/// | AP | `"AP"` + 8 pips | 71 |
-/// | K.O. | `"K.O."` | 32 |
-///
-/// This matters because the first draft of these offsets (HP `+70`, K.O.
-/// `+110`, MP `+140`, AP `+200`, status `+220`) was narrower than the font:
-/// four of the five columns overlapped their neighbour at three-digit HP, and
-/// the K.O. label painted directly over the HP digits. Nothing caught it while
-/// the builder had no caller. Widen a field here and the neighbour's offset
-/// moves with it.
-///
-/// Constants:
-/// - `LINE_H` = 14
-/// - Status icons are tiled at `x + STATUS_X` with 8 px stride
-/// - Damage popups are placed at `pen.x + POPUP_X, slot_y - 16`
+/// The log column stacks below the monster rows; damage popups anchor to
+/// their slot's panel (party) or row (monsters). All filled rects ride
+/// [`BattleHudFrame::solid_src`]; without it the builder emits text only.
 pub fn battle_hud_draws_for(
     font: &legaia_font::Font,
-    slots: &[HudSlotView<'_>],
-    popups: &[HudPopupView],
-    log: &[HudLogView<'_>],
+    frame: &BattleHudFrame<'_>,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
     const LINE_H: i32 = 14;
-    // Column origins, relative to `pen.x`. See the table above.
+    /// Monster-row column origins (surface px, relative to `pen.x`): HP
+    /// numerals, K.O. tag, status strip. Sized from measured advances of the
+    /// retail dialog font (longest monster name 69 px + gutter).
     const HP_X: i32 = 78;
-    const MP_X: i32 = 161;
-    const AP_X: i32 = 240;
-    const KO_X: i32 = 319;
-    const STATUS_X: i32 = 359;
+    const KO_X: i32 = 150;
+    const STATUS_X: i32 = 190;
     const STATUS_STEP: i32 = 8;
     const POPUP_X: i32 = 80;
+    /// Monster HP bar width / height, surface px.
+    const MBAR_W: i32 = 60;
+    const MBAR_H: i32 = 3;
 
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let monster: [f32; 4] = [1.0, 0.7, 0.7, 1.0];
@@ -473,95 +568,261 @@ pub fn battle_hud_draws_for(
     let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
     let yellow: [f32; 4] = [1.0, 0.95, 0.4, 1.0];
     let cyan: [f32; 4] = [0.5, 0.85, 1.0, 1.0];
+    let panel_bg: [f32; 4] = [0.05, 0.07, 0.16, 0.80];
+    let panel_frame: [f32; 4] = [0.78, 0.72, 0.50, 0.95];
+    let bar_back: [f32; 4] = [0.10, 0.10, 0.12, 0.90];
+    let pip_on: [f32; 4] = [0.45, 0.80, 1.0, 1.0];
+    let pip_off: [f32; 4] = [0.28, 0.30, 0.36, 1.0];
+
+    // The boot/menu stage transform: integer upscale of the 320x240 stage,
+    // centred in the surface.
+    let scale = (frame.surface.0 / BOOT_UI_STAGE_W)
+        .min(frame.surface.1 / BOOT_UI_STAGE_H)
+        .clamp(1, 4) as i32;
+    let origin = (
+        (frame.surface.0 as i32 - BOOT_UI_STAGE_W as i32 * scale) / 2,
+        (frame.surface.1 as i32 - BOOT_UI_STAGE_H as i32 * scale) / 2,
+    );
 
     let mut out = Vec::new();
+    // Solid rect in stage pixels (scaled into the surface).
+    let stage_rect = |out: &mut Vec<TextDraw>, x: i32, y: i32, w: i32, h: i32, c: [f32; 4]| {
+        if let Some(src) = frame.solid_src
+            && w > 0
+            && h > 0
+        {
+            out.push(TextDraw {
+                dst: (
+                    origin.0 + x * scale,
+                    origin.1 + y * scale,
+                    (w * scale) as u32,
+                    (h * scale) as u32,
+                ),
+                src,
+                color: c,
+            });
+        }
+    };
+    // Text laid out at a stage-pixel pen, upscaled with the stage transform
+    // (same shape as `scale_stage_text_draws`, applied per burst).
+    let stage_text = |out: &mut Vec<TextDraw>, font: &legaia_font::Font, s: &str, x: i32, y: i32, c: [f32; 4]| {
+        let layout = font.layout_ascii(s);
+        let mut draws = text_draws_for(&layout, (x, y), c);
+        scale_stage_text_draws(&mut draws, origin, scale as u32);
+        out.extend(draws);
+    };
 
-    for (i, slot) in slots.iter().enumerate() {
+    // Retail readout-tint law -> HUD palette. The "normal" tier (7) keeps the
+    // row's base colour so monster rows stay tinted; danger -> red, caution ->
+    // yellow, K.O. -> dim.
+    let tint = |idx: u8, base: [f32; 4]| -> [f32; 4] {
+        match idx {
+            9 => red,
+            6 => yellow,
+            2 => dim,
+            _ => base,
+        }
+    };
+
+    let party_count = frame
+        .slots
+        .iter()
+        .filter(|s| s.is_party && !s.name.is_empty())
+        .count()
+        .clamp(1, 3);
+
+    // Per-slot popup anchor, filled in as rows/panels are laid out. Surface px.
+    let mut popup_anchor: Vec<(i32, i32)> = frame
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(i, _)| (pen.0 + POPUP_X, pen.1 + i as i32 * LINE_H - 16))
+        .collect();
+
+    let mut party_ordinal = 0usize;
+    for (i, slot) in frame.slots.iter().enumerate() {
         if slot.name.is_empty() {
             continue;
         }
-        let row_y = pen.1 + i as i32 * LINE_H;
-        let row_color = if !slot.alive {
-            dim
-        } else if slot.is_party {
-            white
-        } else {
-            monster
-        };
+        if slot.is_party {
+            // ---- Retail-shaped bottom panel ----
+            let px = party_panel_stage_x(party_count, party_ordinal);
+            party_ordinal += 1;
+            let py = PANEL_STAGE_Y;
+            popup_anchor[i] = (origin.0 + (px + 8) * scale, origin.1 + (py - 26) * scale);
 
-        let name_layout = font.layout_ascii(slot.name);
-        out.extend(text_draws_for(&name_layout, (pen.0, row_y), row_color));
+            // Backdrop + 1-px frame.
+            stage_rect(&mut out, px, py, PANEL_STAGE_W, PANEL_STAGE_H, panel_bg);
+            stage_rect(&mut out, px, py, PANEL_STAGE_W, 1, panel_frame);
+            stage_rect(&mut out, px, py + PANEL_STAGE_H - 1, PANEL_STAGE_W, 1, panel_frame);
+            stage_rect(&mut out, px, py, 1, PANEL_STAGE_H, panel_frame);
+            stage_rect(&mut out, px + PANEL_STAGE_W - 1, py, 1, PANEL_STAGE_H, panel_frame);
 
-        // Retail tints HP/MP readouts by the cur/max ratio (FUN_800349EC /
-        // FUN_80035EA8). Map the returned colour index to the HUD palette: the
-        // "normal" tier (7) keeps the row's base colour so monster rows stay
-        // tinted; danger -> red, caution -> yellow, K.O. -> dim.
-        let bar_color = |idx: u8| -> [f32; 4] {
-            match idx {
-                9 => red,
-                6 => yellow,
-                2 => dim,
-                _ => row_color,
-            }
-        };
+            let base = if slot.alive { white } else { dim };
+            stage_text(&mut out, font, slot.name, px + 4, py + 2, base);
 
-        let hp_text = format!("HP {:>3}/{:>3}", slot.hp, slot.hp_max);
-        let hp_layout = font.layout_ascii(&hp_text);
-        let hp_color = if !slot.alive {
-            dim
-        } else {
-            bar_color(hp_bar_color_index(
-                slot.hp,
-                slot.hp_max,
-                !slot.status_letters.is_empty(),
-            ))
-        };
-        out.extend(text_draws_for(&hp_layout, (pen.0 + HP_X, row_y), hp_color));
-
-        if slot.mp_max > 0 {
-            let mp_text = format!("MP {:>3}/{:>3}", slot.mp, slot.mp_max);
-            let mp_layout = font.layout_ascii(&mp_text);
-            let mp_color = if !slot.alive {
+            // HP bar (fill colour = retail gauge index) + numerals (retail
+            // readout tint). `hp` is the ramping display value upstream.
+            let hp_frac = if slot.hp_max == 0 {
+                0.0
+            } else {
+                (slot.hp as f32 / slot.hp_max as f32).clamp(0.0, 1.0)
+            };
+            // Retail's dead arm (`FUN_80046A20` colour 2) greys the whole
+            // gauge, not just the fill - a zero-width fill would never show
+            // it, so the track itself takes the dead colour.
+            let hp_track = if slot.hp_fill == 2 {
+                gauge_fill_color(2)
+            } else {
+                bar_back
+            };
+            stage_rect(&mut out, px + 4, py + 16, 56, 5, hp_track);
+            let fill_w = (56.0 * hp_frac).round() as i32;
+            let fill_w = if slot.hp > 0 { fill_w.max(1) } else { fill_w };
+            stage_rect(&mut out, px + 4, py + 16, fill_w, 5, gauge_fill_color(slot.hp_fill));
+            let hp_color = if !slot.alive {
                 dim
             } else {
-                bar_color(mp_bar_color_index(slot.mp, slot.mp_max))
+                tint(
+                    hp_bar_color_index(slot.hp, slot.hp_max, !slot.status_letters.is_empty()),
+                    base,
+                )
             };
-            out.extend(text_draws_for(&mp_layout, (pen.0 + MP_X, row_y), mp_color));
-        }
+            stage_text(
+                &mut out,
+                font,
+                &format!("{}/{}", slot.hp, slot.hp_max),
+                px + 4,
+                py + 22,
+                hp_color,
+            );
 
-        if slot.ap_max > 0 {
-            let mut ap_text = String::with_capacity(2 + slot.ap_max as usize);
-            ap_text.push_str("AP");
-            for n in 0..slot.ap_max {
-                if n < slot.ap_filled {
-                    ap_text.push('o'); // filled
+            // MP bar + numerals (party rows only carry an MP ceiling).
+            if slot.mp_max > 0 {
+                let mp_frac = (slot.mp as f32 / slot.mp_max as f32).clamp(0.0, 1.0);
+                let mp_track = if slot.mp_fill == 2 {
+                    gauge_fill_color(2)
                 } else {
-                    ap_text.push('-'); // empty
+                    bar_back
+                };
+                stage_rect(&mut out, px + 4, py + 38, 26, 4, mp_track);
+                stage_rect(
+                    &mut out,
+                    px + 4,
+                    py + 38,
+                    (26.0 * mp_frac).round() as i32,
+                    4,
+                    gauge_fill_color(slot.mp_fill),
+                );
+                let mp_color = if !slot.alive {
+                    dim
+                } else {
+                    tint(mp_bar_color_index(slot.mp, slot.mp_max), base)
+                };
+                stage_text(
+                    &mut out,
+                    font,
+                    &format!("{}/{}", slot.mp, slot.mp_max),
+                    px + 33,
+                    py + 33,
+                    mp_color,
+                );
+            }
+
+            // AP pips.
+            if slot.ap_max > 0 {
+                if frame.solid_src.is_some() {
+                    for n in 0..slot.ap_max {
+                        let c = if n < slot.ap_filled { pip_on } else { pip_off };
+                        stage_rect(&mut out, px + 4 + n as i32 * 6, py + 45, 4, 4, c);
+                    }
+                } else {
+                    // Text-only fallback.
+                    let pips: String = (0..slot.ap_max)
+                        .map(|n| if n < slot.ap_filled { 'o' } else { '-' })
+                        .collect();
+                    stage_text(&mut out, font, &pips, px + 4, py + 42, base);
                 }
             }
-            let ap_layout = font.layout_ascii(&ap_text);
-            out.extend(text_draws_for(&ap_layout, (pen.0 + AP_X, row_y), row_color));
-        }
 
-        if !slot.alive {
-            let ko_layout = font.layout_ascii("K.O.");
-            out.extend(text_draws_for(&ko_layout, (pen.0 + KO_X, row_y), red));
-        }
+            // Status strip above the panel.
+            for (k, letter) in slot.status_letters.iter().enumerate() {
+                let s = (*letter as char).to_string();
+                stage_text(&mut out, font, &s, px + 4 + k as i32 * STATUS_STEP, py - 12, yellow);
+            }
 
-        for (k, letter) in slot.status_letters.iter().enumerate() {
-            let s = (*letter as char).to_string();
-            let layout = font.layout_ascii(&s);
-            out.extend(text_draws_for(
-                &layout,
-                (pen.0 + STATUS_X + k as i32 * STATUS_STEP, row_y - 12),
-                yellow,
-            ));
+            if !slot.alive {
+                stage_text(&mut out, font, "K.O.", px + 18, py + 22, red);
+            }
+        } else {
+            // ---- Compact monster row (engine enhancement; retail hides
+            // monster HP entirely) ----
+            let row_y = pen.1 + i as i32 * LINE_H;
+            let base = if slot.alive { monster } else { dim };
+
+            let name_layout = font.layout_ascii(slot.name);
+            out.extend(text_draws_for(&name_layout, (pen.0, row_y), base));
+
+            let hp_color = if !slot.alive {
+                dim
+            } else {
+                tint(
+                    hp_bar_color_index(slot.hp, slot.hp_max, !slot.status_letters.is_empty()),
+                    base,
+                )
+            };
+            let hp_layout = font.layout_ascii(&format!("{}/{}", slot.hp, slot.hp_max));
+            out.extend(text_draws_for(&hp_layout, (pen.0 + HP_X, row_y), hp_color));
+
+            // Thin HP bar under the numerals (surface px, unscaled like the
+            // rest of the monster block).
+            if let Some(src) = frame.solid_src {
+                let frac = if slot.hp_max == 0 {
+                    0.0
+                } else {
+                    (slot.hp as f32 / slot.hp_max as f32).clamp(0.0, 1.0)
+                };
+                let track = if slot.hp_fill == 2 {
+                    gauge_fill_color(2)
+                } else {
+                    bar_back
+                };
+                out.push(TextDraw {
+                    dst: (pen.0 + HP_X, row_y + 12, MBAR_W as u32, MBAR_H as u32),
+                    src,
+                    color: track,
+                });
+                let w = (MBAR_W as f32 * frac).round() as i32;
+                let w = if slot.hp > 0 { w.max(1) } else { w };
+                if w > 0 {
+                    out.push(TextDraw {
+                        dst: (pen.0 + HP_X, row_y + 12, w as u32, MBAR_H as u32),
+                        src,
+                        color: gauge_fill_color(slot.hp_fill),
+                    });
+                }
+            }
+
+            if !slot.alive {
+                let ko_layout = font.layout_ascii("K.O.");
+                out.extend(text_draws_for(&ko_layout, (pen.0 + KO_X, row_y), red));
+            }
+
+            for (k, letter) in slot.status_letters.iter().enumerate() {
+                let s = (*letter as char).to_string();
+                let layout = font.layout_ascii(&s);
+                out.extend(text_draws_for(
+                    &layout,
+                    (pen.0 + STATUS_X + k as i32 * STATUS_STEP, row_y),
+                    yellow,
+                ));
+            }
         }
     }
 
     let log_x = pen.0;
-    let log_y = pen.1 + slots.len() as i32 * LINE_H + 4;
-    for (i, line) in log.iter().enumerate() {
+    let log_y = pen.1 + frame.slots.len() as i32 * LINE_H + 4;
+    for (i, line) in frame.log.iter().enumerate() {
         let layout = font.layout_ascii(line.text);
         out.extend(text_draws_for(
             &layout,
@@ -570,11 +831,11 @@ pub fn battle_hud_draws_for(
         ));
     }
 
-    for popup in popups {
-        if (popup.slot as usize) >= slots.len() {
+    for popup in frame.popups {
+        if (popup.slot as usize) >= frame.slots.len() {
             continue;
         }
-        let slot_y = pen.1 + popup.slot as i32 * LINE_H;
+        let (ax, ay) = popup_anchor[popup.slot as usize];
         let popup_color = match (popup.is_heal, popup.is_crit) {
             (true, _) => apply_alpha(green, popup.alpha),
             (_, true) => apply_alpha(yellow, popup.alpha),
@@ -588,11 +849,7 @@ pub fn battle_hud_draws_for(
             format!("-{}", popup.amount)
         };
         let layout = font.layout_ascii(&text);
-        out.extend(text_draws_for(
-            &layout,
-            (pen.0 + POPUP_X, slot_y - 16),
-            popup_color,
-        ));
+        out.extend(text_draws_for(&layout, (ax, ay), popup_color));
     }
 
     out

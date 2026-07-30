@@ -114,6 +114,31 @@ impl BattleSlotHud {
         self.status_icons.dedup();
     }
 
+    /// Gauge fill-colour indices `(hp, mp)` for the drawn bars, in retail's
+    /// `FUN_80046A20` code space (`2` dead, `3` status override, `7` high,
+    /// `6` mid, `9` low).
+    ///
+    /// The whole-gauge precedence is retail's: death first (`hp == 0` after
+    /// the ramp settles), then the status override, then per-bar fill
+    /// ratios. The status flag retail reads is actor `+0x16E`; the engine
+    /// approximates it with "any active status icon", the same stand-in
+    /// [`legaia_engine_ui::hp_bar_color_index`]'s callers use.
+    ///
+    /// Since `hp` here is the **displayed** (ramping) value, the bar colour
+    /// tracks the drain exactly as retail's gauge does - `FUN_80046A20`
+    /// keys its death arm on the same `+0x172` display field, so a slot
+    /// whose live HP already hit zero stays in the low band until the bar
+    /// finishes draining.
+    pub fn gauge_fill_indices(&self) -> (u8, u8) {
+        legaia_engine_vm::battle_gauge::gauge_colors(
+            self.hp,
+            self.hp_max,
+            self.mp,
+            self.mp_max,
+            u16::from(!self.status_icons.is_empty()),
+        )
+    }
+
     /// Per-slot status icon strip, encoded as one-byte ASCII letters.
     /// Engines pass this to the renderer's `HudSlotView::status_letters`
     /// without an extra allocation step.
@@ -418,18 +443,23 @@ impl BattleHud {
     /// view structs.
     pub fn slot_views(&self) -> Vec<SlotView> {
         self.iter_active()
-            .map(|(slot_idx, s)| SlotView {
-                slot: slot_idx,
-                name: s.name.clone(),
-                is_party: s.is_party,
-                alive: s.alive,
-                hp: s.hp,
-                hp_max: s.hp_max,
-                mp: s.mp,
-                mp_max: s.mp_max,
-                ap_filled: s.ap_filled,
-                ap_max: s.ap_max,
-                status_letters: s.status_letters(),
+            .map(|(slot_idx, s)| {
+                let (hp_fill, mp_fill) = s.gauge_fill_indices();
+                SlotView {
+                    slot: slot_idx,
+                    name: s.name.clone(),
+                    is_party: s.is_party,
+                    alive: s.alive,
+                    hp: s.hp,
+                    hp_max: s.hp_max,
+                    mp: s.mp,
+                    mp_max: s.mp_max,
+                    ap_filled: s.ap_filled,
+                    ap_max: s.ap_max,
+                    hp_fill,
+                    mp_fill,
+                    status_letters: s.status_letters(),
+                }
             })
             .collect()
     }
@@ -478,6 +508,10 @@ pub struct SlotView {
     pub mp_max: u16,
     pub ap_filled: u8,
     pub ap_max: u8,
+    /// Gauge fill-colour indices (retail `FUN_80046A20` code space) - see
+    /// [`BattleSlotHud::gauge_fill_indices`].
+    pub hp_fill: u8,
+    pub mp_fill: u8,
     pub status_letters: Vec<u8>,
 }
 
@@ -1014,6 +1048,29 @@ mod tests {
             log_accent_color(LogAccent::Highlight),
             log_accent_color(LogAccent::Heal)
         );
+    }
+
+    /// The drawn-bar fill index follows retail's whole-gauge precedence
+    /// (FUN_80046A20 via `engine-vm::battle_gauge`): death first, then the
+    /// status override, then per-bar fill bands.
+    #[test]
+    fn gauge_fill_indices_follow_the_retail_precedence() {
+        let mut s = BattleSlotHud::new();
+        s.alive = true;
+        s.hp = 80;
+        s.hp_max = 100;
+        s.mp = 5;
+        s.mp_max = 40;
+        // HP high band (7), MP low band (9), coloured independently.
+        assert_eq!(s.gauge_fill_indices(), (7, 9));
+        // Any active status forces the whole gauge to the override colour.
+        s.set_status_icons([StatusKind::Toxic]);
+        assert_eq!(s.gauge_fill_indices(), (3, 3));
+        // Death (displayed HP zero) wins over everything.
+        s.hp = 0;
+        assert_eq!(s.gauge_fill_indices(), (2, 2));
+        s.status_icons.clear();
+        assert_eq!(s.gauge_fill_indices(), (2, 2));
     }
 
     /// The HUD row must carry the **ramping** HP (`BattleActor::hp_display`,
