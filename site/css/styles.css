@@ -190,8 +190,12 @@ body { padding-top: var(--topbar-h); }
 .zone-docs .app.no-toc {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
 }
-/* Explore zone: single full-width surface, no sidebar */
-.zone-explore .app { display: block; }
+/* Explore zone: page-list sidebar | full-width app surface (no TOC rail) */
+.zone-explore .app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  align-items: start;
+}
 .zone-explore .content { margin: 0 auto; }
 .page-home .content { max-width: 1400px; }
 
@@ -401,7 +405,8 @@ body { padding-top: var(--topbar-h); }
 @media (max-width: 880px) {
   .app { margin-left: 0; }
   .rail { display: none; }
-  .zone-docs .app, .zone-docs .app.no-toc {
+  .zone-docs .app, .zone-docs .app.no-toc,
+  .zone-explore .app {
     grid-template-columns: 1fr;
   }
   .sidebar {
@@ -414,7 +419,7 @@ body { padding-top: var(--topbar-h); }
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
-  .zone-docs .content { padding-top: 64px; }
+  .content { padding-top: 64px; }
 }
 
 /* ---------- Content column ---------- */
@@ -3309,3 +3314,61 @@ kbd {
   letter-spacing: 0;
 }
 .zone-docs .content > .page-header h1 { font-size: 1.85rem; font-weight: 700; }
+
+/* ===================================================================
+   Explore pages: compact disc bar + demoted explainer disclosure
+   (the tool-first restructure pattern used across interactive pages)
+   =================================================================== */
+
+/* Slim per-page disc chooser: sits under the lede, not as its own H2
+   section. rom-cache's status chip renders inside it. */
+.disc-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  border: 1px dashed rgba(217, 168, 98, 0.4);
+  border-radius: 9px;
+  padding: 0.55rem 0.9rem;
+  margin: 0.7rem 0 1.1rem;
+  background: rgba(217, 168, 98, 0.05);
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+.disc-bar label { color: var(--text); font-weight: 600; }
+
+/* "About this data" - the explanatory prose that used to sit above the
+   tool, collapsed below it instead. */
+details.about-data {
+  margin-top: 1.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+details.about-data > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.8rem 1.05rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  transition: color var(--transition);
+}
+details.about-data > summary::before {
+  content: "▸";
+  color: var(--text-dim);
+  font-size: 0.8em;
+  transition: transform var(--transition);
+}
+details.about-data[open] > summary::before { transform: rotate(90deg); }
+details.about-data > summary:hover { color: var(--text); }
+details.about-data[open] > summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+details.about-data > .about-body { padding: 0.4rem 1.2rem 1.1rem; }
+details.about-data > .about-body > h2:first-child,
+details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }

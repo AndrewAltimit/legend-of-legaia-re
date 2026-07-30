@@ -204,6 +204,24 @@ function zoneForKey(key) {
   return EXPLORE_KEYS.has(key || 'home') ? 'explore' : 'docs';
 }
 
+/* Explore sidebar: every interactive page, grouped like the home launcher,
+   so each one is reachable from the left nav on any explore page. */
+const EXPLORE_GROUPS = [
+  { label: 'play',           keys: ['play', 'minigames'] },
+  { label: 'browse the disc', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs'] },
+  { label: 'game data',      keys: ['monsters', 'shops', 'arts'] },
+  { label: 'modding',        keys: ['tooling/rom-patcher'] },
+];
+
+function exploreNavSections() {
+  const byKey = new Map();
+  for (const section of NAV) for (const item of section.items) byKey.set(item.key, item);
+  return EXPLORE_GROUPS.map(g => ({
+    label: g.label,
+    items: g.keys.map(k => byKey.get(k)).filter(Boolean),
+  }));
+}
+
 /* Icon rail: one entry per zone shortcut. `match` marks the entry active. */
 const RAIL = [
   { label: 'Home',   href: 'index.html',              match: k => k === 'home',
@@ -258,19 +276,21 @@ function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/* ---------- Docs sidebar ---------- */
-function buildSidebar(active, depth) {
+/* ---------- Zone sidebar (docs tree, or grouped explore pages) ---------- */
+function buildSidebar(active, depth, zone) {
   const sidebar = document.createElement('aside');
   sidebar.className = 'sidebar';
   sidebar.id = 'sidebar';
 
   const head = document.createElement('div');
   head.className = 'sidebar-head';
-  head.textContent = 'Documentation';
+  head.textContent = zone === 'explore' ? 'Explore' : 'Documentation';
   sidebar.appendChild(head);
 
-  for (const section of NAV) {
-    if (!DOCS_SECTIONS.has(section.label)) continue;
+  const sections = zone === 'explore'
+    ? exploreNavSections()
+    : NAV.filter(s => DOCS_SECTIONS.has(s.label));
+  for (const section of sections) {
     const sec = document.createElement('div');
     sec.className = 'sidebar-section';
     sec.dataset.section = section.label;
@@ -663,48 +683,48 @@ function injectLayout(opts) {
 
   const app = document.querySelector('.app');
 
-  /* Docs zone: sidebar + drawer toggle + TOC + prev/next */
+  /* Both zones get a left sidebar: the docs tree, or the grouped explore
+     page list - so every page is reachable from the left nav. */
+  const sidebar = buildSidebar(active, depth, zone);
+  const toggle = buildMobileToggle();
+  const scrim = document.createElement('div');
+  scrim.className = 'sidebar-overlay';
+  scrim.id = 'sidebar-scrim';
+
+  toggle.addEventListener('click', () => {
+    const open = sidebar.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+    scrim.classList.toggle('show', open);
+  });
+  scrim.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    toggle.setAttribute('aria-expanded', 'false');
+    scrim.classList.remove('show');
+  });
+
+  if (app) app.insertBefore(sidebar, app.firstChild);
+  else document.body.insertBefore(sidebar, document.body.firstChild);
+  document.body.insertBefore(toggle, document.body.firstChild);
+  document.body.appendChild(scrim);
+  restoreSidebarScroll(sidebar);
+
+  /* Order matters: assign IDs first → build TOC (clean text) → add § anchors */
+  assignHeadingIds();
   if (zone === 'docs') {
-    const sidebar = buildSidebar(active, depth);
-    const toggle = buildMobileToggle();
-    const scrim = document.createElement('div');
-    scrim.className = 'sidebar-overlay';
-    scrim.id = 'sidebar-scrim';
-
-    toggle.addEventListener('click', () => {
-      const open = sidebar.classList.toggle('open');
-      toggle.setAttribute('aria-expanded', String(open));
-      scrim.classList.toggle('show', open);
-    });
-    scrim.addEventListener('click', () => {
-      sidebar.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      scrim.classList.remove('show');
-    });
-
-    if (app) app.insertBefore(sidebar, app.firstChild);
-    else document.body.insertBefore(sidebar, document.body.firstChild);
-    document.body.insertBefore(toggle, document.body.firstChild);
-    document.body.appendChild(scrim);
-    restoreSidebarScroll(sidebar);
-
-    assignHeadingIds();
     const toc = buildTocRail();
-    injectHeadingAnchors();
     if (toc && app) app.appendChild(toc);
     else if (app) app.classList.add('no-toc');
+  } else if (app) {
+    app.classList.add('no-toc');
+  }
+  injectHeadingAnchors();
 
+  if (zone === 'docs') {
     const content = document.querySelector('.content');
     if (content) {
       const pn = buildPageNav(active, depth);
       if (pn) content.appendChild(pn);
     }
-  } else {
-    /* Explore zone: app chrome only. Headings still get ids + § anchors so
-       deep links keep working, but no sidebar / TOC / prev-next. */
-    if (app) app.classList.add('no-toc');
-    assignHeadingIds();
-    injectHeadingAnchors();
   }
 
   wireDiscChip();
