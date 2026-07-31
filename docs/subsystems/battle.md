@@ -27,7 +27,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -2018,7 +2018,11 @@ Slot indices are **absolute actor-table indices** - party ordinals below `party_
 
 ### The drawn surface
 
-`battle_hud_draws_for` renders party slots as per-character panels across the bottom of the 320x240 stage, with filled HP and MP bars. The panel X anchors and width are pinned from the battle overlay (`FUN_801D84C0`'s per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio `0x0C`/`0x72` with the third anchor `0xD8` inferred from the pinned `0x66` stride - and `FUN_801DBC30`'s `0x40`-px label strip; canonical port `engine-vm::battle_party_panel`). The panel Y band and in-panel bar rects are engine approximations and say so in the builder. Monster slots draw as compact rows with a thin HP bar - an enhancement; retail draws no monster gauge.
+`battle_hud_draws_for` renders party slots as per-character panels across the bottom of the 320x240 stage, with filled HP and MP bars.
+
+The panel X anchors are pinned from the battle overlay (`FUN_801D84C0`'s per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio `0x0C`/`0x72`; canonical port `engine-vm::battle_party_panel`), and the packet walk confirms them as the panels' **name pen**, five pixels inside a 102x48 panel plate. Retail's own seats, rects and palettes for the whole surface are in [screen chrome](#battle-screen-chrome-packet-pinned).
+
+That includes the one thing the bars here get wrong: **retail draws no HP or MP gauge at all**, in either the panel or the full-width active-actor readout. The filled bars are an engine addition, not an approximation of a retail one. Monster slots draw as compact rows with a thin HP bar - also an enhancement; retail draws no monster gauge.
 
 The filled rects need no dedicated pipeline: `font_solid_src` locates a solid-white texel in the dialog-font atlas and every bar is a `TextDraw` stretching that 1x1 source under a colour tint, through the same textured-quad pass both hosts already run for glyphs.
 
@@ -2050,6 +2054,137 @@ Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set 
 While a target picker's cursor is on the enemy row, both hosts draw retail's deduplicated monster-name strip instead of a debug label: `battle_hud::battle_enemy_target_rows` builds the rows off the live monster slots (identical adjacent monsters collapse into one run whose label takes the dedup-glyph suffix, `FUN_801D9D3C`), and each host runs the retail centre/relax/clamp layout (`target_picker::layout_enemy_menu_rows`) with its font as the measurer. The projected screen X the layout averages (battle actor `+0x34`) is renderer-owned and not plumbed into the HUD layer, so rows centre at `0xA0` and the retail overlap-relaxation pass spreads them - an approximation of retail's over-the-monster placement with the pass structure exact.
 
 Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser play page runs the same fold in `web-viewer`'s `play_battle.rs`.
+
+## Battle screen chrome (packet-pinned)
+
+What retail actually draws around the fight: the actor-name plaque, the
+party status readout and the command-chip cluster. Every number below is
+read out of retail's own display list. A mednafen battle save state carries
+main RAM verbatim, and libgpu leaves its queued primitives there as
+ordering-table nodes (`[u32 tag][GP0 words]`, `tag = len<<24 | next`), so
+the RAM image **is** the frame's packet stream - each `SPRT` carries its own
+`(x, y)`, `(u, v)`, `(w, h)` and CLUT id inline, and the `DR_TPAGE` node
+traversed before it fixes the texture page. Cross-checked against a
+full-VRAM dump of the same frame (`mednafen-state vram-dump`). Port:
+[`engine-vm::battle_chrome`](../../crates/engine-vm/src/battle_chrome.rs).
+
+Anchors used: the Tetsu-tutorial progression `v0_1_battle_command_menu` /
+`v0_1_battle_command_submenu`, the three-member `party_battle_gobu_gobu`,
+and the solo action frames `battle_gimard_tail_fire_a` /
+`battle_melee_hit_spark` / `player_steal_skeleton_pre` (see
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml)).
+
+### One sheet, one 3-slice, two palettes
+
+The whole chrome samples the **resident system-UI TIM**
+([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/asset/src/title_pak.rs),
+`PROT.DAT` `0x18E0`), whose pixels upload to VRAM page `(896, 256)` and
+whose 16-row CLUT block packs into VRAM row **511** as sixteen side-by-side
+sub-palettes. Text comes off the neighbouring menu-glyph atlas at page
+`(896, 0)` through row **510** sub-palette 13, as 14x15 blits of 16x16 cells
+(`cell = ascii - 0x20`, sixteen cells per row, `u = (i%16)*16`,
+`v = (i/16)*16`) advanced by each glyph's own width.
+
+The name plaque, the party bar and every command chip are the **same three
+tiles** at two sheet rows:
+
+| Row | Left cap / body / right cap | Sub-palette | Drawn by |
+|---|---|---|---|
+| `v = 0` | `(208,0)` / `(192,0)` / `(216,0)`, 8x20 / 16x20 / 8x20 | 4 (blue) | party status bar, command chips |
+| `v = 64` | `(208,64)` / `(192,64)` / `(216,64)` | 12 (carved gold) | actor-name plaque |
+
+The `v = 64` row is the art
+[`title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`](../../crates/asset/src/title_pak.rs)
+already pins as the field menu's tab banner. The battle plaque and the pause
+menu's title tab look like the same object because they are one asset;
+`battle_chrome::gold_plate_matches_tab_banner` asserts the equality.
+
+A run is composed left-to-right: cap at `x`, 16-wide body tiles from `x + 8`
+with the **final tile clipped** to the remainder, cap at `x + 8 + interior`.
+A 27-pixel interior emits a 16-wide and an 11-wide tile - the clip is retail
+behaviour, not a rounding of it.
+
+### The actor-name plaque
+
+Fixed seat `(8, 8)`, 20 px tall, in every battle. It names whichever actor is
+currently acting - the party member on their turn, the monster on its - which
+is why the same surface reads `Vahn` in one frame and `Gimard` in the next.
+
+The interior is exactly its content, so the plate is sized to the name:
+
+- no badge: `interior = name width`, first glyph at `(16, 12)`;
+- with an element badge: `interior = 20 + 5 + name width`, badge at
+  `(16, 12)`, first glyph at `(41, 12)`.
+
+Captured widths: `Noa` -> 20 (right cap at x=36), `Carl` -> 23, `Zeto` -> 24,
+`Vahn` -> 27 (cap at 43), `CheDelilas` -> 62, `Gimard` behind a badge -> 63
+(cap at 79). Total plate width is `interior + 16`.
+
+The **element badge** is a 20x12 sprite off the same sheet: eight badges at a
+32-texel pitch from `u = 6`, row `v = 192` plain and `v = 208` winged. Each
+badge picks its own 16-entry sub-palette out of the CLUT block at VRAM x
+`896..`, rows 498 / 499 - the palette travels with the badge, not with the
+row, so the colour is per-element and the geometry is not.
+
+### The party status readout - and it has no gauge
+
+Two mutually exclusive surfaces, and **neither draws a bar**. There is no HP
+or MP meter primitive anywhere in either packet run: a label sprite, numerals
+and a separator, nothing else. A filled gauge in a party HUD is an engine
+invention.
+
+**The active-actor bar** is a full-width blue run at `(8, 188)`, interior 288,
+spanning `8 ..= 312`. It appears while one actor holds the screen - entering
+their command, or playing their action out - and shows that actor only:
+
+| Piece | Seat |
+|---|---|
+| name glyphs | `(16, 192)` |
+| HP label sprite `(208,86)` 16x10 | `(80, 194)` |
+| HP current, right-aligned | ends x=134, `y = 192` |
+| HP `/` separator `(96,64)` 8x16, sub-pal 5 | `(136, 188)` |
+| HP maximum, left-aligned | starts x=154 |
+| MP label sprite `(224,86)` | `(192, 194)` |
+| MP current / separator / maximum | ends 238 / `(240, 188)` / starts 258 |
+
+Numerals are 8x12 cells at `v = 208`, `u = digit * 8`, off the font page
+through sub-palette 13. The separator sprite sits four rows **above** the
+numerals it separates.
+
+**The roster panels** are the default: one 102x48 marbled plate per member,
+texels `(0, 0)` of the same sheet through sub-palette 0, at `y = 164`, seated
+at x `109` (solo), `58` / `160` (pair), `7` / `109` / `211` (trio) - a
+102-pixel pitch. Content is panel-relative: name `(+5, +4)`, LV label sprite
+`(192,86)` at `(+64, +6)` with its digits at `(+88, +4)`, HP label at
+`(+4, +21)` and MP label at `(+4, +36)`, each row's current value ending at
+`+57`, separator at `(+57, y-4)`, maximum starting at `+73`.
+
+The panel seats are the same layout `FUN_801D84C0` publishes - its
+per-party-size anchors (`0x72`; `0x3F`/`0xA5`; `0x0C`/`0x72`, port
+[`battle_party_panel::panel_anchors`](../../crates/engine-vm/src/battle_party_panel.rs))
+are the **name pen**, five pixels inside the panel background. When the
+active-actor bar takes over, the panels do not stop drawing - they move to
+`y = 230`, below the 228-line display window, the same park row the arts
+input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
+
+### The command chips
+
+Chips are blue plate runs around a D-pad glyph - texels `(0, 112)` 16x16,
+sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. Every
+chip in one cluster is built at the **same** interior width; a chip is not
+sized to its own label, and the label is left-aligned at the interior's left
+edge, four rows down.
+
+| Cluster | Centre | Chip interior | Seats |
+|---|---|---|---|
+| `Begin` / `Run` | `(160, 92)` | 36 | horizontal pair, plates at x=96 and x=172, y=82 |
+| per-actor commands | `(228, 70)` | 48 | four-way diamond, `dx = 44`, `dy = 32` |
+
+The command diamond seats `Item` up `(196, 28)`, `Attack` left `(152, 60)`,
+the element command right `(240, 60)` and `Spirit` down `(196, 92)`. An
+unavailable command still gets its chip - the right seat draws a single `-`
+glyph for a character with no magic. The `Begin` / `Run` cluster is seat- and
+size-identical in a solo tutorial fight and in a three-member battle.
 
 ## SFX bank + scheduler
 

@@ -1,7 +1,7 @@
-//! The battle party-name panels: open, label strip, and teardown.
+//! The battle party-name panels: open, cross-out mark, and teardown.
 //!
 //! PORT: FUN_801DBB8C (label-actor open)
-//! PORT: FUN_801DBC30 (label-strip blit)
+//! PORT: FUN_801DBC30 (cross-out mark blit)
 //! PORT: FUN_801D84C0 (panel build + teardown)
 //!
 //! Three battle-overlay leaves that share one piece of state - the eight-byte
@@ -51,13 +51,21 @@
 //! Split by what each piece needs, because the three leaves do not share a
 //! blocker after all.
 //!
-//! **Wired.** The per-party-size X anchors ([`panel_anchors`]) and the
-//! `0x40 x 0x10` name-plate blit ([`label_strip`]) are both live: `engine-ui`
-//! mirrors the anchors as `party_panel_stage_x` (the two are pinned equal by
-//! an `engine-shell` test) and draws the strip's rect under each panel's
-//! name. [`panel_labels`] resolves which of the four buffers takes a name and
-//! which takes a caption, so the buffer layout is modelled rather than
-//! guessed at.
+//! **Wired.** The per-party-size X anchors ([`panel_anchors`]) are live:
+//! `engine-ui` mirrors them as `party_panel_stage_x` (the two are pinned
+//! equal by an `engine-shell` test). A packet walk of retail's own display
+//! list confirms them and says what they anchor - they are the panel's
+//! **name pen**, five pixels inside a 102x48 panel plate, not the plate's
+//! own edge ([`crate::battle_chrome::panel_seats`]). [`panel_labels`]
+//! resolves which of the four buffers takes a name and which takes a
+//! caption, so the buffer layout is modelled rather than guessed at.
+//!
+//! **Mis-attributed, now corrected.** [`cross_out_mark`] was read as the
+//! panels' name-plate blit and `engine-ui` draws a filled rect at its
+//! geometry. Resolving its two texture constants shows it samples the `etim`
+//! effect page's red cross-out X instead, so the plate under a battle name
+//! has no retail source at that rect at all - the real name plates are the
+//! system-UI sheet's 3-slice runs in [`crate::battle_chrome`].
 //!
 //! **No engine analogue: the text-actor handle.** `FUN_801DBB8C` opens a SCUS
 //! *text actor* (`FUN_8003541C` register-and-draw) and stashes its handle at
@@ -210,12 +218,21 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
     ctx_6ce == 0
 }
 
-/// The label strip at `(x, y)` (`FUN_801DBC30`).
+/// The cross-out mark at `(x, y)` (`FUN_801DBC30`).
 ///
 /// A `0x40 x 0x10` blit: screen span `x-8 ..= x+0x37` by `y-4 ..= y+0xB`
 /// against texel span `0 ..= 0x3F` by `0x60 ..= 0x6F` - both `0x3F` wide and
-/// `0x0F` tall, so the strip is drawn 1:1 with no scaling.
-pub fn label_strip(x: i16, y: i16) -> StripQuad {
+/// `0x0F` tall, so the mark is drawn 1:1 with no scaling.
+///
+/// It is **not** a name plate. Resolving the two constants the quad carries
+/// settles what it samples: `tpage 7` is page `(448, 0)` and CLUT `0x7704` is
+/// `(64, 476)`, which is the `etim` effect page's red **cross-out X** at
+/// texels `(0, 96)`-`(63, 111)` - the same rect
+/// [`minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md)
+/// names for the mark retail lays over a forbidden command chip, confirmed by
+/// decoding those texels out of a battle VRAM dump. The battle name plates
+/// come off a different sheet entirely; see [`crate::battle_chrome`].
+pub fn cross_out_mark(x: i16, y: i16) -> StripQuad {
     let x0 = x.wrapping_sub(8);
     let x1 = x.wrapping_add(0x37);
     let y0 = y.wrapping_sub(4);
@@ -437,7 +454,7 @@ mod tests {
 
     #[test]
     fn strip_is_a_one_to_one_blit_of_a_sixty_four_by_sixteen_cell() {
-        let q = label_strip(100, 80);
+        let q = cross_out_mark(100, 80);
         assert_eq!(q.xy[0], (92, 76));
         assert_eq!(q.xy[3], (155, 91));
         assert_eq!(q.xy[1].0 - q.xy[0].0, (q.uv[1].0 - q.uv[0].0) as i16);
@@ -452,7 +469,7 @@ mod tests {
 
     #[test]
     fn strip_corners_share_edges() {
-        let q = label_strip(0, 0);
+        let q = cross_out_mark(0, 0);
         assert_eq!(q.xy[0].1, q.xy[1].1);
         assert_eq!(q.xy[2].1, q.xy[3].1);
         assert_eq!(q.xy[0].0, q.xy[2].0);
