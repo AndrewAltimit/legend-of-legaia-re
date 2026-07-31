@@ -139,14 +139,26 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
     eprintln!("[ok] {checked} scenes, {rows_checked} rollable formation rows all resolve");
 }
 
-/// The New-Game reset clears `World::encounter`. When a host runs it *after*
-/// scene entry (which `play-window --seed-party` does), the per-region
-/// tracker is left installed with nothing to trigger into - and every roll it
-/// produced used to be discarded in `on_field_step`.
+/// A New Game runs *after* scene entry (`play-window --seed-party` does
+/// exactly that), so it lands on a world whose per-region tracker is already
+/// installed. It used to null `World::encounter` outright, leaving that
+/// tracker with nothing to trigger into - and because a region roll is
+/// destructive (RNG drawn, pick latched, counter re-seeded, all before the
+/// return), every roll it produced was a fight that happened and was thrown
+/// away.
 ///
-/// Walk a real region-bearing scene after that reset and require an actual
-/// battle. Also asserts the pre-reset baseline so the test cannot pass by
-/// the scene simply never rolling.
+/// Two arms, because there are two independent guarantees:
+///
+/// * `NewGame` - the reset keeps the session, so the scene's own table stays
+///   in charge. This is the invariant; the assertion below is what fails if
+///   the session is ever dropped again.
+/// * `NewGameSessionDropped` - the session is nulled anyway, standing in for
+///   any host that clears it. `on_field_step` must self-heal by installing a
+///   bracket rather than discarding the pick. Without this arm that backstop
+///   has no coverage.
+///
+/// Both walk a real region-bearing scene and require an actual battle; the
+/// no-reset baseline keeps the test from passing on a scene that never rolls.
 #[test]
 fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
     let Some(extracted) = extracted_dir() else {
@@ -154,20 +166,38 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         return;
     };
 
-    for (scene, reset) in [("rikuroa", false), ("rikuroa", true), ("map03", true)] {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Reset {
+        None,
+        NewGame,
+        NewGameSessionDropped,
+    }
+
+    for (scene, reset) in [
+        ("rikuroa", Reset::None),
+        ("rikuroa", Reset::NewGame),
+        ("rikuroa", Reset::NewGameSessionDropped),
+        ("map03", Reset::NewGame),
+    ] {
         let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
         if host.enter_field_scene(scene, 0).is_err() {
             eprintln!("[skip] {scene}: enter_field_scene failed on this extraction");
             continue;
         }
         host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
-        if reset {
+        if reset != Reset::None {
+            let had_session = host.world.encounter.is_some();
             // The exact call `BootSession::begin_new_game` makes.
             host.world.begin_new_game();
-            assert!(
-                host.world.encounter.is_none(),
-                "the reset is expected to clear the session - that is the state under test"
+            assert_eq!(
+                host.world.encounter.is_some(),
+                had_session,
+                "{scene}: the new-game reset must reset the encounter session, not drop it - \
+                 a dropped session strands the region tracker and silently eats its rolls"
             );
+            if reset == Reset::NewGameSessionDropped {
+                host.world.encounter = None;
+            }
         }
         let world = &mut host.world;
         let Some(table) = world
@@ -204,7 +234,7 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         }
         assert!(
             triggered,
-            "{scene} (new-game reset: {reset}) must roll a region encounter into the transition SM"
+            "{scene} (reset: {reset:?}) must roll a region encounter into the transition SM"
         );
         let mut entered = false;
         for _ in 0..2_000 {
@@ -216,7 +246,7 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         }
         assert!(
             entered,
-            "{scene} (new-game reset: {reset}) rolled but never entered battle - the formation \
+            "{scene} (reset: {reset:?}) rolled but never entered battle - the formation \
              did not resolve"
         );
     }
