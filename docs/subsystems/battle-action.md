@@ -75,7 +75,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` (the [player-summon effect-script dispatcher](#battle-helper-functions)) again while the fade settles. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero. | `0x37`. |
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
-| `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). For `+0x1DE == 1` (Item): looks up item record at `ctx[+0x1DF]*0xC + -0x7FF8BC97` for label/icon; writes `actor[+0x1E8/+0x1E9]` (icon page/x); writes HUD via `_DAT_80077332..+0x35C`. Special case: `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. For non-Item (Magic/Spirit, `+0x1DE != 1`): does the same write of `+0x1E8/+0x1E9` from the spell table at `actor[+0x1DF]*0xC + -0x7FF8AB38`, computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
+| `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](#the-class-tier-seed-at-state-0x3c)). Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
 | `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](#battle-helper-functions)). | `0x3E`. |
 | `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For type 5 (Spirit-arts variant), invokes the Damage UI: writes `_DAT_80076D7E` (damage value) from target HP+formula, calls `FUN_801D8DE8(0xF, 0)` (damage popup) and `FUN_801D8DE8(0x52, 0)` (damage text); RNG via `func_0x80056798`; computes damage scaling: `((target_HP * 7) / 5) + 8`, capped at 0x120 or 100. Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
 | `0x3F` | Spirit - wait & fire damage | Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown). | `0x40`. |
@@ -403,6 +403,8 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x1DD` | u8 | Active-target slot index (used by Magic / Item to retarget mid-chain). |
 | `+0x1DE` | u8 | **Action category** (the inner-dispatch key - see above). |
 | `+0x1DF..+0x1F2` | u8 × N | Per-action parameter byte stream (item ID / spell ID / strike-anim list). The **attack band terminates on `0x00`**, the magic band on `0xFF` (`-1`). Read sequentially via `actor[+0x1DF + actor[+0x15]]`. For a party attack the bytes are direction-command swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (seeded by `FUN_801EED1C`); for a monster they are entry indices from the AI picker. |
+| `+0x1E8` | u8 | **Effect class** of the committed action, seeded once at state `0x3C` (item-effect descriptor `+0` for an Item, spell record `+0` otherwise). Selects the applier's jump-table arm at `0x80014FA0`, the arm's [cue-group site](#fun_800402f4s-cue-group-sites), and the [cast-audio cue](#state-table). |
+| `+0x1E9` | u8 | **Tier / sub-index** within that class, from `+1` of the same record. The `param_2` the applier's cue-group sites turn into a group id for classes `0`, `1`, `2` and `7`. |
 | `+0x1F5` | u8 | Anim-cue flag (read at state `0x33` for fade-in trigger). |
 | `+0x1F9` | u8 | "Spirit shield" flag - gates spirit-arts variant path. Written by `FUN_800402F4` case 5 (set) / case 4 (cleanse clears), selected by `actor[+0x1E8]` seeded from the spell-table class byte (`DAT_800754C8 +0`, `5` = shield / `4` = cleanse). |
 | `+0x1FA` | u8 | Spell-cast iteration counter. |
@@ -743,6 +745,27 @@ menu restore could interrupt has always finished before the menu can act** -
 the inter-action race is closed by the very wait this page documents. The
 intra-action Final Heal is the one crack, and it is measured tight above.
 
+#### The `(class, tier)` seed at state `0x3C`
+
+State `0x3C` is the only writer of `actor[+0x1E8]` / `+0x1E9`, and the branch it
+takes is the category byte `+0x1DE` (`0x801E3B70..0x801E3CB0`):
+
+| `+0x1DE` | `+0x1E8` | `+0x1E9` |
+|---|---|---|
+| `1` (Item) | `+0` of the item-effect descriptor at `0x800752C0 + subtype*4`, where `subtype` is the item record's `+1` byte (`0x80074368 + id*0xC + 1`) | `+1` of that descriptor |
+| anything else (Magic / Spirit) | `+0` of the spell record `0x800754C8 + id*0xC` | `+1` of the same record |
+
+Both legs land in one class space. `0..=8` are the applier's effect classes -
+heal / cure / revive / shield / buff, the same numbering
+[`item-effect-table.md`](../formats/item-effect-table.md) documents - and the
+larger values (`0x14` plain cast, `0x32` summon, `0x63` capture) are the spell
+band's routing bytes. That is why the spirit that raises the shield is disc
+data: a Spirit's spell record simply carries a small class byte.
+
+Three consumers read the pair, all downstream of this one write: the applier
+call at `0x801E4134`, the cue-group site it selects, and the cast-audio cue
+`FUN_801F3990` fired one state earlier at `0x801E3E04`.
+
 #### `FUN_800402F4`'s cue-group sites
 
 The applier does one more thing on its way out of most arms: it asks the
@@ -773,15 +796,25 @@ Classes `6`, `9`, `0xA`, `0xB`/`0xC`/`0xD`, `0xE` and `0x82` never reach the
 expander; class 6's own 7-entry inner table at `0x800151B0` only bumps
 counters. The class-1 loop is bounded by `param_3 == 9` (monster slots `3..7`)
 versus anything else (party slots `0..3`) and carries a second per-slot gate on
-the roster byte, so a party-wide restore fires the expander once per living
-member.
+the roster byte (`DAT_8007BD10[slot]` below 3, `DAT_8007BD09[slot]` above), so a
+party-wide restore fires the expander once per **seated** member - occupancy,
+not liveness, so a downed member still gets the cue.
 
-So the selection is a `(class, param_2)` table plus one loop - small. What is
-**not** small is the input side: see
-`engine-vm`'s `battle_cue_group` module doc for the three things that block
-wiring it (the port's `apply_damage` hook does not carry `param_1` / `param_2`,
-it has an attack-band call site retail does not have, and the expansion has no
-consumer).
+`a0` and `a1` are literals too, one pair per site - the tint and the actor-state
+word the expander writes to `actor[+0x04]`. The class-`0` / class-`1` restore
+arms and the class-`7` tier-1 / tier-2 buff arms pass the neutral tint
+`0x00808080`, so those recolour nothing; the rest do. **The revive arm
+(`0x800410B8`) is the one site whose `a1` is `0x20080200`** - the exact word the
+expander tests for - so revive is the only arm that leaves `actor[+0x0C]`
+alone.
+
+So the whole selection is a `(class, param_2)` table plus one loop, and the port
+carries it as `engine-vm`'s `battle_cue_group::cue_group_for` rather than
+porting the applier's 1976 instructions. The port's own call site is the
+applier's single SM one (state `0x3F`, `0x801E4134`): the acting actor's
+`+0x1E8` / `+0x1E9` pair selects the site, the expander runs, and each cue goes
+to the effect pool / SFX scheduler through the host. The `+0x1E8` / `+0x1E9`
+seed itself is state `0x3C`'s - see the state table.
 
 ### The clamp asymmetry: two overkill guards against different references
 

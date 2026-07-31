@@ -96,9 +96,8 @@ pub const MESSAGE_ID: u8 = 0x66;
 ///
 /// PORT: FUN_801f3c34 (`0x801F3C9C..0x801F3CDC`)
 ///
-/// NOT WIRED: shared by [`queued_magic_message`] and
-/// [`follow_up_hook_install`], both of which are themselves inert - see
-/// [`queued_magic_message`] for the blocker, which is **not** the caller.
+/// Shared by [`queued_magic_message`] - live from the action SM's state
+/// `0x36` - and [`follow_up_hook_install`], which is still inert.
 pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
     for i in 0..SCAN_LIMIT {
         if spell_ids.get(i).copied() == Some(action) {
@@ -119,21 +118,28 @@ pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
 ///
 /// PORT: FUN_801f3c34
 ///
-/// NOT WIRED: **the caller is not the blocker.** An earlier note here said
-/// "the engine's battle round resolves a queued action through
-/// `crate::battle_action` without this pre-pass"; the pass *is* inside that
-/// SM, at state `0x36` (`SummonReturn`), which the port has and drives. What
-/// is missing is three inputs, none of which the SM's host trait exposes:
+/// Live from the action SM's state `0x36` (`SummonReturn`, retail's
+/// `jal 0x801f3c34` at `0x801E4CB8`), which is where all three of its inputs
+/// now come from:
 ///
 /// 1. the caster's record `+0x13D` / `+0x161` spell-id and spell-level arrays
-///    (`legaia_save::character::SpellList` holds both, but
-///    `BattleActionHost` has no accessor that reaches a character record);
-/// 2. the battle message channel `FUN_801D8DE8(id, mode)` - the port routes
-///    the SM's HUD calls through `BattleActionHost::ui_element`, which is the
-///    same printer, so this one is an argument away;
-/// 3. the pending latch `0x801F6960` that this reads and
-///    [`follow_up_hook_install`] writes, together with the hold `0x801F6964`
-///    the SM clamps in the same state.
+///    reach it through
+///    [`BattleActionHost::caster_spell_list`](crate::battle_action::BattleActionHost::caster_spell_list)
+///    (`legaia_save::character::SpellList` on the engine side);
+/// 2. the battle message channel `FUN_801D8DE8(id, mode)` is
+///    [`BattleActionHost::ui_element`](crate::battle_action::BattleActionHost::ui_element),
+///    the same printer the SM's other HUD calls already use, and the
+///    `ctx[+0x18]` mirror is
+///    [`BattleActionCtx::message_id`](crate::battle_action::BattleActionCtx::message_id);
+/// 3. the pending latch `0x801F6960` is
+///    [`BattleActionCtx::follow_up_pending`](crate::battle_action::BattleActionCtx::follow_up_pending).
+///
+/// The latch's **writer** is still missing: [`follow_up_hook_install`] is the
+/// routine that sets it, and that half stays inert (see its own note), so in
+/// the port the latch is only ever read as clear. Retail's guard is silent
+/// whenever a follow-up is already pending, so the port errs toward printing
+/// the message in a case retail might not - a one-branch difference, named
+/// here rather than papered over.
 pub fn queued_magic_message(
     action: u8,
     spell_ids: &[u8],
@@ -268,8 +274,9 @@ pub fn follow_up_band(level: u8) -> i32 {
 /// PORT: FUN_801f3d3c (`0x801F3DEC..0x801F3E7C`)
 ///
 /// NOT WIRED: a helper of [`follow_up_hook_install`], which is itself inert -
-/// same blocker. Its own input is *not* missing: the affinity matrix is
-/// disc-parsed and live as `World::element_affinity`.
+/// same blocker (the `[element][band]` record table at `0x801F6870` has no
+/// parser, so there is no record to install). Its own input is *not* missing:
+/// the affinity matrix is disc-parsed and live as `World::element_affinity`.
 pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
     if inp.roll_enabled == 0 {
         return true;
@@ -297,10 +304,17 @@ pub fn follow_up_roll_passes(inp: &FollowUpInputs) -> bool {
 ///
 /// PORT: FUN_801f3d3c
 ///
-/// NOT WIRED: same blocker as [`queued_magic_message`] - the caster's record
-/// spell-id / spell-level arrays are not reachable from `BattleActionHost`,
-/// and the follow-up slot `0x800775B4` + latch `0x801F6960` are not modelled,
-/// so there is nowhere to install the returned hook.
+/// NOT WIRED, and the blocker is no longer the one [`queued_magic_message`]
+/// had: the caster's spell record now reaches the SM
+/// (`BattleActionHost::caster_spell_list`) and the latch is
+/// `BattleActionCtx::follow_up_pending`. What remains missing is the
+/// **record** this installs. [`FOLLOW_UP_TABLE`] (`0x801F6870`,
+/// `[element][band]` 8-byte records) has no parser - `legaia_asset` extracts
+/// the move-power and effect-aux regions of PROT 0898 but not this one - so
+/// [`FollowUpHookRecord`] has no disc source and a caller could only install
+/// a zeroed hook. The `0x801CFA2C` element jump-table arms this function
+/// escapes into for elements `< 7` are separate bodies and are not dumped
+/// either, so most elements would not reach the installer tail at all.
 pub fn follow_up_hook_install(
     action: u8,
     spell_ids: &[u8],

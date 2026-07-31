@@ -94,6 +94,24 @@ pub(super) fn summon_return<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    // The queued-magic follow-up guard runs at the head of this arm, before
+    // the visibility restore: retail's `jal 0x801f3c34` is at `0x801E4CB8`,
+    // in the body that goes on to stamp `ctx[7] = 0x37`.
+    // PORT: FUN_801F3C34 (call site; the pass itself is
+    // `crate::move_no_effect_guard::queued_magic_message`)
+    let slot = ctx.active_actor;
+    let action = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
+    if let Some((ids, levels)) = host.caster_spell_list(slot)
+        && let Some(message) = crate::move_no_effect_guard::queued_magic_message(
+            action,
+            &ids,
+            &levels,
+            ctx.follow_up_pending != 0,
+        )
+    {
+        host.ui_element(message, 0);
+        ctx.message_id = message;
+    }
     // Restore actor visibility.
     for s in 0..host.slot_count() {
         if let Some(a) = host.actor_mut(s) {

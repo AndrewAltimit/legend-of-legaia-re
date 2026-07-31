@@ -246,6 +246,14 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // stream bytes here are direction swings `0x0C..0x0F`, art starters
     // `0x19`/`0x1A`, and art constants `0x1B+`.)
     //
+    // The strike loop resolves damage through `FUN_801EC3E4` (the fold
+    // above and the host's art-strike hook), NOT through the item / restore
+    // applier: `jal 0x800402f4` occurs exactly once in `FUN_801E295C`, at
+    // `0x801E4134` in the spirit band, and it is passed an effect class where
+    // this loop would have passed an animation byte. The port used to call
+    // `apply_damage(next_byte, 0, target, slot)` from here; that call site
+    // does not exist in retail and is gone.
+    //
     // When the actor has a `chosen_art` set and the host returns an
     // [`legaia_art::ArtRecord`] for it, also dispatch
     // [`BattleActionHost::apply_art_strike`] with the per-strike
@@ -272,7 +280,6 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
             host.apply_art_strike(info);
         }
     }
-    host.apply_damage(next_byte, 0, target, slot);
     stay(ctx)
 }
 

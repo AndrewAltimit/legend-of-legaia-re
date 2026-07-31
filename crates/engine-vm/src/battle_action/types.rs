@@ -482,6 +482,41 @@ pub struct BattleActor {
     pub sub_route: u8,
     /// `+0x1E7` - queued anim staged for spirit / item paths.
     pub queued_anim_b: u8,
+    /// `+0x1E8` - the committed action's **effect class**, seeded once at
+    /// [`ActionState::SpiritPreArm`] and read by everything downstream that
+    /// has to know *what kind* of thing this action does.
+    ///
+    /// Retail seeds it from one of two disc tables, picked on the category
+    /// byte `+0x1DE` (`overlay_battle_action_801e295c.txt`
+    /// `0x801E3B70..0x801E3CB0`):
+    ///
+    /// * category `1` (Item): the item's property record `+1`
+    ///   (`0x80074368 + id*0xC`) indexes the **item-effect descriptor table**
+    ///   `0x800752C0` (4-byte stride) and this takes the record's `+0` byte -
+    ///   `legaia_asset::item_effect::ItemEffect::class`.
+    /// * any other category (Magic / Spirit): the **spell table** record
+    ///   `0x800754C8 + id*0xC`, byte `+0` -
+    ///   `legaia_asset::spell_names::SpellEntry::class`.
+    ///
+    /// Both legs land in one class space: `0..=8` are the applier's effect
+    /// classes (heal / cure / revive / shield / buff), and the larger values
+    /// (`0x14` plain cast, `0x32` summon, `0x63` capture) are the spell-band
+    /// routing bytes. Consumers: the damage primitive's `a0`
+    /// ([`BattleActionHost::apply_damage`], retail `0x801E4124`), the
+    /// cue-group site selection ([`crate::battle_cue_group::cue_group_for`])
+    /// and the cast-audio dispatcher
+    /// ([`crate::battle_cast_cue::cast_audio_cue`]).
+    pub cast_class: u8,
+    /// `+0x1E9` - the class's **tier / sub-index**, seeded beside
+    /// [`Self::cast_class`] from byte `+1` of the same record.
+    ///
+    /// For an item this is `legaia_asset::item_effect::ItemEffect::tier` (the
+    /// heal-amount row, the buff stat, ...); for a spell it is the record's
+    /// `+1` sub-index (`docs/formats/spell-table.md`). It is the `param_2`
+    /// the applier's cue-group sites turn into a group id for classes `0`,
+    /// `1`, `2` and `7`, and the byte the cast-cue dispatcher's class-`7` arm
+    /// gates on.
+    pub cast_sub_class: u8,
     /// Chosen Tactical Art for this turn. When `Some`, the strike-band
     /// states call `BattleActionHost::art_record(character, action)` to
     /// fetch power bytes / hit timings / status effect. `None` falls
@@ -683,6 +718,22 @@ pub struct BattleActionCtx {
     pub hit_counter: u8,
     /// `[+0x24D]` - recovery gate read at `MagicRecovery`.
     pub magic_recovery_gate: u8,
+    /// `[+0x18]` - the battle **message id** the last printer call mirrored
+    /// here. Retail's `FUN_801F3C34` writes `0x66` into it beside the
+    /// `FUN_801D8DE8(0x66, 0)` call it makes
+    /// ([`crate::move_no_effect_guard::queued_magic_message`]); the port
+    /// writes it from the same place, through
+    /// [`BattleActionHost::ui_element`].
+    pub message_id: u8,
+    /// The follow-up latch `0x801F6960` - non-zero while a queued-magic
+    /// follow-up is already pending, which is what makes
+    /// [`crate::move_no_effect_guard::queued_magic_message`] stay silent.
+    ///
+    /// It is a battle-overlay global rather than a `ctx` byte in retail; the
+    /// port keeps it here because its only reader and its only writer are
+    /// both inside this state machine's reach and it has the same lifetime as
+    /// the rest of the action context.
+    pub follow_up_pending: u8,
     /// `[+0x6D6]` - per-action ramp target (the state machine's "PC offset"
     /// cursor for the action body - separate from `action_state`).
     pub ramp_target: u16,

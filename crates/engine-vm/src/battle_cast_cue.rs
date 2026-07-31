@@ -17,30 +17,35 @@
 //! `actor[+0x1DF]` and the sub-class byte `actor[+0x1E9]`. Output: one
 //! `FUN_8004FCC8` SFX id, the `0xFE` item-give special, or nothing.
 //!
-//! # NOT WIRED
+//! # Where it runs
 //!
-//! The call site exists and is live. Retail's `jal` sits in the arm that
-//! stamps state `0x3E` after the queued anim settles
-//! (`overlay_battle_action_801e295c.txt` `0x801E3DD8..0x801E3E08`), which the
-//! port has as `battle_action::spirit`'s `spirit_wait`. What blocks the call
-//! is that three of the five arguments have no carrier:
+//! Retail's `jal` sits in the arm that stamps state `0x3E` after the queued
+//! anim settles (`overlay_battle_action_801e295c.txt`
+//! `0x801E3DD8..0x801E3E08`), which the port has as `battle_action::spirit`'s
+//! `spirit_wait` - and that is where this is called from. All five arguments
+//! now have carriers:
 //!
-//! * `actor[+0x1E8]` (cast class) and `actor[+0x1E9]` (sub-class) are not
-//!   fields of [`crate::battle_action::BattleActor`], and the state that
-//!   seeds them is not modelled - the port reads `0x3C` as `SpiritPreArm`,
-//!   which computes an MP cost and no class byte;
-//! * the char-kind byte `DAT_8007BD10[slot]` has no
-//!   [`BattleActionHost`](crate::battle_action::BattleActionHost) accessor,
-//!   and it is the `* 0x10` term that separates one character's cue band from
-//!   the next, so a zero stand-in would fire Vahn's cue for everyone.
+//! * `actor[+0x1E8]` / `actor[+0x1E9]` are
+//!   [`BattleActor::cast_class`](crate::battle_action::BattleActor::cast_class)
+//!   and
+//!   [`cast_sub_class`](crate::battle_action::BattleActor::cast_sub_class),
+//!   seeded at state `0x3C` from the item-effect descriptor table or the
+//!   spell table depending on the category byte (retail
+//!   `0x801E3B70..0x801E3CB0`);
+//! * the char-kind byte `DAT_8007BD10[slot]` is
+//!   [`BattleActionHost::roster_character_id`](crate::battle_action::BattleActionHost::roster_character_id) -
+//!   it is the `* 0x10` term that separates one character's cue band from the
+//!   next, so it has to be the roster id and not the battle slot;
+//! * the queue head is `actor[+0x1DF]`.
 //!
-//! The sink is missing too: an [`CastCueOutcome::Sfx`] id is a raw
-//! `FUN_8004FCC8` one-shot, and the host trait carries no channel for one -
-//! the engine's battle cues ride `ArtStrikeInfo` / `BattleSfxCue` off a
-//! resolved strike (see `docs/subsystems/battle-action.md`). Ported because
-//! the class -> cue-id algebra (the per-character `char_kind * 0x10 + base`
-//! player band and the enemy-side `0x20C..0x20E` band) is the reference a
-//! cue-parity oracle needs.
+//! The sink is
+//! [`BattleActionHost::one_shot_sfx`](crate::battle_action::BattleActionHost::one_shot_sfx)
+//! (retail `FUN_8004FCC8`), with the `0xFE` item-give special routed to
+//! [`cast_item_give`](crate::battle_action::BattleActionHost::cast_item_give).
+//! These are a **different id space** from the art-record hit cues that ride
+//! `ArtStrikeInfo` / `BattleSfxCue`: a cast cue is a `FUN_8004FCC8` dispatch
+//! id (`>= 0xF8`, and `0x20C..=0x20E` on the enemy leg), which the host
+//! classifies before it reaches a bank.
 
 /// Outcome of the cast audio-cue dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

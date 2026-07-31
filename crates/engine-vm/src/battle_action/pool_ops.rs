@@ -271,22 +271,30 @@ pub struct RedirectQuery {
 /// `is_alive` must eventually return true for some slot on that side (retail
 /// loops forever otherwise).
 ///
-/// NOT WIRED: retail calls this from the turn picker `FUN_801DABA4` - itself
-/// ported, as `World::next_combatant_by_initiative` - at `0x801DAF14` (party
-/// arm) and `0x801DAF50` (monster arm). The gates the port does not carry are
-/// the **command-flow byte `ctx[+0x06] == 0xFF`** on the party arm
-/// (`lbu v1,0x6(a0)` / `bne v1,v0` at `0x801DAF04..0x801DAF0C`) and the
-/// enemy-AI pick `FUN_801E9FD4` that precedes the monster arm.
-/// (`ctx[+0x276]`, the outer gate, *is* modelled - it is
+/// Retail has **three** call sites, and the port drives the one whose gates
+/// it can honour. The AI queue assembler `FUN_801F0450` pushes its freshly
+/// rolled attack target straight through this at `0x801F0574`, with no
+/// command-flow gate in front of it at all; that site is
+/// `battle_action::dispatch`'s `auto_fill_party_queues`, so this runs
+/// wherever the auto-fill arm does.
+///
+/// The other two - the turn picker `FUN_801DABA4`'s party arm (`0x801DAF14`)
+/// and monster arm (`0x801DAF50`) - stay unwired, and the reason is a gate,
+/// not a caller: the party arm tests the **command-flow byte
+/// `ctx[+0x06] == 0xFF`** (`lbu v1,0x6(a0)` / `bne v1,v0` at
+/// `0x801DAF04..0x801DAF0C`) and the monster arm is preceded by the enemy-AI
+/// pick `FUN_801E9FD4`. (`ctx[+0x276]`, the outer gate, *is* modelled - it is
 /// `BattleActionCtx::menu_open`.) The `ctx[+0x06]` gate is not merely
 /// unwritten but **unrepresentable**: `engine-core::battle_flow`'s
 /// `BattleFlowState` deliberately folds retail's `0x00..=0x14`, `0xFE` and
 /// `0xFF` into one `Idle` variant, so the port cannot tell `0xFF` from the
-/// other idle values. Adding the re-roll without that gate would spend RNG
-/// draws retail does not always make, which is a simulation change rather
-/// than a wiring fix.
+/// other idle values. Re-rolling from the turn picker without that gate would
+/// spend RNG draws retail does not always make, which is a simulation change
+/// rather than a wiring fix.
 ///
 /// PORT: FUN_801DB124
+/// REF: FUN_801F0450 (the call site this is driven from),
+/// REF: FUN_801DABA4 (the two gated sites it is not)
 pub fn redirect_dead_target(
     q: RedirectQuery,
     party_count: u8,

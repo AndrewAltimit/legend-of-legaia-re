@@ -2016,6 +2016,159 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 party_slot,
             });
     }
+    /// Retail's present-party list `DAT_8007BD10[slot]`, which the engine
+    /// mirrors as [`World::party_roster_slot`] - 1-based, so `id - 1` is the
+    /// roster index the character record sits at. Monster slots report `4`,
+    /// the value the cast-cue dispatcher's enemy leg tests for.
+    fn roster_character_id(&self, slot: u8) -> u8 {
+        if slot < self.world.party_count {
+            self.world.party_roster_slot(slot as usize) as u8 + 1
+        } else {
+            4
+        }
+    }
+    /// `(class, tier)` of the item's descriptor in the disc item-effect table
+    /// (`0x800752C0`, resolved through the item property record's `+1`
+    /// subtype) - `World::item_effects`, the same table the field/battle item
+    /// menus gate usability on. `None` without a disc image.
+    ///
+    /// Its spell-side sibling `spell_sub_class_byte` is deliberately **not**
+    /// overridden: `legaia_asset::spell_names::SpellEntry` decodes `+0`, `+2`,
+    /// `+3` and `+4` of the 12-byte record but not `+1`, so the engine has no
+    /// carrier for a spell's sub-index. `spell_class_byte` above still supplies
+    /// `+0`, so a cast's *class* is right and only its tier reads as zero. Six
+    /// of the eight cue-group sites are tier-independent literals, and the
+    /// item leg - which is where the applier's `0..=8` effect classes actually
+    /// come from - carries a real tier, so the gap is: a healing/buff **spell**
+    /// (class `0`, `1`, `2` or `7`) picks the tier-`0` group, and
+    /// `battle_cast_cue`'s class-`7` sub-class gate never opens.
+    fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
+        let eff = self.world.item_effects.as_ref()?.effect(item_id)?;
+        Some((eff.class, eff.tier))
+    }
+    /// The two cue-group tables off PROT 0898, through the installed
+    /// move-power catalog's [`EffectAuxTables`](legaia_asset::move_power::EffectAuxTables) -
+    /// the same holder `World::spawn_action_table_effect` reads the effect
+    /// prototypes from, so the group ids, the SFX map and the prototypes all
+    /// come from one parse of one overlay.
+    fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
+        let aux = self.world.move_power.as_ref()?.aux_tables()?;
+        Some((aux.cue_group_bytes(), aux.sfx()))
+    }
+    /// Place one expanded cue.
+    ///
+    /// The two arms go to the two spawn paths retail's own arms go to, on the
+    /// **world** rather than through a host-drained queue, so both the native
+    /// window and the browser play page get them without either having to
+    /// know the cue group exists: `Actor` (`id & 0x80` set) is the 2D effect
+    /// pool (`FUN_801DFDF0` -> [`World::try_spawn_effect`]) and `Effect` is
+    /// the `0x801F6324` prototype scene (`FUN_80050ED4` ->
+    /// [`World::spawn_action_table_effect`]).
+    ///
+    /// The SFX map's non-zero byte rides `World::battle_sfx_cues`, the queue
+    /// both hosts already drain into their SFX schedulers. That queue's id
+    /// space is "bank cue id, played directly" - which is what this byte is:
+    /// retail submits it as a sound packet through `FUN_80058490`, not
+    /// through the `FUN_8004FCC8` classifier.
+    ///
+    /// The spawn position is the cue actor's own live position, which is what
+    /// retail builds the transform from (`actor[+0x34]`/`+0x38` for the
+    /// translation, `+0x44..+0x4A` for the rotation).
+    fn spawn_cue(&mut self, actor_slot: u8, spawn: vm::battle_cue_group::CueSpawn) {
+        use vm::battle_cue_group::CueSpawn;
+        let at = self
+            .world
+            .actors
+            .get(actor_slot as usize)
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0; 3]);
+        match spawn {
+            CueSpawn::Actor { id, yaw } => {
+                self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
+            }
+            CueSpawn::Effect {
+                effect_index, sfx, ..
+            } => {
+                self.world.spawn_action_table_effect(effect_index, at);
+                if let Some(sfx) = sfx {
+                    self.world
+                        .battle_sfx_cues
+                        .push(crate::battle_events::BattleSfxCue {
+                            kind: u16::from(sfx),
+                            timing_frames: 0,
+                            actor_slot,
+                            target_slot: actor_slot,
+                        });
+                }
+            }
+        }
+    }
+    /// The cast-start one-shot (`FUN_8004FCC8`). Routed into the same
+    /// `battle_sfx_cues` queue both hosts drain.
+    ///
+    /// The two id spaces meet at that queue and the port does not reconcile
+    /// them: a cast cue is a *dispatch* id the host would have to push through
+    /// `legaia_engine_audio::classify_cue` first, and both hosts play the
+    /// queue's ids straight. Every cast cue is `>= 0xF8` and the per-character
+    /// band runs to `0x20E`, so in practice these miss the scene bank and are
+    /// silent rather than wrong - the id reaches the scheduler, the runtime
+    /// bank behind it has no engine model. See `docs/formats/sfx-table.md`.
+    fn one_shot_sfx(&mut self, cue_id: u16) {
+        let slot = self.world.battle_ctx.active_actor;
+        self.world
+            .battle_sfx_cues
+            .push(crate::battle_events::BattleSfxCue {
+                kind: cue_id,
+                timing_frames: 0,
+                actor_slot: slot,
+                target_slot: slot,
+            });
+    }
+    /// The acting character's learned-spell record, for the queued-magic
+    /// follow-up guard. Party slots only - retail reaches the record through
+    /// `DAT_8007BD10[slot] - 1` and a monster slot has none.
+    fn caster_spell_list(&self, party_slot: u8) -> Option<(Vec<u8>, Vec<u8>)> {
+        if party_slot >= self.world.party_count {
+            return None;
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let list = self.world.roster.members.get(rslot)?.spell_list();
+        Some((list.ids.to_vec(), list.levels.to_vec()))
+    }
+    /// Character record `+0xF8` - word 1 of the 4-word accessory-passive
+    /// bitfield [`World::refresh_party_ability_bits`] rebuilds from equipment.
+    /// Distinct from `character_ability_bits`, which is word 0 (`+0xF4`).
+    fn character_ability_bits_high(&self, party_slot: u8) -> u32 {
+        if party_slot >= self.world.party_count {
+            return 0;
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let Some(member) = self.world.roster.members.get(rslot) else {
+            return 0;
+        };
+        let bits = member.ability_bits();
+        u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]])
+    }
+    /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
+    /// list the AI auto-fill arm draws its queue bytes from.
+    fn learned_arts(&self, party_slot: u8) -> Vec<u8> {
+        if party_slot >= self.world.party_count {
+            return Vec::new();
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let Some(member) = self.world.roster.members.get(rslot) else {
+            return Vec::new();
+        };
+        let skills = member.displayed_skills();
+        let n = (skills.count as usize).min(skills.ids.len());
+        skills.ids[..n].to_vec()
+    }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.
         let attack = self
