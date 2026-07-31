@@ -180,13 +180,22 @@
 pub enum BattleCamPhase {
     /// An in-battle dialogue box is up (the tutorial text).
     Dialogue,
-    /// No menu owns the pad: the far framing with the idle orbit.
+    /// No menu owns the pad: the far framing with the idle orbit. Also the
+    /// **top-level command chooser** - see [`phase_for_state`].
     #[default]
     Menu,
-    /// A command / arts / spell / item submenu is open.
+    /// An arts / spell / item **input** picker owns the pad
+    /// (`FUN_801D5854` case `0`).
     Submenu,
     /// An action is executing (`FUN_801D5854` case `6`).
     Action,
+    /// The post-strike recovery / return / done band: `FUN_801D5854` case
+    /// `7`, the **two-shot** on the attacker-target midpoint. See
+    /// [`recover_framing`].
+    Recover,
+    /// The end-of-action band: `FUN_801D5854` case `8`, framed on the
+    /// **target**. See [`action_end_framing`].
+    ActionEnd,
 }
 
 /// Retail's own test for "an action owns the framing", from the action state
@@ -288,6 +297,76 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
     } else if submenu_open {
         BattleCamPhase::Submenu
     } else if action_executing {
+        BattleCamPhase::Action
+    } else {
+        BattleCamPhase::Menu
+    }
+}
+
+/// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`7`** - the
+/// attacker-target two-shot ([`recover_framing`]).
+///
+/// `0x1F` (recovery wait) and `0x20` (return) share one arm, and mode `7` is
+/// its **default**: `0x801E5660..0x801E56C0` takes mode `8` only when the
+/// target's live anim id matches its counter-trigger bytes
+/// (`s8[+0x1F1]`/`+0x1F2`) or when a party slot faces a target already in a
+/// death clip (anim `7`/`8`); everything else falls to `li a1,0x7` at
+/// `0x801E56BC`. A retail `ctx[7] == 0x1F` save state corroborates the pose:
+/// with `ctx[+0xD] == 2` it reads pitch `0x80` and `TR.y = 0x400` - case 7's
+/// style-2 tweak - over `TR.z = prescale(ctx[+0x6D0])`.
+///
+/// The Done band's `0x51` is deliberately **not** here even though it can
+/// arm a per-action framing: the port's residency in that state is unbounded
+/// where retail's is `ctx[+0x6D8] = 0x3C` frames, so the whole band stays
+/// idle - see [`action_state_frames_the_action`].
+pub const RECOVER_STATES: [u8; 2] = [0x1F, 0x20];
+
+/// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
+/// ([`action_end_framing`]).
+///
+/// The Done-cleanup arm forks on the action category
+/// (`0x801E5FC0..0x801E6018`): `actor[+0x1DE] == 3` (Attack) branches
+/// straight to `li a1,0x8`, as does a party slot whose target's live-HP
+/// halfword has reached zero; anything else takes `li a1,0x6`. `0x52`
+/// (multi-cast continuation) and `0xFD` (idle hold) arm `8` unconditionally
+/// (`0x801E5F74`).
+///
+/// Both `0x50` and `0x52` are single-frame transits in a measured fight, so
+/// classifying them as a close-up cannot pin the camera the way `0x51` would.
+pub const ACTION_END_STATES: [u8; 3] = [0x50, 0x52, 0xFD];
+
+/// The retail phase for one frame of battle state, over the live `ctx[7]`.
+///
+/// Two things this resolves that the three-boolean [`phase_for`] cannot.
+///
+/// **The top-level command chooser is the FAR framing, not a close-up.**
+/// Retail's battle menu driver `FUN_801D388C` arms *both* case `0` and case
+/// `9` (`0x801D475C` / `0x801D53B8` pass `a1 = 0`; `0x801D4908` /
+/// `0x801D5688` pass `a1 = 9`), so "a menu is open" does not by itself pick
+/// the close-up. Two retail framebuffers separate them: a save with the
+/// **Begin / Run** chooser up reads `pitch 32, TR (0, 1280, 7680), focus
+/// origin` - case 9's `max(span*3, 0x800)` over `+-800` seats, exactly - and
+/// frames both fighters; a save with the **arts input** panel up reads
+/// `TR (-512, 1152, 2457)` and `yaw = 0x8F0 - actor[+0x46]` - case 0 - with
+/// the enemy projecting off the left edge behind the panel. So the close-up
+/// belongs to the *input* pickers; the command chooser keeps the far shot.
+///
+/// **The post-strike band is case 7 / case 8, not case 6.** See
+/// [`RECOVER_STATES`] and [`ACTION_END_STATES`].
+pub fn phase_for_state(
+    dialogue_up: bool,
+    input_menu_open: bool,
+    action_state: u8,
+) -> BattleCamPhase {
+    if dialogue_up {
+        BattleCamPhase::Dialogue
+    } else if input_menu_open {
+        BattleCamPhase::Submenu
+    } else if RECOVER_STATES.contains(&action_state) {
+        BattleCamPhase::Recover
+    } else if ACTION_END_STATES.contains(&action_state) {
+        BattleCamPhase::ActionEnd
+    } else if action_state_frames_the_action(action_state) {
         BattleCamPhase::Action
     } else {
         BattleCamPhase::Menu
@@ -655,6 +734,169 @@ pub fn action_framing(actor: BattleCamActor, f: ActionFraming) -> BattleCamPose 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Recovery / end-of-action framings - `FUN_801D5854` cases 7 and 8.
+// ---------------------------------------------------------------------------
+
+/// The half-turn both post-strike cases add for framing styles `1` and `3`
+/// (`0x801D66D4` / `0x801D68D8`) - the same `ctx[+0xD]` fork case 6's
+/// fallback arm runs.
+const POST_STYLE_HALF_TURN: i32 = 0x800;
+/// Case 7's yaw pre-rotation before the unwrap (`0x801D6708`).
+const RECOVER_YAW_BIAS: i32 = -0x700;
+/// Case 8's (`0x801D693C`) - and its extra base offset (`0x801D67EC`).
+const ACTION_END_YAW_BIAS: i32 = -0x600;
+const ACTION_END_YAW_OFFSET: i32 = -0x100;
+/// TR.y both cases seed (`0x801D65E4` / `0x801D67D8`).
+const POST_TR_Y: f32 = 0x500 as f32;
+/// Case 7's "pull in" tweak (`0x801D6780`): `TR.y += 0x40`, `TR.z = 3z/5`,
+/// pitch levelled.
+const RECOVER_PULL_TR_Y_STEP: f32 = 0x40 as f32;
+/// Camera steps both cases glide over: `a3 = 0xC` display frames
+/// (`0x801D67C8` / `0x801D6EEC`), two frames per camera step.
+pub const POST_ACTION_STEPS: u32 = 6;
+
+/// The one extra context byte cases 7 and 8 read that case 6 does not: the
+/// **target** the acting actor is resolved against (`actor[+0x1DD]` indexed
+/// into the 8-slot actor table `0x801C9370`).
+///
+/// Case 7 orbits the midpoint of the two, which is what makes it the only
+/// framing in the set that keeps *both* combatants on screen; case 8 orbits
+/// the target alone. `None` means retail's own fallback: case 7 degenerates
+/// to the acting actor (the midpoint of a point with itself) and case 8 takes
+/// its `0x801D6870` arm, which frames the actor.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PostActionTarget {
+    /// The framed target's world position (retail `actor[+0x3C/+0x3E/+0x40]`).
+    pub world: [f32; 3],
+    /// `actor[+0x1DD] < 8 && actor_table[target][+4] != 0` - case 8's test for
+    /// "the target slot is real and its node is live" (`0x801D6808`,
+    /// `0x801D682C`). False takes the arm that frames the actor instead.
+    pub live: bool,
+}
+
+/// Retail's case-7 framing: the post-strike **two-shot**.
+///
+/// Ports `0x801D65DC..0x801D67CC`. Base pose (`0x801D65DC..0x801D6694`):
+///
+/// ```text
+/// pitch = 0
+/// yaw   = ctx[+0x6DA] - actor[+0x46]
+/// TR    = (0, 0x500, ctx[+0x6D0])
+/// focus = midpoint(actor[+0x3C/+0x36/+0x40], target[+0x3C/+0x36/+0x40])
+/// ```
+///
+/// then the shared `ctx[+0xD]` style fork (`0x801D6698`), then a yaw
+/// pre-rotation with a **one-way unwrap** (`0x801D6700`): `yaw = (yaw -
+/// 0x700) & 0xFFF`, and if that lands below the live camera yaw a full turn
+/// is added, so the swing always orbits in one direction instead of taking
+/// the short arc. Finally the "pull in" tweak (`0x801D6780`), gated on
+/// `_DAT_800846C0 == 0` and on the acting actor's anim state: pitch levelled,
+/// `TR.y += 0x40`, `TR.z = TR.z * 3 / 5`.
+///
+/// The midpoint focus is the whole point of the case and it is verified, not
+/// inferred - see [`RECOVER_STATES`] for the two retail states that read it
+/// back byte-exactly.
+///
+/// REF: FUN_801D5854 (case 7)
+pub fn recover_framing(
+    actor: BattleCamActor,
+    target: Option<PostActionTarget>,
+    f: ActionFraming,
+    camera_yaw: f32,
+    pull_in: bool,
+) -> BattleCamPose {
+    let mut pitch = 0.0f32;
+    let mut tr_y = POST_TR_Y;
+    let mut yaw = f.yaw_base - actor.facing;
+    if f.style == 1 || f.style == 3 {
+        yaw += POST_STYLE_HALF_TURN;
+    }
+    if f.style == 2 || f.style == 3 {
+        tr_y = ACTION_STYLE_TR_Y;
+        pitch += ACTION_STYLE_PITCH;
+    }
+    let mut tr_z_raw = f.depth_raw;
+    if pull_in {
+        pitch = 0.0;
+        tr_y += RECOVER_PULL_TR_Y_STEP;
+        tr_z_raw = tr_z_raw * 3 / 5;
+    }
+    let other = target.map(|t| t.world).unwrap_or(actor.world);
+    BattleCamPose {
+        pitch,
+        yaw: unwrap_forward(yaw + RECOVER_YAW_BIAS, camera_yaw),
+        tr: [0.0, tr_y, prescale_tr_z(tr_z_raw)],
+        focus: [
+            (actor.world[0] + other[0]) * 0.5,
+            (actor.world[1] + other[1]) * 0.5,
+            (actor.world[2] + other[2]) * 0.5,
+        ],
+    }
+}
+
+/// Retail's case-8 framing: the end-of-action shot, orbiting the **target**.
+///
+/// Ports case 8's base (`0x801D67D0..0x801D69A4`): the same
+/// `(0, 0x500, ctx[+0x6D0])` translation and `ctx[+0x6DA] - actor[+0x46]`
+/// yaw as case 7 with an extra `-0x100` bias, `focus.y` forced to zero, the
+/// target/actor focus fork, the `ctx[+0xD]` style tweaks (style `2` reaches
+/// `TR.y = 0x400` by subtracting `0x100` from the `0x500` seed rather than
+/// storing it, which is the same value) and the `-0x600` one-way yaw unwrap.
+///
+/// **Not ported:** the long per-liveness tail from `0x801D69A8`, which
+/// re-frames on the target's death animation, the counter-attack flags
+/// (`ctx[+0x287]` / `ctx[+0x288]`), the per-character height table and the
+/// `ctx[+0x270]` ramp. Every one of those reads a channel the engine's
+/// battle actor does not carry yet; the base pose is what a plain resolved
+/// action reaches, and the tail only tightens it.
+///
+/// REF: FUN_801D5854 (case 8)
+pub fn action_end_framing(
+    actor: BattleCamActor,
+    target: Option<PostActionTarget>,
+    f: ActionFraming,
+    camera_yaw: f32,
+) -> BattleCamPose {
+    let mut pitch = 0.0f32;
+    let mut tr_y = POST_TR_Y;
+    let mut yaw = f.yaw_base - actor.facing + ACTION_END_YAW_OFFSET;
+    if f.style == 1 || f.style == 3 {
+        yaw += POST_STYLE_HALF_TURN;
+    }
+    if f.style == 2 || f.style == 3 {
+        tr_y = ACTION_STYLE_TR_Y;
+        pitch += ACTION_STYLE_PITCH;
+    }
+    let framed = match target {
+        Some(t) if t.live => t.world,
+        _ => actor.world,
+    };
+    BattleCamPose {
+        pitch,
+        yaw: unwrap_forward(yaw + ACTION_END_YAW_BIAS, camera_yaw),
+        tr: [0.0, tr_y, prescale_tr_z(f.depth_raw)],
+        // Retail writes `sh zero,0x22(sp)` before the fork: the focus height
+        // is pinned to the stage floor, not to the framed actor's own Y.
+        focus: [framed[0], 0.0, framed[2]],
+    }
+}
+
+/// Both post-action cases' one-way yaw unwrap (`0x801D6700` / `0x801D6930`):
+/// wrap into 12 bits, then add a full turn if the result would make the tween
+/// rotate *backwards* past the live camera yaw. Retail compares against
+/// `_DAT_8007B792` itself, so the direction of the swing depends on where the
+/// orbit happens to be - which is why successive end-of-action shots do not
+/// all swing the same way.
+fn unwrap_forward(yaw: i32, camera_yaw: f32) -> f32 {
+    let wrapped = yaw.rem_euclid(4096);
+    if (wrapped as f32) < camera_yaw {
+        (wrapped + 0x1000) as f32
+    } else {
+        wrapped as f32
+    }
+}
+
 /// Raw eye-space Z of the swing pose, before the projection prescale.
 const SWING_TR_Z_RAW: i32 = 0x800;
 
@@ -804,6 +1046,8 @@ pub struct BattleCamera {
     /// The formation the far menu framing encloses. `None` (an un-wired host)
     /// falls back to retail's degenerate case: minimum depth, origin focus.
     formation: Option<FormationBox>,
+    /// The acting actor's target, for cases `7` / `8`.
+    target: Option<PostActionTarget>,
     /// Case-6 context inputs for the [`BattleCamPhase::Action`] framing.
     action: ActionFraming,
     /// Retail `ctx[+0x6DA]`, the action SM's free-running yaw counter
@@ -876,6 +1120,10 @@ pub struct BattleCamInputs {
     pub phase: BattleCamPhase,
     /// The acting battle actor, when one owns the framing.
     pub acting: Option<BattleCamActor>,
+    /// The acting actor's **target** (`actor[+0x1DD]` through the actor
+    /// table), which cases `7` and `8` frame against. `None` degenerates to
+    /// retail's own actor-only arms.
+    pub target: Option<PostActionTarget>,
     /// The live formation the far framing encloses.
     pub formation: Option<FormationBox>,
     /// Case-6 context inputs for the action framing.
@@ -885,6 +1133,24 @@ pub struct BattleCamInputs {
     /// The per-art attack camera's per-actor channels
     /// ([`AttackCamChannels`]), or `None` when that channel is not armed.
     pub attack: Option<AttackCamChannels>,
+    /// The idle orbit's azimuth **on battle entry**, in 12-bit units.
+    ///
+    /// `_DAT_8007B792` is one global: the field camera and the battle camera
+    /// share the rotation trio `0x8007B790/92/94`, and nothing on the battle
+    /// entry path zeroes it - case 9 passes it straight through and the
+    /// action SM only decrements it. A fight therefore *inherits* whatever
+    /// azimuth the field camera left, which is why five retail battle save
+    /// states caught at the same framing (`ctx[7] == 0x00`, pitch `32`,
+    /// `TR (0, 1280, 7680)`, focus at the origin) read five different yaws -
+    /// `224`, `2632`, `3136`, `3808`, `3882`. No captured value is *the*
+    /// resting yaw; the resting yaw is the free-running orbit.
+    ///
+    /// Seeding it matters because `0` is the one degenerate azimuth: the
+    /// retail seats are `(0, +-800)`, so at yaw `0` the eye looks straight
+    /// down the seat axis and the two rows project to the same screen X,
+    /// each occluding the other. Retail cannot start there; a host that
+    /// seeds `0` does, for the ~6 seconds the `-4`/step orbit needs to leave.
+    pub entry_yaw: f32,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -923,11 +1189,13 @@ pub fn drive(
     } else {
         BattleCamPhase::Menu
     };
-    let cam = slot
-        .get_or_insert_with(|| BattleCamera::new_with_formation(entry, inputs.formation, frames));
+    let cam = slot.get_or_insert_with(|| {
+        BattleCamera::new_with_formation(entry, inputs.formation, inputs.entry_yaw, frames)
+    });
     if let Some(actor) = inputs.acting {
         cam.set_actor(actor);
     }
+    cam.set_post_action_target(inputs.target);
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.set_shake_amplitude(inputs.shake_amplitude);
@@ -942,25 +1210,31 @@ impl BattleCamera {
     /// starts at the far menu framing sized to no formation - see
     /// [`BattleCamera::new_with_formation`] for the live-formation entry).
     pub fn new(phase: BattleCamPhase, frames_now: u64) -> Self {
-        Self::new_with_formation(phase, None, frames_now)
+        Self::new_with_formation(phase, None, 0.0, frames_now)
     }
 
     /// [`BattleCamera::new`] with the live formation available at entry, so
     /// a battle opening on the far menu framing snaps to the case-9
     /// formation-sized depth + centre instead of the degenerate minimum
     /// (retail's case 9 runs against the live actor table).
+    /// `entry_yaw` is the live `_DAT_8007B792` the fight inherits - see
+    /// [`BattleCamInputs::entry_yaw`] for why a battle never starts at `0`.
     pub fn new_with_formation(
         phase: BattleCamPhase,
         formation: Option<FormationBox>,
+        entry_yaw: f32,
         frames_now: u64,
     ) -> Self {
         let actor = BattleCamActor::default();
         let action = ActionFraming::default();
+        let yaw = entry_yaw.rem_euclid(4096.0);
         let pose = match phase {
             BattleCamPhase::Dialogue => DIALOGUE_POSE,
             BattleCamPhase::Submenu => actor.submenu_pose(),
             BattleCamPhase::Action => action_framing(actor, action),
-            BattleCamPhase::Menu => menu_framing(formation, 0.0),
+            BattleCamPhase::Recover => recover_framing(actor, None, action, yaw, false),
+            BattleCamPhase::ActionEnd => action_end_framing(actor, None, action, yaw),
+            BattleCamPhase::Menu => menu_framing(formation, yaw),
         };
         BattleCamera {
             phase,
@@ -970,6 +1244,7 @@ impl BattleCamera {
             frame_accum: 0,
             actor,
             formation,
+            target: None,
             action,
             action_yaw: 0,
             shake: ShakeState {
@@ -1071,6 +1346,35 @@ impl BattleCamera {
         self.actor = actor;
     }
 
+    /// Install the acting actor's target, which cases `7` and `8` frame
+    /// against ([`PostActionTarget`]). Hosts call this every frame through
+    /// [`drive`].
+    pub fn set_post_action_target(&mut self, target: Option<PostActionTarget>) {
+        self.target = target;
+    }
+
+    /// Case 7's framing for the live actor / target pair, on the live yaw
+    /// counter and the live camera yaw (which its one-way unwrap reads).
+    fn recover_pose(&self) -> BattleCamPose {
+        recover_framing(
+            self.actor,
+            self.target,
+            self.live_action_framing(),
+            self.pose.yaw,
+            false,
+        )
+    }
+
+    /// Case 8's framing for the live pair.
+    fn action_end_pose(&self) -> BattleCamPose {
+        action_end_framing(
+            self.actor,
+            self.target,
+            self.live_action_framing(),
+            self.pose.yaw,
+        )
+    }
+
     /// Which framing owns the camera this frame. Hosts export it so what the
     /// camera is *doing* is observable - a pose alone cannot distinguish "far
     /// framing, mid-glide" from "action close-up, settled".
@@ -1141,7 +1445,37 @@ impl BattleCamera {
                     true,
                 ));
             }
-            BattleCamPhase::Menu if self.phase == BattleCamPhase::Action => {
+            BattleCamPhase::Recover => {
+                // Case 7 hands `FUN_801D829C` `a3 = 0xC` (`0x801D67C8`), the
+                // same 6 camera steps case 6 uses.
+                let target = self.recover_pose();
+                let raw_z = self.live_action_framing().depth_raw;
+                self.glides.push_back(Glide::linear(
+                    &mut from,
+                    target,
+                    raw_z,
+                    POST_ACTION_STEPS,
+                    true,
+                ));
+            }
+            BattleCamPhase::ActionEnd => {
+                // Case 8's own `a3 = 0xC` (`0x801D6EEC`).
+                let target = self.action_end_pose();
+                let raw_z = self.live_action_framing().depth_raw;
+                self.glides.push_back(Glide::linear(
+                    &mut from,
+                    target,
+                    raw_z,
+                    POST_ACTION_STEPS,
+                    true,
+                ));
+            }
+            BattleCamPhase::Menu
+                if matches!(
+                    self.phase,
+                    BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+                ) =>
+            {
                 // End of action: case 9 re-arms the far framing over its own
                 // `a3 = 0xE` (7 steps) and passes yaw straight through, so
                 // the idle orbit owns it again immediately.
@@ -1312,6 +1646,80 @@ impl BattleCamera {
         self.glides.push_back(g);
     }
 
+    /// Re-derive the **far** framing against the live formation.
+    ///
+    /// Case 9 is not armed once and left: `FUN_801D0748`'s own battle tick
+    /// calls `FUN_801D5854(0, 9)` at `0x801D0E98`, and the menu driver
+    /// `FUN_801D388C` re-arms it at `0x801D4908` / `0x801D5688`, so retail
+    /// rebuilds `max(span * 3, 0x800)` and the bbox centre out of the live
+    /// actor table every pass - exactly like case 6.
+    ///
+    /// This matters because the formation *moves*: an attacker walks most of
+    /// the way to its target during the approach, collapsing the span to the
+    /// `0x800` floor. A depth frozen at the moment the far framing was armed
+    /// then survives the actor walking back to its seat, leaving the eye at
+    /// the minimum depth against a full-width formation - one combatant
+    /// filling the frame and the other **behind the eye**. That is what the
+    /// port shipped: entering the resting framing mid-approach pinned the
+    /// depth at `prescale(0x800)` for the rest of the fight.
+    ///
+    /// The dialogue-dismiss segment is skipped: it is the one rate-clamped
+    /// glide (`steps_left == None`), whose per-component rates are the traced
+    /// dismiss law rather than an arrive-together tween.
+    ///
+    /// REF: FUN_801D5854 (case 9)
+    fn retarget_menu_glide(&mut self) {
+        // Skipped for the two segments that are not "walk to the far framing":
+        // the rate-clamped dialogue dismiss (`steps_left == None`) and the
+        // submenu-exit swing, which is a scripted two-segment chain through
+        // case 1's over-the-shoulder pose before it reaches this framing.
+        if self.glides.len() > 1 {
+            return;
+        }
+        if self
+            .glides
+            .front()
+            .is_some_and(|g| g.steps_left.is_none() || g.yaw_glides)
+        {
+            return;
+        }
+        let live = self.menu_pose();
+        // Settled on the live formation with nothing armed: the idle orbit
+        // owns the frame, so leave it alone rather than re-arming every step.
+        if self.glides.is_empty() && self.pose.tr == live.tr && self.pose.focus == live.focus {
+            return;
+        }
+        let steps = self
+            .glides
+            .front()
+            .and_then(|g| g.steps_left)
+            .unwrap_or(SWING_RETURN_STEPS);
+        let mut from = self.pose;
+        // `yaw = false`: case 9 passes `_DAT_8007B792` straight through, so
+        // the idle orbit keeps owning the azimuth across the re-derive.
+        let g = Glide::linear(&mut from, live, menu_raw_z(self.formation), steps, false);
+        self.pose = from;
+        self.glides.clear();
+        self.glides.push_back(g);
+    }
+
+    /// [`Self::retarget_action_glide`]'s sibling for cases `7` and `8`: rebuild
+    /// the step table against the live pose, carrying the armed segment's
+    /// remaining step count so a settled framing stays settled.
+    fn retarget_post_action_glide(&mut self, live: BattleCamPose) {
+        let raw_z = self.live_action_framing().depth_raw;
+        let steps = self
+            .glides
+            .front()
+            .and_then(|g| g.steps_left)
+            .unwrap_or(POST_ACTION_STEPS);
+        let mut from = self.pose;
+        let g = Glide::linear(&mut from, live, raw_z, steps, true);
+        self.pose = from;
+        self.glides.clear();
+        self.glides.push_back(g);
+    }
+
     /// One rate-limited step of every driven component (all but yaw, which
     /// only moves when the segment owns it - otherwise the idle orbit does).
     fn step_components(&mut self, g: &Glide) {
@@ -1354,6 +1762,23 @@ impl BattleCamera {
                 return;
             }
             self.retarget_action_glide();
+        }
+        // Cases 7 and 8 are re-armed by their own action-SM states on every
+        // pass exactly like case 6, and both frame on positions that move
+        // (case 7 on the *midpoint*, which walks as the pair separates), so
+        // they chase the live pair rather than gliding to a target frozen at
+        // the state change.
+        match self.phase {
+            BattleCamPhase::Recover => {
+                let target = self.recover_pose();
+                self.retarget_post_action_glide(target);
+            }
+            BattleCamPhase::ActionEnd => {
+                let target = self.action_end_pose();
+                self.retarget_post_action_glide(target);
+            }
+            BattleCamPhase::Menu => self.retarget_menu_glide(),
+            _ => {}
         }
         let Some(g) = self.glides.front().copied() else {
             return;
@@ -2277,6 +2702,8 @@ mod tests {
     #[test]
     fn action_yaw_counter_drifts_one_unit_per_display_frame() {
         let inputs = BattleCamInputs {
+            target: None,
+            entry_yaw: 0.0,
             phase: BattleCamPhase::Menu,
             action: ActionFraming {
                 party_slot: false,
@@ -2289,6 +2716,8 @@ mod tests {
         // 200 display frames of idling, then the action opens.
         drive(&mut slot, true, inputs, 200, None);
         let action = BattleCamInputs {
+            target: None,
+            entry_yaw: 0.0,
             phase: BattleCamPhase::Action,
             ..inputs
         };
@@ -2357,6 +2786,8 @@ mod tests {
     #[test]
     fn drive_creates_steps_and_drops() {
         let at = |phase, formation| BattleCamInputs {
+            target: None,
+            entry_yaw: 0.0,
             phase,
             formation,
             ..Default::default()
@@ -2408,6 +2839,8 @@ mod tests {
     #[test]
     fn drive_carries_the_action_and_shake_channels() {
         let inputs = BattleCamInputs {
+            target: None,
+            entry_yaw: 0.0,
             phase: BattleCamPhase::Action,
             acting: Some(BattleCamActor::default()),
             action: ActionFraming {
@@ -2639,6 +3072,208 @@ mod tests {
         }
     }
 
+    /// **The top-level command chooser keeps the far framing.**
+    ///
+    /// The retail battle menu driver `FUN_801D388C` arms case `0` *and* case
+    /// `9`, so "a menu is open" does not select the close-up on its own; two
+    /// retail framebuffers separate them (a Begin/Run save reads case 9's
+    /// `TR (0, 1280, 7680)` over `+-800` seats, an arts-input save reads case
+    /// 0's `TR (-512, 1152, 2457)`). The port used to fold every battle menu
+    /// into `Submenu`, which put the camera behind the acting character with
+    /// the enemy **behind the eye** for the whole command phase.
+    #[test]
+    fn only_the_input_pickers_take_the_close_up() {
+        assert_eq!(
+            phase_for_state(false, false, 0x5A),
+            BattleCamPhase::Menu,
+            "the command chooser is retail's case 9, not the case-0 close-up"
+        );
+        assert_eq!(phase_for_state(false, true, 0x5A), BattleCamPhase::Submenu);
+        assert_eq!(phase_for_state(true, true, 0x5A), BattleCamPhase::Dialogue);
+    }
+
+    /// **The resting yaw is the free-running orbit, not a captured
+    /// constant.** Five retail battle save states caught at the identical
+    /// framing - `ctx[7] == 0x00`, pitch `32`, `TR (0, 1280, 7680)`, focus at
+    /// the origin, `+-800` seats - read the yaws `224`, `2632`, `3136`,
+    /// `3808` and `3882`. A battle inherits `_DAT_8007B792` from the field
+    /// camera (one shared rotation trio) and the action SM only decrements
+    /// it, so no single sample is "the" resting yaw.
+    ///
+    /// What must not survive is `0`: at yaw `0` the eye looks straight down
+    /// the seat axis and both rows project to the same screen X.
+    #[test]
+    fn the_entry_yaw_is_inherited_not_zero() {
+        let formation = FormationBox {
+            min: [0.0, -800.0],
+            max: [0.0, 800.0],
+        };
+        for seed in [224.0f32, 2632.0, 3136.0, 3808.0, 3882.0] {
+            let cam =
+                BattleCamera::new_with_formation(BattleCamPhase::Menu, Some(formation), seed, 0);
+            assert_eq!(cam.framing_pose().yaw, seed);
+            // The pinned depth law is untouched by the seed.
+            assert_eq!(cam.framing_pose().tr[2], prescale_tr_z(4800));
+        }
+        // Out-of-range seeds wrap into the 12-bit orbit domain.
+        assert_eq!(
+            BattleCamera::new_with_formation(BattleCamPhase::Menu, None, 4096.0 + 100.0, 0)
+                .framing_pose()
+                .yaw,
+            100.0
+        );
+    }
+
+    /// **The far framing is re-derived against the LIVE formation.**
+    ///
+    /// Retail re-arms case 9 from its own callers every pass, so the depth
+    /// and the bbox centre track the actors. A port that armed one glide and
+    /// kept its target froze `max(span * 3, 0x800)` at whatever the formation
+    /// was mid-approach - the `0x800` floor - and never recovered when the
+    /// attacker walked back to its seat.
+    #[test]
+    fn the_far_framing_follows_the_formation_after_it_reopens() {
+        let closed = FormationBox {
+            min: [0.0, -800.0],
+            max: [0.0, -700.0],
+        };
+        let open = FormationBox {
+            min: [0.0, -800.0],
+            max: [0.0, 800.0],
+        };
+        let inputs = |f: FormationBox| BattleCamInputs {
+            phase: BattleCamPhase::Menu,
+            formation: Some(f),
+            ..Default::default()
+        };
+        let mut slot = None;
+        // Enter with the formation collapsed: the depth clamps at the floor.
+        for i in 0..20u64 {
+            drive(&mut slot, true, inputs(closed), i * 2, None);
+        }
+        assert_eq!(
+            slot.as_ref().unwrap().framing_pose().tr[2],
+            prescale_tr_z(MENU_TR_Z_MIN_RAW as i32),
+        );
+        // The attacker returns to its seat; the framing must re-open with it.
+        for i in 20..60u64 {
+            drive(&mut slot, true, inputs(open), i * 2, None);
+        }
+        let p = slot.as_ref().unwrap().framing_pose();
+        assert_eq!(p.tr[2], prescale_tr_z(4800), "span 1600 * 3, prescaled");
+        assert_eq!(
+            p.focus,
+            [0.0, 0.0, 0.0],
+            "bbox centre of the re-opened pair"
+        );
+    }
+
+    /// The two post-strike states hand the camera to case 7, and the Done
+    /// cleanup / idle hold to case 8 - `FUN_801E295C`'s own arms.
+    #[test]
+    fn the_post_strike_states_arm_the_two_shot() {
+        for s in RECOVER_STATES {
+            assert_eq!(
+                phase_for_state(false, false, s),
+                BattleCamPhase::Recover,
+                "state 0x{s:02X} arms FUN_801D5854 case 7"
+            );
+        }
+        for s in ACTION_END_STATES {
+            assert_eq!(
+                phase_for_state(false, false, s),
+                BattleCamPhase::ActionEnd,
+                "state 0x{s:02X} arms FUN_801D5854 case 8"
+            );
+        }
+        // The Done fade-down stays idle - the port's residency there is
+        // unbounded where retail's is `ctx[+0x6D8] = 0x3C` frames.
+        assert_eq!(phase_for_state(false, false, 0x51), BattleCamPhase::Menu);
+    }
+
+    /// **Case 7 orbits the midpoint, and that is what keeps both combatants
+    /// on screen.** The property no other framing in the set has: case 6
+    /// focuses one actor, case 8 the target, case 9 the formation centre.
+    #[test]
+    fn the_recover_framing_orbits_the_pair_not_one_actor() {
+        let actor = BattleCamActor {
+            facing: 0,
+            world: [0.0, 0.0, -800.0],
+            height: None,
+        };
+        let target = PostActionTarget {
+            world: [200.0, 0.0, 600.0],
+            live: true,
+        };
+        let f = ActionFraming::default();
+        let pose = recover_framing(actor, Some(target), f, 0.0, false);
+        assert_eq!(pose.focus, [100.0, 0.0, -100.0], "midpoint of the pair");
+        // Case 8 frames the target alone, on the stage floor.
+        let end = action_end_framing(actor, Some(target), f, 0.0);
+        assert_eq!(end.focus, [200.0, 0.0, 600.0]);
+        // A dead / out-of-range target falls back to the acting actor
+        // (retail's `0x801D6870` arm).
+        let dead = action_end_framing(
+            actor,
+            Some(PostActionTarget {
+                live: false,
+                ..target
+            }),
+            f,
+            0.0,
+        );
+        assert_eq!(dead.focus, [0.0, 0.0, -800.0]);
+        // No target at all degenerates case 7 to the acting actor.
+        assert_eq!(
+            recover_framing(actor, None, f, 0.0, false).focus,
+            actor.world
+        );
+    }
+
+    /// Case 7's style fork and pull-in tweak, against the arms at
+    /// `0x801D6698` and `0x801D6780`.
+    #[test]
+    fn the_recover_framing_style_and_pull_in_match_the_arms() {
+        let actor = BattleCamActor::default();
+        let base = ActionFraming {
+            depth_raw: 0xC00,
+            ..Default::default()
+        };
+        let plain = recover_framing(actor, None, base, 0.0, false);
+        assert_eq!(plain.pitch, 0.0);
+        assert_eq!(plain.tr[1], 0x500 as f32);
+        assert_eq!(plain.tr[2], prescale_tr_z(0xC00));
+        // Style 2: `TR.y = 0x400`, `pitch += 0x80` (`0x801D66E8`).
+        let s2 = recover_framing(actor, None, ActionFraming { style: 2, ..base }, 0.0, false);
+        assert_eq!(s2.pitch, 0x80 as f32);
+        assert_eq!(s2.tr[1], 0x400 as f32);
+        // Style 1 adds the half turn to the yaw and leaves the rest.
+        let s1 = recover_framing(actor, None, ActionFraming { style: 1, ..base }, 0.0, false);
+        assert_eq!(s1.tr[1], 0x500 as f32);
+        assert_eq!(
+            s1.yaw,
+            (plain.yaw as i32 + 0x800).rem_euclid(4096) as f32,
+            "style 1 is a half turn"
+        );
+        // Pull-in (`0x801D6780`): pitch levelled, `TR.y += 0x40`,
+        // `TR.z = 3z/5`.
+        let pull = recover_framing(actor, None, ActionFraming { style: 2, ..base }, 0.0, true);
+        assert_eq!(pull.pitch, 0.0);
+        assert_eq!(pull.tr[1], 0x400 as f32 + 0x40 as f32);
+        assert_eq!(pull.tr[2], prescale_tr_z(0xC00 * 3 / 5));
+    }
+
+    /// The one-way yaw unwrap both post-action cases run (`0x801D6700` /
+    /// `0x801D6930`): wrap into 12 bits, then add a full turn when the result
+    /// would make the tween rotate backwards past the live camera yaw.
+    #[test]
+    fn the_post_action_yaw_unwraps_forward_only() {
+        // `0 - 0x700` wraps to `0x900`; above a camera yaw of 0, so it stands.
+        assert_eq!(unwrap_forward(-0x700, 0.0), 0x900 as f32);
+        // Below the live yaw -> a full turn is added rather than rotating back.
+        assert_eq!(unwrap_forward(-0x700, 4000.0), (0x900 + 0x1000) as f32);
+    }
+
     /// The action framing owns the camera **per band**, and the Done band is
     /// not one of them.
     ///
@@ -2707,6 +3342,8 @@ mod tests {
                 for _ in 0..dwell {
                     frames += 1;
                     let inputs = BattleCamInputs {
+                        target: None,
+                        entry_yaw: 0.0,
                         phase: phase_for(false, false, action_state_frames_the_action(state)),
                         acting: Some(BattleCamActor::default()),
                         formation: Some(traced_formation()),

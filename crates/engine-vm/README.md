@@ -18,6 +18,7 @@ original executable.
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`scus_core_helpers`](#scus_core_helpers)
+- [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
@@ -220,6 +221,25 @@ SM debits MP itself at `MagicCastBegin` / `SpiritPreArm`, so a host that prices
 a cast differently elsewhere is charging twice or charging nothing. See
 [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md)
 § Magic in the port for which half of a cast each side owns.
+
+## `battle_cam_script` - `FUN_801D5854`
+
+The phase-scripted battle camera, held once for every host. The module owns
+retail's framing cases and the phase that selects each: the arts / spell / item
+**input** close-up (case `0`), the per-action framing and its two arms (case
+`6`), the post-strike **two-shot** on the attacker-target midpoint (case `7`),
+the end-of-action shot on the target (case `8`), and the far Begin/Run framing
+sized to the live formation (case `9`). `drive` is the single entry both hosts
+call, so the create / retarget / phase-change / step ordering cannot diverge.
+
+Three things here are easy to get wrong and are pinned in
+[`docs/subsystems/battle.md`](../../docs/subsystems/battle.md#battle-camera-exact):
+"a battle menu is open" does **not** select the close-up (the command chooser
+keeps the far framing, only the input pickers take case `0`); case `9` is
+re-derived every pass, so a depth frozen while the formation was collapsed
+mid-approach never re-opens; and the resting yaw is the free-running orbit a
+fight *inherits* from the field camera, not a constant - five retail states at
+one framing read five different yaws.
 
 ## Battle-overlay leaves outside the action SM
 

@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -820,6 +820,102 @@ The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
 translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
 about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
 actions frame from a slowly drifting angle.
+
+**The framing-case table.** `FUN_801D5854`'s mode argument indexes a
+ten-entry jump table at `0x801CEA00` (PROT 0898 file `0x1E8`), and modes `4`
+and `5` are the same no-op tail slot:
+
+| Mode | Entry | Framing | Focus |
+|---|---|---|---|
+| `0` | `0x801D59E0` | arts / spell / item **input** close-up | acting actor |
+| `1` | `0x801D5A6C` | submenu-exit swing | acting actor |
+| `2` / `3` | `0x801D5BB0` / `0x801D5BD4` | menu-driver transitions | acting actor |
+| `4` / `5` | `0x801D7138` | nothing - straight to the shared tail | - |
+| `6` | `0x801D5CE8` | per-action framing (two arms) | acting actor |
+| `7` | `0x801D65DC` | post-strike **two-shot** | attacker-target **midpoint** |
+| `8` | `0x801D67D0` | end-of-action | the target |
+| `9` | `0x801D6EF4` | far Begin/Run framing | formation centre |
+
+### The post-strike two-shot (`FUN_801D5854` cases 7 and 8)
+
+Case `7` is the only framing in the set that orbits **both** combatants. Its
+base (`0x801D65DC..0x801D6694`) is pitch `0`, yaw `ctx[+0x6DA] - actor[+0x46]`,
+`TR = (0, 0x500, ctx[+0x6D0])` and a focus at the midpoint of the acting actor
+and its target (`actor[+0x1DD]` through the actor table `0x801C9370`), each
+component `(a + b) >> 1` and negated. Then the shared `ctx[+0xD]` style fork
+(`1`/`3` add half a turn, `2`/`3` drop `TR.y` to `0x400` and tilt the pitch by
+`0x80`), a **one-way** yaw unwrap at `0x801D6700` - `yaw = (yaw - 0x700) &
+0xFFF`, plus a full turn when that lands below the live `_DAT_8007B792`, so the
+swing never takes the short arc back - and a "pull in" tweak at `0x801D6780`
+(pitch levelled, `TR.y += 0x40`, `TR.z = 3z/5`) gated on `_DAT_800846C0 == 0`
+and the acting actor's anim state.
+
+Case `8` is the same shape aimed at the target alone: an extra `-0x100` on the
+yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a focus
+fork that falls back to the acting actor when `actor[+0x1DD] >= 8` or the
+target's node is dead (`0x801D6870`). Its long per-liveness tail from
+`0x801D69A8` - the death-clip re-frame, the counter-attack flags, the
+`ctx[+0x270]` ramp - is decoded but not ported; every branch reads a channel
+the engine's battle actor does not carry.
+
+Which states arm them is `FUN_801E295C`'s own fork, not an inference. The
+attack chain's recovery-wait and return (`0x1F`, `0x20`) share one arm at
+`0x801E5660..0x801E56C0` whose **default** is `li a1,0x7`; it takes mode `8`
+only when the target's live anim id matches its counter-trigger bytes
+(`s8[+0x1F1]` / `+0x1F2`) or a party slot faces a target already in a death
+clip. The Done cleanup (`0x50`) forks on the action category at
+`0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "party slot whose
+target's live-HP halfword reached zero" branch to `li a1,0x8`, everything else
+to `li a1,0x6` - and `0x52` / `0xFD` arm `8` unconditionally (`0x801E5F74`).
+
+Engine side: `battle_cam_script::recover_framing` / `action_end_framing`, armed
+by the `Recover` / `ActionEnd` phases. `0x51` is deliberately left idle - see
+the Done-band note above; the port's residency there is unbounded where
+retail's is `ctx[+0x6D8] = 0x3C` frames.
+
+### The command chooser is the far framing, the arts input is the close-up
+
+"A battle menu is open" does not select the close-up. The battle menu driver
+`FUN_801D388C` arms **both** cases: `0x801D475C` / `0x801D53B8` pass `a1 = 0`
+and `0x801D4908` / `0x801D5688` pass `a1 = 9`, and the battle tick
+`FUN_801D0748` arms case `9` itself at `0x801D0E98`. Two retail save states
+separate them, framebuffer and RAM together: with the **Begin / Run** chooser
+up the rotation/translation trios read `pitch 32`, `TR (0, 1280, 7680)`, focus
+at the origin - case 9's `max(span * 3, 0x800)` over the `+-800` seats,
+prescaled, exactly - and the framebuffer shows both fighters; with the **arts
+input** panel up they read `TR (-512, 1152, 2457)` and `yaw = 0x8F0 -
+actor[+0x46]` (`2119` against a facing of `169`), which projects the enemy off
+the left edge behind the panel. So the close-up belongs to the input pickers,
+and a host that folds the command chooser into it puts the opponent behind the
+eye for the whole command phase.
+
+### Case 9 is re-derived every pass, so the depth follows the formation
+
+The far framing is not armed once and left. `FUN_801D0748` re-arms it per tick
+and the menu driver re-arms it on its own transitions, so `max(span * 3,
+0x800)` and the bbox centre are rebuilt out of the live actor table - exactly
+like case 6. This matters because the formation *moves*: an attacker walks most
+of the way to its target during the approach, collapsing the span onto the
+`0x800` floor. A depth frozen at the moment the far framing was armed survives
+the actor walking back to its seat, leaving the eye at `prescale(0x800)`
+against a full-width formation with one combatant filling the frame and the
+other behind it. Engine side: `BattleCamera::retarget_menu_glide`, which skips
+only the two segments that are not "walk to the far framing" (the rate-clamped
+dialogue dismiss and the scripted submenu-exit swing).
+
+### The resting yaw is the orbit, and a battle inherits it
+
+`_DAT_8007B790/92/94` is **one** rotation trio, shared by the field and battle
+cameras, and nothing on the battle-entry path zeroes it: case 9 passes
+`_DAT_8007B792` straight through and the action SM only decrements it. A fight
+therefore inherits whatever azimuth the field camera left. Five battle save
+states caught at the identical framing (`ctx[7] == 0x00`, pitch `32`,
+`TR (0, 1280, 7680)`, focus at the origin, `+-800` seats) read five different
+yaws - `224`, `2632`, `3136`, `3808`, `3882` - so no captured value is *the*
+resting yaw. What must not survive is `0`: at yaw `0` the eye looks straight
+down the seat axis and the two rows project to the same screen X, each
+occluding the other. `BattleCamInputs::entry_yaw` carries the inherited
+azimuth; both hosts feed it `World::field_camera_azimuth`.
 
 **The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
 *not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail
