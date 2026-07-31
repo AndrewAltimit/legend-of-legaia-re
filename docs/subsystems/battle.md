@@ -2117,18 +2117,97 @@ Slot indices are **absolute actor-table indices** - party ordinals below `party_
 
 ### The drawn surface
 
-`battle_hud_draws_for` renders party slots as per-character panels across the bottom of the 320x240 stage, with filled HP and MP bars.
+`battle_hud_draws_for` returns two lists (`BattleHudDraws`): `text` samples the
+dialog-font atlas (glyphs plus the solid-texel rects), `sprites` samples the
+resident system-UI atlas. Both hosts composite `sprites` under `text` in the
+same slot they already use for the dialog and menu chrome.
 
-The panel X anchors are pinned from the battle overlay (`FUN_801D84C0`'s per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio `0x0C`/`0x72`; canonical port `engine-vm::battle_party_panel`), and the packet walk confirms them as the panels' **name pen**, five pixels inside a 102x48 panel plate. Retail's own seats, rects and palettes for the whole surface are in [screen chrome](#battle-screen-chrome-packet-pinned).
+The panel X anchors are pinned from the battle overlay (`FUN_801D84C0`'s
+per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio
+`0x0C`/`0x72`; canonical port `engine-vm::battle_party_panel`), and the packet
+walk confirms them as the panels' **name pen**, five pixels inside a 102x48
+panel plate. Retail's own seats, rects and palettes for the whole surface are
+in [screen chrome](#battle-screen-chrome-packet-pinned).
 
-That includes the one thing the bars here get wrong: **retail draws no HP or MP gauge at all**, in either the panel or the full-width active-actor readout. The filled bars are an engine addition, not an approximation of a retail one. Monster slots draw as compact rows with a thin HP bar - also an enhancement; retail draws no monster gauge.
+**Retail draws no HP or MP gauge at all**, in either the panel or the
+full-width active-actor readout, and none for monsters either. Filled bars and
+monster rows are engine additions rather than approximations of a retail
+surface, and both sit behind `LEGAIA_DIAG_HUD`.
 
-The filled rects need no dedicated pipeline: `font_solid_src` locates a solid-white texel in the dialog-font atlas and every bar is a `TextDraw` stretching that 1x1 source under a colour tint, through the same textured-quad pass both hosts already run for glyphs.
+**The party strip.** One full-width lozenge per live party member across the
+bottom of the 320x240 stage. Every column is measured per-pixel off a native
+320x228 framebuffer grab of a solo-Vahn battle: the lozenge spans `x 8..=311`
+by `y 188..=207` with 6-px chamfered caps, and its single glyph row at `y 194`
+carries the name at `x 16`, the gold `HP` label sprite at `x 80`, the current
+HP right-aligned to `x 132`, a `/` at `x 137`, the maximum right-aligned to
+`x 176`, then the green `MP` label at `x 192` with its own pair right-aligned
+to `x 236` and `x 272` around a `/` at `x 241`. The label cells are
+`OVERLAY_SYSTEM_UI_LABEL_HP` / `_MP` - the same two the pause menu's party
+panel draws.
 
-Two retail colour laws drive the surface, both fed the **displayed** (ramping) HP - `BattleActor::hp_display`, retail actor `+0x172`, walked by the quarter-step ramp `FUN_80047430` so damage drains the bar over frames instead of snapping:
+Retail draws **no gauge bar of any kind** inside the strip; it is name plus
+numerals plus the two label sprites, and nothing else. A four-digit HP fits
+because the numerals are right-aligned, which is what a second reference frame
+at 2318/2318 fixes.
 
-- **Numerals** take the readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`).
-- **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`, port of `FUN_80046A20`): death greys the whole track, an active status forces both fills to the override colour, otherwise each bar bands independently on its floored half/quarter thresholds. The index-to-RGB map (`gauge_fill_color`) is approximate - retail resolves the index through unpinned font-CLUT rows.
+**What is not pinned here.** The lozenge *skin* has no atlas cell yet, so the
+strip and the plaque draw in the shared blue-gradient interior under the gold
+9-slice frame. The multi-member layout is an inference: retail's party-row
+widget is per-ordinal (`FUN_8002C69C` kinds `0x33` / `0x34` / `0x35` each call
+`FUN_8002C2E4` with `a0 = 0 / 1 / 2`), each kind rides its own screen element,
+and `FUN_80031D00` reads that element's own `+0xE` / `+0x10` as the pen - so
+retail positions each member's row independently and no captured frame pins
+where. The port stacks one identical strip per member, bottom row on the
+pinned band, which keeps every measured column exact for every member. One
+engine-wide caveat rides all of it: retail's display window is 228 lines while
+the engine stage is 240, so the strip's `y 188` leaves 32 stage lines under it
+here against retail's 20.
+
+**Falsified.** `FUN_801D84C0`'s per-party-size anchor table (solo `0x72`, pair
+`0x3F`/`0xA5`, trio `0x0C`/`0x72`) and `FUN_801DBC30`'s `0x40`-px label-strip
+blit do **not** position this HUD. Retail's solo name sits at stage `x 0x10`;
+the solo anchor would put a `0x40`-wide plate at `x 0x6A..0xA9`, nowhere near
+it. `engine-vm::battle_party_panel` stays the canonical port of those two
+functions and `engine-ui` still mirrors the table for the equality test, but
+the strip does not read it, and what the table really positions is open.
+
+**The plaque.** Retail keeps a small framed plaque in the top-left corner
+naming the actor the frame belongs to - the party member whose action is
+landing, the monster through an enemy turn. Measured: art box `x 8..=50` by
+`y 8..=27` for a four-glyph name, label at `(16, 14)`, i.e. an `(8, 6)` inset
+and a 9-px right pad, so the box tracks the label. `battle_hud::battle_plaque_label`
+supplies it. This is also where the port's **monster readout** lives now:
+retail draws no monster gauge at all, so a monster's name is the whole of what
+it contributes to the drawn surface.
+
+**Parked during input.** Retail parks the status plate off-screen while a
+command-entry session owns the frame (its draws move to `y = 230`, under the
+228-line display window - see
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md)). The port emits no strip
+at all instead, since the engine stage is 12 lines taller and `y = 230` would
+still be visible.
+
+**Diagnostic surface** (`LEGAIA_DIAG_HUD` set to anything but `0` / empty).
+Everything the port used to draw unconditionally and retail does not: monster
+rows with HP numerals and thin gauge bars, the K.O. tag, the per-slot LV / AP
+tail, and the "ENCOUNTER!" transition banner. Off by default on both hosts;
+the toggle is read from the environment so they resolve one answer, and on
+wasm the variable never exists.
+
+The filled rects need no dedicated pipeline: `font_solid_src` locates a
+solid-white texel in the dialog-font atlas and every rect is a `TextDraw`
+stretching that 1x1 source under a colour tint, through the same textured-quad
+pass both hosts already run for glyphs. Without either atlas the builder still
+draws - the lozenge degrades to a solid interior plus a 1-px rim, the label
+sprites to tinted `HP` / `MP` text at the same columns.
+
+Two retail colour laws drive the surface, both fed the **displayed** (ramping)
+HP - `BattleActor::hp_display`, retail actor `+0x172`, walked by the
+quarter-step ramp `FUN_80047430` so damage drains over frames instead of
+snapping:
+
+- **Numerals** take the readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead member's whole row dims.
+- **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`, port of `FUN_80046A20`): death greys the whole track, an active status forces both fills to the override colour, otherwise each bar bands independently on its floored half/quarter thresholds. Only the diagnostic rows draw bars now, so this law reaches the default surface nowhere. The index-to-RGB map (`gauge_fill_color`) is approximate - retail resolves the index through unpinned font-CLUT rows.
 
 MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
 
@@ -2146,7 +2225,7 @@ The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it wit
 
 The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
 
-Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word, `status_element` runs the ladder, and both hosts draw the single selected element (with the level readout on the no-ailment arm). The retail **sprite sheet** for `0x18..=0x20` is not resolved, so the hosts draw a labelled badge keyed on the id: the selection is ported, the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. Only the **ailment** arm reaches the default surface, as a labelled badge in the member's own right-hand strip gutter - the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not, and retail's own element pen is caller-supplied and unpinned. The no-ailment arm (base marker `0x0A` plus the level) is diagnostic-only: neither retail reference frame shows a marker or a level anywhere near the strip. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 

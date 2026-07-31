@@ -258,8 +258,12 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
   (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
-  (slot panels). `engine-render::battle_hud_draws_for` turns it into
-  `TextDraw`s.
+  (slot rows). `engine-render::battle_hud_draws_for` turns it into the
+  drawn surface. Also the two labels the drawn surface needs off the
+  live world: `battle_plaque_label` (the top-left plaque, and the port's
+  whole monster readout - retail draws no monster gauge) and
+  `encounter_banner_label` / `encounter_banner_enabled` (the banner is a
+  port invention with no retail counterpart, so it is gated off).
 - `inventory_use` - `InventoryUseSession` state machine for the field
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
