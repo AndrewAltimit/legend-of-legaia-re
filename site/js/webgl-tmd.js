@@ -85,7 +85,16 @@ function buildSemiTail(indices, cbaTsb) {
 class TmdRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
-    if (!gl) throw new Error('WebGL2 not available');
+    /* Still a throw, so every existing caller behaves exactly as before - but
+     * routed through the shared notice, which puts the real cause on screen
+     * first. Of the twelve construction sites only viewer.html catches this,
+     * and its flat-shaded fallback is what made a missing WebGL2 context look
+     * like an untextured-model bug in the renderer. See main.js. */
+    if (!gl) {
+      throw (window.legaiaWebgl2Failure
+        ? window.legaiaWebgl2Failure()
+        : new Error('WebGL2 not available'));
+    }
     this.canvas = canvas;
     this.gl = gl;
 

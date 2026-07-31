@@ -143,6 +143,59 @@ the file again, click **New game** as soon as the boot modes appear, and read
 the HUD ten seconds later. Re-picking gives `hud-frame=0`; skipping the re-pick,
 same profile and same timing, boots to `opdeene`.
 
+## The 3D pages are WebGL2-only, and they now say so
+
+Every 3D surface on the site takes a `webgl2` context and there has never been
+a WebGL1 path. Three entry points ask for one: `webgl-tmd.js` (the shared
+`TmdRenderer`, twelve construction sites - viewer, all five minigames, the play
+page, world overview, characters, NPCs, world, mesh/field views),
+`webgl-prim-replay.js`, and `monsters.html`, which carries its own renderer.
+
+A null context used to raise a bare `Error('WebGL2 not available')`, and what a
+user saw depended entirely on whether their page caught it:
+
+| Page | Before | What it looked like |
+|---|---|---|
+| Asset viewer | caught; drops to its 2D-canvas flat-shaded loop | every model **untextured** |
+| Minigames | uncaught | stage gone, floating HUD boxes and 2D faces on black - **scrambled art** |
+| Play page | caught by `enter()`, status set to `<scene>: WebGL2 not available` | black canvas, no scene, no new game |
+
+All three read as a broken site rather than a browser that cannot draw, which
+is the most expensive way to be wrong: it sends people into the renderer after
+a bug that is not there. It has already cost that once - a graphics-driver
+update left a browser without hardware acceleration until it was restarted, and
+these pages answered with untextured geometry instead of naming the cause.
+
+So `window.legaiaWebgl2Failure()` (in `site/js/main.js`, loaded on every page)
+raises a sticky banner naming the real condition and returns the `Error` for
+the caller to throw. Control flow is unchanged - the viewer's fallback still
+runs - the failure just explains itself first. The banner is `position: sticky`
+under the top bar on purpose: the canvas that failed is usually well below the
+fold, so a banner pinned to the top of the document scrolls out of sight
+exactly when the user reaches the blank area it explains. Its text leads with
+**restart the browser after a graphics-driver update**, because that is the
+case that actually happened and the one nobody guesses.
+
+**A WebGL1 fallback is not worth building.** Every shader is `#version 300 es`,
+and the renderer leans on WebGL2-only constructs throughout - `usampler2D` and
+`texelFetch` against the `R16UI` VRAM texture *are* the PSX CLUT decode, plus
+vertex-array objects and instanced draws. That is a renderer rewrite, not a
+fallback. The viewer's flat-shaded path is not a reusable one either: it is a
+2D-canvas software rasteriser wired to that page's own wasm API, and it is what
+made a missing context look like a texturing bug in the first place.
+
+Reproduce it without touching a driver - override the context request, which is
+exactly the observable condition:
+
+```js
+await ctx.addInitScript(() => {
+  const orig = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    return type === 'webgl2' ? null : orig.call(this, type, attrs);
+  };
+});
+```
+
 ## Script cache-busting is content-addressed
 
 `site/_gen.py` rewrites every `js/*.js` reference in every generated page to

@@ -470,7 +470,13 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     constructor(canvas) {
       this.canvas = canvas;
       const gl = canvas.getContext('webgl2', { antialias: true });
-      if (!gl) throw new Error('WebGL2 unavailable');
+      /* This page carries its own renderer rather than TmdRenderer, so it has
+       * to reach the shared no-WebGL2 notice itself. See main.js. */
+      if (!gl) {
+        throw (window.legaiaWebgl2Failure
+          ? window.legaiaWebgl2Failure()
+          : new Error('WebGL2 unavailable'));
+      }
       this.gl = gl;
       this.prog = compileProgram(gl, MESH_VS, MESH_FS);
       this.loc = {
