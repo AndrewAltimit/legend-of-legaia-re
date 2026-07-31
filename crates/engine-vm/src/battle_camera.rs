@@ -20,22 +20,30 @@
 //! until each component reaches its endpoint, with 12-bit wrapped angles.
 //! No float easing is involved in retail.
 //!
-//! The two have different wiring status. [`build_camera_angle_tween`] is
-//! live: `engine-shell`'s battle camera builds every arrive-together glide's
-//! rate table through it. [`apply_shake`] is not, and cannot be until the
-//! field VM models one global:
+//! Both are live. [`build_camera_angle_tween`] builds every arrive-together
+//! glide's rate table in [`crate::battle_cam_script`]; [`apply_shake`] is
+//! stepped by that same camera once per camera step, with its amplitude
+//! sourced from the field VM.
 //!
-//! * [`apply_shake`]'s amplitude input is the global `_DAT_8007B630`, and its
-//!   only retail writer is a **field-VM opcode**: `FUN_801DE840` stores the
-//!   instruction's second byte into it and advances the PC by three
-//!   (`overlay_0897_801de840.txt` `0x801E2138..0x801E2144`). The engine's
-//!   field VM does not model that global, so the amplitude would be a
-//!   permanent zero - the value at which the routine degenerates to backing
-//!   its own previous offset out of the accumulators.
-//! * Its output accumulators `0x800840B8`/`0x800840BC` are the camera's
-//!   translation pair, read by the camera pose - which in the port lives in
-//!   `engine-shell`'s battle camera. Nothing in `engine-core` or `engine-vm`
-//!   reads a shake offset back.
+//! ## Where the amplitude comes from, and where retail calls this
+//!
+//! [`apply_shake`]'s amplitude input is the global `_DAT_8007B630`, and its
+//! only retail writer is a **field-VM opcode**: `0x4C` outer-nibble `8`
+//! sub-`4`, a 3-byte instruction `[4C, 84, amplitude]` whose arm at
+//! `0x801E2134` (jump-table slot `0x801CEF58`) stores the operand byte and
+//! advances the PC by three
+//! (`overlay_0897_801de840.txt` `0x801E2134..0x801E2144`). The port models
+//! that opcode - [`crate::field::FieldHost::op4c_n8_sub4_set_b630`] - and the
+//! engine host keeps the value on the world for the camera to read.
+//!
+//! Retail's own callers of `FUN_801D9D30` are all in the **field-family**
+//! slot-A overlay (the per-frame camera updater `0x801D1344` and its
+//! siblings, seen in the dialog / cutscene / world-map captures of that same
+//! image); the battle-action overlay replaces that image at the same base, so
+//! no shake caller is resident during a retail fight. The engine drives the
+//! kernel from its one camera anyway, because the accumulators
+//! `0x800840B8`/`0x800840BC` are that camera's translation pair either way -
+//! see [`crate::battle_cam_script::BattleCamera::set_shake_amplitude`].
 //!
 //! ## `BattleActionHost::screen_shake` is not this routine's caller
 //!
@@ -221,13 +229,10 @@ pub fn build_camera_angle_tween(
 /// REF: this routine is also duplicated verbatim as the tail of
 /// `FUN_801DB510` (the camera follow-ease) - one port covers both sites.
 ///
-/// NOT WIRED: the amplitude has no engine source. Its only retail writer is
-/// the field-VM opcode at `overlay_0897_801de840.txt` `0x801E2134` (a 3-byte
-/// instruction whose operand byte becomes `_DAT_8007B630`), which the port's
-/// field VM does not model - so the amplitude would be a permanent zero, the
-/// value at which this routine degenerates to backing its own previous offset
-/// out of the accumulators. The battle-action `screen_shake` host event is
-/// **not** the missing caller; see the module note for why.
+/// Stepped by [`crate::battle_cam_script::BattleCamera`] once per camera
+/// step; the amplitude reaches it from the field VM's `0x4C`/`8`/`4` opcode
+/// through the engine host. The battle-action `screen_shake` host event is
+/// **not** a caller of this routine; see the module note for why.
 pub fn apply_shake(accum: &mut [i32; 2], offset: &mut [i32; 2], amplitude: u32, seed: &mut u32) {
     accum[0] -= offset[0];
     accum[1] -= offset[1];

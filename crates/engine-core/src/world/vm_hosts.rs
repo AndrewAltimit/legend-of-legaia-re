@@ -1540,6 +1540,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         member.set_hp_mp_sp(hms);
     }
 
+    /// `[4C, 0x84, amplitude]` - the screen-shake amplitude `_DAT_8007B630`.
+    ///
+    /// This opcode is the global's only retail writer and the global is the
+    /// only input to `FUN_801D9D30`, so the field script is the sole source
+    /// of a camera shake. The world holds it for the camera to read; see
+    /// [`crate::world::World::camera_shake_amplitude`].
+    fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
+        self.world.camera_shake_amplitude = value;
+    }
+
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate

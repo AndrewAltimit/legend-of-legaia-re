@@ -1315,11 +1315,30 @@ pub trait FieldHost {
         let _ = slot;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-4 - write `_DAT_8007B630`.
+    /// Op 0x4C outer-nibble-8 sub-4 - set the **screen-shake amplitude**.
     ///
-    /// 3-byte instruction `[4C, 0x84, value]`. The original writes
-    /// `_DAT_8007B630 = value` - a global slot whose meaning is not yet
-    /// reversed (likely a per-scene effect mask). PC += 3.
+    /// 3-byte instruction `[4C, 0x84, amplitude]`. The whole arm is five
+    /// instructions (`0x801E2134`, jump-table slot `0x801CEF58`):
+    ///
+    /// ```text
+    /// 801e2134  addiu s8,s8,0x3        ; PC += 3
+    /// 801e2138  lbu   v1,0x1(s6)       ; the operand byte
+    /// 801e213c  lui   v0,0x8008
+    /// 801e2140  j     0x801e3624       ; the dispatcher's advance exit
+    /// 801e2144  _sw   v1,-0x49d0(v0)   ; _DAT_8007B630 = operand
+    /// ```
+    ///
+    /// The store is a full word of a zero-extended byte, so the global's
+    /// value space is `0..=0xFF` and only the operand byte can set it.
+    ///
+    /// `_DAT_8007B630` is the amplitude `FUN_801D9D30`
+    /// ([`crate::battle_camera::apply_shake`]) turns into an LCG jitter on
+    /// the camera translation pair `0x800840B8/BC`: `0` is "no shake" and
+    /// `1..=0x15` widens the sample window. This opcode is that global's
+    /// only writer, which is what makes the field script the sole source of
+    /// a camera shake.
+    ///
+    /// REF: FUN_801D9D30
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         let _ = value;
     }
@@ -1332,8 +1351,11 @@ pub trait FieldHost {
     /// inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`,
     /// calling `FUN_801D5630(col, row, ...)` for each tile. On non-null
     /// return the inner body writes `tile[+0x3] = 0; tile[+0x2] = value`.
-    /// The post-loop trailer also writes `_DAT_8007B630 = col_start` and
-    /// exits via the dispatcher's `j 0x801e3624` label.
+    /// The loop exits via the dispatcher's `j 0x801e3624` label with the
+    /// 7-byte PC advance in its delay slot (`0x801E212C`) and writes nothing
+    /// else - an earlier note claimed a post-loop `_DAT_8007B630 = col_start`
+    /// trailer, but those bytes are the *next* arm (sub-4, `0x801E2134`),
+    /// which this arm's unconditional jump never reaches.
     ///
     /// `FUN_801D5630` itself (`ghidra/scripts/funcs/overlay_0897_801d5630.txt`)
     /// is the tile-resolver helper: 9-instruction body that on hit returns

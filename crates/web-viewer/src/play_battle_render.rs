@@ -98,29 +98,35 @@ const READEF_PROT_INDEX: u32 = 894;
 /// `web_pose_matches_the_native_recipe`.
 fn derive_battle_cam(
     world: &legaia_engine_core::world::World,
-) -> (
-    legaia_engine_vm::battle_cam_script::BattleCamPhase,
-    Option<legaia_engine_vm::battle_cam_script::BattleCamActor>,
-    Option<legaia_engine_vm::battle_cam_script::FormationBox>,
-) {
+) -> legaia_engine_vm::battle_cam_script::BattleCamInputs {
     use legaia_engine_vm::battle_cam_script as script;
+    // The submenu close-up frames whoever owns the menu; the action framing
+    // frames whoever is acting (`ctx[+0x13]`).
+    let acting_slot = world
+        .battle_command
+        .as_ref()
+        .map(|c| c.actor)
+        .unwrap_or(world.battle_ctx.active_actor);
     let phase = script::phase_for(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
         world.battle_command.is_some()
             || world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
+        script::action_state_frames_the_action(world.battle_ctx.action_state),
     );
-    let acting = world.battle_command.as_ref().and_then(|c| {
-        let a = world.actors.get(c.actor as usize)?;
+    let actor_at = |slot: u8, party_slot: Option<u8>| {
+        let a = world.actors.get(slot as usize)?;
         // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
         // party-record selector; the engine's party rows are that record
         // order, so the row index + 1 is the same id.
-        let height = world
-            .battle_camera_heights
-            .as_ref()
-            .and_then(|t| t.height_for_char_id(c.party_slot + 1))
-            .map(|h| h as f32);
+        let height = party_slot.and_then(|p| {
+            world
+                .battle_camera_heights
+                .as_ref()
+                .and_then(|t| t.height_for_char_id(p + 1))
+                .map(|h| h as f32)
+        });
         Some(script::BattleCamActor {
             // The port's actors carry their heading in `render_26` (the
             // retail `+0x26` 12-bit angle); it stands in for the battle
@@ -133,7 +139,11 @@ fn derive_battle_cam(
             ],
             height,
         })
-    });
+    };
+    let acting = match world.battle_command.as_ref() {
+        Some(c) => actor_at(c.actor, Some(c.party_slot)),
+        None => actor_at(acting_slot, None),
+    };
     // The far menu framing sizes its depth to - and centres on - the live
     // formation's X/Z bounding box (`FUN_801D5854` case 9).
     let pc = world.party_count as usize;
@@ -148,7 +158,26 @@ fn derive_battle_cam(
             a.move_state.world_z as f32,
         );
     }
-    (phase, acting, formation)
+    // `FUN_801D5854` case 6: `party_slot` is retail's `ctx[+0x13] < 3` over
+    // the engine's party band, `char_id` its `DAT_8007BD10[slot]`, and
+    // `depth_raw` is `ctx[+0x6D0]` - what `camera_height_for_frame` last
+    // computed. `flow_active` is `_DAT_8007BD71 == 0xFE`, which the engine
+    // has no byte for and which is true whenever it runs this camera.
+    let party = usize::from(acting_slot) < pc;
+    script::BattleCamInputs {
+        phase,
+        acting,
+        formation,
+        action: script::ActionFraming {
+            party_slot: party,
+            flow_active: true,
+            depth_raw: world.battle_camera_frame_height as i32,
+            yaw_base: 0,
+            style: 0,
+            char_id: if party { acting_slot + 1 } else { 0 },
+        },
+        shake_amplitude: world.camera_shake_amplitude,
+    }
 }
 
 /// Host-safe log: the browser console on wasm, stderr on the native test
@@ -581,13 +610,11 @@ impl LegaiaRuntime {
         };
         let world = &host.world;
         let active = world.mode == SceneMode::Battle;
-        let (phase, acting, formation) = derive_battle_cam(world);
+        let inputs = derive_battle_cam(world);
         legaia_engine_vm::battle_cam_script::drive(
             &mut br.camera,
             active,
-            phase,
-            acting,
-            formation,
+            inputs,
             world.field_frames,
         );
     }
@@ -1183,10 +1210,10 @@ mod battle_cam_web_tests {
             0, 0,
         ));
 
-        let (phase, acting, formation) = derive_battle_cam(&world);
-        assert_eq!(phase, script::BattleCamPhase::Submenu);
+        let inputs = derive_battle_cam(&world);
+        assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
         assert_eq!(
-            acting,
+            inputs.acting,
             Some(script::BattleCamActor {
                 facing: 0,
                 world: [0.0, 0.0, -800.0],
@@ -1194,7 +1221,7 @@ mod battle_cam_web_tests {
             })
         );
         assert_eq!(
-            formation,
+            inputs.formation,
             Some(script::FormationBox {
                 min: [0.0, -800.0],
                 max: [0.0, 800.0],
@@ -1202,7 +1229,7 @@ mod battle_cam_web_tests {
         );
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, phase, acting, formation, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2);
         }
         let pose = slot.as_ref().unwrap().pose();
         // The measured solo-Vahn submenu close-up - the SAME literals the

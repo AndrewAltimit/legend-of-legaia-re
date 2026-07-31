@@ -359,6 +359,18 @@ pub struct World {
     /// REF: FUN_801F0348
     pub battle_camera_frame_height: i16,
 
+    /// Screen-shake amplitude - retail `_DAT_8007B630`.
+    ///
+    /// Written by exactly one thing in retail: the field-VM opcode
+    /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
+    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. It is
+    /// the only input to the LCG camera jitter `FUN_801D9D30`
+    /// ([`legaia_engine_vm::battle_camera::apply_shake`]): `0` is the resting
+    /// state and `1..=0x15` widens the jitter window.
+    ///
+    /// REF: FUN_801D9D30
+    pub camera_shake_amplitude: u8,
+
     /// Per-slot accuracy stat (retail actor `+0x168`, the AGL-derived
     /// hit/dodge seed). Used as the **attacker's** term in the selector-9
     /// accuracy roll ([`legaia_engine_vm::battle_formulas::accuracy_roll`]).
@@ -2394,6 +2406,7 @@ impl World {
             battle_defense_split: [None; 8],
             battle_speed: [0; 8],
             battle_camera_frame_height: legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN,
+            camera_shake_amplitude: 0,
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
             monster_strike_budget: 1,

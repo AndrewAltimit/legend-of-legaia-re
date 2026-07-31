@@ -14,41 +14,63 @@
 //!
 //! ## What this module ports
 //!
-//! The parts whose every instruction is accounted for:
-//!
 //! * [`attack_camera_gate`] - the four-way entry test.
 //! * [`CameraPose`] + [`CameraPose::seed`] - the local triple the arms mutate,
 //!   including the negations that make the look-at the *inverse* of the actor's
 //!   position and facing.
 //! * [`character_arm`] / [`art_arm`] - the two dispatch layers: character id
-//!   `1`/`2`/`3` and then art id `0x1A..=0x2A` through a 17-slot jump table.
+//!   `1`/`2`/`3`, then art id through **that character's own** jump table.
 //! * [`anim_push`] - the animation-frame-driven camera push the arms share,
 //!   with its `0x60` bias, `<< 4` scale and `0x100` clamp.
-//! * [`ArmPhase`] - the phase-table stride the arms index by `ctx[+0x26D]`.
+//! * [`ArmTrack`] / [`arm_tracks`] / [`apply_track`] - which rows of the disc
+//!   track table each arm folds into the pose, and into which component.
 //!
-//! ## What it does not port
+//! ## Three jump tables, not one
 //!
-//! The seventeen per-art arms themselves. Each is a short straight-line block
-//! that reads its own halfword track out of the per-phase table at
-//! `0x801F4E10` and folds it into the pose, and the tracks are **disc data** in
-//! PROT 0898's tail - reproducing the arms without that table would be
-//! transcribing offsets with nothing to check them against. [`ArmPhase`]
-//! records the indexing so the table can be parsed later; the folds stay
-//! undocumented rather than guessed.
+//! The earlier reading - "art id `0x1A..=0x2A` through a 17-slot jump table" -
+//! was one character's table generalised to all three. Each character branch
+//! bounds and indexes its own:
+//!
+//! | character id | bound | jump table | live arms |
+//! |---|---|---|---|
+//! | `1` | `0x11` (`0x801D72E0`) | `0x801CEA88` | 4 |
+//! | `2` | `0x14` (`0x801D76C4`) | `0x801CEAD0` | 5 |
+//! | `3` | `0x11` (`0x801D7B24`) | `0x801CEB20` | 4 |
+//!
+//! So character `2` reaches art ids up to `0x2D`, three past the range the
+//! other two accept, and most slots in every table are the shared epilogue
+//! `0x801D828C`. Thirteen arm bodies exist, not seventeen; several art ids
+//! share one (`0x1E`/`0x2A` for characters `1` and `3`, `0x1D`/`0x2C` and
+//! `0x1E`/`0x2D` for character `2`). See [`ART_JUMP_TABLES`].
+//!
+//! ## The track table
+//!
+//! Each arm reads one or more halfwords out of the disc table at
+//! `0x801F4E10` - twenty rows of two, addressed `base + row*4 + cursor*2`
+//! with `cursor = ctx[+0x26D]` - and adds them into the pose. Parser:
+//! [`legaia_asset::battle_attack_camera_table`]. Every row is used and every
+//! use is a fold into one pose component; [`ARM_TRACKS`] is the whole map,
+//! taken site by site from the dump.
+//!
+//! ## What it still does not port
+//!
+//! The per-arm *literals and ramps* around the folds - each arm also adds its
+//! own constants and multiples of the context counters `ctx[+0x26E]` (a
+//! `0..=0xC8` ramp) and `ctx[+0x87C]`, under its own animation-frame
+//! thresholds. Those two counters are battle-context state the engine does
+//! not model, so the arms are ported as far as the track folds and the shared
+//! [`anim_push`] and no further; the retail address of each remaining block is
+//! on its [`ArmTracks`] row.
 //!
 //! # NOT WIRED
 //!
-//! No engine caller, and the missing prerequisite is the table above. The
-//! engine's battle camera is `engine-shell`'s `BattleCamera`
-//! (`window/battle_cam.rs`): a **battle-phase** glide between three traced
-//! framings - dialogue, menu, per-character submenu close-up - whose only
-//! per-action input is the height snap `BattleActionHost::camera_bounds`.
-//! (`retail_battle_mvp`, which an earlier note named here, is the projection
-//! matrix that framing is fed into, not the framing itself.) Nothing in it
-//! holds a `ctx[+0x26D]` phase cursor or the `0x801F4E10` tracks for these
-//! arms to read, and its phase space is the menu's, not the swing's. Wiring
-//! means a disc parser for that table plus a per-art channel on that camera,
-//! both outside this crate.
+//! The shared battle camera ([`crate::battle_cam_script`]) now has an Action
+//! phase and the track table is parsed, but the per-art channel is not
+//! connected: that camera holds no `ctx[+0x26D]` phase cursor and no live
+//! animation-frame counter for [`anim_push`] to read, and the engine's battle
+//! actors do not expose `actor[+0x21B]` (the arm sub-selector) or
+//! `actor[+0x22C][+0x68]`. Wiring means those three actor channels, not more
+//! camera work.
 
 /// Action category the gate demands (`actor[+0x1DE] == 3`, Attack).
 pub const CATEGORY_ATTACK: u8 = 3;
@@ -58,8 +80,6 @@ pub const PHASE_ACTIVE: u8 = 0xFF;
 pub const PARTY_SLOTS: u8 = 3;
 /// First art id with a camera arm (`actor[+0x1DB] - 0x1A`, table index `0`).
 pub const FIRST_ART: u8 = 0x1A;
-/// Camera arms in the per-art jump table (`sltiu v0, v1, 0x11`).
-pub const ART_ARMS: u8 = 0x11;
 /// Base pitch/yaw magnitude the pose seeds two of its slots with (`0x400`).
 pub const POSE_SEED_ANGLE: i16 = 0x400;
 /// Animation-frame threshold below which the push is skipped (`slti a0, 0x61`).
@@ -116,18 +136,268 @@ pub const fn character_arm(participant_id: u8) -> Option<CharacterArm> {
     }
 }
 
-/// The per-art jump-table index, or `None` when the current art has no arm.
+/// The three per-character art jump tables, in `CharacterArm` order
+/// (`0x801CEA88`, `0x801CEAD0`, `0x801CEB20`), read off the battle-action
+/// overlay image. Index = `art_id - `[`FIRST_ART`]; `None` is retail's shared
+/// epilogue slot `0x801D828C`, and the entry VA is the arm's own body.
 ///
-/// Retail biases by [`FIRST_ART`] and bounds with an **unsigned** compare, so an
-/// art id below the bias wraps to a huge index and is rejected by the same test
-/// that rejects one above the range.
-pub const fn art_arm(art_id: u8) -> Option<u8> {
-    let index = art_id.wrapping_sub(FIRST_ART);
-    if art_id >= FIRST_ART && index < ART_ARMS {
-        Some(index)
-    } else {
-        None
+/// The table **lengths** are the bounds each character branch tests
+/// (`sltiu v0,v1,0x11` / `0x14` / `0x11`), which is why character `2` accepts
+/// three art ids the other two reject.
+pub const ART_JUMP_TABLES: [&[Option<u32>]; 3] = [
+    // Character 1 - `0x801CEA88`, bound 0x11.
+    &[
+        Some(0x801D_7308), // 0x1A
+        None,              // 0x1B
+        Some(0x801D_7650), // 0x1C
+        Some(0x801D_7568), // 0x1D
+        Some(0x801D_74A8), // 0x1E
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(0x801D_74A8), // 0x2A - shares the 0x1E body
+    ],
+    // Character 2 - `0x801CEAD0`, bound 0x14.
+    &[
+        Some(0x801D_76EC), // 0x1A
+        None,              // 0x1B
+        None,              // 0x1C
+        Some(0x801D_78F0), // 0x1D
+        Some(0x801D_797C), // 0x1E
+        Some(0x801D_79F8), // 0x1F
+        Some(0x801D_7870), // 0x20
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,              // 0x2A
+        None,              // 0x2B
+        Some(0x801D_78F0), // 0x2C - shares the 0x1D body
+        Some(0x801D_797C), // 0x2D - shares the 0x1E body
+    ],
+    // Character 3 - `0x801CEB20`, bound 0x11.
+    &[
+        Some(0x801D_7B4C), // 0x1A
+        None,              // 0x1B
+        Some(0x801D_7D7C), // 0x1C
+        Some(0x801D_7EA0), // 0x1D
+        Some(0x801D_81FC), // 0x1E
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(0x801D_81FC), // 0x2A - shares the 0x1E body
+    ],
+];
+
+/// The arm entry VA this character's art id dispatches to, or `None` for a
+/// slot that lands on the shared epilogue (and for an id outside the
+/// character's own bound).
+///
+/// Retail biases by [`FIRST_ART`] and bounds with an **unsigned** compare, so
+/// an art id below the bias wraps to a huge index and is rejected by the same
+/// test that rejects one above the range.
+pub fn art_arm(character: CharacterArm, art_id: u8) -> Option<u32> {
+    let table = ART_JUMP_TABLES[character as usize];
+    let index = art_id.wrapping_sub(FIRST_ART) as usize;
+    if art_id < FIRST_ART || index >= table.len() {
+        return None;
     }
+    table[index]
+}
+
+/// Which pose component an [`ArmTrack`] fold lands in - the stack slot the
+/// arm's `sh` writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PoseSlot {
+    /// `sp+0x10` - [`CameraPose::rot`]`[0]`.
+    Pitch,
+    /// `sp+0x12` - [`CameraPose::rot`]`[1]`.
+    Yaw,
+    /// `sp+0x18` - [`CameraPose::dist`]`[0]`.
+    Dist0,
+    /// `sp+0x1C` - [`CameraPose::dist`]`[2]`.
+    Dist2,
+}
+
+/// One arm's use of one track-table row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArmTrack {
+    /// Row index into [`legaia_asset::battle_attack_camera_table`] (retail's
+    /// `lhu` displacement divided by four).
+    pub row: usize,
+    /// The pose component the row is folded into.
+    pub slot: PoseSlot,
+    /// Whether the fold subtracts instead of adding (`subu` at the store).
+    pub subtract: bool,
+    /// The `lhu`'s own address, so a reader can go straight to the block.
+    pub site_va: u32,
+}
+
+/// The tracks one arm body reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArmTracks {
+    /// The arm's entry VA - the value [`art_arm`] returns.
+    pub entry_va: u32,
+    /// Its row folds, in the order the arm performs them.
+    pub tracks: &'static [ArmTrack],
+}
+
+/// One additive fold, spelled out so the map below reads as a table.
+/// Deliberately not a one-letter name: the reachability analysis matches free
+/// functions by name, and a `fn t` picks up an edge from every `t(..)` call in
+/// the workspace.
+const fn arm_track_fold(row: usize, slot: PoseSlot, site_va: u32) -> ArmTrack {
+    ArmTrack {
+        row,
+        slot,
+        subtract: false,
+        site_va,
+    }
+}
+
+/// Every arm body's track folds, taken site by site from the disassembly.
+///
+/// Twenty rows exist and all twenty are used; the map is dense and the row
+/// set is what pins the table's extent (see the parser's module doc). Most
+/// rows are yaw offsets - the per-art swing angle - with pitch, eye-space X
+/// and eye-space Z taking the rest.
+pub const ARM_TRACKS: &[ArmTracks] = &[
+    // Character 1.
+    ArmTracks {
+        entry_va: 0x801D_7308,
+        tracks: &[
+            arm_track_fold(0, PoseSlot::Pitch, 0x801D_7338),
+            arm_track_fold(1, PoseSlot::Yaw, 0x801D_734C),
+            // The arm's second branch (`0x801D73F0`, taken when
+            // `actor[+0x21B] != 5`).
+            arm_track_fold(2, PoseSlot::Yaw, 0x801D_7470),
+            arm_track_fold(3, PoseSlot::Dist2, 0x801D_748C),
+        ],
+    },
+    ArmTracks {
+        entry_va: 0x801D_74A8,
+        tracks: &[arm_track_fold(5, PoseSlot::Yaw, 0x801D_74F8)],
+    },
+    ArmTracks {
+        entry_va: 0x801D_7568,
+        tracks: &[arm_track_fold(6, PoseSlot::Yaw, 0x801D_75BC)],
+    },
+    ArmTracks {
+        entry_va: 0x801D_7650,
+        tracks: &[arm_track_fold(7, PoseSlot::Yaw, 0x801D_768C)],
+    },
+    // Character 2.
+    ArmTracks {
+        entry_va: 0x801D_76EC,
+        tracks: &[
+            arm_track_fold(0, PoseSlot::Pitch, 0x801D_7730),
+            arm_track_fold(13, PoseSlot::Yaw, 0x801D_7744),
+            arm_track_fold(2, PoseSlot::Yaw, 0x801D_77D8),
+            arm_track_fold(3, PoseSlot::Dist2, 0x801D_77F4),
+            arm_track_fold(14, PoseSlot::Yaw, 0x801D_7864),
+        ],
+    },
+    ArmTracks {
+        entry_va: 0x801D_7870,
+        tracks: &[arm_track_fold(8, PoseSlot::Yaw, 0x801D_78A4)],
+    },
+    ArmTracks {
+        entry_va: 0x801D_78F0,
+        tracks: &[arm_track_fold(9, PoseSlot::Yaw, 0x801D_7934)],
+    },
+    ArmTracks {
+        entry_va: 0x801D_797C,
+        tracks: &[arm_track_fold(10, PoseSlot::Yaw, 0x801D_79C4)],
+    },
+    ArmTracks {
+        entry_va: 0x801D_79F8,
+        tracks: &[
+            arm_track_fold(11, PoseSlot::Yaw, 0x801D_7A48),
+            arm_track_fold(15, PoseSlot::Dist0, 0x801D_7A68),
+            arm_track_fold(12, PoseSlot::Yaw, 0x801D_7AC0),
+            arm_track_fold(16, PoseSlot::Dist0, 0x801D_7AD4),
+        ],
+    },
+    // Character 3.
+    ArmTracks {
+        entry_va: 0x801D_7B4C,
+        tracks: &[
+            ArmTrack {
+                row: 19,
+                slot: PoseSlot::Dist2,
+                // `subu v1,v1,v0` at `0x801D7B90` - the one fold that
+                // subtracts.
+                subtract: true,
+                site_va: 0x801D_7B84,
+            },
+            arm_track_fold(0, PoseSlot::Pitch, 0x801D_7BA0),
+            arm_track_fold(17, PoseSlot::Yaw, 0x801D_7BB4),
+            arm_track_fold(2, PoseSlot::Yaw, 0x801D_7CBC),
+            arm_track_fold(3, PoseSlot::Dist2, 0x801D_7CD8),
+            arm_track_fold(4, PoseSlot::Yaw, 0x801D_7D48),
+        ],
+    },
+    // `0x801D7D7C` (character 3, art 0x1C) reads no table row - it is built
+    // entirely from literals (`0x80`, `-0x200`, `0x280`, `0x300`, `0xFF00`).
+    ArmTracks {
+        entry_va: 0x801D_7EA0,
+        tracks: &[arm_track_fold(18, PoseSlot::Yaw, 0x801D_7EF4)],
+    },
+    // `0x801D81FC` (character 3, art 0x1E / 0x2A) likewise reads no row - its
+    // offsets are multiples of the `ctx[+0x26E]` ramp.
+    ArmTracks {
+        entry_va: 0x801D_7D7C,
+        tracks: &[],
+    },
+    ArmTracks {
+        entry_va: 0x801D_81FC,
+        tracks: &[],
+    },
+];
+
+/// The track folds for an arm entry VA.
+pub fn arm_tracks(entry_va: u32) -> Option<&'static [ArmTrack]> {
+    ARM_TRACKS
+        .iter()
+        .find(|a| a.entry_va == entry_va)
+        .map(|a| a.tracks)
+}
+
+/// Fold one track row into the pose, exactly as the arm's `addu`/`subu` +
+/// `sh` pair does: 16-bit wrapping, into the slot the fold names.
+pub fn apply_track(pose: &mut CameraPose, track: ArmTrack, value: i16) {
+    let slot = match track.slot {
+        PoseSlot::Pitch => &mut pose.rot[0],
+        PoseSlot::Yaw => &mut pose.rot[1],
+        PoseSlot::Dist0 => &mut pose.dist[0],
+        PoseSlot::Dist2 => &mut pose.dist[2],
+    };
+    *slot = if track.subtract {
+        slot.wrapping_sub(value)
+    } else {
+        slot.wrapping_add(value)
+    };
 }
 
 /// The camera triple the arms build on the stack before the setter call.
@@ -212,10 +482,10 @@ pub fn apply_anim_push(pose: &mut CameraPose, phase_cursor: u8, push: i32) {
 /// How an arm addresses the per-phase halfword tracks at `0x801F4E10`.
 ///
 /// Each arm computes one base, `0x801F4E10 + phase_cursor * 2`, and then reads
-/// fixed byte offsets off it (`+0`, `+4`, `+8`, `+0xC`, `+0x14` are the ones the
-/// dumped arms use). So the table is a set of parallel halfword tracks four
-/// bytes apart, each holding two phases - which is the indexing, not a claim
-/// about what any track means.
+/// fixed byte offsets off it. The offsets the arms use are `0x00, 0x04, …,
+/// 0x4C` - dense over twenty rows - so the table is twenty parallel halfword
+/// tracks four bytes apart, each holding one value per phase.
+/// [`legaia_asset::battle_attack_camera_table`] parses it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArmPhase {
     /// `ctx[+0x26D]` - the phase cursor.
@@ -226,6 +496,20 @@ impl ArmPhase {
     /// Byte offset from the table base for track `track` at this phase.
     pub const fn track_offset(self, track: usize) -> usize {
         self.cursor as usize * 2 + track * 4
+    }
+
+    /// Read one track out of a parsed table, at this phase.
+    ///
+    /// Named `track_value` rather than `read`: the reachability analysis
+    /// matches free functions and methods by NAME, so a method called `read`
+    /// here picks up an edge from every `read` call in the workspace and
+    /// reports this whole module as live.
+    pub fn track_value(
+        self,
+        table: &legaia_asset::battle_attack_camera_table::AttackCameraTracks,
+        track: usize,
+    ) -> Option<i16> {
+        table.track(track, self.cursor as usize)
     }
 }
 
@@ -272,22 +556,152 @@ mod tests {
         }
     }
 
+    /// The three characters have three different tables, and the bound is
+    /// per character: `2` accepts `0x2C`/`0x2D`, which `1` and `3` reject.
     #[test]
-    fn art_arm_covers_seventeen_ids_and_rejects_both_sides() {
-        assert_eq!(art_arm(0x1A), Some(0));
-        assert_eq!(art_arm(0x2A), Some(0x10));
-        assert_eq!(art_arm(0x2B), None, "one past the table");
-        assert_eq!(art_arm(0x19), None, "one before the bias wraps unsigned");
-        assert_eq!(art_arm(0), None);
-        let covered = (0u8..=0xFF).filter(|&i| art_arm(i).is_some()).count();
-        assert_eq!(covered, ART_ARMS as usize);
+    fn each_character_dispatches_through_its_own_art_table() {
+        use CharacterArm::*;
+        assert_eq!(ART_JUMP_TABLES[One as usize].len(), 0x11);
+        assert_eq!(ART_JUMP_TABLES[Two as usize].len(), 0x14);
+        assert_eq!(ART_JUMP_TABLES[Three as usize].len(), 0x11);
+
+        assert_eq!(art_arm(One, 0x1A), Some(0x801D_7308));
+        assert_eq!(art_arm(Two, 0x1A), Some(0x801D_76EC));
+        assert_eq!(art_arm(Three, 0x1A), Some(0x801D_7B4C));
+        // Art 0x1C exists for 1 and 3 but is an epilogue slot for 2.
+        assert!(art_arm(One, 0x1C).is_some());
+        assert_eq!(art_arm(Two, 0x1C), None);
+        assert!(art_arm(Three, 0x1C).is_some());
+        // The three ids only character 2 can reach.
+        for id in [0x2B, 0x2C, 0x2D] {
+            assert_eq!(art_arm(One, id), None, "id {id:#x} past char 1's bound");
+            assert_eq!(art_arm(Three, id), None, "id {id:#x} past char 3's bound");
+        }
+        assert_eq!(art_arm(Two, 0x2C), art_arm(Two, 0x1D), "0x2C shares 0x1D");
+        assert_eq!(art_arm(Two, 0x2D), art_arm(Two, 0x1E), "0x2D shares 0x1E");
+        assert_eq!(art_arm(Two, 0x2B), None, "an epilogue slot inside range");
     }
 
+    /// The bias is unsigned, so an id below `0x1A` wraps past every table.
     #[test]
-    fn art_arm_indices_are_dense_and_in_order() {
-        for (want, id) in (FIRST_ART..(FIRST_ART + ART_ARMS)).enumerate() {
-            assert_eq!(art_arm(id), Some(want as u8));
+    fn art_ids_below_the_bias_are_rejected() {
+        for c in [CharacterArm::One, CharacterArm::Two, CharacterArm::Three] {
+            for id in [0u8, 1, 0x19] {
+                assert_eq!(art_arm(c, id), None, "{c:?} id {id:#x}");
+            }
         }
+    }
+
+    /// Thirteen distinct arm bodies exist across the three tables, and every
+    /// one has a track-fold row (possibly empty).
+    #[test]
+    fn every_dispatched_arm_has_a_track_map() {
+        let mut bodies = std::collections::BTreeSet::new();
+        for table in ART_JUMP_TABLES {
+            bodies.extend(table.iter().flatten().copied());
+        }
+        assert_eq!(bodies.len(), 13, "distinct arm bodies");
+        for va in &bodies {
+            assert!(arm_tracks(*va).is_some(), "arm {va:#010x} has no track map");
+        }
+        // And the map has no rows for bodies that are not dispatched.
+        for arm in ARM_TRACKS {
+            assert!(bodies.contains(&arm.entry_va), "{:#010x}", arm.entry_va);
+        }
+    }
+
+    /// The track map covers the whole table: every row `0..20` is read by at
+    /// least one arm. That density is what pins the parser's extent.
+    #[test]
+    fn the_track_map_uses_every_row_of_the_table() {
+        use legaia_asset::battle_attack_camera_table::ATTACK_CAMERA_ROWS;
+        let mut used = std::collections::BTreeSet::new();
+        for arm in ARM_TRACKS {
+            for t in arm.tracks {
+                assert!(t.row < ATTACK_CAMERA_ROWS, "row {} out of table", t.row);
+                used.insert(t.row);
+            }
+        }
+        assert_eq!(
+            used.len(),
+            ATTACK_CAMERA_ROWS,
+            "unused rows: {:?}",
+            (0..ATTACK_CAMERA_ROWS)
+                .filter(|r| !used.contains(r))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// A fold lands in the component the arm's `sh` names and wraps at 16
+    /// bits, and exactly one fold in the whole map subtracts.
+    #[test]
+    fn track_folds_hit_the_named_component() {
+        let seed = CameraPose::seed([0, 0, 0], 0);
+        let fold = |slot, subtract, v| {
+            let mut p = seed;
+            apply_track(
+                &mut p,
+                ArmTrack {
+                    row: 0,
+                    slot,
+                    subtract,
+                    site_va: 0,
+                },
+                v,
+            );
+            p
+        };
+        assert_eq!(fold(PoseSlot::Pitch, false, 0x100).rot[0], 0x100);
+        assert_eq!(fold(PoseSlot::Yaw, false, 0x100).rot[1], 0x100);
+        assert_eq!(fold(PoseSlot::Dist0, false, 0x100).dist[0], 0x100);
+        assert_eq!(
+            fold(PoseSlot::Dist2, false, 0x100).dist[2],
+            POSE_SEED_ANGLE + 0x100
+        );
+        assert_eq!(
+            fold(PoseSlot::Dist2, true, 0x100).dist[2],
+            POSE_SEED_ANGLE - 0x100
+        );
+        // Halfword wrap, not saturation.
+        assert_eq!(fold(PoseSlot::Yaw, false, i16::MAX).rot[1], i16::MAX);
+        let mut p = fold(PoseSlot::Yaw, false, i16::MAX);
+        apply_track(
+            &mut p,
+            ArmTrack {
+                row: 0,
+                slot: PoseSlot::Yaw,
+                subtract: false,
+                site_va: 0,
+            },
+            1,
+        );
+        assert_eq!(p.rot[1], i16::MIN);
+
+        let subtracting: Vec<u32> = ARM_TRACKS
+            .iter()
+            .flat_map(|a| a.tracks.iter())
+            .filter(|t| t.subtract)
+            .map(|t| t.site_va)
+            .collect();
+        assert_eq!(subtracting, vec![0x801D_7B84]);
+    }
+
+    /// The phase cursor selects the row's column, so the two swing phases
+    /// pull different offsets out of one row.
+    #[test]
+    fn arm_phase_reads_the_cursor_column() {
+        use legaia_asset::battle_attack_camera_table::{
+            self as tbl, ATTACK_CAMERA_FILE_OFFSET, ATTACK_CAMERA_LEN,
+        };
+        let mut buf = vec![0u8; ATTACK_CAMERA_FILE_OFFSET + ATTACK_CAMERA_LEN];
+        // Row 3, phase 0 = -256; row 3, phase 1 = 512.
+        let o = ATTACK_CAMERA_FILE_OFFSET + 3 * 4;
+        buf[o..o + 2].copy_from_slice(&(-256i16).to_le_bytes());
+        buf[o + 2..o + 4].copy_from_slice(&512i16.to_le_bytes());
+        let table = tbl::parse(&buf).expect("parses");
+        assert_eq!(ArmPhase { cursor: 0 }.track_value(&table, 3), Some(-256));
+        assert_eq!(ArmPhase { cursor: 1 }.track_value(&table, 3), Some(512));
+        assert_eq!(ArmPhase { cursor: 2 }.track_value(&table, 3), None);
     }
 
     #[test]

@@ -69,6 +69,7 @@ Static `SCUS_942.54` rodata tables that drive stats, items, and magic. These are
 | [Equipment stat-bonus table](equipment-table.md) | Confirmed | `DAT_80074F68`, 8-byte stride. Per-equip attack/def bonuses + equip-character mask + slot type + Ra-Seru flag. |
 | [Accessory passive-effect table](accessory-passive-table.md) | Confirmed | Accessory ("Goods") passives: a 64-slot index space feeding the per-character ability bitfield `char+0xF4` (`FUN_80042558`). Name/description table at `0x8007625C`. |
 | [Move-power table](move-power.md) | Confirmed | Battle-action per-move power + behaviour records (26-byte stride, VA `0x801F4F5C`, PROT 0898). Damage roll, homing, hit reaction, sound cue, spawned effects; id → index map at `0x801F4E63`. |
+| [Attack-camera track table](battle-attack-camera-table.md) | Confirmed | Per-art camera offsets the Arts-swing camera `FUN_801D71B8` folds into its pose (VA `0x801F4E10`, PROT 0898). 20 rows of two signed halfwords, indexed `row*4 + phase*2`. |
 | [Steal table](steal-table.md) | Confirmed | `DAT_80077828`, 1-based monster id, 2-byte `[chance, item]` - chance FIRST, the reverse of the drop field order. What the Evil God Icon steals; **not** in the PROT 867 record. |
 | [SFX descriptor table](sfx-table.md) | Confirmed | `DAT_8006F198`, 8-byte stride, 100 entries `0x00..=0x63`. Per cue: VAB program/tone, voice count, mixer channel. |
 | [New-game starting party](new-game-table.md) | Confirmed | 4-record template at `0x80078C4C` (26-byte stride) that seeds the live `0x80084708` character records; opening scene `town01`. |

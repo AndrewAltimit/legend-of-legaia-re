@@ -184,16 +184,14 @@ impl PlayWindowApp {
     pub(super) fn tick_battle_camera(&mut self) {
         let world = &self.session.host.world;
         let active = world.mode == SceneMode::Battle && self.battle_stage_mesh.is_some();
-        let (phase, acting, formation) = battle_cam_inputs(world);
+        let inputs = battle_cam_inputs(world);
         // The create / retarget / phase-change / step ordering is the shared
         // `drive` - the browser play page runs the identical call, so the two
         // hosts cannot diverge on the phase script.
         legaia_engine_vm::battle_cam_script::drive(
             &mut self.battle_camera,
             active,
-            phase,
-            acting,
-            formation,
+            inputs,
             world.field_frames,
         );
     }
@@ -543,29 +541,35 @@ impl PlayWindowApp {
 /// and the actor's world position is the focus the camera orbits.
 pub(super) fn battle_cam_inputs(
     world: &legaia_engine_core::world::World,
-) -> (
-    legaia_engine_vm::battle_cam_script::BattleCamPhase,
-    Option<legaia_engine_vm::battle_cam_script::BattleCamActor>,
-    Option<legaia_engine_vm::battle_cam_script::FormationBox>,
-) {
+) -> legaia_engine_vm::battle_cam_script::BattleCamInputs {
     use legaia_engine_vm::battle_cam_script as script;
+    let acting_slot = world
+        .battle_command
+        .as_ref()
+        .map(|c| c.actor)
+        .unwrap_or(world.battle_ctx.active_actor);
     let phase = script::phase_for(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
         world.battle_command.is_some()
             || world.battle_arts_menu.is_some()
             || world.battle_spell_menu.is_some()
             || world.battle_item_menu.is_some(),
+        script::action_state_frames_the_action(world.battle_ctx.action_state),
     );
-    let acting = world.battle_command.as_ref().and_then(|c| {
-        let a = world.actors.get(c.actor as usize)?;
+    // The submenu close-up frames whoever owns the menu; the action framing
+    // frames whoever is acting. Both are the same `BattleCamActor`.
+    let actor_at = |slot: u8, party_slot: Option<u8>| {
+        let a = world.actors.get(slot as usize)?;
         // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
         // party-record selector; the engine's party rows are that record
         // order, so the row index + 1 is the same id.
-        let height = world
-            .battle_camera_heights
-            .as_ref()
-            .and_then(|t| t.height_for_char_id(c.party_slot + 1))
-            .map(|h| h as f32);
+        let height = party_slot.and_then(|p| {
+            world
+                .battle_camera_heights
+                .as_ref()
+                .and_then(|t| t.height_for_char_id(p + 1))
+                .map(|h| h as f32)
+        });
         Some(script::BattleCamActor {
             // The port's actors carry their heading in `render_26` (the
             // retail `+0x26` 12-bit angle); it stands in for the battle
@@ -578,11 +582,44 @@ pub(super) fn battle_cam_inputs(
             ],
             height,
         })
-    });
-    // The far menu framing sizes its depth to - and centres on - the live
-    // formation's X/Z bounding box (`FUN_801D5854` case 9).
-    let formation = PlayWindowApp::battle_formation_box(world);
-    (phase, acting, formation)
+    };
+    let acting = match world.battle_command.as_ref() {
+        Some(c) => actor_at(c.actor, Some(c.party_slot)),
+        None => actor_at(acting_slot, None),
+    };
+    legaia_engine_vm::battle_cam_script::BattleCamInputs {
+        phase,
+        acting,
+        // The far menu framing sizes its depth to - and centres on - the
+        // live formation's X/Z bounding box (`FUN_801D5854` case 9).
+        formation: PlayWindowApp::battle_formation_box(world),
+        action: battle_action_framing(world, acting_slot),
+        shake_amplitude: world.camera_shake_amplitude,
+    }
+}
+
+/// The `FUN_801D5854` case-6 context inputs for the acting slot.
+///
+/// `party_slot` is retail's `ctx[+0x13] < 3` over the engine's own party
+/// band, `char_id` its `DAT_8007BD10[slot]` (the party row + 1), and
+/// `depth_raw` is `ctx[+0x6D0]` - the value `camera_height_for_frame`
+/// recomputed at the last action seed. `flow_active` is retail's
+/// `_DAT_8007BD71 == 0xFE`, the battle-flow SM's in-battle state: the engine
+/// has no flow-state byte and only ever runs the camera while a battle is
+/// live, so it is constant here. `style` (`ctx[+0xD]`) is unmodelled.
+pub(super) fn battle_action_framing(
+    world: &legaia_engine_core::world::World,
+    acting_slot: u8,
+) -> legaia_engine_vm::battle_cam_script::ActionFraming {
+    let party = usize::from(acting_slot) < world.party_count as usize;
+    legaia_engine_vm::battle_cam_script::ActionFraming {
+        party_slot: party,
+        flow_active: true,
+        depth_raw: world.battle_camera_frame_height as i32,
+        yaw_base: 0,
+        style: 0,
+        char_id: if party { acting_slot + 1 } else { 0 },
+    }
 }
 
 #[cfg(test)]
@@ -747,10 +784,10 @@ mod battle_cam_shared_tests {
             0, 0,
         ));
 
-        let (phase, acting, formation) = battle_cam_inputs(&world);
-        assert_eq!(phase, script::BattleCamPhase::Submenu);
+        let inputs = battle_cam_inputs(&world);
+        assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
         assert_eq!(
-            acting,
+            inputs.acting,
             Some(script::BattleCamActor {
                 facing: 0,
                 world: [0.0, 0.0, -800.0],
@@ -758,7 +795,7 @@ mod battle_cam_shared_tests {
             })
         );
         assert_eq!(
-            formation,
+            inputs.formation,
             Some(script::FormationBox {
                 min: [0.0, -800.0],
                 max: [0.0, 800.0],
@@ -766,7 +803,7 @@ mod battle_cam_shared_tests {
         );
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, phase, acting, formation, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2);
         }
         let pose = slot.as_ref().unwrap().pose();
         // The measured solo-Vahn submenu close-up, arrived after the 6-step
@@ -775,6 +812,91 @@ mod battle_cam_shared_tests {
         assert_eq!(pose.yaw.rem_euclid(4096.0), 2288.0);
         assert_eq!(pose.tr, [-512.0, 1152.0, 2457.0]);
         assert_eq!(pose.focus, [0.0, 0.0, -800.0]);
+    }
+
+    /// Closing the command menu and letting the action SM run must move the
+    /// camera onto the acting actor - the whole point of the Action phase.
+    /// Driven through THIS host's derivation, so a phase that the shared
+    /// script supports but the host never selects would fail here.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn host_derivation_selects_the_action_phase_and_frames_the_actor() {
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        vahn.move_state.world_z = -800;
+        let mut tetsu = legaia_engine_core::world::Actor::default();
+        tetsu.active = true;
+        tetsu.move_state.world_z = 800;
+        tetsu.battle_monster_id = Some(1);
+        tetsu.tmd_binding = Some(0);
+        world.actors = vec![vahn, tetsu];
+
+        // Idle between actions: the far framing, not the action framing.
+        world.battle_ctx.action_state =
+            legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
+        assert_eq!(
+            battle_cam_inputs(&world).phase,
+            script::BattleCamPhase::Menu
+        );
+
+        // The strike is executing on party slot 0.
+        world.battle_ctx.action_state =
+            legaia_engine_vm::battle_action::ActionState::AttackStrike.as_byte();
+        world.battle_ctx.active_actor = 0;
+        let inputs = battle_cam_inputs(&world);
+        assert_eq!(inputs.phase, script::BattleCamPhase::Action);
+        assert!(inputs.action.party_slot, "slot 0 is a party seat");
+        assert_eq!(inputs.action.char_id, 1, "DAT_8007BD10[0]");
+
+        let mut slot = None;
+        for f in 0..=6u64 {
+            script::drive(&mut slot, true, inputs, f * 2);
+        }
+        let pose = slot.as_ref().unwrap().pose();
+        let want = script::action_framing(inputs.acting.unwrap(), inputs.action);
+        assert_eq!(pose.tr, want.tr);
+        assert_eq!(pose.focus, [0.0, 0.0, -800.0], "framed on the attacker");
+        // Closer than the far framing this battle idles at.
+        let idle = script::menu_framing(inputs.formation, 0.0);
+        assert!(pose.tr[2] < idle.tr[2], "{:?} vs {:?}", pose.tr, idle.tr);
+
+        // A monster's turn frames on the computed size-class depth instead.
+        world.battle_ctx.active_actor = 1;
+        world.battle_camera_frame_height = legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MAX;
+        let mob = battle_cam_inputs(&world);
+        assert!(!mob.action.party_slot);
+        assert_eq!(
+            mob.action.depth_raw,
+            legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MAX as i32,
+            "the fallback arm reads ctx[+0x6D0]"
+        );
+        assert_eq!(mob.action.raw_z(), mob.action.depth_raw);
+    }
+
+    /// The field VM's shake opcode reaches the camera through this host.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn host_derivation_carries_the_field_vm_shake_amplitude() {
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        world.actors = vec![vahn];
+        assert_eq!(battle_cam_inputs(&world).shake_amplitude, 0);
+        world.camera_shake_amplitude = 9;
+        let inputs = battle_cam_inputs(&world);
+        assert_eq!(inputs.shake_amplitude, 9);
+        let mut slot = None;
+        for f in 0..4u64 {
+            script::drive(&mut slot, true, inputs, f * 2);
+        }
+        let cam = slot.as_ref().unwrap();
+        assert_ne!(cam.shake_offset(), [0, 0], "the jitter is live");
+        assert_ne!(cam.pose().tr, cam.framing_pose().tr);
     }
 }
 

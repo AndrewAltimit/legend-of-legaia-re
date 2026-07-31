@@ -676,6 +676,31 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 | Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
 | submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
+| action executing | 0 (or floor-tilted) | `0x800 − facing`, or the drifting `ctx[+0x6DA] − facing` | `(0, height, 0x500)` party / `(0, 0x500, ctx[+0x6D0])` monster | 6-step glide in, 7-step out, then held |
+
+The **step counts are retail's own** `FUN_801D829C` durations, not just trace
+readings: the framing cases pass `a3` in *display frames* and a camera step is
+two frames, so cases `0`/`1`/`2`/`3`/`6` (`a3 = 0xC`) glide over 6 steps and
+case `9` (`a3 = 0xE`, `0x801D712C`) over 7. The `-4`/step idle orbit is likewise
+in the disassembly: the action SM subtracts `DAT_1F800393 * 2` from
+`_DAT_8007B792` per tick and gates that on `ctx[7]` being `0x00` or `0x0B`
+(`0x801E2A3C..0x801E2A6C`), which is what makes "no action executing" the
+phase-script condition for the orbit rather than an inference.
+
+**The action framing (`FUN_801D5854` case 6)** is the one the action SM arms at
+almost every state, and it forks on `_DAT_8007BD71 == 0xFE && slot < 3`. The
+party arm frames from behind the actor (`yaw = 0x800 − actor[+0x46]`) at a
+height of `−5 × actor[+0x3E]`, floored at `0x280` with a quarter of the
+shortfall added to the pitch so the camera tilts down instead of sinking
+(`0x801D6494`); between the two it runs a per-character / per-art script whose
+offsets come from the disc table
+[`battle-attack-camera-table.md`](../formats/battle-attack-camera-table.md).
+The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
+`FUN_801F0348` derives from the framed monster's size class - with a style byte
+`ctx[+0xD]` selecting three tweaks and character id `4` overriding the whole
+translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
+about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
+actions frame from a slowly drifting angle.
 
 `H = 256` and the identity·16384 base hold through every phase. The traced
 numbers above are one fight's *instance* of two formulas, not constants: the
@@ -696,6 +721,19 @@ view-projection via `play_battle_camera_vp`), each stepping on the retail
 display-frame clock. The glide-table kernel port stays at
 `legaia_engine_vm::battle_camera` (`FUN_801D829C`); a cross-host recipe test
 in each host pins both derivations to the same literal pose.
+
+**Screen shake.** `FUN_801D9D30` jitters the same translation pair
+(`0x800840B8/BC`) by two LCG samples masked to `0xFFFFFF >> (0x15 − amplitude)`,
+where the amplitude is `_DAT_8007B630`. That global has exactly one retail
+writer - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
+(`[4C, 84, amplitude]`, arm `0x801E2134`, jump-table slot `0x801CEF58`) - and
+`FUN_801D9D30`'s only callers are the field-family overlay's per-frame camera
+updaters (`0x801D1344` and siblings), so in retail the shake is a *field*
+effect and no caller is resident during a fight. The port models the opcode
+(`FieldHost::op4c_n8_sub4_set_b630` → `World::camera_shake_amplitude`) and
+steps the kernel from the shared battle camera, which owns the same
+translation pair. The offset is held beside the framing pose rather than
+inside it, so a live shake cannot stall a rate-clamped glide.
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix
 `DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0 → a **4.0× uniform
