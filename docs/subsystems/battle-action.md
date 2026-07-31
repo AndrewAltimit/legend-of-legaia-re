@@ -8,7 +8,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [the turn cursor](#the-turn-cursor-ctx0x1a) · [the cast-begin facing store](#the-cast-begin-facing-store) · [per-actor sub-state surface](#per-actor-sub-state-surface)
 - [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
-- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
+- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range law](#fun_8004e2f0---battle-range--reach-metric) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
@@ -54,7 +54,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
 | `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
-| `0x16` | Attack - advance | Same pose; rechecks range with `FUN_8004E2F0`. While out of range, advances `actor[+0x38/+0x34]` along bearing using sin/cos LUTs `_DAT_8007B7F8` / `_DAT_8007B81C` (steps both attacker and target s8 by `>> 9`); re-tests every iteration. When in range, queries the next entry from the per-character swing table. | `0x17`. |
+| `0x16` | Attack - advance | Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) - **no attacker movement here**; the walk is the clip's root motion in the anim tick (`FUN_80047430` `0x80047D20..0x80047E18`, gated on the same range check). On range 0: stages the tag-`0x21` close-in, then the **arrival shove** (`0x801E33EC..0x801E3490`): steps the *target's* live `+0x34`/`+0x38` **and** seat `+0x3C`/`+0x40` pairs along the attacker's facing by `sin/cos >> 9`, looping while still in range - pushing the target back out to the range boundary. (An earlier revision read this as the attacker's advance loop; all four stores go through `s8`, the target.) | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
 | `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
@@ -1105,18 +1105,46 @@ words, touch nothing else - the guard bounces once, retail re-stages
 completes); the byte-level edit is pinned by the `approach_fix_real` disc
 oracle.
 
-**Engine port note.** The clean-room port cannot reproduce this park: its
-`attack_face` routes out-of-range monsters to the windup/advance chain
-without the tag-`0x20` lookup, and the live host's `range_check` defaults to
-in-range (`engine-vm::battle_action::attack`). The routing difference from
-retail (walk-less monsters take `0x15/0x16` instead of `0x19`) is currently
-benign because the default range collapses both paths to an immediate strike.
+**Engine port note.** The engine walks: the live host's `range_check`
+computes the retail law (`World::battle_range_metric`, the `FUN_8004E2F0`
+port) and the approach movement runs as the root-motion drive
+(`World::tick_battle_locomotion`, the `FUN_80047430` term - clip entry-speed
+`+0xC` when a committed clip carries one, else the captured Move-drive
+fallback), so a melee attacker physically closes on its target, strikes and
+walks back to its seat. The port still cannot reproduce this park, now for a
+stronger reason: the locomotion drive runs in every approach state whether
+or not a clip is playing - the engine-native form of the
+`--approach-softlock-fix` guard - so an approach state always closes. Two
+routing differences from retail stand: out-of-range monsters take
+`0x15/0x16` with entry 1 staged instead of the tag-`0x20` scan (walk-less
+monsters therefore also take the windup chain rather than `0x19`), and the
+walk-back targets the seat directly (with off-turn actors continuing home)
+rather than replaying per-clip retreat root motion - retail's committed
+forward drift re-seats exactly in the engine.
 
 ## Cross-references with other battle helpers
 
-### `FUN_8004E2F0` - battle range / line-of-sight
+### `FUN_8004E2F0` - battle range / reach metric
 
-Called from states `0x14`, `0x16`, `0x19` (during the attack chain). Returns a 16-bit distance metric. The state machine treats `0` as "in range" and any non-zero as "still approaching," which keeps `0x16` running its sin/cos-LUT advance loop until the gap closes. Cited in [battle.md](battle.md). Definition in `ghidra/scripts/funcs/8004e2f0.txt`.
+Called from states `0x14`, `0x16`, `0x19` (during the attack chain) and from the anim tick's root-motion gate (`FUN_80047430`). Returns a 16-bit distance metric; `0` = "in range". The full law, from the disassembly (`ghidra/scripts/funcs/8004e2f0.txt`):
+
+```text
+if DAT_8007BD71 != 0xFF or either slot >= 8: return 1
+base = 0; size = 0
+if attacker < 3: base = i16 DAT_80078878[(DAT_8007BD10[attacker] - 1) * 2]
+else:           size = monster_rec(attacker)[+0x1F]
+if target >= 3:
+    t = monster_rec(target)[+0x1F]
+    size = t if size == 0 else ((size + t) * 3) / 5     ; unsigned divide
+if attacker < 3 and target < 3: base >>= 1              ; sra - party on party
+a = (FUN_80019B28(tgt[+0x40], tgt[+0x3C], att[+0x38], att[+0x34]) + 0x800) & 0xFFF
+d = base + |(|att.x - tgt.x| * sin[a]) >> 12| + |(|att.z - tgt.z| * cos[a]) >> 12|
+in_range = (d < i16 DAT_80078870[size*2])   if size < 3   ; signed slt
+         = (d <u size << 4)                 otherwise     ; unsigned sltu
+return 0 if in_range else (i16)d
+```
+
+Note the asymmetric position read: the **attacker's live** pair `+0x34`/`+0x38` against the **target's seat** pair `+0x3C`/`+0x40`. `DAT_80078870` = `{256, 384, 1024}` (small-class thresholds); `DAT_80078878` = per-character reach offsets `{+43, 0, -53, -100}` for roster char ids `1..=4` - **added to the distance**, so a positive value is a shorter reach. Engine port: `legaia_engine_vm::battle_action::motion::range_metric`, assembled from live state by `World::battle_range_metric` (`engine-core::world::battle::locomotion`).
 
 ### `FUN_80042558` - per-frame stat aggregator
 
