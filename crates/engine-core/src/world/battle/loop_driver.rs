@@ -198,6 +198,15 @@ impl World {
             return None;
         }
 
+        // Player-driven: while the retail-model Arts command input is open
+        // the action SM is parked - the per-press entry / review / Begin
+        // flow owns the pad until the entered sequence runs (turn cycles)
+        // or the player backs out (reopens the command menu).
+        if self.battle_arts_input.is_some() {
+            self.tick_battle_arts_input();
+            return None;
+        }
+
         // Player-driven: while the Arts submenu is open the action SM is
         // parked - drive it from the pad and return until the player runs an
         // art (turn cycles) or backs out (reopens the command menu).

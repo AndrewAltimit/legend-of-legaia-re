@@ -129,6 +129,7 @@ impl World {
         self.battle_item_menu = None;
         self.battle_spell_menu = None;
         self.battle_arts_menu = None;
+        self.battle_arts_input = None;
         // Stale damage popups + sound cues must not bleed into the next
         // encounter / field.
         self.battle_hit_fx.clear();

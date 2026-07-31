@@ -1810,6 +1810,25 @@ pub struct World {
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
+    /// Active retail-model **Arts command input** - the per-press
+    /// directional entry the Arts command opens
+    /// ([`crate::arts_command_input::ArtsCommandInputSession`], the port of
+    /// the `FUN_801D0748` state-`0x50` gauge-input arm). `Some` while a
+    /// party member is entering commands / reviewing / picking the Begin
+    /// target; the action SM and [`Self::battle_command`] are parked
+    /// meanwhile. The saved-chain list ([`Self::battle_arts_menu`]) is the
+    /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
+    pub battle_arts_input: Option<crate::arts_command_input::ArtsCommandInputSession>,
+
+    /// Per-party-slot **arm-cost byte** for the Arts command gauge - the
+    /// per-(character, equipped weapon) `+0x74` cost the input session
+    /// charges for the arm (Left) command. Seeded from the player battle
+    /// files' equipped-weapon section at scene entry
+    /// (`SceneHost::refresh_battle_arm_costs`,
+    /// `legaia_asset::battle_data_pack::arm_cost_for_item`); stays at the
+    /// favored-class base `0x1E` without a disc. REF: FUN_800557B8
+    pub battle_arm_costs: [u8; 3],
+
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
     /// hook table indexes. Recomposed each frame from the live command session
@@ -2617,6 +2636,8 @@ impl World {
             battle_item_menu: None,
             battle_spell_menu: None,
             battle_arts_menu: None,
+            battle_arts_input: None,
+            battle_arm_costs: [crate::arts_command_input::FAVORED_COST as u8; 3],
             battle_flow: crate::battle_flow::BattleFlowState::Idle,
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),

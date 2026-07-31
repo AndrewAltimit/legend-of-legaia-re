@@ -198,7 +198,7 @@ impl World {
     /// The first staged component art's status effect is adopted for the whole
     /// finisher. Result is clamped to [`crate::battle_arts::MAX_ART_HITS`] and
     /// floored at one strike.
-    fn miracle_strike_profile(
+    pub(in crate::world) fn miracle_strike_profile(
         &self,
         character: legaia_art::Character,
         miracle: &legaia_art::MiracleArt,
@@ -217,7 +217,7 @@ impl World {
     /// `(character, art)` record is staged, else a tier-0 synthetic strike.
     ///
     /// [`ArtRecord`]: legaia_art::ArtRecord
-    fn super_strike_profile(
+    pub(in crate::world) fn super_strike_profile(
         &self,
         character: legaia_art::Character,
         sa: &legaia_art::SuperArt,

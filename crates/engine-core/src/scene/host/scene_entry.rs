@@ -148,6 +148,46 @@ impl SceneHost {
         }
     }
 
+    /// Refresh [`crate::world::World::battle_arm_costs`] from the player
+    /// battle files: for each roster character (Vahn / Noa / Gala = PROT
+    /// 863 / 864 / 865), find the equipped weapon id in their equipment
+    /// bytes and read the weapon section's swing-record `+0x74` arm-cost
+    /// byte (`legaia_asset::battle_data_pack::arm_cost_for_item`). A slot
+    /// whose weapon / section can't be resolved keeps the favored base
+    /// `0x1E` - the disc-free behaviour. Runs at scene entry (equipment
+    /// can only change in the field), mirroring the retail battle-load
+    /// verbatim copy. REF: FUN_800557B8
+    fn refresh_battle_arm_costs(&mut self) {
+        /// PROT entries of the three weapon-carrying player battle files.
+        const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
+        /// `true` for an id in the equippable-weapon ranges (blade / claw /
+        /// club families + the Astral Sword) - the ids the player files key
+        /// weapon sections by.
+        fn is_weapon_id(id: u8) -> bool {
+            matches!(id, 0x1A..=0x33 | 0xBA)
+        }
+        for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
+            let Some(record) = self.world.roster.members.get(slot) else {
+                continue;
+            };
+            let eq = record.equipment();
+            let Some(&weapon) = eq.slots.iter().find(|&&id| is_weapon_id(id)) else {
+                continue;
+            };
+            let Ok(bytes) = self.index.entry_bytes(prot) else {
+                continue;
+            };
+            let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes) else {
+                continue;
+            };
+            if let Some(cost) =
+                legaia_asset::battle_data_pack::arm_cost_for_item(&bytes, &pack, weapon as u32)
+            {
+                self.world.battle_arm_costs[slot] = cost;
+            }
+        }
+    }
+
     /// Load `name`, switch the world to [`crate::world::SceneMode::Field`],
     /// and load the requested event-script record (default 0) into the
     /// field-VM bytecode buffer. Returns `Err` if the scene has no event
@@ -526,6 +566,9 @@ impl SceneHost {
                 // per-move power (PROT 0898; falls back to the placeholder if
                 // the disc read fails).
                 self.ensure_move_power_table();
+                // ... and the per-(character, equipped weapon) arm-cost
+                // bytes the Arts command input charges per press.
+                self.refresh_battle_arm_costs();
             }
         }
         // Route the per-region random-encounter table from the same MAN so

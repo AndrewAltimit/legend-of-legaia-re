@@ -332,6 +332,89 @@ pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB: (u8, u8, u8) = (0xC0, 0xA0, 0x4
 /// Height of the AP-gauge fill band in rows (`y+5..y+10`).
 pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_H: u32 = 6;
 
+// -----------------------------------------------------------------------
+// Arts command-input chrome (battle / Muscle Dome input screen)
+//
+// Packet-pinned source rects for the pieces the retail arts input screen
+// draws while a party member enters directional commands: the four
+// High / Left / Right / Low direction chips, the D-pad glyph between
+// them, the pennant input bar along the bottom, and the pennant caps a
+// committed command stamps into it. Every rect below was byte-read out
+// of captured SPRT / FT4 words from a live input screen (recomp GP0
+// packet ring + full-VRAM cross-check) - see
+// `docs/subsystems/minigame-muscle-dome.md` "Arts command input"
+// (the dome runs the standard battle input verbatim, so the pin is the
+// battle screen's too). All rects are `(u, v, w, h)` on the 256x192
+// system-UI sheet at [`OVERLAY_SYSTEM_UI_TIM_OFFSET`]; the sub-palette
+// column names the row of its packed CLUT bank (VRAM row 511, x/16).
+// -----------------------------------------------------------------------
+
+/// Direction-chip **body** tile (sub-palette [`OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW`]).
+pub const OVERLAY_SYSTEM_UI_ARTS_CHIP_BODY: (u32, u32, u32, u32) = (215, 96, 24, 26);
+/// Direction-chip **left cap** (drawn at body x-15).
+pub const OVERLAY_SYSTEM_UI_ARTS_CHIP_CAP_L: (u32, u32, u32, u32) = (200, 96, 15, 26);
+/// Direction-chip **right cap** (drawn at body x+24).
+pub const OVERLAY_SYSTEM_UI_ARTS_CHIP_CAP_R: (u32, u32, u32, u32) = (239, 96, 15, 26);
+/// CLUT sub-palette of the chip body / caps and the input bar.
+pub const OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW: u16 = 6;
+
+/// Chip **label strip** column: every label is a 24x18 rect at `u = 104`
+/// with a per-word `v` (sub-palette [`OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW`]).
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_U: u32 = 104;
+/// Label rect width / height on the sheet.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_W: u32 = 24;
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_H: u32 = 18;
+/// Label strip `v` for the **High** chip word.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_HIGH: u32 = 104;
+/// Label strip `v` for the **Left** chip word.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LEFT: u32 = 20;
+/// Label strip `v` for the **Right** chip word.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RIGHT: u32 = 84;
+/// Label strip `v` for the **Low** chip word.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LOW: u32 = 40;
+/// Label strip `v` for the command-cluster **Arms** word (sheet-read).
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_ARMS: u32 = 0;
+/// Label strip `v` for the command-cluster **Ra-Seru** word (sheet-read).
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RASERU: u32 = 64;
+/// CLUT sub-palette of the label strip, diamond ends and pennant caps.
+pub const OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW: u16 = 5;
+
+/// Chip **diamond left end** (drawn at body x-9, y+4).
+pub const OVERLAY_SYSTEM_UI_ARTS_DIAMOND_L: (u32, u32, u32, u32) = (192, 24, 9, 18);
+/// Chip **diamond right end** (drawn at body x+24, y+4).
+pub const OVERLAY_SYSTEM_UI_ARTS_DIAMOND_R: (u32, u32, u32, u32) = (204, 24, 9, 18);
+/// Committed-command **pennant right cap** (the left cap reuses
+/// [`OVERLAY_SYSTEM_UI_ARTS_DIAMOND_L`]'s rect).
+pub const OVERLAY_SYSTEM_UI_ARTS_PENNANT_CAP_R: (u32, u32, u32, u32) = (216, 24, 9, 18);
+
+/// **D-pad glyph** drawn in the middle of the chip diamond (sub-palette
+/// [`OVERLAY_SYSTEM_UI_ARTS_DPAD_CLUT_ROW`]); FT4 seat `(220,62)-(235,77)`.
+pub const OVERLAY_SYSTEM_UI_ARTS_DPAD: (u32, u32, u32, u32) = (0, 112, 16, 16);
+/// CLUT sub-palette of the D-pad glyph.
+pub const OVERLAY_SYSTEM_UI_ARTS_DPAD_CLUT_ROW: u16 = 7;
+
+/// Input-bar **left end** tile (bar seats at `y = 188`).
+pub const OVERLAY_SYSTEM_UI_ARTS_BAR_END_L: (u32, u32, u32, u32) = (240, 0, 16, 18);
+/// Input-bar **body** tile, repeated to the bar's AP width.
+pub const OVERLAY_SYSTEM_UI_ARTS_BAR_BODY: (u32, u32, u32, u32) = (224, 0, 16, 18);
+/// Input-bar **arrow right end**.
+pub const OVERLAY_SYSTEM_UI_ARTS_BAR_ARROW: (u32, u32, u32, u32) = (192, 44, 18, 18);
+
+/// File offset within `PROT.DAT` of the **menu-glyph atlas** TIM
+/// (-> VRAM (960, 256); CLUT bank packs into row 510 as 16 side-by-side
+/// sub-palettes). Carries the small 8x12 digit strip at `v = 208`
+/// (`u = digit * 8`) the battle HUD and the arts input screen's AP
+/// plate read through sub-palette 13 (capture: SPRT clut word `0x7F8D`).
+pub const MENU_GLYPH_ATLAS_TIM_OFFSET: usize = 0x11218;
+/// Sub-palette (of the menu-glyph atlas CLUT bank) of the white HUD
+/// digits / battle text.
+pub const MENU_GLYPH_ATLAS_TEXT_CLUT_ROW: u16 = 13;
+/// Digit strip geometry in the menu-glyph atlas: `u = digit * 8`,
+/// `v = 208`, 8x12 cells.
+pub const MENU_GLYPH_ATLAS_DIGIT_V: u32 = 208;
+pub const MENU_GLYPH_ATLAS_DIGIT_W: u32 = 8;
+pub const MENU_GLYPH_ATLAS_DIGIT_H: u32 = 12;
+
 /// **Dialog-window interior fill** gradient endpoints. The dialog /
 /// menu box emitter `FUN_8002C69C` fills the window body with **two
 /// stacked semi-transparent gouraud `POLY_G4` quads** (prim code

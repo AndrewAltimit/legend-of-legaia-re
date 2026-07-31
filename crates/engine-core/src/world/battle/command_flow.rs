@@ -122,17 +122,22 @@ impl World {
                 // Session done; SM resumes next tick.
             }
             Some(Resolution::OpenArtsMenu) => {
-                // Player picked Arts: hand off to the saved-chain submenu (same
-                // pattern as Magic / Item). `tick_battle_arts_menu` drives until
-                // the player runs an art (turn cycles via EndOfAction) or backs
-                // out.
+                // Player picked Arts: open the retail-model per-press command
+                // input (`FUN_801D0748` state 0x50). The legacy saved-chain
+                // list stays reachable behind `LEGAIA_ARTS_SAVED_LIST=1`
+                // (`var_os` is a clean `None` on wasm, so the browser always
+                // takes the retail path).
                 self.battle_ctx.active_actor = session.actor;
-                let rows = self.build_battle_arts_rows(session.actor);
-                self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
-                    session.actor,
-                    session.actor,
-                    rows,
-                ));
+                if std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some() {
+                    let rows = self.build_battle_arts_rows(session.actor);
+                    self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+                        session.actor,
+                        session.actor,
+                        rows,
+                    ));
+                } else {
+                    self.open_arts_command_input(session.actor);
+                }
             }
             Some(Resolution::OpenSpellMenu) => {
                 // Player picked Magic: hand off to the spell submenu (same
@@ -410,6 +415,195 @@ impl World {
                 self.battle_arts_menu = Some(menu);
             }
         }
+    }
+
+    /// Open the retail-model **Arts command input** for `actor`: seed the
+    /// AP pool from the acting character's AGL (retail `ctx+0x6DC` <-
+    /// actor `+0x154`; [`crate::arts_command_input::DEFAULT_POOL`] without
+    /// stats), the four per-direction press costs (Left = the arm command
+    /// `0x0C`, carrying the per-(character, weapon) `+0x74` byte from
+    /// [`Self::battle_arm_costs`]; the others at the favored base), and the
+    /// Triangle arts-list page count from the caster's loaded art catalog.
+    ///
+    /// PORT: FUN_801D0748 (state 0x50 arm)
+    /// REF: FUN_801D388C
+    /// `true` while a party member owns the pad in the retail-model Arts
+    /// command input. Retail parks the party **status plate off-screen**
+    /// for the whole session (its draws move to `y = 230`, below the
+    /// 228-line display window - `docs/subsystems/minigame-muscle-dome.md`
+    /// § Arts command input), so a host's battle-HUD strip reads this and
+    /// emits nothing while it holds.
+    pub fn arts_input_active(&self) -> bool {
+        self.battle_arts_input.is_some()
+    }
+
+    /// Renderer-agnostic view of the open Arts command input, or `None`
+    /// when no session is up. Both hosts build the pinned chrome from
+    /// this and nothing else.
+    pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
+        let s = self.battle_arts_input.as_ref()?;
+        Some(crate::arts_command_input::ArtsInputView {
+            buffer: &s.buffer,
+            spent: &s.spent,
+            pool: s.pool,
+            pool_max: s.pool_max,
+            costs: s.costs,
+            // The right-hand plate reads the caster's **Spirit** gauge and
+            // never moves during entry - the entry budget's visible form is
+            // the bar. Without a live Spirit value the pool stands in.
+            plate_value: self.spirit_gauge(s.actor).min(100) as u8,
+            list_page: s.list_page,
+            list_pages: s.list_pages,
+            phase: (&s.phase).into(),
+        })
+    }
+
+    pub(in crate::world) fn open_arts_command_input(&mut self, actor: u8) {
+        use crate::arts_command_input::{
+            ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, DEFAULT_POOL, FAVORED_COST,
+        };
+        let char_slot = self.party_roster_slot(actor as usize) as u8;
+        let pool = self
+            .roster
+            .members
+            .get(char_slot as usize)
+            .map(|r| r.live_stats().agl)
+            .filter(|&a| a > 0)
+            .unwrap_or(DEFAULT_POOL);
+        let arm = self
+            .battle_arm_costs
+            .get(char_slot as usize)
+            .copied()
+            .unwrap_or(FAVORED_COST as u8) as u16;
+        // Cost order = Command byte order (Left, Right, Down, Up); Left is
+        // action 0x0C, the weapon-specialty arm.
+        let costs = [arm, FAVORED_COST, FAVORED_COST, FAVORED_COST];
+        let character = self.caster_character(char_slot);
+        let n_arts = self
+            .art_records
+            .iter()
+            .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
+            .count();
+        let pages = n_arts.div_ceil(ARTS_LIST_ROWS_PER_PAGE) as u8;
+        self.battle_arts_input = Some(ArtsCommandInputSession::new(
+            actor, actor, pool, costs, pages,
+        ));
+    }
+
+    /// Drive the open Arts command input one frame from [`World::input`].
+    ///
+    /// On a confirmed Begin the entered sequence resolves through the
+    /// matcher family ([`Self::resolve_arts_input_entry`]) and runs via
+    /// [`Self::apply_battle_art`]; the SM parks at `EndOfAction` so the
+    /// live loop cycles. Backing out (empty buffer + Circle, or no valid
+    /// target) reopens the command menu.
+    pub(in crate::world) fn tick_battle_arts_input(&mut self) {
+        use crate::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
+        use crate::input::PadButton;
+
+        let Some(mut session) = self.battle_arts_input.take() else {
+            return;
+        };
+        let (party, monsters) = self.battle_target_rows();
+        let ev = ArtsCommandPad {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+            triangle: self.input.just_pressed(PadButton::Triangle),
+        };
+        session.input(ev, party, monsters);
+
+        match session.resolved() {
+            Some(ArtsInputResolution::Confirmed {
+                target_row,
+                target_slot,
+            }) => {
+                let caster = session.actor;
+                let (power, enemy_effect, action) =
+                    self.resolve_arts_input_entry(caster, &session.buffer);
+                self.apply_battle_art(
+                    caster,
+                    &power,
+                    enemy_effect,
+                    action,
+                    target_row,
+                    target_slot,
+                );
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            Some(ArtsInputResolution::Aborted) => {
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            None => {
+                self.battle_arts_input = Some(session);
+            }
+        }
+    }
+
+    /// Resolve an entered directional buffer to a per-strike power profile
+    /// through the retail matcher order: exact **Miracle** string replaces
+    /// the whole queue, a recognized art sequence ending on a **Super**
+    /// combination replaces the tail, and otherwise each recognized named
+    /// art contributes its record's strikes with unmatched directions
+    /// staying plain swings
+    /// ([`crate::arts_command_input::resolve_entered_commands`]).
+    ///
+    /// REF: FUN_801EED1C
+    fn resolve_arts_input_entry(
+        &self,
+        caster: u8,
+        buffer: &[u8],
+    ) -> (
+        Vec<legaia_art::PowerByte>,
+        legaia_art::EnemyEffect,
+        Option<legaia_art::ActionConstant>,
+    ) {
+        use crate::battle_arts::{miracle_for_chain, super_for_chain};
+        let char_slot = self.party_roster_slot(caster as usize) as u8;
+        let character = self.caster_character(char_slot);
+        if let Some(miracle) = miracle_for_chain(character, buffer) {
+            let (power, effect) = self.miracle_strike_profile(character, miracle);
+            let action = legaia_engine_vm::battle_action::resolve_action_queue(
+                character,
+                miracle.commands,
+                &[],
+            )
+            .actions()
+            .iter()
+            .rev()
+            .copied()
+            .find(|a| a.is_art());
+            return (power, effect, action);
+        }
+        let caster_records = || {
+            self.art_records
+                .iter()
+                .filter(|((ch, _), _)| *ch == character)
+                .map(|(_, rec)| rec)
+        };
+        if let Some(sa) = super_for_chain(character, buffer, caster_records()) {
+            let (power, effect) = self.super_strike_profile(character, sa);
+            let action = sa
+                .replace
+                .iter()
+                .rev()
+                .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
+                .find(|a| a.is_art());
+            return (power, effect, action);
+        }
+        let records: Vec<(legaia_art::ActionConstant, legaia_art::ArtRecord)> = self
+            .art_records
+            .iter()
+            .filter(|((ch, _), _)| *ch == character)
+            .map(|((_, action), rec)| (*action, rec.clone()))
+            .collect();
+        let entry = crate::arts_command_input::resolve_entered_commands(&records, buffer);
+        (entry.power, entry.enemy_effect, entry.action)
     }
 
     /// Execute an art against the picked target through the real art-power

@@ -134,6 +134,72 @@ fn detects_all_four_retail_player_files() {
     }
 }
 
+/// The weapon-specialty **arm-cost byte** (`section[+0x04]` swing record
+/// `+0x74`) decodes to the three documented cost tiers across the three
+/// weapon-carrying player files, and each character's favored weapon
+/// carries the base cost (`docs/subsystems/arts-command-gauge.md`
+/// § Disc location). Cross-checks the live-RAM measurements: Gala +
+/// Ra-Seru Club (`0x21`) = `0x1E`, Gala + Nail Glove (`0x28`) = `0x2A`,
+/// Vahn + Astral Sword (`0xBA`) = `0x36`.
+#[test]
+fn arm_cost_reads_the_weapon_specialty_tiers() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    // (file, weapon id, expected arm cost)
+    let pins: &[(&str, u32, u8)] = &[
+        ("0865_battle_data.BIN", 0x21, 0x1E), // Gala + Ra-Seru Club: favored
+        ("0865_battle_data.BIN", 0x28, 0x2A), // Gala + Nail Glove: off-class
+        ("0863_edstati3.BIN", 0xBA, 0x36),    // Vahn + Astral Sword: max tier
+        ("0863_edstati3.BIN", 0x1A, 0x1E),    // Vahn + Ra-Seru Blade: favored
+        ("0864_edstati3.BIN", 0x1F, 0x1E),    // Noa + Ra-Seru Fangs: favored
+    ];
+    for &(file, id, want) in pins {
+        let path = prot_dir.join(file);
+        if !path.exists() {
+            eprintln!("[skip] {} missing", path.display());
+            return;
+        }
+        let raw = std::fs::read(&path).expect("read player file");
+        let pack = battle_data_pack::parse(&raw).expect("parse pack");
+        let got = battle_data_pack::arm_cost_for_item(&raw, &pack, id);
+        assert_eq!(
+            got,
+            Some(want),
+            "{file}: weapon 0x{id:02X} arm cost (want 0x{want:02X})"
+        );
+    }
+    // Every weapon section that carries a swing record decodes to one of
+    // the three documented tiers - nothing else appears in the corpus.
+    for file in [
+        "0863_edstati3.BIN",
+        "0864_edstati3.BIN",
+        "0865_battle_data.BIN",
+    ] {
+        let path = prot_dir.join(file);
+        let raw = std::fs::read(&path).expect("read player file");
+        let pack = battle_data_pack::parse(&raw).expect("parse pack");
+        for rec in &pack.records {
+            let Ok(dec) = battle_data_pack::decode_record(&raw, &pack, rec.index) else {
+                continue;
+            };
+            if let Some(cost) = battle_data_pack::arm_cost(&dec.bytes) {
+                assert!(
+                    matches!(cost, 0x1E | 0x2A | 0x36),
+                    "{file} rec {} id 0x{:02X}: unexpected arm cost 0x{cost:02X}",
+                    rec.index,
+                    rec.id
+                );
+            }
+        }
+    }
+}
+
 /// `clut_uploads` is currently the documented no-op (the descriptor at
 /// `u32[3..0x20]` has not been pinned by the byte-match corpus - see
 /// `docs/formats/battle-data-pack.md`). Guard the contract so any
