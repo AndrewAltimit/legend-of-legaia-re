@@ -179,6 +179,29 @@ state: pair with `legaia-engine info --scene <name> --runtime-vram
 vram.bin --vram-diff-png diff.png` for a colour-coded per-pixel diff
 against the engine's `SceneResources::build_targeted` output.
 
+### Name every UI sprite in a frame
+
+```bash
+scripts/mednafen/widget-draw-sweep.py <save.mcr|save.sstate|ram.bin> \
+  [--scus extracted/SCUS_942.54] [--only-matched] [--min-y N] [--max-y N]
+```
+
+Walks the `SPRT` packets libgpu left in the save state's main RAM - the RAM
+image **is** the frame's display list - and looks each packet's
+`(u, v, w, h)` up in the `SCUS_942.54` widget-class table at `0x800732A4`
+(the sprite book behind the whole 2-D chrome; see
+[`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from)).
+Both SCUS draw routines copy those four bytes verbatim into the packet, so
+the join is exact rather than heuristic: each row reports the seat, the
+matching record ids with their class and chain delta, and a `*` when the
+packet's CLUT is the one the record's palette byte decodes to.
+
+Unmatched rows are the surfaces that do *not* come off this table - dialog
+glyphs, numeral cells, effect billboards - so `--only-matched` reduces a
+frame to its chrome. The double-buffered duplicate of every packet is
+collapsed, so the report reads as one screen. It accepts either emulator's
+state (dispatched on extension) or a raw main-RAM `.bin`.
+
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 
 ```bash

@@ -40,6 +40,26 @@ below.
 | Muscle Dome awards a **Seru** on a win | falsified (a leg pays nothing; a contest pays casino coins) | [details ↓](#the-dome-victory-caption-is-not-a-prize) |
 | `FUN_801DBC30` blits the party panels' name plate | falsified (its page + CLUT resolve to the `etim` red cross-out X) | [details ↓](#fun_801dbc30-is-not-the-battle-name-plate) |
 | The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
+| Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
+
+### A kind named by its seat can name the wrong record
+
+Before the `+0x0E` kind byte was resolved as a table index, the open thread
+listed the values it could not decode with the surface each one *sat under*:
+`0x0303` "full-width message rows", `0x0404` "framed windows", `0x2B2B` "the
+status bar", `0x32`/`0x33` "the roster panels". Four of those survive the
+decode. The panel one does not: the three roster-panel placement records
+(6, 78, 79) carry kind `0x07`, and `0x33`/`0x34`/`0x35` are the sibling kinds
+that add the level / status marker on top of the same panel chain.
+
+The reading was not careless - it was correct about *what is on screen* and
+wrong about *which row draws it*, because the two kinds converge: `0x33`'s
+chain hops `+0x0E` and then walks into `0x08` → `0x09`, the same panel plate
+`0x07`'s chain ends on. A seat-based name cannot separate two records that
+draw the same pixels, and no amount of further capture would have; only the
+index arithmetic (`0x800732A4 + kind * 0x0C`, `FUN_8002C69C` at
+`0x8002C7A0`) does. Resolution:
+[`re-settled-threads.md`](re-settled-threads.md#the-chrome-kind-byte-is-an-index-into-the-widget-class-table).
 
 ### `FUN_801DBC30` is not the battle name plate
 

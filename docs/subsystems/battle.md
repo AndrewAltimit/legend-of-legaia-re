@@ -27,7 +27,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [widget-class table](#the-widget-class-table---where-every-chrome-sprite-comes-from) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -2219,9 +2219,12 @@ with a 1-px rim, the labels and the `/` to tinted text, and the numerals to
 font glyphs **centred on the same 8-px cells** - the fallback changes
 letterforms, never layout.
 
-**Still substituted.** The status element's badge art (`0x18..=0x20`) is
-unpinned, so the selected id draws as a labelled tag on the panel's level
-seat, which is the seat retail's exclusive ladder puts it on.
+**Still substituted, and no longer for want of the art.** The port draws the
+selected status id as its own labelled tag on the panel's level seat - the
+seat retail's exclusive ladder puts it on. Retail's own cells are pinned
+([the badge sheet](#the-status-element-badge-sheet)): nine 48x16 tags on the
+system-UI sheet, one row-511 sub-palette each. Wiring them is a draw-builder
+change, not an RE question.
 
 **Parked, not stacked.** The port emits no panel draws at all while the
 active-actor bar or a command-entry session owns the frame, rather than
@@ -2268,7 +2271,9 @@ The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it wit
 
 The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
 
-Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as a labelled tag on the same panel seat: the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+The **art agrees with that assignment**, independently: each of the nine ids is a word tag on the system-UI sheet, and decoding the cells gives `Venom` / `Toxic` / `Stone` / `Rot` / `Rage` / `Numb` / `Sleep` / `Curse` / `Faint` in ladder order. Cells, sub-palettes and the sheet law are in [the badge-sheet section](#the-status-element-badge-sheet).
+
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as its own labelled tag on the same panel seat rather than blitting retail's cell. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 
@@ -2300,8 +2305,10 @@ and the solo action frames `battle_gimard_tail_fire_a` /
 The whole chrome samples the **resident system-UI TIM**
 ([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/asset/src/title_pak.rs),
 `PROT.DAT` `0x18E0`), whose pixels upload to VRAM page `(896, 256)` and
-whose 16-row CLUT block packs into VRAM row **511** as sixteen side-by-side
-sub-palettes. Text comes off the neighbouring menu-glyph atlas at page
+whose CLUT block packs into VRAM row **511** as side-by-side sub-palettes -
+the chrome plates use the first sixteen, and the row runs further (the
+[status badges](#the-status-element-badge-sheet) reach sub-palette 18).
+Text comes off the neighbouring menu-glyph atlas at page
 `(896, 0)` through row **510** sub-palette 13, as 14x15 blits of 16x16 cells
 (`cell = ascii - 0x20`, sixteen cells per row, `u = (i%16)*16`,
 `v = (i/16)*16`) advanced by each glyph's own width.
@@ -2387,10 +2394,13 @@ Captured widths: `Noa` -> 20 (right cap at x=36), `Carl` -> 23, `Zeto` -> 24,
 (cap at 79). Total plate width is `interior + 16`.
 
 The **element badge** is a 20x12 sprite off the same sheet: eight badges at a
-32-texel pitch from `u = 6`, row `v = 192` plain and `v = 208` winged. Each
-badge picks its own 16-entry sub-palette out of the CLUT block at VRAM x
-`896..`, rows 498 / 499 - the palette travels with the badge, not with the
-row, so the colour is per-element and the geometry is not.
+32-texel pitch from `u = 6`, row `v = 192`. Each takes its own 16-entry
+sub-palette out of the CLUT block at VRAM x `896..`, rows 498 / 499 - so the
+colour is per-element and the geometry is not. The selector is the badge
+record's own palette byte, `0x40 + index`, decoded two-dimensionally; the
+winged `v = 208` strip is a separate set of eight 28x12 records on its own
+CLUT block. Both are pinned in
+[the element-badge section](#the-element-badges-and-their-per-badge-palette).
 
 ### The party status readout - and it has no gauge
 
@@ -2451,6 +2461,165 @@ the element command right `(240, 60)` and `Spirit` down `(196, 92)`. An
 unavailable command still gets its chip - the right seat draws a single `-`
 glyph for a character with no magic. The `Begin` / `Run` cluster is seat- and
 size-identical in a solo tutorial fight and in a three-member battle.
+
+## The widget-class table - where every chrome sprite comes from
+
+Everything the packet walk measured above is **disc data**, and it all comes
+out of one array: the widget-class table at `SCUS_942.54` VA `0x800732A4`,
+`0x0C` bytes per record, `0x9D` records. The run's end is structural rather
+than guessed - `0x800732A4 + 0x9D * 0x0C` is exactly `0x80073A00`, the frame
+tile-set pool the class arms read next. Parser `legaia_asset::ui_widgets`;
+disc-gated oracle `crates/asset/tests/ui_widgets_real.rs`.
+
+A [screen-element placement record](../reference/memory-map.md#0x80076c10---one-table-three-names)'s
+`+0x0E` *kind pair* is two indices into this table - which is what turns the
+chrome section's correlation ("`0x0101` is on every blue chip, `0x0202` on the
+gold plaque") into a mapping. Kind `0x01` **is** widget record `0x01`, the blue
+plate body; kind `0x02` is record `0x02`, the carved-gold one. The join holds
+for all 103 initialised placement records: every kind byte, high and low,
+names a real widget record, and each named surface resolves to the art the
+packets drew.
+
+### Record layout
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x00` | u8 | frame **class** - which layout arm draws it (`0..=6`, jump table `0x80010D18`) |
+| `+0x01` | u8 | **tile-set** index into the frame pool at `0x80073A00` |
+| `+0x02` | i8 | **chain delta** to the next record in this widget; `0` ends the run |
+| `+0x03` | u8 | **palette** byte - bit 7 semi-transparent, the rest a packed CLUT address |
+| `+0x04`..`+0x07` | u8 x4 | source rect `u`, `v`, `w`, `h` on the system-UI sheet |
+| `+0x08` / `+0x0A` | i16 | seat bias `dx` / `dy` |
+
+Two SCUS routines read it. `FUN_8002C488(x, y, id)`
+(`ghidra/scripts/funcs/8002c488.txt`) draws exactly one sprite and seats it at
+the caller's `(x, y)` **verbatim** - it never applies `+0x08`/`+0x0A`.
+`FUN_8002C69C(x, y, w, h)` (`ghidra/scripts/funcs/8002c69c.txt`, the
+`POLY_FT4` / `SPRT` emitter) draws a sized widget with the record index in
+`gp+0x14C`, applies the bias, and then loops: `lb v1, 0x2(s7)` at `0x8002FF00`,
+`addu` it into the index, and re-enter at `0x8002C780` unless it is zero.
+
+That split is why the same table produces both behaviours the packet walk saw:
+the status marker lands at `pen + (0x3B, 2)` because its caller
+(`FUN_8002C2E4`) supplies that offset, while the roster panel's `HP` label
+lands at `pen + (-1, 17)` because record `0x07` carries it.
+
+### The palette byte is a packed CLUT address
+
+Both routines decode `+0x03` with the same six instructions, and it has two
+forms:
+
+```text
+bit 6 clear:  CBA  = 0x7FC0 + (b & 0x3F)      -> VRAM row 511, x = (b & 0x3F) * 16
+bit 6 set:    fb_y = 498 + ((b & 0x3F) >> 2)
+              fb_x = 896 + (b & 3) * 16
+```
+
+The first form is the system-UI sheet's own sub-palette strip on VRAM row 511
+(the chrome's blue is sub-palette 4, the carved gold 12, the marbled panel 0).
+The second addresses a **separate 4-wide block of CLUTs at VRAM
+`(896.., 498..501)`**, and it is the whole answer to the element-badge palette
+question - see below.
+
+Bit 7 selects the GP0 code: `0x66` (raw sprite) instead of `0x64`.
+
+### Chains: a widget is a run of records
+
+`+0x02` is a signed hop, so one kind draws several sprites. The two the chrome
+section describes are both chains, and following them reproduces the captured
+seats exactly:
+
+| Kind | Chain | What it lays out |
+|---|---|---|
+| `0x2B` | `0x2B → 0x2C → 0x2D → 0x2E → 0x2F` | the active-actor bar: `HP` label `(+64, +2)`, `/` `(+120, -4)`, `MP` label `(+176, +2)`, `/` `(+224, -4)`, then the blue plate body |
+| `0x07` | `0x07 → 0x08 → 0x09` | a roster panel: `HP` row `(-1, +17)`, `MP` row `(-1, +32)`, then the 102x48 marbled plate at `(-5, -4)` |
+| `0x33` / `0x34` / `0x35` | `→ 0x41 → 0x42 → 0x08 → 0x09` | the same panel with its level / status marker, one kind per party slot |
+
+Against the bar's own pen `(16, 192)` those biases give `(80, 194)`,
+`(136, 188)`, `(192, 194)`, `(240, 188)` - the four seats the packets carry.
+
+### Classes and the frame pool
+
+The class byte picks the layout arm. Two matter for the battle screen:
+
+- **class 3** - the rounded **plate run**. It reads a `(left cap, right cap)`
+  quad pair from `0x80073A60 + tileset * 8`; tile-set 3 gives
+  `(208, 0, 8, 20)` / `(216, 0, 8, 20)` (blue) and tile-set 4
+  `(208, 64, ...)` / `(216, 64, ...)` (gold). Body tiles come from the
+  record's own rect. Tile-set `0` is the sentinel the arm skips, so a
+  cap-less run is expressible.
+- **class 0** - the rectangular **9-slice window**. It reads eight quads from
+  `0x80073A00 + tileset * 0x20` in the order top-left, top-right,
+  bottom-left, bottom-right, top, bottom, left, right. Tile-set 0 is the gold
+  border: 4x4 corners and 24x4 / 4x24 edges cut from one 32x32 patch at
+  texels `(160, 0)`.
+
+The two views overlap by construction - a cap pair *is* the last two quads of
+a frame set - which is why `0x80073A60` sits three tile-sets into the pool.
+
+### The status-element badge sheet
+
+The nine ids the exclusive status ladder emits, `0x18..=0x20`, are **48x16
+cells in a two-column block** on the system-UI sheet, and each takes its own
+row-511 sub-palette. The art is a word tag, not an icon, which is what settles
+the ladder's per-bit assignment independently of the accessory-guard argument:
+
+| Sprite | Mask tested | Sheet cell | Sub-palette | Reads |
+|---|---|---|---|---|
+| `0x18` | `0x0001` | `(0, 48)` | 9 | `Venom` |
+| `0x19` | `0x0002` | `(48, 48)` | 10 | `Toxic` |
+| `0x1A` | `0x0004` | `(48, 80)` | 16 | `Stone` |
+| `0x1B` | `0x0078` | `(48, 112)` | 14 | `Rot` |
+| `0x1C` | `0x0380` | `(0, 96)` | 17 | `Rage` |
+| `0x1D` | `0x0400` | `(0, 64)` | 11 | `Numb` |
+| `0x1E` | `0x0800` | `(0, 80)` | 15 | `Sleep` |
+| `0x1F` | `0x1000` | `(48, 64)` | 13 | `Curse` |
+| `0x20` | HP `== 0` | `(48, 96)` | 18 | `Faint` |
+
+The block's tenth cell (`(0, 112)`) is other art - there is no tenth badge.
+The KO badge reading `Faint` is the confirmation that the zero-HP arm and the
+bit ladder are one selector over one sheet.
+
+Two corollaries the sheet forces. Row 511's sub-palette strip is **wider than
+sixteen**: these badges alone reach index 18, so the strip runs to VRAM x 288,
+and the "sixteen side-by-side sub-palettes" reading above describes the block
+the chrome plates use, not the row's extent. And the no-ailment arm's marker,
+sprite `0x0A`, is a plain 16x10 `LV` label at `(192, 86)` on sub-palette 1 -
+the same three-texel label set as `HP` and `MP`.
+
+### The element badges and their per-badge palette
+
+The badge strip is eight consecutive records, `0x8B..=0x92`: `20 x 12` at a
+32-texel pitch from `u = 6`, row `v = 192`, exactly as the packet walk
+measured. Their palette bytes are `0x40 + index`, and the bit-6 decode turns
+that single walking byte into a 4-wide by 2-tall block of CLUTs:
+
+```text
+badge i -> palette 0x40 + i -> CLUT ( 896 + (i % 4) * 16 , 498 + i / 4 )
+```
+
+Which reproduces every captured pair - `u = 6` with `(896, 498)`, `38` with
+`(912, 498)`, `166` with `(912, 499)`, `230` with `(944, 499)` - from the disc
+alone. The pairs looked unrelated to the badge index because the index is
+encoded **two-dimensionally**: the low two bits pick the column, the next two
+the row. The palette does travel with the badge; it just travels through a
+packed address rather than a lookup.
+
+A sibling strip of eight *winged* badges lives at `0x94..=0x9B`, `28 x 12` from
+`u = 2` on row `v = 208`, on the second CLUT block (`0x48 + index`, rows
+500 / 501 - byte-identical to 498 / 499 in a live frame). Record `0x9B` is the
+one asymmetry: it reads `v = 192`, so the eighth wide badge samples the
+square-framed art on the plain row while its seven siblings sample the winged
+row. The winged eighth badge exists in VRAM and no record selects it.
+
+### Four ids are not on this sheet at all
+
+`FUN_8002C488` has a second arm for ids `0x86`, `0x87`, `0x88` and `0x8A`.
+They draw through texture page `0x1F` (VRAM `(960, 256)`) instead of `0x1E`
+(`(896, 256)`), take their CLUT from the four-word side table at `0x80073DB8`
+(VRAM `(976, 304..307)`) instead of their palette byte, and are the only ids
+whose `+0x08`/`+0x0A` bias applies on the *single-sprite* path. They are the
+three party-member face portraits (16x16 each) plus a 32x32 empty frame.
 
 ## SFX bank + scheduler
 
