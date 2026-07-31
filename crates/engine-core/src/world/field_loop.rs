@@ -56,17 +56,40 @@ impl World {
     ///
     /// Snapshots the field actor table (restored verbatim on victory),
     /// remembers the formation for [`Self::apply_battle_loot`], and seeds the
-    /// battle actor table from the formation + monster catalog. No-op when
-    /// the roll's `formation_id` isn't registered in
-    /// [`Self::formation_table`] (the session has already advanced to
-    /// `Battling`, so the next [`Self::end_encounter_battle`] cleans it up).
+    /// battle actor table from the formation + monster catalog.
+    ///
+    /// An unregistered `formation_id` bails back to the field (the session has
+    /// already advanced to `Battling`, so the next
+    /// [`Self::end_encounter_battle`] cleans it up) - but **loudly**. This is
+    /// the last gate a rolled encounter passes, so a quiet return here is a
+    /// battle that the player saw the transition for and never got, with
+    /// nothing in the log to say so. `install_man_encounter` cross-checks the
+    /// same pairing at scene entry; if this ever fires, that check was bypassed
+    /// or the table was replaced after it ran.
     pub(crate) fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
         let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
-            // Unknown formation: bail back to the field by ending the (empty)
-            // battle so the session leaves `Battling`.
+            log::error!(
+                "encounter: rolled formation {} in scene '{}' is not registered - the battle is \
+                 dropped and the field resumes (registered rows: {:?})",
+                roll.formation_id,
+                self.active_scene_label,
+                self.registered_formation_ids()
+            );
             self.end_encounter_battle();
             return;
         };
+        if formation.slots.is_empty() {
+            // Retail's reader clears the formation cell for a `count == 0` row
+            // and spawns nothing, so this is not an error - but it is still a
+            // step that produced no fight, and worth saying once.
+            log::debug!(
+                "encounter: rolled formation {} in '{}' carries no monsters (retail no-spawn row)",
+                roll.formation_id,
+                self.active_scene_label
+            );
+            self.end_encounter_battle();
+            return;
+        }
         self.field_return = Some(FieldReturnState {
             actors: self.actors.clone(),
             player_actor_slot: self.player_actor_slot,

@@ -1878,6 +1878,38 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
 
+### The session is a bracket, not the roll
+
+On a scene whose MAN carries encounter *regions* - which is every field area
+that fights - the roll does not come from the session at all. It comes from
+`RegionEncounterTracker` (the faithful `FUN_801D9E1C` model: per-region rate
+counter, formation-range pick, one-step anti-repeat), and the session supplies
+only the `Transition -> Triggered -> Battling -> Grace` bracketing around it.
+
+That asymmetry has a failure mode worth naming, because it does not look like
+one from either side. The region tracker's trigger branch is **destructive**:
+it draws RNG, latches the anti-repeat formation and re-seeds its counter before
+returning the pick. A host that dropped `World::encounter` after scene entry -
+`World::begin_new_game` clears it, and `play-window --seed-party` runs that
+*after* `enter_field_live` - therefore left the tracker rolling into a null
+sink, and each roll was a fight that happened and was then thrown away, with no
+transition drawn and nothing logged. `World::on_field_step` now re-installs a
+bare bracket (`World::install_encounter_bracket`) rather than dropping the
+pick, and every remaining way a roll can fail to become a battle logs at error:
+an unregistered formation in `begin_encounter_battle`, a scripted arm with no
+session, and a table/def id mismatch caught at `install_man_encounter` time.
+
+The two id spaces the roll crosses - the MAN formation-row index the roll
+produces and the `World::formation_table` key the battle load resolves - are
+pinned equal across the whole scene corpus by
+[`crates/engine-core/tests/scene_encounter_formations_disc.rs`](../../crates/engine-core/tests/scene_encounter_formations_disc.rs),
+which also carries the New-Game-reset regression.
+
+`World::force_encounter(row)` arms a named row through that same bracket. It is
+the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)),
+and it deliberately does not shortcut into `enter_battle_from_formation` - a
+harness that skips the path it verifies proves nothing about it.
+
 ### Scripted-battle entry (`3E FF <row>`)
 
 The scripted boss fights enter through the field-VM interact op `0x3E` with
@@ -1889,8 +1921,14 @@ battle mode switch (`FUN_8003CE08(0xE)`); the entity tick `FUN_801DA51C`'s
 confirm state then copies the row into the battle formation cell `0x8007BD0C`.
 The boss rows sit **outside** every region's rollable
 `[base, base + count)` slice, so they can only enter through this op, and they
-carry a non-zero first header byte (the reader ORs `0x80` into a battle-setup
-flag for them):
+carry a non-zero first header byte - the predicate the confirm state ORs bit
+`0x80` of the per-battle flags byte `DAT_8007BD60` on (see
+[encounter.md](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)).
+That bit is what gives a scripted fight the `SpinUpParticles` battle intro and
+the transition's second audio cue instead of the random-encounter default; the
+port carries it per formation row as `FormationDef::header_flags` /
+`per_battle_flags()`, so it survives from the MAN parse to the intro. `rikuroa`
+rows 16/17 read `01 00 00` where all sixteen of its random rows read `00 00 00`:
 
 | Scene | Beat record | Op | Formation row | Contents |
 |---|---|---|---|---|

@@ -335,6 +335,20 @@ pub struct FormationDef {
     /// Display label for the formation (used by the encounter banner).
     /// Engines fall back to `"Encounter #N"` when this is empty.
     pub label: String,
+    /// The formation record's own first header byte, `record[+0]`.
+    ///
+    /// The MAN encounter section's per-formation records carry three bytes
+    /// ahead of the monster count. Only the first is read by the battle
+    /// path, and it is read as a *predicate*: the entity SM's confirm state
+    /// tests `record[+0] != 0` and, when so, ORs bit `0x80` into the
+    /// per-battle flags byte `DAT_8007BD60`
+    /// (`0x801DA5F8..0x801DA61C` in `FUN_801DA51C`). Retail's scripted /
+    /// boss rows are exactly the rows that carry a non-zero byte here, and
+    /// the raised bit is what routes the fight to a different battle intro
+    /// and audio cue - see [`Self::per_battle_flags`].
+    ///
+    /// REF: FUN_801DA51C
+    pub header_flags: u8,
 }
 
 impl FormationDef {
@@ -343,12 +357,35 @@ impl FormationDef {
             formation_id,
             slots,
             label: String::new(),
+            header_flags: 0,
         }
     }
 
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
         self
+    }
+
+    /// Attach the formation record's first header byte
+    /// ([`Self::header_flags`]).
+    pub fn with_header_flags(mut self, header_flags: u8) -> Self {
+        self.header_flags = header_flags;
+        self
+    }
+
+    /// The per-battle flags byte (`DAT_8007BD60`) contribution this
+    /// formation makes: bit `0x80` when [`Self::header_flags`] is non-zero,
+    /// otherwise `0`.
+    ///
+    /// The byte's other live bits are the *stage* id the random-encounter
+    /// reader writes from its region record (`region[+8] & 0x1F`,
+    /// `FUN_801D9E1C`), which the backdrop picker consumes; only bit `0x80`
+    /// is a property of the formation, and only bit `0x80` is read by the
+    /// battle-intro style selector and the transition's audio-cue arm.
+    ///
+    /// REF: FUN_801DA51C, FUN_801D9E1C
+    pub fn per_battle_flags(&self) -> u8 {
+        if self.header_flags != 0 { 0x80 } else { 0 }
     }
 
     pub fn slot_count(&self) -> usize {

@@ -147,7 +147,12 @@ pub fn formation_defs_from_man(man_bytes: &[u8]) -> Vec<FormationDef> {
             .iter()
             .map(|&id| FormationSlot::new(id as u16))
             .collect();
-        defs.push(FormationDef::new(i as u16, slots));
+        // `record[+0]` rides along: it is the predicate the entity SM's
+        // confirm state tests before ORing bit `0x80` into the per-battle
+        // flags byte (`FUN_801DA51C` at `0x801DA5F8..0x801DA61C`), which is
+        // what marks a row as a scripted / boss fight for the battle-intro
+        // style + audio cue. See [`FormationDef::per_battle_flags`].
+        defs.push(FormationDef::new(i as u16, slots).with_header_flags(f.header_bytes[0]));
     }
     defs
 }

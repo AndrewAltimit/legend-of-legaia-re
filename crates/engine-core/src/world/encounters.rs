@@ -75,6 +75,11 @@ impl World {
     /// Returns whether the installed table is non-empty (an empty table is
     /// still installed-but-quiet so engines can call [`Self::on_field_step`]
     /// without nil checks).
+    ///
+    /// The two id spaces are cross-checked here rather than at battle-load:
+    /// a table row whose `formation_id` has no registered def would otherwise
+    /// roll fine and then evaporate in [`Self::begin_encounter_battle`], which
+    /// is a fight that never happens with nothing on screen to say why.
     pub fn install_man_encounter(
         &mut self,
         table: crate::encounter::EncounterTable,
@@ -83,10 +88,137 @@ impl World {
         for def in formations {
             self.formation_table.insert(def);
         }
+        for entry in &table.entries {
+            if self
+                .formation_table
+                .formation(entry.formation_id)
+                .is_none_or(|d| d.slots.is_empty())
+            {
+                log::warn!(
+                    "encounter: scene '{}' table row {} names formation {} which resolves to no \
+                     monsters - a roll landing there would enter no battle",
+                    table.scene_label,
+                    entry.formation_id,
+                    entry.formation_id
+                );
+            }
+        }
         let nonempty = !table.is_empty();
         let tracker = crate::encounter::EncounterTracker::new(table);
         self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
         nonempty
+    }
+
+    /// Install a **bare** [`crate::encounter::EncounterSession`] for the
+    /// active scene: an empty mean-rate table (which therefore never rolls of
+    /// its own accord) wrapped in the transition / grace state machine.
+    ///
+    /// This is the sink a roll that came from somewhere *else* needs - the
+    /// per-region tracker ([`crate::region_encounter::RegionEncounterTracker`],
+    /// the faithful `FUN_801D9E1C` model) and the
+    /// [`Self::force_encounter`] harness both own their own pick and only want
+    /// the bracketing. Installing it costs nothing and turns "the session was
+    /// cleared under us" from a lost battle into a recoverable state.
+    pub fn install_encounter_bracket(&mut self) {
+        let label = self.active_scene_label.clone();
+        let table = crate::encounter::EncounterTable::new(label);
+        debug_assert!(table.is_empty(), "the bracket table must never self-roll");
+        let tracker = crate::encounter::EncounterTracker::new(table);
+        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        // `scene_can_roll_encounters` answers `false` while no session is
+        // installed, so the cached answer (and the "no random encounters in
+        // this scene" hint a host draws from it) has to be re-taken now that
+        // one is.
+        self.refresh_encounter_rollable();
+        log::debug!(
+            "encounter: installed a bare transition bracket for '{}'",
+            self.active_scene_label
+        );
+    }
+
+    /// Force the registered formation `formation_id` into battle **through the
+    /// ordinary encounter path**: the roll is handed to the session's
+    /// transition state machine exactly as a region roll is, so the intro
+    /// transition, the battle BGM swap and
+    /// [`Self::begin_encounter_battle`] all run unchanged.
+    ///
+    /// This is the engine side of the `play-window --battle <row>` harness:
+    /// reaching a battle by walking is a probabilistic several-thousand-step
+    /// affair, which makes verifying anything on the battle screen expensive
+    /// and flaky. It deliberately does **not** shortcut into
+    /// [`Self::enter_battle_from_formation`] - a harness that skips the path
+    /// it is meant to exercise proves nothing about it.
+    ///
+    /// `formation_id` is the scene's MAN formation-row index - the same id
+    /// space [`Self::install_man_encounter`] registers and the region roll
+    /// produces. Returns `false` (changing nothing) when the row is not
+    /// registered or carries no monsters.
+    ///
+    /// Clears any post-battle grace / suppression first so a second call
+    /// straight after a fight still lands.
+    pub fn force_encounter(&mut self, formation_id: u16) -> bool {
+        let Some(def) = self.formation_table.formation(formation_id) else {
+            log::error!(
+                "encounter: forced formation {formation_id} is not registered for scene '{}' \
+                 (registered rows: {:?})",
+                self.active_scene_label,
+                self.registered_formation_ids()
+            );
+            return false;
+        };
+        if def.slots.is_empty() {
+            log::error!(
+                "encounter: forced formation {formation_id} carries no monsters - retail's reader \
+                 clears the formation cell for such a row and spawns nothing"
+            );
+            return false;
+        }
+        if self.encounter.is_none() {
+            self.install_encounter_bracket();
+        }
+        if let Some(session) = self.encounter.as_mut() {
+            session.reset();
+            session.tracker_mut().clear_suppression();
+        }
+        if let Some(t) = self.field_region_tracker.as_mut() {
+            t.clear_suppression();
+        }
+        let roll = crate::encounter::EncounterRoll {
+            formation_id,
+            row_index: formation_id as usize,
+            roll_q8: 0,
+        };
+        let armed = self
+            .encounter
+            .as_mut()
+            .map(|s| s.trigger_with(roll))
+            .unwrap_or(false);
+        if armed {
+            log::info!(
+                "encounter: forced formation row {formation_id} in '{}' -> transition armed",
+                self.active_scene_label
+            );
+        }
+        armed
+    }
+
+    /// Every `formation_id` currently registered in [`Self::formation_table`],
+    /// sorted. The answer to "which rows can `--battle` name" and the list the
+    /// unresolved-formation diagnostics print.
+    pub fn registered_formation_ids(&self) -> Vec<u16> {
+        let mut ids: Vec<u16> = self.formation_table.by_id.keys().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// The lowest registered formation row that actually carries monsters, or
+    /// `None` when the scene registered none. What `--battle first` resolves.
+    pub fn first_rollable_formation_id(&self) -> Option<u16> {
+        self.registered_formation_ids().into_iter().find(|id| {
+            self.formation_table
+                .formation(*id)
+                .is_some_and(|d| !d.slots.is_empty())
+        })
     }
 
     /// Replace just the monster stat catalog, leaving `formation_table`
@@ -554,8 +686,16 @@ impl World {
         let id = self.install_encounter_from_record(&scene, &record);
         // Fire-once: retail clears `entity[+0x94]` after the formation copy so
         // the arm fires exactly once. Disarm the engine-side carrier flag too.
-        if id.is_some() {
+        if let Some(id) = id {
             self.scripted_encounter_armed = false;
+            // The record's `record[+0]` here is the *install opcode itself*
+            // (the record overlays the opcode), so it is non-zero by
+            // construction and the confirm state raises the per-battle
+            // `0x80`. Carry it onto the synthesized def so the intro style
+            // and the transition's audio cue see the scripted battle.
+            if let Some(def) = self.formation_table.by_id.get_mut(&id) {
+                def.header_flags = record_bytes.first().copied().unwrap_or(0);
+            }
         }
         id
     }
@@ -723,7 +863,14 @@ impl World {
                     session.tracker_mut().set_rate_modifiers(Default::default());
                     session.on_step(rng)
                 }
-                None => false,
+                None => {
+                    log::error!(
+                        "encounter: a scripted formation was armed for scene '{}' but no encounter \
+                         session is installed - the scripted fight is lost",
+                        self.active_scene_label
+                    );
+                    false
+                }
             };
         }
         // Per-region path: when a field region tracker is installed, the
@@ -735,6 +882,17 @@ impl World {
         // a trigger through [`crate::encounter::EncounterSession::trigger_with`].
         // REF: FUN_801D9E1C (ported in crate::region_encounter)
         if self.field_region_tracker.is_some() {
+            // The region roll owns the rate AND the formation pick; the
+            // session owns nothing but the frames between trigger and battle.
+            // A host that dropped the session after scene entry (the New Game
+            // reset is one) must not therefore silently swallow every roll:
+            // the region tracker consumes RNG, latches its anti-repeat and
+            // re-seeds its counter on a trigger, so a discarded roll is a
+            // fight that happened and then didn't. Re-install the bare
+            // bracket instead.
+            if self.encounter.is_none() {
+                self.install_encounter_bracket();
+            }
             let idle = self
                 .encounter
                 .as_ref()
@@ -770,10 +928,22 @@ impl World {
                         row_index: r.formation_id as usize,
                         roll_q8: 0,
                     };
-                    self.encounter
-                        .as_mut()
-                        .map(|s| s.trigger_with(er))
-                        .unwrap_or(false)
+                    log::info!(
+                        "encounter: region roll in '{}' at ({wx}, {wz}) -> formation row {}",
+                        self.active_scene_label,
+                        r.formation_id
+                    );
+                    match self.encounter.as_mut() {
+                        Some(s) => s.trigger_with(er),
+                        None => {
+                            // Unreachable: the bracket is installed above.
+                            log::error!(
+                                "encounter: region roll dropped - no session sink after the \
+                                 bracket install"
+                            );
+                            false
+                        }
+                    }
                 }
                 None => false,
             };
@@ -851,6 +1021,17 @@ impl World {
         let globals = TransitionGlobals {
             battle_id: i32::from(roll.formation_id),
             total_duration: i32::from(total),
+            // `DAT_8007BD60`. Bit `0x80` is the only bit this kernel reads,
+            // and it is a property of the rolled formation row: the entity
+            // SM's confirm state raises it when the row's `record[+0]` is
+            // non-zero (`FUN_801DA51C` at `0x801DA5F8..0x801DA61C`). The
+            // scripted / boss rows are exactly those rows, and the raised bit
+            // gives the transition its second audio cue.
+            battle_flags: self
+                .formation_table
+                .formation(roll.formation_id)
+                .map(|d| d.per_battle_flags())
+                .unwrap_or(0),
             // `DAT_8007B648 == 0x80` is retail's "battle-mesh assembly
             // finished" byte, which phase 1 spins on. The engine assembles
             // battle meshes synchronously at battle entry, so the answer is
