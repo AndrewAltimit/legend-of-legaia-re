@@ -479,7 +479,11 @@ pub struct BattleCamera {
 ///
 /// A battle that opens on dialogue snaps to the held close-up; any other
 /// battle snaps to the far menu framing (retail's loading pose resolves
-/// there) and glides out to whichever phase is already live.
+/// there) and glides out to whichever phase is already live. The entry snap
+/// takes the LIVE formation: retail's case 9 always runs against the live
+/// actor table, so a battle that opens on the far framing sizes its depth
+/// and centres its focus immediately rather than sitting at the degenerate
+/// minimum until the first phase transition re-derives it.
 pub fn drive(
     slot: &mut Option<BattleCamera>,
     active: bool,
@@ -497,7 +501,8 @@ pub fn drive(
     } else {
         BattleCamPhase::Menu
     };
-    let cam = slot.get_or_insert_with(|| BattleCamera::new(entry, frames));
+    let cam =
+        slot.get_or_insert_with(|| BattleCamera::new_with_formation(entry, formation, frames));
     if let Some(actor) = acting {
         cam.set_actor(actor);
     }
@@ -509,13 +514,26 @@ pub fn drive(
 impl BattleCamera {
     /// New camera snapped to the entry phase's framing (a battle that opens
     /// on tutorial dialogue starts in the held close-up; any other battle
-    /// starts at the far menu framing).
+    /// starts at the far menu framing sized to no formation - see
+    /// [`BattleCamera::new_with_formation`] for the live-formation entry).
     pub fn new(phase: BattleCamPhase, frames_now: u64) -> Self {
+        Self::new_with_formation(phase, None, frames_now)
+    }
+
+    /// [`BattleCamera::new`] with the live formation available at entry, so
+    /// a battle opening on the far menu framing snaps to the case-9
+    /// formation-sized depth + centre instead of the degenerate minimum
+    /// (retail's case 9 runs against the live actor table).
+    pub fn new_with_formation(
+        phase: BattleCamPhase,
+        formation: Option<FormationBox>,
+        frames_now: u64,
+    ) -> Self {
         let actor = BattleCamActor::default();
         let pose = match phase {
             BattleCamPhase::Dialogue => DIALOGUE_POSE,
             BattleCamPhase::Submenu => actor.submenu_pose(),
-            BattleCamPhase::Menu => menu_framing(None, 0.0),
+            BattleCamPhase::Menu => menu_framing(formation, 0.0),
         };
         BattleCamera {
             phase,
@@ -524,7 +542,7 @@ impl BattleCamera {
             last_frames: frames_now,
             frame_accum: 0,
             actor,
-            formation: None,
+            formation,
         }
     }
 
@@ -1340,6 +1358,22 @@ mod tests {
         // Battle ends: the state drops so the next battle re-snaps.
         drive(&mut slot, false, BattleCamPhase::Menu, None, None, 16);
         assert!(slot.is_none());
+    }
+
+    /// A Menu-phase entry with the formation already live snaps straight to
+    /// the case-9 formation-sized framing - no degenerate minimum-depth
+    /// frame while waiting for the first phase transition.
+    #[test]
+    fn drive_entry_sizes_to_the_live_formation() {
+        let formation = Some(FormationBox {
+            min: [-800.0, -800.0],
+            max: [800.0, 800.0],
+        });
+        let mut slot: Option<BattleCamera> = None;
+        drive(&mut slot, true, BattleCamPhase::Menu, None, formation, 0);
+        let p = slot.as_ref().unwrap().pose();
+        assert_eq!(p.tr, [0.0, 1280.0, 7680.0], "the traced far framing");
+        assert_eq!(p.focus, [0.0; 3]);
     }
 
     /// A battle that opens on dialogue snaps to the held close-up; any other
