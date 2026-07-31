@@ -1390,7 +1390,7 @@ mod battle_cam_web_tests {
 
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let yaw = slot.as_ref().unwrap().pose().yaw.rem_euclid(4096.0);
         // The SAME literals the native mirror asserts.
