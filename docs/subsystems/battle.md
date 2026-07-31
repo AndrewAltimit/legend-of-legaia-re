@@ -487,6 +487,50 @@ the four angle saves; leading TMD magic `0x80000002` at file `+4`,
 uncompressed). PROT 88/89/90 share identical geometry and differ only in
 texture payload.
 
+#### One primitive list, two texture classes
+
+A shell is not all texture. About a fifth of it by primitive count is
+`F*`/`G*` flat / gouraud panels that carry a baked colour word and no UVs -
+the sky band, the painted wall faces, the flat water. `town01`'s Tetsu arena
+is 325 textured triangles and 79 untextured; `map01`'s dome is 336 and 78.
+Retail draws them together: `FUN_8001ADA4` case 3 walks the whole group chain
+and the GPU takes `POLY_F*` packets as readily as `POLY_*T*` ones.
+
+The port has to reassemble that from two builders, because
+`tmd_to_vram_mesh` drops any prim with no UVs - such a prim samples nothing.
+The native window pairs it with `tmd_to_color_mesh` on the untextured
+pipeline; the browser page uses the single `tmd_to_vram_mesh_field_hybrid`
+mesh with a per-vertex textured flag. Both halves take the same second-copy
+transform (`ColorMesh::append_scaled` mirrors the textured builder's, winding
+reversal included), and both hosts must end up with the same triangle set -
+pinned by `the_backdrop_shells_untextured_half_is_a_double_digit_share` in
+`crates/engine-core/tests/battle_stage_entries_real.rs`. Rendering only the
+textured half punches holes in the arena wherever a sky panel belongs.
+
+#### The stage streams of one bundle share their VRAM
+
+A scene bundle carries one `scene_tmd_stream` per sub-area, and those streams
+are **not** allocated disjoint VRAM. Rim Elm's four (extraction entries
+6..=9) each declare the same two 4bpp pages, `(768, 0)` and `(832, 0)`, under
+the same two CLUT rows, `473` and `479`; the field texture pack puts a page
+at `(768, 0)` as well. Retail never has to arbitrate, because the chunk
+walker records one stream in `_DAT_8007B864` and only that one is resident.
+
+A port that DMAs every TIM in the bundle - which the battle resource build
+does, `BuildOptions::upload_all_tims` - leaves whichever sibling was written
+last holding the address, and the shell then draws through a neighbouring
+sub-area's texels and palette. `town01`'s semi-transparent cloud band
+(`(768, 0)` at `v` 191..254, palette `1` of row 473, a greyscale + STP ramp)
+came out as flat green rectangles standing on the arena wall, because the
+palette that won the row was one of the rainbow CLUT-cycling ramps a sibling
+parks at that index.
+
+`engine-core::scene::upload_battle_stage_tims_into_vram` re-uploads the
+selected entry's own TIMs last, restoring retail residency without touching
+the rest of the build. Both hosts call it from their `build_battle_stage`.
+Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
+`the_selected_stage_entry_owns_its_vram_after_the_reupload`.
+
 The shell is authored as **half** a bowl. That is the real shape, not a
 truncated parse: across all 182 entries object 0 puts at most 8 % of its X or
 Z extent past `X = 0` / `Z = 0`, and every object satisfies
@@ -752,6 +796,23 @@ in flight leaves both hosts in the per-action close-up for the entire fight,
 with one actor filling the frame and no idle orbit. Guards:
 `the_done_band_does_not_own_the_action_framing` and
 `a_real_turn_spends_most_of_its_frames_in_the_far_framing`.
+
+**Case 6 is re-armed every pass, so the framing chases the actor.** Each of
+the action states calls `FUN_801D5854(actor, 6)` before it does anything else
+- `0x0C`, `0x14`, `0x1F`, `0x20`, `0x32`, `0x37`, `0x3C`..`0x40`, `0x46`,
+`0x47` - so the three tween-target vectors are rebuilt out of the live actor
+record each display frame and `FUN_801D829C` re-emits the step table. The
+target is not frozen at the state change, and the difference is not cosmetic:
+`0x14` stages the approach walk and `0x19` runs it, so a party member crosses
+most of the gap to its target before the swing. A focus pinned to the vacated
+seat frames bare ground - at the close-up depth `prescale(0x500)` = 2048
+against 4x-scaled stage coordinates the whole formation leaves the frustum,
+several combatants behind the eye. `BattleCamera::retarget_action_glide` is
+the port's re-arm; it carries the armed segment's remaining step count over,
+so a framing whose actor stands still still arrives on target at
+`ACTION_STEPS`. One visible consequence: the fallback arm's yaw now follows
+the live `ctx[+0x6DA]` drift instead of freezing on its value at the phase
+change.
 
 The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
 `FUN_801F0348` derives from the framed monster's size class - with a style byte
