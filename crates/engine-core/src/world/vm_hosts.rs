@@ -1841,9 +1841,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// The retail range law (`FUN_8004E2F0`), computed from live state -
     /// see `World::battle_range_metric`
-    /// (`crate::world::battle::locomotion`). This used to read the dead
-    /// always-empty `World::range_table` map, which short-circuited every
-    /// approach state to "already in range".
+    /// (`crate::world::battle::locomotion`). Retail has no range *table* - the
+    /// engine's former one was always empty, which short-circuited every
+    /// approach state to "already in range"; it is gone.
     fn range_check(&self, attacker: u8, target: u8) -> u16 {
         self.world.battle_range_metric(attacker, target)
     }

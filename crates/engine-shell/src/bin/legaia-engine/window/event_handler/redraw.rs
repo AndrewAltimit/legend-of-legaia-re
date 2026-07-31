@@ -3,6 +3,23 @@
 
 use super::super::*;
 
+/// What the frame presents: the scene alone, or the scene with the
+/// field-to-battle transition's screen primitives composited over it.
+///
+/// A function rather than an inline expression because the screenshot
+/// harness has to capture the *same* target it presents - capturing a bare
+/// `Scene` there drops every transition style from the PNGs.
+fn present_target<'a>(
+    scene: &'a RenderScene<'a>,
+    prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+) -> RenderTarget<'a> {
+    if prims.is_empty() {
+        RenderTarget::Scene(scene)
+    } else {
+        RenderTarget::SceneWithScreenPrims { scene, prims }
+    }
+}
+
 impl PlayWindowApp {
     pub(super) fn handle_redraw(&mut self) {
         // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
@@ -1747,6 +1764,38 @@ impl PlayWindowApp {
                 overlay_text: Some(&overlay),
                 clear_color: scene_clear,
             };
+            legaia_engine_render::profile::mark("drawlist");
+            // On the frame the transition arms, land the field frame in the
+            // software VRAM the intro strips texture themselves with, and draw
+            // the rest of this frame against that page. Retail gets it for
+            // free - on the console the framebuffer *is* VRAM - so the port
+            // re-renders this scene offscreen and blits the readback in.
+            if let Some(v) = Self::capture_battle_intro_frame(
+                battle_intro.as_mut(),
+                r,
+                &scene,
+                self.cpu_vram_base.as_ref(),
+            ) {
+                // Keep the captured page GPU-resident for the whole
+                // transition: the capture is a one-shot, but every
+                // transition frame's primitives sample it (the curtain
+                // strips, and the tile shatter's pages + shade page).
+                self.battle_intro_vram = Some(v);
+            }
+            let scene = match (battle_intro.as_ref(), self.battle_intro_vram.as_ref()) {
+                (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
+                _ => scene,
+            };
+            // The intro's primitives composite *over* the scene in one frame.
+            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
+            // mode which clears and draws nothing but quads, so it could never
+            // carry a transition strip over a field scene.
+            //
+            // The target is built *before* the screenshot harness so a capture
+            // sees the frame that is presented. Capturing `Scene(&scene)` here
+            // instead would silently drop every transition style from the PNGs
+            // - the harness's own blind spot, not the emitter's.
+            let target = |scene| present_target(scene, &battle_intro_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
             // and exit after the capture at/past `--screenshot-last-tick`.
@@ -1758,7 +1807,7 @@ impl PlayWindowApp {
                 let path = sw.dir.join(format!("tick_{:05}.png", self.tick_no));
                 let last_tick = sw.last_tick;
                 self.sweep_next_tick = self.tick_no + sw.every;
-                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                match r.capture_rgba(target(&scene)) {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {
                             println!(
@@ -1795,7 +1844,7 @@ impl PlayWindowApp {
                     .as_ref()
                     .and_then(|sc| sc.path.clone())
                     .unwrap();
-                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                match r.capture_rgba(target(&scene)) {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {
                             println!(
@@ -1818,41 +1867,7 @@ impl PlayWindowApp {
                     }
                 }
             }
-            legaia_engine_render::profile::mark("drawlist");
-            // On the frame the transition arms, land the field frame in the
-            // software VRAM the intro strips texture themselves with, and draw
-            // the rest of this frame against that page. Retail gets it for
-            // free - on the console the framebuffer *is* VRAM - so the port
-            // re-renders this scene offscreen and blits the readback in.
-            if let Some(v) = Self::capture_battle_intro_frame(
-                battle_intro.as_mut(),
-                r,
-                &scene,
-                self.cpu_vram_base.as_ref(),
-            ) {
-                // Keep the captured page GPU-resident for the whole
-                // transition: the capture is a one-shot, but every
-                // transition frame's primitives sample it (the curtain
-                // strips, and the tile shatter's pages + shade page).
-                self.battle_intro_vram = Some(v);
-            }
-            let scene = match (battle_intro.as_ref(), self.battle_intro_vram.as_ref()) {
-                (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
-                _ => scene,
-            };
-            // The intro's primitives composite *over* the scene in one frame.
-            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
-            // mode which clears and draws nothing but quads, so it could never
-            // carry a transition strip over a field scene.
-            let target = if battle_intro_prims.is_empty() {
-                RenderTarget::Scene(&scene)
-            } else {
-                RenderTarget::SceneWithScreenPrims {
-                    scene: &scene,
-                    prims: &battle_intro_prims,
-                }
-            };
-            if let Err(e) = r.render(target) {
+            if let Err(e) = r.render(target(&scene)) {
                 log::error!("render: {e:#}");
             }
         }

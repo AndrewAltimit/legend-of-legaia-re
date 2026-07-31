@@ -307,8 +307,11 @@ pub struct World {
     /// state machine and the live cast path cannot price or classify the same
     /// spell differently. A pair of `HashMap`s here that nothing filled is
     /// exactly how they used to.
+    /// There is no melee-range table here either, for the same reason and by
+    /// the same evidence: retail computes reach (`FUN_8004E2F0`) from the
+    /// attacker's per-character base, both actors' size classes and their live
+    /// positions. [`World::battle_range_metric`] answers from those models.
     pub character_ability_bits: [u32; 8],
-    pub range_table: std::collections::HashMap<(u8, u8), u16>,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
     /// compute Tactical-Art damage. Engines populate from the active
     /// character record's weapon power. Default zero - un-populated slots
@@ -2385,7 +2388,6 @@ impl World {
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
             character_ability_bits: [0; 8],
-            range_table: Default::default(),
             battle_attack: [0; 8],
             battle_magic: [0; 8],
             battle_defense: [0; 8],
