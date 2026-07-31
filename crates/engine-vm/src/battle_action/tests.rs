@@ -920,6 +920,109 @@ fn done_fade_down_with_multi_cast_routes_to_multi_cast() {
     ));
 }
 
+/// Retail's Done-band exit is a test on the timer's **value**, re-run every
+/// pass (`bgez v0,0x801E6158` at `0x801E60F0`), not on the one frame the
+/// countdown crosses zero.
+///
+/// The difference only shows when something else holds the band on that exact
+/// frame: `ctx[+0x276]` up on the crossing pass used to consume the crossing
+/// and leave the state with no way out at all.
+#[test]
+fn the_done_band_still_leaves_after_the_menu_flag_clears_on_the_crossing_frame() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    ctx.menu_open = 1;
+    // The flag is up on the frame the countdown would have crossed, and for
+    // a good while after.
+    for _ in 0..40 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    // Retail pins the countdown at the `0xC` floor rather than letting it
+    // sink, so the tail still has twelve frames to run once the flag drops.
+    assert_eq!(ctx.frame_timer, super::done::DONE_MENU_HOLD_FRAMES);
+    ctx.menu_open = 0;
+    let mut passes = 0;
+    loop {
+        match step(&mut host, &mut ctx) {
+            StepOutcome::Stay => {
+                passes += 1;
+                assert!(passes < 64, "the Done band never left");
+            }
+            StepOutcome::Transition { to, .. } => {
+                assert_eq!(to, ActionState::EndOfAction.as_byte());
+                break;
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(
+        passes,
+        super::done::DONE_MENU_HOLD_FRAMES as usize,
+        "the floor's twelve frames still had to run"
+    );
+}
+
+/// The multi-cast branch re-seeds the countdown (`li v0,0xb4` at
+/// `0x801E6134`). Without it the state inherits an expired timer and the
+/// action never ends.
+#[test]
+fn the_multi_cast_branch_reseeds_its_own_timer_and_then_ends_the_action() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    ctx.multi_cast_gate = 1;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneMultiCast.as_byte()
+    ));
+    assert_eq!(ctx.frame_timer, super::done::DONE_MULTI_CAST_FRAMES);
+
+    let mut passes = 0;
+    loop {
+        match step(&mut host, &mut ctx) {
+            StepOutcome::Stay => {
+                passes += 1;
+                assert!(passes < 256, "DoneMultiCast parked on an expired timer");
+            }
+            StepOutcome::Transition { to, .. } => {
+                assert_eq!(to, ActionState::EndOfAction.as_byte());
+                break;
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(passes, super::done::DONE_MULTI_CAST_FRAMES as usize);
+    assert_eq!(ctx.multi_cast_gate, 0, "the gate is consumed");
+}
+
+/// The whole Done band is bounded by `ctx[+0x6D8]`, and a settling HP bar
+/// only *freezes* the countdown - it never removes the bound. Once the
+/// readout has converged the remaining frames run out on schedule.
+#[test]
+fn a_settling_hp_bar_freezes_the_done_countdown_without_unbounding_it() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 4;
+    // Target the acting party slot and leave its readout short of live HP.
+    host.actors[0].active_target = 0;
+    host.actors[0].hp = 40;
+    host.actors[0].hp_display = Some(90);
+    for _ in 0..30 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    assert_eq!(ctx.frame_timer, 4, "the countdown is frozen, not spent");
+    host.actors[0].hp_display = Some(40);
+    for _ in 0..4 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    assert!(matches!(
+        step(&mut host, &mut ctx),
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+    ));
+}
+
 #[test]
 fn end_of_action_party_wipe_signals_battle_end() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);

@@ -917,6 +917,44 @@ Two further instrumentation facts, measured on the Gaza 2 save:
   (~84k vsyncs, twelve Final Heal revives, one menu heal, no harness write to
   any HP / readout / accumulator field) produced zero of either.
 
+### The exit is a test on the value, not on the crossing
+
+Three details of the `0x51` arm decide *when* the band leaves, and all three are
+about the shape of the test rather than the countdown itself
+(`0x801E60B8..0x801E6148`):
+
+1. **The decrement stops at the sign change.** `bltz v0,0x801E60C4` at
+   `0x801E605C` skips the store once the timer is already negative, so the value
+   parks at `-1`-ish instead of running away.
+2. **`ctx[+0x276]` pins a floor of `0xC`.** `slti v0,v0,0xc` / `li v0,0xc` /
+   `sh v0,0x2(s7)` at `0x801E60C0..0x801E60E4` re-raise the countdown to twelve
+   for as long as the menu flag is up - so the band's own tail-cue block (which
+   runs *below* `0xC`) never starts early, and when the flag drops the last
+   twelve frames still have to run.
+3. **The exit re-tests the value every pass.** `bgez v0,0x801E6158` at
+   `0x801E60F0` reads `ctx[+0x6D8]` fresh; `bne v0,zero,0x801E614C` at
+   `0x801E610C` then holds the transition while `ctx[+0x276]` is up. Nothing in
+   the arm records "the countdown crossed zero on this frame".
+
+Point 3 is the one a port can get wrong invisibly, because both spellings agree
+on every pass where nothing else holds the band. They diverge only when the menu
+flag is up on the single frame the countdown would cross: an
+exit conditioned on the *crossing* consumes it and the state then has no exit at
+all, which is a park rather than retail's bounded tail. The engine's
+`done_fade_down` is written against the value.
+
+The `0x52` branch carries a fourth: taking it **re-seeds** the countdown with
+`0xB4` (`li v0,0xb4` / `sh v0,0x2(s7)` at `0x801E6134` / `0x801E6138`) before
+stamping the state. A port that routes to the multi-cast state without the
+re-seed hands it a timer that has already expired, and a state waiting on a
+countdown that can no longer start is the same park by a different route.
+
+The `0x50` seed itself is `0x3C` on all three of its paths (`0x801E5EE8` /
+`0x801E5EFC` / `0x801E5F24` all converge on the store at `0x801E5F28`), with one
+override the port does not carry: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds
+`0x96` when `ctx[+0x26]` is non-zero. That byte has no other reader in the
+ported band, so the engine always takes the `0x3C` arm.
+
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
 The endless-camera-orbit symptom has (at least) two parks behind it, and the
