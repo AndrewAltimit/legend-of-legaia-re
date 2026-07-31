@@ -318,13 +318,23 @@ impl PlayWindowApp {
                 let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
                 let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
                 let mesh = effect_billboard_mesh(r, &sprites, right, up);
-                let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
-                let lines = match r.upload_lines(&pos, &col, &idx) {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        log::warn!("effect outline lines upload: {e:#}");
-                        None
+                // The wireframe outline is a **diagnostic**, off by default
+                // (`LEGAIA_DIAG_FX=1`). It exists to make a spawn readable
+                // when its texels are not resident, and it predates the
+                // battle-entry flame-atlas blit; with the atlas resident the
+                // textured quad draws, and leaving the outline on stamps a
+                // bright rectangle over every effect in normal play.
+                let lines = if std::env::var_os("LEGAIA_DIAG_FX").is_some() {
+                    let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
+                    match r.upload_lines(&pos, &col, &idx) {
+                        Ok(m) => Some(m),
+                        Err(e) => {
+                            log::warn!("effect outline lines upload: {e:#}");
+                            None
+                        }
                     }
+                } else {
+                    None
                 };
                 (mesh, lines)
             }

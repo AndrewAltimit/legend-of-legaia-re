@@ -103,9 +103,14 @@ pub(crate) fn effect_billboard_mesh(
 
 /// Build a tinted outline for each effect billboard through the Lines
 /// pipeline (a camera-facing rectangle, sized from the sprite atlas, faded by
-/// age). This keeps spawned effects visible while the textured-quad's VRAM
-/// source is unpinned - the billboard's geometry and animation are faithful
-/// even when its texels are not yet resident.
+/// age).
+///
+/// **Diagnostic only** (`LEGAIA_DIAG_FX=1`), because retail draws no such
+/// rectangle. It makes a spawn readable when the textured quad samples texels
+/// that are not resident - the billboard's geometry and animation are faithful
+/// even when its pixels are not. In a battle the flame atlas + CLUT rows are
+/// blitted at battle entry, so the quad itself draws and the outline is only
+/// in the way.
 pub(crate) fn effect_sprite_line_geometry(
     sprites: &[legaia_engine_core::world::EffectSprite],
     right: Vec3,
