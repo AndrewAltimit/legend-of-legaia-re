@@ -13,14 +13,21 @@
 //!
 //! # NOT WIRED
 //!
-//! The tween is one step of `FUN_80050120`, the per-actor tint state machine,
-//! and that machine's state is what is missing: the per-actor step-scale byte
-//! and the "tween is running" flag both live on the actor struct outside the
-//! range `BattleActor` models, so nothing can supply `step_scale` or decide
-//! which slots are mid-tween on a given frame. The word it eases,
-//! `actor[+0x4]`, *is* on the port (`BattleActor::render_color`, which the
-//! target-select cursor `FUN_801DA6B4` stamps), so this is the second half of
-//! that pair - it becomes wirable as soon as the tint SM's own state lands.
+//! The tween is one step of `FUN_80050120`, the per-actor **tint state
+//! machine**, and that machine is what is missing - not positions (it is
+//! unrelated to battle motion; `funcs/80050120.txt` shows it eases only the
+//! colour word `actor[+0x4]`). Precisely: `FUN_80050120` is an 11-state
+//! jump-table SM (table at `0x8001532C`) keyed on the per-actor state byte
+//! `actor[+0x21C]` (which the port models as `BattleActor::render_flag`, but
+//! only ever writes with the cursor/summon values `0`/`2`/`5`/`200`/`0xFF`,
+//! never the tween states), with a per-actor hold counter at `actor[+0xC]`
+//! (unmodelled - distinct from `render_scale`'s snapshot use) and per-state
+//! target triples (`0x80` neutral, `0x20` dimmed, ...). Wiring means porting
+//! that state ladder and driving it from the per-frame battle tick slot
+//! retail uses (`FUN_80046A20` calls it right after `FUN_8004DC68`); the
+//! ease arithmetic below is complete and tested, and the word it eases,
+//! `BattleActor::render_color`, is already live (the target-select cursor
+//! stamps it).
 
 /// One channel stepped toward `target` by at most `max_delta`, clamping exactly
 /// on the target without overshoot. Signed so a channel may pass through zero
