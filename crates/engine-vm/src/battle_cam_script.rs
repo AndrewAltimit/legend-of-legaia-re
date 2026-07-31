@@ -1275,6 +1275,43 @@ impl BattleCamera {
         self.step_components(&g);
     }
 
+    /// Re-arm case 6's tween on the **live** acting actor.
+    ///
+    /// The action SM reaches `FUN_801D5854(actor, 6)` from every one of its
+    /// action states on every pass - `0x0C`, `0x14`, `0x1F`, `0x20`, `0x32`,
+    /// `0x37`, `0x3C`..`0x40`, `0x46`, `0x47` all call it before they do
+    /// anything else - so case 6 rebuilds its three tween-target vectors out
+    /// of the live actor record each display frame and hands them to
+    /// `FUN_801D829C`, which re-emits the step table. The framing therefore
+    /// *chases* the actor rather than gliding to a target frozen at the state
+    /// change, which matters because the attack states move the actor:
+    /// `0x14` stages the approach walk and `0x19` runs it, so a party member
+    /// crosses most of the gap to its target before the swing. A focus pinned
+    /// to the seat it left frames an empty patch of ground - at the traced
+    /// close-up depth (`prescale(0x500)` = 2048 against 4x-scaled stage
+    /// coordinates) the whole formation ends up outside the frustum, several
+    /// combatants behind the eye.
+    ///
+    /// The remaining step count is carried over from the armed segment, so a
+    /// framing whose actor never moves steps exactly as the frozen glide did
+    /// and still arrives on the target at step [`ACTION_STEPS`].
+    ///
+    /// REF: FUN_801D5854 (case 6), FUN_801D829C (the step-table builder)
+    fn retarget_action_glide(&mut self) {
+        let live = self.action_pose();
+        let raw_z = self.live_action_framing().raw_z();
+        let steps = self
+            .glides
+            .front()
+            .and_then(|g| g.steps_left)
+            .unwrap_or(ACTION_STEPS);
+        let mut from = self.pose;
+        let g = Glide::linear(&mut from, live, raw_z, steps, true);
+        self.pose = from;
+        self.glides.clear();
+        self.glides.push_back(g);
+    }
+
     /// One rate-limited step of every driven component (all but yaw, which
     /// only moves when the segment owns it - otherwise the idle orbit does).
     fn step_components(&mut self, g: &Glide) {
@@ -1310,12 +1347,13 @@ impl BattleCamera {
         // same tween builder again - so whenever an arm fires it is the
         // per-art target the walker steps toward this frame, not case 6's.
         // An art with no arm returns `None` and case 6's glide stands.
-        if self.phase == BattleCamPhase::Action
-            && let Some(f) = self.attack_framing()
-        {
-            self.glides.clear();
-            self.step_toward_attack_pose(f);
-            return;
+        if self.phase == BattleCamPhase::Action {
+            if let Some(f) = self.attack_framing() {
+                self.glides.clear();
+                self.step_toward_attack_pose(f);
+                return;
+            }
+            self.retarget_action_glide();
         }
         let Some(g) = self.glides.front().copied() else {
             return;
@@ -2229,10 +2267,14 @@ mod tests {
             drive(&mut slot, true, action, 200 + f * 2, None);
         }
         let first = slot.as_ref().unwrap().framing_pose().yaw;
-        // The framing is built when the phase changes, so the target is the
-        // counter's value at that instant (retail re-arms case 6 on every
-        // action-SM state transition, which the port does not model).
-        assert_eq!(first.rem_euclid(4096.0), 200.0, "yaw_base at phase entry");
+        // Case 6 is re-armed on every action-SM pass, so the framing chases
+        // the counter rather than freezing on its value at the phase change:
+        // 200 at entry plus the 12 display frames the glide spans.
+        assert_eq!(
+            first.rem_euclid(4096.0),
+            200.0 + (ACTION_STEPS as f32) * 2.0,
+            "yaw_base chases the live counter"
+        );
         // A later action frames from a different angle.
         drive(&mut slot, true, inputs, 400, None);
         for f in 0..=ACTION_STEPS as u64 {
