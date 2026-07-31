@@ -693,7 +693,19 @@ impl BattleTutorialScript {
             if end == 0 {
                 continue;
             }
-            // Retail uses '|' as the hard line break inside a prompt box.
+            // Retail uses '|' as the hard line break inside a prompt box:
+            // `FUN_8003CBA8` seeds its counter at 1 and bumps it once per
+            // `0x7C`, so mapping the byte to '\n' makes `str::lines()` agree
+            // with the retail line count the box height is built from.
+            //
+            // Divergence, deliberate and narrow: that same walk *skips a
+            // second byte* whenever `(b & 0xF0) == 0xC0`, i.e. the `0xC0..=0xCF`
+            // markers are two-byte escapes and neither byte is a glyph. This
+            // decode maps every byte through, so a prompt carrying one would
+            // measure two glyphs too wide and render them as garbage. No
+            // retail prompt string in the 0967 corpus does, which is why the
+            // simple map holds; a corpus that gains one needs the escape walk
+            // here and in `battle_tutorial_text_width`.
             let text: String = tail[..end]
                 .iter()
                 .map(|&b| if b == b'|' { '\n' } else { b as char })
