@@ -14,9 +14,10 @@
 //!    halves - `append_scaled` doubles the shell), the ground grid, and one
 //!    mesh per bound actor with index-parallel transforms (`5` floats each)
 //!    and a non-empty pose for every poseable actor (rest fallback counts).
-//! 3. **The camera export is live**: the menu framing reports `active` with
-//!    the formation-sized depth at or above the retail floor, and the idle
-//!    orbit moves yaw across ticks.
+//! 3. **The camera export is live**: the battle opens on the far menu framing
+//!    with the formation-sized depth at or above the retail floor, and an
+//!    executing action takes the camera into the per-action close-up with a
+//!    pose that actually moves.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
