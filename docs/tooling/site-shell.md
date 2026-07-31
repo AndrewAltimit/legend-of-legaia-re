@@ -44,22 +44,36 @@ The hamburger lives *inside* the top bar rather than floating over the page.
 A floating button needs the content column to reserve a strip for it; an in-bar
 button needs nothing, and can never sit on top of a paragraph.
 
-## Wide tables
+## What makes a page wider than the phone
 
-A bare `<table>` is `display: table`, and `overflow` does not make a scroll
-container out of a table box - so a wide reference table widens the whole
-document instead of scrolling inside it. `.table-wrap` is the scrolling
-container; `wrapWideTables()` in `layout.js` puts one around every prose table
-at layout time, before any page script builds tables of its own.
+Three shapes, all of which size the *document* rather than only their own box,
+because the page is laid out to its widest min-content:
+
+- **A bare `<table>`.** It is `display: table`, and `overflow` does not make a
+  scroll container out of a table box. `.table-wrap` is the scroller;
+  `wrapWideTables()` in `layout.js` puts one around every prose table at layout
+  time, before any page script builds tables of its own.
+- **An unbreakable token** - `overlay_0897_801ef2b0`, `PTR_DAT_8007436C[id*3]`,
+  a bare `ghidra/scripts/funcs/...` path in running text. `.content` takes
+  `overflow-wrap: anywhere` below the breakpoint; it is inherited, so it
+  reaches inline code, links, list items and table cells alike. `anywhere`
+  rather than `break-word` on purpose - only `anywhere` lowers min-content
+  width, which is the quantity being sized to. Scoped to the breakpoint so
+  desktop column widths, computed from the same min-content, do not move.
+  `pre` is unaffected: `white-space: pre` never wraps.
+- **A canvas sized by its HTML attributes.** `<canvas width="600">` with no CSS
+  cap lays out at 600px. Cap it with `max-width: 100%` - hit-testing that
+  already scales by `canvas.width / rect.width` costs nothing.
 
 ## The cascade-order trap
 
 A `@media` block contributes **nothing** to specificity. These two rules are
-both specificity `(0,1,0)`:
+both specificity `(0,1,0)`, and the shipped stylesheet had them 2500 lines
+apart in this order:
 
 ```css
-@media (max-width: 880px) { .rail { display: none; } }   /* line 406 */
-.rail { display: flex; }                                 /* line 2941 */
+@media (max-width: 880px) { .rail { display: none; } }
+.rail { display: flex; }
 ```
 
 The later one wins, at every viewport width. The breakpoint is dead code that
@@ -69,10 +83,10 @@ layout", because the *other* half of the same block does apply: `.app`'s
 loses its offset while the fixed 76px rail keeps painting over it. Content laid
 out full-width, rendered underneath the rail.
 
-Both halves of the shipped instance had this shape (`.rail`'s `display`, and a
-`.content { padding-top }` swallowed by a later `padding` shorthand). Both came
-from the same cause: the shell is declared in three places in one 3300-line
-stylesheet, and the responsive block sat above two of them.
+The second instance in that same block had the shorthand form: a
+`.content { padding-top }` swallowed by a later `padding`. Both came from one
+cause - the shell is declared in three places in a single long stylesheet, and
+the responsive block sat above two of them.
 
 **The convention:** `site/css/styles.css` ends with a `Responsive shell`
 section holding every shell breakpoint, after all three shell declarations.
