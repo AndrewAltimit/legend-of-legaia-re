@@ -38,7 +38,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::battle_hud::{
-    BattleHud, DamagePopup, battle_plaque_label, encounter_banner_enabled, encounter_banner_label,
+    BattleHud, DamagePopup, battle_active_actor, encounter_banner_enabled, encounter_banner_label,
     sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
@@ -393,14 +393,27 @@ impl LegaiaRuntime {
         surface_h: u32,
     ) -> ui::BattleHudDraws {
         let font = assets.font_ref();
-        let plaque = self
+        let active = self
             .scene_host
             .as_ref()
-            .and_then(|h| battle_plaque_label(&h.world));
+            .and_then(|h| battle_active_actor(&h.world));
+        // The arts-input session owns both halves of the park: it names the
+        // actor whose full-width bar shows, and its being open is what sends
+        // the roster panels off-screen.
         let parked = self
             .scene_host
             .as_ref()
-            .is_some_and(|h| h.world.battle_arts_menu.is_some());
+            .is_some_and(|h| h.world.arts_input_active());
+        let active = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.arts_input_actor())
+            .and_then(|slot| active.map(|(_, name)| (slot, name)))
+            .or_else(|| {
+                self.scene_host
+                    .as_ref()
+                    .and_then(|h| battle_active_actor(&h.world))
+            });
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -410,7 +423,8 @@ impl LegaiaRuntime {
                 solid_src: ui::font_solid_src(font),
                 surface: (surface_w, surface_h),
                 chrome: assets.chrome_rects(),
-                plaque: plaque.as_deref(),
+                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
                 input_session_parked: parked,
@@ -957,28 +971,33 @@ mod live_hud_tests {
             "player-driven battle opens the command menu"
         );
 
-        // (1) The retail party strip reaches the page's overlay draw list.
-        // 960x720 -> stage scale 3, origin (0,0), so the measured band
-        // (stage y 188..=207, glyph row 194) lands at surface y 564 / 582.
-        // The strip's skin is an atlas sprite, its numerals are glyphs, and
-        // retail draws NO gauge bar inside it - all three are asserted, so
-        // neither a lost strip nor a resurrected bar can pass.
-        const STRIP_TOP: i64 = 188 * 3;
-        const STRIP_BOT: i64 = 208 * 3;
-        const STRIP_TEXT: i64 = 194 * 3;
+        // (1) The retail party surface reaches the page's overlay draw list.
+        // 960x720 -> stage scale 3, origin (0,0). At rest that surface is the
+        // roster panels (102x48 at the packet-pinned seats, `y 164`); the
+        // acting member's readout moves to the full-width bar at `y 188`.
+        // Whichever is up, retail draws NO gauge bar inside either - all of
+        // that is asserted, so neither a lost surface nor a resurrected bar
+        // can pass.
+        const PANEL_ROW: i64 = 164 * 3;
+        const PANEL_BOT: i64 = (164 + 48) * 3;
+        const BAR_ROW: i64 = 188 * 3;
         let json = rt.play_overlay_draws_json(960, 720);
         let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
         let texts = v["texts"].as_array().expect("texts array");
         let sprites = v["sprites"].as_array().expect("sprites array");
+        let in_band = |a: &[serde_json::Value], y0: i64, y1: i64| {
+            a.iter()
+                .filter(|t| t["dst"][1].as_i64().is_some_and(|y| (y0..y1).contains(&y)))
+                .count()
+        };
         assert!(
-            sprites.iter().any(|s| s["dst"][1]
-                .as_i64()
-                .is_some_and(|y| (STRIP_TOP..STRIP_BOT).contains(&y))),
-            "no strip chrome sprite on the measured band"
+            in_band(sprites, PANEL_ROW, PANEL_BOT) > 0
+                || in_band(sprites, BAR_ROW, BAR_ROW + 60) > 0,
+            "no party chrome sprite on either packet-pinned band"
         );
         assert!(
-            texts.iter().any(|t| t["dst"][1] == STRIP_TEXT),
-            "no strip glyph on the measured text row"
+            in_band(texts, PANEL_ROW, PANEL_BOT) > 0 || in_band(texts, BAR_ROW, BAR_ROW + 60) > 0,
+            "no party glyph on either packet-pinned band"
         );
         for t in texts {
             let (Some(y), Some(w), Some(h)) = (
@@ -988,11 +1007,19 @@ mod live_hud_tests {
             ) else {
                 continue;
             };
-            let solid = t["src"][2] == 1 && t["src"][3] == 1;
-            let inside = (STRIP_TOP..STRIP_BOT).contains(&y);
+            if t["src"][2] != 1 || t["src"][3] != 1 {
+                continue;
+            }
+            if !(PANEL_ROW..BAR_ROW + 60).contains(&y) {
+                continue;
+            }
+            // Every solid rect on the retail surface is a plate body or one
+            // of the 1-px rims the chrome-less fallback draws round it.
+            let rim = w == 3 || h == 3;
+            let plate = h == 20 * 3 || (w, h) == (102 * 3, 48 * 3);
             assert!(
-                !(solid && inside && h < 18 * 3 && w < 300 * 3),
-                "a gauge bar survives inside the retail strip: {:?}",
+                rim || plate,
+                "a gauge bar survives on the retail party surface: {:?}",
                 t["dst"]
             );
         }

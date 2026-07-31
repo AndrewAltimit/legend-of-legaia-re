@@ -793,22 +793,35 @@ pub fn battle_enemy_target_rows(
     )
 }
 
-/// Label for the battle screen's top-left plaque.
+/// The actor the current battle frame belongs to: `(actor-table slot, name)`.
 ///
-/// Retail keeps a small framed plaque in the top-left corner naming the
-/// actor the frame belongs to - the party member whose action is landing,
-/// the monster through an enemy turn. The engine's battle model carries no
-/// "acting actor" cursor yet, so this returns the first live monster's name
-/// (catalog name when the formation resolved one, `M<n>` otherwise). That is
-/// deliberately also where the port's monster readout now lives: retail's
-/// HUD draws **no monster gauge at all**
-/// (`docs/subsystems/battle-action.md`), so the plaque name is the whole of
-/// what a monster contributes to the drawn surface.
+/// Retail's battle screen keys two surfaces off this actor - the top-left
+/// name plaque (`battle_chrome::name_plaque`, which reads "Vahn" on his turn
+/// and the monster's name through its attack) and the full-width active-actor
+/// bar, which replaces the resting per-member panels for exactly this actor.
 ///
-/// `None` once every formation slot is cleared, which is what stops the
-/// plaque drawing over the victory frames.
-pub fn battle_plaque_label(world: &crate::world::World) -> Option<String> {
+/// The engine has no single "whose turn is it" cursor, so this reads the two
+/// states it does have, in retail's own precedence: an open command session
+/// names its acting party member; otherwise the first live monster stands in
+/// for the enemy turn. That fallback is also the port's whole **monster**
+/// readout - retail's HUD draws no monster gauge at all
+/// (`docs/subsystems/battle-action.md`), so a monster's name is all it
+/// contributes to the drawn surface.
+///
+/// `None` with no command session and every formation slot cleared, which is
+/// what stops the plaque drawing over the victory frames.
+pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> {
     let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    if let Some(cmd) = world.battle_command.as_ref() {
+        let names = crate::field_menu_dispatch::roster_names(world);
+        let ordinal = (cmd.party_slot as usize).min(pc.saturating_sub(1));
+        let name = names
+            .get(world.party_roster_slot(ordinal))
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("P{}", ordinal + 1));
+        return Some((cmd.actor, name));
+    }
     const MAX_FORMATION_MONSTERS: usize = 5;
     for (i, a) in world
         .actors
@@ -820,12 +833,13 @@ pub fn battle_plaque_label(world: &crate::world::World) -> Option<String> {
         if a.battle.max_hp == 0 || a.battle.hp == 0 {
             continue;
         }
-        return Some(
+        return Some((
+            i as u8,
             a.battle_monster_id
                 .and_then(|id| world.monster_catalog.get(id))
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("M{}", i - pc + 1)),
-        );
+        ));
     }
     None
 }

@@ -2134,58 +2134,62 @@ full-width active-actor readout, and none for monsters either. Filled bars and
 monster rows are engine additions rather than approximations of a retail
 surface, and both sit behind `LEGAIA_DIAG_HUD`.
 
-**The party strip.** One full-width lozenge per live party member across the
-bottom of the 320x240 stage. Every column is measured per-pixel off a native
-320x228 framebuffer grab of a solo-Vahn battle: the lozenge spans `x 8..=311`
-by `y 188..=207` with 6-px chamfered caps, and its single glyph row at `y 194`
-carries the name at `x 16`, the gold `HP` label sprite at `x 80`, the current
-HP right-aligned to `x 132`, a `/` at `x 137`, the maximum right-aligned to
-`x 176`, then the green `MP` label at `x 192` with its own pair right-aligned
-to `x 236` and `x 272` around a `/` at `x 241`. The label cells are
-`OVERLAY_SYSTEM_UI_LABEL_HP` / `_MP` - the same two the pause menu's party
-panel draws.
+**Two party surfaces, mutually exclusive.** Retail's party readout is not one
+widget. At rest each live member gets a **roster panel** - a 102x48 plate at
+`y = 164`, seated at `x = 109` solo, `58` / `160` for a pair, `7` / `109` /
+`211` for a trio - carrying the name and level on its top cell, then an HP row
+and an MP row. The member currently entering a command or acting instead takes
+the **active-actor bar**: one plate run at `(8, 188)` with a 288-px interior,
+so it spans `x 8..=312`. The bar does not hide the panels by not drawing them;
+retail parks the whole cluster at `y = 230`, under its 228-line display window.
+Seats, sub-palettes and the 3-slice plate law are pinned in
+`engine-vm::battle_chrome`; `engine-ui` mirrors the seats as literals because
+it sits below `engine-vm` in the crate graph, and `engine-shell`'s HUD tests
+pin the two sets equal.
 
-Retail draws **no gauge bar of any kind** inside the strip; it is name plus
-numerals plus the two label sprites, and nothing else. A four-digit HP fits
-because the numerals are right-aligned, which is what a second reference frame
-at 2318/2318 fixes.
+A single-surface reading of the same screen - "one full-width lozenge per live
+member" - is what a solo capture shows when that member happens to be acting,
+and it is wrong for a resting party. The display-list walk is what separates
+the two cases.
 
-**What is not pinned here.** The lozenge *skin* has no atlas cell yet, so the
-strip and the plaque draw in the shared blue-gradient interior under the gold
-9-slice frame. The multi-member layout is an inference: retail's party-row
-widget is per-ordinal (`FUN_8002C69C` kinds `0x33` / `0x34` / `0x35` each call
-`FUN_8002C2E4` with `a0 = 0 / 1 / 2`), each kind rides its own screen element,
-and `FUN_80031D00` reads that element's own `+0xE` / `+0x10` as the pen - so
-retail positions each member's row independently and no captured frame pins
-where. The port stacks one identical strip per member, bottom row on the
-pinned band, which keeps every measured column exact for every member. One
-engine-wide caveat rides all of it: retail's display window is 228 lines while
-the engine stage is 240, so the strip's `y 188` leaves 32 stage lines under it
-here against retail's 20.
+Inside the bar: name pen `(16, 192)`, the `HP` label cell at `(80, 194)`, the
+current HP right-aligned to `x = 134`, a `/` sprite at `(136, 188)`, the
+maximum running forward from `x = 154`, then the `MP` label at `(192, 194)`
+with its own pair right-aligned to `238` and running from `258` around a `/`
+at `(240, 188)`. A *current* value is right-aligned and its *maximum* is not -
+that asymmetry is what keeps a four-digit HP inside its own field. The panel
+rows carry the same two fields against `CUR_RIGHT = 57` / `MAX_LEFT = 73`.
 
-**Falsified.** `FUN_801D84C0`'s per-party-size anchor table (solo `0x72`, pair
-`0x3F`/`0xA5`, trio `0x0C`/`0x72`) and `FUN_801DBC30`'s `0x40`-px label-strip
-blit do **not** position this HUD. Retail's solo name sits at stage `x 0x10`;
-the solo anchor would put a `0x40`-wide plate at `x 0x6A..0xA9`, nowhere near
-it. `engine-vm::battle_party_panel` stays the canonical port of those two
-functions and `engine-ui` still mirrors the table for the equality test, but
-the strip does not read it, and what the table really positions is open.
+Retail draws **no gauge bar of any kind** on either surface - the display-list
+walk carries no bar primitive in either readout.
 
-**The plaque.** Retail keeps a small framed plaque in the top-left corner
-naming the actor the frame belongs to - the party member whose action is
-landing, the monster through an enemy turn. Measured: art box `x 8..=50` by
-`y 8..=27` for a four-glyph name, label at `(16, 14)`, i.e. an `(8, 6)` inset
-and a 9-px right pad, so the box tracks the label. `battle_hud::battle_plaque_label`
-supplies it. This is also where the port's **monster readout** lives now:
+The `LV`, `HP` and `MP` label cells are three texels in **one** sub-palette
+(CLUT row 511 sub-palette 1); the gold-vs-green difference is baked into the
+texels, not resolved per label, so they draw untinted.
+
+**The plaque.** A carved-gold plate at `(8, 8)` naming the actor the frame
+belongs to - the party member on his turn, the monster through its attack -
+whose interior is sized to the **measured** name (plus a 20-px element badge
+and a 5-px gap when the actor carries one). `name_plaque` lays it out; its
+parked seat is `(8, -24)`, so retail slides it in from above. The port draws
+the live seat only. This is also where the port's **monster readout** lives:
 retail draws no monster gauge at all, so a monster's name is the whole of what
-it contributes to the drawn surface.
+it contributes to the drawn surface. `battle_hud::battle_active_actor` picks
+the actor.
 
-**Parked during input.** Retail parks the status plate off-screen while a
-command-entry session owns the frame (its draws move to `y = 230`, under the
-228-line display window - see
-[`minigame-muscle-dome.md`](minigame-muscle-dome.md)). The port emits no strip
-at all instead, since the engine stage is 12 lines taller and `y = 230` would
-still be visible.
+**Not pinned, and marked as such in the builder.** The 102x48 marbled panel
+background, the plate row's own 3-slice tiles and the 8x16 `/` separator have
+no rect in the engine's system-UI atlas set yet, so a plate draws as the shared
+blue dialog gradient under the gold 9-slice frame at the pinned footprint, and
+the separator as a font glyph. Numerals are font glyphs rather than retail's
+8x12 menu-atlas digit cells. The status element's badge art (`0x18..=0x20`)
+and its caller-supplied pen are unpinned, so the selected id draws as a
+labelled tag inside the member's own panel.
+
+**Parked during input.** The port emits no panel draws at all while a
+command-entry session owns the frame, rather than drawing at retail's parked
+`y = 230`: the engine stage is 240 lines against retail's 228-line display
+window, so `y = 230` would still be visible here.
 
 **Diagnostic surface** (`LEGAIA_DIAG_HUD` set to anything but `0` / empty).
 Everything the port used to draw unconditionally and retail does not: monster
@@ -2225,7 +2229,7 @@ The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it wit
 
 The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
 
-Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. Only the **ailment** arm reaches the default surface, as a labelled badge in the member's own right-hand strip gutter - the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not, and retail's own element pen is caller-supplied and unpinned. The no-ailment arm (base marker `0x0A` plus the level) is diagnostic-only: neither retail reference frame shows a marker or a level anywhere near the strip. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ailment arm draws as a labelled tag inside the same panel: the retail **sprite sheet** for `0x18..=0x20` is not resolved and retail's own element pen is caller-supplied, so the selection is ported and both the pixels and the seat are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 

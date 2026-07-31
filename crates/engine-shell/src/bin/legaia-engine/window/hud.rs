@@ -1797,7 +1797,17 @@ impl PlayWindowApp {
     ) -> legaia_engine_render::BattleHudDraws {
         let slots = battle_hud_slot_views(&self.battle_hud);
         let popups = battle_hud_popup_views(&self.battle_hud);
-        let plaque = legaia_engine_core::battle_hud::battle_plaque_label(&self.session.host.world);
+        let w_ref = &self.session.host.world;
+        // The arts-input session owns both halves of the park: it names the
+        // actor whose full-width bar shows, and its being open is what sends
+        // the roster panels off-screen.
+        let active = w_ref
+            .arts_input_actor()
+            .and_then(|slot| {
+                legaia_engine_core::battle_hud::battle_active_actor(w_ref)
+                    .map(|(_, name)| (slot, name))
+            })
+            .or_else(|| legaia_engine_core::battle_hud::battle_active_actor(w_ref));
         battle_hud_draws_for(
             &self.font,
             &legaia_engine_render::BattleHudFrame {
@@ -1807,10 +1817,11 @@ impl PlayWindowApp {
                 solid_src: self.battle_hud_solid_src(),
                 surface: (w, h),
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
-                plaque: plaque.as_deref(),
+                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.
-                input_session_parked: self.session.host.world.battle_arts_menu.is_some(),
+                input_session_parked: w_ref.arts_input_active(),
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
@@ -1943,9 +1954,6 @@ mod battle_hud_wiring_tests {
     /// columns are readable straight off `dst.0`.
     const SURFACE: (u32, u32) = (640, 480);
     const STAGE_SCALE: i32 = 2;
-    /// The pinned retail strip band (`y 188..=207`) and its glyph row.
-    const STRIP_Y: i32 = 188;
-    const STRIP_TEXT_Y: i32 = STRIP_Y + 6;
 
     fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
         let mut hud = BattleHud::new();
@@ -1981,48 +1989,117 @@ mod battle_hud_wiring_tests {
         )
     }
 
+    /// Solid rects of exactly `(w, h)` stage pixels, by stage `(x, y)`.
+    fn boxes_of(draws: &[legaia_engine_render::TextDraw], w: i32, h: i32) -> Vec<(i32, i32)> {
+        draws
+            .iter()
+            .filter(|d| {
+                d.src == SOLID
+                    && d.dst.2 == (w * STAGE_SCALE) as u32
+                    && d.dst.3 == (h * STAGE_SCALE) as u32
+            })
+            .map(|d| (d.dst.0 / STAGE_SCALE, d.dst.1 / STAGE_SCALE))
+            .collect()
+    }
+
     fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
         frame_draws(hud, false).text
     }
 
-    /// The party arm draws retail's shape: one full-width lozenge on the
-    /// pinned band with its glyph row at `y 194`, and **no gauge bar**.
+    /// The party arm draws retail's resting surface: one 102x48 roster panel
+    /// per live member at `battle_chrome::panel_seats`, and **no gauge bar**.
     ///
-    /// The retail capture (`captures/tetsu_idle`, a native 320x228 solo-Vahn
-    /// frame) holds no green fill anywhere in the strip, so a filled HP or MP
-    /// bar on the party row is the defect this pins shut. The chrome-less
-    /// fallback still emits the lozenge body, which is what the `SOLID` rect
-    /// spanning the full strip width proves.
+    /// The packet run carries no bar primitive in either readout, so a filled
+    /// HP or MP bar on a party row is the defect this pins shut.
     #[test]
-    fn native_battle_strip_is_retail_shaped_and_barless() {
+    fn native_battle_party_is_retail_shaped_and_barless() {
         let hud = hud_with_party_row(250, 300, 12, 30);
         let out = draws(&hud);
-        let rects: Vec<_> = out.iter().filter(|d| d.src == SOLID).collect();
-        // Lozenge body: full strip width (304 stage px) on the pinned band.
-        assert!(
-            rects.iter().any(|d| {
-                d.dst.1 == STRIP_Y * STAGE_SCALE && d.dst.2 == (304 * STAGE_SCALE) as u32
-            }),
-            "no full-width strip body on the pinned band, got {:?}",
-            rects.iter().map(|d| d.dst).collect::<Vec<_>>()
+        assert_eq!(
+            boxes_of(&out, 102, 48),
+            vec![(109, 164)],
+            "the solo roster panel is not at its packet-pinned seat"
         );
-        // No partial-width fill inside the strip band - that is a gauge bar.
-        for d in &rects {
-            let inside = d.dst.1 >= STRIP_Y * STAGE_SCALE
-                && d.dst.1 < (STRIP_Y + 20) * STAGE_SCALE
-                && d.dst.3 < (18 * STAGE_SCALE) as u32;
+        // Every solid rect on the retail surface is a plate body or one of
+        // the 1-px rims the chrome-less fallback draws round it. Anything
+        // with interior extents is a gauge bar.
+        for d in out.iter().filter(|d| d.src == SOLID) {
+            let w = d.dst.2 as i32 / STAGE_SCALE;
+            let h = d.dst.3 as i32 / STAGE_SCALE;
             assert!(
-                !inside || d.dst.2 >= (300 * STAGE_SCALE) as u32,
-                "a bar-shaped rect survives inside the strip: {:?}",
+                w == 1 || h == 1 || h == 20 || (w, h) == (102, 48),
+                "a gauge-bar-shaped rect survives on the retail surface: {:?}",
                 d.dst
             );
         }
-        // Glyph row on the measured line, name at the measured column.
+        // Name glyph at the panel's pinned name pen (+5 inside the panel).
         assert!(
             out.iter().any(|d| d.src != SOLID
-                && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
-                && d.dst.0 == 16 * STAGE_SCALE),
-            "no name glyph at the measured (16, 194) origin"
+                && d.dst.0 == (109 + 5) * STAGE_SCALE
+                && d.dst.1 == (164 + 4) * STAGE_SCALE),
+            "no name glyph at the panel's pinned name pen"
+        );
+    }
+
+    /// `engine-ui` mirrors `battle_chrome`'s seats as literals (it sits below
+    /// `engine-vm` in the crate graph). This window is the one crate that can
+    /// see both, so it is where the copy is held honest - a drift here is a
+    /// HUD drawn at coordinates nothing pinned.
+    #[test]
+    fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_vm::battle_chrome as bc;
+        let font = legaia_font::synthetic_for_tests();
+        let hud = hud_with_party_row(250, 300, 12, 30);
+        let out = battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                slots: &battle_hud_slot_views(&hud),
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                active_slot: Some(0),
+                plaque: Some("Vahn"),
+                ..Default::default()
+            },
+            BATTLE_HUD_PEN,
+        )
+        .text;
+
+        // Panel seats + row.
+        let seats = bc::panel_seats(1);
+        assert_eq!(
+            boxes_of(&out, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32),
+            vec![(seats[0] as i32, bc::PANEL_Y as i32)],
+            "the mirrored panel seat drifted from battle_chrome"
+        );
+        // Active-actor bar: plate footprint and name pen.
+        let bar_w = (bc::BAR_INTERIOR_W + 2 * bc::PLATE_CAP_W) as i32;
+        assert_eq!(
+            boxes_of(&out, bar_w, bc::PLATE_H as i32),
+            vec![(bc::BAR_X as i32, bc::BAR_Y as i32)],
+            "the mirrored active-actor bar drifted from battle_chrome"
+        );
+        assert!(
+            out.iter().any(|d| d.src != SOLID
+                && d.dst.0 == bc::BAR_NAME.0 as i32 * STAGE_SCALE
+                && d.dst.1 == bc::BAR_NAME.1 as i32 * STAGE_SCALE),
+            "the mirrored bar name pen drifted from battle_chrome"
+        );
+        // Plaque: plate sized to the measured name at the pinned seat.
+        let plaque = bc::name_plaque(font.layout_ascii("Vahn").advance_x as u16, false);
+        assert!(
+            boxes_of(
+                &out,
+                bc::plate_width(plaque.interior_w) as i32,
+                bc::PLATE_H as i32
+            )
+            .contains(&(bc::PLAQUE_X as i32, bc::PLAQUE_Y as i32)),
+            "the mirrored plaque drifted from battle_chrome::name_plaque"
+        );
+        assert!(
+            out.iter().any(|d| d.src != SOLID
+                && d.dst.0 == plaque.text.0 as i32 * STAGE_SCALE
+                && d.dst.1 == plaque.text.1 as i32 * STAGE_SCALE),
+            "the mirrored plaque text seat drifted from battle_chrome"
         );
     }
 
@@ -2098,11 +2175,9 @@ mod battle_hud_wiring_tests {
     /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits below
     /// engine-vm in the crate graph, so it cannot import them).
     ///
-    /// The battle strip no longer *reads* the mirror - measuring the retail
-    /// capture falsified it as this HUD's source, since retail's solo name
-    /// sits at stage `x 0x10` and the solo anchor would put a `0x40`-wide
-    /// plate at `x 0x6A`. The mirror stays because the table is still the
-    /// pinned port of that function; this test keeps the copy honest.
+    /// The anchors are the roster panels' **name pens**, `+5` inside the
+    /// panel background `battle_chrome::panel_seats` gives - which is what
+    /// ties the overlay table to the packet run.
     #[test]
     fn panel_anchor_mirror_matches_the_engine_vm_port() {
         use legaia_engine_vm::battle_party_panel::panel_anchors;
@@ -2125,6 +2200,19 @@ mod battle_hud_wiring_tests {
                 want,
                 "engine-ui mirror drifted at ({count}, {ordinal})"
             );
+        }
+        // Every anchor is a panel seat plus the pinned +5 name inset.
+        for size in 1u8..=3 {
+            for (i, seat) in legaia_engine_vm::battle_chrome::panel_seats(size)
+                .iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    *seat as i32 + legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET as i32,
+                    legaia_engine_render::party_panel_stage_x(size as usize, i),
+                    "anchor {i} of a party of {size} is not its panel seat + 5"
+                );
+            }
         }
     }
 
@@ -2158,12 +2246,11 @@ mod battle_hud_wiring_tests {
         let out = draws(&hud);
         assert!(!out.is_empty(), "synced battle state produced no draws");
         // The MP field only draws for a slot carrying a ceiling, so the live
-        // world's MP has to reach the measured MP columns.
+        // world's MP has to reach the panel's pinned MP row.
         assert!(
-            out.iter().any(|d| d.src != SOLID
-                && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
-                && d.dst.0 >= 192 * STAGE_SCALE),
-            "live world state produced no MP field"
+            out.iter()
+                .any(|d| d.src != SOLID && d.dst.1 == (164 + 34) * STAGE_SCALE),
+            "live world state produced no MP field on the panel's MP row"
         );
     }
 

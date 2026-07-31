@@ -345,13 +345,13 @@ list sampling the resident system-UI atlas. The view types `HudSlotView` /
 engine-vm types (matches the existing `ShopRow` / `level_up_draws_for`
 pattern).
 
-The default surface is retail's, measured off a native 320x228 capture: one
-full-width lozenge per live party member across the stage bottom
-(`y 188..=207`, glyph row `194`) carrying name, the gold `HP` label cell with
-right-aligned `cur / max`, and the green `MP` label cell with its own pair -
-and **no gauge bar**. A top-left plaque names the actor the frame belongs to,
-which is also the port's whole monster readout since retail draws no monster
-gauge. Popups sit at slot_y - 16 (heal = green, crit = yellow, plain damage =
+The default surface is retail's, off the packet-pinned
+`engine-vm::battle_chrome`: per-member roster panels (102x48 at `y 164`) at
+rest, replaced for the acting member by the full-width active-actor bar at
+`(8, 188)`, each carrying name / `HP` label + `cur` right-aligned + `max`
+running forward / the same pair for `MP` - and **no gauge bar**. A top-left
+plaque names the actor the frame belongs to, which is also the port's whole
+monster readout since retail draws no monster gauge. Popups sit at slot_y - 16 (heal = green, crit = yellow, plain damage =
 cyan); fade alpha multiplies into the text colour's alpha channel. Monster
 rows, the LV / AP tail and the "ENCOUNTER!" banner are diagnostic-only,
 behind `LEGAIA_DIAG_HUD`. Geometry provenance, including which retail table
@@ -366,10 +366,10 @@ native window is the consumer: `engine-shell/.../window/hud.rs` calls this
 builder for every battle frame from the `BattleHud` model that
 `window/battle.rs::sync_battle_hud_rows` refreshes.
 
-Column offsets are measured, not guessed - the strip's off the retail capture,
-the diagnostic row's off retail-dialog-font advances. A disc-gated test walks
-both sets against the real font, which is what catches a field overrunning the
-next column.
+Column offsets are pinned, not guessed - the bar's and the panel's off the
+display-list walk, the diagnostic row's off retail-dialog-font advances. A
+disc-gated test walks all three sets against the real font, which is what
+catches a field overrunning the next column.
 
 ## Menu chrome
 

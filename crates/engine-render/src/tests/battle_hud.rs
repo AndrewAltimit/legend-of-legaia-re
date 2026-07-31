@@ -8,12 +8,18 @@ const SOLID: (u32, u32, u32, u32) = (5, 9, 1, 1);
 const SURFACE: (u32, u32) = (640, 480);
 const STAGE_SCALE: i32 = 2;
 const PEN: (i32, i32) = (8, 100);
-/// The measured retail strip band and its glyph row (`captures/tetsu_idle`).
-const STRIP_Y: i32 = 188;
-const STRIP_H: i32 = 20;
-const STRIP_X: i32 = 8;
-const STRIP_W: i32 = 304;
-const STRIP_TEXT_Y: i32 = STRIP_Y + 6;
+/// The packet-pinned active-actor bar (`battle_chrome::BAR_*`).
+const BAR_Y: i32 = 188;
+const BAR_X: i32 = 8;
+const BAR_H: i32 = 20;
+const BAR_W: i32 = 304;
+const BAR_NAME_Y: i32 = 192;
+/// The packet-pinned roster panels (`battle_chrome::PANEL_*`).
+const PANEL_Y: i32 = 164;
+const PANEL_W: i32 = 102;
+const PANEL_H: i32 = 48;
+const SOLO_PANEL_X: i32 = 109;
+const TRIO_PANEL_X: [i32; 3] = [7, 109, 211];
 
 fn slot_view<'a>(
     name: &'a str,
@@ -88,31 +94,79 @@ fn hud_draws(
     hud_frame(font, slots, popups, log, false).text
 }
 
-/// The party arm draws retail's measured shape: one full-width lozenge on the
-/// pinned band, its glyph row at `y 194`, the name at `x 16`.
+/// The same frame with slot 0 acting, which is what raises the active-actor
+/// bar over that member's resting panel.
+fn hud_draws_acting(font: &legaia_font::Font, slots: &[HudSlotView<'_>]) -> Vec<TextDraw> {
+    battle_hud_draws_for(
+        font,
+        &BattleHudFrame {
+            slots,
+            solid_src: Some(SOLID),
+            surface: SURFACE,
+            active_slot: Some(0),
+            ..Default::default()
+        },
+        PEN,
+    )
+    .text
+}
+
+/// Solid rects of exactly `(w, h)` stage pixels, by stage `(x, y)`.
+fn boxes_of(draws: &[TextDraw], w: i32, h: i32) -> Vec<(i32, i32)> {
+    draws
+        .iter()
+        .filter(|d| {
+            d.src == SOLID
+                && d.dst.2 == (w * STAGE_SCALE) as u32
+                && d.dst.3 == (h * STAGE_SCALE) as u32
+        })
+        .map(|d| (d.dst.0 / STAGE_SCALE, d.dst.1 / STAGE_SCALE))
+        .collect()
+}
+
+/// At rest the party draws as **roster panels**, not a bar: one 102x48 panel
+/// per live member at the packet-pinned seat, name pen `+5` inside it.
 #[test]
-fn party_strip_lands_on_the_measured_retail_band() {
+fn resting_party_draws_roster_panels_at_the_pinned_seats() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    assert!(!draws.is_empty());
-    let body = draws.iter().find(|d| {
-        d.src == SOLID
-            && d.dst.1 == STRIP_Y * STAGE_SCALE
-            && d.dst.2 == (STRIP_W * STAGE_SCALE) as u32
-    });
-    let body = body.expect("no full-width strip body on the measured band");
-    assert_eq!(body.dst.0, STRIP_X * STAGE_SCALE, "strip left edge moved");
     assert_eq!(
-        body.dst.3,
-        (STRIP_H * STAGE_SCALE) as u32,
-        "strip height moved"
+        boxes_of(&draws, PANEL_W, PANEL_H),
+        vec![(SOLO_PANEL_X, PANEL_Y)],
+        "the solo roster panel is not at its pinned seat"
+    );
+    // `panel_anchors`' solo entry is the panel's *name pen*, +5 inside it.
+    assert!(
+        draws.iter().any(|d| d.src != SOLID
+            && d.dst.0 == (SOLO_PANEL_X + 5) * STAGE_SCALE
+            && d.dst.1 == (PANEL_Y + 4) * STAGE_SCALE),
+        "no name glyph at the panel's pinned name pen"
+    );
+    // And no active-actor bar, because nobody is acting.
+    assert!(
+        boxes_of(&draws, BAR_W, BAR_H).is_empty(),
+        "the active-actor bar drew with no acting actor"
+    );
+}
+
+/// The acting member's readout moves to the full-width bar at the pinned
+/// seats: plate `(8, 188)` 304x20, name pen `(16, 192)`.
+#[test]
+fn acting_member_raises_the_active_actor_bar() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
+    let draws = hud_draws_acting(&font, &[slot]);
+    assert_eq!(
+        boxes_of(&draws, BAR_W, BAR_H),
+        vec![(BAR_X, BAR_Y)],
+        "the active-actor bar is not at its pinned seat"
     );
     assert!(
         draws.iter().any(|d| d.src != SOLID
-            && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
-            && d.dst.0 == STRIP_X.max(16) * STAGE_SCALE),
-        "no name glyph at the measured (16, 194) origin"
+            && d.dst.0 == 16 * STAGE_SCALE
+            && d.dst.1 == BAR_NAME_Y * STAGE_SCALE),
+        "no name glyph at the bar's pinned (16, 192) pen"
     );
 }
 
@@ -123,26 +177,34 @@ fn party_strip_lands_on_the_measured_retail_band() {
 fn party_strip_draws_no_gauge_bar() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 150, 300, 12, 30);
-    let draws = hud_draws(&font, &[slot], &[], &[]);
-    for d in draws.iter().filter(|d| d.src == SOLID) {
-        let inside_band =
-            d.dst.1 >= STRIP_Y * STAGE_SCALE && d.dst.1 < (STRIP_Y + STRIP_H) * STAGE_SCALE;
-        let bar_shaped = d.dst.3 < ((STRIP_H - 2) * STAGE_SCALE) as u32
-            && d.dst.2 < ((STRIP_W - 4) * STAGE_SCALE) as u32;
-        assert!(
-            !(inside_band && bar_shaped),
-            "a bar-shaped rect survives inside the strip: {:?}",
-            d.dst
-        );
+    for draws in [
+        hud_draws(&font, &[slot], &[], &[]),
+        hud_draws_acting(&font, &[slot]),
+    ] {
+        for d in draws.iter().filter(|d| d.src == SOLID) {
+            // Every solid rect on the retail surface is a plate: a panel
+            // body, a bar body, a plaque body, or one of the four 1-px rims
+            // the chrome-less fallback draws around them. Anything else with
+            // interior extents is a gauge bar.
+            let w = d.dst.2 as i32 / STAGE_SCALE;
+            let h = d.dst.3 as i32 / STAGE_SCALE;
+            let rim = w == 1 || h == 1;
+            let plate_body = (w, h) == (PANEL_W, PANEL_H) || (w, h) == (BAR_W, BAR_H) || h == 20;
+            assert!(
+                rim || plate_body,
+                "a gauge-bar-shaped rect survives on the retail surface: {:?}",
+                d.dst
+            );
+        }
+        // Non-vacuous: the surface really did draw.
+        assert!(draws.iter().any(|d| d.src == SOLID));
     }
-    // Non-vacuous: the strip really did draw.
-    assert!(draws.iter().any(|d| d.src == SOLID));
 }
 
-/// A pair or a trio stacks one identical strip per live member, bottom row on
-/// the pinned band. Every member keeps the measured columns.
+/// A trio seats three roster panels side by side at the pinned x anchors, all
+/// on the one panel row.
 #[test]
-fn multi_member_party_stacks_one_strip_per_member() {
+fn trio_seats_three_roster_panels_across_the_pinned_anchors() {
     let font = legaia_font::synthetic_for_tests();
     let slots = [
         slot_view("Vahn", true, true, 100, 100, 10, 20),
@@ -150,24 +212,11 @@ fn multi_member_party_stacks_one_strip_per_member() {
         slot_view("Gala", true, true, 80, 100, 6, 20),
     ];
     let draws = hud_draws(&font, &slots, &[], &[]);
-    let bodies: Vec<i32> = draws
-        .iter()
-        .filter(|d| {
-            d.src == SOLID
-                && d.dst.2 == (STRIP_W * STAGE_SCALE) as u32
-                && d.dst.3 == (STRIP_H * STAGE_SCALE) as u32
-        })
-        .map(|d| d.dst.1)
-        .collect();
-    assert_eq!(bodies.len(), 3, "expected one strip body per member");
-    assert!(
-        bodies.contains(&(STRIP_Y * STAGE_SCALE)),
-        "the bottom row left the pinned band"
+    assert_eq!(
+        boxes_of(&draws, PANEL_W, PANEL_H),
+        TRIO_PANEL_X.map(|x| (x, PANEL_Y)).to_vec(),
+        "the trio panels are not at their pinned seats"
     );
-    let mut sorted = bodies.clone();
-    sorted.sort_unstable();
-    sorted.dedup();
-    assert_eq!(sorted.len(), 3, "strips overlapped instead of stacking");
 }
 
 #[test]
@@ -272,11 +321,10 @@ fn chrome_atlas_moves_the_strip_skin_and_labels_into_sprites() {
         PEN,
     );
     assert!(
-        draws
-            .sprites
-            .iter()
-            .any(|s| s.src == rects.label_hp && s.dst.1 == STRIP_TEXT_Y * STAGE_SCALE),
-        "the gold HP label cell is not on the strip's glyph row"
+        draws.sprites.iter().any(|s| s.src == rects.label_hp
+            && s.dst.0 == (SOLO_PANEL_X + 4) * STAGE_SCALE
+            && s.dst.1 == (PANEL_Y + 21) * STAGE_SCALE),
+        "the HP label cell is not at the panel's pinned HP-row seat"
     );
     assert!(
         draws.sprites.iter().any(|s| s.src == rects.label_mp),
@@ -286,18 +334,19 @@ fn chrome_atlas_moves_the_strip_skin_and_labels_into_sprites() {
         draws.sprites.iter().any(|s| s.src == rects.dialog_fill),
         "the strip interior never drew from the atlas"
     );
-    // With chrome the lozenge body is a sprite, so the text list keeps no
-    // full-width solid rect for it.
+    // With chrome the plate body is a sprite, so the text list keeps no
+    // solid rect for it.
     assert!(
         !draws.text.iter().any(|d| d.src == SOLID),
         "the solid-texel fallback body drew alongside the atlas chrome"
     );
 }
 
-/// Retail parks the party status plate off-screen while a command-entry
-/// session owns the frame; the port emits nothing instead.
+/// Retail parks the roster-panel cluster off-screen (`y = 230`) while a
+/// command-entry session owns the frame; the port emits nothing instead,
+/// because the engine stage is 240 lines and `y = 230` would still show.
 #[test]
-fn parked_input_session_suppresses_the_party_strip() {
+fn parked_input_session_suppresses_the_roster_panels() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
     let draws = battle_hud_draws_for(
@@ -314,13 +363,13 @@ fn parked_input_session_suppresses_the_party_strip() {
         PEN,
     );
     assert!(
-        !draws.text.iter().any(|d| d.dst.1 >= STRIP_Y * STAGE_SCALE),
-        "the strip still drew under a parked input session"
+        boxes_of(&draws.text, PANEL_W, PANEL_H).is_empty(),
+        "the roster panels still drew under a parked input session"
     );
 }
 
-/// The top-left plaque draws its label at the measured `(16, 14)` inset with
-/// a lozenge sized to the label.
+/// The top-left plaque names the acting actor at the pinned `(16, 12)`
+/// content seat, on a plate whose interior is the measured name.
 #[test]
 fn plaque_draws_at_the_measured_inset() {
     let font = legaia_font::synthetic_for_tests();
@@ -342,15 +391,15 @@ fn plaque_draws_at_the_measured_inset() {
         draws
             .text
             .iter()
-            .any(|d| d.src != SOLID && d.dst.0 == 16 * STAGE_SCALE && d.dst.1 == 14 * STAGE_SCALE),
-        "no plaque glyph at the measured (16, 14) origin"
+            .any(|d| d.src != SOLID && d.dst.0 == 16 * STAGE_SCALE && d.dst.1 == 12 * STAGE_SCALE),
+        "no plaque glyph at the pinned (16, 12) content seat"
     );
-    assert!(
-        draws
-            .text
-            .iter()
-            .any(|d| d.src == SOLID && d.dst.1 == 8 * STAGE_SCALE),
-        "no plaque box on the measured band"
+    // Plate at (8, 8), 20 tall, interior sized to the measured name.
+    let name_w = font.layout_ascii("Tetsu").advance_x as i32;
+    assert_eq!(
+        boxes_of(&draws.text, name_w + 16, 20),
+        vec![(8, 8)],
+        "the plaque plate is not sized to its name at the pinned seat"
     );
 }
 
@@ -429,7 +478,7 @@ fn battle_hud_draws_for_includes_log_lines_below_slots() {
 }
 
 #[test]
-fn battle_hud_draws_for_party_popup_rides_its_strip_anchor() {
+fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 100, 100, 0, 0);
     let popup = HudPopupView {
@@ -443,7 +492,7 @@ fn battle_hud_draws_for_party_popup_rides_its_strip_anchor() {
     let n_no_popup = hud_draws(&font, &[slot], &[], &[]).len();
     let draws = hud_draws(&font, &[slot], &[popup], &[]);
     assert!(draws.len() > n_no_popup, "popup produced no glyphs");
-    // Damage popups draw in the cyan tint, above the strip band's top edge (a
+    // Damage popups draw in the cyan tint, above the member's panel (a
     // stage-space anchor, unlike the diagnostic rows' pen anchor).
     let cyan = [0.5, 0.85, 1.0, 1.0];
     assert!(
@@ -483,32 +532,32 @@ fn monster_rows_only_draw_under_the_diagnostic_toggle() {
     );
 }
 
-/// The base-marker + level element (`FUN_8002C2E4`'s no-ailment arm) is
-/// diagnostic-only: neither retail reference frame shows a marker or a level
-/// anywhere near the strip, and the widget's own pen is not pinned.
+/// `FUN_8002C2E4`'s no-ailment arm is the level, and retail draws it as a
+/// **panel row** - LV label plus digits on the panel's top cell - not as the
+/// floating marker the port used to put over the party.
 #[test]
-fn level_readout_is_diagnostic_only() {
+fn level_draws_on_the_panels_top_cell() {
     let font = legaia_font::synthetic_for_tests();
     let mut lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
     lv.level = 27;
     let mut no_lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
     no_lv.level = 0;
 
-    assert_eq!(
-        hud_draws(&font, &[lv], &[], &[]).len(),
-        hud_draws(&font, &[no_lv], &[], &[]).len(),
-        "the level readout reached the retail surface"
+    let with = hud_draws(&font, &[lv], &[], &[]);
+    assert!(
+        with.len() > hud_draws(&font, &[no_lv], &[], &[]).len(),
+        "the level readout never drew"
     );
     assert!(
-        hud_frame(&font, &[lv], &[], &[], true).text.len()
-            > hud_frame(&font, &[no_lv], &[], &[], true).text.len(),
-        "the diagnostic surface lost the level readout"
+        with.iter().any(|d| d.src != SOLID
+            && d.dst.0 == (SOLO_PANEL_X + 88) * STAGE_SCALE
+            && d.dst.1 == (PANEL_Y + 4) * STAGE_SCALE),
+        "the level digits are not at the panel's pinned LV seat"
     );
 }
 
-/// An ailment adds its own badge in the member's right-hand gutter - the
-/// selection is the ported part, the badge art and placement are
-/// approximations.
+/// An ailment adds its own badge inside the member's panel - the selection is
+/// the ported part, the badge art and placement are approximations.
 #[test]
 fn ailment_badge_draws_above_the_members_strip() {
     let font = legaia_font::synthetic_for_tests();
@@ -518,13 +567,17 @@ fn ailment_badge_draws_above_the_members_strip() {
     let with = hud_draws(&font, &[sick], &[], &[]);
     let without = hud_draws(&font, &[clean], &[], &[]);
     assert!(with.len() > without.len(), "the ailment badge never drew");
-    // The badge rides the member's own right-hand gutter (stage x 278), not
-    // the band above - a badge above the row lands on the member stacked
-    // over it, which is what the trio capture showed.
+    // The badge rides the member's own panel, under its MP row - retail's
+    // element art and its caller-supplied pen are both unpinned, so what is
+    // pinned here is only that it stays inside the member's own panel.
     assert!(
-        with.iter()
-            .any(|d| d.dst.0 >= 278 * STAGE_SCALE && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE),
-        "the badge did not draw in the row's right-hand gutter"
+        with.iter().any(|d| {
+            let x = d.dst.0 / STAGE_SCALE;
+            let y = d.dst.1 / STAGE_SCALE;
+            (SOLO_PANEL_X..SOLO_PANEL_X + PANEL_W).contains(&x)
+                && (PANEL_Y..PANEL_Y + PANEL_H + 12).contains(&y)
+        }),
+        "the badge did not draw inside the member's own panel"
     );
 }
 
@@ -588,12 +641,12 @@ fn font_solid_src_finds_a_white_texel_in_the_placeholder_font() {
 /// `extracted/font/` is absent (same gating as every other artifact-dependent
 /// test), so CI does not need redistributed Sony bytes.
 ///
-/// Two column sets ride this: the retail strip (name / HP label / numerals /
-/// MP label / numerals, measured off the native capture) and the diagnostic
-/// monster row. The strip's numerals are right-aligned, so what has to clear
-/// is the field's *right* edge against the next field's origin.
+/// Three column sets ride this: the active-actor bar, the roster panel and
+/// the diagnostic monster row. In both retail surfaces a *current* value is
+/// right-aligned against a fixed edge while its *maximum* runs forward from
+/// its own, so each side has to clear a different neighbour.
 #[test]
-fn strip_and_diag_columns_clear_the_retail_font_or_skips() {
+fn bar_panel_and_diag_columns_clear_the_retail_font_or_skips() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let Some(root) = manifest
         .parent()
@@ -613,23 +666,41 @@ fn strip_and_diag_columns_clear_the_retail_font_or_skips() {
             .unwrap_or(0)
     };
 
-    // Retail strip: the name must end before the HP label's column, each
-    // right-aligned numeral field must start after the field before it.
+    // Active-actor bar: the name must end before the HP label's seat, each
+    // right-aligned current must start after the label before it, and each
+    // forward-running maximum must end before the next field.
     assert!(
         16 + width("Songi") <= 80,
-        "the longest party name overruns the HP label column at 80"
+        "the longest party name overruns the HP label seat at 80"
     );
     assert!(
-        132 - width("9999") >= 80 + 16,
-        "a four-digit HP overruns the HP label cell"
+        134 - width("9999") >= 80 + 16,
+        "a four-digit HP current overruns the HP label cell"
     );
     assert!(
-        176 - width("9999") >= 137 + width("/"),
-        "the HP maximum overruns the slash column"
+        154 + width("9999") <= 192,
+        "a four-digit HP maximum overruns the MP label seat"
     );
     assert!(
-        236 - width("999") >= 192 + 16,
-        "a three-digit MP overruns the MP label cell"
+        238 - width("999") >= 192 + 16,
+        "a three-digit MP current overruns the MP label cell"
+    );
+    assert!(
+        258 + width("999") <= 312,
+        "a three-digit MP maximum overruns the bar's right cap"
+    );
+    // Roster panel: the same two fields inside a 102-px panel.
+    assert!(
+        5 + width("Songi") <= 64,
+        "the longest party name overruns the panel's LV label at +64"
+    );
+    assert!(
+        57 - width("9999") >= 4 + 16,
+        "a four-digit HP current overruns the panel's HP label cell"
+    );
+    assert!(
+        73 + width("9999") <= 102,
+        "a four-digit maximum overruns the panel's right edge"
     );
 
     // Diagnostic monster row: name at 0, HP numerals at 78, K.O. at 150,

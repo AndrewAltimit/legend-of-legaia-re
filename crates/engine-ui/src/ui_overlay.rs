@@ -565,6 +565,12 @@ pub struct BattleHudFrame<'a> {
     /// Hosts set this while a command-entry session is up; the builder then
     /// emits no party strip.
     pub input_session_parked: bool,
+    /// Actor-table slot of the actor the frame belongs to
+    /// (`engine-core::battle_hud::battle_active_actor`). When it names a live
+    /// party member, retail replaces that member's resting panel readout with
+    /// the full-width active-actor bar; hosts also pass the same actor's name
+    /// as [`Self::plaque`].
+    pub active_slot: Option<u8>,
     /// Diagnostic readout ([`diag_hud_enabled`]): the engine's debug rows -
     /// monster HP numerals/bars (retail draws **no** monster gauge,
     /// `docs/subsystems/battle-action.md`), per-slot LV / AP readouts, and
@@ -595,88 +601,96 @@ pub fn diag_hud_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Party-strip stage geometry. Three provenance grades, called out per
-/// constant.
+/// Battle-HUD stage geometry, mirrored from the packet-pinned
+/// `legaia_engine_vm::battle_chrome` because `engine-ui` sits below
+/// `engine-vm` in the crate graph. `engine-shell`'s HUD tests pin the two
+/// sets equal, which is the only thing that keeps the copy honest.
 ///
-/// **Measured (capture):** the strip itself. The retail frame
-/// `captures/tetsu_idle` is a native 320x228 framebuffer grab of a solo-Vahn
-/// battle. Per-pixel it holds exactly one full-width lozenge spanning
-/// `x 8..=311` by `y 188..=207`, 6-px chamfered caps, no gauge bar of any
-/// kind, and one text row at `y 194`: the name at `x 16`, the gold `HP`
-/// label sprite at `x 80`, `cur` right-aligned to `x 132`, `/` at `x 137`,
-/// `max` right-aligned to `x 176`, then the green `MP` label at `x 192`
-/// with its pair right-aligned to `x 236` / `x 272` around a `/` at
-/// `x 241`. The `retail_Tetsu_rush` reference carries four-digit HP against
-/// the same columns, which is what fixes the numerals as right-aligned
-/// rather than left-run.
+/// Retail's party readout is **two mutually-exclusive surfaces**, not one:
+/// per-member roster panels at rest, and a single full-width bar for the
+/// actor entering a command or acting. The bar does not replace the panels
+/// by hiding them - retail parks them at `y = 230`, under its 228-line
+/// display window. The engine stage is 240 lines, so `y = 230` would still
+/// be visible here and the port omits the parked draws instead.
 ///
-/// **Falsified:** `FUN_801D84C0`'s per-party-size anchors (solo `0x72`,
-/// pair `0x3F`/`0xA5`, trio `0x0C`/`0x72`) and `FUN_801DBC30`'s `0x40`-wide
-/// label-strip blit do **not** position this HUD. Retail's solo name sits at
-/// `x 0x10`; the solo anchor would put a `0x40`-wide plate at `x 0x6A..0xA9`,
-/// nowhere near it. [`party_panel_stage_x`] keeps the table so the mirror
-/// test against `legaia_engine_vm::battle_party_panel::panel_anchors` stays
-/// total, but the strip no longer reads it.
-///
-/// **Approximate:** the multi-member layout. Retail's party-row widget is
-/// per-ordinal - `FUN_8002C69C` widget kinds `0x33` / `0x34` / `0x35` each
-/// call `FUN_8002C2E4` with `a0 = 0 / 1 / 2` - and each kind rides its own
-/// screen element, whose `(x, y)` comes from the element record
-/// (`FUN_80031D00` loads `+0xE` / `+0x10` per element and stores `+0x1D`
-/// into `gp+0x14C` before the dispatch). So retail positions each member's
-/// row independently and no captured frame pins where. The engine stacks
-/// one identical full-width strip per live member, bottom row on the pinned
-/// band, which keeps every measured column exact for every member.
-///
-/// One engine-wide caveat rides all of these: retail's display window is 228
-/// lines while [`BOOT_UI_STAGE_H`] is 240, so the strip's pinned `y 188`
-/// leaves 32 stage lines under it here against retail's 20.
-const STRIP_STAGE_X: i32 = 8;
-/// Strip width (stage px) - captured span `x 8..=311`.
-const STRIP_STAGE_W: i32 = 304;
-/// Stage Y of the bottom-most strip - captured band `y 188..=207`.
-const STRIP_STAGE_Y: i32 = 188;
-/// Strip height (stage px) - captured band `y 188..=207`.
-const STRIP_STAGE_H: i32 = 20;
-/// Vertical pitch between stacked member strips (approximation - one strip
-/// plus a 1-px gap; retail's per-element Y is not pinned).
-const STRIP_ROW_PITCH: i32 = 21;
-/// Text row offset from the strip top - captured glyph row `y 194`.
-const STRIP_TEXT_DY: i32 = 6;
+/// Every seat below is packet-pinned from a save-state display-list walk.
+/// What is **not** pinned, and is called out where it is used: the 102x48
+/// marbled panel background and the 8x16 `/` separator have no rect in the
+/// engine's system-UI atlas set yet, so the panel draws in the shared
+/// chrome and the separator as a font glyph.
+const BAR_X: i32 = 8;
+/// Plate top of the active-actor bar.
+const BAR_Y: i32 = 188;
+/// Interior width of the active-actor bar; the plate spans `8 ..= 312`.
+const BAR_INTERIOR_W: i32 = 288;
+/// Plate height, every plate run on the battle screen.
+const PLATE_H: i32 = 20;
+/// Width a plate run occupies for a given interior (a cap at each end).
+const PLATE_CAP_W: i32 = 8;
 
-/// Strip columns (stage px), measured from `captures/tetsu_idle`.
-const STRIP_NAME_X: i32 = 16;
-const STRIP_HP_LABEL_X: i32 = 80;
-const STRIP_HP_CUR_RIGHT: i32 = 132;
-const STRIP_HP_SLASH_X: i32 = 137;
-const STRIP_HP_MAX_RIGHT: i32 = 176;
-const STRIP_MP_LABEL_X: i32 = 192;
-const STRIP_MP_CUR_RIGHT: i32 = 236;
-const STRIP_MP_SLASH_X: i32 = 241;
-const STRIP_MP_MAX_RIGHT: i32 = 272;
-/// Right-hand gutter the status badge rides (approximation - see the badge's
-/// own comment in [`battle_hud_draws_for`]).
-const STRIP_BADGE_X: i32 = 278;
+/// Name-glyph pen inside the active-actor bar.
+const BAR_NAME: (i32, i32) = (16, 192);
+/// HP / MP label-sprite seats inside the bar.
+const BAR_HP_LABEL: (i32, i32) = (80, 194);
+const BAR_MP_LABEL: (i32, i32) = (192, 194);
+/// `/` separator seats - the separator sits four rows above its numerals.
+const BAR_HP_SEPARATOR: (i32, i32) = (136, 188);
+const BAR_MP_SEPARATOR: (i32, i32) = (240, 188);
+/// Numeral pen row, every field in the bar.
+const BAR_DIGIT_Y: i32 = 192;
+/// Right edge the current value is laid out back from; left edge the maximum
+/// starts at. The current is right-aligned and the maximum is **not** - that
+/// asymmetry is what keeps a four-digit HP inside its own field.
+const BAR_HP_CUR_RIGHT: i32 = 134;
+const BAR_HP_MAX_LEFT: i32 = 154;
+const BAR_MP_CUR_RIGHT: i32 = 238;
+const BAR_MP_MAX_LEFT: i32 = 258;
 
-/// Top-left plaque, measured from `captures/tetsu_idle`: the art box spans
-/// `x 8..=50` by `y 8..=27` (the same 20-px chamfered lozenge as the strip)
-/// with the name at `(16, 14)`, i.e. an `(8, 6)` inset and a 9-px right pad,
-/// so the box width tracks the label. The plaque *skin* is not pinned to an
-/// atlas cell, so the label draws as clean text at the measured inset.
-const PLAQUE_TEXT_X: i32 = 16;
-const PLAQUE_TEXT_Y: i32 = 14;
-const PLAQUE_BOX_X: i32 = 8;
-const PLAQUE_BOX_Y: i32 = 8;
-const PLAQUE_BOX_H: i32 = 20;
-/// Left inset + right pad the plaque box adds around its label.
-const PLAQUE_PAD: i32 = 17;
+/// Plate top-left of the actor-name plaque - fixed, every battle.
+const PLAQUE_X: i32 = 8;
+const PLAQUE_Y: i32 = 8;
+/// Vertical inset of the plaque's contents from its plate top.
+const PLAQUE_CONTENT_DY: i32 = 4;
+
+/// Roster-panel background size and row.
+const PANEL_W: i32 = 102;
+const PANEL_H: i32 = 48;
+const PANEL_Y: i32 = 164;
+
+/// Per-member panel content seats, relative to the panel's top-left corner
+/// (`battle_chrome::panel`).
+const PANEL_NAME: (i32, i32) = (5, 4);
+const PANEL_LV_LABEL: (i32, i32) = (64, 6);
+const PANEL_LV_DIGITS: (i32, i32) = (88, 4);
+const PANEL_HP_LABEL: (i32, i32) = (4, 21);
+const PANEL_MP_LABEL: (i32, i32) = (4, 36);
+const PANEL_HP_SEPARATOR: (i32, i32) = (57, 15);
+const PANEL_MP_SEPARATOR: (i32, i32) = (57, 30);
+const PANEL_HP_DIGIT_Y: i32 = 19;
+const PANEL_MP_DIGIT_Y: i32 = 34;
+const PANEL_CUR_RIGHT: i32 = 57;
+const PANEL_MAX_LEFT: i32 = 73;
+
+/// Panel-background x seats for a party of `count`, left to right
+/// (`battle_chrome::panel_seats`). These are the **backgrounds**;
+/// [`party_panel_stage_x`] carries the same layout as *text* anchors, which
+/// is the `+5` `PANEL_NAME` inset and only the slots `FUN_801D84C0` writes.
+fn panel_seats(count: usize) -> &'static [i32] {
+    match count {
+        1 => &[109],
+        2 => &[58, 160],
+        3 => &[7, 109, 211],
+        _ => &[],
+    }
+}
 
 /// Stage X of party section `ordinal` (0-based) for `count` live party
-/// members - retail's `FUN_801D84C0` anchor table, mirrored here as literals
-/// because `engine-ui` sits below `engine-vm` in the crate graph, and pinned
-/// equal to `legaia_engine_vm::battle_party_panel::panel_anchors` by
-/// `engine-shell`'s HUD tests. The battle strip does **not** read it - see
-/// [`STRIP_STAGE_X`] for why that table was falsified as this HUD's source.
+/// members - retail's `FUN_801D84C0` anchor table, which seats the roster
+/// panels' **name pens**, `+5` inside the panel background
+/// ([`panel_seats`]). Mirrored here as literals for the same crate-graph
+/// reason as the rest of this block, and pinned equal to
+/// `legaia_engine_vm::battle_party_panel::panel_anchors` by `engine-shell`'s
+/// HUD tests.
 pub fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
     match (count, ordinal) {
         (1, _) => 0x72,
@@ -834,10 +848,9 @@ pub fn battle_hud_draws_for(
         .filter(|(_, s)| s.is_party && !s.name.is_empty())
         .collect();
 
-    // Right-aligned stage text - the captured numerals right-align against
-    // fixed columns with a fixed slash between the fields, which is what
-    // keeps a four-digit HP (the Tetsu-rush reference) in the same box as a
-    // three-digit one.
+    // Right-aligned stage text: retail lays the *current* value back from a
+    // fixed right edge while the *maximum* runs forward from its own left
+    // edge, which is what keeps a four-digit HP inside its own field.
     let stage_text_r = |out: &mut Vec<TextDraw>, s: &str, right: i32, y: i32, c: [f32; 4]| {
         let layout = font.layout_ascii(s);
         let x = right - layout.advance_x as i32;
@@ -858,37 +871,46 @@ pub fn battle_hud_draws_for(
             color: white,
         });
     };
-    // HP / MP label: the resident system-UI atlas sprites
-    // (`OVERLAY_SYSTEM_UI_LABEL_HP` / `_MP`, `legaia_asset::title_pak`) - the
-    // same two cells the pause menu's party panel draws, and the two the
-    // retail strip draws, gold `HP` and green `MP` out of one CLUT row.
-    // Without an atlas they degrade to tinted text at the same columns.
+    // LV / HP / MP label: the resident system-UI atlas sprites
+    // (`OVERLAY_SYSTEM_UI_LABEL_LV` / `_HP` / `_MP`, `legaia_asset::title_pak`).
+    // Retail packs all three into **one** sub-palette - the gold-vs-green
+    // difference is baked into the texels, not a per-label CLUT - so they
+    // draw untinted. Without an atlas they degrade to tinted text at the same
+    // seats.
     let label =
-        |sprites: &mut Vec<SpriteDraw>, text: &mut Vec<TextDraw>, is_hp: bool, x: i32, y: i32| {
+        |sprites: &mut Vec<SpriteDraw>, text: &mut Vec<TextDraw>, which: u8, x: i32, y: i32| {
             match frame.chrome {
                 Some(rects) => {
-                    let src = if is_hp {
-                        rects.label_hp
-                    } else {
-                        rects.label_mp
+                    let src = match which {
+                        0 => rects.label_hp,
+                        1 => rects.label_mp,
+                        _ => rects.label_lv,
                     };
                     stage_sprite(sprites, src, x, y);
                 }
                 None => {
-                    let (s, c) = if is_hp {
-                        ("HP", label_gold)
-                    } else {
-                        ("MP", label_green)
+                    let (s, c) = match which {
+                        0 => ("HP", label_gold),
+                        1 => ("MP", label_green),
+                        _ => ("LV", label_gold),
                     };
                     stage_text(text, font, s, x, y, c);
                 }
             }
         };
-    // The lozenge skin one strip / plaque draws. Retail's own cell is a
-    // chamfered pill that is not pinned to an atlas rect, so with the
-    // system-UI atlas this is the shared blue dialog gradient under the gold
-    // 9-slice frame, and without it a solid-texel interior plus a 1-px rim.
-    let lozenge =
+    // The `/` between a current and a maximum. Retail's is an 8x16 sheet
+    // sprite at texels `(96, 64)` sitting four rows above its numerals; the
+    // engine's atlas set carries no rect for it, so it draws as a font glyph
+    // on the numeral row instead.
+    let separator = |text: &mut Vec<TextDraw>, x: i32, y: i32, c: [f32; 4]| {
+        stage_text(text, font, "/", x, y + 4, c);
+    };
+    // One plate run: retail's 3-slice (8-px cap, clipped 16-px body tiles,
+    // 8-px cap) out of the system-UI sheet. That sheet row has no rect in the
+    // engine's atlas set, so the run draws as the shared blue dialog gradient
+    // under the gold 9-slice frame at the same footprint, and as a
+    // solid-texel box with a 1-px rim when there is no atlas at all.
+    let plate =
         |text: &mut Vec<TextDraw>, sprites: &mut Vec<SpriteDraw>, rect: (i32, i32, i32, i32)| {
             match frame.chrome {
                 Some(rects) => {
@@ -913,125 +935,238 @@ pub fn battle_hud_draws_for(
                 }
             }
         };
+    // The retail readout-tint law, per slot (`FUN_800349EC` / `FUN_80035EA8`).
+    let tints = |slot: &HudSlotView<'_>| -> ([f32; 4], [f32; 4], [f32; 4]) {
+        let base = if slot.alive { white } else { dim };
+        let hp = if !slot.alive {
+            dim
+        } else {
+            tint(
+                hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
+                white,
+            )
+        };
+        let mp = if !slot.alive {
+            dim
+        } else {
+            tint(mp_bar_color_index(slot.mp, slot.mp_max), white)
+        };
+        (base, hp, mp)
+    };
 
-    // Retail parks the status plate off-screen while an arts input session
-    // owns the frame (`docs/subsystems/minigame-muscle-dome.md`: its draws
-    // move to `y = 230`, under the 228-line display window), and the
-    // arts-input reference frame shows the bottom of the screen carrying the
-    // command bar instead. The port emits nothing rather than drawing at an
-    // off-screen Y, since the engine stage is 12 lines taller than retail's
-    // display window and `y = 230` would still be visible here.
-    if !live_party.is_empty() && !frame.input_session_parked {
-        let rows = live_party.len().min(3) as i32;
+    // ---- Surface 1: the resting roster panels ----
+    //
+    // One 102x48 panel per live member at the packet-pinned seats, carrying
+    // name + LV on the top cell, then an HP row and an MP row. Retail parks
+    // the whole cluster at `y = 230` (under its 228-line display window)
+    // while a command-entry session owns the frame; the engine stage is 240
+    // lines, so `y = 230` would still be visible here and the port omits the
+    // draws instead.
+    let seats = panel_seats(live_party.len().min(3));
+    if !frame.input_session_parked {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
-            // Bottom row on the pinned band, earlier members stacked above.
-            let sy = STRIP_STAGE_Y - (rows - 1 - ordinal as i32) * STRIP_ROW_PITCH;
-            lozenge(
+            let px = seats[ordinal];
+            let py = PANEL_Y;
+            let (base, hp_tint, mp_tint) = tints(slot);
+            plate(&mut text, &mut sprites, (px, py, PANEL_W, PANEL_H));
+
+            stage_text(
                 &mut text,
-                &mut sprites,
-                (STRIP_STAGE_X, sy, STRIP_STAGE_W, STRIP_STAGE_H),
+                font,
+                slot.name,
+                px + PANEL_NAME.0,
+                py + PANEL_NAME.1,
+                base,
             );
+            if slot.level > 0 {
+                // The no-ailment arm of `FUN_8002C2E4`'s ladder: the level
+                // beside its own label, which is a panel row in retail - not
+                // the floating marker the port used to draw.
+                label(
+                    &mut sprites,
+                    &mut text,
+                    2,
+                    px + PANEL_LV_LABEL.0,
+                    py + PANEL_LV_LABEL.1,
+                );
+                stage_text(
+                    &mut text,
+                    font,
+                    &slot.level.to_string(),
+                    px + PANEL_LV_DIGITS.0,
+                    py + PANEL_LV_DIGITS.1,
+                    base,
+                );
+            }
 
-            let base = if slot.alive { white } else { dim };
-            // Numerals take the retail readout-tint law; a dead member's
-            // whole row dims (the readout law's own K.O. index).
-            let hp_tint = if !slot.alive {
-                dim
-            } else {
-                tint(
-                    hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
-                    white,
-                )
-            };
-            let mp_tint = if !slot.alive {
-                dim
-            } else {
-                tint(mp_bar_color_index(slot.mp, slot.mp_max), white)
-            };
-
-            let ty = sy + STRIP_TEXT_DY;
-            stage_text(&mut text, font, slot.name, STRIP_NAME_X, ty, base);
-            label(&mut sprites, &mut text, true, STRIP_HP_LABEL_X, ty);
+            label(
+                &mut sprites,
+                &mut text,
+                0,
+                px + PANEL_HP_LABEL.0,
+                py + PANEL_HP_LABEL.1,
+            );
             stage_text_r(
                 &mut text,
                 &slot.hp.to_string(),
-                STRIP_HP_CUR_RIGHT,
-                ty,
+                px + PANEL_CUR_RIGHT,
+                py + PANEL_HP_DIGIT_Y,
                 hp_tint,
             );
-            stage_text(&mut text, font, "/", STRIP_HP_SLASH_X, ty, hp_tint);
-            stage_text_r(
+            separator(
                 &mut text,
-                &slot.hp_max.to_string(),
-                STRIP_HP_MAX_RIGHT,
-                ty,
+                px + PANEL_HP_SEPARATOR.0,
+                py + PANEL_HP_SEPARATOR.1,
                 hp_tint,
             );
+            stage_text(
+                &mut text,
+                font,
+                &slot.hp_max.to_string(),
+                px + PANEL_MAX_LEFT,
+                py + PANEL_HP_DIGIT_Y,
+                hp_tint,
+            );
+
             if slot.mp_max > 0 {
-                label(&mut sprites, &mut text, false, STRIP_MP_LABEL_X, ty);
+                label(
+                    &mut sprites,
+                    &mut text,
+                    1,
+                    px + PANEL_MP_LABEL.0,
+                    py + PANEL_MP_LABEL.1,
+                );
                 stage_text_r(
                     &mut text,
                     &slot.mp.to_string(),
-                    STRIP_MP_CUR_RIGHT,
-                    ty,
+                    px + PANEL_CUR_RIGHT,
+                    py + PANEL_MP_DIGIT_Y,
                     mp_tint,
                 );
-                stage_text(&mut text, font, "/", STRIP_MP_SLASH_X, ty, mp_tint);
-                stage_text_r(
+                separator(
                     &mut text,
+                    px + PANEL_MP_SEPARATOR.0,
+                    py + PANEL_MP_SEPARATOR.1,
+                    mp_tint,
+                );
+                stage_text(
+                    &mut text,
+                    font,
                     &slot.mp_max.to_string(),
-                    STRIP_MP_MAX_RIGHT,
-                    ty,
+                    px + PANEL_MAX_LEFT,
+                    py + PANEL_MP_DIGIT_Y,
                     mp_tint,
                 );
             }
-            popup_anchor[*i] = (
-                origin.0 + STRIP_HP_LABEL_X * scale,
-                origin.1 + (sy - 26) * scale,
-            );
 
-            // Status badge in the member's own right-hand gutter - retail
-            // draws exactly one element per party slot and which one is
+            // Status badge in the panel's own bottom-right corner - retail
+            // draws exactly one element per slot and which one is
             // `FUN_8002C2E4`'s ladder, already resolved into `status_sprite`
-            // upstream. Only the ailment arm draws by default: the no-ailment
-            // arm is the base marker sprite `0x0A` plus the `+0x130` level,
-            // and neither retail reference frame shows a marker or a level
-            // anywhere near the strip, so the level readout is
-            // diagnostic-only. The badge rides the gutter between the MP
-            // maximum's column and the right cap because that is the one part
-            // of the row nothing else claims - retail's own element pen is
-            // caller-supplied and unpinned, and a badge above the row lands
-            // on the member stacked over it. Art + placement are engine
-            // approximations; the selection is the ported part.
+            // upstream. Retail's element art (`0x18..=0x20`) and its
+            // caller-supplied pen are both unpinned, so the id draws as a
+            // labelled tag inside the member's own panel, where nothing else
+            // sits.
             if slot.status_sprite != 0 {
-                let label_s = status_element_label(slot.status_sprite);
-                let c = status_element_color(slot.status_sprite);
-                stage_text(&mut text, font, label_s, STRIP_BADGE_X, ty, c);
+                stage_text(
+                    &mut text,
+                    font,
+                    status_element_label(slot.status_sprite),
+                    px + PANEL_MAX_LEFT,
+                    py + PANEL_MP_DIGIT_Y + 12,
+                    status_element_color(slot.status_sprite),
+                );
             }
+
+            popup_anchor[*i] = (
+                origin.0 + (px + PANEL_W / 2) * scale,
+                origin.1 + (py - 16) * scale,
+            );
         }
     }
 
-    // ---- Top-left plaque ----
+    // ---- Surface 2: the active-actor bar ----
     //
-    // Retail's battle screen keeps a small framed plaque in the top-left
-    // corner naming the actor the frame belongs to - "Vahn" while Vahn's
-    // item lands (`captures/tetsu_idle`, `captures/item_catch`), the
-    // monster's name through an enemy turn (the Tetsu-rush reference). Its
-    // skin is a brown/gold lozenge that is not pinned to an atlas cell, so
-    // the box draws in the shared chrome and the label as clean text at the
-    // measured inset. This is also where the port's monster readout now
-    // lives: retail draws no monster gauge at all
-    // (`docs/subsystems/battle-action.md`), so the name is all that stays.
+    // The full-width plate the acting party member's readout takes over: name
+    // at the left, then the HP label with its right-aligned current and
+    // forward-running maximum, then the same pair for MP. Retail draws **no
+    // gauge bar** here - the packet run carries no bar primitive in either
+    // readout, and neither reference frame shows one.
+    if let Some(active) = frame.active_slot
+        && let Some((i, slot)) = live_party.iter().find(|(i, _)| *i == active as usize)
+    {
+        let (base, hp_tint, mp_tint) = tints(slot);
+        plate(
+            &mut text,
+            &mut sprites,
+            (BAR_X, BAR_Y, BAR_INTERIOR_W + 2 * PLATE_CAP_W, PLATE_H),
+        );
+        stage_text(&mut text, font, slot.name, BAR_NAME.0, BAR_NAME.1, base);
+        label(&mut sprites, &mut text, 0, BAR_HP_LABEL.0, BAR_HP_LABEL.1);
+        stage_text_r(
+            &mut text,
+            &slot.hp.to_string(),
+            BAR_HP_CUR_RIGHT,
+            BAR_DIGIT_Y,
+            hp_tint,
+        );
+        separator(&mut text, BAR_HP_SEPARATOR.0, BAR_HP_SEPARATOR.1, hp_tint);
+        stage_text(
+            &mut text,
+            font,
+            &slot.hp_max.to_string(),
+            BAR_HP_MAX_LEFT,
+            BAR_DIGIT_Y,
+            hp_tint,
+        );
+        if slot.mp_max > 0 {
+            label(&mut sprites, &mut text, 1, BAR_MP_LABEL.0, BAR_MP_LABEL.1);
+            stage_text_r(
+                &mut text,
+                &slot.mp.to_string(),
+                BAR_MP_CUR_RIGHT,
+                BAR_DIGIT_Y,
+                mp_tint,
+            );
+            separator(&mut text, BAR_MP_SEPARATOR.0, BAR_MP_SEPARATOR.1, mp_tint);
+            stage_text(
+                &mut text,
+                font,
+                &slot.mp_max.to_string(),
+                BAR_MP_MAX_LEFT,
+                BAR_DIGIT_Y,
+                mp_tint,
+            );
+        }
+        popup_anchor[*i] = (
+            origin.0 + BAR_HP_LABEL.0 * scale,
+            origin.1 + (BAR_Y - 26) * scale,
+        );
+    }
+
+    // ---- The actor-name plaque ----
+    //
+    // Retail's top-left plaque names the actor the frame belongs to - the
+    // party member on his turn, the monster through its attack - on a carved
+    // gold plate whose interior is sized to the measured name. Its live seat
+    // is `(8, 8)` and its parked seat `(8, -24)`: the plaque slides in from
+    // above. The port draws only the live seat; the slide is not animated.
     if let Some(name) = frame.plaque
         && !name.is_empty()
     {
-        let w = font.layout_ascii(name).advance_x as i32 + PLAQUE_PAD;
-        lozenge(
+        let name_w = font.layout_ascii(name).advance_x as i32;
+        plate(
             &mut text,
             &mut sprites,
-            (PLAQUE_BOX_X, PLAQUE_BOX_Y, w, PLAQUE_BOX_H),
+            (PLAQUE_X, PLAQUE_Y, name_w + 2 * PLATE_CAP_W, PLATE_H),
         );
-        stage_text(&mut text, font, name, PLAQUE_TEXT_X, PLAQUE_TEXT_Y, white);
+        stage_text(
+            &mut text,
+            font,
+            name,
+            PLAQUE_X + PLATE_CAP_W,
+            PLAQUE_Y + PLAQUE_CONTENT_DY,
+            white,
+        );
     }
 
     // ---- Diagnostic rows (LEGAIA_DIAG_HUD) ----
