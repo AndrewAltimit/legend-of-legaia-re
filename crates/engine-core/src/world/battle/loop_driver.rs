@@ -238,6 +238,14 @@ impl World {
             self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
         }
 
+        // Battle locomotion - the anim tick's root-motion drive
+        // (`FUN_80047430`): the attack band's approach walk toward the
+        // target and the recovery band's walk back to the seat. Retail runs
+        // the actor-list anim tick ahead of the battle-scene per-frame tick
+        // (`FUN_80046A20`), so this goes ahead of the SM step below.
+        // REF: FUN_80047430 (root-motion term; `World::tick_battle_locomotion`)
+        self.tick_battle_locomotion();
+
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
         // state 0x50 *before* the liveness count resolves a wipe. Run it
         // before the SM step so a party member downed late last tick (a
@@ -261,6 +269,14 @@ impl World {
         self.tick_battle_cast_census();
 
         let outcome = self.step_battle();
+
+        // The all-pairs separation pass, on the line after the action SM -
+        // retail's exact slot (`FUN_80046A20` runs `jal 0x801E295C` then
+        // `jal 0x80051078`, every live battle frame).
+        // REF: FUN_80051078, FUN_80050BB8 (kernels in
+        // `legaia_engine_vm::battle_separation`; driver
+        // `World::tick_battle_separation`)
+        self.tick_battle_separation();
 
         // Apply this step's damage events (art strikes carry a damage value;
         // the loop owns folding while live, so events are consumed here).

@@ -1839,18 +1839,20 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .copied()
             .unwrap_or(0)
     }
+    /// The retail range law (`FUN_8004E2F0`), computed from live state -
+    /// see `World::battle_range_metric`
+    /// (`crate::world::battle::locomotion`). This used to read the dead
+    /// always-empty `World::range_table` map, which short-circuited every
+    /// approach state to "already in range".
     fn range_check(&self, attacker: u8, target: u8) -> u16 {
-        self.world
-            .range_table
-            .get(&(attacker, target))
-            .copied()
-            .unwrap_or(0)
+        self.world.battle_range_metric(attacker, target)
     }
-    /// Retail's `actor[+0x34]` / `actor[+0x38]` pair. The engine keeps the
-    /// battle seat on the actor's move state, where `World::enter_battle` puts
-    /// it from [`crate::battle_seats`] and the attack band's drift moves it -
-    /// the same numbers `World::battle_target_rows` hands the target picker's
-    /// angular enemy cursor.
+    /// Retail's **live** position pair `actor[+0x34]` / `actor[+0x38]`. The
+    /// engine keeps it on the actor's move state, where `World::enter_battle`
+    /// puts it from [`crate::battle_seats`] and the locomotion drive
+    /// (`World::tick_battle_locomotion`, the root-motion port) plus the
+    /// separation pass move it - the same numbers `World::battle_target_rows`
+    /// hands the target picker's angular enemy cursor.
     ///
     /// `None` is an unoccupied slot: the actor table holds exactly the seated
     /// combatants, which is what makes it the engine's reading of retail's
@@ -1860,6 +1862,30 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .actors
             .get(slot as usize)
             .map(|a| (a.move_state.world_x, a.move_state.world_z))
+    }
+    /// Mutation half of `actor_position` - the state-`0x16` arrival shove is
+    /// its one SM caller.
+    fn set_actor_position(&mut self, slot: u8, x: i16, z: i16) {
+        if let Some(a) = self.world.actors.get_mut(slot as usize) {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+        }
+    }
+    /// The seat (anchor) pair `+0x3C`/`+0x40` - `BattleActor::seat`, seeded
+    /// by the first locomotion tick and cleared at battle teardown. Falls
+    /// back to the live pair for a not-yet-seeded slot.
+    fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
+        let a = self.world.actors.get(slot as usize)?;
+        Some(
+            a.battle
+                .seat
+                .unwrap_or((a.move_state.world_x, a.move_state.world_z)),
+        )
+    }
+    fn set_actor_anchor(&mut self, slot: u8, x: i16, z: i16) {
+        if let Some(a) = self.world.actors.get_mut(slot as usize) {
+            a.battle.seat = Some((x, z));
+        }
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);

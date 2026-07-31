@@ -93,6 +93,12 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
+        // Drop the battle seat anchors - the next battle's setup re-seats
+        // the actors and the first locomotion tick re-seeds the pair
+        // (`World::tick_battle_locomotion`).
+        for a in self.actors.iter_mut() {
+            a.battle.seat = None;
+        }
         self.battle_escaped = false;
         self.battle_no_escape = false;
         self.battle_guarding = [false; 3];
