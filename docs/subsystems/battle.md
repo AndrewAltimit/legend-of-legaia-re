@@ -2650,7 +2650,17 @@ synchronises its clock from the live transition entity; the one-shot field
 frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
 field in the texture pages each style's packets name; and the emitted
 `ScreenPrim`s composite over the scene through
-`RenderTarget::SceneWithScreenPrims`. Per-style packet detail - what each
+`RenderTarget::SceneWithScreenPrims`.
+
+The session's `Transition` phase length **is** the intro's own
+`DAT_801D2458` - 132 display frames, 252 for the swirl
+(`battle_intro_styles::intro_duration_frames`,
+[`cutscene.md`](cutscene.md#how-long-a-transition-runs-dat_801d2458)) - because
+the entity clock counts up to the same number the session counts down from.
+Two things depend on it that are easy to read as style bugs when the window is
+short: every fade ramp is a lead before it, and the tile shatter's records hold
+at their seeded pose until `delay < elapsed * 0x3C` with `delay = rand() % 5000`,
+so the grid needs ~84 frames just to finish starting. Per-style packet detail - what each
 emitter builds, the dispatcher flag decode, and the two nuances the port
 leaves un-carried - is on
 [`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu);

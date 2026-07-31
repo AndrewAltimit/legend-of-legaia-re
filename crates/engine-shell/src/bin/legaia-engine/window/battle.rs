@@ -1814,20 +1814,28 @@ impl PlayWindowApp {
 ///
 /// Retail reads two 4096-entry tables at `_DAT_8007B7F8` / `_DAT_8007B81C`,
 /// which are runtime-built and which the engine does not carry, so this
-/// computes the same q12 sine and cosine instead. The difference is confined
-/// to the four styles whose packet builders are **not** ported: the curtain -
-/// the one style that draws - calls none of this, so nothing on screen depends
-/// on the substitution. Recorded here rather than hidden because it is the
-/// reason the working sets tick with plausible rather than retail-identical
-/// values.
+/// computes the same q12 sine and cosine instead. All five styles draw now, so
+/// the substitution *is* visible - it decides which way a tile-shatter record
+/// tumbles and where a particle flies, but not whether either happens.
+/// Recorded here rather than hidden because it is the reason the working sets
+/// tick with plausible rather than retail-identical values.
+///
+/// The draws themselves are **not** a local detail: the tile seeder's spawn
+/// delays are 256 consecutive `rand()` results, so a generator that converges
+/// gives every record the same delay and the whole style freezes at its
+/// seeded pose. Hence the shared
+/// [`IntroRng`](legaia_engine_vm::battle_intro_particles::IntroRng).
 struct IntroEnv {
-    lcg: u32,
+    rng: legaia_engine_vm::battle_intro_particles::IntroRng,
 }
 
 impl IntroEnv {
     fn new(seed: u32) -> Self {
         Self {
-            lcg: seed | 1, // a zero state would stick
+            // Shared with every other host that arms an intro - a local LCG
+            // here is what let a degenerate multiplier stop the tile shatter
+            // dead. See `battle_intro_particles::INTRO_RNG_MULTIPLIER`.
+            rng: legaia_engine_vm::battle_intro_particles::IntroRng::new(seed),
         }
     }
 
@@ -1853,8 +1861,7 @@ impl legaia_engine_vm::battle_intro_particles::ParticleEnv for IntroEnv {
     }
     fn rand(&mut self) -> i32 {
         // A 15-bit draw, the range the seeders' `%` arms expect.
-        self.lcg = self.lcg.wrapping_mul(0x0001_9660).wrapping_add(0x3C6E_F35F);
-        ((self.lcg >> 16) & 0x7FFF) as i32
+        self.rng.draw()
     }
 }
 

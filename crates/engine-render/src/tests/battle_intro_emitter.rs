@@ -38,12 +38,14 @@ use legaia_tim::Vram;
 /// shape `engine-vm`'s `battle_intro_chain.rs` uses, kept synthetic so this
 /// file needs no disc.
 struct Env {
-    lcg: u32,
+    rng: legaia_engine_vm::battle_intro_particles::IntroRng,
 }
 
 impl Env {
     fn new() -> Self {
-        Self { lcg: 0x1234_5678 }
+        Self {
+            rng: legaia_engine_vm::battle_intro_particles::IntroRng::new(0x1234_5678),
+        }
     }
     fn sin_q12(units: i32) -> i16 {
         let r = (units.rem_euclid(0x1000) as f64) * std::f64::consts::TAU / 4096.0;
@@ -66,8 +68,7 @@ impl ParticleEnv for Env {
         if v <= 0 { 0 } else { (v as f64).sqrt() as i32 }
     }
     fn rand(&mut self) -> i32 {
-        self.lcg = self.lcg.wrapping_mul(0x0001_9660).wrapping_add(0x3C6E_F35F);
-        ((self.lcg >> 16) & 0x7FFF) as i32
+        self.rng.draw()
     }
 }
 
@@ -611,6 +612,99 @@ fn the_seeded_sheet_projects_to_the_retail_screen_rect() {
     assert!((max_x - 320).abs() <= 1, "right edge at {max_x}");
     assert!((min_y - -4).abs() <= 1, "top edge at {min_y}");
     assert!((max_y - 252).abs() <= 1, "bottom edge at {max_y}");
+}
+
+/// Screen bounding box of a frame's primitives - the measurement that told a
+/// moving transition from a still one.
+fn prim_bbox(f: &crate::battle_intro::IntroFrame) -> (i16, i16, i16, i16) {
+    let (mut lo_x, mut lo_y, mut hi_x, mut hi_y) = (i16::MAX, i16::MAX, i16::MIN, i16::MIN);
+    for p in &f.prims {
+        let ScreenPrim::Textured(q) = p else { continue };
+        for &(x, y) in &q.xy {
+            lo_x = lo_x.min(x);
+            lo_y = lo_y.min(y);
+            hi_x = hi_x.max(x);
+            hi_y = hi_y.max(y);
+        }
+    }
+    (lo_x, lo_y, hi_x, hi_y)
+}
+
+/// **The tile shatter has to shatter.** A per-frame audit of the five styles
+/// found this one's prim bounding box pinned at the seeded sheet's rect
+/// (`[0,-4]..[320,252]`) *to the pixel* for the whole transition, while the
+/// spin-up field's grew as its confetti flew - so the style was a whitening
+/// fade over a re-tiled still frame, not a shatter.
+///
+/// Two independent causes, both fixed and both pinned here:
+///
+/// 1. the seeder's PRNG stand-in was a degenerate LCG that returned one
+///    constant from its sixth draw on, so all 256 records got the *same*
+///    spawn delay ([`IntroRng`](legaia_engine_vm::battle_intro_particles::IntroRng));
+/// 2. the transition ran for 32 frames against a spawn window that needs 84
+///    ([`INTRO_DURATION_FRAMES`](legaia_engine_vm::battle_intro_styles::INTRO_DURATION_FRAMES)
+///    is retail's `0x84`).
+///
+/// Either one alone parks the grid, so the test drives a retail-length
+/// transition and asserts the box **grows past the sheet on every side**.
+#[test]
+fn the_tile_sheet_breaks_apart_over_a_retail_length_transition() {
+    use legaia_engine_vm::battle_intro_styles::{INTRO_DURATION_FRAMES, intro_duration_frames};
+
+    let total = intro_duration_frames(IntroStyle::TileShatter);
+    assert_eq!(total, INTRO_DURATION_FRAMES);
+
+    let mut it = intro(IntroStyle::TileShatter, total);
+    it.tick(0, 1);
+    let seeded = prim_bbox(&it.tick(1, 1));
+    assert_eq!(
+        seeded,
+        (0, -4, 320, 252),
+        "the seeded sheet is the retail rect"
+    );
+
+    let mut widest = seeded;
+    let mut moved_frame = None;
+    for clock in 2..=total as i16 {
+        let bb = prim_bbox(&it.tick(clock, 1));
+        if bb.0 == i16::MAX {
+            continue; // every record retired
+        }
+        if moved_frame.is_none() && bb != seeded {
+            moved_frame = Some(clock);
+        }
+        widest = (
+            widest.0.min(bb.0),
+            widest.1.min(bb.1),
+            widest.2.max(bb.2),
+            widest.3.max(bb.3),
+        );
+    }
+
+    let moved = moved_frame.expect("the sheet never moved - the shatter is static again");
+    assert!(
+        moved <= 40,
+        "the first record only starts at frame {moved}; some tiles must go early"
+    );
+    assert!(widest.0 < seeded.0, "nothing left the sheet on the left");
+    assert!(widest.1 < seeded.1, "nothing left the sheet on the top");
+    assert!(widest.2 > seeded.2, "nothing left the sheet on the right");
+    assert!(widest.3 > seeded.3, "nothing left the sheet on the bottom");
+}
+
+/// The same style over the **old** 32-frame window still moves, which is what
+/// separates the two causes: with a working PRNG the early records start at
+/// once, so a short transition degrades the shatter rather than freezing it.
+#[test]
+fn a_short_transition_still_moves_the_early_records() {
+    let mut it = intro(IntroStyle::TileShatter, 32);
+    it.tick(0, 1);
+    let seeded = prim_bbox(&it.tick(1, 1));
+    let mut changed = false;
+    for clock in 2..=32i16 {
+        changed |= prim_bbox(&it.tick(clock, 1)) != seeded;
+    }
+    assert!(changed, "not even the zero-delay records moved");
 }
 
 #[test]

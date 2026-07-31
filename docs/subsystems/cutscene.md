@@ -1419,6 +1419,41 @@ is why the flags-set path defaults to style 1 rather than to the initial style 2
 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
 
+#### How long a transition runs (`DAT_801D2458`)
+
+The same init block seeds the duration, two instructions before the style switch it
+feeds: `addiu v0,zero,0x84` / `sw v0,0x2458(v1)` at `0x801CED14` / `0x801CED2C`, then
+`sltiu v0,a0,0x5` on `DAT_801D2460`. So **every style runs 132 display frames** unless
+its own arm says otherwise, and exactly one does: the swirl's jump-table arm (slot `4` of
+the table at `0x801CE840`, body `0x801CEFEC`) re-stores `0xFC` at `0x801CEFF4` /
+`0x801CEFFC` - **252 frames**. Both stores are read off the overlay image's instruction
+words; the decompiler's rendering of `FUN_801ce8cc` reaches past the dumped window, so the
+C is not the evidence here. Port:
+`engine-vm::battle_intro_styles::intro_duration_frames`.
+
+That number is the denominator of everything time-shaped in the transition. Each
+`INTRO_FADE_RAMPS` entry is a *lead* before it (the longest is the curtain's `0x40`, so
+`0x84` starts every fade at or after the midpoint), the ready bits are raised at
+`- 0x1E` / `- 6`, and the tile shatter's spawn gate is measured against it.
+
+The shatter is what makes a short duration visible rather than merely quick. Its records
+hold at their seeded pose until `delay < elapsed * 0x3C`, and `delay` is `rand() % 5000`,
+so the last record starts around frame **84**. A transition shorter than that leaves part
+of the grid parked for its whole length - and one shorter than ~20 frames leaves *all* of
+it parked, which draws as a whitening fade over a statically re-tiled screen. The
+engine-side signature is a per-frame primitive bounding box that never leaves the seeded
+sheet's rect (`[0,-4]..[320,252]`, the projection of the `17 x 17` lattice at view z
+`0x800`); a transition that is working has a box that grows past it on all four sides
+within the first two dozen frames and a primitive count that decays as records retire.
+`engine-render`'s `the_tile_sheet_breaks_apart_over_a_retail_length_transition` pins that.
+
+A seeder RNG is the other way to park the same grid, and it fails identically: the delays
+come from 256 consecutive draws, so a generator that converges hands every record the same
+delay. The port's stand-in is
+`engine-vm::battle_intro_particles::IntroRng`, deliberately shared by every host - an LCG
+whose multiplier is even walks its whole state to a fixed point within a handful of draws
+and then returns one constant forever.
+
 #### What the styles actually draw
 
 **Styles 0 and 1** are particle fields - the captured screen cut into 8x8-pixel patches

@@ -249,6 +249,42 @@ pub fn select_intro_style(inputs: &IntroStyleInputs) -> IntroStyleChoice {
     IntroStyleChoice { style, sub_style }
 }
 
+/// `DAT_801D2458` as the intro init leaves it for four of the five styles:
+/// **132 display frames**.
+///
+/// The store is unconditional and sits two instructions before the style
+/// switch itself - `addiu v0,zero,0x84` / `sw v0,0x2458(v1)` at
+/// `0x801CED14` / `0x801CED2C`, immediately followed by the
+/// `sltiu v0,a0,0x5` bound on `DAT_801D2460` (PROT 0979
+/// `overlay_field_battle_intro`, load base `0x801CE818`; read off the image's
+/// own instruction words, not the decompiler).
+///
+/// It is the denominator of everything time-shaped in the transition: the
+/// entity's `+0x1A` clock is compared against it for the BGM hand-off, and
+/// every [`INTRO_FADE_RAMPS`] entry is expressed as a *lead* before it. The
+/// tile shatter is the style that makes it observable - its spawn delays are
+/// `rand() % 5000` held against `elapsed * 60`, so the last records start
+/// around frame 83 and a window shorter than that leaves part of the grid at
+/// its rest pose for the whole transition.
+pub const INTRO_DURATION_FRAMES: i32 = 0x84;
+
+/// `DAT_801D2458` for [`IntroStyle::Swirl`]: **252 display frames**.
+///
+/// The swirl's dispatch arm (jump-table slot `4` at `0x801CE840`, body
+/// `0x801CEFEC`) re-stores the global with `addiu v0,zero,0xfc` /
+/// `sw v0,0x2458(v1)` at `0x801CEFF4` / `0x801CEFFC` - the only arm that
+/// overrides the shared value, which is why the fan transition runs so much
+/// longer than the other four.
+pub const INTRO_DURATION_FRAMES_SWIRL: i32 = 0xFC;
+
+/// The intro duration `DAT_801D2458` holds once the init has run for `style`.
+pub fn intro_duration_frames(style: IntroStyle) -> i32 {
+    match style {
+        IntroStyle::Swirl => INTRO_DURATION_FRAMES_SWIRL,
+        _ => INTRO_DURATION_FRAMES,
+    }
+}
+
 /// The per-style constants of the second switch's fade ramp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroFadeRamp {
@@ -992,6 +1028,66 @@ mod tests {
             let b = intro_fade(style, 2, total - 1, total);
             assert_eq!(a, b, "{style:?} must not read the sub-style");
         }
+    }
+
+    /// The swirl is the only arm that overrides `DAT_801D2458`.
+    #[test]
+    fn only_the_swirl_lengthens_the_intro() {
+        for style in [
+            IntroStyle::ScatterParticles,
+            IntroStyle::SpinUpParticles,
+            IntroStyle::TileShatter,
+            IntroStyle::Curtain,
+        ] {
+            assert_eq!(intro_duration_frames(style), INTRO_DURATION_FRAMES);
+        }
+        assert_eq!(
+            intro_duration_frames(IntroStyle::Swirl),
+            INTRO_DURATION_FRAMES_SWIRL
+        );
+        assert_eq!(
+            (INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL),
+            (132, 252)
+        );
+    }
+
+    /// Every fade ramp is expressed as a lead *before* the intro ends, so a
+    /// duration shorter than the longest lead would start the whole style
+    /// already fading. `0x84` clears all five with room to spare.
+    #[test]
+    fn the_retail_duration_outlasts_every_fade_lead() {
+        for (i, r) in INTRO_FADE_RAMPS.iter().enumerate() {
+            let style = IntroStyle::from_selector(i as i32).unwrap();
+            let total = intro_duration_frames(style);
+            // Every ramp starts no earlier than the transition's midpoint -
+            // the curtain's `0x40` is the longest, and `0x84` still clears it.
+            assert!(
+                r.lead * 2 <= total,
+                "{style:?}: lead {:#x} against duration {total:#x}",
+                r.lead
+            );
+            // The ramp is inactive on the first frame and saturated by the
+            // last, which is what makes the fade read as a fade.
+            assert!(intro_fade(style, 0, 1, total).is_none());
+            assert_eq!(
+                intro_fade(style, 0, total, total).map(|f| f.level),
+                Some(0xFF)
+            );
+        }
+    }
+
+    /// The tile shatter's spawn window has to fit inside the intro, or part of
+    /// the grid never leaves its rest pose. `rand() % 5000` against
+    /// `elapsed * TILE_DELAY_SCALE` puts the last record's start at frame 83.
+    #[test]
+    fn the_tile_spawn_window_fits_inside_the_intro() {
+        let scale = crate::battle_intro_tiles::TILE_DELAY_SCALE;
+        let last_start = 4999 / scale + 1;
+        assert_eq!(last_start, 84);
+        assert!(
+            last_start < intro_duration_frames(IntroStyle::TileShatter),
+            "every tile must get past its delay gate inside the transition"
+        );
     }
 
     fn particle() -> IntroParticle {

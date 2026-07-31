@@ -53,12 +53,14 @@ const FRAMES: i32 = 0x78;
 /// seeded particle gets, which is fine - this test asserts the kernels compose
 /// and stay live, not that they reproduce a captured frame.
 struct IntroEnv {
-    lcg: u32,
+    rng: legaia_engine_vm::battle_intro_particles::IntroRng,
 }
 
 impl IntroEnv {
     fn new() -> Self {
-        Self { lcg: 0x1234_5678 }
+        Self {
+            rng: legaia_engine_vm::battle_intro_particles::IntroRng::new(0x1234_5678),
+        }
     }
 
     /// q12 sine of a 12-bit (0..0x1000) heading.
@@ -88,9 +90,9 @@ impl ParticleEnv for IntroEnv {
 
     fn rand(&mut self) -> i32 {
         // PsyQ-shaped 15-bit draw: the value range is what the seeders' `%`
-        // arms care about, not the exact sequence.
-        self.lcg = self.lcg.wrapping_mul(0x0001_9660).wrapping_add(0x3C6E_F35F);
-        ((self.lcg >> 16) & 0x7FFF) as i32
+        // arms care about, not the exact sequence. Shared with the shell's own
+        // stand-in so a degenerate stream cannot hide here.
+        self.rng.draw()
     }
 }
 
