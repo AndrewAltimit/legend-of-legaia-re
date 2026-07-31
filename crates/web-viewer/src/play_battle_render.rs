@@ -72,10 +72,17 @@ use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
 /// Retail 4x uniform battle world scale (base matrix `0x8007BF10` =
-/// `16384 * I`; GTE `4096` = 1.0). The page composes it onto the actor draws
-/// (mesh scale + pre-scaled translation) exactly as the native redraw
-/// composes it onto the actor camera - the backdrop + grid stay at raw world
-/// coordinates, like retail.
+/// `16384 * I`; GTE `4096` = 1.0), composed per drawn object by
+/// `FUN_80048A08`.
+///
+/// **Every battle draw class rides it**, not just the combatants: the arena
+/// backdrop is registered as an ordinary background actor and goes through
+/// the same path. The page composes it onto the actor draws (mesh scale +
+/// pre-scaled translation); the stage class carries it in its uploaded
+/// vertices instead ([`BattleMesh::stage_positions`]), because the page's
+/// per-draw scale for those is `1.0`. The camera's translation trio is
+/// authored in this scaled space, so a class left at raw 1x would be
+/// orbited at four times the intended radius.
 const BATTLE_WORLD_SCALE: f32 = 4.0;
 
 /// PROT entry of the monster stat/mesh archive (`0867_battle_data`).
@@ -205,6 +212,29 @@ struct BattleMesh {
 impl BattleMesh {
     fn positions(&self) -> Vec<f32> {
         self.mesh.positions.iter().flatten().copied().collect()
+    }
+    /// [`Self::positions`] lifted into the scaled battle stage space -
+    /// what the **stage class** (arena backdrop + ground grid) uploads.
+    ///
+    /// Retail's `0x8007BF10 = 16384*I` base matrix is composed per drawn
+    /// object (`FUN_80048A08`), and the arena is registered as an ordinary
+    /// background *actor*, so the stage rides the same scale the combatants
+    /// do. The page composes `BATTLE_WORLD_SCALE` onto the actor draws only
+    /// (its per-draw `scale` field), so the stage carries it in its
+    /// vertices instead - same world, one scale, no page change.
+    ///
+    /// Leaving the stage at raw 1x under a camera whose translation trio is
+    /// authored in the scaled space orbited the eye at four times the
+    /// intended radius (straight through the arena shell on one side) and
+    /// drew every actor `3 * seat` away from its own ground cell. The
+    /// native window's sibling is `PlayWindowApp::battle_stage_model`.
+    fn stage_positions(&self) -> Vec<f32> {
+        self.mesh
+            .positions
+            .iter()
+            .flatten()
+            .map(|v| v * BATTLE_WORLD_SCALE)
+            .collect()
     }
     fn uvs(&self) -> Vec<u8> {
         self.mesh.uvs.iter().flatten().copied().collect()
@@ -974,7 +1004,7 @@ impl LegaiaRuntime {
         self.battle_render
             .as_ref()
             .and_then(|b| b.backdrop.as_ref())
-            .map(|m| m.positions())
+            .map(|m| m.stage_positions())
             .unwrap_or_default()
     }
 
@@ -1014,7 +1044,7 @@ impl LegaiaRuntime {
         self.battle_render
             .as_ref()
             .and_then(|b| b.ground.as_ref())
-            .map(|m| m.positions())
+            .map(|m| m.stage_positions())
             .unwrap_or_default()
     }
 
@@ -1047,6 +1077,11 @@ impl LegaiaRuntime {
     /// colour), or `null` when no grid is up. The page attaches this to the
     /// grid placement as a **per-draw** cue, so the browser grid fogs into
     /// the stage's far colour exactly as the native `DrawCue` seam does.
+    ///
+    /// `far_z` is a VIEW-depth window, so it rides the same
+    /// [`BATTLE_WORLD_SCALE`] the grid's vertices do
+    /// ([`BattleMesh::stage_positions`]) - otherwise the whole ramp would
+    /// collapse into the near field and the floor would read fully fogged.
     pub fn play_battle_ground_cue_json(&self) -> String {
         let Some(far) = self.battle_render.as_ref().and_then(|b| b.grid_far) else {
             return "null".to_string();
@@ -1057,7 +1092,7 @@ impl LegaiaRuntime {
             far[0],
             far[1],
             far[2],
-            grid::grid_cue_far_z(),
+            grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
             grid::grid_cue_max_ir0()
         )
     }

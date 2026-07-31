@@ -695,6 +695,25 @@ shortfall added to the pitch so the camera tilts down instead of sinking
 (`0x801D6494`); between the two it runs a per-character / per-art script whose
 offsets come from the disc table
 [`battle-attack-camera-table.md`](../formats/battle-attack-camera-table.md).
+**Which states hand it the camera is a band, not a byte list.** `FUN_801E295C`
+arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
+prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
+`6`, the Run band (`0x64..=0x67`) arms case `9` plus the orbit itself, and the
+Done band (`0x50..=0x5A`) arms case `6`/`8` under a **bounded** tail - retail
+seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and leaves for `0x5A` when the
+frame step drives it negative, so the per-action framing survives at most ~60
+display frames past the strike.
+
+That bound is the one thing the port cannot copy: its `DoneFadeDown` waits on
+the HP-bar display cursor settling, which is unbounded, and a measured
+auto-resolved fight rests there for half its frames. `battle_cam_script::
+action_state_frames_the_action` therefore treats the whole Done band as idle,
+which is the port's stand-in for retail's timer; classifying it as an action
+in flight leaves both hosts in the per-action close-up for the entire fight,
+with one actor filling the frame and no idle orbit. Guards:
+`the_done_band_does_not_own_the_action_framing` and
+`a_real_turn_spends_most_of_its_frames_in_the_far_framing`.
+
 The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
 `FUN_801F0348` derives from the framed monster's size class - with a style byte
 `ctx[+0xD]` selecting three tweaks and character id `4` overriding the whole
@@ -746,10 +765,29 @@ GTE TR from the actor's `+0x2C` view-translation trio), so the actors - and
 their stage translations - draw at 4× under the same `Rx(32)·Ry(yaw)` /
 `TR=(0,1280,7680)` / `H=256` camera the backdrop uses at 1×. The 4× is what
 makes the small battle meshes read at retail size against the deep
-translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster). The
-engine mirrors the split in `play-window`: the dome + grid draw at 1× and the
-actor + battle-FX draws compose `BATTLE_WORLD_SCALE = 4.0` under the same
-camera.
+translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster).
+
+**Every battle draw class rides that scale in the port**, not just the
+combatants - the backdrop is registered as an ordinary background actor
+(`FUN_800513F0` → `FUN_80020de0` alloc → the normal actor path), so it goes
+through the same `FUN_80048A08` composition. The port therefore lifts the
+arena and the ground grid with the same `BATTLE_WORLD_SCALE = 4.0`
+(`PlayWindowApp::battle_stage_model` natively, `BattleMesh::stage_positions`
+in the browser upload) and scales the grid's DPCS ramp window with them,
+because that window is a view depth.
+
+The camera's translation trio is authored in this scaled space: the traced
+far framing's `TR.z = 7680` is the eye distance to a formation whose seats
+are `±800` **before** the scale. Leaving a draw class at raw 1× under that
+trio has two consequences, and the port shipped both. The eye orbits that
+class at four times the intended radius - clear of the arena on one side and
+straight through its shell on the other, so the frame fills with a single
+magnified wall - and every actor draws `3 × seat` away from the ground cell
+it stands on. Neither is visible at the far framing on a centred formation,
+because a focus at the origin makes the two classes coincide: that is the one
+configuration the pose tests and `retail_battle_mvp` sample. Guard:
+`the_ground_under_an_actor_projects_under_the_actor` projects each retail
+seat through both classes at every framing and requires the same pixel.
 
 The function that camera comes from is **`battle_dome_camera_mvp`**, not
 `retail_battle_mvp`. The two are not interchangeable and only one is live:

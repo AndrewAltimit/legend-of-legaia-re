@@ -1053,11 +1053,27 @@ impl PlayWindowApp {
                     // duplicate village wall across the open sea side, so
                     // the mirror draw is removed (one instance, like
                     // retail). See `project_battle_backdrop_is_prot88_dome`.
+                    //
+                    // **Stage scale.** The stage rides the same
+                    // [`BATTLE_WORLD_SCALE`] base matrix the actors do
+                    // (`0x8007BF10 = 16384*I`, composed per drawn object by
+                    // `FUN_80048A08` - and the dome is registered as an
+                    // ordinary background *actor*, so it goes through that
+                    // same path). Drawing it at raw 1x while the actors ride
+                    // 4x put the two classes in different worlds: the phase
+                    // camera's translation trio is authored in the scaled
+                    // stage space, so against 1x geometry the eye orbited at
+                    // four times the intended radius and swung *through* the
+                    // arena shell - the frame filling with one magnified
+                    // wall - and every actor stood 3x its seat distance away
+                    // from the ground cell it was supposed to be on. One
+                    // scale for every battle draw class is what makes the
+                    // arena a backdrop and the grid a floor.
                     if let Some(stage_idx) = self.battle_stage_mesh
                         && let Some(mesh) = self.meshes.get(stage_idx)
                     {
-                        let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        // Half-arena stage at raw world coords.
+                        let flip = Self::battle_stage_model();
+                        // Half-arena stage in the scaled battle stage space.
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
@@ -1353,15 +1369,20 @@ impl PlayWindowApp {
                 // rides past 1.0 exactly like retail's bare `mtc2`),
                 // blending toward the battle's staged far colour, so the
                 // floor washes out with distance the way retail's does.
-                // The grid draws at raw PSX world units (no
-                // BATTLE_WORLD_SCALE), so its view depths are on the same
-                // scale as retail's SZ.
+                // The grid rides [`BATTLE_WORLD_SCALE`] like every other
+                // battle draw class (see the stage-scale note on the
+                // backdrop draw above): the party stands ON its own grid
+                // cell only if the cell and the actor's stage translation
+                // are lifted by the same factor. The DPCS ramp is a
+                // VIEW-depth window, so it is lifted with the geometry -
+                // otherwise the whole ramp would collapse into the near
+                // field and the floor would read as fully fogged.
                 if in_battle
                     && let Some(gi) = self.battle_ground_mesh
                     && let Some(gmesh) = self.meshes.get(gi)
                 {
                     use legaia_engine_vm::battle_ground_grid as grid;
-                    let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                    let flip = Self::battle_stage_model();
                     draws.push(SceneDraw {
                         mesh: gmesh,
                         mvp: cam * flip,
@@ -1370,7 +1391,7 @@ impl PlayWindowApp {
                             .map(|far| legaia_engine_render::DrawCue {
                                 far,
                                 near_z: 0.0,
-                                far_z: grid::grid_cue_far_z(),
+                                far_z: grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
                                 max_ir0: grid::grid_cue_max_ir0(),
                             }),
                     });

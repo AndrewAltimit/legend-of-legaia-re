@@ -194,6 +194,48 @@ impl PlayWindowApp {
             inputs,
             world.field_frames,
         );
+        // `LEGAIA_DIAG_BATCAM=1`: one line per camera tick with the framing
+        // pose, the phase that selected it and the action-SM state that
+        // derived the phase, plus each drawn combatant's clip `w` and NDC
+        // through the live battle matrix. Reading a *pose* alone cannot tell
+        // a legitimate close-up from a camera parked inside the geometry -
+        // a negative `w` can, which is what this exists for.
+        if std::env::var_os("LEGAIA_DIAG_BATCAM").is_some()
+            && let Some(c) = self.battle_camera.as_ref()
+        {
+            let p = c.framing_pose();
+            let world = &self.session.host.world;
+            eprintln!(
+                "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?}",
+                world.field_frames,
+                c.phase(),
+                world.battle_ctx.action_state,
+                world.battle_ctx.active_actor,
+                p.pitch,
+                p.yaw,
+                p.tr,
+                p.focus,
+            );
+            let cam = self.battle_dome_camera_mvp(4.0 / 3.0)
+                * Mat4::from_scale(Vec3::splat(super::BATTLE_WORLD_SCALE));
+            for (i, a) in world.actors.iter().enumerate() {
+                if !a.active || a.tmd_binding.is_none() {
+                    continue;
+                }
+                let w = Vec3::new(
+                    a.move_state.world_x as f32,
+                    a.move_state.world_y as f32,
+                    a.move_state.world_z as f32,
+                );
+                let clip = cam * w.extend(1.0);
+                eprintln!(
+                    "  actor{i} world={w:?} clipw={:.1} ndc=({:.2},{:.2})",
+                    clip.w,
+                    clip.x / clip.w,
+                    clip.y / clip.w
+                );
+            }
+        }
     }
 
     /// The X/Z bounding box of the actors the far battle framing encloses -
@@ -360,6 +402,32 @@ impl PlayWindowApp {
         // The battle camera's rotation trio is `(pitch, yaw, 0)` - the battle
         // phase script never stages a roll.
         Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 0.0, 256.0, tr, focus, aspect)
+    }
+
+    /// The model factor every **stage-class** battle draw carries: the
+    /// backdrop arena and the ground grid.
+    ///
+    /// It is the actor class's factor - [`BATTLE_WORLD_SCALE`] (retail's
+    /// `0x8007BF10 = 16384*I` base matrix, composed per drawn object by
+    /// `FUN_80048A08`, and the arena is registered as an ordinary background
+    /// *actor*) - with the per-model Y-flip folded in, because the stage
+    /// meshes are drawn from raw PSX Y-down vertices.
+    ///
+    /// **One scale for every battle draw class.** The phase camera's
+    /// translation trio (`0x800840B8`) is authored in the scaled stage
+    /// space: the traced far framing's `TR.z = 7680` is the eye distance to
+    /// a formation whose seats are `+-800` *before* the scale. Drawing the
+    /// stage at raw 1x against that trio orbited the eye at four times the
+    /// intended radius - clear on one side of the arena and straight
+    /// through its shell on the other, which is the frame filling with a
+    /// single magnified wall - and left every actor drawn `3 * seat` away
+    /// from the ground cell it stands on.
+    pub(super) fn battle_stage_model() -> Mat4 {
+        Mat4::from_scale(Vec3::new(
+            super::BATTLE_WORLD_SCALE,
+            -super::BATTLE_WORLD_SCALE,
+            super::BATTLE_WORLD_SCALE,
+        ))
     }
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
@@ -897,6 +965,94 @@ mod battle_cam_shared_tests {
         let cam = slot.as_ref().unwrap();
         assert_ne!(cam.shake_offset(), [0, 0], "the jitter is live");
         assert_ne!(cam.pose().tr, cam.framing_pose().tr);
+    }
+
+    /// **One world, one scale.** The ground cell an actor stands on must
+    /// project to the same pixel as the actor's own feet, at every framing -
+    /// which is only true if the stage class ([`PlayWindowApp::
+    /// battle_stage_model`], used by the arena and grid draws) and the actor
+    /// class (`cam * scale(BATTLE_WORLD_SCALE)`) ride the same scale.
+    ///
+    /// This is the regression. The stage used to draw at raw 1x while the
+    /// actors rode 4x, so every actor was drawn `3 * seat` away from its own
+    /// ground, and the phase camera - whose translation trio is authored in
+    /// the *scaled* stage space - orbited the raw arena at four times the
+    /// intended radius and swung through its shell. The far framing on a
+    /// centred formation hid it (focus at the origin, so the two classes
+    /// coincide), which is exactly the one configuration the pose tests and
+    /// the pinned `retail_battle_mvp` oracle sample; a close framing, whose
+    /// focus is the acting actor, did not.
+    #[test]
+    fn the_ground_under_an_actor_projects_under_the_actor() {
+        let actor_scale = Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE));
+        let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+        // Every framing the script rests in, including the close-ups whose
+        // focus is off the origin - the case the old split broke.
+        let poses = [
+            script::BOOT_POSE,
+            script::menu_framing(
+                Some(script::FormationBox {
+                    min: [-600.0, -825.0],
+                    max: [600.0, 1400.0],
+                }),
+                1900.0,
+            ),
+            script::BattleCamActor {
+                facing: 0,
+                world: [0.0, 0.0, -800.0],
+                height: None,
+            }
+            .submenu_pose(),
+            script::action_framing(
+                script::BattleCamActor {
+                    facing: 0,
+                    world: [600.0, 0.0, -775.0],
+                    height: None,
+                },
+                script::ActionFraming::default(),
+            ),
+        ];
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        for pose in poses {
+            let cam = PlayWindowApp::psx_camera_mvp(
+                to_rad(pose.pitch),
+                to_rad(pose.yaw),
+                0.0,
+                script::GTE_H,
+                Vec3::from(pose.tr),
+                Vec3::from(pose.focus) * BATTLE_WORLD_SCALE,
+                4.0 / 3.0,
+            );
+            // Retail seats, plus the stage origin the arena is authored on.
+            for seat in [
+                Vec3::new(0.0, 0.0, -825.0),
+                Vec3::new(600.0, 0.0, -775.0),
+                Vec3::new(0.0, 0.0, 800.0),
+                Vec3::ZERO,
+            ] {
+                // Actor class: `cam * scale(S)` over a model carrying the flip.
+                let a = cam * actor_scale * flip * seat.extend(1.0);
+                // Stage class: the shared stage model (scale + flip).
+                let s = cam * PlayWindowApp::battle_stage_model() * seat.extend(1.0);
+                assert!(
+                    a.w.signum() == s.w.signum(),
+                    "seat {seat:?} at pose {pose:?}: the actor and its ground \
+                     cell fall on opposite sides of the eye ({} vs {})",
+                    a.w,
+                    s.w
+                );
+                if a.w <= 1.0 {
+                    continue;
+                }
+                let (ax, ay) = (a.x / a.w, a.y / a.w);
+                let (sx, sy) = (s.x / s.w, s.y / s.w);
+                assert!(
+                    (ax - sx).abs() < 1e-4 && (ay - sy).abs() < 1e-4,
+                    "seat {seat:?} at pose {pose:?}: actor at ({ax},{ay}) but \
+                     its ground cell at ({sx},{sy})"
+                );
+            }
+        }
     }
 }
 

@@ -210,23 +210,60 @@ pub enum BattleCamPhase {
 /// it pins *when* the orbit runs - only while the SM is idling between
 /// actions.
 ///
-/// **`EndOfAction` is idle here and is not in retail's pair.** Retail's `0x5A`
-/// arm falls through to the next actor's `Begin` inside the same dispatch, so
-/// its `ctx[7]` is never observed resting there; the port's loop driver parks
-/// the SM at `EndOfAction` between turns and re-arms on a later step
-/// (`World::step_battle`'s turn-cycling arm). Testing retail's pair alone
-/// therefore reads the port's *resting* state as an action in flight, which
-/// pins the camera in the per-action close-up for the whole fight - one actor
-/// filling the frame, the rest of the formation outside it, and no idle orbit.
-/// The retail pair stays as [`RETAIL_ORBIT_STATES`] so the difference is
-/// visible rather than folded away.
+/// ## The test is a **band**, not a deny-list
+///
+/// The `ctx[7]` space is banded, and `FUN_801E295C`'s own arms arm the camera
+/// per band rather than per byte:
+///
+/// | Band | `ctx[7]` | What `FUN_801E295C` arms |
+/// |---|---|---|
+/// | Setup | `0x00`, `0x0B` | nothing; the prologue orbit runs |
+/// | Seed | `0x0C` | `FUN_801D5854(ctx[0x13], 6)` (`0x801E6464` arm) |
+/// | Action | `0x14..=0x48` | case `6` per state (`0x14`: `jal 0x801d5854` at `0x801E32E4`) |
+/// | Done | `0x50..=0x5A` | case `6`/`8`, under a **bounded** tail timer |
+/// | Run | `0x64..=0x67` | case `9` + the orbit (`jal 0x801d5854`, `li a1,0x9` at `0x801E5BDC`) |
+///
+/// The Done band is the one the port cannot copy byte-for-byte. Retail seeds
+/// `ctx[+0x6D8] = 0x3C` in the `0x50` arm and decrements it by the frame step
+/// each `0x51` pass, leaving for `0x5A` when it goes negative - so retail's
+/// per-action framing survives at most ~60 display frames past the strike.
+/// The port's Done band has no such timer: `DoneFadeDown` waits on the HP-bar
+/// display cursor settling, which is unbounded, and a measured `--no-player-
+/// battle` fight spends **half its frames** resting there. Classifying the
+/// port's Done band as "an action is executing" therefore pins the camera in
+/// the per-action close-up for the whole fight - one actor filling the frame,
+/// the rest of the formation off it or behind the eye, and no idle orbit -
+/// which is the opposite of what retail's bounded tail produces. The Done
+/// band is idle here, and that is the port's stand-in for retail's timer.
+///
+/// The Run band is idle on retail's own authority, not as a deviation: both
+/// the category-`5` seed arm and the `0x50`/`0x51` arms skip the framing call
+/// for `actor[+0x1DE] == 5` and run the yaw orbit instead.
+///
+/// `0x0A` (`PreActionWait`) is a port-only state - `FUN_801E295C` has no
+/// `0x0A` arm at all - and it precedes the seed, so no action is executing.
+///
+/// The retail orbit pair stays as [`RETAIL_ORBIT_STATES`] so the difference
+/// between retail's gate and this band model is visible rather than folded
+/// away.
 pub const fn action_state_frames_the_action(action_state: u8) -> bool {
-    !matches!(action_state, 0x00 | 0x0B | 0x5A)
+    !matches!(
+        action_state,
+        // Setup band: nothing committed yet (`0x0A` is port-only).
+        0x00 | 0x0A | 0x0B
+        // Done band: retail's bounded action tail, unbounded in the port.
+        | 0x50 | 0x51 | 0x52 | 0x5A
+        // Run band: retail arms case 9 + the orbit here itself.
+        | 0x64
+            ..=0x67
+        // Terminal / between-round holds.
+        | 0xFD | 0xFE | 0xFF
+    )
 }
 
 /// The two `ctx[7]` values retail's own orbit gate accepts
-/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] treats one
-/// more state as idle - see its note for why the port needs it.
+/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] treats a
+/// whole band more as idle - see its note for why the port needs it.
 pub const RETAIL_ORBIT_STATES: [u8; 2] = [0x00, 0x0B];
 
 /// The retail phase for one frame of battle state. Both hosts feed the same
@@ -1954,20 +1991,27 @@ mod tests {
         assert!(depth(crate::battle_formulas::CAMERA_HEIGHT_MAX as i32) > far);
     }
 
-    /// The idle orbit runs at retail's two gated states plus `EndOfAction`,
-    /// which is where the port's loop driver parks the SM between turns;
-    /// everything else is an action in flight.
+    /// The idle bands - stated over the real [`ActionState`] enum rather
+    /// than over raw bytes, so a state added to the SM lands on one side of
+    /// the line deliberately.
     ///
-    /// `EndOfAction` is the load-bearing case: reading it as an action leaves
-    /// both hosts in the per-action close-up for an entire fight, because it
-    /// is the state a battle *rests* in while waiting for the next turn.
+    /// The **Done band** is the load-bearing case: reading it as an action
+    /// leaves both hosts in the per-action close-up for an entire fight,
+    /// because it is the band a port battle *rests* in - retail bounds it
+    /// with the `ctx[+0x6D8]` tail timer, the port waits on the HP-bar
+    /// display cursor and has no bound at all.
     #[test]
     fn the_idle_states_leave_the_action_framing() {
         use crate::battle_action::ActionState;
         for s in [
             ActionState::Begin,
+            ActionState::PreActionWait,
             ActionState::QueuedFromMenu,
+            ActionState::DoneCleanup,
+            ActionState::DoneFadeDown,
+            ActionState::DoneMultiCast,
             ActionState::EndOfAction,
+            ActionState::RunBegin,
         ] {
             assert!(
                 !action_state_frames_the_action(s.as_byte()),
@@ -1976,12 +2020,11 @@ mod tests {
         }
         for s in [
             ActionState::ActionSeed,
-            ActionState::PreActionWait,
+            ActionState::AttackFace,
+            ActionState::AttackAdvance,
             ActionState::AttackStrike,
             ActionState::MagicHitLoop,
             ActionState::SummonSustain,
-            ActionState::DoneCleanup,
-            ActionState::RunBegin,
         ] {
             assert!(
                 action_state_frames_the_action(s.as_byte()),
@@ -2313,6 +2356,148 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// The action framing owns the camera **per band**, and the Done band is
+    /// not one of them.
+    ///
+    /// The band boundaries are `FUN_801E295C`'s own (see
+    /// [`action_state_frames_the_action`]). What this pins is the one place
+    /// the port must differ: `DoneFadeDown` (`0x51`) is retail's *bounded*
+    /// action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`) but the port's
+    /// unbounded HP-bar settle, so classifying it as "an action is
+    /// executing" hands it the per-action close-up for as long as the bar
+    /// takes to drain.
+    #[test]
+    fn the_done_band_does_not_own_the_action_framing() {
+        for idle in [0x00u8, 0x0A, 0x0B, 0x50, 0x51, 0x52, 0x5A, 0xFD, 0xFE, 0xFF] {
+            assert!(
+                !action_state_frames_the_action(idle),
+                "state 0x{idle:02X} is idle - the far framing owns it"
+            );
+        }
+        for run in 0x64u8..=0x67 {
+            assert!(
+                !action_state_frames_the_action(run),
+                "Run band 0x{run:02X}: retail arms case 9 + the orbit itself"
+            );
+        }
+        // The action bands DO own it - the seed arm and every attack state
+        // re-arm case 6 (`0x801E6464`, `0x801E32E4`).
+        for act in [
+            0x0Cu8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1E, 0x1F, 0x28, 0x3C, 0x46,
+        ] {
+            assert!(
+                action_state_frames_the_action(act),
+                "state 0x{act:02X} is an action in flight"
+            );
+        }
+    }
+
+    /// **The residency law the phase script exists to satisfy.** A fight
+    /// whose action SM walks a real state sequence must spend a real share
+    /// of its frames in the far framing - that is where the whole formation
+    /// is on screen and where the idle orbit lives.
+    ///
+    /// The sequence below is a measured `--no-player-battle` turn from the
+    /// native play-window (`LEGAIA_DIAG_BATCAM`): seed, the attack band,
+    /// then the long `DoneFadeDown` settle before the next actor's `Begin`.
+    /// Classifying that settle as an action left the far framing owning
+    /// **one frame of 274** across the whole fight; the band model gives it
+    /// the majority.
+    #[test]
+    fn a_real_turn_spends_most_of_its_frames_in_the_far_framing() {
+        // (state byte, display frames spent there) - one measured turn.
+        let turn: [(u8, u32); 8] = [
+            (0x00, 2),  // Begin
+            (0x0C, 1),  // ActionSeed
+            (0x14, 1),  // AttackFace
+            (0x16, 24), // AttackAdvance
+            (0x17, 1),  // AttackCloseRange
+            (0x18, 1),  // AttackStrike
+            (0x1E, 2),  // AttackChain
+            (0x51, 48), // DoneFadeDown - the port's unbounded settle
+        ];
+        let mut slot: Option<BattleCamera> = None;
+        let mut frames = 0u64;
+        let (mut far, mut total) = (0u32, 0u32);
+        for _round in 0..2 {
+            for (state, dwell) in turn {
+                for _ in 0..dwell {
+                    frames += 1;
+                    let inputs = BattleCamInputs {
+                        phase: phase_for(false, false, action_state_frames_the_action(state)),
+                        acting: Some(BattleCamActor::default()),
+                        formation: Some(traced_formation()),
+                        action: ActionFraming::default(),
+                        shake_amplitude: 0,
+                    };
+                    drive(&mut slot, true, inputs, frames);
+                    total += 1;
+                    if slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu) {
+                        far += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            far * 2 > total,
+            "far framing owned {far} of {total} frames - the fight is a permanent close-up"
+        );
+    }
+
+    /// **The actor-anchored close-ups must not park the eye inside the
+    /// actor they frame.** The submenu and action framings are built around
+    /// the acting actor (`focus = actor.world`), so that actor's own
+    /// footprint has to stay in front of the eye and its standing height
+    /// has to fit the frame.
+    ///
+    /// Scoped to those two deliberately: the dialogue close-up and the far
+    /// menu framing are anchored on the *formation*, not on the acting
+    /// actor - the traced dialogue pose (yaw `0`, TR.z `1638`, focus at the
+    /// origin) genuinely leaves the near party row behind the eye, and the
+    /// formation framing has its own on-screen sweep above.
+    ///
+    /// This is the invariant the pose-equality tests structurally cannot
+    /// see. They compare two hosts' poses to each other; a pose that puts
+    /// the camera *inside* the geometry is equal on both hosts and passes
+    /// them both. Here the pose is projected against the world it frames.
+    #[test]
+    fn no_resting_framing_puts_the_eye_inside_the_acting_actor() {
+        // The actor draw class: BATTLE_WORLD_SCALE + the per-model Y-flip.
+        const S: f32 = 4.0;
+        let scale_s: [f32; 16] = [
+            S, 0.0, 0.0, 0.0, //
+            0.0, S, 0.0, 0.0, //
+            0.0, 0.0, S, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let model = mat_mul(&scale_s, &FLIP);
+        let actor = BattleCamActor::default(); // seated at the traced (0,0,-800)
+        let poses = [
+            ("submenu", actor.submenu_pose()),
+            ("action", action_framing(actor, ActionFraming::default())),
+        ];
+        for (name, pose) in poses {
+            let vp = battle_vp(&pose, S, 4.0 / 3.0);
+            // The ground the acting actor stands on, drawn in the same
+            // scaled stage space as the actor itself.
+            let foot = project(&vp, &model, actor.world).unwrap_or_else(|| {
+                panic!("{name}: the acting actor's own footprint is behind the eye")
+            });
+            // ... and its head, so a camera parked inside the body (the
+            // footprint in front but the whole mesh wrapped around the
+            // lens) is caught too.
+            let head = project(&vp, &model, [actor.world[0], -370.0, actor.world[2]])
+                .unwrap_or_else(|| panic!("{name}: the acting actor's head is behind the eye"));
+            // A standing character spans a bounded share of the 240-line
+            // frame; more than a full frame means the eye is inside it.
+            let span = (foot.1 - head.1).abs();
+            assert!(
+                span < 240.0,
+                "{name}: the acting actor spans {span} of 240 scanlines - the eye is inside it"
+            );
         }
     }
 }
