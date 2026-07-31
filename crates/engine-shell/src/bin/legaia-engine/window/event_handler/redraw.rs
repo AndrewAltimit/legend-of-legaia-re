@@ -1537,6 +1537,10 @@ impl PlayWindowApp {
             // Name-entry window chrome (grid + name-field filigree
             // windows + hand cursor) shares the same atlas slot.
             save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
+            // Sparring-tutorial prompt box: the same window skin, framed at
+            // the rect the retail emitter registers the prompt with. In
+            // battle, so it cannot coexist with the boot/menu chrome above.
+            save_chrome_draw_vec.extend(self.battle_tutorial_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,

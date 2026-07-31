@@ -1210,7 +1210,17 @@ impl LegaiaRuntime {
         // The native window draws the same three from the same shared
         // builders + world model.
         battle.extend(self.post_battle_overlay_draws(assets, surface_w, surface_h));
-        if shop.is_none() && windows.is_empty() && banners.is_empty() && battle.is_empty() {
+        // Sparring-tutorial prompt box: unlike the rest of the battle overlay
+        // its rect is in 320x240 stage space (the retail emitter's own
+        // coordinates), so it joins the stage-scaled group below and gets the
+        // window skin the emitter's measured rect implies.
+        let tutorial = self.battle_tutorial_stage_draws(font, chrome.is_some());
+        if shop.is_none()
+            && windows.is_empty()
+            && banners.is_empty()
+            && battle.is_empty()
+            && tutorial.is_empty()
+        {
             return CLOSED.to_string();
         }
 
@@ -1238,6 +1248,10 @@ impl LegaiaRuntime {
         }
         texts.extend(windows);
         texts.extend(banners);
+        if let Some(rects) = chrome {
+            sprites.extend(self.battle_tutorial_chrome_draws(font, rects, origin, scale));
+        }
+        texts.extend(tutorial);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         // Battle draws stay in surface pixels: the shared HUD's measured
         // column offsets span wider than the 320-px menu stage, exactly as

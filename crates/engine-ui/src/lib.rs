@@ -36,6 +36,7 @@ pub use legaia_font;
 pub use legaia_tim;
 
 pub mod battle_name_banner;
+mod battle_tutorial_box;
 pub mod other_game_hud;
 mod ui_fishing;
 mod ui_menu;
@@ -45,6 +46,7 @@ mod ui_menu_window_painters_large;
 mod ui_overlay;
 mod ui_title_save;
 
+pub use battle_tutorial_box::*;
 pub use ui_fishing::*;
 pub use ui_menu::*;
 pub use ui_menu_window_dispatch::*;

@@ -1204,14 +1204,21 @@
         try { shop = JSON.parse(this.rt.play_overlay_draws_json(ov.width, ov.height)); }
         catch (e) { shop = null; }
       }
+      /* This layer does NOT own the frame: the battle HUD rides it, and a
+       * reading box can be up during battle (the sparring fight talks over
+       * the running battle). Returning here left `dialogOnCanvas` false for
+       * every in-battle line, so the page fell back to the DOM `.play-dialog`
+       * strip - CSS-positioned near the BOTTOM - while the engine's own box
+       * geometry says top (`dialog_reading_box_layout`, FUN_801D84D0). So
+       * blit and fall through to the dialog layer instead. */
+      let overlayDrew = false;
       if (shop && shop.open) {
         this._ensureMenuBlitters();
         ctx.clearRect(0, 0, ov.width, ov.height);
         if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = false;
-        return;
+        overlayDrew = true;
       }
 
       /* Retail dialog reading box (field NPC / event message): the engine
@@ -1225,7 +1232,9 @@
       }
       if (dlg && dlg.open) {
         this._ensureMenuBlitters();
-        ctx.clearRect(0, 0, ov.width, ov.height);
+        /* Only clear when nothing has painted this frame - the shop / battle
+         * layer above already cleared and its quads must survive. */
+        if (!overlayDrew) ctx.clearRect(0, 0, ov.width, ov.height);
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
@@ -1233,6 +1242,7 @@
         return;
       }
       this.dialogOnCanvas = false;
+      if (overlayDrew) return;
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live
        * 3D prologue scene. */

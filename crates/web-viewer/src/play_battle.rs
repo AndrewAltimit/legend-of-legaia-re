@@ -41,7 +41,7 @@ use legaia_engine_core::battle_hud::{
     BattleHud, DamagePopup, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, TextDraw};
+use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
 /// Top-left anchor of the battle HUD's slot-row block, in surface pixels
@@ -274,10 +274,9 @@ impl LegaiaRuntime {
     /// (`window/battle.rs`, `window/boot_cutscene.rs`).
     ///
     /// The "this scene rolls no encounters" hint does **not** belong here.
-    /// The page treats a non-empty overlay as owning the frame - it clears
-    /// the canvas, blits, and returns before the dialog-box layer - so a
-    /// passive hint routed through this list would suppress every NPC
-    /// dialogue for the first seconds of a town. The page reads
+    /// A non-empty overlay clears the canvas before it blits, so a passive
+    /// hint routed through this list would wipe whatever the frame had
+    /// already painted for the first seconds of a town. The page reads
     /// [`Self::scene_rolls_encounters`] and prints its own notice instead.
     pub(crate) fn post_battle_overlay_draws(
         &self,
@@ -579,34 +578,83 @@ impl LegaiaRuntime {
             }
         }
 
-        // Sparring-tutorial prompt box, placed by the retail style table
-        // (`FUN_801F747C`): the engine-core box carries the style index, the
-        // host supplies the measured text width and it returns the corner.
-        // Drawn last so it sits over the menus, where retail's box lands too.
-        if let Some(tbox) = bw.battle_tutorial_box() {
-            let layouts: Vec<_> = tbox.text.lines().map(|l| font.layout_ascii(l)).collect();
-            let width = layouts
-                .iter()
-                .map(|l| l.advance_x as i16)
-                .max()
-                .unwrap_or(0);
-            let (bx, by) = tbox.position(width).unwrap_or((0x10, 0x0E));
-            for (i, l) in layouts.iter().enumerate() {
-                out.extend(ui::text_draws_for(
-                    l,
-                    (bx as i32, by as i32 + (i as i32) * 14),
-                    white,
-                ));
-            }
-            if tbox.waits_for_input {
-                out.extend(ui::text_draws_for(
-                    &font.layout_ascii("Cross=continue"),
-                    (bx as i32, by as i32 + (layouts.len() as i32) * 14),
-                    dim,
-                ));
-            }
+        // The sparring-tutorial prompt box is NOT part of this list: its rect
+        // is in retail's 320x240 stage space while everything above is in
+        // surface pixels, and it is a framed window rather than loose text.
+        // It is built by `battle_tutorial_stage_draws` /
+        // `battle_tutorial_chrome_draws` and folded into the stage-scaled
+        // group in `play_overlay_draws_json`.
+        out
+    }
+
+    /// The live sparring-tutorial prompt's box rect in 320x240 **stage**
+    /// pixels, or `None` when no box is up.
+    ///
+    /// The width is measured in this host's font (retail measures it with
+    /// `FUN_80035F04`) and `engine-core` applies the emitter's placement +
+    /// sizing arithmetic (`FUN_801F747C`). Shared by the text and chrome
+    /// layers so the frame and the rows cannot disagree - the native window's
+    /// `battle_tutorial_stage_rect` twin.
+    pub(crate) fn battle_tutorial_stage_rect(
+        &self,
+        font: &legaia_font::Font,
+    ) -> Option<(i32, i32, i32, i32)> {
+        let tbox = self.scene_host.as_ref()?.world.battle_tutorial_box()?;
+        let width = ui::battle_tutorial_text_width(font, &tbox.text);
+        let (x, y, w, h) = tbox.rect(width)?;
+        Some((x as i32, y as i32, w as i32, h as i32))
+    }
+
+    /// Tutorial prompt rows in stage pixels, at the rect origin on the retail
+    /// 14-px pitch.
+    pub(crate) fn battle_tutorial_stage_draws(
+        &self,
+        font: &legaia_font::Font,
+        has_chrome: bool,
+    ) -> Vec<TextDraw> {
+        let Some(rect) = self.battle_tutorial_stage_rect(font) else {
+            return Vec::new();
+        };
+        let Some(tbox) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.battle_tutorial_box())
+        else {
+            return Vec::new();
+        };
+        let mut out = ui::battle_tutorial_text_draws_for(font, &tbox.text, rect);
+        // Without the system-UI atlas there is no frame and no advance hand,
+        // so keep a plain confirm hint as the only affordance a waiting box
+        // would otherwise have.
+        if tbox.waits_for_input && !has_chrome {
+            let lines = tbox.text.lines().count() as i32;
+            out.extend(ui::text_draws_for(
+                &font.layout_ascii("Cross=continue"),
+                (rect.0, rect.1 + lines * 14),
+                [0.75, 0.75, 0.8, 1.0],
+            ));
         }
         out
+    }
+
+    /// Tutorial prompt-box chrome: the same gradient fill + gold 9-slice
+    /// frame the dialog reading box wears, at the emitter's rect.
+    pub(crate) fn battle_tutorial_chrome_draws(
+        &self,
+        font: &legaia_font::Font,
+        rects: &ui::SaveMenuAtlasRects,
+        origin: (i32, i32),
+        scale: u32,
+    ) -> Vec<SpriteDraw> {
+        let Some(rect) = self.battle_tutorial_stage_rect(font) else {
+            return Vec::new();
+        };
+        let waits = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.battle_tutorial_box())
+            .is_some_and(|b| b.waits_for_input);
+        ui::battle_tutorial_chrome_draws_for(rects, rect, waits, origin, scale)
     }
 }
 

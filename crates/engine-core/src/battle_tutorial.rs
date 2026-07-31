@@ -45,6 +45,16 @@
 //! when the player picks the action the current lesson is not teaching. That
 //! cross-product is [`dispatch`].
 //!
+//! ## The box is a sized window, not loose text
+//!
+//! The emitter `FUN_801F747C(str, style)` measures the prompt (line count via
+//! `FUN_8003CBA8`, pixel width via `FUN_80035F04`) and hands the result to the
+//! SCUS text-actor registrar as a full rect:
+//! `FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)`.
+//! [`BoxStyle::box_rect`] is that rect; [`BoxStyle::position`] is only its
+//! corner. A host therefore frames the prompt in the standard window skin at
+//! `box_rect` - see [`docs/subsystems/battle.md`](../../../docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967).
+//!
 //! ## Text provenance - loaded from the disc, never committed
 //!
 //! The prompt strings are Sony bytes living inside overlay 967 itself. This
@@ -214,6 +224,9 @@ pub mod msg {
 /// `x` is either the fixed left margin `0x10` or centred at
 /// `0xA0 - text_width / 2`; `y` is either the fixed top `0x0E` or bottom
 /// anchored at `base - box_height` where `box_height = lines * 14 - 4`.
+///
+/// The style arms only choose `x`/`y`; the **size** is measured, not chosen -
+/// see [`BoxStyle::box_rect`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoxStyle {
     /// Centre horizontally instead of using the `0x10` left margin.
@@ -221,6 +234,14 @@ pub struct BoxStyle {
     /// Bottom-anchor base (`None` = the fixed top anchor `y = 0x0E`).
     pub bottom_anchor: Option<i16>,
     /// Whether the box waits for the player to acknowledge it.
+    ///
+    /// The emitter carries this in `s4`, which it initialises to `1` and only
+    /// the `0 / 1 / 8 / 9` arms clear - styles `8` and `9` are the `2` and `3`
+    /// arms entered one instruction later, at `0x801F7528` / `0x801F7538`,
+    /// past the `move s4, zero`. `s4` then selects the registered actor's
+    /// slot key (`1 + s4`) and its priority (`0x44 - s4`), so a waiting box is
+    /// a *different* text actor from a self-dismissing one rather than the
+    /// same one with a flag.
     pub waits_for_input: bool,
 }
 
@@ -264,6 +285,28 @@ impl BoxStyle {
             None => 0x0E,
         };
         (x, y)
+    }
+
+    /// The whole box rect `(x, y, w, h)` in 320x240 stage pixels - what the
+    /// emitter hands the SCUS text-actor registrar, not just its corner.
+    ///
+    /// `FUN_801F747C` measures the prompt before it places it:
+    /// `FUN_8003CBA8(str)` counts the rendered lines, `FUN_80035F04(str)`
+    /// measures the pixel width, and the tail at `0x801F75B8` passes both on
+    /// to `FUN_8003541C(slot, 0xD, str, x, y, w, h, prio)` -
+    /// `a3 = x`, `sp+0x10 = y`, `sp+0x14 = width`, `sp+0x18 = lines*14 - 4`.
+    /// So the box is **sized to its text**; the style arms only pick the
+    /// corner, and `height` is the same expression `position` bottom-anchors
+    /// against.
+    ///
+    /// This is the retail *centre* rect, in the same sense the dialog reading
+    /// box's `(0x26, 0x10, 0xF4, ...)` is: the drawn window skin extends 8 px
+    /// beyond it on every side.
+    ///
+    /// PORT: FUN_801F747C
+    pub fn box_rect(&self, text_width: i16, lines: i16) -> (i16, i16, i16, i16) {
+        let (x, y) = self.position(text_width, lines);
+        (x, y, text_width, lines * 14 - 4)
     }
 }
 
@@ -835,6 +878,26 @@ mod tests {
         assert!(!BoxStyle::from_raw(9).unwrap().waits_for_input);
         // Out of range.
         assert!(BoxStyle::from_raw(10).is_none());
+    }
+
+    #[test]
+    fn box_rect_is_sized_to_the_measured_text() {
+        // Style 0 (the `[High] [Low] [High]` drill prompt's style): left
+        // margin, top anchor, two lines. Retail passes width and
+        // `lines*14 - 4` straight through to the text-actor registrar.
+        let s0 = BoxStyle::from_raw(0).unwrap();
+        assert_eq!(s0.box_rect(177, 2), (0x10, 0x0E, 177, 24));
+        // The rect's corner is exactly `position`'s, for every style.
+        for raw in 0u8..=9 {
+            let s = BoxStyle::from_raw(raw).unwrap();
+            let (x, y, w, h) = s.box_rect(100, 3);
+            assert_eq!((x, y), s.position(100, 3), "style {raw} corner");
+            assert_eq!((w, h), (100, 3 * 14 - 4), "style {raw} size");
+        }
+        // A bottom-anchored style's rect bottom lands on its anchor base.
+        let s6 = BoxStyle::from_raw(6).unwrap();
+        let (_, y, _, h) = s6.box_rect(80, 2);
+        assert_eq!(y + h, 0x9A);
     }
 
     #[test]

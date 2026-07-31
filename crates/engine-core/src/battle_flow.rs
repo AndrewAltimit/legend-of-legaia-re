@@ -204,6 +204,16 @@ impl ActiveTutorialBox {
         crate::battle_tutorial::BoxStyle::from_raw(self.style)
             .map(|s| s.position(text_width, self.lines()))
     }
+
+    /// The whole box rect `(x, y, w, h)` in 320x240 stage pixels - the rect
+    /// retail's emitter registers the prompt's text actor with
+    /// ([`crate::battle_tutorial::BoxStyle::box_rect`]). Hosts frame the box
+    /// with the standard window skin at this rect and draw the text at its
+    /// origin on a 14-px row pitch.
+    pub fn rect(&self, text_width: i16) -> Option<(i16, i16, i16, i16)> {
+        crate::battle_tutorial::BoxStyle::from_raw(self.style)
+            .map(|s| s.box_rect(text_width, self.lines()))
+    }
 }
 
 /// How long a non-waiting tutorial box stays up, in frames.

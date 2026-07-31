@@ -1209,39 +1209,36 @@ impl PlayWindowApp {
                 }
             }
 
-            // Sparring-tutorial prompt box. Placed by the retail style table
-            // (`FUN_801F747C`): the engine-core box carries the style index, we
-            // supply the measured text width and it returns the corner. Drawn
-            // last inside the battle block so it sits over the menus, which is
-            // where retail's message box lands too.
-            if let Some(tbox) = bw.battle_tutorial_box() {
-                let layouts: Vec<_> = tbox
-                    .text
-                    .lines()
-                    .map(|l| self.font.layout_ascii(l))
-                    .collect();
-                let width = layouts
-                    .iter()
-                    .map(|l| l.advance_x as i16)
-                    .max()
-                    .unwrap_or(0);
-                let (bx, by) = tbox.position(width).unwrap_or((0x10, 0x0E));
-                // Retail box coordinates are 320x240 screen space; the window
-                // draws in the same space as the rest of this HUD.
-                for (i, l) in layouts.iter().enumerate() {
-                    out.extend(text_draws_for(
-                        l,
-                        (bx as i32, by as i32 + (i as i32) * 14),
-                        white,
-                    ));
-                }
-                if tbox.waits_for_input {
-                    out.extend(text_draws_for(
+            // Sparring-tutorial prompt box. `FUN_801F747C` measures the prompt
+            // and registers a text actor with a full rect, so this is a sized
+            // window, not loose text: the shared builder lays the rows out at
+            // the rect origin and the sprite layer
+            // (`battle_tutorial_chrome_sprite_draws`) frames it.
+            //
+            // Unlike the rest of this battle HUD - which is authored in
+            // surface pixels - the tutorial rect is in retail's 320x240 stage
+            // space, so it goes through the stage transform the dialog box and
+            // window chrome use. Drawn last inside the battle block so it sits
+            // over the menus, which is where retail's message box lands too.
+            if let Some(rect) = self.battle_tutorial_stage_rect() {
+                let tbox = bw.battle_tutorial_box().expect("rect implies a box");
+                let mut draws = legaia_engine_render::battle_tutorial_text_draws_for(
+                    &self.font, &tbox.text, rect,
+                );
+                // Without the system-UI atlas there is no frame and no advance
+                // hand, so keep a plain confirm hint as the only affordance a
+                // waiting box would otherwise have.
+                if tbox.waits_for_input && self.save_menu.is_none() {
+                    let lines = tbox.text.lines().count() as i32;
+                    draws.extend(text_draws_for(
                         &self.font.layout_ascii("Cross=continue"),
-                        (bx as i32, by as i32 + (layouts.len() as i32) * 14),
+                        (rect.0, rect.1 + lines * 14),
                         dim,
                     ));
                 }
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
             }
         }
         // Level-up banner: rendered near the top when active after a battle win.
@@ -1531,6 +1528,55 @@ impl PlayWindowApp {
             ));
         }
         out
+    }
+
+    /// The live sparring-tutorial prompt's box rect in 320x240 stage pixels,
+    /// or `None` when no box is up.
+    ///
+    /// The width is measured in this host's font (retail measures it with
+    /// `FUN_80035F04`) and the engine applies the emitter's placement +
+    /// sizing arithmetic. Shared by the text layer and the chrome layer so
+    /// the frame and the rows cannot disagree.
+    pub(super) fn battle_tutorial_stage_rect(&self) -> Option<(i32, i32, i32, i32)> {
+        let tbox = self.session.host.world.battle_tutorial_box()?;
+        let width = legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+        let (x, y, w, h) = tbox.rect(width)?;
+        Some((x as i32, y as i32, w as i32, h as i32))
+    }
+
+    /// Sparring-tutorial prompt-box chrome: the same gradient fill + gold
+    /// 9-slice frame the dialog reading box wears, at the rect the retail
+    /// emitter registers the prompt's text actor with. Sampled from the
+    /// resident system-UI atlas; composited in the shared chrome sprite slot,
+    /// under the text layer.
+    pub(super) fn battle_tutorial_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        if self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let Some(rect) = self.battle_tutorial_stage_rect() else {
+            return Vec::new();
+        };
+        let waits = self
+            .session
+            .host
+            .world
+            .battle_tutorial_box()
+            .is_some_and(|b| b.waits_for_input);
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::battle_tutorial_chrome_draws_for(
+            &assets.rects,
+            rect,
+            waits,
+            stage_origin,
+            stage_scale,
+        )
     }
 
     /// Project the live name-entry session into the renderer-agnostic view
