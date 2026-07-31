@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -881,12 +881,40 @@ object→bone). Pinned live + cross-pipeline in
 character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
 `collect_palette` 0864/0865 - the `PLAYER1..3` files) overlays the CLUT rows
 its mesh samples (`481 + slot` after relocation), so the party reads in its
-real colours (blue Vahn / pink Noa / Gala). A stage battle draws **only
-active actors** - the scene-init actors are bound but inactive and parked at
-the world origin, so without that gate they pile their meshes at `(0,0,0)`.
+real colours (blue Vahn / pink Noa / Gala).
 A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
+
+#### The battle display list is the registration set, not `active`
+
+Retail's loader gives the fight its own actor set: `FUN_800513F0` registers
+the backdrop, the party blobs and the monster meshes into `DAT_8007C018[]`
+and links **those** actors into the render OT. The field scene's actor list
+does not survive the transition.
+
+The port keeps one actor array across the transition (the world clones it
+into `field_return` and restores it at battle end), so every field slot
+arrives in the battle still holding its scene-mesh binding and draws at
+whatever battle-world coordinates its `move_state` carries - which for a
+scene actor that never moved is the **origin**, dead centre of the arena
+between the two rows.
+
+"Draw only `active` actors" is **not** a sufficient gate, and the earlier
+reading that the leftover slots are all inactive is false: rikuroa hands the
+battle two live field actors, which drew a scene prop over the party member
+and made the fight look like it had no party in it at all. The registration
+set is the gate - `unregister_non_battle_meshes` (native host
+`window/battle.rs`) drops the `tmd_binding` of every slot the battle loader
+did not just register, so the display list is exactly what the loader built.
+Nothing is stashed for the restore: the bindings return with the field actor
+table. Regression: `battle_display_list_tests` in the same module.
+
+`LEGAIA_DIAG_BATDRAW=1` prints that display list at battle entry - one row
+per bound slot with its role (party ordinal / monster id / `STRAY`), seat,
+mesh vertex count and projected seat. It is the "which meshes is this battle
+actually drawing" instrument; `LEGAIA_DIAG_BATCAM` answers the per-frame
+framing question and `LEGAIA_DIAG_POSE` the per-frame mesh one.
 
 ### One staged-anim channel: `actor[+0x1DA]`
 
