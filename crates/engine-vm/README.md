@@ -232,7 +232,7 @@ Five more `0898` bodies whose kernels are ported here, each with its own
 | `battle_scatter` | `FUN_801E0080` | The arena's emitter/particle pools: record layouts, both script advances, the countdown drain, the position integration, the brightness ramp and the mirror-bit UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
 | `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera's gate, pose seed, character / art dispatch and animation-frame push; the seventeen per-art arms need the `0x801F4E10` table parsed first. |
-| `battle_value_readout` | `FUN_801E805C` | The multi-cast readout's decimal split (both reciprocal divides), the `(id, id-4)` teardown pairing, the slot-to-widget indirection and the label quad. |
+| `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
 | `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The battle party-name panels - the label-actor open/teardown pair over `0x801F4E08`, the per-party-size anchors, the all-slots actor reset, and the label-strip blit. |
 | `battle_burst` | `FUN_801F30C4` | The two-mode radial effect burst: four compass iterations x three spawn blocks, the per-block placement / spread / tail arithmetic, and both parameter sets. |

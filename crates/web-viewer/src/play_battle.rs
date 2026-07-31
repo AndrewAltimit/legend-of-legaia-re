@@ -52,6 +52,10 @@ const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
 /// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick; the native
 /// window's `ENCOUNTER_BANNER_FRAMES`).
 const ENCOUNTER_BANNER_FRAMES: u16 = 90;
+/// The retail 4x battle world scale (`play_battle_render::BATTLE_WORLD_SCALE`,
+/// private to that module) - the actor stage the battle view-projection is
+/// built for, so an actor origin has to be scaled before it is projected.
+const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
 /// Left margin of the battle command / arts / magic submenus.
 const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
@@ -489,6 +493,14 @@ impl LegaiaRuntime {
                 .text,
         );
 
+        // Floating value readout: the numeral a landed hit throws, over the
+        // struck actor. Layout is the packet-pinned
+        // `engine-vm::battle_value_readout`; this page draws it through the
+        // font fallback rather than the retail 24x24 cells, because its
+        // overlay list is font-atlas quads (the native window has a
+        // screen-space VRAM sink and draws the real art).
+        out.extend(self.battle_value_readout_draws(font, surface_w, surface_h));
+
         // Encounter-transition banner: centred "ENCOUNTER!" over the
         // formation label, shown for the opening frames of the battle. A port
         // invention with no retail counterpart - retail's Field -> Battle edge
@@ -733,6 +745,94 @@ impl LegaiaRuntime {
     /// sizing arithmetic (`FUN_801F747C`). Shared by the text and chrome
     /// layers so the frame and the rows cannot disagree - the native window's
     /// `battle_tutorial_stage_rect` twin.
+    /// The frame's floating value readout, as font-fallback draws in surface
+    /// pixels.
+    ///
+    /// One run of digit cells per live damage popup, seated over the struck
+    /// actor's projected screen position and laid out by
+    /// `legaia_engine_vm::battle_value_readout::value_cells` - the same model
+    /// the native window draws with retail's own 24x24 cells. Only the
+    /// newest popup per actor draws: retail's readout is a per-slot value
+    /// window, and two runs centred on one point interleave unreadably.
+    pub(crate) fn battle_value_readout_draws(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_vm::battle_value_readout as vr;
+        if surface_w == 0 || surface_h == 0 || self.battle_hud.popups.is_empty() {
+            return Vec::new();
+        }
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        // The FX camera: the page's battle view-projection with the retail 4x
+        // world scale composed on, i.e. the native `fx_cam`.
+        let vp = self.play_battle_camera_vp(surface_w as f32 / surface_h as f32);
+        if vp.len() != 16 {
+            return Vec::new();
+        }
+        // The stage transform the rest of the battle chrome uses.
+        let scale = (surface_w / 320).min(surface_h / 240).clamp(1, 4);
+        let origin = (
+            (surface_w as i32 - 320 * scale as i32) / 2,
+            (surface_h as i32 - 240 * scale as i32) / 2,
+        );
+        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        for p in &self.battle_hud.popups {
+            if p.status.is_some() {
+                continue;
+            }
+            match newest.iter_mut().find(|q| q.slot == p.slot) {
+                Some(q) if q.frames_remaining >= p.frames_remaining => {}
+                Some(q) => *q = p,
+                None => newest.push(p),
+            }
+        }
+        let mut out = Vec::new();
+        for p in newest {
+            let Some(a) = world.actors.get(usize::from(p.slot)) else {
+                continue;
+            };
+            // Column-major mat4 times the scaled actor origin.
+            let w = [
+                a.move_state.world_x as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                a.move_state.world_y as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                a.move_state.world_z as f32 * BATTLE_WORLD_SCALE_LOCAL,
+                1.0,
+            ];
+            let mut clip = [0.0f32; 4];
+            for (i, c) in clip.iter_mut().enumerate() {
+                *c = (0..4).map(|j| vp[j * 4 + i] * w[j]).sum();
+            }
+            if clip[3] <= 0.01 {
+                continue;
+            }
+            let ax = ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32;
+            let ay = ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32;
+            let age = p.frames_total.saturating_sub(p.frames_remaining);
+            let cells: Vec<ui::ValueCellView> = vr::value_cells(p.amount, ax, ay - 26, age)
+                .into_iter()
+                .map(|c| ui::ValueCellView {
+                    digit: c.digit,
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                })
+                .collect();
+            out.extend(ui::battle_value_readout_draws_for(
+                font,
+                &cells,
+                ui::VALUE_READOUT_FALLBACK_COLOR,
+                origin,
+                scale,
+            ));
+        }
+        out
+    }
+
     pub(crate) fn battle_tutorial_stage_rect(
         &self,
         font: &legaia_font::Font,

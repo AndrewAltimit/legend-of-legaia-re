@@ -14,7 +14,10 @@ tint. The host renderer rasterises them; neither the geometry nor the menu
 navigation logic depends on the GPU backend.
 
 - `ui_overlay` - dialog box, cutscene narration, battle HUD, encounter banner,
-  stage-scale text, per-glyph sprite emit helpers.
+  stage-scale text, per-glyph sprite emit helpers, and the floating value
+  readout's font fallback (`battle_value_readout_draws_for` - retail's own
+  cells and pitch, for hosts with no screen-space VRAM sink to draw the real
+  24x24 sheet through).
 - `ui_menu` - pause-menu field / status / spell / inventory / equipment panels,
   options + key-rebind, name entry, game-over, the post-battle spoils panel
   (`battle_spoils_draws_for`), tactical-arts editor, the

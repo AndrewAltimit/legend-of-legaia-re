@@ -1435,7 +1435,17 @@ pub fn battle_hud_draws_for(
         ));
     }
 
-    for popup in frame.popups {
+    // ---- Popups: the diagnostic seat only ----
+    //
+    // Retail's landed-hit numeral is not a HUD widget. It is a run of 24x24
+    // cells off the battle effect atlas, thrown over the **struck actor** and
+    // rising to a fixed screen row - laid out by
+    // `engine-vm::battle_value_readout::value_cells` and drawn by the host,
+    // which is the only layer that knows where the actor projects. Anchoring a
+    // number to a party panel (or, for a monster, to the diagnostic pen in the
+    // top-left corner) put every damage figure somewhere retail never draws
+    // one, so that pass is now the diagnostic readout's and nothing else's.
+    for popup in frame.popups.iter().filter(|_| frame.diag) {
         if (popup.slot as usize) >= frame.slots.len() {
             continue;
         }
@@ -1528,4 +1538,77 @@ pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
         color[2],
         color[3] * alpha.clamp(0.0, 1.0),
     ]
+}
+
+/// One laid-out digit of a floating battle value readout.
+///
+/// Hosts fill these from `engine-vm::battle_value_readout::value_cells`, which
+/// is where the geometry is pinned; this crate sits below `engine-vm` in the
+/// crate graph, so the type is mirrored rather than imported. Fields are
+/// **stage pixels** on the retail 320x240 stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueCellView {
+    /// The decimal digit the cell shows.
+    pub digit: u8,
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// Colour the retail numeral art reads as - a hot gold, the top of the sheet's
+/// own vertical ramp. Only the **fallback** uses it: retail's quads carry the
+/// neutral colour word `0x808080` and take their colour from the texels, so a
+/// host drawing the real cells must not tint them.
+pub const VALUE_READOUT_FALLBACK_COLOR: [f32; 4] = [1.0, 0.78, 0.24, 1.0];
+
+/// Fallback draw list for a floating value readout: the dialog font's digits
+/// scaled into the pinned cells.
+///
+/// This is what a host without the battle effect atlas resident draws. The
+/// **layout is retail's** - same cells, same pitch, same pop and rise - and
+/// only the letterforms differ, the same bargain the HUD numerals already
+/// strike. A host that can sample VRAM should draw the real 24x24 cells off
+/// texture page `0x27` / CLUT `0x7703` instead and skip this entirely.
+///
+/// `origin` / `scale` are the stage-to-surface transform the caller already
+/// uses for the rest of the battle chrome.
+pub fn battle_value_readout_draws_for(
+    font: &legaia_font::Font,
+    cells: &[ValueCellView],
+    color: [f32; 4],
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for c in cells {
+        if c.w == 0 || c.h == 0 {
+            continue;
+        }
+        let glyph = [b'0' + (c.digit % 10)];
+        let s = match std::str::from_utf8(&glyph) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let layout = font.layout_ascii(s);
+        // Scale the glyph's own quads into the cell: the font atlas has no
+        // 24-px digits, so each source rect is stretched rather than blitted.
+        let advance = layout.advance_x.max(1) as f32;
+        let sx = c.w as f32 / advance;
+        let sy = c.h as f32 / advance;
+        for d in text_draws_for(&layout, (0, 0), color) {
+            let (dx, dy, dw, dh) = d.dst;
+            out.push(TextDraw {
+                dst: (
+                    origin.0 + (c.x * scale as i32) + (dx as f32 * sx) as i32 * scale as i32,
+                    origin.1 + (c.y * scale as i32) + (dy as f32 * sy) as i32 * scale as i32,
+                    ((dw as f32 * sx) as u32).max(1) * scale,
+                    ((dh as f32 * sy) as u32).max(1) * scale,
+                ),
+                src: d.src,
+                color: d.color,
+            });
+        }
+    }
+    out
 }

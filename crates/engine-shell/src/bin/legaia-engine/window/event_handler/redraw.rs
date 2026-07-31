@@ -1517,6 +1517,27 @@ impl PlayWindowApp {
                                 }
                                 _ => {}
                             }
+                            // Hit reaction: the struck actor ramps toward
+                            // white for a few frames after damage lands.
+                            // Retail's own recolour is the per-actor colour
+                            // word `FUN_8004A908` steps through the actor
+                            // OTZ/colour setup; the port has no per-actor
+                            // colour word, so the flash rides the same
+                            // saturated `DrawCue` seam the target cursor
+                            // uses - a flat blend toward the cue colour,
+                            // decaying over `HIT_FLASH_FRAMES`. It composes
+                            // over the cursor tint rather than beside it:
+                            // a struck monster that is also the pointed-at
+                            // one flashes, then falls back to its pulse.
+                            if let Some(age) = self.battle_hit_age(i) {
+                                let k = 1.0 - f32::from(age) / f32::from(HIT_FLASH_FRAMES.max(1));
+                                cue = Some(legaia_engine_render::DrawCue {
+                                    far: [1.0, 1.0, 1.0],
+                                    near_z: -1.0,
+                                    far_z: 0.0,
+                                    max_ir0: 0.8 * k,
+                                });
+                            }
                         }
                         draws.push(SceneDraw {
                             mesh,
@@ -1810,6 +1831,26 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
+            // Floating value readout: the numeral a landed hit throws.
+            //
+            // Retail's own art and geometry - 24x24 cells off the battle
+            // effect atlas (texture page `0x27`, CLUT `0x7703`), thrown over
+            // the STRUCK actor, growing about a fixed horizontal centre and
+            // rising to screen row 32. Laid out by
+            // `engine-vm::battle_value_readout::value_cells`, whose module
+            // header carries the packet + VRAM provenance. Drawn here rather
+            // than in the HUD builder because the seat needs the target's
+            // projected screen position, which only a host holding the camera
+            // has; it rides the same screen-space ortho MVP as the widget
+            // overlays above, so the numerals sit in front of the fight.
+            let value_readout = self.battle_value_readout_mesh(r, fx_cam);
+            if let Some(m) = &value_readout {
+                draws.push(SceneDraw {
+                    mesh: m,
+                    mvp: screen_fx_mvp,
+                    cue: None,
+                });
+            }
             // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
             // mesh here: it is a multiply tint staged into the colour grade +
             // depth-cue far colour (see the grade staging above), matching
@@ -1944,5 +1985,128 @@ impl PlayWindowApp {
         self.battle_intro = battle_intro;
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
+    }
+}
+
+/// Where a landed hit's numeral starts, above the struck actor's own origin,
+/// in stage pixels. Retail's start seat is captured only once
+/// (`battle_melee_hit_spark`, top edge 49 with the actor mid-frame), so the
+/// lift is engine-chosen; the row it rises **to** is pinned.
+const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
+
+/// Frames the struck actor stays flashed after a hit lands.
+pub(super) const HIT_FLASH_FRAMES: u16 = 10;
+
+impl PlayWindowApp {
+    /// Screen-space stage position (retail 320x240) an actor's origin
+    /// projects to under `cam`, or `None` when it is behind the camera.
+    pub(super) fn actor_stage_point(&self, slot: usize, cam: Mat4) -> Option<(i32, i32)> {
+        let a = self.session.host.world.actors.get(slot)?;
+        let w = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        let clip = cam * w.extend(1.0);
+        if clip.w <= 0.01 {
+            return None;
+        }
+        let ndc = clip.truncate() / clip.w;
+        Some((
+            ((ndc.x * 0.5 + 0.5) * 320.0) as i32,
+            ((0.5 - ndc.y * 0.5) * 240.0) as i32,
+        ))
+    }
+
+    /// How recently actor `slot` was struck, in frames, or `None` if the
+    /// flash window has passed. Derived from the popup queue, which is what
+    /// the per-strike FX drain already fills.
+    pub(super) fn battle_hit_age(&self, slot: usize) -> Option<u16> {
+        self.battle_hud
+            .popups
+            .iter()
+            .filter(|p| usize::from(p.slot) == slot && !p.is_heal)
+            .map(|p| p.frames_total.saturating_sub(p.frames_remaining))
+            .filter(|&age| age < HIT_FLASH_FRAMES)
+            .min()
+    }
+
+    /// The frame's floating value readout, as one screen-space VRAM-textured
+    /// mesh in stage coordinates.
+    ///
+    /// One run of digit cells per live popup, seated over the struck actor
+    /// (`actor_stage_point`) and laid out by
+    /// `legaia_engine_vm::battle_value_readout::value_cells`. Returns `None`
+    /// outside battle, with no popups, or before the battle VRAM (which is
+    /// what makes the effect atlas's digit page resident) has been uploaded.
+    pub(super) fn battle_value_readout_mesh(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cam: Mat4,
+    ) -> Option<legaia_engine_render::UploadedVramMesh> {
+        use legaia_engine_vm::battle_value_readout as vr;
+        if self.session.host.world.mode != SceneMode::Battle {
+            return None;
+        }
+        if self.battle_vram.is_none() || self.battle_hud.popups.is_empty() {
+            return None;
+        }
+        let mut pos: Vec<[f32; 3]> = Vec::new();
+        let mut uvs: Vec<[u8; 2]> = Vec::new();
+        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
+        let mut idx: Vec<u32> = Vec::new();
+        // One numeral per actor, the newest. Retail's readout is a per-slot
+        // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
+        // a second hit on the same actor replaces the figure rather than
+        // stacking beside it - and stacking is not cosmetic here: two runs
+        // centred on the same point interleave into an unreadable third
+        // number (a 9 landing inside a 10 reads as "190").
+        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        for p in &self.battle_hud.popups {
+            if p.status.is_some() {
+                // Status applications have no numeral on the sheet.
+                continue;
+            }
+            match newest.iter_mut().find(|q| q.slot == p.slot) {
+                Some(q) if q.frames_remaining >= p.frames_remaining => {}
+                Some(q) => *q = p,
+                None => newest.push(p),
+            }
+        }
+        for p in newest {
+            let Some((ax, ay)) = self.actor_stage_point(usize::from(p.slot), cam) else {
+                continue;
+            };
+            let age = p.frames_total.saturating_sub(p.frames_remaining);
+            let cells = vr::value_cells(p.amount, ax, ay - VALUE_READOUT_ACTOR_LIFT, age);
+            for c in &cells {
+                let base = pos.len() as u32;
+                let (x0, y0) = (c.x as f32, c.y as f32);
+                let (x1, y1) = (x0 + c.w as f32, y0 + c.h as f32);
+                pos.push([x0, y0, 0.0]);
+                pos.push([x1, y0, 0.0]);
+                pos.push([x0, y1, 0.0]);
+                pos.push([x1, y1, 0.0]);
+                let u1 = c.u.saturating_add(c.cell - 1);
+                let v1 = c.v.saturating_add(c.cell - 1);
+                uvs.extend_from_slice(&[[c.u, c.v], [u1, c.v], [c.u, v1], [u1, v1]]);
+                cba_tsb.extend(std::iter::repeat_n([vr::GLYPH_CLUT, vr::GLYPH_TPAGE], 4));
+                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+            }
+        }
+        if idx.is_empty() {
+            return None;
+        }
+        let normals = vec![[0.0f32; 3]; pos.len()];
+        // Retail's quads carry the neutral colour word `0x808080`: the sheet
+        // is already the gold ramp, so a tint here would double-apply it.
+        let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
+        match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                log::warn!("battle value readout mesh upload: {e:#}");
+                None
+            }
+        }
     }
 }

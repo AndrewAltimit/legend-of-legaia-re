@@ -26,22 +26,66 @@
 //! geometry. The per-digit quad placement walks a chain of reciprocal divides
 //! interleaved with stores across ~700 instructions and is not reproduced.
 //!
-//! # NOT WIRED
+//! ## The sheet, read out of a retail frame
 //!
-//! No engine caller, and the reason is neither the site nor the port. Retail
-//! calls this unconditionally at the head of every action-SM tick (`jal
-//! 0x801e805c` at `0x801E2A70`, ahead of the `ctx[+0x07]` jump), and that head
-//! is ported and live - so a caller could be added today and would run every
-//! frame. It would have nothing to say. Both halves need a producer the engine
-//! does not have: the `0x801F6980` value window and the `0x801F6988` slot list
-//! are written by the summon-overlay side band (PROT 0900 / the `readef`
+//! [`GLYPH_TPAGE`] / [`GLYPH_CLUT`] are not just this routine's - they are the
+//! whole battle value readout's, per-hit numerals included, and the sheet they
+//! name is legible. A mednafen battle save state carries VRAM verbatim, so
+//! decoding page `(448, 0)` at 4bpp through the CLUT at `(48, 476)` shows:
+//!
+//! | texels | content |
+//! |---|---|
+//! | `v = 64..=87` | ten 24x24 digit cells, in strip order **`1234567890`** |
+//! | `u = 0..=55, v = 224..=239` | the `DAMAGE` label - [`label_quad`]'s rect |
+//! | `u = 0..=31, v = 240..=255` | the `HIT` label |
+//! | `u = 32..=79, v = 240..=255` | the `TOTAL` label |
+//!
+//! The strip starts at `1`, not `0`, so a digit's cell is
+//! [`digit_cell_u`]: `((d + 9) % 10) * 24`. The page is inside the battle
+//! effect atlas (PROT 870), which the battle loader already makes resident -
+//! the digits need no separate asset.
+//!
+//! ## The per-hit floating numeral
+//!
+//! The same sheet carries the numeral a landed hit throws, and the display
+//! list pins its geometry directly. In `battle_melee_hit_spark` both frame
+//! arenas are live in one RAM image, so the pair reads as an animation:
+//!
+//! | arena | cells | screen |
+//! |---|---|---|
+//! | earlier | `u = 0` and `u = 96` (= `15`) | `(118, 49)` and `(137, 49)`, each 18x19 |
+//! | later | same cells | `(114, 32)` and `(137, 32)`, each 22x22 |
+//!
+//! Three laws fall out and are ported below: the run's horizontal **centre**
+//! holds (136.5 in both), the cell **grows** toward its 1:1 24-px size, and
+//! the run **rises** to a fixed screen row - `y = 32`, which is also where the
+//! `battle_gimard_tail_fire` pair sits with its growth already finished
+//! (cells 19, 20, 22 and 23 px at that same row, over a different monster at
+//! a different `x`). Cell pitch is the cell width plus one in every sample.
+//! The quads are `0x2C` at colour `0x808080` - opaque, unmodulated - so retail
+//! does **not** fade the numeral out; it ends by no longer being emitted.
+//!
+//! [`value_cells`] is that layout. What is *not* pinned is the frame count the
+//! growth and the rise take, or the numeral's total lifetime: no capture
+//! carries a frame index. [`POP_FRAMES`] and [`POP_START_CELL`] are therefore
+//! engine-chosen, constrained at both ends by the measured sizes.
+//!
+//! # Wiring
+//!
+//! [`value_cells`] is live: the native window lays a landed hit's damage out
+//! with it and draws the cells as screen-space VRAM quads off the resident
+//! effect atlas, so the numerals are retail's own art at retail's own
+//! geometry.
+//!
+//! The multi-cast half above it - the teardown pass and the
+//! `DAMAGE`/`HIT`/`TOTAL` combo cluster - stays unwired, and for a reason that
+//! is neither the site nor the port. Retail calls this unconditionally at the
+//! head of every action-SM tick (`jal 0x801e805c` at `0x801E2A70`, ahead of
+//! the `ctx[+0x07]` jump), and that head is ported and live. It would have
+//! nothing to say: the `0x801F6980` value window and the `0x801F6988` slot
+//! list are written by the summon-overlay side band (PROT 0900 / the `readef`
 //! streaming slots), which nothing in `engine-core` loads, so every slot reads
-//! empty and both the teardown and the render walk return nothing. The output
-//! is GPU primitives linked into the ordering table at `_DAT_1F8003A0`;
-//! `engine-ui` draws battle damage numbers through its own `TextDraw` path
-//! instead. Wiring means the summon side band reaching `engine-core` and the
-//! quads reaching `engine-render` - a per-frame call ahead of either is a call
-//! that measures as wired and does nothing.
+//! empty and both the teardown and the combo walk return nothing.
 
 /// Readout slots the value window holds (`_DAT_801F6980..0x801F6987`, four
 /// halfwords).
@@ -160,10 +204,126 @@ pub struct ReadoutQuad {
     pub tpage: u16,
 }
 
-/// CLUT the label and digit glyphs sample (`0x7703`).
+/// CLUT the label and digit glyphs sample (`0x7703` - VRAM `(48, 476)`).
 pub const GLYPH_CLUT: u16 = 0x7703;
-/// Texture page the label and digit glyphs sample (`0x27`).
+/// Texture page the label and digit glyphs sample (`0x27` - VRAM page
+/// `(448, 0)` at 4bpp, inside the battle effect atlas).
 pub const GLYPH_TPAGE: u16 = 0x27;
+
+/// Texel row the ten digit cells start on.
+pub const DIGIT_ROW_V: u8 = 64;
+/// One digit cell is square, this many texels on a side.
+pub const DIGIT_CELL: u8 = 24;
+/// Screen pitch between adjacent cells is the drawn cell width plus this.
+pub const DIGIT_GAP: i32 = 1;
+
+/// Screen row the floating numeral rises to and rests on.
+pub const RESTING_TOP_Y: i32 = 32;
+/// Frames the pop-in growth and the rise take. **Engine-chosen** - the
+/// captures pin the endpoints, not the rate.
+pub const POP_FRAMES: u16 = 8;
+/// Drawn cell size the pop starts at, in screen pixels. The smallest measured
+/// cell is 18; retail's own start frame is not captured.
+pub const POP_START_CELL: u32 = 16;
+
+/// Inclusive texel rect of the `DAMAGE` label (the one [`label_quad`] draws).
+pub const LABEL_DAMAGE: (u8, u8, u8, u8) = (0x00, 0xE0, 0x37, 0xEF);
+/// Inclusive texel rect of the `HIT` label.
+pub const LABEL_HIT: (u8, u8, u8, u8) = (0x00, 0xF0, 0x1F, 0xFF);
+/// Inclusive texel rect of the `TOTAL` label.
+pub const LABEL_TOTAL: (u8, u8, u8, u8) = (0x20, 0xF0, 0x4F, 0xFF);
+
+/// Left texel of a decimal digit's cell.
+///
+/// The strip runs `1234567890`, so `1` is the first cell and `0` the last -
+/// `((d + 9) % 10) * 24`. Read straight off the decoded sheet, and
+/// corroborated by the two-cell `15` in `battle_melee_hit_spark` landing on
+/// `u = 0` and `u = 96`.
+pub const fn digit_cell_u(digit: u8) -> u8 {
+    ((digit + 9) % 10) * DIGIT_CELL
+}
+
+/// One drawn digit of a floating value readout.
+///
+/// Screen fields are stage pixels on retail's 320x240 stage; texel fields
+/// address [`GLYPH_TPAGE`] through [`GLYPH_CLUT`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueCell {
+    /// The decimal digit this cell shows.
+    pub digit: u8,
+    /// Stage-pixel top-left corner.
+    pub x: i32,
+    pub y: i32,
+    /// Stage-pixel extent (square while the pop is running).
+    pub w: u32,
+    pub h: u32,
+    /// Texel top-left corner on the glyph page.
+    pub u: u8,
+    pub v: u8,
+    /// Texel extent - always [`DIGIT_CELL`]; the screen extent is what scales.
+    pub cell: u8,
+}
+
+/// Drawn cell size `age` frames into the pop, in screen pixels.
+///
+/// Grows linearly from [`POP_START_CELL`] to the 1:1 [`DIGIT_CELL`] over
+/// [`POP_FRAMES`] and then holds. The endpoints are measured; the ramp
+/// between them is engine-chosen.
+pub fn pop_cell_px(age: u16) -> u32 {
+    let end = u32::from(DIGIT_CELL);
+    if age >= POP_FRAMES {
+        return end;
+    }
+    let span = end - POP_START_CELL;
+    POP_START_CELL + span * u32::from(age) / u32::from(POP_FRAMES)
+}
+
+/// Top edge `age` frames into the pop: rises from `start_y` to
+/// [`RESTING_TOP_Y`] over [`POP_FRAMES`], then holds. A numeral that starts at
+/// or above the resting row never moves.
+pub fn pop_top_y(start_y: i32, age: u16) -> i32 {
+    if start_y <= RESTING_TOP_Y {
+        // Already at or above the resting row - the rise never pushes down.
+        return start_y;
+    }
+    if age >= POP_FRAMES {
+        return RESTING_TOP_Y;
+    }
+    let travel = start_y - RESTING_TOP_Y;
+    start_y - travel * i32::from(age) / i32::from(POP_FRAMES)
+}
+
+/// Lay a value out as floating digit cells.
+///
+/// `centre_x` is the stage column the run is centred on - retail holds the
+/// centre fixed while the cells grow - and `start_y` the top edge the run pops
+/// in at, which the rise walks up to [`RESTING_TOP_Y`]. `age` is frames since
+/// the hit landed.
+///
+/// Leading zeros are dropped ([`decimal_digits`]), so a zero value still draws
+/// a single `0` cell.
+pub fn value_cells(value: u16, centre_x: i32, start_y: i32, age: u16) -> Vec<ValueCell> {
+    let digits = decimal_digits(value);
+    let size = pop_cell_px(age);
+    let pitch = size as i32 + DIGIT_GAP;
+    let run = pitch * digits.len() as i32 - DIGIT_GAP;
+    let left = centre_x - run / 2;
+    let top = pop_top_y(start_y, age);
+    digits
+        .iter()
+        .enumerate()
+        .map(|(i, &d)| ValueCell {
+            digit: d,
+            x: left + i as i32 * pitch,
+            y: top,
+            w: size,
+            h: size,
+            u: digit_cell_u(d),
+            v: DIGIT_ROW_V,
+            cell: DIGIT_CELL,
+        })
+        .collect()
+}
 
 /// The label quad, drawn once per readout pass (only for the first slot).
 ///
@@ -274,6 +434,94 @@ mod tests {
         assert_eq!(q.xy[2].1, q.xy[3].1, "bottom edge");
         assert_eq!(q.xy[0].0, q.xy[2].0, "left edge");
         assert_eq!(q.xy[1].0, q.xy[3].0, "right edge");
+    }
+
+    #[test]
+    fn digit_strip_starts_at_one_and_ends_at_zero() {
+        // Read off the decoded sheet: the row is "1234567890".
+        assert_eq!(digit_cell_u(1), 0);
+        assert_eq!(digit_cell_u(2), 24);
+        assert_eq!(digit_cell_u(9), 192);
+        assert_eq!(digit_cell_u(0), 216);
+        // Every cell is inside the 256-texel page row.
+        for d in 0u8..=9 {
+            assert!(u16::from(digit_cell_u(d)) + u16::from(DIGIT_CELL) <= 256);
+        }
+    }
+
+    #[test]
+    fn label_rects_are_the_three_the_sheet_carries() {
+        // `label_quad`'s own rect is the DAMAGE label.
+        let q = label_quad(0, 0);
+        assert_eq!(
+            (q.uv[0].0, q.uv[0].1, q.uv[3].0, q.uv[3].1),
+            LABEL_DAMAGE,
+            "label_quad draws DAMAGE"
+        );
+        // HIT and TOTAL share the row below it and do not overlap.
+        assert_eq!(LABEL_HIT.1, LABEL_TOTAL.1);
+        assert!(LABEL_HIT.2 < LABEL_TOTAL.0);
+        // Measured drawn widths: 55 / 31 / 47 px for inclusive corner spans.
+        assert_eq!(LABEL_DAMAGE.2 - LABEL_DAMAGE.0, 55);
+        assert_eq!(LABEL_HIT.2 - LABEL_HIT.0, 31);
+        assert_eq!(LABEL_TOTAL.2 - LABEL_TOTAL.0, 47);
+    }
+
+    #[test]
+    fn the_pop_grows_to_a_one_to_one_cell_and_holds() {
+        assert_eq!(pop_cell_px(0), POP_START_CELL);
+        assert_eq!(pop_cell_px(POP_FRAMES), u32::from(DIGIT_CELL));
+        assert_eq!(pop_cell_px(POP_FRAMES * 4), u32::from(DIGIT_CELL));
+        // Monotonic.
+        for age in 0..POP_FRAMES {
+            assert!(pop_cell_px(age) <= pop_cell_px(age + 1));
+        }
+    }
+
+    #[test]
+    fn the_run_rises_to_the_resting_row_and_stops() {
+        assert_eq!(pop_top_y(49, 0), 49);
+        assert_eq!(pop_top_y(49, POP_FRAMES), RESTING_TOP_Y);
+        assert_eq!(pop_top_y(49, 240), RESTING_TOP_Y);
+        // A seat already above the row is left alone rather than pushed down.
+        assert_eq!(pop_top_y(10, 0), 10);
+        assert_eq!(pop_top_y(10, POP_FRAMES), 10);
+    }
+
+    #[test]
+    fn the_run_grows_about_a_fixed_centre() {
+        // `battle_melee_hit_spark`: `15` at cells 18 and 22 px, centre 136.5
+        // in both arenas (118..155 then 114..159).
+        let narrow = value_cells(15, 136, 49, 0);
+        let wide = value_cells(15, 136, 49, POP_FRAMES);
+        let span = |c: &[ValueCell]| {
+            let l = c.first().unwrap().x;
+            let r = c.last().unwrap().x + c.last().unwrap().w as i32;
+            (l + r) / 2
+        };
+        assert_eq!(
+            span(&narrow),
+            span(&wide),
+            "centre holds while the cells grow"
+        );
+        assert!(wide[0].w > narrow[0].w);
+        // Pitch is the drawn width plus one.
+        assert_eq!(wide[1].x - wide[0].x, wide[0].w as i32 + DIGIT_GAP);
+    }
+
+    #[test]
+    fn value_cells_address_the_right_digits() {
+        let cells = value_cells(15, 100, 40, POP_FRAMES);
+        assert_eq!(cells.len(), 2);
+        assert_eq!((cells[0].digit, cells[0].u), (1, 0));
+        assert_eq!((cells[1].digit, cells[1].u), (5, 96));
+        assert!(
+            cells
+                .iter()
+                .all(|c| c.v == DIGIT_ROW_V && c.cell == DIGIT_CELL)
+        );
+        // Zero still draws one cell rather than none.
+        assert_eq!(value_cells(0, 0, 0, 0).len(), 1);
     }
 
     #[test]

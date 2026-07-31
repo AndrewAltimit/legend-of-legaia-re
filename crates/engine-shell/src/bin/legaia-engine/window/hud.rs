@@ -2401,9 +2401,13 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// Popups carry an absolute actor slot. The builder anchors them by slice
-    /// index, so the projection must keep inactive slots in place - a
-    /// compacted list would put a monster's damage number on a party row.
+    /// Popups carry an absolute actor slot. The **diagnostic** readout
+    /// anchors them by slice index, so the projection must keep inactive
+    /// slots in place - a compacted list would put a monster's damage number
+    /// on a party row. The default surface no longer draws them at all:
+    /// retail's landed-hit numeral is seated over the struck actor, which
+    /// only a host holding the camera can place, so it is the window's own
+    /// `battle_value_readout_mesh` (see `engine-vm::battle_value_readout`).
     #[test]
     fn popup_anchors_track_absolute_actor_slot() {
         let mut hud = hud_with_party_row(100, 100, 0, 0);
@@ -2422,7 +2426,7 @@ mod battle_hud_wiring_tests {
             },
         );
         hud.push_popup(DamagePopup::damage(3, 25));
-        let out = draws(&hud);
+        let out = frame_draws(&hud, true).text;
         // Row stride is 14; monster slot 3's row sits at pen.y + 42, popups
         // 16 above (monster popups keep the index-anchored surface layout).
         let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;

@@ -173,6 +173,33 @@ This is distinct from the 2D billboard path here:
 - Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
 - The engine's `SpriteAtlasEntry` reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards` - and the `engine-core` snapshot `active_effect_sprites` maps those live child slots directly (the earlier uniform-loop stand-in is gone).
 
+### The floating value readout rides the same atlas
+
+The numeral a landed hit throws is not an effect-pool child, but it samples the
+same texture page: `etim.dat`'s third TIM, page `(448, 0)`, through the
+sub-palette at VRAM `(48, 476)` (CBA `0x7703`, tpage `0x27`). The sheet's
+layout - ten 24x24 digit cells in strip order `1234567890`, plus the `DAMAGE` /
+`HIT` / `TOTAL` labels - is in
+[`formats/effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
+
+The geometry is read out of retail's own display list. Both frame arenas of the
+`battle_melee_hit_spark` capture carry the same two-digit run, so the pair is an
+animation: the run's horizontal **centre** holds while the cell **grows**
+toward its 1:1 24-px size, and the run **rises** to a fixed screen row `y = 32`.
+Cell pitch is the drawn width plus one; the quads are `0x2C` at colour
+`0x808080`, so retail neither modulates nor fades the numeral. Port:
+`engine-vm::battle_value_readout::value_cells`.
+
+Placing it is a **host** job, not a HUD-builder job: the seat is the struck
+actor's projected screen position, which only the layer holding the camera
+knows. The native window projects the actor under the FX camera and emits the
+cells as screen-space VRAM quads (retail's own texels, since the battle loader
+has already made the atlas resident); the browser play page has no
+screen-space VRAM sink, so it draws the same layout through
+`engine-ui::battle_value_readout_draws_for`, the dialog-font fallback - retail's
+cells and pitch, different letterforms. `engine-ui`'s HUD builder draws the
+popup queue only under `LEGAIA_DIAG_HUD`.
+
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 
 ```
