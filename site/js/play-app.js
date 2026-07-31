@@ -1061,18 +1061,43 @@
     }
 
     /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)
-     * as `AtlasBlitter`s the first time the menu opens. Idempotent; the chrome
-     * blitter stays `null` on a PROT.DAT-only load (glyphs only, no gold frame). */
+     * as `AtlasBlitter`s. Idempotent, and safe to call from any frame - which is
+     * the whole point, because it no longer runs only when the menu opens.
+     *
+     * Every `play_menu_*` getter reads the engine's *cached* menu assets and
+     * answers a default when the engine has not built them yet:
+     * `play_menu_font_dims()` gives `[0, 0]` and `play_menu_has_chrome()` gives
+     * `false`. So "this disc has no chrome" and "nobody has asked the engine to
+     * build the chrome yet" are the same answer over the wire, and a resolution
+     * taken off it before the engine is ready is wrong - permanently, because
+     * the chrome branch only ever ran while `_menuChrome` was `undefined`.
+     *
+     * That used to be unreachable: every caller sat behind `play_menu_open()`,
+     * a shop, a naming prompt or a dialog draw, all of which build the assets
+     * first. It is reachable now - the reading-box capability probe calls this
+     * from the top of `_drawOverlay`, i.e. from frame one - and taking the
+     * not-ready answer as final cost the page every chrome sprite for the rest
+     * of the session: pause menu, shop, naming prompt and the retail dialog
+     * reading box all fell back to bare glyphs on black.
+     *
+     * So: don't resolve anything until the engine actually has assets, and
+     * treat a chrome-less answer as provisional rather than final. `null` still
+     * means "no chrome to blit right now" for every call site that guards on
+     * it, but a later `true` from the engine upgrades it. Once both blitters
+     * exist the early return makes this free. */
     _ensureMenuBlitters() {
-      if (this._menuFont && this._menuChrome !== undefined) return;
+      if (this._menuFont && this._menuChrome) return;
       const rt = this.rt;
       try {
         const fd = rt.play_menu_font_dims();
-        if (!this._menuFont && fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0) {
+        /* The engine's readiness signal: `[0, 0]` until it has built its menu
+         * assets at all. Ask again next frame rather than answering for it. */
+        if (!(fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0)) return;
+        if (!this._menuFont) {
           const rgba = rt.play_menu_font_rgba();
           if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1]);
         }
-        if (this._menuChrome === undefined) {
+        if (!this._menuChrome) {
           if (rt.play_menu_has_chrome()) {
             const cd = rt.play_menu_chrome_dims();
             const rgba = rt.play_menu_chrome_rgba();
@@ -1082,10 +1107,43 @@
               this._menuChrome = null;
             }
           } else {
+            /* A PROT.DAT-only load really has no chrome sheet. Provisional:
+             * re-asked next call, which is what lets a late-arriving scene
+             * host upgrade it. */
             this._menuChrome = null;
           }
         }
       } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
+    }
+
+    /* Headless-verification hook for the overlay atlases - the sibling of
+     * `window.__fsState` / `window.__woWalkStamps` on the other 3D pages, and
+     * the reason this defect is now assertable in one line instead of by
+     * eyeballing a screenshot.
+     *
+     * The invariant a driver should check, once a scene is running:
+     *
+     *     engineHasChrome === true  =>  chrome === 'built'
+     *
+     * A page that reports `engineHasChrome: true` with `chrome: 'absent'` has
+     * resolved the blitter from an answer the engine gave before it had
+     * built its menu assets, and every chrome sprite - pause menu, shop,
+     * naming prompt, reading box - is being dropped on the floor. */
+    overlayAtlasState() {
+      const rt = this.rt;
+      let engineHasChrome = null, ready = null;
+      try { engineHasChrome = rt.play_menu_has_chrome(); } catch (e) {}
+      try {
+        const fd = rt.play_menu_font_dims();
+        ready = !!(fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0);
+      } catch (e) {}
+      return {
+        ready, engineHasChrome,
+        font: !!this._menuFont,
+        chrome: this._menuChrome === undefined ? 'unresolved'
+          : (this._menuChrome ? 'built' : 'absent'),
+        dialogCanvasCapable: this.dialogCanvasCapable,
+      };
     }
 
     /* Fishing HUD layer. Returns `true` when it drew (a session is live), so

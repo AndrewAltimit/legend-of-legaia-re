@@ -483,7 +483,7 @@
 <script src="js/webgl-tmd.js?v=zfight-1"></script>
 <script src="js/field-scene-view.js?v=play-3"></script>
 <script src="js/pad-bindings.js?v=pad-1"></script>
-<script src="js/play-app.js?v=play-10"></script>
+<script src="js/play-app.js?v=play-11"></script>
 <script>
 (function () {
   'use strict';
@@ -695,6 +695,12 @@
           },
         });
         window.__playView = view;
+        /* Headless-verification hook (see the `verify` skill, alongside
+           `__fsState` / `__woWalkStamps`): the resolved state of the two
+           overlay atlases. Once a scene is running, `engineHasChrome === true`
+           must imply `chrome === 'built'`; anything else means the page is
+           dropping every chrome sprite. */
+        window.__playOverlayState = () => view ? view.overlayAtlasState() : null;
       }
       const st = view.enter(label);
       view.start();
@@ -765,9 +771,19 @@
         if (gd[0] > 0)
           glyphBlit = new window.LegaiaAtlasBlitter(runtime.boot_title_glyph_atlas_rgba(), gd[0], gd[1]);
       }
-      const fd = runtime.play_menu_font_dims();
-      if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
     } catch (e) { console.warn('boot title atlas', e); }
+    /* The menu font is the engine's, not the title's, so it shares the
+       readiness problem the chrome blitter below has: `play_menu_font_dims()`
+       is `[0, 0]` until the engine builds its menu assets, which nothing has
+       asked it to do while the title card is up. Resolve on first use. */
+    const ensureFont = () => {
+      if (fontBlit) return fontBlit;
+      try {
+        const fd = runtime.play_menu_font_dims();
+        if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
+      } catch (e) { console.warn('boot title font', e); }
+      return fontBlit;
+    };
     const pulse = new Set();
     const onKey = (e) => {
       if (!PAD || PAD[e.code] === undefined) return;
@@ -786,15 +802,27 @@
     /* Chrome blitter for the Continue / Options sub-screens: they are the
      * pause menu's own Load and Options rows (the engine opens them off the
      * title outcome), so they draw off the same two atlases the in-game menu
-     * uses. */
+     * uses.
+     *
+     * Resolved on first use, not here. `play_menu_has_chrome()` reports the
+     * engine's *cached* menu assets and answers `false` while it has not built
+     * them - which is exactly the state the title card runs in, since nothing
+     * has opened a menu yet. Asking once at title entry therefore always got
+     * `false` and left these two screens skinless. The same trap cost the
+     * running page every chrome sprite once a per-frame caller was added; see
+     * `_ensureMenuBlitters` in play-app.js. */
     let chromeBlit = null;
-    try {
-      if (runtime.play_menu_has_chrome()) {
-        const cd = runtime.play_menu_chrome_dims();
-        if (cd[0] > 0)
-          chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1]);
-      }
-    } catch (e) { console.warn('boot title chrome', e); }
+    const ensureChrome = () => {
+      if (chromeBlit) return chromeBlit;
+      try {
+        if (runtime.play_menu_has_chrome()) {
+          const cd = runtime.play_menu_chrome_dims();
+          if (cd[0] > 0)
+            chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1]);
+        }
+      } catch (e) { console.warn('boot title chrome', e); }
+      return chromeBlit;
+    };
     /* Non-empty once Continue / Options handed off to a pause-menu row; the
      * loop then drives that menu instead of the title card, and finishes when
      * it closes. Continue finishes with the loaded save's scene when there is
@@ -826,8 +854,12 @@
         if (md && md.open) {
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
-          if (chromeBlit) chromeBlit.blit(ctx, md.sprites);
-          if (fontBlit) fontBlit.blit(ctx, md.texts);
+          /* By here a pause-menu row is open, so the engine has built its
+             menu assets and the atlas is finally answerable for. */
+          const cb = ensureChrome();
+          if (cb) cb.blit(ctx, md.sprites);
+          const fb = ensureFont();
+          if (fb) fb.blit(ctx, md.texts);
         }
         let stillOpen = false;
         try { stillOpen = runtime.play_menu_is_open(); } catch (e) {}
@@ -857,7 +889,8 @@
         ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (titleBlit) titleBlit.blit(ctx, draws.sprites);
         if (glyphBlit && draws.glyphs) glyphBlit.blit(ctx, draws.glyphs);
-        if (fontBlit) fontBlit.blit(ctx, draws.texts);
+        const fb2 = ensureFont();
+        if (fb2) fb2.blit(ctx, draws.texts);
       }
       if (outcome === 'continue' || outcome === 'options') {
         handoff = outcome;
