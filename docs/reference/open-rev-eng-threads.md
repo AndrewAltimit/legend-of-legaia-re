@@ -177,12 +177,16 @@ process-matching helpers in
 
 ## Battle / rendering
 
-No open threads. The two most recent both closed by capture: the ground
-grid's depth-cue far colour - captured at the draw by an exec-breakpoint
-probe and wired into the port - see
-[`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up) -
-and the battle-intro tile shatter's side-face shade page, which resolved as
-a resident field asset and now draws - see
+| Thread | Status | What would close it |
+|---|---|---|
+| The battle-**intro** enemy-name banner's chrome and seat | open | A live frame. Every mid-fight surface is packet-pinned ([`battle.md`](../subsystems/battle.md#battle-screen-chrome-packet-pinned)), but the intro banner is transient: no manifest battle save state catches it, and a top-centre sweep of all of them finds nothing. Its frame reads as a rectangular gold border over a blue interior rather than the fight plaque's rounded gold plate, so it is probably a different `kind` on the same placement table. Runbook: drive `v0_1_battle_loading_tetsu` forward under PCSX-Redux, dump main RAM on the first frames after the mode flips, then walk the ordering table as the mid-fight pins were walked. |
+| Which element the `+0x0E` **kind pair** selects, per value | open | The correlation is strong on the two values a capture covers - `0x0101` on every blue command chip, `0x0202` on the gold name plaque - and the remaining values (`0x0303` full-width message rows, `0x0404` framed windows, `0x2B2B` the status bar, `0x32`/`0x33` the roster panels) are named only by what sits at their seats. Reading the dispatcher that consumes `+0x0E` would turn a correlation into a mapping. |
+| The element-**badge** palette selector | open | The badge strip's geometry is pinned (eight 20x12 badges, 32-texel pitch from `u = 6`, rows `v = 192` / `208`), but each badge carries its own sub-palette out of the CLUT block at VRAM x `896..`, rows 498 / 499, and the captured pairs (`u = 6` with `(896, 498)`, `38` with `(912, 498)`, `166` with `(912, 499)`, `230` with `(944, 499)`) do not fall out of the badge index alone. Whatever writes the CLUT word is the answer. |
+
+Two recent threads closed by capture: the ground grid's depth-cue far colour
+- captured at the draw by an exec-breakpoint probe and wired into the port -
+and the battle-intro tile shatter's side-face shade page, which resolved as a
+resident field asset and now draws. Both in
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
 
