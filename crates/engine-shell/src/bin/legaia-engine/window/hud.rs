@@ -971,11 +971,10 @@ impl PlayWindowApp {
             // the `BattleHud` model, refreshed each tick by
             // `sync_battle_hud_rows`; the filled rects ride a solid-white
             // font-atlas texel so no new render pipeline is involved.
-            let letters = self.battle_hud_status_letters();
             out.extend(battle_hud_draws_for(
                 &self.font,
                 &legaia_engine_render::BattleHudFrame {
-                    slots: &battle_hud_slot_views(&self.battle_hud, &letters),
+                    slots: &battle_hud_slot_views(&self.battle_hud),
                     popups: &battle_hud_popup_views(&self.battle_hud),
                     log: &[],
                     solid_src: self.battle_hud_solid_src(),
@@ -1643,17 +1642,6 @@ pub(super) const LEVEL_UP_BANNER_PEN: (i32, i32) = (8, 60);
 pub(super) const CAPTURE_BANNER_PEN: (i32, i32) = (8, 40);
 
 impl PlayWindowApp {
-    /// Per-slot status-letter strips, one entry per HUD slot. Kept separate
-    /// from [`battle_hud_slot_views`] because `HudSlotView` borrows the strip
-    /// and the caller has to own the backing buffer.
-    pub(super) fn battle_hud_status_letters(&self) -> Vec<Vec<u8>> {
-        self.battle_hud
-            .slots
-            .iter()
-            .map(|s| s.status_letters())
-            .collect()
-    }
-
     /// The solid-white font-atlas texel the battle HUD's filled rects sample
     /// (`font_solid_src`). Scanned once per process - the window's font never
     /// changes after startup.
@@ -1712,14 +1700,12 @@ impl PlayWindowApp {
 /// row's Y and a popup's anchor from the slice index, so the index has to stay
 /// the absolute actor-table slot. Compacting to active slots only would shift
 /// every monster row up and anchor damage numbers to the wrong actor.
-pub(super) fn battle_hud_slot_views<'a>(
-    hud: &'a legaia_engine_core::battle_hud::BattleHud,
-    letters: &'a [Vec<u8>],
-) -> Vec<HudSlotView<'a>> {
+pub(super) fn battle_hud_slot_views(
+    hud: &legaia_engine_core::battle_hud::BattleHud,
+) -> Vec<HudSlotView<'_>> {
     hud.slots
         .iter()
-        .enumerate()
-        .map(|(i, s)| {
+        .map(|s| {
             let (hp_fill, mp_fill) = s.gauge_fill_indices();
             let meta = HudSlotMeta {
                 is_party: s.is_party,
@@ -1732,10 +1718,14 @@ pub(super) fn battle_hud_slot_views<'a>(
                 ap_max: s.ap_max,
                 hp_fill,
                 mp_fill,
+                // The single retail-selected status element
+                // (`FUN_8002C2E4`'s ladder over the packed `+0x16E` word)
+                // plus the level its no-ailment arm draws.
+                status_sprite: s.status_sprite(),
+                level: s.level,
             };
             let name = if s.active { s.name.as_str() } else { "" };
-            let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
-            HudSlotView::from_plain(meta, name, strip)
+            HudSlotView::from_plain(meta, name)
         })
         .collect()
 }
@@ -1786,11 +1776,10 @@ mod battle_hud_wiring_tests {
     }
 
     fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
-        let letters: Vec<Vec<u8>> = hud.slots.iter().map(|s| s.status_letters()).collect();
         battle_hud_draws_for(
             &legaia_font::synthetic_for_tests(),
             &BattleHudFrame {
-                slots: &battle_hud_slot_views(hud, &letters),
+                slots: &battle_hud_slot_views(hud),
                 popups: &battle_hud_popup_views(hud),
                 log: &[],
                 solid_src: Some(SOLID),

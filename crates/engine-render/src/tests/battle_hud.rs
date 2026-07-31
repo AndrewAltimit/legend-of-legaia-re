@@ -42,7 +42,8 @@ fn slot_view<'a>(
         ap_max: 0,
         hp_fill,
         mp_fill,
-        status_letters: &[],
+        status_sprite: 0,
+        level: 0,
     }
 }
 
@@ -245,14 +246,50 @@ fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
 }
 
 #[test]
-fn battle_hud_draws_for_monster_status_letters_render_in_the_strip() {
+fn battle_hud_draws_for_monster_status_element_renders_in_the_column() {
     let font = legaia_font::synthetic_for_tests();
     let mut slot = slot_view("Gimard", false, true, 100, 100, 0, 0);
-    slot.status_letters = b"BP";
+    // Sprite 0x19 = Toxic, the element retail's ladder picks for `0x0002`.
+    slot.status_sprite = 0x19;
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    // Monster status icons render past the strip origin at pen.x + 190.
+    // The element renders past the column origin at pen.x + 190.
     let icons = draws.iter().filter(|d| d.dst.0 >= PEN.0 + 190).count();
-    assert!(icons > 0, "expected status icons in the monster strip");
+    assert!(icons > 0, "expected a status element in the monster column");
+
+    // And it is exactly ONE element regardless of how many ailments the
+    // slot carries - the whole point of the retail ladder.
+    let mut clean = slot_view("Gimard", false, true, 100, 100, 0, 0);
+    clean.status_sprite = 0;
+    let none = hud_draws(&font, &[clean], &[], &[]);
+    assert_eq!(
+        none.iter().filter(|d| d.dst.0 >= PEN.0 + 190).count(),
+        0,
+        "an unafflicted monster row draws no status element"
+    );
+}
+
+#[test]
+fn party_panel_draws_the_level_when_no_ailment_is_selected() {
+    let font = legaia_font::synthetic_for_tests();
+    // Retail's no-ailment arm is the base marker plus the `+0x130` level.
+    let mut lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    lv.level = 27;
+    let with_level = hud_draws(&font, &[lv], &[], &[]);
+
+    let mut no_lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    no_lv.level = 0;
+    let without = hud_draws(&font, &[no_lv], &[], &[]);
+    assert!(
+        with_level.len() > without.len(),
+        "the level readout produced no glyphs"
+    );
+
+    // An ailment replaces it: the count is not drawn beside a sprite.
+    let mut sick = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    sick.level = 27;
+    sick.status_sprite = 0x1F;
+    let ailing = hud_draws(&font, &[sick], &[], &[]);
+    assert_ne!(ailing.len(), with_level.len());
 }
 
 #[test]
@@ -360,7 +397,7 @@ fn monster_row_offsets_clear_the_retail_font_or_skips() {
     let last_field_end = columns[2].0 + columns[2].1;
     assert!(
         last_field_end <= 190,
-        "row fields end at {last_field_end}, past the status strip at 190"
+        "row fields end at {last_field_end}, past the status column at 190"
     );
     // And the party-panel numerals must fit the pinned 0x40-px panel width.
     assert!(
@@ -370,10 +407,10 @@ fn monster_row_offsets_clear_the_retail_font_or_skips() {
 
     // Non-vacuous: a full monster row really draws its status strip.
     let mut slot = slot_view("Juggernaut", false, false, 250, 300, 0, 0);
-    slot.status_letters = b"TC";
+    slot.status_sprite = 0x1B;
     let draws = hud_draws(&font, &[slot], &[], &[]);
     assert!(
         draws.iter().any(|d| d.dst.0 >= 190),
-        "status strip produced no glyph - the fixture is not exercising a full row"
+        "status column produced no glyph - the fixture is not exercising a full row"
     );
 }

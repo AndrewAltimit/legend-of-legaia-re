@@ -1514,6 +1514,13 @@ pub struct World {
     /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
 
+    /// The battle context's move-FX projection block, installed by the action
+    /// effect script's terminator (`ctx[+0x1014]` / `+0x6C6` / `+0x24E` /
+    /// `+0x1144`; see [`crate::action_effect_script::MoveFxStreak`]). Read by
+    /// [`World::move_fx_streak`]; the render layer projects the afterimage
+    /// streak's billboard from its launch point + half-width.
+    pub move_fx_streak: crate::action_effect_script::MoveFxStreak,
+
     /// The current scene's **field move-VM stager table** - the prescript
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the
@@ -2552,6 +2559,7 @@ impl World {
             active_move_fx: None,
             active_action_fx: Vec::new(),
             active_move_fx_trail_texpage: None,
+            move_fx_streak: Default::default(),
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),

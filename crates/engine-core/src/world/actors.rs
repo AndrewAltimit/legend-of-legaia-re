@@ -268,10 +268,9 @@ impl World {
     /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
-    /// The terminator's move-power offset / homing band are computed by the
-    /// kernel but consumed by nothing here - the engine has no
-    /// `ctx[+0x1014]` slot and no per-target homing block (see
-    /// [`crate::action_effect_script`]'s module note).
+    /// The terminator's context writes land in [`Self::move_fx_streak`] -
+    /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
+    /// projects from ([`crate::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
     fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
         use crate::action_effect_script as fx;
@@ -330,9 +329,30 @@ impl World {
                     facing: script_actor.facing,
                 });
         }
+        // Terminator sink: install the staged move-power record's `+0x04`
+        // word and the launch position into the move-FX streak block. The
+        // record id the terminator resolves indexes the same table
+        // `MovePowerCatalog` holds, so the `+0x6C6` word is that record's
+        // `counter_init()`.
+        if step.homing_band.is_some() {
+            let counter = step
+                .move_power_offset
+                .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
+                .and_then(|id| self.move_power.as_ref()?.record_for_move_id(id))
+                .map(|rec| rec.counter_init());
+            self.move_fx_streak.install(&step, counter);
+        }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
         }
+    }
+
+    /// The move-FX streak block the effect script's terminator installs -
+    /// retail's `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` quartet.
+    /// The render layer projects the afterimage streak from it; `is_armed()`
+    /// is `false` until a terminator has run.
+    pub fn move_fx_streak(&self) -> crate::action_effect_script::MoveFxStreak {
+        self.move_fx_streak
     }
 
     /// Commit every actor's staged battle anim id (`queued_anim` vs

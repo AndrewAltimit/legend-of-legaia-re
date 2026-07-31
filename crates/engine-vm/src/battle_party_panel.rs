@@ -46,16 +46,37 @@
 //! [`field_party_cursor`](crate::field_party_cursor) found in the field VM's
 //! member picker. Two independent subsystems agreeing on the layout convention.
 //!
-//! # NOT WIRED
+//! # Wiring status
 //!
-//! No engine caller for any of the three. The blocker is shared and sits
-//! outside this crate: all three write through SCUS text-actor services
-//! (`FUN_8003541C` register-and-draw, `FUN_8003CA78` / `FUN_8003CAC4` string
-//! set/append, `FUN_8003CBF8` measure) into the battle context's four label
-//! buffers at `ctx+0xA9 / +0x129 / +0x159 / +0x189`, and `engine-ui` builds
-//! battle labels as `TextDraw` entries with no such buffers and no handle to
-//! open or clear. Wiring means `engine-ui` adopting the anchors and the panel
-//! reset, and `engine-core` owning the label-actor handle - both other crates.
+//! Split by what each piece needs, because the three leaves do not share a
+//! blocker after all.
+//!
+//! **Wired.** The per-party-size X anchors ([`panel_anchors`]) and the
+//! `0x40 x 0x10` name-plate blit ([`label_strip`]) are both live: `engine-ui`
+//! mirrors the anchors as `party_panel_stage_x` (the two are pinned equal by
+//! an `engine-shell` test) and draws the strip's rect under each panel's
+//! name. [`panel_labels`] resolves which of the four buffers takes a name and
+//! which takes a caption, so the buffer layout is modelled rather than
+//! guessed at.
+//!
+//! **No engine analogue: the text-actor handle.** `FUN_801DBB8C` opens a SCUS
+//! *text actor* (`FUN_8003541C` register-and-draw) and stashes its handle at
+//! `0x801F4E0C`; `FUN_8003CA78` / `FUN_8003CAC4` set and append that actor's
+//! string, `FUN_8003CBF8` measures it, and `FUN_801D84C0` closes the handle.
+//! That is a retained-mode registry: the caller hands a string to a
+//! persistent object which redraws itself every frame until torn down.
+//! `engine-ui` is immediate-mode - `battle_hud_draws_for` rebuilds every
+//! `TextDraw` from the live model each frame - so there is no object to open,
+//! no handle to store, and nothing for the teardown to clear. [`LabelState`]
+//! and [`OPEN_LAYOUT_ARGS`] therefore stay a documented record of the retail
+//! lifecycle, not a port waiting on a caller: wiring them would mean adding a
+//! retained text-actor layer the port has deliberately not got.
+//!
+//! **Still open.** The roster arm's three fixed caption strings are
+//! overlay-resident text and are not lifted, so [`PanelLabel::Caption`]
+//! carries the participant id without the caption; and the layout arguments
+//! `FUN_801DBB8C` passes the register call encode the panel band's *vertical*
+//! placement, which is why `engine-ui`'s panel Y is still an approximation.
 
 /// Battle-context byte offsets of the four label buffers `FUN_801D84C0` fills.
 pub const LABEL_BUFFERS: [usize; 4] = [0xA9, 0x129, 0x159, 0x189];
@@ -286,6 +307,59 @@ pub const MEASURE_WIDTH: i32 = 0xC1;
 /// declaration order: the third buffer is measured before the second.
 pub const MEASURE_ORDER: [usize; 4] = [0xA9, 0x159, 0x189, 0x129];
 
+/// What one of the four label buffers holds after the build.
+///
+/// PORT: FUN_801D84C0 (the two build arms)
+///
+/// The solo arm fills every buffer from the **first** party slot's name
+/// record; the roster arm gives the first buffer that slot's name and sources
+/// the other three from fixed strings, measuring each with `FUN_8003CBF8` and
+/// storing `participant_id - 1` at the returned offset plus one. The fixed
+/// strings themselves are overlay-resident text and are not lifted here -
+/// what the port carries is *which* buffer takes a name and which takes a
+/// caption, which is the part a UI needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelLabel {
+    /// The buffer receives the participant's display name, read through
+    /// [`name_field_ptr`].
+    Name(u8),
+    /// The buffer receives a fixed caption string, measured to
+    /// [`MEASURE_WIDTH`] with the participant id appended.
+    Caption { participant_id: u8 },
+}
+
+/// Resolve the four label buffers for a build.
+///
+/// `slots` is the party's participant ids in panel order (`DAT_8007BD10..`);
+/// an absent slot is `0`, which is exactly the discriminator
+/// [`build_arm`] keys on. Returns the buffers in [`LABEL_BUFFERS`] order.
+pub const fn panel_labels(slots: [u8; 3]) -> [PanelLabel; 4] {
+    let first = slots[0];
+    match build_arm(slots[1]) {
+        // Solo: every buffer is the first slot's name record.
+        BuildArm::Solo => [
+            PanelLabel::Name(first),
+            PanelLabel::Name(first),
+            PanelLabel::Name(first),
+            PanelLabel::Name(first),
+        ],
+        // Roster: buffer 0 is the name, the rest are measured captions
+        // carrying each further participant's id.
+        BuildArm::Roster => [
+            PanelLabel::Name(first),
+            PanelLabel::Caption {
+                participant_id: slots[1],
+            },
+            PanelLabel::Caption {
+                participant_id: slots[2],
+            },
+            PanelLabel::Caption {
+                participant_id: first,
+            },
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,6 +549,41 @@ mod tests {
         measured.sort_unstable();
         assert_eq!(declared, measured);
         assert_ne!(LABEL_BUFFERS, MEASURE_ORDER);
+    }
+
+    #[test]
+    fn solo_arm_sources_every_buffer_from_the_first_slot() {
+        let labels = panel_labels([2, 0, 0]);
+        assert!(labels.iter().all(|l| *l == PanelLabel::Name(2)));
+    }
+
+    #[test]
+    fn roster_arm_names_the_first_slot_and_captions_the_rest() {
+        let labels = panel_labels([1, 2, 3]);
+        assert_eq!(labels[0], PanelLabel::Name(1));
+        assert_eq!(
+            &labels[1..],
+            &[
+                PanelLabel::Caption { participant_id: 2 },
+                PanelLabel::Caption { participant_id: 3 },
+                PanelLabel::Caption { participant_id: 1 },
+            ]
+        );
+        // The arm discriminator is the SECOND slot, not the party size.
+        assert_eq!(panel_labels([1, 0, 3])[1], PanelLabel::Name(1));
+    }
+
+    #[test]
+    fn a_named_buffer_resolves_to_the_records_display_name() {
+        // The one buffer that takes a name resolves through the same pointer
+        // both build arms hand the string helpers.
+        let PanelLabel::Name(id) = panel_labels([3, 1, 2])[0] else {
+            panic!("buffer 0 always takes a name");
+        };
+        assert_eq!(
+            name_field_ptr(id),
+            CHAR_RECORD_BASE + 2 * CHAR_RECORD_STRIDE + NAME_OFFSET
+        );
     }
 
     #[test]

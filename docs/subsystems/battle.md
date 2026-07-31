@@ -1212,6 +1212,18 @@ renderer's cue uniform is global); and the per-tick facial-animation VRAM
 re-stamps, mid-battle summon-creature spawn and battle-intro screen-prim
 emitter remain native-only.
 
+### Weapon-trail afterimage streak
+
+The trail a swinging weapon leaves is one semi-transparent `POLY_FT4` per emitter call (`FUN_801E1AB0`), and its two projection inputs are context words the action effect script's terminator writes: the billboard centre from `ctx[+0x1144]` and the half-width as `ctx[+0x6C6] - 0x200`. The terminator stages both in one block - `sw` of the move-power record pointer to `+0x1014`, `sh` of that record's `+0x04` to `+0x6C6`, then a four-slot loop writing phase `1` to `+0x24E + i` and the launch position to `+0x1144 + i*8` (`FUN_801DEA50`, `0x801DF284..0x801DF2E0`).
+
+The launch position is **not** the bare actor position: retail re-seeds its stack pair from `actor[+0x34..+0x3B]` at the top of every record iteration and runs the scale + facing rotation on it before the terminator test, so the quad the seed loop copies out carries the terminator record's own placement.
+
+Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id rather than pointer, one shared launch point rather than four identical copies), installed by the live per-frame walk in `World::step_actor_effect_script` and read back through `World::move_fx_streak`. `engine-render::streak_pass` projects it once per frame and hands the corners to the ported packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are unchanged. The native window appends the quads to its screen-space textured batch.
+
+Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
+
+The chained-ribbon sibling `FUN_801E1D98` stays unwired. Its projector uses a constant half-size and no Y push, so it consumes neither context word, and which of the two emitters a move takes is a dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) that is not decoded.
+
 ### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
 
 Retail monster AI is two routines in the battle overlay:
@@ -1868,6 +1880,22 @@ Two retail colour laws drive the surface, both fed the **displayed** (ramping) H
 - **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`, port of `FUN_80046A20`): death greys the whole track, an active status forces both fills to the override colour, otherwise each bar bands independently on its floored half/quarter thresholds. The index-to-RGB map (`gauge_fill_color`) is approximate - retail resolves the index through unpinned font-CLUT rows.
 
 MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+
+### The status element
+
+Retail draws **one** status marker per party slot, never a strip, and which one is a fixed priority ladder in `FUN_8002C2E4` (`ghidra/scripts/funcs/8002c2e4.txt`). Its inputs come from the display record at `0x80084140 + slot * 0x414` - which is the live character record read `0x5C8` bytes early, since `0x80084140 + 0x5C8 == 0x80084708`. So the selector's three fields are character-record fields: `+0x6F6` = `+0x12E` (the packed status word), `+0x6CE` = `+0x106` (current HP) and `+0x6F8` = `+0x130` (the displayed level).
+
+The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it with a paired `lhu`/`sh` on both its arms (`0x80047680`, `0x80048040`). Three draws come out:
+
+| condition | draw |
+|---|---|
+| word `== 0`, HP `!= 0` | base marker sprite `0x0A` at `(pen + 0x3B, pen + 2)`, then the **level** from `+0x6F8` as two digits at `(pen + 0x4B, pen)` |
+| HP `== 0` | sprite `0x20`, tested before any bit - the KO marker wins outright |
+| HP `!= 0`, bits set | the ladder's first match, at `(pen + 0x33, pen - 4)` |
+
+The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
+
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word, `status_element` runs the ladder, and both hosts draw the single selected element (with the level readout on the no-ailment arm). The retail **sprite sheet** for `0x18..=0x20` is not resolved, so the hosts draw a labelled badge keyed on the id: the selection is ported, the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 

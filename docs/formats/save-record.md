@@ -89,7 +89,8 @@ Field offsets are pinned by a fusion of three sources:
 +0x128  u16 LE   ldf_record               ; "Max LDF"
 +0x12A  u16 LE   spd_record               ; "Max SPD"
 +0x12C  u16 LE   int_record               ; "Max INT"
-+0x12E  u8[2]    stat_window_tail
++0x12E  u16 LE   battle_status_flags      ; the packed ailment word, mirrored
+                                           ; from battle actor +0x16E. See note.
 +0x130  u8       magic_rank               ; "Level 99" cheat target. See note.
 +0x131  u8[11]   post_level_unmapped
 +0x13C  u8       learned_spell_count      ; "Magic Slot Activator" target,
@@ -158,6 +159,21 @@ one record stride; same offsets, same fields.
 ## Notes on contradictions reconciled by this document
 
 Two prior interpretations had to be reconciled:
+
+### `+0x12E` is the battle status word.
+
+The halfword is the mirror of battle actor `+0x16E`, the packed ailment
+flags. `FUN_80047430` copies it verbatim every frame a party actor ticks
+(`lhu 0x16e(actor)` then `sh` at both `0x80047680` and `0x80048040`), so the
+record carries the live in-battle condition rather than a stat tail.
+
+The battle HUD reads the same halfword through a second base: the status
+element selector `FUN_8002C2E4` indexes `0x80084140 + slot * 0x414`, and
+`0x80084140 + 0x5C8 == 0x80084708`, so its `+0x6F6` is this `+0x12E`, its
+`+0x6CE` is `+0x106` (current HP) and its `+0x6F8` is `+0x130` below. The
+per-bit map, and the accessory-guard clear masks that pin it, are in
+[`accessory-passive-table.md`](accessory-passive-table.md#status-guard-clear-masks)
+and mirrored at `engine-vm::status_effects::display_flags`.
 
 ### `+0x130` is the displayed character level.
 

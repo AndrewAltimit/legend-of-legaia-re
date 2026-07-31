@@ -20,7 +20,7 @@
 //! Default lifetime is 60 frames (~1 s at PSX 60 Hz).
 
 use crate::ap_gauge::ApGauge;
-use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusKind};
+use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 
 /// Per-slot row update payload for [`BattleHud::sync_slot`].
 ///
@@ -70,6 +70,11 @@ pub struct BattleSlotHud {
     /// Per-slot active status effects. Sorted by [`StatusKind`] enum
     /// variant order so the icon strip is stable across frames.
     pub status_icons: Vec<StatusKind>,
+    /// Displayed character level - retail's char record `+0x130`, which the
+    /// status element's no-ailment arm draws beside the base marker (see
+    /// [`Self::status_element`]). `0` means "unknown", and the hosts draw the
+    /// bare marker rather than "LV 0".
+    pub level: u8,
 }
 
 impl BattleSlotHud {
@@ -152,6 +157,44 @@ impl BattleSlotHud {
             .iter()
             .map(|k| status_kind_letter(*k))
             .collect()
+    }
+
+    /// The slot's packed retail status word - battle actor `+0x16E`, the
+    /// halfword `FUN_80047430` mirrors to the display record's `+0x6F6`.
+    ///
+    /// Built from the typed [`Self::status_icons`] set through
+    /// [`legaia_engine_vm::status_effects::pack_display_flags`]. Rot packs
+    /// its **whole** limb group here rather than a single rolled bit: the HUD
+    /// snapshot carries kinds, not instances, and the ladder only tests the
+    /// group. Faint contributes no bit - it is the zero-HP arm of the ladder.
+    pub fn status_display_flags(&self) -> u16 {
+        self.status_icons
+            .iter()
+            .fold(0u16, |w, k| w | k.display_bit())
+    }
+
+    /// The single status element retail draws for this slot, chosen by the
+    /// `FUN_8002C2E4` priority ladder over [`Self::status_display_flags`].
+    ///
+    /// Retail's `present` input is the display record's `+0x6CE`, i.e. the
+    /// actor's live HP (`+0x14C`); the engine's `alive` flag is the same
+    /// predicate, so a KO'd slot takes the `Sprite(0x20)` arm whatever else
+    /// is set. When nothing is set the arm is
+    /// [`StatusIcon::BaseWithCount`], whose "count" is [`Self::level`].
+    // PORT: FUN_8002C2E4 (the selection; the kernel lives in engine-vm)
+    pub fn status_element(&self) -> StatusIcon {
+        legaia_engine_vm::status_effects::status_icon(self.status_display_flags(), self.alive)
+    }
+
+    /// The retail sprite id the status element resolves to (`0x18..=0x20`),
+    /// or `0` for the no-ailment base marker / an unrepresented bit. Hosts
+    /// take this as the whole per-slot status readout - one element, not a
+    /// strip.
+    pub fn status_sprite(&self) -> u8 {
+        match self.status_element() {
+            StatusIcon::Sprite(id) => id,
+            StatusIcon::BaseWithCount | StatusIcon::None => 0,
+        }
     }
 }
 
@@ -355,6 +398,17 @@ impl BattleHud {
         self.slots[slot as usize].set_status_icons(icons);
     }
 
+    /// Set the slot's displayed level - the count retail draws beside the
+    /// no-ailment base marker (char record `+0x130`,
+    /// [`legaia_save::CharacterRecord::magic_rank`]). Separate from
+    /// [`Self::sync_slot`] because the level lives on the save record rather
+    /// than on the battle actor the row is otherwise built from.
+    pub fn sync_level(&mut self, slot: u8, level: u8) {
+        if let Some(s) = self.slots.get_mut(slot as usize) {
+            s.level = level;
+        }
+    }
+
     /// Mark a slot as inactive (empty actor pool entry). Clears name and
     /// gauges so the renderer skips the row.
     pub fn clear_slot(&mut self, slot: u8) {
@@ -458,7 +512,8 @@ impl BattleHud {
                     ap_max: s.ap_max,
                     hp_fill,
                     mp_fill,
-                    status_letters: s.status_letters(),
+                    status_sprite: s.status_sprite(),
+                    level: s.level,
                 }
             })
             .collect()
@@ -512,7 +567,13 @@ pub struct SlotView {
     /// [`BattleSlotHud::gauge_fill_indices`].
     pub hp_fill: u8,
     pub mp_fill: u8,
-    pub status_letters: Vec<u8>,
+    /// Retail status-element sprite id (`0x18..=0x20`), or `0` for the
+    /// no-ailment base marker. See [`BattleSlotHud::status_sprite`] - retail
+    /// draws exactly one, never a strip.
+    pub status_sprite: u8,
+    /// Displayed character level, the base-marker arm's count
+    /// ([`BattleSlotHud::level`]).
+    pub level: u8,
 }
 
 /// Plain popup view.
@@ -556,6 +617,9 @@ struct SlotRow {
     mp_max: u16,
     /// Index into `World::ap_gauges` for party rows; `None` for monsters.
     ap_slot: Option<usize>,
+    /// Displayed level (char record `+0x130`) for party rows; `0` for
+    /// monsters, which retail's status element never draws a count for.
+    level: u8,
 }
 
 /// Fold the live battle-actor table into `hud`'s per-slot rows, so a host's
@@ -604,6 +668,15 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 mp: a.battle.mp,
                 mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
                 ap_slot: (i < world.ap_gauges.len()).then_some(i),
+                // The status element's no-ailment arm draws the character
+                // record's `+0x130` beside the base marker (`FUN_8002C2E4`
+                // reads it as the display record's `+0x6F8`).
+                level: world
+                    .roster
+                    .members
+                    .get(world.party_roster_slot(i))
+                    .map(|m| m.magic_rank())
+                    .unwrap_or(0),
             },
         ));
     }
@@ -637,6 +710,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 mp: 0,
                 mp_max: 0,
                 ap_slot: None,
+                level: 0,
             },
         ));
     }
@@ -660,6 +734,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 ap,
             },
         );
+        hud.sync_level(*slot, row.level);
     }
     for slot in cleared {
         hud.clear_slot(slot);
@@ -1048,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_views_carries_status_letters() {
+    fn slot_views_carries_the_single_retail_status_element() {
         let mut hud = BattleHud::new();
         hud.sync_slot(
             0,
@@ -1063,9 +1138,42 @@ mod tests {
                 ap: None,
             },
         );
+        hud.sync_level(0, 12);
         hud.slots[0].set_status_icons([StatusKind::Toxic, StatusKind::Confuse]);
         let views = hud.slot_views();
-        assert_eq!(views[0].status_letters, vec![b'T', b'C']);
+        // Two kinds, ONE element: retail's ladder puts the delegation group
+        // (`0x0380` -> sprite `0x1C`) above Toxic (`0x0002` -> `0x19`).
+        assert_eq!(views[0].status_sprite, 0x1C);
+        assert_eq!(views[0].level, 12);
+    }
+
+    #[test]
+    fn slot_status_element_is_the_packed_word_through_the_retail_ladder() {
+        let mut s = BattleSlotHud {
+            alive: true,
+            level: 7,
+            ..Default::default()
+        };
+        // No ailment: the base marker + the level count, not a sprite.
+        assert_eq!(s.status_display_flags(), 0);
+        assert_eq!(s.status_element(), StatusIcon::BaseWithCount);
+        assert_eq!(s.status_sprite(), 0);
+
+        // Venom alone packs bit 0 and selects sprite 0x18.
+        s.set_status_icons([StatusKind::Venom]);
+        assert_eq!(s.status_display_flags(), 0x0001);
+        assert_eq!(s.status_sprite(), 0x18);
+
+        // Adding Stone changes the *element* without changing the set order:
+        // the ladder tests 0x0004 first.
+        s.set_status_icons([StatusKind::Venom, StatusKind::Stone]);
+        assert_eq!(s.status_display_flags(), 0x0005);
+        assert_eq!(s.status_sprite(), 0x1A);
+
+        // A KO'd slot takes the zero-HP arm whatever else is set - retail
+        // tests `+0x6CE` before it inspects a bit.
+        s.alive = false;
+        assert_eq!(s.status_sprite(), 0x20);
     }
 
     #[test]

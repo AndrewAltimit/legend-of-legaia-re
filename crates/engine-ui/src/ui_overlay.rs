@@ -298,9 +298,15 @@ pub struct HudSlotView<'a> {
     pub hp_fill: u8,
     /// Gauge fill-colour index for the drawn MP bar (same code space).
     pub mp_fill: u8,
-    /// One-letter abbreviations for active status icons. Engines pick the
-    /// mapping (e.g. 'B' = Toxic, 'P' = Venom, 'S' = Curse, …).
-    pub status_letters: &'a [u8],
+    /// The **one** status element retail draws for this slot: the sprite id
+    /// `0x18..=0x20` its priority ladder selected, or `0` for the no-ailment
+    /// base marker. Engines fill it from
+    /// `legaia_engine_core::battle_hud::BattleSlotHud::status_sprite`; see
+    /// [`status_element_label`] for the id space.
+    pub status_sprite: u8,
+    /// Displayed character level - the count retail draws beside the base
+    /// marker when `status_sprite == 0`. `0` suppresses the number.
+    pub level: u8,
 }
 
 /// One floating damage / heal / status popup.
@@ -329,9 +335,9 @@ impl<'a> HudSlotView<'a> {
     /// `legaia_engine_core::battle_hud::SlotView`; engines drive this from
     /// `BattleHud::slot_views()` without re-implementing the field copy.
     ///
-    /// `name` and `status_letters` borrow from the caller; ownership stays
-    /// in the engine-core view buffer.
-    pub fn from_plain(meta: HudSlotMeta, name: &'a str, status_letters: &'a [u8]) -> Self {
+    /// `name` borrows from the caller; ownership stays in the engine-core
+    /// view buffer.
+    pub fn from_plain(meta: HudSlotMeta, name: &'a str) -> Self {
         Self {
             name,
             is_party: meta.is_party,
@@ -344,7 +350,8 @@ impl<'a> HudSlotView<'a> {
             ap_max: meta.ap_max,
             hp_fill: meta.hp_fill,
             mp_fill: meta.mp_fill,
-            status_letters,
+            status_sprite: meta.status_sprite,
+            level: meta.level,
         }
     }
 }
@@ -364,6 +371,59 @@ pub struct HudSlotMeta {
     /// See [`HudSlotView::hp_fill`] / [`HudSlotView::mp_fill`].
     pub hp_fill: u8,
     pub mp_fill: u8,
+    /// See [`HudSlotView::status_sprite`].
+    pub status_sprite: u8,
+    /// See [`HudSlotView::level`].
+    pub level: u8,
+}
+
+/// Short label for a retail status-element sprite id.
+///
+/// The ids are `FUN_8002C2E4`'s priority-ladder outputs and the ailment each
+/// one stands for is pinned in
+/// `legaia_engine_vm::status_effects::display_flags`. `engine-ui` sits below
+/// `engine-vm` in the crate graph so the id space is mirrored here as
+/// literals rather than imported; the mapping is one line per row of that
+/// module's table.
+///
+/// The retail **art** for these ids is a sprite sheet the engine does not
+/// resolve, so hosts draw a labelled badge instead - the selection is what is
+/// ported, not the pixels. Returns `""` for `0` (the no-ailment base marker)
+/// and for any id outside the band.
+pub fn status_element_label(sprite: u8) -> &'static str {
+    match sprite {
+        0x18 => "VNM",
+        0x19 => "TOX",
+        0x1A => "STN",
+        0x1B => "ROT",
+        0x1C => "CNF",
+        0x1D => "NMB",
+        0x1E => "SLP",
+        0x1F => "CRS",
+        0x20 => "K.O.",
+        _ => "",
+    }
+}
+
+/// Badge colour for a retail status-element sprite id. Engine-chosen (the
+/// retail sheet's palette is not resolved) but grouped by what the ailment
+/// does: violet for the two poisons, grey for the inert pair (Stone / Numb),
+/// blue for Sleep, magenta for the delegation group - which is the colour
+/// family `FUN_8004A908` tints the *actor* mesh with for the same three
+/// masks - amber for Rot, cyan for Curse, dim for K.O.
+pub fn status_element_color(sprite: u8) -> [f32; 4] {
+    match sprite {
+        0x18 => [0.72, 0.45, 0.95, 1.0], // Venom
+        0x19 => [0.85, 0.30, 0.90, 1.0], // Toxic
+        0x1A => [0.62, 0.60, 0.55, 1.0], // Stone
+        0x1B => [1.0, 0.72, 0.20, 1.0],  // Rot
+        0x1C => [0.94, 0.35, 0.94, 1.0], // Confuse
+        0x1D => [0.70, 0.70, 0.78, 1.0], // Numb
+        0x1E => [0.45, 0.65, 1.0, 1.0],  // Sleep
+        0x1F => [0.40, 0.90, 0.95, 1.0], // Curse
+        0x20 => [0.55, 0.30, 0.30, 1.0], // K.O.
+        _ => [1.0, 1.0, 1.0, 1.0],
+    }
 }
 
 /// Retail HP-bar text colour index for a battle slot.
@@ -550,12 +610,11 @@ pub fn battle_hud_draws_for(
 ) -> Vec<TextDraw> {
     const LINE_H: i32 = 14;
     /// Monster-row column origins (surface px, relative to `pen.x`): HP
-    /// numerals, K.O. tag, status strip. Sized from measured advances of the
-    /// retail dialog font (longest monster name 69 px + gutter).
+    /// numerals, K.O. tag, status element. Sized from measured advances of
+    /// the retail dialog font (longest monster name 69 px + gutter).
     const HP_X: i32 = 78;
     const KO_X: i32 = 150;
     const STATUS_X: i32 = 190;
-    const STATUS_STEP: i32 = 8;
     const POPUP_X: i32 = 80;
     /// Monster HP bar width / height, surface px.
     const MBAR_W: i32 = 60;
@@ -571,6 +630,8 @@ pub fn battle_hud_draws_for(
     let panel_bg: [f32; 4] = [0.05, 0.07, 0.16, 0.80];
     let panel_frame: [f32; 4] = [0.78, 0.72, 0.50, 0.95];
     let bar_back: [f32; 4] = [0.10, 0.10, 0.12, 0.90];
+    // Backing for the retail name-plate blit (`FUN_801DBC30`'s 0x40x0x10 cell).
+    let plate_bg: [f32; 4] = [0.16, 0.17, 0.28, 0.85];
     let pip_on: [f32; 4] = [0.45, 0.80, 1.0, 1.0];
     let pip_off: [f32; 4] = [0.28, 0.30, 0.36, 1.0];
 
@@ -677,8 +738,18 @@ pub fn battle_hud_draws_for(
                 panel_frame,
             );
 
+            // Name plate. Retail's `FUN_801DBC30` blits a `0x40 x 0x10` cell
+            // 1:1 behind the label - screen span `x-8 ..= x+0x37` by
+            // `y-4 ..= y+0xB` from texels `0..0x3F` / `0x60..0x6F` (CLUT
+            // `0x7704`, tpage `7`). The engine has no atlas for that cell, so
+            // the plate draws as a filled rect at the pinned *geometry*: the
+            // strip's span is what fixes the label's box, and its `x-8` bias
+            // is why the name sits 8 px inside the panel edge rather than at
+            // it. Canonical port + provenance:
+            // `legaia_engine_vm::battle_party_panel::label_strip`.
             let base = if slot.alive { white } else { dim };
-            stage_text(&mut out, font, slot.name, px + 4, py + 2, base);
+            stage_rect(&mut out, px, py + 1, PANEL_STAGE_W, 0x10, plate_bg);
+            stage_text(&mut out, font, slot.name, px + 8, py + 5, base);
 
             // HP bar (fill colour = retail gauge index) + numerals (retail
             // readout tint). `hp` is the ramping display value upstream.
@@ -710,7 +781,7 @@ pub fn battle_hud_draws_for(
                 dim
             } else {
                 tint(
-                    hp_bar_color_index(slot.hp, slot.hp_max, !slot.status_letters.is_empty()),
+                    hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
                     base,
                 )
             };
@@ -771,17 +842,47 @@ pub fn battle_hud_draws_for(
                 }
             }
 
-            // Status strip above the panel.
-            for (k, letter) in slot.status_letters.iter().enumerate() {
-                let s = (*letter as char).to_string();
-                stage_text(
+            // Status element above the panel - retail draws exactly one, and
+            // which one is `FUN_8002C2E4`'s ladder (already resolved into
+            // `status_sprite` upstream). The no-ailment arm is the base
+            // marker plus the level, so an unafflicted slot reads "LV nn".
+            //
+            // Retail's two draw points are `(pen + 0x33, pen - 4)` for the
+            // ailment sprite and `(pen + 0x3B, pen + 2)` / `(pen + 0x4B, pen)`
+            // for the marker + number. `pen` itself comes from the caller's
+            // screen-element placement, which is not decoded, and `0x4B`
+            // overruns the `0x40`-wide panel - so only the *relative*
+            // geometry is retail here: the marker leads the number by
+            // `0x4B - 0x3B = 0x10` px, and the ailment sprite sits 8 px left
+            // and 6 px above the marker.
+            const STATUS_MARKER_DX: i32 = 12;
+            const STATUS_NUMBER_GAP: i32 = 0x10;
+            if slot.status_sprite != 0 {
+                let label = status_element_label(slot.status_sprite);
+                let c = status_element_color(slot.status_sprite);
+                let w = 4 + label.len() as i32 * 6;
+                stage_rect(
                     &mut out,
-                    font,
-                    &s,
-                    px + 4 + k as i32 * STATUS_STEP,
-                    py - 12,
-                    yellow,
+                    px + STATUS_MARKER_DX - 8,
+                    py - 18,
+                    w,
+                    10,
+                    [c[0] * 0.35, c[1] * 0.35, c[2] * 0.35, 0.85],
                 );
+                stage_text(&mut out, font, label, px + STATUS_MARKER_DX - 6, py - 17, c);
+            } else {
+                // Base marker (retail sprite `0x0A`) + the `+0x130` level.
+                stage_rect(&mut out, px + STATUS_MARKER_DX, py - 15, 4, 4, base);
+                if slot.level > 0 {
+                    stage_text(
+                        &mut out,
+                        font,
+                        &format!("LV{}", slot.level),
+                        px + STATUS_MARKER_DX + STATUS_NUMBER_GAP,
+                        py - 17,
+                        base,
+                    );
+                }
             }
 
             if !slot.alive {
@@ -800,7 +901,7 @@ pub fn battle_hud_draws_for(
                 dim
             } else {
                 tint(
-                    hp_bar_color_index(slot.hp, slot.hp_max, !slot.status_letters.is_empty()),
+                    hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
                     base,
                 )
             };
@@ -841,13 +942,13 @@ pub fn battle_hud_draws_for(
                 out.extend(text_draws_for(&ko_layout, (pen.0 + KO_X, row_y), red));
             }
 
-            for (k, letter) in slot.status_letters.iter().enumerate() {
-                let s = (*letter as char).to_string();
-                let layout = font.layout_ascii(&s);
+            // Monster rows carry the same single retail-selected element.
+            if slot.status_sprite != 0 {
+                let layout = font.layout_ascii(status_element_label(slot.status_sprite));
                 out.extend(text_draws_for(
                     &layout,
-                    (pen.0 + STATUS_X + k as i32 * STATUS_STEP, row_y),
-                    yellow,
+                    (pen.0 + STATUS_X, row_y),
+                    status_element_color(slot.status_sprite),
                 ));
             }
         }

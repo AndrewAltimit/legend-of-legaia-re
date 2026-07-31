@@ -61,11 +61,10 @@ const MENU_Y: i32 = 210;
 /// popup's anchor from the slice index, so the index has to stay the absolute
 /// actor-table slot. Same projection as the native window's
 /// `battle_hud_slot_views`.
-fn battle_hud_slot_views<'a>(hud: &'a BattleHud, letters: &'a [Vec<u8>]) -> Vec<HudSlotView<'a>> {
+fn battle_hud_slot_views(hud: &BattleHud) -> Vec<HudSlotView<'_>> {
     hud.slots
         .iter()
-        .enumerate()
-        .map(|(i, s)| {
+        .map(|s| {
             let (hp_fill, mp_fill) = s.gauge_fill_indices();
             let meta = HudSlotMeta {
                 is_party: s.is_party,
@@ -78,10 +77,14 @@ fn battle_hud_slot_views<'a>(hud: &'a BattleHud, letters: &'a [Vec<u8>]) -> Vec<
                 ap_max: s.ap_max,
                 hp_fill,
                 mp_fill,
+                // The single retail-selected status element
+                // (`FUN_8002C2E4`'s ladder over the packed `+0x16E` word)
+                // plus the level its no-ailment arm draws.
+                status_sprite: s.status_sprite(),
+                level: s.level,
             };
             let name = if s.active { s.name.as_str() } else { "" };
-            let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
-            HudSlotView::from_plain(meta, name, strip)
+            HudSlotView::from_plain(meta, name)
         })
         .collect()
 }
@@ -332,16 +335,10 @@ impl LegaiaRuntime {
         // each tick by the shared `sync_battle_hud_rows` fold. The filled
         // rects sample a solid-white font-atlas texel, which the page's
         // canvas blitter stretches + tints like any other glyph quad.
-        let letters: Vec<Vec<u8>> = self
-            .battle_hud
-            .slots
-            .iter()
-            .map(|s| s.status_letters())
-            .collect();
         out.extend(ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
-                slots: &battle_hud_slot_views(&self.battle_hud, &letters),
+                slots: &battle_hud_slot_views(&self.battle_hud),
                 popups: &battle_hud_popup_views(&self.battle_hud),
                 log: &[],
                 solid_src: ui::font_solid_src(font),
