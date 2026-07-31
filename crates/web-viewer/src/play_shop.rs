@@ -1251,8 +1251,18 @@ impl LegaiaRuntime {
         if let Some(rects) = chrome {
             sprites.extend(self.battle_tutorial_chrome_draws(font, rects, origin, scale));
         }
+        // Stage-space, so it joins `texts` before the scale pass below.
         texts.extend(tutorial);
+        // Arts command-input chrome (direction chips + D-pad, the pennant
+        // input bar, the AP plate). Emitted in stage space by the shared
+        // `arts_input` builders off the same baked atlas the menu chrome
+        // samples, so this page and the native window draw one geometry.
+        // Its own text (the Begin | Reselect pick) rides the stage-scaled
+        // text pass below.
+        let (arts_sprites, arts_texts) = self.arts_input_stage_draws(font, chrome, origin, scale);
+        sprites.extend(arts_sprites);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
+        texts.extend(arts_texts);
         // Battle draws stay in surface pixels: the shared HUD's measured
         // column offsets span wider than the 320-px menu stage, exactly as
         // drawn by the native window (surface-space HUD).

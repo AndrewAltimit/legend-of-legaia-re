@@ -400,6 +400,25 @@ pub const OVERLAY_SYSTEM_UI_ARTS_BAR_BODY: (u32, u32, u32, u32) = (224, 0, 16, 1
 /// Input-bar **arrow right end**.
 pub const OVERLAY_SYSTEM_UI_ARTS_BAR_ARROW: (u32, u32, u32, u32) = (192, 44, 18, 18);
 
+/// Row shift the shared save-menu sprite atlas bakes the **direction-chip
+/// triple** at. Every other arts-input piece keeps its natural sheet
+/// coordinate in that atlas (the region is free), but the chip's own rows
+/// `y 96..122` are already spoken for by the character-portrait strip, so
+/// the baker re-seats the three chip pieces this many rows down into the
+/// free `y 130..156` band. Applies to the atlas only - the *sheet* rects
+/// above are what a VRAM-space consumer (the browser dome page) samples.
+pub const OVERLAY_SYSTEM_UI_ARTS_CHIP_ATLAS_DY: u32 = 34;
+
+/// Shift a chip-triple sheet rect into its baked atlas seat.
+pub const fn arts_chip_atlas_rect(sheet: (u32, u32, u32, u32)) -> (u32, u32, u32, u32) {
+    (
+        sheet.0,
+        sheet.1 + OVERLAY_SYSTEM_UI_ARTS_CHIP_ATLAS_DY,
+        sheet.2,
+        sheet.3,
+    )
+}
+
 /// File offset within `PROT.DAT` of the **menu-glyph atlas** TIM
 /// (-> VRAM (960, 256); CLUT bank packs into row 510 as 16 side-by-side
 /// sub-palettes). Carries the small 8x12 digit strip at `v = 208`

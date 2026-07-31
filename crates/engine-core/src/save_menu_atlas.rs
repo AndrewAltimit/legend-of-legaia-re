@@ -470,6 +470,15 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         copy_rect(&mut out, ATLAS_WIDTH, &tab_rgba, panel_src_w, src, dst);
     }
 
+    // Arts command-input chrome - three more sub-palettes of the same
+    // system-UI plane. The input screen is shared by the battle Arts
+    // command and the Muscle Dome's Attack (the dome runs it verbatim),
+    // so both hosts sample these from one bake. Every piece lands at its
+    // natural sheet coordinate except the direction-chip triple, whose
+    // rows the portrait strip already owns - `arts_chip_atlas_rect`
+    // re-seats those three. See `legaia_engine_ui::arts_input`.
+    add_arts_input_sprites(&mut out, &panel_parsed, panel_src_w)?;
+
     // ATR element icons from the extension-strip TIM (best-effort: skip
     // silently when the caller's slice doesn't reach it, mirroring the
     // portrait handling below).
@@ -627,6 +636,77 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         width: ATLAS_WIDTH,
         height: ATLAS_HEIGHT,
     })
+}
+
+/// Stamp the **arts command-input** pieces into the atlas from three
+/// further sub-palettes of the system-UI plane: the direction chips and
+/// input bar (sub-palette 6), the chip label strip / diamond ends /
+/// pennant caps (5), and the D-pad glyph (7).
+///
+/// Placement is `legaia_engine_ui::arts_input::ArtsInputAtlasRects::BAKED`:
+/// natural sheet coordinates everywhere except the chip triple, whose rows
+/// the character-portrait strip already occupies at `(200..248, 96..112)`
+/// and which therefore re-seats `OVERLAY_SYSTEM_UI_ARTS_CHIP_ATLAS_DY`
+/// rows down. The label strip is copied as one `24 x (v_high + h)` column
+/// so every word (including the sheet-read Arms / Ra-Seru ones a later
+/// pass may want) comes along.
+///
+/// REF: FUN_801D0748
+fn add_arts_input_sprites(
+    dst: &mut [u8],
+    panel_parsed: &legaia_tim::Tim,
+    src_w: u32,
+) -> anyhow::Result<()> {
+    use title_pak::{arts_chip_atlas_rect as chip_at, *};
+
+    // Sub-palette 6: chip body + caps, and the input-bar tiles.
+    let chip_rgba =
+        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW as usize)?;
+    for src in [
+        OVERLAY_SYSTEM_UI_ARTS_CHIP_BODY,
+        OVERLAY_SYSTEM_UI_ARTS_CHIP_CAP_L,
+        OVERLAY_SYSTEM_UI_ARTS_CHIP_CAP_R,
+    ] {
+        copy_rect(dst, ATLAS_WIDTH, &chip_rgba, src_w, src, chip_at(src));
+    }
+    for src in [
+        OVERLAY_SYSTEM_UI_ARTS_BAR_END_L,
+        OVERLAY_SYSTEM_UI_ARTS_BAR_BODY,
+        OVERLAY_SYSTEM_UI_ARTS_BAR_ARROW,
+    ] {
+        copy_rect(dst, ATLAS_WIDTH, &chip_rgba, src_w, src, src);
+    }
+
+    // Sub-palette 5: the label-strip column plus the three 9x18 ends.
+    let label_rgba =
+        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW as usize)?;
+    let strip = (
+        OVERLAY_SYSTEM_UI_ARTS_LABEL_U,
+        0,
+        OVERLAY_SYSTEM_UI_ARTS_LABEL_W,
+        OVERLAY_SYSTEM_UI_ARTS_LABEL_V_HIGH + OVERLAY_SYSTEM_UI_ARTS_LABEL_H,
+    );
+    copy_rect(dst, ATLAS_WIDTH, &label_rgba, src_w, strip, strip);
+    for src in [
+        OVERLAY_SYSTEM_UI_ARTS_DIAMOND_L,
+        OVERLAY_SYSTEM_UI_ARTS_DIAMOND_R,
+        OVERLAY_SYSTEM_UI_ARTS_PENNANT_CAP_R,
+    ] {
+        copy_rect(dst, ATLAS_WIDTH, &label_rgba, src_w, src, src);
+    }
+
+    // Sub-palette 7 (the cursor's plane): the D-pad glyph.
+    let dpad_rgba =
+        legaia_tim::decode_rgba8(panel_parsed, OVERLAY_SYSTEM_UI_ARTS_DPAD_CLUT_ROW as usize)?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &dpad_rgba,
+        src_w,
+        OVERLAY_SYSTEM_UI_ARTS_DPAD,
+        OVERLAY_SYSTEM_UI_ARTS_DPAD,
+    );
+    Ok(())
 }
 
 /// Decode the three ATR element icons out of the system-UI **extension

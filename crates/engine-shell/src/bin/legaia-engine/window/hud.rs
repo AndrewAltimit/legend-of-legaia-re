@@ -2,6 +2,23 @@
 
 use super::*;
 
+/// Project the simulation's arts-input phase onto the presentation
+/// crate's. The two enums are deliberately separate types -
+/// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
+/// every host that draws the input screen carries this three-line map.
+fn arts_input_screen(
+    p: legaia_engine_core::arts_command_input::ArtsInputScreen,
+) -> legaia_engine_render::arts_input::ArtsInputScreen {
+    use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
+    use legaia_engine_render::arts_input::ArtsInputScreen as Ui;
+    match p {
+        Sim::Entering => Ui::Entering,
+        Sim::Review => Ui::Review,
+        Sim::BeginMenu { cursor } => Ui::BeginMenu { cursor },
+        Sim::Targeting => Ui::Targeting,
+    }
+}
+
 impl PlayWindowApp {
     /// Keep the rendered dialog panel ([`Self::active_dialog`]) in sync with
     /// the world's pending dialog request.
@@ -1004,6 +1021,26 @@ impl PlayWindowApp {
             let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
+            } else if let Some(view) = bw.arts_input_view() {
+                // Retail-model arts entry: the screen is baked art (drawn
+                // in the sprite layer by `arts_input_chrome_sprite_draws`),
+                // so the only text is the Begin | Reselect pick.
+                use legaia_engine_render::arts_input as ai;
+                let (origin, scale) = self.save_select_stage(w, h);
+                out.extend(ai::arts_input_text_draws(
+                    &self.font,
+                    &ai::ArtsInputFrame {
+                        buffer: view.buffer,
+                        spent: view.spent,
+                        pool: view.pool,
+                        pool_max: view.pool_max,
+                        plate_value: view.plate_value,
+                        list_page: view.list_page,
+                        phase: arts_input_screen(view.phase),
+                    },
+                    origin,
+                    scale,
+                ));
             } else if let Some(arts) = &bw.battle_arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
@@ -1473,6 +1510,60 @@ impl PlayWindowApp {
             main: (0x26, 0x10, main_w, main_h),
             picker,
         }
+    }
+
+    /// Build the **arts command-input** chrome sprites - the four
+    /// direction chips + D-pad glyph, the input bar with its committed
+    /// pennants, and the AP plate - while a party member owns the pad in
+    /// the retail-model entry session. Empty otherwise.
+    ///
+    /// Everything is composed by the shared
+    /// [`legaia_engine_render::arts_input`] builders off the same baked
+    /// system-UI atlas the menu chrome samples, so this host and the
+    /// browser play page draw one geometry.
+    pub(super) fn arts_input_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_engine_render::arts_input as ai;
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let Some(view) = self.session.host.world.arts_input_view() else {
+            return Vec::new();
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        let frame = ai::ArtsInputFrame {
+            buffer: view.buffer,
+            spent: view.spent,
+            pool: view.pool,
+            pool_max: view.pool_max,
+            plate_value: view.plate_value,
+            list_page: view.list_page,
+            phase: arts_input_screen(view.phase),
+        };
+        let mut out = ai::arts_input_chrome_draws(
+            &ai::ArtsInputAtlasRects::BAKED,
+            &frame,
+            stage_origin,
+            stage_scale,
+        );
+        // The AP plate is the status screen's own AP-gauge widget, so it
+        // reuses the pieces the atlas already carries.
+        out.extend(ai::arts_input_ap_plate_draws(
+            &ai::ApPlateRects {
+                cap: assets.rects.gauge_cap,
+                trough: assets.rects.gauge_trough,
+                fill: assets.rects.gauge_fill,
+                box_: assets.rects.gauge_box,
+                digits: assets.rects.gauge_digits,
+            },
+            &frame,
+            stage_origin,
+            stage_scale,
+        ));
+        out
     }
 
     /// Build the dialog-window chrome sprites (gradient fill + gold

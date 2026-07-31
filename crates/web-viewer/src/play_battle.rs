@@ -311,6 +311,70 @@ impl LegaiaRuntime {
         out
     }
 
+    /// The **arts command-input** chrome for the browser play page:
+    /// `(sprites, texts)`, both already in surface pixels. Empty unless a
+    /// party member owns the pad in the retail-model entry session.
+    ///
+    /// Sibling of the native window's `arts_input_chrome_sprite_draws` -
+    /// same shared builders, same baked atlas, same stage transform, so
+    /// the two hosts cannot drift.
+    pub(crate) fn arts_input_stage_draws(
+        &self,
+        font: &legaia_font::Font,
+        chrome: Option<&ui::SaveMenuAtlasRects>,
+        origin: (i32, i32),
+        scale: u32,
+    ) -> (Vec<ui::SpriteDraw>, Vec<TextDraw>) {
+        use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
+        use legaia_engine_ui::arts_input as ai;
+        let empty = (Vec::new(), Vec::new());
+        let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return empty;
+        };
+        let Some(view) = bw.arts_input_view() else {
+            return empty;
+        };
+        let frame = ai::ArtsInputFrame {
+            buffer: view.buffer,
+            spent: view.spent,
+            pool: view.pool,
+            pool_max: view.pool_max,
+            plate_value: view.plate_value,
+            list_page: view.list_page,
+            // The two enums are separate types because `engine-ui` is a
+            // leaf that does not link `engine-core`; the native window
+            // carries the same three-line map.
+            phase: match view.phase {
+                Sim::Entering => ai::ArtsInputScreen::Entering,
+                Sim::Review => ai::ArtsInputScreen::Review,
+                Sim::BeginMenu { cursor } => ai::ArtsInputScreen::BeginMenu { cursor },
+                Sim::Targeting => ai::ArtsInputScreen::Targeting,
+            },
+        };
+        let mut sprites =
+            ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, origin, scale);
+        // The AP plate reuses the status screen's own AP-gauge pieces, so
+        // it only draws when the page has the system-UI chrome loaded.
+        if let Some(r) = chrome {
+            sprites.extend(ai::arts_input_ap_plate_draws(
+                &ai::ApPlateRects {
+                    cap: r.gauge_cap,
+                    trough: r.gauge_trough,
+                    fill: r.gauge_fill,
+                    box_: r.gauge_box,
+                    digits: r.gauge_digits,
+                },
+                &frame,
+                origin,
+                scale,
+            ));
+        }
+        (
+            sprites,
+            ai::arts_input_text_draws(font, &frame, origin, scale),
+        )
+    }
+
     /// Battle overlay text draws in **surface pixels**: HUD rows, the
     /// encounter banner, and the player-driven submenus. Empty outside
     /// [`SceneMode::Battle`]. Mirrors the native window's battle HUD block

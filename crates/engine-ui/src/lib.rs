@@ -35,6 +35,7 @@
 pub use legaia_font;
 pub use legaia_tim;
 
+pub mod arts_input;
 pub mod battle_name_banner;
 mod battle_tutorial_box;
 pub mod other_game_hud;

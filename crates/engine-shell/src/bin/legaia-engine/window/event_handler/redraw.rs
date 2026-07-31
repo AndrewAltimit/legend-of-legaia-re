@@ -1541,6 +1541,13 @@ impl PlayWindowApp {
             // the rect the retail emitter registers the prompt with. In
             // battle, so it cannot coexist with the boot/menu chrome above.
             save_chrome_draw_vec.extend(self.battle_tutorial_chrome_sprite_draws(w, h));
+            // Arts command-input chrome (direction chips + D-pad, the
+            // pennant input bar, the AP plate). Also system-UI-atlas
+            // sampled, and mutually exclusive with every state above -
+            // it only draws inside a battle. Coexists with the prompt box
+            // above: retail shows the drill's instruction window over the
+            // chips it is describing.
+            save_chrome_draw_vec.extend(self.arts_input_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
