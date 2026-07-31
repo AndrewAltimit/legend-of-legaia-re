@@ -3859,7 +3859,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (!sym) return `<span class="btn">${escapeHtml(token)}</span>`;
       return `<svg class="btn-icon" role="img" aria-label="${escapeHtml(token)}"><use href="#${sym}"/></svg>`;
     }
+    /* .table-wrap by hand: layout.js wraps prose tables at layout time, which
+       is before this one exists. The button-icon column has a min-content
+       width no phone can give it, and an unwrapped table widens the document
+       rather than scrolling. */
     $br.innerHTML = `
+      <div class="table-wrap">
       <table class="baka-table">
         <thead><tr><th>Round</th><th>Buttons</th><th>Notes</th></tr></thead>
         <tbody>
@@ -3870,7 +3875,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
               <td class="baka-notes">${r.notes ? escapeHtml(r.notes) : ''}</td>
             </tr>`).join('')}
         </tbody>
-      </table>`;
+      </table>
+      </div>`;
   }
 })();
 </script>
