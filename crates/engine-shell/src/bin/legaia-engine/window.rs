@@ -586,6 +586,10 @@ struct PlayWindowApp {
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
+    /// `color_meshes.len()` at battle entry - the twin of `battle_mesh_base`
+    /// for the untextured pipeline, so the backdrop shell's colour half is
+    /// truncated away on battle exit alongside the textured meshes.
+    battle_color_mesh_base: usize,
     /// The battle VRAM (field base + injected monster textures) stashed by
     /// `enter_battle_render`, so a mid-battle player-summon spawn can inject its
     /// own creature texture into a clone and re-upload.
@@ -713,6 +717,13 @@ struct PlayWindowApp {
     /// `scene_tmd_stream` half-dome), drawn behind the actors. `None` when the
     /// scene has no stage or it failed to load.
     battle_stage_mesh: Option<usize>,
+    /// Index into `color_meshes` for the backdrop shell's **untextured** half -
+    /// the `F*`/`G*` flat / gouraud panels (sky, painted wall faces, water
+    /// bands) that carry a baked colour word instead of UVs, so the VRAM-mesh
+    /// builder drops them. Retail draws them through the same actor as the
+    /// textured prims; leaving them out punches holes in the arena shell.
+    /// `None` when the stage shell has no untextured prims.
+    battle_stage_color_mesh: Option<usize>,
     /// Mesh index of the flat tiled ground grid drawn under the battle actors
     /// (retail's `func_0x801d02c0` grid), textured from the constant retail
     /// page/CLUT/UV-window address where the scene battle VRAM places its own

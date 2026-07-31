@@ -1080,6 +1080,19 @@ impl PlayWindowApp {
                             cue: None,
                         });
                     }
+                    // ...and the shell's untextured `F*`/`G*` half on the
+                    // colour pipeline, at the identical transform. Retail
+                    // walks one primitive list, so these panels (sky band,
+                    // painted wall faces, flat water) belong to the same
+                    // backdrop draw; without them the shell has holes.
+                    if let Some(cidx) = self.battle_stage_color_mesh
+                        && let Some(cmesh) = self.color_meshes.get(cidx)
+                    {
+                        color_draws.push(ColorSceneDraw {
+                            mesh: cmesh,
+                            mvp: cam * Self::battle_stage_model(),
+                        });
+                    }
                 } else {
                     // Debug layer filter (`LEGAIA_DIAG_LAYERS=hf,tiles,
                     // ctiles,place,cplace,npc`): when set, only the

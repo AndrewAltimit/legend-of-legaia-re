@@ -33,6 +33,41 @@ impl ColorMesh {
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
+
+    /// Append a second instance of `src`, scaled per axis. Colours and blend
+    /// words are copied verbatim - only positions and winding change.
+    ///
+    /// The colour twin of [`VramMesh::append_scaled`], and it exists for the
+    /// same caller: the battle backdrop shell is an authored half drawn
+    /// twice, and its untextured sky / flat-colour panels have to take the
+    /// same second-copy transform as its textured rock or the shell closes
+    /// on one half and not the other.
+    ///
+    /// A negative-determinant scale reverses triangle winding, so the
+    /// appended indices are emitted in reverse corner order - the mesh-side
+    /// equivalent of retail's `0x40000000 -> 0x48000000` draw-mode swap.
+    ///
+    /// [`VramMesh::append_scaled`]: super::VramMesh::append_scaled
+    pub fn append_scaled(&mut self, src: &ColorMesh, scale: [f32; 3]) {
+        let base = self.positions.len() as u32;
+        let flip = scale[0] * scale[1] * scale[2] < 0.0;
+        self.positions.extend(
+            src.positions
+                .iter()
+                .map(|p| [p[0] * scale[0], p[1] * scale[1], p[2] * scale[2]]),
+        );
+        self.colors.extend_from_slice(&src.colors);
+        self.blend.extend_from_slice(&src.blend);
+        for t in src.indices.chunks_exact(3) {
+            if flip {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[2], base + t[1]]);
+            } else {
+                self.indices
+                    .extend_from_slice(&[base + t[0], base + t[1], base + t[2]]);
+            }
+        }
+    }
 }
 
 /// Build a [`ColorMesh`] from a TMD's **untextured** primitives only (the

@@ -461,6 +461,15 @@ impl LegaiaRuntime {
         )
         .ok()?;
         let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+        // Take back the VRAM this stage owns - a bundle's stage streams all
+        // declare the same pages + CLUT rows, and the DMA-every-TIM build
+        // leaves the last sibling holding them (see the shared kernel's doc).
+        let mut vram = res.vram.clone();
+        legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+            scene,
+            stage_entry,
+            &mut vram,
+        );
         // Which transform the SECOND backdrop copy takes: the SCUS mirror
         // table names the X-mirrored stages (town01 included - half-turning
         // it plants a second village wall across the open sea side); the
@@ -481,7 +490,7 @@ impl LegaiaRuntime {
             .map(|t| t.far_colour_for_prot_index(stage_entry))
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
         Some(WebBattleStage {
-            vram: res.vram.clone(),
+            vram,
             dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
             grid_far: grid_far_bytes.map(|c| f32::from(c) / 255.0),

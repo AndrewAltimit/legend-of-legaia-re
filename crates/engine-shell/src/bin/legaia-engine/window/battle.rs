@@ -312,6 +312,16 @@ impl PlayWindowApp {
         .ok()?;
         // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
         let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+        // Take back the VRAM this stage owns. A bundle carries one stream per
+        // sub-area and they all declare the SAME pages + CLUT rows, so the
+        // DMA-every-TIM build leaves whichever sibling was written last
+        // holding them. Retail only ever has the recorded stream resident.
+        let mut vram = res.vram.clone();
+        let restored = legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+            scene,
+            stage_entry,
+            &mut vram,
+        );
         // Which transform retail gives the SECOND backdrop copy. The default
         // is a half turn about Y; the stages named by the `SCUS_942.54` table
         // at `DAT_80078B50` get an X mirror instead. Getting this wrong is not
@@ -339,12 +349,12 @@ impl PlayWindowApp {
         let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
-             ({} objects, drawn twice, {} second copy)",
+             ({} objects, drawn twice, {} second copy, {restored} stage TIM(s) re-uploaded)",
             dome.tmd.objects.len(),
             second.label()
         );
         Some(BattleStage {
-            vram: res.vram.clone(),
+            vram,
             dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
             grid_far,
@@ -398,11 +408,13 @@ impl PlayWindowApp {
             log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
         }
         self.battle_mesh_base = self.meshes.len();
+        self.battle_color_mesh_base = self.color_meshes.len();
         // Upload the stage dome mesh (drawn as the backdrop). Its textures live
         // in the stage VRAM, so build it unfiltered (all textured prims are
         // resident). Appended after `battle_mesh_base`, so battle exit truncates
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
+        self.battle_stage_color_mesh = None;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`.
@@ -433,6 +445,32 @@ impl PlayWindowApp {
             let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
             let first = vmesh.clone();
             vmesh.append_scaled(&first, second.scale());
+            // The shell's UNTEXTURED half. A backdrop shell is not all rock:
+            // between a fifth and a tenth of its prims are `F*`/`G*` flat /
+            // gouraud panels carrying a baked colour word and no UVs - the
+            // sky band, the painted wall faces, the flat water. The
+            // VRAM-mesh builder drops every prim with no UVs (it would
+            // sample nothing), so those panels were not drawn at all and the
+            // arena showed the clear colour through them: a rectangular hole
+            // across the top of the wall wherever the sky panel should be.
+            // Retail has no such split - `FUN_8001ADA4` case 3 walks the
+            // whole primitive list and the GPU takes `POLY_F*`/`POLY_G*`
+            // packets as readily as `POLY_*T*` ones - so the colour half
+            // rides the same second copy and the same draw.
+            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw);
+            let cfirst = cmesh.clone();
+            cmesh.append_scaled(&cfirst, second.scale());
+            if !cmesh.is_empty()
+                && let Ok(cm) = r.upload_color_mesh_blended(
+                    &cmesh.positions,
+                    &cmesh.colors,
+                    &cmesh.indices,
+                    &cmesh.blend,
+                )
+            {
+                self.battle_stage_color_mesh = Some(self.color_meshes.len());
+                self.color_meshes.push(cm);
+            }
             if !vmesh.indices.is_empty()
                 && let Ok(m) = r.upload_vram_mesh(
                     &vmesh.positions,
@@ -1595,6 +1633,8 @@ impl PlayWindowApp {
         self.meshes.truncate(keep);
         self.scene_tmd_data
             .truncate(keep.min(self.scene_tmd_data.len()));
+        let keep_color = self.battle_color_mesh_base.min(self.color_meshes.len());
+        self.color_meshes.truncate(keep_color);
         // Tear down a spawned player-summon creature.
         if let Some(slot) = self.summon_actor_slot.take()
             && let Some(a) = self.session.host.world.actors.get_mut(slot)
@@ -1609,6 +1649,7 @@ impl PlayWindowApp {
         self.battle_vram_generation = None;
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
+        self.battle_stage_color_mesh = None;
         self.battle_ground_mesh = None;
         self.battle_ground_cue_far = None;
         self.battle_faces.clear();
