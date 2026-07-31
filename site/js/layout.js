@@ -279,6 +279,12 @@ function buildSidebar(active, depth, zone) {
   sidebar.className = 'sidebar';
   sidebar.id = 'sidebar';
 
+  /* Zone shortcuts, mirroring the icon rail. The rail is a different
+     destination set from the page list below it, and the rail is hidden at
+     the drawer breakpoint - so without this strip a phone loses every
+     top-level destination. Hidden by CSS while the rail is on screen. */
+  sidebar.appendChild(buildZoneShortcuts(active, zone, depth));
+
   const head = document.createElement('div');
   head.className = 'sidebar-head';
   head.textContent = zone === 'explore' ? 'Explore' : 'Documentation';
@@ -344,6 +350,26 @@ function buildSidebar(active, depth, zone) {
   sidebar.appendChild(foot);
 
   return sidebar;
+}
+
+/* ---------- Wide tables ----------
+ * A bare <table> is `display: table`, and overflow does not create a scroll
+ * container on a table box - so a wide reference table pushes the whole page
+ * sideways on a phone. `.table-wrap` is the scrolling container the generated
+ * pages already use; give every prose table the same one. Runs at layout time,
+ * before any page script builds its own tables, so it only ever touches the
+ * static markup. */
+function wrapWideTables() {
+  const content = document.querySelector('.content');
+  if (!content) return;
+  content.querySelectorAll('table').forEach(table => {
+    const parent = table.parentElement;
+    if (!parent || parent.classList.contains('table-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    parent.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  });
 }
 
 /* ---------- Heading ID assignment (before anchors / TOC) ---------- */
@@ -444,12 +470,17 @@ function buildPageNav(active, depth) {
   return nav;
 }
 
-/* ---------- Mobile toggle button ---------- */
+/* ---------- Mobile toggle button ----------
+ * Lives inside the top bar rather than floating over the page, so the content
+ * column needs no reserved strip and the button can never sit on top of a
+ * paragraph. */
 function buildMobileToggle() {
   const toggle = document.createElement('button');
+  toggle.type = 'button';
   toggle.className = 'sidebar-toggle';
   toggle.setAttribute('aria-label', 'Toggle navigation');
   toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'sidebar');
   toggle.innerHTML = '&#9776;';
   return toggle;
 }
@@ -611,6 +642,23 @@ function buildRail(active, zone, depth) {
   return rail;
 }
 
+/* The same destinations as the rail, rendered as a strip at the top of the
+   drawer. Built on every page; CSS shows it only where the rail is hidden. */
+function buildZoneShortcuts(active, zone, depth) {
+  const nav = document.createElement('nav');
+  nav.className = 'sidebar-zones';
+  nav.setAttribute('aria-label', 'Site areas');
+  for (const item of RAIL) {
+    const a = document.createElement('a');
+    a.className = 'sidebar-zone';
+    a.href = resolveHref(item.href, depth);
+    if (item.match(active, zone)) a.classList.add('active');
+    a.innerHTML = railSvg(item.icon) + '<span>' + item.label + '</span>';
+    nav.appendChild(a);
+  }
+  return nav;
+}
+
 /* ---------- Search overlay ---------- */
 function buildSearchOverlay(depth) {
   const overlay = document.createElement('div');
@@ -688,22 +736,36 @@ function injectLayout(opts) {
   scrim.className = 'sidebar-overlay';
   scrim.id = 'sidebar-scrim';
 
-  toggle.addEventListener('click', () => {
-    const open = sidebar.classList.toggle('open');
+  function setDrawer(open) {
+    sidebar.classList.toggle('open', open);
     toggle.setAttribute('aria-expanded', String(open));
     scrim.classList.toggle('show', open);
+    /* Lock the page behind the drawer so a swipe scrolls the nav, not the
+       article underneath it. */
+    document.body.classList.toggle('nav-open', open);
+  }
+
+  toggle.addEventListener('click', () => setDrawer(!sidebar.classList.contains('open')));
+  scrim.addEventListener('click', () => setDrawer(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar.classList.contains('open')) setDrawer(false);
   });
-  scrim.addEventListener('click', () => {
-    sidebar.classList.remove('open');
-    toggle.setAttribute('aria-expanded', 'false');
-    scrim.classList.remove('show');
+  /* Growing past the drawer breakpoint brings the rail back; drop the lock so
+     the page is not left unscrollable. The breakpoint is read off the toggle's
+     own computed style rather than restated here - one width literal, and it
+     lives in the stylesheet. */
+  window.addEventListener('resize', () => {
+    if (!sidebar.classList.contains('open')) return;
+    if (getComputedStyle(toggle).display === 'none') setDrawer(false);
   });
 
   if (app) app.insertBefore(sidebar, app.firstChild);
   else document.body.insertBefore(sidebar, document.body.firstChild);
-  document.body.insertBefore(toggle, document.body.firstChild);
+  topbar.insertBefore(toggle, topbar.firstChild);
   document.body.appendChild(scrim);
   restoreSidebarScroll(sidebar);
+
+  wrapWideTables();
 
   /* Order matters: assign IDs first → build TOC (clean text) → add § anchors */
   assignHeadingIds();

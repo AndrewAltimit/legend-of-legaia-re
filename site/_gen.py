@@ -1494,7 +1494,9 @@ def main() -> int:
 
     # 404.html - GitHub Pages serves this for any missing path, at any depth,
     # so every asset reference must be absolute. noindex keeps it out of
-    # search results.
+    # search results. It also carries no layout.js chrome (whose hrefs are
+    # relative, hence depth-dependent), so `.app` has to opt out of the icon
+    # rail's left offset - `no-chrome` does that.
     (ROOT / "404.html").write_text(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1506,7 +1508,7 @@ def main() -> int:
   <link rel="stylesheet" href="{SITE_URL}/css/styles.css">
 </head>
 <body>
-<div class="app">
+<div class="app no-chrome">
 <main class="content" id="content">
 <header class="page-header">
   <div class="breadcrumb">404</div>

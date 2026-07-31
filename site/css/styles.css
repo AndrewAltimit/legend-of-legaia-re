@@ -181,6 +181,10 @@ body { padding-top: var(--topbar-h); }
   margin-left: var(--rail-w);
   min-height: calc(100vh - var(--topbar-h));
 }
+/* Standalone pages that layout.js never touches (404) have no rail to sit
+   beside and no top bar to sit under. */
+.app.no-chrome { margin-left: 0; }
+body:has(> .app.no-chrome) { padding-top: 0; }
 /* Docs zone: sidebar | article | TOC */
 .zone-docs .app {
   display: grid;
@@ -367,22 +371,56 @@ body { padding-top: var(--topbar-h); }
 .sidebar-foot a { color: var(--text-muted); }
 .sidebar-foot a:hover { color: var(--accent); }
 
-/* Mobile sidebar toggle */
+/* Zone shortcuts inside the drawer: the icon rail's destinations, which are a
+   different set from the page list below them. Hidden while the rail itself is
+   on screen; the responsive shell section at the end of this file turns it on
+   at the drawer breakpoint. */
+.sidebar-zones {
+  display: none;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.2rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.1rem 0.45rem;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+  transition: background var(--transition), color var(--transition);
+}
+.sidebar-zone svg { width: 20px; height: 20px; }
+.sidebar-zone:hover { background: var(--bg-card); color: var(--text); text-decoration: none; }
+.sidebar-zone.active { color: var(--accent); background: var(--accent-soft); }
+
+/* Mobile sidebar toggle - an ordinary top-bar button, so nothing floats over
+   the article and the content column needs no reserved strip. */
 .sidebar-toggle {
   display: none;
-  position: fixed;
-  top: calc(var(--topbar-h) + 10px);
-  left: 10px;
-  z-index: 55;
-  background: var(--bg-raised);
-  color: var(--text);
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: transparent;
+  color: var(--text-muted);
   border: 1px solid var(--border);
   width: 38px;
   height: 38px;
-  border-radius: 4px;
-  font-size: 1.1rem;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
 }
+.sidebar-toggle:hover { color: var(--text); border-color: var(--border-hi); }
 
 .sidebar-overlay {
   display: none;
@@ -393,33 +431,8 @@ body { padding-top: var(--topbar-h); }
 }
 .sidebar-overlay.show { display: block; }
 
-@media (max-width: 1100px) {
-  /* Drop TOC rail */
-  .zone-docs .app, .zone-docs .app.no-toc {
-    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  }
-  .toc-rail { display: none; }
-}
-
-@media (max-width: 880px) {
-  .app { margin-left: 0; }
-  .rail { display: none; }
-  .zone-docs .app, .zone-docs .app.no-toc,
-  .zone-explore .app {
-    grid-template-columns: 1fr;
-  }
-  .sidebar {
-    position: fixed;
-    top: var(--topbar-h); bottom: 0; left: 0;
-    width: var(--sidebar-w);
-    z-index: 45;
-    transform: translateX(-100%);
-    transition: transform var(--transition);
-  }
-  .sidebar.open { transform: translateX(0); }
-  .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
-  .content { padding-top: 64px; }
-}
+/* Page behind the open drawer stays put. */
+body.nav-open { overflow: hidden; }
 
 /* ---------- Content column ---------- */
 .content {
@@ -605,7 +618,20 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
+  /* Restores table layout, and with it drops the `overflow: auto` above -
+     overflow does not make a scroll container out of a table box. The scroll
+     container is `.table-wrap`, which layout.js puts around every prose
+     table so a wide one scrolls instead of widening the page. */
   display: table;
+}
+
+/* Wrapped: the frame belongs to the scrolling wrapper, not the table. No
+   min-width here on purpose - a table that can wrap its text should wrap it
+   and only the ones that genuinely cannot should scroll. */
+.table-wrap > table {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
 }
 
 thead { background: var(--bg-raised); }
@@ -2978,12 +3004,9 @@ kbd {
   background: var(--acc);
 }
 
-@media (max-width: 880px) {
-  .tb-name { display: none; }
-  .tb-search .label { display: none; }
-  .disc-chip { max-width: 190px; }
-  .tb-zones { padding: 2px; }
-}
+/* The shell's breakpoint rules are NOT here - see "Responsive shell" at the
+   end of this file. A @media block adds no specificity, so a shell override
+   only wins if it also comes last. */
 
 /* ===================================================================
    Home launcher: hero tile, disc slot, stat strip, tile grid, stories
@@ -3375,3 +3398,98 @@ details.about-data[open] > summary {
 details.about-data > .about-body { padding: 0.4rem 1.2rem 1.1rem; }
 details.about-data > .about-body > h2:first-child,
 details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
+
+/* ===================================================================
+   Responsive shell - MUST STAY LAST IN THIS FILE
+   -------------------------------------------------------------------
+   The shell (top bar, icon rail, sidebar, app grid, content column) is
+   declared in three places above: the original wiki layout near the top,
+   the app-shell chrome section, and the content column. A @media block
+   contributes NO specificity, so a breakpoint rule only beats the base
+   rule when it also comes later in the source. Keeping every shell
+   breakpoint here - after all three - is what makes that true.
+   `scripts/ci/check-css-cascade-order.py` fails the build if any @media
+   declaration ends up shadowed by a later unconditional one.
+   =================================================================== */
+
+/* Tablet: the in-page TOC rail is the first thing to go. */
+@media (max-width: 1100px) {
+  .zone-docs .app, .zone-docs .app.no-toc {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+  .toc-rail { display: none; }
+}
+
+/* Phone / narrow tablet: the icon rail folds into the sidebar, and the
+   sidebar becomes an off-canvas drawer. Content then owns the full width. */
+@media (max-width: 880px) {
+  .rail { display: none; }
+  .app { margin-left: 0; }
+  .zone-docs .app, .zone-docs .app.no-toc,
+  .zone-explore .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: var(--topbar-h);
+    bottom: 0;
+    left: 0;
+    width: min(300px, 86vw);
+    z-index: 45;
+    transform: translateX(-100%);
+    transition: transform var(--transition);
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.45);
+    overscroll-behavior: contain;
+  }
+  .sidebar.open { transform: translateX(0); }
+  /* The rail's destinations, which the hidden rail no longer provides. */
+  .sidebar-zones { display: grid; }
+
+  .sidebar-toggle { display: inline-flex; }
+
+  /* Top bar has to fit a phone: shed the wordmark and the search label, and
+     let the disc chip give up its width first. */
+  .topbar { gap: 0.55rem; padding: 0 0.7rem; }
+  .tb-name { display: none; }
+  .tb-search .label { display: none; }
+  .tb-zones { padding: 2px; }
+  .tb-zone { padding: 0.32rem 0.7rem; }
+  .disc-chip { max-width: 190px; min-width: 0; padding: 0.55rem 0.95rem; }
+
+  /* Finger-sized: every bar control and every drawer row clears 38px. */
+  .tb-mark { width: 38px; height: 38px; border-radius: 9px; }
+  .tb-search { padding: 0.5rem 0.7rem; min-width: 38px; justify-content: center; }
+  .sidebar-section-toggle { padding: 0.6rem 0.5rem; }
+  .sidebar-nav a { padding: 0.55rem 0.5rem 0.55rem 1.4rem; }
+  .sidebar-nav a.nav-child { padding-left: 2.3rem; }
+}
+
+/* Narrow-viewport content. Prose here is dense with unbreakable identifiers
+   (`overlay_0897_801ef2b0`, `PTR_DAT_8007436C[id*3]`), and one of them is wider
+   than a phone - which pushes the whole document sideways, not just its own
+   line. `anywhere` rather than `break-word` on purpose: only `anywhere` lowers
+   the element's min-content width, and the min-content width is what the page
+   was being sized to. Scoped to the breakpoint so desktop column widths, which
+   are computed from the same min-content, do not move.
+   Block code keeps its own horizontal scroll - `pre` is already a scroller. */
+@media (max-width: 880px) {
+  :not(pre) > code,
+  .content a { overflow-wrap: anywhere; }
+}
+
+/* Small phone: the zone pills and the GitHub link both live in the drawer, so
+   the bar keeps only the controls that have no other home. */
+@media (max-width: 620px) {
+  .tb-zones { display: none; }
+  .tb-gh { display: none; }
+  .disc-chip { max-width: none; padding: 0.42rem 0.6rem; }
+}
+
+@media (max-width: 420px) {
+  /* Chip collapses to its status dot - still the "insert disc" control, and
+     still a 34px tap target. */
+  .disc-chip { width: 34px; height: 34px; padding: 0; justify-content: center; }
+  .disc-chip .txt { display: none; }
+  .tb-search .kbd { display: none; }
+}
