@@ -428,6 +428,14 @@ pub struct BattleActor {
     /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,
+    /// `+0x3C` / `+0x40` - the actor's **seat** (anchor) position pair. The
+    /// battle setup writes the authored formation seat here and copies it
+    /// into the live pair `+0x34`/`+0x38` (`FUN_800513F0`; see
+    /// `engine-core::battle_seats`). The range law measures the *target*
+    /// side against this pair, the separation pass measures overlap on it,
+    /// and state `0x16`'s arrival shove moves it together with the live
+    /// pair. `None` = not seated yet - hosts fall back to the live position.
+    pub seat: Option<(i16, i16)>,
     /// `+0x1D9` - current anim ID (read-only here; written by the animation
     /// system).
     pub current_anim: u8,

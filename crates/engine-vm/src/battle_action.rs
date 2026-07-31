@@ -43,6 +43,8 @@ pub use dispatch::*;
 mod attack;
 use attack::*;
 
+pub mod motion;
+
 mod magic;
 use magic::*;
 

@@ -36,16 +36,18 @@ pub trait BattleActionHost {
         0
     }
 
-    /// The slot's battle-world planar seat - the `(x, z)` pair retail reads as
-    /// `actor[+0x34]` / `actor[+0x38]`.
+    /// The slot's **live** battle-world position - the `(x, z)` pair retail
+    /// reads as `actor[+0x34]` / `actor[+0x38]`.
     ///
-    /// [`BattleActor`] deliberately does not carry the pair: the seat is world
-    /// state the host owns and the renderer moves, not action state. But the
-    /// action SM does read it, at the cast-begin facing store
-    /// (`overlay_0898_801e295c.txt` `0x801E4334..0x801E43A4`), which needs both
-    /// the acting actor's seat and either the target's seat or the centroid
-    /// [`crate::battle_target_group::target_group_aim`] folds out of the whole
-    /// table. This accessor is that read.
+    /// [`BattleActor`] deliberately does not carry the pair: the position is
+    /// world state the host owns (the battle setup seeds it from the
+    /// formation seats and the anim tick's root-motion drive moves it), not
+    /// action state. But the action SM does read it, at the cast-begin
+    /// facing store (`overlay_0898_801e295c.txt` `0x801E4334..0x801E43A4`)
+    /// and the attack band's per-frame facing recompute, which need both the
+    /// acting actor's position and either the target's or the centroid
+    /// [`crate::battle_target_group::target_group_aim`] folds out of the
+    /// whole table. This accessor is that read.
     ///
     /// `None` means the slot carries no actor at all - an empty seat, which the
     /// group walk skips and the single-target arm bails on. The default is
@@ -55,6 +57,27 @@ pub trait BattleActionHost {
     fn actor_position(&self, _slot: u8) -> Option<(i16, i16)> {
         None
     }
+
+    /// Write the slot's live position pair (`+0x34`/`+0x38`) - the mutation
+    /// half of [`BattleActionHost::actor_position`]. The SM needs it for
+    /// exactly one arm: state `0x16`'s arrival shove
+    /// ([`motion::arrival_shove_step`]), which displaces the *target* when
+    /// the walker arrives. Default no-op (a positionless host stays
+    /// positionless).
+    fn set_actor_position(&mut self, _slot: u8, _x: i16, _z: i16) {}
+
+    /// The slot's **seat** (anchor) pair - retail `actor[+0x3C]`/`+0x40`,
+    /// the pair the battle setup authored and the range law measures the
+    /// target by. Defaults to the live position (an unmoved actor's two
+    /// pairs are equal by construction - the setup copies seat into live).
+    fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
+        self.actor_position(slot)
+    }
+
+    /// Write the slot's seat pair (`+0x3C`/`+0x40`). The arrival shove moves
+    /// the target's seat together with its live position (retail
+    /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
+    fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
     /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
     /// table for min/max. Default no-op.

@@ -5,6 +5,24 @@ use crate::battle_formulas::{arms_resolver_admits, arms_weapon_atk_fold};
 
 // --- attack band ------------------------------------------------------------
 
+/// Per-frame facing recompute the attack band's states share (`0x14` at
+/// `0x801E32EC..0x801E3318`, `0x15`/`0x16`/`0x19` siblings): `facing =
+/// (bearing(target_live -> attacker_live) + 0x800) & 0xFFF`, stored into
+/// `actor[+0x46]`. The half-turn flips the target-to-attacker bearing into
+/// the attacker-to-target heading the trig consumers (root motion, arrival
+/// shove, effect placement) walk along. Skipped when the host tracks no
+/// positions - the facing is left alone, the pre-accessor behaviour.
+fn update_attack_facing<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8, target: u8) {
+    let (Some(a), Some(t)) = (host.actor_position(slot), host.actor_position(target)) else {
+        return;
+    };
+    let bearing = bearing_12bit_approx(t.1, t.0, a.1, a.0);
+    let facing = bearing.wrapping_add(0x800) & 0xFFF;
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.facing_angle = facing;
+    }
+}
+
 pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -12,6 +30,7 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
     let actor_slot = ctx.active_actor;
     let target_slot = host.actor(actor_slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(actor_slot, Pose::Idle);
+    update_attack_facing(host, actor_slot, target_slot);
     let range = host.range_check(actor_slot, target_slot);
     let party_count = host.party_count();
     let next = if range == 0 {
@@ -25,6 +44,16 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
         }
         ActionState::AttackShortStep
     } else {
+        // Monster arm: retail scans the record's action table for the
+        // tag-`0x20` walk (`FUN_80050E2C`) and stages the found entry index
+        // (fallback: the tag-`1` Move clip, which routes to `0x19` instead).
+        // The engine stages entry 1 - the walk/approach slot of the action
+        // tag space (`MonsterAnimation::action_id` 1) - and keeps the
+        // windup/advance chain for every monster; the routing difference is
+        // disclosed in `docs/subsystems/battle-action.md` (engine port note).
+        if let Some(actor) = host.actor_mut(actor_slot) {
+            actor.queued_anim = 1;
+        }
         ActionState::AttackWindup
     };
     transition(ctx, next)
@@ -35,7 +64,9 @@ pub(super) fn attack_windup<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(slot, Pose::Idle);
+    update_attack_facing(host, slot, target);
     if let Some(actor) = host.actor_mut(slot) {
         // Advance anim cursor toward queued.
         if actor.queued_anim != actor.current_anim {
@@ -54,9 +85,37 @@ pub(super) fn attack_advance<H: BattleActionHost + ?Sized>(
     let slot = ctx.active_actor;
     let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(slot, Pose::Idle);
+    update_attack_facing(host, slot, target);
     let range = host.range_check(slot, target);
     if range != 0 {
+        // Out of range: stay. The movement is NOT here - the walk clip's
+        // root-motion term in the anim tick drives the attacker
+        // (`FUN_80047430` `0x80047D20..0x80047E18`; engine
+        // `World::tick_battle_locomotion`), gated on this same range check.
         return stay(ctx);
+    }
+    // Arrival shove (retail `0x801E33EC..0x801E3490`): after staging the
+    // close-in, the SM steps the *target's* live and seat pairs along the
+    // attacker's facing by `trig >> 9` per iteration, while the pair still
+    // measures in range - the target is pushed back out to the range
+    // boundary before the strikes run. The iteration guard is an engine
+    // safety bound the retail loop doesn't need (its trig steps always
+    // terminate); it never binds on real geometry.
+    let facing = host.actor(slot).map(|a| a.facing_angle).unwrap_or(0);
+    let (sin, cos) = motion::trig12(facing);
+    let (dx, dz) = motion::arrival_shove_step(sin, cos);
+    if (dx, dz) != (0, 0) {
+        let mut guard = 0u32;
+        while guard < 0x400 && host.range_check(slot, target) == 0 {
+            let Some((x, z)) = host.actor_position(target) else {
+                break;
+            };
+            host.set_actor_position(target, x.wrapping_add(dx), z.wrapping_add(dz));
+            if let Some((ax, az)) = host.actor_anchor(target) {
+                host.set_actor_anchor(target, ax.wrapping_add(dx), az.wrapping_add(dz));
+            }
+            guard += 1;
+        }
     }
     transition(ctx, ActionState::AttackCloseRange)
 }
@@ -99,8 +158,12 @@ pub(super) fn attack_short_step<H: BattleActionHost + ?Sized>(
     let slot = ctx.active_actor;
     let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(slot, Pose::Idle);
+    update_attack_facing(host, slot, target);
     let range = host.range_check(slot, target);
     if range != 0 {
+        // No movement code and no timeout in this state (retail `0x19`
+        // stalls at `0x801E35D0`): the staged walk clip's root motion is
+        // the drive (engine `World::tick_battle_locomotion`).
         return stay(ctx);
     }
     if let Some(actor) = host.actor_mut(slot) {
