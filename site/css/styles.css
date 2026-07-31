@@ -3474,8 +3474,11 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
    are computed from the same min-content, do not move.
    Block code keeps its own horizontal scroll - `pre` is already a scroller. */
 @media (max-width: 880px) {
-  :not(pre) > code,
-  .content a { overflow-wrap: anywhere; }
+  /* Inherited, so it reaches inline code, links, list items, table cells and
+     the bare `ghidra/scripts/funcs/...` paths in running prose alike. `pre`
+     is unaffected: `white-space: pre` does not wrap at all, and it carries
+     its own horizontal scroll. */
+  .content { overflow-wrap: anywhere; }
 }
 
 /* Small phone: the zone pills and the GitHub link both live in the drawer, so

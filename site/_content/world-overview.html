@@ -214,6 +214,10 @@
   border: 1px solid var(--border);
   display: block;
 }
+/* The quick-travel map draws at its 600x450 attribute size; without a CSS cap
+   that intrinsic width is what a phone gets laid out to. Hit-testing already
+   scales by `canvas.width / rect.width`, so shrinking it costs nothing. */
+#wo-qt-canvas { max-width: 100%; height: auto; }
 .wo-side dl {
   display: grid; grid-template-columns: auto 1fr;
   gap: 0.2rem 0.6rem;

@@ -582,11 +582,15 @@ function wireDiscChip() {
       chip.classList.remove('empty');
       txt.textContent = meta.name;
       chip.title = meta.name + ' is cached in this browser and feeds every page. Click to swap discs. Nothing is uploaded.';
+      /* The label text is hidden on a small phone, leaving only the status
+         dot - so the accessible name has to be stated, not inferred. */
+      chip.setAttribute('aria-label', 'Disc loaded: ' + meta.name + '. Click to swap discs.');
     } else {
       chip.classList.add('empty');
       chip.classList.remove('loaded');
       txt.textContent = 'Insert disc image (.bin)';
       chip.title = 'Pick your Legend of Legaia .bin once - it is cached locally and every page reads from it. Nothing is uploaded.';
+      chip.setAttribute('aria-label', 'No disc loaded. Click to insert a disc image (.bin).');
     }
     /* The home page's prominent disc slot mirrors the same state. */
     const slot = document.getElementById('disc-slot');

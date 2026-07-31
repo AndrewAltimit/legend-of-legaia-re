@@ -16,6 +16,11 @@
   cursor: pointer;
   transition: background var(--transition);
 }
+/* A 220px address gutter leaves a phone too little for the label, and the
+   label's min-content width is what the page gets sized to. Stack instead. */
+@media (max-width: 620px) {
+  .memmap-row { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+}
 .memmap-row:hover { background: var(--bg-card); }
 .memmap-row.active { background: var(--accent-soft); }
 .memmap-row:last-child { border-bottom: none; }
