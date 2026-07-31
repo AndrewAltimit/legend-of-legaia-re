@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -859,6 +859,47 @@ A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
 
+### One staged-anim channel: `actor[+0x1DA]`
+
+Which clip an actor plays is a **single byte**, `actor[+0x1DA]`, with
+`+0x1DB` as its committed mirror. Every producer writes that same byte, and
+the last writer wins:
+
+| Producer | Site | What it writes |
+|---|---|---|
+| Action SM, party approach | attack band state `0x14` | literal `1` (the walk entry) |
+| Action SM, strike loop | attack chain | the strike-script byte (`0x0C..0x0F` swings, art ids) |
+| Damage arm, flinch | `FUN_800402F4` `0x80042124` | `actor[+0x1EF]` (tag-2 entry) |
+| Damage arm, knockdown | `FUN_800402F4` `0x80042118` | `actor[+0x1F1]` (tag-4 entry) |
+| Knockdown → get-up chain | `FUN_8004AD80` `0x8004B690` | `actor[+0x1F2]` (tag-5 entry) |
+
+The commit `FUN_8004AD80` copies `+0x1DA` into `+0x1DB` unconditionally
+(`0x8004AEB0..0x8004AEB8`); there is no reaction guard anywhere on that path.
+So a hit reaction is not a mode an actor is *in* - it is just the current
+value of the staged byte, and the next thing the SM stages replaces it.
+
+Which arm the damage takes is decided at `0x800420F4..0x80042124`: flinch
+when `actor[+0x1F2] == 0` (no get-up entry) **and** the damage is survivable,
+knockdown otherwise. The `+0x1EF..+0x1F3` map is filled by `FUN_80054CB0`
+(`0x80055360..0x800553F0`), one slot per action tag `2/3/4/5/0xB`, with the
+tag-4 → tag-2 fallback at `0x80055428`. Every player battle file carries a
+tag-5 entry, so a party member takes the **knockdown** arm on any hit.
+
+The port models the reaction with its own `Actor::battle_reaction` latch
+(`engine-core::world::actors`) because its `Pose` hook - the per-frame
+`pose(Idle)` the attack band issues - is an engine-local channel with no
+retail counterpart and would otherwise cancel a reaction on the frame after
+it starts. That latch must **not** outrank the staged channel:
+`commit_staged_battle_anim` clears it whenever it installs a staged clip.
+Giving the latch priority instead is what made a hit party member spend its
+whole attack turn face-down - it walked to the target and back playing the
+knockdown / get-up pair, and the approach clip plus every weapon swing were
+dropped on the floor. Regression:
+`crates/engine-core/tests/battle_reaction_stage_precedence.rs`, plus the
+GPU-free pose oracle in
+`crates/asset/tests/battle_pose_orientation_real.rs` which pins that the
+upright family really is upright and the reaction family really is prone.
+
 ## Battle action state machine (`FUN_801E295C`)
 
 16 KB / 4099 instructions / 155 outgoing calls. The action-execution dispatcher: it takes the player's selected action and runs it to completion across multiple frames.
@@ -1261,6 +1302,18 @@ Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id 
 Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
 
 The chained-ribbon sibling `FUN_801E1D98` stays unwired. Its projector uses a constant half-size and no Y push, so it consumes neither context word, and which of the two emitters a move takes is a dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) that is not decoded.
+
+**Reachability today.** The pass is wired into the native window's screen-FX
+builder, but a live `--battle` fight emits **zero** quads. It is gated on
+`World::active_move_fx_trail_texpage()`, which is set only when
+`World::spawn_move_fx` stages a move-power record's Spawn prototypes - i.e.
+when a *move* runs. A party basic Attack stages no move: the attack
+resolution leaves the actor's `+0x1DF` action stream all-zero, so the attack
+chain reads its terminator on the first byte and exits straight to recovery
+without staging a swing (`0x0C..0x0F`) at all. Damage still lands - the live
+loop applies it through its own strike path, not through the SM's strike
+band - but until the action stream has a producer for the party attack, both
+the swing clips and the streak that trails them stay unreached.
 
 ### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
 

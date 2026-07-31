@@ -1294,6 +1294,32 @@ impl PlayWindowApp {
         // Retail's per-frame step is the display-frame delta; the window's
         // simulation tick is one display frame.
         let prims = intro.tick(entity.elapsed, 1).prims;
+        // Per-frame emitter yield. The styles differ by what they draw on top
+        // of the captured field frame, so a style that emits nothing but the
+        // fade is indistinguishable from a blank transition on screen - this
+        // is the cheapest way to tell the two apart in a screenshot run.
+        if log::log_enabled!(log::Level::Debug) {
+            let mut lo = [i16::MAX; 2];
+            let mut hi = [i16::MIN; 2];
+            for p in &prims {
+                let xy = match p {
+                    ScreenPrim::Textured(q) => q.xy,
+                    ScreenPrim::Flat(q) => q.xy,
+                };
+                for (x, y) in xy {
+                    lo[0] = lo[0].min(x);
+                    lo[1] = lo[1].min(y);
+                    hi[0] = hi[0].max(x);
+                    hi[1] = hi[1].max(y);
+                }
+            }
+            log::debug!(
+                "battle intro {:?} frame {} -> {} prim(s) screen bbox {lo:?}..{hi:?}",
+                intro.style(),
+                entity.elapsed,
+                prims.len()
+            );
+        }
         (Some(intro), prims)
     }
 

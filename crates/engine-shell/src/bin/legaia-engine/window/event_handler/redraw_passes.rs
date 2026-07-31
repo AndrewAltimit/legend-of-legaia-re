@@ -269,9 +269,16 @@ impl PlayWindowApp {
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
                 log::info!(
-                    "DIAG pose: tmd {tmd_idx} verts {} aabb {lo:?}..{hi:?} \
-                         bones[0..2]={:?}",
+                    "DIAG pose: actor {ai} tmd {tmd_idx} verts {} anim {:?} \
+                         world ({},{},{}) aabb {lo:?}..{hi:?} bones[0..2]={:?}",
                     vmesh.positions.len(),
+                    actor
+                        .battle_animation
+                        .as_ref()
+                        .map(|p| (p.action_id(), p.current_frame())),
+                    actor.move_state.world_x,
+                    actor.move_state.world_y,
+                    actor.move_state.world_z,
                     &pose.bone_outputs[..pose.bone_outputs.len().min(2)]
                 );
             }
@@ -552,7 +559,14 @@ impl PlayWindowApp {
         };
         let (w, h) = r.surface_size();
         let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
-        streak_quads(&src, &mvp, self.tick_no as u32)
+        let quads = streak_quads(&src, &mvp, self.tick_no as u32);
+        log::debug!(
+            "move-FX streak: launch {:?} half-width {} -> {} quad(s)",
+            block.launch,
+            block.half_width(),
+            quads.len()
+        );
+        quads
     }
 
     pub(super) fn build_screen_fx_meshes(

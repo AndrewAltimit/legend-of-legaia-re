@@ -431,13 +431,20 @@ impl World {
         // number, so the SM's equality checks compare post-rewrite values.
         a.battle.queued_anim = committed;
         a.battle.current_anim = committed;
-        // An in-flight hit reaction owns the player (same precedence as the
-        // pose hook); the ids still converge above so the SM doesn't stall,
-        // and the clip is treated as elapsed.
-        if a.battle_reaction.is_some() {
-            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
-            return;
-        }
+        // Retail keeps ONE staged-anim channel. The hit reaction is written
+        // into the same `actor[+0x1DA]` byte the action SM stages into
+        // (`FUN_800402F4` `0x80042118` knockdown / `0x80042124` flinch), and
+        // this commit copies `+0x1DA` into `+0x1DB` unconditionally
+        // (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`) - there is no reaction
+        // guard anywhere on that path, and even the knockdown -> get-up chain
+        // runs by writing `+0x1DA = +0x1F2` (`0x8004B690`). So a freshly
+        // staged record REPLACES an in-flight reaction; it is not swallowed
+        // by it. Swallowing it left a hit party member playing knockdown /
+        // get-up through its own attack turn - walking to the target and back
+        // lying on the ground, with the approach clip and every weapon swing
+        // dropped. Dropping the latch here also stops the end-of-clip get-up
+        // chain in `tick_battle_animations` from stealing the clip back.
+        a.battle_reaction = None;
         // Id 1 is the walk/approach: it loops until the SM stages something
         // else (AttackShortStep clears it to 0 on arrival). Engine
         // assumption - the loop-vs-once bit retail derives from the record
@@ -588,9 +595,13 @@ impl World {
         let Some(clips) = actor.battle_action_clips.clone() else {
             return;
         };
-        // An in-flight hit reaction outranks the SM's per-frame pose calls
-        // (retail's pose driver never touches the anim-id fields; the
-        // reaction chain owns them until it completes).
+        // An in-flight hit reaction outranks the SM's per-frame pose calls.
+        // This channel is the PORT's own idle-restore hook, not retail's
+        // staged-anim byte: retail has a single `+0x1DA` stage that the
+        // reaction and the SM both write (see `commit_staged_battle_anim`),
+        // so there is nothing here to be faithful to - and without the guard
+        // the per-frame `pose(Idle)` the attack band issues would cancel
+        // every reaction on the frame after it starts.
         if actor.battle_reaction.is_some() {
             return;
         }
