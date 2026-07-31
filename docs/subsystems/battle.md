@@ -2104,6 +2104,44 @@ with the **final tile clipped** to the remainder, cap at `x + 8 + interior`.
 A 27-pixel interior emits a 16-wide and an 11-wide tile - the clip is retail
 behaviour, not a rounding of it.
 
+### One placement record derives every plate
+
+The plate is not stored anywhere; it is derived from a **content box**, and
+the box is a record of the screen-element placement table at `0x80076C10`
+([`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)).
+Reading the live table out of the same save states the packets came from
+gives one arithmetic that fits all four surfaces:
+
+```text
+glyph pen = (rec.x, rec.y - 2)
+plate     = (rec.x - 8, rec.y - 6),  size (rec.w + 16, 20)
+```
+
+`rec.h` is `0x0C` in every initialised record, so a plate is always 20 tall,
+and `rec.w` **is** the interior width - which is what makes a plate sized to
+its content with the last body tile clipped. The `-8` / `-4` content-to-plate
+bias is the same one `FUN_801DBC30` applies when it frames a box.
+
+| Surface | Record `(x, y, w)` | Glyph pen | Plate |
+|---|---|---|---|
+| actor-name plaque | `(16, 14, 63)` | `(16, 12)` | `(8, 8)` 79x20 |
+| active-actor bar | `(16, 194, 288)` | `(16, 192)` | `(8, 188)` 304x20 |
+| `Item` chip | `(204, 34, 48)` | `(204, 32)` | `(196, 28)` 64x20 |
+| `Begin` chip | `(104, 88, 36)` | `(104, 86)` | `(96, 82)` 52x20 |
+
+The plaque is record **68** (`0x80077270`, element id pair `0x2323`, kind
+`0x0202`), pinned by width rather than by name: across three states the
+record's `w` tracks the measured plaque interior exactly - 27 for `Vahn`, 62
+for `CheDelilas`, 63 for `Gimard` behind its badge - while its live seat stays
+`(16, 14)` and its parked seat `(16, -24)`. So the plaque slides in from above
+the screen, and the record's `+0x14` points at the name scratch buffer the
+string was measured out of (a party-name buffer for a member, a monster-name
+buffer for an enemy).
+
+The per-member roster panel is the exception that proves the rule: it is a
+fixed 102x48 sprite rather than a plate run, so its own record (`w = 88`,
+`h = 50`) insets by `(-5, -6)` and widens by 14 instead.
+
 ### The actor-name plaque
 
 Fixed seat `(8, 8)`, 20 px tall, in every battle. It names whichever actor is

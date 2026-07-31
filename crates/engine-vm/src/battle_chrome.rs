@@ -235,6 +235,60 @@ pub const fn plate_width(interior_w: u16) -> u16 {
 }
 
 // ---------------------------------------------------------------------------
+// The element box -> plate law
+// ---------------------------------------------------------------------------
+
+/// The plaque, the party bar and every command chip are one law over one data
+/// source. Each is a record of the **screen-element placement table** at
+/// `0x80076C10` ([`crate::battle_party_panel::ELEMENT_PLACEMENT_TABLE`],
+/// layout in `docs/reference/memory-map.md`), and the plate is derived from
+/// the record's content box rather than stored:
+///
+/// ```text
+/// glyph pen = (rec.x, rec.y - 2)
+/// plate     = (rec.x - 8, rec.y - 6), (rec.w + 16, 20)
+/// ```
+///
+/// `rec.h` is `0x0C` in every initialised record, so the plate is always 20
+/// tall, and `rec.w` **is** the interior width - which is why a plate is
+/// sized to its content with the final body tile clipped. The same `-8` / `-4`
+/// content-to-plate bias appears in
+/// [`crate::battle_party_panel::cross_out_mark`], the other overlay leaf that
+/// frames a content box.
+///
+/// The law is packet-verified on four surfaces at once: plaque `(16, 12)` w=63
+/// -> `(8, 8)` 79x20; active-actor bar `(16, 192)` w=288 -> `(8, 188)` 304x20;
+/// command chip `(204, 32)` w=48 -> `(196, 28)` 64x20; top-level chip
+/// `(104, 86)` w=36 -> `(96, 82)` 52x20.
+pub const PLATE_INSET_X: i16 = 8;
+/// Vertical inset from the glyph pen to the plate top (see [`PLATE_INSET_X`]).
+pub const PLATE_INSET_Y: i16 = 4;
+/// Offset from a placement record's `y` to the glyph pen it seats.
+pub const RECORD_PEN_DY: i16 = -2;
+
+/// Placement-table record index whose content box **is** the actor-name
+/// plaque (`0x80076C10 + 68 * 0x18` = `0x80077270`, element id pair `0x2323`,
+/// kind `0x0202`).
+///
+/// Pinned by width rather than by name: across three battle save states the
+/// record's `w` tracks the plaque's measured interior exactly - 27 for `Vahn`,
+/// 62 for `CheDelilas`, 63 for `Gimard` behind its element badge - while its
+/// live seat stays `(16, 14)` and its parked seat `(16, -24)`. The plaque
+/// therefore slides in from above the screen, and `+0x14` points at the name
+/// scratch buffer the string was measured out of.
+pub const PLAQUE_PLACEMENT_RECORD: usize = 68;
+
+/// Glyph pen and plate rect for a placement record's `(x, y, w)`.
+///
+/// Returns `(pen, plate_origin, plate_interior_w)`; feed the last two to
+/// [`plate_run`].
+pub const fn plate_for_record(x: i16, y: i16, w: u16) -> ((i16, i16), (i16, i16), u16) {
+    let pen = (x, y + RECORD_PEN_DY);
+    let plate = (pen.0 - PLATE_INSET_X, pen.1 - PLATE_INSET_Y);
+    (pen, plate, w)
+}
+
+// ---------------------------------------------------------------------------
 // The actor-name plaque
 // ---------------------------------------------------------------------------
 
@@ -641,6 +695,42 @@ mod tests {
                 (140, 216, 8),
             ]
         );
+    }
+
+    #[test]
+    fn one_record_law_derives_all_four_plate_surfaces() {
+        // (record x, record y, record w) -> (glyph pen, plate origin), each
+        // read off the live placement table and matched against the packets.
+        let cases = [
+            ((16i16, 14i16, 63u16), (16i16, 12i16), (8i16, 8i16)), // plaque
+            ((16, 194, 288), (16, 192), (8, 188)),                 // active bar
+            ((204, 34, 48), (204, 32), (196, 28)),                 // Item chip
+            ((160, 66, 48), (160, 64), (152, 60)),                 // Attack chip
+            ((104, 88, 36), (104, 86), (96, 82)),                  // Begin chip
+        ];
+        for ((rx, ry, rw), pen, plate) in cases {
+            let (got_pen, got_plate, interior) = plate_for_record(rx, ry, rw);
+            assert_eq!(got_pen, pen, "pen for record ({rx},{ry},{rw})");
+            assert_eq!(got_plate, plate, "plate for record ({rx},{ry},{rw})");
+            assert_eq!(plate_width(interior), rw + 16);
+        }
+    }
+
+    #[test]
+    fn the_plaque_record_derives_the_plaque_layout() {
+        // Record 68's w is the plaque interior, so the placement table and
+        // the content-measured layout have to agree.
+        assert_eq!(
+            PLAQUE_PLACEMENT_RECORD * 0x18 + 0x8007_6C10,
+            0x8007_7270_usize
+        );
+        for (w, badge, name_w) in [(27u16, false, 27u16), (63, true, 38)] {
+            let (pen, plate, interior) = plate_for_record(16, 14, w);
+            let p = name_plaque(name_w, badge);
+            assert_eq!(interior, p.interior_w);
+            assert_eq!(plate, (PLAQUE_X, PLAQUE_Y));
+            assert_eq!(pen.1, p.text.1);
+        }
     }
 
     #[test]
