@@ -208,10 +208,26 @@ pub enum BattleCamPhase {
 /// That is [`ORBIT_STEP`] falling out of the disassembly: two display frames
 /// per camera step at `2` units per frame is the `-4` the trace measured, and
 /// it pins *when* the orbit runs - only while the SM is idling between
-/// actions. Every other `ctx[7]` value is an action in flight.
+/// actions.
+///
+/// **`EndOfAction` is idle here and is not in retail's pair.** Retail's `0x5A`
+/// arm falls through to the next actor's `Begin` inside the same dispatch, so
+/// its `ctx[7]` is never observed resting there; the port's loop driver parks
+/// the SM at `EndOfAction` between turns and re-arms on a later step
+/// (`World::step_battle`'s turn-cycling arm). Testing retail's pair alone
+/// therefore reads the port's *resting* state as an action in flight, which
+/// pins the camera in the per-action close-up for the whole fight - one actor
+/// filling the frame, the rest of the formation outside it, and no idle orbit.
+/// The retail pair stays as [`RETAIL_ORBIT_STATES`] so the difference is
+/// visible rather than folded away.
 pub const fn action_state_frames_the_action(action_state: u8) -> bool {
-    !matches!(action_state, 0x00 | 0x0B)
+    !matches!(action_state, 0x00 | 0x0B | 0x5A)
 }
+
+/// The two `ctx[7]` values retail's own orbit gate accepts
+/// (`0x801E2A3C..0x801E2A6C`). [`action_state_frames_the_action`] treats one
+/// more state as idle - see its note for why the port needs it.
+pub const RETAIL_ORBIT_STATES: [u8; 2] = [0x00, 0x0B];
 
 /// The retail phase for one frame of battle state. Both hosts feed the same
 /// three booleans: `dialogue_up` = an in-battle dialogue / inline-dialogue box
@@ -904,6 +920,13 @@ impl BattleCamera {
     /// seat changes; an already-armed glide is left alone.
     pub fn set_actor(&mut self, actor: BattleCamActor) {
         self.actor = actor;
+    }
+
+    /// Which framing owns the camera this frame. Hosts export it so what the
+    /// camera is *doing* is observable - a pose alone cannot distinguish "far
+    /// framing, mid-glide" from "action close-up, settled".
+    pub fn phase(&self) -> BattleCamPhase {
+        self.phase
     }
 
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
@@ -1931,17 +1954,26 @@ mod tests {
         assert!(depth(crate::battle_formulas::CAMERA_HEIGHT_MAX as i32) > far);
     }
 
-    /// The idle orbit runs at exactly the two action states retail gates it
-    /// on; everything else is an action in flight.
+    /// The idle orbit runs at retail's two gated states plus `EndOfAction`,
+    /// which is where the port's loop driver parks the SM between turns;
+    /// everything else is an action in flight.
+    ///
+    /// `EndOfAction` is the load-bearing case: reading it as an action leaves
+    /// both hosts in the per-action close-up for an entire fight, because it
+    /// is the state a battle *rests* in while waiting for the next turn.
     #[test]
-    fn only_the_two_idle_states_leave_the_action_framing() {
+    fn the_idle_states_leave_the_action_framing() {
         use crate::battle_action::ActionState;
-        assert!(!action_state_frames_the_action(
-            ActionState::Begin.as_byte()
-        ));
-        assert!(!action_state_frames_the_action(
-            ActionState::QueuedFromMenu.as_byte()
-        ));
+        for s in [
+            ActionState::Begin,
+            ActionState::QueuedFromMenu,
+            ActionState::EndOfAction,
+        ] {
+            assert!(
+                !action_state_frames_the_action(s.as_byte()),
+                "{s:?} is idle - it must leave the far framing and its orbit"
+            );
+        }
         for s in [
             ActionState::ActionSeed,
             ActionState::PreActionWait,
@@ -1949,13 +1981,16 @@ mod tests {
             ActionState::MagicHitLoop,
             ActionState::SummonSustain,
             ActionState::DoneCleanup,
-            ActionState::EndOfAction,
             ActionState::RunBegin,
         ] {
             assert!(
                 action_state_frames_the_action(s.as_byte()),
                 "{s:?} frames the action"
             );
+        }
+        // Retail's own pair is a subset, kept visible rather than folded in.
+        for s in RETAIL_ORBIT_STATES {
+            assert!(!action_state_frames_the_action(s));
         }
     }
 

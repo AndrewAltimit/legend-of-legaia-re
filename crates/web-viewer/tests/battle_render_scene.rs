@@ -107,25 +107,45 @@ fn battle_render_builds_backdrop_grid_actors_and_camera() {
     }
     assert!(monsters >= 1, "at least one enemy-side mesh");
 
-    // Camera: active menu framing at (or above) the retail minimum depth
-    // (`0x800` world units through the `(z << 8) / 0xA0` prescale = 3276),
-    // and the idle orbit moves yaw across ticks.
+    // Camera. On the Field -> Battle edge the shared phase script opens on
+    // the far menu framing, sized to the live formation and at or above the
+    // retail minimum depth (`0x800` world units through the
+    // `(z << 8) / 0xA0` prescale = 3276).
     let cam: serde_json::Value =
         serde_json::from_str(&rt.play_battle_camera_json()).expect("camera json");
     assert_eq!(cam["active"], true, "camera active: {cam}");
+    assert_eq!(
+        cam["phase"], "menu",
+        "battle opens on the far framing: {cam}"
+    );
     assert!(
         cam["tr"][2].as_f64().unwrap_or(0.0) >= 3276.0,
         "menu framing depth at or above the retail floor: {cam}"
     );
-    let yaw0 = cam["yaw"].as_f64().unwrap();
-    for _ in 0..4 {
+
+    // This battle is not player-driven, so the SM arms an action on its own
+    // within a few ticks and the camera follows it into the per-action
+    // close-up (`FUN_801D5854` case 6). Both halves matter: the phase has to
+    // change, and the pose has to actually move - a phase flip whose pose
+    // never leaves the far framing would mean the script is not being driven
+    // on this host's clock.
+    //
+    // The idle orbit itself is not asserted here: an auto-driven fight has no
+    // settled idle window to observe it in. Its law lives in
+    // `engine-vm::battle_cam_script` (`ORBIT_STEP` + the phase predicate).
+    let pose0 = cam["tr"].clone();
+    let mut acted = false;
+    let mut moved = false;
+    let mut last = cam.clone();
+    for _ in 0..60 {
         let _ = rt.tick_frame();
+        last = serde_json::from_str(&rt.play_battle_camera_json()).expect("camera json 2");
+        acted |= last["phase"] == "action";
+        moved |= last["tr"] != pose0;
+        if acted && moved {
+            break;
+        }
     }
-    let cam2: serde_json::Value =
-        serde_json::from_str(&rt.play_battle_camera_json()).expect("camera json 2");
-    assert_ne!(
-        yaw0,
-        cam2["yaw"].as_f64().unwrap(),
-        "idle orbit advances yaw"
-    );
+    assert!(acted, "an executing action takes the camera: {last}");
+    assert!(moved, "the camera pose advances across ticks: {last}");
 }

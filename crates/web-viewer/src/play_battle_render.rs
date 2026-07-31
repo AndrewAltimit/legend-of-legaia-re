@@ -1192,7 +1192,8 @@ impl LegaiaRuntime {
         }
         let pose = self.battle_cam_pose();
         format!(
-            r#"{{"active":true,"pitch":{},"yaw":{},"tr":[{},{},{}],"focus":[{},{},{}],"h":{}}}"#,
+            r#"{{"active":true,"phase":"{}","pitch":{},"yaw":{},"tr":[{},{},{}],"focus":[{},{},{}],"h":{}}}"#,
+            self.battle_cam_phase_label(),
             pose.pitch,
             pose.yaw,
             pose.tr[0],
@@ -1226,6 +1227,23 @@ impl LegaiaRuntime {
     /// The live phase-scripted pose, or the shared BOOT_POSE on the first
     /// frame before the camera tick armed the state (the same fallback the
     /// native `battle_dome_camera_mvp` renders).
+    /// Which framing the shared phase script has the camera in, as the JSON
+    /// export's `phase` string.
+    fn battle_cam_phase_label(&self) -> &'static str {
+        use legaia_engine_vm::battle_cam_script::BattleCamPhase as P;
+        match self
+            .battle_render
+            .as_ref()
+            .and_then(|b| b.camera.as_ref())
+            .map(|c| c.phase())
+        {
+            Some(P::Dialogue) => "dialogue",
+            Some(P::Submenu) => "submenu",
+            Some(P::Action) => "action",
+            Some(P::Menu) | None => "menu",
+        }
+    }
+
     fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
         self.battle_render
             .as_ref()
