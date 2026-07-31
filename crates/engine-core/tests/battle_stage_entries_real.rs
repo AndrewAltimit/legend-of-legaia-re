@@ -330,6 +330,89 @@ fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
     }
 }
 
+/// **A backdrop shell is not all texture.** Its `F*`/`G*` flat / gouraud
+/// panels - the sky band, the painted wall faces, the flat water - carry a
+/// baked colour word and no UVs, and `tmd_to_vram_mesh` drops every prim with
+/// no UVs because such a prim would sample nothing from VRAM. A host that
+/// renders only the VRAM half therefore leaves holes in the arena.
+///
+/// Retail draws one primitive list: `FUN_8001ADA4` case 3 walks the whole
+/// group chain and the GPU takes `POLY_F*` / `POLY_G*` packets as readily as
+/// `POLY_*T*` ones. This pins how much of the shell the colour half is - a
+/// double-digit share on the shells the engine actually renders - and that
+/// `ColorMesh::append_scaled` carries it through the second copy the same way
+/// the textured builder does.
+#[test]
+fn the_backdrop_shells_untextured_half_is_a_double_digit_share() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    // town01's Tetsu arena and map01's overworld dome - the two stage shapes.
+    for (idx, min_share) in [(7u32, 0.10f32), (88, 0.02)] {
+        let bytes = host.index.entry_bytes(idx).expect("read stage entry");
+        let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
+        let raw = &bytes[s.tmd_range()];
+        let tmd = legaia_tmd::parse(raw).expect("parse dome TMD");
+        let drawn = legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd);
+        let textured = legaia_tmd::mesh::tmd_to_vram_mesh(&drawn, raw);
+        let mut colour = legaia_tmd::mesh::tmd_to_color_mesh(&drawn, raw);
+        let (t_tris, c_tris) = (textured.indices.len() / 3, colour.indices.len() / 3);
+        let share = c_tris as f32 / (t_tris + c_tris) as f32;
+        eprintln!("stage {idx}: {t_tris} textured tris, {c_tris} colour tris ({share:.3})");
+        assert!(
+            share >= min_share,
+            "stage {idx}: the untextured half is {share:.3} of the shell, \
+             below the {min_share} the renderer must not silently drop"
+        );
+        // The second copy has to carry the colour half too, or the shell
+        // closes on one texture class and not the other.
+        let first = colour.clone();
+        colour.append_scaled(&first, [-1.0, 1.0, 1.0]);
+        assert_eq!(colour.indices.len() / 3, c_tris * 2, "second copy appended");
+        assert_eq!(colour.positions.len(), first.positions.len() * 2);
+        // A negative-determinant scale reverses winding, exactly like the
+        // textured builder's own `append_scaled`.
+        assert_eq!(
+            colour.indices[c_tris * 3..c_tris * 3 + 3],
+            [
+                first.positions.len() as u32,
+                first.positions.len() as u32 + 2,
+                first.positions.len() as u32 + 1
+            ]
+        );
+
+        // **Cross-host guard.** The two hosts assemble the same shell two
+        // different ways: the native window builds a textured VRAM mesh plus
+        // a separate `ColorMesh` on the untextured pipeline, the browser page
+        // builds ONE hybrid mesh carrying a per-vertex textured flag. Those
+        // are different code paths over the same primitive list, so nothing
+        // but an assertion keeps them drawing the same triangles - and the
+        // shipped host-drift gate only asks whether a host CALLS a shared
+        // builder, never whether both build the same model. This is the
+        // shape that let the native window silently lose the shell's
+        // untextured half while the browser kept it.
+        let (hybrid, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&drawn, raw);
+        assert_eq!(
+            hybrid.indices.len() / 3,
+            t_tris + c_tris,
+            "stage {idx}: the browser's hybrid shell and the native window's \
+             textured + colour halves must be the same triangle set"
+        );
+        assert_eq!(
+            hybrid.positions.len(),
+            textured.positions.len() + first.positions.len()
+        );
+        let untextured_verts = shading.textured.iter().filter(|&&t| t == 0).count();
+        assert_eq!(
+            untextured_verts,
+            first.positions.len(),
+            "stage {idx}: the hybrid's untextured verts are exactly the colour half"
+        );
+    }
+}
+
 /// Which objects of a stage TMD the backdrop actually draws.
 ///
 /// Retail's registration drops object index 1 and keeps the rest
