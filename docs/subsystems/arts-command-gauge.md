@@ -193,6 +193,12 @@ The descriptor table keys sections by **equippable item id**, so each equippable
 
 Cross-checked against live RAM: Gala + Nail Glove reads `0x2A`, Gala + Ra-Seru Club reads `0x1E` - matching that file's `0x28` and `0x21` sections. The cost lives inside the section's **LZS-compressed** stream, so an editor decompresses the section, rewrites the byte at `swing_rec_a + 0x74`, recompresses, and writes back within the slot footprint.
 
+### Reading it
+
+`legaia_asset::battle_char_assembly::swing_command_costs(buf, pack, equipped)` returns the four costs for one equipped set, indexed in direction-command byte order (`Left, Right, Down, Up` = runtime action slots `0xC..=0xF`). It is the splice path, not a descriptor-id lookup: `select_sections` matches an equipped id positionally **inside its own section**, and the arm swing is section 2's record, so it is equipment index 2 that re-prices the arm. An id placed at index 0 silently falls through to the section default and every weapon reads `0x1E` - the failure mode to expect when a cost sweep comes back constant.
+
+Every caller reads it here: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/asset/tests/battle_data_pack_real.rs`. One byte prices one command, and the dome is a restricted normal battle, so a second reader would be a second answer.
+
 ## Confidence and open threads
 
 **Confirmed** (live-pinned + byte-validated against the disc): the cost field `DAT_801C9360[char][0x0C] + 0x74`, its measured values, the case-`9` read and case-`0xB` AP spend in `FUN_801D388C`, the SCUS call site of the execution resolver, the **writer** (`FUN_800557B8`, verbatim copy from the LZS-decoded equipment section at battle load - no runtime penalty arithmetic), and the **disc location** of the cost byte (`section[+0x04]` swing record `+0x74` in the player battle files, tabulated above).
@@ -232,32 +238,44 @@ The alternate seed in the same builder (`ctx + 0x6DC = _DAT_80076D7E`) is the
 [Muscle Dome](minigame-muscle-dome.md#hand-deck-decoded) hand's fixed budget,
 not a party battle path.
 
-### Units: what the port models instead
+## The port's input session
 
-`legaia_engine_core::ap_gauge` counts a different quantity in different units,
-and the two disagree in both directions:
+`legaia_engine_core::arts_command_input` is the retail flow: the Arts command
+opens a per-press directional entry, each press appends its command byte to the
+actor's buffer and debits that command's `+0x74` cost from the turn pool, and
+entry **ends by itself** the moment nothing is affordable (`0x50 -> 0x5A`, no
+confirm). The review screen's next press reaches **Begin | Reselect** (`0x6E`).
+The entered sequence resolves through the `legaia-art` matcher family - an
+exact Miracle string replaces the whole queue, a recognised sequence ending on
+a Super combination replaces the tail, and otherwise each named art contributes
+its record's strikes with unmatched directions staying plain swings.
 
-| | retail | `ap_gauge` |
+Costs come from the equipped set at scene entry
+([above](#reading-it)) into `World::battle_swing_costs`; the pool seeds from
+the actor's AGL. Sessions live at `World::battle_arts_input`, and
+`World::arts_input_active()` is what a host's party status strip reads to park
+itself, since retail moves the status plate off-screen for the whole session.
+
+### What still diverges
+
+| | retail | port |
 |---|---|---|
-| pool | actor AGL (`+0x154`), hundreds | `4 + level/10`, capped 10 |
-| direction command (`0x0C..=0x0F`) | costs the `+0x74` byte (30 / 42 / 54) | free |
-| art body / starter | paid from **Spirit** `+0x170` | costs 1 from the pool |
+| pool | actor AGL (`+0x154`) | actor AGL; `100` with no roster loaded |
+| direction command | the `+0x74` byte | the `+0x74` byte, per equipped set |
+| ending entry | auto-end only | auto-end, **plus** Cross to confirm early |
+| leaving the command | not possible | Circle on an empty buffer backs out |
+| art body | paid from **Spirit** `+0x170` | free - the swings are the whole price |
+| target | pre-picked with the command | picked after Begin |
 
-The port therefore charges the arts and comps the swings, where retail charges
-the swings out of AGL and the arts out of Spirit - the two-gauge split this
-page's [next section](#what-an-art-costs-in-ap) exists to keep apart. `4 +
-level/10` reproduces roughly the right *command count* for a favored weapon
-(`AGL / 30`), which is why the queue behaves plausibly, but it is a fitted
-constant with no site behind it: it cannot vary with the weapon, so the whole
-weapon-specialty mechanic is invisible to it.
+The first two rows are the gap this closes: the old `ap_gauge` model counted a
+fitted `4 + level/10` pool and comped the swings entirely, so the
+weapon-specialty mechanic was invisible to it. `ap_gauge` still backs the
+Spirit-command path and the [AP override hook](#arts-ap-override-hook); it is
+no longer what an Arts input spends.
 
-Closing the gap needs the per-`(character, weapon)` `+0x74` byte, which is
-disc data rather than arithmetic: it lives at `section[+0x04] + 0x74` inside
-the equipped weapon's section of the [player battle
-file](../formats/battle-data-pack.md), keyed by equippable item id, and
-`legaia_asset::battle_data_pack` documents the field without parsing it. Until
-a reader exists, an engine-side "party swing budget" would have to invent the
-cost, which would silently pick a weapon-specialty policy.
+The remaining rows are engine conveniences or the un-closed half of the
+[two-gauge split](#what-an-art-costs-in-ap): the port does not yet charge the
+art body out of Spirit, so a turn's whole cost is its swings.
 
 ## What an art costs in AP
 

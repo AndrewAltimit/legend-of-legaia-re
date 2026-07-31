@@ -2612,6 +2612,27 @@ Per-character per-Seru capture-point accumulator. Each captured Seru contributes
 
 Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
 
+## Arts command input
+
+The Arts command opens a **per-press directional entry**, not a list. Each
+d-pad press appends its command to the acting actor's `+0x1DF` queue and
+debits that command's `+0x74` AP cost from the turn pool; the entry ends by
+itself the moment nothing is affordable, and the entered sequence is then
+matched against the character's learned arts. Retail's flow, the AP
+arithmetic and the port's divergences are on
+[`arts-command-gauge.md`](arts-command-gauge.md#the-ports-input-session);
+the screen's packet-pinned presentation is on
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned),
+which is where it was captured (the dome runs the same screen verbatim).
+
+Port: session `engine_core::arts_command_input`, opened from the command
+menu's Arts arm and driven by the live loop while the action SM is parked.
+Chrome: `engine_ui::arts_input`, drawn by both hosts off the shared baked
+system-UI atlas. `World::arts_input_active()` / `arts_input_actor()` tell a
+host's party surface that an actor owns the pad - retail parks the status
+plate off-screen for the whole session. The older saved-chain list stays
+reachable behind `LEGAIA_ARTS_SAVED_LIST=1`.
+
 ## Tactical Arts chain editor
 
 Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.

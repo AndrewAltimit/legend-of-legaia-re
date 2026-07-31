@@ -437,6 +437,15 @@ impl World {
         self.battle_arts_input.is_some()
     }
 
+    /// The actor-table index of the party member entering commands, or
+    /// `None` when no session is open. The party surface has two mutually
+    /// exclusive forms - roster panels, and a full-width bar for the actor
+    /// that owns the pad - so a host needs the *which*, not just the
+    /// *whether*.
+    pub fn arts_input_actor(&self) -> Option<u8> {
+        self.battle_arts_input.as_ref().map(|s| s.actor)
+    }
+
     /// Renderer-agnostic view of the open Arts command input, or `None`
     /// when no session is up. Both hosts build the pinned chrome from
     /// this and nothing else.

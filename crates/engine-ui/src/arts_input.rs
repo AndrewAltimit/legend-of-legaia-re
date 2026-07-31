@@ -51,6 +51,14 @@ pub const CHIP_ANCHOR_LOW: (i32, i32) = (216, 90);
 
 /// Stage seat of the 16x16 D-pad glyph in the middle of the chip diamond
 /// (captured FT4 `(220,62)-(235,77)`, so a 15x15 draw).
+///
+/// The battle **command-select** diamond (Item / Attack / element / Spirit)
+/// is a different cluster with different art, but its capture puts its
+/// D-pad at this same rect and its centre at the same `(228, 70)` these
+/// four chip anchors imply - two independent captures agreeing, which is
+/// what says the arts entry reuses the command diamond's seat rather than
+/// merely sitting near it. Do not confuse the two clusters: this one
+/// carries High / Left / Right / Low.
 pub const DPAD_SEAT: (i32, i32) = (220, 62);
 /// Drawn size of the D-pad glyph (the FT4 spans 15 texels, not 16).
 pub const DPAD_SIZE: (u32, u32) = (15, 15);

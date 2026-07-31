@@ -161,8 +161,14 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
   (HP delta, status, scheduled SFX cues) the world drains into its
   battle event queue.
-- `ap_gauge` - per-character Action-Point gauge driving Tactical Arts
-  command input. Charges +5 on Spirit-press, refills per turn.
+- `arts_command_input` - the retail Arts command entry: per-press
+  directional buffer, per-command AP debit from the turn pool, auto-end
+  when nothing is affordable, and the Begin | Reselect review. Resolves
+  the entered sequence through the `legaia-art` matchers. Costs come from
+  the equipped set's `+0x74` bytes (`World::battle_swing_costs`).
+- `ap_gauge` - per-character Action-Point gauge. Charges +5 on
+  Spirit-press, refills per turn; backs the Spirit command and the AP
+  override hook, **not** the Arts input's swing budget.
 - `battle_stats` - equipment-aware stat aggregator (clean-room port of
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
   status-effect modifiers (Toxic -ATK/-DEF, Confuse halves accuracy,
