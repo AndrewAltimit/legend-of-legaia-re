@@ -438,9 +438,57 @@ impl LegaiaRuntime {
         )
     }
 
+    /// The live battle command menu projected into the shared chip-cluster
+    /// view: one [`legaia_engine_ui::battle_command_ui::CommandChipView`]
+    /// per `BattleCommand::MENU` entry plus the cursor index, or `None`
+    /// when no command menu owns the frame.
+    ///
+    /// One projector feeds both halves of the cluster - the plate sprites
+    /// and the labels - so the page's two draw arrays cannot disagree about
+    /// whether the menu is up. Twin of the native window's method of the
+    /// same name, with the same suppression rules.
+    pub(crate) fn battle_command_menu_chips(
+        &self,
+    ) -> Option<(
+        Vec<legaia_engine_ui::battle_command_ui::CommandChipView<'static>>,
+        usize,
+    )> {
+        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        let bw = self.scene_host.as_ref().map(|h| &h.world)?;
+        if bw.mode != SceneMode::Battle {
+            return None;
+        }
+        if bw.current_dialog.is_some() || bw.inline_dialogue.is_some() {
+            return None;
+        }
+        if bw.arts_input_view().is_some()
+            || bw.battle_arts_menu.is_some()
+            || bw.battle_spell_menu.is_some()
+            || bw.battle_item_menu.is_some()
+        {
+            return None;
+        }
+        let cmd = bw.battle_command.as_ref()?;
+        let CommandPhase::Menu { cursor } = cmd.phase else {
+            return None;
+        };
+        let no_escape = bw.battle_no_escape;
+        Some((
+            BattleCommand::MENU
+                .iter()
+                .map(|c| legaia_engine_ui::battle_command_ui::CommandChipView {
+                    label: c.label(),
+                    enabled: c.available(no_escape),
+                })
+                .collect(),
+            cursor as usize,
+        ))
+    }
+
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
-    /// green `MP` label cells) for the page's system-UI atlas array. Empty
-    /// outside battle.
+    /// green `MP` label cells) for the page's system-UI atlas array, plus
+    /// the command menu's chip plates + D-pad glyph when a menu is up.
+    /// Empty outside battle.
     pub(crate) fn battle_chrome_sprite_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -454,8 +502,29 @@ impl LegaiaRuntime {
         if !in_battle {
             return Vec::new();
         }
-        self.battle_hud_frame_draws(assets, surface_w, surface_h)
-            .sprites
+        let mut out = self
+            .battle_hud_frame_draws(assets, surface_w, surface_h)
+            .sprites;
+        // The command chips sample the same blue plate 3-slice the party
+        // bar does, so they ride this array rather than a second one.
+        if let (Some(rects), Some((chips, cursor))) = (
+            assets.chrome_rects().and_then(|r| r.battle),
+            self.battle_command_menu_chips(),
+        ) {
+            use legaia_engine_ui::battle_command_ui as bcu;
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            out.extend(bcu::battle_command_chip_sprites(
+                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+                &bcu::BattleCommandMenuFrame {
+                    chips: &chips,
+                    cursor: Some(cursor),
+                },
+                origin,
+                scale,
+            ));
+        }
+        out
     }
 
     pub(crate) fn battle_overlay_draws(
@@ -464,7 +533,7 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_core::battle_input::CommandPhase;
         use legaia_engine_core::target_picker::{CursorRow, PickerState};
 
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
@@ -667,34 +736,24 @@ impl LegaiaRuntime {
             let mut my = MENU_Y;
             match &cmd.phase {
                 CommandPhase::Menu { .. } => {
-                    let header = format!("P{} - command:", cmd.actor + 1);
-                    out.extend(ui::text_draws_for(
-                        &font.layout_ascii(&header),
-                        (MENU_X, my),
-                        white,
-                    ));
-                    my += 16;
-                    let cur = cmd.menu_command();
-                    for c in BattleCommand::MENU {
-                        let marker = if Some(c) == cur { ">" } else { " " };
-                        let line = if c.enabled() {
-                            format!("{} {}", marker, c.label())
-                        } else {
-                            format!("{} {} --", marker, c.label())
-                        };
-                        let color = if Some(c) == cur {
-                            white
-                        } else if c.enabled() {
-                            dim
-                        } else {
-                            down_color
-                        };
-                        out.extend(ui::text_draws_for(
-                            &font.layout_ascii(&line),
-                            (MENU_X + 8, my),
-                            color,
+                    // Retail's command menu is a chip cluster, not a list:
+                    // the packet-pinned diamond plus the port's second row.
+                    // Same shared builder + same projector the native
+                    // window uses, so the two hosts cannot drift; the
+                    // plates go out in `battle_chrome_sprite_draws`.
+                    if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                        use legaia_engine_ui::battle_command_ui as bcu;
+                        let (origin, scale) =
+                            crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+                        out.extend(bcu::battle_command_chip_text(
+                            font,
+                            &bcu::BattleCommandMenuFrame {
+                                chips: &chips,
+                                cursor: Some(cursor),
+                            },
+                            origin,
+                            scale,
                         ));
-                        my += 14;
                     }
                 }
                 CommandPhase::Targeting { command, picker } => {

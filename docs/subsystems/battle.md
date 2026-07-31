@@ -2462,6 +2462,24 @@ unavailable command still gets its chip - the right seat draws a single `-`
 glyph for a character with no magic. The `Begin` / `Run` cluster is seat- and
 size-identical in a solo tutorial fight and in a three-member battle.
 
+The dome's element table names the same four seats from a second, unrelated
+capture (`(204, 34)` / `(160, 66)` / `(248, 66)` / `(204, 98)` through the
+plate law above), which is what says this cluster is the battle command menu's
+and not a per-mode variant - see
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#the-command-cluster-is-the-battle-cluster).
+Note the two "cannot pick this" marks are different widgets: the `-` glyph is
+an unavailable command, while a *forbidden* one wears the red cross-out X
+(`FUN_801DBC30`, port `battle_party_panel::cross_out_mark`).
+
+**Port.** The cluster's draw side is
+[`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
+plate run, both clusters, the shared D-pad cell and the `-` chip - and both
+battle hosts seat their command menu through it, so the menu is chips rather
+than a text list on either. The port's menu carries two entries retail's four
+arms have no seat for, and they take a second row the module documents; the
+`engine-ui` literals are pinned equal to `battle_chrome` by `engine-shell`'s
+`engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`.
+
 ## The widget-class table - where every chrome sprite comes from
 
 Everything the packet walk measured above is **disc data**, and it all comes

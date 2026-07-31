@@ -516,11 +516,38 @@ What is still *not* unified is the session object: the dome keeps its own
 `MuscleDomeSession` budget / spent / queue triple while the battle runs
 `engine_core::arts_command_input`. The two model the same retail state
 (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
-a refactor rather than a question - the open part is how the dome's
-*restriction* is expressed. The command-select capture shows retail draws an
-unavailable command as a chip carrying a single `-` glyph rather than
-omitting it, so a restricted caller most likely disables entries in place
-instead of shortening the cluster.
+a refactor rather than a question.
+
+### Two different marks for "you cannot pick this"
+
+The dome's course restriction and a plain unavailable command are **not the
+same widget**, and the captures say so separately:
+
+- A **course restriction** lays the red cross-out X over the chip - a
+  `0x40 x 0x10` blit of the `etim` page's `(0,96)` texels, drawn 1:1 and
+  seated `(x-8, y-4)` off the chip's content box. Retail's emitter is
+  `FUN_801DBC30`; the port is `legaia_engine_vm::battle_party_panel::cross_out_mark`
+  and the dome page ships its rect as `red_x`. The Master course's Item chip
+  is the captured instance.
+- A command that is merely **unavailable** keeps its chip and draws a single
+  `-` glyph where the word would go - the command-select capture's own
+  behaviour, which the shared cluster builder
+  `legaia_engine_ui::battle_command_ui` implements for both battle hosts.
+
+The earlier reading that a restricted caller "most likely" expressed itself
+with the `-` glyph is superseded: the two marks coexist, and the X is the one
+the dome draws.
+
+### The command cluster is the battle cluster
+
+The dome's chip anchors are the same cluster the battle command menu draws,
+which is what the element table says: element 8 Item `(204, 34)`, 9 Attack
+`(160, 66)`, `0xA` the Ra-Seru chip `(248, 66)`, `0xB` Spirit `(204, 98)`.
+Run each through the plate law (`plate = (rec.x - 8, rec.y - 6)`) and they
+are exactly `legaia_engine_ui::battle_command_ui::CLUSTER_COMMAND`'s four
+arms - `(196, 28)` / `(152, 60)` / `(240, 60)` / `(196, 92)` about a centre
+of `(228, 70)`. Two independent captures, one geometry; the dome page and
+the battle hosts draw it from the one module.
 
 Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
 `muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the

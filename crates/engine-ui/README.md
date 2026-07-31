@@ -36,6 +36,13 @@ navigation logic depends on the GPU backend.
   the battle hosts and the dome page all compose from this module.
   Packet-pinned - see
   [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md).
+- `battle_command_ui` - the **battle command menu**'s chip cluster: the blue
+  plate 3-slice with its clipped final body tile, the packet-pinned four-arm
+  diamond at `(228, 70)` and the `Begin | Run` pair at `(160, 92)`, the D-pad
+  glyph they share with `arts_input`, and the `-` chip retail draws for a
+  command that cannot be chosen. Both battle hosts seat their command menu
+  through it. Geometry mirrors `legaia_engine_vm::battle_chrome`, which
+  `engine-shell`'s HUD tests pin equal.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.

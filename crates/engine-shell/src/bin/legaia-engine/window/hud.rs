@@ -954,9 +954,15 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
             }
         }
-        // Battle-event log: rendered along the right edge when non-empty.
-        // Most recent at the bottom of the column.
-        if !self.battle_event_log.is_empty() {
+        // Battle-event log: the engine's own typed battle stream
+        // (`Pose(...)`, `RecomputeBattleOrder`, per-strike `slot N -M HP`)
+        // rendered along the right edge, most recent at the bottom. It is a
+        // **diagnostic** surface - retail draws no such column, and painting
+        // it over the dialog box is what made a live battle unreadable - so
+        // it rides the shared `LEGAIA_DIAG_HUD` toggle with the rest of the
+        // debug readout and is off by default. The ring itself keeps
+        // filling either way, so a probe can turn it on mid-session.
+        if !self.battle_event_log.is_empty() && legaia_engine_render::diag_hud_enabled() {
             let log_color = [1.0f32, 0.95, 0.7, 1.0];
             let line_height = 14;
             let bottom_y = 280;
@@ -972,7 +978,7 @@ impl PlayWindowApp {
         // SceneMode::Battle; harmless when the live loop is off (it just never
         // enters battle).
         if self.session.host.world.mode == SceneMode::Battle {
-            use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+            use legaia_engine_core::battle_input::CommandPhase;
             use legaia_engine_core::target_picker::{CursorRow, PickerState};
             let bw = &self.session.host.world;
             // Greyed-out row tint, used by the target lists in the Arts /
@@ -1183,34 +1189,28 @@ impl PlayWindowApp {
                 let mut my = 210i32;
                 match &cmd.phase {
                     CommandPhase::Menu { .. } => {
-                        let header = format!("P{} - command:", cmd.actor + 1);
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&header),
-                            (menu_x, my),
-                            white,
-                        ));
-                        my += 16;
-                        let cur = cmd.menu_command();
-                        for c in BattleCommand::MENU {
-                            let marker = if Some(c) == cur { ">" } else { " " };
-                            let line = if c.enabled() {
-                                format!("{} {}", marker, c.label())
-                            } else {
-                                format!("{} {} --", marker, c.label())
-                            };
-                            let color = if Some(c) == cur {
-                                white
-                            } else if c.enabled() {
-                                dim
-                            } else {
-                                down_color
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x + 8, my),
-                                color,
+                        // Retail's command menu is a cluster of framed
+                        // chips around a D-pad glyph, not a list: the
+                        // packet-pinned diamond at `(228, 70)` plus the
+                        // port's second row for the two entries retail's
+                        // four arms have no seat for. Labels ride the
+                        // shared builder's left-aligned interior pen, and
+                        // a command that cannot be chosen keeps its chip
+                        // and draws a single `-`. The plates themselves go
+                        // out in the sprite layer
+                        // (`battle_chrome_sprite_draws`).
+                        if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                            use legaia_engine_render::battle_command_ui as bcu;
+                            let (origin, scale) = self.save_select_stage(w, h);
+                            out.extend(bcu::battle_command_chip_text(
+                                &self.font,
+                                &bcu::BattleCommandMenuFrame {
+                                    chips: &chips,
+                                    cursor: Some(cursor),
+                                },
+                                origin,
+                                scale,
                             ));
-                            my += 14;
                         }
                     }
                     CommandPhase::Targeting { command, picker } => {
@@ -1828,9 +1828,60 @@ impl PlayWindowApp {
         )
     }
 
+    /// The live battle command menu projected into the shared chip-cluster
+    /// view: one [`legaia_engine_render::battle_command_ui::CommandChipView`]
+    /// per `BattleCommand::MENU` entry plus the cursor index, or `None` when
+    /// no command menu owns the frame.
+    ///
+    /// One projector feeds both halves of the cluster - the plate sprites
+    /// and the labels - so the two draw slots cannot disagree about whether
+    /// the menu is up. The suppression rules mirror the text block's
+    /// if-else chain exactly: a dialogue box, an arts-entry session or any
+    /// open submenu parks the command chrome, which is what retail does.
+    pub(super) fn battle_command_menu_chips(
+        &self,
+    ) -> Option<(
+        Vec<legaia_engine_render::battle_command_ui::CommandChipView<'static>>,
+        usize,
+    )> {
+        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        let bw = &self.session.host.world;
+        if bw.mode != legaia_engine_core::world::SceneMode::Battle {
+            return None;
+        }
+        if bw.current_dialog.is_some() || bw.inline_dialogue.is_some() {
+            return None;
+        }
+        if bw.arts_input_view().is_some()
+            || bw.battle_arts_menu.is_some()
+            || bw.battle_spell_menu.is_some()
+            || bw.battle_item_menu.is_some()
+        {
+            return None;
+        }
+        let cmd = bw.battle_command.as_ref()?;
+        let CommandPhase::Menu { cursor } = cmd.phase else {
+            return None;
+        };
+        let no_escape = bw.battle_no_escape;
+        Some((
+            BattleCommand::MENU
+                .iter()
+                .map(
+                    |c| legaia_engine_render::battle_command_ui::CommandChipView {
+                        label: c.label(),
+                        enabled: c.available(no_escape),
+                    },
+                )
+                .collect(),
+            cursor as usize,
+        ))
+    }
+
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
-    /// green `MP` label cells) for the system-UI atlas slot. Empty outside
-    /// battle, or before the atlas is resident.
+    /// green `MP` label cells) for the system-UI atlas slot, plus the
+    /// command menu's chip plates + D-pad glyph when a menu is up. Empty
+    /// outside battle, or before the atlas is resident.
     pub(super) fn battle_chrome_sprite_draws(
         &self,
         surface_w: u32,
@@ -1839,10 +1890,31 @@ impl PlayWindowApp {
         if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
             return Vec::new();
         }
-        if self.save_menu.is_none() || self.boot_ui.is_active() {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        if self.boot_ui.is_active() {
             return Vec::new();
         }
-        self.battle_hud_frame_draws(surface_w, surface_h).sprites
+        let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
+        // The command chips sample the same blue plate 3-slice the party
+        // bar does, so they ride this list rather than a second slot.
+        if let (Some(rects), Some((chips, cursor))) =
+            (assets.rects.battle, self.battle_command_menu_chips())
+        {
+            use legaia_engine_render::battle_command_ui as bcu;
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            out.extend(bcu::battle_command_chip_sprites(
+                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+                &bcu::BattleCommandMenuFrame {
+                    chips: &chips,
+                    cursor: Some(cursor),
+                },
+                origin,
+                scale,
+            ));
+        }
+        out
     }
 
     /// The retail enemy target-name strip for a picker parked on the enemy
@@ -2178,6 +2250,145 @@ mod battle_hud_wiring_tests {
                 && d.dst.1 == plaque.text.1 as i32 * STAGE_SCALE),
             "the mirrored plaque text seat drifted from battle_chrome"
         );
+    }
+
+    /// Third face of the same mirror: the **command-chip clusters**. Both
+    /// pinned clusters and every seat on them have to agree with
+    /// `battle_chrome`, or the menu draws chips at coordinates nothing
+    /// pinned. This window is again the only crate that can see both sides.
+    #[test]
+    fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_render::battle_command_ui as bcu;
+        use legaia_engine_vm::battle_chrome as bc;
+
+        let pairs = [
+            (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
+            (bcu::CLUSTER_TOP_LEVEL, bc::CLUSTER_TOP_LEVEL),
+        ];
+        for (ui, vm) in pairs {
+            assert_eq!(ui.centre, (vm.centre.0 as i32, vm.centre.1 as i32));
+            assert_eq!(ui.dx, vm.dx as i32);
+            assert_eq!(ui.dy, vm.dy as i32);
+            assert_eq!(ui.interior_w, vm.interior_w as i32);
+            assert_eq!(
+                ui.plate_width(),
+                bc::plate_width(vm.interior_w) as i32,
+                "the mirrored plate width drifted from battle_chrome"
+            );
+            let seats = [
+                (bcu::ChipSeat::Up, bc::ChipSeat::Up),
+                (bcu::ChipSeat::Left, bc::ChipSeat::Left),
+                (bcu::ChipSeat::Right, bc::ChipSeat::Right),
+                (bcu::ChipSeat::Down, bc::ChipSeat::Down),
+            ];
+            for (us, vs) in seats {
+                let (px, py) = vm.plate_origin(vs);
+                assert_eq!(
+                    ui.plate_origin(us),
+                    (px as i32, py as i32),
+                    "the mirrored chip plate seat drifted from battle_chrome"
+                );
+                let (lx, ly) = vm.label_seat(vs);
+                assert_eq!(
+                    ui.label_seat(us),
+                    (lx as i32, ly as i32),
+                    "the mirrored chip label pen drifted from battle_chrome"
+                );
+            }
+            let (dx, dy, dw, dh) = vm.dpad_rect();
+            assert_eq!(ui.dpad_rect(), (dx as i32, dy as i32, dw as u32, dh as u32));
+        }
+        // The plate 3-slice and the D-pad cell the chips sample are the
+        // same rects `battle_chrome` names.
+        let a = bcu::CommandChipAtlas::SHEET;
+        assert_eq!(a.plate_cap_l.0 as u16, bc::PLATE_CAP_L_U);
+        assert_eq!(a.plate_body.0 as u16, bc::PLATE_BODY_U);
+        assert_eq!(a.plate_cap_r.0 as u16, bc::PLATE_CAP_R_U);
+        for r in [a.plate_cap_l, a.plate_body, a.plate_cap_r] {
+            assert_eq!(r.1 as u16, bc::PLATE_BLUE.v);
+            assert_eq!(r.3 as u16, bc::PLATE_H);
+        }
+        assert_eq!(
+            a.dpad,
+            (
+                bc::DPAD_GLYPH.0 as u32,
+                bc::DPAD_GLYPH.1 as u32,
+                bc::DPAD_GLYPH.2 as u32,
+                bc::DPAD_GLYPH.3 as u32
+            ),
+            "the command cluster stopped sampling battle_chrome's D-pad cell"
+        );
+        assert_eq!(bcu::DPAD_DRAW, bc::DPAD_DRAW_W as u32);
+        // One chip per menu entry, and the port's extra row is the only
+        // seating that is not a pinned diamond arm.
+        assert_eq!(
+            bcu::MENU_SEATS.len(),
+            legaia_engine_core::battle_input::BattleCommand::MENU.len(),
+            "the seating table and the command menu disagree on entry count"
+        );
+        assert_eq!(
+            bcu::MENU_SEATS
+                .iter()
+                .filter(|s| matches!(s, bcu::CommandSeat::Diamond(_)))
+                .count(),
+            4,
+            "the pinned diamond has four arms and they must all be used"
+        );
+    }
+
+    /// The Left / Right step the command session takes has to land on the
+    /// chip actually drawn beside the current one. `engine-core` cannot see
+    /// the seating table (it does not link `engine-ui`), so it carries the
+    /// pairing as its own `match`; this is where the two are held equal.
+    #[test]
+    fn left_right_steps_land_on_the_neighbouring_drawn_chip() {
+        use legaia_engine_core::battle_input::{
+            BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase,
+        };
+        use legaia_engine_core::target_picker::SlotState;
+        use legaia_engine_render::battle_command_ui as bcu;
+
+        let party = [SlotState::alive(true, true); 3];
+        let monsters = [
+            SlotState::alive(true, true),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+        ];
+        for from in 0..BattleCommand::MENU.len() {
+            let mut s = BattleCommandSession::new(0, 0);
+            s.phase = CommandPhase::Menu { cursor: from as u8 };
+            s.input(
+                BattleCommandInput {
+                    right: true,
+                    ..Default::default()
+                },
+                party,
+                monsters,
+            );
+            let to = BattleCommand::MENU
+                .iter()
+                .position(|c| Some(*c) == s.menu_command())
+                .expect("the cursor stayed in the menu");
+            let (a, b) = (bcu::MENU_SEATS[from], bcu::MENU_SEATS[to]);
+            if to == from {
+                // A lone chip on a vertical arm: nothing is drawn beside it.
+                assert!(
+                    bcu::MENU_SEATS
+                        .iter()
+                        .enumerate()
+                        .all(|(j, s)| j == from || s.plate_origin().1 != a.plate_origin().1),
+                    "entry {from} refused to step but shares its row"
+                );
+                continue;
+            }
+            assert_eq!(
+                a.plate_origin().1,
+                b.plate_origin().1,
+                "the Left/Right step off entry {from} left its drawn row"
+            );
+        }
     }
 
     /// The sibling half of the mirror check: the numeral fields. Every one is
