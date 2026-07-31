@@ -1404,6 +1404,31 @@ impl BattleCamera {
 /// GTE projection focal length the battle camera runs on (`_DAT_8007B6F4`).
 pub const GTE_H: f32 = 256.0;
 
+/// GTE screen-centre X (`OFX`), in whole pixels over the 320x240 frame.
+pub const GTE_OFX: f32 = 160.0;
+
+/// GTE screen-centre Y (`OFY`), in whole pixels over the 320x240 frame.
+///
+/// **Not** `240 / 2`. The draw-environment setup writes the pair once into
+/// the GTE control file and never rewrites it, so the projected origin sits
+/// six rows *above* the geometric centre of the frame for the whole game -
+/// field, battle, battle load and minigame alike. `H` is the counter-example
+/// that makes that a finding rather than a property of the measurement: it is
+/// `256` in battle and `512` in the field, written per phase, while `OFX` /
+/// `OFY` / `DQA` / `DQB` do not move. Read off the `GTE` section of nine
+/// save states by `crates/mednafen/tests/gte_projection_real.rs`.
+///
+/// Both hosts fold the six-pixel bias into their projection matrix as a
+/// constant `w`-scaled term on clip `y` ([`battle_vp`] here, `psx_camera_mvp`
+/// in the native window), which is the matrix form of retail's
+/// `screen.y = OFY + H * Ey / Ez`.
+pub const GTE_OFY: f32 = 114.0;
+
+/// The clip-space `y`-from-`w` term that reproduces [`GTE_OFY`] under the
+/// `ndc.y = 1 - 2 * screen_y / 240` viewport map both hosts use: solving
+/// `120 - 120 * bias = OFY` gives `(120 - OFY) / 120`, i.e. `+0.05`.
+pub const GTE_OFY_NDC_BIAS: f32 = (120.0 - GTE_OFY) / 120.0;
+
 /// Near plane both hosts project with (governs depth precision only - the
 /// retail GTE has no near plane; 4 units is the engine's shared choice).
 pub const PSX_NEAR: f32 = 4.0;
@@ -1499,7 +1524,11 @@ pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 1
         0.0, 0.0, 0.0, 1.0,
     ];
     // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
-    // ndc.y = -H*Ey/(120*Ez) (PSX +Y down -> NDC up), clip.w = Ez.
+    // ndc.y = -H*Ey/(120*Ez) + GTE_OFY_NDC_BIAS (PSX +Y down -> NDC up),
+    // clip.w = Ez. The bias term is retail's screen centre [`GTE_OFY`]: it
+    // rides `w`, so it survives the perspective divide as the constant
+    // six-pixel lift the GTE control file carries, and the composition stays
+    // one matrix.
     let (near, far) = (PSX_NEAR, SCENE_FAR);
     let a = far / (far - near);
     let b = -near * far / (far - near);
@@ -1514,7 +1543,7 @@ pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 1
         0.0,
         0.0, //
         0.0,
-        0.0,
+        GTE_OFY_NDC_BIAS,
         a,
         1.0, //
         0.0,
@@ -2479,6 +2508,34 @@ mod tests {
         0.0, 0.0, 0.0, 1.0,
     ];
 
+    /// The GTE origin projects to the control file's screen centre, not to
+    /// the geometric centre of the frame.
+    ///
+    /// This is the assertion the hand-rolled comparison below cannot make on
+    /// its own: that test only says the matrix and the reference agree, so it
+    /// stayed green while both carried `120`. Here the expected value comes
+    /// from [`GTE_OFY`] and the projected value comes from the matrix, so a
+    /// matrix built on `240 / 2` fails.
+    #[test]
+    fn the_projected_origin_lands_on_the_retail_screen_centre() {
+        // Eye straight down -Z at the origin: `focus` and the rotation are
+        // zero, so `v = origin` lands at eye `(0, 0, TR.z)` and the retail
+        // transform reduces to `screen = (OFX, OFY)`.
+        let pose = BattleCamPose {
+            pitch: 0.0,
+            yaw: 0.0,
+            tr: [0.0, 0.0, 7680.0],
+            focus: [0.0, 0.0, 0.0],
+        };
+        let vp = battle_vp(&pose, 4.0, 4.0 / 3.0);
+        let (sx, sy) = project(&vp, &FLIP, [0.0, 0.0, 0.0]).unwrap();
+        assert!((sx - GTE_OFX).abs() < 0.01, "OFX: {sx} vs {GTE_OFX}");
+        assert!((sy - GTE_OFY).abs() < 0.01, "OFY: {sy} vs {GTE_OFY}");
+        // And the centre is genuinely off the naive one, so this is not a
+        // tautology about the viewport map.
+        assert!((sy - 120.0).abs() > 5.0);
+    }
+
     /// [`battle_vp`] reproduces the exact retail projection
     /// `screen = H*(Rx(p)*Ry(y)*(v*S - focus*S) + TR)/Ez` against a
     /// hand-rolled reference, dome (raw units) and actor (4x world scale)
@@ -2507,9 +2564,12 @@ mod tests {
             if ez <= 1.0 {
                 return None;
             }
+            // The screen centre is the GTE control file's `(OFX, OFY)`, not
+            // the geometric `(160, 120)`: writing the naive centre on both
+            // sides of this comparison is what let the six-pixel error live.
             Some((
-                256.0 * (e[0] + pose.tr[0]) / ez + 160.0,
-                256.0 * (e[1] + pose.tr[1]) / ez + 120.0,
+                256.0 * (e[0] + pose.tr[0]) / ez + GTE_OFX,
+                256.0 * (e[1] + pose.tr[1]) / ez + GTE_OFY,
             ))
         };
         let vp = battle_vp(&pose, 4.0, 4.0 / 3.0);

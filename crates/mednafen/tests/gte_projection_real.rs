@@ -126,11 +126,23 @@ fn the_screen_centre_and_depth_cue_slope_are_global_but_h_is_not() {
     );
 }
 
-/// `OFY` is not the naive centre, and a port that assumes `240 / 2` lands
-/// every screen-space primitive six pixels low.
+/// `OFY` is `240 / 2` minus six - but that is a fact about the *port's*
+/// 320x240 logical screen, not about retail's frame.
+///
+/// Retail's drawing area is `320 x 224` (`ClipY0..ClipY1`) inside a `228`-line
+/// display window (`DisplayVStart/End = (28, 256)`), on both halves of the
+/// double buffer and in every state of this corpus - read with
+/// `mednafen-state vram-dump --regs`. `114` is exactly `228 / 2`, i.e.
+/// `SetGeomOffset(width / 2, height / 2)` for the screen retail actually
+/// displays. A port that keeps a 240-row frame still has to write `114`,
+/// because the 2D chrome it draws beside the 3D is authored in retail's
+/// coordinates; what it must not do is *derive* the centre from its own frame
+/// height. See `docs/subsystems/renderer.md` § "The screen the GTE projects
+/// onto is 320x224, not 320x240".
 #[test]
-fn the_vertical_centre_is_six_pixels_above_the_naive_one() {
+fn the_vertical_centre_is_the_centre_of_a_228_line_display_not_a_240_line_one() {
     assert_eq!(EXPECT_OFY >> 16, 114);
+    assert_eq!((EXPECT_OFY >> 16) * 2, 228);
     assert_eq!((EXPECT_OFY >> 16) + 6, 240 / 2);
     assert_eq!(EXPECT_OFX >> 16, 320 / 2);
 }

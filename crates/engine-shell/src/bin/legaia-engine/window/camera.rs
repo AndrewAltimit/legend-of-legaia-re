@@ -400,10 +400,22 @@ impl PlayWindowApp {
         let a = far / (far - near);
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
+        // The `y`-from-`w` term is retail's screen centre
+        // `legaia_engine_vm::battle_cam_script::GTE_OFY` = 114, not the naive
+        // `240 / 2`: the GTE control file carries `OFX = 160` / `OFY = 114`
+        // unchanged through field, battle, battle load and minigame, so every
+        // projected point sits six rows above the geometric centre of the
+        // frame. Shared with the browser host through `battle_vp`, which folds
+        // the identical term.
         let proj = Mat4::from_cols(
             Vec4::new(h / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
             Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, a, 1.0),
+            Vec4::new(
+                0.0,
+                legaia_engine_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+                a,
+                1.0,
+            ),
             Vec4::new(0.0, 0.0, b, 0.0),
         );
         proj * t * r * Mat4::from_translation(-target) * f
@@ -1360,13 +1372,25 @@ mod cutscene_framing_tests {
         assert_ne!(got.to_cols_array(), without.to_cols_array());
     }
 
-    /// The retail intro shot ("It was the Seru.") frames the party at screen
-    /// ~(172, 180) in the 320x240 PSX frame (measured from the intro save
-    /// state's framebuffer). The camera's focus tracks the party anchor, so the
-    /// focus point itself must land there - regardless of the 6x world scale
-    /// (the perspective divide cancels it) - which is exactly what pins the
-    /// eye-back depth. This guards against the old heuristic that framed the
-    /// shot too close.
+    /// The retail intro shot ("It was the Seru.") frames the party low and
+    /// left of centre in the PSX frame. The camera's focus tracks the party
+    /// anchor, so the focus point itself must land there - regardless of the
+    /// 6x world scale (the perspective divide cancels it) - which is exactly
+    /// what pins the eye-back depth. This guards against the old heuristic
+    /// that framed the shot too close.
+    ///
+    /// The two axes are not equally sharp, and it matters which is which. `X`
+    /// is exact: `OFX + h * tr.x / tr.z` = `172.0` on the nose, so a wrong
+    /// eye-back depth moves it immediately. `Y` is `OFY + h * tr.y / tr.z`
+    /// with the retail screen centre `OFY = 114` (see
+    /// `legaia_engine_vm::battle_cam_script::GTE_OFY`), giving `173.7`. The
+    /// framebuffer read this expectation was first taken from said "~180",
+    /// which is what a soft eyeball of a *cluster* of small actors gives
+    /// against a projection of the single ground anchor they stand around -
+    /// and holding `180` here is what kept the naive `240 / 2` centre alive in
+    /// `psx_camera_mvp`. The sharp constraint on the centre is the GTE control
+    /// file plus the battle framebuffer, where a party member's soles land on
+    /// the row `OFY = 114` predicts and six rows above the one `120` does.
     #[test]
     fn intro_focus_projects_to_retail_party_position() {
         // Eye-space translation trio `0x800840B8 = (260, 1293, 17145)`, reduced
@@ -1378,9 +1402,10 @@ mod cutscene_framing_tests {
             (px - 172.0).abs() < 3.0,
             "focus X projects to retail ~172, got {px}"
         );
+        let want_y = legaia_engine_vm::battle_cam_script::GTE_OFY + 792.0 * (1293.0 / 17145.0);
         assert!(
-            (py - 180.0).abs() < 3.0,
-            "focus Y projects to retail ~180 (lower-centre), got {py}"
+            (py - want_y).abs() < 3.0,
+            "focus Y projects to OFY + h*tr.y/tr.z = {want_y} (lower-centre), got {py}"
         );
     }
 

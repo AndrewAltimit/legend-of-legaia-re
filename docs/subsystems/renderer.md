@@ -395,6 +395,52 @@ word is the packet-length code (`0x05000000` / `0x08000000`). See
   [`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
   See `ghidra/scripts/funcs/8003daa8.txt`.
 
+### The screen the GTE projects onto is 320x224, not 320x240
+
+Two numbers travel together and are easy to get half-right. The GTE screen
+centre and the size of the frame it is the centre *of*:
+
+| Quantity | Retail value | Where it is read |
+|---|---|---|
+| `OFX` | `160` (`160 << 16` in the control word) | GTE control file, save state |
+| `OFY` | `114` (`114 << 16`) | GTE control file, save state |
+| Drawing area | `320 x 224` | GPU `ClipX0/Y0/X1/Y1` |
+| Draw offset | `(0, 4)` / `(0, 244)` | GPU `OffsX/OffsY`, alternating buffers |
+| Display window | `320` x **228** scanlines | GPU `DisplayFB_*` + `DisplayVStart/End` = `(28, 256)` |
+
+All five hold across a nine-state corpus spanning field, battle, battle load
+and the dance minigame, on both halves of the double buffer. `H` is the
+counter-example that makes the constancy a finding rather than a property of
+the measurement: it is written per phase (`256` in battle, `512` in the field).
+Oracle: `crates/mednafen/tests/gte_projection_real.rs` for the control file,
+`mednafen-state vram-dump --regs` for the GPU registers.
+
+So `OFY = 114` is **not** an off-centre offset in retail's own frame - it is
+`228 / 2`, dead centre of the display window, and two rows below the centre of
+the 224-row drawing area. It reads as "six pixels above centre" only against a
+240-row frame, which retail never draws. `SetGeomOffset` writes
+`(width / 2, height / 2)`; Legaia's height is 228, not 240.
+
+**What the port does with that.** Both hosts keep a 320x**240** logical screen,
+because every 2D rect the port draws is a retail draw-area coordinate copied
+verbatim (HUD panels, dialog boxes, menu windows) and those are authored in the
+space `OFY = 114` lives in. The projection therefore has to put the GTE origin
+on row 114 of the port's frame as well, or the 3D and the chrome disagree by six
+rows. Both matrices carry it as a constant `w`-scaled term on clip `y`,
+`GTE_OFY_NDC_BIAS = (120 - OFY) / 120`, so it survives the perspective divide:
+`legaia_engine_vm::battle_cam_script::battle_vp` (shared by the browser play
+page) and `psx_camera_mvp` (native window). Guard:
+`the_projected_origin_lands_on_the_retail_screen_centre`, which reads the
+expected row from `GTE_OFY` rather than from the matrix, so a projection rebuilt
+on `240 / 2` fails it.
+
+The residual is the frame height itself: the port's 240 rows against retail's
+224 drawn / 228 displayed means retail's picture occupies `224 / 240` of the
+port's vertical extent, i.e. everything reads about 7% smaller relative to the
+window and the bottom 16 rows are frame the hardware never shows. Closing that
+moves every pinned 2D rect, so it is a screen-convention change rather than a
+projection one.
+
 ## Numeric-glyph string emitters
 
 `FUN_80034CC4` / `FUN_80034FA0` draw a base-10 integer as a run of font glyphs.
