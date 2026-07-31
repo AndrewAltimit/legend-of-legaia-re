@@ -197,7 +197,51 @@ fn derive_battle_cam(
             char_id: if party { acting_slot + 1 } else { 0 },
         },
         shake_amplitude: world.camera_shake_amplitude,
+        attack: attack_channels(world, world.battle_ctx.active_actor),
     }
+}
+
+/// The per-art attack camera's per-actor channels - the browser mirror of the
+/// native window's `battle_attack_channels`. Same gate order
+/// (`FUN_801D71B8` `0x801D71B8..0x801D72D4` plus the call site's outer gate),
+/// same three bytes, same `<< 4` conversion of the engine's whole-keyframe
+/// animation cursor into retail's sixteenths.
+fn attack_channels(
+    world: &legaia_engine_core::world::World,
+    acting_slot: u8,
+) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
+    use legaia_engine_vm::battle_attack_camera as cam;
+    if usize::from(acting_slot) >= world.party_count as usize {
+        return None;
+    }
+    let a = world.actors.get(acting_slot as usize)?;
+    if a.battle.action_category != cam::CATEGORY_ATTACK {
+        return None;
+    }
+    if !cam::outer_gate(0, a.battle.active_target) {
+        return None;
+    }
+    let character = cam::character_arm(acting_slot + 1)?;
+    Some(legaia_engine_vm::battle_cam_script::AttackCamChannels {
+        character,
+        art_id: a.battle.latched_anim,
+        arm_select: a.battle.hit_count_bound,
+        anim_frame: a
+            .battle_animation
+            .as_ref()
+            .map(|p| p.current_frame().saturating_mul(16))
+            .unwrap_or(0),
+    })
+}
+
+/// The per-art camera's disc track table, re-read from the battle-action
+/// overlay the scene loader retains. The browser mirror of the native
+/// window's `battle_attack_tracks`.
+fn attack_tracks(
+    world: &legaia_engine_core::world::World,
+) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
+    let overlay = world.move_power_overlay.as_ref()?;
+    legaia_asset::battle_attack_camera_table::parse(overlay)
 }
 
 /// Host-safe log: the browser console on wasm, stderr on the native test
@@ -709,11 +753,13 @@ impl LegaiaRuntime {
         let world = &host.world;
         let active = world.mode == SceneMode::Battle;
         let inputs = derive_battle_cam(world);
+        let tracks = attack_tracks(world);
         legaia_engine_vm::battle_cam_script::drive(
             &mut br.camera,
             active,
             inputs,
             world.field_frames,
+            tracks.as_ref(),
         );
     }
 
@@ -1440,7 +1486,7 @@ mod battle_cam_web_tests {
         );
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let pose = slot.as_ref().unwrap().pose();
         // The measured solo-Vahn submenu close-up - the SAME literals the

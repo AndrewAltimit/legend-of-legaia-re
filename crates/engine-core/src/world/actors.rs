@@ -394,6 +394,12 @@ impl World {
         if q == actor.battle.current_anim {
             return;
         }
+        // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
+        // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
+        // dynamic slot number - so the latch keeps the RAW staged id, which
+        // is the id space both battle-camera dispatch tables index.
+        self.actors[i].battle.latched_anim = q;
+        let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
         // flight is dropped (retail: the commit replaces the playing
         // record unconditionally).

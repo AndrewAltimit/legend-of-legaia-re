@@ -185,6 +185,10 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         let active = world.mode == SceneMode::Battle && self.battle_stage_mesh.is_some();
         let inputs = battle_cam_inputs(world);
+        // The per-art attack camera's disc table (`0x801F4E10`) is sibling
+        // static data in the battle-action overlay the scene loader already
+        // retains, so it costs a 40-halfword re-read rather than a load.
+        let tracks = battle_attack_tracks(world);
         // The create / retarget / phase-change / step ordering is the shared
         // `drive` - the browser play page runs the identical call, so the two
         // hosts cannot diverge on the phase script.
@@ -193,6 +197,7 @@ impl PlayWindowApp {
             active,
             inputs,
             world.field_frames,
+            tracks.as_ref(),
         );
         // `LEGAIA_DIAG_BATCAM=1`: one line per camera tick with the framing
         // pose, the phase that selected it and the action-SM state that
@@ -216,6 +221,22 @@ impl PlayWindowApp {
                 p.tr,
                 p.focus,
             );
+            // The per-art attack camera's three inputs, so "the channel is
+            // armed but no arm matched" reads differently from "the channel
+            // is not armed at all".
+            let slot = world.battle_ctx.active_actor;
+            match battle_attack_channels(world, slot) {
+                Some(ch) => eprintln!(
+                    "  attackcam char={:?} art=0x{:02X} arm={} animf={} arm_va={:?}",
+                    ch.character,
+                    ch.art_id,
+                    ch.arm_select,
+                    ch.anim_frame,
+                    legaia_engine_vm::battle_attack_camera::art_arm(ch.character, ch.art_id)
+                        .map(|v| format!("{v:#010x}")),
+                ),
+                None => eprintln!("  attackcam not armed"),
+            }
             let cam = self.battle_dome_camera_mvp(4.0 / 3.0)
                 * Mat4::from_scale(Vec3::splat(super::BATTLE_WORLD_SCALE));
             for (i, a) in world.actors.iter().enumerate() {
@@ -228,8 +249,20 @@ impl PlayWindowApp {
                     a.move_state.world_z as f32,
                 );
                 let clip = cam * w.extend(1.0);
+                // On-screen extent of a `DIAG_ACTOR_HEIGHT`-unit vertical
+                // reference segment standing at the actor's feet, in PSX
+                // scanlines (the frame is 240 lines, NDC spans 2). This is
+                // the number a framing change is measured in - a pose alone
+                // does not say how much of the frame the actor fills.
+                const DIAG_ACTOR_HEIGHT: f32 = 800.0;
+                let head = cam * Vec3::new(w.x, w.y - DIAG_ACTOR_HEIGHT, w.z).extend(1.0);
+                let lines = if clip.w > 0.0 && head.w > 0.0 {
+                    ((head.y / head.w - clip.y / clip.w).abs() * 120.0).round()
+                } else {
+                    -1.0
+                };
                 eprintln!(
-                    "  actor{i} world={w:?} clipw={:.1} ndc=({:.2},{:.2})",
+                    "  actor{i} world={w:?} clipw={:.1} ndc=({:.2},{:.2}) lines={lines}",
                     clip.w,
                     clip.x / clip.w,
                     clip.y / clip.w
@@ -688,7 +721,66 @@ pub(super) fn battle_cam_inputs(
         formation: PlayWindowApp::battle_formation_box(world),
         action: battle_action_framing(world, acting_slot),
         shake_amplitude: world.camera_shake_amplitude,
+        attack: battle_attack_channels(world, world.battle_ctx.active_actor),
     }
+}
+
+/// The per-art attack camera's track table, re-read from the battle-action
+/// overlay the scene loader retains for the move-FX path
+/// (`World::move_power_overlay`). `None` on a host that never loaded it.
+pub(super) fn battle_attack_tracks(
+    world: &legaia_engine_core::world::World,
+) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
+    let overlay = world.move_power_overlay.as_ref()?;
+    legaia_asset::battle_attack_camera_table::parse(overlay)
+}
+
+/// The per-art attack camera's per-actor channels for the acting slot, or
+/// `None` when the channel is not armed.
+///
+/// The `None` cases are retail's own, in the order `FUN_801D71B8` tests them
+/// (`0x801D71B8..0x801D72D4`) plus the outer gate its call site applies
+/// (`0x801D7138..0x801D7178`): the acting actor's target slot must be a real
+/// slot, the action category must be Attack, the acting slot must be a party
+/// seat, and the character id must have a camera script. The art id itself is
+/// not filtered here - an id with no arm is the shared epilogue, which the
+/// ported dispatch already returns `None` for.
+///
+/// `anim_frame` is retail `actor[+0x22C][+0x68]`, a **sixteenths-of-a-keyframe**
+/// cursor (its loop bounds are `clip[+0x85] << 4` / `clip[+0x86] << 4`,
+/// `FUN_80047430` `0x800477D4` / `0x8004781C`). The engine's battle animation
+/// player holds an 8.8 phase and exposes only its whole-keyframe part, so the
+/// conversion is a `<< 4` and the arms see the cursor quantised to whole
+/// keyframes.
+pub(super) fn battle_attack_channels(
+    world: &legaia_engine_core::world::World,
+    acting_slot: u8,
+) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
+    use legaia_engine_vm::battle_attack_camera as cam;
+    let party = usize::from(acting_slot) < world.party_count as usize;
+    if !party {
+        return None;
+    }
+    let a = world.actors.get(acting_slot as usize)?;
+    if a.battle.action_category != cam::CATEGORY_ATTACK {
+        return None;
+    }
+    if !cam::outer_gate(0, a.battle.active_target) {
+        return None;
+    }
+    // Retail's height key: `DAT_8007BD10[slot]`, the 1-based party-record
+    // selector - the same id `battle_cam_inputs` uses for the height table.
+    let character = cam::character_arm(acting_slot + 1)?;
+    Some(legaia_engine_vm::battle_cam_script::AttackCamChannels {
+        character,
+        art_id: a.battle.latched_anim,
+        arm_select: a.battle.hit_count_bound,
+        anim_frame: a
+            .battle_animation
+            .as_ref()
+            .map(|p| p.current_frame().saturating_mul(16))
+            .unwrap_or(0),
+    })
 }
 
 /// The `FUN_801D5854` case-6 context inputs for the acting slot.
@@ -896,7 +988,7 @@ mod battle_cam_shared_tests {
         );
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let pose = slot.as_ref().unwrap().pose();
         // The measured solo-Vahn submenu close-up, arrived after the 6-step
@@ -1074,7 +1166,7 @@ mod battle_cam_shared_tests {
 
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let pose = slot.as_ref().unwrap().pose();
         let want = script::action_framing(inputs.acting.unwrap(), inputs.action);
@@ -1113,7 +1205,7 @@ mod battle_cam_shared_tests {
         assert_eq!(inputs.shake_amplitude, 9);
         let mut slot = None;
         for f in 0..4u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let cam = slot.as_ref().unwrap();
         assert_ne!(cam.shake_offset(), [0, 0], "the jitter is live");

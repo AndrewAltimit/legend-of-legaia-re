@@ -692,9 +692,10 @@ almost every state, and it forks on `_DAT_8007BD71 == 0xFE && slot < 3`. The
 party arm frames from behind the actor (`yaw = 0x800 − actor[+0x46]`) at a
 height of `−5 × actor[+0x3E]`, floored at `0x280` with a quarter of the
 shortfall added to the pitch so the camera tilts down instead of sinking
-(`0x801D6494`); between the two it runs a per-character / per-art script whose
-offsets come from the disc table
-[`battle-attack-camera-table.md`](../formats/battle-attack-camera-table.md).
+(`0x801D6494`). Between the base pose and that floor it runs a per-character
+script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0` / `0x801D61E8` /
+`0x801D6440`, rejoining at `0x801D645C`) which reads `actor[+0x1DB]` over the
+band `0x11..=0x18` (bias `-0x11`, bound `8`).
 **Which states hand it the camera is a band, not a byte list.** `FUN_801E295C`
 arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
 prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
@@ -720,6 +721,34 @@ The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
 translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
 about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
 actions frame from a slowly drifting angle.
+
+**The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
+*not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail
+(`0x801D7180`), which runs after whichever framing case has already handed its
+pose to the tween builder, and is gated on `_DAT_800846C0 != 2` and the acting
+actor's `+0x1DD < 8` (`0x801D7138..0x801D7178`). The routine then seeds a
+**fresh** pose from the actor - pitch `0`, yaw `−actor[+0x46]`,
+`TR = (0, 0x400, 0x400)` (`0x600` height for character `3`), look-at the negated
+actor position - runs a per-character / per-art arm over the second band
+`0x1A..=0x2D`, and calls the *same* tween builder again with its own much
+shorter duration (`1`, `3` or `6` display frames against case 6's `0xC`).
+Whichever call ran last owns the step table that frame, and this one runs last;
+an art id with no arm returns without arming anything and case 6's framing
+stands. Both the seed depth (`0x400`) and the arms' folds make the swing
+close-up **tighter** than case 6's `0x500`, ramping as `ctx[+0x26E]` climbs.
+
+The arm's offsets come from the disc table
+[`battle-attack-camera-table.md`](../formats/battle-attack-camera-table.md),
+whose two columns are a per-action coin flip rather than two swing phases; that
+page carries the row map, the ramp counters and the `actor[+0x1DB]` id space.
+Engine side: `legaia_engine_vm::battle_attack_camera` runs the thirteen arm
+bodies and owns the ramp quartet; `battle_cam_script`'s Action phase steps the
+live pose toward whatever the arms produce, each frame, on the arm's own
+duration - which is what retail's per-frame rebuild of the step table amounts
+to. Both hosts feed it the same three per-actor channels (`actor[+0x1DB]` as
+`BattleActor::latched_anim`, `actor[+0x21B]` as `hit_count_bound`, and
+`actor[+0x22C][+0x68]` from the battle animation player's cursor, `<< 4` into
+retail's sixteenths).
 
 `H = 256` and the identity·16384 base hold through every phase. The traced
 numbers above are one fight's *instance* of two formulas, not constants: the

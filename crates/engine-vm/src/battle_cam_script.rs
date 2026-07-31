@@ -493,6 +493,30 @@ const ACTION_OVERRIDE_TR_Y: f32 = 0x300 as f32;
 /// two frames.
 pub const ACTION_STEPS: u32 = 6;
 
+/// The per-art attack camera's per-actor channels, as the hosts hand them in.
+///
+/// Retail's `FUN_801D71B8` reads them straight off the acting actor record;
+/// this is the same three bytes plus the character selector, bundled so a
+/// host cannot wire two of the three and leave the arm dispatching on a
+/// default. `None` on [`BattleCamInputs::attack`] means the channel is not
+/// armed this frame at all - no Attack action, a monster slot, a character
+/// with no camera script, or a host with no disc table.
+///
+/// See [`crate::battle_attack_camera`] for what each byte is and where it
+/// comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttackCamChannels {
+    /// `DAT_8007BD10[ctx[+0x13]]`, resolved.
+    pub character: crate::battle_attack_camera::CharacterArm,
+    /// `actor[+0x1DB]` - the latched battle-animation id.
+    pub art_id: u8,
+    /// `actor[+0x21B]` - the arm sub-selector.
+    pub arm_select: u8,
+    /// `actor[+0x22C][+0x68]` - the animation cursor in sixteenths of a
+    /// keyframe.
+    pub anim_frame: i16,
+}
+
 /// The non-pose inputs `FUN_801D5854` case `6` reads out of the battle
 /// context. Every field is a retail context byte / halfword; the engine
 /// supplies what it models and leaves the rest at the [`Default`], which
@@ -782,6 +806,26 @@ pub struct BattleCamera {
     action_yaw: i32,
     /// Live screen shake (`FUN_801D9D30`), held beside the pose.
     shake: ShakeState,
+    /// The per-art attack camera's channel: the disc track table, the battle
+    /// context's own counters, and the acting actor's three bytes.
+    attack: AttackChannel,
+}
+
+/// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
+/// `+0x26E` / `+0x26F` / `+0x87C` plus the disc table the arms fold.
+#[derive(Debug, Default)]
+struct AttackChannel {
+    /// The parsed `0x801F4E10` table. `None` on a disc-free host, which
+    /// leaves the whole channel inert (retail cannot run without it either).
+    tracks: Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    /// The battle context's ramp / cursor / latch quartet.
+    ctx: crate::battle_attack_camera::AttackCamCtx,
+    /// The acting actor's channels this frame.
+    actor: Option<AttackCamChannels>,
+    /// The `rand()` state the per-action cursor coin flip draws from.
+    /// Retail's `FUN_8004E13C` draws from the process-wide PsyQ `rand()`; the
+    /// engine keeps its own so a battle is reproducible.
+    seed: u32,
 }
 
 /// The `FUN_801D9D30` shake, as the engine holds it.
@@ -812,6 +856,11 @@ struct ShakeState {
 /// `rand()` state, which the engine does not share.
 const SHAKE_SEED: u32 = 0x0BAD_5EED;
 
+/// Sibling seed for the per-action camera-track coin flip (retail's
+/// `FUN_8004E13C` draws it from the same shared `rand()`; the engine keeps a
+/// second stream so a shake and a swing angle are independently reproducible).
+const ATTACK_CURSOR_SEED: u32 = 0x0CA3_5EED;
+
 /// Everything one frame of battle state tells the camera. Bundled so the two
 /// hosts pass the same record to [`drive`] and a new channel cannot be added
 /// to one host and forgotten on the other.
@@ -827,6 +876,9 @@ pub struct BattleCamInputs {
     pub action: ActionFraming,
     /// `_DAT_8007B630` - the screen-shake amplitude the field VM last wrote.
     pub shake_amplitude: u8,
+    /// The per-art attack camera's per-actor channels
+    /// ([`AttackCamChannels`]), or `None` when that channel is not armed.
+    pub attack: Option<AttackCamChannels>,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -844,7 +896,18 @@ pub struct BattleCamInputs {
 /// actor table, so a battle that opens on the far framing sizes its depth
 /// and centres its focus immediately rather than sitting at the degenerate
 /// minimum until the first phase transition re-derives it.
-pub fn drive(slot: &mut Option<BattleCamera>, active: bool, inputs: BattleCamInputs, frames: u64) {
+/// `tracks` is the disc-parsed per-art camera table
+/// (`legaia_asset::battle_attack_camera_table`). It is a parameter rather than
+/// a field on [`BattleCamInputs`] because the record is `Copy` and the table
+/// is not; a host that has no disc data passes `None` and the per-art channel
+/// stays inert, which is the same framing the port had before it existed.
+pub fn drive(
+    slot: &mut Option<BattleCamera>,
+    active: bool,
+    inputs: BattleCamInputs,
+    frames: u64,
+    tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+) {
     if !active {
         *slot = None;
         return;
@@ -862,6 +925,7 @@ pub fn drive(slot: &mut Option<BattleCamera>, active: bool, inputs: BattleCamInp
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.set_shake_amplitude(inputs.shake_amplitude);
+    cam.set_attack_channels(inputs.attack, tracks);
     cam.set_phase(inputs.phase);
     cam.advance_to(frames);
 }
@@ -906,7 +970,49 @@ impl BattleCamera {
                 seed: SHAKE_SEED,
                 ..Default::default()
             },
+            attack: AttackChannel {
+                seed: ATTACK_CURSOR_SEED,
+                ..Default::default()
+            },
         }
+    }
+
+    /// Install the per-art attack camera's per-actor channels and (once) the
+    /// disc track table. Hosts call this every frame through [`drive`].
+    pub fn set_attack_channels(
+        &mut self,
+        channels: Option<AttackCamChannels>,
+        tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    ) {
+        self.attack.actor = channels;
+        if self.attack.tracks.is_none()
+            && let Some(t) = tracks
+        {
+            self.attack.tracks = Some(t.clone());
+        }
+    }
+
+    /// The per-art framing for this frame, or `None` when no arm fires - in
+    /// which case retail leaves the case-6 framing standing and so does the
+    /// port. Mutates the ramp latch exactly as the arms do.
+    fn attack_framing(&mut self) -> Option<crate::battle_attack_camera::AttackCamFraming> {
+        use crate::battle_attack_camera::{AttackCamActor, attack_camera_framing};
+        let c = self.attack.actor?;
+        let tracks = self.attack.tracks.as_ref()?;
+        let a = self.actor;
+        let world = |v: f32| (v as i32) as u16;
+        attack_camera_framing(
+            AttackCamActor {
+                character: c.character,
+                art_id: c.art_id,
+                arm_select: c.arm_select,
+                anim_frame: c.anim_frame,
+                pos: [world(a.world[0]), world(a.world[1]), world(a.world[2])],
+                facing: a.facing as u16,
+            },
+            &mut self.attack.ctx,
+            tracks,
+        )
     }
 
     /// Install the case-6 context inputs the [`BattleCamPhase::Action`]
@@ -1013,6 +1119,12 @@ impl BattleCamera {
         self.glides.clear();
         match phase {
             BattleCamPhase::Action => {
+                // A new action: retail's `FUN_8004E13C` re-rolls the per-art
+                // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
+                // restart from zero, so the swing frames from one of the
+                // table's two columns.
+                let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1 != 0;
+                self.attack.ctx.begin_action(coin);
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(
@@ -1112,11 +1224,49 @@ impl BattleCamera {
         // outside its state switch, so the counter runs whether or not an
         // action is executing.
         self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
+        // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
+        // `8 * frame_step` on EVERY call, so they advance per display frame
+        // for as long as any framing case is being re-armed - not per camera
+        // step.
+        self.attack.ctx.advance(elapsed as u32);
         self.frame_accum += elapsed;
         while self.frame_accum >= 2 {
             self.frame_accum -= 2;
             self.step_once();
         }
+    }
+
+    /// One step of the walker toward the per-art pose.
+    ///
+    /// Retail rebuilds its whole nine-component step table every display
+    /// frame (`FUN_801D71B8` calls `FUN_801D829C` on each pass) and the walker
+    /// then applies one step of it, so the effective law is "move toward the
+    /// live target at `ceil(|delta| / duration)` per frame" - a chase with the
+    /// arm's own time constant, not a fixed glide toward a frozen target. That
+    /// is what this does, on the same builder, with retail's `a3` halved into
+    /// the port's 2-frame camera step.
+    fn step_toward_attack_pose(&mut self, f: crate::battle_attack_camera::AttackCamFraming) {
+        let target = BattleCamPose {
+            pitch: f32::from(f.pose.rot[0]),
+            yaw: f32::from(f.pose.rot[1]),
+            tr: [
+                f32::from(f.pose.dist[0]),
+                f32::from(f.pose.dist[1]),
+                f32::from(f.pose.dist[2]),
+            ],
+            // The arms build the look-at as the NEGATED actor position; the
+            // engine holds the focus un-negated (see `BattleCamPose::focus`).
+            focus: [
+                -f32::from(f.pose.look_at[0]),
+                -f32::from(f.pose.look_at[1]),
+                -f32::from(f.pose.look_at[2]),
+            ],
+        };
+        let mut from = self.pose;
+        let steps = (u32::from(f.duration_frames) / 2).max(1);
+        let g = Glide::linear(&mut from, target, i32::from(f.pose.dist[2]), steps, true);
+        self.pose = from;
+        self.step_components(&g);
     }
 
     /// One rate-limited step of every driven component (all but yaw, which
@@ -1148,6 +1298,18 @@ impl BattleCamera {
         let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);
         if !yaw_gliding && self.phase == BattleCamPhase::Menu {
             self.pose.yaw = (self.pose.yaw - ORBIT_STEP).rem_euclid(4096.0);
+        }
+        // The per-art attack camera runs AFTER `FUN_801D5854` has armed its
+        // own tween (`0x801D7180`), builds a pose of its own and calls the
+        // same tween builder again - so whenever an arm fires it is the
+        // per-art target the walker steps toward this frame, not case 6's.
+        // An art with no arm returns `None` and case 6's glide stands.
+        if self.phase == BattleCamPhase::Action
+            && let Some(f) = self.attack_framing()
+        {
+            self.glides.clear();
+            self.step_toward_attack_pose(f);
+            return;
         }
         let Some(g) = self.glides.front().copied() else {
             return;
@@ -2050,15 +2212,15 @@ mod tests {
             ..Default::default()
         };
         let mut slot: Option<BattleCamera> = None;
-        drive(&mut slot, true, inputs, 0);
+        drive(&mut slot, true, inputs, 0, None);
         // 200 display frames of idling, then the action opens.
-        drive(&mut slot, true, inputs, 200);
+        drive(&mut slot, true, inputs, 200, None);
         let action = BattleCamInputs {
             phase: BattleCamPhase::Action,
             ..inputs
         };
         for f in 0..=ACTION_STEPS as u64 {
-            drive(&mut slot, true, action, 200 + f * 2);
+            drive(&mut slot, true, action, 200 + f * 2, None);
         }
         let first = slot.as_ref().unwrap().framing_pose().yaw;
         // The framing is built when the phase changes, so the target is the
@@ -2066,9 +2228,9 @@ mod tests {
         // action-SM state transition, which the port does not model).
         assert_eq!(first.rem_euclid(4096.0), 200.0, "yaw_base at phase entry");
         // A later action frames from a different angle.
-        drive(&mut slot, true, inputs, 400);
+        drive(&mut slot, true, inputs, 400, None);
         for f in 0..=ACTION_STEPS as u64 {
-            drive(&mut slot, true, action, 400 + f * 2);
+            drive(&mut slot, true, action, 400 + f * 2, None);
         }
         assert_ne!(slot.as_ref().unwrap().framing_pose().yaw, first);
     }
@@ -2124,11 +2286,11 @@ mod tests {
         };
         let mut slot: Option<BattleCamera> = None;
         // Inactive: stays empty.
-        drive(&mut slot, false, at(BattleCamPhase::Menu, None), 0);
+        drive(&mut slot, false, at(BattleCamPhase::Menu, None), 0, None);
         assert!(slot.is_none());
         // First active frame in the Menu phase: entry snap to the far
         // framing (BOOT depth - no formation installed yet on frame 0).
-        drive(&mut slot, true, at(BattleCamPhase::Menu, None), 0);
+        drive(&mut slot, true, at(BattleCamPhase::Menu, None), 0, None);
         let p0 = slot.as_ref().unwrap().pose();
         assert_eq!((p0.pitch, p0.tr), (BOOT_POSE.pitch, BOOT_POSE.tr));
         // Formation + 2 frames: the framing resizes and the orbit runs.
@@ -2136,7 +2298,13 @@ mod tests {
             min: [-800.0, -800.0],
             max: [800.0, 800.0],
         });
-        drive(&mut slot, true, at(BattleCamPhase::Menu, formation), 2);
+        drive(
+            &mut slot,
+            true,
+            at(BattleCamPhase::Menu, formation),
+            2,
+            None,
+        );
         let p1 = slot.as_ref().unwrap().pose();
         assert_eq!(p1.yaw, 4092.0, "one orbit step");
         // Submenu opens on the traced default seat: 6 steps arrive on the
@@ -2147,12 +2315,13 @@ mod tests {
                 true,
                 at(BattleCamPhase::Submenu, formation),
                 f * 2,
+                None,
             );
         }
         let p2 = slot.as_ref().unwrap().pose();
         assert_eq!(p2.tr, BattleCamActor::default().submenu_pose().tr);
         // Battle ends: the state drops so the next battle re-snaps.
-        drive(&mut slot, false, at(BattleCamPhase::Menu, None), 16);
+        drive(&mut slot, false, at(BattleCamPhase::Menu, None), 16, None);
         assert!(slot.is_none());
     }
 
@@ -2174,7 +2343,7 @@ mod tests {
         };
         let mut slot: Option<BattleCamera> = None;
         for f in 0..=ACTION_STEPS as u64 {
-            drive(&mut slot, true, inputs, f * 2);
+            drive(&mut slot, true, inputs, f * 2, None);
         }
         let cam = slot.as_ref().unwrap();
         let want = action_framing(BattleCamActor::default(), inputs.action);
@@ -2201,6 +2370,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            None,
         );
         let p = slot.as_ref().unwrap().pose();
         assert_eq!(p.tr, [0.0, 1280.0, 7680.0], "the traced far framing");
@@ -2220,6 +2390,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            None,
         );
         assert_eq!(slot.as_ref().unwrap().pose(), DIALOGUE_POSE);
         let mut slot: Option<BattleCamera> = None;
@@ -2233,6 +2404,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            None,
         );
         let p = slot.as_ref().unwrap().pose();
         assert_ne!(p.tr, BattleCamActor::default().submenu_pose().tr);
@@ -2432,8 +2604,9 @@ mod tests {
                         formation: Some(traced_formation()),
                         action: ActionFraming::default(),
                         shake_amplitude: 0,
+                        attack: None,
                     };
-                    drive(&mut slot, true, inputs, frames);
+                    drive(&mut slot, true, inputs, frames, None);
                     total += 1;
                     if slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu) {
                         far += 1;

@@ -2,9 +2,17 @@
 
 Twenty rows of two signed halfwords in the battle-action overlay's data tail
 (PROT entry `0898`), read by the per-art attack camera `FUN_801D71B8` while a
-party member's Arts swing plays. Each row is a camera offset the arm adds into
-the pose it hands the tween builder; the second halfword is the same offset for
-the swing's second phase.
+party member's swing animation plays. Each row is a camera offset the arm adds
+into the pose it hands the tween builder.
+
+The second halfword is **not** a later phase of the same swing. `ctx[+0x26D]`,
+the byte that selects the column, has exactly one writer in the corpus -
+`FUN_8004E13C` in `SCUS_942.54` (`0x8004E2DC`), which stores `rand() % 2`
+beside `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` and `ctx[+0xD] = 0`. So a
+row holds **two alternative offsets and retail coin-flips between them once per
+action**, which is why the same swing frames from two visibly different angles
+on successive turns. `FUN_801D5854` forces the column to `0` when the acting
+character id is `3` (`0x801D6A5C`).
 
 Parser: `legaia_asset::battle_attack_camera_table`. Engine side:
 `legaia-engine-vm::battle_attack_camera`.
@@ -32,9 +40,13 @@ An arm forms one base and then reads fixed displacements off it:
 801d734c  lhu   v0,0x4(a0)       ; row 1 at this cursor
 ```
 
-So `value(row, phase) = base[row * 4 + phase * 2]`. The cursor `ctx[+0x26D]`
+So `value(row, column) = base[row * 4 + column * 2]`. The cursor `ctx[+0x26D]`
 is binary everywhere it is used (`beq t2,zero,…` at `0x801D7398` and its
-siblings), so a row holds one value per swing phase.
+siblings), which agrees with its writer storing `rand() % 2`.
+
+One read escapes the cursor entirely: `0x801D7F94` reads `0x801F4E58`
+directly - row 18, column 0 - so Gala's `0x1D` arm folds a fixed column in its
+`cursor == 0` branch rather than the one the coin flip picked.
 
 Retail indexes with a **fixed** displacement off a cursor-shifted base, so an
 out-of-range cursor would silently read the next row's first halfword. That
@@ -77,7 +89,7 @@ triple (`sp+0x10` rotation, `sp+0x18` translation, `sp+0x20` look-at).
 | 6 | yaw | `0x801D7568` |
 | 7 | yaw | `0x801D7650` |
 | 8 | yaw | `0x801D76EC`, `0x801D7870` |
-| 9 | yaw | `0x801D78F0` |
+| 9 | yaw (**subtracted**) | `0x801D78F0` |
 | 10 | yaw | `0x801D797C` |
 | 11 | yaw | `0x801D79F8` |
 | 12 | yaw | `0x801D79F8` |
@@ -89,15 +101,24 @@ triple (`sp+0x10` rotation, `sp+0x18` translation, `sp+0x20` look-at).
 | 18 | yaw | `0x801D7EA0` |
 | 19 | eye-space Z (**subtracted**) | `0x801D7B4C` |
 
-Row 19 at `0x801D7B84` is the only fold whose store is a `subu`; every other
-one adds. Two dispatched arms - `0x801D7D7C` and `0x801D81FC` - read no row at
-all and are built from literals and multiples of the `ctx[+0x26E]` ramp.
+Two folds subtract rather than add: row 19 at `0x801D7B84` (`subu v1,v1,v0`
+at `0x801D7B90`) and row 9 at `0x801D7934`, where the row and the `ctx[+0x87C]`
+accumulator are summed first and the **sum** is subtracted from the yaw
+(`subu v0,v0,v1` at `0x801D794C`). Two dispatched arms - `0x801D7D7C` and
+`0x801D81FC` - read no row at all and are built from literals and multiples of
+the `ctx[+0x26E]` ramp.
 
 ## Who reads it: three jump tables, not one
 
 `FUN_801D71B8` dispatches on the character id `DAT_8007BD10[ctx[+0x13]]` and
-then on the art id `actor[+0x1DB] - 0x1A`, through a table that is **per
-character**:
+then on `actor[+0x1DB] - 0x1A`, through a table that is **per character**.
+
+`actor[+0x1DB]` is the **latched battle-animation id**, not a Tactical-Arts
+`ActionConstant`: `FUN_8004AD80` copies the staged id `actor[+0x1DA]` into it
+each animation tick (`0x8004AEB0..0x8004AEB8`), before an id `>= 0x10` is
+rewritten to the dynamic art-bank slot it materialises into. So the arm that
+runs is chosen by the clip that is playing, and the band `0x1A..=0x2D` is
+art-bank records `0x0A..=0x1D`.
 
 | Character id | Bound | Jump table | Live arms |
 |---|---|---|---|
@@ -111,19 +132,31 @@ arm bodies exist. The earlier "seventeen per-art arms" reading generalised
 character `1`'s table to all three; the bounds `sltiu v0,v1,0x11` /
 `0x14` / `0x11` at `0x801D72E0` / `0x801D76C4` / `0x801D7B24` settle it.
 
-## What is not decoded
+## The two ramp counters the arms fold beside the rows
 
 Each arm also adds its own literals and multiples of two battle-context
-counters around its track folds, under its own animation-frame thresholds
-(`actor[+0x22C][+0x68]` against `0x61` / `0xE0` / `0xF0` and friends):
+counters, under its own animation-frame thresholds (`actor[+0x22C][+0x68]`
+against `0x40`, `0x61`, `0x70`, `0x90`, `0xA0`, `0xB0`, `0xC0`, `0xE0`, `0xF0`
+and `0x110`, depending on the arm):
 
-- `ctx[+0x26E]` - a `0..=0xC8` per-frame ramp, clamped in `FUN_801D5854`'s
-  prologue (`0x801D5918..0x801D5958`).
-- `ctx[+0x87C]` - a word the arms shift and add.
+- `ctx[+0x26E]` - a `0..=0xC8` ramp advanced by `8 * frame_step` and clamped in
+  `FUN_801D5854`'s prologue (`0x801D58F8..0x801D5960`), which runs on **every**
+  call to that function.
+- `ctx[+0x87C]` - a 32-bit accumulator taking the same increment, read either
+  whole (`lw` + shift) or truncated (`lhu`). It does not saturate.
 
-Neither counter is modelled by the engine, so the port stops at the folds and
-the shared animation push. The remaining per-arm arithmetic is `Unknown` in the
-sense that its *effect* is decoded but its inputs are not reproduced.
+Seven arms re-zero one or both through the latch `ctx[+0x26F]` when the swing
+crosses an animation-frame threshold, so the reset fires once per crossing. In
+every such arm the ramp is read **after** the reset, so the crossing frame
+contributes nothing.
+
+Both counters and the latch are ported
+(`legaia-engine-vm::battle_attack_camera::AttackCamCtx`), so the arms carry
+their literals and ramps rather than only their table folds.
+
+`actor[+0x22C][+0x68]` is the animation cursor in **sixteenths of a keyframe**:
+`FUN_80047430` clamps it against `clip[+0x85] << 4` and `clip[+0x86] << 4`
+(`0x800477D4` / `0x8004781C`), so a threshold of `0xB0` is keyframe 11.
 
 ## See also
 

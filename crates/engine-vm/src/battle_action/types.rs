@@ -442,6 +442,18 @@ pub struct BattleActor {
     /// `+0x1DA` - queued next anim ID. The state machine writes this; the
     /// animation system reads `current_anim` toward `queued_anim`.
     pub queued_anim: u8,
+    /// `+0x1DB` - the **latched** staged anim id: `FUN_8004AD80` copies
+    /// `+0x1DA` here once per animation tick, *before* an art-bank id is
+    /// rewritten to its dynamic slot (`0x8004AEB0..0x8004AEB8`), so this byte
+    /// keeps the raw id of the clip that is playing.
+    ///
+    /// It is the byte the battle camera dispatches on - twice, over two
+    /// disjoint bands of the same id space: `FUN_801D5854` case 6's own
+    /// per-character arms take `0x11..=0x18` and the per-art attack camera
+    /// `FUN_801D71B8` takes `0x1A..=0x2D`
+    /// ([`crate::battle_attack_camera::ART_JUMP_TABLES`]). Nothing else in
+    /// the ported state machine reads it.
+    pub latched_anim: u8,
     /// `+0x1DC` - per-actor flag bits. See [`ActorFlags`].
     pub flag_bits: ActorFlags,
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
