@@ -730,6 +730,147 @@ impl LegaiaRuntime {
     }
 }
 
+/// Disc-gated runtime oracle for the drawn battle-HUD surface + the enemy
+/// target strip, driven through a REAL scripted battle off the scene MAN.
+/// Skips + passes without `LEGAIA_DISC_BIN`. Set `LEGAIA_HUD_DUMP=<path>` to
+/// also write the raw overlay JSON for external inspection.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod live_hud_tests {
+    use super::*;
+
+    #[test]
+    fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
+        let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load disc");
+        rt.enter_field("town01").expect("enter town01");
+        for _ in 0..5 {
+            rt.tick_frame().expect("tick");
+        }
+        if !rt.debug_start_test_battle() {
+            eprintln!("[skip] no scripted formation row resolved");
+            return;
+        }
+        // Let the player-driven command menu open for party slot 0.
+        for _ in 0..300 {
+            let open = rt
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.battle_command.is_some());
+            if open {
+                break;
+            }
+            rt.tick_frame().expect("tick");
+        }
+        assert!(
+            rt.scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.battle_command.is_some()),
+            "player-driven battle opens the command menu"
+        );
+
+        // (1) The drawn bar surface reaches the page's overlay draw list:
+        // solid 1x1-src rects (panel chrome + HP/MP fills) ride the same
+        // "texts" channel the canvas blitter paints.
+        let json = rt.play_overlay_draws_json(960, 720);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
+        let texts = v["texts"].as_array().expect("texts array");
+        let solid_rects = texts
+            .iter()
+            .filter(|t| t["src"][2] == 1 && t["src"][3] == 1)
+            .count();
+        assert!(
+            solid_rects >= 4,
+            "expected panel + bar rects in the overlay, got {solid_rects}"
+        );
+
+        // (2) Cross on Attack opens targeting; the retail dedup name strip
+        // resolves rows off the live formation and lands in the draw list at
+        // the strip's stage band.
+        // The session may open on a turn-start prompt phase before the menu,
+        // so press Cross (edge + release) until the Attack targeting phase
+        // shows - a bounded retry, not a spin.
+        'press: for _ in 0..4 {
+            rt.set_pad(0x4000);
+            rt.tick_frame().expect("tick");
+            rt.set_pad(0);
+            for _ in 0..3 {
+                let targeting = rt.scene_host.as_ref().is_some_and(|h| {
+                    matches!(
+                        h.world.battle_command.as_ref().map(|c| &c.phase),
+                        Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
+                    )
+                });
+                if targeting {
+                    break 'press;
+                }
+                rt.tick_frame().expect("tick");
+            }
+        }
+        {
+            let w = &rt.scene_host.as_ref().expect("host").world;
+            let targeting = matches!(
+                w.battle_command.as_ref().map(|c| &c.phase),
+                Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
+            );
+            if !targeting {
+                let pc = w.party_count.clamp(1, 3) as usize;
+                let monsters: Vec<(usize, u16, u16, u16)> = w
+                    .actors
+                    .iter()
+                    .enumerate()
+                    .skip(pc)
+                    .take(5)
+                    .map(|(i, a)| (i, a.battle.hp, a.battle.max_hp, a.battle.liveness))
+                    .collect();
+                eprintln!(
+                    "[dbg] mode={:?} cmd_phase={:?} dialog={} inline={} monsters={monsters:?}",
+                    w.mode,
+                    w.battle_command
+                        .as_ref()
+                        .map(|c| std::mem::discriminant(&c.phase)),
+                    w.current_dialog.is_some(),
+                    w.inline_dialogue.is_some(),
+                );
+            }
+            assert!(targeting, "Cross on Attack opens the target picker");
+            let rows = legaia_engine_core::battle_hud::battle_enemy_target_rows(w);
+            assert!(
+                !rows.is_empty(),
+                "enemy target rows resolve from the live formation"
+            );
+            assert!(
+                rows.iter().all(|r| !r.label.is_empty()),
+                "every row carries a monster name"
+            );
+        }
+        let json = rt.play_overlay_draws_json(960, 720);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
+        // 960x720 -> stage scale 3, origin (0,0); the strip draws at stage
+        // Y 166 (engine-ui ENEMY_MENU_STAGE_Y) -> surface y 498.
+        let strip_glyphs = v["texts"]
+            .as_array()
+            .expect("texts array")
+            .iter()
+            .filter(|t| t["dst"][1] == 498)
+            .count();
+        assert!(
+            strip_glyphs > 0,
+            "enemy target strip glyphs land at the strip band"
+        );
+        if let Ok(path) = std::env::var("LEGAIA_HUD_DUMP") {
+            std::fs::write(path, &json).expect("write hud dump");
+        }
+    }
+}
+
 /// Test-only probes for the disc-gated battle-overlay oracle
 /// (`tests/battle_overlay_parity.rs`). Native-only so the wasm export surface
 /// the page consumes stays exactly the player-facing API.
