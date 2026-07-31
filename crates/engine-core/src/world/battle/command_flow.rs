@@ -396,11 +396,15 @@ impl World {
                     .get(art_index as usize)
                     .map(|a| (a.power.clone(), a.enemy_effect, a.action))
                     .unwrap_or_default();
+                // A saved-chain row collapses to a single executed art (the
+                // row's own matched constant), so its shout list is that one
+                // constant - or empty for a synthetic row.
+                let actions: Vec<legaia_art::ActionConstant> = action.into_iter().collect();
                 self.apply_battle_art(
                     caster,
                     &power,
                     enemy_effect,
-                    action,
+                    &actions,
                     target_row,
                     target_slot,
                 );
@@ -530,13 +534,13 @@ impl World {
                 target_slot,
             }) => {
                 let caster = session.actor;
-                let (power, enemy_effect, action) =
+                let (power, enemy_effect, actions) =
                     self.resolve_arts_input_entry(caster, &session.buffer);
                 self.apply_battle_art(
                     caster,
                     &power,
                     enemy_effect,
-                    action,
+                    &actions,
                     target_row,
                     target_slot,
                 );
@@ -561,7 +565,18 @@ impl World {
     /// staying plain swings
     /// ([`crate::arts_command_input::resolve_entered_commands`]).
     ///
+    /// The third element is the turn's **shout list**: one action constant
+    /// per art the entry performs, in performed order. Retail's entry runs
+    /// until the AP pool is spent, so a plain entry routinely performs
+    /// several named arts, and each one is a separately staged animation
+    /// whose materialiser calls the cue selector - hence one constant per
+    /// art, not one for the whole turn. A Miracle / Super replacement
+    /// answers a single constant (its finisher), which is the pinned key
+    /// for those two paths; the per-constant staging inside a replacement
+    /// queue is not captured, so it is deliberately not expanded here.
+    ///
     /// REF: FUN_801EED1C
+    /// REF: FUN_8004C140
     fn resolve_arts_input_entry(
         &self,
         caster: u8,
@@ -569,7 +584,7 @@ impl World {
     ) -> (
         Vec<legaia_art::PowerByte>,
         legaia_art::EnemyEffect,
-        Option<legaia_art::ActionConstant>,
+        Vec<legaia_art::ActionConstant>,
     ) {
         use crate::battle_arts::{miracle_for_chain, super_for_chain};
         let char_slot = self.party_roster_slot(caster as usize) as u8;
@@ -586,7 +601,7 @@ impl World {
             .rev()
             .copied()
             .find(|a| a.is_art());
-            return (power, effect, action);
+            return (power, effect, action.into_iter().collect());
         }
         let caster_records = || {
             self.art_records
@@ -602,7 +617,7 @@ impl World {
                 .rev()
                 .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
                 .find(|a| a.is_art());
-            return (power, effect, action);
+            return (power, effect, action.into_iter().collect());
         }
         let records: Vec<(legaia_art::ActionConstant, legaia_art::ArtRecord)> = self
             .art_records
@@ -611,7 +626,10 @@ impl World {
             .map(|((_, action), rec)| (*action, rec.clone()))
             .collect();
         let entry = crate::arts_command_input::resolve_entered_commands(&records, buffer);
-        (entry.power, entry.enemy_effect, entry.action)
+        // One shout per recognized art, in performed order - `matched` is
+        // exactly that list, and unmatched directions (plain swings) carry
+        // no constant, so they stay silent as retail's no-cue-entry arts do.
+        (entry.power, entry.enemy_effect, entry.matched)
     }
 
     /// Execute an art against the picked target through the real art-power
@@ -628,12 +646,19 @@ impl World {
     /// `power` comes from the matched art record when one is staged, else a
     /// synthetic per-direction profile (see [`Self::build_battle_arts_rows`]),
     /// so the same kernel handles both real and demo arts.
+    ///
+    /// `actions` is the list of **named arts this turn performs**, in
+    /// performed order - one entry per recognized art in a per-press entry,
+    /// a single finisher constant for a Miracle / Super replacement, and
+    /// empty for a synthetic art with no matched record. It is not a
+    /// display list: it drives one shout cue and one learn-on-use check per
+    /// art, both of which retail runs per art rather than per turn.
     fn apply_battle_art(
         &mut self,
         caster: u8,
         power: &[legaia_art::PowerByte],
         enemy_effect: legaia_art::EnemyEffect,
-        action: Option<legaia_art::ActionConstant>,
+        actions: &[legaia_art::ActionConstant],
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
@@ -653,18 +678,26 @@ impl World {
             .copied()
             .unwrap_or(0);
         let character = self.caster_character(caster);
-        // Arts-voice shout: fired once, on the art's animation-start frame,
-        // when the art carries a real action constant (a synthetic/demo art
-        // has none and stays silent - the retail degradation for arts with no
-        // cue-table entry). The host resolves the (character, action) pair
-        // against the arts-voice tables + XA clip banks and plays the CD-XA
-        // shout with the modeled CD-response delay, so the audio trails this
-        // frame rather than leading it. REF: FUN_8004C140.
-        if let Some(action) = action {
-            let cslot = legaia_art::Character::all()
-                .iter()
-                .position(|c| *c == character)
-                .unwrap_or(usize::MAX);
+        // Arts-voice shout: one cue **per art the turn performs**, on that
+        // art's animation-start frame, when the art carries a real action
+        // constant (a synthetic/demo art has none and stays silent - the
+        // retail degradation for arts with no cue-table entry). Retail
+        // stages each art's animation separately and the materialiser
+        // (`FUN_8004AD80`) calls the cue selector per staging, so an entry
+        // that performs three arts requests three shouts; the mixer queues
+        // a back-to-back request behind the sounding one rather than cutting
+        // it. The live loop has no per-art animation timeline, so the whole
+        // list is requested on this frame in performed order. The host
+        // resolves each (character, action) pair against the arts-voice
+        // tables + XA clip banks and plays the CD-XA shout with the modeled
+        // CD-response delay, so the audio trails this frame rather than
+        // leading it. REF: FUN_8004C140.
+        let cslot = legaia_art::Character::all()
+            .iter()
+            .position(|c| *c == character)
+            .unwrap_or(usize::MAX);
+        let roster = self.party_roster_slot(caster as usize) as u8;
+        for action in actions {
             if cslot < 3 {
                 self.battle_shout_cues
                     .push(crate::battle_events::BattleShoutCue {
@@ -672,15 +705,16 @@ impl World {
                         action: action.as_byte(),
                     });
             }
-            // Learn-on-use. This is the player-driven arts path, which reaches
-            // `art_strike::apply_art_strike` directly rather than through
-            // `BattleActionHost::apply_art_strike`, so retail's per-art check
-            // (`FUN_801EFBFC`, wired in the host impl) has to be run here too.
-            // A synthetic demo row carries no action constant and is skipped -
-            // there is no real art id to insert.
-            let roster = self.party_roster_slot(caster as usize) as u8;
+            // Learn-on-use, likewise per art. This is the player-driven arts
+            // path, which reaches `art_strike::apply_art_strike` directly
+            // rather than through `BattleActionHost::apply_art_strike`, so
+            // retail's per-art check (`FUN_801EFBFC`, wired in the host impl
+            // and run once per accepted art in the queue-builder walk) has to
+            // be run here too. A synthetic art contributes no constant and is
+            // skipped - there is no real art id to insert.
             self.notify_art_used(roster, action.as_byte());
         }
+        let action = actions.first().copied();
         // Selector-9 accuracy/evasion terms (retail actor `+0x168`): the
         // attacker's accuracy vs the target's evasion. The roll engages only
         // when the ATTACKER has a seeded accuracy stat; an unseeded attacker
@@ -700,10 +734,11 @@ impl World {
                 break;
             }
             // Minimal per-strike info: `apply_art_strike` + `resolve_battle_defense`
-            // only read `power` + `enemy_effect`. `art` carries the row's
-            // matched action constant when one exists (the shout-cue key);
-            // the placeholder only remains for synthetic rows, and the live
-            // loop doesn't drive the per-art animation script either way.
+            // only read `power` + `enemy_effect`. `art` carries the turn's
+            // first performed art when one exists; the placeholder only
+            // remains for synthetic entries, and the live loop doesn't drive
+            // the per-art animation script either way, so a multi-art entry's
+            // later strikes are not re-keyed (nothing downstream reads it).
             let info = ArtStrikeInfo {
                 strike_index: i as u8,
                 anim_byte: 0,

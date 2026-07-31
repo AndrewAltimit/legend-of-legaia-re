@@ -1772,9 +1772,11 @@ pub struct World {
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
     /// (`legaia-engine play-window`) set both after boot. All four commands
-    /// are wired: Attack strikes; Arts / Magic / Item open
-    /// [`Self::battle_arts_menu`] / [`Self::battle_spell_menu`] /
-    /// [`Self::battle_item_menu`].
+    /// are wired: Attack strikes; Arts opens the per-press
+    /// [`Self::battle_arts_input`] (the saved-chain
+    /// [`Self::battle_arts_menu`] is the legacy path, behind
+    /// `LEGAIA_ARTS_SAVED_LIST=1`); Magic / Item open
+    /// [`Self::battle_spell_menu`] / [`Self::battle_item_menu`].
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
