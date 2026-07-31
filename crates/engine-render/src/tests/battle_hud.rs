@@ -506,8 +506,9 @@ fn level_readout_is_diagnostic_only() {
     );
 }
 
-/// An ailment still replaces nothing on the strip but adds its own badge -
-/// the selection is the ported part, the badge art is an approximation.
+/// An ailment adds its own badge in the member's right-hand gutter - the
+/// selection is the ported part, the badge art and placement are
+/// approximations.
 #[test]
 fn ailment_badge_draws_above_the_members_strip() {
     let font = legaia_font::synthetic_for_tests();
@@ -517,9 +518,13 @@ fn ailment_badge_draws_above_the_members_strip() {
     let with = hud_draws(&font, &[sick], &[], &[]);
     let without = hud_draws(&font, &[clean], &[], &[]);
     assert!(with.len() > without.len(), "the ailment badge never drew");
+    // The badge rides the member's own right-hand gutter (stage x 278), not
+    // the band above - a badge above the row lands on the member stacked
+    // over it, which is what the trio capture showed.
     assert!(
-        with.iter().any(|d| d.dst.1 < STRIP_Y * STAGE_SCALE),
-        "the badge did not draw above the strip band"
+        with.iter()
+            .any(|d| d.dst.0 >= 278 * STAGE_SCALE && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE),
+        "the badge did not draw in the row's right-hand gutter"
     );
 }
 

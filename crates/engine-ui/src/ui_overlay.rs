@@ -654,6 +654,9 @@ const STRIP_MP_LABEL_X: i32 = 192;
 const STRIP_MP_CUR_RIGHT: i32 = 236;
 const STRIP_MP_SLASH_X: i32 = 241;
 const STRIP_MP_MAX_RIGHT: i32 = 272;
+/// Right-hand gutter the status badge rides (approximation - see the badge's
+/// own comment in [`battle_hud_draws_for`]).
+const STRIP_BADGE_X: i32 = 278;
 
 /// Top-left plaque, measured from `captures/tetsu_idle`: the art box spans
 /// `x 8..=50` by `y 8..=27` (the same 20-px chamfered lozenge as the strip)
@@ -987,28 +990,23 @@ pub fn battle_hud_draws_for(
                 origin.1 + (sy - 26) * scale,
             );
 
-            // Status badge over the member's row - retail draws exactly one
-            // element per party slot and which one is `FUN_8002C2E4`'s
-            // ladder, already resolved into `status_sprite` upstream. Only
-            // the ailment arm draws by default: the no-ailment arm is the
-            // base marker sprite `0x0A` plus the `+0x130` level, and neither
-            // retail reference frame shows a marker or a level anywhere near
-            // the strip, so the level readout is diagnostic-only. Badge art +
-            // placement are engine approximations; the selection is the
-            // ported part.
+            // Status badge in the member's own right-hand gutter - retail
+            // draws exactly one element per party slot and which one is
+            // `FUN_8002C2E4`'s ladder, already resolved into `status_sprite`
+            // upstream. Only the ailment arm draws by default: the no-ailment
+            // arm is the base marker sprite `0x0A` plus the `+0x130` level,
+            // and neither retail reference frame shows a marker or a level
+            // anywhere near the strip, so the level readout is
+            // diagnostic-only. The badge rides the gutter between the MP
+            // maximum's column and the right cap because that is the one part
+            // of the row nothing else claims - retail's own element pen is
+            // caller-supplied and unpinned, and a badge above the row lands
+            // on the member stacked over it. Art + placement are engine
+            // approximations; the selection is the ported part.
             if slot.status_sprite != 0 {
                 let label_s = status_element_label(slot.status_sprite);
                 let c = status_element_color(slot.status_sprite);
-                let w = 4 + label_s.len() as i32 * 6;
-                stage_rect(
-                    &mut text,
-                    STRIP_NAME_X,
-                    sy - 12,
-                    w,
-                    11,
-                    [c[0] * 0.35, c[1] * 0.35, c[2] * 0.35, 0.85],
-                );
-                stage_text(&mut text, font, label_s, STRIP_NAME_X + 2, sy - 11, c);
+                stage_text(&mut text, font, label_s, STRIP_BADGE_X, ty, c);
             }
         }
     }
