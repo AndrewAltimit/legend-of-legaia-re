@@ -145,6 +145,12 @@ impl World {
             a.battle.active_target = target;
             a.battle.action_category = 3;
         }
+        // Same swing stream the player-driven Attack confirm seeds - this is
+        // the path retail's no-input queue arm was written for in the first
+        // place (`FUN_801EED1C` selects it on the slot's AI control byte
+        // `(&DAT_8007BD10)[slot] == 4`). Without it the attack band reads its
+        // terminator on byte 0 and the turn passes without a swing.
+        self.seed_basic_attack_queue(slot, target);
         self.maybe_confuse_retarget(slot);
     }
 

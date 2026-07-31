@@ -12,7 +12,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
-- [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu)
+- [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [the no-directional-input attack queue](#the-no-directional-input-attack-queue) - what a basic Attack queues
 - [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
 
 ## One-paragraph overview
@@ -2484,8 +2484,79 @@ whole-string match against the character's Miracle command table, because that r
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
 (called from `FUN_801D0748` at `0x801D0E84`/`0x801D0ED0`). `FUN_801EED1C`'s non-player heads
-(the Tetsu-tutorial forced chain `0E 0F 0E 0F` at `0x801EEDE0..0x801EEE04`, the char-id-4
-auto-AI block below) share the same emission sites.
+(the Tetsu-tutorial forced chain `0E 0F 0E 0F` at `0x801EEDE0..0x801EEE04`, the
+no-directional-input arm below) share the same emission sites.
+
+### The no-directional-input attack queue
+
+`FUN_801EED1C` has one arm that produces a complete attack queue from **no player input at
+all**. Its head selects the arm on the acting slot's control byte
+`(&DAT_8007BD10)[slot] == 4` - an AI-driven party member - at `0x801EEE40..0x801EEE48`; the
+same table's `!= 4` fall-through is the ordinary player path that normalizes recorded arrows.
+
+The arm's own body is short, and every store in it is a queue store:
+
+```text
+801eef0c  jal   0x80056798        ; rand()
+801eef18  beq   v0,zero,801ef030  ; (rand & 1) == 0 -> actor[+0x1DE] = 0, no action
+801eef28  sb    v0,0x1de(v1)      ; else category 3 = Attack
+801eef2c  jal   0x80056798        ; rand()
+801eef3c  lbu   v1,0x1(v1)        ; ctx[+0x01] = seated monster count
+801eef6c  mfhi  v1                ;   rand % count
+801eef78  sb    v1,0x1dd(v0)      ; target = 3 + that, re-rolled while +0x14C == 0
+801eefb0  addiu v1,v1,-0x6cb8     ; 0x801C9348, the monster record-pointer table
+801eefc8  lbu   v1,0x1e(v0)       ; target record +0x1E
+801eefd0  beq   v1,v0,801ef028    ;   == 2 -> single low swing
+801eefd4  _li   v0,0xe
+801ef02c  _sb   v0,0x1df(a0)      ;            queue[0] = 0x0E
+801eefd8  jal   0x80056798        ; else rand()
+801eeff8  addiu v0,v0,0xc         ;   0x0C + (rand % 2)
+801ef000  _sb   v0,0x1df(v1)      ;            queue[0] = 0x0C | 0x0D
+801eeffc  jal   0x80056798        ; rand()
+801ef01c  addiu v0,v0,0xc         ;   0x0C + (rand % 2)
+801ef024  _sb   v0,0x1e0(v1)      ;            queue[1] = 0x0C | 0x0D
+```
+
+So a basic Attack with no directional input is **two arm swings**, each independently rolled
+Left (`0x0C`) or Right (`0x0D`), against an ordinary target - or **one low swing** (`0x0E`)
+against a target whose record `+0x1E` reads `2`. The `% 2` is retail's signed-safe
+`v0 - (v0/2)*2` idiom at `0x801EEFE0..0x801EEFF0`. No terminator is written: the window is
+already zeroed by the round-boundary clear, and `0x00` is what the attack band stops on.
+
+`+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F` and is not
+parsed by `legaia_asset::monster_archive`. The disassembly establishes its *effect* only - a
+class-`2` target is struck low instead of with the arm - which reads as the height / posture
+class behind retail's limb-vs-height "Miss", but nothing here pins that name.
+
+**Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
+two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from
+both party arming sites - the command menu's Attack confirm (and its no-valid-target fallback)
+and the auto / confused party turn `arm_party_physical`. The engine's Attack command is
+precisely this situation: it resolves a target and carries no direction input, so this is the
+retail kernel that applies. The record `+0x1E` class has no engine carrier, so the port passes
+`0` and always takes the two-arm-swing shape - retail's own answer for every non-class-`2`
+target.
+
+#### Why the seed is load-bearing, and where the damage goes
+
+State `0x1E` is a walk over the stream; it is not a strike primitive with a stream attached.
+An Attack that arms the band without seeding `actor[+0x1DF..]` reads its `0x00` terminator on
+byte 0 and drops to recovery on the first frame, so **the entire retail strike loop is skipped**
+- nothing is staged into `+0x1DA`, the equipment swing clips at action-table slots
+`0x0C..0x0F` never commit, no effect script is installed, and the move-power record the
+weapon-trail streak projects from never resolves (its key is this stream's first byte, read at
+`engine-core`'s `step_actor_effect_script`). The port had exactly that shape: damage still
+landed because `engine-core`'s live loop applied it through its own edge-triggered path, so
+nothing failed loudly.
+
+That leaves one reconciliation to state, because both halves can now fire. The authoritative
+seam is retail's: `FUN_801EC3E4` resolves one hit per **committed arms command** (SCUS calls it
+at `0x800478A0`), so the port applies one strike per swing byte the chain stages, keyed on the
+staged byte being a direction swing (`0x0C..=0x0F`). The live loop's edge-triggered
+`apply_basic_attack` now runs only when the chain consumed **zero** bytes - which is the
+monster band, whose swing count is the AGL budget (`FUN_801E9FD4`) rather than a queue. The
+staged byte is also what picks the defence half and the command power scalar for its own
+strike, so a low swing and an arm swing no longer resolve against the same number.
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
 

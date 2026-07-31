@@ -113,6 +113,9 @@ impl World {
                     a.battle.active_target = target;
                     a.battle.action_category = 3; // Attack
                 }
+                // ... and then seeds it, which is what makes the attack band's
+                // strike loop a loop instead of an immediate exit.
+                self.seed_basic_attack_queue(actor, target);
                 self.battle_ctx.active_actor = actor;
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
@@ -203,6 +206,7 @@ impl World {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
+                self.seed_basic_attack_queue(actor, target);
                 self.battle_ctx.active_actor = actor;
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
@@ -212,6 +216,67 @@ impl World {
                 self.battle_command = Some(session);
             }
         }
+    }
+
+    /// Seed party member `actor`'s action-parameter stream
+    /// (`actor[+0x1DF..]`) with the swing sequence a physical Attack executes,
+    /// and return how many swing bytes were written.
+    ///
+    /// **This is the byte stream the whole attack band runs on.** State
+    /// `0x1E` walks `actor[+0x1DF + actor[+0x15]]` until it reads the `0x00`
+    /// terminator, staging each byte as the next queued anim; with an
+    /// all-zero stream the loop reads its terminator on the first byte and
+    /// falls straight through to recovery, which is a strike-less turn - no
+    /// weapon swing staged, no equipment clip committed, no effect script
+    /// installed, and therefore no move-power record for the weapon-trail
+    /// pass to project from ([`World::move_fx_streak`], whose `action` key is
+    /// this stream's first byte).
+    ///
+    /// The bytes come from [`vm::battle_action::basic_attack_queue`], the port
+    /// of the one queue arm retail builds **without** running the Arts command
+    /// gauge (`FUN_801EED1C`'s no-directional-input arm): two independently
+    /// rolled Left/Right arm swings against an ordinary target, one low swing
+    /// against a [`vm::battle_action::LOW_SWING_TARGET_CLASS`] target. The
+    /// engine's Attack command is exactly that situation - it resolves a
+    /// target with no direction input - so it is the retail kernel that
+    /// applies, and the alternative (the player's own recorded chain, retail
+    /// `FUN_801DA34C` /
+    /// [`vm::battle_action::preseed_action_queue`]) still has no engine-side
+    /// carrier to read from.
+    ///
+    /// **Disclosed stand-in.** Retail picks between the two shapes on the
+    /// target monster record's `+0x1E` byte, which
+    /// `legaia_asset::monster_archive` does not parse and `MonsterDef` does
+    /// not carry, so [`Self::attack_swing_class_of`] answers `0` and the
+    /// live path always takes the two-arm-swing form. That is retail's own
+    /// behaviour for every non-class-`2` target; only the low-swing collapse
+    /// is unreachable until the byte is parsed.
+    ///
+    /// REF: FUN_801EED1C
+    pub(in crate::world) fn seed_basic_attack_queue(&mut self, actor: u8, target: u8) -> usize {
+        let swing_class = self.attack_swing_class_of(target);
+        let mut queue = [0u8; vm::battle_action::ACTION_QUEUE_CAP];
+        let written =
+            vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || self.next_rng());
+        if let Some(a) = self.actors.get_mut(actor as usize) {
+            let len = a.battle.params.len().min(queue.len());
+            a.battle.params[..len].copy_from_slice(&queue[..len]);
+            a.battle.strike_index = 0;
+        }
+        written
+    }
+
+    /// The target's swing class - retail's monster record `+0x1E`, read
+    /// record-direct through the `0x801C9348` pointer table by
+    /// `FUN_801EED1C`'s no-input attack arm.
+    ///
+    /// Always `0` today: the byte is not parsed by
+    /// `legaia_asset::monster_archive` and has no
+    /// [`crate::monster_catalog::MonsterDef`] field, so there is nothing to
+    /// read it from. `0` is the ordinary-target answer, which is what every
+    /// non-class-`2` monster gives in retail too.
+    fn attack_swing_class_of(&self, _target: u8) -> u8 {
+        0
     }
 
     /// Stamp (or clear) the retail target-select tint across the monster

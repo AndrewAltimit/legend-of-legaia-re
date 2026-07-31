@@ -268,6 +268,21 @@ impl World {
         // REF: FUN_801E09F8
         self.tick_battle_cast_census();
 
+        // Pre-step snapshot of the attack chain's cursor. The chain consumes
+        // one queued swing byte per frame it advances (`actor[+0x15]`, bumped
+        // at the same site that stages the byte), and resets the cursor to `0`
+        // on the frame it reads the terminator - so `strike_cursor_before` is
+        // both "did this frame stage a swing" and, at the terminator, "how
+        // many swings this action ran". Both readings are consumed by the
+        // strike reconciliation below the step.
+        let chain_actor = self.battle_ctx.active_actor as usize;
+        let chain_state_before = self.battle_ctx.action_state;
+        let strike_cursor_before = self
+            .actors
+            .get(chain_actor)
+            .map(|a| a.battle.strike_index)
+            .unwrap_or(0);
+
         let outcome = self.step_battle();
 
         // The all-pairs separation pass, on the line after the action SM -
@@ -313,12 +328,40 @@ impl World {
         // every host running the live loop. Hosts drain, they do not fold.
         self.pending_battle_events.splice(0..0, events);
 
+        // Chain-driven strike: this frame's `AttackChain` pass staged one
+        // queued swing byte, so one hit resolves for it. Retail's seam is the
+        // same one - `FUN_801EC3E4` runs once per committed arms command and
+        // applies the HP loss itself.
+        if chain_state_before == ActionState::AttackChain.as_byte()
+            && !art_strike_applied
+            && self.battle_ctx.active_actor as usize == chain_actor
+        {
+            let (cursor_now, staged) = self
+                .actors
+                .get(chain_actor)
+                .map(|a| (a.battle.strike_index, a.battle.queued_anim))
+                .unwrap_or((0, 0));
+            if cursor_now > strike_cursor_before && vm::battle_action::is_swing_command(staged) {
+                self.apply_one_basic_strike(staged);
+            }
+        }
+
         // Generic physical attack: deal damage on the strike-landed edge when
-        // no art strike already did.
+        // no art strike already did **and the chain itself struck nothing**.
+        //
+        // `strike_cursor_before` is the number of swing bytes this action's
+        // chain consumed (the terminator frame is the one that zeroes the
+        // cursor, and this is its pre-step value). A non-zero count means the
+        // per-swing arm above already applied every hit; firing here as well
+        // would charge the action one extra swing. A zero count is an actor
+        // whose stream was never seeded - today the monster band, whose swing
+        // count is the AGL budget rather than a queue - and that keeps its
+        // single edge-triggered application.
         if let StepOutcome::Transition { from, to } = outcome
             && from == ActionState::AttackChain.as_byte()
             && to == ActionState::AttackRecovery.as_byte()
             && !art_strike_applied
+            && strike_cursor_before == 0
         {
             self.apply_basic_attack();
         }
@@ -523,7 +566,7 @@ impl World {
             1
         };
         for _ in 0..strikes {
-            if !self.apply_one_basic_strike() {
+            if !self.apply_one_basic_strike(BASIC_ATTACK_COMMAND) {
                 break;
             }
         }
@@ -532,6 +575,14 @@ impl World {
     /// Apply a single generic physical strike from the active attacker. Returns
     /// `false` when there is no living opposing target (the caller stops the
     /// multi-swing loop). See [`Self::apply_basic_attack`].
+    ///
+    /// `command` is the arms command this swing executes - the byte the attack
+    /// chain staged out of the action queue (`0x0C`..`0x0F`). It picks the
+    /// defence half (`physical_defense_is_udf`) and the command power scalar,
+    /// so a low swing and a high swing resolve against different numbers.
+    /// Callers with no queued byte pass [`BASIC_ATTACK_COMMAND`], the arm
+    /// command, which is what the routine assumed unconditionally before the
+    /// queue existed.
     ///
     /// **A melee swing always connects.** The routine that resolves a physical
     /// hit, `FUN_801EC3E4`, contains no read of the accuracy / evasion
@@ -554,14 +605,14 @@ impl World {
     ///
     /// REF: FUN_801EC3E4 (no `+0x168` read), FUN_800402F4 (selector 9 = the
     /// action-interrupt roll, ported as `battle_formulas::accuracy_roll`)
-    fn apply_one_basic_strike(&mut self) -> bool {
+    fn apply_one_basic_strike(&mut self, command: u8) -> bool {
         let attacker = self.battle_ctx.active_actor as usize;
         let Some(target) = self.resolve_attack_target(attacker as u8) else {
             return false;
         };
         let target = target as usize;
         let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
-        let defense = self.physical_defense_of(target as u8, BASIC_ATTACK_COMMAND);
+        let defense = self.physical_defense_of(target as u8, command);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
         let target_guarding = self.battle_guarding.get(target).copied().unwrap_or(false);
@@ -581,8 +632,8 @@ impl World {
             attacker_atk: attack,
             attacker_hp: hp,
             defender_def: defense,
-            command_scalar: vm::battle_formulas::command_power_scalar(BASIC_ATTACK_COMMAND),
-            staged_anim: BASIC_ATTACK_COMMAND,
+            command_scalar: vm::battle_formulas::command_power_scalar(command),
+            staged_anim: command,
             defender_guarding: target_guarding,
             ..Default::default()
         };
