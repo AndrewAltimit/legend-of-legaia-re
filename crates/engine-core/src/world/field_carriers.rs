@@ -500,10 +500,19 @@ impl World {
 
     /// Resolve `formation_id` against [`Self::formation_table`] and flip from
     /// the world map into a battle, snapshotting the world-map context so
-    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`]. No-op when
-    /// the id isn't registered (the encounter is simply dropped).
+    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
+    ///
+    /// An unregistered id drops the encounter, and says so: the world-map roll
+    /// that produced it is destructive, so a silent return spends a fight
+    /// nothing ever sees - the same shape of defect that made nine consecutive
+    /// field rolls vanish.
     pub(crate) fn begin_world_map_encounter(&mut self, formation_id: u16) {
         let Some(formation) = self.formation_table.formation(formation_id).cloned() else {
+            log::error!(
+                "world-map encounter: formation {formation_id} is not registered \
+                 ({} rows in the table) - the roll is dropped",
+                self.formation_table.len()
+            );
             return;
         };
         self.field_return = Some(FieldReturnState {

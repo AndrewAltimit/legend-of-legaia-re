@@ -162,11 +162,15 @@ impl World {
                 .as_ref()
                 .is_some_and(|t| t.table().any_rollable());
         }
-        if self.encounter.is_none() {
-            return false;
-        }
+        // The region tracker answers first: its session bracket is installed
+        // lazily on the first roll, so an `encounter.is_none()` early return
+        // ahead of this branch reports "no encounters in this scene" for a
+        // region scene that has not rolled yet.
         if let Some(t) = self.field_region_tracker.as_ref() {
             return t.table().any_rollable();
+        }
+        if self.encounter.is_none() {
+            return false;
         }
         self.encounter
             .as_ref()

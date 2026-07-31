@@ -485,6 +485,17 @@ impl World {
             .map(|e| e.class)
     }
 
+    /// The `+1` sub-class of the same record - the tier half of the pair the
+    /// action commit stamps into `actor[+0x1E8]` / `[+0x1E9]`, which selects
+    /// which cue group an executing cast expands to.
+    pub(in crate::world) fn spell_table_sub_class(&self, move_id: u8) -> Option<u8> {
+        self.menu_text
+            .as_ref()
+            .and_then(|t| t.spell_names.as_ref())
+            .and_then(|t| t.entry(move_id))
+            .map(|e| e.sub_class)
+    }
+
     /// Roll a **capture-class boss cast** whose streamed module calls the
     /// guard-**respecting** wrapper `FUN_801DD4B0`.
     ///

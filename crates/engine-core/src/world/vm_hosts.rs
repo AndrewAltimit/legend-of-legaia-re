@@ -2042,19 +2042,17 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// subtype) - `World::item_effects`, the same table the field/battle item
     /// menus gate usability on. `None` without a disc image.
     ///
-    /// Its spell-side sibling `spell_sub_class_byte` is deliberately **not**
-    /// overridden: `legaia_asset::spell_names::SpellEntry` decodes `+0`, `+2`,
-    /// `+3` and `+4` of the 12-byte record but not `+1`, so the engine has no
-    /// carrier for a spell's sub-index. `spell_class_byte` above still supplies
-    /// `+0`, so a cast's *class* is right and only its tier reads as zero. Six
-    /// of the eight cue-group sites are tier-independent literals, and the
-    /// item leg - which is where the applier's `0..=8` effect classes actually
-    /// come from - carries a real tier, so the gap is: a healing/buff **spell**
-    /// (class `0`, `1`, `2` or `7`) picks the tier-`0` group, and
-    /// `battle_cast_cue`'s class-`7` sub-class gate never opens.
     fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
         let eff = self.world.item_effects.as_ref()?.effect(item_id)?;
         Some((eff.class, eff.tier))
+    }
+    /// The spell-side sibling: `+1` of the same 12-byte spell record
+    /// `spell_class_byte` reads `+0` from, so a cast's class *and* tier both
+    /// come from the disc. Together they are what the commit stamps into
+    /// `actor[+0x1E8]` / `[+0x1E9]`, and what decides a healing/buff spell's
+    /// cue group and `battle_cast_cue`'s class-`7` sub-class gate.
+    fn spell_sub_class_byte(&self, spell_id: u8) -> Option<u8> {
+        self.world.spell_table_sub_class(spell_id)
     }
     /// The two cue-group tables off PROT 0898, through the installed
     /// move-power catalog's [`EffectAuxTables`](legaia_asset::move_power::EffectAuxTables) -

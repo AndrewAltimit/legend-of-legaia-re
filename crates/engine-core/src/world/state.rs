@@ -2732,7 +2732,24 @@ impl World {
         self.pending_scripted_encounter = None;
         self.scripted_encounter_armed = false;
         self.scripted_formation_pending = false;
-        self.encounter = None;
+        // Reset the encounter session rather than dropping it. Dropping it
+        // left the per-region trackers installed with their sink gone: a
+        // region roll is destructive (it draws RNG, latches the pick and
+        // re-seeds the counter *before* returning), so every roll after a New
+        // Game was a fight that happened and was discarded, and
+        // `scene_can_roll_encounters` still answered `true` off the stale
+        // cache. The runtime self-heals now (`World::on_field_step` installs a
+        // bracket), but a live session must survive the reset for the scene's
+        // own table to keep driving it.
+        if let Some(session) = self.encounter.as_mut() {
+            session.reset();
+        }
+        if let Some(t) = self.field_region_tracker.as_mut() {
+            t.reset();
+        }
+        if let Some(t) = self.world_map_region_tracker.as_mut() {
+            t.reset();
+        }
         self.battle_end = None;
         self.game_over = false;
         self.play_time_seconds = 0;

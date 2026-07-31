@@ -234,19 +234,35 @@ stage **backdrop** (`legaia_asset::battle_backdrop::drawn_objects_tmd`
 object-list edit, drawn twice - the second copy pre-appended under the SCUS
 `DAT_80078B50` mirror-table transform with `append_scaled`'s winding flip),
 the **ground grid** (`build_ground_grid` + the `DAT_80078C1C` depth-cue far
-colour, exported though the page renderer cannot yet apply a per-draw cue),
+colour, attached as a per-draw cue so the browser grid fogs like the native
+one),
 **monster meshes** (`monster_archive::battle_render_mesh`) and the
 **assembled party battle forms** (`legaia_asset::battle_char_assembly`, real
 texture pools + battle palette; PROT 1204 mesh + PROT 1203 rest pose as the
 fallback ladder). Idle / action / swing / art-bank clips are installed on
 the world so the engine's own battle SM poses every actor; the page reads
 `play_battle_actor_pose` per frame and re-poses positions in place. The
-exported camera is the retail far "menu" framing (`FUN_801D5854` case 9,
-formation-sized depth) with the idle orbit - the native phase-scripted
-close-ups, facial-animation VRAM stamps, summon-creature spawn and
-battle-intro emitter are not ported to this host (disclosed in
+camera runs the **shared** phase script (`engine-vm::battle_cam_script`) that
+the native window runs - dialogue / menu-with-orbit / submenu close-up /
+action framing - and the page consumes a ready view-projection built by the
+retail GTE model rather than re-deriving one. Facial-animation VRAM stamps
+and the battle-intro emitter remain native-only (disclosed in
 `docs/subsystems/battle.md`). Battle exit drops the state and the page
 restores the untouched field VRAM.
+
+## Battle effects (`play_battle_fx`)
+
+The browser twin of the native window's per-frame FX block: it drains the
+effect-script spawns the battle tick queues (`World::drain_battle_effect_spawns`,
+both the direct `0x80`-flag form and the action-table form), then builds the
+draw work for the pools they feed - camera-facing **billboards** over the 2D
+`efect.dat` pool, the `etmd.dat` **effect models**, the move-VM **scene-graph
+parts** (summon + move FX), and the **summon creature**. Transforms are
+composed engine-side into ready 4x4 model matrices under the same
+`battle_vp * scale(4)` the native FX layers ride, so no page-side transform
+model exists to drift. The target-select **cursor tint** (`FUN_801DA6B4`'s
+three render words) rides along as a per-draw cue, and move-FX **sound cues**
+are classified through the shared `classify_cue` into the page's scheduler.
 
 ## Field merchant + banners (`play_shop`)
 

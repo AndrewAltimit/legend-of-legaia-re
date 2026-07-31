@@ -253,8 +253,9 @@ table pinned by `crates/engine-vm/tests/battle_grid_cue_scus_real.rs`;
 `engine-render` gained the per-draw `DrawCue` staging (retail sets the DPCS
 inputs per drawn object), and the play-window battle grid draws under the
 `SZ >> 2` ramp toward the per-stage far colour. The browser play page draws
-no battle 3D layer at all (a disclosed render gap in `play_battle.rs`), so
-there is no second host to wire until that layer exists.
+the same grid under the same table: `play_battle_ground_cue_json` hands the
+page the engine-resolved far colour and the page renderer attaches it as a
+per-draw cue, so both hosts fog from one parse of one table.
 
 ### Who calls the battle on-screen test `FUN_8005126C`?
 
