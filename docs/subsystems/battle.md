@@ -180,11 +180,49 @@ re-issues the same `0xC8`/`0xFF` close writes before reaching the `== 4` arm. So
 the close is safe to re-enter, and `5` is a terminal value rather than a
 one-frame transient.
 
-**Box placement.** The emitter `FUN_801F747C(text, style)` takes a style index
-`0..=9` into a jump table at `0x801F6B48`. `x` is either the fixed left margin
-`0x10` or centred at `0xA0 − width/2`; `y` is either the fixed top `0x0E` or
-bottom-anchored at `base − (lines × 14 − 4)` for `base` in `{0x9A, 0xB0, 0xCC}`.
-Styles `0, 1, 8, 9` do not wait for acknowledgement; `2..=7` do.
+**The prompt is a sized window, not loose text.** The emitter
+`FUN_801F747C(text, style)` measures its prompt before it places it -
+`FUN_8003CBA8(str)` returns the rendered line count, `FUN_80035F04(str)` the
+pixel width - and the shared tail at `0x801F75B8` passes both on to the SCUS
+text-actor registrar as a full rect:
+
+```
+FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)
+             a0         a1   a2   a3 +0x10 +0x14  +0x18       +0x1C
+```
+
+`FUN_8003541C` links the node into a list sorted on its `+0x08` key and stores
+the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the priority at
+`+0x1D`, then draws it (`FUN_80030628`). So the box's *size* is measured, and
+only its *corner* comes from the style table.
+
+**Box placement.** The style index `0..=9` selects a jump table at
+`0x801F6B48`. `x` is either the fixed left margin `0x10` or centred at
+`0xA0 − width/2`; `y` is either the fixed top `0x0E` or bottom-anchored at
+`base − (lines × 14 − 4)` for `base` in `{0x9A, 0xB0, 0xCC}` - the same height
+expression the rect carries. Styles `0, 1, 8, 9` do not wait for
+acknowledgement; `2..=7` do.
+
+The wait is not a flag on one actor. The emitter initialises `s4 = 1` and only
+the `0 / 1 / 8 / 9` arms clear it, because table slots `8` and `9` are the `2`
+and `3` arms entered one instruction later - `0x801F7528` / `0x801F7538`, past
+the `move s4, zero`. `s4` then picks the registered actor's sort key (`1 + s4`)
+and priority (`0x44 − s4`), so a waiting prompt is a *different* text actor
+from a self-dismissing one.
+
+**What the frame looks like.** A retail capture of the drill prompt (style `0`,
+two lines) shows the same gold double-line 9-slice frame and blue gradient
+interior the dialog reading box wears, sized to the text. The measured
+footprint agrees with the rect on every axis: centre rect `(0x10, 0x0E, w, 24)`
+inflated 8 px on each side gives an outer left edge of `8` and an outer height
+of `40`, and the text rows sit at the rect origin on the 14-px pitch. The port
+therefore frames the prompt with the reading box's own chrome builder at
+`BoxStyle::box_rect` - see
+[`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs),
+drawn by both hosts through the 320x240 stage transform (the rect is in retail
+framebuffer pixels, not surface pixels). The confirm hand on a waiting box is
+a port affordance borrowed from the dialog pager: what retail's slot-`2` actor
+draws to signal the wait is not decoded.
 
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only

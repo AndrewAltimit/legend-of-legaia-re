@@ -961,3 +961,36 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.mode == SceneMode::Battle)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use legaia_engine_core::battle_tutorial::BoxStyle;
+
+    /// The tutorial box rect is in 320x240 stage space, so the page's own
+    /// stage transform must carry it - the same law the native window applies
+    /// via `save_select_stage`. Pinned at the browser play canvas's real
+    /// shape (4:3, not an integer multiple of the stage) because that is
+    /// exactly where reading the rect as surface pixels went wrong.
+    #[test]
+    fn tutorial_rect_rides_the_page_stage_transform() {
+        let (x, y, w, h) = BoxStyle::from_raw(0).unwrap().box_rect(177, 2);
+        assert_eq!((x, y, w, h), (0x10, 0x0E, 177, 24));
+
+        let ((ox, oy), scale) = crate::play_menu::stage_transform(862, 646);
+        assert_eq!((ox, oy, scale), (111, 83, 2));
+        // Placed on the stage the box is inset by the letterbox plus the
+        // scaled margin; read as surface pixels it would sit at (16, 14) -
+        // hard against the corner.
+        assert_eq!(ox + x as i32 * scale as i32, 143);
+        assert_eq!(oy + y as i32 * scale as i32, 111);
+
+        // And it stays inside the stage at every supported scale.
+        for (sw, sh) in [(320u32, 240u32), (960, 720), (1920, 1080)] {
+            let ((ox, oy), scale) = crate::play_menu::stage_transform(sw, sh);
+            let right = ox + (x as i32 + w as i32) * scale as i32;
+            let bottom = oy + (y as i32 + h as i32) * scale as i32;
+            assert!(right <= sw as i32, "{sw}x{sh}: right {right}");
+            assert!(bottom <= sh as i32, "{sw}x{sh}: bottom {bottom}");
+        }
+    }
+}

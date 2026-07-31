@@ -23,6 +23,9 @@ navigation logic depends on the GPU backend.
   `FUN_801EAD98`).
 - `ui_title_save` - title menu, 9-slice window chrome, save-select, save-slot
   grid + info panel, "Now checking" dialog.
+- `battle_tutorial_box` - the sparring-tutorial prompt window: text rows at the
+  emitter's measured rect plus that rect's window skin. Stage-space, so both
+  hosts run it through their stage transform.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.

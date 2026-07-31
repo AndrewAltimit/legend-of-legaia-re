@@ -129,6 +129,33 @@ mod tests {
         assert!(draws.iter().all(|d| d.dst.0 >= rect.0));
     }
 
+    /// Regression: the rows are stage pixels and MUST be run through the
+    /// stage transform. Emitted raw they land in the surface's top-left
+    /// corner at anything but a 1x 320x240 window - which is how they shipped
+    /// before this module existed.
+    #[test]
+    fn rows_ride_the_stage_transform_on_a_non_320x240_surface() {
+        let font = legaia_font::Font::placeholder();
+        let rect = (0x10, 0x0E, 177, 24);
+        let mut draws = battle_tutorial_text_draws_for(&font, "ab", rect);
+        let raw_x = draws.iter().map(|d| d.dst.0).min().unwrap();
+        let raw_y = draws.iter().map(|d| d.dst.1).min().unwrap();
+        // A 960x720 surface: scale 3, stage exactly fills, origin (0, 0).
+        scale_stage_text_draws(&mut draws, (0, 0), 3);
+        assert_eq!(draws.iter().map(|d| d.dst.0).min().unwrap(), raw_x * 3);
+        assert_eq!(draws.iter().map(|d| d.dst.1).min().unwrap(), raw_y * 3);
+        assert!(draws.iter().all(|d| d.dst.2 % 3 == 0 && d.dst.3 % 3 == 0));
+
+        // An 862x646 surface: scale 2, stage 640x480 centred at (111, 83).
+        let mut draws = battle_tutorial_text_draws_for(&font, "ab", rect);
+        scale_stage_text_draws(&mut draws, (111, 83), 2);
+        assert_eq!(
+            draws.iter().map(|d| d.dst.0).min().unwrap(),
+            111 + raw_x * 2
+        );
+        assert_eq!(draws.iter().map(|d| d.dst.1).min().unwrap(), 83 + raw_y * 2);
+    }
+
     /// The measured width is the widest line, which is what the emitter's
     /// centring arms divide in half.
     #[test]
