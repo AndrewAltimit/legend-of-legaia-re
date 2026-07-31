@@ -223,18 +223,24 @@ pub enum BattleCamPhase {
 /// | Done | `0x50..=0x5A` | case `6`/`8`, under a **bounded** tail timer |
 /// | Run | `0x64..=0x67` | case `9` + the orbit (`jal 0x801d5854`, `li a1,0x9` at `0x801E5BDC`) |
 ///
-/// The Done band is the one the port cannot copy byte-for-byte. Retail seeds
-/// `ctx[+0x6D8] = 0x3C` in the `0x50` arm and decrements it by the frame step
-/// each `0x51` pass, leaving for `0x5A` when it goes negative - so retail's
-/// per-action framing survives at most ~60 display frames past the strike.
-/// The port's Done band has no such timer: `DoneFadeDown` waits on the HP-bar
-/// display cursor settling, which is unbounded, and a measured `--no-player-
-/// battle` fight spends **half its frames** resting there. Classifying the
-/// port's Done band as "an action is executing" therefore pins the camera in
-/// the per-action close-up for the whole fight - one actor filling the frame,
-/// the rest of the formation off it or behind the eye, and no idle orbit -
-/// which is the opposite of what retail's bounded tail produces. The Done
-/// band is idle here, and that is the port's stand-in for retail's timer.
+/// The Done band is the one the port classifies differently, and the reason
+/// is a *duration*, not a missing timer. Retail seeds `ctx[+0x6D8] = 0x3C` in
+/// the `0x50` arm and decrements it by the frame step each `0x51` pass,
+/// leaving for `0x5A` when it goes negative - at most ~60 display frames of
+/// per-action framing past the strike. **The port has that timer too**
+/// (`done_cleanup` seeds it, `done_fade_down` ticks it), and it is bounded:
+/// ~39 display frames per turn, measured.
+///
+/// What differs is how much of a *fight* that band owns. Two measurements of
+/// the same `--no-player-battle` rikuroa fight, both correct and easy to read
+/// as contradicting each other: **~39 frames per turn** (the timer works) and
+/// **133 of ~270 sampled frames**, i.e. about half the fight (several turns,
+/// each with a Done band long relative to everything else). Classifying the
+/// band as "an action is executing" therefore pins the camera in the
+/// per-action close-up for roughly half the fight - one actor filling the
+/// frame, the rest of the formation off it or behind the eye, and no idle
+/// orbit. The band is idle here for that reason. Re-measure before moving it:
+/// the per-turn number alone makes the change look free, and it is not.
 ///
 /// The Run band is idle on retail's own authority, not as a deviation: both
 /// the category-`5` seed arm and the `0x50`/`0x51` arms skip the framing call
@@ -251,7 +257,7 @@ pub const fn action_state_frames_the_action(action_state: u8) -> bool {
         action_state,
         // Setup band: nothing committed yet (`0x0A` is port-only).
         0x00 | 0x0A | 0x0B
-        // Done band: retail's bounded action tail, unbounded in the port.
+        // Done band: bounded on both sides, but ~half of a fight's frames.
         | 0x50 | 0x51 | 0x52 | 0x5A
         // Run band: retail arms case 9 + the orbit here itself.
         | 0x64
@@ -2536,11 +2542,11 @@ mod tests {
     ///
     /// The band boundaries are `FUN_801E295C`'s own (see
     /// [`action_state_frames_the_action`]). What this pins is the one place
-    /// the port must differ: `DoneFadeDown` (`0x51`) is retail's *bounded*
-    /// action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`) but the port's
-    /// unbounded HP-bar settle, so classifying it as "an action is
-    /// executing" hands it the per-action close-up for as long as the bar
-    /// takes to drain.
+    /// the port classifies differently: `DoneFadeDown` (`0x51`) is retail's
+    /// bounded action tail (`ctx[+0x6D8]`, seeded `0x3C` at `0x50`), and the
+    /// port's is bounded too - but it still owns about half of a fight's
+    /// frames, so classifying it as "an action is executing" hands it the
+    /// per-action close-up for half the battle.
     #[test]
     fn the_done_band_does_not_own_the_action_framing() {
         for idle in [0x00u8, 0x0A, 0x0B, 0x50, 0x51, 0x52, 0x5A, 0xFD, 0xFE, 0xFF] {
