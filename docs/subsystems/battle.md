@@ -2680,6 +2680,36 @@ field in the texture pages each style's packets name; and the emitted
 `ScreenPrim`s composite over the scene through
 `RenderTarget::SceneWithScreenPrims`.
 
+### The window has no field in it
+
+Retail's transition owns the whole frame - its init writes game mode `9` and
+the field renderer does not run again until the completion arm hands over
+(details, incl. the capture chain and the per-style fade blend modes, on
+[`cutscene.md`](cutscene.md#the-transition-owns-the-whole-frame)). The port has
+no such mode: it composites the transition's primitives *over a live scene*,
+because that is the only render target that can put a strip over a field.
+
+`battle_intro::backdrop_prim` is what stands in for the absent mode - an opaque
+display-rect quad at the farthest OT bucket, emitted on every frame of the
+window as `prims[0]`, including the frames a style draws nothing on. Without
+it two things went wrong at once, and only the second was obvious: a patch
+still at its rest pose drew additively over an identical live copy of itself
+and read at double brightness, and once the last particle expired the emitter
+returned an empty list - which put the host back on the non-compositing arm and
+presented a clean, still-animating field for the rest of the window.
+
+The dry stretch itself is retail's. `FUN_801D0370` decays a moving particle's
+colour by `-0x50505` per frame and the tick's top-byte test masks it for good
+once that underflows, so the spin-up field expires around a third of the way in
+and the fade ramp does not start until `total - 0x18`. Retail spends the gap on
+the CD: phase 5 issues the battle-data read and phases 3 and 6 sit in
+`FUN_8003DE7C`'s "READ WAIT" poll, and because the completion arm needs
+`clock > total` **and** `ready == 3`, the 132 frames are a floor rather than a
+length. The port's loads are instant, so the floor is the whole window and the
+gap draws as black - the same thing retail draws, for a reason the port does
+not have. `every_transition_frame_covers_the_screen` in
+`crates/engine-render/src/tests/battle_intro_emitter.rs` pins the invariant.
+
 The session's `Transition` phase length **is** the intro's own
 `DAT_801D2458` - 132 display frames, 252 for the swirl
 (`battle_intro_styles::intro_duration_frames`,

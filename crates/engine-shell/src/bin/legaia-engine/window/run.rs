@@ -606,6 +606,31 @@ pub(super) fn cmd_play_window_with_record(
     // flag overrides whatever composition the boot save carried.
     if let Some(spec) = party {
         let slots = parse_party_spec(spec)?;
+        // Seed the roster slots the spec names before installing the
+        // composition. `--seed-party` seeds retail's New Game roster, which is
+        // Vahn alone (correct for the early game), so a `--party vahn,noa,gala`
+        // asked three battle ordinals to resolve to roster slots 1 and 2 that
+        // did not exist: both HUD panels read `P2 0/0` / `P3 0/0` and neither
+        // actor got a live HP / SPD mirror. Fill them from the same SCUS
+        // template rows retail seeds those characters from when they join.
+        // Records already carrying stats (a loaded save) are left alone.
+        if let Some(starting) = session.starting_party.clone() {
+            let seeded = session
+                .host
+                .world
+                .seed_party_members(&starting, &slots.clone());
+            if seeded > 0 {
+                log::info!(
+                    "play-window: --party seeded {seeded} roster slot(s) from the SCUS \
+                     new-game template"
+                );
+            }
+        } else {
+            log::warn!(
+                "play-window: --party cannot seed absent roster slots - the SCUS \
+                 starting-party template was not readable from this boot source"
+            );
+        }
         let world = &mut session.host.world;
         world.set_active_party(slots.clone());
         if world.active_party.len() != slots.len() {
@@ -614,6 +639,22 @@ pub(super) fn cmd_play_window_with_record(
                  (3 on-screen positions)",
                 world.active_party.len()
             );
+        }
+        // Fold the freshly-seeded records into the battle stat mirrors
+        // (attack / defence split / SPD / AP base). `set_active_party` copies
+        // HP / MP only; without this the new members fight at zero attack.
+        world.seed_party_battle_stats();
+        // The MP ceiling the battle HUD draws is the only one the world
+        // carries and nothing else seeds it from a record.
+        for member in 0..world.active_party.len() {
+            let rslot = world.party_roster_slot(member);
+            let mp_max = world
+                .roster
+                .members
+                .get(rslot)
+                .map(|r| r.hp_mp_sp().mp_max)
+                .unwrap_or(0);
+            world.set_character_max_mp(member as u8, mp_max);
         }
         log::info!(
             "play-window: present party = {:?} (roster slots, battle order)",

@@ -1055,7 +1055,7 @@ mod battle_cam_shared_tests {
 
         let mut slot = None;
         for f in 0..=6u64 {
-            script::drive(&mut slot, true, inputs, f * 2);
+            script::drive(&mut slot, true, inputs, f * 2, None);
         }
         let yaw = slot.as_ref().unwrap().pose().yaw.rem_euclid(4096.0);
         // `0x8F0 - actor[+0x46]` (the submenu close-up's yaw base).

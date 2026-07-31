@@ -75,6 +75,23 @@ For each live child, one flat textured **semi-transparent quad** (9-word GPU pac
 - **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size), projected through `FUN_800195A8` and inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
 - **UV corners**: base/extent from the 8-byte atlas entry, corner order swapped per the child's random mirror bits; CLUT from atlas `+4`, tpage from atlas `+6`.
 
+The semi-transparency is a property of the **prim code**, not of the atlas entry. `0x2E`
+is GP0 `0x20 | quad | textured | semi-transparent`, so every effect child blends,
+whatever page it names - and the page's own ABR bits then choose how. The `efect.dat`
+inline atlas's two entries name pages `0x25` (`(320,0)`, ABR `1` = `B + F`) and `0x66`
+(`(384,0)`, ABR `3` = `B + 0.25F`), both against CLUT rows 474/475 of the flame atlas.
+
+That matters to a port because the enable has nowhere to come from except the code byte:
+the atlas stores its page in a single byte, so a billboard builder that pushes the page
+verbatim into a TSB word can never set the port's prim-ABE bit, and the whole effect
+system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end (`0xC73F` =
+`(248, 200, 136)`) is a pale tan; drawn additively those texels are a glow over a dark
+arena, and drawn opaque they are solid tan blobs. Index `0` is `0x0000` and discards
+either way, so the blobs keep a puff-shaped silhouette - which is what made them read as
+stray geometry rather than as mis-blended sprites. Port: `effect_sprite_tsb` in the
+native window's `geometry.rs`, pinned by
+`every_effect_billboard_corner_is_semi_transparent`.
+
 ## Lifetime + render bridge (engine port)
 
 The algebra above is executed by `Pool::tick_retail` (pass 1: master spawn

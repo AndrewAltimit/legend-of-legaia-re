@@ -294,8 +294,31 @@ pub struct IntroFadeRamp {
     pub lead: i32,
     /// Multiplier on the frames-past-threshold delta.
     pub slope: i32,
-    /// The second argument of `FUN_80024EE4` - the fade quad's OT depth.
-    pub depth: u8,
+    /// The second argument of `FUN_80024EE4` - the quad's **GPU
+    /// semi-transparency (ABR) mode**, `1` or `2` across the five arms.
+    ///
+    /// It is not an OT depth, which is what this field used to be called.
+    /// `FUN_80024EE4` takes the OT layer in `a0` (always
+    /// [`INTRO_FADE_LAYER`]) and folds `a1` into the *draw-mode* packet it
+    /// pushes ahead of the quad:
+    ///
+    /// ```text
+    /// 80024fb0  sll  a3,s3,0x5      ; s3 = a1
+    /// 80024fbc  ori  a3,a3,0xe
+    /// 80024fcc  jal  0x80059010     ; SetDrawMode(p, dfe=0, dtd=0, tpage=a3, tw=0)
+    /// ```
+    ///
+    /// GP0 tpage bits `5..=6` are the ABR field, so `a1` lands there
+    /// verbatim: `1` = `B + F` (additive) and `2` = `B - F` (subtractive).
+    /// The quad's own command byte is `0x2B` (`lui v0,0x2b00` at
+    /// `0x80024f50`) - an untextured **semi-transparent** four-point
+    /// polygon - so the mode is always live.
+    ///
+    /// With the ramp colour being `level` smeared across all three channels,
+    /// this is what decides where a style's tail lands: an `abr == 1` style
+    /// ramps to an additive **white-out**, an `abr == 2` style to a
+    /// subtractive **fade to black**.
+    pub abr: u8,
 }
 
 /// The five ramps, indexed by [`IntroStyle::selector`]. Read off the arms at
@@ -303,47 +326,55 @@ pub struct IntroFadeRamp {
 ///
 /// Style `0` is the one with two forms: its arm branches on
 /// `DAT_801D2464 == 2` - the same tile sub-style global
-/// [`crate::battle_intro_tiles::TileSubStyle`] names - and takes depth `1`
-/// there instead of `2`. See [`intro_fade`].
+/// [`crate::battle_intro_tiles::TileSubStyle`] names - and takes ABR `1`
+/// there instead of `2`, i.e. that sub-style whites out where the plain form
+/// fades to black. See [`intro_fade`].
 pub const INTRO_FADE_RAMPS: [IntroFadeRamp; INTRO_STYLE_COUNT as usize] = [
     IntroFadeRamp {
         lead: 0x18,
         slope: 12,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x18,
         slope: 16,
-        depth: 1,
+        abr: 1,
     },
     IntroFadeRamp {
         lead: 0x1C,
         slope: 16,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x40,
         slope: 4,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x20,
         slope: 10,
-        depth: 1,
+        abr: 1,
     },
 ];
 
 /// The first argument every fade call passes (`li a0,0x2` on all five arms).
 pub const INTRO_FADE_LAYER: u8 = 2;
 
-/// One `FUN_80024EE4(layer, depth, rgb)` call - the full-screen fade quad the
+/// One `FUN_80024EE4(layer, abr, rgb)` call - the full-screen fade quad the
 /// second switch pushes after the style body has run.
+///
+/// The emitter builds a five-word (`0x05000000` tag) untextured quad with
+/// command byte `0x2B` over the whole display rect, then a `SetDrawMode`
+/// packet carrying the ABR mode; both go into OT layer `a0`. So the fade is
+/// one blended full-screen quad, and [`Self::abr`] - not the colour - is what
+/// decides whether it darkens or brightens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroFade {
-    /// `a0`, always [`INTRO_FADE_LAYER`].
+    /// `a0`, always [`INTRO_FADE_LAYER`] - the **OT layer**, the same for
+    /// every style.
     pub layer: u8,
-    /// `a1` - [`IntroFadeRamp::depth`].
-    pub depth: u8,
+    /// `a1` - [`IntroFadeRamp::abr`], the GPU semi-transparency mode.
+    pub abr: u8,
     /// The clamped `0..=0xFF` ramp level, before it is smeared across the
     /// three channels.
     pub level: u8,
@@ -365,7 +396,7 @@ pub struct IntroFade {
 /// level zero.
 ///
 /// `sub_style` is `DAT_801D2464`; only [`IntroStyle::ScatterParticles`] reads
-/// it, and only to choose between fade depth `1` (when it is `2`) and `2`.
+/// it, and only to choose between ABR `1` (when it is `2`) and `2`.
 ///
 /// PORT: FUN_801CF5BC (the second switch)
 /// REF: FUN_80024EE4 - the fade-quad emitter this resolves the arguments of.
@@ -381,14 +412,14 @@ pub fn intro_fade(
     }
     let raw = (elapsed + ramp.lead - total_duration).wrapping_mul(ramp.slope);
     let level = raw.clamp(0, 0xFF) as u8;
-    let depth = match style {
+    let abr = match style {
         IntroStyle::ScatterParticles if sub_style == 2 => 1,
-        _ => ramp.depth,
+        _ => ramp.abr,
     };
     let l = u32::from(level);
     Some(IntroFade {
         layer: INTRO_FADE_LAYER,
-        depth,
+        abr,
         level,
         rgb: l | (l << 8) | (l << 16),
     })
@@ -986,7 +1017,7 @@ mod tests {
         let f = intro_fade(IntroStyle::Curtain, 0, total - 0x40 + 1, total).unwrap();
         assert_eq!(f.level, 4, "one frame past the lead, slope 4");
         assert_eq!(f.layer, INTRO_FADE_LAYER);
-        assert_eq!(f.depth, 2);
+        assert_eq!(f.abr, 2, "subtractive - the curtain fades to black");
     }
 
     #[test]
@@ -996,7 +1027,7 @@ mod tests {
         let f = intro_fade(IntroStyle::SpinUpParticles, 0, total - 0x18 + 5, total).unwrap();
         assert_eq!(f.level, 80);
         assert_eq!(f.rgb, 0x0050_5050);
-        assert_eq!(f.depth, 1);
+        assert_eq!(f.abr, 1, "additive - the spin-up whites out");
     }
 
     #[test]
@@ -1009,13 +1040,13 @@ mod tests {
     }
 
     #[test]
-    fn only_the_scatter_style_reads_the_sub_style_and_only_for_its_depth() {
+    fn only_the_scatter_style_reads_the_sub_style_and_only_for_its_blend() {
         let total = 100;
         let at = total - 0x18 + 2;
         let plain = intro_fade(IntroStyle::ScatterParticles, 0, at, total).unwrap();
         let sub2 = intro_fade(IntroStyle::ScatterParticles, 2, at, total).unwrap();
-        assert_eq!(plain.depth, 2);
-        assert_eq!(sub2.depth, 1, "DAT_801D2464 == 2 takes the other arm");
+        assert_eq!(plain.abr, 2);
+        assert_eq!(sub2.abr, 1, "DAT_801D2464 == 2 takes the other arm");
         assert_eq!(plain.level, sub2.level, "the ramp itself is unaffected");
         // No other style branches on it.
         for style in [

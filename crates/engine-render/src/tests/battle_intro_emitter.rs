@@ -95,6 +95,18 @@ fn intro(style: IntroStyle, total: i32) -> BattleIntro {
     )
 }
 
+/// A frame's primitives with the unconditional backdrop (`prims[0]`, see
+/// [`crate::battle_intro::backdrop_prim`]) dropped, so the positional
+/// assertions below index the style's own emission.
+fn style_prims(f: &crate::battle_intro::IntroFrame) -> &[ScreenPrim] {
+    assert!(
+        matches!(f.prims[0], ScreenPrim::Flat(q) if q.ot_index == u32::MAX
+            && !q.semi_transparent),
+        "prims[0] must be the backdrop"
+    );
+    &f.prims[1..]
+}
+
 /// The 5-bit source channel of the synthetic field frame at `(x, y)`.
 ///
 /// A high-frequency ramp on all three channels: red walks with x, green with
@@ -193,7 +205,7 @@ fn the_curtain_emits_two_strips_per_scanline_plus_the_visible_columns() {
     // Every scanline is drawn in two halves, and at clock zero no column is
     // culled yet.
     assert_eq!(
-        frame.prims.len(),
+        style_prims(&frame).len(),
         (2 * CURTAIN_ROWS + CURTAIN_COLS) as usize,
         "480 row strips + 320 column strips"
     );
@@ -207,11 +219,12 @@ fn the_row_strips_are_the_identity_on_the_first_frame() {
     let frame = it.tick(0, 1);
     // The row pass emits first, two quads per scanline: left at x 0 width
     // 0xC0, right at x 0xC0 width 0x80.
+    let strips = style_prims(&frame);
     for row in 0..CURTAIN_ROWS as usize {
-        let ScreenPrim::Textured(l) = frame.prims[row * 2] else {
+        let ScreenPrim::Textured(l) = strips[row * 2] else {
             panic!("row {row} left half is not textured")
         };
-        let ScreenPrim::Textured(r) = frame.prims[row * 2 + 1] else {
+        let ScreenPrim::Textured(r) = strips[row * 2 + 1] else {
             panic!("row {row} right half is not textured")
         };
         assert_eq!(l.xy[0], (0, row as i16));
@@ -228,7 +241,7 @@ fn the_rows_pull_apart_from_the_screen_centre_as_the_clock_runs() {
     let mut it = intro(IntroStyle::Curtain, 400);
     let first = it.tick(0, 1);
     let later = it.tick(28, 1);
-    let y = |f: &crate::battle_intro::IntroFrame, row: usize| match f.prims[row * 2] {
+    let y = |f: &crate::battle_intro::IntroFrame, row: usize| match style_prims(f)[row * 2] {
         ScreenPrim::Textured(q) => q.xy[0].1,
         _ => panic!(),
     };
@@ -256,7 +269,7 @@ fn the_column_pass_draws_outside_the_display_and_that_is_retails() {
     // screen, and it is the half the pixel test below checks.
     let mut it = intro(IntroStyle::Curtain, 200);
     let frame = it.tick(0, 1);
-    let cols: Vec<_> = frame.prims[2 * CURTAIN_ROWS as usize..]
+    let cols: Vec<_> = style_prims(&frame)[2 * CURTAIN_ROWS as usize..]
         .iter()
         .filter_map(|p| match p {
             ScreenPrim::Textured(q) => Some(q.xy[0].0),
@@ -287,6 +300,111 @@ fn the_fade_rides_the_same_clock_and_arrives_as_a_full_screen_quad() {
     assert_eq!(q.xy[3], (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16));
     assert!(q.semi_transparent);
     assert_eq!(q.color[..3], [4, 4, 4]);
+    // `FUN_80024EE4`'s second argument is the GPU semi-transparency mode, not
+    // an OT depth: it reaches the GPU through the `SetDrawMode` packet's tpage
+    // bits 5..=6 (`sll a3,s3,0x5 ; ori a3,a3,0xe`). The curtain's arm passes
+    // `2` = `B - F`, so its tail is a subtractive fade to black. The OT bucket
+    // is `a0`, the layer every arm shares.
+    assert_eq!(q.abr_mode, 2, "the curtain fades subtractively");
+    assert_eq!(q.ot_index, u32::from(fade.layer));
+}
+
+/// The two additive styles must reach a real white-out, not a half blend.
+///
+/// `INTRO_FADE_RAMPS` gives [`IntroStyle::SpinUpParticles`] and
+/// [`IntroStyle::Swirl`] ABR `1` (`B + F`), and the ramp colour is the level
+/// smeared across all three channels - so their tails saturate to white. Read
+/// as an OT depth (which is what the field used to be called) both landed on
+/// ABR `0`, `0.5B + 0.5F`, and the transition's last frames stayed a washed
+/// grey with the outgoing frame still legible through them.
+#[test]
+fn the_additive_styles_white_out_and_the_rest_fade_to_black() {
+    for (style, want_abr) in [
+        (IntroStyle::ScatterParticles, 2u8),
+        (IntroStyle::SpinUpParticles, 1),
+        (IntroStyle::Curtain, 2),
+        (IntroStyle::Swirl, 1),
+    ] {
+        let total = 200;
+        let mut it = intro(style, total);
+        // Far past every style's lead, so the ramp has saturated.
+        let f = it.tick(total as i16 + 8, 1);
+        let fade = f.fade.unwrap_or_else(|| panic!("{style:?} lost its fade"));
+        assert_eq!(fade.level, 0xFF, "{style:?} must saturate");
+        let ScreenPrim::Flat(q) = f.prims.last().copied().unwrap() else {
+            panic!("{style:?}: the fade quad must be last")
+        };
+        assert_eq!(q.abr_mode, want_abr, "{style:?} blend mode");
+        assert_eq!(q.color[..3], [0xFF, 0xFF, 0xFF], "{style:?} ramp colour");
+    }
+}
+
+/// No frame of the transition may be empty, at any point in the window.
+///
+/// This is the whole shape of the field-to-battle hole. The host composites
+/// the emitter's primitives *over a live field scene*, and it only takes the
+/// compositing arm when the list is non-empty - so a frame that emitted
+/// nothing presented the field, untouched and still animating, in the middle
+/// of a transition. For [`IntroStyle::SpinUpParticles`] that was most of the
+/// window: `FUN_801D0370` decays every moving particle's colour by
+/// `-0x50505` per frame and the tick's own top-byte test masks a particle for
+/// good once it underflows, so the last patch expires around a third of the
+/// way in and the ramp does not start until `total - 0x18`.
+///
+/// Retail has no hole to fill, because it has no field to show: the intro's
+/// init writes game mode `9` into `_DAT_8007B83C` and the field renderer never
+/// runs again for the rest of the window. [`backdrop_prim`] is the port's
+/// stand-in for that, which is why it is unconditional.
+///
+/// [`backdrop_prim`]: crate::battle_intro::backdrop_prim
+#[test]
+fn every_transition_frame_covers_the_screen() {
+    for style in [
+        IntroStyle::ScatterParticles,
+        IntroStyle::SpinUpParticles,
+        IntroStyle::TileShatter,
+        IntroStyle::Curtain,
+        IntroStyle::Swirl,
+    ] {
+        let total = 132;
+        let mut it = intro(style, total);
+        let mut empty_style_frames = 0;
+        for clock in 0..=total as i16 {
+            let f = it.tick(clock, 1);
+            let ScreenPrim::Flat(b) = f.prims[0] else {
+                panic!("{style:?} clock {clock}: prims[0] is not a flat quad")
+            };
+            assert_eq!(
+                b.ot_index,
+                u32::MAX,
+                "{style:?} clock {clock}: backdrop must own the farthest bucket"
+            );
+            assert!(
+                !b.semi_transparent,
+                "{style:?} clock {clock}: backdrop must be opaque"
+            );
+            assert_eq!(
+                (b.xy[0], b.xy[3]),
+                ((0, 0), (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16)),
+                "{style:?} clock {clock}: backdrop must cover the display"
+            );
+            if !f.style_drawn {
+                empty_style_frames += 1;
+            }
+        }
+        // Non-vacuous: the defect only exists because some styles really do
+        // spend frames drawing nothing of their own. If a style ever stopped
+        // having those, this test would still hold but would stop meaning
+        // anything for it - so assert at least one style has them.
+        if style == IntroStyle::SpinUpParticles {
+            assert!(
+                empty_style_frames > 10,
+                "the spin-up style is expected to run dry mid-window \
+                 (got {empty_style_frames} frames with no style geometry); \
+                 if that changed, re-derive what this test is guarding"
+            );
+        }
+    }
 }
 
 #[test]
@@ -303,9 +421,15 @@ fn every_style_skips_its_first_frame_and_keeps_its_fade_schedule() {
         let mut it = intro(style, total);
         let early = it.tick(0, 1);
         assert!(!early.style_drawn, "{style:?} must not draw frame one");
+        assert_eq!(
+            early.prims.len(),
+            1,
+            "{style:?} emitted frame-one geometry beyond the backdrop"
+        );
         assert!(
-            early.prims.is_empty(),
-            "{style:?} emitted frame-one geometry"
+            matches!(early.prims[0], ScreenPrim::Flat(q) if q.ot_index == u32::MAX
+                && !q.semi_transparent),
+            "{style:?}: prims[0] must be the opaque backdrop"
         );
         // The fade still arrives on schedule, over the style's own draws.
         let lead = match style {
@@ -330,6 +454,10 @@ fn every_style_skips_its_first_frame_and_keeps_its_fade_schedule() {
 
 /// Prims of one frame split into (wash, textured particle quads, flat ring
 /// quads, fade).
+///
+/// The backdrop shares the wash's farthest OT bucket, so the two are told
+/// apart by blend: the backdrop is opaque, the wash is the subtractive quad
+/// `FUN_80046978` hands to `FUN_80024EE4` with ABR `2`.
 fn split_particle_frame(
     f: &crate::battle_intro::IntroFrame,
 ) -> (usize, Vec<crate::screen_overlay::ScreenQuad>, usize) {
@@ -339,6 +467,7 @@ fn split_particle_frame(
     for p in &f.prims {
         match p {
             ScreenPrim::Textured(q) => quads.push(*q),
+            ScreenPrim::Flat(q) if q.ot_index == u32::MAX && !q.semi_transparent => {} // backdrop
             ScreenPrim::Flat(q) if q.ot_index == u32::MAX => washes += 1,
             ScreenPrim::Flat(q) if q.semi_transparent && f.fade.is_none() => flats += 1,
             ScreenPrim::Flat(_) => flats += 1,
@@ -545,7 +674,11 @@ fn the_swirl_washes_once_the_late_phase_arrives() {
     let washes = |f: &crate::battle_intro::IntroFrame| {
         f.prims
             .iter()
-            .filter(|p| matches!(p, ScreenPrim::Flat(q) if q.ot_index == u32::MAX))
+            // The backdrop shares the bucket; the wash is the blended one.
+            .filter(|p| {
+                matches!(p, ScreenPrim::Flat(q) if q.ot_index == u32::MAX
+                    && q.semi_transparent)
+            })
             .count()
     };
     assert_eq!(washes(&at), 0, "the wash lags the late-phase crossing");
@@ -571,16 +704,16 @@ fn the_tile_shatter_skips_its_first_frame_and_draws_from_the_second() {
     let mut it = intro(IntroStyle::TileShatter, 200);
     let first = it.tick(0, 1);
     assert!(!first.style_drawn, "frame one draws no tiles in retail");
-    assert!(first.prims.is_empty());
+    assert!(style_prims(&first).is_empty());
 
     let second = it.tick(1, 1);
     assert!(second.style_drawn);
     // 256 tiles, ten faces each, minus NCLIP rejects - at the seeded pose
     // every front face survives, so at minimum the full 16x16 sheet draws.
     assert!(
-        second.prims.len() >= 256,
+        style_prims(&second).len() >= 256,
         "{} prims for 256 tiles",
-        second.prims.len()
+        style_prims(&second).len()
     );
 }
 

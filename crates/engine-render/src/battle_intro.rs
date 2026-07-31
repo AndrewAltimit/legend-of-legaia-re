@@ -351,9 +351,25 @@ pub const PARTICLE_OT_MOVED: u32 = 396;
 /// frame (both `func_0x8004695C(0x101010)` - near-black).
 pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
 
-/// A `FUN_8004695C` wash as a primitive: the call arms a full-screen colour
-/// fill the frame composer draws behind everything, so the port models it as
-/// an opaque display-rect quad at the farthest possible OT bucket.
+/// A `FUN_8004695C` wash as a primitive.
+///
+/// `FUN_8004695C` only *arms* it (`gp+0x9D4 = 1`, `gp+0x9D0 = rgb`, and it
+/// clears `_DAT_8007B6CC` on the way past). The drain is `FUN_80046978`,
+/// which scales each channel by the scratchpad brightness byte at
+/// `0x1F800393`, clamps to `0xFF`, clears the armed flag - so it is a
+/// **one-shot per arm**, which is why `FUN_801CFDA0` re-arms it every frame -
+/// and hands it to `FUN_80024EE4(otlen - 1, 2, rgb)`. Both arguments matter:
+///
+/// * `a0 = otlen - 1` is the **farthest** OT bucket, so this draws before
+///   everything else in the frame,
+/// * `a1 = 2` is ABR mode `B - F`, so it **subtracts** rather than fills.
+///
+/// Retail is therefore darkening whatever the framebuffer already holds, not
+/// painting an opaque background. The port models the packet faithfully; what
+/// it cannot reproduce is the accumulation the effect rides on, because each
+/// port frame is composed from scratch rather than from the previous frame's
+/// pixels. Over [`BACKDROP_RGB`] the subtraction is a near-no-op, which is
+/// the honest outcome rather than a fabricated one.
 pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
     let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
     ScreenPrim::Flat(FlatQuad {
@@ -362,6 +378,59 @@ pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
             (gp0_rgb_word & 0xFF) as u8,
             ((gp0_rgb_word >> 8) & 0xFF) as u8,
             ((gp0_rgb_word >> 16) & 0xFF) as u8,
+            0xFF,
+        ],
+        semi_transparent: true,
+        abr_mode: WASH_ABR_SUBTRACT,
+        ot_index: u32::MAX,
+    })
+}
+
+/// The ABR mode `FUN_80046978` passes for the armed wash: `2`, i.e. `B - F`.
+pub const WASH_ABR_SUBTRACT: u8 = 2;
+
+/// The colour the transition's own frame starts from.
+///
+/// The transition **owns the whole frame**: its init routine writes game mode
+/// `9` into `_DAT_8007B83C` (`0x801CF180`/`0x801CF188`, the "efect" mode) and
+/// the field's mode-3 renderer never runs again for the rest of the window.
+/// The field's last frame is captured once, at init, into the texture page at
+/// VRAM `(320, 256)` - and from there on every visible pixel is a transition
+/// primitive sampling that page.
+///
+/// That is what makes the base colour black rather than "the field". Each
+/// particle packet is semi-transparent with the page's own ABR `1` (`B + F`,
+/// additive), so a record still at its rest pose reproduces its captured
+/// patch **exactly** only when what is under it is black; the un-moved grid
+/// then reconstructs the frame, and every patch that flies away leaves the
+/// base colour behind it.
+pub const BACKDROP_RGB: u32 = 0x0000_0000;
+
+/// The frame the transition composes onto: an opaque display-rect quad at the
+/// farthest OT bucket, in [`BACKDROP_RGB`].
+///
+/// Retail has no such primitive, and does not need one - it has a game mode
+/// with no field renderer in it. The port composes the transition's screen
+/// primitives *over a live scene* ([`crate::RenderTarget::SceneWithScreenPrims`]),
+/// which is a port artifact, so the field kept rendering underneath. Two
+/// things came out of that, both visible in a screenshot sweep: every patch
+/// still at its rest pose was drawn additively over an identical live copy of
+/// itself and read at double brightness, and once the last particle expired
+/// the transition emitted nothing at all - leaving the remaining ~54 frames
+/// of the window showing a clean, untouched, still-animating field.
+///
+/// This quad is the port's stand-in for "the field is not in the ordering
+/// table". It is emitted on every frame of the window, including the frames a
+/// style draws nothing on, which is also what keeps the host's target choice
+/// on the compositing arm for the whole transition.
+pub fn backdrop_prim() -> ScreenPrim {
+    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
+    ScreenPrim::Flat(FlatQuad {
+        xy: [(0, 0), (w, 0), (0, h), (w, h)],
+        color: [
+            (BACKDROP_RGB & 0xFF) as u8,
+            ((BACKDROP_RGB >> 8) & 0xFF) as u8,
+            ((BACKDROP_RGB >> 16) & 0xFF) as u8,
             0xFF,
         ],
         semi_transparent: false,
@@ -977,9 +1046,16 @@ impl BattleIntro {
     /// simulation tick cannot desynchronise the visuals from the handoff.
     /// `frame_step` is retail's per-frame display-frame delta (`1` at the
     /// steady NTSC cadence).
+    ///
+    /// `prims[0]` is always [`backdrop_prim`] - the frame the style composes
+    /// onto - including on frames the style itself draws nothing. Its OT
+    /// bucket is the farthest one, so its position in submission order is
+    /// immaterial to the draw order and it is emitted first only to keep the
+    /// fade quad the list's last element.
     pub fn tick(&mut self, elapsed: i16, frame_step: u8) -> IntroFrame {
         self.clock = elapsed;
         let mut out = IntroFrame::default();
+        out.prims.push(backdrop_prim());
 
         match &mut self.set {
             WorkingSet::Particles { grid, style } => {
@@ -1098,13 +1174,21 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 
 /// The full-screen quad `FUN_80024EE4` pushes for a resolved fade.
 ///
-/// The **ramp** is retail's, ported in
-/// [`legaia_engine_vm::battle_intro_styles::intro_fade`]. The **quad** is the
-/// port's: retail's emitter writes a six-word GP0 packet whose corners come
-/// from the scratchpad display-rect words, which is the whole PSX display, so
-/// the port draws the whole display rect. It is emitted semi-transparent
-/// because a fade that replaced the frame would hide the transition it is
-/// fading, not blend into it.
+/// Both halves are retail's now. The **ramp** is
+/// [`legaia_engine_vm::battle_intro_styles::intro_fade`]; the **quad** is the
+/// emitter's own six-word packet, corners taken from the scratchpad
+/// display-rect words (`_DAT_1F800378` / `_DAT_1F80037A`), which is the whole
+/// PSX display - so the port draws the whole display rect. Command byte
+/// `0x2B` makes it semi-transparent, and its ABR mode is the emitter's second
+/// argument, folded into the `SetDrawMode` packet that precedes it.
+///
+/// That second argument used to be read here as an OT depth, which put every
+/// style's fade on ABR `0` (`0.5B + 0.5F`). It halved both tails: the
+/// additive styles ([`IntroStyle::SpinUpParticles`],
+/// [`IntroStyle::Swirl`]) topped out at a washed grey instead of a full
+/// white-out, and the subtractive ones never reached black. The OT layer is
+/// `a0` - [`legaia_engine_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
+/// same `2` for all five styles - so that is what the bucket carries.
 pub fn fade_quad(f: &IntroFade) -> ScreenPrim {
     let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
     ScreenPrim::Flat(FlatQuad {
@@ -1116,7 +1200,7 @@ pub fn fade_quad(f: &IntroFade) -> ScreenPrim {
             0xFF,
         ],
         semi_transparent: true,
-        abr_mode: 0,
-        ot_index: u32::from(f.depth),
+        abr_mode: f.abr,
+        ot_index: u32::from(f.layer),
     })
 }

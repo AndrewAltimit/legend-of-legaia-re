@@ -1454,6 +1454,58 @@ delay. The port's stand-in is
 whose multiplier is even walks its whole state to a fixed point within a handful of draws
 and then returns one constant forever.
 
+#### The transition owns the whole frame
+
+Nothing else is drawn while it runs. The init routine's last act is
+`addiu v0,zero,9` / `sh v0,-0x47c4(v1)` at `0x801CF180`/`0x801CF188` - **`_DAT_8007B83C = 9`**,
+the "efect" game mode - so the field's mode-3 renderer does not run again until the
+completion arm writes `0x14`. The field's last frame is captured once, at init: `DrawSync`,
+a `MoveImage` of the drawn frame into the other display buffer, a `StoreImage` readback, an
+OR of the STP bit over every pixel, then a `LoadImage` into the texture page at VRAM
+`(320, 256)` plus three `ClearImage` calls blanking the borders. From there every visible
+pixel is a transition primitive sampling that page.
+
+That is what fixes the base colour the styles compose onto as **black** rather than "the
+field". A particle packet is semi-transparent on a page whose ABR is `1` (`B + F`), so a
+record still at its rest pose reproduces its captured patch exactly only over a cleared
+frame; the un-moved grid then *is* the field image, and every patch that flies away leaves
+the base colour behind it. A port that keeps rendering the live field underneath gets both
+halves wrong at once - the rest-pose patches read at double brightness, and the window's
+tail shows an untouched, still-animating field once the last particle has expired.
+
+The port's stand-in is `engine-render::battle_intro::backdrop_prim`, an opaque display-rect
+quad at the farthest OT bucket emitted on **every** frame of the window. It exists because
+the port composites the transition's screen primitives over a live scene
+(`RenderTarget::SceneWithScreenPrims`), which is a port artifact with no retail counterpart.
+
+#### The fade's second argument is a blend mode, not a depth
+
+`func_0x80024EE4(layer, blend, rgb)` pushes a five-word untextured quad over the whole
+display rect - command byte `0x2B`, i.e. semi-transparent - preceded by a `SetDrawMode`
+packet whose tpage word is `(blend << 5) | 0xE` (`sll a3,s3,0x5` / `ori a3,a3,0xe` at
+`0x80024FB0`/`0x80024FBC`). GP0 tpage bits `5..=6` are the ABR field, so the second
+argument lands there verbatim. `a0` is the OT layer, `2` on all five arms.
+
+| Style | Ramp lead / slope | `blend` | Where the tail lands |
+|---|---|---|---|
+| `0` scatter | `0x18` / 12 | `2`, or `1` when `DAT_801D2464 == 2` | black (white-out on the sub-2 arm) |
+| `1` spin-up | `0x18` / 16 | `1` | white |
+| `2` tile shatter | `0x1C` / 16 | `2` | black |
+| `3` curtain | `0x40` / 4 | `2` | black |
+| `4` swirl | `0x20` / 10 | `1` | white |
+
+ABR `1` is `B + F` and ABR `2` is `B - F`; the ramp colour is the level smeared across all
+three channels. So the same white ramp whites out under `1` and blacks out under `2`, and
+reading the argument as an OT depth puts every style on ABR `0` (`0.5B + 0.5F`) - a tail
+that never reaches either end and leaves the outgoing frame legible underneath it.
+
+The armed wash `FUN_8004695C(rgb)` goes through the same emitter. It only sets
+`gp+0x9D4 = 1` / `gp+0x9D0 = rgb` (and clears `_DAT_8007B6CC`); the drain `FUN_80046978`
+scales each channel by the scratchpad brightness byte at `0x1F800393`, clamps, clears the
+armed flag - so it is one-shot per arm, which is why style `0` re-arms it every frame - and
+calls `func_0x80024EE4(otlen - 1, 2, rgb)`: the farthest bucket, subtractive. It darkens
+what the framebuffer already holds rather than filling it.
+
 #### What the styles actually draw
 
 **Styles 0 and 1** are particle fields - the captured screen cut into 8x8-pixel patches
