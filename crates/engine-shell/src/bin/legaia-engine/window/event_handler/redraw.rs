@@ -1043,25 +1043,33 @@ impl PlayWindowApp {
                     // `cam * F` recovers the raw PSX vertex the retail
                     // transform expects.
                     //
-                    // Drawn ONCE, world-fixed - matching retail, which
-                    // sets the dome up as a background **actor**
+                    // World-fixed, and **one draw but two copies** - do not
+                    // read the single `draws.push` below as "one instance".
+                    // Retail sets the dome up as a background **actor**
                     // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
                     // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
-                    // rendered by the normal actor path `FUN_80048A08`.
-                    // The stage TMD is a HALF arena, not a full surround
+                    // rendered by the normal actor path `FUN_80048A08`, and
+                    // it renders it **twice**: a second copy under either a
+                    // per-stage `Ry(180)` half-turn or a mirror-X selected by
+                    // the SCUS table `DAT_80078B50`
+                    // (`legaia_asset::battle_backdrop::SecondCopy`). The
+                    // stage TMD is a HALF arena, not a full surround
                     // (map01's dome is a front half, verts `Z in [-1260,
                     // +12155]`; town01's arena is authored entirely at
                     // `X >= 0`, open side facing -X - the sea horizon in
-                    // the retail Tetsu close-up). Retail never completes
-                    // the circle: its captures show 44-81% horizon
-                    // coverage depending on angle, and the phase-scripted
-                    // camera either sits in a close-up or clips the
-                    // near-side arc behind the eye. An earlier engine
-                    // build drew a second 180-deg-Y mirror instance to
-                    // "complete" the surround - for town01 that planted a
-                    // duplicate village wall across the open sea side, so
-                    // the mirror draw is removed (one instance, like
-                    // retail). See `project_battle_backdrop_is_prot88_dome`.
+                    // the retail Tetsu close-up), which is why the second
+                    // copy exists at all.
+                    //
+                    // The port applies that copy at **mesh build** time, not
+                    // here: `battle_stage_meshes` pre-appends it with
+                    // `VramMesh::append_scaled` (winding flipped for the
+                    // mirror), so the page and the window both upload one
+                    // mesh and this loop pushes one draw. An older comment
+                    // here said "the mirror draw is removed (one instance,
+                    // like retail)" - that described a *withdrawn* draw-time
+                    // second instance and was wrong about retail besides.
+                    // See `project_battle_backdrop_is_prot88_dome` and
+                    // `docs/subsystems/battle.md` § the second copy.
                     //
                     // **Stage scale.** The stage rides the same
                     // [`BATTLE_WORLD_SCALE`] base matrix the actors do

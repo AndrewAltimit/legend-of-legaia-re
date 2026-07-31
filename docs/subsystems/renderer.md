@@ -395,6 +395,38 @@ word is the packet-length code (`0x05000000` / `0x08000000`). See
   [`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
   See `ghidra/scripts/funcs/8003daa8.txt`.
 
+### The battle backdrop is built by a different mesh builder on each host
+
+One TMD, one second-copy transform, two builders - and the two do not agree on
+screen. Same stage, same disc:
+
+| | native `play-window` | browser play page |
+|---|---|---|
+| Textured half | `tmd_to_vram_mesh` | `tmd_to_vram_mesh_field_hybrid` |
+| Untextured `F*`/`G*` half | `tmd_to_color_mesh`, uploaded through `upload_color_mesh_blended` with its per-prim `blend` channel, drawn on the colour pipeline | folded into the same mesh, surfaced as a per-vertex RGBA `flat` channel (alpha `0` = untextured) |
+| Draws per frame | two (one textured, one colour) | one |
+
+Both hosts append the second copy at build time (`VramMesh::append_scaled`
+under `SecondCopy`), so neither draws it as a second `SceneDraw` - the single
+`draws.push` in the battle branch is *not* evidence that the shell is drawn
+once. Retail draws it twice, and which transform the copy takes is per stage
+(`legaia_asset::battle_backdrop`).
+
+The visible divergence is on the overworld dome: the browser paints repeating
+vertical lighter bands across the sky and mountain arc and lays a hard-edged
+flat water slab across the grass, where the native window shows neither. The
+untextured panels are therefore not *missing* from the browser - the earlier
+suspicion - they are present and blended differently, which is the harder
+version of the same bug. The host-drift gate cannot see it: both hosts do
+reach a backdrop builder, so builder-reachability passes while the two
+builders disagree (`docs/tooling/host-drift.md` § what each tier is silent
+about).
+
+Reproducing it in the browser costs a real encounter - `debug_start_test_battle`
+is `#[cfg(not(target_arch = "wasm32"))]`, so a headless page has to walk an
+encounter scene until one fires, and town stages (which roll no encounters)
+cannot be reached at all.
+
 ### The screen the GTE projects onto is 320x224, not 320x240
 
 Two numbers travel together and are easy to get half-right. The GTE screen
