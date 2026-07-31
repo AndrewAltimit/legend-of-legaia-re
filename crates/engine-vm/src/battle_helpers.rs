@@ -13,7 +13,28 @@
 //!
 //! # NOT WIRED
 //!
-//! Each of these leaves is waiting on a different piece of engine state:
+//! Each of these leaves is waiting on a different piece of engine state - and
+//! only one of them is waiting on a missing *caller*:
+//!
+//! | Kernel | Retail caller | Call site | Port of the caller |
+//! |---|---|---|---|
+//! | [`action_queue_append`] | `FUN_8003CB54` is itself the routine | - | queue is typed (`legaia_art::ActionQueue`) |
+//! | [`screen_x_mirror`] | `FUN_800589D0` | `80058A38` | **none - not ported, not documented** |
+//! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
+//! | [`ease_quad_interp`] | `FUN_80025980` | `80025AA0` | `engine-core::mode` |
+//!
+//! [`screen_x_mirror`] is therefore the one row here that names a concrete
+//! missing thing rather than a representation mismatch: port `FUN_800589D0`
+//! (the display-mode rect pass that reads the orientation globals
+//! `DAT_80078D54` / `DAT_80078D57` behind an unsigned `< 2` gate at
+//! `80058A2C`) and the mirror acquires a caller. Nothing else has to move.
+//!
+//! `801CEE80` additionally sits in the VA-aliased band: the same address is a
+//! **jump-table slot** in overlay 0897 and ordinary mid-function code in the
+//! debug-menu and STR-FMV overlays, so a corpus grep for it returns three
+//! programs' unrelated bytes. The body ported here is the one whose entry is
+//! `801CEE80` (`sh a1,0x16(v0)`); see
+//! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
 //!
 //! - `FUN_8003CB54` ([`action_queue_end_offset`] / [`action_queue_append`])
 //!   splices into retail's variable-width `{lead, payload}` byte queue. The

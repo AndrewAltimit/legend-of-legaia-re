@@ -17,9 +17,21 @@
 //! strict `+/-0x180` window around the camera and appends survivors to the
 //! visible table capped at `0x20` entries.
 //!
-//! Source: `ghidra/scripts/funcs/overlay_dialog_801cf754.txt`; the retail
-//! caller context is the dialog-overlay actor frame handler
-//! (`docs/reference/functions.md`, dialog-overlay actor-frame helpers).
+//! Source: `ghidra/scripts/funcs/overlay_dialog_801cf754.txt`. The retail
+//! callers are pinned rather than described: **`FUN_801D1344`** at `801D1658`
+//! (`lw a0,0x1c(v0)` / `lw a1,0xc(v0)` immediately before the `jal`), which
+//! appears in twelve overlay dumps - dialog, dialog typing, world map, the
+//! world-map top view, the cutscene dialogue family and the 0897 door
+//! overlay - and **`FUN_801C2B2C`** at `801C2E40`, overlay 0897's relocated
+//! copy of the same routine. `FUN_801D1344` is already ported, as
+//! `legaia_engine_core::world::frame_tick`; what it does *not* do there is
+//! build a capped visible-actor table, because the port has no cull. So the
+//! gap is the consumer described above, not a caller.
+//!
+//! `801CF754` is a VA-aliased overlay address: other overlays hold unrelated
+//! code at it (`overlay_0897_xxx_dat_801cf754.txt` is a different, zero-arg
+//! function). The body ported here is the two-argument `(int, int*)` variant
+//! resident in the dialog / cutscene-dialogue / 0897 family.
 //!
 //! Retail data flow, mirrored here over typed inputs instead of PSX
 //! pointers:
