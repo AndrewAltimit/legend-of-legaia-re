@@ -461,7 +461,7 @@ fn monster_rows_only_draw_under_the_diagnostic_toggle() {
     // Sprite 0x19 = Toxic, the element retail's ladder picks for `0x0002`.
     slot.status_sprite = 0x19;
     assert!(
-        hud_draws(&font, &[slot.clone()], &[], &[]).is_empty(),
+        hud_draws(&font, &[slot], &[], &[]).is_empty(),
         "a monster row drew on the default retail surface"
     );
 
@@ -495,8 +495,8 @@ fn level_readout_is_diagnostic_only() {
     no_lv.level = 0;
 
     assert_eq!(
-        hud_draws(&font, &[lv.clone()], &[], &[]).len(),
-        hud_draws(&font, &[no_lv.clone()], &[], &[]).len(),
+        hud_draws(&font, &[lv], &[], &[]).len(),
+        hud_draws(&font, &[no_lv], &[], &[]).len(),
         "the level readout reached the retail surface"
     );
     assert!(
@@ -535,7 +535,7 @@ fn battle_hud_draws_for_popup_for_invalid_slot_is_dropped() {
         status_letter: None,
         alpha: 1.0,
     };
-    let with_popup = hud_draws(&font, &[slot.clone()], &[popup], &[]);
+    let with_popup = hud_draws(&font, &[slot], &[popup], &[]);
     let no_popup = hud_draws(&font, &[slot], &[], &[]);
     assert_eq!(with_popup.len(), no_popup.len());
 }
@@ -623,14 +623,9 @@ fn strip_and_diag_columns_clear_the_retail_font_or_skips() {
         "the HP maximum overruns the slash column"
     );
     assert!(
-        192 >= 176,
-        "the MP label column starts before the HP maximum ends"
-    );
-    assert!(
         236 - width("999") >= 192 + 16,
         "a three-digit MP overruns the MP label cell"
     );
-    assert!(272 <= 312, "the MP maximum overruns the strip's right cap");
 
     // Diagnostic monster row: name at 0, HP numerals at 78, K.O. at 150,
     // status strip at 190.

@@ -11,12 +11,13 @@
 //!    arm) resolves a formation off the scene MAN's own table - real disc
 //!    monsters, not synthetic rows.
 //! 2. **The battle overlay draws while the battle runs.** The shared
-//!    `battle_hud_draws_for` rows land in the HUD band and the
-//!    `encounter_banner_draws_for` transition banner lands centred, both in
-//!    surface pixels - the geometry the native window draws.
-//! 3. **The banner is transitional.** It ages out after its ~90-frame hold
-//!    while the HUD keeps drawing - the overlay is a live readout, not a
-//!    one-shot.
+//!    `battle_hud_draws_for` party strip lands on the measured retail band
+//!    (stage `y 188..=207`, glyph row `194`) with its skin in the page's
+//!    sprite array - the geometry the native window draws.
+//! 3. **Nothing retail does not draw.** Retail's `Field -> Battle` edge shows
+//!    no banner, so the port's "ENCOUNTER!" head line stays off the default
+//!    surface, and the HUD keeps drawing once the old banner hold would have
+//!    expired - the overlay is a live readout, not a one-shot.
 //!
 //! No Sony bytes are asserted, only structural facts. Skips + passes when
 //! `LEGAIA_DISC_BIN` is unset.
@@ -38,6 +39,21 @@ fn overlay(rt: &mut LegaiaRuntime) -> serde_json::Value {
     serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json")
 }
 
+/// Sprite quads whose top edge sits inside `[y0, y1)`.
+fn sprites_in_band(v: &serde_json::Value, y0: f64, y1: f64) -> usize {
+    v["sprites"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|t| {
+                    let y = t["dst"][1].as_f64().unwrap_or(f64::MIN);
+                    y >= y0 && y < y1
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 /// Text quads whose top edge sits inside `[y0, y1)`.
 fn texts_in_band(v: &serde_json::Value, y0: f64, y1: f64) -> usize {
     v["texts"]
@@ -53,11 +69,12 @@ fn texts_in_band(v: &serde_json::Value, y0: f64, y1: f64) -> usize {
         .unwrap_or(0)
 }
 
-/// A scripted formation off the town MAN enters a live battle, the overlay
-/// opens with HUD rows + the centred encounter banner, and the banner ages
-/// out while the HUD persists.
+/// A scripted formation off the town MAN enters a live battle and the overlay
+/// opens with the retail party strip on its measured band - skin in the
+/// sprite array, numerals in the text array - and no encounter banner, which
+/// retail does not draw.
 #[test]
-fn live_battle_overlay_draws_hud_and_banner() {
+fn live_battle_overlay_draws_the_retail_strip_and_no_banner() {
     let Some(mut rt) = loaded_in_town() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -79,22 +96,33 @@ fn live_battle_overlay_draws_hud_and_banner() {
         "trigger_scripted_battle must flip the live loop into SceneMode::Battle"
     );
 
+    // 960x720 is an exact 3x of the 320x240 stage with a zero origin, so the
+    // measured strip band (stage y 188..=207) is surface 564..624 and its
+    // glyph row (194) is 582.
+    const STRIP_TOP: f64 = 188.0 * 3.0;
+    const STRIP_BOT: f64 = 208.0 * 3.0;
+    const STRIP_TEXT: f64 = 194.0 * 3.0;
+
     let v = overlay(&mut rt);
     assert_eq!(v["open"], true, "battle overlay must report open");
-    // HUD rows: the slot block anchors at the shared BATTLE_HUD_PEN (8, 60)
-    // and stacks down at 14 px per row - party rows land inside [60, 200).
     assert!(
-        texts_in_band(&v, 60.0, 200.0) > 0,
-        "battle HUD rows must draw in the HUD band: {v}"
+        texts_in_band(&v, STRIP_TEXT, STRIP_TEXT + 1.0) > 0,
+        "the party strip's glyph row must draw on the measured band: {v}"
     );
-    // Encounter banner: centred at surface_h / 4 = 180 for the 720-px canvas,
-    // for the battle's opening frames.
     assert!(
-        texts_in_band(&v, 170.0, 200.0) > 0,
-        "encounter banner must draw near surface_h/4 during the opening frames"
+        sprites_in_band(&v, STRIP_TOP, STRIP_BOT) > 0,
+        "the party strip's chrome must reach the page's sprite array: {v}"
+    );
+    // Retail draws no banner on the Field -> Battle edge, so the port's
+    // "ENCOUNTER!" head line must be absent from the default surface. It
+    // used to land centred at surface_h / 4 = 180.
+    assert_eq!(
+        texts_in_band(&v, 170.0, 200.0),
+        0,
+        "the encounter banner is a port invention and must stay gated off"
     );
 
-    // Age past the banner hold (~90 frames): the banner drops, the HUD stays.
+    // Age past the old banner hold (~90 frames): the HUD keeps drawing.
     for _ in 0..120 {
         rt.tick_frame().expect("tick");
         if rt.scene_mode() != "Battle" {
@@ -106,8 +134,8 @@ fn live_battle_overlay_draws_hud_and_banner() {
     let v = overlay(&mut rt);
     assert_eq!(v["open"], true, "overlay stays open while the battle runs");
     assert!(
-        texts_in_band(&v, 60.0, 200.0) > 0,
-        "battle HUD keeps drawing after the banner ages out"
+        texts_in_band(&v, STRIP_TEXT, STRIP_TEXT + 1.0) > 0,
+        "battle HUD keeps drawing after the opening frames"
     );
 }
 

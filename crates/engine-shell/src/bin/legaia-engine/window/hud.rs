@@ -1787,9 +1787,9 @@ impl PlayWindowApp {
     /// One battle-HUD frame from the shared builder: the party strip, the
     /// top-left plaque and the popups.
     ///
-    /// Both halves come from one call so the two host draw slots cannot drift
-    /// - the text half goes into the glyph layer, the sprite half into the
-    /// system-UI atlas layer through `battle_chrome_sprite_draws`.
+    /// Both halves come from one call so the two host draw slots cannot
+    /// drift: the text half goes into the glyph layer, the sprite half into
+    /// the system-UI atlas layer through `battle_chrome_sprite_draws`.
     pub(super) fn battle_hud_frame_draws(
         &self,
         w: u32,

@@ -38,7 +38,8 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::battle_hud::{
-    BattleHud, DamagePopup, encounter_banner_label, sync_battle_hud_rows,
+    BattleHud, DamagePopup, battle_plaque_label, encounter_banner_enabled, encounter_banner_label,
+    sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
@@ -379,6 +380,66 @@ impl LegaiaRuntime {
     /// encounter banner, and the player-driven submenus. Empty outside
     /// [`SceneMode::Battle`]. Mirrors the native window's battle HUD block
     /// leg for leg (`window/hud.rs`).
+    /// One battle-HUD frame from the shared builder: the party strip, the
+    /// top-left plaque and the popups.
+    ///
+    /// Both halves come from one call so the page's two draw arrays cannot
+    /// drift - the text half joins the surface-space battle text, the sprite
+    /// half the system-UI atlas `sprites` array.
+    pub(crate) fn battle_hud_frame_draws(
+        &self,
+        assets: &crate::play_menu::PlayMenuAssets,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> ui::BattleHudDraws {
+        let font = assets.font_ref();
+        let plaque = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| battle_plaque_label(&h.world));
+        let parked = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.battle_arts_menu.is_some());
+        ui::battle_hud_draws_for(
+            font,
+            &ui::BattleHudFrame {
+                slots: &battle_hud_slot_views(&self.battle_hud),
+                popups: &battle_hud_popup_views(&self.battle_hud),
+                log: &[],
+                solid_src: ui::font_solid_src(font),
+                surface: (surface_w, surface_h),
+                chrome: assets.chrome_rects(),
+                plaque: plaque.as_deref(),
+                // Retail parks the status plate off-screen while a command
+                // entry session owns the frame; the port emits no strip.
+                input_session_parked: parked,
+                diag: ui::diag_hud_enabled(),
+            },
+            BATTLE_HUD_PEN,
+        )
+    }
+
+    /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
+    /// green `MP` label cells) for the page's system-UI atlas array. Empty
+    /// outside battle.
+    pub(crate) fn battle_chrome_sprite_draws(
+        &self,
+        assets: &crate::play_menu::PlayMenuAssets,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<ui::SpriteDraw> {
+        let in_battle = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.mode == SceneMode::Battle);
+        if !in_battle {
+            return Vec::new();
+        }
+        self.battle_hud_frame_draws(assets, surface_w, surface_h)
+            .sprites
+    }
+
     pub(crate) fn battle_overlay_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -401,30 +462,29 @@ impl LegaiaRuntime {
         let down_color = [0.6f32, 0.6, 0.6, 1.0];
         let mut out: Vec<TextDraw> = Vec::new();
 
-        // Per-slot panels (party, retail-shaped with filled bars) + monster
-        // rows, status strips and floating popups all come from the shared
-        // builder, which carries the ported retail HP / MP readout-tint law
-        // (`hp_bar_color_index` / `mp_bar_color_index`, FUN_800349EC /
-        // FUN_80035EA8) and the gauge-fill law (`battle_gauge::gauge_colors`,
-        // FUN_80046A20). Rows are fed from the `BattleHud` model, refreshed
-        // each tick by the shared `sync_battle_hud_rows` fold. The filled
-        // rects sample a solid-white font-atlas texel, which the page's
-        // canvas blitter stretches + tints like any other glyph quad.
-        out.extend(ui::battle_hud_draws_for(
-            font,
-            &ui::BattleHudFrame {
-                slots: &battle_hud_slot_views(&self.battle_hud),
-                popups: &battle_hud_popup_views(&self.battle_hud),
-                log: &[],
-                solid_src: ui::font_solid_src(font),
-                surface: (surface_w, surface_h),
-            },
-            BATTLE_HUD_PEN,
-        ));
+        // The retail party strip (one full-width lozenge per live member
+        // across the stage bottom), the top-left plaque and the floating
+        // popups all come from the shared builder. Its text half lands here;
+        // its chrome sprites go out of `battle_chrome_sprite_draws` into the
+        // page's sprite array. Numerals carry the ported retail readout-tint
+        // law (`hp_bar_color_index` / `mp_bar_color_index`, FUN_800349EC /
+        // FUN_80035EA8). Rows are fed from the `BattleHud` model, refreshed
+        // each tick by the shared `sync_battle_hud_rows` fold.
+        out.extend(
+            self.battle_hud_frame_draws(assets, surface_w, surface_h)
+                .text,
+        );
 
         // Encounter-transition banner: centred "ENCOUNTER!" over the
-        // formation label, shown for the opening frames of the battle.
-        if let Some((_, label)) = &self.encounter_banner {
+        // formation label, shown for the opening frames of the battle. A port
+        // invention with no retail counterpart - retail's Field -> Battle edge
+        // draws no banner at all - so it is gated off by default and only
+        // appears under `LEGAIA_DIAG_HUD` (`encounter_banner_enabled`).
+        if let Some((_, label)) = self
+            .encounter_banner
+            .as_ref()
+            .filter(|_| encounter_banner_enabled())
+        {
             let head_w = font.layout_ascii("ENCOUNTER!").advance_x as i32;
             let pen = ((surface_w as i32 - head_w) / 2, surface_h as i32 / 4);
             out.extend(ui::encounter_banner_draws_for(font, label, pen));
@@ -897,20 +957,45 @@ mod live_hud_tests {
             "player-driven battle opens the command menu"
         );
 
-        // (1) The drawn bar surface reaches the page's overlay draw list:
-        // solid 1x1-src rects (panel chrome + HP/MP fills) ride the same
-        // "texts" channel the canvas blitter paints.
+        // (1) The retail party strip reaches the page's overlay draw list.
+        // 960x720 -> stage scale 3, origin (0,0), so the measured band
+        // (stage y 188..=207, glyph row 194) lands at surface y 564 / 582.
+        // The strip's skin is an atlas sprite, its numerals are glyphs, and
+        // retail draws NO gauge bar inside it - all three are asserted, so
+        // neither a lost strip nor a resurrected bar can pass.
+        const STRIP_TOP: i64 = 188 * 3;
+        const STRIP_BOT: i64 = 208 * 3;
+        const STRIP_TEXT: i64 = 194 * 3;
         let json = rt.play_overlay_draws_json(960, 720);
         let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
         let texts = v["texts"].as_array().expect("texts array");
-        let solid_rects = texts
-            .iter()
-            .filter(|t| t["src"][2] == 1 && t["src"][3] == 1)
-            .count();
+        let sprites = v["sprites"].as_array().expect("sprites array");
         assert!(
-            solid_rects >= 4,
-            "expected panel + bar rects in the overlay, got {solid_rects}"
+            sprites.iter().any(|s| s["dst"][1]
+                .as_i64()
+                .is_some_and(|y| (STRIP_TOP..STRIP_BOT).contains(&y))),
+            "no strip chrome sprite on the measured band"
         );
+        assert!(
+            texts.iter().any(|t| t["dst"][1] == STRIP_TEXT),
+            "no strip glyph on the measured text row"
+        );
+        for t in texts {
+            let (Some(y), Some(w), Some(h)) = (
+                t["dst"][1].as_i64(),
+                t["dst"][2].as_i64(),
+                t["dst"][3].as_i64(),
+            ) else {
+                continue;
+            };
+            let solid = t["src"][2] == 1 && t["src"][3] == 1;
+            let inside = (STRIP_TOP..STRIP_BOT).contains(&y);
+            assert!(
+                !(solid && inside && h < 18 * 3 && w < 300 * 3),
+                "a gauge bar survives inside the retail strip: {:?}",
+                t["dst"]
+            );
+        }
 
         // (2) Cross on Attack opens targeting; the retail dedup name strip
         // resolves rows off the live formation and lands in the draw list at
