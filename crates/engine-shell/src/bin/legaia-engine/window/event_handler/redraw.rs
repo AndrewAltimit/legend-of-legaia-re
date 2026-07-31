@@ -1428,6 +1428,9 @@ impl PlayWindowApp {
                             match b.render_flag {
                                 ba::CURSOR_FLAG_SELECTED => {
                                     let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
+                                    log::trace!(
+                                        "target cursor: actor {i} SELECTED pulse {pulse:.2}"
+                                    );
                                     cue = Some(legaia_engine_render::DrawCue {
                                         far: [1.0, 1.0, 1.0],
                                         near_z: -1.0,
@@ -1436,6 +1439,7 @@ impl PlayWindowApp {
                                     });
                                 }
                                 ba::CURSOR_FLAG_DIMMED => {
+                                    log::trace!("target cursor: actor {i} DIMMED");
                                     cue = Some(legaia_engine_render::DrawCue {
                                         far: [0.0, 0.0, 0.0],
                                         near_z: -1.0,
@@ -1616,9 +1620,10 @@ impl PlayWindowApp {
             // (`World::active_effect_sprites`). Each draws two ways: a
             // textured quad sampling the scene VRAM at the sprite's
             // atlas page/clut/uv (the retail FUN_801E0088 pass-2 path -
-            // invisible while the texel-source upload is unpinned, real
-            // once it lands), plus a tinted outline through the Lines
-            // pipeline so the spawn is visible now. See
+            // in battle the flame atlas + CLUT rows are resident via the
+            // battle-entry blit, see `effect_billboard_mesh`), plus a
+            // tinted outline through the Lines pipeline so the spawn
+            // reads even where a sprite samples unloaded texels. See
             // docs/subsystems/effect-vm.md. The billboards ride `fx_cam`
             // like every other battle FX layer: in a stage-dome battle
             // the pool positions are actor-stage coordinates, so drawing

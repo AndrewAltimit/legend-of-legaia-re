@@ -754,6 +754,14 @@ impl World {
             let mut tracker = self.field_region_tracker.take().expect("is_some checked");
             tracker.set_modifiers(self.encounter_rate_modifiers());
             let roll = tracker.on_step(wx, wz, || self.next_rng());
+            // Per-step roll diagnostics (trace level; off in normal runs):
+            // which tile the step landed on and how far the region counter
+            // has drained. A step outside every region logs no counter
+            // movement - the signature of "walking where nothing rolls".
+            log::trace!(
+                "field step at ({wx}, {wz}): region counter {}",
+                tracker.counter()
+            );
             self.field_region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {

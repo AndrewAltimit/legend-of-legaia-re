@@ -36,10 +36,14 @@ fn effect_sprite_corners(
 /// atlas `(u, v)` / `tpage` / `clut`. Mirrors the retail per-frame walker
 /// (`FUN_801E0088` pass 2), which emits one GPU sprite primitive per child.
 ///
-/// The texel-source upload for battle effects is not yet pinned, so a quad
-/// over empty VRAM samples all-zero texels which the VRAM-mesh shader
-/// discards (clean, not garbage); real pixels appear once that upload lands.
-/// Returns `None` when there is nothing to draw.
+/// Texel residency: in battle the PROT 870 flame atlas + its CLUT rows are
+/// blitted into the battle VRAM copy at battle entry
+/// (`scene::upload_flame_atlas_into_vram`), and the field-resident
+/// `player_data` §2 pages land at scene entry - the two effect-texel pools
+/// `docs/subsystems/effect-vm.md` pins. A sprite whose atlas rect falls
+/// outside the uploaded pools samples all-zero texels, which the VRAM-mesh
+/// shader discards (clean, not garbage). Returns `None` when there is
+/// nothing to draw.
 pub(crate) fn effect_billboard_mesh(
     r: &legaia_engine_render::Renderer,
     sprites: &[legaia_engine_core::world::EffectSprite],

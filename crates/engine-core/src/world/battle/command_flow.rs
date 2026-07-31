@@ -224,9 +224,22 @@ impl World {
     /// resolved session - runs the clear pass, which is retail's
     /// `param_1 != 0` arm.
     ///
+    /// The stamps are the kernel's three render words
+    /// ([`vm::battle_action::target_cursor_highlight`] - flag 5/200, the
+    /// bright/dim colour words, the q12 scale), applied here over the
+    /// **engine's** monster window: retail walks the fixed table slots
+    /// `3..=6` because its monsters always seat there, but the engine
+    /// compacts seating to `party_count..`, so with fewer than three party
+    /// members the kernel's fixed window lands on empty slots and no monster
+    /// is ever tinted. Same law, engine seat numbering.
+    ///
     /// REF: FUN_801DA6B4
     fn apply_target_cursor_tint(&mut self, session: &crate::battle_input::BattleCommandSession) {
         use crate::target_picker::{CursorRow, PickerState};
+        use vm::battle_action::{
+            CURSOR_COLOR_BRIGHT, CURSOR_COLOR_DIM, CURSOR_FLAG_DIMMED, CURSOR_FLAG_SELECTED,
+            CURSOR_SCALE_ON,
+        };
         let party_count = self.party_count.clamp(1, 3);
         let enable = match session.picker().map(|p| p.state()) {
             Some(PickerState::Cursor {
@@ -241,9 +254,36 @@ impl World {
             }
             _ => false,
         };
-        let ctx = self.battle_ctx.clone();
-        let mut host = BattleHostImpl { world: self };
-        vm::battle_action::target_cursor_highlight(&mut host, &ctx, enable);
+        let active_target = self
+            .actors
+            .get(session.actor as usize)
+            .map(|a| a.battle.active_target)
+            .unwrap_or(0);
+        // The engine's four-slot monster window (retail `3..=6` re-based to
+        // the compacted seating).
+        for slot in party_count..party_count.saturating_add(4) {
+            let selected = slot == active_target;
+            let Some(actor) = self.actors.get_mut(slot as usize).map(|a| &mut a.battle) else {
+                continue;
+            };
+            // Dead slots keep their state (retail `+0x14C != 0` gate).
+            if actor.liveness == 0 {
+                continue;
+            }
+            if !enable {
+                actor.render_flag = 0;
+                actor.render_scale = 0;
+                actor.render_color = CURSOR_COLOR_BRIGHT;
+            } else if selected {
+                actor.render_scale = CURSOR_SCALE_ON;
+                actor.render_flag = CURSOR_FLAG_SELECTED;
+                actor.render_color = CURSOR_COLOR_BRIGHT;
+            } else {
+                actor.render_scale = CURSOR_SCALE_ON;
+                actor.render_flag = CURSOR_FLAG_DIMMED;
+                actor.render_color = CURSOR_COLOR_DIM;
+            }
+        }
     }
 
     /// Drive the open battle Arts submenu one frame from [`World::input`].
