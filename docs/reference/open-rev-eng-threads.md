@@ -179,43 +179,44 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| The battle-**intro** enemy-name banner - which placement record raises it | open (narrowed - chrome, frame law and seat family now pinned) | [details ↓](#the-battle-intro-enemy-name-banner) |
+| The battle-**intro** enemy-name banner - which placement record raises it | mostly resolved (chrome, seat and frame law captured on the same surface mid-fight; only the record identity is owed) | [details ↓](#the-battle-intro-enemy-name-banner) |
 
 ### The battle-intro enemy-name banner
 
-*Status:* the chrome, the frame arithmetic and the seat family are settled from
-the disc plus one live frame; what is still owed is which placement record the
-banner itself raises.
+*Status:* the chrome, the seat and the frame arithmetic are captured - on the
+same banner surface, mid-fight. What is owed is only which placement record
+the intro instance raises.
 
-The thread opened as "chrome and seat unknown, blocked on a live frame". The
-chrome half is closed without one: the banner's "rectangular gold border over a
-blue interior" is the widget table's **class-0 9-slice window** (tile-set 0,
-sub-palette 2) - 4x4 corners and 24x4 / 4x24 edges cut from one 32x32 patch at
-texels `(160, 0)`, insetting `(-8, -8)` from the content box. Every placement
-record whose kind byte is `0x03` / `0x04` / `0x44` frames itself that way. The
-table is in
+The thread opened as "chrome and seat unknown, blocked on a live frame", on
+the premise that no manifest state catches the surface. That premise was
+wrong about the surface rather than about the intro: a corner-sweep of the
+whole save library finds the battle's **full-width top message banner** live
+in two states - `rim_elm_gimard_seru_capture_after` (the mid-battle Seru
+"captured!" banner) and `noa_levelup_banner`.
+
+Both draw the same thing, and it is the frame the thread described. It is the
+widget table's **class-0 9-slice window**, tile-set 0, sub-palette 2: 4x4
+corners and 24x4 / 4x24 edges cut from one 32x32 patch at texels `(160, 0)`,
+content pen `(16, 12)`, frame origin `(8, 4)`, interior 20 tall, top and
+bottom edges tiled 24 wide from `x = 12` with the last tile clipped. Every
+placement record whose kind byte is `0x03` / `0x04` / `0x44` frames itself
+that way. Table and law:
 [`battle.md`](../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from).
 
-A live class-0 window at the top of the battle screen is packet-pinned too, in
-the `v0_1_battle_command_menu` state: corners at `(8, 6)` and `(299, 6)`,
-bottom row at `y = 28`, top edge tiled 24 wide from `x = 12` with the last tile
-clipped to 23, glyphs on the content row at `y = 14`. That is the
-sparring-tutorial prompt rather than the enemy-name banner, but it demonstrates
-the seat family and checks the frame arithmetic against retail. It also settles
-a sub-question the old row implied: retail draws **no interior fill** under that
-window - the display list carries the border sprites and nothing else, so the
-scene shows through. "Blue interior" describes the fill art records `0x03` /
-`0x04` carry, not what this window puts on screen.
+One sub-claim in the old row is **falsified** by those frames: there is no
+blue interior. Retail draws the border sprites and the glyph run and nothing
+else - no fill primitive of any kind under the window, so the scene shows
+through. The blue-marbled 32x32 patch that made "gold border over a blue
+interior" a natural reading is the fill the framed *menu* windows use.
 
-Residual: the banner is transient and no manifest state catches it, so which
-top-seated `0x0303` placement record it raises - the candidates park at
-`(16, -24)` and live at `(16, 14)` with a 280 / 288 interior - is still
-capture-owed. The runbook is unchanged: drive `v0_1_battle_loading_tetsu`
-forward under PCSX-Redux and dump main RAM on the first frames after the mode
-flips. The read-out is now mechanical -
+Residual: the intro instance is transient, so which top-seated `0x0303`
+record it raises - the candidates park at `(16, -24)` and live at `(16, 14)`,
+and the runtime overwrites the disc width with the measured enemy name - is
+still capture-owed. The runbook is unchanged: drive
+`v0_1_battle_loading_tetsu` forward under PCSX-Redux and dump main RAM on the
+first frames after the mode flips. The read-out is mechanical -
 [`scripts/mednafen/widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py)
-joins any frame's sprites back to the widget records that drew them, so the
-banner identifies itself the moment a frame contains it.
+joins any frame's sprites back to the widget records that drew them.
 
 Two operating notes apply to any run: PCSX-Redux probes **do not exit on their
 own** ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)), and

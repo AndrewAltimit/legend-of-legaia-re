@@ -2499,6 +2499,13 @@ the caller's `(x, y)` **verbatim** - it never applies `+0x08`/`+0x0A`.
 `gp+0x14C`, applies the bias, and then loops: `lb v1, 0x2(s7)` at `0x8002FF00`,
 `addu` it into the index, and re-enter at `0x8002C780` unless it is zero.
 
+The `(x, y)` it is called with is the **glyph pen** - the content box's
+`(x, y - 2)` - not the box seat, and the bias converts pen to frame origin.
+One law covers both frame families: the plate run's `(-8, -4)` takes the
+plaque's pen `(16, 12)` to the documented plate at `(8, 8)`, and the framed
+window's `(-8, -8)` takes a banner pen `(16, 12)` to a frame at `(8, 4)`.
+Both are packet-confirmed (see the message banner below).
+
 That split is why the same table produces both behaviours the packet walk saw:
 the status marker lands at `pen + (0x3B, 2)` because its caller
 (`FUN_8002C2E4`) supplies that offset, while the roster panel's `HP` label
@@ -2556,6 +2563,27 @@ The class byte picks the layout arm. Two matter for the battle screen:
 
 The two views overlap by construction - a cap pair *is* the last two quads of
 a frame set - which is why `0x80073A60` sits three tile-sets into the pool.
+
+### The full-width message banner
+
+The top-of-screen banner every battle message uses is a class-0 window on the
+same seat, and it is packet-pinned mid-fight (the `rim_elm_gimard_seru_capture_after`
+and `noa_levelup_banner` states). Content pen `(16, 12)`, frame origin
+`(8, 4)`, left / right border columns 4 wide, interior 20 tall - so the frame
+is 28 tall and its right column starts at `16 + measured_width`. The top and
+bottom edges tile 24 wide from `x = 12` with the final tile clipped, exactly
+as a plate run clips its last body tile.
+
+Retail draws **no interior fill** under it: the display list carries the
+border sprites and the glyph run and nothing else, so the scene shows
+through. The 32x32 blue-marbled patch records `0x03` / `0x04` carry as their
+own rect is a fill the framed *menu* windows use, not this banner.
+
+The same frames catch the actor-name plaque parked: a gold plate run at
+`(8, -30)` with a 27-pixel interior (cap, one 16-wide body tile, one clipped
+to 11) and `Vahn` on the pen at `(16, -26)`. That is placement record 68's
+disc-side parked seat `(16, -24)` through the pen and bias law above, and it
+is the clip rule and the plate arithmetic confirmed in one packet run.
 
 ### The status-element badge sheet
 

@@ -41,6 +41,22 @@ below.
 | `FUN_801DBC30` blits the party panels' name plate | falsified (its page + CLUT resolve to the `etim` red cross-out X) | [details ↓](#fun_801dbc30-is-not-the-battle-name-plate) |
 | The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
 | Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
+| The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
+
+### The battle message banner has no interior fill
+
+Two live frames carrying the banner - `rim_elm_gimard_seru_capture_after` (the
+mid-battle Seru "captured!" line) and `noa_levelup_banner` - draw the class-0
+9-slice border sprites and the glyph run and **nothing else**. No textured
+fill, no flat quad, no semi-transparent rect anywhere inside the frame rect.
+The scene shows through.
+
+What made "a gold border over a blue interior" the natural reading is that the
+framed-window widget records (`0x03` / `0x04` / `0x44`) carry a 32x32
+blue-marbled patch at texels `(128, 0)` as their own sprite rect, and the
+framed *menu* windows do fill with it - so the art exists, and the battle
+banner simply does not use it. Geometry:
+[`battle.md`](../subsystems/battle.md#the-full-width-message-banner).
 
 ### A kind named by its seat can name the wrong record
 
