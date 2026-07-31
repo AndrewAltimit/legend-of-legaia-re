@@ -148,42 +148,47 @@ impl SceneHost {
         }
     }
 
-    /// Refresh [`crate::world::World::battle_arm_costs`] from the player
+    /// Refresh [`crate::world::World::battle_swing_costs`] from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
-    /// 863 / 864 / 865), find the equipped weapon id in their equipment
-    /// bytes and read the weapon section's swing-record `+0x74` arm-cost
-    /// byte (`legaia_asset::battle_data_pack::arm_cost_for_item`). A slot
-    /// whose weapon / section can't be resolved keeps the favored base
-    /// `0x1E` - the disc-free behaviour. Runs at scene entry (equipment
-    /// can only change in the field), mirroring the retail battle-load
-    /// verbatim copy. REF: FUN_800557B8
-    fn refresh_battle_arm_costs(&mut self) {
+    /// 863 / 864 / 865), splice that character's *equipped* sections and
+    /// read each swing record's `+0x74` AP cost
+    /// (`legaia_asset::battle_char_assembly::swing_command_costs`, slots
+    /// `0xC..=0xF` = Left / Right / Down / Up). A slot whose section can't
+    /// be resolved keeps the favored base `0x1E` - the disc-free
+    /// behaviour.
+    ///
+    /// Runs at scene entry, since equipment can only change in the field;
+    /// retail does the same copy at battle load. The Muscle Dome reads the
+    /// same bytes through the same function, which is what keeps the two
+    /// input screens pricing a swing identically.
+    ///
+    /// REF: FUN_800557B8
+    fn refresh_battle_swing_costs(&mut self) {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
-        /// `true` for an id in the equippable-weapon ranges (blade / claw /
-        /// club families + the Astral Sword) - the ids the player files key
-        /// weapon sections by.
-        fn is_weapon_id(id: u8) -> bool {
-            matches!(id, 0x1A..=0x33 | 0xBA)
-        }
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
             let Some(record) = self.world.roster.members.get(slot) else {
                 continue;
             };
-            let eq = record.equipment();
-            let Some(&weapon) = eq.slots.iter().find(|&&id| is_weapon_id(id)) else {
-                continue;
-            };
+            // The assembler keys sections off the first five equipment
+            // bytes (`+0x196..+0x19B`); the record carries eight.
+            let s = record.equipment().slots;
+            let equipped = [s[0], s[1], s[2], s[3], s[4]];
             let Ok(bytes) = self.index.entry_bytes(prot) else {
                 continue;
             };
             let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes) else {
                 continue;
             };
-            if let Some(cost) =
-                legaia_asset::battle_data_pack::arm_cost_for_item(&bytes, &pack, weapon as u32)
-            {
-                self.world.battle_arm_costs[slot] = cost;
+            let Ok(costs) =
+                legaia_asset::battle_char_assembly::swing_command_costs(&bytes, &pack, &equipped)
+            else {
+                continue;
+            };
+            for (i, c) in costs.iter().enumerate() {
+                if let Some(c) = c {
+                    self.world.battle_swing_costs[slot][i] = *c as u16;
+                }
             }
         }
     }
@@ -566,9 +571,9 @@ impl SceneHost {
                 // per-move power (PROT 0898; falls back to the placeholder if
                 // the disc read fails).
                 self.ensure_move_power_table();
-                // ... and the per-(character, equipped weapon) arm-cost
+                // ... and the per-(character, equipped set) swing-cost
                 // bytes the Arts command input charges per press.
-                self.refresh_battle_arm_costs();
+                self.refresh_battle_swing_costs();
             }
         }
         // Route the per-region random-encounter table from the same MAN so

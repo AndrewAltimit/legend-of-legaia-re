@@ -1820,14 +1820,15 @@ pub struct World {
     /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
     pub battle_arts_input: Option<crate::arts_command_input::ArtsCommandInputSession>,
 
-    /// Per-party-slot **arm-cost byte** for the Arts command gauge - the
-    /// per-(character, equipped weapon) `+0x74` cost the input session
-    /// charges for the arm (Left) command. Seeded from the player battle
-    /// files' equipped-weapon section at scene entry
-    /// (`SceneHost::refresh_battle_arm_costs`,
-    /// `legaia_asset::battle_data_pack::arm_cost_for_item`); stays at the
+    /// Per-party-slot **swing costs** for the Arts command gauge: the four
+    /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots
+    /// `0xC..=0xF`) the input session charges per directional press, for
+    /// that slot's *equipped* set. Seeded from the player battle files at
+    /// scene entry (`SceneHost::refresh_battle_swing_costs`, via
+    /// `legaia_asset::battle_char_assembly::swing_command_costs` - the
+    /// same reader the Muscle Dome prices its commands with); stays at the
     /// favored-class base `0x1E` without a disc. REF: FUN_800557B8
-    pub battle_arm_costs: [u8; 3],
+    pub battle_swing_costs: [[u16; 4]; 3],
 
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
@@ -2637,7 +2638,7 @@ impl World {
             battle_spell_menu: None,
             battle_arts_menu: None,
             battle_arts_input: None,
-            battle_arm_costs: [crate::arts_command_input::FAVORED_COST as u8; 3],
+            battle_swing_costs: [[crate::arts_command_input::FAVORED_COST; 4]; 3],
             battle_flow: crate::battle_flow::BattleFlowState::Idle,
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),

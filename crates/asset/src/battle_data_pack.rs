@@ -268,46 +268,6 @@ pub fn decode_all(buf: &[u8], pack: &BattleDataPack) -> Vec<Result<DecodedEntry>
         .collect()
 }
 
-/// Offset of the `swing_rec_a` pointer word in a decoded slot header.
-pub const SLOT_SWING_REC_A_OFF: usize = 0x04;
-
-/// Offset of the **arm-cost byte** inside a swing action record - the
-/// per-(character, weapon) AP cost the Arts command gauge charges per
-/// directional press (`DAT_801C9360[char][cmd] + 0x74`, copied verbatim
-/// from this byte at battle load by `FUN_800557B8`). Retail values:
-/// `0x1E` (30) favored class, `0x2A` (42) off-class, `0x36` (54) the
-/// Astral Sword. See `docs/subsystems/arts-command-gauge.md` § Disc
-/// location. REF: FUN_800557B8
-pub const SWING_ARM_COST_OFF: usize = 0x74;
-
-/// Read the weapon-specialty **arm-cost byte** out of a decoded weapon
-/// section: `decoded[swing_rec_a + 0x74]` where `swing_rec_a` is the
-/// slot header's `+0x04` word. `None` when the slot carries no swing
-/// record (`swing_rec_a == 0` - non-weapon sections) or the offset falls
-/// outside the decoded bytes.
-pub fn arm_cost(decoded: &[u8]) -> Option<u8> {
-    let swing = legaia_bytes::u32_le(decoded, SLOT_SWING_REC_A_OFF)? as usize;
-    if swing == 0 {
-        return None;
-    }
-    decoded.get(swing.checked_add(SWING_ARM_COST_OFF)?).copied()
-}
-
-/// Resolve the arm cost for equippable item `item_id` from a player
-/// battle file: find the descriptor record whose id matches, decode its
-/// slot, and read [`arm_cost`]. The descriptor table keys sections by
-/// equippable item id, so this is the per-(character, weapon) lookup the
-/// battle loader performs. `None` when the id has no section in this
-/// file or its section carries no swing record.
-pub fn arm_cost_for_item(buf: &[u8], pack: &BattleDataPack, item_id: u32) -> Option<u8> {
-    let idx = pack
-        .records
-        .iter()
-        .position(|r| r.id == item_id && r.id != 0)?;
-    let decoded = decode_record(buf, pack, idx).ok()?;
-    arm_cost(&decoded.bytes)
-}
-
 /// Find the Legaia TMD inside a decoded entry.
 ///
 /// Empirically two record-shape variants appear in the retail files:

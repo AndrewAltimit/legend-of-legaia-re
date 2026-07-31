@@ -134,15 +134,17 @@ fn detects_all_four_retail_player_files() {
     }
 }
 
-/// The weapon-specialty **arm-cost byte** (`section[+0x04]` swing record
-/// `+0x74`) decodes to the three documented cost tiers across the three
-/// weapon-carrying player files, and each character's favored weapon
-/// carries the base cost (`docs/subsystems/arts-command-gauge.md`
-/// § Disc location). Cross-checks the live-RAM measurements: Gala +
-/// Ra-Seru Club (`0x21`) = `0x1E`, Gala + Nail Glove (`0x28`) = `0x2A`,
-/// Vahn + Astral Sword (`0xBA`) = `0x36`.
+/// The four **per-direction swing costs** the Arts command gauge charges
+/// per press (`swing_command_costs`, runtime slots `0xC..=0xF` = Left /
+/// Right / Down / Up) resolve from every weapon-carrying player file's
+/// default equipped set, and every one lands on a documented tier
+/// (`docs/subsystems/arts-command-gauge.md`: favored `0x1E`, off-class
+/// `0x2A`, far `0x36`).
+///
+/// This is the byte the Muscle Dome charges for the same command, read
+/// through the same function - so the pin covers both input screens.
 #[test]
-fn arm_cost_reads_the_weapon_specialty_tiers() {
+fn swing_command_costs_read_the_documented_tiers() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -151,15 +153,12 @@ fn arm_cost_reads_the_weapon_specialty_tiers() {
         eprintln!("[skip] extracted/PROT missing");
         return;
     };
-    // (file, weapon id, expected arm cost)
-    let pins: &[(&str, u32, u8)] = &[
-        ("0865_battle_data.BIN", 0x21, 0x1E), // Gala + Ra-Seru Club: favored
-        ("0865_battle_data.BIN", 0x28, 0x2A), // Gala + Nail Glove: off-class
-        ("0863_edstati3.BIN", 0xBA, 0x36),    // Vahn + Astral Sword: max tier
-        ("0863_edstati3.BIN", 0x1A, 0x1E),    // Vahn + Ra-Seru Blade: favored
-        ("0864_edstati3.BIN", 0x1F, 0x1E),    // Noa + Ra-Seru Fangs: favored
-    ];
-    for &(file, id, want) in pins {
+    let mut checked = 0usize;
+    for file in [
+        "0863_edstati3.BIN",
+        "0864_edstati3.BIN",
+        "0865_battle_data.BIN",
+    ] {
         let path = prot_dir.join(file);
         if !path.exists() {
             eprintln!("[skip] {} missing", path.display());
@@ -167,37 +166,68 @@ fn arm_cost_reads_the_weapon_specialty_tiers() {
         }
         let raw = std::fs::read(&path).expect("read player file");
         let pack = battle_data_pack::parse(&raw).expect("parse pack");
-        let got = battle_data_pack::arm_cost_for_item(&raw, &pack, id);
-        assert_eq!(
-            got,
-            Some(want),
-            "{file}: weapon 0x{id:02X} arm cost (want 0x{want:02X})"
-        );
-    }
-    // Every weapon section that carries a swing record decodes to one of
-    // the three documented tiers - nothing else appears in the corpus.
-    for file in [
-        "0863_edstati3.BIN",
-        "0864_edstati3.BIN",
-        "0865_battle_data.BIN",
-    ] {
-        let path = prot_dir.join(file);
-        let raw = std::fs::read(&path).expect("read player file");
-        let pack = battle_data_pack::parse(&raw).expect("parse pack");
-        for rec in &pack.records {
-            let Ok(dec) = battle_data_pack::decode_record(&raw, &pack, rec.index) else {
-                continue;
-            };
-            if let Some(cost) = battle_data_pack::arm_cost(&dec.bytes) {
-                assert!(
-                    matches!(cost, 0x1E | 0x2A | 0x36),
-                    "{file} rec {} id 0x{:02X}: unexpected arm cost 0x{cost:02X}",
-                    rec.index,
-                    rec.id
-                );
-            }
+        // The section-default set (id 0 per slot) - what a fresh
+        // character walks into a fight with.
+        let costs = legaia_asset::battle_char_assembly::swing_command_costs(&raw, &pack, &[0u8; 5])
+            .unwrap_or_else(|e| panic!("{file}: swing costs: {e}"));
+        for (i, c) in costs.iter().enumerate() {
+            let c = c.unwrap_or_else(|| panic!("{file}: slot 0x{:X} has no cost", 0xC + i));
+            assert!(
+                matches!(c, 0x1E | 0x2A | 0x36),
+                "{file} slot 0x{:X}: unexpected cost 0x{c:02X}",
+                0xC + i
+            );
+            checked += 1;
         }
     }
+    assert_eq!(checked, 12, "three files x four direction slots");
+}
+
+/// The same `+0x74` byte read through an explicitly **equipped** set: the
+/// arm price moves with the weapon. That property is what makes the cost a
+/// randomizer target, and why the port re-reads it per equipped set rather
+/// than caching a per-character constant.
+#[test]
+fn swing_costs_track_the_equipped_set() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let path = prot_dir.join("0865_battle_data.BIN"); // Gala
+    if !path.exists() {
+        eprintln!("[skip] {} missing", path.display());
+        return;
+    }
+    let raw = std::fs::read(&path).expect("read player file");
+    let pack = battle_data_pack::parse(&raw).expect("parse pack");
+    let base = legaia_asset::battle_char_assembly::swing_command_costs(&raw, &pack, &[0u8; 5])
+        .expect("default costs")[0]
+        .expect("default arm cost");
+    // `select_sections` matches an equipped id positionally *inside* its
+    // own section, and the arm swing (slot `0xC`) is section 2's record -
+    // so equipment index 2 is the one that re-prices the arm. Sweep every
+    // id the table carries through it.
+    let mut seen = std::collections::BTreeSet::new();
+    for rec in &pack.records {
+        if rec.id == 0 || rec.id > 0xFF {
+            continue;
+        }
+        let eq = [0, 0, rec.id as u8, 0, 0];
+        if let Ok(c) = legaia_asset::battle_char_assembly::swing_command_costs(&raw, &pack, &eq)
+            && let Some(arm) = c[0]
+        {
+            seen.insert(arm);
+        }
+    }
+    assert!(seen.contains(&base), "the default arm cost is in the set");
+    assert!(
+        seen.len() > 1,
+        "swapping the equipped weapon changes the arm cost (saw {seen:?})"
+    );
 }
 
 /// `clut_uploads` is currently the documented no-op (the descriptor at

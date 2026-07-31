@@ -296,21 +296,17 @@ impl LegaiaMinigames {
         )?;
         let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
         // Section defaults (id 0 per slot) - the browser has no save to read
-        // an equipped set from.
-        let swings =
-            legaia_asset::battle_char_assembly::swing_battle_animations(raw, &pack, &[0u8; 5])
-                .ok()?;
-        let mut costs = [0u16; 4];
-        for s in &swings {
-            let i = s.slot.checked_sub(0xC)? as usize;
-            if i < 4 && s.cost > 0 {
-                costs[i] = s.cost as u16;
-            }
+        // an equipped set from. Read through the shared per-slot cost
+        // function, the same one the battle Arts input prices its presses
+        // with, so the dome and the battle cannot charge differently for
+        // the same command.
+        let costs =
+            legaia_asset::battle_char_assembly::swing_command_costs(raw, &pack, &[0u8; 5]).ok()?;
+        let mut out = [0u16; 4];
+        for (i, c) in costs.iter().enumerate() {
+            out[i] = (*c)? as u16;
         }
-        if costs.contains(&0) {
-            return None;
-        }
-        Some(costs)
+        Some(out)
     }
 
     /// The player fighter's record stats: SCUS new-game template leveled

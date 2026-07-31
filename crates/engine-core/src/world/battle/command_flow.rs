@@ -470,14 +470,13 @@ impl World {
             .map(|r| r.live_stats().agl)
             .filter(|&a| a > 0)
             .unwrap_or(DEFAULT_POOL);
-        let arm = self
-            .battle_arm_costs
+        // Cost order = Command byte order (Left, Right, Down, Up) = the
+        // runtime action slots `0xC..=0xF` the disc bytes are keyed by.
+        let costs = self
+            .battle_swing_costs
             .get(char_slot as usize)
             .copied()
-            .unwrap_or(FAVORED_COST as u8) as u16;
-        // Cost order = Command byte order (Left, Right, Down, Up); Left is
-        // action 0x0C, the weapon-specialty arm.
-        let costs = [arm, FAVORED_COST, FAVORED_COST, FAVORED_COST];
+            .unwrap_or([FAVORED_COST; 4]);
         let character = self.caster_character(char_slot);
         let n_arts = self
             .art_records
