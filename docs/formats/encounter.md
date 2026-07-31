@@ -81,7 +81,27 @@ The reader copies `monster_ids[0..count]` into the global formation cell at `0x8
 
 The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94` is the encounter-record pointer slot. The clear-then-copy ordering means a `monster_count < 4` record correctly leaves trailing slots zeroed. After the copy the reader clears `entity[+0x94]` and advances the entity's 5-state SM (`entity[+0x8A]++`), so the formation copy fires exactly once per arm.
 
-Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0]` (the **opcode byte** the record overlays - see the writer below) and, when it is non-zero, ORs bit `0x80` into a battle-setup flag byte. Because the install opcodes are themselves non-zero, this bit is effectively always raised for a scripted arm; the byte is the first of the record's three "reserved" bytes (`+0x00..+0x02` = the install opcode + its two operand bytes).
+Just before the copy the reader also reads `record[+0]` and, when it is non-zero, ORs bit `0x80` into the per-battle flags byte `DAT_8007BD60`:
+
+```mips
+801da5f8  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
+801da5fc  nop
+801da600  lbu v0,0x0(v0)         ; v0 = record[+0]
+801da604  nop
+801da608  beq v0,zero,0x801da620  ; zero: leave the flags byte alone
+801da60c  _lui v1,0x8008
+801da610  lbu v0,-0x42a0(v1)      ; 0x8007BD60, the per-battle flags byte
+801da614  nop
+801da618  ori v0,v0,0x80
+801da61c  sb v0,-0x42a0(v1)
+```
+
+The byte is the first of the record's three "reserved" bytes. Which value sits there depends on which arm installed the record, and both arms are live:
+
+- An **inline-script** arm points `+0x94` at the bytecode overlaying the install opcode, so `record[+0]` *is* the install opcode - non-zero by construction, and the bit is always raised.
+- The **`3E FF <row>`** arm and the **random roll** both point `+0x94` at a MAN formation row (`ctrl[+0x20] + 1 + row * ctrl[+0x5D]`), so the predicate is the row's own header byte, authored per row. Retail's scripted / boss rows are exactly the rows that carry a non-zero one: `rikuroa`'s rows 16 and 17 (the lone Caruban fight the stager launches) read `01 00 00`, while all sixteen of its random rows read `00 00 00`.
+
+What the raised bit then changes is tabulated under [the per-battle flags byte](#the-per-battle-flags-byte-dat_8007bd60).
 
 **Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode:
 
@@ -153,6 +173,37 @@ Adjacent to the formation cell:
 |---|---|---|
 | `0x8007BD0C` | `u8[4]` | Active formation: monster ids per slot, populated by the reader above. |
 | `0x8007BD11` | `u8` | Battle-data PROT-id selector. `FUN_800520F0` case-4 path reads this byte and chooses PROT entry **`0x367`** (raw TOC index; = extraction entry 0869) when it equals the case-1 character index, otherwise **`0x36D`** (raw TOC index; = extraction entry 0875). The selected entry is loaded as a kind-2 streaming asset for the battle scene. |
+| `0x8007BD60` | `u8` | Per-battle flags byte, [decoded below](#the-per-battle-flags-byte-dat_8007bd60). |
+
+### The per-battle flags byte (`DAT_8007BD60`)
+
+One byte carries two unrelated things, written by the two halves of the same
+encounter path:
+
+- **Low bits - the stage id.** The random-encounter reader overwrites the whole
+  byte with `region[+8] & 0x1F` (`FUN_801D9E1C`), and the backdrop picker reads
+  it back as `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the
+  battle stage. See [`legaia_asset::battle_backdrop`](../../crates/asset/src/battle_backdrop.rs).
+- **Bit `0x80` - "this fight is scripted".** Raised by the entity SM's confirm
+  state when the armed record's own `record[+0]` is non-zero
+  (`0x801DA5F8..0x801DA61C`, quoted above). Because the roll writes the byte
+  *first* and the confirm state ORs into it *after*, the two never race: a
+  random roll leaves the bit clear unless the row it landed on carries a
+  non-zero header byte of its own.
+
+Three consumers read bit `0x80`, and each gives a scripted fight a different
+face:
+
+| Consumer | Effect when the bit is set |
+|---|---|
+| Battle-intro style selector (`FUN_801CE8CC`) | Selects `SpinUpParticles` instead of the `TileShatter` default (or `TileShatter` sub-style 1 for slot-0 ids `0x13..=0x15`). |
+| Intro transition phase 0 (`FUN_801CF5BC`) | Emits the second audio cue on top of the plain one. |
+| Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/asset/src/monster_archive.rs). |
+
+The engine carries the bit as a property of the *formation row* rather than as
+a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's
+`record[+0]` as `header_flags` and derives `per_battle_flags()` from it, which
+the intro style + transition read at battle entry.
 
 Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](../tooling/mednafen-automation.md)):
 
@@ -568,7 +619,9 @@ followed by three count-prefixed record arrays:
 +0x02          u8      region_stride
 +0x03          u8      formation_count
 +0x04          formation_count × formation_stride bytes   ; encounter records
-                   record_i[+0..+2] = reserved (other-path scratch)
+                   record_i[+0]     = scripted-fight predicate; non-zero raises
+                                      per-battle flag 0x80 (see above)
+                   record_i[+1..+2] = reserved (other-path scratch)
                    record_i[+3]     = monster_count
                    record_i[+4..]   = monster_ids
 +next          u8 condition_count + condition_count × condition_stride bytes

@@ -42,6 +42,40 @@ trigger rate, exactly as on the retail disc. The window says so in the corner
 (`no random encounters in this scene`) so a quiet walk does not look like a
 broken engine - step onto the overworld, or `--scene map03`, to fight.
 
+### Getting into a battle on purpose
+
+Waiting for a step roll is fine for playing and useless for *checking*
+something on the battle screen: the retail counter takes several hundred steps
+to drain, and blind pad-scripted walking rarely reaches one at all.
+`--battle` names the fight instead:
+
+```bash
+# The scene's lowest formation row that carries monsters.
+./legaia-engine play-window --disc "$DISC" --scene map03 --battle first
+
+# A specific MAN encounter-table row (rikuroa row 17 = the lone Caruban boss).
+./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17
+```
+
+The row is an index into the scene's own MAN encounter table - the same id
+space the region roll produces, so `--battle 12` fights what walking into that
+region would have. Unregistered rows are refused with the scene's row list
+logged, and the flag changes nothing at all when it is absent.
+
+The fight is **armed, not injected**: the row goes into the encounter session's
+transition state machine exactly as a roll does, so the intro transition, the
+BGM swap and the battle load are the ordinary ones and what you see is what an
+organic encounter shows. It also means the fight opens a beat after boot rather
+than on frame 0 - allow ~40 ticks when pairing it with a capture:
+
+```bash
+./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17 \
+    --seed-party --screenshot /tmp/battle.png --screenshot-tick 200
+```
+
+`--battle` turns the live loop on even under `--no-live-loop`, because the
+loop is what drains the transition.
+
 ## 2. Pick a scene
 
 ```bash

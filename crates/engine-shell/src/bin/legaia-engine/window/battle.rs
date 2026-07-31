@@ -1307,16 +1307,46 @@ impl PlayWindowApp {
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
         use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
 
-        let slot0 = self
-            .session
-            .host
-            .world
-            .battle_monster_slots()
-            .first()
-            .map(|&(_, id, _)| id as u8)
+        let world = &self.session.host.world;
+        // `formation_slot0` is the *first monster id* of the formation about to
+        // fight - the value seven of the selector's arms key on. The rolled
+        // formation is the only source available here: the intro is armed
+        // during the encounter's `Transition` phase, so the world is still in
+        // Field mode and `battle_monster_slots()` (which returns empty outside
+        // `SceneMode::Battle`) cannot answer yet. Reading it first and falling
+        // back to `formation_id` therefore fed the selector a *row index* on
+        // every single battle, which left every id-keyed override - the three
+        // ScatterParticles ids, Curtain, Swirl, both TileShatter sub-2 arms -
+        // unreachable. Resolve the row instead, and keep the live table as the
+        // in-battle re-arm path.
+        let slot0 = world
+            .formation_table
+            .formation(formation_id)
+            .and_then(|d| d.slots.first())
+            .map(|s| s.monster_id as u8)
+            .or_else(|| {
+                world
+                    .battle_monster_slots()
+                    .first()
+                    .map(|&(_, id, _)| id as u8)
+            })
             .unwrap_or(formation_id as u8);
+        // `DAT_8007BD60`, and specifically its bit `0x80` - the only bit the
+        // selector reads. It is a property of the rolled formation row, not a
+        // host choice: the entity SM's confirm state ORs the bit in when the
+        // row's `record[+0]` is non-zero (`FUN_801DA51C` at
+        // `0x801DA5F8..0x801DA61C`). The MAN's scripted / boss rows are
+        // exactly the rows carrying a non-zero byte there, which is what makes
+        // `IntroStyle::SpinUpParticles` reachable at all - it is the arm the
+        // flag selects. Passing a hard `0` here pinned every fight to the
+        // TileShatter default.
+        let battle_flags = world
+            .formation_table
+            .formation(formation_id)
+            .map(|d| d.per_battle_flags())
+            .unwrap_or(0);
         let choice = select_intro_style(&IntroStyleInputs {
-            battle_flags: 0,
+            battle_flags,
             formation_slot0: slot0,
             scene_index: self.battle_intro_scene_index(),
         });
@@ -1324,7 +1354,8 @@ impl PlayWindowApp {
             .intro_quad_table()
             .unwrap_or_else(legaia_engine_render::battle_intro::IntroQuadTable::neutral);
         log::info!(
-            "play-window: battle intro style {:?} (sub {}) for formation slot0 {slot0:#04x}",
+            "play-window: battle intro style {:?} (sub {}) for formation slot0 {slot0:#04x}, \
+             battle flags {battle_flags:#04x}",
             choice.style,
             choice.sub_style
         );

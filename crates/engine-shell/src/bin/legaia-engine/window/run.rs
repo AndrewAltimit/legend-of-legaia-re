@@ -104,6 +104,7 @@ pub(crate) fn cmd_play_window(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    battle: Option<&str>,
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
@@ -132,11 +133,80 @@ pub(crate) fn cmd_play_window(
         battle_bgm,
         screenshot,
         seed_party,
+        battle,
         dynamic_lighting,
         dyn_shadows,
         entry_pulse,
         None,
     )
+}
+
+/// A `--battle` operand: a scene MAN formation-row index, or "the first row
+/// the scene registered that carries monsters".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BattleEntry {
+    Row(u16),
+    First,
+}
+
+impl BattleEntry {
+    fn parse(spec: &str) -> Result<Self> {
+        let t = spec.trim();
+        if t.eq_ignore_ascii_case("first") {
+            return Ok(Self::First);
+        }
+        t.parse::<u16>().map(Self::Row).map_err(|_| {
+            anyhow::anyhow!("--battle wants a formation row index or `first`, got {spec:?}")
+        })
+    }
+
+    /// Resolve against the world's registered formations.
+    fn resolve(self, world: &legaia_engine_core::world::World) -> Option<u16> {
+        match self {
+            Self::Row(row) => Some(row),
+            Self::First => world.first_rollable_formation_id(),
+        }
+    }
+}
+
+/// Arm the `--battle` fight on a world that has just entered its scene.
+///
+/// The battle is driven through `World::force_encounter`, which hands the
+/// named row to the encounter session's transition state machine exactly as a
+/// region roll does - so the intro, the BGM swap and the battle-load path are
+/// the ordinary ones, and what the window shows is what an organic encounter
+/// shows. Nothing here runs when `--battle` is absent.
+fn arm_requested_battle(session: &mut BootSession, spec: &str) {
+    let entry = match BattleEntry::parse(spec) {
+        Ok(e) => e,
+        Err(err) => {
+            log::error!("play-window: {err:#}");
+            return;
+        }
+    };
+    let world = &mut session.host.world;
+    let Some(row) = entry.resolve(world) else {
+        log::error!(
+            "play-window: --battle {spec} found no registered formation in '{}' (rows: {:?})",
+            world.active_scene_label,
+            world.registered_formation_ids()
+        );
+        return;
+    };
+    // The transition is drained by the live field tick, so the loop has to be
+    // on for the armed fight to open at all. `--battle` is an explicit request
+    // for a fight; honour it over `--no-live-loop`.
+    if !world.live_gameplay_loop {
+        log::info!("play-window: --battle turns the live loop on (it drains the transition)");
+        world.live_gameplay_loop = true;
+    }
+    if world.force_encounter(row) {
+        log::info!(
+            "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
+             the normal encounter transition",
+            world.active_scene_label
+        );
+    }
 }
 
 /// Build the play-window's render-side [`SceneResources`] for the host's
@@ -261,6 +331,7 @@ pub(super) fn cmd_play_window_with_record(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    battle: Option<&str>,
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
@@ -548,6 +619,21 @@ pub(super) fn cmd_play_window_with_record(
             "play-window: present party = {:?} (roster slots, battle order)",
             world.active_party
         );
+    }
+
+    // `--battle <ROW|first>`: arm a deterministic fight. Last of the world
+    // setup, so the party / cheats / New Game reset have all settled and the
+    // combatants entering the battle are the ones the run configured.
+    if let Some(spec) = battle {
+        if boot_ui {
+            // The title / save-select flow enters its own scene afterwards and
+            // would reset the session under the armed fight.
+            log::warn!("play-window: --battle ignored under --boot-ui (the boot flow re-enters)");
+        } else if session.host.world.mode == legaia_engine_core::world::SceneMode::Battle {
+            log::warn!("play-window: --battle skipped - a battle is already open");
+        } else {
+            arm_requested_battle(&mut session, spec);
+        }
     }
 
     let scene_res = build_window_scene_resources(&session)?;
