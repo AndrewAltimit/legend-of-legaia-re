@@ -73,6 +73,33 @@ Run it before believing a locally served play page, and especially before tellin
 anyone a play-page fix is live. When stale it names the drifted files, because
 "the bundle is stale" alone doesn't say whether the drift is web-visible.
 
+## What a stale engine against fresh pages costs
+
+The stamp answers "is the bundle on disk built from this tree?". A *served*
+bundle has a second staleness axis the stamp cannot see: the browser's own HTTP
+cache. `site/wasm/legaia_web_viewer.js` and `legaia_web_viewer_bg.wasm` are
+fetched from URLs that never change, while every `js/*.js` beside them is
+content-busted by `_gen.py` (see
+[`site-shell.md`](site-shell.md#script-cache-busting-is-content-addressed)). So
+a rebuilt engine can reach a returning browser late, or not at all, while the
+page scripts around it update immediately.
+
+How long "late" is comes from the response headers, and the two hosts differ:
+
+| Host | Headers on `wasm/*` | Stale window after a rebuild |
+|---|---|---|
+| `python3 -m http.server` (local) | `Last-Modified` only, no `Cache-Control`, no `ETag` | Chrome's heuristic freshness - 10% of the file's age, so **hours** for a bundle last built days ago |
+| GitHub Pages | `Cache-Control: max-age=600` + `ETag` | **10 minutes**, then revalidated |
+
+What that skew costs in practice was measured rather than assumed, in both
+directions, against an engine 76 commits apart: current pages on the old
+engine, and old pages on the new engine. Both boot, both render textured, on
+SwiftShader and on a real driver. The reason is that every page-side call into
+an engine export added by that span is `typeof rt.x === 'function'`-guarded, so
+a missing export degrades a feature instead of throwing. That is a property of
+the current call sites, not a guarantee: an unguarded call to a newly added
+export would turn the same window into a hard failure.
+
 ## Why the bundle is no longer committed
 
 It was, for 87 commits. A 4.6 MB binary rebuilt that often came to roughly

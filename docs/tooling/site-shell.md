@@ -117,6 +117,55 @@ on **every** invocation - a "clean" verdict from a detector that never matches
 is the exact failure the gate exists to prevent. Wired into CI and into the
 pre-commit hook when staged changes touch `site/`.
 
+## One disc, one delivery
+
+`site/js/rom-cache.js` holds the user's picked disc in IndexedDB so one pick
+serves the whole site. `RomCache.attach(input, { onLoad })` therefore has **two
+mouths** - the cached-disc auto-load on page init, and the input's own `change`
+event - and they are not mutually exclusive. A returning visitor whose disc is
+already cached, who then picks that same file anyway, gets both.
+
+Every page rebuilds its whole engine per delivery (`new LegaiaRuntime()` +
+`load_disc`), so the second delivery lands on top of whatever the first one
+started. On the play page that is fatal, and it does not look like a double
+load: the title card comes up normally, and a few seconds later the status
+snaps back to `Disc loaded (…). Pick a boot mode.` over a dead canvas, because
+the runtime the live title session was stepping has been replaced under it. The
+same shape can strand a scene entered from the picker.
+
+`attach` therefore keys deliveries by `(name, size)` and sequences them: the
+same disc is never handed to `onLoad` twice, and a genuinely different disc
+waits for the delivery in flight, so *last picked* wins rather than *last to
+finish*. A failed delivery clears the key so a retry still gets through.
+
+The reproduction is a control pair, not a screenshot: with a warm cache, pick
+the file again, click **New game** as soon as the boot modes appear, and read
+the HUD ten seconds later. Re-picking gives `hud-frame=0`; skipping the re-pick,
+same profile and same timing, boots to `opdeene`.
+
+## Script cache-busting is content-addressed
+
+`site/_gen.py` rewrites every `js/*.js` reference in every generated page to
+carry `?v=<content hash>`, discarding whatever marker the `_content` source
+had. Do not hand-write a version marker in `_content` - it is overwritten, and
+maintaining one is maintaining a lie.
+
+Hand-written markers were the previous scheme and they fail silently: they only
+bust when someone remembers to bump them, and a forgotten bump is
+indistinguishable from a correct deploy in a diff, in `git log`, and in a fresh
+browser. `webgl-tmd.js` and `webgl-math.js` both changed content while still
+shipping `?v=zfight-1`; `layout.js` carried no marker at all. A content hash
+cannot be forgotten - it changes exactly when the bytes change, and only then.
+
+This does **not** cover `site/wasm/`. The engine bundle is loaded by a bare
+`import('./wasm/legaia_web_viewer.js')` with no query, and the glue then fetches
+its own binary through `new URL('legaia_web_viewer_bg.wasm', import.meta.url)` -
+a URL query on the glue does **not** propagate to that fetch, so busting only
+the glue is a half-fix. Both would have to be handled together, via a loader
+that passes an explicit versioned URL into the wasm-bindgen `init`. What the
+skew actually costs today is measured in
+[`shipped-bundle-freshness.md`](shipped-bundle-freshness.md#what-a-stale-engine-against-fresh-pages-costs).
+
 ## Verifying a shell change
 
 Static reading is not enough - the trap above is invisible in a diff and

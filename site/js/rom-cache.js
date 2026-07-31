@@ -28,6 +28,19 @@
  *     unless autoLoad === false, calls onLoad(cachedSource) so the page
  *     renders with zero clicks. With autoLoad:false the chip still shows
  *     (so a button-driven loader can pull the disc via resolve()).
+ *
+ * One disc, one delivery. `attach` has two mouths - the cached-disc auto-load
+ * and the input's own `change` - and they are not exclusive: a returning
+ * visitor whose disc is already cached, who then picks that same file anyway,
+ * used to get BOTH. Every page rebuilds its whole engine per delivery, so the
+ * second one lands on top of whatever the first one started. On the play page
+ * that is fatal and looks like a page bug rather than a double load: the title
+ * card comes up, then a few seconds later the status snaps back to "Pick a
+ * boot mode" over a dead canvas, because the second `LegaiaRuntime` replaced
+ * the one the live title session was running on. So deliveries are keyed by
+ * (name, size) and sequenced: the same disc is never handed over twice, and a
+ * genuinely different disc waits for the delivery in flight so the newer one
+ * is the one that wins.
  */
 (function () {
   'use strict';
@@ -199,6 +212,44 @@
     var autoLoad = opts.autoLoad !== false;
     var chip = makeChip(input);
 
+    /* Which disc has been handed to `onLoad`, and the delivery still running.
+     * See the header note: without these, the auto-load and the pick both
+     * fire and the loser of the race overwrites the winner's engine. */
+    var delivered = null;
+    var inFlight = null;
+
+    function keyOf(src) { return (src.name || '') + ' ' + src.size; }
+
+    function deliver(src) {
+      var key = keyOf(src);
+      if (key === delivered) return;   /* same disc - the page already has it */
+      delivered = key;
+      /* A different disc while one is still loading: let the running delivery
+       * finish first, so "last picked wins" is true rather than "last to
+       * finish wins". */
+      var start = function () {
+        var r;
+        try {
+          r = onLoad(src);
+        } catch (e) {
+          console.warn('RomCache: load handler threw -', e);
+          if (delivered === key) delivered = null;   /* let a retry through */
+          return;
+        }
+        if (!r || typeof r.then !== 'function') return;
+        inFlight = r;
+        var settle = function (failed) {
+          return function () {
+            if (inFlight === r) inFlight = null;
+            if (failed && delivered === key) delivered = null;
+          };
+        };
+        r.then(settle(false), settle(true));
+      };
+      if (inFlight) inFlight.then(start, start);
+      else start();
+    }
+
     input.addEventListener('change', function () {
       var f = input.files && input.files[0];
       if (!f) return;
@@ -207,17 +258,14 @@
       }).catch(function (e) {
         console.warn('RomCache: could not cache disc -', e);
       });
-      onLoad(f);
+      deliver(f);
     });
 
     if (!hasIdb) return;
     get().then(function (rec) {
       if (!rec || !rec.blob) return;
       renderChip(chip, rec, autoLoad);
-      if (autoLoad) {
-        try { onLoad(sourceFromRecord(rec)); }
-        catch (e) { console.warn('RomCache: auto-load handler threw -', e); }
-      }
+      if (autoLoad) deliver(sourceFromRecord(rec));
     }).catch(function (e) {
       console.warn('RomCache: cache read failed -', e);
     });
