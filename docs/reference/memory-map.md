@@ -422,14 +422,30 @@ is either null or a pointer into the `0x8007B6xx` gp-pool band.
 |---|---|
 | `+0x00` | element id pair (two bytes, usually equal) |
 | `+0x02` / `+0x04` | x / y |
-| `+0x06` / `+0x08` | width / height (`+0x08` is `0x0C` throughout) |
+| `+0x06` / `+0x08` | content width / box height |
 | `+0x0A` / `+0x0C` | staging x / y - the pair `FUN_801D5778` offsets by a screen width |
 | `+0x0E` | kind pair |
 | `+0x14` | payload pointer (content, or the acting actor's `+0x1BC` animation descriptor when the battle pose path owns the row) |
 
-The array holds **200 initialised records**, `0x80076C10..0x80077ED0`. Records
-41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` copies inline; the copy
-helpers are `FUN_801D5778` (re-mapped) and `FUN_801D57E8` (straight).
+The array holds **103 initialised records**, `0x80076C10..0x800775B8`; parser
+`legaia_asset::screen_elements`, disc-gated oracle
+`crates/asset/tests/screen_elements_real.rs`. Records 41/42 (`+0x3D8` /
+`+0x3F0`) are the pair `FUN_801D5854` copies inline; the copy helpers are
+`FUN_801D5778` (re-mapped) and `FUN_801D57E8` (straight).
+
+Two earlier readings of the extent are corrected by the disc bytes. The run is
+**not** 200 records to `0x80077ED0`: index 129 is `0x80077828`, the per-monster
+[steal table](../formats/steal-table.md), so 129 is a hard ceiling, and the
+placement shape itself stops at 103 - every record below keeps all four
+coordinates within `+/-416` while record 105 already carries `-1000`. And
+`+0x08` is **not** `0x0C` throughout: `0x0C` is the line height of the
+plate-run family (name plaque, party status bar, command chips), while the
+roster panels carry `50` and the framed windows `120` / `42` / `28` / `26`.
+
+A record is a **content box**, and the chrome around it is derived rather than
+stored - `pen = (x, y - 2)` and `plate = (x - 8, y - 6)` sized `(w + 16, 20)`.
+[`battle.md`](../subsystems/battle.md#one-placement-record-derives-every-plate)
+has the packet evidence and the per-surface table.
 
 Prefer "screen-element placement table" when naming it. "Pose-slot array" is
 the narrowest of the three names and the only one the record layout

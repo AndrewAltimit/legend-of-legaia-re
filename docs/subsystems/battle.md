@@ -2142,6 +2142,13 @@ The per-member roster panel is the exception that proves the rule: it is a
 fixed 102x48 sprite rather than a plate run, so its own record (`w = 88`,
 `h = 50`) insets by `(-5, -6)` and widens by 14 instead.
 
+The table is **disc data** - it is initialised rodata in the executable's data
+segment, and the runtime writes back only the measured width, the string
+pointer and the live seat while an element slides. Parser
+`legaia_asset::screen_elements`; the disc-gated oracle
+`crates/asset/tests/screen_elements_real.rs` re-decodes it off the user's
+`SCUS_942.54` and asserts each seat above.
+
 ### The actor-name plaque
 
 Fixed seat `(8, 8)`, 20 px tall, in every battle. It names whichever actor is

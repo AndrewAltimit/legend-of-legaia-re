@@ -90,6 +90,7 @@ pub mod scene_tmd_stream;
 pub mod scene_v12_table;
 pub mod scene_vab_stream;
 pub mod scene_vdf;
+pub mod screen_elements;
 pub mod seru_trade;
 pub mod sfx_table;
 pub mod shop_stock;

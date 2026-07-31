@@ -278,6 +278,11 @@ pub const RECORD_PEN_DY: i16 = -2;
 /// scratch buffer the string was measured out of.
 pub const PLAQUE_PLACEMENT_RECORD: usize = 68;
 
+/// The table itself is disc data - parser
+/// [`legaia_asset::screen_elements`], which also carries the corrected extent
+/// (103 records, not 200) and the per-family box heights.
+pub use legaia_asset::screen_elements;
+
 /// Glyph pen and plate rect for a placement record's `(x, y, w)`.
 ///
 /// Returns `(pen, plate_origin, plate_interior_w)`; feed the last two to
