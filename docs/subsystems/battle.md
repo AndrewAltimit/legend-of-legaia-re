@@ -2183,8 +2183,8 @@ no rect in the engine's system-UI atlas set yet, so a plate draws as the shared
 blue dialog gradient under the gold 9-slice frame at the pinned footprint, and
 the separator as a font glyph. Numerals are font glyphs rather than retail's
 8x12 menu-atlas digit cells. The status element's badge art (`0x18..=0x20`)
-and its caller-supplied pen are unpinned, so the selected id draws as a
-labelled tag inside the member's own panel.
+is unpinned, so the selected id draws as a labelled tag on the panel's
+level seat, which is the seat retail's exclusive ladder puts it on.
 
 **Parked during input.** The port emits no panel draws at all while a
 command-entry session owns the frame, rather than drawing at retail's parked
@@ -2229,7 +2229,7 @@ The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it wit
 
 The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
 
-Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ailment arm draws as a labelled tag inside the same panel: the retail **sprite sheet** for `0x18..=0x20` is not resolved and retail's own element pen is caller-supplied, so the selection is ported and both the pixels and the seat are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as a labelled tag on the same panel seat: the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
 
 ### Enemy target strip
 

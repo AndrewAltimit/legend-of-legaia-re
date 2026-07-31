@@ -978,10 +978,24 @@ pub fn battle_hud_draws_for(
                 py + PANEL_NAME.1,
                 base,
             );
-            if slot.level > 0 {
-                // The no-ailment arm of `FUN_8002C2E4`'s ladder: the level
-                // beside its own label, which is a panel row in retail - not
-                // the floating marker the port used to draw.
+            // `FUN_8002C2E4` draws exactly **one** element per slot, and its
+            // ladder is exclusive: the no-ailment arm is the base marker plus
+            // the level, and any set bit (or zero HP) replaces both with a
+            // single ailment sprite. Retail seats that element on the panel's
+            // top cell, so the level and the ailment share one seat here too.
+            // The ladder itself is resolved into `status_sprite` upstream;
+            // what is approximate is only the art - retail's sprite sheet for
+            // `0x18..=0x20` is unresolved, so the id draws as a labelled tag.
+            if slot.status_sprite != 0 {
+                stage_text(
+                    &mut text,
+                    font,
+                    status_element_label(slot.status_sprite),
+                    px + PANEL_LV_LABEL.0,
+                    py + PANEL_LV_LABEL.1,
+                    status_element_color(slot.status_sprite),
+                );
+            } else if slot.level > 0 {
                 label(
                     &mut sprites,
                     &mut text,
@@ -1056,24 +1070,6 @@ pub fn battle_hud_draws_for(
                     px + PANEL_MAX_LEFT,
                     py + PANEL_MP_DIGIT_Y,
                     mp_tint,
-                );
-            }
-
-            // Status badge in the panel's own bottom-right corner - retail
-            // draws exactly one element per slot and which one is
-            // `FUN_8002C2E4`'s ladder, already resolved into `status_sprite`
-            // upstream. Retail's element art (`0x18..=0x20`) and its
-            // caller-supplied pen are both unpinned, so the id draws as a
-            // labelled tag inside the member's own panel, where nothing else
-            // sits.
-            if slot.status_sprite != 0 {
-                stage_text(
-                    &mut text,
-                    font,
-                    status_element_label(slot.status_sprite),
-                    px + PANEL_MAX_LEFT,
-                    py + PANEL_MP_DIGIT_Y + 12,
-                    status_element_color(slot.status_sprite),
                 );
             }
 

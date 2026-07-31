@@ -556,28 +556,39 @@ fn level_draws_on_the_panels_top_cell() {
     );
 }
 
-/// An ailment adds its own badge inside the member's panel - the selection is
-/// the ported part, the badge art and placement are approximations.
+/// An ailment **replaces** the level on the member's panel - `FUN_8002C2E4`
+/// draws exactly one element per slot. The selection is the ported part; the
+/// tag's art is an approximation of an unresolved sprite sheet.
 #[test]
-fn ailment_badge_draws_above_the_members_strip() {
+fn ailment_replaces_the_level_on_the_members_panel() {
     let font = legaia_font::synthetic_for_tests();
-    let clean = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    let mut clean = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    clean.level = 27;
     let mut sick = slot_view("Vahn", true, true, 100, 100, 30, 30);
+    sick.level = 27;
     sick.status_sprite = 0x1F;
     let with = hud_draws(&font, &[sick], &[], &[]);
     let without = hud_draws(&font, &[clean], &[], &[]);
-    assert!(with.len() > without.len(), "the ailment badge never drew");
-    // The badge rides the member's own panel, under its MP row - retail's
-    // element art and its caller-supplied pen are both unpinned, so what is
-    // pinned here is only that it stays inside the member's own panel.
+    // `FUN_8002C2E4`'s ladder is exclusive: the ailment REPLACES the level
+    // element rather than joining it, so the tag lands on the panel's LV seat
+    // and the LV label sprite stops drawing.
     assert!(
-        with.iter().any(|d| {
-            let x = d.dst.0 / STAGE_SCALE;
-            let y = d.dst.1 / STAGE_SCALE;
-            (SOLO_PANEL_X..SOLO_PANEL_X + PANEL_W).contains(&x)
-                && (PANEL_Y..PANEL_Y + PANEL_H + 12).contains(&y)
-        }),
-        "the badge did not draw inside the member's own panel"
+        with.iter().any(|d| d.src != SOLID
+            && d.dst.0 == (SOLO_PANEL_X + 64) * STAGE_SCALE
+            && d.dst.1 == (PANEL_Y + 6) * STAGE_SCALE),
+        "the ailment tag is not on the panel's element seat"
+    );
+    assert!(
+        without
+            .iter()
+            .any(|d| d.src != SOLID && d.dst.0 == (SOLO_PANEL_X + 88) * STAGE_SCALE),
+        "the unafflicted slot lost its level readout"
+    );
+    assert!(
+        !with
+            .iter()
+            .any(|d| d.src != SOLID && d.dst.0 == (SOLO_PANEL_X + 88) * STAGE_SCALE),
+        "the level drew alongside an ailment - the retail ladder is exclusive"
     );
 }
 
