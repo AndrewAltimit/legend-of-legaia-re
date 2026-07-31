@@ -254,7 +254,18 @@ impl PlayWindowApp {
                 // scanlines (the frame is 240 lines, NDC spans 2). This is
                 // the number a framing change is measured in - a pose alone
                 // does not say how much of the frame the actor fills.
-                const DIAG_ACTOR_HEIGHT: f32 = 800.0;
+                //
+                // The reference is a real battle-form party mesh, not a round
+                // number: the posed AABBs are 425 (Vahn), 390 (Noa) and 503
+                // (Gala) battle-world units, feet on the seat plane
+                // (`docs/formats/character-mesh.md` § Rest-pose orientation).
+                // The old `800` here was nearly *double* the mesh it claimed
+                // to stand in for, so every `lines` reading came out 1.9x
+                // high - and one was read as evidence that the assembled mesh
+                // was itself oversized. It is not: nothing on the load path
+                // scales a vertex. Change this only to another measured mesh
+                // height.
+                const DIAG_ACTOR_HEIGHT: f32 = 425.0;
                 let head = cam * Vec3::new(w.x, w.y - DIAG_ACTOR_HEIGHT, w.z).extend(1.0);
                 let lines = if clip.w > 0.0 && head.w > 0.0 {
                     ((head.y / head.w - clip.y / clip.w).abs() * 120.0).round()

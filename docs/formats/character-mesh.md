@@ -517,6 +517,35 @@ The fourth player battle file (0866) is a quadruped and does not satisfy
 this: 332, 223, 594 - long in Z by design, not mis-posed. It also has no
 runtime texture band, so it is not rendered as a party member anyway.
 
+#### What that AABB is worth on screen
+
+The mesh carries no scale of its own and nothing on the load path applies one,
+so "is the party member the right size" is arithmetic on four numbers, none of
+which live in this file:
+
+```
+apparent_height_px = H * world_scale * mesh_height / Ez
+```
+
+`H = 256` and `world_scale = 4.0` in battle - the latter is the base matrix
+`0x8007BF10 = diag(0x4000)`, which `FUN_8001DCF8` installs *only* on game mode
+`0x14`; `FUN_80048A08` inherits it through the composed view matrix and never
+names it. The per-actor scale field `actor+0x72` reads `0x1000` (1.0) for party
+and monster alike, `FUN_80020DE0` seeds it that way, and neither the equipment
+descriptor nor `tmd_register` / `tmd_ptr_fixup` touches a vertex. So `Ez` - the
+camera's eye distance to the seat - is the only free variable, and an actor
+that looks wrong-sized is a framing question before it is a mesh question.
+
+Worked example, from the battle command-menu save state (`TR = (0, 1280,
+7680)`, `H = 256`, pitch `32`, yaw `3372`, base matrix `16384 * I`, party seat
+`(0, 0, -800)`): `Ez = 6260`, so Vahn's `425` units project to `70` px. The
+framebuffer agrees - his soles land on row `169` and his hair tops out around
+`106`, and `169` is also exactly what the seat projects to under the retail
+screen centre `OFY = 114` (see
+[`renderer.md`](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)).
+A party member is therefore **just under a third of the frame** in the resting
+menu framing, not most of it; the action close-ups are where he grows.
+
 The reaction family is the shape to keep apart: the last keyframe of the
 knockdown clip (action tag 4) measures ~275-325 x, ~120-175 y, ~515-580 z -
 flat on the ground, long in Z. That is a *correct* pose for a hit reaction
