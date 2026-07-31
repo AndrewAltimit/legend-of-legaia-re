@@ -86,15 +86,27 @@ pub struct InlineDialogue {
     /// end-latch spin, `4A` frame wait). Both steppers bound it so an
     /// unresolvable wait can never soft-lock the engaged player.
     pub park_frames: u32,
-    /// Per-byte "an instruction was executed here" map over
+    /// Per-byte "this pass has already been here" map over
     /// [`Self::bytecode`]. Interaction records are **resident conversation
     /// drivers**: every story-state branch exits by jumping to a shared tail
     /// that loops back to the top selector, and retail parks there until the
-    /// next talk. A VM `Advance` jumping backward onto an already-executed PC
+    /// next talk. A VM `Advance` jumping backward onto an already-visited PC
     /// is that loop-back - the end of ONE conversation pass - so the runner
-    /// ends there instead of replaying the branch forever. Cleared on every
-    /// picker commit so menu records (which re-emit their menu by jumping
-    /// back after a branch reply) still cycle - a user choice is progress.
+    /// ends there instead of replaying the branch forever.
+    ///
+    /// **Text segments count.** A `0x1F` lead is marked when its box opens,
+    /// not only when an opcode executes: a record's tail commonly jumps back
+    /// onto the opening *line* rather than onto an opcode, and marking only
+    /// opcodes made the detector structurally unable to see that. Four of Rim
+    /// Elm's thirty-six talkable placements loop exactly that way, and each
+    /// replayed without limit - an NPC conversation with no exit. A box is
+    /// identified by its segment PC, so that is what the map has to carry.
+    ///
+    /// The picker commit clears the map only **from the branch target
+    /// forward** (never before the prompt), because the branch may legitimately
+    /// re-tread PCs this pass ran - a user choice is progress. Clearing the
+    /// whole map disarms the detector for the rest of the conversation, which
+    /// is the same defect in its second shape.
     pub visited: Vec<bool>,
 }
 

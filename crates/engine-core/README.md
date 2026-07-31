@@ -343,6 +343,20 @@ field VM, so dialogue advances by script execution rather than by a
 reimplemented approximation. Hosts that want the simpler path can leave
 it off and drive the dialog panel directly.
 
+A pass ends where retail's parks: on the record's backward jump onto a PC
+the pass already reached (`InlineDialogue::visited`). That map marks **text
+segments as well as opcodes** - retail records commonly loop back onto the
+opening line rather than onto an opcode - and a picker commit clears it only
+from the branch target forward. Both are load-bearing: with either one
+missing, real Rim Elm conversations replay without limit and cannot be
+left. Covered disc-gated by `engine-shell/npc_conversation_terminates`.
+
+`World::dialogue_owns_input` is the single "a conversation owns the pad and
+the player" predicate - **both** channels, the simplified `current_dialog`
+request and the runner. Locomotion, the interaction probe, walk-on
+dispatch, the tile board and both hosts' pause-menu open all gate on it;
+testing either field alone is the asymmetry it exists to prevent.
+
 `save_full` / `load_full` are the disk save round-trip (LGSF): party,
 story flags, money, inventory, per-character ext, saved chains.
 

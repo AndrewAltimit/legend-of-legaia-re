@@ -300,9 +300,21 @@
       this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
       this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
       this._overlayActive = false;
-      /* True while the retail dialog reading box is being blitted onto the
-       * overlay canvas - the page hides its DOM text fallback then. */
-      this.dialogOnCanvas = false;
+      /* Whether this session CAN draw the retail reading box on the overlay
+       * canvas: the engine exports the draw builder and the font atlas is
+       * uploaded. The page's DOM `.play-dialog` fallback keys off this.
+       *
+       * A *capability*, deliberately, not a per-frame "did we draw it". The
+       * flag used to be the latter, and it produced a visible defect: the HUD
+       * DOM update runs earlier in `_frame` than `_drawOverlay`, so on the
+       * frame a box opened the page read last frame's value (false), unhid the
+       * DOM box - which CSS anchors at `bottom: 5%` - and only hid it again a
+       * frame later, once the canvas had drawn the real box at the TOP
+       * (`dialog_reading_box_layout`: `(0x26, 0x10, ...)`, FUN_801D84D0). One
+       * frame of an empty-looking window at the bottom, on every box open and
+       * every page break. A capability cannot race a draw: it settles once,
+       * before the first conversation, and never flickers. */
+      this.dialogCanvasCapable = false;
       /* Last engine state handed to the HUD - lets the menu gate on Field
        * mode / no-dialog before opening. */
       this._hudState = null;
@@ -879,6 +891,13 @@
       if (!open) {
         if (startEdge && this._canOpenFieldMenu()) {
           try { rt.play_menu_open(); } catch (e) { return false; }
+          /* The engine can REFUSE - `play_menu_open` declines while a dialogue
+           * engagement owns the player (`World::dialogue_owns_input`), which is
+           * retail's engaged-bit branch. Take none of the follow-up on a
+           * refusal: no confirm blip, no swallowed pad edge, no menu clock. */
+          let opened = false;
+          try { opened = rt.play_menu_is_open(); } catch (e) {}
+          if (!opened) return false;
           this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
@@ -1101,7 +1120,6 @@
       }
       if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
       this._overlayActive = true;
-      this.dialogOnCanvas = false;
       return true;
     }
 
@@ -1143,10 +1161,21 @@
        * chrome's repeated fill. Force nearest so the repeat is seamless and the
        * glyphs stay crisp, matching native. */
       ctx.imageSmoothingEnabled = false;
+      /* Settle the reading-box capability once, ahead of every early return
+       * below, so it is already true before the first conversation and cannot
+       * flip with whatever else owns the overlay this frame. Both halves have
+       * to hold: the engine must export the builder (a cached WASM predating
+       * it does not), and the font atlas must have uploaded, because without
+       * `_menuFont` the blit paints no glyphs. `_ensureMenuBlitters` is
+       * idempotent and returns immediately once built. */
+      if (!this.dialogCanvasCapable
+          && typeof this.rt.play_dialog_draws_json === 'function') {
+        this._ensureMenuBlitters();
+        if (this._menuFont) this.dialogCanvasCapable = true;
+      }
       let open = false;
       try { open = this.rt.play_menu_is_open(); } catch (e) {}
       if (open) {
-        this.dialogOnCanvas = false;
         this._overlayActive = true;
         this._ensureMenuBlitters();
         let draws;
@@ -1181,7 +1210,6 @@
         if (this._menuChrome) this._menuChrome.blit(ctx, naming.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, naming.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = false;
         return;
       }
 
@@ -1206,11 +1234,11 @@
       }
       /* This layer does NOT own the frame: the battle HUD rides it, and a
        * reading box can be up during battle (the sparring fight talks over
-       * the running battle). Returning here left `dialogOnCanvas` false for
-       * every in-battle line, so the page fell back to the DOM `.play-dialog`
-       * strip - CSS-positioned near the BOTTOM - while the engine's own box
-       * geometry says top (`dialog_reading_box_layout`, FUN_801D84D0). So
-       * blit and fall through to the dialog layer instead. */
+       * the running battle). Returning here suppressed the canvas reading box
+       * for every in-battle line, so the page fell back to the DOM
+       * `.play-dialog` strip - CSS-positioned near the BOTTOM - while the
+       * engine's own box geometry says top (`dialog_reading_box_layout`,
+       * FUN_801D84D0). So blit and fall through to the dialog layer. */
       let overlayDrew = false;
       if (shop && shop.open) {
         this._ensureMenuBlitters();
@@ -1223,8 +1251,11 @@
 
       /* Retail dialog reading box (field NPC / event message): the engine
        * serves the byte-pinned chrome + glyph quads; blit them over the live
-       * GL view. Falls back to the DOM text box (the page hides it while
-       * `dialogOnCanvas` is true) against a cached WASM without the API. */
+       * GL view. The DOM text box stands in only where this whole path is
+       * unavailable (`dialogCanvasCapable` false - a cached WASM without the
+       * export, or no font atlas); it is never a per-frame alternative to
+       * this, because the two are seated differently and a page that switches
+       * between them mid-conversation shows the box move. */
       let dlg = null;
       if (typeof this.rt.play_dialog_draws_json === 'function') {
         try { dlg = JSON.parse(this.rt.play_dialog_draws_json(ov.width, ov.height)); }
@@ -1238,10 +1269,8 @@
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = !!this._menuFont;
         return;
       }
-      this.dialogOnCanvas = false;
       if (overlayDrew) return;
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live

@@ -946,10 +946,20 @@
         + `, fired ${sfx.fired}`
       : '-';
 
-    /* The retail dialog reading box is engine-drawn on the overlay canvas
-     * (PlayView.dialogOnCanvas); this DOM text box only stands in against a
-     * cached WASM without that draw path. */
-    if (st.dialog && st.dialog.text && !(view && view.dialogOnCanvas)) {
+    /* The retail dialog reading box is engine-drawn on the overlay canvas at
+     * the TOP of the stage. This DOM text box is a `bottom: 5%` strip and
+     * stands in ONLY where that draw path does not exist at all - a cached
+     * WASM without the export, or no font atlas. That is what
+     * `dialogCanvasCapable` reports: a capability, settled before the first
+     * conversation.
+     *
+     * It must not be the per-frame "is the canvas drawing it right now", which
+     * is what it used to be: this HUD update runs earlier in `PlayView._frame`
+     * than `_drawOverlay`, so a box that opened this frame read last frame's
+     * answer, flashed this strip at the bottom for one frame, and was replaced
+     * by the real box at the top on the next - on every open and every page
+     * break. Two differently-seated surfaces cannot be swapped per frame. */
+    if (st.dialog && st.dialog.text && !(view && view.dialogCanvasCapable)) {
       let html = st.dialog.text.replace(/[<>&]/g, c => (
         { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
       if (st.dialog.options && st.dialog.options.length) {

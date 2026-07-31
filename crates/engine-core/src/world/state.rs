@@ -727,6 +727,23 @@ pub struct World {
     /// executed).
     pub field_npc_headings: std::collections::HashMap<u8, i16>,
 
+    /// The talk-time facing save: `(placement slot, the heading the NPC stood
+    /// with before the player addressed it)`.
+    ///
+    /// Retail's touch post copies the addressed actor's `+0x26` into `+0x5A`
+    /// (`FUN_801D5B5C` at `0x801D5BE4`: `lhu a0,0x26(a2)` then `sh a0,0x5a(a2)`
+    /// in the branch delay slot), and the dialog SM's teardown writes it back
+    /// (`FUN_80039B7C` at `0x80039CE8` / `0x80039EBC`) - so an NPC that turned
+    /// to answer the player returns to its authored heading afterwards.
+    ///
+    /// One slot at a time, because one interaction owns the player at a time
+    /// (retail keeps the save per-actor and releases the engaged flag only
+    /// once every overlapping touch is dismissed; the engine opens exactly one
+    /// conversation, so a single slot is the whole of that state).
+    ///
+    /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
+    pub field_npc_facing_save: Option<(u8, i16)>,
+
     /// Static prop colliders, one per placed object of the scene's field
     /// `.MAP` object grid - the engine's source for the **actor-collision
     /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
@@ -2479,6 +2496,7 @@ impl World {
             field_entry_prerun: false,
             field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
+            field_npc_facing_save: None,
             field_prop_colliders: Vec::new(),
             resolved_cold_spawn: None,
             field_prop_bank: Default::default(),

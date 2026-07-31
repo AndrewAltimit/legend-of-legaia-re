@@ -407,6 +407,19 @@ impl LegaiaRuntime {
         if self.play_menu.is_some() {
             return;
         }
+        // Start is inert while a dialogue engagement owns the player - the
+        // same refusal `BootSession::open_field_menu` makes, off the same
+        // shared `World::dialogue_owns_input`. Retail's menu-open accept sits
+        // behind `FUN_801D01B0`'s engaged-bit branch (`0x801D01F0`), so a
+        // talking player cannot reach it.
+        // REF: FUN_801D01B0
+        if self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.dialogue_owns_input())
+        {
+            return;
+        }
         let mut session = FieldMenuSession::new();
         let resume_mode = match self.scene_host.as_mut() {
             Some(host) => {

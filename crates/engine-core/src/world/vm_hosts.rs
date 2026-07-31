@@ -430,7 +430,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         }
     }
     fn dialog_active(&self) -> bool {
-        self.world.current_dialog.is_some()
+        self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
         self.world.world_map_player_walking
@@ -506,7 +506,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
         }
     }
     fn dialog_active(&self) -> bool {
-        self.world.current_dialog.is_some()
+        self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
         // Report "player walking" so the SM's proximity-interact path stays
@@ -1151,19 +1151,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.trigger_scripted_battle(slot);
             return;
         }
-        // "Face the speaker": turn the interacted NPC toward the player before
-        // the dialogue opens. Retail's talk kernel runs a `0x4C` FaceTarget
-        // motion leg on the spoken-to actor (its `+0x26` heading rotates to the
-        // player bearing); the ported op lives in
-        // [`World::face_field_npc_toward`] and the renderer already consumes the
-        // resulting [`World::field_npc_headings`] entry. A no-op for a slot with
-        // no surfaced position (the retail actor-list miss).
-        if let Some(pslot) = self.world.player_actor_slot
-            && let Some(pactor) = self.world.actors.get(pslot as usize)
-        {
-            let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
-            self.world.face_field_npc_toward(slot, px, pz);
-        }
+        // "Face the speaker" now lives inside
+        // [`World::trigger_field_interact`] below, as
+        // [`World::face_field_npc_at_player`] - both because retail's write is
+        // in the dialog SM (one snap, not the `0x4C` ramp this site used to
+        // run) and because doing it here reached only the *scripted* interact
+        // op. The walk-up-and-press talk goes straight to
+        // `trigger_field_interact` from the interaction probe and never
+        // reached this function at all, which is why ordinary NPCs did not
+        // turn.
+        //
         // The real field-dialogue path: open the interacted actor's own inline
         // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
         // arm/engage a scripted-encounter carrier on that slot (the dialogue-

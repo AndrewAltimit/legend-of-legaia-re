@@ -40,6 +40,20 @@ struct AmbientPlayerProbe {
     player: Option<(i16, i16)>,
 }
 
+/// The 12-bit engine heading that points along `(dx, dz)` - the engine's
+/// stand-in for retail's arctangent resolver `FUN_80019B28` (LUT at
+/// `DAT_8006F4C8`), in the engine's own convention where `0` faces Z+ rather
+/// than retail's `+0x26` space where `0` faces Z-.
+///
+/// Float `atan2` rather than the LUT, so the result is shape-faithful and not
+/// bit-exact; every consumer either draws it or quantises it into a 45°
+/// compass sector.
+///
+/// REF: FUN_80019B28
+fn engine_bearing(dx: f32, dz: f32) -> i16 {
+    ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16
+}
+
 /// Does this motion stream carry a walk op - a directional step
 /// (`0x03`/`0x19`/`0x20`) or the `0x18` AABB wander?
 fn stream_has_walk_op(code: &[u8]) -> bool {
@@ -1148,8 +1162,109 @@ impl World {
         if dx == 0.0 && dz == 0.0 {
             return;
         }
-        ms.render_26 =
-            ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
+        ms.render_26 = engine_bearing(dx, dz);
+    }
+
+    /// Turn field NPC `slot` to face the player, and remember the heading it
+    /// was standing with - the talk-time half of retail's save / snap /
+    /// restore triple.
+    ///
+    /// **Retail snaps; it does not ramp.** The write is a single `sh` in the
+    /// per-actor dialog SM: `FUN_80039B7C` reaches `0x80039F48` when it moves
+    /// its context to state 1 (the script has yielded and the box is about to
+    /// open), tests the addressed actor's class word
+    /// (`flags & 0x420000 == 0x20000` - moving-class set, `0x400000` clear, so
+    /// static props never turn), calls the bearing resolver `FUN_80019B28` and
+    /// stores the result straight into `+0x26` at `0x80039F80`. There is no
+    /// budget word, no `+0x54` ramp cursor and no per-frame re-entry: one
+    /// instruction, one frame.
+    ///
+    /// That distinguishes it from the motion VM's `0x4C` `FaceTarget` leg
+    /// ([`Self::face_field_npc_toward`]), which really does ramp over a frame
+    /// budget and is the *scripted* poser - the two functions write the same
+    /// field and the last writer of the frame draws.
+    ///
+    /// Note also which endpoints retail passes. `0x4C` calls
+    /// `FUN_80019B28(self.z, self.x, tgt.z, tgt.x)` and adds `0x800`; this
+    /// site calls it `(player.z, player.x, self.z, self.x)` with **no**
+    /// `0x800`. Swapping the endpoints is the half-turn, so the two agree - a
+    /// port that copied the `0x4C` convention here *and* kept the `0x800`
+    /// would face the NPC exactly backwards.
+    ///
+    /// The previous heading goes into [`Self::field_npc_facing_save`], which
+    /// [`Self::release_talk_facing`] writes back when the conversation ends.
+    /// No-op for a slot with no surfaced position (retail's actor-list miss)
+    /// and while a save is already outstanding, so a nested interaction cannot
+    /// overwrite the authored heading with a talk pose.
+    ///
+    /// The engine resolves the bearing with float `atan2` in its own heading
+    /// convention (`0` = Z+) rather than retail's arctan LUT at `0x8006F4C8`,
+    /// so it is shape-faithful rather than bit-exact.
+    ///
+    /// PORT: FUN_80039B7C (the `0x80039F48..0x80039F80` face-the-player arm)
+    /// REF: FUN_80019B28, FUN_801D5B5C
+    pub fn face_field_npc_at_player(&mut self, slot: u8) {
+        let Some(&(nx, nz)) = self.field_npc_positions.get(&slot) else {
+            return;
+        };
+        let Some(pslot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(pactor) = self.actors.get(pslot as usize) else {
+            return;
+        };
+        let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
+        let (dx, dz) = (
+            (px as i32 - nx as i32) as f32,
+            (pz as i32 - nz as i32) as f32,
+        );
+        if dx == 0.0 && dz == 0.0 {
+            return;
+        }
+        if self.field_npc_facing_save.is_none() {
+            let prev = self.field_npc_headings.get(&slot).copied().unwrap_or(0);
+            self.field_npc_facing_save = Some((slot, prev));
+        }
+        self.field_npc_headings.insert(slot, engine_bearing(dx, dz));
+    }
+
+    /// Write an addressed NPC's pre-talk heading back, once the conversation
+    /// that turned it has ended - retail's `+0x5A` restore, which the dialog
+    /// SM's teardown performs at `0x80039CE8` / `0x80039EBC` (`lhu v0,0x5a` /
+    /// `sh v0,0x26`) on the way out.
+    ///
+    /// A no-op with no save outstanding, and - deliberately - a no-op for a
+    /// slot whose heading has been rewritten since the snap. That covers the
+    /// case retail covers with its `0x400000` class test in the other
+    /// direction: an NPC that *walked* during the conversation (a scripted
+    /// interaction leg, an autonomous patrol resuming) has earned a new
+    /// heading, and restoring the pre-talk one would teleport its facing.
+    ///
+    /// PORT: FUN_80039B7C (the `+0x5A` -> `+0x26` interaction-end restore)
+    pub fn release_talk_facing(&mut self) {
+        let Some((slot, prev)) = self.field_npc_facing_save.take() else {
+            return;
+        };
+        // Only restore when the talk pose is still the live heading.
+        let posed = match (
+            self.field_npc_positions.get(&slot),
+            self.player_actor_slot
+                .and_then(|p| self.actors.get(p as usize)),
+        ) {
+            (Some(&(nx, nz)), Some(pactor)) => {
+                let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
+                let (dx, dz) = (
+                    (px as i32 - nx as i32) as f32,
+                    (pz as i32 - nz as i32) as f32,
+                );
+                (dx != 0.0 || dz != 0.0).then(|| engine_bearing(dx, dz))
+            }
+            _ => None,
+        };
+        if posed.is_some() && self.field_npc_headings.get(&slot).copied() != posed {
+            return;
+        }
+        self.field_npc_headings.insert(slot, prev);
     }
 
     /// Seed each placed field NPC's **initial facing** from its MAN spawn
@@ -1597,7 +1712,7 @@ impl World {
         // through this same machinery, and retail's walk kernel ticks every
         // frame regardless of what spawned the record.
         let timeline_up = self.cutscene_timeline_active();
-        let dialogue_up = self.current_dialog.is_some() || self.inline_dialogue.is_some();
+        let dialogue_up = self.dialogue_owns_input();
         // Kick autonomous legs for routed NPCs with no in-flight motion.
         if self.animate_field_npcs && !dialogue_up && !timeline_up {
             let kicks: Vec<(u8, (i16, i16))> = self
@@ -2059,7 +2174,12 @@ impl World {
         // direction decode, so an input-free (or fully wall-blocked) frame
         // leaves `(0, 0)` behind and the ledge-hop trigger stays quiet.
         self.field_step_delta = (0, 0);
-        if self.current_dialog.is_some() || self.tile_board.is_some() {
+        // BOTH dialogue channels, through the shared predicate. The ordinary
+        // NPC talk runs the field-VM inline runner, which holds a box open
+        // without a `current_dialog` whenever the record selects its segment
+        // from a prologue - so a `current_dialog`-only test left the pad
+        // walking the player around under the box.
+        if self.dialogue_owns_input() || self.tile_board.is_some() {
             return;
         }
         // Lock pad-driven locomotion while an opening-cutscene timeline owns

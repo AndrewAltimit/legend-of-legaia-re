@@ -184,10 +184,19 @@ impl PlayWindowApp {
                 // retail CARD pair, game_mode 0x17 - the world holds
                 // SceneMode::Menu while it is open) and route the
                 // window's input + draws to it via the boot-UI arm.
+                //
+                // The open can be REFUSED - `open_field_menu` declines while
+                // a dialogue engagement owns the player, as retail's
+                // engaged-bit branch does. Only take the boot-UI arm when a
+                // session actually exists, or the window would route input
+                // and draws to a menu that is not there while the scene tick
+                // stayed skipped.
                 self.session.open_field_menu();
-                self.boot_ui = BootUiState::FieldMenu { sub: None };
-                self.prev_pad = self.pad;
-                continue;
+                if self.session.field_menu_is_open() {
+                    self.boot_ui = BootUiState::FieldMenu { sub: None };
+                    self.prev_pad = self.pad;
+                    continue;
+                }
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map

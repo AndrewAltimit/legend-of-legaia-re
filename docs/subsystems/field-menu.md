@@ -391,6 +391,25 @@ gated row stays **navigable** and draws grey, matching the picker's
 unconditional 7-row cursor walk; the engine's separate row mask is the one
 that removes a row from the browse order.
 
+### The menu does not open at all while a dialogue is up
+
+Retail's Start handler is not a separate handler: the menu-open accept sits
+in the pre-movement header of the locomotion controller `FUN_801D01B0`, at
+`0x801D0250..0x801D02DC`. The very first test in that function
+(`0x801D01F0`) branches out when the player actor's engaged bit
+`+0x10 & 0x80000` is set - the bit the touch post `FUN_801D5B5C` raises on
+every talk and the dialog SM's teardown clears - so a talking player's Start
+never reaches the accept. Nothing opens, and nothing buzzes.
+
+Both engine hosts refuse through the same predicate,
+`World::dialogue_owns_input` (either dialogue channel): `open_field_menu`
+and `play_menu_open` return without building a session, and each caller
+re-reads `field_menu_is_open` / `play_menu_is_open` rather than assuming the
+open took, so a refused Start does not leave the host routing input to a
+menu that is not there. The tier-3 host-drift row for pause-menu open names
+the predicate, so one host cannot keep the refusal while the other loses it
+(see [`host-drift.md`](../tooling/host-drift.md#tier-3---simulation-do-both-hosts-feed-the-same-kernel)).
+
 The seven labels are **NUL-terminated C strings** in the menu overlay's
 leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
 `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /

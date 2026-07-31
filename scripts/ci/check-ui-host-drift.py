@@ -414,7 +414,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_MENU, "play_menu_open"),
         },
         "mode": "symbols_all",
-        "symbols": ["FieldMenuGate", "SceneMode::Menu"],
+        "symbols": ["FieldMenuGate", "SceneMode::Menu", "dialogue_owns_input"],
     },
     {
         "what": "game-over panel - both hosts must project the live "

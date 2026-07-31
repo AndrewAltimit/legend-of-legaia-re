@@ -1410,7 +1410,7 @@ impl SceneHost {
         };
         if self.world.cutscene_timeline_active()
             || self.world.name_entry_active()
-            || self.world.current_dialog.is_some()
+            || self.world.dialogue_owns_input()
             || self.world.tile_board.is_some()
             || self.world.active_fmv().is_some()
         {

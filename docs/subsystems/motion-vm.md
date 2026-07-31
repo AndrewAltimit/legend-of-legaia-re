@@ -8,8 +8,13 @@ tail-section 1 - [below](#the-second-motion-vm---fun_80038158)). Both live in
 `SCUS_942.54`.
 
 The first drives **per-actor pursue / patrol / face-target** logic - NPC movement on
-the field, camera follow paths, and "face the speaker" cinematic posing during
-dialog. The second drives scripted actor choreography and writes story flags.
+the field, camera follow paths, and scripted "face the speaker" posing. The
+second drives scripted actor choreography and writes story flags.
+
+**Which function turns an NPC when the player talks to it is a different
+one.** That write is not this VM's `0x4C` ramp: it is a single `sh` in the
+dialog SM `FUN_80039B7C` - see
+[Talk-time facing is not this VM](#talk-time-facing-is-not-this-vm).
 
 Both are distinct from the other three members of
 [the runtime VM family](move-vm.md#the-runtime-vm-family) - the
@@ -91,7 +96,7 @@ Each script entry is `1 + N` bytes:
 +N  u8 operand[...]    ; opcode-specific operands
 ```
 
-When the high bit is set, the VM resolves a target actor before applying the body. `0xF8` resolves to "this actor" (the retail engine reads `_DAT_8007c364` - current player ptr), `0xFB` follows a linked list at `_DAT_8007c34c` looking for a matching record-class signature, and any other id linearly scans the actor list at `_DAT_8007c354` matching against the actor's id field at `+0x14`.
+When the high bit is set, the VM resolves a target actor before applying the body. `0xF8` resolves to "this actor" (the retail engine reads `_DAT_8007c364` - current player ptr), `0xFB` follows a linked list at `_DAT_8007c34c` looking for a matching record-class signature, and any other id linearly scans the actor list at `_DAT_8007c354` matching against the actor's **placement bind index** at `+0x50` (`lhu v0,0x50(v1)` at `0x80037E88`; `+0x14` is the actor's world X, not an id).
 
 ## Opcodes
 
@@ -178,8 +183,10 @@ increment pattern - oracle
   wrap-crossing turn.
 - **The `0x38` endpoint is always a compass entry** (the LUT snap); the
   `0x4C` endpoint is the live arctan bearing and is generally NOT
-  compass-aligned - the interact face-the-player write lands on values like
-  `1075`, and nothing re-snaps it.
+  compass-aligned - a bearing write lands on values like `1075`, and nothing
+  re-snaps it. (The measured `1075` is the *talk-time* write, which belongs to
+  `FUN_80039B7C`; the point about non-compass endpoints holds for both, because
+  both call the same bearing resolver.)
 
 The two ops differ only in what they aim at and how they choose a direction:
 
@@ -197,6 +204,41 @@ The `+0x800` on the bearing is the convention shift, not a fudge:
 table at `0x8006F4C8`, indexed by `min << 11 / max`), while the actor heading
 space has `0` = -Z. The engine's `render_26` space matches the bearing's, so
 the port carries the half-turn on the LUT instead.
+
+### Talk-time facing is not this VM
+
+The NPC turning to look at you when you press the action button is the
+easiest write in the game to attribute to `0x4C` FaceTarget, and it is not
+that op. It is one `sh` in the per-actor dialog SM, and the difference is
+observable: `0x4C` ramps over a frame budget, the talk write does not ramp at
+all.
+
+The chain is a save / snap / restore triple, none of it in `FUN_8003774C`:
+
+| step | site | what it does |
+|---|---|---|
+| save | `FUN_801D5B5C` `0x801D5BE4` | `lhu a0,0x26(a2)` then `sh a0,0x5a(a2)` in the delay slot - the addressed actor's heading is copied to `+0x5A`. |
+| snap | `FUN_80039B7C` `0x80039F48..0x80039F80` | class test, `FUN_80019B28`, `sh v0,0x26(s2)`. One instruction, one frame. |
+| restore | `FUN_80039B7C` `0x80039CE8` / `0x80039EBC` | `lhu v0,0x5a` / `sh v0,0x26` on the SM's exit paths. |
+
+The snap arm runs when the SM moves the context to state 1 - the script has
+yielded and the box is about to open - and only for a **moving-class** actor:
+`flags & 0x420000 == 0x20000` (`lui v1,0x42` / `and` / `lui v1,0x2` / `bne`).
+Static props never turn. There is no `+0x54` ramp cursor and no budget word
+anywhere in the arm.
+
+Its argument order is the load-bearing detail. `0x4C` calls
+`FUN_80019B28(self.z, self.x, tgt.z, tgt.x)` and adds `0x800`; this arm calls
+it `(player.z, player.x, self.z, self.x)` and stores the result with **no**
+`0x800`. Swapping the endpoints *is* the half-turn, so the two agree - a port
+that copies the `0x4C` convention here and keeps the `0x800` faces the NPC
+exactly backwards.
+
+Engine side: `World::face_field_npc_at_player` writes the snap and stashes the
+previous heading in `World::field_npc_facing_save`;
+`World::release_talk_facing` writes it back once no dialogue channel owns the
+frame. Both are called from the field tick, so the walk-up talk and the
+scripted `0x3E` interact get the same behaviour.
 
 ## Per-frame speed
 
@@ -246,11 +288,11 @@ from `seed_field_npc_facings`). Disc + save-library oracle:
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
 
-On interaction start the host also poses the spoken-to NPC toward the player,
-the live driver for the "face the speaker" posing named above:
-`World::face_field_npc_toward` runs the `0x4C` FaceTarget op for one step,
-rotating the NPC's heading to the player's bearing and settling it into
-`field_npc_headings` (which the renderer reads). Separately, the interacted
+`World::face_field_npc_toward` is the engine's entry into this op for a
+scripted pose: it runs the `0x4C` FaceTarget leg for one step, rotating the
+NPC's heading toward a point and settling it into `field_npc_headings` (which
+the renderer reads). The **talk-time** pose does not go through it - see the
+section below. Separately, the interacted
 `0x4C 0x51` op's byte-+4 move-anim id (retail actor `+0x5C`, consumed by the
 anim-stream stepper `FUN_800204F8`) is carried onto the started glide leg as a
 `field_npc_anim_cues` entry (`carry_npc_run_anim`) instead of being dropped.

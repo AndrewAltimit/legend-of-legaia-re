@@ -148,7 +148,7 @@ impl World {
     /// top-view debug camera, or while the player's movement-disabled flag
     /// (`+0x10 & 0x80000`) is set (encounter queued / cutscene owns the player).
     fn step_world_map_locomotion(&mut self) {
-        if self.current_dialog.is_some() {
+        if self.dialogue_owns_input() {
             return;
         }
         // A spawned overworld cutscene timeline owns the player - the opening
@@ -360,7 +360,7 @@ impl World {
     /// auto-engaged (they are talk-to, not walk-onto). No-op without entity
     /// positions, a player actor, or while a dialog owns the frame.
     fn auto_engage_world_map_portals(&mut self) {
-        if self.current_dialog.is_some() || self.world_map_entity_positions.is_empty() {
+        if self.dialogue_owns_input() || self.world_map_entity_positions.is_empty() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -634,8 +634,11 @@ impl World {
 
     fn tick_world_map_npc_dialog(&mut self) {
         // A box is up: a confirm/cancel press dismisses it (and the locomotion
-        // + auto-engage steps stay gated off `current_dialog` meanwhile).
-        if self.current_dialog.is_some() {
+        // + auto-engage steps stay gated off `dialogue_owns_input` meanwhile).
+        // The outer test covers BOTH channels so a runner-owned conversation
+        // can never have a *second* overworld dialogue opened on top of it by
+        // the same button edge that is advancing the first.
+        if self.dialogue_owns_input() {
             // The inline-script runner, when active, owns dismissal.
             if self.inline_dialogue.is_none()
                 && (self.input.just_pressed(input::PadButton::Cross)
