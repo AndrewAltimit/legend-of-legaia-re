@@ -29,10 +29,12 @@
 //! measured column offsets (name / HP / MP / AP / K.O.) span wider than the
 //! 320-px stage, so stage-scaling would push the status strip off screen.
 //!
-//! What this host still lacks vs the native window is the battle's 3D layer
-//! (monster meshes, the assembled party battle forms, the stage dome): the
-//! scene keeps rendering behind the overlay. That is a render gap, not a
-//! rules gap - the fight itself is the same engine-core battle.
+//! The battle's 3D layer under this overlay is no longer missing: the stage
+//! dome, ground grid, monster meshes and assembled party battle forms build in
+//! [`crate::play_battle_render`], and the effect layer on top of them - the
+//! effect-script spawn drain, the effect-pool billboards, the `etmd` / move-VM
+//! FX models, the summon creature and the target-select cursor tint - in
+//! [`crate::play_battle_fx`].
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::battle_hud::{
@@ -229,6 +231,16 @@ impl LegaiaRuntime {
         // drained (the world must not accumulate them) and dropped.
         let cues = host.world.drain_battle_sfx_cues();
         let _ = host.world.drain_battle_shout_cues();
+        // Battle effect-script spawn requests (one per effect record the
+        // per-actor effect-script walk consumed this tick). Routed into the
+        // world's own spawn paths so the FX render layers
+        // ([`crate::play_battle_fx`]) have something to draw - the browser
+        // used to leave this queue undrained, which is why every cast, art
+        // impact and enemy special was visually a no-op here.
+        self.drain_battle_effect_spawns_web();
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
         // Refresh per-slot rows + status icons through the shared fold, then
         // age the popups one frame.
         if host.world.mode == SceneMode::Battle {

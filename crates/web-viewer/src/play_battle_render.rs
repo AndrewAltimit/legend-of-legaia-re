@@ -53,11 +53,15 @@
 //! `battle_vp` = the native `psx_camera_mvp` composition) instead of
 //! re-projecting the pose through its orbit camera.
 //!
-//! What the native battle render still has that this host lacks: the
-//! per-tick facial-animation VRAM re-stamps (`tick_battle_face_stamps`), the
-//! mid-battle summon-creature spawn, the battle-intro screen-prim emitter,
-//! and the per-draw GTE depth cue on the ground grid (the page renderer's
-//! cue uniform is global per frame, so the grid draws uncued).
+//! The effect layer that draws *on top* of this - effect-pool billboards,
+//! `etmd` FX models, the move-VM scene-graph parts, the summon creature and
+//! the target-select cursor tint - lives in [`crate::play_battle_fx`].
+//!
+//! What the native battle render still has that this host lacks: the per-tick
+//! facial-animation VRAM re-stamps (`tick_battle_face_stamps`), the
+//! battle-intro screen-prim emitter, and the field move-VM stager parts
+//! (`build_field_fx_part_draws`, which resolve against the scene TMD pack the
+//! page does not upload while a battle is on screen).
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::scene::{Scene, SceneHost};
@@ -183,7 +187,7 @@ fn derive_battle_cam(
 /// Host-safe log: the browser console on wasm, stderr on the native test
 /// build (`crate::console_log` is a hard wasm-only stub that panics off-web,
 /// and this module runs under the disc-gated native oracles).
-fn web_log(s: &str) {
+pub(crate) fn web_log(s: &str) {
     #[cfg(target_arch = "wasm32")]
     crate::console_log(s);
     #[cfg(not(target_arch = "wasm32"))]
@@ -235,19 +239,69 @@ struct BattleActorRender {
 pub(crate) struct BattleRender {
     /// Battle VRAM (stage + flame atlas + monster/party texture bands). The
     /// page uploads this for the fight and restores the field VRAM after.
-    vram: legaia_tim::Vram,
+    pub(crate) vram: legaia_tim::Vram,
     backdrop: Option<BattleMesh>,
     ground: Option<BattleMesh>,
-    /// Ground-grid depth-cue far colour, display `0..1` (exported; the page
-    /// renderer cannot apply a per-draw cue yet - see the module doc).
+    /// Ground-grid depth-cue far colour, display `0..1`, applied by the page
+    /// as a **per-draw** cue on the grid mesh (the native `DrawCue` seam).
     grid_far: Option<[f32; 3]>,
     actors: Vec<BattleActorRender>,
+    /// How many of the five battle texture slots the entry build consumed.
+    /// A mid-battle summon injects its creature texture into the next one
+    /// ([`LegaiaRuntime::spawn_summon_creature_web`]) - the browser twin of
+    /// the native window's `battle_tex_slots_used`.
+    pub(crate) tex_slots_used: u8,
     /// The shared phase-scripted battle camera - the SAME
     /// [`legaia_engine_vm::battle_cam_script::BattleCamera`] the native
     /// window steps, driven by [`LegaiaRuntime::tick_battle_camera_web`].
     camera: Option<legaia_engine_vm::battle_cam_script::BattleCamera>,
-    /// Bumped per battle entry so the page knows to re-upload.
-    generation: u32,
+    /// Bumped per battle entry - and once more per mid-battle summon spawn -
+    /// so the page knows to re-upload.
+    pub(crate) generation: u32,
+}
+
+impl BattleRender {
+    /// World actor-table slot of each bound mesh, in mesh order. The FX
+    /// exports key their per-actor rows off this so they stay
+    /// index-parallel with `play_battle_actor_transforms`.
+    pub(crate) fn actor_slots(&self) -> Vec<usize> {
+        self.actors.iter().map(|a| a.actor_idx).collect()
+    }
+
+    /// Append a mid-battle summon creature's mesh bundle and adopt the VRAM
+    /// its texture was injected into. Called by
+    /// [`LegaiaRuntime::spawn_summon_creature_web`] after the world side of
+    /// the seat is installed; the caller bumps the generation so the page
+    /// re-uploads the battle scene with the new mesh.
+    pub(crate) fn push_summon_actor(
+        &mut self,
+        vram: legaia_tim::Vram,
+        tex_slot: u8,
+        actor_idx: usize,
+        mesh: legaia_tmd::mesh::VramMesh,
+        object_ids: Vec<u32>,
+        rest_pose: Vec<i32>,
+    ) {
+        self.vram = vram;
+        self.tex_slots_used = self.tex_slots_used.max(tex_slot.saturating_add(1));
+        // A second cast reuses the same seat, so replace rather than append -
+        // two mesh entries bound to one actor slot would draw the creature
+        // twice at identical transforms.
+        self.actors.retain(|a| a.actor_idx != actor_idx);
+        self.actors.push(BattleActorRender {
+            actor_idx,
+            // The summon rides the enemy animation pipeline but stands on the
+            // party side; the archive meshes rest facing `+Z`, which is the
+            // direction the party already faces, so no half-turn.
+            monster: false,
+            mesh: BattleMesh {
+                mesh,
+                flat: Vec::new(),
+            },
+            object_ids,
+            rest_pose,
+        });
+    }
 }
 
 /// The stage bundle `build_battle_stage` resolves - the browser copy of the
@@ -434,6 +488,9 @@ impl LegaiaRuntime {
         // idle / action clips for the shared SM pose hook.
         let mut actors: Vec<BattleActorRender> = Vec::new();
         let mut pending: Vec<PendingClips> = Vec::new();
+        // Highest battle texture slot the monster binds consumed; a
+        // mid-battle summon injects its creature texture into the next one.
+        let mut tex_slots_used: u8 = 0;
         for (actor_idx, monster_id, slot) in monsters {
             let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
                 Ok(Some(m)) => m,
@@ -454,6 +511,7 @@ impl LegaiaRuntime {
             if vmesh.indices.is_empty() {
                 continue;
             }
+            tex_slots_used = tex_slots_used.max(slot.saturating_add(1));
             let object_ids =
                 legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
             let idle = legaia_asset::monster_archive::idle_animation(&archive, monster_id)
@@ -579,6 +637,7 @@ impl LegaiaRuntime {
             ground,
             grid_far,
             actors,
+            tex_slots_used,
             camera: None,
             generation: self.battle_render_generation,
         });
@@ -985,8 +1044,9 @@ impl LegaiaRuntime {
 
     /// Ground-grid depth-cue parameters:
     /// `{"far":[r,g,b],"near_z":0,"far_z":Z,"max_ir0":M}` (display 0..1
-    /// colour), or `null` when no grid is up. Exported for the page even
-    /// though its renderer cannot yet apply a per-draw cue.
+    /// colour), or `null` when no grid is up. The page attaches this to the
+    /// grid placement as a **per-draw** cue, so the browser grid fogs into
+    /// the stage's far colour exactly as the native `DrawCue` seam does.
     pub fn play_battle_ground_cue_json(&self) -> String {
         let Some(far) = self.battle_render.as_ref().and_then(|b| b.grid_far) else {
             return "null".to_string();

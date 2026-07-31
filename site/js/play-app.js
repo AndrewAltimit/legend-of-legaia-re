@@ -26,8 +26,21 @@
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
-  /* Battle 3D layer: 930000 backdrop, +1 ground grid, +16+i actor meshes. */
+  /* Battle 3D layer: 930000 backdrop, +1 ground grid, +2 the effect-pool
+   * billboard batch, +16+i actor meshes, +256+tmd the 3D FX model cache
+   * (keyed by the engine's global-TMD-pool index, so one upload per distinct
+   * effect mesh per fight). */
   const BATTLE_MESH_BASE = 930000;
+  const BATTLE_FX_BILLBOARD_MESH = BATTLE_MESH_BASE + 2;
+  const BATTLE_FX_MODEL_BASE = BATTLE_MESH_BASE + 256;
+  /* Identity model matrix for draws whose transform the engine already folded
+   * into the vertex stream (the FX billboard batch). */
+  const IDENTITY_MODEL = new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ]);
   /* Wall-clock NPC anim fallback rate, used ONLY against a cached WASM
    * without the engine clip-state API. The live path reads each clip's
    * current frame from the engine, whose playhead advances in sim-tick time
@@ -1758,9 +1771,26 @@
        * scale (base matrix 0x8007BF10), pre-scaled here because the page's
        * per-draw `scale` only scales the mesh, not its translation. */
       if (b.backdrop) draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
-      if (b.ground) draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      /* The grid rides the stage's own GTE depth cue (`DAT_80078C1C` outdoor
+       * table / indoor grey), as a PER-DRAW cue - nothing else in the frame
+       * fogs. The engine resolved the far colour + ramp window at battle
+       * entry; the page just attaches it. */
+      if (b.ground) {
+        draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+      }
       const S = b.scale;
       const tf = rt.play_battle_actor_transforms();
+      /* Target-select cursor: the engine resolves `FUN_801DA6B4`'s three
+       * render words into a ready [enable, far rgb, max_ir0, model scale] row
+       * per actor - the pointed-at monster pulses bright, the rest dim, and
+       * the q12 render scale composes about the actor origin. Guarded against
+       * a cached WASM without the export. */
+      let cursor = null;
+      try {
+        if (typeof rt.play_battle_actor_cursor === 'function') {
+          cursor = rt.play_battle_actor_cursor();
+        }
+      } catch (e) { /* no cursor tint this frame */ }
       for (let i = 0; i < b.actors.length; i++) {
         const a = b.actors[i];
         const o = i * 5;
@@ -1774,6 +1804,7 @@
             this.renderer.updateSceneMeshPositions(a.meshId, a.out);
           }
         }
+        const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
         draws.push({
           meshId: a.meshId,
           /* Raw retail translation (Y-down, like the native actor_model) -
@@ -1783,9 +1814,16 @@
           /* Enemy meshes rest facing +Z; the enemy side carries the
            * half-turn toward the party (the native actor_model rule). */
           rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
-          scale: S,
+          scale: (c >= 0) ? S * cursor[c + 5] : S,
+          cue: (c >= 0 && cursor[c] > 0.5)
+            ? {
+              far: [cursor[c + 1], cursor[c + 2], cursor[c + 3]],
+              nearZ: -1, farZ: 0, maxIr0: cursor[c + 4],
+            }
+            : null,
         });
       }
+      this._battleFxDraws(rt, b, draws);
 
       /* Camera: the engine hands the page a READY view-projection - the
        * shared retail phase script's live pose (dialogue close-up / far
@@ -1809,6 +1847,58 @@
       return true;
     }
 
+    /* Battle effect layer: append this frame's FX draws to `draws`.
+     *
+     * Two engine-composed seams, both from `crates/web-viewer/play_battle_fx`:
+     *
+     *  - the effect POOL, as one batched mesh of camera-facing textured quads
+     *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas
+     *    the battle VRAM carries) plus tinted outline strips. Its vertices
+     *    already carry the FX camera's 4x world scale, so it draws under an
+     *    identity model - the basis is derived engine-side from the same
+     *    battle VP the page renders with, which is what makes the quads face
+     *    the camera that actually draws them.
+     *  - the 3D FX MODELS: `etmd.dat` effect meshes and the move-VM
+     *    scene-graph parts (summon + battle move-FX), each with a ready model
+     *    matrix. Meshes are cached per global-TMD-pool index for the fight.
+     *
+     * Silent no-op against a cached WASM without the FX exports. */
+    _battleFxDraws(rt, b, draws) {
+      if (typeof rt.play_battle_fx_sync !== 'function') return;
+      const c = this.renderer.canvas;
+      const aspect = c.width / Math.max(c.height, 1);
+      let verts = 0;
+      try { verts = rt.play_battle_fx_sync(aspect); } catch (e) { return; }
+      if (verts > 0) {
+        this.renderer.uploadSceneMesh(BATTLE_FX_BILLBOARD_MESH,
+          rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
+          rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
+          rt.play_battle_fx_flat_rgba());
+        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL });
+      }
+      const n = rt.play_battle_fx_model_count();
+      if (!n) return;
+      const mats = rt.play_battle_fx_model_matrices();
+      for (let i = 0; i < n; i++) {
+        const tmd = rt.play_battle_fx_model_tmd(i);
+        const meshId = BATTLE_FX_MODEL_BASE + tmd;
+        if (!b.fxMeshes.has(tmd)) {
+          const pos = rt.play_battle_fx_mesh_positions(tmd);
+          const idx = rt.play_battle_fx_mesh_indices(tmd);
+          /* Cache the miss too: a pool slot that yields no geometry must not
+           * be re-decoded every frame for the life of the fight. */
+          b.fxMeshes.set(tmd, !!(pos.length && idx.length));
+          if (pos.length && idx.length) {
+            this.renderer.uploadSceneMesh(meshId, pos,
+              rt.play_battle_fx_mesh_uvs(tmd), rt.play_battle_fx_mesh_cba_tsb(tmd),
+              idx, null);
+          }
+        }
+        if (!b.fxMeshes.get(tmd)) continue;
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16) });
+      }
+    }
+
     /* Upload the freshly-built battle scene: the battle VRAM (stage + flame
      * atlas + monster/party texture bands), the backdrop, the ground grid
      * and one mesh per bound battle actor. Actor slots that fail to decode
@@ -1830,7 +1920,22 @@
         scale: (typeof rt.play_battle_world_scale === 'function')
           ? rt.play_battle_world_scale() : 4.0,
         backdrop: 0, ground: 0, actors: [],
+        /* global-TMD-pool index -> "this slot uploaded geometry", so an FX
+         * model decodes once per fight (and a dud slot is not retried). */
+        fxMeshes: new Map(),
+        /* The ground grid's per-stage depth cue, in the renderer's per-draw
+         * cue shape. Resolved engine-side (`play_battle_ground_cue_json` =
+         * the SCUS outdoor table / indoor grey), null when no grid is up. */
+        groundCue: null,
       };
+      try {
+        const cue = JSON.parse(rt.play_battle_ground_cue_json());
+        if (cue && cue.far) {
+          b.groundCue = {
+            far: cue.far, nearZ: cue.near_z, farZ: cue.far_z, maxIr0: cue.max_ir0,
+          };
+        }
+      } catch (e) { /* an unreadable cue just leaves the grid uncued */ }
       b.backdrop = up(BATTLE_MESH_BASE, rt.play_battle_backdrop_positions(),
         rt.play_battle_backdrop_uvs(), rt.play_battle_backdrop_cba_tsb(),
         rt.play_battle_backdrop_indices(), rt.play_battle_backdrop_flat_rgba());
