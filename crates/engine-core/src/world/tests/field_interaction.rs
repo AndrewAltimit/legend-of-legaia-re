@@ -699,3 +699,255 @@ fn three_actor_talk_first_arm_without_leader_defaults_to_slot_zero() {
     assert_eq!(world.party_actor_slots, vec![Some(0)]);
     assert!(world.system_flag_test(0x10), "flag 0x10 + leader(0)");
 }
+
+// ---- the walk-up talk: engagement, loop, locomotion, facing ----
+
+/// A scene the player can walk in: every collision cell open, every object
+/// cell walk-visible, player actor in slot 0 at the origin facing Z+.
+fn walkable_talk_scene() -> World {
+    let mut w = World::new();
+    w.mode = SceneMode::Field;
+    w.load_field_collision_grid(&vec![0u8; FIELD_GRID_LEN]);
+    w.load_field_object_cells(&[0x00u8, 0x10].repeat(FIELD_GRID_LEN));
+    w.player_actor_slot = Some(0);
+    w.actors[0].active = true;
+    w.actors[0].move_state.world_x = 0;
+    w.actors[0].move_state.world_z = 0;
+    // Heading 0 = travel Z+, which the probe maps to compass sector 4 and a
+    // probe point 64 units up-Z: exactly where the NPC below stands.
+    w.actors[0].move_state.render_26 = 0;
+    w.actors[0].move_state.field_72 = 0x1000;
+    w
+}
+
+/// Seat a talkable NPC in front of the player, with an interaction record
+/// whose whole content is one text segment and the `0x21` pass terminator -
+/// the shape the field-VM inline runner drives. Deliberately registered
+/// **only** as a prologue record (no `field_npc_dialog` entry), because that
+/// is the case where `current_dialog` stays `None` for the whole conversation
+/// and the runner alone owns it - the case every `current_dialog`-only gate
+/// in the field tick was blind to.
+fn seat_prologue_npc(w: &mut World, slot: u8) {
+    w.field_npc_positions.insert(slot, (0, 64));
+    w.field_npc_headings.insert(slot, 0x400);
+    w.field_npc_dialog_prologue.insert(
+        slot,
+        crate::man_field_scripts::InlineDialogPrologue {
+            body: vec![0x1F, b'h', b'i', 0x00, 0x21],
+            entry_pc: 0,
+            first_segment: 0,
+        },
+    );
+    w.use_vm_dialogue = true;
+}
+
+/// Tick `n` frames with `mask` held. The pad mask is republished every frame
+/// because that is what rotates `pad_prev`: a host that sets it once and then
+/// ticks leaves `just_pressed` latched true forever, which is a property of
+/// the test harness rather than of the engine (every real host calls
+/// `set_pad` per frame).
+fn hold(w: &mut World, mask: u16, n: usize) {
+    for _ in 0..n {
+        w.input.set_pad(mask);
+        let _ = w.tick();
+    }
+}
+
+/// Play one conversation the way a player does - press, release, press - and
+/// return once no dialogue channel owns the frame.
+fn play_out_conversation(w: &mut World) {
+    use crate::input::PadButton;
+    for _ in 0..40 {
+        if !w.dialogue_owns_input() {
+            return;
+        }
+        hold(w, 0, 1);
+        // Checked between the two halves: the release frame is often the one
+        // that runs the record's tail past the dismissed box, and pressing
+        // again after it would simply start the *next* conversation.
+        if !w.dialogue_owns_input() {
+            return;
+        }
+        hold(w, PadButton::Cross.mask(), 1);
+    }
+    panic!("the conversation never ended");
+}
+
+/// The probe-driven NPC talk must end when the player dismisses it and stay
+/// ended - with the confirm still held and the player still standing in the
+/// NPC's interact box.
+///
+/// The defect this pins: the probe tested only `current_dialog`, so every
+/// page-advance press on a runner-owned conversation ALSO re-ran
+/// `trigger_field_interact` and re-armed `active_inline_prologue`. The frame
+/// the conversation ended, `drive_inline_dialogue` found that leftover and
+/// relaunched the same record with no input at all - a conversation that
+/// reopened itself, forever, which is what "dialogue loops and is hard to get
+/// out of" looks like from the pad.
+#[test]
+fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
+    use crate::input::PadButton;
+    let mut world = walkable_talk_scene();
+    seat_prologue_npc(&mut world, 3);
+
+    hold(&mut world, PadButton::Cross.mask(), 1);
+    assert!(
+        world.inline_dialogue.is_some(),
+        "the facing probe must open the NPC's interaction record"
+    );
+    // Let it type; a held button is not a second press.
+    hold(&mut world, PadButton::Cross.mask(), 8);
+    assert!(world.dialogue_owns_input(), "the box is still up");
+
+    // Dismiss with a real press - release, press - and then NEVER let go. The
+    // record's tail (`0x21`) runs out over the next couple of frames while the
+    // button is still down, so the conversation ends under a held confirm,
+    // which is the state the player is actually in when they mash through a
+    // line. From there no pad edge exists at all.
+    hold(&mut world, 0, 1);
+    for frame in 0..160 {
+        world.input.set_pad(PadButton::Cross.mask());
+        let _ = world.tick();
+        // Two frames to close the box and run the record's tail; after that
+        // nothing may bring it back.
+        if frame >= 4 {
+            assert!(
+                !world.dialogue_owns_input(),
+                "the conversation reopened by itself on frame {frame} with no \
+                 new button edge (held confirm, player still in the interact \
+                 box)"
+            );
+        }
+    }
+    // And with the pad fully released it must stay closed too - the original
+    // relaunch needed no input whatsoever.
+    for frame in 0..120 {
+        world.input.set_pad(0);
+        let _ = world.tick();
+        assert!(
+            !world.dialogue_owns_input(),
+            "the conversation reopened by itself on idle frame {frame}"
+        );
+    }
+    assert!(
+        world.active_inline_prologue.is_none(),
+        "no interaction staging may survive the conversation"
+    );
+
+    // And a fresh press still works - the fix must not have made the NPC
+    // permanently unaddressable.
+    hold(&mut world, 0, 1);
+    hold(&mut world, PadButton::Cross.mask(), 1);
+    assert!(
+        world.inline_dialogue.is_some(),
+        "a new press re-opens the conversation"
+    );
+}
+
+/// The player must not walk while a dialogue owns the frame.
+///
+/// `step_field_locomotion` gated on `current_dialog` alone, and the ordinary
+/// NPC talk runs through the inline field-VM runner - which for a
+/// prologue-selected record never sets `current_dialog`. So the pad walked the
+/// player around underneath the box, including while navigating options.
+#[test]
+fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
+    use crate::input::PadButton;
+
+    // Control: with no dialogue up, a held direction does move the player.
+    let mut free = walkable_talk_scene();
+    seat_prologue_npc(&mut free, 3);
+    hold(&mut free, PadButton::Up.mask(), 1);
+    assert_ne!(
+        free.actors[0].move_state.world_z, 0,
+        "control: the pad walks the player when nothing owns the frame"
+    );
+
+    let mut world = walkable_talk_scene();
+    seat_prologue_npc(&mut world, 3);
+    hold(&mut world, PadButton::Cross.mask(), 1);
+    assert!(world.inline_dialogue.is_some(), "the conversation opened");
+    let seat = (
+        world.actors[0].move_state.world_x,
+        world.actors[0].move_state.world_z,
+    );
+    hold(
+        &mut world,
+        PadButton::Up.mask() | PadButton::Right.mask(),
+        60,
+    );
+    assert!(
+        world.dialogue_owns_input(),
+        "the box is still up (a direction is not a dismiss)"
+    );
+    assert_eq!(
+        (
+            world.actors[0].move_state.world_x,
+            world.actors[0].move_state.world_z
+        ),
+        seat,
+        "the player must stand still while the dialogue owns the pad"
+    );
+}
+
+/// Talking to an NPC turns it to face the player, instantly, and gives its
+/// authored heading back when the conversation ends.
+///
+/// Retail does both in the dialog SM: the touch post saves `+0x26` into
+/// `+0x5A` (`FUN_801D5B5C`), the SM writes the player bearing into `+0x26`
+/// with a single `sh` (`FUN_80039B7C` at `0x80039F80` - no ramp, no budget),
+/// and the teardown writes the save back.
+#[test]
+fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
+    use crate::input::PadButton;
+    let mut world = walkable_talk_scene();
+    seat_prologue_npc(&mut world, 3);
+    assert_eq!(
+        world.field_npc_headings.get(&3),
+        Some(&0x400),
+        "the NPC starts on its authored heading"
+    );
+
+    hold(&mut world, PadButton::Cross.mask(), 1);
+    // Player at (0, 0), NPC at (0, 64): the bearing NPC -> player is -Z, which
+    // is 0x800 in the engine's heading space (0 = +Z). One frame, not a ramp.
+    assert_eq!(
+        world.field_npc_headings.get(&3),
+        Some(&0x800),
+        "the addressed NPC faces the player on the frame the talk starts"
+    );
+    assert_eq!(world.field_npc_facing_save, Some((3, 0x400)));
+
+    play_out_conversation(&mut world);
+    hold(&mut world, 0, 1);
+    assert!(!world.dialogue_owns_input(), "the conversation ended");
+    assert_eq!(
+        world.field_npc_headings.get(&3),
+        Some(&0x400),
+        "the NPC goes back to the heading it was authored with"
+    );
+    assert!(world.field_npc_facing_save.is_none());
+}
+
+/// The pause menu is refused while a dialogue owns the player - retail's
+/// menu-open accept sits behind `FUN_801D01B0`'s engaged-bit branch, so a
+/// talking player's Start never reaches it.
+#[test]
+fn dialogue_owns_input_covers_both_channels() {
+    let mut w = World::new();
+    assert!(!w.dialogue_owns_input(), "idle world owns no input");
+    w.start_inline_dialogue(vec![0x1F, b'a', 0x00]);
+    assert!(
+        w.dialogue_owns_input(),
+        "the inline runner alone must count - it is the ordinary NPC talk"
+    );
+    w.inline_dialogue = None;
+    w.current_dialog = Some(crate::world::DialogRequest {
+        text_id: 0,
+        inline: Vec::new(),
+        world_x: 0,
+        world_z: 0,
+        depth_id: 0,
+    });
+    assert!(w.dialogue_owns_input(), "the simplified request counts too");
+}

@@ -275,6 +275,104 @@ pub trait ParticleEnv {
     fn rand(&mut self) -> i32;
 }
 
+/// The draw width every seeder's `%` arm is written against: retail's
+/// `FUN_80056798` hands back a 15-bit value, and the tile seeder's
+/// `rand() % 5000` / `rand() % 4000` only spread over their full range if the
+/// source does too.
+pub const INTRO_RAND_BITS: u32 = 15;
+
+/// Multiplier of the [`IntroRng`] stream. `0x0019660D` (1664525) is the
+/// standard companion of the [`INTRO_RNG_INCREMENT`] already in use, and -
+/// unlike an even multiplier - it makes the generator full-period over
+/// `2^32`.
+///
+/// This constant is load-bearing rather than cosmetic. A multiplier divisible
+/// by `2^k` drives `k` more low bits of the state to a constant on every step,
+/// so an even one walks the whole 32-bit state into the fixed point
+/// `c * (1 - m)^-1` within a handful of draws and then returns **the same
+/// number forever**. The host stand-in previously used `0x00019660` - the same
+/// digits with one dropped - which collapsed after five draws, handed all 256
+/// tile-shatter records the identical spawn delay, and pinned the whole style
+/// at its seeded rest pose. See [`IntroRng::draw`]'s test.
+pub const INTRO_RNG_MULTIPLIER: u32 = 0x0019_660D;
+
+/// Increment of the [`IntroRng`] stream (1013904223).
+pub const INTRO_RNG_INCREMENT: u32 = 0x3C6E_F35F;
+
+/// The port's stand-in for `FUN_80056798`, shared by every host that arms a
+/// battle intro.
+///
+/// Retail's PRNG is a SCUS routine the seeders call; the port does not need
+/// its exact stream (the seeded delays and jitter are not part of any parity
+/// oracle) but it *does* need a stream with the same statistical shape - 15
+/// bits, uniform, non-repeating over the ~700 draws one transition consumes.
+/// Keeping the one implementation here rather than one per host is what stops
+/// the three call sites drifting apart again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntroRng {
+    state: u32,
+}
+
+impl IntroRng {
+    /// Seed the stream. A zero seed would be a legal state for a full-period
+    /// LCG, but the odd bias keeps the first draw off the increment itself.
+    pub fn new(seed: u32) -> Self {
+        Self { state: seed | 1 }
+    }
+
+    /// One 15-bit draw, taken from the state's high half (the low bits of any
+    /// power-of-two-modulus LCG have short periods).
+    pub fn draw(&mut self) -> i32 {
+        self.state = self
+            .state
+            .wrapping_mul(INTRO_RNG_MULTIPLIER)
+            .wrapping_add(INTRO_RNG_INCREMENT);
+        ((self.state >> 16) & ((1 << INTRO_RAND_BITS) - 1)) as i32
+    }
+}
+
+#[cfg(test)]
+mod intro_rng_tests {
+    use super::*;
+
+    /// The regression the tile shatter needed: the stream must not converge.
+    ///
+    /// With the dropped-digit multiplier every seed reached a fixed point
+    /// within five draws, so this fails by returning one repeated value.
+    #[test]
+    fn the_stream_does_not_collapse_to_a_fixed_point() {
+        for seed in [0u32, 1, 0x1234_5678, 0xDEAD_BEEF, 99_991] {
+            let mut rng = IntroRng::new(seed);
+            let draws: Vec<i32> = (0..600).map(|_| rng.draw()).collect();
+            let distinct: std::collections::BTreeSet<i32> = draws.iter().copied().collect();
+            assert!(
+                distinct.len() > 400,
+                "seed {seed:#x}: only {} distinct draws in 600",
+                distinct.len()
+            );
+            // Every draw fits the 15-bit width the `%` arms assume.
+            assert!(draws.iter().all(|&d| (0..0x8000).contains(&d)));
+        }
+    }
+
+    /// What the tile seeder actually asks for: 256 delays out of
+    /// `rand() % 5000`, spread widely enough that some tiles start early in a
+    /// retail-length transition and some start late.
+    #[test]
+    fn the_tile_delay_draws_spread_across_the_whole_window() {
+        let mut rng = IntroRng::new(0x1234_5678);
+        // The seeder burns two draws per interior vertex before the tile loop.
+        for _ in 0..450 {
+            rng.draw();
+        }
+        let delays: Vec<i32> = (0..256).map(|_| rng.draw() % 5000).collect();
+        let min = *delays.iter().min().unwrap();
+        let max = *delays.iter().max().unwrap();
+        assert!(min < 300, "no tile starts in the first frames (min {min})");
+        assert!(max > 3000, "no tile starts late (max {max})");
+    }
+}
+
 /// Seed one transition particle grid. `FUN_801CFBB4` / `FUN_801D0164`.
 ///
 /// `allocated` is the allocator's answer for the `0xDC00` request

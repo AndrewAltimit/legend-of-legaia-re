@@ -33,17 +33,31 @@
 //! distinct budget stage, so it is left out rather than guessed at. Everything
 //! this module exposes is a kernel whose every instruction is accounted for.
 //!
-//! # NOT WIRED
+//! # Wiring: the auto-fill arm is live, the pool arm is not
 //!
-//! No engine caller - but **the call site is not the missing piece**, and an
-//! earlier note here naming the unported battle flow SM `FUN_801D388C` as the
-//! caller was wrong. The retail caller is the action SM itself: `jal
-//! 0x801f0450` at `0x801E2AB8` in `overlay_battle_action_801e295c.txt`, the
-//! first call of the `ctx[+0x07] == 0x00` arm that begins at `0x801E2AB4` -
+//! The retail caller is the action SM itself: `jal 0x801f0450` at
+//! `0x801E2AB8` in `overlay_battle_action_801e295c.txt`, the **first**
+//! instruction of the `ctx[+0x07] == 0x00` arm that begins at `0x801E2AB4` -
 //! the arm that latches `ctx[+0x290]` into `+0x291` and stamps state `0x0A` /
-//! `0x0B`, which is ported and live as
-//! [`battle_action`](crate::battle_action)'s `Begin`. The wire has a home;
-//! what it has no arguments for is the pool arm's two disc-side inputs:
+//! `0x0B`, ported and live as [`battle_action`](crate::battle_action)'s
+//! `Begin`. `battle_action::dispatch`'s `auto_fill_party_queues` is the port
+//! of the per-slot loop, and it drives [`auto_fill_queue`] +
+//! [`auto_fill_floor`] + [`roll_target_slot`] from there.
+//!
+//! Correcting one thing an earlier note here got wrong: the gate word is
+//! **not** `BattleActionHost::character_ability_bits`. That accessor is the
+//! character record's `+0xF4` word (the MP-cost discount bits the cast band
+//! reads at `0x801E3D04`); the auto-fill gate reads `+0xF8`
+//! (`0x801F04D4`, `lw v0,0x6c0(v1)` off the `0x80084140` base) - the *upper*
+//! word of the same 64-bit accessory-passive bitfield, reached through
+//! [`BattleActionHost::character_ability_bits_high`](crate::battle_action::BattleActionHost::character_ability_bits_high).
+//! The learned-arts list is
+//! [`BattleActionHost::learned_arts`](crate::battle_action::BattleActionHost::learned_arts)
+//! (record `+0x185` count, `+0x186..` ids) and the per-character floor keys on
+//! `DAT_8007BD10[slot]`, the roster character id, not the battle slot.
+//!
+//! **The pool arm stays inert**, and its blockers are disc-side, not caller-
+//! side:
 //!
 //! * the per-(character, weapon) arts-command records at
 //!   `DAT_801C9360[slot][cmd]` with their `+0x74` AP costs (see
@@ -53,14 +67,10 @@
 //! * the four-entry status-guard mask table at `0x801F672C`, which no parser
 //!   extracts at all.
 //!
-//! The auto-fill arm needs less - the ability bit is already
-//! `BattleActionHost::character_ability_bits` and the status word is on the
-//! actor - but its learned-arts list (`record[+0x185]` count, `+0x186..`
-//! bytes) has no host accessor either. Calling the module from `Begin` with
-//! empty tables would be a call that does nothing in production, so the
-//! honest order is tables first, call site second. `engine-core` drives
-//! auto-fighting party members through its own stand-in physical action until
-//! then.
+//! So [`build_candidate_pool`], [`command_weight`], [`weight_family`] and
+//! [`spend_gauge`] would draw from an empty pool if called; `engine-core`
+//! keeps driving auto-fighting party members through its own stand-in
+//! physical action on that leg.
 
 use crate::battle_formulas::FleeActor;
 

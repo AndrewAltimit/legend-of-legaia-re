@@ -139,7 +139,11 @@ void main() {
 class PrimReplayRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
-    if (!gl) throw new Error('WebGL2 not available');
+    if (!gl) {
+      throw (window.legaiaWebgl2Failure
+        ? window.legaiaWebgl2Failure()
+        : new Error('WebGL2 not available'));
+    }
     this.canvas = canvas;
     this.gl = gl;
     this.program = compileProgram2(gl, VS_REPLAY, FS_REPLAY);

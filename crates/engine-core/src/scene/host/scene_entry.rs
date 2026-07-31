@@ -148,6 +148,51 @@ impl SceneHost {
         }
     }
 
+    /// Refresh [`crate::world::World::battle_swing_costs`] from the player
+    /// battle files: for each roster character (Vahn / Noa / Gala = PROT
+    /// 863 / 864 / 865), splice that character's *equipped* sections and
+    /// read each swing record's `+0x74` AP cost
+    /// (`legaia_asset::battle_char_assembly::swing_command_costs`, slots
+    /// `0xC..=0xF` = Left / Right / Down / Up). A slot whose section can't
+    /// be resolved keeps the favored base `0x1E` - the disc-free
+    /// behaviour.
+    ///
+    /// Runs at scene entry, since equipment can only change in the field;
+    /// retail does the same copy at battle load. The Muscle Dome reads the
+    /// same bytes through the same function, which is what keeps the two
+    /// input screens pricing a swing identically.
+    ///
+    /// REF: FUN_800557B8
+    fn refresh_battle_swing_costs(&mut self) {
+        /// PROT entries of the three weapon-carrying player battle files.
+        const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
+        for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
+            let Some(record) = self.world.roster.members.get(slot) else {
+                continue;
+            };
+            // The assembler keys sections off the first five equipment
+            // bytes (`+0x196..+0x19B`); the record carries eight.
+            let s = record.equipment().slots;
+            let equipped = [s[0], s[1], s[2], s[3], s[4]];
+            let Ok(bytes) = self.index.entry_bytes(prot) else {
+                continue;
+            };
+            let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes) else {
+                continue;
+            };
+            let Ok(costs) =
+                legaia_asset::battle_char_assembly::swing_command_costs(&bytes, &pack, &equipped)
+            else {
+                continue;
+            };
+            for (i, c) in costs.iter().enumerate() {
+                if let Some(c) = c {
+                    self.world.battle_swing_costs[slot][i] = *c as u16;
+                }
+            }
+        }
+    }
+
     /// Load `name`, switch the world to [`crate::world::SceneMode::Field`],
     /// and load the requested event-script record (default 0) into the
     /// field-VM bytecode buffer. Returns `Err` if the scene has no event
@@ -526,6 +571,9 @@ impl SceneHost {
                 // per-move power (PROT 0898; falls back to the placeholder if
                 // the disc read fails).
                 self.ensure_move_power_table();
+                // ... and the per-(character, equipped set) swing-cost
+                // bytes the Arts command input charges per press.
+                self.refresh_battle_swing_costs();
             }
         }
         // Route the per-region random-encounter table from the same MAN so
@@ -1362,7 +1410,7 @@ impl SceneHost {
         };
         if self.world.cutscene_timeline_active()
             || self.world.name_entry_active()
-            || self.world.current_dialog.is_some()
+            || self.world.dialogue_owns_input()
             || self.world.tile_board.is_some()
             || self.world.active_fmv().is_some()
         {

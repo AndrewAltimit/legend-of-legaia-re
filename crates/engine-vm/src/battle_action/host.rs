@@ -36,16 +36,18 @@ pub trait BattleActionHost {
         0
     }
 
-    /// The slot's battle-world planar seat - the `(x, z)` pair retail reads as
-    /// `actor[+0x34]` / `actor[+0x38]`.
+    /// The slot's **live** battle-world position - the `(x, z)` pair retail
+    /// reads as `actor[+0x34]` / `actor[+0x38]`.
     ///
-    /// [`BattleActor`] deliberately does not carry the pair: the seat is world
-    /// state the host owns and the renderer moves, not action state. But the
-    /// action SM does read it, at the cast-begin facing store
-    /// (`overlay_0898_801e295c.txt` `0x801E4334..0x801E43A4`), which needs both
-    /// the acting actor's seat and either the target's seat or the centroid
-    /// [`crate::battle_target_group::target_group_aim`] folds out of the whole
-    /// table. This accessor is that read.
+    /// [`BattleActor`] deliberately does not carry the pair: the position is
+    /// world state the host owns (the battle setup seeds it from the
+    /// formation seats and the anim tick's root-motion drive moves it), not
+    /// action state. But the action SM does read it, at the cast-begin
+    /// facing store (`overlay_0898_801e295c.txt` `0x801E4334..0x801E43A4`)
+    /// and the attack band's per-frame facing recompute, which need both the
+    /// acting actor's position and either the target's or the centroid
+    /// [`crate::battle_target_group::target_group_aim`] folds out of the
+    /// whole table. This accessor is that read.
     ///
     /// `None` means the slot carries no actor at all - an empty seat, which the
     /// group walk skips and the single-target arm bails on. The default is
@@ -55,6 +57,27 @@ pub trait BattleActionHost {
     fn actor_position(&self, _slot: u8) -> Option<(i16, i16)> {
         None
     }
+
+    /// Write the slot's live position pair (`+0x34`/`+0x38`) - the mutation
+    /// half of [`BattleActionHost::actor_position`]. The SM needs it for
+    /// exactly one arm: state `0x16`'s arrival shove
+    /// ([`motion::arrival_shove_step`]), which displaces the *target* when
+    /// the walker arrives. Default no-op (a positionless host stays
+    /// positionless).
+    fn set_actor_position(&mut self, _slot: u8, _x: i16, _z: i16) {}
+
+    /// The slot's **seat** (anchor) pair - retail `actor[+0x3C]`/`+0x40`,
+    /// the pair the battle setup authored and the range law measures the
+    /// target by. Defaults to the live position (an unmoved actor's two
+    /// pairs are equal by construction - the setup copies seat into live).
+    fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
+        self.actor_position(slot)
+    }
+
+    /// Write the slot's seat pair (`+0x3C`/`+0x40`). The arrival shove moves
+    /// the target's seat together with its live position (retail
+    /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
+    fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
     /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
     /// table for min/max. Default no-op.
@@ -151,9 +174,153 @@ pub trait BattleActionHost {
     /// animation. Default no-op.
     fn spell_anim_sustain(&mut self, _actor_id: u8, _anim_id: u8) {}
 
-    /// Equivalent of `func_0x800402F4(icon, page, target_slot, party_slot)` -
-    /// damage application primitive. Default no-op.
+    /// Equivalent of `func_0x800402F4(class, tier, target_slot, party_index)` -
+    /// the item / restore **applier**, retail's damage-and-effect primitive.
+    ///
+    /// The SM has exactly one call site for it, state `0x3F`
+    /// (`ActionState::SpiritFireDamage`, retail `jal 0x800402f4` at
+    /// `0x801E4134`), and the four arguments there are
+    /// `(actor[+0x1E8], actor[+0x1E9], actor[+0x1DD], DAT_8007BD10[slot] - 1)`,
+    /// i.e. [`BattleActor::cast_class`], [`BattleActor::cast_sub_class`], the
+    /// target slot and the acting slot's **roster character index**
+    /// ([`BattleActionHost::roster_character_id`] less one), not the battle
+    /// slot. The parameter names are kept from the pre-`+0x1E8` port for
+    /// source compatibility.
+    ///
+    /// Default no-op.
     fn apply_damage(&mut self, _icon: u8, _page: u8, _target_slot: u8, _party_slot: u8) {}
+
+    /// `DAT_8007BD10[slot]` - the **roster character id** seated in a battle
+    /// slot, 1-based on the party side (`id - 1` indexes the character record
+    /// at `0x80084708 + (id-1)*0x414`) and `4` for the enemy side.
+    ///
+    /// Three consumers read the same byte and none of them can be given the
+    /// battle slot instead: the applier's fourth argument
+    /// ([`BattleActionHost::apply_damage`]), the cast-audio dispatcher's
+    /// per-character cue band ([`crate::battle_cast_cue::cast_audio_cue`],
+    /// whose `char_kind * 0x10` term is what separates one character's cues
+    /// from the next) and the auto-fill arm's per-character queue floor
+    /// ([`crate::battle_arts_auto_combo::auto_fill_floor`]).
+    ///
+    /// Default is `slot + 1`, the identity seating a host with no roster
+    /// indirection has (battle slot `0` = character `1`).
+    fn roster_character_id(&self, slot: u8) -> u8 {
+        slot.saturating_add(1)
+    }
+
+    /// The `(class, tier)` pair of the **item-effect descriptor** item
+    /// `item_id` resolves to - `+0` / `+1` of `0x800752C0 + subtype*4`, where
+    /// `subtype` is the item property record's `+1` byte. This is
+    /// `legaia_asset::item_effect::ItemEffectTable::effect(id)` mapped to
+    /// `(ItemEffect::class, ItemEffect::tier)`.
+    ///
+    /// Seeds [`BattleActor::cast_class`] / [`BattleActor::cast_sub_class`] on
+    /// the Item leg of state `0x3C`. `None` = no disc item-effect table, and
+    /// the pair is left at zero (the applier's class-`0` HP-restore arm,
+    /// which is what an all-zero descriptor means in retail too).
+    fn item_effect_class_pair(&self, _item_id: u8) -> Option<(u8, u8)> {
+        None
+    }
+
+    /// The spell record's `+1` **sub-index** byte
+    /// (`DAT_800754C8 + spell_id*0xC + 1`), the magic-leg source of
+    /// [`BattleActor::cast_sub_class`].
+    ///
+    /// Sibling of [`BattleActionHost::spell_class_byte`], which is the same
+    /// record's `+0`. `None` = the host has no spell table (or its parse
+    /// carries no `+1`), leaving the tier at zero - see the module note on
+    /// [`crate::battle_cue_group::cue_group_for`] for which cue groups that
+    /// actually moves and which are literals regardless.
+    fn spell_sub_class_byte(&self, _spell_id: u8) -> Option<u8> {
+        None
+    }
+
+    /// The two cue-group tables the expander indexes:
+    /// `(groups @ 0x801F6470, sfx_map @ 0x801F6418)`.
+    ///
+    /// Both are disc-parsed by
+    /// `legaia_asset::move_power::EffectAuxTables` off PROT 0898. `None` =
+    /// no battle-action overlay installed (disc-free battles), which makes
+    /// the whole cue-group expansion a no-op rather than a synthetic one.
+    fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
+        None
+    }
+
+    /// One expanded cue reaching the host's effect pool + SFX scheduler.
+    ///
+    /// The two [`crate::battle_cue_group::CueSpawn`] arms are retail's two
+    /// spawn entry points: `Actor` is `FUN_801DFDF0(id, &pos, yaw)` (the 2D
+    /// effect pool) and `Effect` is `FUN_80050ED4(&pos, &rot, proto, 0x1000)`
+    /// over the `0x801F6324` prototype table, plus the `FUN_80058490` sound
+    /// packet the SFX map's non-zero byte submits. `actor_slot` is the slot
+    /// whose live position / facing retail builds the spawn transform from
+    /// (`+0x34`/`+0x38` and `+0x46`).
+    ///
+    /// Default no-op - a host with no effect pool drops the plan, which is
+    /// where the port was before the expander had a consumer.
+    fn spawn_cue(&mut self, _actor_slot: u8, _spawn: crate::battle_cue_group::CueSpawn) {}
+
+    /// One-shot battle SFX - retail `FUN_8004FCC8(cue_id)`, the dispatcher
+    /// that classifies a cue id into the pending ring or a voice trigger
+    /// (`legaia_engine_audio::classify_cue` is the routing port).
+    ///
+    /// The SM's one caller is the cast-audio dispatcher at state `0x3D`
+    /// ([`crate::battle_cast_cue::cast_audio_cue`], retail `jal 0x801f3990`
+    /// at `0x801E3E04`). Ids in the per-character band are `>= 0xF8` and the
+    /// enemy band is `0x20C..=0x20E`, so this is a `u16` channel, not the
+    /// `u8` one the move-FX cue rides.
+    ///
+    /// Default no-op.
+    fn one_shot_sfx(&mut self, _cue_id: u16) {}
+
+    /// The cast-audio dispatcher's `actor[+0x1DF] == 0xFE` special: give item
+    /// `0xFE` x1 (`FUN_800421D4(0xFE, 1)`) and play the per-character voice
+    /// cue `FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`.
+    ///
+    /// `voice_arg` is that first argument. Default no-op.
+    fn cast_item_give(&mut self, _voice_arg: u8) {}
+
+    /// The acting character's learned-spell record: `(ids, levels)` - the
+    /// `+0x13D` and `+0x161` parallel 36-byte arrays
+    /// (`legaia_save::SpellList`), for the party slot's roster character.
+    ///
+    /// Read by the queued-magic follow-up guard
+    /// ([`crate::move_no_effect_guard::queued_magic_message`]) at state
+    /// `0x36`. `None` = no character records (monster slots, or a host with
+    /// no roster), and the guard stays silent - retail reaches the record
+    /// through `DAT_8007BD10[slot] - 1` and so has nothing to read either
+    /// for an enemy caster.
+    fn caster_spell_list(&self, _party_slot: u8) -> Option<(Vec<u8>, Vec<u8>)> {
+        None
+    }
+
+    /// The **upper** word of the character record's 64-bit accessory-passive
+    /// bitfield - record `+0xF8`, the word after
+    /// [`BattleActionHost::character_ability_bits`]'s `+0xF4`.
+    ///
+    /// It is a different word, not a different view of the same one: the
+    /// auto-fill gate reads `record[+0xF8] & 0x2000`
+    /// (`overlay_battle_action_801f0450.txt` `0x801F04D4`) while the MP-cost
+    /// discount reads `record[+0xF4]` (`0x801E3D04`). Passive indices `32..63`
+    /// live here (`docs/formats/accessory-passive-table.md`).
+    ///
+    /// Default `0` - no auto-fill passive, which is the normal party state.
+    fn character_ability_bits_high(&self, _party_slot: u8) -> u32 {
+        0
+    }
+
+    /// The character's displayed-skill list - record `+0x185` count and
+    /// `+0x186..` ids (`legaia_save::DisplayedSkillList`), truncated to the
+    /// count.
+    ///
+    /// This is the list the AI auto-fill arm draws from
+    /// ([`crate::battle_arts_auto_combo::auto_fill_queue`], retail reads
+    /// `record[+0x74D]` / `+0x74E` off the `0x80084140` base). Default empty,
+    /// which makes the auto-fill arm bail exactly where retail's count gate
+    /// does.
+    fn learned_arts(&self, _party_slot: u8) -> Vec<u8> {
+        Vec::new()
+    }
 
     /// Apply one Tactical-Art strike with the power-byte / hit-timing values
     /// pulled from the active art record.

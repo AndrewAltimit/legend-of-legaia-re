@@ -24,6 +24,7 @@
 //! [`EncounterTracker::on_step`] from the field-step path and feed the
 //! resulting [`EncounterRoll`] into their battle-load routine.
 
+use legaia_engine_vm as vm;
 use std::collections::HashMap;
 
 /// One row in an encounter table.
@@ -324,8 +325,21 @@ pub enum EncounterPhase {
 pub struct EncounterSession {
     tracker: EncounterTracker,
     phase: EncounterPhase,
-    /// Frames the [`EncounterPhase::Transition`] phase lasts. Default 32
-    /// (~0.5s at 60Hz) - matches the retail fade-out duration.
+    /// Frames the [`EncounterPhase::Transition`] phase lasts.
+    ///
+    /// This *is* the intro overlay's `DAT_801D2458` - the transition entity's
+    /// `+0x1A` clock counts up to it while the session counts down from it -
+    /// so the default is retail's own
+    /// [`INTRO_DURATION_FRAMES`](vm::battle_intro_styles::INTRO_DURATION_FRAMES),
+    /// 132 display frames. The earlier `32` was a stand-in from before the
+    /// styles were ported, and it is shorter than the tile shatter's own spawn
+    /// window (`rand() % 5000` at `elapsed * 60` starts the last records around
+    /// frame 83), which left most of that style's grid parked at its rest pose
+    /// for the whole transition.
+    ///
+    /// [`IntroStyle::Swirl`](vm::battle_intro_styles::IntroStyle::Swirl) runs
+    /// longer still (252); the session picks its length before the style is
+    /// resolved, so that override is not carried here.
     pub transition_frames: u16,
     /// Frames the [`EncounterPhase::Grace`] phase lasts after a battle.
     /// Default 30 (~0.5s) - the post-battle "no immediate re-encounter"
@@ -338,7 +352,7 @@ impl EncounterSession {
         Self {
             tracker,
             phase: EncounterPhase::Idle,
-            transition_frames: 32,
+            transition_frames: vm::battle_intro_styles::INTRO_DURATION_FRAMES as u16,
             grace_frames: 30,
         }
     }

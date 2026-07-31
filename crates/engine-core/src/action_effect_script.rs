@@ -73,15 +73,18 @@
 //! committed clip through [`step_effect_script`] and queues the resulting
 //! [`EffectSpawn`]s as `world::BattleEffectSpawn`s (drained via
 //! `World::drain_battle_effect_spawns`, consumed by the native window's
-//! battle FX layer). The terminator's two context writes remain **disclosed,
-//! not wired**: the engine has no `ctx[+0x1014]` staged move-power slot and no
-//! per-target `+0x1144` homing block (its damage path resolves move-power
-//! records by move id through `crate::move_power::MovePowerCatalog` instead),
-//! so [`EffectScriptStep::move_power_offset`] / `homing_band` are computed
-//! and surfaced but nothing consumes them yet. The same applies to the
-//! stepper's function-head sibling: retail's `0x801DEA50..0x801DEBEC` prologue
-//! integrates the in-flight homing projectile (`ctx[+0x1028]`) each call,
-//! which this module does not model.
+//! battle FX layer).
+//!
+//! The terminator's context writes now have a sink: [`MoveFxStreak`] models
+//! the `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` block, the live tick
+//! installs it (`World::step_actor_effect_script` →
+//! `World::move_fx_streak`), and the render layer projects the streak
+//! billboard from it (`legaia_engine_render::afterimage`, drawn by the native
+//! window's screen-FX pass). What is still **not** modelled is the stepper's
+//! function-head sibling: retail's `0x801DEA50..0x801DEBEC` prologue
+//! integrates the in-flight homing projectile (`ctx[+0x1028]`) each call, so
+//! the per-target homing *motion* the four `+0x1144` slots normally drive is
+//! absent - the engine reads the block only as the streak's projection input.
 //!
 //! REF: FUN_80050ED4, FUN_801DFDF0 - the two effect-spawn entry points.
 //! REF: FUN_80047430 - the sole retail caller, the battle anim-node tick.
@@ -444,6 +447,102 @@ pub struct EffectScriptStep {
     /// `Some(band)` when the stream terminated - the target slots whose homing
     /// state the terminator seeds.
     pub homing_band: Option<TargetBand>,
+    /// `Some(point)` when the stream terminated - the world-space **launch
+    /// position** the terminator writes into every `ctx[+0x1144 + i*8]` slot.
+    ///
+    /// It is the terminator record's own rotated offset, not the bare actor
+    /// position: retail re-seeds the stack pair from `actor[+0x34..+0x3B]` at
+    /// the top of *every* record iteration (`0x801DECE4`) and then runs the
+    /// scale + facing rotation on it (`0x801DED30` for Y, `0x801DEE40` /
+    /// `0x801DEE7C` or `0x801DF014` / `0x801DF050` for X / Z) **before** the
+    /// terminator test, so the quad the seed loop copies out at `0x801DF2B4`
+    /// carries the terminator record's placement. That point is what the
+    /// afterimage streak later projects
+    /// ([`legaia_engine_render::afterimage`]).
+    pub launch: Option<(i32, i32, i32)>,
+}
+
+/// The battle-context block the terminator installs, and the consumer the
+/// move-FX streak reads it back through.
+///
+/// PORT: FUN_801DEA50 (`0x801df248..0x801df2e0` - the install + seed loop)
+///
+/// This is the sink for the two context writes the stepper used to compute
+/// and drop. Retail's block spans four context words:
+///
+/// | context | written by | read by |
+/// |---|---|---|
+/// | `+0x1014` | `sw` of the move-power record pointer (`0x801DF284`) | the action SM's per-move behaviour reads |
+/// | `+0x6C6` | `sh` of that record's `+0x04` (`0x801DF290`) | the afterimage streak's billboard **half-width**, as `word - 0x200` (`0x801E1B44`) |
+/// | `+0x24E + i` | `sb 1` per slot `i in 0..4` (`0x801DF2A4`) | the homing phase gate |
+/// | `+0x1144 + i*8` | the launch position, same loop (`0x801DF2B4`) | the streak's billboard **centre** (`0x801E1AF8`) |
+///
+/// The engine keeps the record as an id rather than a pointer (its damage
+/// path resolves move power by id through [`crate::move_power`]), and models
+/// the four homing slots as one shared launch point - retail's pre-seed
+/// loop writes the *same* quad into all four, and only the band loop that
+/// follows differentiates them, which is per-target homing state the streak
+/// never reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MoveFxStreak {
+    /// `ctx[+0x1014]`, as a table index rather than a pointer: the move id
+    /// whose record the terminator staged. `None` before any terminator.
+    pub move_id: Option<u8>,
+    /// `ctx[+0x6C6]` - the staged record's `+0x04` word.
+    pub counter_word: u16,
+    /// `ctx[+0x1144]` - the launch position every homing slot is seeded with.
+    pub launch: Option<(i32, i32, i32)>,
+    /// `ctx[+0x24E + i]` - the homing phase byte, `1` once seeded. Retail
+    /// writes four identical bytes; the engine keeps the one value.
+    pub phase: u8,
+    /// The band the seed loop swept, for hosts that want to know which
+    /// targets the move homes on.
+    pub band: Option<TargetBand>,
+}
+
+impl MoveFxStreak {
+    /// Apply one terminator's writes. No-op for a step that did not
+    /// terminate, so a host can call it unconditionally per frame.
+    ///
+    /// `counter_word` is the staged move-power record's `+0x04`
+    /// ([`legaia_asset::move_power::MoveRecord::counter_init`]); pass `None`
+    /// when no catalog is installed and the block keeps its previous word,
+    /// exactly as retail's `sh` would be skipped.
+    pub fn install(&mut self, step: &EffectScriptStep, counter_word: Option<u16>) -> bool {
+        let Some(band) = step.homing_band else {
+            return false;
+        };
+        self.move_id = step
+            .move_power_offset
+            .map(|off| (off / MOVE_POWER_STRIDE) as u8);
+        if let Some(w) = counter_word {
+            self.counter_word = w;
+        }
+        self.launch = step.launch;
+        self.phase = 1;
+        self.band = Some(band);
+        true
+    }
+
+    /// The streak billboard's half-width: `ctx[+0x6C6] - 0x200`, the value
+    /// `FUN_801E1AB0` hands the GTE projector at `0x801E1B44`. Mirrors
+    /// `legaia_engine_render::afterimage::streak_half_width`, which is the
+    /// canonical port - repeated here so `engine-core` (which cannot depend
+    /// on the wgpu-linked render crate) can answer the same question.
+    pub fn half_width(&self) -> i16 {
+        (self.counter_word as i16).wrapping_sub(0x200)
+    }
+
+    /// `true` once a terminator has staged a launch point - i.e. the frame's
+    /// streak has something to project.
+    pub fn is_armed(&self) -> bool {
+        self.phase != 0 && self.launch.is_some()
+    }
+
+    /// Drop the block (the move finished / the actor's clip changed).
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
 }
 
 /// Actor state the stepper reads.
@@ -507,6 +606,7 @@ pub fn step_effect_script<L: RotationLut>(
         spawns: Vec::new(),
         move_power_offset: None,
         homing_band: None,
+        launch: None,
     };
     if actor.suppressed || actor.cursor >= MAX_CURSOR {
         return out;
@@ -519,26 +619,32 @@ pub fn step_effect_script<L: RotationLut>(
         if i32::from(frame) + 1 < i32::from(rec.frame) || rec.frame == 0 {
             break;
         }
+        // The offset math runs for EVERY record, terminator included: retail
+        // re-seeds the stack pair from the actor position and rotates it
+        // before the terminator test, so the terminator's own placement is
+        // what the homing seed copies out as the launch position.
+        let sx = scale_offset(rec.off_x, actor.scale);
+        let sy = scale_offset(rec.off_y, actor.scale);
+        let sz = scale_offset(rec.off_z, actor.scale);
+        let (dx, dz) = rotate_offset(
+            lut,
+            actor.facing,
+            FacingBias::for_effect(rec.effect),
+            sx,
+            sz,
+        );
+        // Y is subtracted (`0x801ded38`: `subu v0,v0,v1`).
+        let at = (actor.world.0 + dx, actor.world.1 - sy, actor.world.2 + dz);
         if rec.is_terminator() {
             out.move_power_offset = move_power_record_offset(move_power_map, actor.action);
             out.homing_band = Some(TargetBand::from_scope(actor.scope));
+            out.launch = Some(at);
         } else {
-            let sx = scale_offset(rec.off_x, actor.scale);
-            let sy = scale_offset(rec.off_y, actor.scale);
-            let sz = scale_offset(rec.off_z, actor.scale);
-            let (dx, dz) = rotate_offset(
-                lut,
-                actor.facing,
-                FacingBias::for_effect(rec.effect),
-                sx,
-                sz,
-            );
             out.spawns.push(EffectSpawn {
                 cursor: out.cursor,
                 effect: rec.effect,
                 direct: rec.is_direct(),
-                // Y is subtracted (`0x801ded38`: `subu v0,v0,v1`).
-                at: (actor.world.0 + dx, actor.world.1 - sy, actor.world.2 + dz),
+                at,
             });
         }
         out.cursor += 1;
@@ -737,6 +843,78 @@ mod tests {
         assert_eq!(s.move_power_offset, Some(3 * MOVE_POWER_STRIDE));
         assert_eq!(s.homing_band, Some(TargetBand { first: 3, last: 6 }));
         assert!(!s.spawns[0].direct);
+    }
+
+    #[test]
+    fn the_terminator_carries_its_own_placement_as_the_launch_point() {
+        let lut = Lut::new();
+        // A terminator with a non-zero offset: retail rotates it like any
+        // other record before it notices the record ends the stream, so the
+        // launch point is NOT the bare actor position.
+        let b = block(&[(1, 0xFF, 100, 40, 0)]);
+        let s = step_effect_script(&lut, &b, actor(), 4, &[0u8; 8]);
+        let launch = s.launch.expect("terminator seeds a launch point");
+        assert_ne!(launch, actor().world, "the offset is applied");
+        // Y is subtracted, unrotated.
+        assert_eq!(launch.1, actor().world.1 - 40);
+        // A zero-offset terminator does land on the actor.
+        let b0 = block(&[(1, 0xFF, 0, 0, 0)]);
+        let s0 = step_effect_script(&lut, &b0, actor(), 4, &[0u8; 8]);
+        assert_eq!(s0.launch, Some(actor().world));
+    }
+
+    #[test]
+    fn a_step_that_does_not_terminate_seeds_nothing() {
+        let lut = Lut::new();
+        let b = block(&[(1, 0x10, 0, 0, 0)]);
+        let s = step_effect_script(&lut, &b, actor(), 4, &[0u8; 8]);
+        assert_eq!(s.launch, None);
+        let mut blk = MoveFxStreak::default();
+        assert!(!blk.install(&s, Some(0x300)));
+        assert!(!blk.is_armed());
+        assert_eq!(blk, MoveFxStreak::default());
+    }
+
+    #[test]
+    fn the_terminator_installs_the_streak_block() {
+        let lut = Lut::new();
+        let b = block(&[(1, 0x10, 0, 0, 0), (1, 0xFF, 0, 0, 0)]);
+        let map = [0u8, 0, 0, 0, 3];
+        let s = step_effect_script(&lut, &b, actor(), 4, &map);
+
+        let mut blk = MoveFxStreak::default();
+        assert!(blk.install(&s, Some(0x300)));
+        // `ctx[+0x1014]` as an id: the offset the terminator resolved, back
+        // through the table stride.
+        assert_eq!(blk.move_id, Some(3));
+        // `ctx[+0x6C6]` verbatim, and the projector's half-width from it.
+        assert_eq!(blk.counter_word, 0x300);
+        assert_eq!(blk.half_width(), 0x100);
+        assert_eq!(blk.launch, s.launch);
+        assert_eq!(blk.phase, 1);
+        assert_eq!(blk.band, s.homing_band);
+        assert!(blk.is_armed());
+
+        // No catalog: the `sh` is skipped and the previous word stands.
+        let mut again = blk;
+        assert!(again.install(&s, None));
+        assert_eq!(again.counter_word, 0x300);
+
+        blk.clear();
+        assert!(!blk.is_armed());
+    }
+
+    #[test]
+    fn half_width_is_the_context_word_minus_0x200_and_wraps() {
+        // The projector argument is a signed 16-bit subtract, so a small
+        // counter yields a negative half-width - retail passes it through.
+        let mut blk = MoveFxStreak {
+            counter_word: 0x100,
+            ..Default::default()
+        };
+        assert_eq!(blk.half_width(), -0x100);
+        blk.counter_word = 0x200;
+        assert_eq!(blk.half_width(), 0);
     }
 
     #[test]

@@ -112,8 +112,7 @@ impl World {
     ///    field is not what is being driven at all (a menu, a battle, a
     ///    minigame).
     fn escape_timer_busy(&self) -> bool {
-        self.current_dialog.is_some()
-            || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
+        self.dialogue_owns_input() || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
     }
 
     /// Drain the scripted countdown one retail frame and fire whichever
@@ -468,8 +467,9 @@ impl World {
         // +0x10 & 0x80000`) is host-substituted by "a dialog engagement is
         // live"; the cadence is the 60 fps sub-clock step, matching the
         // narration roller above.
+        let balloon_engaged = self.dialogue_owns_input();
         if let Some(balloon) = self.text_balloon.as_mut() {
-            let engaged = self.current_dialog.is_some();
+            let engaged = balloon_engaged;
             let cadence = self.field_frame_step as i16;
             if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
                 self.text_balloon = None;
@@ -613,6 +613,15 @@ impl World {
                 // Faithful dialogue path (opt-in): drive a just-opened field
                 // dialogue through the field VM so branch handlers execute.
                 self.drive_inline_dialogue();
+                // Interaction teardown: put an addressed NPC's authored facing
+                // back once no dialogue channel owns the frame any more
+                // (retail's `+0x5A` -> `+0x26` restore on the dialog SM's exit
+                // path). Placed after the runner start above, so the frame the
+                // talk begins already counts as engaged and the save survives.
+                // REF: FUN_80039B7C
+                if !self.dialogue_owns_input() && self.active_inline_prologue.is_none() {
+                    self.release_talk_facing();
+                }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,
                 // the ending-scene op-0x43 family) tick after the script step
                 // that may have spawned them this frame.
@@ -786,7 +795,7 @@ impl World {
     /// (the field VM owns the frame). Reads only pad bits + board state,
     /// so it is deterministic across identical pad streams.
     fn tick_tile_board(&mut self) {
-        if self.current_dialog.is_some() {
+        if self.dialogue_owns_input() {
             return;
         }
         let Some(player_slot) = self.player_actor_slot else {

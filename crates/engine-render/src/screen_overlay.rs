@@ -53,10 +53,9 @@
 //!
 //! ## Wiring status
 //!
-//! Nothing outside this crate builds a [`ScreenPrim`] yet. The pass is
-//! substrate: the consumers (the afterimage streak, the five field-to-battle
-//! transition styles) are ported but blocked on their own inputs, each stated
-//! on its own module. It is also **native-only** - see
+//! The main consumer is [`crate::battle_intro`]: all five field-to-battle
+//! transition styles emit through this pass, driven per frame by the native
+//! play window. The pass is **native-only** - see
 //! `docs/tooling/host-drift.md` for what the browser hosts would need.
 //!
 //! ## Simplifications vs. hardware (documented, not hidden)

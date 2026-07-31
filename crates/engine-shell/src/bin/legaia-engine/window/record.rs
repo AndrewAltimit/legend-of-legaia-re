@@ -43,6 +43,7 @@ pub(crate) fn cmd_record(
         None,
         None,
         false,
+        None,  // battle: a recording captures real play, never a forced fight
         false, // dynamic_lighting: replays stay on the faithful render
         true,  // dyn_shadows: inert while dynamic_lighting is off
         false, // entry_pulse: replays stay on the retail-static entry

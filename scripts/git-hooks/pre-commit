@@ -100,6 +100,19 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# CSS cascade order. A @media block contributes no specificity, so a breakpoint
+# written above the rule it overrides loses at every viewport width while still
+# reading like a working feature. The mobile icon rail shipped that way: it
+# never hid, and the content column laid out full-width underneath it.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-css-cascade-order.py" ]]; then
+    printf '[pre-commit] css cascade order\n'
+    if ! python3 scripts/ci/check-css-cascade-order.py --quiet; then
+        printf '[pre-commit] shadowed @media rule(s) above -- move the block below the rules it overrides (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Generated-page staleness. The link gate above proves every reference RESOLVES;
 # it cannot see a reference that is absent. Editing a _content fragment to pull
 # in a new asset and not re-running site/_gen.py leaves the served page loading

@@ -307,8 +307,11 @@ pub struct World {
     /// state machine and the live cast path cannot price or classify the same
     /// spell differently. A pair of `HashMap`s here that nothing filled is
     /// exactly how they used to.
+    /// There is no melee-range table here either, for the same reason and by
+    /// the same evidence: retail computes reach (`FUN_8004E2F0`) from the
+    /// attacker's per-character base, both actors' size classes and their live
+    /// positions. [`World::battle_range_metric`] answers from those models.
     pub character_ability_bits: [u32; 8],
-    pub range_table: std::collections::HashMap<(u8, u8), u16>,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
     /// compute Tactical-Art damage. Engines populate from the active
     /// character record's weapon power. Default zero - un-populated slots
@@ -355,6 +358,18 @@ pub struct World {
     ///
     /// REF: FUN_801F0348
     pub battle_camera_frame_height: i16,
+
+    /// Screen-shake amplitude - retail `_DAT_8007B630`.
+    ///
+    /// Written by exactly one thing in retail: the field-VM opcode
+    /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
+    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. It is
+    /// the only input to the LCG camera jitter `FUN_801D9D30`
+    /// ([`legaia_engine_vm::battle_camera::apply_shake`]): `0` is the resting
+    /// state and `1..=0x15` widens the jitter window.
+    ///
+    /// REF: FUN_801D9D30
+    pub camera_shake_amplitude: u8,
 
     /// Per-slot accuracy stat (retail actor `+0x168`, the AGL-derived
     /// hit/dodge seed). Used as the **attacker's** term in the selector-9
@@ -711,6 +726,23 @@ pub struct World {
     /// initial facings are the per-actor field-VM channels, not yet
     /// executed).
     pub field_npc_headings: std::collections::HashMap<u8, i16>,
+
+    /// The talk-time facing save: `(placement slot, the heading the NPC stood
+    /// with before the player addressed it)`.
+    ///
+    /// Retail's touch post copies the addressed actor's `+0x26` into `+0x5A`
+    /// (`FUN_801D5B5C` at `0x801D5BE4`: `lhu a0,0x26(a2)` then `sh a0,0x5a(a2)`
+    /// in the branch delay slot), and the dialog SM's teardown writes it back
+    /// (`FUN_80039B7C` at `0x80039CE8` / `0x80039EBC`) - so an NPC that turned
+    /// to answer the player returns to its authored heading afterwards.
+    ///
+    /// One slot at a time, because one interaction owns the player at a time
+    /// (retail keeps the save per-actor and releases the engaged flag only
+    /// once every overlapping touch is dismissed; the engine opens exactly one
+    /// conversation, so a single slot is the whole of that state).
+    ///
+    /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
+    pub field_npc_facing_save: Option<(u8, i16)>,
 
     /// Static prop colliders, one per placed object of the scene's field
     /// `.MAP` object grid - the engine's source for the **actor-collision
@@ -1499,6 +1531,13 @@ pub struct World {
     /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
 
+    /// The battle context's move-FX projection block, installed by the action
+    /// effect script's terminator (`ctx[+0x1014]` / `+0x6C6` / `+0x24E` /
+    /// `+0x1144`; see [`crate::action_effect_script::MoveFxStreak`]). Read by
+    /// [`World::move_fx_streak`]; the render layer projects the afterimage
+    /// streak's billboard from its launch point + half-width.
+    pub move_fx_streak: crate::action_effect_script::MoveFxStreak,
+
     /// The current scene's **field move-VM stager table** - the prescript
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the
@@ -1750,9 +1789,11 @@ pub struct World {
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
     /// (`legaia-engine play-window`) set both after boot. All four commands
-    /// are wired: Attack strikes; Arts / Magic / Item open
-    /// [`Self::battle_arts_menu`] / [`Self::battle_spell_menu`] /
-    /// [`Self::battle_item_menu`].
+    /// are wired: Attack strikes; Arts opens the per-press
+    /// [`Self::battle_arts_input`] (the saved-chain
+    /// [`Self::battle_arts_menu`] is the legacy path, behind
+    /// `LEGAIA_ARTS_SAVED_LIST=1`); Magic / Item open
+    /// [`Self::battle_spell_menu`] / [`Self::battle_item_menu`].
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
@@ -1787,6 +1828,26 @@ pub struct World {
     /// [`Self::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
+
+    /// Active retail-model **Arts command input** - the per-press
+    /// directional entry the Arts command opens
+    /// ([`crate::arts_command_input::ArtsCommandInputSession`], the port of
+    /// the `FUN_801D0748` state-`0x50` gauge-input arm). `Some` while a
+    /// party member is entering commands / reviewing / picking the Begin
+    /// target; the action SM and [`Self::battle_command`] are parked
+    /// meanwhile. The saved-chain list ([`Self::battle_arts_menu`]) is the
+    /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
+    pub battle_arts_input: Option<crate::arts_command_input::ArtsCommandInputSession>,
+
+    /// Per-party-slot **swing costs** for the Arts command gauge: the four
+    /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots
+    /// `0xC..=0xF`) the input session charges per directional press, for
+    /// that slot's *equipped* set. Seeded from the player battle files at
+    /// scene entry (`SceneHost::refresh_battle_swing_costs`, via
+    /// `legaia_asset::battle_char_assembly::swing_command_costs` - the
+    /// same reader the Muscle Dome prices its commands with); stays at the
+    /// favored-class base `0x1E` without a disc. REF: FUN_800557B8
+    pub battle_swing_costs: [[u16; 4]; 3],
 
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
@@ -2385,13 +2446,13 @@ impl World {
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
             character_ability_bits: [0; 8],
-            range_table: Default::default(),
             battle_attack: [0; 8],
             battle_magic: [0; 8],
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             battle_speed: [0; 8],
             battle_camera_frame_height: legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN,
+            camera_shake_amplitude: 0,
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
             monster_strike_budget: 1,
@@ -2435,6 +2496,7 @@ impl World {
             field_entry_prerun: false,
             field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
+            field_npc_facing_save: None,
             field_prop_colliders: Vec::new(),
             resolved_cold_spawn: None,
             field_prop_bank: Default::default(),
@@ -2537,6 +2599,7 @@ impl World {
             active_move_fx: None,
             active_action_fx: Vec::new(),
             active_move_fx_trail_texpage: None,
+            move_fx_streak: Default::default(),
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),
@@ -2594,6 +2657,8 @@ impl World {
             battle_item_menu: None,
             battle_spell_menu: None,
             battle_arts_menu: None,
+            battle_arts_input: None,
+            battle_swing_costs: [[crate::arts_command_input::FAVORED_COST; 4]; 3],
             battle_flow: crate::battle_flow::BattleFlowState::Idle,
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
@@ -2709,7 +2774,24 @@ impl World {
         self.pending_scripted_encounter = None;
         self.scripted_encounter_armed = false;
         self.scripted_formation_pending = false;
-        self.encounter = None;
+        // Reset the encounter session rather than dropping it. Dropping it
+        // left the per-region trackers installed with their sink gone: a
+        // region roll is destructive (it draws RNG, latches the pick and
+        // re-seeds the counter *before* returning), so every roll after a New
+        // Game was a fight that happened and was discarded, and
+        // `scene_can_roll_encounters` still answered `true` off the stale
+        // cache. The runtime self-heals now (`World::on_field_step` installs a
+        // bracket), but a live session must survive the reset for the scene's
+        // own table to keep driving it.
+        if let Some(session) = self.encounter.as_mut() {
+            session.reset();
+        }
+        if let Some(t) = self.field_region_tracker.as_mut() {
+            t.reset();
+        }
+        if let Some(t) = self.world_map_region_tracker.as_mut() {
+            t.reset();
+        }
         self.battle_end = None;
         self.game_over = false;
         self.play_time_seconds = 0;

@@ -9,7 +9,10 @@
 //! [`legaia_engine_shell::mode_trace_oracle::load_runtime_mode_trace_from_save`])
 //! and its recorded scene / mode (/ position where the loader exposes it) is
 //! asserted. Present anchors are checked; absent ones skip. A `checked >= 1`
-//! guard keeps the part non-vacuous.
+//! guard keeps the part non-vacuous *when the library is there* - the part
+//! skips outright when `saves/library` is absent, because that library is one
+//! of its inputs and a disc-gated test has to skip-and-pass on every input it
+//! reads, not just on `LEGAIA_DISC_BIN`.
 //!
 //! | anchor                        | scene   | note                          |
 //! |-------------------------------|---------|-------------------------------|
@@ -144,6 +147,15 @@ fn part_a_spine_anchors_codify_retail_progression() {
         eprintln!("[skip] extracted/ missing");
         return;
     };
+    // Part A's third input, alongside the disc and `extracted/`: the capture
+    // library every anchor below is loaded from. `saves/` is gitignored, so
+    // gating only on the first two turned "no capture library" into a
+    // `checked >= 1` FAILURE instead of a skip. The directory is the gate, so
+    // a library that is present but lost an anchor still trips that assert.
+    if library_dir().is_none() {
+        eprintln!("[skip] saves/library missing (capture-gated)");
+        return;
+    }
     // legaia_pcsxr resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
     // at the extracted copy if the harness didn't set it.
     if std::env::var_os("LEGAIA_SCUS").is_none() {

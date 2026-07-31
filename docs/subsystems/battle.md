@@ -9,7 +9,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -27,7 +27,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Clean-room engine systems**
 - [Inventory (page-banked)](#inventory-cratesasset-page-banked-layout) · [Status effects](#status-effects) · [AP / Spirit gauge](#ap--spirit-gauge) · [Battle stat aggregator](#battle-stat-aggregator) · [Item catalog](#item-catalog)
-- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [SFX bank](#sfx-bank--scheduler)
+- [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [screen chrome](#battle-screen-chrome-packet-pinned) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
 - [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop---field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
@@ -35,7 +35,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 **Runtime-memory captures + tests**
 - [Encounter trigger memory layout](#encounter-trigger---runtime-memory-layout) · [scene-init residency](#battle-scene-init-residency-window) · [item-use residency](#item-use-battle-event-residency) · [stat-growth observations](#captured-stat-growth-observations)
 - [CDNAME → MV STR cutscene routing](#cdname--mv-str-cutscene-routing) · [end-to-end gameplay loop test](#end-to-end-gameplay-loop-integration-test)
-- [Field-to-battle intro presentation](#field-to-battle-intro-presentation) - [what blocks the styles](#what-actually-blocks-the-styles)
+- [Field-to-battle intro presentation](#field-to-battle-intro-presentation)
 
 ## Battle scene loader (`FUN_800520F0`)
 
@@ -180,11 +180,49 @@ re-issues the same `0xC8`/`0xFF` close writes before reaching the `== 4` arm. So
 the close is safe to re-enter, and `5` is a terminal value rather than a
 one-frame transient.
 
-**Box placement.** The emitter `FUN_801F747C(text, style)` takes a style index
-`0..=9` into a jump table at `0x801F6B48`. `x` is either the fixed left margin
-`0x10` or centred at `0xA0 − width/2`; `y` is either the fixed top `0x0E` or
-bottom-anchored at `base − (lines × 14 − 4)` for `base` in `{0x9A, 0xB0, 0xCC}`.
-Styles `0, 1, 8, 9` do not wait for acknowledgement; `2..=7` do.
+**The prompt is a sized window, not loose text.** The emitter
+`FUN_801F747C(text, style)` measures its prompt before it places it -
+`FUN_8003CBA8(str)` returns the rendered line count, `FUN_80035F04(str)` the
+pixel width - and the shared tail at `0x801F75B8` passes both on to the SCUS
+text-actor registrar as a full rect:
+
+```
+FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)
+             a0         a1   a2   a3 +0x10 +0x14  +0x18       +0x1C
+```
+
+`FUN_8003541C` links the node into a list sorted on its `+0x08` key and stores
+the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the priority at
+`+0x1D`, then draws it (`FUN_80030628`). So the box's *size* is measured, and
+only its *corner* comes from the style table.
+
+**Box placement.** The style index `0..=9` selects a jump table at
+`0x801F6B48`. `x` is either the fixed left margin `0x10` or centred at
+`0xA0 − width/2`; `y` is either the fixed top `0x0E` or bottom-anchored at
+`base − (lines × 14 − 4)` for `base` in `{0x9A, 0xB0, 0xCC}` - the same height
+expression the rect carries. Styles `0, 1, 8, 9` do not wait for
+acknowledgement; `2..=7` do.
+
+The wait is not a flag on one actor. The emitter initialises `s4 = 1` and only
+the `0 / 1 / 8 / 9` arms clear it, because table slots `8` and `9` are the `2`
+and `3` arms entered one instruction later - `0x801F7528` / `0x801F7538`, past
+the `move s4, zero`. `s4` then picks the registered actor's sort key (`1 + s4`)
+and priority (`0x44 − s4`), so a waiting prompt is a *different* text actor
+from a self-dismissing one.
+
+**What the frame looks like.** A retail capture of the drill prompt (style `0`,
+two lines) shows the same gold double-line 9-slice frame and blue gradient
+interior the dialog reading box wears, sized to the text. The measured
+footprint agrees with the rect on every axis: centre rect `(0x10, 0x0E, w, 24)`
+inflated 8 px on each side gives an outer left edge of `8` and an outer height
+of `40`, and the text rows sit at the rect origin on the 14-px pitch. The port
+therefore frames the prompt with the reading box's own chrome builder at
+`BoxStyle::box_rect` - see
+[`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs),
+drawn by both hosts through the 320x240 stage transform (the rect is in retail
+framebuffer pixels, not surface pixels). The confirm hand on a waiting box is
+a port affordance borrowed from the dialog pager: what retail's slot-`2` actor
+draws to signal the wait is not decoded.
 
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
@@ -449,6 +487,50 @@ the four angle saves; leading TMD magic `0x80000002` at file `+4`,
 uncompressed). PROT 88/89/90 share identical geometry and differ only in
 texture payload.
 
+#### One primitive list, two texture classes
+
+A shell is not all texture. About a fifth of it by primitive count is
+`F*`/`G*` flat / gouraud panels that carry a baked colour word and no UVs -
+the sky band, the painted wall faces, the flat water. `town01`'s Tetsu arena
+is 325 textured triangles and 79 untextured; `map01`'s dome is 336 and 78.
+Retail draws them together: `FUN_8001ADA4` case 3 walks the whole group chain
+and the GPU takes `POLY_F*` packets as readily as `POLY_*T*` ones.
+
+The port has to reassemble that from two builders, because
+`tmd_to_vram_mesh` drops any prim with no UVs - such a prim samples nothing.
+The native window pairs it with `tmd_to_color_mesh` on the untextured
+pipeline; the browser page uses the single `tmd_to_vram_mesh_field_hybrid`
+mesh with a per-vertex textured flag. Both halves take the same second-copy
+transform (`ColorMesh::append_scaled` mirrors the textured builder's, winding
+reversal included), and both hosts must end up with the same triangle set -
+pinned by `the_backdrop_shells_untextured_half_is_a_double_digit_share` in
+`crates/engine-core/tests/battle_stage_entries_real.rs`. Rendering only the
+textured half punches holes in the arena wherever a sky panel belongs.
+
+#### The stage streams of one bundle share their VRAM
+
+A scene bundle carries one `scene_tmd_stream` per sub-area, and those streams
+are **not** allocated disjoint VRAM. Rim Elm's four (extraction entries
+6..=9) each declare the same two 4bpp pages, `(768, 0)` and `(832, 0)`, under
+the same two CLUT rows, `473` and `479`; the field texture pack puts a page
+at `(768, 0)` as well. Retail never has to arbitrate, because the chunk
+walker records one stream in `_DAT_8007B864` and only that one is resident.
+
+A port that DMAs every TIM in the bundle - which the battle resource build
+does, `BuildOptions::upload_all_tims` - leaves whichever sibling was written
+last holding the address, and the shell then draws through a neighbouring
+sub-area's texels and palette. `town01`'s semi-transparent cloud band
+(`(768, 0)` at `v` 191..254, palette `1` of row 473, a greyscale + STP ramp)
+came out as flat green rectangles standing on the arena wall, because the
+palette that won the row was one of the rainbow CLUT-cycling ramps a sibling
+parks at that index.
+
+`engine-core::scene::upload_battle_stage_tims_into_vram` re-uploads the
+selected entry's own TIMs last, restoring retail residency without touching
+the rest of the build. Both hosts call it from their `build_battle_stage`.
+Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
+`the_selected_stage_entry_owns_its_vram_after_the_reupload`.
+
 The shell is authored as **half** a bowl. That is the real shape, not a
 truncated parse: across all 182 entries object 0 puts at most 8 % of its X or
 Z extent past `X = 0` / `Z = 0`, and every object satisfies
@@ -676,6 +758,96 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 | Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
 | submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
+| action executing | 0 (or floor-tilted) | `0x800 − facing`, or the drifting `ctx[+0x6DA] − facing` | `(0, height, 0x500)` party / `(0, 0x500, ctx[+0x6D0])` monster | 6-step glide in, 7-step out, then held |
+
+The **step counts are retail's own** `FUN_801D829C` durations, not just trace
+readings: the framing cases pass `a3` in *display frames* and a camera step is
+two frames, so cases `0`/`1`/`2`/`3`/`6` (`a3 = 0xC`) glide over 6 steps and
+case `9` (`a3 = 0xE`, `0x801D712C`) over 7. The `-4`/step idle orbit is likewise
+in the disassembly: the action SM subtracts `DAT_1F800393 * 2` from
+`_DAT_8007B792` per tick and gates that on `ctx[7]` being `0x00` or `0x0B`
+(`0x801E2A3C..0x801E2A6C`), which is what makes "no action executing" the
+phase-script condition for the orbit rather than an inference.
+
+**The action framing (`FUN_801D5854` case 6)** is the one the action SM arms at
+almost every state, and it forks on `_DAT_8007BD71 == 0xFE && slot < 3`. The
+party arm frames from behind the actor (`yaw = 0x800 − actor[+0x46]`) at a
+height of `−5 × actor[+0x3E]`, floored at `0x280` with a quarter of the
+shortfall added to the pitch so the camera tilts down instead of sinking
+(`0x801D6494`). Between the base pose and that floor it runs a per-character
+script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0` / `0x801D61E8` /
+`0x801D6440`, rejoining at `0x801D645C`) which reads `actor[+0x1DB]` over the
+band `0x11..=0x18` (bias `-0x11`, bound `8`).
+**Which states hand it the camera is a band, not a byte list.** `FUN_801E295C`
+arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
+prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
+`6`, the Run band (`0x64..=0x67`) arms case `9` plus the orbit itself, and the
+Done band (`0x50..=0x5A`) arms case `6`/`8` under a **bounded** tail - retail
+seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and leaves for `0x5A` when the
+frame step drives it negative, so the per-action framing survives at most ~60
+display frames past the strike.
+
+That bound is the one thing the port cannot copy: its `DoneFadeDown` waits on
+the HP-bar display cursor settling, which is unbounded, and a measured
+auto-resolved fight rests there for half its frames. `battle_cam_script::
+action_state_frames_the_action` therefore treats the whole Done band as idle,
+which is the port's stand-in for retail's timer; classifying it as an action
+in flight leaves both hosts in the per-action close-up for the entire fight,
+with one actor filling the frame and no idle orbit. Guards:
+`the_done_band_does_not_own_the_action_framing` and
+`a_real_turn_spends_most_of_its_frames_in_the_far_framing`.
+
+**Case 6 is re-armed every pass, so the framing chases the actor.** Each of
+the action states calls `FUN_801D5854(actor, 6)` before it does anything else
+- `0x0C`, `0x14`, `0x1F`, `0x20`, `0x32`, `0x37`, `0x3C`..`0x40`, `0x46`,
+`0x47` - so the three tween-target vectors are rebuilt out of the live actor
+record each display frame and `FUN_801D829C` re-emits the step table. The
+target is not frozen at the state change, and the difference is not cosmetic:
+`0x14` stages the approach walk and `0x19` runs it, so a party member crosses
+most of the gap to its target before the swing. A focus pinned to the vacated
+seat frames bare ground - at the close-up depth `prescale(0x500)` = 2048
+against 4x-scaled stage coordinates the whole formation leaves the frustum,
+several combatants behind the eye. `BattleCamera::retarget_action_glide` is
+the port's re-arm; it carries the armed segment's remaining step count over,
+so a framing whose actor stands still still arrives on target at
+`ACTION_STEPS`. One visible consequence: the fallback arm's yaw now follows
+the live `ctx[+0x6DA]` drift instead of freezing on its value at the phase
+change.
+
+The fallback arm frames on the seat position at `ctx[+0x6D0]` - the depth
+`FUN_801F0348` derives from the framed monster's size class - with a style byte
+`ctx[+0xD]` selecting three tweaks and character id `4` overriding the whole
+translation. `ctx[+0x6DA]` is not a constant: the SM's prologue advances it
+about one unit per display frame (`0x801E29E4..0x801E2A24`), so successive enemy
+actions frame from a slowly drifting angle.
+
+**The per-art attack camera is an override, not a fold.** `FUN_801D71B8` is
+*not* part of case 6. Its only call site is `FUN_801D5854`'s shared tail
+(`0x801D7180`), which runs after whichever framing case has already handed its
+pose to the tween builder, and is gated on `_DAT_800846C0 != 2` and the acting
+actor's `+0x1DD < 8` (`0x801D7138..0x801D7178`). The routine then seeds a
+**fresh** pose from the actor - pitch `0`, yaw `−actor[+0x46]`,
+`TR = (0, 0x400, 0x400)` (`0x600` height for character `3`), look-at the negated
+actor position - runs a per-character / per-art arm over the second band
+`0x1A..=0x2D`, and calls the *same* tween builder again with its own much
+shorter duration (`1`, `3` or `6` display frames against case 6's `0xC`).
+Whichever call ran last owns the step table that frame, and this one runs last;
+an art id with no arm returns without arming anything and case 6's framing
+stands. Both the seed depth (`0x400`) and the arms' folds make the swing
+close-up **tighter** than case 6's `0x500`, ramping as `ctx[+0x26E]` climbs.
+
+The arm's offsets come from the disc table
+[`battle-attack-camera-table.md`](../formats/battle-attack-camera-table.md),
+whose two columns are a per-action coin flip rather than two swing phases; that
+page carries the row map, the ramp counters and the `actor[+0x1DB]` id space.
+Engine side: `legaia_engine_vm::battle_attack_camera` runs the thirteen arm
+bodies and owns the ramp quartet; `battle_cam_script`'s Action phase steps the
+live pose toward whatever the arms produce, each frame, on the arm's own
+duration - which is what retail's per-frame rebuild of the step table amounts
+to. Both hosts feed it the same three per-actor channels (`actor[+0x1DB]` as
+`BattleActor::latched_anim`, `actor[+0x21B]` as `hit_count_bound`, and
+`actor[+0x22C][+0x68]` from the battle animation player's cursor, `<< 4` into
+retail's sixteenths).
 
 `H = 256` and the identity·16384 base hold through every phase. The traced
 numbers above are one fight's *instance* of two formulas, not constants: the
@@ -685,10 +857,30 @@ Tetsu seats. Per-seat variation lives in the **focus trio**, which a solo
 trace cannot distinguish from a constant. Both framing laws, the per-character
 height table `0x801F4D2C`, and the focus trio are covered under
 [`battle-action.md`](battle-action.md#case-0---the-submenu-close-up-framing).
-Engine mirror: `window/battle_cam.rs` in `play-window` (phase derived from the
-live dialogue / command-session state, stepped on the retail display-frame
-clock), with the glide-table kernel port at `legaia_engine_vm::battle_camera`
-(`FUN_801D829C`).
+Engine mirror: the phase script lives ONCE, in
+`legaia_engine_vm::battle_cam_script` (phases, poses, glides, plus
+`battle_vp` - the retail GTE view-projection as one matrix), and both hosts
+drive it: the native `play-window` (`window/battle_cam.rs` adapter;
+`battle_cam_inputs` derives phase / acting actor / formation from the live
+dialogue / command-session state) and the browser play page
+(`web-viewer::play_battle_render`, same derivation, handing the page a ready
+view-projection via `play_battle_camera_vp`), each stepping on the retail
+display-frame clock. The glide-table kernel port stays at
+`legaia_engine_vm::battle_camera` (`FUN_801D829C`); a cross-host recipe test
+in each host pins both derivations to the same literal pose.
+
+**Screen shake.** `FUN_801D9D30` jitters the same translation pair
+(`0x800840B8/BC`) by two LCG samples masked to `0xFFFFFF >> (0x15 − amplitude)`,
+where the amplitude is `_DAT_8007B630`. That global has exactly one retail
+writer - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
+(`[4C, 84, amplitude]`, arm `0x801E2134`, jump-table slot `0x801CEF58`) - and
+`FUN_801D9D30`'s only callers are the field-family overlay's per-frame camera
+updaters (`0x801D1344` and siblings), so in retail the shake is a *field*
+effect and no caller is resident during a fight. The port models the opcode
+(`FieldHost::op4c_n8_sub4_set_b630` → `World::camera_shake_amplitude`) and
+steps the kernel from the shared battle camera, which owns the same
+translation pair. The offset is held beside the framing pose rather than
+inside it, so a live shake cannot stall a rate-clamped glide.
 
 **Actor pass: the 4× world-scale base matrix.** The battle base matrix
 `DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0 → a **4.0× uniform
@@ -701,10 +893,29 @@ GTE TR from the actor's `+0x2C` view-translation trio), so the actors - and
 their stage translations - draw at 4× under the same `Rx(32)·Ry(yaw)` /
 `TR=(0,1280,7680)` / `H=256` camera the backdrop uses at 1×. The 4× is what
 makes the small battle meshes read at retail size against the deep
-translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster). The
-engine mirrors the split in `play-window`: the dome + grid draw at 1× and the
-actor + battle-FX draws compose `BATTLE_WORLD_SCALE = 4.0` under the same
-camera.
+translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster).
+
+**Every battle draw class rides that scale in the port**, not just the
+combatants - the backdrop is registered as an ordinary background actor
+(`FUN_800513F0` → `FUN_80020de0` alloc → the normal actor path), so it goes
+through the same `FUN_80048A08` composition. The port therefore lifts the
+arena and the ground grid with the same `BATTLE_WORLD_SCALE = 4.0`
+(`PlayWindowApp::battle_stage_model` natively, `BattleMesh::stage_positions`
+in the browser upload) and scales the grid's DPCS ramp window with them,
+because that window is a view depth.
+
+The camera's translation trio is authored in this scaled space: the traced
+far framing's `TR.z = 7680` is the eye distance to a formation whose seats
+are `±800` **before** the scale. Leaving a draw class at raw 1× under that
+trio has two consequences, and the port shipped both. The eye orbits that
+class at four times the intended radius - clear of the arena on one side and
+straight through its shell on the other, so the frame fills with a single
+magnified wall - and every actor draws `3 × seat` away from the ground cell
+it stands on. Neither is visible at the far framing on a centred formation,
+because a focus at the origin makes the two classes coincide: that is the one
+configuration the pose tests and `retail_battle_mvp` sample. Guard:
+`the_ground_under_an_actor_projects_under_the_actor` projects each retail
+seat through both classes at every framing and requires the same pixel.
 
 The function that camera comes from is **`battle_dome_camera_mvp`**, not
 `retail_battle_mvp`. The two are not interchangeable and only one is live:
@@ -769,12 +980,81 @@ object→bone). Pinned live + cross-pipeline in
 character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
 `collect_palette` 0864/0865 - the `PLAYER1..3` files) overlays the CLUT rows
 its mesh samples (`481 + slot` after relocation), so the party reads in its
-real colours (blue Vahn / pink Noa / Gala). A stage battle draws **only
-active actors** - the scene-init actors are bound but inactive and parked at
-the world origin, so without that gate they pile their meshes at `(0,0,0)`.
+real colours (blue Vahn / pink Noa / Gala).
 A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
+
+#### The battle display list is the registration set, not `active`
+
+Retail's loader gives the fight its own actor set: `FUN_800513F0` registers
+the backdrop, the party blobs and the monster meshes into `DAT_8007C018[]`
+and links **those** actors into the render OT. The field scene's actor list
+does not survive the transition.
+
+The port keeps one actor array across the transition (the world clones it
+into `field_return` and restores it at battle end), so every field slot
+arrives in the battle still holding its scene-mesh binding and draws at
+whatever battle-world coordinates its `move_state` carries - which for a
+scene actor that never moved is the **origin**, dead centre of the arena
+between the two rows.
+
+"Draw only `active` actors" is **not** a sufficient gate, and the earlier
+reading that the leftover slots are all inactive is false: rikuroa hands the
+battle two live field actors, which drew a scene prop over the party member
+and made the fight look like it had no party in it at all. The registration
+set is the gate - `unregister_non_battle_meshes` (native host
+`window/battle.rs`) drops the `tmd_binding` of every slot the battle loader
+did not just register, so the display list is exactly what the loader built.
+Nothing is stashed for the restore: the bindings return with the field actor
+table. Regression: `battle_display_list_tests` in the same module.
+
+`LEGAIA_DIAG_BATDRAW=1` prints that display list at battle entry - one row
+per bound slot with its role (party ordinal / monster id / `STRAY`), seat,
+mesh vertex count and projected seat. It is the "which meshes is this battle
+actually drawing" instrument; `LEGAIA_DIAG_BATCAM` answers the per-frame
+framing question and `LEGAIA_DIAG_POSE` the per-frame mesh one.
+
+### One staged-anim channel: `actor[+0x1DA]`
+
+Which clip an actor plays is a **single byte**, `actor[+0x1DA]`, with
+`+0x1DB` as its committed mirror. Every producer writes that same byte, and
+the last writer wins:
+
+| Producer | Site | What it writes |
+|---|---|---|
+| Action SM, party approach | attack band state `0x14` | literal `1` (the walk entry) |
+| Action SM, strike loop | attack chain | the strike-script byte (`0x0C..0x0F` swings, art ids) |
+| Damage arm, flinch | `FUN_800402F4` `0x80042124` | `actor[+0x1EF]` (tag-2 entry) |
+| Damage arm, knockdown | `FUN_800402F4` `0x80042118` | `actor[+0x1F1]` (tag-4 entry) |
+| Knockdown → get-up chain | `FUN_8004AD80` `0x8004B690` | `actor[+0x1F2]` (tag-5 entry) |
+
+The commit `FUN_8004AD80` copies `+0x1DA` into `+0x1DB` unconditionally
+(`0x8004AEB0..0x8004AEB8`); there is no reaction guard anywhere on that path.
+So a hit reaction is not a mode an actor is *in* - it is just the current
+value of the staged byte, and the next thing the SM stages replaces it.
+
+Which arm the damage takes is decided at `0x800420F4..0x80042124`: flinch
+when `actor[+0x1F2] == 0` (no get-up entry) **and** the damage is survivable,
+knockdown otherwise. The `+0x1EF..+0x1F3` map is filled by `FUN_80054CB0`
+(`0x80055360..0x800553F0`), one slot per action tag `2/3/4/5/0xB`, with the
+tag-4 → tag-2 fallback at `0x80055428`. Every player battle file carries a
+tag-5 entry, so a party member takes the **knockdown** arm on any hit.
+
+The port models the reaction with its own `Actor::battle_reaction` latch
+(`engine-core::world::actors`) because its `Pose` hook - the per-frame
+`pose(Idle)` the attack band issues - is an engine-local channel with no
+retail counterpart and would otherwise cancel a reaction on the frame after
+it starts. That latch must **not** outrank the staged channel:
+`commit_staged_battle_anim` clears it whenever it installs a staged clip.
+Giving the latch priority instead is what made a hit party member spend its
+whole attack turn face-down - it walked to the target and back playing the
+knockdown / get-up pair, and the approach clip plus every weapon swing were
+dropped on the floor. Regression:
+`crates/engine-core/tests/battle_reaction_stage_precedence.rs`, plus the
+GPU-free pose oracle in
+`crates/asset/tests/battle_pose_orientation_real.rs` which pins that the
+upright family really is upright and the reaction family really is prone.
 
 ## Battle action state machine (`FUN_801E295C`)
 
@@ -1166,6 +1446,30 @@ ported; the ground grid draws without its per-draw GTE depth cue (the page
 renderer's cue uniform is global); and the per-tick facial-animation VRAM
 re-stamps, mid-battle summon-creature spawn and battle-intro screen-prim
 emitter remain native-only.
+
+### Weapon-trail afterimage streak
+
+The trail a swinging weapon leaves is one semi-transparent `POLY_FT4` per emitter call (`FUN_801E1AB0`), and its two projection inputs are context words the action effect script's terminator writes: the billboard centre from `ctx[+0x1144]` and the half-width as `ctx[+0x6C6] - 0x200`. The terminator stages both in one block - `sw` of the move-power record pointer to `+0x1014`, `sh` of that record's `+0x04` to `+0x6C6`, then a four-slot loop writing phase `1` to `+0x24E + i` and the launch position to `+0x1144 + i*8` (`FUN_801DEA50`, `0x801DF284..0x801DF2E0`).
+
+The launch position is **not** the bare actor position: retail re-seeds its stack pair from `actor[+0x34..+0x3B]` at the top of every record iteration and runs the scale + facing rotation on it before the terminator test, so the quad the seed loop copies out carries the terminator record's own placement.
+
+Port: `engine-core::action_effect_script::MoveFxStreak` is the block (record id rather than pointer, one shared launch point rather than four identical copies), installed by the live per-frame walk in `World::step_actor_effect_script` and read back through `World::move_fx_streak`. `engine-render::streak_pass` projects it once per frame and hands the corners to the ported packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are unchanged. The native window appends the quads to its screen-space textured batch.
+
+Two disclosed departures. The **projection** is the engine camera's, not the GTE's: `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes, which is the same operation `FUN_800195A8` performs in view space - but the engine's battle camera carries no GTE rotation/translation pair to feed the exact port (`billboard::project_billboard`). And retail links each packet at the projected billboard's own OT bucket, inside the scene; the engine's screen-space batch draws them over the actors instead of interleaved with them.
+
+The chained-ribbon sibling `FUN_801E1D98` stays unwired. Its projector uses a constant half-size and no Y push, so it consumes neither context word, and which of the two emitters a move takes is a dispatcher choice (`0x801E0CA0` vs `0x801E0CD0`) that is not decoded.
+
+**Reachability today.** The pass is wired into the native window's screen-FX
+builder, but a live `--battle` fight emits **zero** quads. It is gated on
+`World::active_move_fx_trail_texpage()`, which is set only when
+`World::spawn_move_fx` stages a move-power record's Spawn prototypes - i.e.
+when a *move* runs. A party basic Attack stages no move: the attack
+resolution leaves the actor's `+0x1DF` action stream all-zero, so the attack
+chain reads its terminator on the first byte and exits straight to recovery
+without staging a swing (`0x0C..0x0F`) at all. Damage still lands - the live
+loop applies it through its own strike path, not through the SM's strike
+band - but until the action stream has a producer for the party attack, both
+the swing clips and the streak that trails them stay unreached.
 
 ### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
 
@@ -1809,11 +2113,344 @@ The HUD is fed by `World` events:
 
 Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
 
-Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives both a row's Y and a popup's anchor from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
+Slot indices are **absolute actor-table indices** - party ordinals below `party_count`, monsters above - and stay absolute through the draw list. `battle_hud_draws_for` derives monster-row Y and popup anchors from the slice position, so a host that hands it a compacted "active slots only" list shifts every monster row up and anchors damage numbers to the wrong actor. Inactive slots are passed through as empty-name rows, which the builder skips while still consuming their Y.
 
-HP and MP readouts are tinted by the four-tier retail colour law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+### The drawn surface
 
-Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`.
+`battle_hud_draws_for` returns two lists (`BattleHudDraws`): `text` samples the
+dialog-font atlas (glyphs plus the solid-texel rects), `sprites` samples the
+resident system-UI atlas. Both hosts composite `sprites` under `text` in the
+same slot they already use for the dialog and menu chrome.
+
+The panel X anchors are pinned from the battle overlay (`FUN_801D84C0`'s
+per-party-size anchor table - solo `0x72`, pair `0x3F`/`0xA5`, trio
+`0x0C`/`0x72`; canonical port `engine-vm::battle_party_panel`), and the packet
+walk confirms them as the panels' **name pen**, five pixels inside a 102x48
+panel plate. Retail's own seats, rects and palettes for the whole surface are
+in [screen chrome](#battle-screen-chrome-packet-pinned).
+
+**Retail draws no HP or MP gauge at all**, in either the panel or the
+full-width active-actor readout, and none for monsters either. Filled bars and
+monster rows are engine additions rather than approximations of a retail
+surface, and both sit behind `LEGAIA_DIAG_HUD`.
+
+**Two party surfaces, mutually exclusive.** Retail's party readout is not one
+widget. At rest each live member gets a **roster panel** - a 102x48 plate at
+`y = 164`, seated at `x = 109` solo, `58` / `160` for a pair, `7` / `109` /
+`211` for a trio - carrying the name and level on its top cell, then an HP row
+and an MP row. The member currently entering a command or acting instead takes
+the **active-actor bar**: one plate run at `(8, 188)` with a 288-px interior,
+so it spans `x 8..=312`. The bar does not hide the panels by not drawing them;
+retail parks the whole cluster at `y = 230`, under its 228-line display window.
+Seats, sub-palettes and the 3-slice plate law are pinned in
+`engine-vm::battle_chrome`; `engine-ui` mirrors the seats as literals because
+it sits below `engine-vm` in the crate graph, and `engine-shell`'s HUD tests
+pin the two sets equal.
+
+A single-surface reading of the same screen - "one full-width lozenge per live
+member" - is what a solo capture shows when that member happens to be acting,
+and it is wrong for a resting party. The display-list walk is what separates
+the two cases.
+
+Inside the bar: name pen `(16, 192)`, the `HP` label cell at `(80, 194)`, the
+current HP right-aligned to `x = 134`, a `/` sprite at `(136, 188)`, the
+maximum right-aligned to `x = 178`, then the `MP` label at `(192, 194)` with
+its own pair right-aligned to `238` and `274` around a `/` at `(240, 188)`.
+The panel rows carry the same two fields against `CUR_RIGHT = 57` /
+`MAX_RIGHT = 97`, and the level against `LV_DIGITS_RIGHT = 96`.
+
+### Numbers are cells, names are glyphs
+
+Every **number** on the battle screen is a run of fixed 8x12 cells off the
+menu-glyph strip; only the names use the proportional dialog font. That split
+is what the field geometry is built around, and it decides two things at once.
+
+**Both halves of a `cur / max` pair are right-aligned.** Neither runs forward
+from a pen. A capture whose values happen to share a digit count cannot tell
+the two models apart - it takes a second capture at a different width, and
+three of them disagree with the forward-running reading:
+
+| field | 2 digits | 3 digits | 4 digits | right edge |
+|---|---|---|---|---|
+| bar HP maximum | - | `154` | `146` | `178` |
+| bar MP maximum | `258` | `250` | - | `274` |
+| panel maximum | `81` | `73` | `65` | `97` |
+| panel level | `80` | - | - | `96` |
+
+**A field's width budget is a cell count.** Four cells per HP field and per
+panel field, three per bar MP field - the panel's numerals close five pixels
+short of its right edge, mirroring the five-pixel inset of its name pen. A
+proportional-font `9999` is wider than four cells and overruns the 102-px
+plate into the neighbouring member's panel, which is the failure the cell
+model removes by construction rather than by moving a column.
+
+Retail draws **no gauge bar of any kind** on either surface - the display-list
+walk carries no bar primitive in either readout.
+
+The `LV`, `HP` and `MP` label cells are three texels in **one** sub-palette
+(CLUT row 511 sub-palette 1); the gold-vs-green difference is baked into the
+texels, not resolved per label, so they draw untinted.
+
+**The plaque.** A carved-gold plate at `(8, 8)` naming the actor the frame
+belongs to - the party member on his turn, the monster through its attack -
+whose interior is sized to the **measured** name (plus a 20-px element badge
+and a 5-px gap when the actor carries one). `name_plaque` lays it out; its
+parked seat is `(8, -24)`, so retail slides it in from above. The port draws
+the live seat only. This is also where the port's **monster readout** lives:
+retail draws no monster gauge at all, so a monster's name is the whole of what
+it contributes to the drawn surface. `battle_hud::battle_active_actor` picks
+the actor.
+
+**The surface samples the disc's own cells.** The 102x48 marbled panel plate,
+the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are all
+baked into the shared sprite atlas and drawn 1:1 from it - the first three off
+the resident system-UI sheet (sub-palettes 0 / 4 / 5), the numerals off the
+neighbouring menu-glyph atlas through sub-palette 13. The plaque takes the
+carved-gold plate row, which is the same art the field menu's tab banner
+already bakes. Source rects live in
+[`title_pak`](../../crates/asset/src/title_pak.rs) as
+`OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
+[`save_menu_atlas`](../../crates/engine-core/src/save_menu_atlas.rs) as
+`ATLAS_RECT_BATTLE_*`, all at their natural sheet coordinates except the
+numeral strip, whose own row the filigree tile holds.
+
+Without an atlas the builder still draws: plates degrade to a solid interior
+with a 1-px rim, the labels and the `/` to tinted text, and the numerals to
+font glyphs **centred on the same 8-px cells** - the fallback changes
+letterforms, never layout.
+
+**Still substituted.** The status element's badge art (`0x18..=0x20`) is
+unpinned, so the selected id draws as a labelled tag on the panel's level
+seat, which is the seat retail's exclusive ladder puts it on.
+
+**Parked, not stacked.** The port emits no panel draws at all while the
+active-actor bar or a command-entry session owns the frame, rather than
+drawing at retail's parked `y = 230`: the engine stage is 240 lines against
+retail's 228-line display window, so `y = 230` would still be visible here.
+Drawing both is what "two mutually exclusive surfaces" rules out - the bar
+would sit on top of the panel row it replaces.
+
+**Diagnostic surface** (`LEGAIA_DIAG_HUD` set to anything but `0` / empty).
+Everything the port used to draw unconditionally and retail does not: monster
+rows with HP numerals and thin gauge bars, the K.O. tag, the per-slot LV / AP
+tail, and the "ENCOUNTER!" transition banner. Off by default on both hosts;
+the toggle is read from the environment so they resolve one answer, and on
+wasm the variable never exists.
+
+The filled rects need no dedicated pipeline: `font_solid_src` locates a
+solid-white texel in the dialog-font atlas and every rect is a `TextDraw`
+stretching that 1x1 source under a colour tint, through the same textured-quad
+pass both hosts already run for glyphs. Without either atlas the builder still
+draws - the lozenge degrades to a solid interior plus a 1-px rim, the label
+sprites to tinted `HP` / `MP` text at the same columns.
+
+Two retail colour laws drive the surface, both fed the **displayed** (ramping)
+HP - `BattleActor::hp_display`, retail actor `+0x172`, walked by the
+quarter-step ramp `FUN_80047430` so damage drains over frames instead of
+snapping:
+
+- **Numerals** take the readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead member's whole row dims.
+- **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`, port of `FUN_80046A20`): death greys the whole track, an active status forces both fills to the override colour, otherwise each bar bands independently on its floored half/quarter thresholds. Only the diagnostic rows draw bars now, so this law reaches the default surface nowhere. The index-to-RGB map (`gauge_fill_color`) is approximate - retail resolves the index through unpinned font-CLUT rows.
+
+MP has no ceiling on the battle actor: `World::character_max_mp`, keyed by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and the builder draws them no MP field.
+
+### The status element
+
+Retail draws **one** status marker per party slot, never a strip, and which one is a fixed priority ladder in `FUN_8002C2E4` (`ghidra/scripts/funcs/8002c2e4.txt`). Its inputs come from the display record at `0x80084140 + slot * 0x414` - which is the live character record read `0x5C8` bytes early, since `0x80084140 + 0x5C8 == 0x80084708`. So the selector's three fields are character-record fields: `+0x6F6` = `+0x12E` (the packed status word), `+0x6CE` = `+0x106` (current HP) and `+0x6F8` = `+0x130` (the displayed level).
+
+The word itself is battle actor `+0x16E` verbatim: `FUN_80047430` mirrors it with a paired `lhu`/`sh` on both its arms (`0x80047680`, `0x80048040`). Three draws come out:
+
+| condition | draw |
+|---|---|
+| word `== 0`, HP `!= 0` | base marker sprite `0x0A` at `(pen + 0x3B, pen + 2)`, then the **level** from `+0x6F8` as two digits at `(pen + 0x4B, pen)` |
+| HP `== 0` | sprite `0x20`, tested before any bit - the KO marker wins outright |
+| HP `!= 0`, bits set | the ladder's first match, at `(pen + 0x33, pen - 4)` |
+
+The ladder tests `0x0004`, `0x0400`, `0x0800`, `0x0380`, `0x0078`, `0x1000`, `0x0002`, `0x0001` in that order, emitting sprites `0x1A`, `0x1D`, `0x1E`, `0x1C`, `0x1B`, `0x1F`, `0x19`, `0x18`. The band `0x18..=0x20` is nine sprites for the nine conditions the status model tracks, KO being the one that is a zero-HP test rather than a bit. Per-bit provenance is in [`accessory-passive-table.md`](../formats/accessory-passive-table.md#status-guard-clear-masks) - the seven accessory guards each clear exactly one ailment's mask, which is what fixes the assignment - and mirrored at `engine-vm::status_effects::display_flags`.
+
+Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set into the retail word and `status_element` runs the ladder. The no-ailment arm is the level, and retail draws that as a **panel row** - the `LV` label cell at the panel's `(64, 6)` with its digits at `(88, 4)` - not as a floating marker. The ladder is exclusive, so any set bit (or zero HP) **replaces** that level with its own element, and the port draws the selected id as a labelled tag on the same panel seat: the retail **sprite sheet** for `0x18..=0x20` is not resolved, so the selection is ported and the pixels are not. Three bits - `0x0040` inside the Rot group, and `0x2000`/`0x4000`/`0x8000`, which survive even Master Guard's clear - have no writer anywhere in the dumped corpus and stay unassigned.
+
+### Enemy target strip
+
+While a target picker's cursor is on the enemy row, both hosts draw retail's deduplicated monster-name strip instead of a debug label: `battle_hud::battle_enemy_target_rows` builds the rows off the live monster slots (identical adjacent monsters collapse into one run whose label takes the dedup-glyph suffix, `FUN_801D9D3C`), and each host runs the retail centre/relax/clamp layout (`target_picker::layout_enemy_menu_rows`) with its font as the measurer. The projected screen X the layout averages (battle actor `+0x34`) is renderer-owned and not plumbed into the HUD layer, so rows centre at `0xA0` and the retail overlap-relaxation pass spreads them - an approximation of retail's over-the-monster placement with the pass structure exact.
+
+Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser play page runs the same fold in `web-viewer`'s `play_battle.rs`.
+
+## Battle screen chrome (packet-pinned)
+
+What retail actually draws around the fight: the actor-name plaque, the
+party status readout and the command-chip cluster. Every number below is
+read out of retail's own display list. A mednafen battle save state carries
+main RAM verbatim, and libgpu leaves its queued primitives there as
+ordering-table nodes (`[u32 tag][GP0 words]`, `tag = len<<24 | next`), so
+the RAM image **is** the frame's packet stream - each `SPRT` carries its own
+`(x, y)`, `(u, v)`, `(w, h)` and CLUT id inline, and the `DR_TPAGE` node
+traversed before it fixes the texture page. Cross-checked against a
+full-VRAM dump of the same frame (`mednafen-state vram-dump`). Port:
+[`engine-vm::battle_chrome`](../../crates/engine-vm/src/battle_chrome.rs).
+
+Anchors used: the Tetsu-tutorial progression `v0_1_battle_command_menu` /
+`v0_1_battle_command_submenu`, the three-member `party_battle_gobu_gobu`,
+and the solo action frames `battle_gimard_tail_fire_a` /
+`battle_melee_hit_spark` / `player_steal_skeleton_pre` (see
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml)).
+
+### One sheet, one 3-slice, two palettes
+
+The whole chrome samples the **resident system-UI TIM**
+([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/asset/src/title_pak.rs),
+`PROT.DAT` `0x18E0`), whose pixels upload to VRAM page `(896, 256)` and
+whose 16-row CLUT block packs into VRAM row **511** as sixteen side-by-side
+sub-palettes. Text comes off the neighbouring menu-glyph atlas at page
+`(896, 0)` through row **510** sub-palette 13, as 14x15 blits of 16x16 cells
+(`cell = ascii - 0x20`, sixteen cells per row, `u = (i%16)*16`,
+`v = (i/16)*16`) advanced by each glyph's own width.
+
+The name plaque, the party bar and every command chip are the **same three
+tiles** at two sheet rows:
+
+| Row | Left cap / body / right cap | Sub-palette | Drawn by |
+|---|---|---|---|
+| `v = 0` | `(208,0)` / `(192,0)` / `(216,0)`, 8x20 / 16x20 / 8x20 | 4 (blue) | party status bar, command chips |
+| `v = 64` | `(208,64)` / `(192,64)` / `(216,64)` | 12 (carved gold) | actor-name plaque |
+
+The `v = 64` row is the art
+[`title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`](../../crates/asset/src/title_pak.rs)
+already pins as the field menu's tab banner. The battle plaque and the pause
+menu's title tab look like the same object because they are one asset;
+`battle_chrome::gold_plate_matches_tab_banner` asserts the equality.
+
+A run is composed left-to-right: cap at `x`, 16-wide body tiles from `x + 8`
+with the **final tile clipped** to the remainder, cap at `x + 8 + interior`.
+A 27-pixel interior emits a 16-wide and an 11-wide tile - the clip is retail
+behaviour, not a rounding of it.
+
+### One placement record derives every plate
+
+The plate is not stored anywhere; it is derived from a **content box**, and
+the box is a record of the screen-element placement table at `0x80076C10`
+([`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)).
+Reading the live table out of the same save states the packets came from
+gives one arithmetic that fits all four surfaces:
+
+```text
+glyph pen = (rec.x, rec.y - 2)
+plate     = (rec.x - 8, rec.y - 6),  size (rec.w + 16, 20)
+```
+
+`rec.h` is `0x0C` in every initialised record, so a plate is always 20 tall,
+and `rec.w` **is** the interior width - which is what makes a plate sized to
+its content with the last body tile clipped. The `-8` / `-4` content-to-plate
+bias is the same one `FUN_801DBC30` applies when it frames a box.
+
+| Surface | Record `(x, y, w)` | Glyph pen | Plate |
+|---|---|---|---|
+| actor-name plaque | `(16, 14, 63)` | `(16, 12)` | `(8, 8)` 79x20 |
+| active-actor bar | `(16, 194, 288)` | `(16, 192)` | `(8, 188)` 304x20 |
+| `Item` chip | `(204, 34, 48)` | `(204, 32)` | `(196, 28)` 64x20 |
+| `Begin` chip | `(104, 88, 36)` | `(104, 86)` | `(96, 82)` 52x20 |
+
+The plaque is record **68** (`0x80077270`, element id pair `0x2323`, kind
+`0x0202`), pinned by width rather than by name: across three states the
+record's `w` tracks the measured plaque interior exactly - 27 for `Vahn`, 62
+for `CheDelilas`, 63 for `Gimard` behind its badge - while its live seat stays
+`(16, 14)` and its parked seat `(16, -24)`. So the plaque slides in from above
+the screen, and the record's `+0x14` points at the name scratch buffer the
+string was measured out of (a party-name buffer for a member, a monster-name
+buffer for an enemy).
+
+The per-member roster panel is the exception that proves the rule: it is a
+fixed 102x48 sprite rather than a plate run, so its own record (`w = 88`,
+`h = 50`) insets by `(-5, -6)` and widens by 14 instead.
+
+The table is **disc data** - it is initialised rodata in the executable's data
+segment, and the runtime writes back only the measured width, the string
+pointer and the live seat while an element slides. Parser
+`legaia_asset::screen_elements`; the disc-gated oracle
+`crates/asset/tests/screen_elements_real.rs` re-decodes it off the user's
+`SCUS_942.54` and asserts each seat above.
+
+### The actor-name plaque
+
+Fixed seat `(8, 8)`, 20 px tall, in every battle. It names whichever actor is
+currently acting - the party member on their turn, the monster on its - which
+is why the same surface reads `Vahn` in one frame and `Gimard` in the next.
+
+The interior is exactly its content, so the plate is sized to the name:
+
+- no badge: `interior = name width`, first glyph at `(16, 12)`;
+- with an element badge: `interior = 20 + 5 + name width`, badge at
+  `(16, 12)`, first glyph at `(41, 12)`.
+
+Captured widths: `Noa` -> 20 (right cap at x=36), `Carl` -> 23, `Zeto` -> 24,
+`Vahn` -> 27 (cap at 43), `CheDelilas` -> 62, `Gimard` behind a badge -> 63
+(cap at 79). Total plate width is `interior + 16`.
+
+The **element badge** is a 20x12 sprite off the same sheet: eight badges at a
+32-texel pitch from `u = 6`, row `v = 192` plain and `v = 208` winged. Each
+badge picks its own 16-entry sub-palette out of the CLUT block at VRAM x
+`896..`, rows 498 / 499 - the palette travels with the badge, not with the
+row, so the colour is per-element and the geometry is not.
+
+### The party status readout - and it has no gauge
+
+Two mutually exclusive surfaces, and **neither draws a bar**. There is no HP
+or MP meter primitive anywhere in either packet run: a label sprite, numerals
+and a separator, nothing else. A filled gauge in a party HUD is an engine
+invention.
+
+**The active-actor bar** is a full-width blue run at `(8, 188)`, interior 288,
+spanning `8 ..= 312`. It appears while one actor holds the screen - entering
+their command, or playing their action out - and shows that actor only:
+
+| Piece | Seat |
+|---|---|
+| name glyphs | `(16, 192)` |
+| HP label sprite `(208,86)` 16x10 | `(80, 194)` |
+| HP current, right-aligned | ends x=134, `y = 192` |
+| HP `/` separator `(96,64)` 8x16, sub-pal 5 | `(136, 188)` |
+| HP maximum, left-aligned | starts x=154 |
+| MP label sprite `(224,86)` | `(192, 194)` |
+| MP current / separator / maximum | ends 238 / `(240, 188)` / starts 258 |
+
+Numerals are 8x12 cells at `v = 208`, `u = digit * 8`, off the font page
+through sub-palette 13. The separator sprite sits four rows **above** the
+numerals it separates.
+
+**The roster panels** are the default: one 102x48 marbled plate per member,
+texels `(0, 0)` of the same sheet through sub-palette 0, at `y = 164`, seated
+at x `109` (solo), `58` / `160` (pair), `7` / `109` / `211` (trio) - a
+102-pixel pitch. Content is panel-relative: name `(+5, +4)`, LV label sprite
+`(192,86)` at `(+64, +6)` with its digits at `(+88, +4)`, HP label at
+`(+4, +21)` and MP label at `(+4, +36)`, each row's current value ending at
+`+57`, separator at `(+57, y-4)`, maximum starting at `+73`.
+
+The panel seats are the same layout `FUN_801D84C0` publishes - its
+per-party-size anchors (`0x72`; `0x3F`/`0xA5`; `0x0C`/`0x72`, port
+[`battle_party_panel::panel_anchors`](../../crates/engine-vm/src/battle_party_panel.rs))
+are the **name pen**, five pixels inside the panel background. When the
+active-actor bar takes over, the panels do not stop drawing - they move to
+`y = 230`, below the 228-line display window, the same park row the arts
+input screen uses ([`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned)).
+
+### The command chips
+
+Chips are blue plate runs around a D-pad glyph - texels `(0, 112)` 16x16,
+sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. Every
+chip in one cluster is built at the **same** interior width; a chip is not
+sized to its own label, and the label is left-aligned at the interior's left
+edge, four rows down.
+
+| Cluster | Centre | Chip interior | Seats |
+|---|---|---|---|
+| `Begin` / `Run` | `(160, 92)` | 36 | horizontal pair, plates at x=96 and x=172, y=82 |
+| per-actor commands | `(228, 70)` | 48 | four-way diamond, `dx = 44`, `dy = 32` |
+
+The command diamond seats `Item` up `(196, 28)`, `Attack` left `(152, 60)`,
+the element command right `(240, 60)` and `Spirit` down `(196, 92)`. An
+unavailable command still gets its chip - the right seat draws a single `-`
+glyph for a character with no magic. The `Begin` / `Run` cluster is seat- and
+size-identical in a solo tutorial fight and in a three-member battle.
 
 ## SFX bank + scheduler
 
@@ -1856,6 +2493,38 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
 
+### The session is a bracket, not the roll
+
+On a scene whose MAN carries encounter *regions* - which is every field area
+that fights - the roll does not come from the session at all. It comes from
+`RegionEncounterTracker` (the faithful `FUN_801D9E1C` model: per-region rate
+counter, formation-range pick, one-step anti-repeat), and the session supplies
+only the `Transition -> Triggered -> Battling -> Grace` bracketing around it.
+
+That asymmetry has a failure mode worth naming, because it does not look like
+one from either side. The region tracker's trigger branch is **destructive**:
+it draws RNG, latches the anti-repeat formation and re-seeds its counter before
+returning the pick. A host that dropped `World::encounter` after scene entry -
+`World::begin_new_game` clears it, and `play-window --seed-party` runs that
+*after* `enter_field_live` - therefore left the tracker rolling into a null
+sink, and each roll was a fight that happened and was then thrown away, with no
+transition drawn and nothing logged. `World::on_field_step` now re-installs a
+bare bracket (`World::install_encounter_bracket`) rather than dropping the
+pick, and every remaining way a roll can fail to become a battle logs at error:
+an unregistered formation in `begin_encounter_battle`, a scripted arm with no
+session, and a table/def id mismatch caught at `install_man_encounter` time.
+
+The two id spaces the roll crosses - the MAN formation-row index the roll
+produces and the `World::formation_table` key the battle load resolves - are
+pinned equal across the whole scene corpus by
+[`crates/engine-core/tests/scene_encounter_formations_disc.rs`](../../crates/engine-core/tests/scene_encounter_formations_disc.rs),
+which also carries the New-Game-reset regression.
+
+`World::force_encounter(row)` arms a named row through that same bracket. It is
+the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)),
+and it deliberately does not shortcut into `enter_battle_from_formation` - a
+harness that skips the path it verifies proves nothing about it.
+
 ### Scripted-battle entry (`3E FF <row>`)
 
 The scripted boss fights enter through the field-VM interact op `0x3E` with
@@ -1867,8 +2536,14 @@ battle mode switch (`FUN_8003CE08(0xE)`); the entity tick `FUN_801DA51C`'s
 confirm state then copies the row into the battle formation cell `0x8007BD0C`.
 The boss rows sit **outside** every region's rollable
 `[base, base + count)` slice, so they can only enter through this op, and they
-carry a non-zero first header byte (the reader ORs `0x80` into a battle-setup
-flag for them):
+carry a non-zero first header byte - the predicate the confirm state ORs bit
+`0x80` of the per-battle flags byte `DAT_8007BD60` on (see
+[encounter.md](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)).
+That bit is what gives a scripted fight the `SpinUpParticles` battle intro and
+the transition's second audio cue instead of the random-encounter default; the
+port carries it per formation row as `FormationDef::header_flags` /
+`per_battle_flags()`, so it survives from the MAN parse to the intro. `rikuroa`
+rows 16/17 read `01 00 00` where all sixteen of its random rows read `00 00 00`:
 
 | Scene | Beat record | Op | Formation row | Contents |
 |---|---|---|---|---|
@@ -2120,6 +2795,27 @@ Per-character per-Seru capture-point accumulator. Each captured Seru contributes
 
 Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
 
+## Arts command input
+
+The Arts command opens a **per-press directional entry**, not a list. Each
+d-pad press appends its command to the acting actor's `+0x1DF` queue and
+debits that command's `+0x74` AP cost from the turn pool; the entry ends by
+itself the moment nothing is affordable, and the entered sequence is then
+matched against the character's learned arts. Retail's flow, the AP
+arithmetic and the port's divergences are on
+[`arts-command-gauge.md`](arts-command-gauge.md#the-ports-input-session);
+the screen's packet-pinned presentation is on
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#arts-command-input-packet-pinned),
+which is where it was captured (the dome runs the same screen verbatim).
+
+Port: session `engine_core::arts_command_input`, opened from the command
+menu's Arts arm and driven by the live loop while the action SM is parked.
+Chrome: `engine_ui::arts_input`, drawn by both hosts off the shared baked
+system-UI atlas. `World::arts_input_active()` / `arts_input_actor()` tell a
+host's party surface that an actor owns the pad - retail parks the status
+plate off-screen for the whole session. The older saved-chain list stays
+reachable behind `LEGAIA_ARTS_SAVED_LIST=1`.
+
 ## Tactical Arts chain editor
 
 Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.
@@ -2208,36 +2904,54 @@ enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
     - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction - reliable only on a weakened Seru - downing it and logging the id into `World::battle_captures` on success);
     - and **escape** (sets `World::battle_escaped`, and the spell tick returns to the field via `finish_battle` with no loot).
     - Accuracy / Evasion / Speed buffs are tracked but have no live-loop scalar to move yet.
-- **Arts** opens a `battle_arts::BattleArtsSession` on `World::battle_arts_menu`
-(built by `World::build_battle_arts_rows` from `World::saved_chains` filtered to
-the caster). An Art is a saved command chain; each menu row carries a per-strike
-**power profile** (`Vec<PowerByte>` + `EnemyEffect`) and runs through the real
-art-power path: `World::apply_battle_art` drives each power byte through
-`crate::art_strike::apply_art_strike`, so the byte's multiplier tier + UDF/LDF
-target decode, `resolve_battle_defense` picks the matching defense half, and the
-art's status effect lands on a hit. The profile comes from a staged `ArtRecord`
-(`World::art_records`, keyed by `(Character, ActionConstant)`, populated from
-disc PROT entry `0x05C4` via `World::set_art_record`) when a record's command
-string the saved chain ends with (`chain_matches_record`); with no matching
-record it falls back to a synthetic per-direction profile
+- **Arts** opens the per-press [Arts command input](#arts-command-input) on
+`World::battle_arts_input` - the player *types* the chain, one d-pad press per
+command, and the entry ends itself when the AP pool can no longer afford a
+press. `World::resolve_arts_input_entry` then runs the entered buffer through
+the retail matcher order (Miracle string → Super tail → per-art greedy
+longest-match, unmatched directions staying plain synthetic swings) to a
+per-strike **power profile** (`Vec<PowerByte>` + `EnemyEffect`) plus the list of
+named arts the turn performs. `World::apply_battle_art` drives each power byte
+through `crate::art_strike::apply_art_strike`, so the byte's multiplier tier +
+UDF/LDF target decode, `resolve_battle_defense` picks the matching defense half,
+and the art's status effect lands on a hit. Art records come from
+`World::art_records`, keyed by `(Character, ActionConstant)` and populated from
+disc PROT entry `0x05C4` via `World::set_art_record`.
+  Because an entry runs until the pool is spent, performing **several** arts in
+one turn is the ordinary case, and the performed-art list is what the shout cue
+and the learn-on-use check are keyed on - once per art, not once per turn (see
+[audio.md](audio.md#battle-arts-voice-shout-path-engine)). A Miracle / Super
+replacement answers a single constant, its finisher.
+  The legacy saved-chain list (`battle_arts::BattleArtsSession` on
+`World::battle_arts_menu`, built by `World::build_battle_arts_rows` from
+`World::saved_chains`) stays reachable behind `LEGAIA_ARTS_SAVED_LIST=1`. A row
+there collapses to the one art whose command string the chain ends with
+(`chain_matches_record`), or to a synthetic per-direction profile
 (`battle_arts::synthetic_power` - Down → LDF, else UDF, tier-0 ×12, clamped to
-`MAX_ART_HITS`). Both paths share the one `apply_art_strike` kernel; the
-synthetic fallback keeps a saved chain playable when the disc art tables aren't
-loaded.
+`MAX_ART_HITS`) when no record matches. Both paths share the one
+`apply_art_strike` kernel.
 
 While any submenu is open both the SM and the command session are parked;
-`World::tick_battle_{arts,spell,item}_menu` drives it from `World::input`. On a
-completed action the result is applied, the relevant popup is surfaced
-(`battle_hit_fx`), and the action SM is **parked at `EndOfAction`** so the
-re-arm block cycles to the next combatant - a cast / art / item use is the
-actor's whole turn, no Attack-SM strike fires. Backing out reopens the command
-menu for the same actor. Implementation:
+`World::tick_battle_arts_input` / `tick_battle_{arts,spell,item}_menu` drives it
+from `World::input`. On a completed action the result is applied, the relevant
+popup is surfaced (`battle_hit_fx`), and the action SM is **parked at
+`EndOfAction`** so the re-arm block cycles to the next combatant - a cast / art
+/ item use is the actor's whole turn, no Attack-SM strike fires. Backing out
+reopens the command menu for the same actor. Implementation:
 [`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
-+ [`battle_arts`](../../crates/engine-core/src/battle_arts.rs) /
-[`battle_magic`](../../crates/engine-core/src/battle_magic.rs); coverage
-`crates/engine-core/tests/battle_player_driven.rs` walks into a battle, asserts
-no strike lands until the player confirms a command, then drives the picker to a
-monster wipe + loot.
++ [`arts_command_input`](../../crates/engine-core/src/arts_command_input.rs) /
+[`battle_arts`](../../crates/engine-core/src/battle_arts.rs) /
+[`battle_magic`](../../crates/engine-core/src/battle_magic.rs).
+
+Coverage: `crates/engine-core/tests/battle_player_driven.rs` walks into a
+battle, asserts no strike lands until the player confirms a command, then
+drives the picker to a monster wipe + loot.
+`battle_command_arms_reachable.rs` is the hand-off guard - each of Arts / Magic
+/ Item must open exactly its own surface, consume the command session, arm
+nothing, and (for Arts) actually consume a directional press. It exists because
+re-pointing an arm is invisible to `--lib`: the surface's own unit tests keep
+passing while every integration driver that walked the old arm stops reaching
+an executed action.
 
 ### Post-battle Seru learning
 
@@ -2360,7 +3074,7 @@ stated by the concrete writes.
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |
 | `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Its live arms ease the actor's packed tint/tween word `+0x04` toward a target via `FUN_80050F30`, and treat the packed arrival value `0x20080200` (all three channels at the neutral `0x80` target) as "reached". |
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
-| `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' position accumulators `+0x34`/`+0x38` apart by `sin/cos >> 10`. Positional physics keyed on the game's trig tables; ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes). |
+| `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (the `+0x3C`/`+0x40` pair it measures is the seat). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
 | `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |
 | `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write - documented, not ported. |
 
@@ -2385,47 +3099,72 @@ by `World::tick_battle_intro` for as long as the encounter session sits in its
 advancing, and bit 0 comes from the post-switch spin test, so `ready == 3` is
 the completion state.
 
-The **visual** half is not. Five style kernels are ported and none is reached
-by a host:
+The **visual** half is live end to end. The five style kernels are ported in
+`engine-vm` and drawn by `engine-render::battle_intro`, the per-frame
+working-set owner the native play window arms for every encounter (the browser
+hosts have no screen-space primitive path - see
+[`host-drift.md`](../tooling/host-drift.md)):
 
-| Style | Retail | Port |
-|---|---|---|
-| Scatter particles | `FUN_801CFDA0` | `battle_intro_styles::tick_particle_field` (`PARTICLE_TICK_A`) |
-| Scatter with spin-up | `FUN_801D0370` | same, `PARTICLE_TICK_B` |
-| Tile shatter | `FUN_801D0D24` | `battle_intro_tiles::tick_tile_grid` |
-| Swirl fan | `FUN_801D1888` | `battle_intro_swirl::tick_swirl` |
-| Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` |
+| Style | Retail tick | Simulation port | Packet builder port |
+|---|---|---|---|
+| Scatter particles | `FUN_801CFDA0` | `battle_intro_styles::tick_particle_field` (`PARTICLE_TICK_A`) | `battle_intro::emit_particle_field` |
+| Scatter with spin-up | `FUN_801D0370` (+ ring tail `FUN_801D1CFC`) | same, `PARTICLE_TICK_B` | same + `emit_spinup_ring` |
+| Tile shatter | `FUN_801D0D24` | `battle_intro_tiles::tick_tile_grid` | `battle_intro::emit_tile` |
+| Swirl fan | `FUN_801D1888` / `FUN_801D1A20` | `battle_intro_swirl::tick_swirl` | `battle_intro::emit_swirl_band` |
+| Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` | `battle_intro::intro_quad_to_screen` |
 
-### What actually blocks the styles
+The chain: `BattleIntro` holds the style's working set between frames and
+synchronises its clock from the live transition entity; the one-shot field
+frame capture (`Renderer::capture_rgba` → `vram_capture`) lands the drawn
+field in the texture pages each style's packets name; and the emitted
+`ScreenPrim`s composite over the scene through
+`RenderTarget::SceneWithScreenPrims`.
 
-Two things, and neither is the screen-space draw path - a point worth stating
-plainly because the modules' own notes previously claimed otherwise.
+### The window has no field in it
 
-1. **No working-set owner.** `World::battle_intro` is a `TransitionEntity`
-   (`phase` / `elapsed` / `ready`). Nothing holds a particle block, tile grid
-   or swirl mesh between frames.
-2. **No captured field frame.** Every style textures itself with the field
-   image retail left in VRAM. The engine never lands its drawn 3D scene in the
-   software PSX VRAM: the VRAM texture is created `TEXTURE_BINDING |
-   COPY_DST`, and only TIM / CLUT / texture-page uploads ever reach it.
+Retail's transition owns the whole frame - its init writes game mode `9` and
+the field renderer does not run again until the completion arm hands over
+(details, incl. the capture chain and the per-style fade blend modes, on
+[`cutscene.md`](cutscene.md#the-transition-owns-the-whole-frame)). The port has
+no such mode: it composites the transition's primitives *over a live scene*,
+because that is the only render target that can put a strip over a field.
 
-What is **not** missing: `engine-render` has the screen-space textured
-primitive path these styles draw through - `RenderTarget::ScreenOverlay` over
-per-primitive tpage / CLUT with `screen_overlay::order_primitives` as the
-ordering table, and `billboard::project_billboard` (a port of `FUN_800195A8`)
-as the sprite projector the particle field rides, returning the OT bucket
-`particle_quad_accepted` consumes. A frame capture also exists
-(`Renderer::capture_rgba`), and `legaia_tim::Vram` is a persistent re-readable
-framebuffer whose `move_image` is a port of retail's own capture primitive.
+`battle_intro::backdrop_prim` is what stands in for the absent mode - an opaque
+display-rect quad at the farthest OT bucket, emitted on every frame of the
+window as `prims[0]`, including the frames a style draws nothing on. Without
+it two things went wrong at once, and only the second was obvious: a patch
+still at its rest pose drew additively over an identical live copy of itself
+and read at double brightness, and once the last particle expired the emitter
+returned an empty list - which put the host back on the non-compositing arm and
+presented a clean, still-animating field for the rest of the window.
 
-The curtain has a third input missing: its descriptor table at overlay VA
-`0x801D1EC4`. That is a parse rather than a discovery - PROT 0979 is already
-identified and base-pinned in `crates/asset/data/static-overlays.toml`, so the
-bytes are reachable; nothing decodes the `0x14`-stride records yet.
+The dry stretch itself is retail's. `FUN_801D0370` decays a moving particle's
+colour by `-0x50505` per frame and the tick's top-byte test masks it for good
+once that underflows, so the spin-up field expires around a third of the way in
+and the fade ramp does not start until `total - 0x18`. Retail spends the gap on
+the CD: phase 5 issues the battle-data read and phases 3 and 6 sit in
+`FUN_8003DE7C`'s "READ WAIT" poll, and because the completion arm needs
+`clock > total` **and** `ready == 3`, the 132 frames are a floor rather than a
+length. The port's loads are instant, so the floor is the whole window and the
+gap draws as black - the same thing retail draws, for a reason the port does
+not have. `every_transition_frame_covers_the_screen` in
+`crates/engine-render/src/tests/battle_intro_emitter.rs` pins the invariant.
 
-`crates/engine-vm/tests/battle_intro_chain.rs` pins the half that is done: all
-four working sets seed and tick from the live transition clock, each advancing
-one step per frame, with no gap in the arithmetic.
+The session's `Transition` phase length **is** the intro's own
+`DAT_801D2458` - 132 display frames, 252 for the swirl
+(`battle_intro_styles::intro_duration_frames`,
+[`cutscene.md`](cutscene.md#how-long-a-transition-runs-dat_801d2458)) - because
+the entity clock counts up to the same number the session counts down from.
+Two things depend on it that are easy to read as style bugs when the window is
+short: every fade ramp is a lead before it, and the tile shatter's records hold
+at their seeded pose until `delay < elapsed * 0x3C` with `delay = rand() % 5000`,
+so the grid needs ~84 frames just to finish starting. Per-style packet detail - what each
+emitter builds, the dispatcher flag decode, and the two nuances the port
+leaves un-carried - is on
+[`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu);
+`crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
+counts, geometry and OT linkage, and `crates/engine-vm/tests/battle_intro_chain.rs`
+the working-set arithmetic.
 
 ## See also
 

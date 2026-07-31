@@ -21,7 +21,7 @@
  *   r.dispose();
  *
  * Each `placement` for `renderAssembled` is:
- *   { meshId, x, z, y?, rotY?, scale?, anchor? }
+ *   { meshId, x, z, y?, rotY?, scale?, anchor?, model?, cue? }
  *     scale  - per-placement world-scale (defaults to MESH_SCALE).
  *     y      - optional world height for the anchor (walk-frame landmarks
  *              pass the floor-LUT height so they sit on the heightfield;
@@ -30,6 +30,14 @@
  *     anchor - 'origin' (default) uses the mesh's TMD-local origin as the
  *              placement pivot; 'centroid' first translates the mesh so
  *              its AABB centroid sits at (x, 0, z).
+ *     model  - explicit column-major mat4 (Float32Array(16)) that REPLACES
+ *              the whole x/y/z/rotY/scale/anchor construction. The battle FX
+ *              layer passes engine-composed matrices through this so the
+ *              browser cannot drift from the native `fx_cam * model`.
+ *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
+ *              overriding the frame-global `setDepthCue` for this draw only.
+ *              The engine's `DrawCue` seam: the battle ground grid's per-stage
+ *              far colour and the target-select cursor tint both ride it.
  *
  * Fog parameters (uploadFogLut(lut, { enable, zShift, color, farRef })):
  *   lut     - 512-entry Uint16Array, BGR555 entries indexed by Z >> 5.
@@ -77,7 +85,16 @@ function buildSemiTail(indices, cbaTsb) {
 class TmdRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
-    if (!gl) throw new Error('WebGL2 not available');
+    /* Still a throw, so every existing caller behaves exactly as before - but
+     * routed through the shared notice, which puts the real cause on screen
+     * first. Of the twelve construction sites only viewer.html catches this,
+     * and its flat-shaded fallback is what made a missing WebGL2 context look
+     * like an untextured-model bug in the renderer. See main.js. */
+    if (!gl) {
+      throw (window.legaiaWebgl2Failure
+        ? window.legaiaWebgl2Failure()
+        : new Error('WebGL2 not available'));
+    }
     this.canvas = canvas;
     this.gl = gl;
 
@@ -374,10 +391,22 @@ class TmdRenderer {
   _applyGradeCue() {
     const gl = this.gl;
     if (!this.locGrade) return;
-    const g = this.gradeParams, c = this.cueParams;
+    const g = this.gradeParams;
     if (g.rgb) gl.uniform4f(this.locGrade, g.rgb[0], g.rgb[1], g.rgb[2], g.strength);
     else gl.uniform4f(this.locGrade, 1, 1, 1, 0);
-    if (c.far) {
+    this._setCue(this.cueParams);
+  }
+
+  /* Push one depth-cue record (the frame-global `cueParams`, or a
+   * placement's own `cue`) into the bound program. Split out of
+   * `_applyGradeCue` so `renderAssembled` can switch the cue PER DRAW: the
+   * native renderer's cue is a per-`SceneDraw` field, and the battle ground
+   * grid's stage fog and the target-select cursor tint are both draws that
+   * carry their own while everything around them stays uncued. */
+  _setCue(c) {
+    const gl = this.gl;
+    if (!this.locCue) return;
+    if (c && c.far && c.maxIr0 > 0) {
       gl.uniform4f(this.locCue, c.nearZ, c.farZ, c.maxIr0, 1);
       gl.uniform3f(this.locCueFar, c.far[0], c.far[1], c.far[2]);
     } else {
@@ -1033,6 +1062,9 @@ class TmdRenderer {
       list.push(p);
     }
     let flatColorsOn = false;
+    /* Which cue record is currently staged, so a frame with no per-draw cues
+     * costs no extra uniform writes. `undefined` = the frame-global one. */
+    let cueOn;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (m.indexCount === 0) continue;
@@ -1045,9 +1077,16 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
+        const wantCue = p.cue || this.cueParams;
+        if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
+    }
+    /* Hand the frame-global cue back before the blend pass / next frame. */
+    if (cueOn !== undefined && cueOn !== this.cueParams) {
+      this._setCue(this.cueParams);
+      cueOn = this.cueParams;
     }
 
     /* Blend pass: re-draw the deferred semi-transparent (ABE) prims over the
@@ -1072,12 +1111,18 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
+        const wantCue = p.cue || this.cueParams;
+        if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
         }
       }
+    }
+    if (cueOn !== undefined && cueOn !== this.cueParams) {
+      this._setCue(this.cueParams);
+      cueOn = this.cueParams;
     }
     if (blendOn) {
       gl.disable(gl.BLEND);
@@ -1091,6 +1136,11 @@ class TmdRenderer {
   /* Model matrix for one renderAssembled placement (shared by the opaque
    * and blend passes so both draw at identical transforms). */
   _placementModel(p, m) {
+    /* Engine-composed override: the battle FX layer hands whole model
+     * matrices through (billboards ride an identity, FX parts ride the
+     * native T*Ry*Rx*Rz*flip composition with the retail 4x world scale
+     * already folded in), so no JS-side transform model exists to drift. */
+    if (p.model) return p.model;
     const scale = (p.scale != null) ? p.scale : MESH_SCALE;
     if ((p.anchor === 'centroid') && m.aabb) {
       return placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);

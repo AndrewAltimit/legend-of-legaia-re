@@ -27,6 +27,23 @@
 //! (`0x20080200`) - retail falls through to it - while the dimmed path takes a
 //! different colour and skips that shared store. This module reproduces that
 //! exactly.
+//!
+//! # NOT WIRED
+//!
+//! Its one prerequisite is the **fixed** slot window above. Retail seats
+//! monsters at actor-table entries `3..=6` whatever the party size; the engine
+//! seats them compactly from `party_count..`, so with a one- or two-member
+//! party this kernel's stamps land on empty slots and no monster is ever
+//! tinted. The live cursor is therefore applied by
+//! `engine_core::world::battle::command_flow::apply_target_cursor_tint`, which
+//! runs the same three-word law (the constants below) over the engine's own
+//! monster window, and the renderer reads `render_flag` / `render_color` /
+//! `render_scale` off the actor.
+//!
+//! This module stays as the retail-numbering reference: it is what pins the
+//! slot window, the flag/colour/scale words and the shared-store fall-through
+//! against the disassembly. Wiring it means parameterising the window so one
+//! kernel can serve both seatings.
 
 use super::*;
 

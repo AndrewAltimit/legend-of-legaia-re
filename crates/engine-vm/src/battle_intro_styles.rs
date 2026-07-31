@@ -249,6 +249,42 @@ pub fn select_intro_style(inputs: &IntroStyleInputs) -> IntroStyleChoice {
     IntroStyleChoice { style, sub_style }
 }
 
+/// `DAT_801D2458` as the intro init leaves it for four of the five styles:
+/// **132 display frames**.
+///
+/// The store is unconditional and sits two instructions before the style
+/// switch itself - `addiu v0,zero,0x84` / `sw v0,0x2458(v1)` at
+/// `0x801CED14` / `0x801CED2C`, immediately followed by the
+/// `sltiu v0,a0,0x5` bound on `DAT_801D2460` (PROT 0979
+/// `overlay_field_battle_intro`, load base `0x801CE818`; read off the image's
+/// own instruction words, not the decompiler).
+///
+/// It is the denominator of everything time-shaped in the transition: the
+/// entity's `+0x1A` clock is compared against it for the BGM hand-off, and
+/// every [`INTRO_FADE_RAMPS`] entry is expressed as a *lead* before it. The
+/// tile shatter is the style that makes it observable - its spawn delays are
+/// `rand() % 5000` held against `elapsed * 60`, so the last records start
+/// around frame 83 and a window shorter than that leaves part of the grid at
+/// its rest pose for the whole transition.
+pub const INTRO_DURATION_FRAMES: i32 = 0x84;
+
+/// `DAT_801D2458` for [`IntroStyle::Swirl`]: **252 display frames**.
+///
+/// The swirl's dispatch arm (jump-table slot `4` at `0x801CE840`, body
+/// `0x801CEFEC`) re-stores the global with `addiu v0,zero,0xfc` /
+/// `sw v0,0x2458(v1)` at `0x801CEFF4` / `0x801CEFFC` - the only arm that
+/// overrides the shared value, which is why the fan transition runs so much
+/// longer than the other four.
+pub const INTRO_DURATION_FRAMES_SWIRL: i32 = 0xFC;
+
+/// The intro duration `DAT_801D2458` holds once the init has run for `style`.
+pub fn intro_duration_frames(style: IntroStyle) -> i32 {
+    match style {
+        IntroStyle::Swirl => INTRO_DURATION_FRAMES_SWIRL,
+        _ => INTRO_DURATION_FRAMES,
+    }
+}
+
 /// The per-style constants of the second switch's fade ramp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroFadeRamp {
@@ -258,8 +294,31 @@ pub struct IntroFadeRamp {
     pub lead: i32,
     /// Multiplier on the frames-past-threshold delta.
     pub slope: i32,
-    /// The second argument of `FUN_80024EE4` - the fade quad's OT depth.
-    pub depth: u8,
+    /// The second argument of `FUN_80024EE4` - the quad's **GPU
+    /// semi-transparency (ABR) mode**, `1` or `2` across the five arms.
+    ///
+    /// It is not an OT depth, which is what this field used to be called.
+    /// `FUN_80024EE4` takes the OT layer in `a0` (always
+    /// [`INTRO_FADE_LAYER`]) and folds `a1` into the *draw-mode* packet it
+    /// pushes ahead of the quad:
+    ///
+    /// ```text
+    /// 80024fb0  sll  a3,s3,0x5      ; s3 = a1
+    /// 80024fbc  ori  a3,a3,0xe
+    /// 80024fcc  jal  0x80059010     ; SetDrawMode(p, dfe=0, dtd=0, tpage=a3, tw=0)
+    /// ```
+    ///
+    /// GP0 tpage bits `5..=6` are the ABR field, so `a1` lands there
+    /// verbatim: `1` = `B + F` (additive) and `2` = `B - F` (subtractive).
+    /// The quad's own command byte is `0x2B` (`lui v0,0x2b00` at
+    /// `0x80024f50`) - an untextured **semi-transparent** four-point
+    /// polygon - so the mode is always live.
+    ///
+    /// With the ramp colour being `level` smeared across all three channels,
+    /// this is what decides where a style's tail lands: an `abr == 1` style
+    /// ramps to an additive **white-out**, an `abr == 2` style to a
+    /// subtractive **fade to black**.
+    pub abr: u8,
 }
 
 /// The five ramps, indexed by [`IntroStyle::selector`]. Read off the arms at
@@ -267,47 +326,55 @@ pub struct IntroFadeRamp {
 ///
 /// Style `0` is the one with two forms: its arm branches on
 /// `DAT_801D2464 == 2` - the same tile sub-style global
-/// [`crate::battle_intro_tiles::TileSubStyle`] names - and takes depth `1`
-/// there instead of `2`. See [`intro_fade`].
+/// [`crate::battle_intro_tiles::TileSubStyle`] names - and takes ABR `1`
+/// there instead of `2`, i.e. that sub-style whites out where the plain form
+/// fades to black. See [`intro_fade`].
 pub const INTRO_FADE_RAMPS: [IntroFadeRamp; INTRO_STYLE_COUNT as usize] = [
     IntroFadeRamp {
         lead: 0x18,
         slope: 12,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x18,
         slope: 16,
-        depth: 1,
+        abr: 1,
     },
     IntroFadeRamp {
         lead: 0x1C,
         slope: 16,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x40,
         slope: 4,
-        depth: 2,
+        abr: 2,
     },
     IntroFadeRamp {
         lead: 0x20,
         slope: 10,
-        depth: 1,
+        abr: 1,
     },
 ];
 
 /// The first argument every fade call passes (`li a0,0x2` on all five arms).
 pub const INTRO_FADE_LAYER: u8 = 2;
 
-/// One `FUN_80024EE4(layer, depth, rgb)` call - the full-screen fade quad the
+/// One `FUN_80024EE4(layer, abr, rgb)` call - the full-screen fade quad the
 /// second switch pushes after the style body has run.
+///
+/// The emitter builds a five-word (`0x05000000` tag) untextured quad with
+/// command byte `0x2B` over the whole display rect, then a `SetDrawMode`
+/// packet carrying the ABR mode; both go into OT layer `a0`. So the fade is
+/// one blended full-screen quad, and [`Self::abr`] - not the colour - is what
+/// decides whether it darkens or brightens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntroFade {
-    /// `a0`, always [`INTRO_FADE_LAYER`].
+    /// `a0`, always [`INTRO_FADE_LAYER`] - the **OT layer**, the same for
+    /// every style.
     pub layer: u8,
-    /// `a1` - [`IntroFadeRamp::depth`].
-    pub depth: u8,
+    /// `a1` - [`IntroFadeRamp::abr`], the GPU semi-transparency mode.
+    pub abr: u8,
     /// The clamped `0..=0xFF` ramp level, before it is smeared across the
     /// three channels.
     pub level: u8,
@@ -329,7 +396,7 @@ pub struct IntroFade {
 /// level zero.
 ///
 /// `sub_style` is `DAT_801D2464`; only [`IntroStyle::ScatterParticles`] reads
-/// it, and only to choose between fade depth `1` (when it is `2`) and `2`.
+/// it, and only to choose between ABR `1` (when it is `2`) and `2`.
 ///
 /// PORT: FUN_801CF5BC (the second switch)
 /// REF: FUN_80024EE4 - the fade-quad emitter this resolves the arguments of.
@@ -345,14 +412,14 @@ pub fn intro_fade(
     }
     let raw = (elapsed + ramp.lead - total_duration).wrapping_mul(ramp.slope);
     let level = raw.clamp(0, 0xFF) as u8;
-    let depth = match style {
+    let abr = match style {
         IntroStyle::ScatterParticles if sub_style == 2 => 1,
-        _ => ramp.depth,
+        _ => ramp.abr,
     };
     let l = u32::from(level);
     Some(IntroFade {
         layer: INTRO_FADE_LAYER,
-        depth,
+        abr,
         level,
         rgb: l | (l << 8) | (l << 16),
     })
@@ -583,22 +650,18 @@ pub fn particle_quad_accepted(style: &ParticleTickStyle, depth: i32, corner0: (i
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
-/// owns the particle block between frames and ticks it from the live
-/// transition clock, so the working set is no longer inert - which matters
-/// because the fade ramp ([`intro_fade`]) and the transition's own completion
-/// arm both ride that clock.
+/// NOT WIRED: **superseded, not blocked**. The live path is
+/// `legaia_engine_render::battle_intro::emit_particle_field`, which carries
+/// the same two PORT tags and does what this loop does *and* assembles the
+/// per-particle `POLY_FT4` packet in the same pass - the packet assembly this
+/// note used to name as the missing piece. It steps each particle through
+/// [`step_particle`] rather than calling this batch wrapper, so nothing
+/// outside the tests reaches this entry point.
 ///
-/// NOT DRAWN: no primitive reaches the ordering table for either particle
-/// style. The draw path is not what is missing - `billboard::project_billboard`
-/// is a port of the sprite projector these styles ride and returns both the
-/// screen corners and the OT bucket [`particle_quad_accepted`] consumes, and
-/// `screen_overlay` is the ordering table. What is missing is the retail
-/// **packet assembly** between them, which sits at the clean-room boundary
-/// (`docs/subsystems/cutscene.md` § "Per-style emitters"), plus the trig
-/// tables `_DAT_8007B7F8` / `_DAT_8007B81C` the seeders index - the host
-/// substitutes computed sine and cosine, so a seeded grid is plausible rather
-/// than retail-identical.
+/// Kept because it is the side-effect-free integration kernel: the emitter
+/// needs a renderer, this does not, so the frame-by-frame position/clock
+/// arithmetic stays testable on its own. Retiring it means moving those
+/// tests onto the emitter.
 pub fn tick_particle_field(
     particles: &mut [IntroParticle],
     style: &ParticleTickStyle,
@@ -954,7 +1017,7 @@ mod tests {
         let f = intro_fade(IntroStyle::Curtain, 0, total - 0x40 + 1, total).unwrap();
         assert_eq!(f.level, 4, "one frame past the lead, slope 4");
         assert_eq!(f.layer, INTRO_FADE_LAYER);
-        assert_eq!(f.depth, 2);
+        assert_eq!(f.abr, 2, "subtractive - the curtain fades to black");
     }
 
     #[test]
@@ -964,7 +1027,7 @@ mod tests {
         let f = intro_fade(IntroStyle::SpinUpParticles, 0, total - 0x18 + 5, total).unwrap();
         assert_eq!(f.level, 80);
         assert_eq!(f.rgb, 0x0050_5050);
-        assert_eq!(f.depth, 1);
+        assert_eq!(f.abr, 1, "additive - the spin-up whites out");
     }
 
     #[test]
@@ -977,13 +1040,13 @@ mod tests {
     }
 
     #[test]
-    fn only_the_scatter_style_reads_the_sub_style_and_only_for_its_depth() {
+    fn only_the_scatter_style_reads_the_sub_style_and_only_for_its_blend() {
         let total = 100;
         let at = total - 0x18 + 2;
         let plain = intro_fade(IntroStyle::ScatterParticles, 0, at, total).unwrap();
         let sub2 = intro_fade(IntroStyle::ScatterParticles, 2, at, total).unwrap();
-        assert_eq!(plain.depth, 2);
-        assert_eq!(sub2.depth, 1, "DAT_801D2464 == 2 takes the other arm");
+        assert_eq!(plain.abr, 2);
+        assert_eq!(sub2.abr, 1, "DAT_801D2464 == 2 takes the other arm");
         assert_eq!(plain.level, sub2.level, "the ramp itself is unaffected");
         // No other style branches on it.
         for style in [
@@ -996,6 +1059,66 @@ mod tests {
             let b = intro_fade(style, 2, total - 1, total);
             assert_eq!(a, b, "{style:?} must not read the sub-style");
         }
+    }
+
+    /// The swirl is the only arm that overrides `DAT_801D2458`.
+    #[test]
+    fn only_the_swirl_lengthens_the_intro() {
+        for style in [
+            IntroStyle::ScatterParticles,
+            IntroStyle::SpinUpParticles,
+            IntroStyle::TileShatter,
+            IntroStyle::Curtain,
+        ] {
+            assert_eq!(intro_duration_frames(style), INTRO_DURATION_FRAMES);
+        }
+        assert_eq!(
+            intro_duration_frames(IntroStyle::Swirl),
+            INTRO_DURATION_FRAMES_SWIRL
+        );
+        assert_eq!(
+            (INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL),
+            (132, 252)
+        );
+    }
+
+    /// Every fade ramp is expressed as a lead *before* the intro ends, so a
+    /// duration shorter than the longest lead would start the whole style
+    /// already fading. `0x84` clears all five with room to spare.
+    #[test]
+    fn the_retail_duration_outlasts_every_fade_lead() {
+        for (i, r) in INTRO_FADE_RAMPS.iter().enumerate() {
+            let style = IntroStyle::from_selector(i as i32).unwrap();
+            let total = intro_duration_frames(style);
+            // Every ramp starts no earlier than the transition's midpoint -
+            // the curtain's `0x40` is the longest, and `0x84` still clears it.
+            assert!(
+                r.lead * 2 <= total,
+                "{style:?}: lead {:#x} against duration {total:#x}",
+                r.lead
+            );
+            // The ramp is inactive on the first frame and saturated by the
+            // last, which is what makes the fade read as a fade.
+            assert!(intro_fade(style, 0, 1, total).is_none());
+            assert_eq!(
+                intro_fade(style, 0, total, total).map(|f| f.level),
+                Some(0xFF)
+            );
+        }
+    }
+
+    /// The tile shatter's spawn window has to fit inside the intro, or part of
+    /// the grid never leaves its rest pose. `rand() % 5000` against
+    /// `elapsed * TILE_DELAY_SCALE` puts the last record's start at frame 83.
+    #[test]
+    fn the_tile_spawn_window_fits_inside_the_intro() {
+        let scale = crate::battle_intro_tiles::TILE_DELAY_SCALE;
+        let last_start = 4999 / scale + 1;
+        assert_eq!(last_start, 84);
+        assert!(
+            last_start < intro_duration_frames(IntroStyle::TileShatter),
+            "every tile must get past its delay gate inside the transition"
+        );
     }
 
     fn particle() -> IntroParticle {

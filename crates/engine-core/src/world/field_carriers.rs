@@ -240,6 +240,11 @@ impl World {
                 .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
             return;
         }
+        // Turn the addressed NPC to face the player, saving the heading it
+        // stood with (retail's touch post + dialog SM; see
+        // [`Self::face_field_npc_at_player`]). Ahead of the dialogue open so
+        // the very first drawn frame of the box already shows the NPC turned.
+        self.face_field_npc_at_player(slot);
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
@@ -386,7 +391,17 @@ impl World {
             return;
         }
 
-        if self.current_dialog.is_some() {
+        // A dialogue engagement owns the frame: **either** channel. Testing
+        // only `current_dialog` here let the ordinary NPC talk - which the
+        // inline field-VM runner drives, often with no `current_dialog` at all
+        // - fall through to the "open an interaction" arm below on every
+        // page-advance press, re-arming `active_inline_prologue` each time.
+        // The runner then restarted that prologue the frame after it finished,
+        // with no button press: the conversation looped and could not be left.
+        // Retail cannot reach this shape - the engaged bit `+0x10 & 0x80000`
+        // that the touch post raises suppresses the whole probe until the
+        // dialog SM's teardown clears it.
+        if self.dialogue_owns_input() {
             // A carrier's spar menu owns the input while it is up (navigate +
             // confirm the fight option); only then does the generic dismiss run.
             if self.handle_carrier_menu() {
@@ -500,10 +515,19 @@ impl World {
 
     /// Resolve `formation_id` against [`Self::formation_table`] and flip from
     /// the world map into a battle, snapshotting the world-map context so
-    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`]. No-op when
-    /// the id isn't registered (the encounter is simply dropped).
+    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
+    ///
+    /// An unregistered id drops the encounter, and says so: the world-map roll
+    /// that produced it is destructive, so a silent return spends a fight
+    /// nothing ever sees - the same shape of defect that made nine consecutive
+    /// field rolls vanish.
     pub(crate) fn begin_world_map_encounter(&mut self, formation_id: u16) {
         let Some(formation) = self.formation_table.formation(formation_id).cloned() else {
+            log::error!(
+                "world-map encounter: formation {formation_id} is not registered \
+                 ({} rows in the table) - the roll is dropped",
+                self.formation_table.len()
+            );
             return;
         };
         self.field_return = Some(FieldReturnState {

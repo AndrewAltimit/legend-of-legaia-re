@@ -19,6 +19,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`static_overlay`](#static_overlay)
   - [`monster_archive`](#monster_archive)
   - [`move_power`](#move_power)
+  - [`battle_attack_camera_table`](#battle_attack_camera_table)
   - [`fishing_exchange`](#fishing_exchange)
   - [`fishing_species`](#fishing_species)
   - [`dance_chart`](#dance_chart)
@@ -178,6 +179,20 @@ Static battle-overlay data, pinned in PROT 0898 at fixed raw-entry offsets
 
 CLI `asset move-power <PROT 0898 .BIN>` (`--json` for the machine-readable table). See
 [`spell-table.md`](../../docs/formats/spell-table.md).
+
+### `battle_attack_camera_table`
+
+Per-art **attack-camera track table** (runtime VA `0x801F4E10`, PROT 0898 file
+`0x265F8`): 20 rows of two signed halfwords, addressed
+`base + row*4 + phase_cursor*2`. These are the values `FUN_801D71B8`'s per-art
+arms fold into the swing framing - the data half of the camera that frames a
+Tactical Art. Extent measured two independent ways that agree: the `lhu`
+displacements the arms form run `0x00..0x4C` dense, and the disc bytes stop
+being camera offsets at `0x801F4E60`.
+
+- `parse` → the row list; disc oracle `tests/battle_attack_camera_table_real.rs`
+  (skip-passes without `LEGAIA_DISC_BIN`). See
+  [`battle-attack-camera-table.md`](../../docs/formats/battle-attack-camera-table.md).
 
 ### `fishing_exchange`
 
@@ -363,7 +378,7 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | `battle_char_pack` | The `other5` battle-form mesh pack, **two entries**: PROT 1204's five `TMD2` streaming chunks and PROT 1205's eight 256×256 4bpp atlases at `0x8224` stride. The Baka Fighter / default-equipment sibling of the assembled battle meshes. CLI `asset battle-char-pack ... --atlas-entry`. |
 | `battle_char_assembly` | Battle character-mesh assembler: selects a player file's five equipment sections by equipped item ids and splices them into the merged battle TMD (bone tags + attach bones; `PORT: FUN_80052770` case 4 / `FUN_800536BC` / `FUN_80053898`), plus `relocate_tsb_cba` - the registration-time per-slot TSB/CBA rewrite into the runtime VRAM band (`PORT: FUN_80053a28`; texpages `x in [512, 896), y = 256`, CLUT row `481 + slot`). Assembly + relocation reproduces the live runtime blob. |
 | `battle_char_assembly` (battle animations) | The character's battle animations from `record[0]` of the same file (`battle_animations` / `idle_battle_animation`: action-offset table at the record head, monster-format `[parts][frames][9-byte TRS]` stream at entry `+0xAC`, `parts` = skeleton bones, entry first byte = action tag with tags `2..5`/`0xB` the hit-reaction family, rate byte at `+0x78` - the in-battle pose source for the assembled mesh, NOT PROT 1203), plus the per-object pose-channel map (`anm_bones` + `expand_animation_for_objects`; equipment extras ride their attach bone). |
-| `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
+| `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), `swing_command_costs` reduces them to the four `+0x74` AP prices the Arts input and the Muscle Dome both charge per command, and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
 | `me_archive` | `"ME"` keyframe-stream archive (`PORT: FUN_8002B28C` walk + `FUN_8002A9CC` channel-delta codec): `['M']['E'][u8 count][u16 sizes (bit 15 = compressed)][bodies]` → packed `[parts][frames][9-byte TRS]` streams. The art-animation stream source in `readef.DAT` slots `3*char+1` / `3*char+2`. |
 | `face_anim` | Battle facial animation (`PORT: FUN_8004C7B4`): the action entries' eye (`+0x8C`) / mouth (`+0x98`) keyframe tracks (`FaceTracks` / `battle_face_tracks`), the static `SCUS_942.54` face-frame tables (`FaceFrameTables::from_scus`, `DAT_80076824..0x80076908`) and the per-frame stamp selection (`FaceFrameTables::stamps` → `MoveImage` rects the engine applies via `legaia_tim::Vram::move_image`). See [`battle-data-pack.md` § Facial animation tracks](../../docs/formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98). |
 | `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) - `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
@@ -406,7 +421,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** - `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads - and the **stat-up / buff taxonomy** - `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
 | `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
 | `accessory_passive` | Accessory ("Goods") passive effects: `AccessoryPassiveTable::from_scus` → `passive(id)` (item id → descriptor `+3` / equip `+5` index byte → 64-slot passive index + the `0x8007625C` name/description/scope record). `stat_boosts(index)` mirrors the `FUN_80042558` percent arithmetic, `bit_location(index)` the `char+0xF4` ability-bitfield placement. Byte-validated vs the curated gamedata accessory table. CLI `asset accessory-passive <SCUS>`. See [`accessory-passive-table.md`](../../docs/formats/accessory-passive-table.md). |
-| `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). CLI `asset spell-names <SCUS>`. See [`spell-table.md`](../../docs/formats/spell-table.md). |
+| `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). `SpellEntry` also carries the `+0`/`+1` **class / sub-class** pair the battle-action commit stamps into `actor[+0x1E8]`, which selects a cast's cue group. CLI `asset spell-names <SCUS>`. See [`spell-table.md`](../../docs/formats/spell-table.md). |
 | `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. CLI `asset steal-table <SCUS> [--all]`. See [`steal-table.md`](../../docs/formats/steal-table.md). |
 | `mode_table` | `SCUS_942.54` game-mode dispatch table (`0x8007078C`, 28 × 24-byte entries): `ModeTable::from_scus` → per-mode handler fn ptr / param / dev name. Recovers the index → retail-handler map from the disc (12 of 14 per-frame modes share `0x80025EEC`; field/town = 2/3 MAIN; world-map = 12/13 MAPDISP). CLI `asset mode-table` (`--json`). See [`boot.md`](../../docs/subsystems/boot.md#game-mode-state-machine). |
 

@@ -26,8 +26,21 @@
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
-  /* Battle 3D layer: 930000 backdrop, +1 ground grid, +16+i actor meshes. */
+  /* Battle 3D layer: 930000 backdrop, +1 ground grid, +2 the effect-pool
+   * billboard batch, +16+i actor meshes, +256+tmd the 3D FX model cache
+   * (keyed by the engine's global-TMD-pool index, so one upload per distinct
+   * effect mesh per fight). */
   const BATTLE_MESH_BASE = 930000;
+  const BATTLE_FX_BILLBOARD_MESH = BATTLE_MESH_BASE + 2;
+  const BATTLE_FX_MODEL_BASE = BATTLE_MESH_BASE + 256;
+  /* Identity model matrix for draws whose transform the engine already folded
+   * into the vertex stream (the FX billboard batch). */
+  const IDENTITY_MODEL = new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ]);
   /* Wall-clock NPC anim fallback rate, used ONLY against a cached WASM
    * without the engine clip-state API. The live path reads each clip's
    * current frame from the engine, whose playhead advances in sim-tick time
@@ -287,9 +300,21 @@
       this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
       this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
       this._overlayActive = false;
-      /* True while the retail dialog reading box is being blitted onto the
-       * overlay canvas - the page hides its DOM text fallback then. */
-      this.dialogOnCanvas = false;
+      /* Whether this session CAN draw the retail reading box on the overlay
+       * canvas: the engine exports the draw builder and the font atlas is
+       * uploaded. The page's DOM `.play-dialog` fallback keys off this.
+       *
+       * A *capability*, deliberately, not a per-frame "did we draw it". The
+       * flag used to be the latter, and it produced a visible defect: the HUD
+       * DOM update runs earlier in `_frame` than `_drawOverlay`, so on the
+       * frame a box opened the page read last frame's value (false), unhid the
+       * DOM box - which CSS anchors at `bottom: 5%` - and only hid it again a
+       * frame later, once the canvas had drawn the real box at the TOP
+       * (`dialog_reading_box_layout`: `(0x26, 0x10, ...)`, FUN_801D84D0). One
+       * frame of an empty-looking window at the bottom, on every box open and
+       * every page break. A capability cannot race a draw: it settles once,
+       * before the first conversation, and never flickers. */
+      this.dialogCanvasCapable = false;
       /* Last engine state handed to the HUD - lets the menu gate on Field
        * mode / no-dialog before opening. */
       this._hudState = null;
@@ -866,6 +891,13 @@
       if (!open) {
         if (startEdge && this._canOpenFieldMenu()) {
           try { rt.play_menu_open(); } catch (e) { return false; }
+          /* The engine can REFUSE - `play_menu_open` declines while a dialogue
+           * engagement owns the player (`World::dialogue_owns_input`), which is
+           * retail's engaged-bit branch. Take none of the follow-up on a
+           * refusal: no confirm blip, no swallowed pad edge, no menu clock. */
+          let opened = false;
+          try { opened = rt.play_menu_is_open(); } catch (e) {}
+          if (!opened) return false;
           this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
@@ -1029,18 +1061,43 @@
     }
 
     /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)
-     * as `AtlasBlitter`s the first time the menu opens. Idempotent; the chrome
-     * blitter stays `null` on a PROT.DAT-only load (glyphs only, no gold frame). */
+     * as `AtlasBlitter`s. Idempotent, and safe to call from any frame - which is
+     * the whole point, because it no longer runs only when the menu opens.
+     *
+     * Every `play_menu_*` getter reads the engine's *cached* menu assets and
+     * answers a default when the engine has not built them yet:
+     * `play_menu_font_dims()` gives `[0, 0]` and `play_menu_has_chrome()` gives
+     * `false`. So "this disc has no chrome" and "nobody has asked the engine to
+     * build the chrome yet" are the same answer over the wire, and a resolution
+     * taken off it before the engine is ready is wrong - permanently, because
+     * the chrome branch only ever ran while `_menuChrome` was `undefined`.
+     *
+     * That used to be unreachable: every caller sat behind `play_menu_open()`,
+     * a shop, a naming prompt or a dialog draw, all of which build the assets
+     * first. It is reachable now - the reading-box capability probe calls this
+     * from the top of `_drawOverlay`, i.e. from frame one - and taking the
+     * not-ready answer as final cost the page every chrome sprite for the rest
+     * of the session: pause menu, shop, naming prompt and the retail dialog
+     * reading box all fell back to bare glyphs on black.
+     *
+     * So: don't resolve anything until the engine actually has assets, and
+     * treat a chrome-less answer as provisional rather than final. `null` still
+     * means "no chrome to blit right now" for every call site that guards on
+     * it, but a later `true` from the engine upgrades it. Once both blitters
+     * exist the early return makes this free. */
     _ensureMenuBlitters() {
-      if (this._menuFont && this._menuChrome !== undefined) return;
+      if (this._menuFont && this._menuChrome) return;
       const rt = this.rt;
       try {
         const fd = rt.play_menu_font_dims();
-        if (!this._menuFont && fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0) {
+        /* The engine's readiness signal: `[0, 0]` until it has built its menu
+         * assets at all. Ask again next frame rather than answering for it. */
+        if (!(fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0)) return;
+        if (!this._menuFont) {
           const rgba = rt.play_menu_font_rgba();
           if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1]);
         }
-        if (this._menuChrome === undefined) {
+        if (!this._menuChrome) {
           if (rt.play_menu_has_chrome()) {
             const cd = rt.play_menu_chrome_dims();
             const rgba = rt.play_menu_chrome_rgba();
@@ -1050,10 +1107,43 @@
               this._menuChrome = null;
             }
           } else {
+            /* A PROT.DAT-only load really has no chrome sheet. Provisional:
+             * re-asked next call, which is what lets a late-arriving scene
+             * host upgrade it. */
             this._menuChrome = null;
           }
         }
       } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
+    }
+
+    /* Headless-verification hook for the overlay atlases - the sibling of
+     * `window.__fsState` / `window.__woWalkStamps` on the other 3D pages, and
+     * the reason this defect is now assertable in one line instead of by
+     * eyeballing a screenshot.
+     *
+     * The invariant a driver should check, once a scene is running:
+     *
+     *     engineHasChrome === true  =>  chrome === 'built'
+     *
+     * A page that reports `engineHasChrome: true` with `chrome: 'absent'` has
+     * resolved the blitter from an answer the engine gave before it had
+     * built its menu assets, and every chrome sprite - pause menu, shop,
+     * naming prompt, reading box - is being dropped on the floor. */
+    overlayAtlasState() {
+      const rt = this.rt;
+      let engineHasChrome = null, ready = null;
+      try { engineHasChrome = rt.play_menu_has_chrome(); } catch (e) {}
+      try {
+        const fd = rt.play_menu_font_dims();
+        ready = !!(fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0);
+      } catch (e) {}
+      return {
+        ready, engineHasChrome,
+        font: !!this._menuFont,
+        chrome: this._menuChrome === undefined ? 'unresolved'
+          : (this._menuChrome ? 'built' : 'absent'),
+        dialogCanvasCapable: this.dialogCanvasCapable,
+      };
     }
 
     /* Fishing HUD layer. Returns `true` when it drew (a session is live), so
@@ -1088,7 +1178,6 @@
       }
       if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
       this._overlayActive = true;
-      this.dialogOnCanvas = false;
       return true;
     }
 
@@ -1130,10 +1219,21 @@
        * chrome's repeated fill. Force nearest so the repeat is seamless and the
        * glyphs stay crisp, matching native. */
       ctx.imageSmoothingEnabled = false;
+      /* Settle the reading-box capability once, ahead of every early return
+       * below, so it is already true before the first conversation and cannot
+       * flip with whatever else owns the overlay this frame. Both halves have
+       * to hold: the engine must export the builder (a cached WASM predating
+       * it does not), and the font atlas must have uploaded, because without
+       * `_menuFont` the blit paints no glyphs. `_ensureMenuBlitters` is
+       * idempotent and returns immediately once built. */
+      if (!this.dialogCanvasCapable
+          && typeof this.rt.play_dialog_draws_json === 'function') {
+        this._ensureMenuBlitters();
+        if (this._menuFont) this.dialogCanvasCapable = true;
+      }
       let open = false;
       try { open = this.rt.play_menu_is_open(); } catch (e) {}
       if (open) {
-        this.dialogOnCanvas = false;
         this._overlayActive = true;
         this._ensureMenuBlitters();
         let draws;
@@ -1168,7 +1268,6 @@
         if (this._menuChrome) this._menuChrome.blit(ctx, naming.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, naming.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = false;
         return;
       }
 
@@ -1191,20 +1290,30 @@
         try { shop = JSON.parse(this.rt.play_overlay_draws_json(ov.width, ov.height)); }
         catch (e) { shop = null; }
       }
+      /* This layer does NOT own the frame: the battle HUD rides it, and a
+       * reading box can be up during battle (the sparring fight talks over
+       * the running battle). Returning here suppressed the canvas reading box
+       * for every in-battle line, so the page fell back to the DOM
+       * `.play-dialog` strip - CSS-positioned near the BOTTOM - while the
+       * engine's own box geometry says top (`dialog_reading_box_layout`,
+       * FUN_801D84D0). So blit and fall through to the dialog layer. */
+      let overlayDrew = false;
       if (shop && shop.open) {
         this._ensureMenuBlitters();
         ctx.clearRect(0, 0, ov.width, ov.height);
         if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = false;
-        return;
+        overlayDrew = true;
       }
 
       /* Retail dialog reading box (field NPC / event message): the engine
        * serves the byte-pinned chrome + glyph quads; blit them over the live
-       * GL view. Falls back to the DOM text box (the page hides it while
-       * `dialogOnCanvas` is true) against a cached WASM without the API. */
+       * GL view. The DOM text box stands in only where this whole path is
+       * unavailable (`dialogCanvasCapable` false - a cached WASM without the
+       * export, or no font atlas); it is never a per-frame alternative to
+       * this, because the two are seated differently and a page that switches
+       * between them mid-conversation shows the box move. */
       let dlg = null;
       if (typeof this.rt.play_dialog_draws_json === 'function') {
         try { dlg = JSON.parse(this.rt.play_dialog_draws_json(ov.width, ov.height)); }
@@ -1212,14 +1321,15 @@
       }
       if (dlg && dlg.open) {
         this._ensureMenuBlitters();
-        ctx.clearRect(0, 0, ov.width, ov.height);
+        /* Only clear when nothing has painted this frame - the shop / battle
+         * layer above already cleared and its quads must survive. */
+        if (!overlayDrew) ctx.clearRect(0, 0, ov.width, ov.height);
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
-        this.dialogOnCanvas = !!this._menuFont;
         return;
       }
-      this.dialogOnCanvas = false;
+      if (overlayDrew) return;
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live
        * 3D prologue scene. */
@@ -1480,7 +1590,7 @@
       try {
       /* Battle 3D scene: while a random encounter owns the world, the battle
        * layer (backdrop dome drawn twice, ground grid, monster + party
-       * battle forms under the retail menu framing + idle orbit) replaces
+       * battle forms under the shared phase-scripted retail camera) replaces
        * the field draw list - the browser twin of the native redraw's
        * battle branch. `_battleFrame` returns false outside battle (and
        * restores the field VRAM texture on the exit edge), handing the
@@ -1718,7 +1828,7 @@
 
     /* One battle frame: upload the battle scene on its generation edge, pose
      * each bound actor from the engine's live battle-animation `pose_frame`,
-     * aim the camera from the exported retail menu framing, and draw. Returns
+     * take the engine-built battle view-projection (cam.vp), and draw. Returns
      * `false` outside battle (restoring the field VRAM texture on the exit
      * edge) so `_frame` runs its normal field path; `false` too when the
      * engine built no battle render (no monsters decoded) - the field scene
@@ -1729,6 +1839,10 @@
       let active = false;
       try { active = !!rt.play_battle_active(); } catch (e) { return false; }
       if (!active) {
+        /* Drop the battle VP override whenever battle isn't drawing, so the
+         * field frame is back on the orbit projection even if the battle
+         * state was torn down elsewhere (scene swap, trap recovery). */
+        if (this.cam.vp) this.cam.vp = null;
         if (this._battle) {
           /* Battle just ended: drop the battle scene and restore the field
            * VRAM texture. The engine's field-side VRAM was never touched -
@@ -1754,9 +1868,26 @@
        * scale (base matrix 0x8007BF10), pre-scaled here because the page's
        * per-draw `scale` only scales the mesh, not its translation. */
       if (b.backdrop) draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
-      if (b.ground) draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      /* The grid rides the stage's own GTE depth cue (`DAT_80078C1C` outdoor
+       * table / indoor grey), as a PER-DRAW cue - nothing else in the frame
+       * fogs. The engine resolved the far colour + ramp window at battle
+       * entry; the page just attaches it. */
+      if (b.ground) {
+        draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+      }
       const S = b.scale;
       const tf = rt.play_battle_actor_transforms();
+      /* Target-select cursor: the engine resolves `FUN_801DA6B4`'s three
+       * render words into a ready [enable, far rgb, max_ir0, model scale] row
+       * per actor - the pointed-at monster pulses bright, the rest dim, and
+       * the q12 render scale composes about the actor origin. Guarded against
+       * a cached WASM without the export. */
+      let cursor = null;
+      try {
+        if (typeof rt.play_battle_actor_cursor === 'function') {
+          cursor = rt.play_battle_actor_cursor();
+        }
+      } catch (e) { /* no cursor tint this frame */ }
       for (let i = 0; i < b.actors.length; i++) {
         const a = b.actors[i];
         const o = i * 5;
@@ -1770,41 +1901,99 @@
             this.renderer.updateSceneMeshPositions(a.meshId, a.out);
           }
         }
+        const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
         draws.push({
           meshId: a.meshId,
-          x: tf[o] * S, y: -tf[o + 1] * S, z: tf[o + 2] * S,
+          /* Raw retail translation (Y-down, like the native actor_model) -
+           * the battle VP carries no world negation, its trailing Y-flip
+           * cancels the placement model's, so world Y goes through as-is. */
+          x: tf[o] * S, y: tf[o + 1] * S, z: tf[o + 2] * S,
           /* Enemy meshes rest facing +Z; the enemy side carries the
            * half-turn toward the party (the native actor_model rule). */
           rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
-          scale: S,
+          scale: (c >= 0) ? S * cursor[c + 5] : S,
+          cue: (c >= 0 && cursor[c] > 0.5)
+            ? {
+              far: [cursor[c + 1], cursor[c + 2], cursor[c + 3]],
+              nearZ: -1, farZ: 0, maxIr0: cursor[c + 4],
+            }
+            : null,
         });
       }
+      this._battleFxDraws(rt, b, draws);
 
-      /* Camera: the exported retail far "menu" framing + idle orbit, mapped
-       * onto the page's orbit projection the same way the cutscene camera
-       * is: focus -> orbit target (scaled with the actors), yaw negated for
-       * the projection's screen-X mirror, framing half-height from the
-       * eye-space depth over the GTE focal length (half-screen 120 px / H).
-       * The orbit pitch is measured from vertical, retail's from horizontal,
-       * hence the complement. */
+      /* Camera: the engine hands the page a READY view-projection - the
+       * shared retail phase script's live pose (dialogue close-up / far
+       * menu framing + idle orbit / per-character submenu close-up)
+       * projected through `battle_cam_script::battle_vp`, the exact matrix
+       * the native window renders with. `cam.vp` overrides the orbit
+       * construction in buildWorldOrbitVp (and still yields to the VR
+       * per-eye override), so the old orbit-remap fudge is gone. Guarded
+       * against a cached WASM without the export: the previous camera is
+       * kept rather than re-approximated. */
       try {
-        const bc = JSON.parse(rt.play_battle_camera_json());
-        if (bc && bc.active) {
-          this.cam.centerX = bc.focus[0] * S;
-          this.cam.centerY = -bc.focus[1] * S + 60;
-          this.cam.centerZ = bc.focus[2] * S;
-          this.cam.yaw = -bc.yaw * A2R;
-          this.cam.pitch = Math.max(0.12, Math.min(1.35, Math.PI / 2 - bc.pitch * A2R));
-          this.cam.roll = 0;
-          const half = Math.abs(bc.tr[2]) * 120 / Math.max(bc.h, 1);
-          this.cam.halfWidth = Math.max(220, Math.min(12000, half));
-          this.cam.halfHeight = this.cam.halfWidth;
+        if (typeof rt.play_battle_camera_vp === 'function') {
+          const c = this.renderer.canvas;
+          const vp = rt.play_battle_camera_vp(c.width / Math.max(c.height, 1));
+          if (vp && vp.length === 16) this.cam.vp = Float32Array.from(vp);
         }
       } catch (e) { /* keep the previous camera */ }
 
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
       return true;
+    }
+
+    /* Battle effect layer: append this frame's FX draws to `draws`.
+     *
+     * Two engine-composed seams, both from `crates/web-viewer/play_battle_fx`:
+     *
+     *  - the effect POOL, as one batched mesh of camera-facing textured quads
+     *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas
+     *    the battle VRAM carries) plus tinted outline strips. Its vertices
+     *    already carry the FX camera's 4x world scale, so it draws under an
+     *    identity model - the basis is derived engine-side from the same
+     *    battle VP the page renders with, which is what makes the quads face
+     *    the camera that actually draws them.
+     *  - the 3D FX MODELS: `etmd.dat` effect meshes and the move-VM
+     *    scene-graph parts (summon + battle move-FX), each with a ready model
+     *    matrix. Meshes are cached per global-TMD-pool index for the fight.
+     *
+     * Silent no-op against a cached WASM without the FX exports. */
+    _battleFxDraws(rt, b, draws) {
+      if (typeof rt.play_battle_fx_sync !== 'function') return;
+      const c = this.renderer.canvas;
+      const aspect = c.width / Math.max(c.height, 1);
+      let verts = 0;
+      try { verts = rt.play_battle_fx_sync(aspect); } catch (e) { return; }
+      if (verts > 0) {
+        this.renderer.uploadSceneMesh(BATTLE_FX_BILLBOARD_MESH,
+          rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
+          rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
+          rt.play_battle_fx_flat_rgba());
+        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL });
+      }
+      const n = rt.play_battle_fx_model_count();
+      if (!n) return;
+      const mats = rt.play_battle_fx_model_matrices();
+      for (let i = 0; i < n; i++) {
+        const tmd = rt.play_battle_fx_model_tmd(i);
+        const meshId = BATTLE_FX_MODEL_BASE + tmd;
+        if (!b.fxMeshes.has(tmd)) {
+          const pos = rt.play_battle_fx_mesh_positions(tmd);
+          const idx = rt.play_battle_fx_mesh_indices(tmd);
+          /* Cache the miss too: a pool slot that yields no geometry must not
+           * be re-decoded every frame for the life of the fight. */
+          b.fxMeshes.set(tmd, !!(pos.length && idx.length));
+          if (pos.length && idx.length) {
+            this.renderer.uploadSceneMesh(meshId, pos,
+              rt.play_battle_fx_mesh_uvs(tmd), rt.play_battle_fx_mesh_cba_tsb(tmd),
+              idx, null);
+          }
+        }
+        if (!b.fxMeshes.get(tmd)) continue;
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16) });
+      }
     }
 
     /* Upload the freshly-built battle scene: the battle VRAM (stage + flame
@@ -1828,7 +2017,22 @@
         scale: (typeof rt.play_battle_world_scale === 'function')
           ? rt.play_battle_world_scale() : 4.0,
         backdrop: 0, ground: 0, actors: [],
+        /* global-TMD-pool index -> "this slot uploaded geometry", so an FX
+         * model decodes once per fight (and a dud slot is not retried). */
+        fxMeshes: new Map(),
+        /* The ground grid's per-stage depth cue, in the renderer's per-draw
+         * cue shape. Resolved engine-side (`play_battle_ground_cue_json` =
+         * the SCUS outdoor table / indoor grey), null when no grid is up. */
+        groundCue: null,
       };
+      try {
+        const cue = JSON.parse(rt.play_battle_ground_cue_json());
+        if (cue && cue.far) {
+          b.groundCue = {
+            far: cue.far, nearZ: cue.near_z, farZ: cue.far_z, maxIr0: cue.max_ir0,
+          };
+        }
+      } catch (e) { /* an unreadable cue just leaves the grid uncued */ }
       b.backdrop = up(BATTLE_MESH_BASE, rt.play_battle_backdrop_positions(),
         rt.play_battle_backdrop_uvs(), rt.play_battle_backdrop_cba_tsb(),
         rt.play_battle_backdrop_indices(), rt.play_battle_backdrop_flat_rgba());

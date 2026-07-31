@@ -585,8 +585,11 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
         "the BGM swap runs during the spin, not at battle entry"
     );
 
-    // Leaving the phase drops the entity.
-    for _ in 0..64 {
+    // Leaving the phase drops the entity. The transition's length is retail's
+    // `DAT_801D2458` (`battle_intro_styles::INTRO_DURATION_FRAMES`), so the
+    // bound is read off the session rather than written as a literal.
+    let frames = world.encounter.as_ref().unwrap().transition_frames;
+    for _ in 0..frames + 4 {
         world.tick_encounter();
     }
     assert!(matches!(

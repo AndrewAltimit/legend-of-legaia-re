@@ -23,6 +23,7 @@ Run from the repo root:
     python3 site/_gen.py
 """
 from __future__ import annotations
+import hashlib
 import html
 import json
 import re
@@ -355,6 +356,47 @@ WIDE_PAGES: set[str] = {
     "reference/music-tracks",
     "tooling/rom-patcher",
 }
+
+
+# ---------------------------------------------------------------------------
+# Script cache-busting
+# ---------------------------------------------------------------------------
+# Every `js/*.js` a page loads is rewritten to carry `?v=<content hash>`,
+# replacing whatever hand-written marker was there.
+#
+# Hand-written markers are the failure: they only bust when someone remembers
+# to bump them, and forgetting is silent - a stale script and a current one
+# deploy identically and read identically in a diff. `webgl-tmd.js` and
+# `webgl-math.js` both changed while still shipping `?v=zfight-1`, and
+# `layout.js` never carried a marker at all, so a returning browser kept
+# running the old file against a rebuilt engine until its cache expired on its
+# own. A content hash cannot be forgotten: it changes exactly when the bytes
+# change, and only then.
+_SCRIPT_SRC_RE = re.compile(r'(src=")((?:\.\./)*js/[A-Za-z0-9._-]+\.js)(?:\?[^"]*)?(")')
+_asset_hash_cache: dict[str, str] = {}
+
+
+def _asset_hash(rel: str) -> str | None:
+    """Short content hash of `site/<rel>`; None when there is no such file."""
+    if rel not in _asset_hash_cache:
+        path = ROOT / rel
+        _asset_hash_cache[rel] = (
+            hashlib.sha256(path.read_bytes()).hexdigest()[:10] if path.exists() else ""
+        )
+    return _asset_hash_cache[rel] or None
+
+
+def version_script_srcs(page: str) -> str:
+    """Stamp every `js/*.js` reference in one page with its content hash."""
+
+    def sub(m: re.Match[str]) -> str:
+        head, ref, tail = m.group(1), m.group(2), m.group(3)
+        digest = _asset_hash(ref.replace("../", ""))
+        # An unresolvable reference keeps whatever it had: inventing a version
+        # for a file that is not there would hide the missing file.
+        return m.group(0) if digest is None else f"{head}{ref}?v={digest}{tail}"
+
+    return _SCRIPT_SRC_RE.sub(sub, page)
 
 
 def html_template(page_title: str, depth: int, active_key: str, body: str, extra_head: str = "", head_meta: str = "") -> str:
@@ -1455,7 +1497,9 @@ def main() -> int:
         description = DESCRIPTIONS.get(active) or _clip_description(lede) or DEFAULT_DESCRIPTION
         page_title, head_meta = seo_head(out_path, active, title, description)
 
-        page = html_template(page_title, depth, active, body, extra_head, head_meta)
+        page = version_script_srcs(
+            html_template(page_title, depth, active, body, extra_head, head_meta)
+        )
         out = ROOT / out_path
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(page)
@@ -1494,7 +1538,9 @@ def main() -> int:
 
     # 404.html - GitHub Pages serves this for any missing path, at any depth,
     # so every asset reference must be absolute. noindex keeps it out of
-    # search results.
+    # search results. It also carries no layout.js chrome (whose hrefs are
+    # relative, hence depth-dependent), so `.app` has to opt out of the icon
+    # rail's left offset - `no-chrome` does that.
     (ROOT / "404.html").write_text(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1506,7 +1552,7 @@ def main() -> int:
   <link rel="stylesheet" href="{SITE_URL}/css/styles.css">
 </head>
 <body>
-<div class="app">
+<div class="app no-chrome">
 <main class="content" id="content">
 <header class="page-header">
   <div class="breadcrumb">404</div>

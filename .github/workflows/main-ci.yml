@@ -73,6 +73,13 @@ jobs:
       - name: Site internal links
         run: python3 scripts/ci/check-site-links.py
 
+      # A @media block adds no specificity, so a breakpoint placed above the
+      # rule it overrides is dead code that still reads like a feature. That is
+      # how the mobile icon rail shipped never hiding, with the content column
+      # laid out full-width underneath it.
+      - name: CSS cascade order
+        run: python3 scripts/ci/check-css-cascade-order.py
+
       - name: Shell observer traps
         run: python3 scripts/ci/check-shell-observer-traps.py
 

@@ -15,12 +15,12 @@
 //!
 //! Tracks the set of status conditions afflicting each battle actor and
 //! folds them down into per-turn ticks. The retail engine stores battle
-//! status flags as the packed `u16` at battle-actor `+0x16E` (mirrored to
-//! char record `+0x12E` for party slots by `FUN_80047430`): bit `1` =
-//! Venom, bit `2` = Toxic, bits `8/0x10/0x20` = Rot (per-limb command
-//! disable), bits `0x380` = AI-delegation (Rage / charm), bit `0x1000` =
-//! Curse. This module mirrors the observed semantics on a per-kind
-//! instance list rather than reproducing the byte layout.
+//! status flags as the packed `u16` at battle-actor `+0x16E`, mirrored to
+//! char record `+0x12E` for party slots by `FUN_80047430`; the whole bit
+//! map is tabulated in [`display_flags`], and [`pack_display_flags`] builds
+//! the same word out of this module's typed instance list. The tracker
+//! itself stays instance-shaped - the packed word is the *display* form the
+//! HUD selector consumes.
 //!
 //! The conditions the runtime distinguishes, named with the game's
 //! in-game ailment terms. `byte` is the on-disc art-record `enemy_effect`
@@ -533,6 +533,13 @@ impl StatusEffectTracker {
     pub fn actor_count(&self) -> usize {
         self.per_actor.len()
     }
+
+    /// The slot's packed retail display word (battle actor `+0x16E`,
+    /// mirrored to the display record's `+0x6F6`), built from the tracked
+    /// instances by [`pack_display_flags`]. Feed it to [`status_icon`].
+    pub fn display_flags(&self, slot: u8) -> u16 {
+        pack_display_flags(self.slots(slot))
+    }
 }
 
 /// Tick-damage formula for Toxic - the exact strong-DoT arm of the retail
@@ -573,6 +580,167 @@ fn dot_tick_damage(current_hp: u16, raw: u16, cap: u16) -> u16 {
     }
     dmg
 }
+/// The packed battle status-flag word: battle actor `+0x16E`, mirrored
+/// verbatim to the display record at `+0x6F6` for party slots.
+///
+/// REF: FUN_80047430 - the mirror. Two `sh` sites store the freshly loaded
+/// `lhu 0x16e(actor)` straight into `0x6f6(display)` (`0x80047680` on the
+/// inert-actor early-out arm, `0x80048040` on the main arm), so the display
+/// word is the actor word, not a re-encoding.
+///
+/// **The display record is the character record.** The selector's base is
+/// `0x80084140 + slot * 0x414`, and `0x80084140 + 0x5C8 == 0x80084708`, the
+/// live character-record base - so `+0x6F6` is char record `+0x12E`,
+/// `+0x6CE` is `+0x106` (current HP), `+0x6D2` is `+0x10A` (current MP) and
+/// `+0x6F8` is `+0x130` (the displayed level). `FUN_80047430` fills the HP /
+/// MP pair from battle actor `+0x14C` / `+0x150` at `0x80047FBC` /
+/// `0x80047FC8`; `+0x130` is maintained by the level-up applier
+/// `FUN_801E9504`. See [`docs/formats/save-record.md`] for the record.
+///
+/// **How each bit was pinned.** Every assignment below rests on the
+/// disassembly of an applier, a consumer, or the accessory-guard clear
+/// table in `FUN_8004CE2C` - not on inference from names:
+///
+/// | bit | ailment | pinned by |
+/// |---|---|---|
+/// | `0x0001` | Venom | applier `ori 0x1` (`0x801E1654`, 1/8 roll); the weak-DoT arm of the ticker `FUN_801E752C`; the actor tint at `0x8004AC24`; Poison Guard 1 clears exactly it |
+/// | `0x0002` | Toxic | applier `ori 0x2` (`0x801E1684`); strong-DoT arm; tint `0x8004AC58`; Poison Guard 2 clears `0x0003` |
+/// | `0x0004` | Stone | applier `ori 0x4` (`0x80041CF4`); the "not a valid target" test everywhere (`& 4`); Stone Guard clears exactly it |
+/// | `0x0008` `0x0010` `0x0020` | Rot (per-limb) | applier rolls `1 << (rand % 3 + 3)` (`0x801E1734`); the command gates below; Rot Guard clears `0x0078` |
+/// | `0x0040` | Rot group, never set | inside Rot Guard's `0x0078` clear and the ladder's `0x0078` mask, but no applier in the corpus sets it |
+/// | `0x0080` `0x0100` `0x0200` | Confuse / AI delegation | set as the group `ori 0x380` (`0x80047F88` from the Rage passive, `0x8004D118`); tint `0x8004AC8C`; the AI gates `0x801E2C94` / `0x801EB3BC`; the retarget `FUN_801E7320` |
+/// | `0x0400` | Numb | Numb Guard (passive index `0x1B`) clears exactly it; `& 0x400` zeroes the queued action category `+0x1DE` (`0x801EC09C`); pairs with Stone as the `& 0x404` whole-actor early-out |
+/// | `0x0800` | Sleep | the one ailment inside Master Guard's clear with no guard of its own, and the only tracked kind left unassigned; cleared by damage with the rest of `0x0F80` |
+/// | `0x1000` | Curse | applier `ori 0x1000` (`0x80041EE8`); the Magic gates `0x801D143C` / `0x801EAE94`; Curse Guard clears exactly it |
+/// | `0x2000` `0x4000` `0x8000` | unknown | never set, never tested, and survive even Master Guard's clear |
+///
+/// The guard table is the decisive instrument: `FUN_8004CE2C`
+/// (`0x8004CEF4..0x8004CFF8`) walks the wearer's accessory-passive bitfield
+/// at char `+0xF4` and, per bit, ANDs a mask into `+0x16E` *and* into
+/// `+0x6F6`. Passive index `0x16..=0x1C` is Poison Guard 1 / Poison Guard 2 /
+/// Rot Guard / Curse Guard / Stone Guard / **Numb Guard** / Master Guard
+/// (see [`docs/formats/accessory-passive-table.md`]), and the seven masks
+/// clear `0x0001` / `0x0003` / `0x0078` / `0x1000` / `0x0004` / `0x0400` /
+/// [`AILMENT_MASK`] in that order. Six named guards fix six bits directly;
+/// the seventh, Master Guard, fixes the ailment set as a whole.
+pub mod display_flags {
+    /// Standard poison.
+    pub const VENOM: u16 = 0x0001;
+    /// Deadly poison.
+    pub const TOXIC: u16 = 0x0002;
+    /// Petrification.
+    pub const STONE: u16 = 0x0004;
+    /// The three limb bits the Rot applier rolls between
+    /// (`1 << (rand % 3 + 3)`), in limb order (0 = left, 1 = right, 2 = low).
+    pub const ROT_LIMBS: [u16; 3] = [0x0008, 0x0010, 0x0020];
+    /// The mask Rot Guard clears and the icon ladder tests. One bit wider
+    /// than [`ROT_LIMBS`] - `0x0040` is inside the group but no applier in
+    /// the dumped corpus ever sets it.
+    pub const ROT_MASK: u16 = 0x0078;
+    /// The AI-delegation group. Always set and tested as a unit, never
+    /// bit-by-bit: Rage / charm hand the actor's action pick to the AI.
+    pub const CONFUSE_MASK: u16 = 0x0380;
+    /// The bit [`CONFUSE_MASK`] is packed as when the engine raises Confuse.
+    /// Retail sets all three together (`ori 0x380`); the engine writes the
+    /// same group, so this is only the "which bit does a single-bit test
+    /// see" answer.
+    pub const CONFUSE: u16 = 0x0380;
+    /// Paralysis.
+    pub const NUMB: u16 = 0x0400;
+    /// Asleep.
+    pub const SLEEP: u16 = 0x0800;
+    /// Blocks Magic.
+    pub const CURSE: u16 = 0x1000;
+
+    /// Every ailment bit, i.e. the mask Master Guard clears
+    /// (`FUN_8004CE2C` `andi 0xE380`, so the cleared set is `0x1C7F`).
+    /// Note the AI-delegation group is **not** in it: Rage is an equipment
+    /// passive, not an ailment, so a full cure does not lift it.
+    pub const AILMENT_MASK: u16 = 0x1C7F;
+
+    /// The bits taking damage clears (`FUN_801EC3E4` `0x801EDA5C`:
+    /// `andi 0xF07F` on the damaged actor's word). Sleep, Numb and the
+    /// whole delegation group - the "wakes when hit" family.
+    pub const DAMAGE_CLEARS: u16 = 0x0F80;
+
+    /// Whole-actor inert test: an actor carrying either bit skips its entire
+    /// per-frame update (`FUN_80047430` `andi 0x404` at `0x80047640`) and is
+    /// passed over by the AI action picker (`0x801EB3D8`, `0x801E671C`).
+    pub const INERT_MASK: u16 = 0x0404;
+}
+
+pub use display_flags::AILMENT_MASK;
+
+impl StatusKind {
+    /// This kind's bit(s) in the packed `+0x16E` word, or `0` for a kind
+    /// retail does not represent as a flag.
+    ///
+    /// [`StatusKind::Faint`] returns `0` on purpose: retail has no KO bit.
+    /// A dead actor is one whose current HP (`+0x14C`, mirrored to the
+    /// display record's `+0x6CE`) is zero, and the icon selector tests that
+    /// halfword directly - which is why [`status_icon`] takes `present`
+    /// separately from the flag word.
+    ///
+    /// [`StatusKind::Rot`] returns the whole [`display_flags::ROT_MASK`]
+    /// group; use [`StatusInstance::display_bit`] to get the single rolled
+    /// limb bit instead.
+    pub fn display_bit(self) -> u16 {
+        match self {
+            StatusKind::Venom => display_flags::VENOM,
+            StatusKind::Toxic => display_flags::TOXIC,
+            StatusKind::Stone => display_flags::STONE,
+            StatusKind::Rot => display_flags::ROT_MASK,
+            StatusKind::Confuse => display_flags::CONFUSE,
+            StatusKind::Numb => display_flags::NUMB,
+            StatusKind::Sleep => display_flags::SLEEP,
+            StatusKind::Curse => display_flags::CURSE,
+            StatusKind::Faint => 0,
+        }
+    }
+
+    /// Inverse of [`Self::display_bit`] for the icon ladder's masks: the kind
+    /// the retail sprite id `0x18..=0x20` stands for. `None` for an id
+    /// outside the band.
+    pub fn from_icon_sprite(sprite: u8) -> Option<Self> {
+        Some(match sprite {
+            0x18 => StatusKind::Venom,
+            0x19 => StatusKind::Toxic,
+            0x1A => StatusKind::Stone,
+            0x1B => StatusKind::Rot,
+            0x1C => StatusKind::Confuse,
+            0x1D => StatusKind::Numb,
+            0x1E => StatusKind::Sleep,
+            0x1F => StatusKind::Curse,
+            0x20 => StatusKind::Faint,
+            _ => return None,
+        })
+    }
+}
+
+impl StatusInstance {
+    /// The instance's bit(s) in the packed word. Identical to
+    /// [`StatusKind::display_bit`] except for Rot, which contributes only the
+    /// single limb bit the applier rolled ([`Self::rot_limb`]) - retail's
+    /// `1 << (rot_limb + 3)`.
+    pub fn display_bit(self) -> u16 {
+        if self.kind == StatusKind::Rot {
+            display_flags::ROT_LIMBS[(self.rot_limb % 3) as usize]
+        } else {
+            self.kind.display_bit()
+        }
+    }
+}
+
+/// Pack a typed status set into the retail `+0x16E` / `+0x6F6` display word.
+///
+/// This is the bridge the HUD needs: the engine models a slot's ailments as
+/// a list of [`StatusInstance`]s, retail models them as bits, and
+/// [`status_icon`] selects on the bits. Faint contributes nothing (see
+/// [`StatusKind::display_bit`]); Rot contributes its rolled limb bit only.
+pub fn pack_display_flags<'a>(statuses: impl IntoIterator<Item = &'a StatusInstance>) -> u16 {
+    statuses.into_iter().fold(0u16, |w, s| w | s.display_bit())
+}
+
 /// Outcome of the HUD status-icon selector [`status_icon`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusIcon {
@@ -594,47 +762,52 @@ pub enum StatusIcon {
 ///
 /// PORT: FUN_8002C2E4
 ///
-/// NOT WIRED: this selector consumes a packed `u16` display-flag word
-/// (`+0x6F6`) and the engine never builds one. The battle HUD models a slot's
-/// ailments as a typed `Vec<StatusKind>` (`SlotHud::status_icons`), sorts it
-/// and draws **one sprite per kind**, where retail packs the ailments into
-/// bits and draws exactly one sprite chosen by the priority ladder below.
-/// Wiring needs the packed word first, and with it the bit -> ailment map -
-/// which this port deliberately does not claim, because the ladder's masks
-/// (`0x0380`, `0x0078`) group bits whose individual meanings are unpinned.
-/// Feeding it a word synthesised from `StatusKind` would be inventing that
-/// map, not porting it.
+/// Each on-screen party slot carries its display state at
+/// `0x80084140 + slot * 0x414`, which is the live character record read from
+/// `0x5C8` bytes early (see [`display_flags`]): the packed status word at
+/// `+0x6F6` (= char `+0x12E`), current HP at `+0x6CE` (= `+0x106`) and the
+/// displayed level at `+0x6F8` (= `+0x130`). Once per frame the retail
+/// routine turns the first two into one of three draws:
 ///
-/// Each on-screen party / battle slot carries a `u16` display-flag word at
-/// its status-display record `+0x6F6` and a "slot live" halfword at `+0x6CE`
-/// (`present`). Once per frame the retail routine turns the two into one of
-/// three draws, all landing through the icon drawer `FUN_8002C488`:
+/// - `flags == 0 && hp != 0` -> [`StatusIcon::BaseWithCount`]: the base
+///   marker sprite `0x0A` at `(pen.x + 0x3B, pen.y + 2)` through the icon
+///   drawer `FUN_8002C488`, then the **level** from `+0x6F8` as a two-digit
+///   number at `(pen.x + 0x4B, pen.y)` through `FUN_80034B78`. So an
+///   unafflicted slot reads "LV nn" - the count is not a turn counter.
+/// - `hp == 0` -> `Sprite(0x20)`, the KO marker, which wins over any flag
+///   bits still set (retail tests `+0x6CE` before it inspects a single bit).
+/// - alive with bits set -> the first match of a fixed **priority ladder**,
+///   read off the branch order at `0x8002C3BC..0x8002C464`, drawn at
+///   `(pen.x + 0x33, pen.y - 4)`:
 ///
-/// - `flags == 0 && present` -> [`StatusIcon::BaseWithCount`]: the base
-///   marker plus the `+0x6F8` counter.
-/// - otherwise, `!present` -> `Sprite(0x20)` (the "empty / gone" marker,
-///   which wins over any flag bits still set), and
-/// - `present` with bits set -> the first match of a fixed **priority
-///   ladder**, read off the disassembly's branch order (the Ghidra C renders
-///   it as a nest of `if`s in the same order):
+/// | bit tested | sprite id | ailment |
+/// |------------|-----------|---------|
+/// | `0x0004`   | `0x1A`    | Stone   |
+/// | `0x0400`   | `0x1D`    | Numb    |
+/// | `0x0800`   | `0x1E`    | Sleep   |
+/// | `0x0380`   | `0x1C`    | Confuse (AI delegation / Rage) |
+/// | `0x0078`   | `0x1B`    | Rot     |
+/// | `0x1000`   | `0x1F`    | Curse   |
+/// | `0x0002`   | `0x19`    | Toxic   |
+/// | `0x0001`   | `0x18`    | Venom   |
 ///
-/// | bit tested | sprite id |
-/// |------------|-----------|
-/// | `0x0004`   | `0x1A`    |
-/// | `0x0400`   | `0x1D`    |
-/// | `0x0800`   | `0x1E`    |
-/// | `0x0380`   | `0x1C`    |
-/// | `0x0078`   | `0x1B`    |
-/// | `0x1000`   | `0x1F`    |
-/// | `0x0002`   | `0x19`    |
-/// | `0x0001`   | `0x18`    |
+/// The ailment column is pinned bit-by-bit in [`display_flags`]; it is not a
+/// guess from the sprite order. Note the band `0x18..=0x20` is exactly nine
+/// sprites for exactly the nine conditions this module tracks, with KO the
+/// one that is a zero-HP test rather than a bit.
 ///
-/// A `present` slot whose only set bits fall outside every mask above draws
+/// An alive slot whose only set bits fall outside every mask above draws
 /// nothing ([`StatusIcon::None`]) - retail falls through the ladder to the
-/// function's return. The mapping from a bit to the ailment it represents is
-/// not pinned here; this port reproduces the selection, and the draw
-/// coordinates (`param2 + 0x33`, `param3 - 4`) are fixed offsets the caller
-/// supplies.
+/// function's return. `0x2000`/`0x4000`/`0x8000` are the only such bits, and
+/// nothing in the dumped corpus sets them.
+///
+/// Wired: `legaia_engine_core::battle_hud::BattleSlotHud::status_element`
+/// packs the slot's typed status set with [`pack_display_flags`] and runs it
+/// through this ladder, and both hosts draw the single selected element (the
+/// native window's battle HUD and the browser play page) instead of one glyph
+/// per kind. The retail **sprite art** for ids `0x18..=0x20` is not resolved -
+/// the hosts draw an engine badge keyed on the id - so the selection is the
+/// ported part, not the pixels.
 pub fn status_icon(display_flags: u16, present: bool) -> StatusIcon {
     if display_flags == 0 {
         return if present {
@@ -697,6 +870,100 @@ mod tests {
         assert_eq!(status_icon(0x0004 | 0x0001, true), StatusIcon::Sprite(0x1A));
         // 0x0380 (a group mask) outranks 0x0078.
         assert_eq!(status_icon(0x0380 | 0x0078, true), StatusIcon::Sprite(0x1C));
+    }
+
+    #[test]
+    fn every_tracked_kind_round_trips_typed_set_to_word_to_element() {
+        // The wiring contract in one test: a typed status set packs into the
+        // retail word, the retail ladder picks one sprite, and the sprite
+        // names the kind back. Faint is the one kind with no bit - it is the
+        // zero-HP arm instead.
+        for kind in [
+            StatusKind::Venom,
+            StatusKind::Toxic,
+            StatusKind::Stone,
+            StatusKind::Rot,
+            StatusKind::Confuse,
+            StatusKind::Numb,
+            StatusKind::Sleep,
+            StatusKind::Curse,
+        ] {
+            let mut t = StatusEffectTracker::new();
+            t.apply(0, kind);
+            let word = t.display_flags(0);
+            assert_ne!(word, 0, "{kind:?} must set a bit");
+            let StatusIcon::Sprite(id) = status_icon(word, true) else {
+                panic!("{kind:?} -> word {word:#06x} selected no sprite");
+            };
+            assert_eq!(
+                StatusKind::from_icon_sprite(id),
+                Some(kind),
+                "{kind:?} -> {word:#06x} -> sprite {id:#04x}"
+            );
+        }
+        // Faint: no bit, and the zero-HP arm draws the KO marker.
+        assert_eq!(StatusKind::Faint.display_bit(), 0);
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Faint);
+        assert_eq!(t.display_flags(0), 0);
+        assert_eq!(
+            status_icon(t.display_flags(0), false),
+            StatusIcon::Sprite(0x20)
+        );
+        assert_eq!(StatusKind::from_icon_sprite(0x20), Some(StatusKind::Faint));
+    }
+
+    #[test]
+    fn rot_packs_only_the_rolled_limb_bit() {
+        let mut t = StatusEffectTracker::new();
+        t.apply(1, StatusKind::Rot);
+        for limb in 0..3u8 {
+            t.set_rot_limb(1, limb);
+            let word = t.display_flags(1);
+            assert_eq!(word, display_flags::ROT_LIMBS[limb as usize]);
+            // One limb bit still lands on the group mask the ladder tests.
+            assert_ne!(word & display_flags::ROT_MASK, 0);
+            assert_eq!(status_icon(word, true), StatusIcon::Sprite(0x1B));
+        }
+        // The kind-level bit is the whole group (what Rot Guard clears).
+        assert_eq!(StatusKind::Rot.display_bit(), display_flags::ROT_MASK);
+    }
+
+    #[test]
+    fn packed_word_orders_by_the_retail_ladder_not_the_typed_list() {
+        // Venom + Stone: the engine's list order puts Venom first, retail's
+        // ladder puts Stone first. The packed word is what decides.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Venom);
+        t.apply(0, StatusKind::Stone);
+        let word = t.display_flags(0);
+        assert_eq!(word, display_flags::VENOM | display_flags::STONE);
+        assert_eq!(status_icon(word, true), StatusIcon::Sprite(0x1A));
+    }
+
+    #[test]
+    fn master_guard_mask_is_every_ailment_bit_and_excludes_delegation() {
+        // FUN_8004CE2C's Master Guard arm clears 0x1C7F (`andi 0xe380`).
+        let all = display_flags::VENOM
+            | display_flags::TOXIC
+            | display_flags::STONE
+            | display_flags::ROT_MASK
+            | display_flags::NUMB
+            | display_flags::SLEEP
+            | display_flags::CURSE;
+        assert_eq!(all, AILMENT_MASK);
+        // Rage is a passive, not an ailment: a full cure leaves it standing.
+        assert_eq!(AILMENT_MASK & display_flags::CONFUSE_MASK, 0);
+        // Damage clears the wake-on-hit family and nothing else.
+        assert_eq!(
+            display_flags::DAMAGE_CLEARS,
+            display_flags::CONFUSE_MASK | display_flags::NUMB | display_flags::SLEEP
+        );
+        // The whole-actor inert pair is Stone + Numb.
+        assert_eq!(
+            display_flags::INERT_MASK,
+            display_flags::STONE | display_flags::NUMB
+        );
     }
 
     #[test]

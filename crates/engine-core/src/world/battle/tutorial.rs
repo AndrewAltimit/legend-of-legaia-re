@@ -166,7 +166,7 @@ impl World {
             BattleMenuKind::Item
         } else if self.battle_spell_menu.is_some() {
             BattleMenuKind::Magic
-        } else if self.battle_arts_menu.is_some() {
+        } else if self.battle_arts_menu.is_some() || self.battle_arts_input.is_some() {
             BattleMenuKind::Arts
         } else {
             BattleMenuKind::None

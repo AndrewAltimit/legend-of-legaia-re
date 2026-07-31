@@ -430,7 +430,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         }
     }
     fn dialog_active(&self) -> bool {
-        self.world.current_dialog.is_some()
+        self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
         self.world.world_map_player_walking
@@ -506,7 +506,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
         }
     }
     fn dialog_active(&self) -> bool {
-        self.world.current_dialog.is_some()
+        self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
         // Report "player walking" so the SM's proximity-interact path stays
@@ -1151,19 +1151,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.trigger_scripted_battle(slot);
             return;
         }
-        // "Face the speaker": turn the interacted NPC toward the player before
-        // the dialogue opens. Retail's talk kernel runs a `0x4C` FaceTarget
-        // motion leg on the spoken-to actor (its `+0x26` heading rotates to the
-        // player bearing); the ported op lives in
-        // [`World::face_field_npc_toward`] and the renderer already consumes the
-        // resulting [`World::field_npc_headings`] entry. A no-op for a slot with
-        // no surfaced position (the retail actor-list miss).
-        if let Some(pslot) = self.world.player_actor_slot
-            && let Some(pactor) = self.world.actors.get(pslot as usize)
-        {
-            let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
-            self.world.face_field_npc_toward(slot, px, pz);
-        }
+        // "Face the speaker" now lives inside
+        // [`World::trigger_field_interact`] below, as
+        // [`World::face_field_npc_at_player`] - both because retail's write is
+        // in the dialog SM (one snap, not the `0x4C` ramp this site used to
+        // run) and because doing it here reached only the *scripted* interact
+        // op. The walk-up-and-press talk goes straight to
+        // `trigger_field_interact` from the interaction probe and never
+        // reached this function at all, which is why ordinary NPCs did not
+        // turn.
+        //
         // The real field-dialogue path: open the interacted actor's own inline
         // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
         // arm/engage a scripted-encounter carrier on that slot (the dialogue-
@@ -1540,6 +1537,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         member.set_hp_mp_sp(hms);
     }
 
+    /// `[4C, 0x84, amplitude]` - the screen-shake amplitude `_DAT_8007B630`.
+    ///
+    /// This opcode is the global's only retail writer and the global is the
+    /// only input to `FUN_801D9D30`, so the field script is the sole source
+    /// of a camera shake. The world holds it for the camera to read; see
+    /// [`crate::world::World::camera_shake_amplitude`].
+    fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
+        self.world.camera_shake_amplitude = value;
+    }
+
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate
@@ -1839,18 +1846,20 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .copied()
             .unwrap_or(0)
     }
+    /// The retail range law (`FUN_8004E2F0`), computed from live state -
+    /// see `World::battle_range_metric`
+    /// (`crate::world::battle::locomotion`). Retail has no range *table* - the
+    /// engine's former one was always empty, which short-circuited every
+    /// approach state to "already in range"; it is gone.
     fn range_check(&self, attacker: u8, target: u8) -> u16 {
-        self.world
-            .range_table
-            .get(&(attacker, target))
-            .copied()
-            .unwrap_or(0)
+        self.world.battle_range_metric(attacker, target)
     }
-    /// Retail's `actor[+0x34]` / `actor[+0x38]` pair. The engine keeps the
-    /// battle seat on the actor's move state, where `World::enter_battle` puts
-    /// it from [`crate::battle_seats`] and the attack band's drift moves it -
-    /// the same numbers `World::battle_target_rows` hands the target picker's
-    /// angular enemy cursor.
+    /// Retail's **live** position pair `actor[+0x34]` / `actor[+0x38]`. The
+    /// engine keeps it on the actor's move state, where `World::enter_battle`
+    /// puts it from [`crate::battle_seats`] and the locomotion drive
+    /// (`World::tick_battle_locomotion`, the root-motion port) plus the
+    /// separation pass move it - the same numbers `World::battle_target_rows`
+    /// hands the target picker's angular enemy cursor.
     ///
     /// `None` is an unoccupied slot: the actor table holds exactly the seated
     /// combatants, which is what makes it the engine's reading of retail's
@@ -1860,6 +1869,30 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .actors
             .get(slot as usize)
             .map(|a| (a.move_state.world_x, a.move_state.world_z))
+    }
+    /// Mutation half of `actor_position` - the state-`0x16` arrival shove is
+    /// its one SM caller.
+    fn set_actor_position(&mut self, slot: u8, x: i16, z: i16) {
+        if let Some(a) = self.world.actors.get_mut(slot as usize) {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+        }
+    }
+    /// The seat (anchor) pair `+0x3C`/`+0x40` - `BattleActor::seat`, seeded
+    /// by the first locomotion tick and cleared at battle teardown. Falls
+    /// back to the live pair for a not-yet-seeded slot.
+    fn actor_anchor(&self, slot: u8) -> Option<(i16, i16)> {
+        let a = self.world.actors.get(slot as usize)?;
+        Some(
+            a.battle
+                .seat
+                .unwrap_or((a.move_state.world_x, a.move_state.world_z)),
+        )
+    }
+    fn set_actor_anchor(&mut self, slot: u8, x: i16, z: i16) {
+        if let Some(a) = self.world.actors.get_mut(slot as usize) {
+            a.battle.seat = Some((x, z));
+        }
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);
@@ -1885,8 +1918,34 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // mode == 0: spawn/reset. Route directly into the effect pool so
         // the VM's state machine drives the effect lifecycle while engines
         // also receive the event for visual dispatch.
+        //
+        // Retail seeds the spawn position from the ACTING actor's own world
+        // position and facing, never the world origin: the effect-script
+        // spawn arm copies `actor+0x34..0x3B` into the position buffer,
+        // rotates the per-effect offsets by the facing's sin/cos, and passes
+        // `actor+0x46` as the spawn angle (`FUN_8004998C` spawn sites
+        // `0x8004A634..0x8004A81C` -> `FUN_801DFDF0(id, sp+0x10, +0x46)`,
+        // disassembly-graded). The engine equivalents are the actor's battle
+        // seat on `move_state` (the retail `+0x34/+0x38` pair
+        // `BattleActionHost::actor_position` already reads) and
+        // `BattleActor::facing_angle` (`+0x46`).
         if mode == 0 {
-            self.world.try_spawn_effect(effect_id, [0, 0, 0], 0);
+            let (at, angle) = self
+                .world
+                .actors
+                .get(self.world.battle_ctx.active_actor as usize)
+                .map(|a| {
+                    (
+                        [
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        ],
+                        a.battle.facing_angle & 0xFFF,
+                    )
+                })
+                .unwrap_or(([0, 0, 0], 0));
+            self.world.try_spawn_effect(effect_id, at, angle);
         }
     }
     fn camera_bounds(&mut self) {
@@ -1963,6 +2022,157 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 target_slot,
                 party_slot,
             });
+    }
+    /// Retail's present-party list `DAT_8007BD10[slot]`, which the engine
+    /// mirrors as [`World::party_roster_slot`] - 1-based, so `id - 1` is the
+    /// roster index the character record sits at. Monster slots report `4`,
+    /// the value the cast-cue dispatcher's enemy leg tests for.
+    fn roster_character_id(&self, slot: u8) -> u8 {
+        if slot < self.world.party_count {
+            self.world.party_roster_slot(slot as usize) as u8 + 1
+        } else {
+            4
+        }
+    }
+    /// `(class, tier)` of the item's descriptor in the disc item-effect table
+    /// (`0x800752C0`, resolved through the item property record's `+1`
+    /// subtype) - `World::item_effects`, the same table the field/battle item
+    /// menus gate usability on. `None` without a disc image.
+    ///
+    fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
+        let eff = self.world.item_effects.as_ref()?.effect(item_id)?;
+        Some((eff.class, eff.tier))
+    }
+    /// The spell-side sibling: `+1` of the same 12-byte spell record
+    /// `spell_class_byte` reads `+0` from, so a cast's class *and* tier both
+    /// come from the disc. Together they are what the commit stamps into
+    /// `actor[+0x1E8]` / `[+0x1E9]`, and what decides a healing/buff spell's
+    /// cue group and `battle_cast_cue`'s class-`7` sub-class gate.
+    fn spell_sub_class_byte(&self, spell_id: u8) -> Option<u8> {
+        self.world.spell_table_sub_class(spell_id)
+    }
+    /// The two cue-group tables off PROT 0898, through the installed
+    /// move-power catalog's [`EffectAuxTables`](legaia_asset::move_power::EffectAuxTables) -
+    /// the same holder `World::spawn_action_table_effect` reads the effect
+    /// prototypes from, so the group ids, the SFX map and the prototypes all
+    /// come from one parse of one overlay.
+    fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
+        let aux = self.world.move_power.as_ref()?.aux_tables()?;
+        Some((aux.cue_group_bytes(), aux.sfx()))
+    }
+    /// Place one expanded cue.
+    ///
+    /// The two arms go to the two spawn paths retail's own arms go to, on the
+    /// **world** rather than through a host-drained queue, so both the native
+    /// window and the browser play page get them without either having to
+    /// know the cue group exists: `Actor` (`id & 0x80` set) is the 2D effect
+    /// pool (`FUN_801DFDF0` -> [`World::try_spawn_effect`]) and `Effect` is
+    /// the `0x801F6324` prototype scene (`FUN_80050ED4` ->
+    /// [`World::spawn_action_table_effect`]).
+    ///
+    /// The SFX map's non-zero byte rides `World::battle_sfx_cues`, the queue
+    /// both hosts already drain into their SFX schedulers. That queue's id
+    /// space is "bank cue id, played directly" - which is what this byte is:
+    /// retail submits it as a sound packet through `FUN_80058490`, not
+    /// through the `FUN_8004FCC8` classifier.
+    ///
+    /// The spawn position is the cue actor's own live position, which is what
+    /// retail builds the transform from (`actor[+0x34]`/`+0x38` for the
+    /// translation, `+0x44..+0x4A` for the rotation).
+    fn spawn_cue(&mut self, actor_slot: u8, spawn: vm::battle_cue_group::CueSpawn) {
+        use vm::battle_cue_group::CueSpawn;
+        let at = self
+            .world
+            .actors
+            .get(actor_slot as usize)
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0; 3]);
+        match spawn {
+            CueSpawn::Actor { id, yaw } => {
+                self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
+            }
+            CueSpawn::Effect {
+                effect_index, sfx, ..
+            } => {
+                self.world.spawn_action_table_effect(effect_index, at);
+                if let Some(sfx) = sfx {
+                    self.world
+                        .battle_sfx_cues
+                        .push(crate::battle_events::BattleSfxCue {
+                            kind: u16::from(sfx),
+                            timing_frames: 0,
+                            actor_slot,
+                            target_slot: actor_slot,
+                        });
+                }
+            }
+        }
+    }
+    /// The cast-start one-shot (`FUN_8004FCC8`). Routed into the same
+    /// `battle_sfx_cues` queue both hosts drain.
+    ///
+    /// The two id spaces meet at that queue and the port does not reconcile
+    /// them: a cast cue is a *dispatch* id the host would have to push through
+    /// `legaia_engine_audio::classify_cue` first, and both hosts play the
+    /// queue's ids straight. Every cast cue is `>= 0xF8` and the per-character
+    /// band runs to `0x20E`, so in practice these miss the scene bank and are
+    /// silent rather than wrong - the id reaches the scheduler, the runtime
+    /// bank behind it has no engine model. See `docs/formats/sfx-table.md`.
+    fn one_shot_sfx(&mut self, cue_id: u16) {
+        let slot = self.world.battle_ctx.active_actor;
+        self.world
+            .battle_sfx_cues
+            .push(crate::battle_events::BattleSfxCue {
+                kind: cue_id,
+                timing_frames: 0,
+                actor_slot: slot,
+                target_slot: slot,
+            });
+    }
+    /// The acting character's learned-spell record, for the queued-magic
+    /// follow-up guard. Party slots only - retail reaches the record through
+    /// `DAT_8007BD10[slot] - 1` and a monster slot has none.
+    fn caster_spell_list(&self, party_slot: u8) -> Option<(Vec<u8>, Vec<u8>)> {
+        if party_slot >= self.world.party_count {
+            return None;
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let list = self.world.roster.members.get(rslot)?.spell_list();
+        Some((list.ids.to_vec(), list.levels.to_vec()))
+    }
+    /// Character record `+0xF8` - word 1 of the 4-word accessory-passive
+    /// bitfield [`World::refresh_party_ability_bits`] rebuilds from equipment.
+    /// Distinct from `character_ability_bits`, which is word 0 (`+0xF4`).
+    fn character_ability_bits_high(&self, party_slot: u8) -> u32 {
+        if party_slot >= self.world.party_count {
+            return 0;
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let Some(member) = self.world.roster.members.get(rslot) else {
+            return 0;
+        };
+        let bits = member.ability_bits();
+        u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]])
+    }
+    /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
+    /// list the AI auto-fill arm draws its queue bytes from.
+    fn learned_arts(&self, party_slot: u8) -> Vec<u8> {
+        if party_slot >= self.world.party_count {
+            return Vec::new();
+        }
+        let rslot = self.world.party_roster_slot(party_slot as usize);
+        let Some(member) = self.world.roster.members.get(rslot) else {
+            return Vec::new();
+        };
+        let skills = member.displayed_skills();
+        let n = (skills.count as usize).min(skills.ids.len());
+        skills.ids[..n].to_vec()
     }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.

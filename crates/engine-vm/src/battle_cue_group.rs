@@ -107,58 +107,29 @@ pub struct CueTables<'a> {
 /// A group whose count byte is zero produces no spawns; the two actor writes
 /// still happen.
 ///
-/// NOT WIRED. **Both tables are disc-parsed now**, and two earlier notes here
-/// were wrong about that: the first said no parser extracted either, the second
-/// said the group table was "the whole prerequisite". Neither holds.
-/// `legaia_asset::move_power::EffectAuxTables` reads all three regions
-/// (`0x801F6324` prototypes, `0x801F6418` SFX map, `0x801F6470` groups) off
-/// PROT 0898 behind the move-power table's structural guard, so both
-/// [`CueTables`] fields have a live source and the pair composes - see
-/// `crates/engine-vm/tests/battle_cue_group_real.rs`.
+/// Live from the battle-action SM's state `0x3F`
+/// (`battle_action::spirit`'s `spirit_fire_damage`, retail `0x801E4134`): the
+/// committed action's `(class, tier)` pair picks a site through
+/// [`cue_group_for`], this expands that site's group, and each
+/// [`CueSpawn`] is handed to
+/// [`BattleActionHost::spawn_cue`](crate::battle_action::BattleActionHost::spawn_cue).
+/// Both tables come off the disc - `legaia_asset::move_power::EffectAuxTables`
+/// reads all three regions (`0x801F6324` prototypes, `0x801F6418` SFX map,
+/// `0x801F6470` groups) off PROT 0898 - through
+/// [`BattleActionHost::cue_tables`](crate::battle_action::BattleActionHost::cue_tables),
+/// so a host with no overlay expands nothing rather than expanding synthetic
+/// records. Composition oracle: `crates/engine-vm/tests/battle_cue_group_real.rs`.
 ///
-/// What is missing is the **caller**, and the per-branch dispatch is the
-/// smallest of three blockers, not the whole of it.
+/// Retail reaches this from `FUN_800402F4`, the item / restore applier, at
+/// eleven branches of its 132-entry class jump table (`0x80014FA0`); the port
+/// reaches it from the applier's one SM call site instead, because the port
+/// models the applier as a host hook rather than porting its 1976
+/// instructions. What crosses that seam is exactly what retail's branch
+/// selection reads - see [`cue_group_for`].
 ///
-/// Retail's only caller is `FUN_800402F4`, the item / restore applier, which
-/// reaches `jal 0x801e22c8` from eleven branches of its 132-entry class jump
-/// table (`0x80014FA0`) and picks the group id per branch: eight literals
-/// `5`..`0xC`, two computed (`s5 + 1` at `0x80040D74`, `param_2 + 3` at
-/// `0x80040E38`) and one forwarding its own `param_2` (`0x800408D4`). That
-/// selection is tabulated site-by-site in
-/// `docs/subsystems/battle-action.md` § "`FUN_800402F4`'s cue-group sites",
-/// and it is a `(class, tier)` table plus one per-slot loop - mechanical work,
-/// **not** a port of the applier's 1976 instructions.
-///
-/// The three things that actually block the wire:
-///
-/// 1. **The port's hook does not carry the primitive's arguments.** Retail's
-///    one call site inside the action SM is `0x801E4134` (state `0x3F`, spirit
-///    fire-damage) and it passes `a0 = actor[+0x1E8]` (`0x801E4124`),
-///    `a1 = actor[+0x1E9]` (`0x801E4130`), `a2 = ` the stacked target byte
-///    `+0x1DD` (`0x801E4108`) and `a3 = DAT_8007BD10[ctx[+0x13]]`, the roster
-///    **character id** (`0x801E411C`..`0x801E412C`). The port's
-///    `spirit_fire_damage` passes `queued_anim_b` (`+0x1E7`) and `spell_iter`
-///    (`+0x1FA`) for the first two - neither is `+0x1E8` / `+0x1E9`, and
-///    [`BattleActor`](crate::battle_action::BattleActor) models neither field -
-///    and the slot index for the fourth. So the class and tier that *select*
-///    the branch never reach the hook.
-/// 2. **The port has a call site retail does not.** `attack_chain` calls
-///    `apply_damage(next_byte, 0, target, slot)` with an animation byte where
-///    the primitive expects an effect class. `jal 0x800402f4` occurs exactly
-///    once in `FUN_801E295C`, at `0x801E4134`; the strike loop resolves damage
-///    through `FUN_801EC3E4`, not through the applier.
-/// 3. **The expansion has no consumer.** This function returns a *plan*.
-///    Nothing routes a [`CueSpawn`] into an effect pool or the SFX mixer, and
-///    `engine-core`'s `MovePowerTables::aux_tables()` is the only production
-///    holder of the group table.
-///
-/// Wiring on top of (1) and (2) would produce a call that satisfies a
-/// call-graph audit while expanding the wrong group from the wrong bytes, and
-/// (3) would discard the result anyway.
-///
-/// Meanwhile the engine's per-action presentation comes from the art record's
-/// own effect / hit cues (`ArtStrikeInfo::hit_cue` and `BattleSfxCue`), a
-/// different source for the same frames.
+/// The art record's own effect / hit cues (`ArtStrikeInfo::hit_cue` and
+/// `BattleSfxCue`) stay the presentation source for the *attack* band; this is
+/// the Item / Spirit band's, and the two do not overlap.
 ///
 /// PORT: FUN_801E22C8
 /// REF: FUN_800402F4 (the damage primitive that picks the group id),
@@ -212,6 +183,114 @@ pub fn expand_cue_group(
         }
     }
     out
+}
+
+/// Which of the applier's eleven `jal 0x801e22c8` sites a committed
+/// `(class, tier)` pair reaches, and the four arguments it passes.
+///
+/// Every field is a literal in the site's own instruction stream, so a site is
+/// fully determined by the branch - nothing about the acting actor varies it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CueGroupSite {
+    /// The `a0` tint word ([`expand_cue_group`]'s `tint`), built by the
+    /// site's `lui`/`ori` pair.
+    pub tint: u32,
+    /// The `a1` actor-state word written to `actor[+0x04]`. The class-`4`
+    /// revive site is the one that passes [`CUE_ACTOR_STATE_SKIP`], so it is
+    /// also the only arm whose `+0x0C = 0x2000` follow-up is suppressed.
+    pub actor_state: u32,
+    /// The `a3` group id the site passes to [`expand_cue_group`].
+    pub group: u8,
+    /// `true` for the class-`1` arm, whose `jal` sits **inside** a per-slot
+    /// loop: a party-wide restore fires the expander once per living member,
+    /// with `a2` the loop's own slot index rather than the action's target.
+    pub per_target: bool,
+    /// `true` when the site is one of retail's battle-mode-gated arms
+    /// (`*(s16 *)0x8007B83C == 0x15`). Inside this state machine the mode
+    /// byte is battle by construction, so the flag is recorded rather than
+    /// tested - it is what tells a *non*-battle caller of the applier which
+    /// arms it must skip.
+    pub battle_only: bool,
+}
+
+/// Select the applier's cue-group site for a committed action's
+/// `(class, tier)` - the `(a3, a2)` half of `FUN_800402F4`'s eleven
+/// `jal 0x801e22c8` branches, without the 1976-instruction applier around it.
+///
+/// `class` is the actor's `+0x1E8` and `tier` its `+0x1E9`
+/// ([`BattleActor::cast_class`](crate::battle_action::BattleActor::cast_class) /
+/// [`cast_sub_class`](crate::battle_action::BattleActor::cast_sub_class)).
+/// The mapping, read off the delay slots of the eleven `jal`s in
+/// `ghidra/scripts/funcs/800402f4.txt` and tabulated in
+/// `docs/subsystems/battle-action.md` § "`FUN_800402F4`'s cue-group sites":
+///
+/// | class | site | group | `a0` tint | `a1` actor state |
+/// |---|---|---|---|---|
+/// | `0` HP restore, single | `0x800408F8` | `tier` | `0x00808080` | `0x000FFFFF` |
+/// | `1` HP restore, per-slot loop | `0x80040D70` | `tier + 1`, once per seated slot | `0x00808080` | `0x000FFFFF` |
+/// | `2` MP restore | `0x80040E54` | `tier + 3` | `0x00FF8080` | `0x3FF80200` |
+/// | `3` status cure | `0x80040F04` | `5` | `0x0080FFFF` | `0x200FFFFF` |
+/// | `4` revive | `0x800410B8` | `6` | `0x0080FFFF` | `0x20080200` |
+/// | `5` spirit shield | `0x8004111C` | `7` | `0x004040FF` | `0x100403FF` |
+/// | `7` stat buff, `tier == 1` | `0x8004157C` | `8` | `0x00808080` | `0x3FF00000` |
+/// | `7` stat buff, `tier == 2` | `0x80041718` | `9` | `0x00808080` | `0x000FF000` |
+/// | `7` stat buff, `tier == 3` | `0x800417FC` | `0xA` | `0x000000FF` | `0x000003FF` |
+/// | `7` stat buff, `tier == 4` | `0x80041BA0` | `0xB` | `0x0000FFFF` | `0x000FF3FF` |
+/// | `8` status clear | `0x80041C60` | `0xC` | `0x0080C0C0` | `0x200C0300` |
+///
+/// The class-`0`/`1` tint is [`CUE_TINT_NEUTRAL`], so a plain HP restore
+/// recolours nothing; every other arm recolours. The class-`4` `a1` is
+/// [`CUE_ACTOR_STATE_SKIP`] exactly, which is what makes revive the one arm
+/// that leaves `actor[+0x0C]` alone.
+///
+/// Everything else returns `None`: classes `6`, `9`, `0xA`, `0xB`..`0xD`,
+/// `0xE` and `0x82` have arms that never reach the expander (class 6's own
+/// 7-entry inner table at `0x800151B0` only bumps counters), a class-`7` tier
+/// outside `1..=4` falls past all four of its `jal`s, and every class byte
+/// from the spell table's routing band (`0x14` plain cast, `0x32` summon,
+/// `0x63` capture) is above the jump table's `0x84` bound or lands on an arm
+/// with no `jal`.
+///
+/// **What a missing tier costs.** Six of the eight rows are literals, so a
+/// host that cannot supply `+0x1E9` still selects the right group for classes
+/// `3`, `4`, `5` and `8`; only the two restore classes and the stat-buff class
+/// move with it, and for those a zero tier reads as "tier 0" rather than as a
+/// wrong branch (class `7` tier `0` correctly selects *no* site).
+///
+/// PORT: FUN_800402F4 (the cue-group branch selection only - the arms'
+/// stat arithmetic is [`BattleActionHost::apply_damage`](crate::battle_action::BattleActionHost::apply_damage)'s
+/// side of the seam)
+/// REF: FUN_801E22C8 (what each site calls)
+pub fn cue_group_for(class: u8, tier: u8) -> Option<CueGroupSite> {
+    let site = |tint: u32, actor_state: u32, group: u8, battle_only: bool| {
+        Some(CueGroupSite {
+            tint,
+            actor_state,
+            group,
+            per_target: false,
+            battle_only,
+        })
+    };
+    match class {
+        0 => site(0x0080_8080, 0x000F_FFFF, tier, true),
+        1 => Some(CueGroupSite {
+            per_target: true,
+            ..site(0x0080_8080, 0x000F_FFFF, tier.wrapping_add(1), true)?
+        }),
+        2 => site(0x00FF_8080, 0x3FF8_0200, tier.wrapping_add(3), true),
+        3 => site(0x0080_FFFF, 0x200F_FFFF, 5, true),
+        4 => site(0x0080_FFFF, CUE_ACTOR_STATE_SKIP, 6, true),
+        5 => site(0x0040_40FF, 0x1004_03FF, 7, false),
+        7 => match tier {
+            1 => site(0x0080_8080, 0x3FF0_0000, 8, false),
+            2 => site(0x0080_8080, 0x000F_F000, 9, false),
+            3 => site(0x0000_00FF, 0x0000_03FF, 0xA, false),
+            4 => site(0x0000_FFFF, 0x000F_F3FF, 0xB, false),
+            _ => None,
+        },
+        8 => site(0x0080_C0C0, 0x200C_0300, 0xC, true),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +609,89 @@ mod tests {
                 tint: Some(0x00FF_0000 | CUE_TINT_MODE)
             }
         );
+    }
+
+    #[test]
+    fn the_three_computed_sites_move_with_the_tier() {
+        // class 0: group == tier. class 1: tier + 1. class 2: tier + 3.
+        for tier in 0..4u8 {
+            assert_eq!(cue_group_for(0, tier).unwrap().group, tier);
+            assert_eq!(cue_group_for(1, tier).unwrap().group, tier + 1);
+            assert_eq!(cue_group_for(2, tier).unwrap().group, tier + 3);
+        }
+    }
+
+    #[test]
+    fn the_literal_sites_ignore_the_tier_entirely() {
+        for tier in [0u8, 1, 9, 0xFF] {
+            assert_eq!(cue_group_for(3, tier).unwrap().group, 5);
+            assert_eq!(cue_group_for(4, tier).unwrap().group, 6);
+            assert_eq!(cue_group_for(5, tier).unwrap().group, 7);
+            assert_eq!(cue_group_for(8, tier).unwrap().group, 0xC);
+        }
+    }
+
+    #[test]
+    fn class_seven_has_one_site_per_tier_and_none_outside_one_to_four() {
+        for (tier, group) in [(1u8, 8u8), (2, 9), (3, 0xA), (4, 0xB)] {
+            assert_eq!(cue_group_for(7, tier).unwrap().group, group);
+        }
+        assert!(cue_group_for(7, 0).is_none());
+        assert!(cue_group_for(7, 5).is_none());
+    }
+
+    #[test]
+    fn only_the_class_one_loop_arm_is_per_target() {
+        assert!(cue_group_for(1, 0).unwrap().per_target);
+        for class in [0u8, 2, 3, 4, 5, 8] {
+            assert!(
+                !cue_group_for(class, 1).unwrap().per_target,
+                "class {class}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_classes_with_no_expander_branch_select_no_site() {
+        // Class 6's inner table only bumps counters; 9..=0xE and 0x82 have no
+        // `jal`; the spell-table routing bytes are above the arms entirely.
+        for class in [6u8, 9, 0xA, 0xB, 0xC, 0xD, 0xE, 0x14, 0x32, 0x63, 0x82] {
+            assert!(cue_group_for(class, 1).is_none(), "class {class:#x}");
+        }
+    }
+
+    #[test]
+    fn revive_is_the_one_site_that_passes_the_skip_state() {
+        let revive = cue_group_for(4, 0).unwrap();
+        assert_eq!(revive.actor_state, CUE_ACTOR_STATE_SKIP);
+        // ... which is what suppresses the `+0x0C` follow-up write.
+        let groups = vec![0u8; CUE_GROUP_STRIDE * 8];
+        let sfx = vec![0u8; 16];
+        let t = CueTables {
+            groups: &groups,
+            sfx_map: &sfx,
+        };
+        let out = expand_cue_group(revive.tint, revive.actor_state, 0, revive.group, &t);
+        assert_eq!(out.actor_flags, None);
+        // Every other site writes it.
+        for class in [0u8, 1, 2, 3, 5, 8] {
+            let s = cue_group_for(class, 1).unwrap();
+            let out = expand_cue_group(s.tint, s.actor_state, 0, s.group, &t);
+            assert_eq!(out.actor_flags, Some(0x2000), "class {class}");
+        }
+    }
+
+    #[test]
+    fn only_the_two_hp_restore_sites_pass_the_neutral_tint() {
+        assert_eq!(cue_group_for(0, 0).unwrap().tint, CUE_TINT_NEUTRAL);
+        assert_eq!(cue_group_for(1, 0).unwrap().tint, CUE_TINT_NEUTRAL);
+        // The class-7 buff sites reuse the neutral word for tiers 1 and 2 but
+        // not 3 and 4 - so "neutral" is per-site, not per-class.
+        assert_eq!(cue_group_for(7, 1).unwrap().tint, CUE_TINT_NEUTRAL);
+        assert_ne!(cue_group_for(7, 3).unwrap().tint, CUE_TINT_NEUTRAL);
+        for class in [2u8, 3, 4, 5, 8] {
+            assert_ne!(cue_group_for(class, 1).unwrap().tint, CUE_TINT_NEUTRAL);
+        }
     }
 
     fn inputs() -> BannerInputs {

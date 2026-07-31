@@ -16,6 +16,20 @@ pub(crate) type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 /// so the identity scale draws it faithfully.
 const EFFECT_TEXEL_WORLD: f32 = 1.0;
 
+/// The TSB vertex word one effect billboard corner carries: the sprite
+/// atlas's texture-page byte with the port's prim semi-transparency enable
+/// (bit 15) forced on.
+///
+/// The enable is unconditional because retail's is: every effect child goes
+/// out as prim code `0x2E`, a flat textured quad with the GP0 command's
+/// semi-transparency bit set. Nothing in the atlas entry carries it - the
+/// page byte is at most `0xFF` - so a builder that pushes the page verbatim
+/// silently draws the whole effect system opaque. See
+/// [`effect_billboard_mesh`] for what that looked like on screen.
+fn effect_sprite_tsb(page: u16) -> u16 {
+    legaia_tmd::mesh::pack_tsb_semi(page, true)
+}
+
 /// The four world-space corners of a camera-facing billboard for `sprite`,
 /// using the camera's world `right`/`up` basis. Order: TL, TR, BL, BR.
 fn effect_sprite_corners(
@@ -36,10 +50,34 @@ fn effect_sprite_corners(
 /// atlas `(u, v)` / `tpage` / `clut`. Mirrors the retail per-frame walker
 /// (`FUN_801E0088` pass 2), which emits one GPU sprite primitive per child.
 ///
-/// The texel-source upload for battle effects is not yet pinned, so a quad
-/// over empty VRAM samples all-zero texels which the VRAM-mesh shader
-/// discards (clean, not garbage); real pixels appear once that upload lands.
-/// Returns `None` when there is nothing to draw.
+/// Texel residency: in battle the PROT 870 flame atlas + its CLUT rows are
+/// blitted into the battle VRAM copy at battle entry
+/// (`scene::upload_flame_atlas_into_vram`), and the field-resident
+/// `player_data` §2 pages land at scene entry - the two effect-texel pools
+/// `docs/subsystems/effect-vm.md` pins. A sprite whose atlas rect falls
+/// outside the uploaded pools samples all-zero texels, which the VRAM-mesh
+/// shader discards (clean, not garbage). Returns `None` when there is
+/// nothing to draw.
+///
+/// # Every effect child is semi-transparent, and the TSB word has to say so
+///
+/// Retail's per-child GPU packet is prim code **`0x2E`** - a flat textured
+/// quad with the semi-transparency bit set - so the ABE enable is
+/// unconditional on this path, not a property of the atlas entry. The port's
+/// blend model carries that enable in bit 15 of the TSB vertex attribute
+/// ([`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`]); every TMD path sets it
+/// through `pack_tsb_semi`, and this builder used to push the raw atlas page
+/// byte, which tops out at `0xFF` and can never reach bit 15.
+///
+/// The consequence was not a subtle one. `psx_blend::append_semi_tail` saw
+/// no semi-transparent primitive, so no billboard triangle ever entered the
+/// blend pass, and the shader's STP deferral never fired - so every texel
+/// drew fully opaque. The flame atlas's CLUT row 474 is a fire ramp whose hot
+/// end (`0xC73F` = `(248, 200, 136)`) is a pale tan: under retail's additive
+/// `B + F` those texels are a glow over the dark arena, and drawn opaque they
+/// are solid tan blobs sitting on the floor. Index `0` is `0x0000` and still
+/// discards, which is why the blobs kept a puff-shaped silhouette inside the
+/// `LEGAIA_DIAG_FX` outline rather than filling it.
 pub(crate) fn effect_billboard_mesh(
     r: &legaia_engine_render::Renderer,
     sprites: &[legaia_engine_core::world::EffectSprite],
@@ -82,7 +120,7 @@ pub(crate) fn effect_billboard_mesh(
         for (corner, uv) in corners.iter().zip(corner_uv) {
             positions.push(corner.to_array());
             uvs.push(uv);
-            cba_tsb.push([s.clut, s.page]);
+            cba_tsb.push([s.clut, effect_sprite_tsb(s.page)]);
             normals.push(face);
             colors.push([s.brightness; 3]);
         }
@@ -99,9 +137,14 @@ pub(crate) fn effect_billboard_mesh(
 
 /// Build a tinted outline for each effect billboard through the Lines
 /// pipeline (a camera-facing rectangle, sized from the sprite atlas, faded by
-/// age). This keeps spawned effects visible while the textured-quad's VRAM
-/// source is unpinned - the billboard's geometry and animation are faithful
-/// even when its texels are not yet resident.
+/// age).
+///
+/// **Diagnostic only** (`LEGAIA_DIAG_FX=1`), because retail draws no such
+/// rectangle. It makes a spawn readable when the textured quad samples texels
+/// that are not resident - the billboard's geometry and animation are faithful
+/// even when its pixels are not. In a battle the flame atlas + CLUT rows are
+/// blitted at battle entry, so the quad itself draws and the outline is only
+/// in the way.
 pub(crate) fn effect_sprite_line_geometry(
     sprites: &[legaia_engine_core::world::EffectSprite],
     right: Vec3,
@@ -304,4 +347,39 @@ pub(crate) fn world_map_slot4_line_geometry(
         idx.push(base + 1);
     }
     (pos, col, idx)
+}
+
+#[cfg(test)]
+mod effect_billboard_tests {
+    use super::effect_sprite_tsb;
+    use legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
+
+    /// Retail's per-child packet is prim code `0x2E` - textured **and**
+    /// semi-transparent - so every billboard corner has to carry the port's
+    /// prim-ABE enable, whatever the atlas entry's page byte is.
+    ///
+    /// Pushing the page verbatim (which is what this used to do) can never
+    /// set bit 15, because the atlas stores the page in a single byte. The
+    /// blend pass then admits no billboard triangle at all and the shader's
+    /// STP deferral never fires, so every flame / dust texel rasterises
+    /// opaque: the CLUT-474 fire ramp's hot end is a pale tan, which is
+    /// exactly the opaque tan domes that appeared on the battle floor.
+    #[test]
+    fn every_effect_billboard_corner_is_semi_transparent() {
+        // The two pages the `efect.dat` inline atlas actually names, plus the
+        // extremes of the byte the atlas can hold.
+        for page in [0x25u16, 0x66, 0x00, 0xFF] {
+            let tsb = effect_sprite_tsb(page);
+            assert_ne!(
+                tsb & TSB_SEMI_TRANSPARENT_BIT,
+                0,
+                "page {page:#04x} must keep the prim-ABE enable"
+            );
+            assert_eq!(
+                tsb & !TSB_SEMI_TRANSPARENT_BIT,
+                page,
+                "page {page:#04x} must survive the packing unchanged"
+            );
+        }
+    }
 }

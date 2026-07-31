@@ -175,6 +175,244 @@ fn town01_battle_build_surfaces_the_stage_mesh() {
     );
 }
 
+/// One TIM's VRAM footprint: `(fb_x, fb_y, width, height)`.
+type FbRect = (u16, u16, u16, u16);
+
+/// Every parseable TIM in a buffer, as `(image page, clut block)` addresses.
+fn tim_addresses(bytes: &[u8]) -> Vec<(FbRect, FbRect)> {
+    let mut out = Vec::new();
+    for hit in legaia_asset::tim_scan::scan_buffer(bytes) {
+        let end = hit.offset + hit.byte_len;
+        let Some(slice) = bytes.get(hit.offset..end) else {
+            continue;
+        };
+        let Ok(tim) = legaia_tim::parse(slice) else {
+            continue;
+        };
+        let Some(c) = tim.clut.as_ref() else { continue };
+        let i = &tim.image;
+        out.push(((i.fb_x, i.fb_y, i.fb_w, i.h), (c.fb_x, c.fb_y, c.w, c.h)));
+    }
+    out
+}
+
+/// **The residency collision the battle VRAM build has to resolve.**
+///
+/// Rim Elm's four backdrop streams (entries 6..=9) do not each own a corner of
+/// VRAM - they all declare the *same* two 4bpp pages, `(768, 0)` and
+/// `(832, 0)`, under the same two CLUT rows, `473` and `479`. Retail never has
+/// to notice: the type-`0x01` chunk walker leaves one stream in
+/// `_DAT_8007B864` and only that one's pages are resident. The port's battle
+/// build DMAs every TIM in the bundle, so absent a final re-upload of the
+/// *selected* entry the shell draws its own geometry through a sibling
+/// sub-area's texels and palette.
+///
+/// Asserting the collision keeps the reason for
+/// `upload_battle_stage_tims_into_vram` visible rather than folklore.
+#[test]
+fn rim_elms_four_stage_streams_all_claim_the_same_vram() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut per_entry = Vec::new();
+    for idx in 6u32..=9 {
+        let bytes = host.index.entry_bytes(idx).expect("read stage entry");
+        let mut addrs = tim_addresses(&bytes);
+        addrs.sort();
+        eprintln!("entry {idx}: {addrs:?}");
+        per_entry.push(addrs);
+    }
+    assert!(
+        !per_entry[0].is_empty(),
+        "the stage streams carry their own TIMs"
+    );
+    for (i, a) in per_entry.iter().enumerate().skip(1) {
+        assert_eq!(
+            *a,
+            per_entry[0],
+            "stage stream {} declares the same VRAM as entry 6",
+            6 + i
+        );
+    }
+    let pages: Vec<(u16, u16)> = per_entry[0].iter().map(|(i, _)| (i.0, i.1)).collect();
+    assert!(pages.contains(&(768, 0)), "the rock + cloud page");
+    assert!(pages.contains(&(832, 0)), "the ground-tile page");
+    let cluts: Vec<(u16, u16)> = per_entry[0].iter().map(|(_, c)| (c.0, c.1)).collect();
+    assert!(cluts.contains(&(0, 473)), "the cloud/rock CLUT row");
+    assert!(cluts.contains(&(0, 479)), "the ground-tile CLUT row");
+}
+
+/// The fix, end to end. After a `SceneLoadKind::Battle` build some sibling
+/// stream holds the shared addresses; re-uploading the selected stage entry
+/// puts that entry's own bytes back at every address it declares.
+///
+/// The `collided > 0` half is what keeps this non-vacuous: it fails the day
+/// the general build stops losing the race, at which point the re-upload is
+/// no longer load-bearing and this test is the thing that says so.
+#[test]
+fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
+    use legaia_engine_core::scene::Scene;
+    use legaia_engine_core::scene_resources::{
+        BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+    };
+
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let stage_entry = host
+        .index
+        .battle_stage_entry_for_scene("town01")
+        .expect("town01 has a battle stage entry");
+    assert_eq!(stage_entry, 7, "the Tetsu spar's stage stream");
+
+    let scene = Scene::load(&host.index, "town01").expect("load town01");
+    let shared: Vec<Scene> = FIELD_SHARED_BLOCKS
+        .iter()
+        .filter_map(|n| Scene::load(&host.index, n).ok())
+        .collect();
+    let refs: Vec<&Scene> = shared.iter().collect();
+    let (res, _) = SceneResources::build_targeted_with_options(
+        &scene,
+        &refs,
+        BuildOptions {
+            kind: SceneLoadKind::Battle,
+            upload_all_tims: true,
+            system_ui: None,
+        },
+    )
+    .expect("battle resource build");
+
+    // The stage entry's own CLUT rows, straight off the disc.
+    let raw = host.index.entry_bytes(stage_entry).expect("stage bytes");
+    let want: Vec<(u16, u16, Vec<u16>)> = legaia_asset::tim_scan::scan_buffer(&raw)
+        .into_iter()
+        .filter_map(|hit| {
+            let end = hit.offset + hit.byte_len;
+            let tim = legaia_tim::parse(raw.get(hit.offset..end)?).ok()?;
+            let c = tim.clut?;
+            Some((c.fb_x, c.fb_y, c.entries))
+        })
+        .collect();
+    assert!(!want.is_empty(), "the stage entry carries CLUTs");
+
+    let read_row = |v: &legaia_tim::Vram, x: u16, y: u16, n: usize| -> Vec<u16> {
+        (0..n)
+            .map(|i| v.pixel(x as usize + i, y as usize))
+            .collect()
+    };
+
+    let collided = want
+        .iter()
+        .filter(|(x, y, e)| read_row(&res.vram, *x, *y, e.len()) != *e)
+        .count();
+    assert!(
+        collided > 0,
+        "a sibling stream should be holding the shared CLUT rows before the re-upload"
+    );
+
+    let mut vram = res.vram.clone();
+    let n = legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+        &scene,
+        stage_entry,
+        &mut vram,
+    );
+    assert_eq!(n, want.len(), "every stage TIM re-uploaded");
+    for (x, y, entries) in &want {
+        assert_eq!(
+            read_row(&vram, *x, *y, entries.len()),
+            *entries,
+            "CLUT row ({x}, {y}) is the selected stage entry's own"
+        );
+    }
+}
+
+/// **A backdrop shell is not all texture.** Its `F*`/`G*` flat / gouraud
+/// panels - the sky band, the painted wall faces, the flat water - carry a
+/// baked colour word and no UVs, and `tmd_to_vram_mesh` drops every prim with
+/// no UVs because such a prim would sample nothing from VRAM. A host that
+/// renders only the VRAM half therefore leaves holes in the arena.
+///
+/// Retail draws one primitive list: `FUN_8001ADA4` case 3 walks the whole
+/// group chain and the GPU takes `POLY_F*` / `POLY_G*` packets as readily as
+/// `POLY_*T*` ones. This pins how much of the shell the colour half is - a
+/// double-digit share on the shells the engine actually renders - and that
+/// `ColorMesh::append_scaled` carries it through the second copy the same way
+/// the textured builder does.
+#[test]
+fn the_backdrop_shells_untextured_half_is_a_double_digit_share() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    // town01's Tetsu arena and map01's overworld dome - the two stage shapes.
+    for (idx, min_share) in [(7u32, 0.10f32), (88, 0.02)] {
+        let bytes = host.index.entry_bytes(idx).expect("read stage entry");
+        let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
+        let raw = &bytes[s.tmd_range()];
+        let tmd = legaia_tmd::parse(raw).expect("parse dome TMD");
+        let drawn = legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd);
+        let textured = legaia_tmd::mesh::tmd_to_vram_mesh(&drawn, raw);
+        let mut colour = legaia_tmd::mesh::tmd_to_color_mesh(&drawn, raw);
+        let (t_tris, c_tris) = (textured.indices.len() / 3, colour.indices.len() / 3);
+        let share = c_tris as f32 / (t_tris + c_tris) as f32;
+        eprintln!("stage {idx}: {t_tris} textured tris, {c_tris} colour tris ({share:.3})");
+        assert!(
+            share >= min_share,
+            "stage {idx}: the untextured half is {share:.3} of the shell, \
+             below the {min_share} the renderer must not silently drop"
+        );
+        // The second copy has to carry the colour half too, or the shell
+        // closes on one texture class and not the other.
+        let first = colour.clone();
+        colour.append_scaled(&first, [-1.0, 1.0, 1.0]);
+        assert_eq!(colour.indices.len() / 3, c_tris * 2, "second copy appended");
+        assert_eq!(colour.positions.len(), first.positions.len() * 2);
+        // A negative-determinant scale reverses winding, exactly like the
+        // textured builder's own `append_scaled`.
+        assert_eq!(
+            colour.indices[c_tris * 3..c_tris * 3 + 3],
+            [
+                first.positions.len() as u32,
+                first.positions.len() as u32 + 2,
+                first.positions.len() as u32 + 1
+            ]
+        );
+
+        // **Cross-host guard.** The two hosts assemble the same shell two
+        // different ways: the native window builds a textured VRAM mesh plus
+        // a separate `ColorMesh` on the untextured pipeline, the browser page
+        // builds ONE hybrid mesh carrying a per-vertex textured flag. Those
+        // are different code paths over the same primitive list, so nothing
+        // but an assertion keeps them drawing the same triangles - and the
+        // shipped host-drift gate only asks whether a host CALLS a shared
+        // builder, never whether both build the same model. This is the
+        // shape that let the native window silently lose the shell's
+        // untextured half while the browser kept it.
+        let (hybrid, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&drawn, raw);
+        assert_eq!(
+            hybrid.indices.len() / 3,
+            t_tris + c_tris,
+            "stage {idx}: the browser's hybrid shell and the native window's \
+             textured + colour halves must be the same triangle set"
+        );
+        assert_eq!(
+            hybrid.positions.len(),
+            textured.positions.len() + first.positions.len()
+        );
+        let untextured_verts = shading.textured.iter().filter(|&&t| t == 0).count();
+        assert_eq!(
+            untextured_verts,
+            first.positions.len(),
+            "stage {idx}: the hybrid's untextured verts are exactly the colour half"
+        );
+    }
+}
+
 /// Which objects of a stage TMD the backdrop actually draws.
 ///
 /// Retail's registration drops object index 1 and keeps the rest

@@ -638,7 +638,14 @@ fn attack_chain_walks_param_stream_until_terminator() {
     assert_eq!(host.actors[1].queued_anim, 0x10);
     assert_eq!(host.actors[1].strike_index, 1);
     assert!(host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
-    assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
+    // The strike loop fires no `apply_damage`: retail's one `jal 0x800402f4`
+    // is in the spirit band, not here.
+    assert!(
+        !host
+            .take()
+            .iter()
+            .any(|e| matches!(e, Event::ApplyDamage(..)))
+    );
 
     // While ADVANCE_DONE is set the staged swing is in flight - the
     // chain holds without reading the next byte (the 0x801E370C gate).
@@ -653,7 +660,12 @@ fn attack_chain_walks_param_stream_until_terminator() {
     assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
     assert_eq!(host.actors[1].queued_anim, 0x12);
     assert_eq!(host.actors[1].strike_index, 2);
-    assert!(host.take().contains(&Event::ApplyDamage(0x12, 0, 0, 1)));
+    assert!(
+        !host
+            .take()
+            .iter()
+            .any(|e| matches!(e, Event::ApplyDamage(..)))
+    );
     host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
 
     // Third step: terminator → recovery; SM clears ADVANCE_DONE.
@@ -905,6 +917,109 @@ fn done_fade_down_with_multi_cast_routes_to_multi_cast() {
             to,
             ..
         } if to == ActionState::DoneMultiCast.as_byte()
+    ));
+}
+
+/// Retail's Done-band exit is a test on the timer's **value**, re-run every
+/// pass (`bgez v0,0x801E6158` at `0x801E60F0`), not on the one frame the
+/// countdown crosses zero.
+///
+/// The difference only shows when something else holds the band on that exact
+/// frame: `ctx[+0x276]` up on the crossing pass used to consume the crossing
+/// and leave the state with no way out at all.
+#[test]
+fn the_done_band_still_leaves_after_the_menu_flag_clears_on_the_crossing_frame() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    ctx.menu_open = 1;
+    // The flag is up on the frame the countdown would have crossed, and for
+    // a good while after.
+    for _ in 0..40 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    // Retail pins the countdown at the `0xC` floor rather than letting it
+    // sink, so the tail still has twelve frames to run once the flag drops.
+    assert_eq!(ctx.frame_timer, super::done::DONE_MENU_HOLD_FRAMES);
+    ctx.menu_open = 0;
+    let mut passes = 0;
+    loop {
+        match step(&mut host, &mut ctx) {
+            StepOutcome::Stay => {
+                passes += 1;
+                assert!(passes < 64, "the Done band never left");
+            }
+            StepOutcome::Transition { to, .. } => {
+                assert_eq!(to, ActionState::EndOfAction.as_byte());
+                break;
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(
+        passes,
+        super::done::DONE_MENU_HOLD_FRAMES as usize,
+        "the floor's twelve frames still had to run"
+    );
+}
+
+/// The multi-cast branch re-seeds the countdown (`li v0,0xb4` at
+/// `0x801E6134`). Without it the state inherits an expired timer and the
+/// action never ends.
+#[test]
+fn the_multi_cast_branch_reseeds_its_own_timer_and_then_ends_the_action() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    ctx.multi_cast_gate = 1;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneMultiCast.as_byte()
+    ));
+    assert_eq!(ctx.frame_timer, super::done::DONE_MULTI_CAST_FRAMES);
+
+    let mut passes = 0;
+    loop {
+        match step(&mut host, &mut ctx) {
+            StepOutcome::Stay => {
+                passes += 1;
+                assert!(passes < 256, "DoneMultiCast parked on an expired timer");
+            }
+            StepOutcome::Transition { to, .. } => {
+                assert_eq!(to, ActionState::EndOfAction.as_byte());
+                break;
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(passes, super::done::DONE_MULTI_CAST_FRAMES as usize);
+    assert_eq!(ctx.multi_cast_gate, 0, "the gate is consumed");
+}
+
+/// The whole Done band is bounded by `ctx[+0x6D8]`, and a settling HP bar
+/// only *freezes* the countdown - it never removes the bound. Once the
+/// readout has converged the remaining frames run out on schedule.
+#[test]
+fn a_settling_hp_bar_freezes_the_done_countdown_without_unbounding_it() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 4;
+    // Target the acting party slot and leave its readout short of live HP.
+    host.actors[0].active_target = 0;
+    host.actors[0].hp = 40;
+    host.actors[0].hp_display = Some(90);
+    for _ in 0..30 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    assert_eq!(ctx.frame_timer, 4, "the countdown is frozen, not spent");
+    host.actors[0].hp_display = Some(40);
+    for _ in 0..4 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    assert!(matches!(
+        step(&mut host, &mut ctx),
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
     ));
 }
 
@@ -1532,8 +1647,13 @@ fn full_attack_flow_round_trips() {
     // AttackChain: walk one anim then terminator.
     host.actors[1].params[0] = 0x10;
     host.actors[1].params[1] = 0xFF;
-    step(&mut host, &mut ctx); // queue 0x10, fires apply_damage
-    assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
+    step(&mut host, &mut ctx); // queue 0x10; the strike loop applies no damage
+    assert!(
+        !host
+            .take()
+            .iter()
+            .any(|e| matches!(e, Event::ApplyDamage(..)))
+    );
     // Anim system signals the staged swing finished (clears the
     // 0x801E370C read gate) before the chain reads the next byte.
     host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
@@ -2017,8 +2137,8 @@ fn attack_chain_dispatches_apply_art_strike_when_art_chosen() {
     // 2nd strike has no hit_cue staged at index 1 (only one in the
     // synthetic record), so this is None.
     assert!(s1.hit_cue.is_none());
-    // apply_damage still fires alongside apply_art_strike for
-    // backward compatibility.
+    // The art-strike hook is the strike loop's only damage channel; the
+    // item / restore applier is not called from the attack band at all.
     let damages: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
@@ -2026,13 +2146,13 @@ fn attack_chain_dispatches_apply_art_strike_when_art_chosen() {
             _ => None,
         })
         .collect();
-    assert_eq!(damages.len(), 2, "apply_damage still fires per strike");
+    assert!(damages.is_empty(), "the applier is not an attack-band call");
 }
 
 #[test]
 fn attack_chain_skips_apply_art_strike_when_no_art_chosen() {
-    // Default actor has chosen_art = None - the strike chain must
-    // fire only apply_damage, not apply_art_strike.
+    // Default actor has chosen_art = None - the strike chain stages the
+    // anim and fires neither hook.
     let mut host = RecHost::with_n_actors(3);
     host.actors[0].params[0] = 0x10;
     host.actors[0].params[1] = 0xFF;
@@ -2056,13 +2176,13 @@ fn attack_chain_skips_apply_art_strike_when_no_art_chosen() {
         .filter(|e| matches!(e, Event::ApplyDamage(..)))
         .count();
     assert_eq!(strikes, 0);
-    assert_eq!(damages, 1);
+    assert_eq!(damages, 0);
 }
 
 #[test]
 fn attack_chain_no_art_strike_when_record_missing() {
     // chosen_art = Some but the host returns None for art_record.
-    // The SM must fall through to plain apply_damage.
+    // The SM stages the anim and dispatches neither hook.
     use legaia_art::ActionConstant;
     let mut host = RecHost::with_n_actors(3);
     host.actors[0].chosen_art = Some(ActionConstant::Art1B);
@@ -2083,8 +2203,8 @@ fn attack_chain_no_art_strike_when_record_missing() {
         "no art strike should fire when art_record returns None"
     );
     assert!(
-        events.iter().any(|e| matches!(e, Event::ApplyDamage(..))),
-        "apply_damage should still fire as fallback"
+        events.iter().all(|e| !matches!(e, Event::ApplyDamage(..))),
+        "the applier has no attack-band call site"
     );
 }
 

@@ -18,57 +18,50 @@
 //! the transition entity's `+0x48` block and emits straight into the OT
 //! cursor. [`BattleIntro`] is that owner.
 //!
-//! # Style coverage is not uniform, and the difference is structural
+//! # All five styles emit
 //!
 //! `FUN_801CF5BC`'s first tail switch dispatches five styles
-//! ([`IntroStyle`]). They do **not** all reach a primitive here, and the split
-//! is not effort - it is which retail packet builder is ported:
+//! ([`IntroStyle`]), and each reaches a primitive here through its own retail
+//! packet builder:
 //!
-//! | Style | Working set ticks | Emits primitives |
+//! | Style | Retail packet builder | Port |
 //! |---|---|---|
-//! | [`IntroStyle::Curtain`] | yes | **yes** - complete |
-//! | [`IntroStyle::TileShatter`] | yes | **yes** - complete |
-//! | [`IntroStyle::ScatterParticles`] | yes | no - see below |
-//! | [`IntroStyle::SpinUpParticles`] | yes | no |
-//! | [`IntroStyle::Swirl`] | yes | no |
+//! | [`IntroStyle::ScatterParticles`] | `FUN_801CFDA0` | [`emit_particle_field`] |
+//! | [`IntroStyle::SpinUpParticles`] | `FUN_801D0370` + tail `FUN_801D1CFC` | [`emit_particle_field`] + [`emit_spinup_ring`] |
+//! | [`IntroStyle::TileShatter`] | `FUN_801D0E54` via `FUN_80043390` | [`emit_tile`] |
+//! | [`IntroStyle::Curtain`] | `FUN_801CF1B0` | [`intro_quad_to_screen`] |
+//! | [`IntroStyle::Swirl`] | `FUN_801D1A20` via `FUN_80043390` / `FUN_80029888` | [`emit_swirl_band`] |
 //!
-//! The curtain is complete because it is the one style whose packet builder is
-//! itself ported: `FUN_801CF1B0`
-//! ([`legaia_engine_vm::battle_intro_transition::build_intro_quad`]) produces
-//! **screen-space** corners with texture page, CLUT, UVs and a top/bottom
-//! colour pair, so there is no projection step to invent. Its descriptor table
-//! is disc data that parses ([`IntroQuadTable`]), and the texture pages its two
-//! passes name decode to exactly the rects [`crate::vram_capture`] captures
-//! into.
+//! The curtain's builder produces **screen-space** corners with texture page,
+//! CLUT, UVs and a top/bottom colour pair, so there is no projection step to
+//! invent; its descriptor table is disc data that parses
+//! ([`IntroQuadTable`]), and the texture pages its two passes name decode to
+//! exactly the rects [`crate::vram_capture`] captures into.
 //!
-//! The tile shatter - the style the **ordinary random encounter** takes - is
-//! complete because every input its emitter needs is now pinned: the packet
-//! is [`legaia_engine_vm::battle_intro_tiles::tile_face_quads`], the corner
-//! table decodes off PROT 0979 ([`parse_tile_corner_table`]), the projection
-//! chain is the FT4 handler's ([`emit_tile`]'s doc has the accept chain), and
-//! the 4bpp shade page its side faces sample turned out to be **disc data
-//! already parsed by the engine** - `legaia_asset::field_char_textures` entry
-//! 0 (PROT 0874 §2), which [`BattleIntro::capture_field_frame`] lands in the
-//! transition's cloned page. One retail nuance is *not* carried: the
-//! dispatcher runs a moving tile's opaque faces through the depth-cue alpha
-//! bank (fade toward a zeroed far colour), which the screen overlay has no
-//! channel for - receding tiles keep their face grey instead of also dimming
-//! with distance.
+//! The other four all end in the same GTE projection this module reproduces
+//! ([`project_intro_corner`] + the FT4 handler's accept chain in
+//! [`push_ft4_quad`]). The tile shatter and the swirl both assemble a
+//! synthetic Legaia-TMD object in the `_DAT_8007B85C + 0x5DC00` scratch block
+//! and hand it to the generic per-prim dispatcher; the two particle styles
+//! write `POLY_FT4` packets straight into the ordering-table cursor and
+//! project through `FUN_8005BAC8` (RotTransPers4; its return is `SZ3 >> 2`,
+//! which is the depth [`legaia_engine_vm::battle_intro_styles::particle_quad_accepted`]
+//! bounds).
 //!
-//! The other three end in a GTE/GPU packet emitter that is documented but not
-//! ported (`docs/subsystems/cutscene.md` § "Per-style emitters"): the particle
-//! styles project sprite quads through the sprite projector, and the swirl
-//! submits 32 primitives per band half from a 198-vertex fan. The trig tables
-//! `_DAT_8007B7F8` / `_DAT_8007B81C` are no longer a blocker (the tile draw
-//! reproduces them via [`crate::billboard::psx_sin`]); the swirl's fan is
-//! triangles, which [`ScreenPrim`] has no variant for at all.
+//! Two retail nuances are *not* carried, both stated rather than hidden. The
+//! dispatcher runs a moving tile's opaque faces - and the whole late-phase
+//! swirl - through a depth-cue bank (fade toward a per-caller far colour),
+//! which the screen overlay has no channel for: receding tiles keep their
+//! face grey, and the late swirl keeps its packet colours instead of hazing
+//! toward the mid-grey far colour `FUN_80029888` stages. And the spin-up
+//! ring's mesh comes from `FUN_80028158`, a 1395-instruction multi-shape
+//! generator of which only the case-0 annulus parameters are modelled - see
+//! [`emit_spinup_ring`].
 //!
-//! Ticking their working sets anyway is deliberate and is not an inert
-//! allocation: the fade ramp and the transition's own completion arm both read
-//! the same clock, so a battle opened on any of the three still fades and
-//! still hands off on the retail frame. What it does not do is draw the style,
-//! and [`IntroFrame::style_drawn`] reports that per frame rather than leaving
-//! a caller to infer it from an empty list.
+//! [`IntroFrame::style_drawn`] still reports per frame whether the style's own
+//! geometry reached the list, as against the frame carrying only the fade
+//! quad; every style's first frame is a deliberate no-draw (see the
+//! stale-view-matrix note on [`BattleIntro::tick`]'s tile arm).
 //!
 //! # The capture is a two-rect affair, and both rects are used
 //!
@@ -87,9 +80,9 @@ use crate::vram_capture::{
     VramRect,
 };
 use legaia_engine_vm::battle_intro_styles::{
-    self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B,
+    self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B, ParticleTickStyle,
 };
-use legaia_engine_vm::battle_intro_swirl::{self as swirl, SwirlMesh};
+use legaia_engine_vm::battle_intro_swirl::{self as swirl, SwirlBandDraw, SwirlMesh};
 use legaia_engine_vm::battle_intro_tiles::{self as tiles, TileGrid};
 use legaia_engine_vm::battle_intro_transition::{INTRO_QUAD_DESC_STRIDE, IntroQuad, IntroQuadDesc};
 use legaia_tim::Vram;
@@ -113,20 +106,22 @@ pub const TILE_SHADE_PAGE: VramRect = VramRect::new(448, 0, 16, 64);
 /// |---|---|---|
 /// | [`IntroStyle::Curtain`] | row pass `0x105`/`0x108` at `(320,0)`/`(512,0)`; column pass `0x115`/`0x118` at `(320,256)`/`(512,256)` | both |
 /// | [`IntroStyle::TileShatter`] | `0x135`/`0x137` at `(320,256)`/`(448,256)`, plus the 4bpp [`TILE_SHADE_PAGE`] at `(448,0)` | **columns only** |
-/// | the rest | not established | both |
+/// | the particle styles | `0x135..=0x139` at `(320,256)..(576,256)` (u < 64, so the five pages tile the 320 capture columns) | **columns only** |
+/// | [`IntroStyle::Swirl`] | `0x115`/`0x117` at `(320,256)`/`(448,256)` | **columns only** |
 ///
-/// The tile row is the one that has to differ. Its own pages are wholly
-/// inside the column rect, and the shade page it also needs is inside the row
-/// rect - so writing the rows would destroy an input it depends on while
-/// gaining it nothing. The styles whose sampling is not established keep both
-/// rects: that is the conservative choice, and it costs nothing today because
-/// none of them reaches a primitive.
+/// Only the curtain's row pass samples the rows rect. The tile shatter is the
+/// style where columns-only is load-bearing rather than economical: its own
+/// pages are wholly inside the column rect, and the shade page it also needs
+/// is inside the row rect - so writing the rows would destroy an input it
+/// depends on while gaining it nothing. The particle and swirl pages are
+/// likewise wholly inside the column rect (every page they name carries the
+/// `y = 256` bit), so the rows blit would buy them nothing either.
 pub fn capture_rects_for(style: IntroStyle) -> &'static [VramRect] {
     const BOTH: [VramRect; 2] = [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS];
     const COLS_ONLY: [VramRect; 1] = [FIELD_CAPTURE_COLS];
     match style {
-        IntroStyle::TileShatter => &COLS_ONLY,
-        _ => &BOTH,
+        IntroStyle::Curtain => &BOTH,
+        _ => &COLS_ONLY,
     }
 }
 
@@ -214,12 +209,14 @@ struct ProjCorner {
     sz: i32,
 }
 
-/// `RTPS` for one tile corner: rotate by the tile's own matrix, translate by
-/// the record position (the per-tile MVMVA result - the transition's view
-/// matrix is identity rotation with zero translation from the second frame
-/// on, pinned live), perspective-divide through the UNR reciprocal at
-/// [`INTRO_H`], and offset by the transition's screen centre.
-fn project_tile_corner(rot: &GteMat3, tr: GteVec3, c: (i16, i16, i16)) -> ProjCorner {
+/// `RTPS` for one intro-packet corner: rotate by the packet's own matrix,
+/// translate by the record position (the per-record MVMVA result - the
+/// transition's view matrix is identity rotation with zero translation from
+/// the second frame on, pinned live), perspective-divide through the UNR
+/// reciprocal at [`INTRO_H`], and offset by the transition's screen centre.
+/// Shared by the tile shatter, the two particle fields, the swirl and the
+/// spin-up ring - all five run on the same transition GTE file.
+fn project_intro_corner(rot: &GteMat3, tr: GteVec3, c: (i16, i16, i16)) -> ProjCorner {
     let v = rot.mul_vec(GteVec3::new(i32::from(c.0), i32::from(c.1), i32::from(c.2)));
     let (x, y, z) = (v.x + tr.x, v.y + tr.y, v.z + tr.z);
     // SZ3 saturates to 0..0xFFFF; the divide then saturates at the
@@ -265,27 +262,505 @@ pub fn emit_tile(
     );
     for q in &quads {
         let p: [ProjCorner; 4] =
-            std::array::from_fn(|i| project_tile_corner(&rot, tr, q.corners[i]));
+            std::array::from_fn(|i| project_intro_corner(&rot, tr, q.corners[i]));
+        let grey = u32::from(q.grey);
+        push_ft4_quad(
+            &p,
+            q.uv,
+            q.clut,
+            q.tpage,
+            grey << 16 | grey << 8 | grey,
+            q.semi_transparent,
+            CullMode::SingleSided,
+            prims,
+        );
+    }
+}
+
+/// Backface handling of one dispatched packet - the dispatcher's NCLIP mask.
+///
+/// `FUN_80043390` decodes bit 27 of its second argument into the mask the
+/// kind handlers AND over each NCLIP result (`0x80043520..0x80043540`):
+/// clear = `0xFFFFFFFF` (the plain single-sided accept), set = `0x7FFFFFFF`
+/// (the sign bit is stripped, so `n <= 0 && n >= 0` can only reject a
+/// degenerate quad - effectively double-sided). The tile shatter passes `0`
+/// there and culls; the swirl passes `0x18808080` and does not, which is what
+/// lets its x-mirrored half - whose winding is reversed - draw at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CullMode {
+    SingleSided,
+    DoubleSided,
+}
+
+/// The FT4 handler's accept chain (`FUN_800439E4` and its fog-bank sibling
+/// share it): `NCLIP` over corners 0-2, a second `NCLIP` over 1-3 after the
+/// fourth `RTPS`, reject on `n1 <= 0 && n2 >= 0` (through the [`CullMode`]
+/// mask), then `AVSZ4` for the OT depth and the [`INTRO_NEAR_OTZ`] cutoff.
+/// Returns whether the quad was pushed.
+#[allow(clippy::too_many_arguments)]
+fn push_ft4_quad(
+    p: &[ProjCorner; 4],
+    uv: [(u8, u8); 4],
+    clut: u16,
+    tpage: u16,
+    color: u32,
+    semi_transparent: bool,
+    cull: CullMode,
+    prims: &mut Vec<ScreenPrim>,
+) -> bool {
+    if cull == CullMode::SingleSided {
         let n1 = nclip(p[0].xy, p[1].xy, p[2].xy);
         let n2 = nclip(p[1].xy, p[2].xy, p[3].xy);
         if n1 <= 0 && n2 >= 0 {
+            return false;
+        }
+    }
+    let otz = avsz4_with_scale(p[0].sz, p[1].sz, p[2].sz, p[3].sz, INTRO_ZSF4);
+    if otz < INTRO_NEAR_OTZ {
+        return false;
+    }
+    prims.push(ScreenPrim::Textured(ScreenQuad {
+        xy: std::array::from_fn(|i| (p[i].xy.x as i16, p[i].xy.y as i16)),
+        uv,
+        clut,
+        tpage,
+        color,
+        gouraud: None,
+        semi_transparent,
+        ot_index: otz as u32,
+    }));
+    true
+}
+
+// ---------------------------------------------------------------------------
+// The particle fields (FUN_801CFDA0 / FUN_801D0370)
+// ---------------------------------------------------------------------------
+
+/// OT bucket a particle quad links at, in the raw-OTZ scale the dispatcher
+/// buckets use (a dispatcher word index is `otz >> 2`, and both particle
+/// ticks link at OT byte offset `400` - word `100` - so the equivalent OTZ is
+/// `400`). Nearer than the spin-up ring's projected depth (`~0x200` at view z
+/// `0x800`), farther than the fade quad's `1..=2`.
+pub const PARTICLE_OT: u32 = 400;
+/// `FUN_801D0370` links a particle that moved this frame **one OT word
+/// nearer** (`s6 = -1`, `OT + 400 + s6 * 4`).
+pub const PARTICLE_OT_MOVED: u32 = 396;
+
+/// The full-screen wash `FUN_801CFDA0` arms on every frame after the first,
+/// and `FUN_801D1888` arms once the swirl clock has passed its late-phase
+/// frame (both `func_0x8004695C(0x101010)` - near-black).
+pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
+
+/// A `FUN_8004695C` wash as a primitive.
+///
+/// `FUN_8004695C` only *arms* it (`gp+0x9D4 = 1`, `gp+0x9D0 = rgb`, and it
+/// clears `_DAT_8007B6CC` on the way past). The drain is `FUN_80046978`,
+/// which scales each channel by the scratchpad brightness byte at
+/// `0x1F800393`, clamps to `0xFF`, clears the armed flag - so it is a
+/// **one-shot per arm**, which is why `FUN_801CFDA0` re-arms it every frame -
+/// and hands it to `FUN_80024EE4(otlen - 1, 2, rgb)`. Both arguments matter:
+///
+/// * `a0 = otlen - 1` is the **farthest** OT bucket, so this draws before
+///   everything else in the frame,
+/// * `a1 = 2` is ABR mode `B - F`, so it **subtracts** rather than fills.
+///
+/// Retail is therefore darkening whatever the framebuffer already holds, not
+/// painting an opaque background. The port models the packet faithfully; what
+/// it cannot reproduce is the accumulation the effect rides on, because each
+/// port frame is composed from scratch rather than from the previous frame's
+/// pixels. Over [`BACKDROP_RGB`] the subtraction is a near-no-op, which is
+/// the honest outcome rather than a fabricated one.
+pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
+    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
+    ScreenPrim::Flat(FlatQuad {
+        xy: [(0, 0), (w, 0), (0, h), (w, h)],
+        color: [
+            (gp0_rgb_word & 0xFF) as u8,
+            ((gp0_rgb_word >> 8) & 0xFF) as u8,
+            ((gp0_rgb_word >> 16) & 0xFF) as u8,
+            0xFF,
+        ],
+        semi_transparent: true,
+        abr_mode: WASH_ABR_SUBTRACT,
+        ot_index: u32::MAX,
+    })
+}
+
+/// The ABR mode `FUN_80046978` passes for the armed wash: `2`, i.e. `B - F`.
+pub const WASH_ABR_SUBTRACT: u8 = 2;
+
+/// The colour the transition's own frame starts from.
+///
+/// The transition **owns the whole frame**: its init routine writes game mode
+/// `9` into `_DAT_8007B83C` (`0x801CF180`/`0x801CF188`, the "efect" mode) and
+/// the field's mode-3 renderer never runs again for the rest of the window.
+/// The field's last frame is captured once, at init, into the texture page at
+/// VRAM `(320, 256)` - and from there on every visible pixel is a transition
+/// primitive sampling that page.
+///
+/// That is what makes the base colour black rather than "the field". Each
+/// particle packet is semi-transparent with the page's own ABR `1` (`B + F`,
+/// additive), so a record still at its rest pose reproduces its captured
+/// patch **exactly** only when what is under it is black; the un-moved grid
+/// then reconstructs the frame, and every patch that flies away leaves the
+/// base colour behind it.
+pub const BACKDROP_RGB: u32 = 0x0000_0000;
+
+/// The frame the transition composes onto: an opaque display-rect quad at the
+/// farthest OT bucket, in [`BACKDROP_RGB`].
+///
+/// Retail has no such primitive, and does not need one - it has a game mode
+/// with no field renderer in it. The port composes the transition's screen
+/// primitives *over a live scene* ([`crate::RenderTarget::SceneWithScreenPrims`]),
+/// which is a port artifact, so the field kept rendering underneath. Two
+/// things came out of that, both visible in a screenshot sweep: every patch
+/// still at its rest pose was drawn additively over an identical live copy of
+/// itself and read at double brightness, and once the last particle expired
+/// the transition emitted nothing at all - leaving the remaining ~54 frames
+/// of the window showing a clean, untouched, still-animating field.
+///
+/// This quad is the port's stand-in for "the field is not in the ordering
+/// table". It is emitted on every frame of the window, including the frames a
+/// style draws nothing on, which is also what keeps the host's target choice
+/// on the compositing arm for the whole transition.
+pub fn backdrop_prim() -> ScreenPrim {
+    let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
+    ScreenPrim::Flat(FlatQuad {
+        xy: [(0, 0), (w, 0), (0, h), (w, h)],
+        color: [
+            (BACKDROP_RGB & 0xFF) as u8,
+            ((BACKDROP_RGB >> 8) & 0xFF) as u8,
+            ((BACKDROP_RGB >> 16) & 0xFF) as u8,
+            0xFF,
+        ],
+        semi_transparent: false,
+        abr_mode: 0,
+        ot_index: u32::MAX,
+    })
+}
+
+/// A GP0 colour word (`R` in the low byte) as [`ScreenQuad::color`]'s
+/// `0x00RRGGBB`.
+fn gp0_rgb(word: u32) -> u32 {
+    (word & 0xFF) << 16 | (word & 0xFF00) | ((word >> 16) & 0xFF)
+}
+
+/// One frame of a particle-field style, integration and packet emission
+/// together. `FUN_801CFDA0` / `FUN_801D0370`.
+///
+/// Retail's per-particle packet is a 10-word `POLY_FT4` (tag `0x09000000`,
+/// colour code `0x2C`, `|= 2` - semi-transparent, ABR 1 additive off the
+/// page's TSB - once the particle's delay has expired) sampling an **8 x 8
+/// texel patch of the captured field frame**: texture page
+/// `(rec[+0x28] >> 6) + 0x135` with `u = rec[+0x28] & 0x3F`,
+/// `v = rec[+0x2A]`. Pages `0x135..=0x139` are 15-bpp pages at
+/// `(320 + 64k, 256)`, and u stays below `0x40`, so the five pages tile
+/// exactly the 320 captured columns - the seeded grid *is* the screen cut
+/// into 8 x 8 patches (40 columns x 29 visited rows = 320 x 232 of the 240
+/// rows, which is why the ticks stop at `0x488` records). At the seeded rest
+/// pose the projection maps a cell straight back onto its own patch
+/// (`z = 0x1000` under `H = 0x80` is a 1/32 scale for style A; style B's
+/// `>> 3` pre-divide against `z = 0x2000 >> 3` lands the same 8-px cell), so
+/// the un-moved field reconstructs the captured frame and particles peel off
+/// it as their delays expire.
+///
+/// The packet is authored from the record's **frame-entry** state: the colour
+/// word, UVs and both pose matrices are latched before the integration block
+/// runs (`0x801CFEA4..0x801CFF3C` all precede the moved arm), so a decaying or
+/// accelerating particle draws this frame's starting pose and colour. The
+/// pose chain is the per-record `SetRotMatrix(view)` →
+/// `FUN_8003D344(rec+0x10)` → `FUN_80026988(rec+0x08)` sequence: **`+0x10` is
+/// the position triple and `+0x08` the Euler triple** (`FUN_80026988` is the
+/// Euler-to-matrix kernel and it is handed `+0x08`), the reverse of the
+/// labels the seeder-era notes used - the same position/rotation inversion
+/// the tile record went through. The kernel field names
+/// (`IntroParticle::rot` / `IntroParticle::trans`) still carry the old
+/// labels; the arithmetic is unaffected because integration pairs are
+/// unchanged.
+///
+/// Projection is `FUN_8005BAC8` (RotTransPers4): corners `(0,0)`, `(s,0)`,
+/// `(0,s)`, `(s,s)` at the style's quad size, depth = `SZ3 >> 2`, then the
+/// screen-window accept
+/// ([`legaia_engine_vm::battle_intro_styles::particle_quad_accepted`]) and a
+/// fixed OT bucket ([`PARTICLE_OT`]). `emit` is the first-frame gate the
+/// caller derives from the transition clock - see the tile arm's
+/// stale-view-matrix note.
+///
+/// PORT: FUN_801CFDA0
+/// PORT: FUN_801D0370
+/// REF: FUN_8005BAC8 (RotTransPers4; returns `SZ3 >> 2`)
+pub fn emit_particle_field(
+    grid: &mut [legaia_engine_vm::battle_intro_particles::IntroParticle],
+    style: &ParticleTickStyle,
+    elapsed: &mut i16,
+    frame_step: u8,
+    emit: bool,
+    prims: &mut Vec<ScreenPrim>,
+) -> bool {
+    let scaled = i32::from(*elapsed) * style.delay_scale;
+    let mut drawn = false;
+    for p in grid.iter_mut().take(styles::PARTICLE_TICK_COUNT) {
+        // Latch the packet inputs before the integration mutates the record.
+        let color = gp0_rgb(p.tint);
+        let u = (p.texel_page as u16 & 0x3F) as u8;
+        let v = p.texel_v as u8;
+        let tpage = (p.texel_page >> 6).wrapping_add(styles::PARTICLE_TPAGE_BIAS) as u16;
+        let pos = p.rot; // +0x10: the position triple (see the doc above)
+        let ang = p.trans; // +0x08: the Euler triple
+        let step = styles::step_particle(p, style, frame_step, scaled);
+        let styles::ParticleStep::Live { moved, .. } = step else {
+            continue;
+        };
+        if !emit {
             continue;
         }
-        let otz = avsz4_with_scale(p[0].sz, p[1].sz, p[2].sz, p[3].sz, INTRO_ZSF4);
+        let s = style.rot_prescale_shift;
+        let tr = GteVec3::new(
+            i32::from(pos.0) >> s,
+            i32::from(pos.1) >> s,
+            i32::from(pos.2) >> s,
+        );
+        let rot = euler_rot_psx(ang);
+        let q = style.quad_size;
+        let corners = [(0, 0), (q, 0), (0, q), (q, q)];
+        let pc: [ProjCorner; 4] = std::array::from_fn(|i| {
+            project_intro_corner(&rot, tr, (corners[i].0, corners[i].1, 0))
+        });
+        // FUN_8005BAC8 returns the fourth corner's SZ quartered.
+        let depth = pc[3].sz >> 2;
+        if !styles::particle_quad_accepted(style, depth, (pc[0].xy.x as i16, pc[0].xy.y as i16)) {
+            continue;
+        }
+        let ot = if moved && style.moved_links_nearer {
+            PARTICLE_OT_MOVED
+        } else {
+            PARTICLE_OT
+        };
+        prims.push(ScreenPrim::Textured(ScreenQuad {
+            xy: std::array::from_fn(|i| (pc[i].xy.x as i16, pc[i].xy.y as i16)),
+            uv: [
+                (u, v),
+                (u.wrapping_add(8), v),
+                (u, v.wrapping_add(8)),
+                (u.wrapping_add(8), v.wrapping_add(8)),
+            ],
+            clut: 0,
+            tpage,
+            color,
+            gouraud: None,
+            semi_transparent: moved,
+            ot_index: ot,
+        }));
+        drawn = true;
+    }
+    *elapsed = (*elapsed as u16).wrapping_add(u16::from(frame_step)) as i16;
+    drawn
+}
+
+// ---------------------------------------------------------------------------
+// The spin-up style's expanding ring (FUN_801D1CFC)
+// ---------------------------------------------------------------------------
+
+/// Ring phase per clock frame: `FUN_801D0370`'s tail calls
+/// `FUN_801D1CFC(elapsed * 0xA0)` with the pre-increment clock.
+pub const SPINUP_RING_PHASE_STEP: i32 = 0xA0;
+/// The ring draws while its phase is `1..=0x1000`
+/// (`param_1 - 1 <u 0x1000`), i.e. for clock frames 1 through 25.
+pub const SPINUP_RING_PHASE_MAX: i32 = 0x1000;
+/// Segments around the ring (`FUN_80028158(dest, 0, 0x60, params)`).
+pub const SPINUP_RING_SEGMENTS: usize = 0x60;
+/// The mesh params' x/y scale pair (`params +0x20/+0x22 = 0xE00`).
+pub const SPINUP_RING_SCALE: i32 = 0xE00;
+/// The outer rim's z depth (`params +0x1E = 0xC8`); the inner rim sits at 0.
+pub const SPINUP_RING_DEPTH: i16 = 0xC8;
+/// The view translation the tail stages before the call
+/// (`0x1F800348..0x350 = (0, 0, 0x800)`).
+pub const SPINUP_RING_VIEW_Z: i32 = 0x800;
+/// The ring's flat colour (`params +0x08 = 0x303030`).
+pub const SPINUP_RING_RGB: u32 = 0x0030_3030;
+
+/// The expanding shockwave ring `FUN_801D0370` draws behind its confetti:
+/// `FUN_801D1CFC(phase)`, `phase = clock * 0xA0`.
+///
+/// The tail builds a procedural annulus via `FUN_80028158(scratch, 0, 0x60,
+/// params)` - the shared SCUS multi-shape mesh generator - and dispatches it
+/// through `FUN_80043390` with flag word `0x89000000` (bit 27: double-sided)
+/// and `a2 = phase` (non-zero: the depth-cue alpha bank, ambient staged from
+/// the flag word's zero RGB). The generator's case-0 arm with these params
+/// makes a 96-column cone band: inner rim at radius `phase` and z `0`, outer
+/// rim at radius `phase + 2` and z [`SPINUP_RING_DEPTH`], both scaled by
+/// `0xE00 / 0x1000`, one quad per column pair, colour `0x303030`.
+///
+/// Two halves of this are modelled rather than instruction-ported, and both
+/// are recorded here so the boundary is inspectable: the exact vertex walk of
+/// `FUN_80028158` (1395 instructions; only its case-0 parameters and lane
+/// assignment are taken - x from the `_DAT_8007B7F8` lane, y from
+/// `_DAT_8007B81C`, per-column angle step `0x1000 / 96` with a half-step
+/// offset and the generator's `-0x400` quarter-turn bias), and the fog bank's
+/// blend (drawn here as the half-blend bank's `B/2 + F/2` with the colour
+/// faded toward the staged black ambient as the phase grows - the ring
+/// self-extinguishes as it expands, matching `a2` rising to `0x1000`).
+///
+/// PORT: FUN_801D1CFC
+/// REF: FUN_80028158 (case-0 annulus parameters only - see above)
+pub fn emit_spinup_ring(phase: i32, prims: &mut Vec<ScreenPrim>) -> bool {
+    if !(1..=SPINUP_RING_PHASE_MAX).contains(&phase) {
+        return false;
+    }
+    let (r_in, r_out) = (phase, phase + 2);
+    let seg_step = 0x1000 / SPINUP_RING_SEGMENTS as i32; // 0x2A
+    let half_step = seg_step >> 1; // 0x15
+    let tr = GteVec3::new(0, 0, SPINUP_RING_VIEW_Z);
+    let vert = |k: usize, r: i32, z: i16| -> ProjCorner {
+        let a = ((k as i32 % SPINUP_RING_SEGMENTS as i32) * seg_step - half_step - 0x400) & 0xFFF;
+        let x = (((psx_cos(a as u16) * SPINUP_RING_SCALE) >> 12) * r) >> 12;
+        let y = (((psx_sin(a as u16) * SPINUP_RING_SCALE) >> 12) * r) >> 12;
+        project_intro_corner(&GteMat3::IDENTITY, tr, (x as i16, y as i16, z))
+    };
+    // The depth-cue fade toward the staged black ambient: `a2` is the phase,
+    // full at 0x1000.
+    let level = (((SPINUP_RING_RGB & 0xFF) as i32 * (0x1000 - phase)) >> 12) as u8;
+    let mut drawn = false;
+    for k in 0..SPINUP_RING_SEGMENTS {
+        let pc = [
+            vert(k, r_in, 0),
+            vert(k, r_out, SPINUP_RING_DEPTH),
+            vert(k + 1, r_in, 0),
+            vert(k + 1, r_out, SPINUP_RING_DEPTH),
+        ];
+        let otz = avsz4_with_scale(pc[0].sz, pc[1].sz, pc[2].sz, pc[3].sz, INTRO_ZSF4);
         if otz < INTRO_NEAR_OTZ {
             continue;
         }
-        let grey = u32::from(q.grey);
-        prims.push(ScreenPrim::Textured(ScreenQuad {
-            xy: std::array::from_fn(|i| (p[i].xy.x as i16, p[i].xy.y as i16)),
-            uv: q.uv,
-            clut: q.clut,
-            tpage: q.tpage,
-            color: grey << 16 | grey << 8 | grey,
-            gouraud: None,
-            semi_transparent: q.semi_transparent,
+        prims.push(ScreenPrim::Flat(FlatQuad {
+            xy: std::array::from_fn(|i| (pc[i].xy.x as i16, pc[i].xy.y as i16)),
+            color: [level, level, level, 0xFF],
+            semi_transparent: true,
+            abr_mode: 0,
             ot_index: otz as u32,
         }));
+        drawn = true;
+    }
+    drawn
+}
+
+// ---------------------------------------------------------------------------
+// The swirl's band submit (FUN_801D1A20)
+// ---------------------------------------------------------------------------
+
+/// Colour word of a swirl **ring** quad (`0x2C808080`: opaque FT4, neutral).
+pub const SWIRL_RING_RGB: u32 = 0x0080_8080;
+/// Colour word of a swirl **wall** quad (`0x2C404040`: the darker quad that
+/// joins a column's far-z copy to the near ring).
+pub const SWIRL_WALL_RGB: u32 = 0x0040_4040;
+
+/// One band half of the swirl, projected and appended. `FUN_801D1A20`.
+///
+/// The submit is the tile shatter's mechanism again: a synthetic Legaia-TMD
+/// object in the `_DAT_8007B85C + 0x5DC00` scratch block - group header
+/// `count = 0x40`, `flags = 0x22` (dispatch kind 17, the flat-textured-quad
+/// handler), `ilen = 6`, `mode = 0x2C` - handed to `FUN_80043390`. The **64**
+/// primitives come from a 32-iteration loop writing two quads per column
+/// pair (the historical "32 triangles per half" reading is falsified by the
+/// packet: every primitive is a `POLY_FT4`):
+///
+/// * the **ring** quad `(p, p+1, p+3, p+4)` - inner/outer rim of column `c`
+///   to inner/outer rim of column `c+1` - colour `0x2C808080`, and
+/// * the **wall** quad `(p+2, p, p+5, p+3)` - the far-z copies joined to the
+///   near inner rim - colour `0x2C404040`,
+///
+/// each with the texel pairs of its own vertices and the half's texture page
+/// (`0x117` primary / `0x115` mirrored - the right and left 320-column halves
+/// of the capture). The flag word `0x1880_8080` sets bit 27, so the dispatch
+/// is **double-sided** ([`CullMode`]) - which is what lets the x-mirrored
+/// half, whose winding is reversed, draw at all - and `a2 = 0` keeps it on
+/// the opaque bank, so the `0x808080` in the flag word never multiplies
+/// anything (`desc + 0xC` is zero and the tint block is skipped).
+///
+/// `band_z` is the band record's `+0x08` scalar **latched before the tick's
+/// integration**: the per-band pose is identity rotation with translation
+/// `(0, 0, band_z)` (`FUN_801D1888` at `0x801D1904..0x801D195C`), so the
+/// scalar is the band's view depth, not a rotation angle - alternating rate
+/// signs make alternating bands fly toward and away from the camera.
+///
+/// Past the late-phase frame the submit goes through `FUN_80029888` instead,
+/// which stages a mid-grey far colour and builds an extra Euler rotation from
+/// its fourth argument (`(clock - 0x3C) * 4`, `<< 4` into the angle lanes) -
+/// the roll that gives the style its name. The port carries the rotation
+/// ([`SwirlBandDraw::late_arg`]); the far-colour haze has no screen-overlay
+/// channel and is left un-carried, like the tile shatter's depth-cue note.
+/// (The rotation-axis detail is graded decompiled-C: the Euler vector build
+/// in `FUN_80029888` is read off the C rendering, not the disassembly.)
+///
+/// PORT: FUN_801D1A20
+/// REF: FUN_80029888 (the late-phase dispatcher; far colour + roll staging)
+pub fn emit_swirl_band(
+    mesh: &SwirlMesh,
+    band_z: i32,
+    draw: &SwirlBandDraw,
+    prims: &mut Vec<ScreenPrim>,
+) -> bool {
+    let tr = GteVec3::new(0, 0, band_z);
+    let rot = match draw.late_arg {
+        // `local_44 = param_4 << 4` feeds the Euler build's x and z lanes.
+        Some(n) => {
+            let a = (n << 4) as i16;
+            euler_rot_psx((a, 0, a))
+        }
+        None => GteMat3::IDENTITY,
+    };
+    let mut drawn = false;
+    for seg in 0..swirl::COLUMNS - 1 {
+        let p = draw.first_vertex + seg * swirl::VERTS_PER_COLUMN;
+        for (idx, rgb) in [
+            ([p, p + 1, p + 3, p + 4], SWIRL_RING_RGB),
+            ([p + 2, p, p + 5, p + 3], SWIRL_WALL_RGB),
+        ] {
+            let pc: [ProjCorner; 4] = std::array::from_fn(|i| {
+                let v = mesh.vertices[idx[i]];
+                project_intro_corner(&rot, tr, (v.x, v.y, v.z))
+            });
+            let uv: [(u8, u8); 4] = std::array::from_fn(|i| {
+                let (u, v) = mesh.texels[idx[i]];
+                (u as u8, v as u8)
+            });
+            drawn |= push_ft4_quad(
+                &pc,
+                uv,
+                0,
+                draw.tpage as u16,
+                rgb,
+                false,
+                CullMode::DoubleSided,
+                prims,
+            );
+        }
+    }
+    drawn
+}
+
+/// The swirl mesh builder's trig tables, in the phase the packet's own texel
+/// math pins.
+///
+/// The build samples `_DAT_8007B81C` for x and `_DAT_8007B7F8` for y over
+/// entries `0..=2048` (half the 4096-entry space). The primary half's u is
+/// `(x >> 4) + 0x20` into the **right**-half page `0x117` and the mirrored
+/// half's `-0x61 - (x >> 4)` into the left-half page `0x115`; both stay
+/// inside their 320-column capture halves only when x is non-negative over
+/// the sampled range - so the x table is **sine-phased** (0 at entry 0) and
+/// the y table cosine-phased, spanning the full ±0x760 the `v` bias needs.
+/// [`BattleIntro::new`] therefore builds the mesh with this pair - the exact
+/// PSX table via [`psx_sin`] - rather than with the host-supplied
+/// [`swirl::SwirlTrig`], whose phase convention (shared with the particle
+/// seeders' heading tables) is the transpose.
+struct SwirlTables;
+
+impl swirl::SwirlTrig for SwirlTables {
+    fn table_x(&mut self, entry: i32) -> i16 {
+        psx_sin((entry & 0xFFF) as u16) as i16
+    }
+    fn table_y(&mut self, entry: i32) -> i16 {
+        psx_cos((entry & 0xFFF) as u16) as i16
     }
 }
 
@@ -410,14 +885,17 @@ impl BattleIntro {
     /// the scatter style's fade depth. `table` is only consulted by
     /// [`IntroStyle::Curtain`]. `env` supplies the trig / sqrt / PRNG the
     /// seeders call; the two particle styles and the tiles need it, the
-    /// curtain does not.
+    /// curtain does not. `_trig` is kept as the documented seam for a host
+    /// carrying the real `_DAT_8007B7F8` / `_DAT_8007B81C` tables, but the
+    /// swirl mesh is currently built from [`SwirlTables`] - the packet's
+    /// texel math pins the phase, and the host convention is its transpose.
     pub fn new(
         style: IntroStyle,
         sub_style: i32,
         total_duration: i32,
         table: IntroQuadTable,
         env: &mut dyn legaia_engine_vm::battle_intro_particles::ParticleEnv,
-        trig: &mut dyn swirl::SwirlTrig,
+        _trig: &mut dyn swirl::SwirlTrig,
         tile_corners: [i32; 4],
     ) -> Self {
         use legaia_engine_vm::battle_intro_particles as particles;
@@ -450,7 +928,13 @@ impl BattleIntro {
                 }
             }
             IntroStyle::Curtain => WorkingSet::Curtain(table),
-            IntroStyle::Swirl => match swirl::build_swirl_mesh(true, trig) {
+            // The mesh is built with the module's own [`SwirlTables`] rather
+            // than the host's `trig`: the packet's texel math pins the x
+            // table as sine-phased (see `SwirlTables`), while the host's
+            // convention - shared with the particle seeders - is the
+            // transpose. The parameter stays because the trait is the
+            // documented seam and a future host may carry the real tables.
+            IntroStyle::Swirl => match swirl::build_swirl_mesh(true, &mut SwirlTables) {
                 swirl::SwirlBuildOutcome::Built(mesh) => WorkingSet::Swirl {
                     mesh,
                     prev_clock: 0,
@@ -562,13 +1046,46 @@ impl BattleIntro {
     /// simulation tick cannot desynchronise the visuals from the handoff.
     /// `frame_step` is retail's per-frame display-frame delta (`1` at the
     /// steady NTSC cadence).
+    ///
+    /// `prims[0]` is always [`backdrop_prim`] - the frame the style composes
+    /// onto - including on frames the style itself draws nothing. Its OT
+    /// bucket is the farthest one, so its position in submission order is
+    /// immaterial to the draw order and it is emitted first only to keep the
+    /// fade quad the list's last element.
     pub fn tick(&mut self, elapsed: i16, frame_step: u8) -> IntroFrame {
         self.clock = elapsed;
         let mut out = IntroFrame::default();
+        out.prims.push(backdrop_prim());
 
         match &mut self.set {
             WorkingSet::Particles { grid, style } => {
-                styles::tick_particle_field(grid, style, &mut self.clock, frame_step);
+                // Same first-frame gate as the tiles below: retail's first
+                // frame projects through the field camera's stale view
+                // matrix; from frame two the view is identity rotation +
+                // zero translation (pinned live), which is what
+                // `project_intro_corner` hard-codes.
+                let emit = self.clock != 0;
+                // `FUN_801CFDA0` (and only it - `stamp_field_16` is its
+                // marker) washes the screen near-black on every frame after
+                // the first; the confetti reconstructs the frame over it
+                // until the delays expire.
+                if emit && style.stamp_field_16 {
+                    out.prims.push(wash_prim(PARTICLE_WASH_RGB));
+                }
+                // The spin-up tail's ring phase uses the pre-increment clock.
+                let ring_phase = i32::from(self.clock) * SPINUP_RING_PHASE_STEP;
+                let drawn = emit_particle_field(
+                    grid,
+                    style,
+                    &mut self.clock,
+                    frame_step,
+                    emit,
+                    &mut out.prims,
+                );
+                // `FUN_801D0370`'s tail (`spin_up` is its marker): the
+                // expanding ring behind the confetti.
+                let ring = emit && style.spin_up && emit_spinup_ring(ring_phase, &mut out.prims);
+                out.style_drawn = drawn || ring;
             }
             WorkingSet::Tiles(grid) => {
                 // Retail's first shatter frame projects through the field
@@ -598,7 +1115,21 @@ impl BattleIntro {
                 out.style_drawn = !tick.quads.is_empty();
             }
             WorkingSet::Swirl { mesh, prev_clock } => {
-                swirl::tick_swirl(mesh, &mut self.clock, frame_step, prev_clock);
+                // Latch each band's view depth before the tick integrates it:
+                // retail stages the per-band translation and *then* advances
+                // the scalar, so the draw uses the frame-entry value.
+                let emit = self.clock != 0;
+                let zs: [i32; swirl::BANDS] = std::array::from_fn(|i| mesh.bands[i].angle);
+                let tick = swirl::tick_swirl(mesh, &mut self.clock, frame_step, prev_clock);
+                if tick.late_wash {
+                    out.prims.push(wash_prim(swirl::LATE_WASH_RGB));
+                }
+                if emit {
+                    for d in &tick.draws {
+                        let band = d.first_vertex / swirl::VERTS_PER_BAND;
+                        out.style_drawn |= emit_swirl_band(mesh, zs[band], d, &mut out.prims);
+                    }
+                }
             }
         }
 
@@ -643,13 +1174,21 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 
 /// The full-screen quad `FUN_80024EE4` pushes for a resolved fade.
 ///
-/// The **ramp** is retail's, ported in
-/// [`legaia_engine_vm::battle_intro_styles::intro_fade`]. The **quad** is the
-/// port's: retail's emitter writes a six-word GP0 packet whose corners come
-/// from the scratchpad display-rect words, which is the whole PSX display, so
-/// the port draws the whole display rect. It is emitted semi-transparent
-/// because a fade that replaced the frame would hide the transition it is
-/// fading, not blend into it.
+/// Both halves are retail's now. The **ramp** is
+/// [`legaia_engine_vm::battle_intro_styles::intro_fade`]; the **quad** is the
+/// emitter's own six-word packet, corners taken from the scratchpad
+/// display-rect words (`_DAT_1F800378` / `_DAT_1F80037A`), which is the whole
+/// PSX display - so the port draws the whole display rect. Command byte
+/// `0x2B` makes it semi-transparent, and its ABR mode is the emitter's second
+/// argument, folded into the `SetDrawMode` packet that precedes it.
+///
+/// That second argument used to be read here as an OT depth, which put every
+/// style's fade on ABR `0` (`0.5B + 0.5F`). It halved both tails: the
+/// additive styles ([`IntroStyle::SpinUpParticles`],
+/// [`IntroStyle::Swirl`]) topped out at a washed grey instead of a full
+/// white-out, and the subtractive ones never reached black. The OT layer is
+/// `a0` - [`legaia_engine_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
+/// same `2` for all five styles - so that is what the bucket carries.
 pub fn fade_quad(f: &IntroFade) -> ScreenPrim {
     let (w, h) = (PSX_SCREEN_WIDTH as i16, PSX_SCREEN_HEIGHT as i16);
     ScreenPrim::Flat(FlatQuad {
@@ -661,7 +1200,7 @@ pub fn fade_quad(f: &IntroFade) -> ScreenPrim {
             0xFF,
         ],
         semi_transparent: true,
-        abr_mode: 0,
-        ot_index: u32::from(f.depth),
+        abr_mode: f.abr,
+        ot_index: u32::from(f.layer),
     })
 }

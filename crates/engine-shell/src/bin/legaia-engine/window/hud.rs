@@ -2,6 +2,23 @@
 
 use super::*;
 
+/// Project the simulation's arts-input phase onto the presentation
+/// crate's. The two enums are deliberately separate types -
+/// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
+/// every host that draws the input screen carries this three-line map.
+fn arts_input_screen(
+    p: legaia_engine_core::arts_command_input::ArtsInputScreen,
+) -> legaia_engine_render::arts_input::ArtsInputScreen {
+    use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
+    use legaia_engine_render::arts_input::ArtsInputScreen as Ui;
+    match p {
+        Sim::Entering => Ui::Entering,
+        Sim::Review => Ui::Review,
+        Sim::BeginMenu { cursor } => Ui::BeginMenu { cursor },
+        Sim::Targeting => Ui::Targeting,
+    }
+}
+
 impl PlayWindowApp {
     /// Keep the rendered dialog panel ([`Self::active_dialog`]) in sync with
     /// the world's pending dialog request.
@@ -962,25 +979,28 @@ impl PlayWindowApp {
             // Magic / Item submenus below for a K.O.'d target.
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
 
-            // Per-slot rows, status strip and floating popups all come from
-            // the shared builder, which carries the ported retail HP / MP
-            // colour law (`hp_bar_color_index` / `mp_bar_color_index`,
-            // FUN_800349EC / FUN_80035EA8). The rows are fed from the
-            // `BattleHud` model, refreshed each tick by
-            // `sync_battle_hud_rows`.
-            out.extend(battle_hud_draws_for(
-                &self.font,
-                &battle_hud_slot_views(&self.battle_hud, &self.battle_hud_status_letters()),
-                &battle_hud_popup_views(&self.battle_hud),
-                &[],
-                BATTLE_HUD_PEN,
-            ));
+            // The retail party strip (one full-width lozenge per live member
+            // across the stage bottom), the top-left plaque and the floating
+            // popups all come from the shared builder. Its text half lands
+            // here; its chrome sprites ride `battle_chrome_sprite_draws` in
+            // the system-UI atlas slot. Numerals carry the ported retail
+            // readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`,
+            // FUN_800349EC / FUN_80035EA8). Rows are fed from the `BattleHud`
+            // model, refreshed each tick by `sync_battle_hud_rows`.
+            out.extend(self.battle_hud_frame_draws(w, h).text);
 
             // Encounter-transition banner: centred "ENCOUNTER!" over the
             // formation label, shown for the opening frames of the battle.
             // Armed once per Field -> Battle edge by `sync_battle_render`,
-            // aged in `drain_and_log_battle_events`.
-            if let Some((_, label)) = &self.encounter_banner {
+            // aged in `drain_and_log_battle_events`. A port invention with no
+            // retail counterpart - retail's Field -> Battle edge draws no
+            // banner at all - so it is gated off by default and only appears
+            // under `LEGAIA_DIAG_HUD` (`encounter_banner_enabled`).
+            if let Some((_, label)) = self
+                .encounter_banner
+                .as_ref()
+                .filter(|_| legaia_engine_core::battle_hud::encounter_banner_enabled())
+            {
                 let head_w = self.font.layout_ascii("ENCOUNTER!").advance_x as i32;
                 let pen = ((w as i32 - head_w) / 2, h as i32 / 4);
                 out.extend(encounter_banner_draws_for(&self.font, label, pen));
@@ -997,6 +1017,26 @@ impl PlayWindowApp {
             let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
+            } else if let Some(view) = bw.arts_input_view() {
+                // Retail-model arts entry: the screen is baked art (drawn
+                // in the sprite layer by `arts_input_chrome_sprite_draws`),
+                // so the only text is the Begin | Reselect pick.
+                use legaia_engine_render::arts_input as ai;
+                let (origin, scale) = self.save_select_stage(w, h);
+                out.extend(ai::arts_input_text_draws(
+                    &self.font,
+                    &ai::ArtsInputFrame {
+                        buffer: view.buffer,
+                        spent: view.spent,
+                        pool: view.pool,
+                        pool_max: view.pool_max,
+                        plate_value: view.plate_value,
+                        list_page: view.list_page,
+                        phase: arts_input_screen(view.phase),
+                    },
+                    origin,
+                    scale,
+                ));
             } else if let Some(arts) = &bw.battle_arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
@@ -1039,22 +1079,25 @@ impl PlayWindowApp {
                         }
                     }
                     ArtsPhase::Targeting { picker, .. } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("art -> target M{}", slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("art -> target P{}", slot + 1),
-                            _ => "art -> select target".to_string(),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        // Enemy cursor: the retail dedup name strip
+                        // (FUN_801D9D3C rows + layout). Ally / sweep states
+                        // keep the text line.
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("art -> target P{}", slot + 1),
+                                _ => "art -> select target".to_string(),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         out.extend(text_draws_for(
                             &self
@@ -1106,22 +1149,22 @@ impl PlayWindowApp {
                         }
                     }
                     SpellPhase::Targeting { picker, .. } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("cast -> target M{}", slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("cast -> target P{}", slot + 1),
-                            _ => "cast -> select target".to_string(),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("cast -> target P{}", slot + 1),
+                                _ => "cast -> select target".to_string(),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         out.extend(text_draws_for(
                             &self
@@ -1171,22 +1214,22 @@ impl PlayWindowApp {
                         }
                     }
                     CommandPhase::Targeting { command, picker } => {
-                        let line = match picker.state() {
-                            PickerState::Cursor {
-                                row: CursorRow::Enemy,
-                                slot,
-                            } => format!("{} -> target M{}", command.label(), slot + 1),
-                            PickerState::Cursor {
-                                row: CursorRow::Ally,
-                                slot,
-                            } => format!("{} -> target P{}", command.label(), slot + 1),
-                            _ => format!("{} -> select target", command.label()),
-                        };
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&line),
-                            (menu_x, my),
-                            white,
-                        ));
+                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                            out.extend(strip);
+                        } else {
+                            let line = match picker.state() {
+                                PickerState::Cursor {
+                                    row: CursorRow::Ally,
+                                    slot,
+                                } => format!("{} -> target P{}", command.label(), slot + 1),
+                                _ => format!("{} -> select target", command.label()),
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x, my),
+                                white,
+                            ));
+                        }
                         my += 14;
                         let hint = "Left/Right=move  Cross=confirm  Circle=back";
                         out.extend(text_draws_for(
@@ -1199,39 +1242,36 @@ impl PlayWindowApp {
                 }
             }
 
-            // Sparring-tutorial prompt box. Placed by the retail style table
-            // (`FUN_801F747C`): the engine-core box carries the style index, we
-            // supply the measured text width and it returns the corner. Drawn
-            // last inside the battle block so it sits over the menus, which is
-            // where retail's message box lands too.
-            if let Some(tbox) = bw.battle_tutorial_box() {
-                let layouts: Vec<_> = tbox
-                    .text
-                    .lines()
-                    .map(|l| self.font.layout_ascii(l))
-                    .collect();
-                let width = layouts
-                    .iter()
-                    .map(|l| l.advance_x as i16)
-                    .max()
-                    .unwrap_or(0);
-                let (bx, by) = tbox.position(width).unwrap_or((0x10, 0x0E));
-                // Retail box coordinates are 320x240 screen space; the window
-                // draws in the same space as the rest of this HUD.
-                for (i, l) in layouts.iter().enumerate() {
-                    out.extend(text_draws_for(
-                        l,
-                        (bx as i32, by as i32 + (i as i32) * 14),
-                        white,
-                    ));
-                }
-                if tbox.waits_for_input {
-                    out.extend(text_draws_for(
+            // Sparring-tutorial prompt box. `FUN_801F747C` measures the prompt
+            // and registers a text actor with a full rect, so this is a sized
+            // window, not loose text: the shared builder lays the rows out at
+            // the rect origin and the sprite layer
+            // (`battle_tutorial_chrome_sprite_draws`) frames it.
+            //
+            // Unlike the rest of this battle HUD - which is authored in
+            // surface pixels - the tutorial rect is in retail's 320x240 stage
+            // space, so it goes through the stage transform the dialog box and
+            // window chrome use. Drawn last inside the battle block so it sits
+            // over the menus, which is where retail's message box lands too.
+            if let Some(rect) = self.battle_tutorial_stage_rect() {
+                let tbox = bw.battle_tutorial_box().expect("rect implies a box");
+                let mut draws = legaia_engine_render::battle_tutorial_text_draws_for(
+                    &self.font, &tbox.text, rect,
+                );
+                // Without the system-UI atlas there is no frame and no advance
+                // hand, so keep a plain confirm hint as the only affordance a
+                // waiting box would otherwise have.
+                if tbox.waits_for_input && self.save_menu.is_none() {
+                    let lines = tbox.text.lines().count() as i32;
+                    draws.extend(text_draws_for(
                         &self.font.layout_ascii("Cross=continue"),
-                        (bx as i32, by as i32 + (layouts.len() as i32) * 14),
+                        (rect.0, rect.1 + lines * 14),
                         dim,
                     ));
                 }
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
             }
         }
         // Level-up banner: rendered near the top when active after a battle win.
@@ -1468,6 +1508,60 @@ impl PlayWindowApp {
         }
     }
 
+    /// Build the **arts command-input** chrome sprites - the four
+    /// direction chips + D-pad glyph, the input bar with its committed
+    /// pennants, and the AP plate - while a party member owns the pad in
+    /// the retail-model entry session. Empty otherwise.
+    ///
+    /// Everything is composed by the shared
+    /// [`legaia_engine_render::arts_input`] builders off the same baked
+    /// system-UI atlas the menu chrome samples, so this host and the
+    /// browser play page draw one geometry.
+    pub(super) fn arts_input_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_engine_render::arts_input as ai;
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let Some(view) = self.session.host.world.arts_input_view() else {
+            return Vec::new();
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        let frame = ai::ArtsInputFrame {
+            buffer: view.buffer,
+            spent: view.spent,
+            pool: view.pool,
+            pool_max: view.pool_max,
+            plate_value: view.plate_value,
+            list_page: view.list_page,
+            phase: arts_input_screen(view.phase),
+        };
+        let mut out = ai::arts_input_chrome_draws(
+            &ai::ArtsInputAtlasRects::BAKED,
+            &frame,
+            stage_origin,
+            stage_scale,
+        );
+        // The AP plate is the status screen's own AP-gauge widget, so it
+        // reuses the pieces the atlas already carries.
+        out.extend(ai::arts_input_ap_plate_draws(
+            &ai::ApPlateRects {
+                cap: assets.rects.gauge_cap,
+                trough: assets.rects.gauge_trough,
+                fill: assets.rects.gauge_fill,
+                box_: assets.rects.gauge_box,
+                digits: assets.rects.gauge_digits,
+            },
+            &frame,
+            stage_origin,
+            stage_scale,
+        ));
+        out
+    }
+
     /// Build the dialog-window chrome sprites (gradient fill + gold
     /// 9-slice frame + hand cursors) for the active dialog box, if
     /// any. Sampled from the resident system-UI atlas; composited in
@@ -1521,6 +1615,55 @@ impl PlayWindowApp {
             ));
         }
         out
+    }
+
+    /// The live sparring-tutorial prompt's box rect in 320x240 stage pixels,
+    /// or `None` when no box is up.
+    ///
+    /// The width is measured in this host's font (retail measures it with
+    /// `FUN_80035F04`) and the engine applies the emitter's placement +
+    /// sizing arithmetic. Shared by the text layer and the chrome layer so
+    /// the frame and the rows cannot disagree.
+    pub(super) fn battle_tutorial_stage_rect(&self) -> Option<(i32, i32, i32, i32)> {
+        let tbox = self.session.host.world.battle_tutorial_box()?;
+        let width = legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+        let (x, y, w, h) = tbox.rect(width)?;
+        Some((x as i32, y as i32, w as i32, h as i32))
+    }
+
+    /// Sparring-tutorial prompt-box chrome: the same gradient fill + gold
+    /// 9-slice frame the dialog reading box wears, at the rect the retail
+    /// emitter registers the prompt's text actor with. Sampled from the
+    /// resident system-UI atlas; composited in the shared chrome sprite slot,
+    /// under the text layer.
+    pub(super) fn battle_tutorial_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        if self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let Some(rect) = self.battle_tutorial_stage_rect() else {
+            return Vec::new();
+        };
+        let waits = self
+            .session
+            .host
+            .world
+            .battle_tutorial_box()
+            .is_some_and(|b| b.waits_for_input);
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::battle_tutorial_chrome_draws_for(
+            &assets.rects,
+            rect,
+            waits,
+            stage_origin,
+            stage_scale,
+        )
     }
 
     /// Project the live name-entry session into the renderer-agnostic view
@@ -1632,15 +1775,115 @@ pub(super) const LEVEL_UP_BANNER_PEN: (i32, i32) = (8, 60);
 pub(super) const CAPTURE_BANNER_PEN: (i32, i32) = (8, 40);
 
 impl PlayWindowApp {
-    /// Per-slot status-letter strips, one entry per HUD slot. Kept separate
-    /// from [`battle_hud_slot_views`] because `HudSlotView` borrows the strip
-    /// and the caller has to own the backing buffer.
-    pub(super) fn battle_hud_status_letters(&self) -> Vec<Vec<u8>> {
-        self.battle_hud
-            .slots
+    /// The solid-white font-atlas texel the battle HUD's filled rects sample
+    /// (`font_solid_src`). Scanned once per process - the window's font never
+    /// changes after startup.
+    pub(super) fn battle_hud_solid_src(&self) -> Option<(u32, u32, u32, u32)> {
+        use std::sync::OnceLock;
+        static SOLID: OnceLock<Option<(u32, u32, u32, u32)>> = OnceLock::new();
+        *SOLID.get_or_init(|| legaia_engine_render::font_solid_src(&self.font))
+    }
+
+    /// One battle-HUD frame from the shared builder: the party strip, the
+    /// top-left plaque and the popups.
+    ///
+    /// Both halves come from one call so the two host draw slots cannot
+    /// drift: the text half goes into the glyph layer, the sprite half into
+    /// the system-UI atlas layer through `battle_chrome_sprite_draws`.
+    pub(super) fn battle_hud_frame_draws(
+        &self,
+        w: u32,
+        h: u32,
+    ) -> legaia_engine_render::BattleHudDraws {
+        let slots = battle_hud_slot_views(&self.battle_hud);
+        let popups = battle_hud_popup_views(&self.battle_hud);
+        let w_ref = &self.session.host.world;
+        // The arts-input session owns both halves of the park: it names the
+        // actor whose full-width bar shows, and its being open is what sends
+        // the roster panels off-screen.
+        let active = w_ref
+            .arts_input_actor()
+            .and_then(|slot| {
+                legaia_engine_core::battle_hud::battle_active_actor(w_ref)
+                    .map(|(_, name)| (slot, name))
+            })
+            .or_else(|| legaia_engine_core::battle_hud::battle_active_actor(w_ref));
+        battle_hud_draws_for(
+            &self.font,
+            &legaia_engine_render::BattleHudFrame {
+                slots: &slots,
+                popups: &popups,
+                log: &[],
+                solid_src: self.battle_hud_solid_src(),
+                surface: (w, h),
+                chrome: self.save_menu.as_ref().map(|a| &a.rects),
+                plaque: active.as_ref().map(|(_, n)| n.as_str()),
+                active_slot: active.as_ref().map(|(s, _)| *s),
+                // Retail parks the status plate off-screen while a command
+                // entry session owns the frame; the port emits no strip.
+                input_session_parked: w_ref.arts_input_active(),
+                diag: legaia_engine_render::diag_hud_enabled(),
+            },
+            BATTLE_HUD_PEN,
+        )
+    }
+
+    /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
+    /// green `MP` label cells) for the system-UI atlas slot. Empty outside
+    /// battle, or before the atlas is resident.
+    pub(super) fn battle_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
+            return Vec::new();
+        }
+        if self.save_menu.is_none() || self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        self.battle_hud_frame_draws(surface_w, surface_h).sprites
+    }
+
+    /// The retail enemy target-name strip for a picker parked on the enemy
+    /// row: rows deduplicated + labelled by the ported `FUN_801D9D3C`
+    /// (`battle_enemy_target_rows`), placed by its centre/relax/clamp layout
+    /// with this window's font as the measurer, cursor row highlighted.
+    /// `None` when the cursor is not on the enemy row (ally / sweep states
+    /// keep their text line) or no monster is up.
+    pub(super) fn enemy_target_strip_draws(
+        &self,
+        picker: &legaia_engine_core::target_picker::TargetPickerSession,
+        w: u32,
+        h: u32,
+    ) -> Option<Vec<TextDraw>> {
+        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
+        let PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot,
+        } = picker.state()
+        else {
+            return None;
+        };
+        let mut rows =
+            legaia_engine_core::battle_hud::battle_enemy_target_rows(&self.session.host.world);
+        if rows.is_empty() {
+            return None;
+        }
+        layout_enemy_menu_rows(&mut rows, |s| self.font.layout_ascii(s).advance_x as i16);
+        let views: Vec<legaia_engine_render::EnemyTargetRowView<'_>> = rows
             .iter()
-            .map(|s| s.status_letters())
-            .collect()
+            .map(|r| legaia_engine_render::EnemyTargetRowView {
+                label: &r.label,
+                x: r.x,
+                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
+            })
+            .collect();
+        Some(legaia_engine_render::enemy_target_menu_draws_for(
+            &self.font,
+            &views,
+            (w, h),
+        ))
     }
 }
 
@@ -1651,14 +1894,13 @@ impl PlayWindowApp {
 /// row's Y and a popup's anchor from the slice index, so the index has to stay
 /// the absolute actor-table slot. Compacting to active slots only would shift
 /// every monster row up and anchor damage numbers to the wrong actor.
-pub(super) fn battle_hud_slot_views<'a>(
-    hud: &'a legaia_engine_core::battle_hud::BattleHud,
-    letters: &'a [Vec<u8>],
-) -> Vec<HudSlotView<'a>> {
+pub(super) fn battle_hud_slot_views(
+    hud: &legaia_engine_core::battle_hud::BattleHud,
+) -> Vec<HudSlotView<'_>> {
     hud.slots
         .iter()
-        .enumerate()
-        .map(|(i, s)| {
+        .map(|s| {
+            let (hp_fill, mp_fill) = s.gauge_fill_indices();
             let meta = HudSlotMeta {
                 is_party: s.is_party,
                 alive: s.alive,
@@ -1668,10 +1910,16 @@ pub(super) fn battle_hud_slot_views<'a>(
                 mp_max: s.mp_max,
                 ap_filled: s.ap_filled,
                 ap_max: s.ap_max,
+                hp_fill,
+                mp_fill,
+                // The single retail-selected status element
+                // (`FUN_8002C2E4`'s ladder over the packed `+0x16E` word)
+                // plus the level its no-ailment arm draws.
+                status_sprite: s.status_sprite(),
+                level: s.level,
             };
             let name = if s.active { s.name.as_str() } else { "" };
-            let strip: &'a [u8] = letters.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
-            HudSlotView::from_plain(meta, name, strip)
+            HudSlotView::from_plain(meta, name)
         })
         .collect()
 }
@@ -1697,7 +1945,82 @@ pub(super) fn battle_hud_popup_views(
 mod battle_hud_wiring_tests {
     use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
     use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
-    use legaia_engine_render::battle_hud_draws_for;
+    use legaia_engine_render::{BattleHudDraws, BattleHudFrame, battle_hud_draws_for};
+
+    /// A recognisable 1x1 solid src for the filled-rect draws.
+    const SOLID: (u32, u32, u32, u32) = (7, 3, 1, 1);
+    /// 640x480 = an exact 2x of the 320x240 stage with a zero origin, so a
+    /// stage column `c` lands at surface `2 * c` and the pinned retail
+    /// columns are readable straight off `dst.0`.
+    const SURFACE: (u32, u32) = (640, 480);
+    const STAGE_SCALE: i32 = 2;
+
+    /// The numeral strip's seat in the baked atlas
+    /// (`save_menu_atlas::ATLAS_RECT_HUD_DIGITS`).
+    const BATTLE_MIRROR_DIGITS: (u32, u32, u32, u32) = (0, 244, 80, 12);
+    /// The minimum chrome set that puts the numerals on the sprite list, so
+    /// a cell's screen seat is readable rather than inferred from a glyph.
+    const BATTLE_MIRROR_RECTS: legaia_engine_render::SaveMenuAtlasRects =
+        legaia_engine_render::SaveMenuAtlasRects {
+            battle: Some(legaia_engine_render::BattleChromeRects {
+                panel_bg: (0, 0, 102, 48),
+                plate_cap_l: (208, 0, 8, 20),
+                plate_body: (192, 0, 16, 20),
+                plate_cap_r: (216, 0, 8, 20),
+                separator: (96, 64, 8, 16),
+                digits: Some(BATTLE_MIRROR_DIGITS),
+            }),
+            ..blank_rects()
+        };
+
+    /// `SaveMenuAtlasRects::default()` is not `const`, so spell the zeroed
+    /// base out for [`BATTLE_MIRROR_RECTS`].
+    const fn blank_rects() -> legaia_engine_render::SaveMenuAtlasRects {
+        const Z: (u32, u32, u32, u32) = (0, 0, 0, 0);
+        legaia_engine_render::SaveMenuAtlasRects {
+            panel_tl: Z,
+            panel_tr: Z,
+            panel_bl: Z,
+            panel_br: Z,
+            panel_top: Z,
+            panel_bot: Z,
+            panel_left: Z,
+            panel_right: Z,
+            slot1: Z,
+            slot2: Z,
+            cursor: Z,
+            panel_interior: Z,
+            panel_filigree: Z,
+            label_lv: Z,
+            label_hp: Z,
+            label_mp: Z,
+            icon_money: Z,
+            label_time: Z,
+            label_coin: Z,
+            gauge_cap: Z,
+            gauge_trough: Z,
+            gauge_box: Z,
+            gauge_tip: Z,
+            gauge_digits: Z,
+            gauge_100: Z,
+            gauge_fill: Z,
+            dialog_fill: Z,
+            icon_weapon: Z,
+            icon_helmet: Z,
+            icon_armor: Z,
+            icon_boot: Z,
+            icon_goods: Z,
+            pager_left: Z,
+            pager_right: Z,
+            tab_cap_l: Z,
+            tab_body: Z,
+            tab_cap_r: Z,
+            atr_icons: [Z; 3],
+            load_empty_frame: None,
+            load_portrait_by_char: [None; 3],
+            battle: None,
+        }
+    }
 
     fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
         let mut hud = BattleHud::new();
@@ -1717,76 +2040,327 @@ mod battle_hud_wiring_tests {
         hud
     }
 
-    /// The window's battle block must produce an MP field. The hand-rolled HUD
-    /// this replaced printed HP only, so this assertion is what pins the MP
-    /// readout as wired rather than merely available.
-    ///
-    /// MP is drawn at `pen.x + 140`; HP at `pen.x + 70`. Counting glyphs at or
-    /// past the MP column is therefore a positional test that cannot pass off
-    /// an HP-only row as an MP one.
-    #[test]
-    fn native_battle_hud_draws_an_mp_field() {
-        let font = legaia_font::synthetic_for_tests();
-        let hud = hud_with_party_row(250, 300, 12, 30);
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
+    fn frame_draws(hud: &BattleHud, diag: bool) -> BattleHudDraws {
+        battle_hud_draws_for(
+            &legaia_font::synthetic_for_tests(),
+            &BattleHudFrame {
+                slots: &battle_hud_slot_views(hud),
+                popups: &battle_hud_popup_views(hud),
+                log: &[],
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                diag,
+                ..Default::default()
+            },
             BATTLE_HUD_PEN,
+        )
+    }
+
+    /// Solid rects of exactly `(w, h)` stage pixels, by stage `(x, y)`.
+    fn boxes_of(draws: &[legaia_engine_render::TextDraw], w: i32, h: i32) -> Vec<(i32, i32)> {
+        draws
+            .iter()
+            .filter(|d| {
+                d.src == SOLID
+                    && d.dst.2 == (w * STAGE_SCALE) as u32
+                    && d.dst.3 == (h * STAGE_SCALE) as u32
+            })
+            .map(|d| (d.dst.0 / STAGE_SCALE, d.dst.1 / STAGE_SCALE))
+            .collect()
+    }
+
+    fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
+        frame_draws(hud, false).text
+    }
+
+    /// The party arm draws retail's resting surface: one 102x48 roster panel
+    /// per live member at `battle_chrome::panel_seats`, and **no gauge bar**.
+    ///
+    /// The packet run carries no bar primitive in either readout, so a filled
+    /// HP or MP bar on a party row is the defect this pins shut.
+    #[test]
+    fn native_battle_party_is_retail_shaped_and_barless() {
+        let hud = hud_with_party_row(250, 300, 12, 30);
+        let out = draws(&hud);
+        assert_eq!(
+            boxes_of(&out, 102, 48),
+            vec![(109, 164)],
+            "the solo roster panel is not at its packet-pinned seat"
         );
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        // Every solid rect on the retail surface is a plate body or one of
+        // the 1-px rims the chrome-less fallback draws round it. Anything
+        // with interior extents is a gauge bar.
+        for d in out.iter().filter(|d| d.src == SOLID) {
+            let w = d.dst.2 as i32 / STAGE_SCALE;
+            let h = d.dst.3 as i32 / STAGE_SCALE;
+            assert!(
+                w == 1 || h == 1 || h == 20 || (w, h) == (102, 48),
+                "a gauge-bar-shaped rect survives on the retail surface: {:?}",
+                d.dst
+            );
+        }
+        // Name glyph at the panel's pinned name pen (+5 inside the panel).
         assert!(
-            draws.iter().any(|d| d.dst.0 >= mp_x),
-            "no glyph reached the MP column at x={mp_x}"
+            out.iter().any(|d| d.src != SOLID
+                && d.dst.0 == (109 + 5) * STAGE_SCALE
+                && d.dst.1 == (164 + 4) * STAGE_SCALE),
+            "no name glyph at the panel's pinned name pen"
         );
     }
 
-    /// The four-tier retail HP colour law has to reach the surface, not just
-    /// exist in engine-ui. Normal / caution / danger / K.O. must produce three
-    /// distinct tints plus the dim K.O. row.
+    /// `engine-ui` mirrors `battle_chrome`'s seats as literals (it sits below
+    /// `engine-vm` in the crate graph). This window is the one crate that can
+    /// see both, so it is where the copy is held honest - a drift here is a
+    /// HUD drawn at coordinates nothing pinned.
     #[test]
-    fn native_battle_hud_hp_tints_span_all_four_retail_tiers() {
+    fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_vm::battle_chrome as bc;
         let font = legaia_font::synthetic_for_tests();
-        let letters = vec![Vec::new(); 8];
-        let hp_x = BATTLE_HUD_PEN.0 + 70;
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
-        // First glyph of the HP field, per HP value.
-        let hp_tint = |hp: u16| -> [f32; 4] {
-            let hud = hud_with_party_row(hp, 100, 0, 0);
-            let draws = battle_hud_draws_for(
+        let hud = hud_with_party_row(250, 300, 12, 30);
+        // The two party surfaces are mutually exclusive, so each is measured
+        // in the frame that owns it: the panels at rest, the bar acting.
+        let frame = |active: Option<u8>| -> Vec<legaia_engine_render::TextDraw> {
+            battle_hud_draws_for(
                 &font,
-                &battle_hud_slot_views(&hud, &letters),
-                &[],
-                &[],
+                &BattleHudFrame {
+                    slots: &battle_hud_slot_views(&hud),
+                    solid_src: Some(SOLID),
+                    surface: SURFACE,
+                    active_slot: active,
+                    plaque: Some("Vahn"),
+                    ..Default::default()
+                },
                 BATTLE_HUD_PEN,
-            );
-            draws
-                .iter()
-                .filter(|d| d.dst.0 >= hp_x && d.dst.0 < mp_x)
-                .map(|d| d.color)
-                .next()
-                .expect("HP field produced no glyph")
+            )
+            .text
         };
-        let normal = hp_tint(90); // > max/2  -> index 7
-        let caution = hp_tint(40); // <= max/2 -> index 6
-        let danger = hp_tint(20); // <= max/4 -> index 9
-        assert_ne!(
-            normal, caution,
-            "caution tier not distinguished from normal"
+        let resting = frame(None);
+        let acting = frame(Some(0));
+
+        // Panel seats + row.
+        let seats = bc::panel_seats(1);
+        assert_eq!(
+            boxes_of(&resting, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32),
+            vec![(seats[0] as i32, bc::PANEL_Y as i32)],
+            "the mirrored panel seat drifted from battle_chrome"
         );
-        assert_ne!(
-            caution, danger,
-            "danger tier not distinguished from caution"
-        );
-        assert_ne!(normal, danger, "danger tier not distinguished from normal");
-        // Caution is yellow (r ~= g, both high); danger is red (r > g).
-        assert!(danger[0] > danger[1], "danger tier is not red-dominant");
         assert!(
-            caution[1] > danger[1],
-            "caution tier is not the lighter tint"
+            boxes_of(&acting, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32).is_empty(),
+            "the roster cluster drew under the active-actor bar"
         );
+        // Active-actor bar: plate footprint and name pen.
+        let bar_w = (bc::BAR_INTERIOR_W + 2 * bc::PLATE_CAP_W) as i32;
+        assert_eq!(
+            boxes_of(&acting, bar_w, bc::PLATE_H as i32),
+            vec![(bc::BAR_X as i32, bc::BAR_Y as i32)],
+            "the mirrored active-actor bar drifted from battle_chrome"
+        );
+        assert!(
+            acting.iter().any(|d| d.src != SOLID
+                && d.dst.0 == bc::BAR_NAME.0 as i32 * STAGE_SCALE
+                && d.dst.1 == bc::BAR_NAME.1 as i32 * STAGE_SCALE),
+            "the mirrored bar name pen drifted from battle_chrome"
+        );
+        // Plaque: plate sized to the measured name at the pinned seat.
+        let plaque = bc::name_plaque(font.layout_ascii("Vahn").advance_x as u16, false);
+        assert!(
+            boxes_of(
+                &acting,
+                bc::plate_width(plaque.interior_w) as i32,
+                bc::PLATE_H as i32
+            )
+            .contains(&(bc::PLAQUE_X as i32, bc::PLAQUE_Y as i32)),
+            "the mirrored plaque drifted from battle_chrome::name_plaque"
+        );
+        assert!(
+            acting.iter().any(|d| d.src != SOLID
+                && d.dst.0 == plaque.text.0 as i32 * STAGE_SCALE
+                && d.dst.1 == plaque.text.1 as i32 * STAGE_SCALE),
+            "the mirrored plaque text seat drifted from battle_chrome"
+        );
+    }
+
+    /// The sibling half of the mirror check: the numeral fields. Every one is
+    /// a right edge the field grows leftward from in 8-px cells, and the
+    /// `engine-ui` literals have to name the same edges `battle_chrome` pins
+    /// - a drift here is a four-digit HP drawn off the end of its panel.
+    #[test]
+    fn engine_ui_numeral_edges_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_vm::battle_chrome as bc;
+        let font = legaia_font::synthetic_for_tests();
+        // Widest values every field is laid out against.
+        let hud = hud_with_party_row(9999, 9999, 999, 999);
+        let cells = |active: Option<u8>| -> Vec<(i32, i32)> {
+            battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    slots: &battle_hud_slot_views(&hud),
+                    solid_src: Some(SOLID),
+                    surface: SURFACE,
+                    chrome: Some(&BATTLE_MIRROR_RECTS),
+                    active_slot: active,
+                    ..Default::default()
+                },
+                BATTLE_HUD_PEN,
+            )
+            .sprites
+            .iter()
+            .filter(|s| s.src.1 == BATTLE_MIRROR_DIGITS.1 && s.src.2 == bc::DIGIT_W as u32)
+            .map(|s| (s.dst.0 / STAGE_SCALE, s.dst.1 / STAGE_SCALE))
+            .collect()
+        };
+
+        // Panel: the HP row's two four-cell runs, at the pinned right edges.
+        let px = bc::panel_seats(1)[0] as i32;
+        let panel = cells(None);
+        for (right, digits, y) in [
+            (bc::panel::CUR_RIGHT, 4, bc::panel::HP_DIGIT_Y),
+            (bc::panel::MAX_RIGHT, 4, bc::panel::HP_DIGIT_Y),
+            (bc::panel::CUR_RIGHT, 3, bc::panel::MP_DIGIT_Y),
+            (bc::panel::MAX_RIGHT, 3, bc::panel::MP_DIGIT_Y),
+        ] {
+            let left = px + bc::digits_left_of(right, digits) as i32;
+            let row = bc::PANEL_Y as i32 + y as i32;
+            assert!(
+                panel.contains(&(left, row)),
+                "no numeral cell at the mirrored panel edge {right} ({digits} digits): {panel:?}"
+            );
+            assert!(
+                panel
+                    .iter()
+                    .all(|(x, _)| x + bc::DIGIT_W as i32 <= px + bc::PANEL_BG.2 as i32),
+                "a panel numeral runs past the 102-px plate: {panel:?}"
+            );
+        }
+
+        // Bar: four cells per HP field, three per MP field.
+        let bar = cells(Some(0));
+        let y = bc::BAR_DIGIT_Y as i32;
+        for (right, digits) in [
+            (bc::BAR_HP_CUR_RIGHT, 4),
+            (bc::BAR_HP_MAX_RIGHT, 4),
+            (bc::BAR_MP_CUR_RIGHT, 3),
+            (bc::BAR_MP_MAX_RIGHT, 3),
+        ] {
+            let left = bc::digits_left_of(right, digits) as i32;
+            assert!(
+                bar.contains(&(left, y)),
+                "no numeral cell at the mirrored bar edge {right} ({digits} digits): {bar:?}"
+            );
+        }
+    }
+
+    /// Retail draws **no monster gauge at all**
+    /// (`docs/subsystems/battle-action.md`), so a monster contributes nothing
+    /// to the default surface - and everything it used to contribute has to
+    /// still be reachable under `LEGAIA_DIAG_HUD`.
+    #[test]
+    fn monster_rows_are_diagnostic_only() {
+        let mut hud = hud_with_party_row(100, 100, 0, 0);
+        hud.sync_slot(
+            3,
+            SlotSyncInfo {
+                name: "Goblin",
+                is_party: false,
+                alive: true,
+                hp: 40,
+                hp_max: 100,
+                mp: 0,
+                mp_max: 0,
+                ap: None,
+            },
+        );
+        let monster_row_y = BATTLE_HUD_PEN.1 + 3 * 14;
+        assert!(
+            !frame_draws(&hud, false)
+                .text
+                .iter()
+                .any(|d| d.dst.1 == monster_row_y),
+            "a monster row drew on the default surface"
+        );
+        assert!(
+            frame_draws(&hud, true)
+                .text
+                .iter()
+                .any(|d| d.dst.1 == monster_row_y),
+            "the diagnostic surface lost the monster row"
+        );
+    }
+
+    /// The four-tier retail readout-tint law has to reach the surface, not
+    /// just exist in engine-ui: normal / caution / danger numerals must
+    /// produce three distinct glyph tints.
+    #[test]
+    fn native_battle_hud_hp_tints_span_the_retail_tiers() {
+        let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
+            let hud = hud_with_party_row(hp, 100, 0, 0);
+            draws(&hud)
+                .iter()
+                .filter(|d| d.src != SOLID)
+                .map(|d| d.color)
+                .collect()
+        };
+        let caution = [1.0, 0.95, 0.4, 1.0]; // builder's yellow
+        let danger = [1.0, 0.4, 0.4, 1.0]; // builder's red
+        assert!(
+            !glyph_colors(90)
+                .iter()
+                .any(|c| *c == caution || *c == danger),
+            "normal tier numerals took a warning tint"
+        );
+        assert!(
+            glyph_colors(40).contains(&caution),
+            "caution tier numerals not yellow"
+        );
+        assert!(
+            glyph_colors(20).contains(&danger),
+            "danger tier numerals not red"
+        );
+    }
+
+    /// The engine-ui anchor mirror is a literal copy of the canonical
+    /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits below
+    /// engine-vm in the crate graph, so it cannot import them).
+    ///
+    /// The anchors are the roster panels' **name pens**, `+5` inside the
+    /// panel background `battle_chrome::panel_seats` gives - which is what
+    /// ties the overlay table to the packet run.
+    #[test]
+    fn panel_anchor_mirror_matches_the_engine_vm_port() {
+        use legaia_engine_vm::battle_party_panel::panel_anchors;
+        assert_eq!(panel_anchors(1), Some((0x72, None)));
+        assert_eq!(panel_anchors(2), Some((0x3F, Some(0xA5))));
+        assert_eq!(panel_anchors(3), Some((0x0C, Some(0x72))));
+        // The inferred third anchor continues the pinned 0x66 stride.
+        assert_eq!(0x72 - 0x0C, 0x66);
+        assert_eq!(0xA5 - 0x3F, 0x66);
+        for (count, ordinal, want) in [
+            (1usize, 0usize, 0x72),
+            (2, 0, 0x3F),
+            (2, 1, 0xA5),
+            (3, 0, 0x0C),
+            (3, 1, 0x72),
+            (3, 2, 0xD8),
+        ] {
+            assert_eq!(
+                legaia_engine_render::party_panel_stage_x(count, ordinal),
+                want,
+                "engine-ui mirror drifted at ({count}, {ordinal})"
+            );
+        }
+        // Every anchor is a panel seat plus the pinned +5 name inset.
+        for size in 1u8..=3 {
+            for (i, seat) in legaia_engine_vm::battle_chrome::panel_seats(size)
+                .iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    *seat as i32 + legaia_engine_vm::battle_chrome::PANEL_TEXT_INSET as i32,
+                    legaia_engine_render::party_panel_stage_x(size as usize, i),
+                    "anchor {i} of a party of {size} is not its panel seat + 5"
+                );
+            }
+        }
     }
 
     /// The end-to-end wiring: a live `World` battle state must reach the
@@ -1795,14 +2369,10 @@ mod battle_hud_wiring_tests {
     /// This is the assertion that fails if `sync_battle_hud_rows` is dropped
     /// from the tick - the HUD model's slots stay `active == false`, the
     /// builder skips every empty-name row, and `draws` comes back empty.
-    /// Confirmed by commenting the `hud.sync_slot` loop out of
-    /// `sync_battle_hud_rows`: the row assertion below then fails with an
-    /// empty draw list, and the two MP assertions with it.
     #[test]
     fn live_world_battle_state_reaches_the_shared_builder() {
         use legaia_engine_core::world::World;
 
-        let font = legaia_font::synthetic_for_tests();
         let mut world = World::new();
         world.party_count = 1;
         world.actors[0].active = true;
@@ -1820,19 +2390,14 @@ mod battle_hud_wiring_tests {
             "MP ceiling did not reach the model"
         );
 
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
-            BATTLE_HUD_PEN,
-        );
-        assert!(!draws.is_empty(), "synced battle state produced no draws");
-        let mp_x = BATTLE_HUD_PEN.0 + 140;
+        let out = draws(&hud);
+        assert!(!out.is_empty(), "synced battle state produced no draws");
+        // The MP field only draws for a slot carrying a ceiling, so the live
+        // world's MP has to reach the panel's pinned MP row.
         assert!(
-            draws.iter().any(|d| d.dst.0 >= mp_x),
-            "live world state produced no MP field"
+            out.iter()
+                .any(|d| d.src != SOLID && d.dst.1 == (164 + 34) * STAGE_SCALE),
+            "live world state produced no MP field on the panel's MP row"
         );
     }
 
@@ -1841,7 +2406,6 @@ mod battle_hud_wiring_tests {
     /// compacted list would put a monster's damage number on a party row.
     #[test]
     fn popup_anchors_track_absolute_actor_slot() {
-        let font = legaia_font::synthetic_for_tests();
         let mut hud = hud_with_party_row(100, 100, 0, 0);
         // Slots 1 and 2 stay empty; the monster occupies slot 3.
         hud.sync_slot(
@@ -1858,21 +2422,13 @@ mod battle_hud_wiring_tests {
             },
         );
         hud.push_popup(DamagePopup::damage(3, 25));
-        let letters = vec![Vec::new(); hud.slots.len()];
-        let draws = battle_hud_draws_for(
-            &font,
-            &battle_hud_slot_views(&hud, &letters),
-            &battle_hud_popup_views(&hud),
-            &[],
-            BATTLE_HUD_PEN,
-        );
-        // Row stride is 14; slot 3's row sits at pen.y + 42, popups 16 above.
+        let out = draws(&hud);
+        // Row stride is 14; monster slot 3's row sits at pen.y + 42, popups
+        // 16 above (monster popups keep the index-anchored surface layout).
         let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;
         let popup_x = BATTLE_HUD_PEN.0 + 80;
         assert!(
-            draws
-                .iter()
-                .any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
+            out.iter().any(|d| d.dst.1 == want_y && d.dst.0 >= popup_x),
             "no popup glyph at slot 3's anchor (y={want_y})"
         );
     }

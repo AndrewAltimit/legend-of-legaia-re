@@ -449,3 +449,53 @@ pub fn upload_flame_atlas_into_vram(
     }
     Ok(uploaded)
 }
+
+/// Re-upload the **chosen** battle-stage stream's own TIMs on top of `vram`,
+/// so a scene whose bundle carries several stage streams renders the one it
+/// actually fights in.
+///
+/// Rim Elm is the case that makes this load-bearing. Its bundle carries four
+/// backdrop streams (extraction entries 6..9, the Tetsu spar is fought in
+/// `7` - see `ProtIndex::battle_stage_entry_for_scene`) and **all four target
+/// the identical VRAM addresses**: a 4bpp page at `(768, 0)` under the CLUT
+/// row at `(0, 473)`, and a second at `(832, 0)` under `(0, 479)`. So do the
+/// stage streams of every other multi-sub-area scene, and the field texture
+/// pack puts a page at `(768, 0)` too.
+///
+/// Retail never has to resolve that: the type-`0x01` chunk walker records one
+/// stream in `_DAT_8007B864` and only that one's pages are resident. The
+/// port's battle resource build instead DMAs every TIM in the bundle
+/// (`BuildOptions::upload_all_tims`), so the last sibling written wins the
+/// shared page and CLUT row. The shell then draws its own geometry through a
+/// neighbour's texels and palette: on `town01` the semi-transparent cloud
+/// quads - `(768, 0)`, palette `1` of row 473, a greyscale + STP ramp - came
+/// out as flat green rectangles standing on the arena wall, because the
+/// palette that won the row was one of the rainbow CLUT-cycling ramps a
+/// sibling stream parks at the same index.
+///
+/// Re-uploading the selected entry last restores retail's residency without
+/// touching the general build: everything the bundle contributed stays, and
+/// only the addresses this stage owns are taken back. Returns the number of
+/// TIMs re-uploaded (`0` when the entry carries none, which is not an error).
+pub fn upload_battle_stage_tims_into_vram(
+    scene: &Scene,
+    stage_entry: u32,
+    vram: &mut legaia_tim::Vram,
+) -> usize {
+    let Some(entry) = scene.entries.iter().find(|e| e.idx == stage_entry) else {
+        return 0;
+    };
+    let bytes: &[u8] = &entry.bytes;
+    let mut uploaded = 0;
+    for hit in legaia_asset::tim_scan::scan_buffer(bytes) {
+        let end = hit.offset + hit.byte_len;
+        if end > bytes.len() {
+            continue;
+        }
+        if let Ok(tim) = legaia_tim::parse(&bytes[hit.offset..end]) {
+            vram.upload_tim_partial(&tim, true, true);
+            uploaded += 1;
+        }
+    }
+    uploaded
+}

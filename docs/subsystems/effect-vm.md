@@ -75,6 +75,23 @@ For each live child, one flat textured **semi-transparent quad** (9-word GPU pac
 - **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size), projected through `FUN_800195A8` and inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
 - **UV corners**: base/extent from the 8-byte atlas entry, corner order swapped per the child's random mirror bits; CLUT from atlas `+4`, tpage from atlas `+6`.
 
+The semi-transparency is a property of the **prim code**, not of the atlas entry. `0x2E`
+is GP0 `0x20 | quad | textured | semi-transparent`, so every effect child blends,
+whatever page it names - and the page's own ABR bits then choose how. The `efect.dat`
+inline atlas's two entries name pages `0x25` (`(320,0)`, ABR `1` = `B + F`) and `0x66`
+(`(384,0)`, ABR `3` = `B + 0.25F`), both against CLUT rows 474/475 of the flame atlas.
+
+That matters to a port because the enable has nowhere to come from except the code byte:
+the atlas stores its page in a single byte, so a billboard builder that pushes the page
+verbatim into a TSB word can never set the port's prim-ABE bit, and the whole effect
+system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end (`0xC73F` =
+`(248, 200, 136)`) is a pale tan; drawn additively those texels are a glow over a dark
+arena, and drawn opaque they are solid tan blobs. Index `0` is `0x0000` and discards
+either way, so the blobs keep a puff-shaped silhouette - which is what made them read as
+stray geometry rather than as mis-blended sprites. Port: `effect_sprite_tsb` in the
+native window's `geometry.rs`, pinned by
+`every_effect_billboard_corner_is_semi_transparent`.
+
 ## Lifetime + render bridge (engine port)
 
 The algebra above is executed by `Pool::tick_retail` (pass 1: master spawn
@@ -103,6 +120,8 @@ keep a fixed budget, but they live outside the pool
 ### Catalog load
 
 The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the action SM's `ui_element` spawns (`FUN_801D8DE8 → FUN_801DFDF8`, ported as `World::try_spawn_effect`) resolve to real effect scripts. The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.
+
+A spawn is seated at an **actor**, never at the world origin: the retail spawn caller copies the owning actor's own world position (`actor+0x34..0x3B` via `lwl`/`lwr` into the position buffer), offsets it by the per-effect planar legs rotated through the facing's sin/cos LUTs, and passes the facing halfword (`actor+0x46`) as the spawn angle - `FUN_8004998C`'s effect arm at `0x8004A634..0x8004A81C` calling `FUN_801DFDF0(id, sp+0x10, actor+0x46)` (disassembly; see `ghidra/scripts/funcs/8004998c.txt`). The engine's `BattleActionHost::ui_element` mirrors this by spawning at the acting actor's battle seat with its `facing_angle`.
 
 A second producer feeds the same two spawn seams per battle frame: the per-action **effect-script walk** (`FUN_801DEA50`, see [`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)). Its `0x80`-flagged records route into the pool via `World::try_spawn_effect`; its table-form records stage a `0x801F6324` prototype scene via `World::spawn_action_table_effect` (a small move-VM scene-graph in `World::active_action_fx`, ticked by `World::tick_move_fx` and drawn through `World::active_move_fx_part_draws`).
 

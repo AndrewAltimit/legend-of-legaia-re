@@ -38,6 +38,37 @@ below.
 | Gaza 2 `0x51` park: the Final Heal revive lands "at the worst possible moment" (mid-drain) | falsified on the Gaza 2 move set (12/12 revives found the accumulator already drained) | [details ↓](#gaza-2-0x51-park---the-two-falsified-generators) |
 | Muscle Dome as a **card battle** with a per-fighter "score out of 108" | falsified (it is a 4-turn battle; the readout is the opponent's HP percentage) | [details ↓](#muscle-dome-was-never-a-card-battle) |
 | Muscle Dome awards a **Seru** on a win | falsified (a leg pays nothing; a contest pays casino coins) | [details ↓](#the-dome-victory-caption-is-not-a-prize) |
+| `FUN_801DBC30` blits the party panels' name plate | falsified (its page + CLUT resolve to the `etim` red cross-out X) | [details ↓](#fun_801dbc30-is-not-the-battle-name-plate) |
+| The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
+
+### `FUN_801DBC30` is not the battle name plate
+
+The blit at `FUN_801DBC30` sits in the battle overlay next to the party-name
+panel's open and teardown leaves, takes an `(x, y)`, and lays down one
+`0x40 x 0x10` textured quad. Reading it as those panels' name plate is almost
+irresistible: a fixed-size strip, drawn at a caller-supplied seat, in the one
+function group that builds the name buffers. The port acted on it - the HUD
+drew a filled rect at the quad's geometry, and the panels' 8-pixel text inset
+was explained by the quad's `x-8` bias.
+
+The quad's own words falsify it. Two constants say where the pixels come
+from: `tpage 7` resolves to VRAM page `(448, 0)` and CLUT `0x7704` to
+`(64, 476)`. That is not the system-UI sheet the battle chrome samples - it
+is the `etim` effect page, and the texel span `(0, 96)`-`(63, 111)` decodes
+out of a battle VRAM dump as the **red cross-out X**, the mark retail lays
+over a command chip the actor cannot pick. The same rect is already pinned,
+under that name, for the Muscle Dome's forbidden Item chip.
+
+Walking the real display list settles what the chrome is instead: the name
+plates are 3-slice runs off the resident system-UI sheet's page `(896, 256)`,
+and the party readout draws no bar at all.
+
+**Lesson:** a primitive builder is identified by the page and palette it
+samples, not by the neighbourhood it is compiled into. Both constants were
+sitting in the decode the whole time; nobody resolved them to a VRAM
+coordinate, so the function kept the name its neighbours gave it.
+
+See [battle.md](../subsystems/battle.md#battle-screen-chrome-packet-pinned).
 
 ### The dome victory caption is not a prize
 

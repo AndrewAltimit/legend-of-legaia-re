@@ -503,6 +503,25 @@ exact pennant spawn anchor (it spawns at the fighter and glides in via
 `FUN_801d9bbc`), and the review / Begin-Reselect screens' piece
 decomposition (screenshot-read only).
 
+Because the dome runs this screen verbatim, its geometry is **not** dome
+data: the composition (chip anchors, D-pad seat, bar and pennant seats, AP
+plate span, list window) lives in `legaia_engine_ui::arts_input`, which the
+battle hosts draw through directly and which the dome page builds its
+`arts_input` JSON from. The per-command AP price is shared the same way -
+both screens read the equipped set's `+0x74` bytes through
+`legaia_asset::battle_char_assembly::swing_command_costs`
+([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
+
+What is still *not* unified is the session object: the dome keeps its own
+`MuscleDomeSession` budget / spent / queue triple while the battle runs
+`engine_core::arts_command_input`. The two model the same retail state
+(`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
+a refactor rather than a question - the open part is how the dome's
+*restriction* is expressed. The command-select capture shows retail draws an
+unavailable command as a chip carrying a single `-` glyph rather than
+omitting it, so a restricted caller most likely disables entries in place
+instead of shortening the cluster.
+
 Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
 `muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the
 dome panel draws the chrome from them - including the whole

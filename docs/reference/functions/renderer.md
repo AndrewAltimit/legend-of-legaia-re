@@ -48,7 +48,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 
 | Address | Role |
 |---|---|
-| `80024EE4` | Push textured-quad GPU primitive onto the OT chain. `(layer, depth, color)` - writes a 6-word PSX GP0 packet (`0x05000000` length + `0x2B` polygon-with-tex command + four corner verts at `_DAT_1F80038C/0x18E` × `0xFFFC`) at `_DAT_1F8003A0`, then linkPrim via `FUN_8003D2C4`. Used by `FUN_800196A4` for the screen-fade / dim overlay. |
+| `80024EE4` | Push a blended full-screen quad onto the OT chain. `(ot_layer, abr, color)` - a 6-word GP0 packet (`0x05000000` + command `0x2B`, untextured semi-transparent quad, four corner verts from the scratchpad display rect) plus a `SetDrawMode` whose tpage is `(abr << 5) \| 0xE`, both linked via `FUN_8003D2C4`. Used by `FUN_800196A4` for the screen-fade / dim overlay - [details ↓](#80024ee4) |
 | `80024E80` | **Screen-fade primitive spawn.** `(fade_template, mode: u16)`. Allocates an actor from pool `&DAT_80070674` via the actor allocator `FUN_80020DE0` (free-list `_DAT_8007C34C`); on success stores `mode` at `actor[+0x18]` and calls `FUN_80020B00(actor + 0x7C, fade_template)` to load the fade state (start RGB and frame count copied `<< 6`; per-frame RGB deltas = `((end - start) << 6) / duration`). Returns the new actor, or 0 when the pool is exhausted. The battle-action SM stages the summon backdrop fade (state `0x33`) and the successful-escape white-out (state `0x66`) through this (`func_0x80024E80(&DAT_801C9070, …)`). Port `engine-core::fade::spawn_fade`. `see ghidra/scripts/funcs/80024e80.txt`. |
 | `80020B00` | **Fade-state loader.** `(i16* state, i16* template)`. Converts a 13-`i16` fade template into the pool actor's `+0x7C` ramp state in 10.6 fixed point: `state[0..2] = start_rgb << 6` (current), `state[4..6] = end_rgb << 6`, `state[8..10] = ((end − start) × 0x40) / duration` (per-frame delta), duration + three mode words copied verbatim. The displayed colour each frame is `current >> 6`, landing exactly on `end` after `duration` frames. Ported as `legaia_engine_core::fade::FadeState::load`; the escape template (kind 2, `0x40` frames, black → white) is pinned from the SM's case-`0x66` write. `see ghidra/scripts/funcs/80020b00.txt`. |
 | `801DE478` | **Field-overlay fade-actor spawn.** `(mode)`. The overlay-resident sibling of the SCUS pair `80024E80` / `80020B00`, and a *different* family: it allocates from the overlay template `&DAT_801F2810` (not `&DAT_80070674`) through the same allocator `FUN_80020DE0(template, _DAT_8007C34C)`, then forces `mode = 1` when the field/dual-mode gate `_DAT_8007B868` is non-zero, and stores the resulting `mode` as a halfword at `actor[+0x54]`. Seven independent RAM captures (baka-fighter / dance / debug-menu / fishing / slot-machine / both cutscene overlays) dump the same 20-instruction body here. `see ghidra/scripts/funcs/overlay_baka_fighter_801de478.txt`. |
@@ -143,6 +143,41 @@ Per-frame substeps of `FUN_801D1344` (the actor frame handler in the dialog over
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `80024EE4`
+
+**The engine's one full-screen blend quad.** `(ot_layer, abr, rgb)`.
+
+`a0` is the ordering-table layer, clamped into `0..otlen-1` (`0x80024F00`
+floors it at zero, `0x80024F14`..`0x80024F2C` caps it at `otlen - 1`).
+
+`a2` is masked to `0x00FFFFFF` and OR'd with the command byte `0x2B`
+(`lui v0,0x2b00` at `0x80024F50`). GP0 `0x2B` is `0x20 | quad | semi-transparent`
+- **untextured**; bit `0x04` is clear, so an earlier reading of this as a
+"polygon-with-tex" packet is wrong. The corners come from the scratchpad
+display-rect halfwords `0x1F800378` / `0x1F80037A`, with the top edge at `-4`.
+
+`a1` is the one argument that is easy to mis-name, and it is **not** an OT
+depth: it is folded into the `SetDrawMode` packet pushed ahead of the quad,
+as `tpage = (a1 << 5) | 0xE` (`sll a3,s3,0x5` / `ori a3,a3,0xe` at
+`0x80024FB0` / `0x80024FBC`, handed to `FUN_80059010`). Tpage bits `5..=6` are
+the GPU's semi-transparency (ABR) field, so `a1` selects the blend: `1` =
+`B + F` (additive), `2` = `B - F` (subtractive). With a grey ramp colour the
+same call therefore whites out under `1` and blacks out under `2`. Both
+packets are linked into the same layer via `FUN_8003D2C4`; the draw-mode one
+is added second and so is walked first.
+
+The armed-wash pair reaches the same emitter: `FUN_8004695C(rgb)` only sets
+`gp+0x9D4 = 1` / `gp+0x9D0 = rgb` (and clears `_DAT_8007B6CC`), and the drain
+`FUN_80046978` scales each channel by the scratchpad brightness byte at
+`0x1F800393`, clamps to `0xFF`, clears the armed flag - one-shot per arm - and
+calls `FUN_80024EE4(otlen - 1, 2, rgb)`: farthest bucket, subtractive.
+
+Port: `legaia_engine_vm::battle_intro_styles::{IntroFade, intro_fade}` and
+`legaia_engine_render::battle_intro::{fade_quad, wash_prim}`. See
+[`cutscene.md`](../../subsystems/cutscene.md#the-fades-second-argument-is-a-blend-mode-not-a-depth).
+
+`see ghidra/scripts/funcs/80024ee4.txt`, `8004695c.txt`, `80046978.txt`.
 
 ### `80020F88`
 

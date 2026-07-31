@@ -20,7 +20,7 @@
 //! Default lifetime is 60 frames (~1 s at PSX 60 Hz).
 
 use crate::ap_gauge::ApGauge;
-use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusKind};
+use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 
 /// Per-slot row update payload for [`BattleHud::sync_slot`].
 ///
@@ -70,6 +70,11 @@ pub struct BattleSlotHud {
     /// Per-slot active status effects. Sorted by [`StatusKind`] enum
     /// variant order so the icon strip is stable across frames.
     pub status_icons: Vec<StatusKind>,
+    /// Displayed character level - retail's char record `+0x130`, which the
+    /// status element's no-ailment arm draws beside the base marker (see
+    /// [`Self::status_element`]). `0` means "unknown", and the hosts draw the
+    /// bare marker rather than "LV 0".
+    pub level: u8,
 }
 
 impl BattleSlotHud {
@@ -114,6 +119,31 @@ impl BattleSlotHud {
         self.status_icons.dedup();
     }
 
+    /// Gauge fill-colour indices `(hp, mp)` for the drawn bars, in retail's
+    /// `FUN_80046A20` code space (`2` dead, `3` status override, `7` high,
+    /// `6` mid, `9` low).
+    ///
+    /// The whole-gauge precedence is retail's: death first (`hp == 0` after
+    /// the ramp settles), then the status override, then per-bar fill
+    /// ratios. The status flag retail reads is actor `+0x16E`; the engine
+    /// approximates it with "any active status icon", the same stand-in
+    /// [`legaia_engine_ui::hp_bar_color_index`]'s callers use.
+    ///
+    /// Since `hp` here is the **displayed** (ramping) value, the bar colour
+    /// tracks the drain exactly as retail's gauge does - `FUN_80046A20`
+    /// keys its death arm on the same `+0x172` display field, so a slot
+    /// whose live HP already hit zero stays in the low band until the bar
+    /// finishes draining.
+    pub fn gauge_fill_indices(&self) -> (u8, u8) {
+        legaia_engine_vm::battle_gauge::gauge_colors(
+            self.hp,
+            self.hp_max,
+            self.mp,
+            self.mp_max,
+            u16::from(!self.status_icons.is_empty()),
+        )
+    }
+
     /// Per-slot status icon strip, encoded as one-byte ASCII letters.
     /// Engines pass this to the renderer's `HudSlotView::status_letters`
     /// without an extra allocation step.
@@ -127,6 +157,44 @@ impl BattleSlotHud {
             .iter()
             .map(|k| status_kind_letter(*k))
             .collect()
+    }
+
+    /// The slot's packed retail status word - battle actor `+0x16E`, the
+    /// halfword `FUN_80047430` mirrors to the display record's `+0x6F6`.
+    ///
+    /// Built from the typed [`Self::status_icons`] set through
+    /// [`legaia_engine_vm::status_effects::pack_display_flags`]. Rot packs
+    /// its **whole** limb group here rather than a single rolled bit: the HUD
+    /// snapshot carries kinds, not instances, and the ladder only tests the
+    /// group. Faint contributes no bit - it is the zero-HP arm of the ladder.
+    pub fn status_display_flags(&self) -> u16 {
+        self.status_icons
+            .iter()
+            .fold(0u16, |w, k| w | k.display_bit())
+    }
+
+    /// The single status element retail draws for this slot, chosen by the
+    /// `FUN_8002C2E4` priority ladder over [`Self::status_display_flags`].
+    ///
+    /// Retail's `present` input is the display record's `+0x6CE`, i.e. the
+    /// actor's live HP (`+0x14C`); the engine's `alive` flag is the same
+    /// predicate, so a KO'd slot takes the `Sprite(0x20)` arm whatever else
+    /// is set. When nothing is set the arm is
+    /// [`StatusIcon::BaseWithCount`], whose "count" is [`Self::level`].
+    // PORT: FUN_8002C2E4 (the selection; the kernel lives in engine-vm)
+    pub fn status_element(&self) -> StatusIcon {
+        legaia_engine_vm::status_effects::status_icon(self.status_display_flags(), self.alive)
+    }
+
+    /// The retail sprite id the status element resolves to (`0x18..=0x20`),
+    /// or `0` for the no-ailment base marker / an unrepresented bit. Hosts
+    /// take this as the whole per-slot status readout - one element, not a
+    /// strip.
+    pub fn status_sprite(&self) -> u8 {
+        match self.status_element() {
+            StatusIcon::Sprite(id) => id,
+            StatusIcon::BaseWithCount | StatusIcon::None => 0,
+        }
     }
 }
 
@@ -330,6 +398,17 @@ impl BattleHud {
         self.slots[slot as usize].set_status_icons(icons);
     }
 
+    /// Set the slot's displayed level - the count retail draws beside the
+    /// no-ailment base marker (char record `+0x130`,
+    /// [`legaia_save::CharacterRecord::magic_rank`]). Separate from
+    /// [`Self::sync_slot`] because the level lives on the save record rather
+    /// than on the battle actor the row is otherwise built from.
+    pub fn sync_level(&mut self, slot: u8, level: u8) {
+        if let Some(s) = self.slots.get_mut(slot as usize) {
+            s.level = level;
+        }
+    }
+
     /// Mark a slot as inactive (empty actor pool entry). Clears name and
     /// gauges so the renderer skips the row.
     pub fn clear_slot(&mut self, slot: u8) {
@@ -418,18 +497,24 @@ impl BattleHud {
     /// view structs.
     pub fn slot_views(&self) -> Vec<SlotView> {
         self.iter_active()
-            .map(|(slot_idx, s)| SlotView {
-                slot: slot_idx,
-                name: s.name.clone(),
-                is_party: s.is_party,
-                alive: s.alive,
-                hp: s.hp,
-                hp_max: s.hp_max,
-                mp: s.mp,
-                mp_max: s.mp_max,
-                ap_filled: s.ap_filled,
-                ap_max: s.ap_max,
-                status_letters: s.status_letters(),
+            .map(|(slot_idx, s)| {
+                let (hp_fill, mp_fill) = s.gauge_fill_indices();
+                SlotView {
+                    slot: slot_idx,
+                    name: s.name.clone(),
+                    is_party: s.is_party,
+                    alive: s.alive,
+                    hp: s.hp,
+                    hp_max: s.hp_max,
+                    mp: s.mp,
+                    mp_max: s.mp_max,
+                    ap_filled: s.ap_filled,
+                    ap_max: s.ap_max,
+                    hp_fill,
+                    mp_fill,
+                    status_sprite: s.status_sprite(),
+                    level: s.level,
+                }
             })
             .collect()
     }
@@ -478,7 +563,17 @@ pub struct SlotView {
     pub mp_max: u16,
     pub ap_filled: u8,
     pub ap_max: u8,
-    pub status_letters: Vec<u8>,
+    /// Gauge fill-colour indices (retail `FUN_80046A20` code space) - see
+    /// [`BattleSlotHud::gauge_fill_indices`].
+    pub hp_fill: u8,
+    pub mp_fill: u8,
+    /// Retail status-element sprite id (`0x18..=0x20`), or `0` for the
+    /// no-ailment base marker. See [`BattleSlotHud::status_sprite`] - retail
+    /// draws exactly one, never a strip.
+    pub status_sprite: u8,
+    /// Displayed character level, the base-marker arm's count
+    /// ([`BattleSlotHud::level`]).
+    pub level: u8,
 }
 
 /// Plain popup view.
@@ -522,6 +617,9 @@ struct SlotRow {
     mp_max: u16,
     /// Index into `World::ap_gauges` for party rows; `None` for monsters.
     ap_slot: Option<usize>,
+    /// Displayed level (char record `+0x130`) for party rows; `0` for
+    /// monsters, which retail's status element never draws a count for.
+    level: u8,
 }
 
 /// Fold the live battle-actor table into `hud`'s per-slot rows, so a host's
@@ -544,6 +642,14 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     // Party rows. `character_max_mp` is the only MP ceiling the world carries
     // (`BattleActor` has live `mp` but no max), and it is keyed by battle
     // ordinal - the same index `build_battle_item_session` uses.
+    //
+    // HP is the **displayed** value, not the live one: retail's readout draws
+    // actor `+0x172`, the bar the per-frame ramp `FUN_80047430` walks toward
+    // live HP a quarter of the debt at a time. The sim maintains that ramp in
+    // `BattleActor::hp_display` (`World::apply_battle_hp_delta` seeds it,
+    // `tick_battle_hp_bars` drains it); reading live `hp` here showed the
+    // ramp's end state instantly and left the animation computed but unseen.
+    // `None` means "never armed / settled at live HP".
     let mut rows: Vec<(u8, String, SlotRow)> = Vec::new();
     for (i, a) in world.actors.iter().take(pc).enumerate() {
         let name = party_names
@@ -557,11 +663,20 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
             SlotRow {
                 is_party: true,
                 alive: a.battle.liveness != 0,
-                hp: a.battle.hp,
+                hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: a.battle.mp,
                 mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
                 ap_slot: (i < world.ap_gauges.len()).then_some(i),
+                // The status element's no-ailment arm draws the character
+                // record's `+0x130` beside the base marker (`FUN_8002C2E4`
+                // reads it as the display record's `+0x6F8`).
+                level: world
+                    .roster
+                    .members
+                    .get(world.party_roster_slot(i))
+                    .map(|m| m.magic_rank())
+                    .unwrap_or(0),
             },
         ));
     }
@@ -587,11 +702,15 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
             SlotRow {
                 is_party: false,
                 alive: a.battle.liveness != 0,
-                hp: a.battle.hp,
+                // Same displayed-HP read as the party rows; monster slots
+                // (>= 3) settle in one frame per FUN_80047430's slot split,
+                // so their display only ever lags by a single tick.
+                hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: 0,
                 mp_max: 0,
                 ap_slot: None,
+                level: 0,
             },
         ));
     }
@@ -615,10 +734,128 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 ap,
             },
         );
+        hud.sync_level(*slot, row.level);
     }
     for slot in cleared {
         hud.clear_slot(slot);
     }
+}
+
+/// Build the deduplicated enemy target-menu rows straight off the live
+/// world's monster slots - the host-facing entry to
+/// [`crate::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`).
+///
+/// The engine seats a formation's monsters directly after the party
+/// (`World::enter_battle`), and the pickers the hosts drive index enemies
+/// the same way (`CursorRow::Enemy` slot `i` = actor `party_count + i`), so
+/// a row's `first_slot` compares directly against the picker's cursor slot.
+///
+/// Occupancy stands in for retail's `_DAT_8007BD0C` monster-id table: a
+/// dead or unseeded slot contributes `0` (retail's "no monster here"), and
+/// distinct catalog names get distinct synthetic ids so identical adjacent
+/// monsters collapse into one labelled run exactly as retail's identical-id
+/// runs do. Names come from the same live catalog the HUD rows use.
+///
+/// The projected screen X each row averages is the battle actor's `+0x34` -
+/// a GTE projection result the renderer owns - so the accumulator is left
+/// at `0` here: every row then centres at `MENU_CENTRE_X` and the retail
+/// overlap-relaxation pass in
+/// [`crate::target_picker::layout_enemy_menu_rows`] spreads them. Callers
+/// run that layout with their own text measurer before drawing.
+pub fn battle_enemy_target_rows(
+    world: &crate::world::World,
+) -> Vec<crate::target_picker::EnemyMenuRow> {
+    use crate::target_picker::{DEDUP_GLYPH_FALLBACK, FORMATION_SLOTS, enemy_menu_rows};
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let mut ids = [0u8; FORMATION_SLOTS];
+    let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
+    for i in 0..FORMATION_SLOTS {
+        let Some(a) = world.actors.get(pc + i) else {
+            continue;
+        };
+        if a.battle.max_hp == 0 || a.battle.hp == 0 {
+            continue;
+        }
+        let name = a
+            .battle_monster_id
+            .and_then(|id| world.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| format!("M{}", i + 1));
+        let pos = names[..i].iter().position(|n| !n.is_empty() && n == &name);
+        ids[i] = (pos.unwrap_or(i) + 1) as u8;
+        names[i] = name;
+    }
+    enemy_menu_rows(
+        ids,
+        DEDUP_GLYPH_FALLBACK,
+        |slot| names[slot as usize].clone(),
+        |_| 0,
+    )
+}
+
+/// The actor the current battle frame belongs to: `(actor-table slot, name)`.
+///
+/// Retail's battle screen keys two surfaces off this actor - the top-left
+/// name plaque (`battle_chrome::name_plaque`, which reads "Vahn" on his turn
+/// and the monster's name through its attack) and the full-width active-actor
+/// bar, which replaces the resting per-member panels for exactly this actor.
+///
+/// The engine has no single "whose turn is it" cursor, so this reads the two
+/// states it does have, in retail's own precedence: an open command session
+/// names its acting party member; otherwise the first live monster stands in
+/// for the enemy turn. That fallback is also the port's whole **monster**
+/// readout - retail's HUD draws no monster gauge at all
+/// (`docs/subsystems/battle-action.md`), so a monster's name is all it
+/// contributes to the drawn surface.
+///
+/// `None` with no command session and every formation slot cleared, which is
+/// what stops the plaque drawing over the victory frames.
+pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> {
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    if let Some(cmd) = world.battle_command.as_ref() {
+        let names = crate::field_menu_dispatch::roster_names(world);
+        let ordinal = (cmd.party_slot as usize).min(pc.saturating_sub(1));
+        let name = names
+            .get(world.party_roster_slot(ordinal))
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("P{}", ordinal + 1));
+        return Some((cmd.actor, name));
+    }
+    const MAX_FORMATION_MONSTERS: usize = 5;
+    for (i, a) in world
+        .actors
+        .iter()
+        .enumerate()
+        .skip(pc)
+        .take(MAX_FORMATION_MONSTERS)
+    {
+        if a.battle.max_hp == 0 || a.battle.hp == 0 {
+            continue;
+        }
+        return Some((
+            i as u8,
+            a.battle_monster_id
+                .and_then(|id| world.monster_catalog.get(id))
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| format!("M{}", i - pc + 1)),
+        ));
+    }
+    None
+}
+
+/// Is the port's encounter-transition banner enabled?
+///
+/// The "ENCOUNTER!" head line has no retail counterpart - retail's
+/// `Field -> Battle` edge draws no banner at all - so it is off by default
+/// and rides the same shared toggle as the diagnostic HUD rows:
+/// `LEGAIA_DIAG_HUD` set to anything but `0` / empty. Reading the
+/// environment keeps both hosts on one answer; on wasm the variable never
+/// exists and the banner stays off.
+pub fn encounter_banner_enabled() -> bool {
+    std::env::var("LEGAIA_DIAG_HUD")
+        .map(|v| !v.is_empty() && v != "0")
+        .unwrap_or(false)
 }
 
 /// Formation label for the encounter-transition banner, reusing the battle
@@ -627,6 +864,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 /// skipped, so a formation that has not resolved HP yet yields an empty label
 /// and the banner shows only its "ENCOUNTER!" head line. Shared by both hosts
 /// (armed on each `Field -> Battle` mode edge).
+///
+/// The banner itself is a port invention - retail shows nothing on the
+/// `Field -> Battle` edge - so hosts arm it only when
+/// [`encounter_banner_enabled`] says so.
 pub fn encounter_banner_label(world: &crate::world::World) -> String {
     let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
     // `World::actors` is the fixed 64-slot table, not a battle-sized list;
@@ -951,7 +1192,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_views_carries_status_letters() {
+    fn slot_views_carries_the_single_retail_status_element() {
         let mut hud = BattleHud::new();
         hud.sync_slot(
             0,
@@ -966,9 +1207,42 @@ mod tests {
                 ap: None,
             },
         );
+        hud.sync_level(0, 12);
         hud.slots[0].set_status_icons([StatusKind::Toxic, StatusKind::Confuse]);
         let views = hud.slot_views();
-        assert_eq!(views[0].status_letters, vec![b'T', b'C']);
+        // Two kinds, ONE element: retail's ladder puts the delegation group
+        // (`0x0380` -> sprite `0x1C`) above Toxic (`0x0002` -> `0x19`).
+        assert_eq!(views[0].status_sprite, 0x1C);
+        assert_eq!(views[0].level, 12);
+    }
+
+    #[test]
+    fn slot_status_element_is_the_packed_word_through_the_retail_ladder() {
+        let mut s = BattleSlotHud {
+            alive: true,
+            level: 7,
+            ..Default::default()
+        };
+        // No ailment: the base marker + the level count, not a sprite.
+        assert_eq!(s.status_display_flags(), 0);
+        assert_eq!(s.status_element(), StatusIcon::BaseWithCount);
+        assert_eq!(s.status_sprite(), 0);
+
+        // Venom alone packs bit 0 and selects sprite 0x18.
+        s.set_status_icons([StatusKind::Venom]);
+        assert_eq!(s.status_display_flags(), 0x0001);
+        assert_eq!(s.status_sprite(), 0x18);
+
+        // Adding Stone changes the *element* without changing the set order:
+        // the ladder tests 0x0004 first.
+        s.set_status_icons([StatusKind::Venom, StatusKind::Stone]);
+        assert_eq!(s.status_display_flags(), 0x0005);
+        assert_eq!(s.status_sprite(), 0x1A);
+
+        // A KO'd slot takes the zero-HP arm whatever else is set - retail
+        // tests `+0x6CE` before it inspects a bit.
+        s.alive = false;
+        assert_eq!(s.status_sprite(), 0x20);
     }
 
     #[test]
@@ -1003,6 +1277,105 @@ mod tests {
             log_accent_color(LogAccent::Highlight),
             log_accent_color(LogAccent::Heal)
         );
+    }
+
+    /// The drawn-bar fill index follows retail's whole-gauge precedence
+    /// (FUN_80046A20 via `engine-vm::battle_gauge`): death first, then the
+    /// status override, then per-bar fill bands.
+    #[test]
+    fn gauge_fill_indices_follow_the_retail_precedence() {
+        let mut s = BattleSlotHud::new();
+        s.alive = true;
+        s.hp = 80;
+        s.hp_max = 100;
+        s.mp = 5;
+        s.mp_max = 40;
+        // HP high band (7), MP low band (9), coloured independently.
+        assert_eq!(s.gauge_fill_indices(), (7, 9));
+        // Any active status forces the whole gauge to the override colour.
+        s.set_status_icons([StatusKind::Toxic]);
+        assert_eq!(s.gauge_fill_indices(), (3, 3));
+        // Death (displayed HP zero) wins over everything.
+        s.hp = 0;
+        assert_eq!(s.gauge_fill_indices(), (2, 2));
+        s.status_icons.clear();
+        assert_eq!(s.gauge_fill_indices(), (2, 2));
+    }
+
+    /// Identical adjacent monsters must collapse into one dedup-labelled
+    /// retail row (FUN_801D9D3C via `target_picker::enemy_menu_rows`), and a
+    /// dead slot must contribute nothing (retail's zero id).
+    #[test]
+    fn enemy_target_rows_collapse_runs_and_skip_dead_slots() {
+        use crate::monster_catalog::MonsterDef;
+        use crate::world::{Actor, World};
+        let mut w = World::new();
+        while w.actors.len() < 8 {
+            w.actors.push(Actor::default());
+        }
+        w.party_count = 1;
+        w.monster_catalog
+            .insert(MonsterDef::new(7, "Gimard", 40, 5));
+        w.monster_catalog
+            .insert(MonsterDef::new(9, "Zenoir", 40, 5));
+        // Slots 1..=3: Gimard, Gimard, Zenoir. Slot 2's twin is dead.
+        for (i, (id, hp)) in [(7u16, 40u16), (7, 40), (9, 40)].iter().enumerate() {
+            let a = &mut w.actors[1 + i];
+            a.battle.hp = *hp;
+            a.battle.max_hp = 40;
+            a.battle.liveness = 1;
+            a.battle_monster_id = Some(*id);
+        }
+        let rows = battle_enemy_target_rows(&w);
+        assert_eq!(rows.len(), 2, "the Gimard pair collapses into one row");
+        assert_eq!(rows[0].first_slot, 0);
+        assert_eq!(rows[0].members, 2);
+        // The second member overwrites the label's final character with the
+        // dedup glyph (fallback 'A'), keeping the byte length.
+        assert_eq!(rows[0].label, "GimarA");
+        assert_eq!(rows[1].label, "Zenoir");
+        assert_eq!(rows[1].first_slot, 2);
+
+        // Kill the second Gimard: the run breaks and no dedup glyph remains.
+        w.actors[2].battle.hp = 0;
+        let rows = battle_enemy_target_rows(&w);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].label, "Gimard");
+        assert_eq!(rows[0].members, 1);
+    }
+
+    /// The HUD row must carry the **ramping** HP (`BattleActor::hp_display`,
+    /// retail actor `+0x172` / FUN_80047430), not the live value the sim
+    /// already settled - otherwise the drain animation is computed every
+    /// frame and never shown.
+    #[test]
+    fn sync_reads_ramped_display_hp_not_live_hp() {
+        use crate::world::{Actor, World};
+        let mut w = World::new();
+        while w.actors.len() < 4 {
+            w.actors.push(Actor::default());
+        }
+        w.party_count = 1;
+        w.actors[0].battle.hp = 100;
+        w.actors[0].battle.max_hp = 200;
+        w.actors[0].battle.liveness = 1;
+        // Mid-ramp: live HP already at 100, bar still showing 160.
+        w.actors[0].battle.hp_display = Some(160);
+        // Monster slot mid-ramp too.
+        w.actors[1].battle.hp = 10;
+        w.actors[1].battle.max_hp = 50;
+        w.actors[1].battle.liveness = 1;
+        w.actors[1].battle.hp_display = Some(30);
+
+        let mut hud = BattleHud::new();
+        sync_battle_hud_rows(&mut hud, &w);
+        assert_eq!(hud.slots[0].hp, 160, "party row shows the ramping bar");
+        assert_eq!(hud.slots[1].hp, 30, "monster row shows the ramping bar");
+
+        // Settled (`None`) falls back to live HP.
+        w.actors[0].battle.hp_display = None;
+        sync_battle_hud_rows(&mut hud, &w);
+        assert_eq!(hud.slots[0].hp, 100, "settled bar reads live HP");
     }
 
     #[test]

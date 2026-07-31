@@ -71,10 +71,7 @@ impl World {
     ///
     /// PORT: FUN_801D5B5C (the touch-event post + engaged-flag raise)
     pub fn start_prop_interaction(&mut self, anchor: (u8, u8)) -> bool {
-        if self.inline_dialogue.is_some()
-            || self.current_dialog.is_some()
-            || self.cutscene_timeline_active()
-        {
+        if self.dialogue_owns_input() || self.cutscene_timeline_active() {
             return false;
         }
         let Some(prop) = self.field_prop_bank.props.get(&anchor) else {

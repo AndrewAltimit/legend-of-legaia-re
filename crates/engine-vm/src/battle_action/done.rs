@@ -25,7 +25,14 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
         actor.action_recoil = recoil;
         actor.flag_bits.set(ActorFlags::EXIT);
     }
-    // Set frame timer for fade-down (0x3C default; 0x96 if shake).
+    // The Done band's own countdown. All three of retail's `0x50` paths
+    // converge on `li v0,0x3c` / `sh v0,0x2(s7)` (`0x801E5EE8` / `0x801E5EFC`
+    // / `0x801E5F24` into `0x801E5F28`), so `0x3C` is the seed regardless of
+    // which arm the action category took. The one override is
+    // `lbu v0,0x15(s5)` at `0x801E5F2C`: a non-zero `ctx[+0x26]` re-seeds
+    // `0x96` instead. That byte is not modelled on `BattleActionCtx` - it has
+    // no other reader in the ported band - so the port always takes the `0x3C`
+    // arm and the longer tail is a stated gap, not an accident.
     ctx.frame_timer = 0x3C;
 
     // Per-category pose: run → screen-shake; attack → pose 8; otherwise idle.
@@ -186,25 +193,66 @@ pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut Battle
     ctx.item_target_b = census.sole_monster_target;
 }
 
+/// The timer floor retail holds the Done band at while the menu flag
+/// `ctx[+0x276]` is up (`slti v0,v0,0xc` / `li v0,0xc` / `sh v0,0x2(s7)` at
+/// `0x801E60C0..0x801E60E4`).
+///
+/// It is a *floor*, not a gate: the countdown is allowed to sink to `0xC` and
+/// is then pinned there for as long as the flag is set, so the band's tail
+/// cue block (which runs below `0xC`) never starts and the exit below never
+/// fires. When the flag clears, the last twelve frames still have to run.
+pub const DONE_MENU_HOLD_FRAMES: i16 = 0xC;
+
+/// The timer retail re-seeds when the Done band routes to
+/// [`ActionState::DoneMultiCast`] instead of ending the action
+/// (`li v0,0xb4` / `sh v0,0x2(s7)` at `0x801E6134`/`0x801E6138`, the arm
+/// `ctx[+0x269] != 0` selects).
+///
+/// Without it the multi-cast state inherits an already-negative timer and can
+/// never satisfy a countdown, which is a park rather than a wait.
+pub const DONE_MULTI_CAST_FRAMES: i16 = 0xB4;
+
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    // REF: FUN_801E7250 - retail's state-0x51 arm freezes the `+0x6D8`
-    // countdown while the HP-bar drain check reports a mismatch
-    // (`if (iVar11 == 0) { decrement }` at the `0x801E6044` callsite).
-    if hp_bar_drain_pending(host, ctx) {
+    // Retail's `0x51` arm, in its own order (`0x801E6044..0x801E6148`):
+    //
+    // 1. `jal FUN_801E7250` - the HP-bar settle check. A pending drain
+    //    branches **past the decrement** (`bne v0,zero,0x801E60B8`), so the
+    //    countdown freezes while a party readout is still ramping; it does
+    //    not restart it and it does not skip the exit test.
+    // 2. decrement, but only while the timer is still non-negative
+    //    (`bltz v0,0x801E60C4` at `0x801E605C`).
+    // 3. the menu-flag floor at `0xC` ([`DONE_MENU_HOLD_FRAMES`]).
+    // 4. leave when the timer is **negative and** the menu flag is clear
+    //    (`bgez v0,...` at `0x801E60F0`, `bne v0,zero,...` at `0x801E610C`).
+    //
+    // Step 4 is a test on the *value*, re-run every pass - not on the frame
+    // the countdown happens to cross zero. Gating the exit on the crossing
+    // means any pass where the menu flag is up on that one frame loses the
+    // exit for good, which is the shape of an unbounded park rather than of
+    // retail's bounded tail.
+    //
+    // REF: FUN_801E7250 (the settle check this arm calls)
+    // PORT: FUN_801E295C (`0x801E6044..0x801E6148`)
+    if !hp_bar_drain_pending(host, ctx) && ctx.frame_timer >= 0 {
+        ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
+    }
+    if ctx.frame_timer < DONE_MENU_HOLD_FRAMES && ctx.menu_open != 0 {
+        ctx.frame_timer = DONE_MENU_HOLD_FRAMES;
+    }
+    if ctx.frame_timer >= 0 || ctx.menu_open != 0 {
         return stay(ctx);
     }
-    if !tick_frame_timer(host, ctx) {
-        return stay(ctx);
-    }
-    if ctx.menu_open != 0 {
-        return stay(ctx);
-    }
+    // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack trigger
+    // flag is cleared on the way out, so a counter armed during this action
+    // cannot leak into the next one.
+    ctx.counter_attack_b = 0;
     if ctx.multi_cast_gate == 0 {
         return transition(ctx, ActionState::EndOfAction);
     }
+    ctx.frame_timer = DONE_MULTI_CAST_FRAMES;
     transition(ctx, ActionState::DoneMultiCast)
 }
 
@@ -214,7 +262,13 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
-    if !tick_frame_timer(host, ctx) {
+    // Same countdown shape as the band above: the entry seeded
+    // [`DONE_MULTI_CAST_FRAMES`], the decrement stops at the sign change, and
+    // the exit is a test on the value rather than on the crossing.
+    if ctx.frame_timer >= 0 {
+        ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
+    }
+    if ctx.frame_timer >= 0 {
         return stay(ctx);
     }
     ctx.multi_cast_gate = 0;

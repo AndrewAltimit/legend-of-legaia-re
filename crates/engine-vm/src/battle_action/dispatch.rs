@@ -285,6 +285,95 @@ pub fn begin_formation_arm_for<H: BattleActionHost + ?Sized>(
     begin_formation_arm(party, monsters, ctx)
 }
 
+/// The **auto-fill arm** of the AI queue assembler, over every party slot -
+/// `FUN_801F0450`'s `record[+0xF8] & 0x2000` leg
+/// (`0x801F04A0..0x801F06D4`), driven from its retail call site.
+///
+/// For each party slot whose roster character carries the auto-fight passive
+/// and whose actor is not status-vetoed, this stamps action category `3`
+/// (Attack), rolls a target over the monster slots, and fills
+/// `actor[+0x1DF..]` with biased learned-art bytes from the character's
+/// displayed-skill list ([`crate::battle_arts_auto_combo::auto_fill_queue`]).
+///
+/// The **pool arm** - the AP-budgeted `DAT_801C9360[slot][cmd]` draw the same
+/// function takes when the passive is clear - is not driven from here: its
+/// per-(character, weapon) command records with their `+0x74` costs and the
+/// four-entry status-guard mask table at `0x801F672C` have no parser, so
+/// calling [`crate::battle_arts_auto_combo::build_candidate_pool`] would draw
+/// from an empty pool. `engine-core` keeps driving auto-fighting party members
+/// through its own stand-in physical action on that leg.
+///
+/// The target roll consumes one host RNG draw per selected slot and the
+/// fill consumes two per iteration, in retail's own order (stop roll, then
+/// index roll), so a host with a deterministic RNG stays deterministic.
+///
+/// PORT: FUN_801F0450 (the auto-fill leg + its per-slot loop)
+/// REF: FUN_801DB124 (the dead-target redirect the target roll feeds)
+fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H) {
+    use super::pool_ops::{RedirectQuery, redirect_dead_target};
+    use crate::battle_arts_auto_combo::{
+        ART_ACTION_BIAS, auto_fill_queue, gate_selects_auto_fill, roll_target_slot,
+    };
+    let party = host.party_count();
+    let monsters = (party..host.slot_count())
+        .filter(|&s| host.actor(s).is_some_and(|a| a.liveness != 0))
+        .count() as u8;
+    let alive: Vec<bool> = (0..host.slot_count())
+        .map(|s| host.actor(s).is_some_and(|a| a.liveness != 0))
+        .collect();
+    for slot in 0..party {
+        let Some(status) = host.actor(slot).map(|a| a.field_flags) else {
+            continue;
+        };
+        if !gate_selects_auto_fill(host.character_ability_bits_high(slot), status) {
+            continue;
+        }
+        // Retail's order: category and target are written first
+        // (`0x801F0528` / `0x801F0578`), and the learned-arts count gate that
+        // can end the slot comes after (`0x801F05AC`) - so a delegated member
+        // with an empty list still ends up with a committed Attack.
+        let draw = host.rng() as i32;
+        let rolled = roll_target_slot(monsters, draw);
+        // The roll goes straight through the dead-target redirect
+        // (`jal 0x801db124` at `0x801F0574`) - a third call site for it, and
+        // unlike the turn picker's two this one carries no `ctx[+0x06]`
+        // command-flow gate, so the redirect is unconditional here.
+        let target = redirect_dead_target(
+            RedirectQuery {
+                target_slot: rolled,
+                category: ActionCategory::Attack.as_byte(),
+                param0: 0,
+            },
+            party,
+            monsters,
+            || host.rng() as i32,
+            |s| alive.get(s as usize).copied().unwrap_or(false),
+            |_| 0,
+        )
+        .unwrap_or(rolled);
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.action_category = ActionCategory::Attack.as_byte();
+            actor.active_target = target;
+        }
+        let char_id = host.roster_character_id(slot);
+        let learned = host.learned_arts(slot);
+        if learned.is_empty() {
+            continue;
+        }
+        let filled = {
+            let mut rng = || host.rng() as i32;
+            auto_fill_queue(char_id, &learned, &mut rng)
+        };
+        debug_assert!(filled.bytes.iter().all(|&b| b >= ART_ACTION_BIAS));
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.params = [0; ACTION_PARAM_BYTES];
+            for (dst, src) in actor.params.iter_mut().zip(filled.bytes.iter()) {
+                *dst = *src;
+            }
+        }
+    }
+}
+
 pub(super) fn begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -292,6 +381,12 @@ pub(super) fn begin<H: BattleActionHost + ?Sized>(
     // Reset ctx counters at +0x6DA..+0x6DB.
     ctx.combo_timer = 0;
     // Seed the turn cursor from the formation advantage, then latch it away.
+    // The AI queue assembler runs in the same once-per-battle pass, and it
+    // runs first: retail's opening instruction of state `0x00` is
+    // `jal 0x801f0450` (`0x801E2AB8`), ahead of the formation arm.
+    if !ctx.formation_armed {
+        auto_fill_party_queues(host);
+    }
     begin_formation_arm_for(host, ctx);
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.
     if ctx.menu_open != 0 {

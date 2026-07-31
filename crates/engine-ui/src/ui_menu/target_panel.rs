@@ -560,6 +560,7 @@ mod target_panel_tests {
             atr_icons: [z; 3],
             load_empty_frame: None,
             load_portrait_by_char: [None; 3],
+            battle: None,
         };
         let hands = |cursor: TargetPanelCursor| {
             target_panel_sprites_for(

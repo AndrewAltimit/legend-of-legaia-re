@@ -269,9 +269,16 @@ impl PlayWindowApp {
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
                 log::info!(
-                    "DIAG pose: tmd {tmd_idx} verts {} aabb {lo:?}..{hi:?} \
-                         bones[0..2]={:?}",
+                    "DIAG pose: actor {ai} tmd {tmd_idx} verts {} anim {:?} \
+                         world ({},{},{}) aabb {lo:?}..{hi:?} bones[0..2]={:?}",
                     vmesh.positions.len(),
+                    actor
+                        .battle_animation
+                        .as_ref()
+                        .map(|p| (p.action_id(), p.current_frame())),
+                    actor.move_state.world_x,
+                    actor.move_state.world_y,
+                    actor.move_state.world_z,
                     &pose.bone_outputs[..pose.bone_outputs.len().min(2)]
                 );
             }
@@ -311,13 +318,23 @@ impl PlayWindowApp {
                 let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
                 let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
                 let mesh = effect_billboard_mesh(r, &sprites, right, up);
-                let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
-                let lines = match r.upload_lines(&pos, &col, &idx) {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        log::warn!("effect outline lines upload: {e:#}");
-                        None
+                // The wireframe outline is a **diagnostic**, off by default
+                // (`LEGAIA_DIAG_FX=1`). It exists to make a spawn readable
+                // when its texels are not resident, and it predates the
+                // battle-entry flame-atlas blit; with the atlas resident the
+                // textured quad draws, and leaving the outline on stamps a
+                // bright rectangle over every effect in normal play.
+                let lines = if std::env::var_os("LEGAIA_DIAG_FX").is_some() {
+                    let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
+                    match r.upload_lines(&pos, &col, &idx) {
+                        Ok(m) => Some(m),
+                        Err(e) => {
+                            log::warn!("effect outline lines upload: {e:#}");
+                            None
+                        }
                     }
+                } else {
+                    None
                 };
                 (mesh, lines)
             }
@@ -521,14 +538,56 @@ impl PlayWindowApp {
         field_fx_draws
     }
 
+    /// This frame's move-FX afterimage streak, as screen-space quads on the
+    /// retail 320x240 stage.
+    ///
+    /// The pass retail runs once per move-FX frame: project the launch point
+    /// the action effect script's terminator staged
+    /// (`legaia_engine_core::action_effect_script::MoveFxStreak`), fan a
+    /// camera-facing billboard out at the staged half-width, and emit the
+    /// jittered semi-transparent `POLY_FT4` the ported `FUN_801E1AB0` builds.
+    ///
+    /// Gated on the move-FX scene being live: the trail texpage is
+    /// scene-scoped (`World::spawn_move_fx` sets it, `tick_move_fx` drops it
+    /// when the scene drains), so the streak lasts exactly as long as the
+    /// effect it trails. Empty outside a move.
+    // PORT: FUN_801E1AB0 (per-frame emission; the packet + the projection
+    // live in `legaia_engine_render::{afterimage, streak_pass}`)
+    fn move_fx_streak_quads(
+        &self,
+        r: &legaia_engine_render::Renderer,
+    ) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
+        use legaia_engine_render::streak_pass::{StreakSource, streak_quads};
+        let world = &self.session.host.world;
+        let trail = world.active_move_fx_trail_texpage();
+        if trail.is_none() {
+            return Vec::new();
+        }
+        let block = world.move_fx_streak();
+        let Some(src) = StreakSource::from_block(block.launch, block.half_width(), trail) else {
+            return Vec::new();
+        };
+        let (w, h) = r.surface_size();
+        let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
+        let quads = streak_quads(&src, &mvp, self.tick_no as u32);
+        log::debug!(
+            "move-FX streak: launch {:?} half-width {} -> {} quad(s)",
+            block.launch,
+            block.half_width(),
+            quads.len()
+        );
+        quads
+    }
+
     pub(super) fn build_screen_fx_meshes(
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (Option<UploadedColorMesh>, Option<UploadedVramMesh>) {
         let mut screen_fx_solid = None;
         let mut screen_fx_tex = None;
+        let streak = self.move_fx_streak_quads(r);
         let fx_frame = &self.session.host.world.screen_fx_frame;
-        if !fx_frame.is_empty() {
+        if !fx_frame.is_empty() || !streak.is_empty() {
             let quad = |pos: &mut Vec<[f32; 3]>,
                         idx: &mut Vec<u32>,
                         l: f32,
@@ -611,6 +670,27 @@ impl PlayWindowApp {
                     [s.clut as u16, s.texpage as u16],
                     pos.len() - base,
                 ));
+            }
+            // Move-FX afterimage streak. Unlike the widget quads above these
+            // are not axis-aligned rects - the packet carries four
+            // independent corners in the retail `xy0..xy3` order (TL, TR, BL,
+            // BR) - so they are pushed vertex-by-vertex rather than through
+            // `quad()`. Depth `0.0` puts them with the sprites, in front of
+            // the panels: retail links each streak packet at the projected
+            // billboard's own OT bucket (inside the scene), which this
+            // screen-space batch cannot express, so the engine draws them
+            // over the actors instead of interleaved with them.
+            for q in &streak {
+                let base = pos.len() as u32;
+                for (x, y) in q.xy {
+                    pos.push([x as f32, y as f32, 0.0]);
+                }
+                // `xy` is TL, TR, BL, BR - the same winding `quad()` emits.
+                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+                for (u, v) in q.uv {
+                    uvs.push([u, v]);
+                }
+                cba_tsb.extend(std::iter::repeat_n([q.clut, q.tpage], q.xy.len()));
             }
             if !idx.is_empty() {
                 let normals = vec![[0.0f32; 3]; pos.len()];

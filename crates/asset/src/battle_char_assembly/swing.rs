@@ -49,6 +49,40 @@ pub struct SwingAnimation {
     pub face: Option<crate::face_anim::FaceTracks>,
 }
 
+/// The four **per-direction command costs** for one character's equipped
+/// set, indexed by direction-command byte order (`Left, Right, Down, Up` =
+/// runtime slots `0xC..=0xF`, so index `i` is slot `SWING_SLOT_BASE + i`).
+///
+/// This is the one AP price in the game: the Arts command gauge charges it
+/// per directional press, and the Muscle Dome charges the same byte for the
+/// same command (`FUN_801d388c` case 9 reads it out of the runtime record
+/// `DAT_801C9360[char][cmd] + 0x74`, which the battle loader copied
+/// verbatim from these disc bytes). Both callers must read it here so the
+/// two screens cannot price a swing differently.
+///
+/// `Err` when a section fails to decode; `None` in a slot the equipped set
+/// leaves without a swing record (retail always fills all four for a real
+/// equipped set - a `None` means the caller passed a set the disc has no
+/// section for).
+///
+/// REF: FUN_800557B8
+pub fn swing_command_costs(
+    buf: &[u8],
+    pack: &BattleDataPack,
+    equipped: &[u8; SECTION_COUNT],
+) -> Result<[Option<u8>; 4]> {
+    let mut out = [None; 4];
+    for s in swing_battle_animations(buf, pack, equipped)? {
+        if let Some(i) = s.slot.checked_sub(SWING_SLOT_BASE)
+            && (i as usize) < out.len()
+            && s.cost > 0
+        {
+            out[i as usize] = Some(s.cost);
+        }
+    }
+    Ok(out)
+}
+
 /// Parse the standard `0xAC`-byte action entry at `off` in `block`: action
 /// tag at `+0x00`, rate byte at `+0x78`
 /// ([`crate::monster_archive::ANIM_RATE_OFFSET`]), packed keyframe stream at

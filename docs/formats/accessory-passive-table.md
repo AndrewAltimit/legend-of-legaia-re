@@ -81,6 +81,39 @@ and scope:
 Party-wide scope is set on exactly indices `0x30..=0x37` and `0x3B..=0x3F`
 (the battle-end / encounter / escape modifiers).
 
+## Status-guard clear masks
+
+Seven of the indices are **status guards**, and the routine that applies them
+is what pins the battle status-flag bit map. `FUN_8004CE2C`
+(`ghidra/scripts/funcs/8004ce2c.txt`, `0x8004CEF4..0x8004CFF8`) reads the
+wearer's ability bitfield word at char `+0xF4` once per guard and, for each
+set bit, ANDs a fixed mask into the battle actor's status word `+0x16E` -
+mirroring the result into the display record's `+0x6F6` in the same
+instruction pair. The mask is the guard's meaning expressed in bits:
+
+| Index | Name | AND mask | Bits cleared | Ailment |
+|---:|---|---|---|---|
+| `0x16` | Poison Guard 1 | `0xFFFE` | `0x0001` | Venom |
+| `0x17` | Poison Guard 2 | `0xFFFC` | `0x0003` | Venom + Toxic |
+| `0x18` | Rot Guard | `0xFF87` | `0x0078` | Rot (three limb bits + one unused) |
+| `0x19` | Curse Guard | `0xEFFF` | `0x1000` | Curse |
+| `0x1A` | Stone Guard | `0xFFFB` | `0x0004` | Stone |
+| `0x1B` | Numb Guard | `0xFBFF` | `0x0400` | Numb |
+| `0x1C` | Master Guard | `0xE380` | `0x1C7F` | every ailment |
+
+Master Guard's mask is the definition of "ailment": `0x1C7F` is the union of
+the six above plus `0x0800`, the one condition with no guard of its own.
+Notably it does **not** clear `0x0380`, the AI-delegation group Rage
+(`0x2D`) sets - a passive, not an ailment, so a full cure leaves it standing.
+
+The `0x2A` Maximum AP row lands in the same routine's second word
+(`+0xF8` bit `0x400`, index 42) and writes `0x64` to the actor's `+0x170`
+gauge, which is how that offset is pinned as the 0..100 AP gauge.
+
+Bit assignments, priorities and the HUD element each drives are in
+[`save-record.md`](save-record.md#0x12e-is-the-battle-status-word) and
+mirrored at `engine-vm::status_effects::display_flags`.
+
 ## The 64 passive indices
 
 Names/descriptions are the on-disc strings; the index assignments are

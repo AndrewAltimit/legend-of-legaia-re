@@ -1385,9 +1385,9 @@ ordering-table cursor `_DAT_1F8003A0`, transforms vertices through the GTE (`FUN
 RotMatrix, `FUN_8005BAC8` RotTransPers-class, `FUN_8003D2C4` / `FUN_8003D344` /
 `FUN_8003D1A4` primitive helpers) and screen-clips before linking. The per-record
 simulation each style runs - seeding, gating and integration - is ported into
-`legaia-engine-vm`; styles 3 (the strip curtain) and 2 (the tile shatter) also **draw**
-through the engine's screen-overlay path, while the packet assembly of the remaining
-three stays at the clean-room boundary.
+`legaia-engine-vm`, and all five styles **draw** through the engine's screen-overlay
+path: the packet builders live in `engine-render::battle_intro` (`emit_particle_field`,
+`emit_tile`, `intro_quad_to_screen`, `emit_swirl_band`, `emit_spinup_ring`).
 
 Every style is a **(init, tick)** pair, and the allocation sizes are what pair them:
 
@@ -1419,16 +1419,131 @@ is why the flags-set path defaults to style 1 rather than to the initial style 2
 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never escapes, then returns. `see
 ghidra/scripts/funcs/overlay_field_battle_intro_<addr>.txt` for each.
 
+#### How long a transition runs (`DAT_801D2458`)
+
+The same init block seeds the duration, two instructions before the style switch it
+feeds: `addiu v0,zero,0x84` / `sw v0,0x2458(v1)` at `0x801CED14` / `0x801CED2C`, then
+`sltiu v0,a0,0x5` on `DAT_801D2460`. So **every style runs 132 display frames** unless
+its own arm says otherwise, and exactly one does: the swirl's jump-table arm (slot `4` of
+the table at `0x801CE840`, body `0x801CEFEC`) re-stores `0xFC` at `0x801CEFF4` /
+`0x801CEFFC` - **252 frames**. Both stores are read off the overlay image's instruction
+words; the decompiler's rendering of `FUN_801ce8cc` reaches past the dumped window, so the
+C is not the evidence here. Port:
+`engine-vm::battle_intro_styles::intro_duration_frames`.
+
+That number is the denominator of everything time-shaped in the transition. Each
+`INTRO_FADE_RAMPS` entry is a *lead* before it (the longest is the curtain's `0x40`, so
+`0x84` starts every fade at or after the midpoint), the ready bits are raised at
+`- 0x1E` / `- 6`, and the tile shatter's spawn gate is measured against it.
+
+The shatter is what makes a short duration visible rather than merely quick. Its records
+hold at their seeded pose until `delay < elapsed * 0x3C`, and `delay` is `rand() % 5000`,
+so the last record starts around frame **84**. A transition shorter than that leaves part
+of the grid parked for its whole length - and one shorter than ~20 frames leaves *all* of
+it parked, which draws as a whitening fade over a statically re-tiled screen. The
+engine-side signature is a per-frame primitive bounding box that never leaves the seeded
+sheet's rect (`[0,-4]..[320,252]`, the projection of the `17 x 17` lattice at view z
+`0x800`); a transition that is working has a box that grows past it on all four sides
+within the first two dozen frames and a primitive count that decays as records retire.
+`engine-render`'s `the_tile_sheet_breaks_apart_over_a_retail_length_transition` pins that.
+
+A seeder RNG is the other way to park the same grid, and it fails identically: the delays
+come from 256 consecutive draws, so a generator that converges hands every record the same
+delay. The port's stand-in is
+`engine-vm::battle_intro_particles::IntroRng`, deliberately shared by every host - an LCG
+whose multiplier is even walks its whole state to a fixed point within a handful of draws
+and then returns one constant forever.
+
+#### The transition owns the whole frame
+
+Nothing else is drawn while it runs. The init routine's last act is
+`addiu v0,zero,9` / `sh v0,-0x47c4(v1)` at `0x801CF180`/`0x801CF188` - **`_DAT_8007B83C = 9`**,
+the "efect" game mode - so the field's mode-3 renderer does not run again until the
+completion arm writes `0x14`. The field's last frame is captured once, at init: `DrawSync`,
+a `MoveImage` of the drawn frame into the other display buffer, a `StoreImage` readback, an
+OR of the STP bit over every pixel, then a `LoadImage` into the texture page at VRAM
+`(320, 256)` plus three `ClearImage` calls blanking the borders. From there every visible
+pixel is a transition primitive sampling that page.
+
+That is what fixes the base colour the styles compose onto as **black** rather than "the
+field". A particle packet is semi-transparent on a page whose ABR is `1` (`B + F`), so a
+record still at its rest pose reproduces its captured patch exactly only over a cleared
+frame; the un-moved grid then *is* the field image, and every patch that flies away leaves
+the base colour behind it. A port that keeps rendering the live field underneath gets both
+halves wrong at once - the rest-pose patches read at double brightness, and the window's
+tail shows an untouched, still-animating field once the last particle has expired.
+
+The port's stand-in is `engine-render::battle_intro::backdrop_prim`, an opaque display-rect
+quad at the farthest OT bucket emitted on **every** frame of the window. It exists because
+the port composites the transition's screen primitives over a live scene
+(`RenderTarget::SceneWithScreenPrims`), which is a port artifact with no retail counterpart.
+
+#### The fade's second argument is a blend mode, not a depth
+
+`func_0x80024EE4(layer, blend, rgb)` pushes a five-word untextured quad over the whole
+display rect - command byte `0x2B`, i.e. semi-transparent - preceded by a `SetDrawMode`
+packet whose tpage word is `(blend << 5) | 0xE` (`sll a3,s3,0x5` / `ori a3,a3,0xe` at
+`0x80024FB0`/`0x80024FBC`). GP0 tpage bits `5..=6` are the ABR field, so the second
+argument lands there verbatim. `a0` is the OT layer, `2` on all five arms.
+
+| Style | Ramp lead / slope | `blend` | Where the tail lands |
+|---|---|---|---|
+| `0` scatter | `0x18` / 12 | `2`, or `1` when `DAT_801D2464 == 2` | black (white-out on the sub-2 arm) |
+| `1` spin-up | `0x18` / 16 | `1` | white |
+| `2` tile shatter | `0x1C` / 16 | `2` | black |
+| `3` curtain | `0x40` / 4 | `2` | black |
+| `4` swirl | `0x20` / 10 | `1` | white |
+
+ABR `1` is `B + F` and ABR `2` is `B - F`; the ramp colour is the level smeared across all
+three channels. So the same white ramp whites out under `1` and blacks out under `2`, and
+reading the argument as an OT depth puts every style on ABR `0` (`0.5B + 0.5F`) - a tail
+that never reaches either end and leaves the outgoing frame legible underneath it.
+
+The armed wash `FUN_8004695C(rgb)` goes through the same emitter. It only sets
+`gp+0x9D4 = 1` / `gp+0x9D0 = rgb` (and clears `_DAT_8007B6CC`); the drain `FUN_80046978`
+scales each channel by the scratchpad brightness byte at `0x1F800393`, clamps, clears the
+armed flag - so it is one-shot per arm, which is why style `0` re-arms it every frame - and
+calls `func_0x80024EE4(otlen - 1, 2, rgb)`: the farthest bucket, subtractive. It darkens
+what the framebuffer already holds rather than filling it.
+
 #### What the styles actually draw
 
-**Styles 0 and 1** are particle fields. Both walk `0x488` of the seeder's 1280 records - the
-last 120 are seeded and never visited - and both read the record the same way: `+0x08..+0x0C`
-is a translation integrated by `+0x20..+0x24`, `+0x10..+0x14` a rotation integrated by
-`+0x18..+0x1C`, `+0x1E` a spawn delay measured against the entity clock, and `+0x04` a colour
-whose **top byte non-zero skips the particle entirely**. That fixes `+0x20..+0x24` as a
-velocity rather than as the sprite size and flag word an earlier reading of the seeders
-assigned. Style 1 additionally ramps each particle's spin by `1.375x` per frame and decays
-its colour by `-0x50505`.
+**Styles 0 and 1** are particle fields - the captured screen cut into 8x8-pixel patches
+that fly apart. Both walk `0x488` of the seeder's 1280 records - the last 120 are seeded
+and never visited - and both read the record the same way: `+0x1E` is a spawn delay
+measured against the scaled entity clock, and `+0x04` a colour whose **top byte non-zero
+skips the particle entirely**. The two pose triples carry the same inversion the tile
+record went through: **`+0x10..+0x14` is the particle's position** (the per-record chain
+at `0x801CFF08..0x801CFF3C` / `0x801D04E8..0x801D0524` is `SetRotMatrix(view)` →
+`FUN_8003D344(rec+0x10)` into the translation slot → `FUN_80026988(rec+0x08)` - the
+Euler-to-matrix kernel - into the rotation) **and `+0x08..+0x0C` its Euler angles**, so
+`+0x18..+0x1C` is a position velocity (radial drift + the fall rate on z, which flies the
+patch toward the camera) and `+0x20..+0x24` an angular rate. The integration pairing an
+earlier reading recorded is unchanged; only the labels invert. Style 1 additionally ramps
+each particle's position velocity by `1.375x` per frame, decays its colour by `-0x50505`,
+pre-divides the position by 8 before the transform, and links a moved particle one OT
+word nearer (`OT+396` vs the shared `OT+400`).
+
+The packet (`0x801CFEA4..0x801CFF08` / `0x801D0440..0x801D04EC`) is a 10-word `POLY_FT4`:
+colour code `0x2C` from the record tint, `|= 2` (semi-transparent; the page's ABR is 1,
+additive) once the delay has expired, texture page `(rec[+0x28] >> 6) + 0x135` with
+`u = rec[+0x28] & 0x3F`, `v = rec[+0x2A]`, corners `(u,v)..(u+8,v+8)`. Pages
+`0x135..=0x139` are 15bpp pages at `(320+64k, 256)` - the captured field frame - and at
+the seeded rest pose the projection (`FUN_8005BAC8`, whose return is `SZ3 >> 2`) maps
+every cell straight back onto its own patch, which is why the ticks stop at `0x488`:
+40 columns x 29 rows of 8px covers the 320x240 frame, and the unvisited 3 rows would
+sample below it. Style 0 also washes the screen with `0x101010` (`FUN_8004695C`) on every
+frame after the first; both styles' packet fields are latched **before** the integration
+block, so a particle draws its frame-entry pose and colour.
+
+**Style 1's sub-emitter `FUN_801D1CFC`** runs after the particle loop with the
+pre-increment clock: for `clock * 0xA0` in `1..=0x1000` it builds an annulus via the SCUS
+procedural mesh generator `FUN_80028158(scratch, 0, 0x60, params)` - case-0 parameters:
+96 segments, inner rim radius `clock * 0xA0` at z 0, outer rim `+2` at z `0xC8`, x/y
+scale `0xE00`, colour `0x303030` - staged at view translation `(0, 0, 0x800)`, and
+dispatches it with flag word `0x89000000` and `a2 = phase`: an expanding shockwave ring
+behind the confetti that fades out (the depth-cue bank against the flag word's zero
+ambient) as it grows.
 
 #### Style 2's emitter is not a GTE emitter
 
@@ -1561,13 +1676,45 @@ culled when the warp pushes them off-screen, and stretched vertically by
 `(|col - 160| * clock) >> 5`. Both passes **patch the shared descriptor record in place**
 before every `FUN_801CF1B0` call rather than carrying per-strip records.
 
-**Style 4** is a radial fan. Each of 16 bands samples the trig tables at stride `0x80` - one
-entry every 64 units of a 4096-entry table, so `0x21` columns span exactly half a turn - and
-the other half is written as an x-negated mirror, which is why a band is `2 * 99` vertices
-rather than `65 * 3`. A band carries an inner radius `4 + b * 0x10` and an outer
-`0x14 + b * 0x10`; the products are clamped to `+-0xA00` (x) and `+-0x760` (y), so the outer
-bands stop being circular and become the screen rectangle. Alternating bands get opposite
-rotation rates, which is what makes the rings counter-rotate.
+**Style 4** is a radial fan of the captured screen. Each of 16 bands samples the trig
+tables at stride `0x80` - one entry every 64 units of a 4096-entry table, so `0x21`
+columns span exactly half a turn - and the other half is written as an x-negated mirror,
+which is why a band is `2 * 99` vertices rather than `65 * 3`. A band carries an inner
+radius `4 + b * 0x10` and an outer `0x14 + b * 0x10`; the products are clamped to
+`+-0xA00` (x) and `+-0x760` (y), so the outer bands stop being circular and become the
+screen rectangle. Two earlier readings of the tick are corrected by the submit's own
+bytes:
+
+- **The band scalar at `+0x08` is a view depth, not a rotation angle.** `FUN_801D1888`
+  stages each band as identity rotation (`FUN_80026988` over a zero triple) with
+  translation `(0, 0, scalar)` (`0x801D1904..0x801D195C`), and the `> 0x80` draw gate is
+  a near-plane test. The alternating rate signs
+  (`((band & 1) ? .. : -..) * 0x1400 + 0xA00`) fly alternating bands toward and away
+  from the camera, not into counter-rotation.
+- **A band half is 64 `POLY_FT4` quads, not a triangle fan.** `FUN_801D1A20` is the tile
+  shatter's mechanism again: a synthetic Legaia-TMD object at `_DAT_8007B85C + 0x5DC00`
+  (group header `count = 0x40`, `flags = 0x22` - dispatch kind 17 - `ilen = 6`, `mode =
+  0x2C`), whose 32-iteration loop writes **two quads per column pair**: the ring quad
+  `(p, p+1, p+3, p+4)` at colour `0x2C808080` and the darker wall quad
+  `(p+2, p, p+5, p+3)` - the far-z copies joined to the near rim - at `0x2C404040`,
+  texture page `0x117` (primary, the capture's right 320-column half) or `0x115`
+  (mirrored, the left half).
+
+Before the late-phase frame `0x5A` the submit goes to `FUN_80043390` with flag word
+`0x1880_8080`: bit 27 selects the **double-sided** NCLIP mask (`0x7FFFFFFF`, the
+dispatcher's `0x80043520..0x80043540` decode), without which the x-mirrored half's
+reversed winding would cull; `a2 = 0` keeps the opaque bank, and the `0x808080` low bytes
+multiply nothing because the descriptor's `+0xC` word is zero. From `0x5A` on the submit
+swaps to `FUN_80029888(desc, 0x8180_8080, 0, (clock - 0x3C) * 4)` - the light-source TMD
+renderer - which stages a mid-grey far colour (`param_2` bytes `<< 4`) and builds an
+extra Euler rotation from the fourth argument (`<< 4` into the angle lanes; the roll that
+gives the style its name - this axis detail is graded decompiled-C), zeroing the GTE
+light block first; the tick also washes the screen `0x101010` once the *previous* frame's
+clock has passed the bound. The two texture pages also pin the trig tables' phase: the
+primary half's `u = (x >> 4) + 0x20` and the mirrored half's `-0x61 - (x >> 4)` stay
+inside their capture halves only when x is non-negative over the sampled half turn, so
+`_DAT_8007B81C` (the x lane) is sine-phased and `_DAT_8007B7F8` cosine-phased - the
+transpose of the phase convention the particle-seeder port assumed for the same pair.
 
 ## Script-cutscene helpers (`overlay_cutscene_dialogue`)
 
@@ -1679,7 +1826,7 @@ Every burst that passes the one-in-sixteen gate spawns at least one particle.
 | StGetNext frame poll + end latch + display width | `FUN_801CF740`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CF740.txt` |
 | MDEC decode watchdog / reset / DMA-out thunk | `FUN_801CFAD4` / `FUN_801CFC18` / `FUN_801CFE00`; `see ghidra/scripts/funcs/overlay_str_fmv_0x801CFAD4.txt` |
 | Field->battle transition SM + style dispatch | `FUN_801CF5BC` (PROT 0979 `field_battle_intro`); `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt` |
-| Field->battle per-style GTE/GPU emitters | `FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0` / `FUN_801D1888` + helpers `FUN_801CF1B0` / `FUN_801D0E54` / `FUN_801D0164` / `FUN_801D1564`; PROT 0979 `field_battle_intro` |
+| Field->battle per-style GTE/GPU emitters | `FUN_801CFDA0` / `FUN_801D0370` / `FUN_801D0D24` / `FUN_801D11D0` / `FUN_801D1888` + helpers `FUN_801CF1B0` / `FUN_801D0E54` / `FUN_801D0164` / `FUN_801D1564` / `FUN_801D1A20` / `FUN_801D1CFC`; PROT 0979 `field_battle_intro` |
 | Script-cutscene camera / tween / particle steps | `FUN_801D27E0` / `FUN_801D5C08` / `FUN_801D5D60` / `FUN_801D6058`; `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` |
 | Iki / STRv2 bitstream decoders | `FUN_801D0378` / `FUN_801D070C` (+ LZSS `FUN_801D0604`); `see ghidra/scripts/funcs/overlay_str_fmv_0x801D0378.txt` |
 | XA-clip channel selector (`CdlSetfilter`) | `FUN_8003D53C` / `FUN_8003D764`; `see ghidra/scripts/funcs/8003d764.txt` |

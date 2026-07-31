@@ -2,16 +2,17 @@
 //! drive a Tactical Art through the live player-driven battle session and
 //! assert the shout's CD-XA PCM lands in the audio mix at the expected time.
 //!
-//! Chain under test: a saved chain matching Vahn's Somersault record (action
-//! constant `0x27`) - the capture-verified arts-voice anchor (a live retail
+//! Art under test: Vahn's Somersault record (action constant `0x27`), entered
+//! as its own one-press command string (`Up`) in the retail per-press Arts
+//! command input - the capture-verified arts-voice anchor (a live retail
 //! trace of Somersault fired `FUN_8003D53C(XA2, chan 0/6, ...)` from
 //! `FUN_8004C140`). The test:
 //!
 //! 1. builds the same [`legaia_engine_audio::ArtsShoutBank`] the boot path
 //!    stages (`read_arts_shout_bank`: XA2/XA4/XA6 channel demux + SCUS cue
 //!    tables) from the real disc;
-//! 2. walks a `World` into a battle and executes the art through the live
-//!    Arts menu, draining the [`BattleShoutCue`] queue each tick;
+//! 2. walks a `World` into a battle and *types* the art through the live Arts
+//!    command input, draining the [`BattleShoutCue`] queue each tick;
 //! 3. resolves the cue against the bank and feeds the clip through the
 //!    device-free [`legaia_engine_audio::OfflineMixer`] with the modeled
 //!    CD-response start delay, asserting silence during the delay window and
@@ -26,6 +27,7 @@
 
 use std::path::PathBuf;
 
+use legaia_engine_core::arts_command_input::ArtsInputScreen;
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
@@ -61,8 +63,8 @@ fn stage_somersault(w: &mut World) {
     w.set_art_record(legaia_art::Character::Vahn, action, rec);
 }
 
-/// A live-loop world one walk-step away from a scripted encounter, with one
-/// saved chain (`Up`) for Vahn. Mirrors `super_art_live_battle`'s setup.
+/// A live-loop world one walk-step away from a scripted encounter. Mirrors
+/// `engine-core/tests/battle_shout_cue.rs`'s setup.
 fn build_world(with_record: bool) -> World {
     let mut w = World::new();
     while w.actors.len() < 8 {
@@ -81,11 +83,6 @@ fn build_world(with_record: bool) -> World {
     if with_record {
         stage_somersault(&mut w);
     }
-    w.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "Som".into(),
-        sequence: vec![4], // Up
-    });
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
@@ -110,9 +107,15 @@ fn build_world(with_record: bool) -> World {
     w
 }
 
-/// Walk into the battle and run the first art through the live Arts menu,
-/// draining shout cues every tick (they must be captured before the battle
-/// teardown clears the queue). Returns the accumulated cues.
+/// Walk into the battle and type one art through the live Arts command input:
+/// command menu → Arts → one `Up` press → Cross to end the entry → Begin →
+/// target. Shout cues are drained every tick (they must be captured before the
+/// battle teardown clears the queue). Later party turns fall back to Attack so
+/// the cue list measures exactly one arts entry. Returns the accumulated cues.
+///
+/// This is the pad path a player walks: under the retail model the Arts
+/// command opens a per-press directional entry, so a driver that only ever
+/// presses Cross never reaches an executed art.
 fn drive_art_and_collect_shouts(
     w: &mut World,
 ) -> Vec<legaia_engine_core::battle_events::BattleShoutCue> {
@@ -130,30 +133,70 @@ fn drive_art_and_collect_shouts(
     }
     assert!(entered, "walking should trigger Field -> Battle");
 
+    // Somersault's whole command string is one `Up`.
+    let combo = [PadButton::Up];
+    let mut next_dir = 0usize;
     let mut shouts = Vec::new();
     let mut press = true;
+    let mut opened_input = false;
+    let mut arts_turns = 0usize;
     for _ in 0..4000 {
         let pad = if !press {
             0
-        } else if w.battle_arts_menu.is_some() {
-            InputState::mask_of([PadButton::Cross])
+        } else if let Some(view) = w.arts_input_view() {
+            opened_input = true;
+            match view.phase {
+                ArtsInputScreen::Entering => {
+                    if next_dir < combo.len() {
+                        let dir = combo[next_dir];
+                        next_dir += 1;
+                        InputState::mask_of([dir])
+                    } else {
+                        InputState::mask_of([PadButton::Cross])
+                    }
+                }
+                // Review → Begin|Reselect (cursor 0 = Begin) → target picker.
+                _ => InputState::mask_of([PadButton::Cross]),
+            }
         } else if let Some(cmd) = w.battle_command.as_ref() {
-            if cmd.menu_command() == Some(BattleCommand::Arts) {
+            if arts_turns == 0 {
+                if cmd.menu_command() == Some(BattleCommand::Arts) {
+                    InputState::mask_of([PadButton::Cross])
+                } else {
+                    InputState::mask_of([PadButton::Down])
+                }
+            } else if cmd.menu_command() == Some(BattleCommand::Attack) {
                 InputState::mask_of([PadButton::Cross])
             } else {
-                InputState::mask_of([PadButton::Down])
+                InputState::mask_of([PadButton::Up])
             }
         } else {
             0
         };
+        let input_was_open = w.arts_input_active();
         w.set_pad(pad);
         press = !press;
         w.tick();
+        if input_was_open && !w.arts_input_active() {
+            arts_turns += 1;
+        }
         shouts.extend(w.drain_battle_shout_cues());
         if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
             break;
         }
     }
+    assert!(
+        opened_input,
+        "the Arts command must open the per-press input session"
+    );
+    assert_eq!(arts_turns, 1, "exactly one arts entry was driven");
+    // Non-vacuity: an aborted entry (or a spun-out loop) would leave the world
+    // in Battle, and the shout-free baseline would pass for the wrong reason.
+    assert_eq!(w.mode, SceneMode::Field, "the battle resolved");
+    assert!(
+        w.last_battle_rewards.is_some(),
+        "the party won, so an art actually landed"
+    );
     shouts
 }
 

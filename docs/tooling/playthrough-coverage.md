@@ -23,6 +23,7 @@ page cannot go stale against it.
 - [Attribution: SCUS vs overlay](#attribution-scus-vs-overlay)
 - [The capture + triage loop](#the-capture--triage-loop)
 - [Segment ledger](#segment-ledger)
+- [Guarding an oracle that reads the library](#guarding-an-oracle-that-reads-the-library)
 - [What the traces resolve](#what-the-traces-resolve)
 
 ## Why trace-driven
@@ -295,6 +296,70 @@ with the field tick, checkpoint on the next scene/mode). **S3 does not chain by
 input mashing** - the town01 opening is a non-dialogue script wait, detailed
 below. S4 chains from S3 by the grid-BFS door-nav (`autorun_s4_doornav.lua`); S5
 chains from the S4 exterior anchor.
+
+## Guarding an oracle that reads the library
+
+A test that consumes these anchors has **three** gitignored inputs, not one:
+`LEGAIA_DISC_BIN`, `extracted/`, and `saves/library`. The repo's rule is that a
+disc-gated test skips-and-passes when its data is missing, and that means every
+input it reads - a guard that covers only the first two turns a missing capture
+library into a *failure*.
+
+The defect hides in the one provisioning nobody runs on purpose. With no data at
+all (CI, a fresh clone) the `LEGAIA_DISC_BIN` gate stops the test before it can
+reach the library, and with the full set present it simply runs. It fires only in
+between: disc set and `extracted/` populated, `saves/` absent - which is exactly
+the state of a machine that has run `legaia-extract` but never captured a save.
+
+Its shape is what makes it read as guarded. The anchor loop already skips each
+missing capture individually, so the body looks correct:
+
+```rust
+for a in ANCHORS {
+    let Some(path) = library_save(a.fingerprint) else {
+        eprintln!("[skip] {}: no library save", a.label);   // looks guarded
+        continue;
+    };
+    ...
+    checked += 1;
+}
+assert!(checked >= 1, "expected at least one anchor present");  // fails at 0
+```
+
+Every per-item skip fires, `checked` stays `0`, and the aggregate assertion -
+there to keep the oracle non-vacuous - is what fails.
+
+The fix is a **directory**-level gate before the loop, not a per-fingerprint one:
+
+```rust
+if library_dir().is_none() {
+    eprintln!("[skip] saves/library missing (capture-gated)");
+    return;
+}
+```
+
+Gating on the directory keeps `checked >= 1` meaningful. A library that is
+present but has lost an anchor still trips it, which is the case the assertion
+was written for; only "no library at all" becomes a skip.
+
+**Detect it by removing the root, not by reading the source.** Whether a guard
+covers an input is a control-flow property, and this corpus already holds tests
+that absorb an absent library *without* a directory probe - a single-save
+`let ... else { return }`, or a loop that turns an empty result set into its own
+skip. Any static rule keyed on the shape above flags those too, so the reliable
+check is to hide the root and run:
+
+```bash
+# with LEGAIA_DISC_BIN set and extracted/ present
+mv saves saves.off
+for f in $(grep -rl 'saves/' crates/*/tests/); do
+  pkg=$(basename "$(dirname "$(dirname "$f")")")
+  cargo test -p "legaia-$pkg" --test "$(basename "$f" .rs)"
+done
+mv saves.off saves
+```
+
+Anything that fails rather than skips has a guard narrower than its inputs.
 
 ### S3 captured: the town01 opening is the name-entry screen
 

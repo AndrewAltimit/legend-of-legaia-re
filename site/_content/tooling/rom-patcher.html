@@ -691,8 +691,10 @@
   .rom-form input[type=text], .rom-form select, .rom-form textarea { width: 100%; max-width: 32rem; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; resize: vertical; }
   .rom-form input[type=file] { color: var(--text-muted); }
 
-  /* Disc + seed side by side where there is room. */
-  .rom-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 0 1.4rem; }
+  /* Disc + seed side by side where there is room. `min(20rem, 100%)` rather
+     than a bare `20rem`: a track floor wider than the container is a floor the
+     grid still honours, and the page goes sideways on a small phone. */
+  .rom-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: 0 1.4rem; }
 
   /* Presets */
   .rom-presets { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: stretch; }

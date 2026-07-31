@@ -163,6 +163,14 @@ pub struct LegaiaRuntime {
     /// Monotonic battle-render build counter; the page re-uploads the battle
     /// scene when `play_battle_generation` changes.
     pub(crate) battle_render_generation: u32,
+    /// This frame's built battle FX geometry (effect-pool billboards + the 3D
+    /// FX model draw list), rebuilt by `play_battle_fx_sync` and read back by
+    /// the `play_battle_fx_*` accessors ([`crate::play_battle_fx`]).
+    pub(crate) battle_fx: crate::play_battle_fx::BattleFxFrame,
+    /// Actor-table slot the mid-battle summon creature is seated in, once one
+    /// has spawned - the browser twin of the native window's
+    /// `summon_actor_slot`, kept so a second cast reuses the same seat.
+    pub(crate) summon_actor_slot: Option<usize>,
     /// Raw `SCUS_942.54` bytes (in the visitor's own browser, like the disc
     /// itself), kept for the battle render's per-stage tables: the backdrop
     /// second-copy mirror list (`DAT_80078B50`) and the ground-grid outdoor
@@ -302,6 +310,8 @@ impl LegaiaRuntime {
             prev_scene_mode: None,
             battle_render: None,
             battle_render_generation: 0,
+            battle_fx: Default::default(),
+            summon_actor_slot: None,
             scus: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
@@ -1683,36 +1693,51 @@ fn wall_clock_ms() -> f64 {
 
 impl LegaiaRuntime {
     /// Tick the world's effect scene-graphs - the browser twin of the native
-    /// window's per-frame effects block.
+    /// window's per-frame effects block, now leg for leg:
     ///
-    /// Three of the four halves are pure simulation and are run here:
-    /// [`World::spawn_move_fx`](legaia_engine_core::world::World::spawn_move_fx)
-    /// off the production `take_pending_move_fx_spawn` request, then
-    /// `tick_summon` / `tick_move_fx` / `tick_field_fx` at the retail
-    /// `0x0400` anim-speed step. Each self-gates to a no-op when nothing is
-    /// live.
-    ///
-    /// The fourth, `take_pending_summon_spawn`, is deliberately **not**
-    /// drained here. Its faithful render is the namesake battle creature drawn
-    /// through the enemy animation pipeline, and the browser has no battle 3D
-    /// layer to draw it into (a recorded host gap, not wiring); draining the
-    /// request would turn "the summon does not appear" into "the summon was
-    /// silently discarded", which is strictly less recoverable for whichever
-    /// host wires that layer.
+    /// * `take_pending_summon_spawn` -> [`Self::spawn_summon_creature_web`]:
+    ///   a player Seru-magic cast's namesake `battle_data` creature, seated
+    ///   and drawn through the enemy animation pipeline
+    ///   ([`crate::play_battle_fx`]). This used to be *deliberately* left
+    ///   undrained, on the reasoning that the browser had no battle 3D layer
+    ///   to draw it into - the layer exists now, so the request is honoured.
+    /// * `take_pending_move_fx_spawn` ->
+    ///   [`World::spawn_move_fx`](legaia_engine_core::world::World::spawn_move_fx),
+    ///   whose parts ride the FX part-draw seam.
+    /// * the spawned move's sound cue through the retail dispatch decode
+    ///   (`classify_cue` = `FUN_8004FCC8`) into the page's SFX scheduler - a
+    ///   `Ring` cue's `ring_value` is the `SfxBank` descriptor id. Voice cues
+    ///   (`id >= 0x100`) are streamed XA triggers neither host has a lane for.
+    /// * `tick_summon` / `tick_move_fx` / `tick_field_fx` at the retail
+    ///   `0x0400` anim-speed step. Each self-gates to a no-op when nothing is
+    ///   live.
     fn tick_world_effects(&mut self) {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
         let world = &mut host.world;
-        if let Some((move_id, origin)) = world.take_pending_move_fx_spawn() {
-            world.spawn_move_fx(move_id, origin);
-            // Classify-only, like the native path: move-FX cue playback is
-            // not wired to the SFX ring on either host.
-            let _ = world.take_pending_move_fx_cue();
+        let summon = world.take_pending_summon_spawn();
+        let mut cue = None;
+        if let Some((move_id, origin)) = world.take_pending_move_fx_spawn()
+            && world.spawn_move_fx(move_id, origin)
+        {
+            cue = world.take_pending_move_fx_cue();
         }
         world.tick_summon(0x0400);
         world.tick_move_fx(0x0400);
         world.tick_field_fx(0x0400);
+        // Both remaining legs need `&mut self`, so they run after the host
+        // borrow ends.
+        if let Some((spell_id, _origin)) = summon {
+            self.spawn_summon_creature_web(spell_id);
+        }
+        if let Some(cue) = cue
+            && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
+                legaia_engine_audio::classify_cue(cue as u32)
+            && let Ok(id) = u8::try_from(ring_value)
+        {
+            self.enqueue_sfx(id, 0);
+        }
     }
 
     /// Advance the world's play clock off the page's wall clock - the browser

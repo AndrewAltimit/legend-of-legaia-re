@@ -206,6 +206,111 @@
     });
   }
 
+  /* ---------- No WebGL2 ---------- */
+
+  /* Every 3D surface on this site - the asset viewer, the minigames, the play
+   * page, the world overview, the monster meshes - is WebGL2 only. There has
+   * never been a WebGL1 path and building one is not worth it.
+   *
+   * What was worth fixing is how the absence announced itself. `getContext
+   * ('webgl2')` returning null used to surface as a bare `Error('WebGL2 not
+   * available')`: the asset viewer caught it and dropped to its flat-shaded
+   * loop (so the models came out untextured), the minigames and the play page
+   * did not (so the art came out scrambled, or the canvas stayed black behind
+   * a one-line status). All three read as "this site is broken" rather than
+   * "this browser cannot draw it", which is the most expensive way to be
+   * wrong - it sends people hunting through the renderer for a bug that is not
+   * there. It has already cost that once: a graphics-driver update left a
+   * browser without hardware acceleration until it was restarted, and the
+   * pages answered with untextured geometry instead of saying so.
+   *
+   * So the null context now raises a banner that names the real condition
+   * before it throws. Callers keep throwing exactly as before - the viewer's
+   * fallback still runs - they just do it through here. */
+  var webgl2NoticeShown = false;
+
+  function showWebgl2Notice() {
+    if (webgl2NoticeShown) return;
+    webgl2NoticeShown = true;
+    var host = document.querySelector('.content') || document.body;
+    if (!host) return;
+
+    var box = document.createElement('div');
+    box.className = 'legaia-webgl2-notice';
+    box.setAttribute('role', 'alert');
+    /* Sticky, because the canvas that failed is usually well below the fold:
+     * a banner pinned to the top of the page scrolls out of sight exactly when
+     * the user reaches the blank/untextured area it explains. Offset by the
+     * fixed top bar so the two do not overlap, and opaque so the page does not
+     * show through it. */
+    box.style.cssText = [
+      'position:sticky;top:calc(var(--topbar-h,56px) + .5rem);z-index:40',
+      'margin:1rem 0;padding:1rem 1.15rem;border-radius:8px',
+      'border:1px solid var(--border,#3a4356)',
+      'border-left:4px solid #d9a441',
+      'background:var(--bg-code,#141a24)',
+      'box-shadow:0 6px 18px rgba(0,0,0,.45)',
+      'color:var(--text,#dde3ee);font-size:.92rem;line-height:1.55',
+    ].join(';');
+
+    var h = document.createElement('strong');
+    h.style.cssText = 'display:block;font-size:1rem;margin-bottom:.4rem';
+    h.textContent = 'This browser has no WebGL2 - the 3D views cannot draw';
+    box.appendChild(h);
+
+    var p = document.createElement('p');
+    p.style.cssText = 'margin:.35rem 0';
+    p.textContent =
+      'Every 3D view here (asset viewer, minigames, the playable port, the '
+      + 'world overview) needs WebGL2, and this browser is not providing it. '
+      + 'This is a browser or graphics-driver condition, not a fault in the '
+      + 'page - nothing on the site is broken, and reloading will not help '
+      + 'until the browser can create a WebGL2 context again.';
+    box.appendChild(p);
+
+    var lead = document.createElement('p');
+    lead.style.cssText = 'margin:.6rem 0 .25rem';
+    lead.textContent = 'What to try, most likely first:';
+    box.appendChild(lead);
+
+    var ul = document.createElement('ul');
+    ul.style.cssText = 'margin:.25rem 0 .25rem 1.1rem;padding:0';
+    [
+      ['Restart your browser - especially after a graphics-driver update. ',
+       'A driver update leaves the already-running browser without hardware '
+       + 'acceleration until it is restarted. This is the most common cause '
+       + 'and the least obvious one, because everything else keeps working.'],
+      ['Firefox: ',
+       'check about:support under Graphics for a blocked or failed driver, '
+       + 'and try setting webgl.force-enabled to true in about:config.'],
+      ['Chrome / Chromium: ',
+       'check chrome://gpu, and make sure "Use graphics acceleration when '
+       + 'available" is on in Settings > System.'],
+    ].forEach(function (pair) {
+      var li = document.createElement('li');
+      li.style.cssText = 'margin:.2rem 0';
+      var b = document.createElement('strong');
+      b.textContent = pair[0];
+      li.appendChild(b);
+      li.appendChild(document.createTextNode(pair[1]));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+
+    host.insertBefore(box, host.firstChild);
+    /* The canvas that just failed is usually far down the page, so the banner
+     * would sit unread above the fold the user is looking at. */
+    try { box.scrollIntoView({ block: 'center' }); } catch (e) {}
+  }
+
+  /* Raise the banner and hand back the Error for the caller to throw. */
+  window.legaiaWebgl2Failure = function () {
+    try { showWebgl2Notice(); } catch (e) { /* never mask the real failure */ }
+    var err = new Error('WebGL2 not available');
+    err.noWebgl2 = true;
+    return err;
+  };
+
   /* ---------- Init ---------- */
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {

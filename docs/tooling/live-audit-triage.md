@@ -780,9 +780,18 @@ eleven branches and picks the group id per branch - eight literals, two
 computed, and exactly one forwarding its own `param_2`. The port models
 `FUN_800402F4` as
 the `apply_damage` host hook, whose parameters are the primitive's arguments and
-not its per-branch choices, so no honest single call site exists until that
-dispatch is ported. A disclosure that names a table when the blocker is a
+not its per-branch choices, so no honest single call site existed until that
+dispatch was ported. A disclosure that names a table when the blocker is a
 dispatch is the same error this page records for the panel painters.
+
+**Closed by porting the dispatch, not the applier.** The eleven branches differ
+only in three literals apiece - tint, actor-state word, group id - plus one
+`per_target` loop flag, all readable off the `jal` sites' own instruction
+streams. `battle_cue_group::cue_group_for` is that table, and the SM's state
+`0x3F` selects a site from the acting actor's `+0x1E8` / `+0x1E9` pair before
+handing the expansion to the host's effect pool and SFX scheduler. The applier's
+1976 instructions of stat arithmetic stay behind the `apply_damage` hook; the
+dispatch that was the actual blocker is ~30 lines.
 
 ## Known false positives the correction introduces
 

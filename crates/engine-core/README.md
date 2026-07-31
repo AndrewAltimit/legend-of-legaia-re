@@ -161,8 +161,14 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
   (HP delta, status, scheduled SFX cues) the world drains into its
   battle event queue.
-- `ap_gauge` - per-character Action-Point gauge driving Tactical Arts
-  command input. Charges +5 on Spirit-press, refills per turn.
+- `arts_command_input` - the retail Arts command entry: per-press
+  directional buffer, per-command AP debit from the turn pool, auto-end
+  when nothing is affordable, and the Begin | Reselect review. Resolves
+  the entered sequence through the `legaia-art` matchers. Costs come from
+  the equipped set's `+0x74` bytes (`World::battle_swing_costs`).
+- `ap_gauge` - per-character Action-Point gauge. Charges +5 on
+  Spirit-press, refills per turn; backs the Spirit command and the AP
+  override hook, **not** the Arts input's swing budget.
 - `battle_stats` - equipment-aware stat aggregator (clean-room port of
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
   status-effect modifiers (Toxic -ATK/-DEF, Confuse halves accuracy,
@@ -252,8 +258,12 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
   (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
-  (slot panels). `engine-render::battle_hud_draws_for` turns it into
-  `TextDraw`s.
+  (slot rows). `engine-render::battle_hud_draws_for` turns it into the
+  drawn surface. Also the two labels the drawn surface needs off the
+  live world: `battle_plaque_label` (the top-left plaque, and the port's
+  whole monster readout - retail draws no monster gauge) and
+  `encounter_banner_label` / `encounter_banner_enabled` (the banner is a
+  port invention with no retail counterpart, so it is gated off).
 - `inventory_use` - `InventoryUseSession` state machine for the field
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
@@ -262,10 +272,16 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (Browsing → Editing → Naming → Done) composes a directional chain into
   a per-character `ChainLibrary`. `World::chain_library` /
   `World::store_chain_library` bridge that library to `World.saved_chains`,
-  so a chain authored in the menu serializes with `save_full` and is
-  offered in the next battle via `build_battle_arts_rows` - the same path
-  whether it was edited live or loaded from a save (`SavedChain::to_record`
-  / `from_record` pack to the `Command` byte alphabet the battle side reads).
+  so a chain authored in the menu serializes with `save_full` - the same
+  path whether it was edited live or loaded from a save
+  (`SavedChain::to_record` / `from_record` pack to the `Command` byte
+  alphabet the battle side reads). In battle the chain does **not** commit
+  an art by itself: retail's Arts command is the per-press
+  `arts_command_input` entry, and a saved chain's retail role is to preseed
+  that entry's buffer (not yet wired - see
+  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs)).
+  `build_battle_arts_rows` still reads `saved_chains` for the legacy
+  submenu behind `LEGAIA_ARTS_SAVED_LIST=1`.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
   field-VM scripts (record 0 = scene-entry system script, records 1.. =
   per-actor interaction scripts). `walk_partition1_scripts` bounds each
@@ -326,6 +342,20 @@ ports the retail dialog state machine `FUN_80039B7C` through the *real*
 field VM, so dialogue advances by script execution rather than by a
 reimplemented approximation. Hosts that want the simpler path can leave
 it off and drive the dialog panel directly.
+
+A pass ends where retail's parks: on the record's backward jump onto a PC
+the pass already reached (`InlineDialogue::visited`). That map marks **text
+segments as well as opcodes** - retail records commonly loop back onto the
+opening line rather than onto an opcode - and a picker commit clears it only
+from the branch target forward. Both are load-bearing: with either one
+missing, real Rim Elm conversations replay without limit and cannot be
+left. Covered disc-gated by `engine-shell/npc_conversation_terminates`.
+
+`World::dialogue_owns_input` is the single "a conversation owns the pad and
+the player" predicate - **both** channels, the simplified `current_dialog`
+request and the runner. Locomotion, the interaction probe, walk-on
+dispatch, the tile board and both hosts' pause-menu open all gate on it;
+testing either field alone is the asymmetry it exists to prevent.
 
 `save_full` / `load_full` are the disk save round-trip (LGSF): party,
 story flags, money, inventory, per-character ext, saved chains.

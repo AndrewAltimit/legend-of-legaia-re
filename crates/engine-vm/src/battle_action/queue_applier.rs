@@ -115,6 +115,103 @@ pub fn clear_queue_msb(queue: &mut [u8; ACTION_QUEUE_CAP]) {
     }
 }
 
+/// The four party **arms command** bytes an action queue records, in the
+/// direction order `FUN_801EED1C`'s own status-limb strip loop pins
+/// (`0x801EF04C..0x801EF1A4`): the loop drops a `0x0D` when the actor's
+/// `+0x16E` carries bit `0x10`, a `0x0C` on bit `0x08`, and either of
+/// `0x0E`/`0x0F` on bit `0x20` - the same three limb bits
+/// `docs/subsystems/arts-command-gauge.md` tabulates as RIGHT / LEFT /
+/// UP+DOWN. `0x0C` is the **arm** command whose AP cost carries the
+/// weapon-specialty penalty.
+pub const SWING_LEFT: u8 = 0x0C;
+/// See [`SWING_LEFT`].
+pub const SWING_RIGHT: u8 = 0x0D;
+/// See [`SWING_LEFT`].
+pub const SWING_LOW: u8 = 0x0E;
+/// See [`SWING_LEFT`].
+pub const SWING_HIGH: u8 = 0x0F;
+
+/// The target class that collapses [`basic_attack_queue`] to a single low
+/// swing: the monster record's `+0x1E` byte, read record-direct through the
+/// `0x801C9348` record-pointer table (`0x801EEFA8..0x801EEFCC`), compared
+/// against `2` at `0x801EEFD0`.
+///
+/// `+0x1E` sits between the record's element byte `+0x1D` and its size class
+/// `+0x1F`, and `legaia_asset::monster_archive` does not parse it. What the
+/// disassembly establishes is only its *effect*: a class-`2` target is struck
+/// with one `SWING_LOW` instead of two arm swings, which reads as the height /
+/// posture class behind retail's limb-vs-height "Miss".
+pub const LOW_SWING_TARGET_CLASS: u8 = 2;
+
+/// The swing count [`basic_attack_queue`] writes for an ordinary target.
+pub const BASIC_ATTACK_SWINGS: usize = 2;
+
+/// PORT: FUN_801EED1C (the no-directional-input attack-queue arm,
+/// `0x801EEFC8..0x801EF02C`)
+///
+/// Build the action-parameter stream for a physical attack that carries **no
+/// player directional input**, and return how many bytes it wrote.
+///
+/// This is the one queue shape retail produces without running the Arts
+/// command gauge. `FUN_801EED1C`'s head selects it on the acting slot's
+/// control byte `(&DAT_8007BD10)[slot] == 4` (`0x801EEE40..0x801EEE48`) - an
+/// AI-driven party member - and the arm then commits category `3`
+/// (`sb v0,0x1de` at `0x801EEF28`), rolls a living monster target, and writes
+/// the queue:
+///
+/// ```text
+/// 801eefc8  lbu   v1,0x1e(v0)      ; target record +0x1E
+/// 801eefd0  beq   v1,v0,801ef028   ;   == 2 -> single low swing
+/// 801eefd4  _li   v0,0xe
+/// 801ef02c  _sb   v0,0x1df(a0)     ;            queue[0] = 0x0E
+/// 801eefd8  jal   0x80056798       ; else rand()
+/// 801eeff8  addiu v0,v0,0xc        ;   0x0C + (rand % 2)
+/// 801ef000  _sb   v0,0x1df(v1)     ;            queue[0] = 0x0C | 0x0D
+/// 801eeffc  jal   0x80056798       ; rand()
+/// 801ef01c  addiu v0,v0,0xc        ;   0x0C + (rand % 2)
+/// 801ef024  _sb   v0,0x1e0(v1)     ;            queue[1] = 0x0C | 0x0D
+/// ```
+///
+/// So an ordinary target takes **two** arm swings, each independently rolled
+/// Left / Right, and a [`LOW_SWING_TARGET_CLASS`] target takes **one** low
+/// swing. The `% 2` is retail's signed-safe `v0 - (v0/2)*2` idiom
+/// (`0x801EEFE0..0x801EEFF0`), which agrees with `% 2` for the non-negative
+/// values `func_0x80056798` returns.
+///
+/// The arm writes no terminator - the queue window it writes into is already
+/// zeroed (the round-boundary clear `FUN_801D88CC` at `0x801D89D8`, or the
+/// per-action clear the engine calls before this), and `0x00` is what the
+/// attack band terminates on. This function zeroes the rest of the window for
+/// the same reason, so the stream is self-terminating either way.
+///
+/// RNG: two draws for an ordinary target, **none** for a low-swing target -
+/// exactly the retail draw count, so a host mirroring the shared battle RNG
+/// stays in step.
+pub fn basic_attack_queue(
+    queue: &mut [u8; ACTION_QUEUE_CAP],
+    target_swing_class: u8,
+    rng: &mut dyn FnMut() -> u32,
+) -> usize {
+    queue.fill(0);
+    if target_swing_class == LOW_SWING_TARGET_CLASS {
+        queue[0] = SWING_LOW;
+        return 1;
+    }
+    for slot in queue.iter_mut().take(BASIC_ATTACK_SWINGS) {
+        *slot = SWING_LEFT + (rng() % 2) as u8;
+    }
+    BASIC_ATTACK_SWINGS
+}
+
+/// True when `byte` is one of the four party arms-command swings
+/// ([`SWING_LEFT`]..=[`SWING_HIGH`]) rather than an art starter / action
+/// constant or a monster archive entry index. The attack chain's damage
+/// seam keys on it: a direction swing is a committed arms command, which is
+/// what `FUN_801EC3E4` resolves one hit for.
+pub fn is_swing_command(byte: u8) -> bool {
+    (SWING_LEFT..=SWING_HIGH).contains(&byte)
+}
+
 /// Outcome of [`apply_super_tail_replace`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SuperTailReplace {
@@ -494,6 +591,55 @@ mod queue_applier_tests {
         let mut q = [0u8; ACTION_QUEUE_CAP];
         q[..bytes.len()].copy_from_slice(bytes);
         q
+    }
+
+    #[test]
+    fn basic_attack_queue_writes_two_rolled_arm_swings() {
+        // Two draws, each `0x0C + (rand % 2)`, and nothing past them.
+        let draws = [0u32, 1];
+        let mut i = 0usize;
+        let mut q = [0xFFu8; ACTION_QUEUE_CAP];
+        let n = basic_attack_queue(&mut q, 0, &mut || {
+            let v = draws[i];
+            i += 1;
+            v
+        });
+        assert_eq!(n, BASIC_ATTACK_SWINGS);
+        assert_eq!(i, 2, "two rand draws, one per swing");
+        assert_eq!(&q[..3], &[SWING_LEFT, SWING_RIGHT, 0]);
+    }
+
+    #[test]
+    fn basic_attack_queue_low_class_target_is_one_swing_and_no_rng() {
+        let mut q = [0xFFu8; ACTION_QUEUE_CAP];
+        let mut draws = 0usize;
+        let n = basic_attack_queue(&mut q, LOW_SWING_TARGET_CLASS, &mut || {
+            draws += 1;
+            0
+        });
+        assert_eq!(n, 1);
+        assert_eq!(draws, 0, "the low-swing arm draws no RNG in retail");
+        assert_eq!(&q[..2], &[SWING_LOW, 0]);
+    }
+
+    #[test]
+    fn basic_attack_queue_is_self_terminating() {
+        // A stale queue is fully cleared, so the attack band's 0x00
+        // terminator is reached right after the written swings.
+        let mut q = [0x1Bu8; ACTION_QUEUE_CAP];
+        let n = basic_attack_queue(&mut q, 0, &mut || 0);
+        assert!(q[n..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn swing_command_span_is_the_four_arms_commands() {
+        for b in 0u8..=0xFF {
+            assert_eq!(
+                is_swing_command(b),
+                (0x0C..=0x0F).contains(&b),
+                "byte {b:#04x}"
+            );
+        }
     }
 
     #[test]

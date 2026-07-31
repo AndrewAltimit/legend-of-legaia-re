@@ -2,31 +2,32 @@
 //!
 //! PORT: FUN_801e1ab0 (battle move-FX afterimage streak draw)
 //!
-//! NOT WIRED: no host builds a streak quad. The *destination* exists - a quad
-//! converts through [`crate::screen_overlay::afterimage_screen_quad`] and
-//! would draw via [`crate::RenderTarget::ScreenOverlay`] - but that converter
-//! has no non-test caller either, so the pass is a road with nothing on it.
-//! Two concrete gaps sit between here and a visible trail, and the first one
-//! has a **named** owner rather than a missing model:
+//! Wired through [`crate::streak_pass`], which supplies the two projection
+//! inputs and calls [`build_afterimage_quad`] once per move-FX frame; the
+//! native window appends the packets to its screen-space textured batch.
+//! Both of the gaps this module used to carry are closed:
 //!
-//! * **Both projection inputs come from one inert port.** Retail reads them
-//!   off the battle context `_DAT_8007BD24`: the centre point is the homing
-//!   launch position `ctx[+0x1144]` (`0x801E1AF8`) and the half-width is
+//! * **The projection inputs now have a producer.** Retail reads them off the
+//!   battle context `_DAT_8007BD24`: the centre point is the homing launch
+//!   position `ctx[+0x1144]` (`0x801E1AF8`) and the half-width is
 //!   `ctx[+0x6C6] - 0x200` (`0x801E1B44`, hence [`streak_half_width`]). Both
-//!   words are written by the action effect script `FUN_801DEA50`, which the
-//!   engine *has* ported as `legaia_engine_core::action_effect_script` - and
-//!   that module is itself NOT WIRED, because the battle-action path carries
-//!   no `ctx[+0x1014]` move-power slot and no per-target `+0x1144` homing
-//!   block. So the prerequisite is that module's caller, not new modelling
-//!   here.
-//! * **The host consumes the trail id as a log line.** engine-shell reads
-//!   [`legaia_engine_core::World::active_move_fx_trail_texpage`] and prints
-//!   it; nothing turns it into a per-frame streak pass over the move-FX part
-//!   positions, which is what emits one quad per call the way retail does.
+//!   words are written by the action effect script `FUN_801DEA50`, whose
+//!   terminator arm is ported at
+//!   `legaia_engine_core::action_effect_script::MoveFxStreak` - installed by
+//!   the live per-frame walk and read back through `World::move_fx_streak`.
+//! * **The trail id reaches a pass.** It used to be printed as a log line;
+//!   [`crate::streak_pass::streak_quads`] now turns
+//!   [`legaia_engine_core::World::active_move_fx_trail_texpage`] into this
+//!   module's `trail_id` argument every frame the move-FX scene is live.
 //!
-//! The arithmetic below is unit-tested against the retail draw order and is
-//! the part that would be reused unchanged once a caller exists; do not
-//! delete it.
+//! Two things stay outside the wiring, both disclosed on
+//! [`crate::streak_pass`]: the corner **projection** runs against the engine
+//! camera's MVP rather than [`project_streak_corners`]'s GTE form (the battle
+//! camera carries no GTE rotation/translation pair), and the chained-ribbon
+//! sibling [`build_streak_ribbon`] is still unreached - it projects at a
+//! constant half-size and consumes neither context word, and the dispatcher
+//! choice between the two emitters (`0x801E0CA0` vs `0x801E0CD0`) is not
+//! decoded.
 //!
 //! REF: FUN_801dea50 - the action effect script, which writes both of the
 //! battle-context words the streak's projection reads.
@@ -72,12 +73,12 @@
 //! machinery was complete and only an emitter was missing, which was true of
 //! the geometry and false of the pass.)
 //!
-//! What is still missing is the per-frame emitter described in the NOT WIRED
-//! note above **and** the host frame that hands the built list to the
-//! renderer: no `RenderTarget::SceneWithScreenPrims` call exists outside this
-//! crate's tests. Live effect billboards currently draw as 3D meshes via
-//! engine-shell's `effect_billboard_mesh` instead, which is why nothing has
-//! needed this 2D path yet.
+//! That converter is still the route for a host that wants the streak
+//! *interleaved* with the scene's own primitives at the retail OT depth. The
+//! wired path takes a different one: [`crate::streak_pass`] hands the packets
+//! to engine-shell's screen-FX batch, which draws them over the actors under
+//! a 320x240 orthographic MVP. Retail links each packet inside the scene, so
+//! that ordering is an engine departure, not a reproduction.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied
@@ -319,6 +320,17 @@ fn ribbon_uv(band: u8) -> [(u8, u8); 4] {
 }
 
 /// PORT: FUN_801e1d98 (battle move-FX chained streak ribbon)
+///
+/// NOT WIRED: the module's sibling emitter *is* wired
+/// ([`crate::streak_pass`] drives [`build_afterimage_quad`] every move-FX
+/// frame), but the ribbon is not, and the blocker is a decode gap rather than
+/// a missing model. Retail picks between the two at the move-FX draw
+/// dispatcher (`0x801E0CA0` calls the afterimage, `0x801E0CD0` calls this),
+/// and which moves take which branch is not decoded. The pass cannot guess:
+/// the ribbon projects at a **constant** half-size with no Y push
+/// ([`project_ribbon_corners`]), so unlike the afterimage it consumes neither
+/// of the two context words the action script's terminator stages - firing it
+/// on the same trigger would be inventing the dispatch, not porting it.
 ///
 /// Build the full chain of ribbon segments from the four projected corners of
 /// the bottom billboard, the move's trail-texture id, and an injected random

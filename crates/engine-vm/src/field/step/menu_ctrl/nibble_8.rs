@@ -264,11 +264,17 @@ pub(super) fn op_4c_n8<H: FieldHost>(
         // `FUN_801D5630(col, row, ...)` per tile; on hit, writes
         // `tile[+0x2] = value`. The clean-room port surfaces
         // the rectangle through one host hook and lets the
-        // engine drive its tile-pool semantics. The original
-        // dispatcher's post-loop also writes
-        // `_DAT_8007B630 = col_start` - the host hook owns that
-        // side effect too (engines that don't care can ignore
-        // it). PC advances by `header_size + 6` (= 7 bytes).
+        // engine drive its tile-pool semantics. PC advances by
+        // `header_size + 6` (= 7 bytes).
+        //
+        // This arm does NOT write `_DAT_8007B630`. An earlier note
+        // (and `script-vm-menuctrl.md`) claimed a post-loop trailer
+        // that does; the disassembly ends the loop on a clean
+        // `j 0x801e3624 / _addiu s8,s8,0x7` at `0x801E212C`, and
+        // the `sw` into `-0x49d0(0x8008)` two instructions later is
+        // the first instruction of the SEPARATE sub-4 arm at
+        // `0x801E2134` (its own jump-table slot, `0x801CEF58`).
+        // The two are adjacent, not sequential.
         3 => {
             if operand + 6 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };

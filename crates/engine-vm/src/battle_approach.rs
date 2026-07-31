@@ -48,24 +48,35 @@
 //! request compares as a very large unsigned value and takes the `min` arm
 //! rather than the `max` arm. [`approach_distance`] keeps that.
 //!
-//! # NOT WIRED
+//! # Wiring status
 //!
-//! No engine caller. The Attack band's approach states (`0x16` "advance",
-//! `0x19` "short-step") are ported in
-//! [`battle_action`](crate::battle_action), but they step the actor with the
-//! band's own sin/cos drift rather than through a distance request, so there is
-//! no site holding a `requested` value for this to clamp. Wiring it means the
-//! approach states asking for a step length first - which is also the shape the
-//! `0x19` approach-park investigation wants, since a clamp that can only return
-//! `[3d/4, d]` can never close the last quarter on its own. See
-//! `docs/subsystems/battle-action.md` ("The `0x19` attack-approach park").
+//! Split, so the module carries no blanket tag. [`projected_separation`] and
+//! [`approach_angle`] are **live**: the battle locomotion drive
+//! (`World::tick_battle_locomotion`) and the attack band's motion kernels
+//! measure attacker-to-target reach with them every frame. The clamp itself,
+//! [`approach_distance`], is the part with no caller, and its own note carries
+//! that disclosure.
 //!
-//! **The host's seat accessor does not unblock it**, and a triage note that
-//! said it would is withdrawn. Positions were never the gap: the retail caller
-//! is not the action SM at all. The corpus holds exactly one `jal 0x801df570`,
-//! at `0x801DEDC8` inside `FUN_801DEA50` (the staged-value reader), and its
-//! `a1` is a sign-extended halfword - the requested step. That is the value the
-//! port has no producer for.
+//! The `requested` producer, which earlier
+//! revisions of this note could not name, is now pinned from the caller's
+//! disassembly (`overlay_battle_action_801dea50.txt`). `FUN_801DEA50` is the
+//! per-clip **battle effect-script walker** (ported as
+//! `engine-core::action_effect_script`), and this clamp is a placement rule
+//! of its **direct-spawn branch**: for an 8-byte record whose effect byte is
+//! `0x93` or `0x84` (`0x801DEDAC..0x801DEDD0`), the record's Z offset -
+//! already scaled by the actor's mesh scale, `requested =
+//! (record[+6] * (*(actor+0x22C))[+0x72]) >> 12` - is passed through
+//! `FUN_801DF570` before the facing rotation, so those effects land clamped
+//! into the `[3d/4, d]` band of the attacker-target separation instead of at
+//! their authored distance. It is an **effect-placement** clamp, not an
+//! actor-movement request: the attack band's approach movement is the anim
+//! tick's root-motion term (`FUN_80047430`; engine
+//! `World::tick_battle_locomotion`), which never calls this.
+//!
+//! Wiring therefore belongs in `action_effect_script::step_effect_script`'s
+//! direct branch (intercept effect ids `0x93`/`0x84`, replace the scaled Z
+//! offset with [`approach_distance`] over the attacker's live pair and the
+//! target's seat pair) - outside this crate.
 
 /// Half-turn added to the bearing before the LUT lookup (`0x800` of a 12-bit
 /// angle).
@@ -132,6 +143,12 @@ pub fn clamp_step(requested: i16, separation: i32) -> i16 {
 /// The whole routine: project the separation, then clamp the request.
 ///
 /// PORT: FUN_801DF570
+///
+/// NOT WIRED: nothing produces a `requested` step for it yet. The producer is
+/// pinned (see the module doc): the effect-script walker's direct-spawn branch
+/// for effect ids `0x93` / `0x84`, so the wiring site is
+/// `engine-core::action_effect_script`'s direct branch, not the attack band -
+/// the approach *movement* is root motion and never calls this.
 pub fn approach_distance(pose: ApproachPose, requested: i16, sin: i16, cos: i16) -> i16 {
     let d = projected_separation(pose.x, pose.z, pose.ref_x, pose.ref_z, sin, cos);
     clamp_step(requested, d)

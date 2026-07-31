@@ -104,6 +104,7 @@ pub(crate) fn cmd_play_window(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    battle: Option<&str>,
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
@@ -132,11 +133,80 @@ pub(crate) fn cmd_play_window(
         battle_bgm,
         screenshot,
         seed_party,
+        battle,
         dynamic_lighting,
         dyn_shadows,
         entry_pulse,
         None,
     )
+}
+
+/// A `--battle` operand: a scene MAN formation-row index, or "the first row
+/// the scene registered that carries monsters".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BattleEntry {
+    Row(u16),
+    First,
+}
+
+impl BattleEntry {
+    fn parse(spec: &str) -> Result<Self> {
+        let t = spec.trim();
+        if t.eq_ignore_ascii_case("first") {
+            return Ok(Self::First);
+        }
+        t.parse::<u16>().map(Self::Row).map_err(|_| {
+            anyhow::anyhow!("--battle wants a formation row index or `first`, got {spec:?}")
+        })
+    }
+
+    /// Resolve against the world's registered formations.
+    fn resolve(self, world: &legaia_engine_core::world::World) -> Option<u16> {
+        match self {
+            Self::Row(row) => Some(row),
+            Self::First => world.first_rollable_formation_id(),
+        }
+    }
+}
+
+/// Arm the `--battle` fight on a world that has just entered its scene.
+///
+/// The battle is driven through `World::force_encounter`, which hands the
+/// named row to the encounter session's transition state machine exactly as a
+/// region roll does - so the intro, the BGM swap and the battle-load path are
+/// the ordinary ones, and what the window shows is what an organic encounter
+/// shows. Nothing here runs when `--battle` is absent.
+fn arm_requested_battle(session: &mut BootSession, spec: &str) {
+    let entry = match BattleEntry::parse(spec) {
+        Ok(e) => e,
+        Err(err) => {
+            log::error!("play-window: {err:#}");
+            return;
+        }
+    };
+    let world = &mut session.host.world;
+    let Some(row) = entry.resolve(world) else {
+        log::error!(
+            "play-window: --battle {spec} found no registered formation in '{}' (rows: {:?})",
+            world.active_scene_label,
+            world.registered_formation_ids()
+        );
+        return;
+    };
+    // The transition is drained by the live field tick, so the loop has to be
+    // on for the armed fight to open at all. `--battle` is an explicit request
+    // for a fight; honour it over `--no-live-loop`.
+    if !world.live_gameplay_loop {
+        log::info!("play-window: --battle turns the live loop on (it drains the transition)");
+        world.live_gameplay_loop = true;
+    }
+    if world.force_encounter(row) {
+        log::info!(
+            "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
+             the normal encounter transition",
+            world.active_scene_label
+        );
+    }
 }
 
 /// Build the play-window's render-side [`SceneResources`] for the host's
@@ -261,6 +331,7 @@ pub(super) fn cmd_play_window_with_record(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    battle: Option<&str>,
     dynamic_lighting: bool,
     dyn_shadows: bool,
     entry_pulse: bool,
@@ -535,6 +606,31 @@ pub(super) fn cmd_play_window_with_record(
     // flag overrides whatever composition the boot save carried.
     if let Some(spec) = party {
         let slots = parse_party_spec(spec)?;
+        // Seed the roster slots the spec names before installing the
+        // composition. `--seed-party` seeds retail's New Game roster, which is
+        // Vahn alone (correct for the early game), so a `--party vahn,noa,gala`
+        // asked three battle ordinals to resolve to roster slots 1 and 2 that
+        // did not exist: both HUD panels read `P2 0/0` / `P3 0/0` and neither
+        // actor got a live HP / SPD mirror. Fill them from the same SCUS
+        // template rows retail seeds those characters from when they join.
+        // Records already carrying stats (a loaded save) are left alone.
+        if let Some(starting) = session.starting_party.clone() {
+            let seeded = session
+                .host
+                .world
+                .seed_party_members(&starting, &slots.clone());
+            if seeded > 0 {
+                log::info!(
+                    "play-window: --party seeded {seeded} roster slot(s) from the SCUS \
+                     new-game template"
+                );
+            }
+        } else {
+            log::warn!(
+                "play-window: --party cannot seed absent roster slots - the SCUS \
+                 starting-party template was not readable from this boot source"
+            );
+        }
         let world = &mut session.host.world;
         world.set_active_party(slots.clone());
         if world.active_party.len() != slots.len() {
@@ -544,10 +640,41 @@ pub(super) fn cmd_play_window_with_record(
                 world.active_party.len()
             );
         }
+        // Fold the freshly-seeded records into the battle stat mirrors
+        // (attack / defence split / SPD / AP base). `set_active_party` copies
+        // HP / MP only; without this the new members fight at zero attack.
+        world.seed_party_battle_stats();
+        // The MP ceiling the battle HUD draws is the only one the world
+        // carries and nothing else seeds it from a record.
+        for member in 0..world.active_party.len() {
+            let rslot = world.party_roster_slot(member);
+            let mp_max = world
+                .roster
+                .members
+                .get(rslot)
+                .map(|r| r.hp_mp_sp().mp_max)
+                .unwrap_or(0);
+            world.set_character_max_mp(member as u8, mp_max);
+        }
         log::info!(
             "play-window: present party = {:?} (roster slots, battle order)",
             world.active_party
         );
+    }
+
+    // `--battle <ROW|first>`: arm a deterministic fight. Last of the world
+    // setup, so the party / cheats / New Game reset have all settled and the
+    // combatants entering the battle are the ones the run configured.
+    if let Some(spec) = battle {
+        if boot_ui {
+            // The title / save-select flow enters its own scene afterwards and
+            // would reset the session under the armed fight.
+            log::warn!("play-window: --battle ignored under --boot-ui (the boot flow re-enters)");
+        } else if session.host.world.mode == legaia_engine_core::world::SceneMode::Battle {
+            log::warn!("play-window: --battle skipped - a battle is already open");
+        } else {
+            arm_requested_battle(&mut session, spec);
+        }
     }
 
     let scene_res = build_window_scene_resources(&session)?;
@@ -667,11 +794,25 @@ pub(super) fn cmd_play_window_with_record(
         }
     };
 
+    // The battle HUD's 8x12 numeral cells come off the same menu-glyph TIM
+    // as the small-caps rows above, through its sub-palette 13. Baked into
+    // the save-menu atlas (below) rather than sampled from the menu-glyph
+    // atlas so the HUD's sprite list stays one texture.
+    let menu_glyph_tim_bytes = session
+        .host
+        .index
+        .prot_dat_raw_bytes(
+            legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
+            legaia_asset::menu_glyph_atlas::TIM_SIZE,
+        )
+        .ok();
+
     // Try to decode the save-menu UI atlas. Needs TWO disc sources:
     //   1. PROT 0899's extended footprint @ `OVERLAY_SAVE_MENU_TIM_OFFSET`
     //      carries the SLOT 1 / SLOT 2 pill sprites (CLUT 7).
     //   2. Raw PROT.DAT @ `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`
     //      carries the 9-slice panel chrome (CLUT row 2).
+    // Plus the optional menu-glyph TIM above for the HUD numerals.
     // The atlas builder composites both into one 256x256 RGBA atlas;
     // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
     // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
@@ -699,7 +840,11 @@ pub(super) fn cmd_play_window_with_record(
         },
     ) {
         (Ok(pill_bytes), Ok(panel_bytes)) => {
-            match legaia_engine_core::save_menu_atlas::build_atlas(&panel_bytes, &pill_bytes) {
+            match legaia_engine_core::save_menu_atlas::build_atlas(
+                &panel_bytes,
+                &pill_bytes,
+                menu_glyph_tim_bytes.as_deref(),
+            ) {
                 Ok(a) => {
                     log::info!(
                         "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
@@ -842,11 +987,13 @@ pub(super) fn cmd_play_window_with_record(
         muscle_prev_contest_open: false,
         summon_actor_slot: None,
         battle_stage_mesh: None,
+        battle_stage_color_mesh: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
+        battle_color_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,

@@ -1210,11 +1210,25 @@ impl LegaiaRuntime {
         // The native window draws the same three from the same shared
         // builders + world model.
         battle.extend(self.post_battle_overlay_draws(assets, surface_w, surface_h));
-        if shop.is_none() && windows.is_empty() && banners.is_empty() && battle.is_empty() {
+        // Sparring-tutorial prompt box: unlike the rest of the battle overlay
+        // its rect is in 320x240 stage space (the retail emitter's own
+        // coordinates), so it joins the stage-scaled group below and gets the
+        // window skin the emitter's measured rect implies.
+        let tutorial = self.battle_tutorial_stage_draws(font, chrome.is_some());
+        if shop.is_none()
+            && windows.is_empty()
+            && banners.is_empty()
+            && battle.is_empty()
+            && tutorial.is_empty()
+        {
             return CLOSED.to_string();
         }
 
         let mut sprites: Vec<SpriteDraw> = Vec::new();
+        // Battle HUD chrome (party-strip + plaque lozenges and the gold HP /
+        // green MP label cells) samples the same system-UI atlas as the shop
+        // frame, so it rides the same sprite array. Empty outside battle.
+        sprites.extend(self.battle_chrome_sprite_draws(assets, surface_w, surface_h));
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,
@@ -1238,7 +1252,21 @@ impl LegaiaRuntime {
         }
         texts.extend(windows);
         texts.extend(banners);
+        if let Some(rects) = chrome {
+            sprites.extend(self.battle_tutorial_chrome_draws(font, rects, origin, scale));
+        }
+        // Stage-space, so it joins `texts` before the scale pass below.
+        texts.extend(tutorial);
+        // Arts command-input chrome (direction chips + D-pad, the pennant
+        // input bar, the AP plate). Emitted in stage space by the shared
+        // `arts_input` builders off the same baked atlas the menu chrome
+        // samples, so this page and the native window draw one geometry.
+        // Its own text (the Begin | Reselect pick) rides the stage-scaled
+        // text pass below.
+        let (arts_sprites, arts_texts) = self.arts_input_stage_draws(font, chrome, origin, scale);
+        sprites.extend(arts_sprites);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
+        texts.extend(arts_texts);
         // Battle draws stay in surface pixels: the shared HUD's measured
         // column offsets span wider than the 320-px menu stage, exactly as
         // drawn by the native window (surface-space HUD).

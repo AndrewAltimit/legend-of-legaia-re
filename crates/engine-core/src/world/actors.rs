@@ -268,10 +268,9 @@ impl World {
     /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
-    /// The terminator's move-power offset / homing band are computed by the
-    /// kernel but consumed by nothing here - the engine has no
-    /// `ctx[+0x1014]` slot and no per-target homing block (see
-    /// [`crate::action_effect_script`]'s module note).
+    /// The terminator's context writes land in [`Self::move_fx_streak`] -
+    /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
+    /// projects from ([`crate::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
     fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
         use crate::action_effect_script as fx;
@@ -330,9 +329,30 @@ impl World {
                     facing: script_actor.facing,
                 });
         }
+        // Terminator sink: install the staged move-power record's `+0x04`
+        // word and the launch position into the move-FX streak block. The
+        // record id the terminator resolves indexes the same table
+        // `MovePowerCatalog` holds, so the `+0x6C6` word is that record's
+        // `counter_init()`.
+        if step.homing_band.is_some() {
+            let counter = step
+                .move_power_offset
+                .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
+                .and_then(|id| self.move_power.as_ref()?.record_for_move_id(id))
+                .map(|rec| rec.counter_init());
+            self.move_fx_streak.install(&step, counter);
+        }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
         }
+    }
+
+    /// The move-FX streak block the effect script's terminator installs -
+    /// retail's `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` quartet.
+    /// The render layer projects the afterimage streak from it; `is_armed()`
+    /// is `false` until a terminator has run.
+    pub fn move_fx_streak(&self) -> crate::action_effect_script::MoveFxStreak {
+        self.move_fx_streak
     }
 
     /// Commit every actor's staged battle anim id (`queued_anim` vs
@@ -374,6 +394,12 @@ impl World {
         if q == actor.battle.current_anim {
             return;
         }
+        // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
+        // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
+        // dynamic slot number - so the latch keeps the RAW staged id, which
+        // is the id space both battle-camera dispatch tables index.
+        self.actors[i].battle.latched_anim = q;
+        let actor = &self.actors[i];
         // Staged idle: converge and resume the loop. A staged clip in
         // flight is dropped (retail: the commit replaces the playing
         // record unconditionally).
@@ -411,13 +437,20 @@ impl World {
         // number, so the SM's equality checks compare post-rewrite values.
         a.battle.queued_anim = committed;
         a.battle.current_anim = committed;
-        // An in-flight hit reaction owns the player (same precedence as the
-        // pose hook); the ids still converge above so the SM doesn't stall,
-        // and the clip is treated as elapsed.
-        if a.battle_reaction.is_some() {
-            a.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
-            return;
-        }
+        // Retail keeps ONE staged-anim channel. The hit reaction is written
+        // into the same `actor[+0x1DA]` byte the action SM stages into
+        // (`FUN_800402F4` `0x80042118` knockdown / `0x80042124` flinch), and
+        // this commit copies `+0x1DA` into `+0x1DB` unconditionally
+        // (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`) - there is no reaction
+        // guard anywhere on that path, and even the knockdown -> get-up chain
+        // runs by writing `+0x1DA = +0x1F2` (`0x8004B690`). So a freshly
+        // staged record REPLACES an in-flight reaction; it is not swallowed
+        // by it. Swallowing it left a hit party member playing knockdown /
+        // get-up through its own attack turn - walking to the target and back
+        // lying on the ground, with the approach clip and every weapon swing
+        // dropped. Dropping the latch here also stops the end-of-clip get-up
+        // chain in `tick_battle_animations` from stealing the clip back.
+        a.battle_reaction = None;
         // Id 1 is the walk/approach: it loops until the SM stages something
         // else (AttackShortStep clears it to 0 on arrival). Engine
         // assumption - the loop-vs-once bit retail derives from the record
@@ -568,9 +601,13 @@ impl World {
         let Some(clips) = actor.battle_action_clips.clone() else {
             return;
         };
-        // An in-flight hit reaction outranks the SM's per-frame pose calls
-        // (retail's pose driver never touches the anim-id fields; the
-        // reaction chain owns them until it completes).
+        // An in-flight hit reaction outranks the SM's per-frame pose calls.
+        // This channel is the PORT's own idle-restore hook, not retail's
+        // staged-anim byte: retail has a single `+0x1DA` stage that the
+        // reaction and the SM both write (see `commit_staged_battle_anim`),
+        // so there is nothing here to be faithful to - and without the guard
+        // the per-frame `pose(Idle)` the attack band issues would cancel
+        // every reaction on the frame after it starts.
         if actor.battle_reaction.is_some() {
             return;
         }

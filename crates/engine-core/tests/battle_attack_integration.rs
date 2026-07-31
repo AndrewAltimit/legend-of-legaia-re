@@ -63,11 +63,16 @@ fn full_attack_action_emits_apply_damage_event() {
         transitions > 0,
         "battle SM made zero transitions across 1000 frames"
     );
-    // The base battle SM port doesn't currently call apply_damage from
-    // the AttackChain state - that's wired in `spirit_fire_damage` only.
-    // The test still passes (zero damage events expected) but documents
-    // what we'd want to see once the AttackChain damage hook lands.
-    let _ = damage_events;
+    // `apply_damage` stands in for the item / restore applier `FUN_800402F4`,
+    // and retail calls it from exactly one place in the action SM: state
+    // `0x3F` (`spirit_fire_damage`, `jal 0x800402f4` at `0x801E4134`). The
+    // attack band resolves damage through `FUN_801EC3E4` instead, so **zero**
+    // is the correct count for an Attack action - an earlier revision of this
+    // comment expected an AttackChain damage hook that retail does not have.
+    assert_eq!(
+        damage_events, 0,
+        "the applier has no attack-band call site in retail"
+    );
 }
 
 #[test]

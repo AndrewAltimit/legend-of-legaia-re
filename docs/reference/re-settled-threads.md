@@ -126,6 +126,7 @@ reserved/authoring data with no live consumer.
 |---|---|---|---|
 | Encounter MAN sub-section layout | resolved (header shape corrected) | `disassembly` | [details ↓](#encounter-man-sub-section-layout) |
 | Battle-intro tile shatter - the side-face shade page | resolved (a resident field asset, not a transition upload) | `capture` | [details ↓](#battle-intro-tile-shatter---the-side-face-shade-page) |
+| How long does a field-to-battle transition run (`DAT_801D2458`)? | resolved (132 frames; 252 for the swirl) | `disassembly` | [details ↓](#battle-intro-transition-length---dat_801d2458) |
 | Which stage-dome objects does the battle backdrop draw? | resolved (drop index 1, not "keep index 0") | `disassembly` + `capture` | The registration edits the object list rather than truncating it: each backdrop actor owns a private `0x9c` part table at `+0x44` (allocated at `0x80021184`), and `0x80051ad4..0x80051bac` applies one `count -= 1` plus one `entry[i] = entry[i+1]` shift from index 1 to each. Object **1** is dropped and everything else kept, gated on `_DAT_8007b64b == 0`. Indistinguishable from "draw object 0" on the two-object shells; on the seven four-object domes it keeps sky, mountains and the ground ring. See [battle.md](../subsystems/battle.md#object-1-is-dropped). |
 | Battle ground grid depth cue - the far colour | resolved (captured at the draw; port fogs the grid) | `capture` | [details ↓](#battle-ground-grid-depth-cue---the-far-colour) |
 | Does the battle ground grid roll per-cell randomness? | resolved (no - a four-entry table walk) | `disassembly` | No. `func_0x801d02c0` builds sixteen literal UV words into scratchpad `0x1f800034` (`0x801d0304..0x801d03a0`) and the emit loop reads group `n` for quad `n`, advancing `0x10` each time. They decode to four fixed 32x32 sub-tiles of the `(192..=255)^2` window walked in `sub_row * 2 + sub_col` order, copied into the packet verbatim - no roll, no corner mirror. The grid origin also carries an extra `-0x200` bias on `z`, and pass 1's cull is a view-`z` bracket with **no** screen-space term (that is a separate pass-2 test). See [battle.md](../subsystems/battle.md#the-grids-own-constants-read-off-the-emitter). |
@@ -212,6 +213,29 @@ and `ZSF4` is `0x400`, so a primitive's OT depth is the plain four-corner SZ
 average. Full spec + engine wiring:
 [`cutscene.md`](../subsystems/cutscene.md#what-style-2s-emitter-builds).
 
+### Battle-intro transition length - `DAT_801D2458`
+
+*Status:* resolved - `disassembly`. 132 display frames, 252 for the swirl.
+
+The intro overlay's own init seeds the duration two instructions before the
+style switch it feeds: `addiu v0,zero,0x84` at `0x801CED14` and
+`sw v0,0x2458(v1)` at `0x801CED2C`, then `sltiu v0,a0,0x5` on the selector
+`DAT_801D2460`. The store is unconditional, so **every** style gets `0x84`.
+Exactly one arm overrides it - jump-table slot `4` (the swirl, table at
+`0x801CE840`, body `0x801CEFEC`) re-stores `0xFC` at `0x801CEFF4` /
+`0x801CEFFC`. Read off PROT 0979's instruction words at load base
+`0x801CE818`; the decompiler's rendering of `FUN_801ce8cc` reaches past that
+dump's window, so the C alone would not have settled it.
+
+Why it is worth a thread rather than a constant: it is the denominator of the
+whole transition. Each fade ramp is a *lead* before it, the entity's ready bits
+are raised at `- 0x1E` / `- 6`, and the tile shatter's records hold until
+`delay < elapsed * 0x3C` with `delay = rand() % 5000` - so the grid needs ~84
+frames merely to finish starting, and a shorter window leaves part of it at its
+seeded pose for the transition's whole length. Port:
+`engine-vm::battle_intro_styles::intro_duration_frames`; spec in
+[`cutscene.md`](../subsystems/cutscene.md#how-long-a-transition-runs-dat_801d2458).
+
 ### Battle ground grid depth cue - the far colour
 
 *Status:* resolved - the far colour is the backdrop's staged far colour,
@@ -253,8 +277,9 @@ table pinned by `crates/engine-vm/tests/battle_grid_cue_scus_real.rs`;
 `engine-render` gained the per-draw `DrawCue` staging (retail sets the DPCS
 inputs per drawn object), and the play-window battle grid draws under the
 `SZ >> 2` ramp toward the per-stage far colour. The browser play page draws
-no battle 3D layer at all (a disclosed render gap in `play_battle.rs`), so
-there is no second host to wire until that layer exists.
+the same grid under the same table: `play_battle_ground_cue_json` hands the
+page the engine-resolved far colour and the page renderer attaches it as a
+per-draw cue, so both hosts fog from one parse of one table.
 
 ### Who calls the battle on-screen test `FUN_8005126C`?
 

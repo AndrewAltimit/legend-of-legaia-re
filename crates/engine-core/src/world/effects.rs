@@ -223,13 +223,18 @@ impl World {
         // `current_anim` / cleared `ADVANCE_DONE` for clip-less actors and
         // sees in-flight staged clips otherwise.
         self.commit_staged_battle_anims();
-        let ctx_ptr: *mut BattleActionCtx = &mut self.battle_ctx;
+        // Step against a clone of the context, then write it back. The
+        // previous raw-pointer alias required that no host method ever
+        // touch `world.battle_ctx`; `BattleActionHost::ui_element` now
+        // legitimately READS `battle_ctx.active_actor` (the retail effect
+        // spawn is seated at the acting actor), so the alias is gone.
+        // Host methods still must not WRITE `world.battle_ctx` - the
+        // write-back would clobber it.
+        let mut ctx = self.battle_ctx.clone();
         let mut host = BattleHostImpl { world: self };
-        // SAFETY: BattleHostImpl never reads or writes `world.battle_ctx`
-        // through the borrow; it only touches `actors`, helper tables, and
-        // call-records.
-        let ctx = unsafe { &mut *ctx_ptr };
-        vm::battle_action::step(&mut host, ctx)
+        let out = vm::battle_action::step(&mut host, &mut ctx);
+        self.battle_ctx = ctx;
+        out
     }
 
     /// Tick the effect pool - one sweep of the faithful retail walker

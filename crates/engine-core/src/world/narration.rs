@@ -612,6 +612,34 @@ impl World {
             .is_some_and(|t| !t.is_done())
     }
 
+    /// `true` while a dialogue engagement owns the pad and the player.
+    ///
+    /// The engine has **two** dialogue channels and either one can be live on
+    /// its own. [`Self::current_dialog`] is the simplified request the probe /
+    /// world map open; [`Self::inline_dialogue`] is the faithful field-VM
+    /// runner ([`crate::inline_dialogue`]), which the ordinary NPC-talk path
+    /// runs and which can hold a box open with no `current_dialog` at all -
+    /// an interaction record whose prologue selects its segment never sets
+    /// one. Testing only the first therefore leaves the pad live under the
+    /// commonest conversation in the game.
+    ///
+    /// This is the engine's stand-in for retail's single answer to the same
+    /// question: the player actor's engaged bit `+0x10 & 0x80000`, raised by
+    /// the touch post `FUN_801D5B5C` and cleared by the dialog SM's teardown.
+    /// `FUN_801D01B0` branches on it at its very first test (`0x801D01F0`),
+    /// past the action-button accept, past the menu-open accept and past every
+    /// movement leg - so while it is set retail neither walks the player nor
+    /// opens the pause menu.
+    ///
+    /// Call this rather than testing either field directly: a site that tests
+    /// one and not the other is the exact asymmetry this predicate exists to
+    /// make unrepresentable.
+    ///
+    /// REF: FUN_801D01B0 (`0x801D01F0`, the engaged-bit branch), FUN_801D5B5C
+    pub fn dialogue_owns_input(&self) -> bool {
+        self.current_dialog.is_some() || self.inline_dialogue.is_some()
+    }
+
     /// Step the opening-cutscene timeline one frame.
     ///
     /// Runs the spawned cutscene context ([`crate::cutscene_timeline`]) through
@@ -2190,6 +2218,12 @@ impl World {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);
+                    // A user choice is progress: clear the wrap map so a menu
+                    // record that re-emits its menu by jumping back after a
+                    // branch reply still cycles (the izumi book-menu shape,
+                    // pinned by `inline_dialogue_menu_reemission_survives_wrap_rule`).
+                    // The player leaves such a record by picking its exit
+                    // option, not by the runner deciding the pass is over.
                     id.visited.iter_mut().for_each(|v| *v = false);
                     match target {
                         Some(t) => id.pc = t,
@@ -2222,6 +2256,18 @@ impl World {
                     // Reached a text segment. A prologue (if any) selected it, so
                     // retire the fallback and open the box here.
                     id.fallback_segment_pc = None;
+                    // Mark the segment's own PC as executed. Text segments used
+                    // to be left unmarked - only opcode bytes were - and that
+                    // made the pass-end detector below structurally unable to
+                    // fire on the commonest retail shape: a conversation whose
+                    // tail jumps **back onto a text segment**. Rim Elm alone has
+                    // four such placements, and each one replayed its line
+                    // without limit, which is what an unescapable looping NPC
+                    // conversation is. The check needs "have I shown this box
+                    // already", and a box is identified by its `0x1F` PC.
+                    if id.pc < id.visited.len() {
+                        id.visited[id.pc] = true;
+                    }
                     id.panel = Some(crate::dialog::OwnedDialogPanel::at_segment(
                         std::sync::Arc::clone(&id.bytecode),
                         id.pc,
@@ -2471,6 +2517,17 @@ impl World {
         if self.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
             self.inline_dialogue = None;
             self.current_dialog = None;
+            // Drop the interaction's staging slots with it. They are consumed
+            // by `take()` when the runner starts, so a leftover is always a
+            // *second* arm of the same interaction - and this function's own
+            // start arm would then relaunch the conversation on the next
+            // frame, with no input, forever. The probe no longer re-arms them
+            // mid-conversation (see `tick_field_interaction_probe`); clearing
+            // here makes the restart unrepresentable rather than merely
+            // unreachable, because any future caller of
+            // `trigger_field_interact` would otherwise re-open the same trap.
+            self.active_inline_prologue = None;
+            self.active_inline_slot = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }

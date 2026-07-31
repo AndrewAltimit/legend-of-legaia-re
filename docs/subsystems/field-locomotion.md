@@ -79,7 +79,7 @@ The callers this protects are the ones whose tile is *derived* rather than autho
 
 ## Per-frame flow
 
-1. **Disabled gate.** If `player.flags & 0x80000` is set, skip all movement (an encounter is queued or a cutscene owns the player).
+1. **Disabled gate.** If `player.flags & 0x80000` is set, branch out (`0x801D01F0`: `lw v0,0x10(v0)` / `lui v1,0x8` / `and` / `bne 0x801D0334`) - an encounter is queued, a cutscene owns the player, or a talk engagement is live. This is the **first** test in the function, so it skips not only the movement legs but the whole pre-movement header below it: the action-button accept at step 2 and the **menu-open accept** at `0x801D0250..0x801D02DC`. While the bit is raised the pad opens no pause menu at all - not even the `0x23` deny buzz, which belongs to a different refusal (`_DAT_1F800394 & 0x8000000`). The engine's counterpart is `World::dialogue_owns_input`, which both hosts' menu-open paths consult.
 2. **Action button.** An edge-pad action bit (`_DAT_8007b874 & 4`, gated by `DAT_8007b6a8`) plays the confirm SFX `func_0x80035b50(0x20)` and raises `player.flags |= 0x1000000` (talk / examine), short-circuiting movement that frame.
 3. **Direction decode.** `func_0x800467e8(&_DAT_8007b850)` rewrites the held pad in place into a *camera-relative* mask (so "screen up" maps to the correct world axis regardless of camera azimuth). `FUN_80046494(player)` reads that remapped mask (`gp+0x538`) and returns the movement direction in bits `& 0xf000`, resolving diagonals (`0x9000 / 0xc000 / 0x3000 / 0x6000`). The player heading `+0x26` is set to one of eight angle constants from the same mask.
 
@@ -1320,7 +1320,7 @@ Provenance: the per-handler dumps named above. Not documented here (out of scope
 
 ## Open
 
-- The `FUN_801d5b5c` post kernel's facing save/restore (`+0x26` -> `+0x5A`) and touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`); the engaged flag and the parked-script resume are modelled (`world/prop_interact.rs`).
+- The `FUN_801d5b5c` post kernel's touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`), which are what let overlapping touches keep the engaged flag raised until every one is dismissed. The engaged flag, the parked-script resume (`world/prop_interact.rs`) and the facing save/restore (`+0x26` -> `+0x5A` -> `+0x26`, `World::field_npc_facing_save` / `World::release_talk_facing`; see [`motion-vm.md`](motion-vm.md#talk-time-facing-is-not-this-vm)) are modelled.
 - Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected). The **door** path does evaluate its branches live (see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)); the general actor path does not yet.
 
 ## NPC initial facing

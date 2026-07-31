@@ -1,13 +1,21 @@
-//! In-app verification: a Super Art is selectable and executes through the
-//! **live** player-driven battle menu - not just the row builder.
+//! In-app verification: a Super Art is triggerable and executes through the
+//! **live** player-driven battle input - not just the row builder.
 //!
 //! Drives the same `World::tick` path the windowed app uses: walk into a
-//! battle, navigate the command menu to Arts, open the Arts submenu, and
-//! confirm a saved chain that performs Vahn's Tri-Somersault combo
-//! (Somersault → Cyclone → Somersault). Asserts the live menu row carries the
-//! Super name (`ArtRow::super_art`) and that selecting it deals damage and
+//! battle, navigate the command menu to Arts, and *type* Vahn's Tri-Somersault
+//! combo (Somersault → Cyclone → Somersault = Up Down Up) into the retail
+//! per-press Arts command input. Three presses is also the AP pool's own end
+//! at the disc-free fallback (100 AP, favored-class cost 0x1E), so the entry
+//! auto-ends on the third press exactly like retail's `0x50 -> 0x5A` edge -
+//! no confirm involved.
+//!
+//! What proves the Super fired is the **shout cue's action constant**: the
+//! Super path keys the cue on the combo's finisher (`0x2B`, Tri-Somersault's
+//! `replace` tail), while three unrecognized-as-a-Super Somersaults would key
+//! three cues on `0x27`. The test then asserts the entry deals damage and
 //! resolves the battle. Disc-free; runs in CI.
 
+use legaia_engine_core::arts_command_input::ArtsInputScreen;
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
@@ -52,15 +60,9 @@ fn build_world() -> World {
 
     // Vahn's Tri-Somersault = Somersault (Art27) -> Cyclone (Art1F) ->
     // Somersault (Art27). Give each component art a one-direction command so a
-    // flat chain recognizes the sequence.
+    // flat Up-Down-Up entry recognizes the sequence.
     stage_vahn_art(&mut w, 0x27, legaia_art::Command::Up, 2);
     stage_vahn_art(&mut w, 0x1F, legaia_art::Command::Down, 1);
-    // Chain Up Down Up (Left=1 Right=2 Down=3 Up=4).
-    w.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "TriSom".into(),
-        sequence: vec![4, 3, 4],
-    });
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
@@ -92,7 +94,7 @@ fn monster_hp_total(w: &World) -> u32 {
 }
 
 #[test]
-fn live_arts_menu_selects_and_fires_a_super() {
+fn live_arts_input_types_and_fires_a_super() {
     use legaia_engine_core::battle_input::BattleCommand;
 
     let mut w = build_world();
@@ -113,38 +115,65 @@ fn live_arts_menu_selects_and_fires_a_super() {
     let hp_before = monster_hp_total(&w);
     assert!(hp_before > 0, "monster alive on entry");
 
-    // --- Drive command -> Arts -> select Super row -> confirm target. ---
+    // --- Drive command -> Arts -> type Up Down Up -> Begin -> target. ---
     // Edge-triggered: emit a button only on alternate "press" frames, choosing
-    // it from the live menu state so navigation is deterministic.
+    // it from the live session state so navigation is deterministic.
+    let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
+    let mut next_dir = 0usize;
     let mut press = true;
-    let mut saw_super_row = false;
+    let mut opened_input = false;
+    let mut auto_ended_without_confirm = false;
+    let mut arts_turns = 0usize;
+    let mut shouts = Vec::new();
     let mut resolved = false;
     for _ in 0..4000 {
         let pad = if !press {
             0
-        } else if let Some(menu) = w.battle_arts_menu.as_ref() {
-            // Arts submenu open. In the Select phase the row under the cursor
-            // must be the recognized Super; confirm it, then confirm target.
-            if menu
-                .menu_art()
-                .is_some_and(|row| row.super_art == Some("Tri-Somersault"))
-            {
-                saw_super_row = true;
+        } else if let Some(view) = w.arts_input_view() {
+            opened_input = true;
+            match view.phase {
+                ArtsInputScreen::Entering => {
+                    if next_dir < combo.len() {
+                        let dir = combo[next_dir];
+                        next_dir += 1;
+                        InputState::mask_of([dir])
+                    } else {
+                        InputState::mask_of([PadButton::Cross])
+                    }
+                }
+                other => {
+                    // The pool ended the entry itself once the combo was in -
+                    // retail's `0x50 -> 0x5A` edge, reached with no confirm.
+                    if next_dir == combo.len() && other == ArtsInputScreen::Review {
+                        auto_ended_without_confirm = true;
+                    }
+                    InputState::mask_of([PadButton::Cross])
+                }
             }
-            InputState::mask_of([PadButton::Cross])
         } else if let Some(cmd) = w.battle_command.as_ref() {
-            // Command menu: move the cursor onto Arts, then confirm it.
-            if cmd.menu_command() == Some(BattleCommand::Arts) {
+            if arts_turns == 0 {
+                // Command menu: move the cursor onto Arts, then confirm it.
+                if cmd.menu_command() == Some(BattleCommand::Arts) {
+                    InputState::mask_of([PadButton::Cross])
+                } else {
+                    InputState::mask_of([PadButton::Down])
+                }
+            } else if cmd.menu_command() == Some(BattleCommand::Attack) {
                 InputState::mask_of([PadButton::Cross])
             } else {
-                InputState::mask_of([PadButton::Down])
+                InputState::mask_of([PadButton::Up])
             }
         } else {
             0
         };
+        let input_was_open = w.arts_input_active();
         w.set_pad(pad);
         press = !press;
         w.tick();
+        if input_was_open && !w.arts_input_active() {
+            arts_turns += 1;
+        }
+        shouts.extend(w.drain_battle_shout_cues());
         if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
             resolved = true;
             break;
@@ -152,12 +181,30 @@ fn live_arts_menu_selects_and_fires_a_super() {
     }
 
     assert!(
-        saw_super_row,
-        "the live Arts menu row for the chain must be flagged as the Super"
+        opened_input,
+        "the Arts command must open the per-press input session"
+    );
+    assert!(
+        auto_ended_without_confirm,
+        "three presses spend the pool, so the entry ends by itself"
+    );
+    assert_eq!(arts_turns, 1, "exactly one arts entry was driven");
+    // The Super replaced the recognized art tail: one cue keyed on the combo's
+    // finisher constant. Without the Super match the same three directions
+    // would perform three plain Somersaults and queue three `0x27` cues.
+    assert_eq!(
+        shouts.len(),
+        1,
+        "a Super replacement is one performed finisher: {shouts:?}"
+    );
+    assert_eq!(shouts[0].cslot, 0, "Vahn = character slot 0 (XA2 bank)");
+    assert_eq!(
+        shouts[0].action, 0x2B,
+        "Tri-Somersault's finisher constant, not a component art's"
     );
     assert!(
         resolved,
-        "selecting the Super must execute and resolve the battle"
+        "the typed Super must execute and resolve the battle"
     );
     assert_eq!(w.mode, SceneMode::Field, "return to field after the wipe");
     let rewards = w

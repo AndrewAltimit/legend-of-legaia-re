@@ -12,6 +12,7 @@ mod capture;
 mod casting;
 mod command_flow;
 mod initiative;
+mod locomotion;
 mod loop_driver;
 mod monster_ai;
 mod stats;

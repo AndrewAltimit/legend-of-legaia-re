@@ -296,21 +296,17 @@ impl LegaiaMinigames {
         )?;
         let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
         // Section defaults (id 0 per slot) - the browser has no save to read
-        // an equipped set from.
-        let swings =
-            legaia_asset::battle_char_assembly::swing_battle_animations(raw, &pack, &[0u8; 5])
-                .ok()?;
-        let mut costs = [0u16; 4];
-        for s in &swings {
-            let i = s.slot.checked_sub(0xC)? as usize;
-            if i < 4 && s.cost > 0 {
-                costs[i] = s.cost as u16;
-            }
+        // an equipped set from. Read through the shared per-slot cost
+        // function, the same one the battle Arts input prices its presses
+        // with, so the dome and the battle cannot charge differently for
+        // the same command.
+        let costs =
+            legaia_asset::battle_char_assembly::swing_command_costs(raw, &pack, &[0u8; 5]).ok()?;
+        let mut out = [0u16; 4];
+        for (i, c) in costs.iter().enumerate() {
+            out[i] = (*c)? as u16;
         }
-        if costs.contains(&0) {
-            return None;
-        }
-        Some(costs)
+        Some(out)
     }
 
     /// The player fighter's record stats: SCUS new-game template leveled
@@ -1785,34 +1781,77 @@ const HUD_BUTTON_TIM_OFFSET: usize = 0x7B00;
 /// `docs/subsystems/minigame-muscle-dome.md` "Arts command input"). Split
 /// out of [`LegaiaMinigames::muscle_hud_json`]'s `json!` so the macro stays
 /// under the recursion limit.
+///
+/// Every rect here comes from the shared
+/// [`legaia_engine_ui::arts_input`] module (which the battle hosts draw
+/// through directly): retail runs one input screen for the dome's Attack
+/// and for the battle Arts command, so the dome page must not carry its
+/// own copy of the numbers. The page samples the widget page in **texel**
+/// space, hence [`ArtsInputAtlasRects::SHEET`] rather than the hosts'
+/// baked-atlas variant.
 fn arts_input_pieces() -> serde_json::Value {
+    use legaia_asset::title_pak as tp;
+    use legaia_engine_ui::arts_input::{ArtsInputAtlasRects, ChipDirection};
+    let r = ArtsInputAtlasRects::SHEET;
+    let rect = |t: (u32, u32, u32, u32)| serde_json::json!([t.0, t.1, t.2, t.3]);
     serde_json::json!({
-        "cmd_chip": {"body": [215,96,24,26], "cap_l": [200,96,15,26],
-                      "cap_r": [239,96,15,26], "pal": 6},
-        "cmd_label": {"u": 104, "w": 24, "h": 18, "pal": 5,
-                       "v": {"high": 104, "left": 20, "right": 84,
-                             "low": 40, "arms": 0, "raseru": 64}},
-        "chip_diamond_l": {"r": [192,24,9,18], "pal": 5},
-        "chip_diamond_r": {"r": [204,24,9,18], "pal": 5},
-        "pennant_cap_l": {"r": [192,24,9,18], "pal": 5},
-        "pennant_cap_r": {"r": [216,24,9,18], "pal": 5},
-        "bar_end_l": {"r": [240,0,16,18], "pal": 6},
-        "bar_body": {"r": [224,0,16,18], "pal": 6},
-        "bar_arrow": {"r": [192,44,18,18], "pal": 6},
-        "list_win": {"interior": [128,0,32,32], "edge_top": [164,0,24,4],
-                      "edge_bottom": [164,28,24,4], "edge_l": [160,4,4,24],
-                      "edge_r": [188,4,4,24], "corner_tl": [160,0,4,4],
-                      "corner_tr": [188,0,4,4], "corner_bl": [160,28,4,4],
-                      "corner_br": [188,28,4,4], "pal": 2,
+        "cmd_chip": {"body": rect(r.chip_body), "cap_l": rect(r.chip_cap_l),
+                      "cap_r": rect(r.chip_cap_r),
+                      "pal": tp::OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW},
+        "cmd_label": {"u": r.label_u, "w": r.label_w, "h": r.label_h,
+                       "pal": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW,
+                       "v": {"high": ChipDirection::High.label_v(),
+                             "left": ChipDirection::Left.label_v(),
+                             "right": ChipDirection::Right.label_v(),
+                             "low": ChipDirection::Low.label_v(),
+                             "arms": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_ARMS,
+                             "raseru": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RASERU}},
+        "chip_diamond_l": {"r": rect(r.diamond_l),
+                            "pal": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW},
+        "chip_diamond_r": {"r": rect(r.diamond_r),
+                            "pal": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW},
+        "pennant_cap_l": {"r": rect(r.pennant_cap_l),
+                           "pal": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW},
+        "pennant_cap_r": {"r": rect(r.pennant_cap_r),
+                           "pal": tp::OVERLAY_SYSTEM_UI_ARTS_LABEL_CLUT_ROW},
+        "bar_end_l": {"r": rect(r.bar_end_l),
+                       "pal": tp::OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW},
+        "bar_body": {"r": rect(r.bar_body),
+                      "pal": tp::OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW},
+        "bar_arrow": {"r": rect(r.bar_arrow),
+                       "pal": tp::OVERLAY_SYSTEM_UI_ARTS_CHIP_CLUT_ROW},
+        // The Triangle arts-list window is the ordinary system-UI panel
+        // 9-slice under a per-window vertical gouraud - the same tiles the
+        // pause menu frames its windows with.
+        "list_win": {"interior": [128,0,32,32],
+                      "edge_top": rect(tp::OVERLAY_SYSTEM_UI_PANEL_TOP),
+                      "edge_bottom": rect(tp::OVERLAY_SYSTEM_UI_PANEL_BOT),
+                      "edge_l": [160,4,4,24], "edge_r": [188,4,4,24],
+                      "corner_tl": rect(tp::OVERLAY_SYSTEM_UI_PANEL_TL),
+                      "corner_tr": rect(tp::OVERLAY_SYSTEM_UI_PANEL_TR),
+                      "corner_bl": rect(tp::OVERLAY_SYSTEM_UI_PANEL_BL),
+                      "corner_br": rect(tp::OVERLAY_SYSTEM_UI_PANEL_BR),
+                      "pal": tp::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW,
                       "grad": [0x40, 0x88]},
         "arts_arrows": {"v": 208, "w": 12, "h": 12, "pal": 15,
                          "u": {"up": 208, "down": 220, "right": 232,
                                "left": 244}},
         "arts_text_pal": 15,
         "tri_button": {"r": [48,0,16,16]},
-        "ap_input_fill": {"rect": [235,177,50,6],
-                           "rgb": [[192,160,64],[128,32,16]]},
+        "ap_input_fill": {"rect": [ai_fill().0, ai_fill().1, ai_fill().2, ai_fill().3],
+                           "rgb": [rgb(tp::OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB),
+                                   rgb(tp::OVERLAY_SYSTEM_UI_GAUGE_FILL_DARK_RGB)]},
     })
+}
+
+/// The AP plate's gouraud-fill span, from the shared module.
+fn ai_fill() -> (i32, i32, i32, i32) {
+    use legaia_engine_ui::arts_input as ai;
+    (ai::AP_FILL_X, ai::AP_FILL_Y, ai::AP_FILL_W, ai::AP_FILL_H)
+}
+
+fn rgb(c: (u8, u8, u8)) -> serde_json::Value {
+    serde_json::json!([c.0, c.1, c.2])
 }
 
 /// SCUS VA of the screen-element placement table (24-byte stride); the

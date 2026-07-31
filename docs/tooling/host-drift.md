@@ -149,7 +149,7 @@ is reached at runtime.
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
 | save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
-| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu`. |
+| pause-menu open | `symbols_all` on `FieldMenuGate` + `SceneMode::Menu` + `dialogue_owns_input`. |
 | game-over panel | `pattern_same` over the `game_over_draws_for` argument list. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
@@ -166,6 +166,13 @@ host that opens the menu without sampling them into a `FieldMenuGate` draws
 every row white and opens every row, which lets a player Save in one of the
 scenes whose header forbids it (see [`save-screen.md`](../subsystems/save-screen.md)).
 Both open sites call the same builder, so tier 1 was green throughout.
+
+The row also names `dialogue_owns_input`, because *whether the menu opens at
+all* is the same kind of invisible split. Retail's menu-open accept sits behind
+the locomotion controller's engaged-bit branch, so Start is inert while the
+player is talking; the two hosts refuse in two crates, and a host that dropped
+the check would look identical in every screenshot that is not mid-conversation
+(see [`field-menu.md`](../subsystems/field-menu.md#the-menu-does-not-open-at-all-while-a-dialogue-is-up)).
 
 **Game-over panel.** The assertion is that both hosts project the live
 `GameOverSession` - its cursor, and the save-scan `continue_enabled` - rather

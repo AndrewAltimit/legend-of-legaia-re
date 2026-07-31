@@ -338,13 +338,25 @@ for tests that don't exercise memory.
 
 ## Battle HUD pipeline
 
-`battle_hud_draws_for(font, slots, popups, log, pen)` produces a
-`Vec<TextDraw>` for the in-battle HUD. The view types `HudSlotView` /
+`battle_hud_draws_for(font, frame, pen)` produces a `BattleHudDraws` for the
+in-battle HUD: a `text` list sampling the dialog-font atlas and a `sprites`
+list sampling the resident system-UI atlas. The view types `HudSlotView` /
 `HudPopupView` / `HudLogView` keep the renderer agnostic to engine-core /
 engine-vm types (matches the existing `ShopRow` / `level_up_draws_for`
-pattern). Status icons render at row_y - 12 with 8 px stride; popups sit at
-slot_y - 16 (heal = green, crit = yellow, plain damage = cyan); fade alpha
-multiplies into the text colour's alpha channel.
+pattern).
+
+The default surface is retail's, off the packet-pinned
+`engine-vm::battle_chrome`: per-member roster panels (102x48 at `y 164`) at
+rest, replaced for the acting member by the full-width active-actor bar at
+`(8, 188)`, each carrying name / `HP` label + `cur` right-aligned + `max`
+running forward / the same pair for `MP` - and **no gauge bar**. A top-left
+plaque names the actor the frame belongs to, which is also the port's whole
+monster readout since retail draws no monster gauge. Popups sit at slot_y - 16 (heal = green, crit = yellow, plain damage =
+cyan); fade alpha multiplies into the text colour's alpha channel. Monster
+rows, the LV / AP tail and the "ENCOUNTER!" banner are diagnostic-only,
+behind `LEGAIA_DIAG_HUD`. Geometry provenance, including which retail table
+the measurement falsified, is on
+[`docs/subsystems/battle.md`](../../docs/subsystems/battle.md#the-drawn-surface).
 
 HP and MP readouts are tinted by the **four-tier retail colour law**
 (`hp_bar_color_index` / `mp_bar_color_index`, ports of FUN_800349EC /
@@ -354,10 +366,10 @@ native window is the consumer: `engine-shell/.../window/hud.rs` calls this
 builder for every battle frame from the `BattleHud` model that
 `window/battle.rs::sync_battle_hud_rows` refreshes.
 
-Column offsets are sized from measured retail-dialog-font advances rather than
-guessed - see the doc comment on the builder for the table and for the
-overlap bug that the first, narrower draft shipped while the builder still had
-no caller.
+Column offsets are pinned, not guessed - the bar's and the panel's off the
+display-list walk, the diagnostic row's off retail-dialog-font advances. A
+disc-gated test walks all three sets against the real font, which is what
+catches a field overrunning the next column.
 
 ## Menu chrome
 

@@ -3,6 +3,23 @@
 
 use super::super::*;
 
+/// What the frame presents: the scene alone, or the scene with the
+/// field-to-battle transition's screen primitives composited over it.
+///
+/// A function rather than an inline expression because the screenshot
+/// harness has to capture the *same* target it presents - capturing a bare
+/// `Scene` there drops every transition style from the PNGs.
+fn present_target<'a>(
+    scene: &'a RenderScene<'a>,
+    prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+) -> RenderTarget<'a> {
+    if prims.is_empty() {
+        RenderTarget::Scene(scene)
+    } else {
+        RenderTarget::SceneWithScreenPrims { scene, prims }
+    }
+}
+
 impl PlayWindowApp {
     pub(super) fn handle_redraw(&mut self) {
         // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
@@ -167,10 +184,19 @@ impl PlayWindowApp {
                 // retail CARD pair, game_mode 0x17 - the world holds
                 // SceneMode::Menu while it is open) and route the
                 // window's input + draws to it via the boot-UI arm.
+                //
+                // The open can be REFUSED - `open_field_menu` declines while
+                // a dialogue engagement owns the player, as retail's
+                // engaged-bit branch does. Only take the boot-UI arm when a
+                // session actually exists, or the window would route input
+                // and draws to a menu that is not there while the scene tick
+                // stayed skipped.
                 self.session.open_field_menu();
-                self.boot_ui = BootUiState::FieldMenu { sub: None };
-                self.prev_pad = self.pad;
-                continue;
+                if self.session.field_menu_is_open() {
+                    self.boot_ui = BootUiState::FieldMenu { sub: None };
+                    self.prev_pad = self.pad;
+                    continue;
+                }
             }
             // Route this frame's pad into the engine before the
             // tick so World::tick's mode dispatch (world-map
@@ -292,12 +318,35 @@ impl PlayWindowApp {
             if let Some((move_id, origin)) = self.session.host.world.take_pending_move_fx_spawn()
                 && self.session.host.world.spawn_move_fx(move_id, origin)
             {
-                // Route the move's sound cue the same way the field-FX /
-                // debug path does (classify only; move-FX cue playback is
-                // not yet wired to the SFX ring).
+                // Route the move's sound cue through the retail dispatch
+                // decode (`classify_cue` = FUN_8004FCC8) and PLAY it: a
+                // Ring cue's `ring_value` is the SfxBank descriptor id
+                // (docs/formats/sfx-table.md), enqueued into the same
+                // per-frame SFX scheduler the art-strike cues ride
+                // (`AudioBgmDirector::enqueue_sfx` -> `tick_sfx_frame`,
+                // which resolves the cue's own `+4` category bank).
+                // Voice cues (`id >= 0x100`) are streamed XA triggers
+                // with no engine lane yet - logged, not dropped silently.
                 if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
-                    let dispatch = legaia_engine_audio::classify_cue(cue as u32);
-                    log::debug!("battle move-FX cue {cue:#04x} -> {dispatch:?}");
+                    match legaia_engine_audio::classify_cue(cue as u32) {
+                        legaia_engine_audio::CueDispatch::Ring { ring_value, .. } => {
+                            if let Some(bgm) = self.session.bgm.as_mut() {
+                                bgm.enqueue_sfx(ring_value, 0, 0, 0);
+                                log::debug!(
+                                    "battle move-FX cue {cue:#04x} enqueued as SFX {ring_value:#04x}"
+                                );
+                            } else {
+                                log::debug!(
+                                    "battle move-FX cue {cue:#04x} -> SFX {ring_value:#04x} (no audio)"
+                                );
+                            }
+                        }
+                        dispatch @ legaia_engine_audio::CueDispatch::Voice { .. } => {
+                            log::debug!(
+                                "battle move-FX cue {cue:#04x} -> {dispatch:?} (voice lane unmodeled)"
+                            );
+                        }
+                    }
                 }
             }
             // Advance an active Seru-magic summon scene-graph (the cast
@@ -1013,15 +1062,44 @@ impl PlayWindowApp {
                     // duplicate village wall across the open sea side, so
                     // the mirror draw is removed (one instance, like
                     // retail). See `project_battle_backdrop_is_prot88_dome`.
+                    //
+                    // **Stage scale.** The stage rides the same
+                    // [`BATTLE_WORLD_SCALE`] base matrix the actors do
+                    // (`0x8007BF10 = 16384*I`, composed per drawn object by
+                    // `FUN_80048A08` - and the dome is registered as an
+                    // ordinary background *actor*, so it goes through that
+                    // same path). Drawing it at raw 1x while the actors ride
+                    // 4x put the two classes in different worlds: the phase
+                    // camera's translation trio is authored in the scaled
+                    // stage space, so against 1x geometry the eye orbited at
+                    // four times the intended radius and swung *through* the
+                    // arena shell - the frame filling with one magnified
+                    // wall - and every actor stood 3x its seat distance away
+                    // from the ground cell it was supposed to be on. One
+                    // scale for every battle draw class is what makes the
+                    // arena a backdrop and the grid a floor.
                     if let Some(stage_idx) = self.battle_stage_mesh
                         && let Some(mesh) = self.meshes.get(stage_idx)
                     {
-                        let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        // Half-arena stage at raw world coords.
+                        let flip = Self::battle_stage_model();
+                        // Half-arena stage in the scaled battle stage space.
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
                             cue: None,
+                        });
+                    }
+                    // ...and the shell's untextured `F*`/`G*` half on the
+                    // colour pipeline, at the identical transform. Retail
+                    // walks one primitive list, so these panels (sky band,
+                    // painted wall faces, flat water) belong to the same
+                    // backdrop draw; without them the shell has holes.
+                    if let Some(cidx) = self.battle_stage_color_mesh
+                        && let Some(cmesh) = self.color_meshes.get(cidx)
+                    {
+                        color_draws.push(ColorSceneDraw {
+                            mesh: cmesh,
+                            mvp: cam * Self::battle_stage_model(),
                         });
                     }
                 } else {
@@ -1313,15 +1391,20 @@ impl PlayWindowApp {
                 // rides past 1.0 exactly like retail's bare `mtc2`),
                 // blending toward the battle's staged far colour, so the
                 // floor washes out with distance the way retail's does.
-                // The grid draws at raw PSX world units (no
-                // BATTLE_WORLD_SCALE), so its view depths are on the same
-                // scale as retail's SZ.
+                // The grid rides [`BATTLE_WORLD_SCALE`] like every other
+                // battle draw class (see the stage-scale note on the
+                // backdrop draw above): the party stands ON its own grid
+                // cell only if the cell and the actor's stage translation
+                // are lifted by the same factor. The DPCS ramp is a
+                // VIEW-depth window, so it is lifted with the geometry -
+                // otherwise the whole ramp would collapse into the near
+                // field and the floor would read as fully fogged.
                 if in_battle
                     && let Some(gi) = self.battle_ground_mesh
                     && let Some(gmesh) = self.meshes.get(gi)
                 {
                     use legaia_engine_vm::battle_ground_grid as grid;
-                    let flip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                    let flip = Self::battle_stage_model();
                     draws.push(SceneDraw {
                         mesh: gmesh,
                         mvp: cam * flip,
@@ -1330,7 +1413,7 @@ impl PlayWindowApp {
                             .map(|far| legaia_engine_render::DrawCue {
                                 far,
                                 near_z: 0.0,
-                                far_z: grid::grid_cue_far_z(),
+                                far_z: grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
                                 max_ir0: grid::grid_cue_max_ir0(),
                             }),
                     });
@@ -1378,10 +1461,59 @@ impl PlayWindowApp {
                         .and_then(|o| o.as_ref())
                         .or_else(|| self.meshes.get(tmd_idx));
                     if let Some(mesh) = mesh {
+                        // Target-select cursor: while the command picker
+                        // points at an enemy row, the ported FUN_801DA6B4
+                        // (`engine-vm::battle_action::target_cursor_highlight`)
+                        // stamps three render words across the monster slots -
+                        // `render_flag` 5 on the pointed-at monster / 200 on
+                        // the rest, the bright/dim colour words, and the q12
+                        // `render_scale` (0x1000 = neutral, 0 = cursor down).
+                        // Render them here: the scale word composes onto the
+                        // model about the actor origin, and the tint rides the
+                        // per-draw GTE depth-cue seam (a saturated `DrawCue`
+                        // ramp = a flat blend toward the cue colour) - the
+                        // pointed-at monster pulses bright, the others dim.
+                        // The retail tint pass's own per-frame colour-word
+                        // stepping (FUN_8004A908) is not modeled; the pulse
+                        // phase is the host tick.
+                        let mut model = self.actor_model(i);
+                        let mut cue = None;
+                        if in_battle {
+                            use legaia_engine_vm::battle_action as ba;
+                            let b = &actor.battle;
+                            if b.render_scale != 0 && b.render_scale != 0x1000 {
+                                model *=
+                                    Mat4::from_scale(Vec3::splat(b.render_scale as f32 / 4096.0));
+                            }
+                            match b.render_flag {
+                                ba::CURSOR_FLAG_SELECTED => {
+                                    let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
+                                    log::trace!(
+                                        "target cursor: actor {i} SELECTED pulse {pulse:.2}"
+                                    );
+                                    cue = Some(legaia_engine_render::DrawCue {
+                                        far: [1.0, 1.0, 1.0],
+                                        near_z: -1.0,
+                                        far_z: 0.0,
+                                        max_ir0: pulse,
+                                    });
+                                }
+                                ba::CURSOR_FLAG_DIMMED => {
+                                    log::trace!("target cursor: actor {i} DIMMED");
+                                    cue = Some(legaia_engine_render::DrawCue {
+                                        far: [0.0, 0.0, 0.0],
+                                        near_z: -1.0,
+                                        far_z: 0.0,
+                                        max_ir0: 0.55,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: actor_cam * self.actor_model(i),
-                            cue: None,
+                            mvp: actor_cam * model,
+                            cue,
                         });
                     }
                 }
@@ -1427,6 +1559,23 @@ impl PlayWindowApp {
             // Name-entry window chrome (grid + name-field filigree
             // windows + hand cursor) shares the same atlas slot.
             save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
+            // Battle HUD chrome (party-strip + plaque lozenges and the
+            // gold HP / green MP label cells) comes out of the same
+            // atlas; battle and the boot/menu chrome never coexist. Drawn
+            // first of the three battle surfaces so the prompt box and the
+            // command chips below layer over the readout, not under it.
+            save_chrome_draw_vec.extend(self.battle_chrome_sprite_draws(w, h));
+            // Sparring-tutorial prompt box: the same window skin, framed at
+            // the rect the retail emitter registers the prompt with. In
+            // battle, so it cannot coexist with the boot/menu chrome above.
+            save_chrome_draw_vec.extend(self.battle_tutorial_chrome_sprite_draws(w, h));
+            // Arts command-input chrome (direction chips + D-pad, the
+            // pennant input bar, the AP plate). Also system-UI-atlas
+            // sampled, and mutually exclusive with every state above -
+            // it only draws inside a battle. Coexists with the prompt box
+            // above: retail shows the drill's instruction window over the
+            // chips it is describing.
+            save_chrome_draw_vec.extend(self.arts_input_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
@@ -1523,21 +1672,47 @@ impl PlayWindowApp {
             } else {
                 None
             };
+            // FX model matrices pair with the active render frame:
+            // battle cameras carry no world negation (keep the
+            // per-model Y-flip); the field cameras compose
+            // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
+            let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
+            let fx_model_flip = if fx_in_battle {
+                Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            } else {
+                Mat4::IDENTITY
+            };
+            // Battle FX ride the actor camera composition (the retail
+            // 4x world-scale base under the shared rotation) so
+            // effects land on the scaled actor stage; field FX use
+            // the field camera as-is.
+            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
+                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+            } else {
+                cam
+            };
             // Effect-pool billboards: bridge live effect child sprites
             // into the renderer as faithful camera-facing quads sized
             // and UV-addressed from the effect bundle's inline atlas
             // (`World::active_effect_sprites`). Each draws two ways: a
             // textured quad sampling the scene VRAM at the sprite's
             // atlas page/clut/uv (the retail FUN_801E0088 pass-2 path -
-            // invisible while the texel-source upload is unpinned, real
-            // once it lands), plus a tinted outline through the Lines
-            // pipeline so the spawn is visible now. See
-            // docs/subsystems/effect-vm.md.
-            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, cam);
+            // in battle the flame atlas + CLUT rows are resident via the
+            // battle-entry blit, see `effect_billboard_mesh`), plus a
+            // tinted outline through the Lines pipeline so the spawn
+            // reads even where a sprite samples unloaded texels. See
+            // docs/subsystems/effect-vm.md. The billboards ride `fx_cam`
+            // like every other battle FX layer: in a stage-dome battle
+            // the pool positions are actor-stage coordinates, so drawing
+            // them under the unscaled `cam` landed each quad 4x too
+            // small at the wrong stage position. The camera-facing basis
+            // derives from the same matrix, so the quads face the camera
+            // that actually draws them.
+            let (effect_billboard, effect_lines) = self.build_effect_billboards(r, fx_cam);
             if let Some(mesh) = effect_billboard.as_ref() {
                 draws.push(SceneDraw {
                     mesh,
-                    mvp: cam,
+                    mvp: fx_cam,
                     cue: None,
                 });
             }
@@ -1558,25 +1733,6 @@ impl PlayWindowApp {
             // has a model assigned (same per-frame model-matrix
             // convention as `actor_model`). Held in a local Vec so the
             // meshes outlive the render borrow.
-            // FX model matrices pair with the active render frame:
-            // battle cameras carry no world negation (keep the
-            // per-model Y-flip); the field cameras compose
-            // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
-            let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
-            let fx_model_flip = if fx_in_battle {
-                Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-            } else {
-                Mat4::IDENTITY
-            };
-            // Battle FX ride the actor camera composition (the retail
-            // 4x world-scale base under the shared rotation) so
-            // effects land on the scaled actor stage; field FX use
-            // the field camera as-is.
-            let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
-                cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
-            } else {
-                cam
-            };
             let effect_model_draws = self.build_effect_model_draws(r, fx_model_flip, in_world_map);
             for (mesh, model) in &effect_model_draws {
                 draws.push(SceneDraw {
@@ -1656,15 +1812,50 @@ impl PlayWindowApp {
                 vram,
                 draws: &draws,
                 color_draws: &color_draws,
+                // Effect outlines share the billboards' `fx_cam` (the two
+                // sources are mutually exclusive, and off the battle stage
+                // `fx_cam == cam`, so the world-map markers are unaffected).
                 overlay_lines: world_map_entity_lines
                     .as_ref()
                     .or(effect_lines.as_ref())
-                    .map(|m| (m, cam)),
+                    .map(|m| (m, fx_cam)),
                 overlay_sprites: sprites_slot_1,
                 overlay_sprites_2: sprites_slot_2,
                 overlay_text: Some(&overlay),
                 clear_color: scene_clear,
             };
+            legaia_engine_render::profile::mark("drawlist");
+            // On the frame the transition arms, land the field frame in the
+            // software VRAM the intro strips texture themselves with, and draw
+            // the rest of this frame against that page. Retail gets it for
+            // free - on the console the framebuffer *is* VRAM - so the port
+            // re-renders this scene offscreen and blits the readback in.
+            if let Some(v) = Self::capture_battle_intro_frame(
+                battle_intro.as_mut(),
+                r,
+                &scene,
+                self.cpu_vram_base.as_ref(),
+            ) {
+                // Keep the captured page GPU-resident for the whole
+                // transition: the capture is a one-shot, but every
+                // transition frame's primitives sample it (the curtain
+                // strips, and the tile shatter's pages + shade page).
+                self.battle_intro_vram = Some(v);
+            }
+            let scene = match (battle_intro.as_ref(), self.battle_intro_vram.as_ref()) {
+                (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
+                _ => scene,
+            };
+            // The intro's primitives composite *over* the scene in one frame.
+            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
+            // mode which clears and draws nothing but quads, so it could never
+            // carry a transition strip over a field scene.
+            //
+            // The target is built *before* the screenshot harness so a capture
+            // sees the frame that is presented. Capturing `Scene(&scene)` here
+            // instead would silently drop every transition style from the PNGs
+            // - the harness's own blind spot, not the emitter's.
+            let target = |scene| present_target(scene, &battle_intro_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
             // and exit after the capture at/past `--screenshot-last-tick`.
@@ -1676,7 +1867,7 @@ impl PlayWindowApp {
                 let path = sw.dir.join(format!("tick_{:05}.png", self.tick_no));
                 let last_tick = sw.last_tick;
                 self.sweep_next_tick = self.tick_no + sw.every;
-                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                match r.capture_rgba(target(&scene)) {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {
                             println!(
@@ -1713,7 +1904,7 @@ impl PlayWindowApp {
                     .as_ref()
                     .and_then(|sc| sc.path.clone())
                     .unwrap();
-                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                match r.capture_rgba(target(&scene)) {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {
                             println!(
@@ -1736,41 +1927,7 @@ impl PlayWindowApp {
                     }
                 }
             }
-            legaia_engine_render::profile::mark("drawlist");
-            // On the frame the transition arms, land the field frame in the
-            // software VRAM the intro strips texture themselves with, and draw
-            // the rest of this frame against that page. Retail gets it for
-            // free - on the console the framebuffer *is* VRAM - so the port
-            // re-renders this scene offscreen and blits the readback in.
-            if let Some(v) = Self::capture_battle_intro_frame(
-                battle_intro.as_mut(),
-                r,
-                &scene,
-                self.cpu_vram_base.as_ref(),
-            ) {
-                // Keep the captured page GPU-resident for the whole
-                // transition: the capture is a one-shot, but every
-                // transition frame's primitives sample it (the curtain
-                // strips, and the tile shatter's pages + shade page).
-                self.battle_intro_vram = Some(v);
-            }
-            let scene = match (battle_intro.as_ref(), self.battle_intro_vram.as_ref()) {
-                (Some(_), Some(v)) => RenderScene { vram: v, ..scene },
-                _ => scene,
-            };
-            // The intro's primitives composite *over* the scene in one frame.
-            // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame
-            // mode which clears and draws nothing but quads, so it could never
-            // carry a transition strip over a field scene.
-            let target = if battle_intro_prims.is_empty() {
-                RenderTarget::Scene(&scene)
-            } else {
-                RenderTarget::SceneWithScreenPrims {
-                    scene: &scene,
-                    prims: &battle_intro_prims,
-                }
-            };
-            if let Err(e) = r.render(target) {
+            if let Err(e) = r.render(target(&scene)) {
                 log::error!("render: {e:#}");
             }
         }

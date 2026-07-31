@@ -173,6 +173,13 @@ pub struct SpellEntry {
     /// [`capture_class_records`] and
     /// `docs/subsystems/battle-formulas.md`. Any other value is a plain cast.
     pub class: u8,
+    /// **Cast sub-class / tier** (`stats +1`) - the second half of the pair the
+    /// battle-action commit copies into `actor[+0x1E8]` / `[+0x1E9]` for every
+    /// non-Item category (`0x801E3B70..0x801E3CB0`). It selects which cue group
+    /// an executing cast expands to; the Item leg reads the same pair off the
+    /// item-effect table instead. See
+    /// `engine-vm::battle_cue_group` and `docs/subsystems/battle-action.md`.
+    pub sub_class: u8,
     /// Display name, or `None` for an empty / internal-tier slot.
     pub name: Option<String>,
     /// MP cost (`stats +3`).
@@ -220,6 +227,7 @@ impl SpellNameTable {
         for id in 0..SPELL_COUNT {
             let stat = map.off(STATS_VA + (id * RECORD_STRIDE) as u32)?;
             let class = *scus.get(stat)?;
+            let sub_class = *scus.get(stat + 1)?;
             let target = *scus.get(stat + 2)?;
             let mp = *scus.get(stat + 3)?;
             let name_ptr = u32::from_le_bytes(scus.get(stat + 8..stat + 12)?.try_into().ok()?);
@@ -238,6 +246,7 @@ impl SpellNameTable {
             };
             entries.push(SpellEntry {
                 class,
+                sub_class,
                 name,
                 mp,
                 target,

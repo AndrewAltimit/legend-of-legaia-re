@@ -913,6 +913,17 @@ pub(crate) enum Cmd {
         /// Matches the retail early-game single-Vahn party.
         #[arg(long, default_value_t = false)]
         seed_party: bool,
+        /// Enter a battle deterministically instead of waiting for a step
+        /// roll: `--battle <ROW>` names one of the scene's MAN encounter
+        /// formation rows (the id space the region roll itself produces), and
+        /// `--battle first` takes the scene's lowest row that carries
+        /// monsters. The fight is armed at boot and opens through the ordinary
+        /// transition, so what it shows is what an organic encounter shows.
+        /// Forces the live loop on. Omit for normal play - the flag changes
+        /// nothing when absent. Pairs with `--screenshot-tick` (allow ~40
+        /// ticks for the intro transition).
+        #[arg(long, value_name = "ROW|first")]
+        battle: Option<String>,
         /// Opt-in dynamic-lighting ENHANCEMENT (non-retail): layer a soft
         /// warm directional light (off the smoothed mesh normals) plus a
         /// screen-centred light pool over the baked per-prim shading, capped

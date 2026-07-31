@@ -37,6 +37,7 @@ share.)
   - [Hybrid render (textured + untextured prims)](#hybrid-render-textured--untextured-prims)
 - [Battle form - assembled from the player files](#battle-form---assembled-from-the-player-files)
   - [Assembly - object-local pieces posed by the character's own battle streams](#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)
+  - [Rest-pose orientation](#rest-pose-orientation-what-a-correct-assembly-looks-like)
   - [Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)
   - [Equipment groups (battle only)](#equipment-groups-battle-only)
   - [On-disc layout (PROT 1204 + 1205)](#on-disc-layout-prot-1204--1205)
@@ -491,6 +492,40 @@ files, raw indices → extraction entries: `etim.dat` `0x368` → 0870,
 `efect.dat` `0x36b` → 0873, and the battle-type-conditional pair
 `0x367`/`0x36d` → 0869/0875, both VAB-prefixed streaming files - see
 [`effect.md` § Battle effect cluster](effect.md#battle-effect-cluster-befect_data).)
+
+### Rest-pose orientation (what a correct assembly looks like)
+
+Posing the assembled TMD at frame 0 of the character's own idle stream gives
+a measurable shape, which is the cheapest check that the whole splice +
+`anm_bones` + `R*v + T` chain came out right - no renderer involved. In PSX
+battle-world units, with Y pointing **down**:
+
+| Character | Player file | Posed AABB (x, y, z extents) | Head (min y) | Feet (max y) |
+|---|---|---|---|---|
+| Vahn | 0863 | 202, 425, 339 | -423 | +3 |
+| Noa | 0864 | 217, 390, 296 | -391 | -1 |
+| Gala | 0865 | 208, 503, 340 | -503 | 0 |
+
+So the invariant is: vertical extent dominates, the head sits ~400-500 units
+above the stage plane, and the feet land within a few units of `y = 0` (the
+seat plane the `battle_seats` rows place the actor on). Side-on, all three
+face **+Z** - the direction of the monster seats - which is why the party
+half of `PlayWindowApp::actor_model` composes no rotation while the enemy
+half takes the half turn.
+
+The fourth player battle file (0866) is a quadruped and does not satisfy
+this: 332, 223, 594 - long in Z by design, not mis-posed. It also has no
+runtime texture band, so it is not rendered as a party member anyway.
+
+The reaction family is the shape to keep apart: the last keyframe of the
+knockdown clip (action tag 4) measures ~275-325 x, ~120-175 y, ~515-580 z -
+flat on the ground, long in Z. That is a *correct* pose for a hit reaction
+and a badly wrong one for an attack turn, so "is the party member upright"
+is a real question with a real answer rather than a matter of taste. Oracle:
+`crates/asset/tests/battle_pose_orientation_real.rs` (disc-gated; set
+`LEGAIA_POSE_DUMP_DIR` for orthographic PNG renders of each pose). The
+staging rule that decides which family plays is in
+[`battle.md` § One staged-anim channel](../subsystems/battle.md#one-staged-anim-channel-actor0x1da).
 
 ### Battle render: load-time TSB/CBA relocation
 

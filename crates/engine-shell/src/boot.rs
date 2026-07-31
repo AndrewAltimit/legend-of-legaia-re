@@ -764,6 +764,15 @@ impl BootSession {
         if self.field_menu.is_some() {
             return;
         }
+        // Start is inert while a dialogue engagement owns the player. Retail's
+        // menu-open accept lives in `FUN_801D01B0`'s pre-movement header,
+        // *after* the engaged-bit branch at `0x801D01F0` - so with
+        // `player+0x10 & 0x80000` raised the pad never reaches it and no menu
+        // (and no deny buzz) happens at all.
+        // REF: FUN_801D01B0
+        if self.host.world.dialogue_owns_input() {
+            return;
+        }
         let world = &mut self.host.world;
         let mut session = FieldMenuSession::new();
         session.money = world.money.max(0) as u32;
