@@ -1550,6 +1550,12 @@ impl PlayWindowApp {
             // Name-entry window chrome (grid + name-field filigree
             // windows + hand cursor) shares the same atlas slot.
             save_chrome_draw_vec.extend(self.name_entry_chrome_sprite_draws(w, h));
+            // Battle HUD chrome (party-strip + plaque lozenges and the
+            // gold HP / green MP label cells) comes out of the same
+            // atlas; battle and the boot/menu chrome never coexist. Drawn
+            // first of the three battle surfaces so the prompt box and the
+            // command chips below layer over the readout, not under it.
+            save_chrome_draw_vec.extend(self.battle_chrome_sprite_draws(w, h));
             // Sparring-tutorial prompt box: the same window skin, framed at
             // the rect the retail emitter registers the prompt with. In
             // battle, so it cannot coexist with the boot/menu chrome above.

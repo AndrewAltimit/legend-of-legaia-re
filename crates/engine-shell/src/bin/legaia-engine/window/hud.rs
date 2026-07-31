@@ -979,32 +979,28 @@ impl PlayWindowApp {
             // Magic / Item submenus below for a K.O.'d target.
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
 
-            // Per-slot panels (party, retail-shaped with filled bars) +
-            // monster rows, status strips and floating popups all come from
-            // the shared builder, which carries the ported retail HP / MP
+            // The retail party strip (one full-width lozenge per live member
+            // across the stage bottom), the top-left plaque and the floating
+            // popups all come from the shared builder. Its text half lands
+            // here; its chrome sprites ride `battle_chrome_sprite_draws` in
+            // the system-UI atlas slot. Numerals carry the ported retail
             // readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`,
-            // FUN_800349EC / FUN_80035EA8) and the gauge-fill law
-            // (`battle_gauge::gauge_colors`, FUN_80046A20). Rows are fed from
-            // the `BattleHud` model, refreshed each tick by
-            // `sync_battle_hud_rows`; the filled rects ride a solid-white
-            // font-atlas texel so no new render pipeline is involved.
-            out.extend(battle_hud_draws_for(
-                &self.font,
-                &legaia_engine_render::BattleHudFrame {
-                    slots: &battle_hud_slot_views(&self.battle_hud),
-                    popups: &battle_hud_popup_views(&self.battle_hud),
-                    log: &[],
-                    solid_src: self.battle_hud_solid_src(),
-                    surface: (w, h),
-                },
-                BATTLE_HUD_PEN,
-            ));
+            // FUN_800349EC / FUN_80035EA8). Rows are fed from the `BattleHud`
+            // model, refreshed each tick by `sync_battle_hud_rows`.
+            out.extend(self.battle_hud_frame_draws(w, h).text);
 
             // Encounter-transition banner: centred "ENCOUNTER!" over the
             // formation label, shown for the opening frames of the battle.
             // Armed once per Field -> Battle edge by `sync_battle_render`,
-            // aged in `drain_and_log_battle_events`.
-            if let Some((_, label)) = &self.encounter_banner {
+            // aged in `drain_and_log_battle_events`. A port invention with no
+            // retail counterpart - retail's Field -> Battle edge draws no
+            // banner at all - so it is gated off by default and only appears
+            // under `LEGAIA_DIAG_HUD` (`encounter_banner_enabled`).
+            if let Some((_, label)) = self
+                .encounter_banner
+                .as_ref()
+                .filter(|_| legaia_engine_core::battle_hud::encounter_banner_enabled())
+            {
                 let head_w = self.font.layout_ascii("ENCOUNTER!").advance_x as i32;
                 let pen = ((w as i32 - head_w) / 2, h as i32 / 4);
                 out.extend(encounter_banner_draws_for(&self.font, label, pen));
@@ -1788,6 +1784,56 @@ impl PlayWindowApp {
         *SOLID.get_or_init(|| legaia_engine_render::font_solid_src(&self.font))
     }
 
+    /// One battle-HUD frame from the shared builder: the party strip, the
+    /// top-left plaque and the popups.
+    ///
+    /// Both halves come from one call so the two host draw slots cannot drift
+    /// - the text half goes into the glyph layer, the sprite half into the
+    /// system-UI atlas layer through `battle_chrome_sprite_draws`.
+    pub(super) fn battle_hud_frame_draws(
+        &self,
+        w: u32,
+        h: u32,
+    ) -> legaia_engine_render::BattleHudDraws {
+        let slots = battle_hud_slot_views(&self.battle_hud);
+        let popups = battle_hud_popup_views(&self.battle_hud);
+        let plaque = legaia_engine_core::battle_hud::battle_plaque_label(&self.session.host.world);
+        battle_hud_draws_for(
+            &self.font,
+            &legaia_engine_render::BattleHudFrame {
+                slots: &slots,
+                popups: &popups,
+                log: &[],
+                solid_src: self.battle_hud_solid_src(),
+                surface: (w, h),
+                chrome: self.save_menu.as_ref().map(|a| &a.rects),
+                plaque: plaque.as_deref(),
+                // Retail parks the status plate off-screen while a command
+                // entry session owns the frame; the port emits no strip.
+                input_session_parked: self.session.host.world.battle_arts_menu.is_some(),
+                diag: legaia_engine_render::diag_hud_enabled(),
+            },
+            BATTLE_HUD_PEN,
+        )
+    }
+
+    /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
+    /// green `MP` label cells) for the system-UI atlas slot. Empty outside
+    /// battle, or before the atlas is resident.
+    pub(super) fn battle_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
+            return Vec::new();
+        }
+        if self.save_menu.is_none() || self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        self.battle_hud_frame_draws(surface_w, surface_h).sprites
+    }
+
     /// The retail enemy target-name strip for a picker parked on the enemy
     /// row: rows deduplicated + labelled by the ported `FUN_801D9D3C`
     /// (`battle_enemy_target_rows`), placed by its centre/relax/clamp layout
@@ -1888,11 +1934,18 @@ pub(super) fn battle_hud_popup_views(
 mod battle_hud_wiring_tests {
     use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
     use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
-    use legaia_engine_render::{BattleHudFrame, battle_hud_draws_for, gauge_fill_color};
+    use legaia_engine_render::{BattleHudDraws, BattleHudFrame, battle_hud_draws_for};
 
     /// A recognisable 1x1 solid src for the filled-rect draws.
     const SOLID: (u32, u32, u32, u32) = (7, 3, 1, 1);
+    /// 640x480 = an exact 2x of the 320x240 stage with a zero origin, so a
+    /// stage column `c` lands at surface `2 * c` and the pinned retail
+    /// columns are readable straight off `dst.0`.
     const SURFACE: (u32, u32) = (640, 480);
+    const STAGE_SCALE: i32 = 2;
+    /// The pinned retail strip band (`y 188..=207`) and its glyph row.
+    const STRIP_Y: i32 = 188;
+    const STRIP_TEXT_Y: i32 = STRIP_Y + 6;
 
     fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
         let mut hud = BattleHud::new();
@@ -1912,7 +1965,7 @@ mod battle_hud_wiring_tests {
         hud
     }
 
-    fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
+    fn frame_draws(hud: &BattleHud, diag: bool) -> BattleHudDraws {
         battle_hud_draws_for(
             &legaia_font::synthetic_for_tests(),
             &BattleHudFrame {
@@ -1921,40 +1974,98 @@ mod battle_hud_wiring_tests {
                 log: &[],
                 solid_src: Some(SOLID),
                 surface: SURFACE,
+                diag,
+                ..Default::default()
             },
             BATTLE_HUD_PEN,
         )
     }
 
-    /// The window's battle block must produce a **drawn bar surface**: solid
-    /// rects sampling the white texel, with the HP fill taking the retail
-    /// gauge index (FUN_80046A20) through `gauge_fill_color`. A text-only
-    /// list cannot pass - the bar draws are the ones whose `src` is `SOLID`.
+    fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
+        frame_draws(hud, false).text
+    }
+
+    /// The party arm draws retail's shape: one full-width lozenge on the
+    /// pinned band with its glyph row at `y 194`, and **no gauge bar**.
+    ///
+    /// The retail capture (`captures/tetsu_idle`, a native 320x228 solo-Vahn
+    /// frame) holds no green fill anywhere in the strip, so a filled HP or MP
+    /// bar on the party row is the defect this pins shut. The chrome-less
+    /// fallback still emits the lozenge body, which is what the `SOLID` rect
+    /// spanning the full strip width proves.
     #[test]
-    fn native_battle_hud_draws_filled_bars() {
+    fn native_battle_strip_is_retail_shaped_and_barless() {
         let hud = hud_with_party_row(250, 300, 12, 30);
         let out = draws(&hud);
         let rects: Vec<_> = out.iter().filter(|d| d.src == SOLID).collect();
+        // Lozenge body: full strip width (304 stage px) on the pinned band.
         assert!(
-            rects.len() >= 4,
-            "expected panel chrome + bar rects, got {}",
-            rects.len()
+            rects.iter().any(|d| {
+                d.dst.1 == STRIP_Y * STAGE_SCALE && d.dst.2 == (304 * STAGE_SCALE) as u32
+            }),
+            "no full-width strip body on the pinned band, got {:?}",
+            rects.iter().map(|d| d.dst).collect::<Vec<_>>()
         );
-        // 250/300 > half -> gauge HIGH (7); 12/30 in (1/4, 1/2] -> MID (6).
+        // No partial-width fill inside the strip band - that is a gauge bar.
+        for d in &rects {
+            let inside = d.dst.1 >= STRIP_Y * STAGE_SCALE
+                && d.dst.1 < (STRIP_Y + 20) * STAGE_SCALE
+                && d.dst.3 < (18 * STAGE_SCALE) as u32;
+            assert!(
+                !inside || d.dst.2 >= (300 * STAGE_SCALE) as u32,
+                "a bar-shaped rect survives inside the strip: {:?}",
+                d.dst
+            );
+        }
+        // Glyph row on the measured line, name at the measured column.
         assert!(
-            rects.iter().any(|d| d.color == gauge_fill_color(7)),
-            "no HP fill at the HIGH gauge colour"
+            out.iter().any(|d| d.src != SOLID
+                && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
+                && d.dst.0 == 16 * STAGE_SCALE),
+            "no name glyph at the measured (16, 194) origin"
+        );
+    }
+
+    /// Retail draws **no monster gauge at all**
+    /// (`docs/subsystems/battle-action.md`), so a monster contributes nothing
+    /// to the default surface - and everything it used to contribute has to
+    /// still be reachable under `LEGAIA_DIAG_HUD`.
+    #[test]
+    fn monster_rows_are_diagnostic_only() {
+        let mut hud = hud_with_party_row(100, 100, 0, 0);
+        hud.sync_slot(
+            3,
+            SlotSyncInfo {
+                name: "Goblin",
+                is_party: false,
+                alive: true,
+                hp: 40,
+                hp_max: 100,
+                mp: 0,
+                mp_max: 0,
+                ap: None,
+            },
+        );
+        let monster_row_y = BATTLE_HUD_PEN.1 + 3 * 14;
+        assert!(
+            !frame_draws(&hud, false)
+                .text
+                .iter()
+                .any(|d| d.dst.1 == monster_row_y),
+            "a monster row drew on the default surface"
         );
         assert!(
-            rects.iter().any(|d| d.color == gauge_fill_color(6)),
-            "no MP fill at the MID gauge colour"
+            frame_draws(&hud, true)
+                .text
+                .iter()
+                .any(|d| d.dst.1 == monster_row_y),
+            "the diagnostic surface lost the monster row"
         );
     }
 
     /// The four-tier retail readout-tint law has to reach the surface, not
     /// just exist in engine-ui: normal / caution / danger numerals must
-    /// produce three distinct glyph tints, and the gauge fill must move
-    /// through the matching FUN_80046A20 bands.
+    /// produce three distinct glyph tints.
     #[test]
     fn native_battle_hud_hp_tints_span_the_retail_tiers() {
         let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
@@ -1981,31 +2092,40 @@ mod battle_hud_wiring_tests {
             glyph_colors(20).contains(&danger),
             "danger tier numerals not red"
         );
-        // And the bar fill follows the gauge law into the danger band.
-        let hud = hud_with_party_row(20, 100, 0, 0);
-        assert!(
-            draws(&hud)
-                .iter()
-                .any(|d| d.src == SOLID && d.color == gauge_fill_color(9)),
-            "danger-band HP fill not at the LOW gauge colour"
-        );
     }
 
-    /// The engine-ui panel anchors are literal mirrors of the canonical
-    /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits
-    /// below engine-vm in the crate graph, so it cannot import them). This
-    /// is the tie that keeps the mirror honest.
+    /// The engine-ui anchor mirror is a literal copy of the canonical
+    /// `engine-vm` port of retail's `FUN_801D84C0` table (engine-ui sits below
+    /// engine-vm in the crate graph, so it cannot import them).
+    ///
+    /// The battle strip no longer *reads* the mirror - measuring the retail
+    /// capture falsified it as this HUD's source, since retail's solo name
+    /// sits at stage `x 0x10` and the solo anchor would put a `0x40`-wide
+    /// plate at `x 0x6A`. The mirror stays because the table is still the
+    /// pinned port of that function; this test keeps the copy honest.
     #[test]
     fn panel_anchor_mirror_matches_the_engine_vm_port() {
         use legaia_engine_vm::battle_party_panel::panel_anchors;
-        // Solo: one panel at 0x72.
         assert_eq!(panel_anchors(1), Some((0x72, None)));
-        // Pair: 0x3F / 0xA5. Trio: 0x0C / 0x72 (third inferred at 0xD8).
         assert_eq!(panel_anchors(2), Some((0x3F, Some(0xA5))));
         assert_eq!(panel_anchors(3), Some((0x0C, Some(0x72))));
         // The inferred third anchor continues the pinned 0x66 stride.
         assert_eq!(0x72 - 0x0C, 0x66);
         assert_eq!(0xA5 - 0x3F, 0x66);
+        for (count, ordinal, want) in [
+            (1usize, 0usize, 0x72),
+            (2, 0, 0x3F),
+            (2, 1, 0xA5),
+            (3, 0, 0x0C),
+            (3, 1, 0x72),
+            (3, 2, 0xD8),
+        ] {
+            assert_eq!(
+                legaia_engine_render::party_panel_stage_x(count, ordinal),
+                want,
+                "engine-ui mirror drifted at ({count}, {ordinal})"
+            );
+        }
     }
 
     /// The end-to-end wiring: a live `World` battle state must reach the
@@ -2014,14 +2134,10 @@ mod battle_hud_wiring_tests {
     /// This is the assertion that fails if `sync_battle_hud_rows` is dropped
     /// from the tick - the HUD model's slots stay `active == false`, the
     /// builder skips every empty-name row, and `draws` comes back empty.
-    /// Confirmed by commenting the `hud.sync_slot` loop out of
-    /// `sync_battle_hud_rows`: the row assertion below then fails with an
-    /// empty draw list, and the two MP assertions with it.
     #[test]
     fn live_world_battle_state_reaches_the_shared_builder() {
         use legaia_engine_core::world::World;
 
-        let font = legaia_font::synthetic_for_tests();
         let mut world = World::new();
         world.party_count = 1;
         world.actors[0].active = true;
@@ -2040,14 +2156,14 @@ mod battle_hud_wiring_tests {
         );
 
         let out = draws(&hud);
-        let _ = font;
         assert!(!out.is_empty(), "synced battle state produced no draws");
-        // MP 12/30 lands in the MID gauge band (30>>2 = 7 < 12 <= 15): the
-        // live world state must surface an MP fill rect at that colour.
+        // The MP field only draws for a slot carrying a ceiling, so the live
+        // world's MP has to reach the measured MP columns.
         assert!(
-            out.iter()
-                .any(|d| d.src == SOLID && d.color == gauge_fill_color(6)),
-            "live world state produced no MP fill"
+            out.iter().any(|d| d.src != SOLID
+                && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
+                && d.dst.0 >= 192 * STAGE_SCALE),
+            "live world state produced no MP field"
         );
     }
 
@@ -2056,7 +2172,6 @@ mod battle_hud_wiring_tests {
     /// compacted list would put a monster's damage number on a party row.
     #[test]
     fn popup_anchors_track_absolute_actor_slot() {
-        let font = legaia_font::synthetic_for_tests();
         let mut hud = hud_with_party_row(100, 100, 0, 0);
         // Slots 1 and 2 stay empty; the monster occupies slot 3.
         hud.sync_slot(
@@ -2074,9 +2189,8 @@ mod battle_hud_wiring_tests {
         );
         hud.push_popup(DamagePopup::damage(3, 25));
         let out = draws(&hud);
-        let _ = font;
         // Row stride is 14; monster slot 3's row sits at pen.y + 42, popups
-        // 16 above (monster rows keep the index-anchored surface layout).
+        // 16 above (monster popups keep the index-anchored surface layout).
         let want_y = BATTLE_HUD_PEN.1 + 3 * 14 - 16;
         let popup_x = BATTLE_HUD_PEN.0 + 80;
         assert!(

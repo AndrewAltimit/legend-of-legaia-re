@@ -793,12 +793,67 @@ pub fn battle_enemy_target_rows(
     )
 }
 
+/// Label for the battle screen's top-left plaque.
+///
+/// Retail keeps a small framed plaque in the top-left corner naming the
+/// actor the frame belongs to - the party member whose action is landing,
+/// the monster through an enemy turn. The engine's battle model carries no
+/// "acting actor" cursor yet, so this returns the first live monster's name
+/// (catalog name when the formation resolved one, `M<n>` otherwise). That is
+/// deliberately also where the port's monster readout now lives: retail's
+/// HUD draws **no monster gauge at all**
+/// (`docs/subsystems/battle-action.md`), so the plaque name is the whole of
+/// what a monster contributes to the drawn surface.
+///
+/// `None` once every formation slot is cleared, which is what stops the
+/// plaque drawing over the victory frames.
+pub fn battle_plaque_label(world: &crate::world::World) -> Option<String> {
+    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    const MAX_FORMATION_MONSTERS: usize = 5;
+    for (i, a) in world
+        .actors
+        .iter()
+        .enumerate()
+        .skip(pc)
+        .take(MAX_FORMATION_MONSTERS)
+    {
+        if a.battle.max_hp == 0 || a.battle.hp == 0 {
+            continue;
+        }
+        return Some(
+            a.battle_monster_id
+                .and_then(|id| world.monster_catalog.get(id))
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| format!("M{}", i - pc + 1)),
+        );
+    }
+    None
+}
+
+/// Is the port's encounter-transition banner enabled?
+///
+/// The "ENCOUNTER!" head line has no retail counterpart - retail's
+/// `Field -> Battle` edge draws no banner at all - so it is off by default
+/// and rides the same shared toggle as the diagnostic HUD rows:
+/// `LEGAIA_DIAG_HUD` set to anything but `0` / empty. Reading the
+/// environment keeps both hosts on one answer; on wasm the variable never
+/// exists and the banner stays off.
+pub fn encounter_banner_enabled() -> bool {
+    std::env::var("LEGAIA_DIAG_HUD")
+        .map(|v| !v.is_empty() && v != "0")
+        .unwrap_or(false)
+}
+
 /// Formation label for the encounter-transition banner, reusing the battle
 /// HUD's monster naming: the live catalog name when the formation resolved
 /// one, `M<n>` otherwise. Slots with `max_hp == 0` (unseeded / cleared) are
 /// skipped, so a formation that has not resolved HP yet yields an empty label
 /// and the banner shows only its "ENCOUNTER!" head line. Shared by both hosts
 /// (armed on each `Field -> Battle` mode edge).
+///
+/// The banner itself is a port invention - retail shows nothing on the
+/// `Field -> Battle` edge - so hosts arm it only when
+/// [`encounter_banner_enabled`] says so.
 pub fn encounter_banner_label(world: &crate::world::World) -> String {
     let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
     // `World::actors` is the fixed 64-slot table, not a battle-sized list;

@@ -304,7 +304,9 @@ pub const TITLE_ART_SIZE: (i32, i32) = (254, 148);
 /// sstate9 RAM dump - retail draws the panel as 14 separate
 /// `GP0_TEXTURED_SPRITE` primitives sampling CLUT row 2 of the
 /// system-UI sprite sheet at `PROT.DAT[0x018E0]`.
-#[derive(Debug, Clone, Copy)]
+/// `Default` is all-zero rects: a test / fallback fixture that names the two
+/// or three cells it cares about and leaves the rest inert.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SaveMenuAtlasRects {
     /// Panel top-left corner tile (4x4, CLUT row 2 of system-UI TIM).
     pub panel_tl: (u32, u32, u32, u32),

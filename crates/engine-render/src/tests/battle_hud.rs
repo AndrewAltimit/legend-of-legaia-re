@@ -2,8 +2,18 @@ use super::*;
 
 /// A recognisable 1x1 solid src for the filled-rect draws.
 const SOLID: (u32, u32, u32, u32) = (5, 9, 1, 1);
+/// 640x480 is an exact 2x of the 320x240 stage with a zero origin, so a stage
+/// column `c` lands at surface `2 * c` and the measured retail columns read
+/// straight off `dst.0`.
 const SURFACE: (u32, u32) = (640, 480);
+const STAGE_SCALE: i32 = 2;
 const PEN: (i32, i32) = (8, 100);
+/// The measured retail strip band and its glyph row (`captures/tetsu_idle`).
+const STRIP_Y: i32 = 188;
+const STRIP_H: i32 = 20;
+const STRIP_X: i32 = 8;
+const STRIP_W: i32 = 304;
+const STRIP_TEXT_Y: i32 = STRIP_Y + 6;
 
 fn slot_view<'a>(
     name: &'a str,
@@ -47,12 +57,13 @@ fn slot_view<'a>(
     }
 }
 
-fn hud_draws(
+fn hud_frame(
     font: &legaia_font::Font,
     slots: &[HudSlotView<'_>],
     popups: &[HudPopupView],
     log: &[HudLogView<'_>],
-) -> Vec<TextDraw> {
+    diag: bool,
+) -> BattleHudDraws {
     battle_hud_draws_for(
         font,
         &BattleHudFrame {
@@ -61,27 +72,102 @@ fn hud_draws(
             log,
             solid_src: Some(SOLID),
             surface: SURFACE,
+            diag,
+            ..Default::default()
         },
         PEN,
     )
 }
 
+fn hud_draws(
+    font: &legaia_font::Font,
+    slots: &[HudSlotView<'_>],
+    popups: &[HudPopupView],
+    log: &[HudLogView<'_>],
+) -> Vec<TextDraw> {
+    hud_frame(font, slots, popups, log, false).text
+}
+
+/// The party arm draws retail's measured shape: one full-width lozenge on the
+/// pinned band, its glyph row at `y 194`, the name at `x 16`.
 #[test]
-fn battle_hud_draws_for_party_row_includes_glyphs_and_bars() {
+fn party_strip_lands_on_the_measured_retail_band() {
     let font = legaia_font::synthetic_for_tests();
-    let mut slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
-    slot.ap_filled = 2;
-    slot.ap_max = 5;
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
     let draws = hud_draws(&font, &[slot], &[], &[]);
     assert!(!draws.is_empty());
-    // Panel chrome + HP/MP bar rects sample the solid texel.
-    assert!(draws.iter().filter(|d| d.src == SOLID).count() >= 4);
-    // The HP fill takes the HIGH gauge colour (250 > 300/2 -> index 7).
-    assert!(
-        draws
-            .iter()
-            .any(|d| d.src == SOLID && d.color == gauge_fill_color(7))
+    let body = draws.iter().find(|d| {
+        d.src == SOLID
+            && d.dst.1 == STRIP_Y * STAGE_SCALE
+            && d.dst.2 == (STRIP_W * STAGE_SCALE) as u32
+    });
+    let body = body.expect("no full-width strip body on the measured band");
+    assert_eq!(body.dst.0, STRIP_X * STAGE_SCALE, "strip left edge moved");
+    assert_eq!(
+        body.dst.3,
+        (STRIP_H * STAGE_SCALE) as u32,
+        "strip height moved"
     );
+    assert!(
+        draws.iter().any(|d| d.src != SOLID
+            && d.dst.1 == STRIP_TEXT_Y * STAGE_SCALE
+            && d.dst.0 == STRIP_X.max(16) * STAGE_SCALE),
+        "no name glyph at the measured (16, 194) origin"
+    );
+}
+
+/// Retail's party strip carries **no gauge bar of any kind** - the native
+/// 320x228 capture holds only glyphs and the two label sprites between the
+/// lozenge caps. This is the assertion the old invented green HP bar fails.
+#[test]
+fn party_strip_draws_no_gauge_bar() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 150, 300, 12, 30);
+    let draws = hud_draws(&font, &[slot], &[], &[]);
+    for d in draws.iter().filter(|d| d.src == SOLID) {
+        let inside_band =
+            d.dst.1 >= STRIP_Y * STAGE_SCALE && d.dst.1 < (STRIP_Y + STRIP_H) * STAGE_SCALE;
+        let bar_shaped = d.dst.3 < ((STRIP_H - 2) * STAGE_SCALE) as u32
+            && d.dst.2 < ((STRIP_W - 4) * STAGE_SCALE) as u32;
+        assert!(
+            !(inside_band && bar_shaped),
+            "a bar-shaped rect survives inside the strip: {:?}",
+            d.dst
+        );
+    }
+    // Non-vacuous: the strip really did draw.
+    assert!(draws.iter().any(|d| d.src == SOLID));
+}
+
+/// A pair or a trio stacks one identical strip per live member, bottom row on
+/// the pinned band. Every member keeps the measured columns.
+#[test]
+fn multi_member_party_stacks_one_strip_per_member() {
+    let font = legaia_font::synthetic_for_tests();
+    let slots = [
+        slot_view("Vahn", true, true, 100, 100, 10, 20),
+        slot_view("Noa", true, true, 90, 100, 8, 20),
+        slot_view("Gala", true, true, 80, 100, 6, 20),
+    ];
+    let draws = hud_draws(&font, &slots, &[], &[]);
+    let bodies: Vec<i32> = draws
+        .iter()
+        .filter(|d| {
+            d.src == SOLID
+                && d.dst.2 == (STRIP_W * STAGE_SCALE) as u32
+                && d.dst.3 == (STRIP_H * STAGE_SCALE) as u32
+        })
+        .map(|d| d.dst.1)
+        .collect();
+    assert_eq!(bodies.len(), 3, "expected one strip body per member");
+    assert!(
+        bodies.contains(&(STRIP_Y * STAGE_SCALE)),
+        "the bottom row left the pinned band"
+    );
+    let mut sorted = bodies.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), 3, "strips overlapped instead of stacking");
 }
 
 #[test]
@@ -92,19 +178,22 @@ fn battle_hud_draws_for_skips_empty_slot_name() {
     assert!(draws.is_empty());
 }
 
+/// A K.O.'d member keeps its row and dims - retail's strip has no "K.O."
+/// legend, and the readout law's own death index is what greys the numerals.
 #[test]
-fn battle_hud_draws_for_dead_slot_shows_ko_overlay() {
+fn dead_member_dims_instead_of_drawing_a_ko_legend() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, false, 0, 300, 0, 30);
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    // The K.O. label draws in red over the panel.
-    let red = [1.0, 0.4, 0.4, 1.0];
-    assert!(draws.iter().any(|d| d.src != SOLID && d.color == red));
-    // Dead gauge fill (index 2) reaches the bar surface.
+    let dim = [0.5f32, 0.5, 0.5, 1.0];
     assert!(
-        draws
-            .iter()
-            .any(|d| d.src == SOLID && d.color == gauge_fill_color(2))
+        draws.iter().any(|d| d.src != SOLID && d.color == dim),
+        "dead member's glyphs did not take the dim tint"
+    );
+    let red = [1.0f32, 0.4, 0.4, 1.0];
+    assert!(
+        !draws.iter().any(|d| d.src != SOLID && d.color == red),
+        "a K.O. legend still draws on the retail strip"
     );
 }
 
@@ -113,16 +202,11 @@ fn battle_hud_draws_for_low_hp_uses_red_color() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 10, 100, 0, 0);
     let draws = hud_draws(&font, &[slot], &[], &[]);
-    // Numerals take the danger tint (red-dominant) and the fill the LOW band.
+    // Numerals take the danger tint (red-dominant).
     let any_red = draws
         .iter()
         .any(|d| d.src != SOLID && d.color[0] > d.color[1]);
     assert!(any_red, "low HP should produce a red-tinted glyph");
-    assert!(
-        draws
-            .iter()
-            .any(|d| d.src == SOLID && d.color == gauge_fill_color(9))
-    );
 }
 
 #[test]
@@ -137,13 +221,136 @@ fn battle_hud_without_solid_src_degrades_to_text_only() {
             log: &[],
             solid_src: None,
             surface: SURFACE,
+            ..Default::default()
         },
         PEN,
     );
-    assert!(!draws.is_empty(), "text-only fallback still draws numerals");
     assert!(
-        !draws.iter().any(|d| d.src == SOLID),
+        !draws.text.is_empty(),
+        "text-only fallback still draws numerals"
+    );
+    assert!(
+        !draws.text.iter().any(|d| d.src == SOLID),
         "no rect may be emitted without a solid src"
+    );
+}
+
+/// With the resident system-UI atlas the strip's chrome and its gold `HP` /
+/// green `MP` label cells come out as **sprites**, not glyphs - the second
+/// list the builder returns. Without an atlas the same information degrades
+/// into the text list, which is what keeps a chrome-less host readable.
+#[test]
+fn chrome_atlas_moves_the_strip_skin_and_labels_into_sprites() {
+    let font = legaia_font::synthetic_for_tests();
+    let rects = SaveMenuAtlasRects {
+        label_hp: (208, 86, 16, 10),
+        label_mp: (224, 86, 16, 10),
+        dialog_fill: (128, 0, 32, 29),
+        // The 9-slice needs real tile extents - it tiles the edges.
+        panel_tl: (160, 0, 4, 4),
+        panel_tr: (188, 0, 4, 4),
+        panel_bl: (160, 28, 4, 4),
+        panel_br: (188, 28, 4, 4),
+        panel_top: (164, 0, 24, 4),
+        panel_bot: (164, 28, 24, 4),
+        panel_left: (160, 4, 4, 24),
+        panel_right: (188, 4, 4, 24),
+        ..Default::default()
+    };
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
+    let draws = battle_hud_draws_for(
+        &font,
+        &BattleHudFrame {
+            slots: &[slot],
+            popups: &[],
+            log: &[],
+            solid_src: Some(SOLID),
+            surface: SURFACE,
+            chrome: Some(&rects),
+            ..Default::default()
+        },
+        PEN,
+    );
+    assert!(
+        draws
+            .sprites
+            .iter()
+            .any(|s| s.src == rects.label_hp && s.dst.1 == STRIP_TEXT_Y * STAGE_SCALE),
+        "the gold HP label cell is not on the strip's glyph row"
+    );
+    assert!(
+        draws.sprites.iter().any(|s| s.src == rects.label_mp),
+        "the green MP label cell never drew"
+    );
+    assert!(
+        draws.sprites.iter().any(|s| s.src == rects.dialog_fill),
+        "the strip interior never drew from the atlas"
+    );
+    // With chrome the lozenge body is a sprite, so the text list keeps no
+    // full-width solid rect for it.
+    assert!(
+        !draws.text.iter().any(|d| d.src == SOLID),
+        "the solid-texel fallback body drew alongside the atlas chrome"
+    );
+}
+
+/// Retail parks the party status plate off-screen while a command-entry
+/// session owns the frame; the port emits nothing instead.
+#[test]
+fn parked_input_session_suppresses_the_party_strip() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
+    let draws = battle_hud_draws_for(
+        &font,
+        &BattleHudFrame {
+            slots: &[slot],
+            popups: &[],
+            log: &[],
+            solid_src: Some(SOLID),
+            surface: SURFACE,
+            input_session_parked: true,
+            ..Default::default()
+        },
+        PEN,
+    );
+    assert!(
+        !draws.text.iter().any(|d| d.dst.1 >= STRIP_Y * STAGE_SCALE),
+        "the strip still drew under a parked input session"
+    );
+}
+
+/// The top-left plaque draws its label at the measured `(16, 14)` inset with
+/// a lozenge sized to the label.
+#[test]
+fn plaque_draws_at_the_measured_inset() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 100, 100, 0, 0);
+    let draws = battle_hud_draws_for(
+        &font,
+        &BattleHudFrame {
+            slots: &[slot],
+            popups: &[],
+            log: &[],
+            solid_src: Some(SOLID),
+            surface: SURFACE,
+            plaque: Some("Tetsu"),
+            ..Default::default()
+        },
+        PEN,
+    );
+    assert!(
+        draws
+            .text
+            .iter()
+            .any(|d| d.src != SOLID && d.dst.0 == 16 * STAGE_SCALE && d.dst.1 == 14 * STAGE_SCALE),
+        "no plaque glyph at the measured (16, 14) origin"
+    );
+    assert!(
+        draws
+            .text
+            .iter()
+            .any(|d| d.src == SOLID && d.dst.1 == 8 * STAGE_SCALE),
+        "no plaque box on the measured band"
     );
 }
 
@@ -222,7 +429,7 @@ fn battle_hud_draws_for_includes_log_lines_below_slots() {
 }
 
 #[test]
-fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
+fn battle_hud_draws_for_party_popup_rides_its_strip_anchor() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 100, 100, 0, 0);
     let popup = HudPopupView {
@@ -236,8 +443,8 @@ fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
     let n_no_popup = hud_draws(&font, &[slot], &[], &[]).len();
     let draws = hud_draws(&font, &[slot], &[popup], &[]);
     assert!(draws.len() > n_no_popup, "popup produced no glyphs");
-    // Damage popups draw in the cyan tint - and above the panel band's top
-    // edge (a stage-space anchor, unlike the monster rows' pen anchor).
+    // Damage popups draw in the cyan tint, above the strip band's top edge (a
+    // stage-space anchor, unlike the diagnostic rows' pen anchor).
     let cyan = [0.5, 0.85, 1.0, 1.0];
     assert!(
         draws.iter().any(|d| d.src != SOLID && d.color == cyan),
@@ -245,22 +452,30 @@ fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
     );
 }
 
+/// Monster rows are the **diagnostic** surface now: retail's HUD draws no
+/// monster gauge at all, so nothing about a monster reaches the default list.
 #[test]
-fn battle_hud_draws_for_monster_status_element_renders_in_the_column() {
+fn monster_rows_only_draw_under_the_diagnostic_toggle() {
     let font = legaia_font::synthetic_for_tests();
     let mut slot = slot_view("Gimard", false, true, 100, 100, 0, 0);
     // Sprite 0x19 = Toxic, the element retail's ladder picks for `0x0002`.
     slot.status_sprite = 0x19;
-    let draws = hud_draws(&font, &[slot], &[], &[]);
-    // The element renders past the column origin at pen.x + 190.
-    let icons = draws.iter().filter(|d| d.dst.0 >= PEN.0 + 190).count();
-    assert!(icons > 0, "expected a status element in the monster column");
+    assert!(
+        hud_draws(&font, &[slot.clone()], &[], &[]).is_empty(),
+        "a monster row drew on the default retail surface"
+    );
 
-    // And it is exactly ONE element regardless of how many ailments the
-    // slot carries - the whole point of the retail ladder.
-    let mut clean = slot_view("Gimard", false, true, 100, 100, 0, 0);
-    clean.status_sprite = 0;
-    let none = hud_draws(&font, &[clean], &[], &[]);
+    let diag = hud_frame(&font, &[slot], &[], &[], true).text;
+    // The element renders past the column origin at pen.x + 190.
+    assert!(
+        diag.iter().filter(|d| d.dst.0 >= PEN.0 + 190).count() > 0,
+        "expected a status element in the diagnostic monster column"
+    );
+
+    // And it is exactly ONE element regardless of how many ailments the slot
+    // carries - the whole point of the retail ladder.
+    let clean = slot_view("Gimard", false, true, 100, 100, 0, 0);
+    let none = hud_frame(&font, &[clean], &[], &[], true).text;
     assert_eq!(
         none.iter().filter(|d| d.dst.0 >= PEN.0 + 190).count(),
         0,
@@ -268,28 +483,44 @@ fn battle_hud_draws_for_monster_status_element_renders_in_the_column() {
     );
 }
 
+/// The base-marker + level element (`FUN_8002C2E4`'s no-ailment arm) is
+/// diagnostic-only: neither retail reference frame shows a marker or a level
+/// anywhere near the strip, and the widget's own pen is not pinned.
 #[test]
-fn party_panel_draws_the_level_when_no_ailment_is_selected() {
+fn level_readout_is_diagnostic_only() {
     let font = legaia_font::synthetic_for_tests();
-    // Retail's no-ailment arm is the base marker plus the `+0x130` level.
     let mut lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
     lv.level = 27;
-    let with_level = hud_draws(&font, &[lv], &[], &[]);
-
     let mut no_lv = slot_view("Vahn", true, true, 100, 100, 30, 30);
     no_lv.level = 0;
-    let without = hud_draws(&font, &[no_lv], &[], &[]);
-    assert!(
-        with_level.len() > without.len(),
-        "the level readout produced no glyphs"
-    );
 
-    // An ailment replaces it: the count is not drawn beside a sprite.
+    assert_eq!(
+        hud_draws(&font, &[lv.clone()], &[], &[]).len(),
+        hud_draws(&font, &[no_lv.clone()], &[], &[]).len(),
+        "the level readout reached the retail surface"
+    );
+    assert!(
+        hud_frame(&font, &[lv], &[], &[], true).text.len()
+            > hud_frame(&font, &[no_lv], &[], &[], true).text.len(),
+        "the diagnostic surface lost the level readout"
+    );
+}
+
+/// An ailment still replaces nothing on the strip but adds its own badge -
+/// the selection is the ported part, the badge art is an approximation.
+#[test]
+fn ailment_badge_draws_above_the_members_strip() {
+    let font = legaia_font::synthetic_for_tests();
+    let clean = slot_view("Vahn", true, true, 100, 100, 30, 30);
     let mut sick = slot_view("Vahn", true, true, 100, 100, 30, 30);
-    sick.level = 27;
     sick.status_sprite = 0x1F;
-    let ailing = hud_draws(&font, &[sick], &[], &[]);
-    assert_ne!(ailing.len(), with_level.len());
+    let with = hud_draws(&font, &[sick], &[], &[]);
+    let without = hud_draws(&font, &[clean], &[], &[]);
+    assert!(with.len() > without.len(), "the ailment badge never drew");
+    assert!(
+        with.iter().any(|d| d.dst.1 < STRIP_Y * STAGE_SCALE),
+        "the badge did not draw above the strip band"
+    );
 }
 
 #[test]
@@ -304,7 +535,7 @@ fn battle_hud_draws_for_popup_for_invalid_slot_is_dropped() {
         status_letter: None,
         alpha: 1.0,
     };
-    let with_popup = hud_draws(&font, &[slot], &[popup], &[]);
+    let with_popup = hud_draws(&font, &[slot.clone()], &[popup], &[]);
     let no_popup = hud_draws(&font, &[slot], &[], &[]);
     assert_eq!(with_popup.len(), no_popup.len());
 }
@@ -347,17 +578,17 @@ fn font_solid_src_finds_a_white_texel_in_the_placeholder_font() {
     assert_eq!(&rgba[off..off + 4], &[255, 255, 255, 255]);
 }
 
-/// The monster-row column offsets have to be wider than the retail dialog
-/// font's actual advances, or fields overlap on screen. Skips and passes when
+/// The measured strip columns have to clear the retail dialog font's actual
+/// advances, or the fields collide on screen. Skips and passes when
 /// `extracted/font/` is absent (same gating as every other artifact-dependent
 /// test), so CI does not need redistributed Sony bytes.
 ///
-/// This is the regression guard for the first draft of the old table layout,
-/// which was narrower than the font in four of five columns - the K.O. label
-/// landed on top of the HP digits. It went unnoticed because the builder had
-/// no caller.
+/// Two column sets ride this: the retail strip (name / HP label / numerals /
+/// MP label / numerals, measured off the native capture) and the diagnostic
+/// monster row. The strip's numerals are right-aligned, so what has to clear
+/// is the field's *right* edge against the next field's origin.
 #[test]
-fn monster_row_offsets_clear_the_retail_font_or_skips() {
+fn strip_and_diag_columns_clear_the_retail_font_or_skips() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let Some(root) = manifest
         .parent()
@@ -377,9 +608,32 @@ fn monster_row_offsets_clear_the_retail_font_or_skips() {
             .unwrap_or(0)
     };
 
-    // Column origins the builder documents (monster rows): name at 0, HP
-    // numerals at 78, K.O. at 150, status strip at 190. Each field's widest
-    // realistic string must end before the next column starts.
+    // Retail strip: the name must end before the HP label's column, each
+    // right-aligned numeral field must start after the field before it.
+    assert!(
+        16 + width("Songi") <= 80,
+        "the longest party name overruns the HP label column at 80"
+    );
+    assert!(
+        132 - width("9999") >= 80 + 16,
+        "a four-digit HP overruns the HP label cell"
+    );
+    assert!(
+        176 - width("9999") >= 137 + width("/"),
+        "the HP maximum overruns the slash column"
+    );
+    assert!(
+        192 >= 176,
+        "the MP label column starts before the HP maximum ends"
+    );
+    assert!(
+        236 - width("999") >= 192 + 16,
+        "a three-digit MP overruns the MP label cell"
+    );
+    assert!(272 <= 312, "the MP maximum overruns the strip's right cap");
+
+    // Diagnostic monster row: name at 0, HP numerals at 78, K.O. at 150,
+    // status strip at 190.
     let columns: [(i32, i32, &str); 3] = [
         (0, width("Juggernaut"), "name"),
         (78, width("250/300"), "HP"),
@@ -399,16 +653,11 @@ fn monster_row_offsets_clear_the_retail_font_or_skips() {
         last_field_end <= 190,
         "row fields end at {last_field_end}, past the status column at 190"
     );
-    // And the party-panel numerals must fit the pinned 0x40-px panel width.
-    assert!(
-        4 + width("999/999") <= 0x40,
-        "HP numerals overflow the 64-px panel"
-    );
 
-    // Non-vacuous: a full monster row really draws its status strip.
+    // Non-vacuous: a full diagnostic monster row really draws its status strip.
     let mut slot = slot_view("Juggernaut", false, false, 250, 300, 0, 0);
     slot.status_sprite = 0x1B;
-    let draws = hud_draws(&font, &[slot], &[], &[]);
+    let draws = hud_frame(&font, &[slot], &[], &[], true).text;
     assert!(
         draws.iter().any(|d| d.dst.0 >= 190),
         "status column produced no glyph - the fixture is not exercising a full row"
