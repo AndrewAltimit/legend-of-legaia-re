@@ -48,9 +48,16 @@
 //! request compares as a very large unsigned value and takes the `min` arm
 //! rather than the `max` arm. [`approach_distance`] keeps that.
 //!
-//! # NOT WIRED
+//! # Wiring status
 //!
-//! No engine caller yet - but the `requested` producer, which earlier
+//! Split, so the module carries no blanket tag. [`projected_separation`] and
+//! [`approach_angle`] are **live**: the battle locomotion drive
+//! (`World::tick_battle_locomotion`) and the attack band's motion kernels
+//! measure attacker-to-target reach with them every frame. The clamp itself,
+//! [`approach_distance`], is the part with no caller, and its own note carries
+//! that disclosure.
+//!
+//! The `requested` producer, which earlier
 //! revisions of this note could not name, is now pinned from the caller's
 //! disassembly (`overlay_battle_action_801dea50.txt`). `FUN_801DEA50` is the
 //! per-clip **battle effect-script walker** (ported as
@@ -136,6 +143,12 @@ pub fn clamp_step(requested: i16, separation: i32) -> i16 {
 /// The whole routine: project the separation, then clamp the request.
 ///
 /// PORT: FUN_801DF570
+///
+/// NOT WIRED: nothing produces a `requested` step for it yet. The producer is
+/// pinned (see the module doc): the effect-script walker's direct-spawn branch
+/// for effect ids `0x93` / `0x84`, so the wiring site is
+/// `engine-core::action_effect_script`'s direct branch, not the attack band -
+/// the approach *movement* is root motion and never calls this.
 pub fn approach_distance(pose: ApproachPose, requested: i16, sin: i16, cos: i16) -> i16 {
     let d = projected_separation(pose.x, pose.z, pose.ref_x, pose.ref_z, sin, cos);
     clamp_step(requested, d)

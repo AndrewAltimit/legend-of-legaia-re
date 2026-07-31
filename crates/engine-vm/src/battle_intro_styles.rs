@@ -583,22 +583,18 @@ pub fn particle_quad_accepted(style: &ParticleTickStyle, depth: i32, corner0: (i
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// WIRED, without a draw. `legaia_engine_render::battle_intro::BattleIntro`
-/// owns the particle block between frames and ticks it from the live
-/// transition clock, so the working set is no longer inert - which matters
-/// because the fade ramp ([`intro_fade`]) and the transition's own completion
-/// arm both ride that clock.
+/// NOT WIRED: **superseded, not blocked**. The live path is
+/// `legaia_engine_render::battle_intro::emit_particle_field`, which carries
+/// the same two PORT tags and does what this loop does *and* assembles the
+/// per-particle `POLY_FT4` packet in the same pass - the packet assembly this
+/// note used to name as the missing piece. It steps each particle through
+/// [`step_particle`] rather than calling this batch wrapper, so nothing
+/// outside the tests reaches this entry point.
 ///
-/// NOT DRAWN: no primitive reaches the ordering table for either particle
-/// style. The draw path is not what is missing - `billboard::project_billboard`
-/// is a port of the sprite projector these styles ride and returns both the
-/// screen corners and the OT bucket [`particle_quad_accepted`] consumes, and
-/// `screen_overlay` is the ordering table. What is missing is the retail
-/// **packet assembly** between them, which sits at the clean-room boundary
-/// (`docs/subsystems/cutscene.md` § "Per-style emitters"), plus the trig
-/// tables `_DAT_8007B7F8` / `_DAT_8007B81C` the seeders index - the host
-/// substitutes computed sine and cosine, so a seeded grid is plausible rather
-/// than retail-identical.
+/// Kept because it is the side-effect-free integration kernel: the emitter
+/// needs a renderer, this does not, so the frame-by-frame position/clock
+/// arithmetic stays testable on its own. Retiring it means moving those
+/// tests onto the emitter.
 pub fn tick_particle_field(
     particles: &mut [IntroParticle],
     style: &ParticleTickStyle,
