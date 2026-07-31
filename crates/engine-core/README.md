@@ -272,10 +272,16 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (Browsing → Editing → Naming → Done) composes a directional chain into
   a per-character `ChainLibrary`. `World::chain_library` /
   `World::store_chain_library` bridge that library to `World.saved_chains`,
-  so a chain authored in the menu serializes with `save_full` and is
-  offered in the next battle via `build_battle_arts_rows` - the same path
-  whether it was edited live or loaded from a save (`SavedChain::to_record`
-  / `from_record` pack to the `Command` byte alphabet the battle side reads).
+  so a chain authored in the menu serializes with `save_full` - the same
+  path whether it was edited live or loaded from a save
+  (`SavedChain::to_record` / `from_record` pack to the `Command` byte
+  alphabet the battle side reads). In battle the chain does **not** commit
+  an art by itself: retail's Arts command is the per-press
+  `arts_command_input` entry, and a saved chain's retail role is to preseed
+  that entry's buffer (not yet wired - see
+  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs)).
+  `build_battle_arts_rows` still reads `saved_chains` for the legacy
+  submenu behind `LEGAIA_ARTS_SAVED_LIST=1`.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
   field-VM scripts (record 0 = scene-entry system script, records 1.. =
   per-actor interaction scripts). `walk_partition1_scripts` bounds each

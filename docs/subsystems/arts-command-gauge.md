@@ -277,6 +277,29 @@ The remaining rows are engine conveniences or the un-closed half of the
 [two-gauge split](#what-an-art-costs-in-ap): the port does not yet charge the
 art body out of Spirit, so a turn's whole cost is its swings.
 
+### Where a saved chain belongs
+
+Retail has no "pick a saved art" list, so a saved chain never commits an art by
+itself. Its retail role is to **preseed the entry**: `FUN_801DA34C` copies one
+of the character record's two 16-byte arts-input strings (`+0x76F` / `+0x77F`)
+into `actor[+0x1DF..]` when the entry opens, the pad then edits those bytes in
+place, and `FUN_801DA59C` writes the result back after the action - so a chain
+is a *remembered starting buffer*, not a shortcut past the input
+([battle-action.md](battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)
+carries the byte-level walk; ported as
+`legaia_engine_vm::battle_action::preseed_action_queue` / `save_action_queue`).
+
+The port opens every entry empty. `World::saved_chains` stays live data - the
+chain editor writes it, the save round-trip carries it, and the legacy
+`LEGAIA_ARTS_SAVED_LIST=1` list still reads it - but nothing preseeds the input
+from it. Wiring that is the open piece; what it needs first is whether the
+preseeded presses arrive already paid for or re-debit the pool on the way in,
+which no capture pins yet.
+
+Because a turn now performs however many arts the pool paid for, the
+**shout cue and the learn-on-use check are per art, not per turn** - see
+[audio.md](audio.md#battle-arts-voice-shout-path-engine).
+
 ## What an art costs in AP
 
 This is a **different AP** from the command-gauge cost above: the arm/command

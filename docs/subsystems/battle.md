@@ -2865,36 +2865,54 @@ enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
     - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction - reliable only on a weakened Seru - downing it and logging the id into `World::battle_captures` on success);
     - and **escape** (sets `World::battle_escaped`, and the spell tick returns to the field via `finish_battle` with no loot).
     - Accuracy / Evasion / Speed buffs are tracked but have no live-loop scalar to move yet.
-- **Arts** opens a `battle_arts::BattleArtsSession` on `World::battle_arts_menu`
-(built by `World::build_battle_arts_rows` from `World::saved_chains` filtered to
-the caster). An Art is a saved command chain; each menu row carries a per-strike
-**power profile** (`Vec<PowerByte>` + `EnemyEffect`) and runs through the real
-art-power path: `World::apply_battle_art` drives each power byte through
-`crate::art_strike::apply_art_strike`, so the byte's multiplier tier + UDF/LDF
-target decode, `resolve_battle_defense` picks the matching defense half, and the
-art's status effect lands on a hit. The profile comes from a staged `ArtRecord`
-(`World::art_records`, keyed by `(Character, ActionConstant)`, populated from
-disc PROT entry `0x05C4` via `World::set_art_record`) when a record's command
-string the saved chain ends with (`chain_matches_record`); with no matching
-record it falls back to a synthetic per-direction profile
+- **Arts** opens the per-press [Arts command input](#arts-command-input) on
+`World::battle_arts_input` - the player *types* the chain, one d-pad press per
+command, and the entry ends itself when the AP pool can no longer afford a
+press. `World::resolve_arts_input_entry` then runs the entered buffer through
+the retail matcher order (Miracle string → Super tail → per-art greedy
+longest-match, unmatched directions staying plain synthetic swings) to a
+per-strike **power profile** (`Vec<PowerByte>` + `EnemyEffect`) plus the list of
+named arts the turn performs. `World::apply_battle_art` drives each power byte
+through `crate::art_strike::apply_art_strike`, so the byte's multiplier tier +
+UDF/LDF target decode, `resolve_battle_defense` picks the matching defense half,
+and the art's status effect lands on a hit. Art records come from
+`World::art_records`, keyed by `(Character, ActionConstant)` and populated from
+disc PROT entry `0x05C4` via `World::set_art_record`.
+  Because an entry runs until the pool is spent, performing **several** arts in
+one turn is the ordinary case, and the performed-art list is what the shout cue
+and the learn-on-use check are keyed on - once per art, not once per turn (see
+[audio.md](audio.md#battle-arts-voice-shout-path-engine)). A Miracle / Super
+replacement answers a single constant, its finisher.
+  The legacy saved-chain list (`battle_arts::BattleArtsSession` on
+`World::battle_arts_menu`, built by `World::build_battle_arts_rows` from
+`World::saved_chains`) stays reachable behind `LEGAIA_ARTS_SAVED_LIST=1`. A row
+there collapses to the one art whose command string the chain ends with
+(`chain_matches_record`), or to a synthetic per-direction profile
 (`battle_arts::synthetic_power` - Down → LDF, else UDF, tier-0 ×12, clamped to
-`MAX_ART_HITS`). Both paths share the one `apply_art_strike` kernel; the
-synthetic fallback keeps a saved chain playable when the disc art tables aren't
-loaded.
+`MAX_ART_HITS`) when no record matches. Both paths share the one
+`apply_art_strike` kernel.
 
 While any submenu is open both the SM and the command session are parked;
-`World::tick_battle_{arts,spell,item}_menu` drives it from `World::input`. On a
-completed action the result is applied, the relevant popup is surfaced
-(`battle_hit_fx`), and the action SM is **parked at `EndOfAction`** so the
-re-arm block cycles to the next combatant - a cast / art / item use is the
-actor's whole turn, no Attack-SM strike fires. Backing out reopens the command
-menu for the same actor. Implementation:
+`World::tick_battle_arts_input` / `tick_battle_{arts,spell,item}_menu` drives it
+from `World::input`. On a completed action the result is applied, the relevant
+popup is surfaced (`battle_hit_fx`), and the action SM is **parked at
+`EndOfAction`** so the re-arm block cycles to the next combatant - a cast / art
+/ item use is the actor's whole turn, no Attack-SM strike fires. Backing out
+reopens the command menu for the same actor. Implementation:
 [`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
-+ [`battle_arts`](../../crates/engine-core/src/battle_arts.rs) /
-[`battle_magic`](../../crates/engine-core/src/battle_magic.rs); coverage
-`crates/engine-core/tests/battle_player_driven.rs` walks into a battle, asserts
-no strike lands until the player confirms a command, then drives the picker to a
-monster wipe + loot.
++ [`arts_command_input`](../../crates/engine-core/src/arts_command_input.rs) /
+[`battle_arts`](../../crates/engine-core/src/battle_arts.rs) /
+[`battle_magic`](../../crates/engine-core/src/battle_magic.rs).
+
+Coverage: `crates/engine-core/tests/battle_player_driven.rs` walks into a
+battle, asserts no strike lands until the player confirms a command, then
+drives the picker to a monster wipe + loot.
+`battle_command_arms_reachable.rs` is the hand-off guard - each of Arts / Magic
+/ Item must open exactly its own surface, consume the command session, arm
+nothing, and (for Arts) actually consume a directional press. It exists because
+re-pointing an arm is invisible to `--lib`: the surface's own unit tests keep
+passing while every integration driver that walked the old arm stops reaching
+an executed action.
 
 ### Post-battle Seru learning
 
