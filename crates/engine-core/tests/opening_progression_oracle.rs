@@ -17,8 +17,13 @@
 //! Part B drives the engine's own opening (`SceneHost` -> install the town01
 //! opening timeline -> tick) and asserts it reproduces the **S2 -> S3 beat**:
 //! it reaches `town01` in field mode and the timeline opens name entry at op-0x49
-//! (retail's post-arrival, pre-free-roam step). Skips when `LEGAIA_DISC_BIN` is
-//! unset.
+//! (retail's post-arrival, pre-free-roam step).
+//!
+//! Both parts skip-and-pass when an input they read is absent, per the repo's
+//! disc-gating rule: `LEGAIA_DISC_BIN` unset or `extracted/` missing skips
+//! both, and Part A additionally skips when the `saves/library` capture
+//! library is missing - that library is its third input, and guarding only
+//! the first two made a present disc plus an absent `saves/` a **failure**.
 
 use std::path::PathBuf;
 
@@ -35,16 +40,31 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn library_save(fp: &str) -> Option<PathBuf> {
+/// The PCSX-Redux save-state library the anchors live in.
+///
+/// `saves/` is gitignored, so it is absent on CI and on a fresh clone exactly
+/// like `extracted/` and `LEGAIA_DISC_BIN` - and a test's guard has to cover
+/// **every** input it reads, not just the one that named it. Part A's inputs
+/// are the disc, `extracted/` **and** this library; guarding only the first
+/// two turned "the capture library isn't here" into a hard failure of
+/// `checked >= 1` rather than a skip.
+///
+/// The directory (not each fingerprint) is the gate: with the library present
+/// the `checked >= 1` assertion stays, so a library that lost an anchor still
+/// fails loudly instead of quietly passing.
+fn library_dir() -> Option<PathBuf> {
     for c in ["saves/library", "../saves/library", "../../saves/library"] {
-        let p = PathBuf::from(c)
-            .join("pcsx-redux")
-            .join(format!("{fp}.sstate"));
-        if p.exists() {
-            return Some(p);
+        let d = PathBuf::from(c).join("pcsx-redux");
+        if d.is_dir() {
+            return Some(d);
         }
     }
     None
+}
+
+fn library_save(fp: &str) -> Option<PathBuf> {
+    let p = library_dir()?.join(format!("{fp}.sstate"));
+    p.exists().then_some(p)
 }
 
 struct Seg {
@@ -103,6 +123,10 @@ fn opening_anchors_codify_retail_progression() {
         eprintln!("[skip] extracted/ missing");
         return;
     };
+    if library_dir().is_none() {
+        eprintln!("[skip] saves/library/pcsx-redux missing (capture-gated)");
+        return;
+    }
     if std::env::var_os("LEGAIA_SCUS").is_none() {
         // SAFETY: single-threaded test setup before any save load.
         unsafe { std::env::set_var("LEGAIA_SCUS", extracted.join("SCUS_942.54")) };

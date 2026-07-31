@@ -25,14 +25,24 @@ fn ensure_scus() -> bool {
     false
 }
 
-fn library_save(fp: &str) -> Option<PathBuf> {
+/// The PCSX-Redux save-state library the anchors live in. `saves/` is
+/// gitignored, so its absence is a **skip** like `LEGAIA_DISC_BIN` and
+/// `extracted/` - a guard has to cover every input the test reads. The
+/// directory (not each fingerprint) is the gate, so a library that is present
+/// but lost an anchor still trips `checked >= 1`.
+fn library_dir() -> Option<PathBuf> {
     for c in ["saves/library", "../saves/library", "../../saves/library"] {
-        let p = Path::new(c).join("pcsx-redux").join(format!("{fp}.sstate"));
-        if p.exists() {
-            return Some(p);
+        let d = Path::new(c).join("pcsx-redux");
+        if d.is_dir() {
+            return Some(d);
         }
     }
     None
+}
+
+fn library_save(fp: &str) -> Option<PathBuf> {
+    let p = library_dir()?.join(format!("{fp}.sstate"));
+    p.exists().then_some(p)
 }
 
 /// A cataloged anchor + the facts its capture pinned (`scripts/scenarios.toml`).
@@ -77,6 +87,10 @@ fn reads_back_cataloged_anchor_facts() {
     }
     if !ensure_scus() {
         eprintln!("[skip] extracted/SCUS_942.54 not found (set LEGAIA_SCUS)");
+        return;
+    }
+    if library_dir().is_none() {
+        eprintln!("[skip] saves/library/pcsx-redux missing (capture-gated)");
         return;
     }
 

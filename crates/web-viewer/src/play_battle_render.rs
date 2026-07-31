@@ -139,10 +139,13 @@ fn derive_battle_cam(
                 .map(|h| h as f32)
         });
         Some(script::BattleCamActor {
-            // The port's actors carry their heading in `render_26` (the
-            // retail `+0x26` 12-bit angle); it stands in for the battle
-            // actor record's `+0x46` the framing formula subtracts.
-            facing: (a.move_state.render_26 as u16 & 0xFFF) as i32,
+            // The **battle** heading `actor[+0x46]`, not the field heading
+            // `+0x26` - the same source the native host feeds (see
+            // `legaia-engine::window::camera::battle_cam_inputs` for the
+            // `FUN_801E295C` case-`0x14` citation). Written by the action SM
+            // as `(bearing(target -> attacker) + 0x800) & 0xFFF`; the port
+            // keeps it in `Actor::battle.facing_angle`.
+            facing: i32::from(a.battle.facing_angle & 0xFFF),
             world: [
                 a.move_state.world_x as f32,
                 a.move_state.world_y as f32,
@@ -156,7 +159,13 @@ fn derive_battle_cam(
         None => actor_at(acting_slot, None),
     };
     // The far menu framing sizes its depth to - and centres on - the live
-    // formation's X/Z bounding box (`FUN_801D5854` case 9).
+    // formation's X/Z bounding box (`FUN_801D5854` case 9). Presence is the
+    // **world** fact `battle_monster_id`, never the render fact
+    // `tmd_binding`: retail's walk gates on the live-HP halfword
+    // `actor[+0x14c]` (`0x801D7000`) and touches no mesh, so keying on a
+    // per-host mesh binding would let two hosts derive different formations
+    // from one identical `World`. Pinned against the native host by
+    // `the_formation_box_is_a_world_fact_not_a_render_fact`.
     let pc = world.party_count as usize;
     let mut formation: Option<script::FormationBox> = None;
     for (i, a) in world.actors.iter().enumerate() {
@@ -1293,6 +1302,95 @@ mod battle_cam_web_tests {
     use super::*;
     use legaia_engine_core::world::World;
     use legaia_engine_vm::battle_cam_script as script;
+
+    /// **Cross-host heading pin, browser half.** The identical world recipe
+    /// as the native `the_camera_reads_the_battle_heading_not_the_field_heading`
+    /// (`engine-shell` `window/camera.rs` tests): an off-axis seat whose
+    /// field heading `+0x26` and battle heading `+0x46` deliberately differ.
+    /// Retail's framing subtracts `+0x46` (`FUN_801E295C` case `0x14` writes
+    /// it at `0x801E32EC..0x801E3318`), so both hosts must land on the same
+    /// yaw literal.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn web_camera_reads_the_battle_heading_not_the_field_heading() {
+        const FIELD_26: u16 = 0x333;
+        const BATTLE_46: u16 = 0x600;
+
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        vahn.move_state.world_x = 600;
+        vahn.move_state.world_z = -775;
+        vahn.move_state.render_26 = FIELD_26 as i16;
+        vahn.battle.facing_angle = BATTLE_46;
+        let mut tetsu = legaia_engine_core::world::Actor::default();
+        tetsu.active = true;
+        tetsu.move_state.world_x = -400;
+        tetsu.move_state.world_z = 900;
+        tetsu.battle_monster_id = Some(1);
+        tetsu.tmd_binding = Some(0);
+        world.actors = vec![vahn, tetsu];
+        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+            0, 0,
+        ));
+
+        let inputs = derive_battle_cam(&world);
+        assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
+        let acting = inputs.acting.expect("acting actor");
+        assert_eq!(acting.facing, i32::from(BATTLE_46), "actor[+0x46]");
+        assert_ne!(acting.facing, i32::from(FIELD_26), "not the field +0x26");
+
+        let mut slot = None;
+        for f in 0..=6u64 {
+            script::drive(&mut slot, true, inputs, f * 2);
+        }
+        let yaw = slot.as_ref().unwrap().pose().yaw.rem_euclid(4096.0);
+        // The SAME literals the native mirror asserts.
+        assert_eq!(yaw, 752.0, "0x8F0 - 0x600");
+        assert_ne!(yaw, 1469.0, "0x8F0 - 0x333 (the field heading)");
+    }
+
+    /// **Cross-host presence pin, browser half.** The identical world recipe
+    /// as the native `the_formation_box_is_a_world_fact_not_a_render_fact`:
+    /// a live combatant seated off the origin whose mesh this host has NOT
+    /// bound. Retail's case-9 walk gates on `actor[+0x14c]` (`0x801D7000`)
+    /// and consults no mesh, so the box must contain it on both hosts.
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn web_formation_box_is_a_world_fact_not_a_render_fact() {
+        let mut world = World::default();
+        world.mode = SceneMode::Battle;
+        world.party_count = 1;
+        let mut vahn = legaia_engine_core::world::Actor::default();
+        vahn.active = true;
+        vahn.move_state.world_z = -800;
+        let mut tetsu = legaia_engine_core::world::Actor::default();
+        tetsu.active = true;
+        tetsu.move_state.world_x = 600;
+        tetsu.move_state.world_z = 900;
+        tetsu.battle_monster_id = Some(1);
+        tetsu.tmd_binding = None;
+        world.actors = vec![vahn, tetsu];
+
+        let formation = derive_battle_cam(&world).formation;
+        assert_eq!(
+            formation,
+            Some(script::FormationBox {
+                min: [0.0, -800.0],
+                max: [600.0, 900.0],
+            }),
+            "the unbound-but-live monster is inside the framing box"
+        );
+        assert_ne!(
+            formation,
+            Some(script::FormationBox {
+                min: [0.0, -800.0],
+                max: [0.0, -800.0],
+            })
+        );
+    }
 
     /// **Cross-host single-model pin, browser half.** The identical world
     /// recipe as the native `native_pose_matches_the_shared_recipe`
