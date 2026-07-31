@@ -163,8 +163,11 @@ mod tests {
         assert_eq!(atlas.glyph_rect('A'), Some((8, 224, 8, 14)));
         // Z → 26th cell.
         assert_eq!(atlas.glyph_rect('Z'), Some((8 + 25 * 8, 224, 8, 14)));
-        // 0 → first digit cell.
-        assert_eq!(atlas.glyph_rect('0'), Some((8, 209, 8, 11)));
+        // 0 → first digit cell. The digit row starts at x = 0, not at the
+        // alphabet row's 8: digit `d` is the cell at `u = d * 8`, which is
+        // the uv retail's own HUD `SPRT` packets carry.
+        assert_eq!(atlas.glyph_rect('0'), Some((0, 208, 8, 12)));
+        assert_eq!(atlas.glyph_rect('9'), Some((72, 208, 8, 12)));
         // Space is unmapped.
         assert_eq!(atlas.glyph_rect(' '), None);
     }

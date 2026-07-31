@@ -692,6 +692,14 @@ impl PlayWindowApp {
                             atlas_data.band_load_portrait(1),
                             atlas_data.band_load_portrait(2),
                         ],
+                        battle: Some(legaia_engine_render::BattleChromeRects {
+                            panel_bg: atlas_data.band_battle_panel_bg(),
+                            plate_cap_l: atlas_data.band_battle_plate_cap_l(),
+                            plate_body: atlas_data.band_battle_plate_body(),
+                            plate_cap_r: atlas_data.band_battle_plate_cap_r(),
+                            separator: atlas_data.band_battle_separator(),
+                            digits: atlas_data.band_hud_digits(),
+                        }),
                     };
                     self.save_menu = Some(SaveMenuAssets { rects, atlas });
                 }

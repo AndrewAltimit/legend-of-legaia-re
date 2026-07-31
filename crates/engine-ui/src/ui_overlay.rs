@@ -638,13 +638,19 @@ const BAR_HP_SEPARATOR: (i32, i32) = (136, 188);
 const BAR_MP_SEPARATOR: (i32, i32) = (240, 188);
 /// Numeral pen row, every field in the bar.
 const BAR_DIGIT_Y: i32 = 192;
-/// Right edge the current value is laid out back from; left edge the maximum
-/// starts at. The current is right-aligned and the maximum is **not** - that
-/// asymmetry is what keeps a four-digit HP inside its own field.
+/// Right edges the four numeral fields are laid out back from. **Both**
+/// halves of a `cur / max` pair are right-aligned - the field grows leftward
+/// one 8-px cell per digit - which is what keeps a four-digit HP inside its
+/// own field. A forward-running maximum is what a capture whose values are
+/// all three digits looks like, and it overruns as soon as they are not.
 const BAR_HP_CUR_RIGHT: i32 = 134;
-const BAR_HP_MAX_LEFT: i32 = 154;
+const BAR_HP_MAX_RIGHT: i32 = 178;
 const BAR_MP_CUR_RIGHT: i32 = 238;
-const BAR_MP_MAX_LEFT: i32 = 258;
+const BAR_MP_MAX_RIGHT: i32 = 274;
+
+/// Width and horizontal pitch of one HUD numeral cell - retail's, and the
+/// unit every numeral field above is measured in.
+const DIGIT_W: i32 = 8;
 
 /// Plate top-left of the actor-name plaque - fixed, every battle.
 const PLAQUE_X: i32 = 8;
@@ -661,7 +667,10 @@ const PANEL_Y: i32 = 164;
 /// (`battle_chrome::panel`).
 const PANEL_NAME: (i32, i32) = (5, 4);
 const PANEL_LV_LABEL: (i32, i32) = (64, 6);
-const PANEL_LV_DIGITS: (i32, i32) = (88, 4);
+/// Right edge the level numerals are laid out back from - right-aligned like
+/// every other number on the screen, not a pen.
+const PANEL_LV_DIGITS_RIGHT: i32 = 96;
+const PANEL_LV_DIGIT_Y: i32 = 4;
 const PANEL_HP_LABEL: (i32, i32) = (4, 21);
 const PANEL_MP_LABEL: (i32, i32) = (4, 36);
 const PANEL_HP_SEPARATOR: (i32, i32) = (57, 15);
@@ -669,7 +678,10 @@ const PANEL_MP_SEPARATOR: (i32, i32) = (57, 30);
 const PANEL_HP_DIGIT_Y: i32 = 19;
 const PANEL_MP_DIGIT_Y: i32 = 34;
 const PANEL_CUR_RIGHT: i32 = 57;
-const PANEL_MAX_LEFT: i32 = 73;
+/// Right edge a maximum is laid out back from. `102 - 5`: the panel's
+/// content box is inset five pixels on both sides, so a four-digit maximum
+/// runs `65..97` and still clears the plate.
+const PANEL_MAX_RIGHT: i32 = 97;
 
 /// Panel-background x seats for a party of `count`, left to right
 /// (`battle_chrome::panel_seats`). These are the **backgrounds**;
@@ -848,16 +860,6 @@ pub fn battle_hud_draws_for(
         .filter(|(_, s)| s.is_party && !s.name.is_empty())
         .collect();
 
-    // Right-aligned stage text: retail lays the *current* value back from a
-    // fixed right edge while the *maximum* runs forward from its own left
-    // edge, which is what keeps a four-digit HP inside its own field.
-    let stage_text_r = |out: &mut Vec<TextDraw>, s: &str, right: i32, y: i32, c: [f32; 4]| {
-        let layout = font.layout_ascii(s);
-        let x = right - layout.advance_x as i32;
-        let mut draws = text_draws_for(&layout, (x, y), c);
-        scale_stage_text_draws(&mut draws, origin, scale as u32);
-        out.extend(draws);
-    };
     // Sprite blit in stage pixels.
     let stage_sprite = |out: &mut Vec<SpriteDraw>, src: (u32, u32, u32, u32), x: i32, y: i32| {
         out.push(SpriteDraw {
@@ -898,41 +900,149 @@ pub fn battle_hud_draws_for(
                 }
             }
         };
-    // The `/` between a current and a maximum. Retail's is an 8x16 sheet
-    // sprite at texels `(96, 64)` sitting four rows above its numerals; the
-    // engine's atlas set carries no rect for it, so it draws as a font glyph
-    // on the numeral row instead.
-    let separator = |text: &mut Vec<TextDraw>, x: i32, y: i32, c: [f32; 4]| {
-        stage_text(text, font, "/", x, y + 4, c);
-    };
-    // One plate run: retail's 3-slice (8-px cap, clipped 16-px body tiles,
-    // 8-px cap) out of the system-UI sheet. That sheet row has no rect in the
-    // engine's atlas set, so the run draws as the shared blue dialog gradient
-    // under the gold 9-slice frame at the same footprint, and as a
-    // solid-texel box with a 1-px rim when there is no atlas at all.
-    let plate =
-        |text: &mut Vec<TextDraw>, sprites: &mut Vec<SpriteDraw>, rect: (i32, i32, i32, i32)| {
-            match frame.chrome {
-                Some(rects) => {
-                    sprites.push(SpriteDraw {
-                        dst: (
-                            origin.0 + (rect.0 + 2) * scale,
-                            origin.1 + (rect.1 + 2) * scale,
-                            ((rect.2 - 4) * scale) as u32,
-                            ((rect.3 - 4) * scale) as u32,
-                        ),
-                        src: rects.dialog_fill,
-                        color: white,
-                    });
-                    nine_slice_border_into(sprites, rects, rect, origin, scale as u32);
-                }
+    // The battle screen's own cells, when the atlas carries them.
+    let battle = frame.chrome.and_then(|r| r.battle);
+    // The `/` between a current and a maximum: retail's 8x16 sheet sprite,
+    // which seats four rows **above** its numerals. Without the atlas it
+    // degrades to a font glyph on the numeral row.
+    let separator =
+        |sprites: &mut Vec<SpriteDraw>, text: &mut Vec<TextDraw>, x: i32, y: i32, c: [f32; 4]| {
+            match battle {
+                Some(b) => sprites.push(SpriteDraw {
+                    dst: (
+                        origin.0 + x * scale,
+                        origin.1 + y * scale,
+                        b.separator.2 * scale as u32,
+                        b.separator.3 * scale as u32,
+                    ),
+                    src: b.separator,
+                    color: c,
+                }),
+                None => stage_text(text, font, "/", x, y + 4, c),
+            }
+        };
+    // A number, in retail's own numeral cells: 8x12 sprites off the
+    // menu-glyph atlas strip, right-aligned so the field grows leftward one
+    // cell per digit.
+    //
+    // This - not the dialog font - is how retail draws every HP, MP and
+    // level on the battle screen, and it is what the seats above were
+    // measured against. A proportional-font `9999` is wider than four cells
+    // and overruns the roster panel's 102-px plate; four cells do not.
+    //
+    // Without the strip (an atlas built without the menu-glyph TIM, or no
+    // atlas at all) the digits fall back to font glyphs **centred in the
+    // same cells**, so the layout is identical and only the letterforms
+    // differ.
+    let numerals = |sprites: &mut Vec<SpriteDraw>,
+                    text: &mut Vec<TextDraw>,
+                    value: u32,
+                    right: i32,
+                    y: i32,
+                    c: [f32; 4]| {
+        let s = value.to_string();
+        let left = right - s.len() as i32 * DIGIT_W;
+        for (i, ch) in s.bytes().enumerate() {
+            let cell_x = left + i as i32 * DIGIT_W;
+            let d = u32::from(ch - b'0');
+            match battle
+                .and_then(|b| b.digits)
+                .and_then(|strip| crate::hud_digit_rect(strip, d))
+            {
+                Some(src) => sprites.push(SpriteDraw {
+                    dst: (
+                        origin.0 + cell_x * scale,
+                        origin.1 + y * scale,
+                        src.2 * scale as u32,
+                        src.3 * scale as u32,
+                    ),
+                    src,
+                    color: c,
+                }),
                 None => {
-                    stage_rect(text, rect.0, rect.1, rect.2, rect.3, strip_bg);
-                    stage_rect(text, rect.0, rect.1, rect.2, 1, strip_frame);
-                    stage_rect(text, rect.0, rect.1 + rect.3 - 1, rect.2, 1, strip_frame);
-                    stage_rect(text, rect.0, rect.1, 1, rect.3, strip_frame);
-                    stage_rect(text, rect.0 + rect.2 - 1, rect.1, 1, rect.3, strip_frame);
+                    let glyph = [ch];
+                    let g = std::str::from_utf8(&glyph).unwrap_or("0");
+                    let advance = font.layout_ascii(g).advance_x as i32;
+                    stage_text(text, font, g, cell_x + (DIGIT_W - advance) / 2, y, c);
                 }
+            }
+        }
+    };
+    // Fallback skin for a plate or panel with no atlas at all: a solid
+    // interior plus a 1-px rim, which is what keeps a chrome-less host
+    // readable.
+    let flat_skin = |text: &mut Vec<TextDraw>, rect: (i32, i32, i32, i32)| {
+        stage_rect(text, rect.0, rect.1, rect.2, rect.3, strip_bg);
+        stage_rect(text, rect.0, rect.1, rect.2, 1, strip_frame);
+        stage_rect(text, rect.0, rect.1 + rect.3 - 1, rect.2, 1, strip_frame);
+        stage_rect(text, rect.0, rect.1, 1, rect.3, strip_frame);
+        stage_rect(text, rect.0 + rect.2 - 1, rect.1, 1, rect.3, strip_frame);
+    };
+    // One plate run: retail's 3-slice out of the system-UI sheet - an 8-px
+    // cap, body tiles filling the interior with the **last tile clipped** to
+    // the remainder, and a closing cap. Total width is `interior + 16`, and
+    // the clipped final tile is retail's behaviour rather than a rounding of
+    // it (`battle_chrome::plate_run`).
+    //
+    // `art` picks the sheet row: the blue row (`v = 0`) for the bar and the
+    // command chips, the carved-gold row (`v = 64`) for the actor plaque.
+    // The gold row is the same tiles the field menu's tab banner samples,
+    // which is why they are the atlas's `tab_*` rects.
+    let plate_run = |text: &mut Vec<TextDraw>,
+                     sprites: &mut Vec<SpriteDraw>,
+                     x: i32,
+                     y: i32,
+                     interior_w: i32,
+                     gold: bool| {
+        let tiles = match (frame.chrome, battle) {
+            (Some(r), Some(_)) if gold => Some((r.tab_cap_l, r.tab_body, r.tab_cap_r)),
+            (Some(_), Some(b)) => Some((b.plate_cap_l, b.plate_body, b.plate_cap_r)),
+            _ => {
+                flat_skin(text, (x, y, interior_w + 2 * PLATE_CAP_W, PLATE_H));
+                None
+            }
+        };
+        let Some((cap_l, body, cap_r)) = tiles else {
+            return;
+        };
+        let mut blit = |src: (u32, u32, u32, u32), bx: i32, w: u32| {
+            sprites.push(SpriteDraw {
+                dst: (
+                    origin.0 + bx * scale,
+                    origin.1 + y * scale,
+                    w * scale as u32,
+                    src.3 * scale as u32,
+                ),
+                src: (src.0, src.1, w, src.3),
+                color: white,
+            });
+        };
+        blit(cap_l, x, cap_l.2);
+        let interior_x = x + PLATE_CAP_W;
+        let mut done = 0;
+        while done < interior_w {
+            let w = (body.2 as i32).min(interior_w - done);
+            blit(body, interior_x + done, w as u32);
+            done += w;
+        }
+        blit(cap_r, interior_x + interior_w, cap_r.2);
+    };
+    // The roster panel's own background: retail blits the whole 102x48
+    // marbled plate as one sprite, not as a 9-slice.
+    let panel_plate =
+        |text: &mut Vec<TextDraw>, sprites: &mut Vec<SpriteDraw>, rect: (i32, i32, i32, i32)| {
+            match battle {
+                Some(b) => sprites.push(SpriteDraw {
+                    dst: (
+                        origin.0 + rect.0 * scale,
+                        origin.1 + rect.1 * scale,
+                        b.panel_bg.2 * scale as u32,
+                        b.panel_bg.3 * scale as u32,
+                    ),
+                    src: b.panel_bg,
+                    color: white,
+                }),
+                None => flat_skin(text, rect),
             }
         };
     // The retail readout-tint law, per slot (`FUN_800349EC` / `FUN_80035EA8`).
@@ -954,21 +1064,29 @@ pub fn battle_hud_draws_for(
         (base, hp, mp)
     };
 
+    // The member whose readout takes the full-width bar, if any. Retail's two
+    // party surfaces are **mutually exclusive**: while the bar owns the
+    // screen the whole roster cluster is parked off-screen, so a frame shows
+    // one or the other and never both.
+    let bar_member = frame
+        .active_slot
+        .and_then(|a| live_party.iter().find(|(i, _)| *i == a as usize).copied());
+
     // ---- Surface 1: the resting roster panels ----
     //
     // One 102x48 panel per live member at the packet-pinned seats, carrying
     // name + LV on the top cell, then an HP row and an MP row. Retail parks
     // the whole cluster at `y = 230` (under its 228-line display window)
-    // while a command-entry session owns the frame; the engine stage is 240
-    // lines, so `y = 230` would still be visible here and the port omits the
-    // draws instead.
+    // while the bar or a command-entry session owns the frame; the engine
+    // stage is 240 lines, so `y = 230` would still be visible here and the
+    // port omits the draws instead.
     let seats = panel_seats(live_party.len().min(3));
-    if !frame.input_session_parked {
+    if !frame.input_session_parked && bar_member.is_none() {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
             let py = PANEL_Y;
             let (base, hp_tint, mp_tint) = tints(slot);
-            plate(&mut text, &mut sprites, (px, py, PANEL_W, PANEL_H));
+            panel_plate(&mut text, &mut sprites, (px, py, PANEL_W, PANEL_H));
 
             stage_text(
                 &mut text,
@@ -1003,12 +1121,12 @@ pub fn battle_hud_draws_for(
                     px + PANEL_LV_LABEL.0,
                     py + PANEL_LV_LABEL.1,
                 );
-                stage_text(
+                numerals(
+                    &mut sprites,
                     &mut text,
-                    font,
-                    &slot.level.to_string(),
-                    px + PANEL_LV_DIGITS.0,
-                    py + PANEL_LV_DIGITS.1,
+                    u32::from(slot.level),
+                    px + PANEL_LV_DIGITS_RIGHT,
+                    py + PANEL_LV_DIGIT_Y,
                     base,
                 );
             }
@@ -1020,24 +1138,26 @@ pub fn battle_hud_draws_for(
                 px + PANEL_HP_LABEL.0,
                 py + PANEL_HP_LABEL.1,
             );
-            stage_text_r(
+            numerals(
+                &mut sprites,
                 &mut text,
-                &slot.hp.to_string(),
+                u32::from(slot.hp),
                 px + PANEL_CUR_RIGHT,
                 py + PANEL_HP_DIGIT_Y,
                 hp_tint,
             );
             separator(
+                &mut sprites,
                 &mut text,
                 px + PANEL_HP_SEPARATOR.0,
                 py + PANEL_HP_SEPARATOR.1,
                 hp_tint,
             );
-            stage_text(
+            numerals(
+                &mut sprites,
                 &mut text,
-                font,
-                &slot.hp_max.to_string(),
-                px + PANEL_MAX_LEFT,
+                u32::from(slot.hp_max),
+                px + PANEL_MAX_RIGHT,
                 py + PANEL_HP_DIGIT_Y,
                 hp_tint,
             );
@@ -1050,24 +1170,26 @@ pub fn battle_hud_draws_for(
                     px + PANEL_MP_LABEL.0,
                     py + PANEL_MP_LABEL.1,
                 );
-                stage_text_r(
+                numerals(
+                    &mut sprites,
                     &mut text,
-                    &slot.mp.to_string(),
+                    u32::from(slot.mp),
                     px + PANEL_CUR_RIGHT,
                     py + PANEL_MP_DIGIT_Y,
                     mp_tint,
                 );
                 separator(
+                    &mut sprites,
                     &mut text,
                     px + PANEL_MP_SEPARATOR.0,
                     py + PANEL_MP_SEPARATOR.1,
                     mp_tint,
                 );
-                stage_text(
+                numerals(
+                    &mut sprites,
                     &mut text,
-                    font,
-                    &slot.mp_max.to_string(),
-                    px + PANEL_MAX_LEFT,
+                    u32::from(slot.mp_max),
+                    px + PANEL_MAX_RIGHT,
                     py + PANEL_MP_DIGIT_Y,
                     mp_tint,
                 );
@@ -1083,57 +1205,65 @@ pub fn battle_hud_draws_for(
     // ---- Surface 2: the active-actor bar ----
     //
     // The full-width plate the acting party member's readout takes over: name
-    // at the left, then the HP label with its right-aligned current and
-    // forward-running maximum, then the same pair for MP. Retail draws **no
-    // gauge bar** here - the packet run carries no bar primitive in either
-    // readout, and neither reference frame shows one.
-    if let Some(active) = frame.active_slot
-        && let Some((i, slot)) = live_party.iter().find(|(i, _)| *i == active as usize)
-    {
+    // at the left, then the HP label with a right-aligned current and a
+    // right-aligned maximum either side of the `/`, then the same pair for
+    // MP. Retail draws **no gauge bar** here - the packet run carries no bar
+    // primitive in either readout, and neither reference frame shows one.
+    if let Some((i, slot)) = bar_member {
         let (base, hp_tint, mp_tint) = tints(slot);
-        plate(
-            &mut text,
-            &mut sprites,
-            (BAR_X, BAR_Y, BAR_INTERIOR_W + 2 * PLATE_CAP_W, PLATE_H),
-        );
+        plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
         stage_text(&mut text, font, slot.name, BAR_NAME.0, BAR_NAME.1, base);
         label(&mut sprites, &mut text, 0, BAR_HP_LABEL.0, BAR_HP_LABEL.1);
-        stage_text_r(
+        numerals(
+            &mut sprites,
             &mut text,
-            &slot.hp.to_string(),
+            u32::from(slot.hp),
             BAR_HP_CUR_RIGHT,
             BAR_DIGIT_Y,
             hp_tint,
         );
-        separator(&mut text, BAR_HP_SEPARATOR.0, BAR_HP_SEPARATOR.1, hp_tint);
-        stage_text(
+        separator(
+            &mut sprites,
             &mut text,
-            font,
-            &slot.hp_max.to_string(),
-            BAR_HP_MAX_LEFT,
+            BAR_HP_SEPARATOR.0,
+            BAR_HP_SEPARATOR.1,
+            hp_tint,
+        );
+        numerals(
+            &mut sprites,
+            &mut text,
+            u32::from(slot.hp_max),
+            BAR_HP_MAX_RIGHT,
             BAR_DIGIT_Y,
             hp_tint,
         );
         if slot.mp_max > 0 {
             label(&mut sprites, &mut text, 1, BAR_MP_LABEL.0, BAR_MP_LABEL.1);
-            stage_text_r(
+            numerals(
+                &mut sprites,
                 &mut text,
-                &slot.mp.to_string(),
+                u32::from(slot.mp),
                 BAR_MP_CUR_RIGHT,
                 BAR_DIGIT_Y,
                 mp_tint,
             );
-            separator(&mut text, BAR_MP_SEPARATOR.0, BAR_MP_SEPARATOR.1, mp_tint);
-            stage_text(
+            separator(
+                &mut sprites,
                 &mut text,
-                font,
-                &slot.mp_max.to_string(),
-                BAR_MP_MAX_LEFT,
+                BAR_MP_SEPARATOR.0,
+                BAR_MP_SEPARATOR.1,
+                mp_tint,
+            );
+            numerals(
+                &mut sprites,
+                &mut text,
+                u32::from(slot.mp_max),
+                BAR_MP_MAX_RIGHT,
                 BAR_DIGIT_Y,
                 mp_tint,
             );
         }
-        popup_anchor[*i] = (
+        popup_anchor[i] = (
             origin.0 + BAR_HP_LABEL.0 * scale,
             origin.1 + (BAR_Y - 26) * scale,
         );
@@ -1150,11 +1280,7 @@ pub fn battle_hud_draws_for(
         && !name.is_empty()
     {
         let name_w = font.layout_ascii(name).advance_x as i32;
-        plate(
-            &mut text,
-            &mut sprites,
-            (PLAQUE_X, PLAQUE_Y, name_w + 2 * PLATE_CAP_W, PLATE_H),
-        );
+        plate_run(&mut text, &mut sprites, PLAQUE_X, PLAQUE_Y, name_w, true);
         stage_text(
             &mut text,
             font,

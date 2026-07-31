@@ -2154,11 +2154,35 @@ the two cases.
 
 Inside the bar: name pen `(16, 192)`, the `HP` label cell at `(80, 194)`, the
 current HP right-aligned to `x = 134`, a `/` sprite at `(136, 188)`, the
-maximum running forward from `x = 154`, then the `MP` label at `(192, 194)`
-with its own pair right-aligned to `238` and running from `258` around a `/`
-at `(240, 188)`. A *current* value is right-aligned and its *maximum* is not -
-that asymmetry is what keeps a four-digit HP inside its own field. The panel
-rows carry the same two fields against `CUR_RIGHT = 57` / `MAX_LEFT = 73`.
+maximum right-aligned to `x = 178`, then the `MP` label at `(192, 194)` with
+its own pair right-aligned to `238` and `274` around a `/` at `(240, 188)`.
+The panel rows carry the same two fields against `CUR_RIGHT = 57` /
+`MAX_RIGHT = 97`, and the level against `LV_DIGITS_RIGHT = 96`.
+
+### Numbers are cells, names are glyphs
+
+Every **number** on the battle screen is a run of fixed 8x12 cells off the
+menu-glyph strip; only the names use the proportional dialog font. That split
+is what the field geometry is built around, and it decides two things at once.
+
+**Both halves of a `cur / max` pair are right-aligned.** Neither runs forward
+from a pen. A capture whose values happen to share a digit count cannot tell
+the two models apart - it takes a second capture at a different width, and
+three of them disagree with the forward-running reading:
+
+| field | 2 digits | 3 digits | 4 digits | right edge |
+|---|---|---|---|---|
+| bar HP maximum | - | `154` | `146` | `178` |
+| bar MP maximum | `258` | `250` | - | `274` |
+| panel maximum | `81` | `73` | `65` | `97` |
+| panel level | `80` | - | - | `96` |
+
+**A field's width budget is a cell count.** Four cells per HP field and per
+panel field, three per bar MP field - the panel's numerals close five pixels
+short of its right edge, mirroring the five-pixel inset of its name pen. A
+proportional-font `9999` is wider than four cells and overruns the 102-px
+plate into the neighbouring member's panel, which is the failure the cell
+model removes by construction rather than by moving a column.
 
 Retail draws **no gauge bar of any kind** on either surface - the display-list
 walk carries no bar primitive in either readout.
@@ -2177,19 +2201,34 @@ retail draws no monster gauge at all, so a monster's name is the whole of what
 it contributes to the drawn surface. `battle_hud::battle_active_actor` picks
 the actor.
 
-**Not pinned, and marked as such in the builder.** The 102x48 marbled panel
-background, the plate row's own 3-slice tiles and the 8x16 `/` separator have
-no rect in the engine's system-UI atlas set yet, so a plate draws as the shared
-blue dialog gradient under the gold 9-slice frame at the pinned footprint, and
-the separator as a font glyph. Numerals are font glyphs rather than retail's
-8x12 menu-atlas digit cells. The status element's badge art (`0x18..=0x20`)
-is unpinned, so the selected id draws as a labelled tag on the panel's
-level seat, which is the seat retail's exclusive ladder puts it on.
+**The surface samples the disc's own cells.** The 102x48 marbled panel plate,
+the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are all
+baked into the shared sprite atlas and drawn 1:1 from it - the first three off
+the resident system-UI sheet (sub-palettes 0 / 4 / 5), the numerals off the
+neighbouring menu-glyph atlas through sub-palette 13. The plaque takes the
+carved-gold plate row, which is the same art the field menu's tab banner
+already bakes. Source rects live in
+[`title_pak`](../../crates/asset/src/title_pak.rs) as
+`OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
+[`save_menu_atlas`](../../crates/engine-core/src/save_menu_atlas.rs) as
+`ATLAS_RECT_BATTLE_*`, all at their natural sheet coordinates except the
+numeral strip, whose own row the filigree tile holds.
 
-**Parked during input.** The port emits no panel draws at all while a
-command-entry session owns the frame, rather than drawing at retail's parked
-`y = 230`: the engine stage is 240 lines against retail's 228-line display
-window, so `y = 230` would still be visible here.
+Without an atlas the builder still draws: plates degrade to a solid interior
+with a 1-px rim, the labels and the `/` to tinted text, and the numerals to
+font glyphs **centred on the same 8-px cells** - the fallback changes
+letterforms, never layout.
+
+**Still substituted.** The status element's badge art (`0x18..=0x20`) is
+unpinned, so the selected id draws as a labelled tag on the panel's level
+seat, which is the seat retail's exclusive ladder puts it on.
+
+**Parked, not stacked.** The port emits no panel draws at all while the
+active-actor bar or a command-entry session owns the frame, rather than
+drawing at retail's parked `y = 230`: the engine stage is 240 lines against
+retail's 228-line display window, so `y = 230` would still be visible here.
+Drawing both is what "two mutually exclusive surfaces" rules out - the bar
+would sit on top of the panel row it replaces.
 
 **Diagnostic surface** (`LEGAIA_DIAG_HUD` set to anything but `0` / empty).
 Everything the port used to draw unconditionally and retail does not: monster

@@ -32,12 +32,20 @@
 //!
 //! | Row             | Y range  | Cell w | First-cell X | Content              |
 //! |-----------------|----------|--------|--------------|----------------------|
-//! | `digits`        | 209..220 | 8      | 8            | `0123456789`         |
+//! | `digits`        | 208..220 | 8      | 0            | `0123456789`         |
 //! | `alphabet`      | 224..238 | 8      | 8            | `ABCDEFGHIJKLMNOPQRSTUVWXYZ` |
 //!
-//! Both rows are 14 px tall (the rendered glyph height); cells are
-//! 8 px wide on an 8 px pitch with no inter-cell gutter. The first
-//! cell of each row starts at `x = 8`.
+//! Cells are 8 px wide on an 8 px pitch with no inter-cell gutter. The
+//! two rows do **not** share an origin: the alphabet's `A` cell starts
+//! at `x = 8` (cell 0 of that row is blank), while the digit row's `0`
+//! cell starts at `x = 0`, so digit `d` is the cell at `u = d * 8`.
+//!
+//! The digit row's origin and 12-px height are read out of retail's own
+//! display list rather than measured off the ink: the battle HUD blits
+//! each numeral as an 8x12 `SPRT` whose `uv` is exactly `(d * 8, 208)`
+//! ([`crate::title_pak::MENU_GLYPH_ATLAS_DIGIT_V`] and siblings). An
+//! ink-measured origin of `(8, 209)` is off by one cell and renders
+//! every number one digit too high.
 //!
 //! The atlas also carries debug-only content (a `<DEMO>` row, an
 //! "ここは常駐エフェクトが入る予定 / Pochi" debug string, a `FONT CLUT`
@@ -74,24 +82,25 @@ pub const ATLAS_HEIGHT: u32 = 256;
 /// `(x=8, y=224)`.
 pub const ALPHABET_ROW: (u32, u32, u32, u32) = (8, 224, 26 * 8, 14);
 
-/// Source rect of the digits row. 10 cells × 8 px wide × 11 px tall,
-/// starting at `(x=8, y=209)`. The first cell renders `0`.
-pub const DIGITS_ROW: (u32, u32, u32, u32) = (8, 209, 10 * 8, 11);
+/// Source rect of the digits row. 10 cells × 8 px wide × 12 px tall,
+/// starting at `(x=0, y=208)`. The first cell renders `0`.
+pub const DIGITS_ROW: (u32, u32, u32, u32) = (0, 208, 10 * 8, 12);
 
 /// Width of a single glyph cell (alphabet + digits share this pitch).
 pub const GLYPH_W: u32 = 8;
 /// Height of a single alphabet-row glyph cell.
 pub const ALPHABET_GLYPH_H: u32 = 14;
-/// Height of a single digit-row glyph cell.
-pub const DIGITS_GLYPH_H: u32 = 11;
+/// Height of a single digit-row glyph cell - the height retail blits.
+pub const DIGITS_GLYPH_H: u32 = 12;
 /// X coordinate of the first alphabet cell (the `A` cell).
 pub const ALPHABET_FIRST_X: u32 = 8;
 /// Y coordinate of the alphabet row's top edge.
 pub const ALPHABET_Y: u32 = 224;
-/// X coordinate of the first digit cell (the `0` cell).
-pub const DIGITS_FIRST_X: u32 = 8;
+/// X coordinate of the first digit cell (the `0` cell). Zero, not the
+/// alphabet row's `8` - see the module docs.
+pub const DIGITS_FIRST_X: u32 = 0;
 /// Y coordinate of the digit row's top edge.
-pub const DIGITS_Y: u32 = 209;
+pub const DIGITS_Y: u32 = 208;
 
 /// PSX TIM magic word (`0x00000010` LE).
 const TIM_MAGIC: u32 = 0x0000_0010;
@@ -263,6 +272,33 @@ mod tests {
         // Unmapped characters return None.
         assert_eq!(glyph_rect(' '), None);
         assert_eq!(glyph_rect('!'), None);
+    }
+
+    /// The digit row is pinned twice - here as a glyph row and in
+    /// [`crate::title_pak`] as the battle HUD's numeral cells - and both
+    /// pins come from the same retail `SPRT` packets. Keep them equal so
+    /// a future edit to either has to move both.
+    #[test]
+    fn digit_cells_agree_with_the_hud_numeral_pins() {
+        use crate::title_pak as tp;
+        assert_eq!(DIGITS_Y, tp::MENU_GLYPH_ATLAS_DIGIT_V);
+        assert_eq!(GLYPH_W, tp::MENU_GLYPH_ATLAS_DIGIT_W);
+        assert_eq!(DIGITS_GLYPH_H, tp::MENU_GLYPH_ATLAS_DIGIT_H);
+        // Digit `d` is the cell at `u = d * 8` - retail's own uv.
+        for d in 0..10u32 {
+            let c = char::from_digit(d, 10).unwrap();
+            assert_eq!(
+                glyph_rect(c),
+                Some((
+                    d * tp::MENU_GLYPH_ATLAS_DIGIT_W,
+                    tp::MENU_GLYPH_ATLAS_DIGIT_V,
+                    tp::MENU_GLYPH_ATLAS_DIGIT_W,
+                    tp::MENU_GLYPH_ATLAS_DIGIT_H,
+                )),
+                "digit {d}"
+            );
+        }
+        assert_eq!(DIGITS_ROW, (0, DIGITS_Y, 10 * GLYPH_W, DIGITS_GLYPH_H));
     }
 
     #[test]

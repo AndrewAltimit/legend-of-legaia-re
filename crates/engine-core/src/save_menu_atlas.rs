@@ -127,6 +127,55 @@ pub const ATLAS_RECT_TAB_CAP_R: (u32, u32, u32, u32) = (172, 232, 8, 20);
 pub const ATLAS_RECT_ATR_ICONS: [(u32, u32, u32, u32); 3] =
     [(184, 232, 28, 12), (212, 232, 28, 12), (184, 244, 28, 12)];
 
+/// Atlas placement of the **battle roster panel background** - one 102x48
+/// marbled plate, the whole of a resting party member's readout skin.
+///
+/// Natural sheet coordinates: `engine_vm::battle_chrome::PANEL_BG` is
+/// `(0, 0, 102, 48)` on the system-UI sheet through sub-palette 0, and the
+/// atlas's `(0..102, 0..48)` corner is free, so the rect reads the same on
+/// both sides.
+pub const ATLAS_RECT_BATTLE_PANEL_BG: (u32, u32, u32, u32) = (0, 0, 102, 48);
+
+/// Atlas placement of the **blue plate 3-slice** - the left cap, repeating
+/// body tile and right cap the active-actor bar and every command chip are
+/// built from (`battle_chrome::PLATE_BLUE`, sheet row `v = 0`, sub-palette 4).
+///
+/// Natural sheet coordinates again. The carved-gold sibling at `v = 64` is
+/// already baked as the field menu's tab banner
+/// ([`ATLAS_RECT_TAB_CAP_L`] and friends) - it is the same art, which is why
+/// the battle plaque and the pause menu's title tab look alike.
+pub const ATLAS_RECT_BATTLE_PLATE_CAP_L: (u32, u32, u32, u32) = (208, 0, 8, 20);
+pub const ATLAS_RECT_BATTLE_PLATE_BODY: (u32, u32, u32, u32) = (192, 0, 16, 20);
+pub const ATLAS_RECT_BATTLE_PLATE_CAP_R: (u32, u32, u32, u32) = (216, 0, 8, 20);
+
+/// Atlas placement of the **`/` separator** between a current and a maximum
+/// (`battle_chrome::SEPARATOR`, sub-palette 5). A sheet sprite, not a font
+/// glyph - and it sits four rows above the numerals it separates.
+pub const ATLAS_RECT_BATTLE_SEPARATOR: (u32, u32, u32, u32) = (96, 64, 8, 16);
+
+/// Atlas placement of the **HUD numeral strip** - ten 8x12 digit cells
+/// at an 8-px pitch, `0` first. Unlike every other rect in this atlas
+/// the source is not the system-UI sheet but the neighbouring
+/// **menu-glyph atlas** TIM (`legaia_asset::menu_glyph_atlas`, VRAM page
+/// `(960, 256)`), decoded through its sub-palette 13 - the palette
+/// retail's own `SPRT` packets name for battle-HUD text.
+///
+/// These are the numerals the battle HUD draws: retail lays HP / MP /
+/// level out as fixed 8-px cells from this strip, never as proportional
+/// dialog-font glyphs, which is what keeps a four-digit value inside a
+/// 102-px roster panel. Baked into this atlas rather than sampled from
+/// the separately-uploaded menu-glyph atlas so the HUD's sprite list
+/// stays one texture.
+///
+/// The one battle rect that is **not** at its natural coordinate: the
+/// strip's own row is `(0, 208)`, which the filigree tile already holds,
+/// so it re-seats - the same rule the arts chips follow.
+pub const ATLAS_RECT_HUD_DIGITS: (u32, u32, u32, u32) = (0, 244, 80, 12);
+/// Width and horizontal pitch of one [`ATLAS_RECT_HUD_DIGITS`] cell.
+pub const HUD_DIGIT_W: u32 = 8;
+/// Height of one HUD numeral cell.
+pub const HUD_DIGIT_H: u32 = 12;
+
 /// Atlas placement of the 3 character portrait TIMs (16x16 each).
 /// Stacked horizontally just below the empty-frame rect; each portrait
 /// occupies a 16x16 sub-region.
@@ -156,6 +205,11 @@ pub struct SaveMenuAtlas {
     pub rgba: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    /// Whether [`ATLAS_RECT_HUD_DIGITS`] actually carries the numeral
+    /// strip. False when [`build_atlas`] was handed no menu-glyph TIM;
+    /// [`SaveMenuAtlas::band_hud_digits`] answers `None` then, and the
+    /// battle HUD falls back to font glyphs on the same 8-px grid.
+    pub has_hud_digits: bool,
 }
 
 impl SaveMenuAtlas {
@@ -321,6 +375,34 @@ impl SaveMenuAtlas {
     pub fn band_atr_icons(&self) -> [(u32, u32, u32, u32); 3] {
         ATLAS_RECT_ATR_ICONS
     }
+    /// The whole HUD numeral strip (80x12, ten 8x12 cells starting at
+    /// `0`). Slice a single digit out of it with [`hud_digit_cell`].
+    ///
+    /// `None` when the caller built the atlas without the menu-glyph TIM,
+    /// so consumers can fall back rather than blit ten blank cells.
+    pub fn band_hud_digits(&self) -> Option<(u32, u32, u32, u32)> {
+        self.has_hud_digits.then_some(ATLAS_RECT_HUD_DIGITS)
+    }
+    /// Battle roster-panel background (102x48, sub-palette 0).
+    pub fn band_battle_panel_bg(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_BATTLE_PANEL_BG
+    }
+    /// Battle blue-plate left cap (8x20, sub-palette 4).
+    pub fn band_battle_plate_cap_l(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_BATTLE_PLATE_CAP_L
+    }
+    /// Battle blue-plate body tile (16x20); the last tile of a run clips.
+    pub fn band_battle_plate_body(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_BATTLE_PLATE_BODY
+    }
+    /// Battle blue-plate right cap (8x20).
+    pub fn band_battle_plate_cap_r(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_BATTLE_PLATE_CAP_R
+    }
+    /// The `/` between a current and a maximum (8x16, sub-palette 5).
+    pub fn band_battle_separator(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_BATTLE_SEPARATOR
+    }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
     /// 20x20 hollow blue border centred in the sprite - outer 6 px
     /// margin is transparent).
@@ -346,6 +428,18 @@ impl SaveMenuAtlas {
     }
 }
 
+/// Sub-rect of digit `d` (`0..=9`) inside a HUD-numeral strip whose
+/// whole-strip rect is `strip`. Retail addresses the strip the same way:
+/// `u = d * 8` off the row origin.
+///
+/// Returns `None` for `d > 9`, so a caller can pass any byte through.
+pub const fn hud_digit_cell(strip: (u32, u32, u32, u32), d: u32) -> Option<(u32, u32, u32, u32)> {
+    if d > 9 {
+        return None;
+    }
+    Some((strip.0 + d * HUD_DIGIT_W, strip.1, HUD_DIGIT_W, HUD_DIGIT_H))
+}
+
 /// Build a [`SaveMenuAtlas`] from raw `PROT.DAT` bytes (carries the
 /// system-UI TIM at offset `0x018E0`) plus the trailing-overlay
 /// bytes of PROT 0899 (carries the save-menu TIM with the slot pills).
@@ -354,7 +448,18 @@ impl SaveMenuAtlas {
 /// - byte-equal to the retail VRAM contents at parked-on-load-screen
 ///   sstate9. The slot pills are decoded from PROT 0899 with CLUT 7 -
 ///   byte-equal as well.
-pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Result<SaveMenuAtlas> {
+///
+/// `menu_glyph_tim` is the optional third source: the
+/// [`legaia_asset::menu_glyph_atlas`] TIM slice (`PROT.DAT[0x11218]`),
+/// which carries the battle HUD's 8x12 numeral cells. Pass `None` and
+/// [`ATLAS_RECT_HUD_DIGITS`] stays transparent - every consumer treats a
+/// blank strip as "no digit art" and falls back to font glyphs, so a
+/// caller that cannot reach the TIM still gets a usable atlas.
+pub fn build_atlas(
+    prot_dat_bytes: &[u8],
+    prot_0899_bytes: &[u8],
+    menu_glyph_tim: Option<&[u8]>,
+) -> anyhow::Result<SaveMenuAtlas> {
     // --- Slot pills from PROT 0899 ---
     let pill_tim = title_pak::extract_overlay_save_menu_tim(prot_0899_bytes)?;
     let pill_parsed = legaia_tim::parse(pill_tim.bytes)?;
@@ -631,11 +736,124 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
     // them).
     add_load_slot_grid_sprites(&mut out, prot_dat_bytes)?;
 
+    // Battle-screen chrome - the roster panel plate, the blue plate 3-slice
+    // and the `/` separator, three more sub-palettes of the same system-UI
+    // plane. All at their natural sheet coordinates
+    // (`engine_vm::battle_chrome`), which the atlas happens to leave free.
+    add_battle_chrome_sprites(&mut out, &panel_parsed, panel_src_w)?;
+
+    // Battle-HUD numeral cells, off a different TIM entirely. Optional:
+    // a caller without the menu-glyph slice leaves the strip blank and
+    // the HUD falls back to font glyphs.
+    let mut has_hud_digits = false;
+    if let Some(tim) = menu_glyph_tim {
+        add_hud_digit_strip(&mut out, tim)?;
+        has_hud_digits = true;
+    }
+
     Ok(SaveMenuAtlas {
         rgba: out,
         width: ATLAS_WIDTH,
         height: ATLAS_HEIGHT,
+        has_hud_digits,
     })
+}
+
+/// Stamp the battle screen's own skin into the atlas: the roster-panel
+/// plate, the blue plate 3-slice and the `/` separator.
+///
+/// Three sub-palettes of the system-UI plane, all pinned in
+/// `engine_vm::battle_chrome` off retail's display list - sub-palette 0 for
+/// the panel, 4 for the blue plate row at `v = 0`, 5 for the separator.
+/// The carved-gold plate row at `v = 64` is not repeated here: it is the
+/// same art the field menu's tab banner already bakes.
+fn add_battle_chrome_sprites(
+    dst: &mut [u8],
+    panel_parsed: &legaia_tim::Tim,
+    src_w: u32,
+) -> anyhow::Result<()> {
+    use title_pak::{
+        OVERLAY_SYSTEM_UI_BATTLE_PANEL_BG, OVERLAY_SYSTEM_UI_BATTLE_PANEL_CLUT_ROW,
+        OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY, OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_L,
+        OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_R, OVERLAY_SYSTEM_UI_BATTLE_PLATE_CLUT_ROW,
+        OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR, OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW,
+    };
+
+    let panel_rgba = legaia_tim::decode_rgba8(
+        panel_parsed,
+        OVERLAY_SYSTEM_UI_BATTLE_PANEL_CLUT_ROW as usize,
+    )?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &panel_rgba,
+        src_w,
+        OVERLAY_SYSTEM_UI_BATTLE_PANEL_BG,
+        ATLAS_RECT_BATTLE_PANEL_BG,
+    );
+
+    let plate_rgba = legaia_tim::decode_rgba8(
+        panel_parsed,
+        OVERLAY_SYSTEM_UI_BATTLE_PLATE_CLUT_ROW as usize,
+    )?;
+    for (src, dst_rect) in [
+        (
+            OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_L,
+            ATLAS_RECT_BATTLE_PLATE_CAP_L,
+        ),
+        (
+            OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY,
+            ATLAS_RECT_BATTLE_PLATE_BODY,
+        ),
+        (
+            OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_R,
+            ATLAS_RECT_BATTLE_PLATE_CAP_R,
+        ),
+    ] {
+        copy_rect(dst, ATLAS_WIDTH, &plate_rgba, src_w, src, dst_rect);
+    }
+
+    let sep_rgba = legaia_tim::decode_rgba8(
+        panel_parsed,
+        OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW as usize,
+    )?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &sep_rgba,
+        src_w,
+        OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR,
+        ATLAS_RECT_BATTLE_SEPARATOR,
+    );
+    Ok(())
+}
+
+/// Stamp the battle HUD's ten 8x12 numeral cells into
+/// [`ATLAS_RECT_HUD_DIGITS`].
+///
+/// Source is the **menu-glyph atlas** TIM, not the system-UI sheet -
+/// retail's HUD numerals come off VRAM page `(960, 256)` through CLUT
+/// row 510 sub-palette 13, which is
+/// [`title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW`]. The row origin
+/// (`u = digit * 8`, `v = 208`) is read out of the HUD's own `SPRT`
+/// packets; see [`legaia_asset::menu_glyph_atlas`].
+fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyhow::Result<()> {
+    use legaia_asset::menu_glyph_atlas as mga;
+
+    let tim = mga::extract_from_tim_slice(menu_glyph_tim)?;
+    let parsed = legaia_tim::parse(tim.bytes)?;
+    let src_w = parsed.pixel_width() as u32;
+    let rgba =
+        legaia_tim::decode_rgba8(&parsed, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &rgba,
+        src_w,
+        mga::DIGITS_ROW,
+        ATLAS_RECT_HUD_DIGITS,
+    );
+    Ok(())
 }
 
 /// Stamp the **arts command-input** pieces into the atlas from three
@@ -1041,10 +1259,46 @@ mod tests {
         let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
             + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
         let system_ui_slice = &prot_dat[tim_off..end];
-        let atlas = build_atlas(system_ui_slice, &prot_899).expect("build save-menu atlas");
+        let glyph_off = legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET as usize;
+        let glyph_tim = &prot_dat[glyph_off..glyph_off + legaia_asset::menu_glyph_atlas::TIM_SIZE];
+        let atlas = build_atlas(system_ui_slice, &prot_899, Some(glyph_tim))
+            .expect("build save-menu atlas");
         assert_eq!(atlas.width, ATLAS_WIDTH);
         assert_eq!(atlas.height, ATLAS_HEIGHT);
         assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
+
+        // The HUD numeral strip: ten 8x12 cells, every one carrying ink,
+        // and none of them bleeding into a neighbour's cell. Retail draws
+        // every battle HP / MP / level out of this strip.
+        assert!(atlas.has_hud_digits);
+        let strip = atlas.band_hud_digits().expect("digit strip baked");
+        assert_eq!(strip, ATLAS_RECT_HUD_DIGITS);
+        let stride = (ATLAS_WIDTH * 4) as usize;
+        for d in 0..10u32 {
+            let (cx, cy, cw, ch) = hud_digit_cell(strip, d).expect("digit cell");
+            let mut ink = 0u32;
+            for row in 0..ch {
+                for col in 0..cw {
+                    let off = ((cy + row) as usize) * stride + ((cx + col) as usize) * 4;
+                    if atlas.rgba[off + 3] != 0 {
+                        ink += 1;
+                    }
+                }
+            }
+            assert!(ink >= 20, "digit {d} cell has only {ink} opaque texels");
+        }
+        // Cell 9's right edge is the strip's right edge - no eleventh cell.
+        assert_eq!(
+            hud_digit_cell(strip, 9).unwrap().0 + HUD_DIGIT_W,
+            strip.0 + strip.2
+        );
+        assert_eq!(hud_digit_cell(strip, 10), None);
+
+        // Built without the glyph TIM, the strip is absent rather than
+        // blank - that is what lets the HUD choose its font fallback.
+        let bare = build_atlas(system_ui_slice, &prot_899, None).expect("build without glyphs");
+        assert!(!bare.has_hud_digits);
+        assert_eq!(bare.band_hud_digits(), None);
 
         // The top-left corner tile must contain opaque gold-bronze
         // pixels (CLUT row 2 entries 7..15).

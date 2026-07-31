@@ -418,6 +418,64 @@ pub struct SaveMenuAtlasRects {
     /// from PROT.DAT[0x1AC90..0x1AF30]). Index = char_id (0=Vahn,
     /// 1=Noa, 2=Gala). `None` for char_ids past the 3-portrait atlas.
     pub load_portrait_by_char: [Option<(u32, u32, u32, u32)>; 3],
+    /// The battle screen's own skin, when the atlas carries it. See
+    /// [`BattleChromeRects`].
+    pub battle: Option<BattleChromeRects>,
+}
+
+/// The battle HUD's source rects inside the baked atlas - the disc's own
+/// cells for the surface, not stand-ins for them.
+///
+/// Every one is packet-pinned in `legaia_engine_vm::battle_chrome` and
+/// copied out of the resident system-UI sheet by
+/// `legaia_engine_core::save_menu_atlas`, except [`Self::digits`], which
+/// comes off the neighbouring menu-glyph atlas and is therefore the one
+/// piece a caller can be missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BattleChromeRects {
+    /// Roster-panel background: one 102x48 marbled plate per resting
+    /// party member, blitted whole.
+    pub panel_bg: (u32, u32, u32, u32),
+    /// Blue plate 3-slice - left cap (8x20), body tile (16x20) and right
+    /// cap (8x20). The active-actor bar and the command chips are runs of
+    /// these; the plaque uses the gold row, which is
+    /// [`SaveMenuAtlasRects::tab_cap_l`] and friends.
+    pub plate_cap_l: (u32, u32, u32, u32),
+    pub plate_body: (u32, u32, u32, u32),
+    pub plate_cap_r: (u32, u32, u32, u32),
+    /// The `/` between a current and a maximum (8x16). A sheet sprite,
+    /// and it seats four rows above the numerals it separates.
+    pub separator: (u32, u32, u32, u32),
+    /// **Numeral strip**: ten 8x12 digit cells at an 8-px pitch, `0`
+    /// first. Slice digit `d` out with [`hud_digit_rect`].
+    ///
+    /// Retail draws every HP / MP / level from these fixed cells rather
+    /// than from proportional dialog-font glyphs, which is why a
+    /// four-digit value fits a 102-px roster panel. `None` when the atlas
+    /// was built without the menu-glyph TIM - the HUD then falls back to
+    /// font glyphs seated on the same 8-px grid, so the layout survives
+    /// even without the art.
+    pub digits: Option<(u32, u32, u32, u32)>,
+}
+
+/// Width and horizontal pitch of one HUD numeral cell
+/// ([`BattleChromeRects::digits`]). Retail's own cell pitch.
+pub const HUD_DIGIT_W: i32 = 8;
+/// Height of one HUD numeral cell.
+pub const HUD_DIGIT_H: i32 = 12;
+
+/// Sub-rect of digit `d` (`0..=9`) inside a HUD numeral `strip`.
+/// Mirrors `legaia_engine_core::save_menu_atlas::hud_digit_cell`;
+/// `engine-ui` sits below `engine-core` in the crate graph.
+pub fn hud_digit_rect(strip: (u32, u32, u32, u32), d: u32) -> Option<(u32, u32, u32, u32)> {
+    (d <= 9).then(|| {
+        (
+            strip.0 + d * HUD_DIGIT_W as u32,
+            strip.1,
+            HUD_DIGIT_W as u32,
+            HUD_DIGIT_H as u32,
+        )
+    })
 }
 
 /// Build [`SpriteDraw`]s for the retail save-screen chrome (9-slice

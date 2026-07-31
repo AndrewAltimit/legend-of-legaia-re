@@ -198,6 +198,16 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
             Some((216, 96, 16, 16)),
             Some((232, 96, 16, 16)),
         ],
+        // The battle screen's own cells, at their baked atlas seats
+        // (`save_menu_atlas::ATLAS_RECT_BATTLE_*` / `_HUD_DIGITS`).
+        battle: Some(BattleChromeRects {
+            panel_bg: (0, 0, 102, 48),
+            plate_cap_l: (208, 0, 8, 20),
+            plate_body: (192, 0, 16, 20),
+            plate_cap_r: (216, 0, 8, 20),
+            separator: (96, 64, 8, 16),
+            digits: Some((0, 244, 80, 12)),
+        }),
     }
 }
 

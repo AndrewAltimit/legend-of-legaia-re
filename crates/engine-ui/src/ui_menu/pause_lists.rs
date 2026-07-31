@@ -982,6 +982,7 @@ mod pause_list_tests {
             atr_icons: [z; 3],
             load_empty_frame: None,
             load_portrait_by_char: [None; 3],
+            battle: None,
         }
     }
 

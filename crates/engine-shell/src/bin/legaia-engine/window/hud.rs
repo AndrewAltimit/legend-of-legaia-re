@@ -1955,6 +1955,73 @@ mod battle_hud_wiring_tests {
     const SURFACE: (u32, u32) = (640, 480);
     const STAGE_SCALE: i32 = 2;
 
+    /// The numeral strip's seat in the baked atlas
+    /// (`save_menu_atlas::ATLAS_RECT_HUD_DIGITS`).
+    const BATTLE_MIRROR_DIGITS: (u32, u32, u32, u32) = (0, 244, 80, 12);
+    /// The minimum chrome set that puts the numerals on the sprite list, so
+    /// a cell's screen seat is readable rather than inferred from a glyph.
+    const BATTLE_MIRROR_RECTS: legaia_engine_render::SaveMenuAtlasRects =
+        legaia_engine_render::SaveMenuAtlasRects {
+            battle: Some(legaia_engine_render::BattleChromeRects {
+                panel_bg: (0, 0, 102, 48),
+                plate_cap_l: (208, 0, 8, 20),
+                plate_body: (192, 0, 16, 20),
+                plate_cap_r: (216, 0, 8, 20),
+                separator: (96, 64, 8, 16),
+                digits: Some(BATTLE_MIRROR_DIGITS),
+            }),
+            ..blank_rects()
+        };
+
+    /// `SaveMenuAtlasRects::default()` is not `const`, so spell the zeroed
+    /// base out for [`BATTLE_MIRROR_RECTS`].
+    const fn blank_rects() -> legaia_engine_render::SaveMenuAtlasRects {
+        const Z: (u32, u32, u32, u32) = (0, 0, 0, 0);
+        legaia_engine_render::SaveMenuAtlasRects {
+            panel_tl: Z,
+            panel_tr: Z,
+            panel_bl: Z,
+            panel_br: Z,
+            panel_top: Z,
+            panel_bot: Z,
+            panel_left: Z,
+            panel_right: Z,
+            slot1: Z,
+            slot2: Z,
+            cursor: Z,
+            panel_interior: Z,
+            panel_filigree: Z,
+            label_lv: Z,
+            label_hp: Z,
+            label_mp: Z,
+            icon_money: Z,
+            label_time: Z,
+            label_coin: Z,
+            gauge_cap: Z,
+            gauge_trough: Z,
+            gauge_box: Z,
+            gauge_tip: Z,
+            gauge_digits: Z,
+            gauge_100: Z,
+            gauge_fill: Z,
+            dialog_fill: Z,
+            icon_weapon: Z,
+            icon_helmet: Z,
+            icon_armor: Z,
+            icon_boot: Z,
+            icon_goods: Z,
+            pager_left: Z,
+            pager_right: Z,
+            tab_cap_l: Z,
+            tab_body: Z,
+            tab_cap_r: Z,
+            atr_icons: [Z; 3],
+            load_empty_frame: None,
+            load_portrait_by_char: [None; 3],
+            battle: None,
+        }
+    }
+
     fn hud_with_party_row(hp: u16, hp_max: u16, mp: u16, mp_max: u16) -> BattleHud {
         let mut hud = BattleHud::new();
         hud.sync_slot(
@@ -2050,36 +2117,46 @@ mod battle_hud_wiring_tests {
         use legaia_engine_vm::battle_chrome as bc;
         let font = legaia_font::synthetic_for_tests();
         let hud = hud_with_party_row(250, 300, 12, 30);
-        let out = battle_hud_draws_for(
-            &font,
-            &BattleHudFrame {
-                slots: &battle_hud_slot_views(&hud),
-                solid_src: Some(SOLID),
-                surface: SURFACE,
-                active_slot: Some(0),
-                plaque: Some("Vahn"),
-                ..Default::default()
-            },
-            BATTLE_HUD_PEN,
-        )
-        .text;
+        // The two party surfaces are mutually exclusive, so each is measured
+        // in the frame that owns it: the panels at rest, the bar acting.
+        let frame = |active: Option<u8>| -> Vec<legaia_engine_render::TextDraw> {
+            battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    slots: &battle_hud_slot_views(&hud),
+                    solid_src: Some(SOLID),
+                    surface: SURFACE,
+                    active_slot: active,
+                    plaque: Some("Vahn"),
+                    ..Default::default()
+                },
+                BATTLE_HUD_PEN,
+            )
+            .text
+        };
+        let resting = frame(None);
+        let acting = frame(Some(0));
 
         // Panel seats + row.
         let seats = bc::panel_seats(1);
         assert_eq!(
-            boxes_of(&out, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32),
+            boxes_of(&resting, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32),
             vec![(seats[0] as i32, bc::PANEL_Y as i32)],
             "the mirrored panel seat drifted from battle_chrome"
+        );
+        assert!(
+            boxes_of(&acting, bc::PANEL_BG.2 as i32, bc::PANEL_BG.3 as i32).is_empty(),
+            "the roster cluster drew under the active-actor bar"
         );
         // Active-actor bar: plate footprint and name pen.
         let bar_w = (bc::BAR_INTERIOR_W + 2 * bc::PLATE_CAP_W) as i32;
         assert_eq!(
-            boxes_of(&out, bar_w, bc::PLATE_H as i32),
+            boxes_of(&acting, bar_w, bc::PLATE_H as i32),
             vec![(bc::BAR_X as i32, bc::BAR_Y as i32)],
             "the mirrored active-actor bar drifted from battle_chrome"
         );
         assert!(
-            out.iter().any(|d| d.src != SOLID
+            acting.iter().any(|d| d.src != SOLID
                 && d.dst.0 == bc::BAR_NAME.0 as i32 * STAGE_SCALE
                 && d.dst.1 == bc::BAR_NAME.1 as i32 * STAGE_SCALE),
             "the mirrored bar name pen drifted from battle_chrome"
@@ -2088,7 +2165,7 @@ mod battle_hud_wiring_tests {
         let plaque = bc::name_plaque(font.layout_ascii("Vahn").advance_x as u16, false);
         assert!(
             boxes_of(
-                &out,
+                &acting,
                 bc::plate_width(plaque.interior_w) as i32,
                 bc::PLATE_H as i32
             )
@@ -2096,11 +2173,81 @@ mod battle_hud_wiring_tests {
             "the mirrored plaque drifted from battle_chrome::name_plaque"
         );
         assert!(
-            out.iter().any(|d| d.src != SOLID
+            acting.iter().any(|d| d.src != SOLID
                 && d.dst.0 == plaque.text.0 as i32 * STAGE_SCALE
                 && d.dst.1 == plaque.text.1 as i32 * STAGE_SCALE),
             "the mirrored plaque text seat drifted from battle_chrome"
         );
+    }
+
+    /// The sibling half of the mirror check: the numeral fields. Every one is
+    /// a right edge the field grows leftward from in 8-px cells, and the
+    /// `engine-ui` literals have to name the same edges `battle_chrome` pins
+    /// - a drift here is a four-digit HP drawn off the end of its panel.
+    #[test]
+    fn engine_ui_numeral_edges_mirror_the_packet_pinned_battle_chrome() {
+        use legaia_engine_vm::battle_chrome as bc;
+        let font = legaia_font::synthetic_for_tests();
+        // Widest values every field is laid out against.
+        let hud = hud_with_party_row(9999, 9999, 999, 999);
+        let cells = |active: Option<u8>| -> Vec<(i32, i32)> {
+            battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    slots: &battle_hud_slot_views(&hud),
+                    solid_src: Some(SOLID),
+                    surface: SURFACE,
+                    chrome: Some(&BATTLE_MIRROR_RECTS),
+                    active_slot: active,
+                    ..Default::default()
+                },
+                BATTLE_HUD_PEN,
+            )
+            .sprites
+            .iter()
+            .filter(|s| s.src.1 == BATTLE_MIRROR_DIGITS.1 && s.src.2 == bc::DIGIT_W as u32)
+            .map(|s| (s.dst.0 / STAGE_SCALE, s.dst.1 / STAGE_SCALE))
+            .collect()
+        };
+
+        // Panel: the HP row's two four-cell runs, at the pinned right edges.
+        let px = bc::panel_seats(1)[0] as i32;
+        let panel = cells(None);
+        for (right, digits, y) in [
+            (bc::panel::CUR_RIGHT, 4, bc::panel::HP_DIGIT_Y),
+            (bc::panel::MAX_RIGHT, 4, bc::panel::HP_DIGIT_Y),
+            (bc::panel::CUR_RIGHT, 3, bc::panel::MP_DIGIT_Y),
+            (bc::panel::MAX_RIGHT, 3, bc::panel::MP_DIGIT_Y),
+        ] {
+            let left = px + bc::digits_left_of(right, digits) as i32;
+            let row = bc::PANEL_Y as i32 + y as i32;
+            assert!(
+                panel.contains(&(left, row)),
+                "no numeral cell at the mirrored panel edge {right} ({digits} digits): {panel:?}"
+            );
+            assert!(
+                panel
+                    .iter()
+                    .all(|(x, _)| x + bc::DIGIT_W as i32 <= px + bc::PANEL_BG.2 as i32),
+                "a panel numeral runs past the 102-px plate: {panel:?}"
+            );
+        }
+
+        // Bar: four cells per HP field, three per MP field.
+        let bar = cells(Some(0));
+        let y = bc::BAR_DIGIT_Y as i32;
+        for (right, digits) in [
+            (bc::BAR_HP_CUR_RIGHT, 4),
+            (bc::BAR_HP_MAX_RIGHT, 4),
+            (bc::BAR_MP_CUR_RIGHT, 3),
+            (bc::BAR_MP_MAX_RIGHT, 3),
+        ] {
+            let left = bc::digits_left_of(right, digits) as i32;
+            assert!(
+                bar.contains(&(left, y)),
+                "no numeral cell at the mirrored bar edge {right} ({digits} digits): {bar:?}"
+            );
+        }
     }
 
     /// Retail draws **no monster gauge at all**

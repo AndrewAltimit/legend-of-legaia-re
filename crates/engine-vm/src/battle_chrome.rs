@@ -150,6 +150,12 @@ pub const DPAD_DRAW_W: u16 = 15;
 
 /// Small numerals the readouts use: 8x12 cells at `v = 208`, `u = digit * 8`,
 /// on the **font** page through sub-palette 13.
+///
+/// Every number on the battle screen is laid out in these cells, never in
+/// the proportional dialog font - the names are proportional, the numbers
+/// are not. That is what lets a four-digit HP live inside a 102-px roster
+/// panel, and it is why each numeral field below is a fixed **right edge**
+/// rather than a pen: the field grows leftward one 8-px cell per digit.
 pub const DIGIT_V: u16 = 208;
 /// Width and horizontal pitch of one small numeral cell.
 pub const DIGIT_W: u16 = 8;
@@ -368,16 +374,36 @@ pub const BAR_MP_SEPARATOR: (i16, i16) = (240, 188);
 pub const BAR_DIGIT_Y: i16 = 192;
 /// Right edge the HP current value is laid out back from.
 pub const BAR_HP_CUR_RIGHT: i16 = 134;
-/// Left edge the HP maximum value starts at.
-pub const BAR_HP_MAX_LEFT: i16 = 154;
+/// Right edge the HP **maximum** is laid out back from.
+///
+/// Both halves of a `cur / max` pair are right-aligned; neither runs
+/// forward from a pen. Two captures with different digit counts fix this
+/// edge: `battle_gimard_tail_fire_a` draws `154 / 180` with the maximum's
+/// three cells at `154 / 162 / 170`, and a four-digit party frame draws
+/// `4955 / 4984` with the maximum's four cells at `146 / 154 / 162 / 170`.
+/// The left edge moves, `178` does not.
+pub const BAR_HP_MAX_RIGHT: i16 = 178;
 /// Right edge the MP current value is laid out back from.
 pub const BAR_MP_CUR_RIGHT: i16 = 238;
-/// Left edge the MP maximum value starts at.
-pub const BAR_MP_MAX_LEFT: i16 = 258;
+/// Right edge the MP maximum is laid out back from - same two captures,
+/// `20` at `258` and `856` at `250 / 258 / 266`.
+pub const BAR_MP_MAX_RIGHT: i16 = 274;
 
 /// Left edge of a right-aligned numeral field of `digits` cells.
 pub const fn digits_left_of(right: i16, digits: u16) -> i16 {
     right - (digits * DIGIT_W) as i16
+}
+
+/// Cell count a value occupies, which is its decimal digit count (retail
+/// pads nothing - a level of `1` is one cell, `99` is two).
+pub const fn digit_count(value: u32) -> u16 {
+    let mut n = 1;
+    let mut v = value;
+    while v >= 10 {
+        v /= 10;
+        n += 1;
+    }
+    n
 }
 
 /// Screen y of the per-member panel cluster.
@@ -395,13 +421,24 @@ pub const PANEL_TEXT_INSET: i16 = 5;
 
 /// Per-member panel content seats, relative to the panel background's
 /// top-left corner.
+///
+/// Every numeral field is a **right edge**, not a pen - see [`DIGIT_V`].
+/// The panel's content box is inset 5 px on the left ([`NAME`]) and its
+/// numerals close 5 px short of the right ([`MAX_RIGHT`] = `102 - 5`), so
+/// a four-digit maximum runs `65..97` and still clears the panel.
 pub mod panel {
     /// Name-glyph pen.
     pub const NAME: (i16, i16) = (5, 4);
     /// LV label sprite.
     pub const LV_LABEL: (i16, i16) = (64, 6);
-    /// Level numerals.
-    pub const LV_DIGITS: (i16, i16) = (88, 4);
+    /// Right edge the level numerals are laid out back from. A level of
+    /// `1` puts its one cell at `88`, `99` puts two at `80` / `88` -
+    /// the same right-aligned law as every other number on the screen,
+    /// and `FUN_8002C2E4`'s `pen + 0x4B` is the two-digit case of it
+    /// (`name pen 5 + 0x4B = 80`).
+    pub const LV_DIGITS_RIGHT: i16 = 96;
+    /// Screen y of the level numerals.
+    pub const LV_DIGIT_Y: i16 = 4;
     /// HP label sprite.
     pub const HP_LABEL: (i16, i16) = (4, 21);
     /// MP label sprite.
@@ -414,10 +451,13 @@ pub mod panel {
     pub const HP_DIGIT_Y: i16 = 19;
     /// Screen y of the MP numerals.
     pub const MP_DIGIT_Y: i16 = 34;
-    /// Right edge a current value is laid out back from.
+    /// Right edge a current value is laid out back from - also the `/`
+    /// separator's left edge, which the current value butts against.
     pub const CUR_RIGHT: i16 = 57;
-    /// Left edge a maximum value starts at.
-    pub const MAX_LEFT: i16 = 73;
+    /// Right edge a maximum value is laid out back from. Pinned across
+    /// two-, three- and four-digit values in two captures: `20` at `81`,
+    /// `180` / `856` at `73`, `4984` at `65`. Only the right edge holds.
+    pub const MAX_RIGHT: i16 = 97;
 }
 
 /// Panel-background x seats for a party of `size`, left to right.
@@ -523,6 +563,42 @@ impl ChipCluster {
 // Asset-crate cross-checks
 // ---------------------------------------------------------------------------
 
+/// The four battle rects the `engine-core` atlas bakes are these same rects.
+///
+/// `legaia_asset::title_pak` owns the *source* side (which texels of the
+/// system-UI sheet to copy); this module owns the *draw* side (where they
+/// land and how a run composes). They have to name one set of numbers.
+pub const fn battle_chrome_source_rects_match() -> bool {
+    let (pb_u, pb_v, pb_w, pb_h) = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PANEL_BG;
+    let (cl_u, cl_v, cl_w, cl_h) = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_L;
+    let (b_u, b_v, b_w, b_h) = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY;
+    let (cr_u, cr_v, cr_w, cr_h) = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_R;
+    let (s_u, s_v, s_w, s_h) = title_pak::OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR;
+    pb_u == PANEL_BG.0 as u32
+        && pb_v == PANEL_BG.1 as u32
+        && pb_w == PANEL_BG.2 as u32
+        && pb_h == PANEL_BG.3 as u32
+        && title_pak::OVERLAY_SYSTEM_UI_BATTLE_PANEL_CLUT_ROW == SUBPAL_PANEL
+        && cl_u == PLATE_CAP_L_U as u32
+        && cl_v == PLATE_BLUE.v as u32
+        && cl_w == PLATE_CAP_W as u32
+        && cl_h == PLATE_H as u32
+        && b_u == PLATE_BODY_U as u32
+        && b_v == PLATE_BLUE.v as u32
+        && b_w == PLATE_BODY_W as u32
+        && b_h == PLATE_H as u32
+        && cr_u == PLATE_CAP_R_U as u32
+        && cr_v == PLATE_BLUE.v as u32
+        && cr_w == PLATE_CAP_W as u32
+        && cr_h == PLATE_H as u32
+        && title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_CLUT_ROW == SUBPAL_PLATE_BLUE
+        && s_u == SEPARATOR.0 as u32
+        && s_v == SEPARATOR.1 as u32
+        && s_w == SEPARATOR.2 as u32
+        && s_h == SEPARATOR.3 as u32
+        && title_pak::OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW == SUBPAL_SEPARATOR
+}
+
 /// The gold plate row is byte-for-byte the field menu's tab-banner plaque.
 pub const fn gold_plate_matches_tab_banner() -> bool {
     let (cl_u, cl_v, cl_w, cl_h) = title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L;
@@ -554,6 +630,11 @@ mod tests {
     #[test]
     fn gold_plate_is_the_tab_banner_art() {
         assert!(gold_plate_matches_tab_banner());
+    }
+
+    #[test]
+    fn the_atlas_bakes_the_rects_this_module_draws() {
+        assert!(battle_chrome_source_rects_match());
     }
 
     #[test]
@@ -620,11 +701,55 @@ mod tests {
     fn bar_numeral_fields_land_where_retail_put_them() {
         // `battle_gimard_tail_fire_a`: HP 154 / 180, MP 20 / 20.
         assert_eq!(digits_left_of(BAR_HP_CUR_RIGHT, 3), 110);
-        assert_eq!(BAR_HP_MAX_LEFT, 154);
+        assert_eq!(digits_left_of(BAR_HP_MAX_RIGHT, 3), 154);
         assert_eq!(digits_left_of(BAR_MP_CUR_RIGHT, 2), 222);
-        assert_eq!(BAR_MP_MAX_LEFT, 258);
+        assert_eq!(digits_left_of(BAR_MP_MAX_RIGHT, 2), 258);
         // The separator sits four rows above the numerals it separates.
         assert_eq!(BAR_HP_SEPARATOR.1 + 4, BAR_DIGIT_Y);
+    }
+
+    /// The same two edges under a four-digit HP - the case that shows the
+    /// maximum is right-aligned and not a forward-running pen. Packet
+    /// cells: current `102/110/118/126`, maximum `146/154/162/170`, MP
+    /// `214/222/230` and `250/258/266`.
+    #[test]
+    fn four_digit_bar_values_reproduce_their_capture() {
+        assert_eq!(digits_left_of(BAR_HP_CUR_RIGHT, 4), 102);
+        assert_eq!(digits_left_of(BAR_HP_MAX_RIGHT, 4), 146);
+        assert_eq!(digits_left_of(BAR_MP_CUR_RIGHT, 3), 214);
+        assert_eq!(digits_left_of(BAR_MP_MAX_RIGHT, 3), 250);
+    }
+
+    /// How many cells each field can take before it runs into the label
+    /// cell before it or the sprite after it. The bar spends its width
+    /// unevenly: four cells per HP field, three per MP field. The roster
+    /// panel affords four everywhere. Nothing on the screen affords five,
+    /// which is the ceiling both surfaces are laid out against.
+    #[test]
+    fn each_numeral_field_budgets_the_cells_retail_gave_it() {
+        // HP: current clears the `HP` label cell, maximum clears the `/`.
+        assert!(digits_left_of(BAR_HP_CUR_RIGHT, 4) >= BAR_HP_LABEL.0 + 16);
+        assert!(digits_left_of(BAR_HP_MAX_RIGHT, 4) >= BAR_HP_SEPARATOR.0 + 8);
+        assert!(BAR_HP_CUR_RIGHT <= BAR_HP_SEPARATOR.0);
+        assert!(BAR_HP_MAX_RIGHT <= BAR_MP_LABEL.0);
+        // MP: three cells fit, a fourth would cross the label / the `/`.
+        assert!(digits_left_of(BAR_MP_CUR_RIGHT, 3) >= BAR_MP_LABEL.0 + 16);
+        assert!(digits_left_of(BAR_MP_MAX_RIGHT, 3) >= BAR_MP_SEPARATOR.0 + 8);
+        assert!(digits_left_of(BAR_MP_CUR_RIGHT, 4) < BAR_MP_LABEL.0 + 16);
+        assert!(digits_left_of(BAR_MP_MAX_RIGHT, 4) < BAR_MP_SEPARATOR.0 + 8);
+        assert!(BAR_MP_CUR_RIGHT <= BAR_MP_SEPARATOR.0);
+        // The bar's interior ends at BAR_X + 8 + 288 = 304.
+        assert!(BAR_MP_MAX_RIGHT <= BAR_X + PLATE_CAP_W as i16 + BAR_INTERIOR_W as i16);
+    }
+
+    #[test]
+    fn digit_counts_are_the_cell_counts_retail_draws() {
+        assert_eq!(digit_count(0), 1);
+        assert_eq!(digit_count(1), 1);
+        assert_eq!(digit_count(20), 2);
+        assert_eq!(digit_count(180), 3);
+        assert_eq!(digit_count(4984), 4);
+        assert_eq!(digit_count(9999), 4);
     }
 
     #[test]
@@ -644,7 +769,7 @@ mod tests {
 
     #[test]
     fn panel_content_seats_match_the_three_party_capture() {
-        // `party_battle_gobu_gobu`, middle panel at x=109, y=164.
+        // Three-panel party frame, middle panel at x=109, y=164.
         let (px, py) = (109i16, PANEL_Y);
         assert_eq!((px + panel::NAME.0, py + panel::NAME.1), (114, 168));
         assert_eq!((px + panel::LV_LABEL.0, py + panel::LV_LABEL.1), (173, 170));
@@ -653,7 +778,46 @@ mod tests {
         assert_eq!(px + panel::HP_SEPARATOR.0, 166);
         assert_eq!(py + panel::HP_SEPARATOR.1, 179);
         assert_eq!(py + panel::HP_DIGIT_Y, 183);
-        assert_eq!(px + panel::MAX_LEFT, 182);
+        // That panel's HP row is 4560 / 4560: four cells back from 57,
+        // four cells back from 97.
+        assert_eq!(px + digits_left_of(panel::CUR_RIGHT, 4), 134);
+        assert_eq!(px + digits_left_of(panel::MAX_RIGHT, 4), 174);
+        // Its MP row is 783 / 783 - three cells against the same edges.
+        assert_eq!(px + digits_left_of(panel::CUR_RIGHT, 3), 142);
+        assert_eq!(px + digits_left_of(panel::MAX_RIGHT, 3), 182);
+    }
+
+    /// The solo-panel capture, whose values have fewer digits against the
+    /// same edges: HP 180 / 180, MP 20 / 20, LV 1, panel at x=109.
+    ///
+    /// Read together with the three-party frame this is what falsifies a
+    /// forward-running maximum: a 2-, 3- and 4-digit maximum share a right
+    /// edge and no left one.
+    #[test]
+    fn solo_panel_capture_shares_the_same_right_edges() {
+        let px = 109i16;
+        assert_eq!(px + digits_left_of(panel::CUR_RIGHT, 3), 142);
+        assert_eq!(px + digits_left_of(panel::MAX_RIGHT, 3), 182);
+        assert_eq!(px + digits_left_of(panel::CUR_RIGHT, 2), 150);
+        assert_eq!(px + digits_left_of(panel::MAX_RIGHT, 2), 190);
+        // One-digit level at 197; the three-party frame's level 99 at
+        // 189 / 197.
+        assert_eq!(px + digits_left_of(panel::LV_DIGITS_RIGHT, 1), 197);
+        assert_eq!(px + digits_left_of(panel::LV_DIGITS_RIGHT, 2), 189);
+    }
+
+    /// Every panel field has to fit the 102-px plate at its widest, or it
+    /// bleeds into the neighbouring panel (`PANEL_PITCH` is also 102).
+    #[test]
+    fn widest_panel_fields_stay_inside_the_plate() {
+        assert!(digits_left_of(panel::CUR_RIGHT, 4) >= panel::HP_LABEL.0 + 16);
+        assert!(digits_left_of(panel::MAX_RIGHT, 4) >= panel::HP_SEPARATOR.0 + 8);
+        assert!(panel::MAX_RIGHT <= PANEL_BG.2 as i16);
+        assert!(panel::LV_DIGITS_RIGHT <= PANEL_BG.2 as i16);
+        assert!(digits_left_of(panel::LV_DIGITS_RIGHT, 2) >= panel::LV_LABEL.0 + 16);
+        // The content box is inset symmetrically: 5 px in from each edge.
+        assert_eq!(panel::NAME.0, PANEL_BG.2 as i16 - panel::MAX_RIGHT);
+        assert_eq!(panel::NAME.0, PANEL_TEXT_INSET);
     }
 
     #[test]

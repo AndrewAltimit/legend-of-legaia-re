@@ -794,11 +794,25 @@ pub(super) fn cmd_play_window_with_record(
         }
     };
 
+    // The battle HUD's 8x12 numeral cells come off the same menu-glyph TIM
+    // as the small-caps rows above, through its sub-palette 13. Baked into
+    // the save-menu atlas (below) rather than sampled from the menu-glyph
+    // atlas so the HUD's sprite list stays one texture.
+    let menu_glyph_tim_bytes = session
+        .host
+        .index
+        .prot_dat_raw_bytes(
+            legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
+            legaia_asset::menu_glyph_atlas::TIM_SIZE,
+        )
+        .ok();
+
     // Try to decode the save-menu UI atlas. Needs TWO disc sources:
     //   1. PROT 0899's extended footprint @ `OVERLAY_SAVE_MENU_TIM_OFFSET`
     //      carries the SLOT 1 / SLOT 2 pill sprites (CLUT 7).
     //   2. Raw PROT.DAT @ `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`
     //      carries the 9-slice panel chrome (CLUT row 2).
+    // Plus the optional menu-glyph TIM above for the HUD numerals.
     // The atlas builder composites both into one 256x256 RGBA atlas;
     // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
     // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
@@ -826,7 +840,11 @@ pub(super) fn cmd_play_window_with_record(
         },
     ) {
         (Ok(pill_bytes), Ok(panel_bytes)) => {
-            match legaia_engine_core::save_menu_atlas::build_atlas(&panel_bytes, &pill_bytes) {
+            match legaia_engine_core::save_menu_atlas::build_atlas(
+                &panel_bytes,
+                &pill_bytes,
+                menu_glyph_tim_bytes.as_deref(),
+            ) {
                 Ok(a) => {
                     log::info!(
                         "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",

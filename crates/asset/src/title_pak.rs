@@ -541,6 +541,40 @@ pub const OVERLAY_SYSTEM_UI_ATR_ICONS: [(u32, u32, u32, u32); 3] =
 /// byte's `b & 3` for codes `0x94` / `0x96` / `0x95`.
 pub const OVERLAY_SYSTEM_UI_ATR_PALETTES: [usize; 3] = [0, 2, 1];
 
+// -----------------------------------------------------------------------
+// Battle-screen chrome on the same system-UI sheet
+//
+// The battle HUD's whole skin is four rects of this one TIM, each read out
+// of retail's own display list (`SPRT` packets in a mednafen battle save
+// state); the seats and sub-palettes are pinned in
+// `legaia_engine_vm::battle_chrome`, and these are its source rects.
+// -----------------------------------------------------------------------
+
+/// Battle **roster-panel background** - the 102x48 marbled plate one
+/// resting party member's readout is drawn on, sub-palette 0. Retail blits
+/// it as a single `SPRT` at the panel seat.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PANEL_BG: (u32, u32, u32, u32) = (0, 0, 102, 48);
+/// Sub-palette the roster-panel background decodes with.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PANEL_CLUT_ROW: u16 = 0;
+
+/// Battle **blue plate** 3-slice at sheet row `v = 0`, sub-palette 4: the
+/// active-actor bar and every command chip. Byte-identical in shape to the
+/// carved-gold row at `v = 64` that [`OVERLAY_SYSTEM_UI_TAB_CAP_L`] pins -
+/// the two rows are the same tiles in two palettes.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_L: (u32, u32, u32, u32) = (208, 0, 8, 20);
+/// Blue-plate body tile; a run repeats it and clips the final one to fit.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY: (u32, u32, u32, u32) = (192, 0, 16, 20);
+/// Blue-plate right cap.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_R: (u32, u32, u32, u32) = (216, 0, 8, 20);
+/// Sub-palette the blue plate row decodes with.
+pub const OVERLAY_SYSTEM_UI_BATTLE_PLATE_CLUT_ROW: u16 = 4;
+
+/// The **`/` separator** between a current and a maximum value - a sheet
+/// sprite, not a font glyph, and it sits four rows above its numerals.
+pub const OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR: (u32, u32, u32, u32) = (96, 64, 8, 16);
+/// Sub-palette the `/` separator decodes with.
+pub const OVERLAY_SYSTEM_UI_BATTLE_SEPARATOR_CLUT_ROW: u16 = 5;
+
 /// **Pointing-finger cursor** sprite - the small white hand retail
 /// renders to the left of the highlighted slot pill. Lives in the
 /// same system-UI TIM as the panel chrome but uses a different CLUT

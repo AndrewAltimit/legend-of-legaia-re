@@ -350,9 +350,18 @@ impl LegaiaRuntime {
                 };
                 let pill =
                     idx.entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32);
+                // The battle HUD's 8x12 numeral cells, off the menu-glyph
+                // TIM's sub-palette 13. Baked into the same atlas so the
+                // HUD's sprite list stays one texture on this host too.
+                let glyph_tim = idx
+                    .prot_dat_raw_bytes(
+                        legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
+                        legaia_asset::menu_glyph_atlas::TIM_SIZE,
+                    )
+                    .ok();
                 let chrome = match (panel, pill) {
                     (Ok(panel_bytes), Ok(pill_bytes)) => {
-                        match build_atlas(&panel_bytes, &pill_bytes) {
+                        match build_atlas(&panel_bytes, &pill_bytes, glyph_tim.as_deref()) {
                             Ok(a) => {
                                 let rects = save_menu_rects(&a);
                                 Some((a, rects))
@@ -2321,5 +2330,13 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             a.band_load_portrait(1),
             a.band_load_portrait(2),
         ],
+        battle: Some(legaia_engine_ui::BattleChromeRects {
+            panel_bg: a.band_battle_panel_bg(),
+            plate_cap_l: a.band_battle_plate_cap_l(),
+            plate_body: a.band_battle_plate_body(),
+            plate_cap_r: a.band_battle_plate_cap_r(),
+            separator: a.band_battle_separator(),
+            digits: a.band_hud_digits(),
+        }),
     }
 }
