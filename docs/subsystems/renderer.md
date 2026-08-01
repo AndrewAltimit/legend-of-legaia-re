@@ -1285,7 +1285,7 @@ layer; CPU lockstep mirror + tunables in
   (~150 view units - sized so the player mesh itself, the floor tier at its
   feet, and NPCs standing beside it never fade), and
 - it lies within the **screen-space fade circle** around the player's
-  projected centre (radius 0.20 of the viewport height), so only the patch of
+  projected centre (radius 0.30 of the viewport height), so only the patch of
   wall actually covering the character opens up - the rest of the surface
   stays solid.
 

@@ -44,12 +44,12 @@
 
 /// Fade-circle radius as a fraction of the viewport height. WGSL twin:
 /// staged into `occl_params.x` in pixels.
-pub const OCCL_RADIUS_FRAC: f32 = 0.20;
+pub const OCCL_RADIUS_FRAC: f32 = 0.30;
 
 /// Width of the rim feather (keep probability ramps 1.0 -> [`OCCL_MIN_KEEP`]
 /// over this band), as a fraction of the viewport height. WGSL twin:
 /// staged into `occl_params.w` in pixels.
-pub const OCCL_FEATHER_FRAC: f32 = 0.10;
+pub const OCCL_FEATHER_FRAC: f32 = 0.15;
 
 /// Keep probability at the circle centre - the "mostly transparent" floor.
 /// `0.25` keeps 4 of every 16 screen-door pixels. WGSL twin: `occl_params.y`.
@@ -165,8 +165,8 @@ mod tests {
         }
     }
 
-    const R: f32 = 144.0; // 0.20 * 720
-    const F: f32 = 72.0; // 0.10 * 720
+    const R: f32 = 216.0; // 0.30 * 720
+    const F: f32 = 108.0; // 0.15 * 720
     const FOCUS: [f32; 2] = [480.0, 360.0];
     const FOCUS_Z: f32 = 1800.0;
 
