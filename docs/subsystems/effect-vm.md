@@ -142,7 +142,7 @@ Each host also carries a **tinted outline** builder - a flat rectangle around th
 
 The outline predates the battle-entry flame-atlas blit. It existed so a spawn stayed readable when its texels were not resident; with the atlas resident the textured quad draws on its own and the rectangle is only in the way.
 
-It is also not a faint marking. The strips are untextured, carry no ABE bit, and so rasterise in the **opaque** pass, and the tint law `(80 + 175f, 200f, 255f)` for `f = 1 - age01` is red-dominant at every point of a sprite's animation - pale rose at spawn, dark red at the end. What that draws is a solid red-ish box around every effect sprite in a fight.
+It is also not a faint marking. The strips are untextured, carry no ABE bit, and so rasterise in the **opaque** pass, and the tint law `(80 + 175f, 200f, 255f)` for `f = 1 - age01` is red-dominant at every point of a sprite's animation - pale rose at spawn, dark red at the end. What that draws is a solid red-ish box around every effect sprite in a fight; the Rim Elm spar (`play-window --scene town01 --battle 4`) carries up to 25 live sprites in one frame, so it is up to 25 boxes.
 
 The two gates are host-shaped, because a WASM module has no process environment to read:
 
