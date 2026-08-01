@@ -990,6 +990,67 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.scene_encounters_rollable)
     }
 
+    /// The formation rows the current scene registered, as a JSON array of
+    /// ids (`[]` with no scene up). The list the native window prints when
+    /// `--battle <ROW>` names a row the scene never registered, exposed so a
+    /// page - or a headless driver - can pick a row that exists instead of
+    /// guessing.
+    pub fn debug_formation_rows(&self) -> String {
+        let ids = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.registered_formation_ids())
+            .unwrap_or_default();
+        let body: Vec<String> = ids.iter().map(|i| i.to_string()).collect();
+        format!("[{}]", body.join(","))
+    }
+
+    /// Arm a deterministic battle instead of waiting for a step roll - the
+    /// browser twin of the native window's `--battle <ROW|first>`.
+    ///
+    /// `row >= 0` names one of the scene's MAN encounter formation rows (the
+    /// id space the region roll itself produces); `row < 0` takes the lowest
+    /// row that carries monsters, i.e. `--battle first`. The fight is armed
+    /// through [`legaia_engine_core::world::World::force_encounter`], which
+    /// hands the row to the encounter session's transition state machine
+    /// exactly as a region roll does, so the intro, the BGM swap and the
+    /// battle-load path are the ordinary ones and what the page shows is what
+    /// an organic encounter shows.
+    ///
+    /// Like the native flag it turns the live loop on: the transition is
+    /// drained by the live field tick, so an armed fight cannot open without
+    /// it. Returns `true` when the row resolved and the transition armed - the
+    /// page still has to tick for the `Field -> Battle` edge to land.
+    ///
+    /// This is the page's only way into a fight in a scene that rolls none
+    /// (every town), which is what previously made the browser battle screen
+    /// unreachable to a headless driver: `debug_start_test_battle` is
+    /// `#[cfg(not(target_arch = "wasm32"))]` and never crossed into the
+    /// bundle.
+    pub fn debug_force_battle(&mut self, row: i32) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let resolved = if row < 0 {
+            host.world.first_rollable_formation_id()
+        } else {
+            u16::try_from(row).ok()
+        };
+        let Some(id) = resolved else {
+            crate::console_log(&format!(
+                "debug_force_battle: no formation resolved in '{}' (registered rows: {:?})",
+                host.world.active_scene_label,
+                host.world.registered_formation_ids()
+            ));
+            return false;
+        };
+        if !host.world.live_gameplay_loop {
+            host.world.live_gameplay_loop = true;
+            host.world.battle_player_driven = true;
+        }
+        host.world.force_encounter(id)
+    }
+
     /// `true` while the game-over panel owns the frame. The page draws the
     /// panel and routes pad edges into it through
     /// [`Self::game_over_input`].

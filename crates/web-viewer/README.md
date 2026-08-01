@@ -222,6 +222,18 @@ rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
 text - into `play_overlay_draws_json`, in surface pixels. Disc-gated oracle:
 `tests/battle_overlay_parity.rs`.
 
+`debug_force_battle(row)` is the exported twin of the native
+`--battle <ROW|first>`: it resolves a formation row against the scene's own MAN
+table, turns the live loop on and hands the row to `World::force_encounter`, so
+the intro, the BGM swap and the battle load are the ordinary ones.
+`debug_formation_rows()` lists the rows the current scene registered. Both are
+on the ordinary `#[wasm_bindgen]` surface, not behind a feature: every retail
+town is rate-0 by design and the native `debug_start_test_battle` is
+`#[cfg(not(target_arch = "wasm32"))]`, so without these the battle screen is
+unreachable from a headless driver - which is how it came to be verified on the
+native window alone. Driver recipe:
+[`site-shell.md`](../../docs/tooling/site-shell.md#reaching-the-play-pages-battle-screen-headlessly).
+
 ## Battle 3D scene (`play_battle_render`)
 
 The battle's 3D layer under that overlay - the browser twin of the native
