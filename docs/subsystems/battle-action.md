@@ -10,7 +10,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [The `0x51` exit gate and the HP-bar settle invariant](#the-0x51-exit-gate-and-the-hp-bar-settle-invariant) - the endless-camera-orbit softlock class
 - [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range law](#fun_8004e2f0---battle-range--reach-metric) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
 - More helpers: [escape roll](#the-escape-roll-fun_801e791c) · [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) · [battle voice cues](#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout) · [helper functions](#battle-helper-functions)
-- [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port) · [where an action leaves its combatants](#where-an-action-leaves-its-combatants) · [three readings the port already satisfied](#three-readings-the-port-already-satisfied)
+- [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port) · [where an action leaves its combatants](#where-an-action-leaves-its-combatants) · [the sound a melee swing makes](#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has) · [three readings the port already satisfied](#three-readings-the-port-already-satisfied)
 - [The per-action effect script (`FUN_801DEA50`)](#the-per-action-effect-script-fun_801dea50)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [the no-directional-input attack queue](#the-no-directional-input-attack-queue) - what a basic Attack queues
 - [Screen-element placement table `0x80076C10`](#screen-element-placement-table-0x80076c10-and-its-copy-helpers) · [overlay-local PRNG](#overlay-local-prng-fun_801d0290) · [open work](#open-work)
@@ -2243,6 +2243,21 @@ An action does **not** return its combatants to their authored formation seats. 
 The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
 
 Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands. Retail's recovery backstep (the recover clip's own negative-speed root motion) is deliberately not modelled: it is clip-timed and no clip-duration source is decoded, so the attacker ends on the range boundary the arrival shove pushed its target out to.
+
+### The sound a melee swing makes, and which half of it the port has
+
+A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`, the only submit to the battle overlay's sound funnel anywhere in the melee kernel `FUN_801EC3E4`. Its second argument is the **attacker's actor-table index**, and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
+
+| Attacker | Leg | Result |
+|---|---|---|
+| Party (`category < 3`) | CD-XA voice | `0x10C` → clip `26`, channel `4` - i.e. `XA27` |
+| Monster (`category >= 3`) | element-tinted high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the attacker's element byte into that id's runtime-bank descriptor |
+
+Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`).
+
+The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::apply_one_basic_strike` now runs the funnel at retail's site, which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
+
+**Which half that is.** The *producer* half is done and observable: a monster swing enqueues `0x2A8` on `World::battle_sfx_cues` and the native host logs it. The *playback* half is not, for two reasons that are properties of the audio stack rather than of this seam - the party leg's `XA27` is not among the clips boot stages (`XA2`/`XA4`/`XA6`), and `0x2A8` is a runtime-bank id (`>= 0x200`) that no engine bank models, so the host's scheduler accepts it and resolves nothing. The party leg's request is therefore discarded rather than faked into the ring.
 
 ### Three readings the port already satisfied
 

@@ -468,7 +468,11 @@ mod tests {
         w.battle_ctx.active_actor = 0;
         w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
         w.tick_battle_locomotion();
-        assert_eq!(w.battle_seat_of(0), seat0, "the seat holds during an action");
+        assert_eq!(
+            w.battle_seat_of(0),
+            seat0,
+            "the seat holds during an action"
+        );
         // The action's cleanup state re-takes it from the live pair.
         w.battle_ctx.action_state = ActionState::DoneCleanup.as_byte();
         w.tick_battle_locomotion();

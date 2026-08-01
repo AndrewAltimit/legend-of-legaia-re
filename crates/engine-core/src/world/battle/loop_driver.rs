@@ -697,11 +697,116 @@ impl World {
             is_heal: false,
             is_crit: false,
         });
+        // ... and its sound. The live loop resolves melee damage inline rather
+        // than through the art-strike event, which is why nothing downstream of
+        // `fold_battle_event` used to see a swing at all.
+        self.fire_melee_impact_cue(attacker as u8, target as u8);
         if dmg > 0 {
             let survives = self.actors[target].battle.hp > 0;
             self.queue_battle_reaction(target, survives);
         }
         true
+    }
+
+    /// The melee kernel's own sound cue - retail's `FUN_801EC3E4` tail
+    /// (`0x801EEB5C..0x801EEBEC`), which submits cue id [`MELEE_IMPACT_CUE`]
+    /// with the **attacker slot as the category** through the battle overlay's
+    /// one sound funnel `FUN_8004FE5C`
+    /// ([`crate::sfx_cue::route_sfx_cue`]).
+    ///
+    /// This is the only `jal 0x8004fe5c` in the melee kernel, so it is the
+    /// whole of a physical swing's sound, and the funnel's two legs make the
+    /// two sides of a fight sound different by construction:
+    ///
+    /// * a **party** attacker (`category < 3`) takes the CD-XA voice leg -
+    ///   `0x10C` resolves to clip `26` / channel `4`, i.e. `XA27`. Boot stages
+    ///   only `XA2`/`XA4`/`XA6`, so that clip is not resident and the port has
+    ///   no carrier for a raw (clip, channel, duration) request either. The
+    ///   route is run and its outcome discarded rather than faked: a party
+    ///   swing stays silent, and that is a *staging* gap, not a missing
+    ///   producer.
+    /// * a **monster** attacker takes the element-tinted high leg, which
+    ///   enqueues ring id `0x10C + 0x19C = 0x2A8`. That one has a carrier -
+    ///   [`World::battle_sfx_cues`], the queue both hosts drain into their SFX
+    ///   scheduler - so it is pushed.
+    ///
+    /// Two retail gates, one modelled and one not. Modelled: the target must be
+    /// playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a
+    /// hit landing during an art-bank animation is silent. Not modelled:
+    /// `_DAT_8007BD84`, the word that selects between this cue and the
+    /// per-character XA30 grunt above it (`0x801EEAC0` / `0x801EEB60`) - it has
+    /// no engine model and no other reader, so the port always takes the cue
+    /// arm.
+    ///
+    /// The ring is transient by design. Its slots are drained in retail by
+    /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
+    /// scheduler is the drain), and the only state a persistent ring would
+    /// carry across calls is the `last_played` dedupe word that same drainer
+    /// maintains - so a stored ring would sit at zero and dedupe nothing.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EEBD8..0x801EEBEC`, the cue-submit site)
+    fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8) {
+        let target_anim = self
+            .actors
+            .get(target as usize)
+            .map(|a| a.battle.current_anim)
+            .unwrap_or(0);
+        if target_anim >= 0x10 {
+            return;
+        }
+        // The funnel switches legs on `category < 3`, which is retail's
+        // **actor-table** index space (party `0..=2`, monsters `3..=7`). The
+        // engine compacts seating to `party_count..`, so the slot has to be
+        // re-based first or a monster seated at index 1 takes the party leg
+        // and the fight goes silent from the wrong side.
+        let category = self.retail_actor_category(attacker);
+        let element_of = |cat: u8| {
+            let slot = self.engine_slot_of_retail_category(cat);
+            self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
+        };
+        // The `0x800788B8` per-clip duration table is not parsed; it is read
+        // only on the XA leg, whose request is discarded below.
+        let xa_duration_raw = |_: u32| 0u16;
+        let src = crate::sfx_cue::SfxCueSources {
+            element_of: &element_of,
+            xa_duration_raw: &xa_duration_raw,
+            tutorial_active: self.battle_tutorial.is_some(),
+            cd_read_busy: false,
+        };
+        let mut ring = crate::sfx_cue::SfxCueRing::default();
+        let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
+        if let Some(id) = out.enqueued {
+            self.battle_sfx_cues
+                .push(crate::battle_events::BattleSfxCue {
+                    kind: id,
+                    timing_frames: 0,
+                    actor_slot: attacker,
+                    target_slot: target,
+                });
+        }
+    }
+
+    /// An engine seat index in **retail's** actor-table index space: party
+    /// `0..=2`, monsters `3..=7`. The engine compacts monster seating to
+    /// `party_count..`, so any retail kernel that switches on "is this index a
+    /// party slot" needs the re-based value, not the seat.
+    fn retail_actor_category(&self, slot: u8) -> u8 {
+        let pc = self.party_count.min(3);
+        if slot < pc {
+            slot
+        } else {
+            3u8.saturating_add(slot.saturating_sub(pc)).min(7)
+        }
+    }
+
+    /// Inverse of [`Self::retail_actor_category`].
+    fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
+        let pc = self.party_count.min(3);
+        if category < 3 {
+            category
+        } else {
+            pc.saturating_add(category - 3)
+        }
     }
 
     /// Resolve the slot a strike from `attacker` should land on. Honors a
@@ -804,5 +909,61 @@ impl World {
                 self.actors[slot].battle.field_flags = next;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod melee_cue_tests {
+    use super::*;
+
+    /// A battle with one party member and one monster, both alive.
+    fn duel() -> World {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        for i in 0..2 {
+            w.actors[i].battle.liveness = 1;
+            w.actors[i].battle.hp = 500;
+            w.actors[i].battle.max_hp = 500;
+        }
+        w.set_battle_attack(0, 80);
+        w.set_battle_attack(1, 80);
+        w.actors[0].battle.active_target = 1;
+        w.actors[1].battle.active_target = 0;
+        w
+    }
+
+    #[test]
+    fn a_monster_swing_enqueues_the_melee_impact_cue() {
+        let mut w = duel();
+        w.battle_ctx.active_actor = 1; // the monster attacks
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        let cues = w.drain_battle_sfx_cues();
+        assert_eq!(cues.len(), 1, "one swing, one cue: {cues:?}");
+        // The funnel's element-tinted high leg: `0x10C + 0x19C`.
+        assert_eq!(cues[0].kind, 0x2A8);
+        assert_eq!(cues[0].actor_slot, 1);
+        assert_eq!(cues[0].target_slot, 0);
+    }
+
+    #[test]
+    fn a_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
+        let mut w = duel();
+        w.battle_ctx.active_actor = 0; // the party member attacks
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        assert!(
+            w.drain_battle_sfx_cues().is_empty(),
+            "a party attacker's `0x10C` is a CD-XA voice request, not a ring id"
+        );
+    }
+
+    #[test]
+    fn a_target_playing_an_art_bank_clip_is_silent() {
+        let mut w = duel();
+        w.battle_ctx.active_actor = 1;
+        // Retail gate `0x801EEB88`: the cue is submitted only while the target
+        // is playing a plain action-table clip.
+        w.actors[0].battle.current_anim = 0x11;
+        assert!(w.apply_one_basic_strike(BASIC_ATTACK_COMMAND));
+        assert!(w.drain_battle_sfx_cues().is_empty());
     }
 }
