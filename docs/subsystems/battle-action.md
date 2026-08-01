@@ -2671,6 +2671,48 @@ scripts/ghidra-analysis/disasm-overlay-fn.py \
 
 Ported as `engine-vm::battle_action::OverlayRng`.
 
+## Arts announcement banner (`FUN_801E2524` / `FUN_801E2650`)
+
+The pair that draws **`NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` /
+`SUPER ARTS!!`**. Both were read as a full-screen flash ramp; decoding the
+texel rows the emitter addresses falsifies that - they are the banner words,
+and the "brightness level" is the banner's slide clock.
+
+`FUN_801E2524` runs once per frame off the battle context and reads two bytes.
+`ctx[+0x28B]` selects the banner (`0` idle, `1..=4` live, `5..=8` a cancel that
+clears the byte and draws nothing, `>= 9` inert without clearing);
+`ctx[+0x28C]` is the clock, walked by `DAT_1F800393 << 3` and saturating at
+`0xF0`. A live frame emits four layers through `FUN_801E2650`, all sharing
+`stage - 1` as the position selector but each with its own clock `offset`
+(`0x30 / 0x20 / 0x10 / 0x00`) and brightness percent (`5 / 10 / 20 / 50`, only
+the last opaque). Because the offset shifts the clock, the four are the same
+banner drawn at four points of its own travel - a ghost trail behind the
+sliding word, gated off at clock `0xF0 / 0xE0 / 0xD0` as the banner lands.
+
+`FUN_801E2650` emits **two** textured `POLY_FT4`s per layer, both at texpage
+`0x27` = `(448, 0)` under CBA `0x7703` - the value-readout sheet's page and
+sub-palette. The second quad's texel rect is fixed (the sheet's single shared
+`ARTS!!`); the first is position-selected, so the four positions compose the
+four banners. Layout: [`formats/effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
+
+Geometry, per layer:
+
+- travel `t = min(ctx[+0x28C] - offset + 0x30, 0xF0) * 2`
+- quad 1 spans screen X `t - bias` to `seam`; quad 2 spans `seam` to
+  `far - t`. So the halves march toward the seam as the clock runs.
+- both share the vertical band `0x90 - h` to `0xB2 + h`, `h = (0x1E0 - t) * 7 / 20`
+- the position table is `(bias, seam, far, quad-1 texel rect)`:
+  `0` = `(0x198, 0x90, 0x2D8, NEW)`, `1` = `(0x1AC, 0xA4, 0x2EC, HYPER)`,
+  `2` = `(0x1B4, 0xAC, 0x2F4, MIRACLE)`, `3` = `(0x1AC, 0xA4, 0x2EC, SUPER)`
+- the switch has **no default arm**, so a position `>= 4` reaches the CLUT /
+  tpage writes and `AddPrim` with whatever X the recycled packet held
+
+Ported as `engine-vm::battle_action::flash_ramp` (`step_flash_ramp` +
+`flash_quads`), both disclosed `NOT WIRED`: `BattleActionCtx` carries neither
+byte, and retail's writer of `+0x28B` is not in the dumped battle-overlay
+corpus. The engine-side raiser would sit at the Super / Miracle chain match in
+`engine-core`'s battle command flow.
+
 ## Open work
 
 - **Unlisted `ctx[7]` states are inert/reserved, not a crash (`FUN_801E295C`).** The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` with **no `default`** (`sltiu v0,ctx[7],0x100; jr v0`; see `ghidra/scripts/funcs/overlay_0898_801e295c.txt`). The handled states are `0x00`, `0x0A`–`0x0C`, `0x14`–`0x19`, `0x1E`–`0x20`, `0x28`–`0x2E`, `0x32`–`0x38`, `0x3C`–`0x40`, `0x46`–`0x48`, `0x50`–`0x52`, `0x5A`, `0x64`–`0x66`, `0x68`–`0x6B`, `0x6E`–`0x71`, `0xFD`, `0xFF`. Every other byte value in `0x00`–`0xFF` has no case body: its table slot falls straight to the shared post-switch epilogue (the knockback/shove settle at `0x801E6814`), a safe no-op advance, never an out-of-bounds jump.

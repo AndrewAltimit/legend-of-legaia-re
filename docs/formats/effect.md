@@ -186,9 +186,25 @@ the page at 4bpp through the sub-palette at VRAM `(48, 476)` (CBA word
 | texels | content |
 |---|---|
 | `v = 64..=87` | ten 24x24 digit cells, strip order **`1234567890`** |
+| `u = 0..=111, v = 152..=175` | the word `SUPER` |
+| `u = 0..=111, v = 176..=199` | the word `HYPER` |
+| `u = 112..=215, v = 176..=199` | the shared tail `ARTS!!` |
+| `u = 0..=127, v = 200..=223` | the word `MIRACLE` |
+| `u = 128..=199, v = 200..=223` | the word `NEW` |
 | `u = 0..=55, v = 224..=239` | the `DAMAGE` label |
 | `u = 0..=31, v = 240..=255` | the `HIT` label |
 | `u = 32..=79, v = 240..=255` | the `TOTAL` label |
+
+##### The four Arts banners are composed, not stored
+
+Only one `ARTS!!` exists on the sheet. The banner emitter `FUN_801E2650` draws a
+**pair** of quads per call: the first takes the position-selected word row above,
+the second always takes `u 112..=215, v 176..=199` - so the four positions render
+`NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` / `SUPER ARTS!!`, the halves
+sliding in from opposite sides of the screen to a per-position seam. That is what
+`ctx[+0x28B]` selects and `ctx[+0x28C]` clocks: the **Arts announcement banner**,
+not a full-screen flash (a reading this decode falsifies - see
+[`reference/functions/audio.md`](../reference/functions/audio.md#audio)).
 
 The strip starts at `1`, so digit `d`'s cell is `((d + 9) % 10) * 24`. This is
 a *different* sheet from the HUD's `cur / max` numerals, which are 8x12 cells

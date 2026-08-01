@@ -776,8 +776,10 @@ already documented (their hits are interior label-calls of the battle main
 dispatcher `FUN_801D0748`, the pose driver `FUN_801D5854`, the arts/AP gauge, the
 damage/power kernels, etc.). **Several were new and are now documented** in
 [`functions.md` § Battle per-frame draw](../reference/functions/battle.md#battle-per-frame-draw-overlay-0898-trace-surfaced):
-`FUN_801E2524`+`FUN_801E2650` (full-screen flash/fade overlay, `ctx+0x28B`
-trigger + `ctx+0x28C` fade ramp), `FUN_801DF6B8` (per-actor draw/position loop -
+`FUN_801E2524`+`FUN_801E2650` (the Arts announcement banner, `ctx+0x28B`
+selector + `ctx+0x28C` slide clock - first read here as a full-screen flash /
+fade overlay, [falsified](../reference/re-do-not-re-walk.md#the-flash-ramp-is-the-arts-announcement-banner)),
+`FUN_801DF6B8` (per-actor draw/position loop -
 the top consumer of the SCUS element helpers), `FUN_801D829C` (camera-state
 per-actor transform builder off `DAT_8007B790/2/4`), `FUN_801D71B8` (attack-phase
 actor sub-handler), `FUN_801E805C` (battle effect/summon-band orchestrator), and

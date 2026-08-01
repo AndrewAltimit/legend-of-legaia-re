@@ -1,47 +1,50 @@
-//! Battle-context screen-flash ramp: the layered emit + brightness walk.
+//! The battle **Arts announcement banner**: the layered emit + slide clock.
 //!
 //! PORT: FUN_801e2524
+//!
+//! This was read as a full-screen flash ramp, and it is not one. Decoding the
+//! texel rows its emitter ([`flash_quads`], `FUN_801E2650`) addresses -
+//! `etim.dat`'s third TIM through the value-readout sub-palette - shows the
+//! four `ctx[+0x28B]` values selecting the four **`<word> ARTS!!` banners**:
+//! `NEW` / `HYPER` / `MIRACLE` / `SUPER`. The sheet stores one `ARTS!!`, and
+//! each banner is composed from its own word plus that shared tail, the two
+//! halves sliding in from opposite sides of the screen to a fixed seam.
+//! Layout: [`docs/formats/effect.md`](../../../../docs/formats/effect.md).
+//! The "level" is that slide clock, not a brightness.
 //!
 //! Runs once per frame off the battle context (`_DAT_8007BD24`). Two bytes
 //! drive it:
 //!
 //! | byte | role |
 //! |---|---|
-//! | `ctx[+0x28B]` | the **stage**. `0` = idle, `1..=4` = a live flash, `5..=8` = a cancel request, `>= 9` = ignored |
-//! | `ctx[+0x28C]` | the **brightness level**, `0..=0xF0`, walked up each frame while a flash is live |
+//! | `ctx[+0x28B]` | the **banner**. `0` = idle, `1..=4` = a live banner (`NEW` / `HYPER` / `MIRACLE` / `SUPER`), `5..=8` = a cancel request, `>= 9` = ignored |
+//! | `ctx[+0x28C]` | the **slide clock**, `0..=0xF0`, walked up each frame while a banner is live |
 //!
 //! The stage byte is not a simple counter - the three bands do three
 //! different things, and only the first band draws:
 //!
 //! * `0` returns immediately.
-//! * `1..=4` runs the emit pass below and then advances the level.
+//! * `1..=4` runs the emit pass below and then advances the clock.
 //! * `5..=8` **clears the stage byte** and draws nothing. That band is how a
-//!   caller cancels a flash in flight: it writes `stage + 4` and the next
+//!   caller cancels a banner in flight: it writes `stage + 4` and the next
 //!   frame retires it.
 //! * `>= 9` returns without even clearing, so a garbage stage byte is inert
 //!   rather than self-healing.
 //!
-//! The emit pass is four layers of the same quad emitter (`FUN_801E2650`),
+//! The emit pass is four layers of the same quad emitter ([`flash_quads`]),
 //! each with its own `(offset, percent, semi_transparent)` triple and all
-//! sharing `stage - 1` as the emitter's position selector. The first three
-//! layers are gated on the level being **below** a per-layer ceiling, so as
-//! the flash brightens the layers drop out one at a time - `0xD0` kills the
-//! innermost, `0xE0` the middle, `0xF0` the outermost. The fourth layer is
-//! ungated and is the only opaque one, so a fully-ramped flash is a single
-//! opaque quad.
+//! sharing `stage - 1` as the emitter's position selector. Since the per-layer
+//! `offset` shifts the slide clock, the four layers are the banner drawn at
+//! four points of its own travel - a **ghost trail** behind the sliding word,
+//! brightening `5 / 10 / 20 / 50` percent toward the real one. The first three
+//! are gated on the clock being **below** a per-layer ceiling, so the trail
+//! retracts as the banner lands - `0xD0` kills the innermost, `0xE0` the
+//! middle, `0xF0` the outermost. The fourth is ungated and the only opaque
+//! one, so a fully-arrived banner is a single opaque pair.
 //!
-//! The level then advances by `frame_delta * 8` (retail `DAT_1F800393`, the
+//! The clock then advances by `frame_delta * 8` (retail `DAT_1F800393`, the
 //! same per-frame scalar the move-buffer envelope uses) and saturates at
-//! `0xF0` - the value that has already gated every layer off.
-//!
-//! The emitter behind a layer is [`flash_quads`] (`FUN_801E2650`), ported
-//! below. It is **not a full-screen wash**: each layer becomes a *pair* of
-//! textured quads that slide in from off-screen left and right and meet at a
-//! fixed seam, sampling the battle effect atlas's third page through the same
-//! sub-palette as the floating value readout (`tpage 0x27` = `(448, 0)`,
-//! CBA `0x7703`). So the "flash" is a banner strip whose two halves close on
-//! the seam as the level ramps, with the four layers acting as a ghost trail
-//! (they differ only by a per-layer level `offset` and a brightness percent).
+//! `0xF0` - the value that has already gated every trail layer off.
 //!
 //! # NOT WIRED
 //!
@@ -49,13 +52,18 @@
 //! (`jal 0x801e2524` at `0x80048140`, `ghidra/scripts/funcs/800480d8.txt`),
 //! whose own port - `engine-render::battle_actor_tick` - is a schedule with no
 //! host yet, so the wire's location is known but does not exist. The ramp is
-//! driven entirely by the two battle-context bytes `ctx[+0x28B]` (stage) and
-//! `ctx[+0x28C]` (level), and `BattleActionCtx` carries neither - nothing in
-//! the port can raise a flash or hold its level between frames. Retail calls
+//! driven entirely by the two battle-context bytes `ctx[+0x28B]` (banner) and
+//! `ctx[+0x28C]` (clock), and `BattleActionCtx` carries neither - nothing in
+//! the port can raise a banner or hold its clock between frames. Retail calls
 //! the ramp unconditionally every frame and lets the stage byte gate it, so
-//! the missing piece is not the per-frame call but the **raiser**: whatever
-//! writes `1..=4` into `+0x28B` is in the unported part of the battle overlay,
-//! and until it is found a wired ramp would step a stage that is always `0`.
+//! the missing piece is not the per-frame call but the **raiser**.
+//!
+//! Now that the four positions are identified, the raiser's engine-side home
+//! is too: the Super / Miracle chain match in `engine-core`'s battle command
+//! flow (`resolve_arts_input_entry`, which already calls `miracle_for_chain` /
+//! `super_for_chain`) is where a recognized chain would set `1..=4`. Retail's
+//! own writer is still unfound in the battle overlay, so a port that raises it
+//! there is choosing the trigger rather than reproducing one.
 
 /// Stage values `1..=STAGE_DRAW_MAX` run the emit pass.
 pub const STAGE_DRAW_MAX: u8 = 4;

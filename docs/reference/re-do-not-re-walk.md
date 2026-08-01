@@ -42,6 +42,32 @@ below.
 | The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
 | Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
 | The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
+| `FUN_801E2524` / `FUN_801E2650` are a full-screen flash / fade ramp | falsified (they are the **Arts announcement banner**) | [details ↓](#the-flash-ramp-is-the-arts-announcement-banner) |
+
+### The flash ramp is the Arts announcement banner
+
+`FUN_801E2650` scales a percent into grey, replicates it into RGB, picks GP0
+`0x2C` or `0x2E`, and emits quads whose extent is driven by a level byte. Read
+on the arithmetic alone that is a flash, and it was documented as one - a
+"full-screen flash / fade overlay" walked by a "brightness level".
+
+The quads are **textured**, and the texels settle it. Every arm writes texpage
+`0x27` = `(448, 0)` under CBA `0x7703`; decoding that page at 4bpp through that
+sub-palette shows the emitter's three 24-tall rows are the words `SUPER`,
+`HYPER`, and `MIRACLE` + `NEW`, sitting directly above the already-documented
+`DAMAGE` / `HIT` / `TOTAL` labels on the same sheet. The second quad's texel
+rect is fixed for every position and reads `ARTS!!`. So the four `ctx[+0x28B]`
+values compose `NEW ARTS!!` / `HYPER ARTS!!` / `MIRACLE ARTS!!` /
+`SUPER ARTS!!`, each as two halves sliding in from opposite screen sides to a
+per-banner seam. `ctx[+0x28C]` is that slide's clock, and the four "layers" are
+a ghost trail behind the moving word - not a brightness ramp.
+
+The lesson generalises: a routine that emits textured primitives is not
+characterised until its texels are decoded. Percent-scaled grey with
+`0x2C`/`0x2E` describes a flash and a banner equally well, and only the atlas
+distinguishes them. Full geometry:
+[`battle-action.md`](../subsystems/battle-action.md#arts-announcement-banner-fun_801e2524--fun_801e2650);
+sheet layout: [`effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
 
 ### The battle message banner has no interior fill
 
