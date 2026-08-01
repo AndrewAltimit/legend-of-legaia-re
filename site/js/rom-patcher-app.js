@@ -1396,6 +1396,10 @@ const STARTING_BUNDLE = {
 // Equipment drops are additive - a code hook grants one extra random gear piece
 // on a low per-battle chance, on top of the normal drop - so every gameplay
 // preset turns them on; only vanilla leaves them off.
+//
+// `monster_stats` is Full Chaos only: reshuffled enemy stat blocks move fights
+// off the vanilla difficulty curve that the rest of Balanced - kingdom-scope
+// encounters, shuffled loot, the level-10 start - is balanced against.
 const PRESETS = {
   vanilla: { ...PRESET_BASE },
   items: {
@@ -1408,7 +1412,7 @@ const PRESETS = {
     drops: 'shuffle', encounters: 'shuffle', encounter_scope: 'kingdom',
     soloStrong: true, fleeExp: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
-    monster_stats: 'shuffle', equip_bonus: 'shuffle', equipmentDrops: true,
+    equip_bonus: 'shuffle', equipmentDrops: true,
     seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true,
     ...STARTING_BUNDLE,
   },
