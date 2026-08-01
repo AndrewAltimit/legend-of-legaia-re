@@ -1197,6 +1197,51 @@ The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
 one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams
 the whole clip (`FUN_80019794(op>>3)`).
 
+## What a normal attack sounds like, and why the port's is silent
+
+The plain melee swing is the most common sound in a fight, and it is **two**
+emissions from one routine. `FUN_801EC3E4` (battle overlay 0898, the melee
+roll pair) calls:
+
+- `FUN_8003D53C(0x1D, chan, dur)` at `0x801EEB44`, the XA30 grunt - three arms
+  select `(0, 0x26)` / `(4, 0x2E)` / `(6, 0x1A)`, the same character-indexed
+  channel spacing the XA2/XA4/XA6 shout banks use. Already tabulated under the
+  [one-shot cue census](#one-shot-cue-census-fun_8003d53c).
+- `FUN_8004FE5C(0x10C, cat)` at `0x801EEBE8`, the cue router. `0x10C` is above
+  `0x100`, so for a party attacker it takes the router's **XA voice** leg -
+  clip `(0x0C >> 3) = 1` remapped to `26`, channel `0x0C & 7 = 4` - and for a
+  non-party attacker the high element-tinted ring leg (`id + 0x19C = 0x2A8`).
+
+Both are `see ghidra/scripts/funcs/overlay_battle_action_801ec3e4.txt`
+(disassembly, not the C). Note what that makes retail's impact sound: a
+**streamed CD-XA clip**, not an SPU descriptor one-shot.
+
+That is the shape of the port's silence, and it is specifically a *sound
+effect* silence: a battle does have music, because the field track keeps
+playing through the swap (the [audio-trace section](#audio-trace-parity-oracle)
+records why no battle track resolves). What a whole fight produces is zero
+cues. Three gaps, in order of what they cost:
+
+1. **The live battle loop emits no cue at all.** `World::fold_battle_event`
+   turns an `ApplyArtStrike` outcome's `is_sound` cues into `battle_sfx_cues`,
+   and the only caller of that fold is the `BattleSession` path. The live loop
+   (`live_battle_tick`) resolves damage inline and queues a presentation-only
+   `BattleHitFx`, so a fight driven by the window host or the play page produces
+   an empty cue queue for its whole duration.
+2. **No CD-XA bank is staged for the battle voice clips.** Boot demuxes
+   `XA2`/`XA4`/`XA6` for the arts shouts (`read_arts_shout_bank`) and nothing
+   else, so even a correctly routed `0x10C` or `0x1D` cue has no PCM to play.
+   `legaia_engine_core::sfx_cue::route_sfx_cue` - a complete port of
+   `FUN_8004FE5C` - has no caller for the same reason.
+3. **The cue queue is `u16` and the descriptor bank is `u8`.** The battle action
+   SM's cast cues run to `0x20E`; truncating them into the descriptor space did
+   not silence them, it played a *different populated descriptor*
+   (`0x20C` → `0x0C`). The consumer now classifies with `classify_cue` and drops
+   the voice band instead. The low band's retail `id - 1` resolution is **not**
+   applied: the one live producer feeds this queue an art-record `HitCue::kind`
+   the bank is already indexed by, and moving it without an oracle would break
+   the one cue that works.
+
 ## Audio-trace parity oracle
 
 Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:

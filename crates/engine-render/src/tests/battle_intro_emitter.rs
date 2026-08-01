@@ -177,19 +177,20 @@ fn expected_frame() -> Vec<u8> {
     rgba
 }
 
+/// The page the one-shot capture leaves behind: the field frame in
+/// [`FIELD_CAPTURE_COLS`] and nothing in [`FIELD_CAPTURE_ROWS`], because the
+/// rows rect is the intermediate the curtain's column pass renders each frame.
 fn vram_with_capture() -> Vram {
     let mut vram = Vram::new();
     let frame = field_frame();
-    for rect in [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS] {
-        blit_rgba_into_vram(
-            &frame,
-            PSX_SCREEN_WIDTH as u32,
-            PSX_SCREEN_HEIGHT as u32,
-            &mut vram,
-            rect,
-            CaptureOpts { set_mask_bit: true },
-        );
-    }
+    blit_rgba_into_vram(
+        &frame,
+        PSX_SCREEN_WIDTH as u32,
+        PSX_SCREEN_HEIGHT as u32,
+        &mut vram,
+        FIELD_CAPTURE_COLS,
+        CaptureOpts { set_mask_bit: true },
+    );
     vram
 }
 
@@ -202,12 +203,19 @@ fn the_curtain_emits_two_strips_per_scanline_plus_the_visible_columns() {
     let mut it = intro(IntroStyle::Curtain, 200);
     let frame = it.tick(0, 1);
     assert!(frame.style_drawn);
-    // Every scanline is drawn in two halves, and at clock zero no column is
-    // culled yet.
+    // Every scanline is drawn in two halves. Only those reach the screen: the
+    // column pass renders the intermediate that the row pass samples, so its
+    // 320 quads are held for the CPU rasteriser instead of being emitted.
     assert_eq!(
         style_prims(&frame).len(),
-        (2 * CURTAIN_ROWS + CURTAIN_COLS) as usize,
-        "480 row strips + 320 column strips"
+        2 * CURTAIN_ROWS as usize,
+        "480 row strips on screen"
+    );
+    // At clock zero no column is culled yet, so all 320 are pending.
+    assert_eq!(
+        it.pending_column_quads().len(),
+        CURTAIN_COLS as usize,
+        "320 column strips into the intermediate"
     );
     // No fade this early: style 3's ramp only starts 0x40 frames from the end.
     assert!(frame.fade.is_none());
@@ -260,27 +268,38 @@ fn the_column_pass_draws_outside_the_display_and_that_is_retails() {
     // `0..0x140` and then draws it at `warped + 0x1E0` (`0x801D1438` and the
     // delay slot at `0x801D1454`). The two biases differ by exactly one screen
     // width, so every column that passes the test is drawn 320 pixels to the
-    // right of where it was tested - off a 320-wide display entirely.
+    // right of where it was tested.
     //
-    // Both constants are read off the disassembly and both are reproduced, so
-    // this is not a transcription slip to be "corrected" by inventing a -320.
-    // Pinned so that a future change has to argue with the disassembly rather
-    // than with a silent expectation. The row pass is the half that is on
-    // screen, and it is the half the pixel test below checks.
+    // That is not an off-screen draw: retail links `SetDrawOffset(0, 0)` +
+    // `SetDrawArea(320, 0, 320, 240)` at OT bucket `0x1F4` and restores the
+    // back buffer at `0x190`, so the column pass runs with the draw area on
+    // VRAM `(320, 0)` and its coordinates are absolute VRAM. `0x1E0` puts
+    // every visible column exactly inside that rect - which is
+    // `FIELD_CAPTURE_ROWS`, the rect the row pass then samples.
+    //
+    // Pinned so a future change has to argue with the disassembly rather than
+    // with a silent expectation.
     let mut it = intro(IntroStyle::Curtain, 200);
     let frame = it.tick(0, 1);
-    let cols: Vec<_> = style_prims(&frame)[2 * CURTAIN_ROWS as usize..]
+    // Nothing from the column pass reaches the screen list.
+    assert!(
+        style_prims(&frame).len() == 2 * CURTAIN_ROWS as usize,
+        "the column pass must not be on screen"
+    );
+    let cols: Vec<i16> = it
+        .pending_column_quads()
         .iter()
-        .filter_map(|p| match p {
-            ScreenPrim::Textured(q) => Some(q.xy[0].0),
-            _ => None,
-        })
+        .map(|q| q.verts[0].x)
         .collect();
     assert_eq!(cols.len(), CURTAIN_COLS as usize);
+    let rect = FIELD_CAPTURE_ROWS;
     assert!(
-        cols.iter().all(|&x| x >= PSX_SCREEN_WIDTH as i16),
-        "every column strip is at or past the right screen edge"
+        cols.iter()
+            .all(|&x| x >= rect.x as i16 && x < (rect.x + rect.w) as i16),
+        "every column strip lands inside the intermediate rect the row pass samples"
     );
+    // And it starts past the display, which is what the two biases encode.
+    assert!(cols.iter().all(|&x| x >= PSX_SCREEN_WIDTH as i16));
 }
 
 #[test]
@@ -1091,21 +1110,28 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
         eprintln!("no GPU adapter; skipping the battle-intro end-to-end frames");
         return;
     };
-    let vram = vram_with_capture();
-    let h = build_harness_vram(
-        device,
-        queue,
-        &vram,
-        (PSX_SCREEN_WIDTH as u32, PSX_SCREEN_HEIGHT as u32),
-    );
     let (w, h_px) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
     let source = expected_frame();
     let mut it = intro(IntroStyle::Curtain, 400);
 
-    // --- Frame 1: the warp is the identity, so the transition's first frame
-    // must be the field frame it captured. Clear to magenta so an undrawn
-    // pixel is unmistakable.
-    let drawn = render_frame_rgba(&h, &it.tick(0, 1).prims, [1.0, 0.0, 1.0, 1.0]);
+    // Both passes, in retail's order. The capture lands in the columns rect
+    // only; the column pass renders the intermediate at (320, 0) that the row
+    // pass then samples. At clock zero both warps are the identity, so a
+    // correct two-pass composition has to come back out as the captured frame
+    // - which makes this an exact test of the CPU column rasteriser as well as
+    // of the GPU row draw.
+    it.seed_capture_for_test(vram_with_capture());
+    let f1 = it.tick(0, 1);
+    it.compose_intermediate_for_test();
+    let h = build_harness_vram(
+        device,
+        queue,
+        it.captured_vram().expect("seeded above"),
+        (PSX_SCREEN_WIDTH as u32, PSX_SCREEN_HEIGHT as u32),
+    );
+
+    // --- Frame 1: clear to magenta so an undrawn pixel is unmistakable.
+    let drawn = render_frame_rgba(&h, &f1.prims, [1.0, 0.0, 1.0, 1.0]);
     assert_eq!(drawn.len(), w * h_px * 4);
 
     let mut worst = 0i32;
@@ -1143,6 +1169,8 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
     // --- Frame 2: at clock 28 the warp doubles the scanline spread about
     // y = 120, so most destination rows lose their strip and keep the clear
     // colour. If this frame still matched, the curtain would not be opening.
+    // Drawn against frame 1's intermediate - the harness binds its VRAM once,
+    // and the claim here is about the row pass, not the column pass.
     let opened = render_frame_rgba(&h, &it.tick(28, 1).prims, [1.0, 0.0, 1.0, 1.0]);
     let differing = (0..h_px * w)
         .filter(|&i| {
@@ -1205,13 +1233,13 @@ mod capture_rects {
     }
 
     #[test]
-    fn the_curtain_keeps_both_rects() {
-        // Its row pass samples pages at (320, 0) / (512, 0); dropping the rows
-        // rect would leave that pass reading whatever the scene left there.
-        assert_eq!(
-            capture_rects_for(IntroStyle::Curtain),
-            [FIELD_CAPTURE_ROWS, FIELD_CAPTURE_COLS]
-        );
+    fn the_curtain_captures_columns_only_because_the_rows_rect_is_its_own_output() {
+        // Its row pass samples pages at (320, 0) / (512, 0), which is the rows
+        // rect - but retail does not put the capture there. The column pass
+        // runs under `SetDrawArea(320, 0, 320, 240)` and renders it, every
+        // frame. Blitting the capture into it would be overwritten by the
+        // first column strip.
+        assert_eq!(capture_rects_for(IntroStyle::Curtain), [FIELD_CAPTURE_COLS]);
     }
 
     #[test]

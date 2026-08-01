@@ -3431,6 +3431,50 @@ field in the texture pages each style's packets name; and the emitted
 `ScreenPrim`s composite over the scene through
 `RenderTarget::SceneWithScreenPrims`.
 
+### The curtain is a render-to-texture, and only its row pass is on screen
+
+`FUN_801D11D0` draws two passes and it does **not** draw them to the same
+place. Between them it links draw-environment packets into the ordering table,
+and their OT buckets - a higher index draws first - order them against the
+strips:
+
+| OT bucket | packet |
+|---|---|
+| `0x1F4` | `SetDrawOffset(0, 0)` + `SetDrawArea(320, 0, 320, 240)` |
+| `0x1EA` | `FUN_801D1D9C(0x1EA, 2, 0x808080)`, the mid-pass emitter |
+| `0x1C2` | the column strips |
+| `0x190` | `SetDrawArea(0, y, 320, h)` + `SetDrawOffset(0, y)`, the back buffer |
+| `0x12C` | the row strips |
+
+So the column pass runs with the draw area on VRAM `(320, 0)` and its offset at
+zero, which makes its primitive coordinates absolute VRAM. `CURTAIN_COL_DRAW_BIAS`
+(`0x1E0`) is what makes that fit: a column that passes the visibility test -
+which re-centres on `0xA0` - lands at `x` in `320..640`, exactly the installed
+area. That area is the rect the row pass' texture pages `0x105` / `0x108`
+decode to, so **the row pass samples what the column pass just drew**. The
+image is warped horizontally into an intermediate and then sliced vertically
+out of it; only the second slice reaches the display.
+
+Two consequences for the port, both now carried. The one-shot field capture
+belongs in the *columns* rect only (`capture_rects_for`) - the rows rect is the
+intermediate, overwritten every frame - and the column pass has to be
+rasterised somewhere, which `engine-render::battle_intro`'s
+`compose_curtain_intermediate` does on the CPU because a screen-space quad list
+has no render-to-VRAM target. Reading the two rects as "two copies of the same
+capture" instead left the curtain stretching in one axis only.
+
+What is still missing is the accumulation the effect rides on. Retail never
+clears: the transition's own `FUN_8004695C(0x80808)` subtracts 8 per channel
+per frame from the display buffer, so a scanline drawn on one frame decays over
+~31 frames behind the ones drawn after it, and the mid-pass emitter does the
+same to the intermediate at a steeper rate. The port composes each frame from
+scratch over `backdrop_prim`, so the gaps between strips are pure black rather
+than a fading trail, and the transition reads far darker than retail's from
+about a third of the way in. `FUN_801D1D9C` is only dumped at a VA that aliases
+another overlay ([`call-target-integrity.md`](../tooling/call-target-integrity.md)),
+so its exact decay is not established; the port clears the intermediate instead
+of guessing.
+
 ### The window has no field in it
 
 Retail's transition owns the whole frame - its init writes game mode `9` and

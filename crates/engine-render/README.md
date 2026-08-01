@@ -286,10 +286,11 @@ expands a 5-bit channel as `(c5 << 3) | (c5 >> 2)`, so `byte >> 3` recovers
 `c5` for all 32 values. A capture at the native 320x240 is not resampled at
 all; a window-sized frame is point-sampled down.
 
-`FIELD_CAPTURE_ROWS` / `FIELD_CAPTURE_COLS` name where retail parks the
-field-to-battle capture. That falls out of the transition's own texture-page
-words with no capture needed - they decode to 15-bpp pages whose strips span
-VRAM columns `320..=639` on two rows.
+`FIELD_CAPTURE_ROWS` / `FIELD_CAPTURE_COLS` name the two 15-bpp rects the
+transition's texture-page words decode to, each spanning VRAM columns
+`320..=639` on its own row. Only **`FIELD_CAPTURE_COLS` is a capture
+destination**: the rows rect is the intermediate the curtain's column pass
+renders into every frame, and no style samples it from the capture.
 
 ## Field-to-battle transition emitter
 
@@ -299,28 +300,30 @@ owner that stands between the (already live) transition state machine in
 working set, advances it off the transition entity's own clock, and emits
 `ScreenPrim`s plus the per-style fade.
 
-Style coverage is **not** uniform, and the difference is which retail packet
-builder is ported rather than effort:
+All five styles tick and all five emit: `emit_particle_field` (both particle
+arms) plus `emit_spinup_ring`, `emit_tile`, `emit_swirl_band`, and
+`intro_quad_to_screen` for the curtain.
 
-| Style | Ticks | Emits |
-|---|---|---|
-| Curtain | yes | yes - complete |
-| Tile shatter | yes | yes - complete |
-| Scatter / spin-up particles, swirl | yes | no |
+The curtain is the one with a second output. Its packet builder produces
+screen-space corners, so there is no projection step to invent - but retail
+draws its two passes into two different places. The column pass runs under a
+`SetDrawArea(320, 0, 320, 240)` that the row pass then samples as texture pages
+`0x105` / `0x108`, so the effect is a render-to-texture and only the row pass is
+on screen. `compose_curtain_intermediate` rasterises the column quads into that
+rect on the CPU each frame (there is no render-to-VRAM target for a
+screen-space quad list), and the one-shot field capture goes into the *columns*
+rect only. The tile shatter - the default random-encounter style - has all of
+its inputs pinned too: the ten-face packet is `engine-vm`'s `tile_face_quads`,
+the projection + accept chain is the FT4 handler's (`emit_tile`, with
+`euler_rot_psx` as the `FUN_80026988` port), and the 4bpp shade page its side
+faces sample is `field_char_textures` entry 0, re-landed in the transition's
+cloned page at capture time.
 
-The curtain is complete because its packet builder is itself ported and
-produces screen-space corners, so there is no projection step to invent; its
-descriptor table is disc data that parses, and its texture pages decode to
-the capture rects above. The tile shatter - the default random-encounter
-style - is complete because all of its inputs are pinned: the ten-face packet
-is `engine-vm`'s `tile_face_quads`, the projection + accept chain is the FT4
-handler's (`emit_tile`, with `euler_rot_psx` as the `FUN_80026988` port), and
-the 4bpp shade page its side faces sample is `field_char_textures` entry 0,
-re-landed in the transition's cloned page at capture time. The other three
-end in a GTE/GPU packet emitter that is documented but not ported, and the
-swirl's fan is triangles, which `ScreenPrim` has no variant for at all. Their
-working sets still tick, because the fade and the battle handoff both ride
-the same clock.
+Two retail nuances stay un-carried and are stated rather than hidden: the
+dispatcher's depth-cue bank (the screen overlay has no channel for it) and the
+frame-to-frame **accumulation** every style rides on - retail subtracts a small
+constant from the display buffer instead of clearing, so its strips leave
+fading trails where the port's leave black.
 
 ## GTE register-transfer + memory ops
 

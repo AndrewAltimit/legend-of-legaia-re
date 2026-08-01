@@ -1565,22 +1565,26 @@ impl PlayWindowApp {
         legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, base_va)
     }
 
-    /// Land the field frame in VRAM for the transition to texture itself with,
-    /// once, on the frame the emitter is armed.
+    /// Bring the transition's private VRAM page up to date for this frame and
+    /// upload it.
     ///
     /// This is the port's equivalent of the console's framebuffer *being*
-    /// VRAM: retail's strips sample the frame the GPU drew moments earlier, so
-    /// the port re-renders the field scene offscreen, blits it into the two
-    /// rects the style's texture pages decode to, and uploads that page for
-    /// the strips to sample.
+    /// VRAM. Two things ride on it. The **capture** is a one-shot: retail's
+    /// strips sample the frame the GPU drew moments earlier, so the port
+    /// re-renders the field scene offscreen and blits it into the rect the
+    /// style's texture pages decode to. The **curtain's intermediate** is
+    /// per-frame: its column pass renders into VRAM `(320, 0)` and its row
+    /// pass samples that, so the page changes every frame of a curtain
+    /// transition (see `legaia_engine_render::battle_intro`).
     ///
     /// An **associated** function, not a method: the render pass calls it
     /// while the renderer is borrowed out of `self`, so it takes the three
     /// pieces it needs rather than `&mut self`. The scene's pristine page is
     /// borrowed and cloned inside, never edited.
     ///
-    /// Returns the uploaded page to draw this frame against, or `None` when
-    /// there is nothing to capture (no emitter, already captured, no base).
+    /// Returns a freshly uploaded page whenever the contents changed, or
+    /// `None` when the previously uploaded one is still correct (no emitter,
+    /// no base, or a style whose page is a one-shot already landed).
     pub(super) fn capture_battle_intro_frame(
         intro: Option<&mut BattleIntro>,
         renderer: &legaia_engine_render::Renderer,
@@ -1588,16 +1592,15 @@ impl PlayWindowApp {
         base: Option<&legaia_tim::Vram>,
     ) -> Option<legaia_engine_render::UploadedVram> {
         let intro = intro?;
-        if !intro.needs_capture() {
-            return None;
-        }
         let base = base?;
-        let page = match intro.capture_field_frame(
+        let first = intro.needs_capture();
+        let page = match intro.update_field_capture(
             renderer,
             legaia_engine_render::RenderTarget::Scene(scene),
             base,
         ) {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) => return None,
             Err(e) => {
                 log::error!("play-window: battle intro capture: {e:#}");
                 return None;
@@ -1605,7 +1608,9 @@ impl PlayWindowApp {
         };
         match renderer.upload_vram(page) {
             Ok(v) => {
-                log::info!("play-window: battle intro captured the field frame into VRAM");
+                if first {
+                    log::info!("play-window: battle intro captured the field frame into VRAM");
+                }
                 Some(v)
             }
             Err(e) => {
