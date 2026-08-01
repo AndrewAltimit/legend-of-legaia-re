@@ -1341,27 +1341,67 @@ mod live_hud_tests {
             );
         }
 
-        // (2) Cross on Attack opens targeting; the retail dedup name strip
+        // (2) Reaching Attack opens targeting; the retail dedup name strip
         // resolves rows off the live formation and lands in the draw list at
         // the strip's stage band.
-        // The session may open on a turn-start prompt phase before the menu,
-        // so press Cross (edge + release) until the Attack targeting phase
-        // shows - a bounded retry, not a spin.
-        'press: for _ in 0..4 {
-            rt.set_pad(0x4000);
-            rt.tick_frame().expect("tick");
-            rt.set_pad(0);
-            for _ in 0..3 {
-                let targeting = rt.scene_host.as_ref().is_some_and(|h| {
-                    matches!(
-                        h.world.battle_command.as_ref().map(|c| &c.phase),
-                        Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
-                    )
-                });
-                if targeting {
-                    break 'press;
-                }
+        //
+        // The walk has to be PHASE-DRIVEN. Retail's opening flow is three
+        // selection surfaces, not one flat list - the `Begin | Run` round
+        // prompt, the four-arm ring in seat order (Item / Attack / magic /
+        // Spirit), then `Auto | Command` - and the ring opens on **Item**.
+        // This test used to mash Cross, which worked only while `Attack` was
+        // entry 0 of a flat menu; against the retail flow the first confirm
+        // opens the item submenu and hands the command session away, which is
+        // why the failure read `cmd_phase=None`. Step to the arm, then
+        // confirm.
+        {
+            use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase};
+            let tap = |rt: &mut LegaiaRuntime, b: legaia_engine_core::input::PadButton| {
+                rt.set_pad(b.mask());
                 rt.tick_frame().expect("tick");
+                rt.set_pad(0);
+                rt.tick_frame().expect("tick");
+            };
+            use legaia_engine_core::input::PadButton;
+            for _ in 0..40 {
+                let phase = rt
+                    .scene_host
+                    .as_ref()
+                    .and_then(|h| h.world.battle_command.as_ref())
+                    .map(|c| {
+                        (
+                            std::mem::discriminant(&c.phase),
+                            matches!(c.phase, CommandPhase::RoundPrompt { .. }),
+                            matches!(c.phase, CommandPhase::Menu { .. }),
+                            matches!(c.phase, CommandPhase::AttackMode { .. }),
+                            matches!(c.phase, CommandPhase::Targeting { .. }),
+                            c.menu_command(),
+                            c.attack_mode(),
+                        )
+                    });
+                let Some((_, round, menu, atk_mode, targeting, cmd, mode)) = phase else {
+                    break;
+                };
+                if targeting {
+                    break;
+                }
+                if round {
+                    tap(&mut rt, PadButton::Cross); // opens on Begin
+                } else if menu {
+                    if cmd == Some(BattleCommand::Attack) {
+                        tap(&mut rt, PadButton::Cross);
+                    } else {
+                        tap(&mut rt, PadButton::Down);
+                    }
+                } else if atk_mode {
+                    if mode == Some(AttackMode::Auto) {
+                        tap(&mut rt, PadButton::Cross);
+                    } else {
+                        tap(&mut rt, PadButton::Right);
+                    }
+                } else {
+                    break;
+                }
             }
         }
         {
