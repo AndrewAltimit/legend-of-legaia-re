@@ -1035,8 +1035,8 @@ scene), but even the exact segment-vs-world-AABB form culled legitimate bodies:
 the placement boxes are axis-aligned over whole terrain tiles, walls, and
 buildings, so as the camera orbited or the player walked, the lens-to-player
 segment swept through a *neighbour's* box and blinked it out. The cull code is
-kept for reference but the branch is never taken. The native renderer solves
-the same "wall between lens and player" problem at per-fragment granularity
+kept for reference but the branch is never taken. Both hosts now solve the
+same "wall between lens and player" problem at per-fragment granularity
 instead - the
 [camera-occlusion fade](#camera-occlusion-fade-see-through-walls-opt-in-enhancement),
 which dissolves pixels rather than culling bodies and so has no
@@ -1306,8 +1306,18 @@ segment pierces) and had to disable it - see the `OCCLUDER_CULL` history
 above. Placement boxes span whole terrain tiles and buildings, so neighbours
 blinked out as the camera orbited. The fragment test has no such failure
 mode: nothing is ever culled, geometry only loses individual pixels inside
-the fade circle. The browser hosts currently ship no occlusion handling at
-all (the fade is native-only, like dynamic lighting).
+the fade circle.
+
+**The browser play page ships the same fade** (default-on, the
+"See-through walls" checkbox): `occl_keep` / `occl_bayer` GLSL twins in
+`site/js/webgl-shaders.js` (tunables mirrored at the top of that file -
+keep them in lockstep with `occlusion_fade.rs`), staged through
+`TmdRenderer.setOcclusionFocus(world_pos)` - `renderAssembled` projects the
+focus with the same view-projection it builds for the scene draws, so the
+page never duplicates camera math. `play-app.js` stages the player's body
+centre per field frame and clears it for battle and VR first-person (where
+the eye *is* the player). The other WebGL pages never stage a focus, so
+they are untouched.
 
 The host stages the focus in **field free-roam only** - the player's floor
 tier (the same sampler the follow camera anchors to) lifted half a character

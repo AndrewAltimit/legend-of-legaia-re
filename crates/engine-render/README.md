@@ -206,7 +206,9 @@ lockstep mirror live in the `occlusion_fade` module. In `play-window`
 this is ON by default (`--no-occlusion-fade` / the `D` key disables), and
 the fade is deliberately per-fragment - the site's abandoned per-body
 occluder cull is the failure mode it avoids (see
-`docs/subsystems/renderer.md`).
+`docs/subsystems/renderer.md`). The browser play page ships the GLSL twin
+(`occl_keep`/`occl_bayer` in `site/js/webgl-shaders.js`, constants
+mirrored there - keep them in lockstep with this module).
 
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
 GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps

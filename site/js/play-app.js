@@ -290,6 +290,14 @@
        * null otherwise. `_camBeforeBattle` restores the field framing after. */
       this._battle = null;
       this._camBeforeBattle = null;
+      /* Camera-occlusion fade (see-through walls) - the browser twin of the
+       * native play-window's default-on enhancement: field geometry between
+       * the camera and the player screen-doors open around the character
+       * (per-fragment, in the shared FS - NOT the abandoned per-body
+       * OCCLUDER_CULL above). The page's checkbox drives setOcclusionFade;
+       * the focus itself is staged per field frame in `_frame` and never
+       * during battle or VR first-person. */
+      this.occlusionFade = true;
       /* Retail pause menu (Start): the state + navigation live in the engine
        * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
        * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
@@ -1598,6 +1606,11 @@
        * restores the field VRAM texture on the exit edge), handing the
        * frame back to the field path in the `else`. The text HUD overlay
        * further below runs either way, on top. */
+      /* Occlusion-fade focus is per-frame state: drop it before whichever
+       * mode draws, and let the field branch below re-stage it. Battle and
+       * VR first-person never fade (battle frames its own subjects; in
+       * first-person the eye IS the player, nothing can sit between). */
+      this.renderer.clearOcclusionFocus();
       if (this._battleFrame(rt, skipDraw)) {
         /* Battle owns the 3D frame; FPS/HUD/overlay below still run. */
       } else {
@@ -1631,6 +1644,13 @@
       /* In VR first-person there is no third-person lens: the eye IS the
        * player, so nothing can "sit between" them - draw everything. */
       const fpLive = this._vrFp && this.vr && this.vr.isActive();
+      /* Camera-occlusion fade: stage the player's body centre (the same
+       * point the dead cull below used - draw frame, +90 up from the feet)
+       * so renderAssembled screen-doors wall fragments that bury the
+       * character. The renderer projects it with the frame's own camera. */
+      if (this.occlusionFade && !fpLive) {
+        this.renderer.setOcclusionFocus([pt[0], -pt[1] + 90, pt[2]]);
+      }
       if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
         const px = pt[0], py = -pt[1] + 90, pz = pt[2];
@@ -2099,6 +2119,14 @@
         this.cam.centerY + dist * cp,
         this.cam.centerZ - dist * sp * cy,
       ];
+    }
+
+    /* Toggle the camera-occlusion fade (the page's "See-through walls"
+     * checkbox; default on, matching the native play-window). Off drops
+     * the staged focus immediately so the next frame is fully solid. */
+    setOcclusionFade(on) {
+      this.occlusionFade = !!on;
+      if (!this.occlusionFade && this.renderer) this.renderer.clearOcclusionFocus();
     }
 
     /* Keep the camera on the player: same target, user-controlled orbit. */

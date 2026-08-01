@@ -302,6 +302,10 @@
                  title="Overlay the retail developer menu on the running scene (the native window's LEGAIA_DEV_MENU opt-in). Edits your own session only; off every page load by design - nothing in a link or in storage can carry it.">
             <input type="checkbox" id="play-dev-menu"> Dev menu
           </label>
+          <label class="play-dev-menu"
+                 title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
+            <input type="checkbox" id="play-see-through" checked> See-through walls
+          </label>
         </div>
       </div>
 
@@ -701,6 +705,9 @@
            must imply `chrome === 'built'`; anything else means the page is
            dropping every chrome sprite. */
         window.__playOverlayState = () => view ? view.overlayAtlasState() : null;
+        /* Honour the See-through-walls checkbox state at view creation (it
+         * may have been unchecked before the first scene was entered). */
+        if (window.__playApplySeeThrough) window.__playApplySeeThrough();
       }
       const st = view.enter(label);
       view.start();
@@ -1524,6 +1531,18 @@
   }
   devMenuEl.addEventListener('change', () => { applyDevMenu(); canvas.focus(); });
   window.__playApplyDevMenu = applyDevMenu;
+
+  /* Camera-occlusion fade ("See-through walls") - default ON, matching the
+   * native play-window. Pure presentation (a fragment-shader dither around
+   * the character when geometry buries it); PlayView stages the per-frame
+   * focus, so unchecking simply stops staging it. Re-applied on every view
+   * rebuild since the checkbox may have been toggled between scenes. */
+  const seeThroughEl = document.getElementById('play-see-through');
+  function applySeeThrough() {
+    if (view) view.setOcclusionFade(!!seeThroughEl.checked);
+  }
+  seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
+  window.__playApplySeeThrough = applySeeThrough;
 
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own
