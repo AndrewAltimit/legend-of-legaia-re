@@ -18,9 +18,11 @@
 //! * **effect-pool billboards** ([`LegaiaRuntime::play_battle_fx_sync`]):
 //!   camera-facing textured quads over `World::active_effect_sprites`, sized
 //!   and UV-addressed from the effect bundle's inline atlas exactly like the
-//!   native `effect_billboard_mesh` (retail `FUN_801E0088` pass 2), plus the
-//!   native tinted outline - emitted here as untextured hybrid-flat strips
-//!   because the page renderer has no Lines pipeline.
+//!   native `effect_billboard_mesh` (retail `FUN_801E0088` pass 2). The
+//!   native *diagnostic* outline has a twin here too - untextured hybrid-flat
+//!   strips, because the page renderer has no Lines pipeline - behind the same
+//!   default-off gate ([`FX_OUTLINE`] /
+//!   [`LegaiaRuntime::set_battle_fx_outline`]).
 //! * **3D FX models**: the `etmd.dat` effect meshes
 //!   (`World::active_effect_models`) and the move-VM scene-graph parts
 //!   (`World::active_summon_part_draws` + `active_move_fx_part_draws`), each
@@ -51,6 +53,52 @@ const BATTLE_WORLD_SCALE: f32 = 4.0;
 /// untextured quad through the hybrid-flat shader path.
 const OUTLINE_FRAC: f32 = 0.03;
 const OUTLINE_MIN: f32 = 1.0;
+
+/// Whether the per-billboard debug outline is emitted. **Off by default**,
+/// because retail draws no such rectangle.
+///
+/// This is the browser twin of the native window's `LEGAIA_DIAG_FX=1` gate on
+/// `effect_sprite_line_geometry`. A WASM module has no process environment to
+/// read, so the toggle is a module static the page (or a devtools console) can
+/// flip through [`LegaiaRuntime::set_battle_fx_outline`]; the browser is
+/// single-threaded, so an atomic is only for interior mutability.
+///
+/// # Why this needed a gate at all
+///
+/// The outline predates the battle-entry flame-atlas blit: it existed so a
+/// spawn stayed readable when its texels were not resident. With the atlas
+/// resident the textured quad draws on its own and the outline is purely in
+/// the way - and it is not a faint one. Its vertices carry `flat.a = 0`, which
+/// sends them down the page shader's untextured branch
+/// (`site/js/webgl-shaders.js`, the `v_flat_rgba.a < 0.5` arm), and they carry
+/// `cba_tsb = [0, 0]`, so `prim_semi` is clear and they rasterise in the
+/// **opaque** pass at `alpha = 1.0`. The colour is R-dominant at every fade
+/// (`(80 + 175f, 200f, 255f)` - dark red at the end of a sprite's animation,
+/// rose in the middle), so what the page actually drew was an opaque red-ish
+/// rectangle around every effect sprite in the fight.
+///
+/// The native window gated its twin off by default and this one was left on -
+/// one edit, one host, exactly the drift shape `docs/tooling/host-drift.md`
+/// describes.
+static FX_OUTLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Flat RGBA an outline strip carries at animation fraction `age01`, matching
+/// the native `effect_sprite_line_geometry` tint law. Alpha `0` is the page
+/// shader's "untextured" flag, not an opacity.
+fn outline_color(age01: f32) -> [u8; 4] {
+    let fade = (1.0 - age01).clamp(0.0, 1.0);
+    [
+        (80.0 + 175.0 * fade) as u8,
+        (200.0 * fade) as u8,
+        (255.0 * fade) as u8,
+        0,
+    ]
+}
+
+/// Inward width of one outline strip for a billboard of pass-2 `size`.
+fn outline_thickness(size: [f32; 2]) -> f32 {
+    (size[0].max(size[1]) * OUTLINE_FRAC).max(OUTLINE_MIN)
+}
 
 /// One 3D FX draw, already composed into the page's model-matrix space.
 pub(crate) struct FxModelDraw {
@@ -369,14 +417,13 @@ impl LegaiaRuntime {
 
             // Outline: four thin untextured strips along the quad edges,
             // faded by age like the native `effect_sprite_line_geometry`.
-            let fade = (1.0 - sprite.age01).clamp(0.0, 1.0);
-            let col = [
-                (80.0 + 175.0 * fade) as u8,
-                (200.0 * fade) as u8,
-                (255.0 * fade) as u8,
-                0, // alpha 0 = "untextured" to the hybrid shader
-            ];
-            let t = (sprite.size[0].max(sprite.size[1]) * OUTLINE_FRAC).max(OUTLINE_MIN);
+            // A **diagnostic**, off unless the page asked for it - see
+            // [`FX_OUTLINE`] for what leaving it on looked like on screen.
+            if !FX_OUTLINE.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
+            let col = outline_color(sprite.age01);
+            let t = outline_thickness(sprite.size);
             let inset = |a: [f32; 3], dir: [f32; 3], amount: f32| {
                 [
                     a[0] + dir[0] * amount,
@@ -608,6 +655,22 @@ impl LegaiaRuntime {
         (self.battle_fx.positions.len() / 3) as u32
     }
 
+    /// Turn the per-billboard debug outline on or off (**off** by default).
+    ///
+    /// The browser twin of the native window's `LEGAIA_DIAG_FX=1` gate: it
+    /// stamps a flat rectangle around every effect sprite so a spawn stays
+    /// readable when its texels are not resident. Retail draws no such
+    /// rectangle, so normal play leaves it off; the page never has to call
+    /// this, and a devtools console can flip it for one session.
+    pub fn set_battle_fx_outline(&mut self, on: bool) {
+        FX_OUTLINE.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether [`Self::set_battle_fx_outline`] is currently on.
+    pub fn battle_fx_outline(&self) -> bool {
+        FX_OUTLINE.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Billboard + outline vertex positions, `3 x f32` per vertex, already in
     /// the page's battle-VP space (the retail 4x world scale is folded in, so
     /// the page draws them under an **identity** model matrix).
@@ -813,5 +876,41 @@ mod tests {
             2.0 * hw < sprite.size[0],
             "the shared kernel must divide by the camera scale"
         );
+    }
+
+    /// Retail draws no rectangle around an effect sprite, and the native
+    /// window's twin outline is off unless `LEGAIA_DIAG_FX=1`. This host had
+    /// no gate at all, so every fight on the play page carried an opaque
+    /// red-ish box around every billboard. The default is the whole fix.
+    #[test]
+    fn the_debug_outline_is_off_by_default() {
+        assert!(!FX_OUTLINE.load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    /// The tint law, pinned so the "what colour was the box" question has an
+    /// answer in the tree rather than in a screenshot. R dominates G and B at
+    /// every fade, and the end of a sprite's animation is a dark red - which
+    /// is what the box read as. Alpha is the page shader's untextured flag,
+    /// not an opacity, so it stays `0` throughout.
+    #[test]
+    fn outline_tint_is_red_dominant_across_the_animation() {
+        // age01 = 1 (animation done): the darkest, reddest end.
+        assert_eq!(outline_color(1.0), [80, 0, 0, 0]);
+        // age01 = 0 (just spawned): the pale end.
+        assert_eq!(outline_color(0.0), [255, 200, 255, 0]);
+        for step in 0..=10 {
+            let c = outline_color(step as f32 / 10.0);
+            assert!(c[0] >= c[1], "R >= G at age {step}");
+            assert_eq!(c[3], 0, "alpha is the untextured flag at age {step}");
+        }
+    }
+
+    /// The strip width has a world-unit floor, so a tiny sprite's outline does
+    /// not collapse to nothing - which is why the box was visible even around
+    /// the small dust puffs the Rim Elm spar fires.
+    #[test]
+    fn outline_thickness_has_a_floor() {
+        assert_eq!(outline_thickness([4.0, 4.0]), OUTLINE_MIN);
+        assert_eq!(outline_thickness([100.0, 200.0]), 200.0 * OUTLINE_FRAC);
     }
 }
