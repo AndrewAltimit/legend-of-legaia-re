@@ -750,9 +750,109 @@ pub(super) fn battle_cam_inputs(
         // `_DAT_8007B792` is one global shared with the field camera, and
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
-        entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
+        entry_yaw: battle_entry_yaw(world),
         shake_amplitude: world.camera_shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
+    }
+}
+
+/// One **measured** sample of retail's free-running battle azimuth, in 12-bit
+/// units - the yaw a mednafen battle save state reads while the fight idles at
+/// the far Begin/Run framing.
+///
+/// It is not "the" resting yaw and nothing in retail makes it special: five
+/// battle states caught at the same framing read `224`, `2632`, `3136`, `3808`
+/// and `3882`, because `_DAT_8007B792` free-runs and a fight inherits whatever
+/// the field camera left. What every one of them *is* is **far from the seat
+/// axis**, and that is the property this constant is used for - see
+/// [`battle_entry_yaw`].
+pub(super) const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
+
+/// How close to the seat axis an entry azimuth may be before
+/// [`battle_entry_yaw`] replaces it, in 12-bit units (`192` = ~17 degrees).
+///
+/// The bound is geometric, not fitted: the retail seats are `(0, ±800)`
+/// ([`legaia_engine_core::battle_seats`]), so at azimuth `t` the two rows are
+/// separated on screen by roughly `1600 * sin(t)` battle-world units against
+/// character meshes ~400 units wide (`docs/formats/character-mesh.md`). Inside
+/// ~17 degrees the separation is under one character width and the near row
+/// still covers the far one. It is a threshold on a continuum, and it is a
+/// **port judgement** - retail needs none because its azimuth free-runs.
+/// Sanity check rather than derivation: all five captured retail battle yaws
+/// (`224`, `2632`, `3136`, `3808`, `3882`) sit outside it.
+const DEGENERATE_YAW_WINDOW: u16 = 192;
+
+/// The azimuth a fight inherits on entry.
+///
+/// Retail passes the shared rotation global `_DAT_8007B792` straight through,
+/// and the port's mirror of it is [`legaia_engine_core::world::World::
+/// field_camera_azimuth`]. The problem is that the mirror is not free-running:
+/// the field is framed by a **fixed follow camera**, `Camera::
+/// reset_for_free_roam` snaps the controller back to it every free-roam frame,
+/// and `Camera::compass_azimuth_units` therefore publishes a constant `0` for
+/// the entire time the player is not manually orbiting.
+///
+/// `0` is the one azimuth a battle must not start at. The retail seats are
+/// `(0, ±800)` ([`legaia_engine_core::battle_seats`]), so at yaw `0` the eye
+/// looks straight down the seat axis: the two rows project to the same screen
+/// X, the near row occludes the far one, and the acting actor sits close to the
+/// eye while its target reads small - the standing framing complaint. Retail
+/// cannot start there because its azimuth carries a real orbit; the port could,
+/// and did, for the ~6 seconds the `-4`/step idle orbit needs to leave.
+///
+/// Measured in `town01` with a seeded party, the compass reads `160` on the
+/// frame the Tetsu fight opens - not `0`, but 14 degrees off the seat axis,
+/// which is inside the overlap window and framed both combatants at the same
+/// screen X (`ndc.x` `0.00` for both, `LEGAIA_DIAG_BATCAM`). So the test is
+/// against [`DEGENERATE_YAW_WINDOW`], not against zero.
+///
+/// So: use the live azimuth when it is a framing the fight can actually be
+/// seen from, and otherwise seed [`BATTLE_ENTRY_YAW_SAMPLE`]. Both branches
+/// feed the same case-9 framing - only the azimuth the idle orbit starts from
+/// differs.
+pub(super) fn battle_entry_yaw(world: &legaia_engine_core::world::World) -> f32 {
+    let live = world.field_camera_azimuth & 0xFFF;
+    // Distance to the nearer end of the seat axis (`0` and `2048` are the two
+    // azimuths that put the eye on it).
+    let off_axis = live.min(4096 - live).min(live.abs_diff(2048));
+    if off_axis < DEGENERATE_YAW_WINDOW {
+        BATTLE_ENTRY_YAW_SAMPLE
+    } else {
+        f32::from(live)
+    }
+}
+
+#[cfg(test)]
+mod battle_entry_yaw_tests {
+    use super::*;
+
+    fn world_at(azimuth: u16) -> legaia_engine_core::world::World {
+        let mut w = legaia_engine_core::world::World::new();
+        w.field_camera_azimuth = azimuth;
+        w
+    }
+
+    /// Every azimuth on (or beside) the seat axis is replaced - `0` and `2048`
+    /// are the two that put the eye straight down it, and the port's fixed
+    /// follow camera parks at `0`.
+    #[test]
+    fn an_on_axis_entry_azimuth_is_replaced() {
+        for az in [0u16, 8, 160, 191, 2048, 2100, 4090] {
+            assert_eq!(
+                battle_entry_yaw(&world_at(az)),
+                BATTLE_ENTRY_YAW_SAMPLE,
+                "azimuth {az} frames both rows at the same screen X"
+            );
+        }
+    }
+
+    /// A real orbit sample is passed through untouched. These five are the
+    /// captured retail battle yaws.
+    #[test]
+    fn a_real_orbit_azimuth_survives() {
+        for az in [224u16, 2632, 3136, 3808, 3882] {
+            assert_eq!(battle_entry_yaw(&world_at(az)), f32::from(az));
+        }
     }
 }
 

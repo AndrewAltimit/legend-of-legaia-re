@@ -208,10 +208,26 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         }
         return transition(ctx, ActionState::AttackRecovery);
     }
-    let (target, strike_index_pre, character, chosen_art) = host
+    let (target, strike_index_pre, character, chosen_art, staged_power, staged_effect) = host
         .actor(slot)
-        .map(|a| (a.active_target, a.strike_index, a.character, a.chosen_art))
-        .unwrap_or((0, 0, legaia_art::Character::default(), None));
+        .map(|a| {
+            (
+                a.active_target,
+                a.strike_index,
+                a.character,
+                a.chosen_art,
+                a.art_power.get(a.strike_index as usize).copied().flatten(),
+                a.art_enemy_effect,
+            )
+        })
+        .unwrap_or((
+            0,
+            0,
+            legaia_art::Character::default(),
+            None,
+            None,
+            legaia_art::EnemyEffect::None,
+        ));
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = next_byte;
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
@@ -254,28 +270,76 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // `apply_damage(next_byte, 0, target, slot)` from here; that call site
     // does not exist in retail and is gone.
     //
-    // When the actor has a `chosen_art` set and the host returns an
-    // [`legaia_art::ArtRecord`] for it, also dispatch
-    // [`BattleActionHost::apply_art_strike`] with the per-strike
-    // power/timing/effect/hit-cue values. Generic-attack callers ignore
-    // this hook (default no-op); callers wired up to art data drive HP
-    // deduction, status application, and SFX timing from it.
-    if let Some(art) = chosen_art {
-        let info = host.art_record(character, art).map(|rec| {
+    // Which art - if any - this staged byte belongs to.
+    //
+    // Retail's stream alphabet for a party attack is direction swings
+    // `0x0C..0x0F`, the art starters `0x19`/`0x1A` and art action constants
+    // `0x1B+` (`docs/subsystems/battle-action.md` § Attack chain - strike
+    // loop), so a Tactical-Arts turn stages its constants **inline**: the
+    // byte itself names the art, and it is the byte the anim commit latches
+    // into `+0x1DB` for the per-art attack camera to dispatch on. That
+    // inline id is therefore authoritative here; `chosen_art` stays the
+    // fallback for a caller that stages plain anim ids instead.
+    //
+    // A **direction swing** is a plain committed arms command and never an
+    // art hit - it resolves through the host's own melee seam - so no art
+    // strike is dispatched for one even while `chosen_art` is set. Without
+    // that guard an arts turn's unmatched directions would be charged twice,
+    // once as a swing and once as an art strike.
+    //
+    // The inline read is **party-only**. A monster's stream carries archive
+    // entry indices over the whole byte range, so the same `0x1B+` value that
+    // names an art on a party slot names a plain clip on a monster - and the
+    // slot's `character` key is meaningless there. Retail draws the same line:
+    // `FUN_801EED1C` is the party setup hook, and the per-art camera's own
+    // gate requires a party seat.
+    let party_slot = slot < host.party_count();
+    let inline_art = legaia_art::ActionConstant::from_byte(next_byte)
+        .filter(|_| party_slot)
+        .filter(|a| a.is_art());
+    let strike_art = if is_swing_command(next_byte) {
+        None
+    } else {
+        inline_art.or(chosen_art)
+    };
+    // Dispatch [`BattleActionHost::apply_art_strike`] with the per-strike
+    // power/timing/effect/hit-cue values. Generic-attack callers ignore this
+    // hook (default no-op); callers wired up to art data drive HP deduction,
+    // status application, and SFX timing from it.
+    //
+    // The power comes from the staged profile when the engine put one on the
+    // actor ([`BattleActor::art_power`]) and from the art record otherwise,
+    // so a Miracle / Super finisher - whose per-strike profile is a property
+    // of its replacement queue, not of any single record - resolves through
+    // the same seam as a plain named art.
+    if let Some(art) = strike_art {
+        let info = {
+            let rec = host.art_record(character, art);
             let idx = strike_index_pre as usize;
-            ArtStrikeInfo {
+            let power = staged_power.or_else(|| rec.and_then(|r| r.power.get(idx).copied()));
+            let effect = if staged_effect != legaia_art::EnemyEffect::None {
+                staged_effect
+            } else {
+                rec.map(|r| r.enemy_effect).unwrap_or_default()
+            };
+            // Nothing to resolve at all - no staged profile and no record -
+            // is the pre-carrier "art data unavailable" case, which stays a
+            // no-op. A source that *exists* but runs out of power bytes at
+            // this index still dispatches with `power: None`, which is the
+            // documented "this anim plays but does no damage" strike.
+            (staged_power.is_some() || rec.is_some()).then_some(ArtStrikeInfo {
                 strike_index: strike_index_pre,
                 anim_byte: next_byte,
                 actor_slot: slot,
                 target_slot: target,
                 character,
                 art,
-                power: rec.power.get(idx).copied(),
-                dmg_timing: rec.dmg_timing.get(idx).copied(),
-                enemy_effect: rec.enemy_effect,
-                hit_cue: rec.hit_cues.get(idx).copied(),
-            }
-        });
+                power,
+                dmg_timing: rec.and_then(|r| r.dmg_timing.get(idx).copied()),
+                enemy_effect: effect,
+                hit_cue: rec.and_then(|r| r.hit_cues.get(idx).copied()),
+            })
+        };
         if let Some(info) = info {
             host.apply_art_strike(info);
         }

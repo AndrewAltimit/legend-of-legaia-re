@@ -2213,6 +2213,133 @@ The stride idiom is worth recognising on sight: any dump opening inside
 `sll/addu/sll/addu` over a small integer, followed by an add of `0x80084140`,
 is in the middle of a character-record lookup and is not a function.
 
+## A Tactical Art is an ordinary attack-band action
+
+There is no Arts *band*. A recognised art executes through the same category-3
+attack band a plain physical swing does; the only thing that makes it an art is
+the byte the strike loop stages. Three separate functions carry the chain, and
+none of them is the one people reach for first.
+
+### 1. The queue builder writes the art constant into the stream
+
+`FUN_801EED1C` writes direction commands into `actor[+0x1DF..]` as
+`0x0B + dir_code`, i.e. `0x0C..0x0F` (`0x801EEDDC`, `0x801EEFF8`), and the
+combo matcher compares `stream[i] - 0x0B` against the art record's command
+bytes (`0x801EF3E8`: `addiu v1,v1,-0xb`; `0x801EF3EC`: `bne v1,v0,…`).
+
+On a match, the commit at `0x801EF6E8..0x801EF7A0` does **not** collapse the
+combo into a single constant:
+
+```text
+801ef6f0  addiu v1,t3,0x18       ; t3 = 1 (known) / 2 (newly learned)
+801ef6f8  sb    v1,0x1df(v0)     ; stream[last_matched_dir] = 0x19 or 0x1A
+801ef714  ...                    ; shift stream[last+1 .. 0x0E] right by one
+801ef794  addiu v0,s3,0x10       ; s3 = art record index + 0x0B
+801ef7a0  _sb   v0,0x1df(v1)     ; stream[last+1] = art_id + 0x1B
+```
+
+So only the **last** direction of the match is overwritten - by the starter
+marker `0x19` (art already known) or `0x1A` (art learned on this use) - and the
+art constant `art_id + 0x1B` is *inserted* after it, shifting the tail right by
+one. Every direction before it stays in the stream and still executes as its own
+swing.
+
+**This falsifies the port's arts damage model.** `engine-core`'s
+`arts_command_input::resolve_entered_commands` has a matched art *consume* its
+directions, contributing only the record's power bytes for the whole matched
+run. Retail charges the leading directions as plain swings **and** the art. A
+three-direction art is two swings plus an art in retail, one art in the port.
+The port's shape is the one the balance is currently tuned against, so this is
+recorded as a measured divergence rather than silently changed.
+
+A second commit path exists at `0x801EF5BC..0x801EF644`, gated on
+`ctx[+0x25F + slot] != 0`, which writes `0x1A` at the *start* of the match and
+then walks the art record's `+0x0A..+0x0D` entries (`0x801EF620`:
+`sltiu v0,a2,0x4`) writing `(art_index + k) + 0x11`; and a third,
+whole-window overwrite at `0x801EF4F0..0x801EF524` sourcing
+`0x801F64F4 + (char - 1) * 0x10` for the AI / auto-fight case.
+
+### 2. The strike loop stages one byte per swing and applies no damage
+
+The `0x1E` body's stage site is `0x801E3734..0x801E3764`:
+
+```text
+801e3734  lbu v0,0x4(s5)         ; cursor  (s5 = _DAT_8007BD24 + 0x11)
+801e373c  addiu v1,v0,0x1
+801e3748  sb  v1,0x4(s5)         ; cursor += 1   -- post-increment, exactly 1
+801e374c  lbu v1,0x1df(v0)       ; b = stream[old cursor]
+801e375c  sb  v0,0x1dc(s3)       ; actor[+0x1DC] |= 2   (one-per-clip latch)
+801e3764  sb  v1,0x1da(s3)       ; actor[+0x1DA] = b    (the stage)
+```
+
+Two corrections fall out. The cursor is a **battle-controller** byte
+(`_DAT_8007BD24[+0x15]`, reached as `0x4(s5)`), not an actor byte - the port
+models it per actor, which is equivalent only because one actor acts at a time.
+And the terminator is tested at the **new** cursor
+(`0x801E3998..0x801E39AC`), with `0x00` routing to state `0x1F`
+(`0x801E3A7C`).
+
+**`FUN_801E295C` never calls a damage kernel.** `jal 0x801ec3e4` does not
+appear anywhere in its 4099 instructions; case `0x1E`'s only calls are
+`FUN_801D8DE8`, `FUN_801EED1C`, `FUN_801D5854` and the atan2 `FUN_80019B28`.
+The `0x19` refill loop at `0x801E3A20..0x801E3A64` is the Miracle continuation:
+it rewinds the cursor (`sb zero,0x4(s5)`) and rewrites marked slots to `0x19`.
+
+### 3. Damage is one power byte per animation hit event
+
+`FUN_801EC3E4` is called from the **anim** tick `FUN_80047430`
+(`0x800478A0`, `0x80047BF0`) with the hit-event frame in `a2`, not from the
+state machine. Each call consumes exactly one power byte, indexed by the
+actor's own counter `+0x1F4`:
+
+```text
+801ec45c  lbu v1,0x1f4(v0)       ; strike index
+801ec464  addu a1,a1,v1
+801ec480  _sltiu v0,v1,0x4       ; BOUND, not a loop back edge
+801ec494  lbu a0,0x0(a1)         ; the single power byte
+...
+801eecdc  lbu v0,0x1f4(v1)
+801eece8  sb  v0,0x1f4(v1)       ; +0x1F4 += 1, once, in the epilogue
+```
+
+So **one staged art constant produces as many damage applications as its clip
+has hit events**, capped at four - the art's power list is walked by the
+animation, not by the stream. `+0x1F4` is reset from the anim side when the
+*latched* id crosses `0x2B` (`0x80047878`: `sb zero,0x1f4(s2)`).
+
+### 4. The latch is what makes the attack camera reachable
+
+`FUN_8004AD80` ends with an unconditional byte copy
+(`0x8004AEB0`: `lbu v0,0x1da(s1)`; `0x8004AEB8`: `sb v0,0x1db(s1)`) that every
+path converges on, so an art constant staged into `+0x1DA` reaches `+0x1DB`
+unchanged. `+0x1DB` is the byte the per-art attack camera dispatches on
+(`0x1A..=0x2D`, see
+[battle-attack-camera-table.md](../formats/battle-attack-camera-table.md)),
+which is why the camera is unreachable for any action whose stream carries only
+direction swings.
+
+### What the port does instead
+
+`World::run_battle_art` (`engine-core`, `world/battle/command_flow.rs`) arms the
+attack band for a resolved arts entry: category `3`, target, `Begin`, and an
+action-parameter stream of **one byte per resolved strike**, each carrying the
+turn's action constant. `BattleActor::art_power` carries the entry's per-strike
+power profile alongside, and `attack_chain` resolves the art from the staged
+byte itself, falling back to `chosen_art`. Two divergences, both deliberate:
+
+- **One byte per hit, not one byte per art.** Retail stages the art once and
+  lets the clip's hit events pace `FUN_801EC3E4`. The port has no per-clip
+  hit-event driver on this path, so the stream carries the hit count instead.
+  Same hit count, same power bytes, different pacing.
+- **The stream carries no leading direction bytes and no `0x19`/`0x1A`
+  starter.** That follows from the model divergence in §1: the port's entry
+  resolver already folded those directions into the art.
+
+A direction swing (`0x0C..0x0F`) staged in the stream never dispatches the
+art-strike hook even while `chosen_art` is set - it resolves through the host's
+melee seam - so an entry that mixes plain swings with arts cannot charge a
+direction twice.
+
 ## Engine port
 
 `crates/engine-vm/src/battle_action.rs` ports the state graph as a per-frame edge-triggered state machine. Surface:
