@@ -148,10 +148,14 @@ impl LegaiaRuntime {
                 selected: slot >= r.first_slot && slot < r.first_slot + r.members,
             })
             .collect();
-        Some(ui::enemy_target_menu_draws_for(
+        // The strip shares a row band with a host-drawn prompt box, so it
+        // steps up in whole 14 px rows off that box's rect rather than
+        // overprinting it - the native window resolves the same collision.
+        Some(ui::enemy_target_menu_draws_at(
             font,
             &views,
             (surface_w, surface_h),
+            ui::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect(font)),
         ))
     }
 
@@ -450,6 +454,11 @@ impl LegaiaRuntime {
                         h.world.current_dialog.is_some() || h.world.inline_dialogue.is_some()
                     }),
                 badges: badges.as_ref(),
+                // The same tutorial box that takes the plaque's seat also
+                // sits on a party surface's row; naming its rect is what
+                // parks the covered surface instead of letting two text
+                // runs share the pixels.
+                host_box: self.battle_tutorial_stage_rect(font),
                 active_slot: active.as_ref().map(|(s, _)| *s),
                 // Retail parks the status plate off-screen while a command
                 // entry session owns the frame; the port emits no strip.

@@ -397,14 +397,15 @@ impl LegaiaRuntime {
             let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
             let ct = [sprite.clut, sprite.page];
             // The retail pass-2 brightness envelope writes `r = g = b =
-            // brightness` on the GPU packet. The page's hybrid shader keeps
-            // the a_flat_rgba alpha as the "textured" flag, so the envelope
-            // rides the RGB lanes and is applied to the sampled texel by the
-            // textured branch's own shade - the same faithfulness ceiling the
-            // native billboard has.
+            // brightness` on the GPU packet, and the page's textured branch
+            // now applies retail's `texel * colour / 128`, so the envelope
+            // rides the RGB lanes verbatim. Writing 255 here would both
+            // discard the envelope and brighten every sprite by `255/128`.
+            // `0x80` is neutral; see `effect_vm::pool::pass2_brightness`.
             let base = (frame.positions.len() / 3) as u32;
+            let b = sprite.brightness;
             for (corner, uv) in corners.iter().zip(corner_uv) {
-                push_vertex(&mut frame, *corner, uv, ct, [255, 255, 255, 255]);
+                push_vertex(&mut frame, *corner, uv, ct, [b, b, b, 255]);
             }
             frame.indices.extend_from_slice(&[
                 base,

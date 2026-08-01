@@ -1950,7 +1950,11 @@
      *
      *  - the effect POOL, as one batched mesh of camera-facing textured quads
      *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas
-     *    the battle VRAM carries) plus tinted outline strips. Its vertices
+     *    the battle VRAM carries). The per-billboard tinted outline is a
+     *    diagnostic and is OFF unless something calls
+     *    `rt.set_battle_fx_outline(true)` - retail draws no such rectangle,
+     *    and leaving it on stamped an opaque red-ish box around every effect
+     *    sprite in the fight. Its vertices
      *    already carry the FX camera's 4x world scale, so it draws under an
      *    identity model - the basis is derived engine-side from the same
      *    battle VP the page renders with, which is what makes the quads face

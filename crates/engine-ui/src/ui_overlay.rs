@@ -1679,8 +1679,9 @@ pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
     y
 }
 
-/// Build [`TextDraw`]s for the enemy target-selection name strip at
-/// [`ENEMY_MENU_STAGE_Y`].
+/// Build [`TextDraw`]s for the enemy target-selection name strip at a
+/// caller-chosen stage row - the seat [`enemy_target_menu_rows_y`] picks,
+/// which is [`ENEMY_MENU_STAGE_Y`] unless a host box shares the strip's row.
 ///
 /// The row *content* is retail's: dedup labels from `FUN_801D9D3C` and the
 /// centre/relax/clamp X layout from its second half
@@ -1689,16 +1690,10 @@ pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
 /// its stage X (integer-upscaled + centred, the same transform as the battle
 /// HUD panels), the selected row in white behind a `>` cursor, the rest
 /// dimmed.
-pub fn enemy_target_menu_draws_for(
-    font: &legaia_font::Font,
-    rows: &[EnemyTargetRowView<'_>],
-    surface: (u32, u32),
-) -> Vec<TextDraw> {
-    enemy_target_menu_draws_at(font, rows, surface, ENEMY_MENU_STAGE_Y)
-}
-
-/// [`enemy_target_menu_draws_for`] at a caller-chosen stage row - the seat
-/// [`enemy_target_menu_rows_y`] picks when a host box shares the strip's row.
+///
+/// There is deliberately no fixed-seat wrapper: both hosts share a row band
+/// with a host-drawn prompt box, so every caller must pass the resolved seat
+/// or it silently overprints the box.
 pub fn enemy_target_menu_draws_at(
     font: &legaia_font::Font,
     rows: &[EnemyTargetRowView<'_>],
