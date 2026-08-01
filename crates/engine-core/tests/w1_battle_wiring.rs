@@ -61,6 +61,32 @@ fn open_command_menu(w: &mut World) -> usize {
     panic!("the live loop never opened a command session");
 }
 
+/// Drive the open session from wherever it is to the **target cursor**.
+///
+/// Retail's open flow puts two prompts around the ring - the round-open
+/// `Begin | Run` and the `Auto | Command` pair under the `Attack` arm - so a
+/// bare Cross no longer lands on a target. Every press here is one edge, and
+/// the only non-Cross press is the ring walk off its opening `Item` arm.
+fn open_target_cursor(w: &mut World) {
+    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    for _ in 0..64 {
+        let Some(session) = w.battle_command.as_ref() else {
+            panic!("the command session closed before a target cursor opened");
+        };
+        match session.phase {
+            CommandPhase::Targeting { .. } => return,
+            CommandPhase::Menu { .. } if session.menu_command() != Some(BattleCommand::Attack) => {
+                w.set_pad(InputState::mask_of([PadButton::Down]));
+            }
+            _ => w.set_pad(InputState::mask_of([PadButton::Cross])),
+        }
+        w.tick();
+        w.set_pad(0);
+        w.tick();
+    }
+    panic!("the target cursor never opened");
+}
+
 #[test]
 fn validator_backed_target_rows_skip_a_downed_monster_slot() {
     // Monster slot 4 is seated but down. The target rows the picker opens on
@@ -71,9 +97,9 @@ fn validator_backed_target_rows_skip_a_downed_monster_slot() {
     w.actors[4].battle.liveness = 0;
     let acting = open_command_menu(&mut w);
 
-    // Cross selects Attack and opens the cursor on the first valid slot.
-    w.set_pad(InputState::mask_of([PadButton::Cross]));
-    w.tick();
+    // Walk the open flow to Attack / Auto: the cursor opens on the first
+    // valid slot.
+    open_target_cursor(&mut w);
     assert!(w.battle_command.is_some(), "target cursor open");
     assert_eq!(
         w.actors[acting].battle.active_target, 3,
@@ -94,10 +120,9 @@ fn target_cursor_tint_is_stamped_while_picking_and_cleared_on_confirm() {
     let mut w = battle_world(3);
     let acting = open_command_menu(&mut w);
 
-    // Cross #1: Attack selected, target cursor opens on the first live
-    // monster. FUN_801DA6B4's "on" arm has run.
-    w.set_pad(InputState::mask_of([PadButton::Cross]));
-    w.tick();
+    // Attack / Auto taken: the target cursor opens on the first live monster.
+    // FUN_801DA6B4's "on" arm has run.
+    open_target_cursor(&mut w);
     assert!(w.battle_command.is_some(), "picker still open");
     assert_eq!(w.actors[3].battle.render_flag, CURSOR_FLAG_SELECTED);
     assert_eq!(w.actors[3].battle.render_color, CURSOR_COLOR_BRIGHT);

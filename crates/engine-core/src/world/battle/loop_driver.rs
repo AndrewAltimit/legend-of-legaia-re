@@ -190,6 +190,11 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // Everything already in the battle-event queue belongs to an earlier
+        // tick and has been folded once; only this tick's tail may be folded
+        // below. See the fold site for what re-folding costs.
+        let events_before = self.pending_battle_events.len();
+
         // Round-open prompt: the flow byte sitting at `TurnPrompt` is the
         // port's `ctx[+0x06] == 0x1E`, and retail reaches it once per round
         // (state `0x14` sets it unconditionally, and the action SM's
@@ -324,7 +329,16 @@ impl World {
 
         // Apply this step's damage events (art strikes carry a damage value;
         // the loop owns folding while live, so events are consumed here).
-        let events = std::mem::take(&mut self.pending_battle_events);
+        //
+        // Only what **this** tick produced (`events_before` was measured on
+        // entry): everything already in the queue has been folded once and is
+        // only sitting there so a host can still observe it. Re-folding it
+        // applies its HP delta again every frame until the host drains, which
+        // for `ApplyArtStrike` is a target losing the same damage on repeat.
+        // Both play hosts drain once per simulation tick, so this only bit a
+        // driver that drains on redraw - but the queue's contract is "folded
+        // once", not "drained promptly".
+        let events: Vec<BattleEvent> = self.pending_battle_events.split_off(events_before);
         let mut art_strike_applied = false;
         for e in &events {
             if let BattleEvent::ApplyArtStrike {
@@ -355,7 +369,9 @@ impl World {
         // presentation-only members - `CameraFrameHeight`, anim / cast
         // triggers - and taking it here used to drop those on the floor for
         // every host running the live loop. Hosts drain, they do not fold.
-        self.pending_battle_events.splice(0..0, events);
+        // Appended, not prepended: an undrained backlog keeps its order and
+        // this tick's tail stays behind it.
+        self.pending_battle_events.extend(events);
 
         // Chain-driven strike: this frame's `AttackChain` pass staged one
         // queued swing byte, so one hit resolves for it. Retail's seam is the

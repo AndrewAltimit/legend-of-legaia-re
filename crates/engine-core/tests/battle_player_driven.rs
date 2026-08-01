@@ -115,16 +115,32 @@ fn battle_waits_for_player_command_then_resolves() {
         "no strike may land before the player confirms a command"
     );
 
-    // --- Phase 3: drive the command picker. Cross presses are edge-triggered,
-    // so alternate press/release frames. First press selects Attack, second
-    // confirms the (lone) monster target; then the strike commits and the
-    // single-monster formation wipes. ---
+    // --- Phase 3: drive the command picker through retail's open flow.
+    // Presses are edge-triggered, so alternate press/release frames. `Begin`
+    // on the round prompt, the ring's `Attack` arm (one Down off the `Item`
+    // arm it opens on), `Auto` on the attack-mode prompt, then the target
+    // cursor's confirm; the strike commits and the single-monster formation
+    // wipes. ---
+    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    let down = InputState::mask_of([PadButton::Down]);
     let mut returned = false;
-    let mut pressed = false;
+    let mut release = false;
     for _ in 0..2000 {
-        // Press Cross on alternate frames to generate clean just_pressed edges.
-        w.set_pad(if pressed { 0 } else { cross });
-        pressed = !pressed;
+        // Everything is Cross except the one step that walks the ring cursor.
+        let pad = if release {
+            0
+        } else {
+            match w.battle_command.as_ref().map(|s| (&s.phase, s)) {
+                Some((CommandPhase::Menu { .. }, s))
+                    if s.menu_command() != Some(BattleCommand::Attack) =>
+                {
+                    down
+                }
+                _ => cross,
+            }
+        };
+        release = !release;
+        w.set_pad(pad);
         w.tick();
         if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
             returned = true;

@@ -482,6 +482,14 @@ impl LegaiaRuntime {
             host.world.item_shop_data = Some(shop_data);
         }
 
+        // Battle chip / banner labels off the user's own disc - the
+        // `Ambushed!` and `surprised the enemy` lines, `Spirit`, and the
+        // per-character Ra-Seru name the command ring's magic arm carries.
+        // Twin of the native window's read in `window/run.rs`; without it the
+        // browser draws the port's own fallback wording instead.
+        host.world.battle_ui_strings =
+            legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
+
         // Keep the executable bytes for the battle render's per-stage SCUS
         // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
         self.scus = scus;

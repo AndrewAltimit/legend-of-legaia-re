@@ -159,16 +159,27 @@ fn drive_art_and_collect_shouts(
                 _ => InputState::mask_of([PadButton::Cross]),
             }
         } else if let Some(cmd) = w.battle_command.as_ref() {
-            if arts_turns == 0 {
-                if cmd.menu_command() == Some(BattleCommand::Arts) {
-                    InputState::mask_of([PadButton::Cross])
-                } else {
+            // Retail's open flow: `Begin` on the round prompt, the ring's
+            // `Attack` arm, then the `Auto | Command` prompt - `Command` is
+            // the directional arts entry, `Auto` the plain swing.
+            use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
+            match cmd.phase {
+                CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Down])
                 }
-            } else if cmd.menu_command() == Some(BattleCommand::Attack) {
-                InputState::mask_of([PadButton::Cross])
-            } else {
-                InputState::mask_of([PadButton::Up])
+                CommandPhase::AttackMode { .. } => {
+                    let want = if arts_turns == 0 {
+                        AttackMode::Command
+                    } else {
+                        AttackMode::Auto
+                    };
+                    if cmd.attack_mode() == Some(want) {
+                        InputState::mask_of([PadButton::Cross])
+                    } else {
+                        InputState::mask_of([PadButton::Right])
+                    }
+                }
+                _ => InputState::mask_of([PadButton::Cross]),
             }
         } else {
             0

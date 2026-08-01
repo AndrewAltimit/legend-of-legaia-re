@@ -93,18 +93,54 @@ fn enter_battle(w: &mut World) {
     assert!(w.battle_command.is_some(), "the turn opens a command menu");
 }
 
-/// Walk the command cursor onto `want` and confirm it. Panics if the cursor
-/// never reaches the command - the menu is a fixed six-row list, so a miss
-/// means the arm was removed, not that the driver was unlucky.
+/// Drive the open command session all the way to `want`, through whichever of
+/// retail's three selection surfaces stand between it and the pad.
+///
+/// The flow is `Begin | Run` (the round prompt), then the four-arm ring, and
+/// for the two attack modes a third `Auto | Command` prompt under the ring's
+/// `Attack` arm - so `Arts` is reached *through* `Attack`, which is where
+/// retail puts the directional command entry. Panics if the walk never gets
+/// there: a miss means the arm was removed, not that the driver was unlucky.
 fn pick_command(w: &mut World, want: legaia_engine_core::battle_input::BattleCommand) {
-    for _ in 0..12 {
-        let at = w.battle_command.as_ref().and_then(|c| c.menu_command());
-        if at == Some(want) {
-            tap(w, PadButton::Cross);
+    use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+    let ring_arm = match want {
+        BattleCommand::Arts => BattleCommand::Attack,
+        other => other,
+    };
+    let want_mode = match want {
+        BattleCommand::Arts => AttackMode::Command,
+        _ => AttackMode::Auto,
+    };
+    for _ in 0..40 {
+        let Some(session) = w.battle_command.as_ref() else {
             return;
+        };
+        match session.phase {
+            CommandPhase::RoundPrompt { .. } => {
+                assert_eq!(
+                    session.round_choice(),
+                    Some(RoundChoice::Begin),
+                    "the round prompt opens on Begin"
+                );
+                tap(w, PadButton::Cross);
+            }
+            CommandPhase::Menu { .. } => {
+                if session.menu_command() == Some(ring_arm) {
+                    tap(w, PadButton::Cross);
+                } else {
+                    tap(w, PadButton::Down);
+                }
+            }
+            CommandPhase::AttackMode { .. } => {
+                if session.attack_mode() == Some(want_mode) {
+                    tap(w, PadButton::Cross);
+                } else {
+                    tap(w, PadButton::Right);
+                }
+            }
+            // Targeting / resolved: the walk is done.
+            _ => return,
         }
-        assert!(at.is_some(), "the command menu should still be up");
-        tap(w, PadButton::Down);
     }
     panic!("the command cursor never reached {want:?}");
 }

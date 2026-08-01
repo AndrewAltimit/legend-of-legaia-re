@@ -2459,12 +2459,12 @@ mod battle_hud_wiring_tests {
             "the command cluster stopped sampling battle_chrome's D-pad cell"
         );
         assert_eq!(bcu::DPAD_DRAW, bc::DPAD_DRAW_W as u32);
-        // One chip per menu entry, and the port's extra row is the only
-        // seating that is not a pinned diamond arm.
+        // One chip per ring entry, and every one of them is a pinned diamond
+        // arm - there is no invented seating left on this screen.
         assert_eq!(
             bcu::MENU_SEATS.len(),
             legaia_engine_core::battle_input::BattleCommand::MENU.len(),
-            "the seating table and the command menu disagree on entry count"
+            "the seating table and the command ring disagree on entry count"
         );
         assert_eq!(
             bcu::MENU_SEATS
@@ -2474,6 +2474,24 @@ mod battle_hud_wiring_tests {
             4,
             "the pinned diamond has four arms and they must all be used"
         );
+        // The other two phases seat on pinned arms too: the round prompt on
+        // the top-level pair, the attack-mode prompt on the diamond's own
+        // left / right.
+        assert_eq!(
+            bcu::ROUND_PROMPT_SEATS.len(),
+            legaia_engine_core::battle_input::RoundChoice::PROMPT.len()
+        );
+        assert!(
+            bcu::ROUND_PROMPT_SEATS
+                .iter()
+                .all(|s| matches!(s, bcu::CommandSeat::TopLevel(_)))
+        );
+        assert_eq!(
+            bcu::ATTACK_MODE_SEATS.len(),
+            legaia_engine_core::battle_input::AttackMode::PROMPT.len()
+        );
+        assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
+        assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
     }
 
     /// The Left / Right step the command session takes has to land on the

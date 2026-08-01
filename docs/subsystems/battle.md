@@ -2577,11 +2577,13 @@ an unavailable command, while a *forbidden* one wears the red cross-out X
 
 **Port.** The cluster's draw side is
 [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs) -
-plate run, both clusters, the shared D-pad cell and the `-` chip - and both
-battle hosts seat their command menu through it, so the menu is chips rather
-than a text list on either. The port's menu carries two entries retail's four
-arms have no seat for, and they take a second row the module documents; the
-`engine-ui` literals are pinned equal to `battle_chrome` by `engine-shell`'s
+plate run, both clusters, the shared face-button cell and the `-` chip - and
+both battle hosts seat their command menu through it, so the menu is chips
+rather than a text list on either. Every chip sits on a pinned arm: the two
+clusters are three **phases**, not two rows of one menu, and the phase a frame
+is in ([`ChipPhase`](#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing))
+is what names the seats. The `engine-ui` literals are pinned equal to
+`battle_chrome` by `engine-shell`'s
 `engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome`.
 
 ## The widget-class table - where every chrome sprite comes from

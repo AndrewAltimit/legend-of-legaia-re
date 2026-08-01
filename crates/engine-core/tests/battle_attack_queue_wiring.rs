@@ -105,19 +105,38 @@ fn acting_slot(w: &World) -> usize {
     w.battle_ctx.active_actor as usize
 }
 
-/// Press Cross on alternate frames (the picker is edge-triggered) until the
-/// command session resolves: first press picks Attack, second confirms the
-/// lone monster target.
+/// Walk the open command session to a committed Attack, one edge per frame
+/// (every surface is edge-triggered).
+///
+/// Retail's open flow is three prompts deep - `Begin` on the round prompt,
+/// the ring's `Attack` arm, `Auto` on the attack-mode prompt, then the target
+/// cursor - so this steers by **phase** rather than by a press count: the only
+/// non-Cross input it ever needs is the Down that walks the ring cursor off
+/// its opening `Item` arm.
 fn confirm_attack(w: &mut World) {
+    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
-    let mut pressed = false;
-    for _ in 0..64 {
-        w.set_pad(if pressed { 0 } else { cross });
-        pressed = !pressed;
-        w.tick();
-        if w.battle_command.is_none() {
+    let down = InputState::mask_of([PadButton::Down]);
+    let mut release = false;
+    for _ in 0..256 {
+        let Some(session) = w.battle_command.as_ref() else {
             return;
-        }
+        };
+        let pad = if release {
+            0
+        } else {
+            match session.phase {
+                CommandPhase::Menu { .. }
+                    if session.menu_command() != Some(BattleCommand::Attack) =>
+                {
+                    down
+                }
+                _ => cross,
+            }
+        };
+        release = !release;
+        w.set_pad(pad);
+        w.tick();
     }
     panic!("Attack was never confirmed");
 }
