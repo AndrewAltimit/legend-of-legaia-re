@@ -1084,6 +1084,11 @@ pub(super) fn cmd_play_window_with_record(
     app.session.camera.distance = app.options_state.camera_distance;
     app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
     app.session.host.world.precise_movement = app.options_state.precise_movement;
+    // Field Move (pause menu Walk / Run, retail config word 0x800846CC). The
+    // run BUTTON inverts this per frame - see `World::field_run_active` - and
+    // is fed from the pad each tick in the event handler.
+    app.session.host.world.field_move_run_default =
+        app.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
     log::info!(
         "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
         app.options_state.camera_distance.label(),
@@ -1091,6 +1096,14 @@ pub(super) fn cmd_play_window_with_record(
             "ON"
         } else {
             "off"
+        }
+    );
+    log::info!(
+        "field move: {} by default (hold the run button to invert)",
+        if app.session.host.world.field_move_run_default {
+            "RUN"
+        } else {
+            "walk"
         }
     );
 

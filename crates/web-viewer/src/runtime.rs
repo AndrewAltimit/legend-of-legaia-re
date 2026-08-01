@@ -1803,6 +1803,11 @@ impl LegaiaRuntime {
         }
         if let Some(host) = self.scene_host.as_mut() {
             host.world.precise_movement = self.options_state.precise_movement;
+            // Field Move (pause-menu Walk / Run). Only the DEFAULT lands
+            // here; the run button that inverts it is latched by
+            // `World::set_pad`, so this page needs no per-frame wiring.
+            host.world.field_move_run_default =
+                self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
         }
     }
 }

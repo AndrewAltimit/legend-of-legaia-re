@@ -214,6 +214,13 @@ impl PlayWindowApp {
             // Game transitions can reseed world state, and the toggle is
             // host policy (options file + `R` key), not world state.
             self.session.host.world.precise_movement = self.options_state.precise_movement;
+            // Field Move default (pause-menu Walk / Run) + the run button
+            // that inverts it. Re-asserted per tick for the same reason as
+            // precise movement: it is host policy over reseeded world state.
+            self.session.host.world.field_move_run_default =
+                self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
+            // `set_pad` also latches the run button off the same word, so
+            // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
             match self.session.tick() {
                 // Door transition: the host loaded a new scene under

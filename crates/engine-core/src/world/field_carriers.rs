@@ -94,6 +94,11 @@ impl World {
         self.field_npc_positions.clear();
         self.field_npc_entry_positions.clear();
         self.field_npc_headings.clear();
+        // Motion state is per-scene: a snapshot carried across a scene change
+        // would diff the warp itself as one enormous step and start every
+        // actor - the player included - walking on the landing frame.
+        self.field_motion_prev.clear();
+        self.field_actor_moving.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             let Ok(slot) = u8::try_from(placement.index) else {
                 continue;

@@ -576,3 +576,138 @@ fn a_started_hop_survives_the_pad_being_released() {
         "the movement lock is held for the flight"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Base-step selector: Walk / Run (retail `FUN_801d01b0` @ 0x801D0334..0x801D03E0)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn run_is_the_xor_of_the_option_and_the_button() {
+    let mut world = World::new();
+    // Walk selected, button clear -> walk.
+    world.field_move_run_default = false;
+    world.field_run_button_held = false;
+    assert!(!world.field_run_active());
+    assert_eq!(world.field_base_step(), 8);
+
+    // Walk selected, button HELD -> run. (Hold-to-run.)
+    world.field_run_button_held = true;
+    assert!(world.field_run_active());
+    assert_eq!(world.field_base_step(), 0xc);
+
+    // Run selected, button clear -> run.
+    world.field_move_run_default = true;
+    world.field_run_button_held = false;
+    assert!(world.field_run_active());
+    assert_eq!(world.field_base_step(), 0xc);
+
+    // Run selected, button HELD -> WALK. The button inverts the option; it
+    // does not simply force run. This is the arm that a plain OR would get
+    // wrong, and it is what the paired branches at 0x801D0370 / 0x801D0398
+    // encode.
+    world.field_run_button_held = true;
+    assert!(!world.field_run_active());
+    assert_eq!(world.field_base_step(), 8);
+}
+
+#[test]
+fn forced_slow_cannot_be_run_out_of() {
+    let mut world = World::new();
+    // Retail's `_DAT_8007B6A8` arm jumps past the run check entirely, so a
+    // forced walk stays slow no matter what the option or the button say.
+    world.field_forced_slow = true;
+    for (opt, btn) in [(false, false), (false, true), (true, false), (true, true)] {
+        world.field_move_run_default = opt;
+        world.field_run_button_held = btn;
+        assert_eq!(
+            world.field_base_step(),
+            5,
+            "forced-slow overridden by option={opt} button={btn}"
+        );
+    }
+}
+
+#[test]
+fn set_pad_latches_the_run_button() {
+    let mut world = World::new();
+    assert!(!world.field_run_button_held);
+    world.set_pad(input::PadButton::Square.mask());
+    assert!(world.field_run_button_held);
+    // Released on the next word - it is a held state, not an edge.
+    world.set_pad(input::PadButton::Up.mask());
+    assert!(!world.field_run_button_held);
+}
+
+#[test]
+fn running_covers_more_ground_per_frame_than_walking() {
+    let step = |run: bool| {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.field_move_run_default = run;
+        world.actors[0].move_state.world_x = 200;
+        world.actors[0].move_state.world_z = 200;
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        world.actors[0].move_state.world_z - 200
+    };
+    // speed = (base_step * 0x1000) >> 12, so the step IS the base step.
+    assert_eq!(step(false), 8, "walk");
+    assert_eq!(step(true), 0xc, "run");
+}
+
+// ---------------------------------------------------------------------------
+// Source-agnostic motion detection (the glide fix)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn script_driven_player_movement_raises_the_walk_flag() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 200;
+    // Seed the snapshot with a first tick and NO pad, so the actor is known
+    // to be standing still.
+    world.set_pad(0);
+    let _ = world.tick();
+    assert!(!world.field_actor_moving.contains(&0));
+
+    // Now move the player the way a cutscene MoveTo does: write the position
+    // directly, touching no locomotion path and raising no flag of its own.
+    world.actors[0].move_state.world_z += 32;
+    world.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.field_actor_moving.contains(&0),
+        "a script-moved player must read as moving - selecting the walk clip \
+         off the MOVER rather than off the MOTION is what made it glide"
+    );
+}
+
+#[test]
+fn standing_still_is_not_motion_and_a_new_actor_is_not_a_step() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 640;
+    world.actors[0].move_state.world_z = 640;
+    world.set_pad(0);
+    let _ = world.tick();
+    let _ = world.tick();
+    assert!(!world.field_actor_moving.contains(&0), "idle player");
+
+    // An NPC seated mid-scene by a timeline appears in the position map for
+    // the first time. Its ARRIVAL is a placement, not a step, so it must not
+    // read as moving on the frame it shows up.
+    world.field_npc_positions.insert(7, (1024, 1024));
+    let _ = world.tick();
+    assert!(
+        !world.field_actor_moving.contains(&7),
+        "a freshly-seated actor must not read as walking on its arrival frame"
+    );
+    // But its next actual move does.
+    world.field_npc_positions.insert(7, (1064, 1024));
+    let _ = world.tick();
+    assert!(world.field_actor_moving.contains(&7), "NPC walked");
+}
