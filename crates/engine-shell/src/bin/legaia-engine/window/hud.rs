@@ -2611,9 +2611,17 @@ mod battle_hud_wiring_tests {
         );
     }
 
-    /// The four-tier retail readout-tint law has to reach the surface, not
-    /// just exist in engine-ui: normal / caution / danger numerals must
-    /// produce three distinct glyph tints.
+    /// The retail readout-tint law has to reach the **surface**, not just
+    /// exist in engine-ui: normal / caution / danger numerals must each take
+    /// their own tier's colour.
+    ///
+    /// Expectations come from `gauge_fill_color`, retail's own law, rather
+    /// than from literals. This test used to carry `[1.0, 0.95, 0.4, 1.0]`
+    /// ("builder's yellow") and `[1.0, 0.4, 0.4, 1.0]` ("builder's red") -
+    /// the port's pre-VRAM approximations - so once the colours were pinned
+    /// off a retail frame it failed while asserting nothing retail does.
+    /// What it always meant to protect is that the law reaches this host and
+    /// separates the tiers; both survive, and neither is spelled here.
     #[test]
     fn native_battle_hud_hp_tints_span_the_retail_tiers() {
         let glyph_colors = |hp: u16| -> Vec<[f32; 4]> {
@@ -2624,8 +2632,17 @@ mod battle_hud_wiring_tests {
                 .map(|d| d.color)
                 .collect()
         };
-        let caution = [1.0, 0.95, 0.4, 1.0]; // builder's yellow
-        let danger = [1.0, 0.4, 0.4, 1.0]; // builder's red
+        // Retail's tier ids: 7 normal, 6 caution, 9 danger.
+        let caution = legaia_engine_render::gauge_fill_color(6);
+        let danger = legaia_engine_render::gauge_fill_color(9);
+        // A law whose tiers collapsed to one colour would satisfy every
+        // "contains" below while drawing a single flat readout.
+        assert!(
+            caution != danger
+                && caution != legaia_engine_render::READOUT_NORMAL
+                && danger != legaia_engine_render::READOUT_NORMAL,
+            "the three tiers must be visually distinct"
+        );
         assert!(
             !glyph_colors(90)
                 .iter()
@@ -2634,11 +2651,11 @@ mod battle_hud_wiring_tests {
         );
         assert!(
             glyph_colors(40).contains(&caution),
-            "caution tier numerals not yellow"
+            "caution tier numerals do not take the tier-6 colour"
         );
         assert!(
             glyph_colors(20).contains(&danger),
-            "danger tier numerals not red"
+            "danger tier numerals do not take the tier-9 colour"
         );
     }
 
