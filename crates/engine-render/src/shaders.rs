@@ -1042,6 +1042,13 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
+    // Double-sided pair copies (blend bit 14, set by
+    // `legaia_tmd::mesh::resolve_hybrid` - the colour-half twin of the
+    // VRAM-mesh shader's CBA bit 15): draw only the camera-facing copy,
+    // same field-frame parity as the textured discard above it mirrors.
+    if ((in.blend & 0x4000u) != 0u && front_facing) {
+        discard;
+    }
     // Semi-transparency (ABE): an untextured ABE prim blends every pixel, so
     // nothing of it belongs in the opaque pass - the blend pass re-draws it
     // from the per-ABR-mode index tail. Gated on the semi-blend flag
@@ -1096,7 +1103,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // arithmetic output, which retail dithers down to 15-bit before the blend
 // math - so the dither stage applies to F here, before mode 3's 0.25
 // pre-scale (retail folds that scale into the blend itself).
-fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
+fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    // Double-sided pair copies: same facing discard as the opaque entry
+    // (mirrors the textured blend pass).
+    if ((in.blend & 0x4000u) != 0u && front_facing) {
+        discard;
+    }
     // Opt-in dynamic light first (identity when disabled), matching the
     // opaque colour pass so a semi prim blends against equally-lit pixels.
     // Prologue palette mode mirrors the opaque colour pass exactly.
@@ -1129,13 +1141,13 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
 }
 
 @fragment
-fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, 1.0);
+fn fs_blend(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 1.0);
 }
 
 @fragment
-fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, 0.25);
+fn fs_blend_quarter(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 0.25);
 }
 "#;
 

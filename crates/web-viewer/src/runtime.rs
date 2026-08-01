@@ -1808,6 +1808,9 @@ impl LegaiaRuntime {
             // `World::set_pad`, so this page needs no per-frame wiring.
             host.world.field_move_run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
+            // Photosensitivity guard over the ambient palette cyclers
+            // (default ON; see `OptionsState::reduce_flashing`).
+            host.world.reduce_flashing = self.options_state.reduce_flashing;
         }
     }
 }

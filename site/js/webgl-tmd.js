@@ -551,6 +551,15 @@ class TmdRenderer {
     return m ? m.aabb : null;
   }
 
+  /* Vertex count of an uploaded scene mesh (0 until uploadSceneMesh has
+   * run). The sky-mesh classifier's density guard reads it: a genuine sky
+   * shell is a few dozen verts stretched over kilometres, while big REAL
+   * geometry (kor5's 459-vert town paving) is dense. */
+  getMeshVertexCount(meshId) {
+    const m = this.sceneMeshes.get(meshId);
+    return m ? (m.vertexCount || 0) : 0;
+  }
+
   /* `flatRgba` (optional): Uint8Array, 4 bytes per vertex
    * [r, g, b, textured_flag] - the prim's PSX packet colour plus which job it
    * does. Textured verts (flag 255) MODULATE their texel by it
@@ -745,6 +754,7 @@ class TmdRenderer {
       this.sceneMeshes.set(meshId, m);
     }
     m.aabb = computeAabb(positions);
+    m.vertexCount = positions.length / 3;
     gl.bindVertexArray(m.vao);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);

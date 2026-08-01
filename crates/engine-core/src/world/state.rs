@@ -1653,6 +1653,20 @@ pub struct World {
     /// captured rect. Filled lazily by [`World::step_ambient_fx`] from the
     /// host's VRAM the first time a cell fires; cleared on scene entry.
     pub ambient_cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// Photosensitivity guard over the ambient CLUT-cell cyclers (see
+    /// [`crate::options::OptionsState::reduce_flashing`]). When `true`
+    /// (the default - a host that never plumbs options stays safe),
+    /// [`World::step_ambient_fx`] slew-limits the **applied** luminance
+    /// channels (`v_add`, `white`) toward each cell's simulated target
+    /// instead of jumping, so full-swing per-tick strobes (koin3's dance
+    /// floor) become sub-hazard-rate pulses. Hue / saturation sweeps pass
+    /// through untouched. The move-VM state itself always advances
+    /// retail-exact - this only shapes the VRAM presentation.
+    pub reduce_flashing: bool,
+    /// The limiter's per-rect applied `(v_add, white)` state - what the
+    /// last [`World::step_ambient_fx`] actually wrote, keyed like
+    /// [`Self::ambient_cell_captures`] and cleared with it on scene entry.
+    pub ambient_flash_applied: std::collections::HashMap<(u16, u16, u16, u16), (i16, i16)>,
     /// Scene-entry **VDF pulse** (enhancement): a rolling ramp envelope over
     /// the scene's populated VDF pack for scenes whose entry-ambient tree
     /// arms no morph lanes of its own (jou). Installed by
@@ -2698,6 +2712,8 @@ impl World {
             ambient_pending_game_ticks: 0,
             ambient_vsync_accum: 0,
             ambient_cell_captures: std::collections::HashMap::new(),
+            reduce_flashing: true,
+            ambient_flash_applied: std::collections::HashMap::new(),
             entry_vdf_pulse: None,
             morph_dirty_slots: std::collections::BTreeSet::new(),
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).

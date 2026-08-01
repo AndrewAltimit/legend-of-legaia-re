@@ -34,12 +34,20 @@
    * vertical sheet wider than any real wall (town cliffs are thick, and flat
    * floor slabs are horizontal); a *dome shell* is huge on BOTH horizontal axes
    * AND tall (interior floor slabs like korb3's 3584-unit carpets are flat;
-   * mountain walls like rikuroa slot 32 are long but shallow). */
-  function isSkyMesh(aabb) {
+   * mountain walls like rikuroa slot 32 are long but shallow) AND sparse -
+   * every genuine shell in the corpus is 42-51 verts stretched over a
+   * 7k-18k span (teien slot 3, town01 slots 84/85, rikuroa slot 37), while
+   * real geometry that big is dense: kor5 slot 3 - the town's ENTIRE tiled
+   * paving + walkway floor, 459 verts over 4224x3680 - matched the old
+   * AABB-only arm and the whole plaza floor silently vanished into the sky
+   * bucket. `vertCount` 0/undefined (metadata unavailable) keeps the
+   * pre-guard behaviour. */
+  function isSkyMesh(aabb, vertCount) {
     if (!aabb) return false;
+    const sparse = !vertCount || vertCount <= 96;
     const flatPlane = Math.min(aabb.sx, aabb.sz) < 8
       && Math.max(aabb.sx, aabb.sz) > 3000 && aabb.sy > 600;
-    const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800;
+    const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800 && sparse;
     return flatPlane || domeShell;
   }
 
@@ -180,7 +188,9 @@
         for (let i = 0; i < slots.length; i++) {
           const ms = slots[i];
           if (!ensureMesh(ms)) continue;
-          if (isSkyMesh(this.renderer.getMeshAabb(ms))) {
+          if (isSkyMesh(this.renderer.getMeshAabb(ms),
+                        this.renderer.getMeshVertexCount
+                          ? this.renderer.getMeshVertexCount(ms) : 0)) {
             skySlots.add(ms);
             skyDrawsHidden++;
             continue;
@@ -295,16 +305,31 @@
       this.raf = requestAnimationFrame(tick);
     }
 
-    /* Advance the scene's VRAM animation one vsync and re-upload the VRAM
-     * texture when texels changed (CLUT-walk shimmer fires every few game
-     * ticks; the ambient palette cyclers every game tick while lit). Called
-     * from both the flat loop and (via LegaiaVr's draw callback path) each
-     * XR frame. No-op for scenes with no animation sources. */
+    /* Advance the scene's VRAM animation by however many retail vsyncs of
+     * wall clock elapsed and re-upload the VRAM texture when texels changed
+     * (CLUT-walk shimmer fires every few game ticks; the ambient palette
+     * cyclers every game tick while lit). Called from both the flat loop and
+     * (via LegaiaVr's draw callback path) each XR frame - both of which fire
+     * at the DISPLAY rate, so the vsync count must come from the wall clock,
+     * not the callback count: ticking 1 per rAF ran the palette animations
+     * at 2-2.4x retail on a 120/144 Hz monitor (and up to 4x in a 240 Hz
+     * headset), the same class of bug the play page's `_simAccum` governor
+     * fixed for the world tick. No-op for scenes with no animation sources. */
     stepAnim() {
       if (!this.anim) return;
       const v = this.viewer;
       if (typeof v.field_scene_anim_tick !== 'function') return;
-      if (v.field_scene_anim_tick(1)) {
+      const VSYNC_MS = 1000 / 60;
+      const now = performance.now();
+      if (this._animLast === undefined) this._animLast = now;
+      this._animAccum = (this._animAccum || 0) + (now - this._animLast);
+      this._animLast = now;
+      /* Cap the backlog so a hidden tab doesn't unleash a catch-up burst. */
+      if (this._animAccum > VSYNC_MS * 4) this._animAccum = VSYNC_MS * 4;
+      const vsyncs = Math.floor(this._animAccum / VSYNC_MS);
+      if (vsyncs <= 0) return;
+      this._animAccum -= vsyncs * VSYNC_MS;
+      if (v.field_scene_anim_tick(vsyncs)) {
         this.renderer.uploadVram(v.field_scene_vram_bytes());
       }
       /* VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator

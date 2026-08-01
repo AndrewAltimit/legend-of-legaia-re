@@ -219,6 +219,10 @@ impl PlayWindowApp {
             // precise movement: it is host policy over reseeded world state.
             self.session.host.world.field_move_run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
+            // Photosensitivity guard over the ambient palette cyclers -
+            // host policy like the two above (default ON; see
+            // `OptionsState::reduce_flashing`).
+            self.session.host.world.reduce_flashing = self.options_state.reduce_flashing;
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
@@ -1296,6 +1300,14 @@ impl PlayWindowApp {
                         // sentinel tile precisely so they never render.
                         let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
                         if x == hide && z == hide {
+                            continue;
+                        }
+                        // Zero render scale (`actor[+0x72] = 0`, written by
+                        // the trigger records' spawn prologue): retail
+                        // collapses the actor's mesh to a point - the
+                        // invisible interaction markers (orange diamond +
+                        // blue cone dev gizmo). Skip the draw entirely.
+                        if w.field_npc_render_scale(d.slot as usize) == Some(0) {
                             continue;
                         }
                         let y = w.sample_field_floor_height(x as i32, z as i32) as f32;

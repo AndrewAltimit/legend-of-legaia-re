@@ -1753,6 +1753,24 @@ impl World {
     /// for placements the patroller does NOT drive - the two never fight over a
     /// slot's position. During a cutscene the patroller stands down, so the
     /// channel owns every slot's write-through exactly as before.
+    /// The render scale a placement channel's actor draws at - retail's
+    /// `actor[+0x72]` fixed-point scalar (`0x1000` = 1.0), seeded by the
+    /// allocator (`actor_free`) and rewritten by the spawn prologue's
+    /// `4C 40` writes. The per-actor render dispatcher (`FUN_8001ADA4`)
+    /// composes it into the GTE model matrix, so **scale 0 = invisible**:
+    /// the invisible interaction-trigger records draw their dev-gizmo
+    /// marker mesh at scale 0 in retail. Both hosts' NPC draw loops read
+    /// this and skip zero-scale actors. `None` when no channel owns the
+    /// placement (draw at unit scale).
+    // REF: FUN_8001ADA4 (scale-vector compose, disasm 8001b240..8001b28c)
+    // REF: FUN_80020de0 (actor_free: +0x72 = 0x1000 at birth)
+    pub fn field_npc_render_scale(&self, placement_index: usize) -> Option<u16> {
+        self.field_channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == placement_index)
+            .map(|c| c.ctx.field_72)
+    }
+
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {

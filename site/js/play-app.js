@@ -635,7 +635,9 @@
            * are a wall in front of the lens. Same classifier the full-map view
            * uses. */
           const aabb = this.renderer.getMeshAabb(meshId);
-          if (isSky(aabb)) continue;
+          const verts = this.renderer.getMeshVertexCount
+            ? this.renderer.getMeshVertexCount(meshId) : 0;
+          if (isSky(aabb, verts)) continue;
           const draw = {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
