@@ -195,14 +195,21 @@ fn transform_dir(m: &[f32; 16], v: [f32; 3]) -> [f32; 3] {
 /// BR - the browser copy of the native `effect_sprite_corners`. The native
 /// `EFFECT_TEXEL_WORLD` extra scale is `1.0` (the sprite's `size` is already
 /// the retail pass-2 world size), so it does not appear here.
+///
+/// The half-extents come through [`legaia_engine_vm::effect_billboard`]
+/// because retail forms the corners in **view** space, after the camera
+/// transform (`FUN_800195A8`), so they must not take the battle base matrix's
+/// `BATTLE_WORLD_SCALE` a second time - the module carries the instruction
+/// evidence. Both hosts share the kernel so their effects cannot differ in
+/// size.
 fn sprite_corners(
     sprite: &legaia_engine_core::world::EffectSprite,
     right: [f32; 3],
     up: [f32; 3],
 ) -> [[f32; 3]; 4] {
     let c = sprite.world_pos;
-    let hw = sprite.size[0] * 0.5;
-    let hh = sprite.size[1] * 0.5;
+    let (hw, hh) =
+        legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
     let mut out = [[0.0f32; 3]; 4];
     // TL, TR, BL, BR: (-r +u), (+r +u), (-r -u), (+r -u).
     for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]

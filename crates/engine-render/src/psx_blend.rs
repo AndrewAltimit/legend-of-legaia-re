@@ -25,9 +25,17 @@
 //! the opaque pass draws every triangle and discards STP texels of
 //! semi-transparent prims in the shader, then a blend pass re-draws only the
 //! semi-transparent triangles (grouped per ABR mode by
-//! [`append_semi_tail`]) and discards everything *except* STP texels. Both
-//! the shader discard and the blend pass are gated on the PSX-faithful mode
-//! flag ([`Renderer::set_psx_mode`]), so the default path is unchanged.
+//! [`append_semi_tail`]) and discards everything *except* STP texels.
+//!
+//! Both the shader discard and the blend pass are gated on `semi_blend`
+//! ([`Renderer::set_semi_blend`]), which is **on by default** and
+//! deliberately independent of the strict-PS1 knobs: blending is correct in
+//! the clean render, so it does not wait on [`Renderer::set_psx_mode`]. An
+//! earlier version of this note said `set_psx_mode` gated it, which sends a
+//! reader hunting for a disabled pass that is in fact running - and a
+//! deferred fragment looks exactly like a culled one from the outside.
+//! `LEGAIA_DIAG_NOSEMI` turns the blend pass off so a deferred fragment
+//! draws opaque instead of vanishing, which is how to tell the two apart.
 
 /// Bit 15 of the per-vertex TSB attribute = "prim is semi-transparent"
 /// (the TMD mode byte's ABE bit). Engine-side packing; kept in lockstep

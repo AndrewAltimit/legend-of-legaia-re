@@ -412,20 +412,27 @@ under `SecondCopy`), so neither draws it as a second `SceneDraw` - the single
 once. Retail draws it twice, and which transform the copy takes is per stage
 (`legaia_asset::battle_backdrop`).
 
-The visible divergence is on the overworld dome: the browser paints repeating
-vertical lighter bands across the sky and mountain arc and lays a hard-edged
-flat water slab across the grass, where the native window shows neither. The
-untextured panels are therefore not *missing* from the browser - the earlier
-suspicion - they are present and blended differently, which is the harder
-version of the same bug. The host-drift gate cannot see it: both hosts do
-reach a backdrop builder, so builder-reachability passes while the two
-builders disagree (`docs/tooling/host-drift.md` § what each tier is silent
-about).
-
-Reproducing it in the browser costs a real encounter - `debug_start_test_battle`
-is `#[cfg(not(target_arch = "wasm32"))]`, so a headless page has to walk an
-encounter scene until one fires, and town stages (which roll no encounters)
-cannot be reached at all.
+> **Resolved, and the builder split was not the cause.** The visible
+> divergence - repeating vertical lighter bands across the browser's sky and
+> mountain arc - was **one multiply in the fragment shader**, not the two
+> builders: both carry the same per-vertex colours and the same ABE bit.
+> `site/js/webgl-shaders.js` applied a synthetic Lambert on its untextured
+> path, and a sky dome's panels sweep every azimuth, so a term in the
+> screen-space geometric normal painted exactly those bands. The untextured
+> branch now draws the packet colour, as retail and as the native renderer do.
+> The table above still describes the builder split accurately - it is real,
+> and it is still something the host-drift gate cannot see, because both hosts
+> *do* reach a backdrop builder - but it is not what was on screen. Full
+> analysis, including the residual textured-path Lambert that is still a
+> stand-in for `texel * packet_colour / 128`, is in
+> [`host-drift.md`](../tooling/host-drift.md).
+>
+> The reproduction cost is also gone: `play_battle.rs` exports a wasm
+> `debug_force_battle(row)` that mirrors native `--battle <ROW>`, so a headless
+> page can enter a named formation directly. Before it, `debug_start_test_battle`
+> was `#[cfg(not(target_arch = "wasm32"))]` and town stages - which roll no
+> encounters - could not be reached in the browser at all, which is why nobody
+> had ever looked at one.
 
 ### The screen the GTE projects onto is 320x224, not 320x240
 
