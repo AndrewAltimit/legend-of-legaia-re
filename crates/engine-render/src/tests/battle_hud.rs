@@ -672,8 +672,14 @@ fn battle_hud_draws_for_includes_log_lines_below_slots() {
     assert!(draws_with_log.len() > n_no_log);
 }
 
+/// The HUD's text popup is the **diagnostic** readout of a hit, not the retail
+/// one: retail throws its numeral off the effect atlas
+/// ([`legaia_engine_vm::battle_value_readout`]) over the actor that was struck,
+/// so nothing about a landed hit reaches the default surface here. The anchor
+/// this asserts is therefore the diagnostic column's, and the retail seat is
+/// covered by the readout module's own tests.
 #[test]
-fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
+fn battle_hud_popup_is_a_diagnostic_row_riding_its_panel_anchor() {
     let font = legaia_font::synthetic_for_tests();
     let slot = slot_view("Vahn", true, true, 100, 100, 0, 0);
     let popup = HudPopupView {
@@ -684,8 +690,14 @@ fn battle_hud_draws_for_party_popup_rides_its_panel_anchor() {
         status_letter: None,
         alpha: 1.0,
     };
-    let n_no_popup = hud_draws(&font, &[slot], &[], &[]).len();
-    let draws = hud_draws(&font, &[slot], &[popup], &[]);
+    assert_eq!(
+        hud_draws(&font, &[slot], &[popup], &[]).len(),
+        hud_draws(&font, &[slot], &[], &[]).len(),
+        "a popup drew on the default retail surface"
+    );
+
+    let n_no_popup = hud_frame(&font, &[slot], &[], &[], true).text.len();
+    let draws = hud_frame(&font, &[slot], &[popup], &[], true).text;
     assert!(draws.len() > n_no_popup, "popup produced no glyphs");
     // Damage popups draw in the cyan tint, above the member's panel (a
     // stage-space anchor, unlike the diagnostic rows' pen anchor).
@@ -816,9 +828,15 @@ fn battle_hud_draws_for_popup_for_invalid_slot_is_dropped() {
         status_letter: None,
         alpha: 1.0,
     };
-    let with_popup = hud_draws(&font, &[slot], &[popup], &[]);
-    let no_popup = hud_draws(&font, &[slot], &[], &[]);
+    // Measured on the diagnostic frame: popups no longer reach the default
+    // surface at all, so comparing there would pass for the wrong reason - the
+    // out-of-range guard would be untested rather than proven.
+    let with_popup = hud_frame(&font, &[slot], &[popup], &[], true).text;
+    let no_popup = hud_frame(&font, &[slot], &[], &[], true).text;
     assert_eq!(with_popup.len(), no_popup.len());
+    // Non-vacuity: an in-range popup on the same frame does add glyphs.
+    let valid = HudPopupView { slot: 0, ..popup };
+    assert!(hud_frame(&font, &[slot], &[valid], &[], true).text.len() > no_popup.len());
 }
 
 #[test]
@@ -833,7 +851,7 @@ fn battle_hud_draws_for_heal_popup_uses_green_tint() {
         status_letter: None,
         alpha: 1.0,
     };
-    let draws = hud_draws(&font, &[slot], &[popup], &[]);
+    let draws = hud_frame(&font, &[slot], &[popup], &[], true).text;
     // Heal color is green: [0.5, 1.0, 0.5, 1.0]; any glyph with that profile.
     let any_green = draws
         .iter()
