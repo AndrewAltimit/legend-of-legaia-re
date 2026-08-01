@@ -203,7 +203,7 @@ impl World {
     /// and a rolled **back attack** - whose entire effect is that the monsters
     /// get the drop - still opened on the party, because the side lockout only
     /// zeroed keys that slot 0's hand-arm had already bypassed.
-    pub(in crate::world) fn seed_battle_initiative(&mut self) {
+    pub fn seed_battle_initiative(&mut self) {
         if !self.any_battle_speed() {
             return;
         }
@@ -289,6 +289,10 @@ impl World {
     /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
     /// REF: FUN_801D0748 (the flow arm that writes `ctx[7] = 0` at battle open)
     pub(in crate::world) fn latch_battle_formation(&mut self) {
+        // The banner is chosen from the **unlatched** copy, because the arm
+        // below clears it - retail reads it in state `0x0A` (`FUN_801D9D3C`),
+        // one state before the action SM's `0x00` latch runs.
+        self.raise_battle_open_banner();
         let party = self.party_count;
         // `ctx[+0x01]` is the seated monster count, not the width of the
         // 8-slot table - the tail of it is empty in most formations.
@@ -296,6 +300,50 @@ impl World {
             .filter(|&slot| self.actors[slot].battle.liveness != 0)
             .count() as u8;
         vm::battle_action::begin_formation_arm(party, monsters, &mut self.battle_ctx);
+    }
+
+    /// Queue the battle-open formation banner - `Ambushed!` or the
+    /// `surprised the enemy` line - onto the shared battle message box.
+    ///
+    /// Retail draws it in flow state `0x0A` from `FUN_801D9D3C`'s
+    /// `ctx[+0x290]` arm (`0x801DA234`), holds it for the `ctx[+0x6D6]` intro
+    /// timer, and then lets the round start. The port re-hosts that as one
+    /// self-dismissing box on the battle message queue, which is retail's own
+    /// single-box surface (`ctx[+0x6B2]`); the loop parks on it exactly as it
+    /// parks on the intro timer.
+    ///
+    /// An ordinary formation queues nothing, which is retail's own skip.
+    ///
+    /// PORT: FUN_801D9D3C (the `ctx+0x290` banner arm; the party-plate layout
+    /// stays with the HUD)
+    pub fn raise_battle_open_banner(&mut self) {
+        use crate::battle_open::{BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner};
+        let Some(banner) =
+            FormationBanner::for_formation(self.battle_formation(), self.party_count)
+        else {
+            return;
+        };
+        // Retail substitutes the *leader's* name, not the acting member's:
+        // the operand it writes after the `0xC1` token is
+        // `DAT_8007BD10[0] - 1`.
+        let leader = self
+            .roster
+            .members
+            .get(self.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "The party".to_string());
+        let template = self
+            .battle_ui_strings
+            .get(banner.disc_label())
+            .map(str::to_string);
+        self.battle_tutorial_boxes
+            .push_back(crate::battle_flow::ActiveTutorialBox {
+                text: banner.line(&leader, template.as_deref()),
+                style: BANNER_BOX_STYLE,
+                waits_for_input: false,
+                frames_remaining: BANNER_FRAMES,
+            });
     }
 
     /// Next combatant by SPD-seeded initiative - the port of

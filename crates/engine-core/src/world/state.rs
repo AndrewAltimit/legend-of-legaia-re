@@ -1871,7 +1871,17 @@ pub struct World {
     /// Tutorial boxes waiting to be shown, front first. While non-empty the
     /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
     /// message-box guard, which makes `FUN_801D0748` return early.
+    ///
+    /// The queue is retail's single battle message box, so it carries more
+    /// than the tutorial: the battle-open formation banner
+    /// ([`World::raise_battle_open_banner`]) rides it too.
     pub battle_tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+
+    /// The battle screen's chip / banner labels, read off the user's own disc
+    /// ([`legaia_asset::battle_ui_strings`]). Empty when the host had no disc
+    /// to read - the port's own wording is used then, so the surfaces still
+    /// draw rather than going blank.
+    pub battle_ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings,
 
     /// The next [`World::enter_battle`] is the sparring fight and should arm
     /// [`Self::battle_tutorial`]. Set by
@@ -2663,6 +2673,7 @@ impl World {
             battle_tutorial: None,
             battle_tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             battle_tutorial_boxes: std::collections::VecDeque::new(),
+            battle_ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             battle_tutorial_pending: false,
             active_formation: None,
             field_boss_stagers: std::collections::HashMap::new(),

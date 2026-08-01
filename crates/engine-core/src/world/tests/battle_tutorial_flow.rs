@@ -119,6 +119,7 @@ fn picking_the_item_window_during_the_attack_lesson_rewinds() {
     world.battle_command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: CommandPhase::OpenItemMenu,
     });
     world.tick_battle_command();
@@ -138,6 +139,7 @@ fn the_item_window_is_allowed_once_the_item_lesson_is_running() {
     world.battle_command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: CommandPhase::OpenItemMenu,
     });
     world.tick_battle_command();
@@ -164,6 +166,7 @@ fn run_is_rejected_for_the_whole_sparring_fight() {
         world.battle_command = Some(BattleCommandSession {
             actor: 0,
             party_slot: 0,
+            no_escape: false,
             phase: CommandPhase::RunAway,
         });
         world.tick_battle_command();
@@ -185,6 +188,7 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     world.battle_command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: CommandPhase::Confirmed {
             command: crate::battle_input::BattleCommand::Attack,
             target_row: crate::target_picker::CursorRow::Enemy,

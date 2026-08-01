@@ -137,11 +137,9 @@ pub enum BattleMenuKind {
 /// would be sitting in, and the command session that spawned it has already
 /// resolved. When neither is live the flow is [`BattleFlowState::Idle`].
 ///
-/// The engine has no separate `[Begin]` screen, so
-/// [`BattleFlowState::TurnPrompt`] is not produced here - the World raises it
-/// for the frame a command session is opened (see
-/// `World::open_battle_command`), which is the same instant retail enters
-/// `0x1E`.
+/// The command session now models retail's round prompt (`0x1E`) and
+/// attack-mode prompt (`0x78`) as phases of its own, so both map straight
+/// across instead of being synthesised by the World.
 pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> BattleFlowState {
     match menu {
         BattleMenuKind::Item => return BattleFlowState::ItemWindow,
@@ -150,6 +148,8 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         BattleMenuKind::None => {}
     }
     match phase {
+        Some(CommandPhase::RoundPrompt { .. }) => BattleFlowState::TurnPrompt,
+        Some(CommandPhase::AttackMode { .. }) => BattleFlowState::AttackModePrompt,
         Some(CommandPhase::Menu { .. }) => BattleFlowState::CategoryMenu,
         Some(CommandPhase::Targeting { .. }) => BattleFlowState::TargetSelect,
         // A confirmed target commits the action: retail's target cursor (0x5A)

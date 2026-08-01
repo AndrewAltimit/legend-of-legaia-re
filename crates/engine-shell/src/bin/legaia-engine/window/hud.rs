@@ -1188,18 +1188,21 @@ impl PlayWindowApp {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
-                    CommandPhase::Menu { .. } => {
-                        // Retail's command menu is a cluster of framed
-                        // chips around a D-pad glyph, not a list: the
-                        // packet-pinned diamond at `(228, 70)` plus the
-                        // port's second row for the two entries retail's
-                        // four arms have no seat for. Labels ride the
-                        // shared builder's left-aligned interior pen, and
-                        // a command that cannot be chosen keeps its chip
-                        // and draws a single `-`. The plates themselves go
-                        // out in the sprite layer
+                    CommandPhase::RoundPrompt { .. }
+                    | CommandPhase::Menu { .. }
+                    | CommandPhase::AttackMode { .. } => {
+                        // Retail's command surfaces are clusters of framed
+                        // chips around a face-button glyph, not lists: the
+                        // round-open `Begin | Run` pair, the packet-pinned
+                        // four-arm diamond at `(228, 70)`, and the
+                        // `Auto | Command` pair that re-uses the diamond's
+                        // own left / right arms. Labels ride the shared
+                        // builder's left-aligned interior pen, and a
+                        // command that cannot be chosen keeps its chip and
+                        // draws a single `-`. The plates themselves go out
+                        // in the sprite layer
                         // (`battle_chrome_sprite_draws`).
-                        if let Some((chips, cursor)) = self.battle_command_menu_chips() {
+                        if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
                             use legaia_engine_render::battle_command_ui as bcu;
                             let (origin, scale) = self.save_select_stage(w, h);
                             out.extend(bcu::battle_command_chip_text(
@@ -1207,6 +1210,7 @@ impl PlayWindowApp {
                                 &bcu::BattleCommandMenuFrame {
                                     chips: &chips,
                                     cursor: Some(cursor),
+                                    phase,
                                 },
                                 origin,
                                 scale,
@@ -1922,10 +1926,15 @@ impl PlayWindowApp {
             .and_then(|b| b.current_banner())
     }
 
-    /// The live battle command menu projected into the shared chip-cluster
+    /// The live battle command surface projected into the shared chip-cluster
     /// view: one [`legaia_engine_render::battle_command_ui::CommandChipView`]
-    /// per `BattleCommand::MENU` entry plus the cursor index, or `None` when
-    /// no command menu owns the frame.
+    /// per chip of whichever phase is up, the cursor index, and the phase
+    /// itself (which is what names the seats). `None` when no command surface
+    /// owns the frame.
+    ///
+    /// The three phases are retail's three selection states - the round-open
+    /// `Begin | Run` prompt (`0x1E`), the four-arm command ring (`0x28`) and
+    /// the `Auto | Command` attack-mode prompt (`0x78`).
     ///
     /// One projector feeds both halves of the cluster - the plate sprites
     /// and the labels - so the two draw slots cannot disagree about whether
@@ -1937,8 +1946,12 @@ impl PlayWindowApp {
     ) -> Option<(
         Vec<legaia_engine_render::battle_command_ui::CommandChipView<'static>>,
         usize,
+        legaia_engine_render::battle_command_ui::ChipPhase,
     )> {
-        use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_core::battle_input::{
+            AttackMode, BattleCommand, CommandPhase, RoundChoice,
+        };
+        use legaia_engine_render::battle_command_ui::{ChipPhase, CommandChipView};
         let bw = &self.session.host.world;
         if bw.mode != legaia_engine_core::world::SceneMode::Battle {
             return None;
@@ -1954,22 +1967,35 @@ impl PlayWindowApp {
             return None;
         }
         let cmd = bw.battle_command.as_ref()?;
-        let CommandPhase::Menu { cursor } = cmd.phase else {
-            return None;
-        };
         let no_escape = bw.battle_no_escape;
-        Some((
-            BattleCommand::MENU
-                .iter()
-                .map(
-                    |c| legaia_engine_render::battle_command_ui::CommandChipView {
-                        label: c.label(),
-                        enabled: c.available(no_escape),
-                    },
-                )
-                .collect(),
-            cursor as usize,
-        ))
+        let chip = |label: &'static str, enabled: bool| CommandChipView { label, enabled };
+        match cmd.phase {
+            CommandPhase::RoundPrompt { cursor } => Some((
+                RoundChoice::PROMPT
+                    .iter()
+                    .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::RoundPrompt,
+            )),
+            CommandPhase::Menu { cursor } => Some((
+                BattleCommand::MENU
+                    .iter()
+                    .map(|c| chip(c.label(), c.available(no_escape)))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::CommandRing,
+            )),
+            CommandPhase::AttackMode { cursor } => Some((
+                AttackMode::PROMPT
+                    .iter()
+                    .map(|m| chip(m.label(), true))
+                    .collect(),
+                cursor as usize,
+                ChipPhase::AttackMode,
+            )),
+            _ => None,
+        }
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -2008,7 +2034,7 @@ impl PlayWindowApp {
         let mut out = self.battle_hud_frame_draws(surface_w, surface_h).sprites;
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this list rather than a second slot.
-        if let (Some(rects), Some((chips, cursor))) =
+        if let (Some(rects), Some((chips, cursor, phase))) =
             (assets.rects.battle, self.battle_command_menu_chips())
         {
             use legaia_engine_render::battle_command_ui as bcu;
@@ -2018,6 +2044,7 @@ impl PlayWindowApp {
                 &bcu::BattleCommandMenuFrame {
                     chips: &chips,
                     cursor: Some(cursor),
+                    phase,
                 },
                 origin,
                 scale,

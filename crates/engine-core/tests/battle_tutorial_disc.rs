@@ -249,6 +249,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession {
         actor: 0,
         party_slot: 0,
+        no_escape: false,
         phase: legaia_engine_core::battle_input::CommandPhase::RunAway,
     });
     world.tick();

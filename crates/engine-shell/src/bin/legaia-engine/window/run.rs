@@ -485,6 +485,17 @@ pub(super) fn cmd_play_window_with_record(
     // stage id, which only the Tetsu fight in `town01` carries; the engine has
     // no per-formation stage id yet, so the scene stands in. `LEGAIA_BATTLE_TUTORIAL`
     // forces / suppresses it (`1` / `0`) for hand-testing in any scene.
+    // Battle chip / banner labels off the user's own disc: the `Ambushed!` and
+    // `surprised the enemy` lines, `Spirit`, `Escape` and the per-character
+    // Ra-Seru magic-command name. Empty on a partial extraction, in which case
+    // the port's own wording draws instead of nothing.
+    if player_battle {
+        let strings =
+            legaia_engine_core::battle_open::battle_ui_strings_from_prot(&session.host.index);
+        let n = strings.len();
+        session.host.world.battle_ui_strings = strings;
+        log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
+    }
     if player_battle {
         let forced = std::env::var("LEGAIA_BATTLE_TUTORIAL").ok();
         let want = match forced.as_deref() {

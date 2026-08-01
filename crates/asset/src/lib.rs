@@ -28,6 +28,7 @@ pub mod battle_char_pack;
 pub mod battle_char_palette;
 pub mod battle_data_pack;
 pub mod battle_texture_catalog;
+pub mod battle_ui_strings;
 pub mod befect_cluster;
 pub mod boot_overlay;
 pub mod bse_bank;
