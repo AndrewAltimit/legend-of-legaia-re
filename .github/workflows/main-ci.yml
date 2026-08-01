@@ -80,6 +80,14 @@ jobs:
       - name: CSS cascade order
         run: python3 scripts/ci/check-css-cascade-order.py
 
+      # `_gen.py` never reads `docs/`, so a `site/_content/` mirror of a docs
+      # page drifts silently: it keeps building and keeps passing the link
+      # checker while whole areas of its source stop appearing on the public
+      # site. That is how the open-RE-threads page shipped with no battle
+      # section and a closed thread still described as open.
+      - name: Site mirrors cover their docs sources
+        run: python3 scripts/ci/check-site-doc-mirrors.py
+
       - name: Shell observer traps
         run: python3 scripts/ci/check-shell-observer-traps.py
 

@@ -4,13 +4,13 @@
   <p class="lede">Hypotheses about Legaia's runtime that were disproved, kept with their reasoning intact. The reasoning is the deliverable: each of these is a <em>plausible</em> reading of the bytes, and knowing why it is wrong is worth more than the row it occupies.</p>
 </header>
 
-<section class="doc-section" id="overview">
+<section class="doc-section" id="overview" data-doc="-">
   <h2>How to use this page</h2>
   <p>Check here before committing to a reading that looks obvious. Rows are terminal - if new evidence reopens one, it moves back to <a href="open-rev-eng-threads.html">open RE threads</a> rather than having its verdict edited in place, because the falsification trail is what makes the row useful.</p>
   <p>Two classes recur often enough to name up front. <strong>VA aliasing</strong>: a bare virtual address is not an identity, because slot-A and slot-B overlays host different code at the same VA, so a dump labelled by address can be a different function entirely. <strong>Ghidra's collapsed switch</strong>: a jump table's arms can render as bare <code>break</code>s or as fake <code>FUN_x</code> calls, inventing opcode semantics the raw table does not have.</p>
 </section>
 
-<section class="doc-section" id="world-map">
+<section class="doc-section" id="world-map" data-doc="world-map--kingdom-bundles">
   <h2>World map / kingdom bundles</h2>
   <table>
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
@@ -31,7 +31,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="battle">
+<section class="doc-section" id="battle" data-doc="battle--arts--level-up">
   <h2>Battle / arts / level-up</h2>
   <table>
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
@@ -94,7 +94,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="audio">
+<section class="doc-section" id="audio" data-doc="audio--sound-driver">
   <h2>Audio / sound driver</h2>
   <table>
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
@@ -115,7 +115,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="field">
+<section class="doc-section" id="field" data-doc="field--locomotion">
   <h2>Field / locomotion</h2>
   <table>
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
@@ -147,7 +147,7 @@
     </tbody>
   </table>
 </section>
-<section class="doc-section" id="containers">
+<section class="doc-section" id="containers" data-doc="containers--placeholder-slots">
   <h2>Containers / entry coordinates</h2>
   <table>
     <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th><th>Detail</th></tr></thead>
@@ -174,7 +174,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="details">
+<section class="doc-section" id="details" data-doc="-">
   <h2>Details</h2>
 
   <h3 id="d-entry-coordinates">Assets named by the entry the over-read window started in</h3>
@@ -206,7 +206,58 @@
   <p>Sweeping all mapped slot-A overlay images plus the slot-B field library for prologues / static <code>jal</code> targets at the listed addresses yields only two coincidental hits (both in the never-resident slot-machine image) and a handful of <code>j</code>-target labels. The durable lessons: seed lists from a recomp's interpreter dispatcher need <strong>per-hit resident-image resolution</strong> before any identity claim, and a "new function" claim needs a prologue or a static-call witness in the image that was actually resident. The real undumped-code question for 0897 is better served by the <a href="../tooling/port-catalog.html">port-catalog dashboard</a>.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="overlay-band" data-doc="no-overlay-function-lives-below-0x801ce818">
+  <h2>No overlay function lives below <code>0x801CE818</code></h2>
+  <p><strong>Falsified:</strong> "an undocumented address in the <code>0x801C0164</code>..<code>0x801CE000</code> band is an overlay-resident function awaiting a doc entry."</p>
+  <p>The reading is plausible because the project's own orientation says overlay code lives "at <code>0x801C0000+</code>", and because dumps in that band disassemble cleanly, carry function-shaped prologues and epilogues, and are filed under <code>overlay_&lt;label&gt;_801c&hellip;.txt</code> names. Nothing about them looks wrong.</p>
+  <p>They are not functions. They are <strong>printed addresses from imports based at <code>0x801C0000</code></strong>, and the true VA of every one is <code>printed + delta</code>. The structural argument needs no dump at all: every occupant of the slot-A overlay window bases at <code>0x801CE818</code> and every slot-B occupant at <code>0x801F69D8</code>, so <strong>no extracted overlay image contains any VA below <code>0x801CE818</code></strong>. An address in that band cannot name a function in any overlay, whatever its dump looks like. The measurement agrees: disassembling every extracted image at its mapped base and asking which of those addresses is a <code>jal</code> target, a <code>j</code> target or an instruction boundary returns nothing at all for the whole band.</p>
+  <p>The deltas are constant per import - <code>+0xE818</code> into the field (0897) or menu (0899) overlay, <code>+0xD018</code> into fishing (0972), <code>+0x9818</code> into dance (0980), <code>+0x5818</code> for the <code>overlay_0896_*</code> family - so the whole band resolves mechanically. Worked examples: the "function at <code>0x801C6FEC</code>" is the fishing reel tug-of-war <code>FUN_801D4004</code>; "<code>0x801C56B4</code>" is the hooked-fish handler <code>FUN_801D26CC</code>; "<code>0x801C2704</code>" is menu-overlay <code>FUN_801D0F1C</code>. Each is already documented under its real address.</p>
+  <p>The same failure extends <strong>above</strong> <code>0x801CE818</code>, where it is harder to see because the printed address then falls inside a real overlay's span and cannot be rejected on range alone. There the working test is the same one: resolve the dump's bytes to an image and offset, and separately ask whether the printed VA is a <code>jr ra</code>-preceded boundary in any image. A VA that is only ever a <code>j</code> or branch target is an intra-function label, not a port site.</p>
+  <p><strong>Generalises to:</strong> treat "the dump prints an address" as evidence about the <em>import</em>, never about the game. Which image, which offset, is this a function at all - those are answered from the extracted image at its mapped base, and only from there. The same deltas drive the <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>, which attaches each image's identity from its PROT entry rather than from a filename.</p>
+</section>
+
+<section class="doc-section" id="measurement" data-doc="measurement-readings">
+  <h2>Measurement readings</h2>
+  <p>Falsified claims about the <em>instruments</em>, not about the game. They belong here for the same reason the rest do: each was a plausible reading, each was believed, and each shaped what work looked worth doing.</p>
+  <table>
+    <thead><tr><th>Thread</th><th>Verdict</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The disc-coverage report's excluded dumps are "typically the ones that report <code>0 instructions</code> and hold only decompiled C"</td>
+        <td><span class="tag tag-done">falsified</span> (zero of them reported <code>0 instructions</code>)</td>
+        <td>The files that <em>do</em> report <code>0 instructions</code> were passing the header regex and being credited a byte each. Of the excluded set, three were C-only and four fifths were not dumps at all. The count was real; the sentence attached to it had never been checked against the files.</td>
+      </tr>
+      <tr>
+        <td>The inner of two nested overlay spans "cannot be repaired &hellip; no amount of dumping moves it"</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>Address ambiguity really is total for the inner span. Byte attribution then places most of those extents in one image or the other, and the row reports. The <strong>starting point of a measurement was mistaken for its limit</strong>, and the structural-sounding argument made it read as settled.</td>
+      </tr>
+      <tr>
+        <td>The unattributable residue "is repaired by re-dumping, not by extracting another overlay"</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>Re-dumping repairs almost none of it. The residue had been described from its class names rather than counted from the artifact.</td>
+      </tr>
+      <tr>
+        <td><code>0x8005BA38</code> is "not a function - the dump reports <code>size=1 bytes, 0 instructions</code>"</td>
+        <td><span class="tag tag-done">falsified</span> (it is a complete <code>RotTransPers</code>)</td>
+        <td>The dump was empty when the row was written and is 11 instructions now. Nothing re-reads a caveat when its dump improves, so <strong>a claim quoting a dump statistic decays silently</strong> while still reading as evidence-backed.</td>
+      </tr>
+      <tr>
+        <td>"About 2&nbsp;% of retail camera beats set a non-zero roll"</td>
+        <td><span class="tag tag-done">falsified</span> (the figure was the scan's own filter)</td>
+        <td>The number came from a byte scan that finds 4257 "sites" where control flow reaches 371, then applied a post-hoc "credible" filter and measured the ratio over the survivors. The answer - retail <em>does</em> roll, in eight scenes - came from executing the records, not decoding them.</td>
+      </tr>
+      <tr>
+        <td>An over-strict header regex is one instrument's bug</td>
+        <td><span class="tag tag-done">falsified</span> (every instrument had its own)</td>
+        <td>Each tool over the dump corpus carried a private header regex, and the corpus spells all four header fields several ways, so each silently rejected a different subset of <strong>real dumps</strong> and reported them as a corpus deficiency.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Generalises to:</strong> a measurement instrument has no oracle, so a number it prints is believed on the strength of its <em>explanation</em>. Check the explanation against the files, not against its own plausibility - most of the rows above are a correct count with a wrong story attached, and the story is what directed effort.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="related-pages">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
