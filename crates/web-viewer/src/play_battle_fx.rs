@@ -797,7 +797,21 @@ mod tests {
             assert!(((tr[k] + bl[k]) * 0.5 - sprite.world_pos[k]).abs() < 1e-4);
             assert!(((tr[k] - tl[k]) - (br[k] - bl[k])).abs() < 1e-4);
         }
-        assert!((tr[0] - tl[0] - 8.0).abs() < 1e-4, "width = size[0]");
-        assert!((tl[1] - bl[1] - 4.0).abs() < 1e-4, "height = size[1]");
+        // The quad's WORLD extent is the pass-2 size divided by the camera's
+        // own scale, because retail forms the corners in view space after the
+        // camera transform (`FUN_800195A8`) - drawing them under a `4x` MVP
+        // would otherwise apply that scale twice. This assertion used to read
+        // `== size[0]`, which is what the oversize looked like from inside the
+        // browser host.
+        let (hw, hh) =
+            legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+        assert!((tr[0] - tl[0] - 2.0 * hw).abs() < 1e-4, "width = 2 * hw");
+        assert!((tl[1] - bl[1] - 2.0 * hh).abs() < 1e-4, "height = 2 * hh");
+        // Non-vacuity: the kernel really does shrink, so a host that skipped
+        // it would fail the two assertions above rather than pass them.
+        assert!(
+            2.0 * hw < sprite.size[0],
+            "the shared kernel must divide by the camera scale"
+        );
     }
 }
