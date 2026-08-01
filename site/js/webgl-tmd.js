@@ -118,6 +118,7 @@ class TmdRenderer {
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
+    this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
     /* Prologue colour grade + depth-cue ramp, staged per frame by the play
      * page (identity / off by default - no other page is affected). */
     this.gradeParams = { rgb: null, strength: 0 };
@@ -441,14 +442,22 @@ class TmdRenderer {
 
   /* Camera-occlusion fade (see-through walls): stage the player's world
    * position (draw frame - the Y-flipped coords the placements use; the
-   * play page passes `[x, -y + 90, z]`, its body-centre point) for the
+   * play page passes `[x, -y + 90, z]`, its body-centre point) plus the
+   * page's eased fade strength (0..1, the visibility-gate ramp) for the
    * next renderAssembled call, which projects it through the frame's own
    * view-projection and screen-doors scene fragments that sit between the
    * camera and this point (GLSL `occl_keep`/`occl_bayer`; the native twin
    * is engine-render's occlusion_fade module). Call per frame; stale foci
    * would fade the wrong screen region. */
-  setOcclusionFocus(worldPos) {
-    this.occlFocus = worldPos ? [worldPos[0], worldPos[1], worldPos[2]] : null;
+  setOcclusionFocus(worldPos, strength) {
+    if (!worldPos || !(strength > 0)) {
+      this.occlFocus = null;
+      return;
+    }
+    this.occlFocus = {
+      pos: [worldPos[0], worldPos[1], worldPos[2]],
+      strength: Math.min(strength, 1.0),
+    };
   }
 
   /* Drop the occlusion-fade focus - every fragment keeps (the default). */
@@ -467,13 +476,14 @@ class TmdRenderer {
     const f = this.occlFocus;
     if (f) {
       /* clip = vp * (x, y, z, 1) - column-major mat4. */
-      const cx = vp[0] * f[0] + vp[4] * f[1] + vp[8] * f[2] + vp[12];
-      const cy = vp[1] * f[0] + vp[5] * f[1] + vp[9] * f[2] + vp[13];
-      const cw = vp[3] * f[0] + vp[7] * f[1] + vp[11] * f[2] + vp[15];
+      const p = f.pos;
+      const cx = vp[0] * p[0] + vp[4] * p[1] + vp[8] * p[2] + vp[12];
+      const cy = vp[1] * p[0] + vp[5] * p[1] + vp[9] * p[2] + vp[13];
+      const cw = vp[3] * p[0] + vp[7] * p[1] + vp[11] * p[2] + vp[15];
       if (cw > 1e-3) {
         const px = (cx / cw * 0.5 + 0.5) * w;
         const py = (cy / cw * 0.5 + 0.5) * h;
-        gl.uniform4f(this.locOcclFocus, px, py, cw, 1.0);
+        gl.uniform4f(this.locOcclFocus, px, py, cw, f.strength);
         gl.uniform4f(this.locOcclParams,
           OCCL_RADIUS_FRAC * h, OCCL_MIN_KEEP,
           OCCL_DEPTH_MARGIN, OCCL_FEATHER_FRAC * h);
@@ -1124,6 +1134,8 @@ class TmdRenderer {
         0, 0, 0, 1,
       ]);
       gl.uniformMatrix4fv(this.locModel, false, flipY);
+      /* The ground is environment: the occlusion fade may dissolve it. */
+      gl.uniform1i(this.locOcclAllow, 1);
       gl.bindVertexArray(this.ground.vao);
       gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
       gl.bindVertexArray(null);
@@ -1156,6 +1168,9 @@ class TmdRenderer {
         const wantCue = p.cue || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        /* Actor draws (the player, NPCs - `noOccl` on the placement) must
+         * never dissolve; environment placements may. */
+        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
@@ -1190,6 +1205,7 @@ class TmdRenderer {
         const wantCue = p.cue || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);

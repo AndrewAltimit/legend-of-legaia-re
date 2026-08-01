@@ -690,30 +690,46 @@ impl PlayWindowApp {
             } else {
                 r.clear_scene_lights();
             }
-            // Camera-occlusion fade focus (the see-through-walls
-            // enhancement): stage the player's clip-space position under
-            // this frame's camera so the scene shaders can screen-door
-            // fragments that bury the character. Field free-roam only -
-            // cutscene framing is authored (an occluded player there is a
-            // directorial choice), and battle / world map / boot UI frame
-            // their own subjects. The focus is the player's body centre:
-            // the floor tier under the actor (the same sampler the follow
-            // camera anchors to - `world_y` is usually 0 while the ground
-            // sits on a LUT-elevated tier) lifted half a character height
-            // (~130-unit mesh; field world is retail Y-down, so up is
-            // negative). Inert unless the fade toggle is on (`D` /
-            // `--no-occlusion-fade`) - the renderer gates on both.
-            let occl_focus = (!self.boot_ui.is_active()
+            // Camera-occlusion fade (the see-through-walls enhancement),
+            // two per-frame halves:
+            //
+            // 1. The **visibility gate**: ray-cast a 5-point eye->player
+            //    cross against the static scene triangles
+            //    (`field_occluders`) and arm the fade ONLY when every
+            //    sample is blocked - a partially visible character gets
+            //    no fade at all (geometry merely near the corridor, e.g.
+            //    an upper-tier floor beside a pit, must not dither while
+            //    the player is plainly on screen). The eye is the follow
+            //    camera's analytic position (`field_follow_camera_eye`),
+            //    so the gate runs in field free-roam under the follow
+            //    camera only - cutscene framing is authored, the debug
+            //    orbit is a dev vantage, and battle / world map / boot UI
+            //    frame their own subjects.
+            // 2. The **strength ramp**: ease toward the gate verdict a
+            //    quarter of the gap per frame (`OCCL_STRENGTH_EASE`,
+            //    mirrored by the browser play page's ramp) so the
+            //    screen-door dissolves in/out instead of popping while
+            //    the gate flips at cover edges.
+            //
+            // The staged focus is the player's body centre: the floor
+            // tier under the actor (the same sampler the follow camera
+            // anchors to) lifted half a character height (~130-unit mesh;
+            // field world is retail Y-down, so up is negative).
+            const OCCL_STRENGTH_EASE: f32 = 0.25;
+            let occl_focus = (self.occlusion_fade
+                && !self.boot_ui.is_active()
                 && !in_world_map
                 && self.session.host.world.mode == SceneMode::Field
-                && cutscene_cam.is_none())
-            .then(|| {
-                let w = &self.session.host.world;
-                w.player_actor_slot
-                    .and_then(|s| w.actors.get(s as usize))
-                    .map(|a| (a.move_state.world_x, a.move_state.world_z))
-            })
-            .flatten();
+                && cutscene_cam.is_none()
+                && !self.field_debug_camera)
+                .then(|| {
+                    let w = &self.session.host.world;
+                    w.player_actor_slot
+                        .and_then(|s| w.actors.get(s as usize))
+                        .map(|a| (a.move_state.world_x, a.move_state.world_z))
+                })
+                .flatten();
+            let mut occl_staged = false;
             if let Some((wx, wz)) = occl_focus {
                 const HALF_CHAR_HEIGHT: f32 = 65.0;
                 let floor_y = self
@@ -721,10 +737,54 @@ impl PlayWindowApp {
                     .host
                     .world
                     .sample_field_floor_height(wx as i32, wz as i32);
-                let clip =
-                    cam * Vec4::new(wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32, 1.0);
-                r.set_occlusion_focus(clip.to_array());
+                let centre = [wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32];
+                let fully_hidden = self
+                    .field_follow_camera_eye()
+                    .map(|eye| {
+                        if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
+                            let hits = self.field_occluders.sample_hits(eye.to_array(), centre);
+                            // A correct eye is the centre of projection: its
+                            // clip w under the very camera matrix the draws
+                            // use must be ~0.
+                            let eye_w = (cam * Vec4::new(eye.x, eye.y, eye.z, 1.0)).w;
+                            log::info!(
+                                "occl-gate: hits {:?} eye {:?} (clip w {:.2}) centre {:?}",
+                                hits,
+                                eye.to_array(),
+                                eye_w,
+                                centre
+                            );
+                            if hits.iter().all(|h| *h)
+                                && let Some((tri, res_tmd)) =
+                                    self.field_occluders.first_hit(eye.to_array(), centre)
+                            {
+                                log::info!(
+                                    "occl-gate: centre blocked by tri {tri:?} res_tmd {res_tmd}"
+                                );
+                            }
+                        }
+                        self.field_occluders.fully_occluded(eye.to_array(), centre)
+                    })
+                    .unwrap_or(false);
+                let target = if fully_hidden { 1.0 } else { 0.0 };
+                let mut s = self.occl_fade_strength.get();
+                s += (target - s) * OCCL_STRENGTH_EASE;
+                if (s - target).abs() < 0.01 {
+                    s = target;
+                }
+                self.occl_fade_strength.set(s);
+                if s > 0.01 {
+                    let clip = cam * Vec4::new(centre[0], centre[1], centre[2], 1.0);
+                    if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
+                        log::info!("occl-gate: staging focus clip {:?} strength {s:.2}", clip);
+                    }
+                    r.set_occlusion_focus(clip.to_array(), s);
+                    occl_staged = true;
+                }
             } else {
+                self.occl_fade_strength.set(0.0);
+            }
+            if !occl_staged {
                 r.clear_occlusion_focus();
             }
             // Drain queued spawn slots: build a VRAM mesh from each
@@ -1306,6 +1366,15 @@ impl PlayWindowApp {
                             });
                         }
                     }
+                    // Occlusion-fade draw watermark: every draw pushed so
+                    // far is scene ENVIRONMENT (terrain, placements, posed
+                    // props, their colour halves) - fadeable. Everything
+                    // after this point is an ACTOR (the player's two
+                    // halves, NPCs, tile actors, spawned meshes), which the
+                    // fade must never dissolve - the depth margin only has
+                    // to guard geometry AT the focus depth now, so
+                    // occluders hugging the character still open up.
+                    r.set_occlusion_env_draws(draws.len(), color_draws.len());
                     // The player's untextured mesh half (pants /
                     // sleeves), following the actor's live transform.
                     // Prefer this frame's posed rebuild (idle/walk

@@ -1058,6 +1058,8 @@ pub(super) fn cmd_play_window_with_record(
         dynamic_lighting,
         dyn_shadows,
         occlusion_fade,
+        field_occluders: Default::default(),
+        occl_fade_strength: std::cell::Cell::new(0.0),
         scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         cursor_x: 0.0,

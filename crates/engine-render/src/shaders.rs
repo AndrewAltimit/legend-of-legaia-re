@@ -310,8 +310,8 @@ struct SceneLightsU {
     // Camera-occlusion fade (opt-in see-through-walls enhancement,
     // NON-RETAIL - see `crate::occlusion_fade`): .xy = the player's
     // projected framebuffer pixel, .z = the player's view-space depth,
-    // .w = enable (0.0, the default, is the identity - every fragment
-    // keeps).
+    // .w = fade strength 0..1 (the host's eased visibility-gate output;
+    // 0.0, the default, is the identity - every fragment keeps).
     occl_focus: vec4<f32>,
     // (radius_px, min_keep, depth_margin, feather_px) - the staged
     // `crate::occlusion_fade` constants (radius/feather scaled to the
@@ -363,7 +363,11 @@ fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
 // `frag_w` is `@builtin(position).w` = 1/clip_w, so `1/frag_w` is the
 // fragment's view-space depth (same recovery as `cue_ramp_ir0`).
 fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
-    if (sl.occl_focus.w < 0.5) {
+    // `.w` is the host's eased fade strength (0..1): 0 = off (identity),
+    // fractional values blend the geometric keep toward 1.0 so the
+    // screen-door dissolves in/out with the visibility gate.
+    let s = sl.occl_focus.w;
+    if (s < 0.004) {
         return 1.0;
     }
     let view_z = 1.0 / max(frag_w, 1e-8);
@@ -376,7 +380,7 @@ fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
         return 1.0;
     }
     let t = smoothstep(r - sl.occl_params.w, r, d);
-    return mix(sl.occl_params.y, 1.0, t);
+    return mix(1.0, mix(sl.occl_params.y, 1.0, t), s);
 }
 
 // Summed point-light gain for one fragment (the `point_gain` argument of
@@ -877,7 +881,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // screen-door discard of fragments between the camera and the player.
     // Identity while disabled - `occl_keep` returns 1.0 and no threshold
     // reaches it (see the prelude's `occl_bayer`).
-    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+    if (u.flags.z > 0.5
+        && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     let tsb = in.cba_tsb.y;
@@ -973,7 +978,8 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     // Camera-occlusion fade: same screen-door as the opaque pass, so a
     // semi-transparent wall patch (water panes, glass) opens up too.
-    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+    if (u.flags.z > 0.5
+        && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     let tsb = in.cba_tsb.y;
@@ -1134,7 +1140,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // Camera-occlusion fade (opt-in see-through-walls enhancement):
     // screen-door discard of fragments between the camera and the player,
     // mirroring the textured opaque pass. Identity while disabled.
-    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+    if (u.flags.z > 0.5
+        && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     // An untextured PSX prim is filled with its packet colour directly - no
@@ -1190,7 +1197,8 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         discard;
     }
     // Camera-occlusion fade: same screen-door as the opaque colour pass.
-    if (occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
+    if (u.flags.z > 0.5
+        && occl_bayer(in.clip_pos.xy) >= occl_keep(in.clip_pos.xy, in.clip_pos.w)) {
         discard;
     }
     // Opt-in dynamic light first (identity when disabled), matching the

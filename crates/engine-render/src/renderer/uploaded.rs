@@ -61,8 +61,12 @@ pub(super) struct MeshUniforms {
     /// GTE **NCLIP** screen-winding rejection as a fragment `discard` on the
     /// VRAM / colour mesh shaders, so a camera placed inside a closed shell
     /// (the opdeene crater's cave-wall backdrop) sees through the near wall
-    /// exactly as retail does. Set with [`Renderer::set_backface_cull`];
-    /// `[1..4]` reserved.
+    /// exactly as retail does. Set with [`Renderer::set_backface_cull`].
+    /// `[1]` = semi-transparency (ABE) blend enable. `[2]` = per-draw
+    /// occlusion-fade permission: `1.0` on environment draws below the
+    /// [`Renderer::set_occlusion_env_draws`] watermark, `0.0` on actor
+    /// draws (the player / NPCs), which the see-through fade must never
+    /// dissolve. `[3]` reserved.
     pub(super) flags: [f32; 4],
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source; see the `dyn_light` WGSL helper). `[0..3]` = unit

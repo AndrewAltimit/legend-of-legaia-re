@@ -198,10 +198,18 @@ pub struct Renderer {
     /// ([`Self::set_occlusion_focus`]).
     pub(super) occl_fade: std::cell::Cell<bool>,
     /// The player's clip-space position under the current frame's scene
-    /// camera, staged per field frame by the host via
-    /// [`Self::set_occlusion_focus`]; `None` (cleared on non-field modes /
-    /// cutscenes) leaves the fade inert regardless of the toggle.
-    pub(super) occl_focus: std::cell::Cell<Option<[f32; 4]>>,
+    /// camera plus the host's eased fade strength (0..1), staged per field
+    /// frame via [`Self::set_occlusion_focus`]; `None` (cleared on
+    /// non-field modes / cutscenes / a disarmed visibility gate) leaves the
+    /// fade inert regardless of the toggle.
+    pub(super) occl_focus: std::cell::Cell<Option<([f32; 4], f32)>>,
+    /// Occlusion-fade draw watermark `(textured, colour)`: scene draw slots
+    /// BELOW these counts are environment geometry (fadeable); slots at or
+    /// past them are actors (the player, NPCs), which the fade must never
+    /// dissolve. Staged per frame by the host via
+    /// [`Self::set_occlusion_env_draws`]; defaults to "everything fadeable"
+    /// for hosts that stage a focus without counts.
+    pub(super) occl_env_counts: std::cell::Cell<(usize, usize)>,
     /// Derived per-scene point lights (world space), staged by the host
     /// via [`Self::set_scene_lights`]. Cleared on scene change.
     pub(super) scene_lights: std::cell::RefCell<Vec<crate::scene_lights::ScenePointLight>>,
@@ -349,19 +357,35 @@ impl Renderer {
     /// Stage the player's **clip-space position** under this frame's scene
     /// camera (`view_proj * world_pos`, the same matrix the scene draw
     /// MVPs compose against - pre reversed-Z, which only remaps `z` and
-    /// leaves the `x/y/w` this consumer reads untouched). The renderer
-    /// projects it to framebuffer pixels + view depth when staging the
-    /// per-frame scene uniform. Call every field frame; stale foci would
-    /// fade the wrong screen region, so clear on mode changes
+    /// leaves the `x/y/w` this consumer reads untouched) together with the
+    /// host's **fade strength** (0..1: the eased output of the visibility
+    /// gate - the shaders blend the screen-door keep toward the identity by
+    /// it, so the fade dissolves in/out instead of popping). The renderer
+    /// projects the focus to framebuffer pixels + view depth when staging
+    /// the per-frame scene uniform. Call every field frame; stale foci
+    /// would fade the wrong screen region, so clear on mode changes
     /// ([`Self::clear_occlusion_focus`]).
-    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4]) {
-        self.occl_focus.set(Some(clip_pos));
+    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4], strength: f32) {
+        self.occl_focus
+            .set(Some((clip_pos, strength.clamp(0.0, 1.0))));
     }
 
     /// Drop the staged occlusion-fade focus: the fade goes inert (every
     /// fragment keeps) until the next [`Self::set_occlusion_focus`].
     pub fn clear_occlusion_focus(&self) {
         self.occl_focus.set(None);
+    }
+
+    /// Stage the occlusion-fade draw watermark for the current frame: the
+    /// first `textured` scene draws and the first `color` colour draws are
+    /// environment geometry the fade may dissolve; every later slot is an
+    /// actor (the player's own halves, NPCs, spawned meshes) and keeps
+    /// every fragment. This is what lets [`crate::occlusion_fade::
+    /// OCCL_DEPTH_MARGIN`] stay small enough that a wall hugging the
+    /// character still opens up - the player mesh is protected by the
+    /// watermark, not by depth slack.
+    pub fn set_occlusion_env_draws(&self, textured: usize, color: usize) {
+        self.occl_env_counts.set((textured, color));
     }
 
     /// Stage the derived per-scene point lights (see

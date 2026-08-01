@@ -56,12 +56,17 @@ pub const OCCL_FEATHER_FRAC: f32 = 0.15;
 pub const OCCL_MIN_KEEP: f32 = 0.25;
 
 /// A fragment must be nearer the camera than the player by more than this
-/// many view-space units to fade. Sized to clear the player mesh itself
-/// (~130 units tall; the head projects ~40 units nearer than the body
-/// centre under the retail 39.6-degree down-tilt) and the floor tier at its
-/// feet, while catching any wall thick-set enough to hide the character.
-/// WGSL twin: `occl_params.z`.
-pub const OCCL_DEPTH_MARGIN: f32 = 150.0;
+/// many view-space units to fade. The player's own mesh (and every other
+/// actor) is protected by the per-draw watermark
+/// (`Renderer::set_occlusion_env_draws` -> `MeshUniforms.flags[2]`), NOT by
+/// this margin - so it only needs to guard environment geometry AT the
+/// focus depth (the floor tier and coplanar decals around the character's
+/// feet), and an occluder hugging the character (a plant stalk or inner
+/// wall right in front of them) still opens up. Earlier values (150, then
+/// 70) doubled as the player-mesh shield and protected hugging walls as if
+/// they were the player - the "only the nearest of several stacked
+/// occluders fades" report. WGSL twin: `occl_params.z`.
+pub const OCCL_DEPTH_MARGIN: f32 = 16.0;
 
 /// 4x4 Bayer threshold for the screen-door pattern, in `[0, 1)`:
 /// `(bayer[y&3][x&3] + 0.5) / 16`. WGSL twin: `occl_bayer` in the shader
@@ -84,7 +89,9 @@ pub fn bayer_threshold(x: u32, y: u32) -> f32 {
 /// shader recovers its own as `1 / @builtin(position).w`); `focus_px` is
 /// the player's projected framebuffer pixel; `radius_px` / `feather_px`
 /// are [`OCCL_RADIUS_FRAC`] / [`OCCL_FEATHER_FRAC`] times the viewport
-/// height.
+/// height. `strength` (0..1) is the host's eased visibility-gate output:
+/// the geometric keep blends toward the identity by it, so the
+/// screen-door dissolves in and out instead of popping.
 #[allow(clippy::too_many_arguments)]
 pub fn keep_probability(
     frag_px: [f32; 2],
@@ -95,7 +102,11 @@ pub fn keep_probability(
     feather_px: f32,
     min_keep: f32,
     depth_margin: f32,
+    strength: f32,
 ) -> f32 {
+    if strength < 0.004 {
+        return 1.0;
+    }
     // Only fragments in front of the player (nearer the camera by more
     // than the margin) can be occluding it.
     if frag_view_z >= focus_view_z - depth_margin {
@@ -107,9 +118,11 @@ pub fn keep_probability(
     if d >= radius_px {
         return 1.0;
     }
-    // Radial feather: min_keep at the centre, 1.0 at the rim.
+    // Radial feather: min_keep at the centre, 1.0 at the rim; then the
+    // strength blend toward the identity.
     let t = smoothstep(radius_px - feather_px, radius_px, d);
-    min_keep + (1.0 - min_keep) * t
+    let k = min_keep + (1.0 - min_keep) * t;
+    1.0 - strength * (1.0 - k)
 }
 
 /// WGSL-equivalent `smoothstep` (identical clamped Hermite).
@@ -180,19 +193,52 @@ mod tests {
             F,
             OCCL_MIN_KEEP,
             OCCL_DEPTH_MARGIN,
+            1.0,
         )
     }
 
-    /// Geometry at or behind the player's depth (minus the margin) never
-    /// fades - the player mesh, the floor at its feet, the wall behind it.
+    /// The strength blend: 0 is the identity everywhere, fractions move
+    /// the centre keep proportionally toward the full-fade floor.
     #[test]
-    fn depth_margin_shields_player_and_floor() {
+    fn strength_blends_toward_identity() {
+        let deep = FOCUS_Z - 500.0;
+        let at = |s: f32| {
+            keep_probability(
+                FOCUS,
+                deep,
+                FOCUS,
+                FOCUS_Z,
+                R,
+                F,
+                OCCL_MIN_KEEP,
+                OCCL_DEPTH_MARGIN,
+                s,
+            )
+        };
+        assert_eq!(at(0.0), 1.0);
+        assert_eq!(at(1.0), OCCL_MIN_KEEP);
+        let half = at(0.5);
+        assert!((half - (1.0 - 0.5 * (1.0 - OCCL_MIN_KEEP))).abs() < 1e-6);
+    }
+
+    /// Geometry at or behind the player's depth (minus the small margin)
+    /// never fades - the floor tier and coplanar decals at the focus depth,
+    /// and everything behind the character. (The player mesh itself is
+    /// protected by the per-draw watermark, not by this margin.)
+    #[test]
+    fn depth_margin_shields_the_focus_depth() {
         // Dead centre on screen but AT the player depth: kept.
         assert_eq!(keep_at(FOCUS, FOCUS_Z), 1.0);
-        // The player's own head (~40 units nearer): kept.
-        assert_eq!(keep_at(FOCUS, FOCUS_Z - 40.0), 1.0);
         // Just inside the margin: kept.
         assert_eq!(keep_at(FOCUS, FOCUS_Z - OCCL_DEPTH_MARGIN), 1.0);
+        // Behind the player: kept.
+        assert_eq!(keep_at(FOCUS, FOCUS_Z + 300.0), 1.0);
+        // An occluder hugging the character (just past the margin) fades -
+        // the multi-layer / point-blank case the margin used to swallow.
+        assert_eq!(
+            keep_at(FOCUS, FOCUS_Z - OCCL_DEPTH_MARGIN - 1.0),
+            OCCL_MIN_KEEP
+        );
         // A wall well in front: faded to the floor value at the centre.
         assert_eq!(keep_at(FOCUS, FOCUS_Z - 500.0), OCCL_MIN_KEEP);
     }

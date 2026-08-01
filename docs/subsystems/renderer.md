@@ -1277,27 +1277,62 @@ and the parity oracles never see it; `legaia-engine play-window` turns it on
 by default as a clearly-better play experience (`--no-occlusion-fade`, or the
 `D` key, restores authored-framing-only).
 
-A fragment fades only when **both** hold (`occl_keep` in the scene-lights WGSL
-layer; CPU lockstep mirror + tunables in
-`crates/engine-render/src/occlusion_fade.rs`):
+The fade has two halves: a per-frame **visibility gate** deciding WHETHER to
+fade at all, and a per-fragment rule deciding WHICH pixels dissolve.
 
+**The visibility gate** (`legaia_engine_core::field_occlusion`, one kernel
+shared by both hosts - the native window calls it directly, the browser play
+page through the wasm export `field_player_occluded`): a CPU ray-cast of a
+5-point body cross (centre, head, hips, both shoulders) from the camera eye
+to the character, against the scene's **static occluder set**, in retail
+Y-down world coordinates. The fade arms only when **every** sample is
+blocked - a partially visible character gets no fade at all, so geometry
+merely near the eye-player corridor (an upper-tier floor beside a tower pit)
+never dithers while the player is plainly on screen. The occluder set is
+built per scene load from the resolved terrain + placement draw lists, and
+it deliberately excludes everything that draws see-through: **semi-
+transparent (ABE) prims** (the keikoku canyon's corridor-spanning mist veils
+armed the gate while the character was visible), prims dropped by the
+renderers' own VRAM-coverage filter, prims below the
+`OCCLUDER_MIN_OPACITY` texel floor (cutout foliage / grates / tile skirts),
+and animated draws. The native eye is the follow camera's analytic position
+(`field_follow_camera_eye`, the exact inverse of the camera composition -
+its clip `w` under the frame's matrix is 0); the web passes its orbit
+camera's `_eye()` with the draw-frame Y negated. The gate verdict drives an
+eased **strength ramp** (a quarter of the gap per frame on both hosts), so
+the screen-door dissolves in and out instead of popping at cover edges.
+`keikoku_corridor_walk_does_not_arm_the_gate` (disc-gated) pins the mist-
+veil regression.
+
+**The per-fragment rule** (`occl_keep` in the scene-lights WGSL layer; CPU
+lockstep mirror + tunables in `crates/engine-render/src/occlusion_fade.rs`).
+A fragment fades only when all three hold:
+
+- its draw is **environment geometry**: the host stages a per-frame draw
+  watermark (`Renderer::set_occlusion_env_draws` -> `MeshUniforms.flags[2]`)
+  splitting the scene lists into environment (terrain / placements / posed
+  props - fadeable) and actors (the player's own halves, NPCs - never
+  faded), so the depth test below does not need slack for the player mesh;
 - it is **nearer the camera than the player** by more than the depth margin
-  (~150 view units - sized so the player mesh itself, the floor tier at its
-  feet, and NPCs standing beside it never fade), and
+  (16 view units - just enough to shield the floor tier and coplanar decals
+  at the focus depth; because actors are exempted per draw, an occluder
+  hugging the character - a plant stalk, an inner wall - still opens up,
+  and stacked occluders all open at once since the Bayer pattern is
+  screen-aligned across layers); and
 - it lies within the **screen-space fade circle** around the player's
-  projected centre (radius 0.30 of the viewport height), so only the patch of
-  wall actually covering the character opens up - the rest of the surface
-  stays solid.
+  projected centre (radius 0.30 of the viewport height), so only the patch
+  of wall actually covering the character opens up.
 
 The fade itself is a **screen-door discard** against a 4x4 Bayer threshold
 (`occl_bayer` in the shader prelude): keep probability ramps from 1.0 at the
-circle's rim down to 0.25 at the centre over a feather band. Discarding in
-the opaque pass (and identically in the semi-blend entries) means no new
-pipelines, no blend state, no CPU sorting, and depth writes stay intact - and
-the dither pattern reads naturally next to the PSX ordered dither. The focus
-rides in the per-frame group-2 scene uniform (`SceneLightsUniform`, which is
-staged every scene frame whether or not the point-light layer is live), so
-the faithful path pays one uniform read; the single-mesh pipelines compile a
+circle's rim down to 0.25 at the centre over a feather band, then blends
+toward the identity by the gate's strength. Discarding in the opaque pass
+(and identically in the semi-blend entries) means no new pipelines, no blend
+state, no CPU sorting, and depth writes stay intact - and the dither pattern
+reads naturally next to the PSX ordered dither. The focus + strength ride in
+the per-frame group-2 scene uniform (`SceneLightsUniform`, which is staged
+every scene frame whether or not the point-light layer is live), so the
+faithful path pays one uniform read; the single-mesh pipelines compile a
 `return 1.0` stub, exactly like `scene_point_gain`.
 
 **Per-fragment on purpose.** The site play page once shipped this feature at
@@ -1312,10 +1347,13 @@ the fade circle.
 "See-through walls" checkbox): `occl_keep` / `occl_bayer` GLSL twins in
 `site/js/webgl-shaders.js` (tunables mirrored at the top of that file -
 keep them in lockstep with `occlusion_fade.rs`), staged through
-`TmdRenderer.setOcclusionFocus(world_pos)` - `renderAssembled` projects the
-focus with the same view-projection it builds for the scene draws, so the
-page never duplicates camera math. `play-app.js` stages the player's body
-centre per field frame and clears it for battle and VR first-person (where
+`TmdRenderer.setOcclusionFocus(world_pos, strength)` - `renderAssembled`
+projects the focus with the same view-projection it builds for the scene
+draws, so the page never duplicates camera math - and the per-draw actor
+exemption rides the `u_occl_allow` uniform (`noOccl` on the player / NPC
+placements). `play-app.js` runs the same gate through the runtime's
+`field_player_occluded` export (falling back to always-armed on a stale
+wasm bundle) and clears the focus for battle and VR first-person (where
 the eye *is* the player). The other WebGL pages never stage a focus, so
 they are untouched.
 

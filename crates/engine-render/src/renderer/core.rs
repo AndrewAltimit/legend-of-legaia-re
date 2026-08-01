@@ -1358,6 +1358,7 @@ impl Renderer {
             // window opts in explicitly.
             occl_fade: std::cell::Cell::new(false),
             occl_focus: std::cell::Cell::new(None),
+            occl_env_counts: std::cell::Cell::new((usize::MAX, usize::MAX)),
             scene_lights: std::cell::RefCell::new(Vec::new()),
             scene_view_proj: std::cell::Cell::new(None),
             scene_lights_buf,
