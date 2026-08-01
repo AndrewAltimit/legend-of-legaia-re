@@ -19,7 +19,7 @@ Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 
 ## Where the gates run
 
-The five host-drift tiers below all run in the `gates` job of
+The six host-drift tiers below all run in the `gates` job of
 [`.github/workflows/main-ci.yml`](../../.github/workflows/main-ci.yml) and from
 [`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) as a fast
 local mirror. CI is the authority: a gate that lives only in a hook is one
@@ -257,6 +257,45 @@ There is deliberately **no waiver file** for this tier. A waiver names a
 blocking capability, and no capability is missing here: the table is exported,
 the adoption helper ships, and the answer is always to type the lookup.
 
+## Tier 6 - diagnostics: is a debug draw off on BOTH hosts?
+
+Every tier above asks whether a host **reaches** a surface. None can see the
+shape where both hosts reach it and only one of them turns it off.
+
+That shipped, and a user reported it. The effect billboards carry a tinted
+wireframe outline so a spawn stays readable when its texels are not resident.
+The native window gates it behind `LEGAIA_DIAG_FX=1`; the browser twin had no
+gate at all. Retail draws no such rectangle, so every play-page fight stamped
+an opaque red-ish box around every effect sprite - up to 25 at once. Both hosts
+called the builder, the constants matched, the sim pairs matched, no page
+carried a key table: **all five tiers above passed.**
+
+`DIAG_GATES` in [`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
+declares every `LEGAIA_DIAG_*` gate in the engine crates and whether it is
+`additive` - whether it draws something retail does not. The asymmetry is the
+whole point:
+
+| kind | example | a host missing it |
+|---|---|---|
+| subtractive | `NOFX` (suppress the layer), `NOSEMI` (blend off), `LAYERS` / `PLACE_RANGE` (draw a subset) | renders retail-correctly; it just cannot bisect |
+| additive | `FX` (outline strips), `HUD` (diagnostic text over the frame) | **paints it in normal play, for every user** |
+
+Only additive gates require a twin. A WASM module has no process environment,
+so the browser twin is a module static a page or devtools console flips - which
+is why this cannot be checked by looking for the env name on both sides. The
+check is that the twin's *initialiser* reads false.
+
+Validated both ways, like the waiver files: an undeclared `LEGAIA_DIAG_*` fails
+(declare what it draws), and a declared gate that no longer appears fails (drop
+the row). What it does **not** prove: that the two gates suppress the same
+draw, that the twin is wired to anything, or that no un-gated debug draw exists
+under some other name.
+
+One gate declares `web_toggle = None` with a reason rather than a twin:
+`LEGAIA_DIAG_HUD` reads its env inside the shared `engine-ui` leaf, so it is
+one implementation both hosts call, and `std::env::var` answers `Err` under
+`wasm32` - default-off by construction rather than by a second toggle.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -482,7 +521,9 @@ way, once the suspected wrong way - and asserts they differ.
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
 - a paired constant joins tier 2 by being added to `CONSTANT_PAIRS`;
 - a feature joins tier 3 by being added to `SIM_PAIRS` with its two sites;
-- a trait joins tier 4 by having a default method body and two implementers.
+- a trait joins tier 4 by having a default method body and two implementers;
+- a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
+  optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
 
 Each script self-tests its own detectors on every run and refuses to report a
 pass when a control fails - a "0 orphans" verdict from a classifier that
