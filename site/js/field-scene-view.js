@@ -34,12 +34,20 @@
    * vertical sheet wider than any real wall (town cliffs are thick, and flat
    * floor slabs are horizontal); a *dome shell* is huge on BOTH horizontal axes
    * AND tall (interior floor slabs like korb3's 3584-unit carpets are flat;
-   * mountain walls like rikuroa slot 32 are long but shallow). */
-  function isSkyMesh(aabb) {
+   * mountain walls like rikuroa slot 32 are long but shallow) AND sparse -
+   * every genuine shell in the corpus is 42-51 verts stretched over a
+   * 7k-18k span (teien slot 3, town01 slots 84/85, rikuroa slot 37), while
+   * real geometry that big is dense: kor5 slot 3 - the town's ENTIRE tiled
+   * paving + walkway floor, 459 verts over 4224x3680 - matched the old
+   * AABB-only arm and the whole plaza floor silently vanished into the sky
+   * bucket. `vertCount` 0/undefined (metadata unavailable) keeps the
+   * pre-guard behaviour. */
+  function isSkyMesh(aabb, vertCount) {
     if (!aabb) return false;
+    const sparse = !vertCount || vertCount <= 96;
     const flatPlane = Math.min(aabb.sx, aabb.sz) < 8
       && Math.max(aabb.sx, aabb.sz) > 3000 && aabb.sy > 600;
-    const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800;
+    const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800 && sparse;
     return flatPlane || domeShell;
   }
 
@@ -180,7 +188,9 @@
         for (let i = 0; i < slots.length; i++) {
           const ms = slots[i];
           if (!ensureMesh(ms)) continue;
-          if (isSkyMesh(this.renderer.getMeshAabb(ms))) {
+          if (isSkyMesh(this.renderer.getMeshAabb(ms),
+                        this.renderer.getMeshVertexCount
+                          ? this.renderer.getMeshVertexCount(ms) : 0)) {
             skySlots.add(ms);
             skyDrawsHidden++;
             continue;

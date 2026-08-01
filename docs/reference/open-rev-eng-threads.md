@@ -124,6 +124,27 @@ with the instruction evidence cited.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
+| teien hedge-base ground fill (kind-2 tile-trigger cells) | open | [details ↓](#teien-hedge-base-ground-fill) |
+
+### teien hedge-base ground fill
+
+*Status:* open - the port is byte-faithful to every pinned draw channel; the question is whether retail has one more
+
+Under teien's hedge maze the cells along the hedge rows carry only
+object-grid bit `0x0800` (kind-2 tile-trigger presence - the height-override
+platform records `FUN_80019278` reads), not the `0x1000` ground-draw bit, so
+neither retail's pinned ground-quad emitter (`FUN_801f6d48`, gate
+`(cell & 0x1000) != 0`) nor the port's `build_walk_heightfield` (same gate,
+verified byte-exact against retail's load-time recompute in `FUN_80017BEC`
+for kor5/teien/town01) emits ground there. Through the hedge sprites'
+authored cutout texels that reads as black holes along the hedge bases from
+free-camera angles retail's fixed camera may never reach. If retail really
+shows grass in those cells, the filler is an **unpinned kind-2-cell draw
+channel**. What would close it: a mednafen/PCSX-Redux save state inside
+teien + the display-list read (a RAM image carries the frame's libgpu OT -
+see `docs/tooling/mednafen-automation.md`), checking whether any ground
+prim covers a `0x0800`-only cell. Until then the engine must not grow a
+speculative fill.
 
 ### Region story-flag gate families
 
