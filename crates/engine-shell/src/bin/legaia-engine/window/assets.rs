@@ -94,38 +94,7 @@ impl PlayWindowApp {
                 // untextured half of a mixed mesh). A mesh whose only textured
                 // prims reference missing CLUTs yields an empty colour mesh AND
                 // an empty filtered VRAM mesh, so it correctly stays dropped.
-                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-                if !cmesh.is_empty() {
-                    for p in &cmesh.positions {
-                        for ax in 0..3 {
-                            if p[ax] < lo[ax] {
-                                lo[ax] = p[ax];
-                            }
-                            if p[ax] > hi[ax] {
-                                hi[ax] = p[ax];
-                            }
-                        }
-                    }
-                    tmd_color_emitters[src_i] =
-                        legaia_engine_render::scene_lights::color_mesh_emitters(
-                            &cmesh.positions,
-                            &cmesh.colors,
-                            &cmesh.blend,
-                            &cmesh.indices,
-                        );
-                    match r.upload_color_mesh_blended(
-                        &cmesh.positions,
-                        &cmesh.colors,
-                        &cmesh.indices,
-                        &cmesh.blend,
-                    ) {
-                        Ok(m) => {
-                            color_meshes.push(m);
-                            color_tmd_src_index.push(src_i);
-                        }
-                        Err(e) => log::warn!("color mesh upload skipped: {e:#}"),
-                    }
-                }
+                let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
 
                 // Use the VRAM-aware filter so prims whose CBA / TSB sample
                 // un-uploaded regions get dropped at mesh-build time. This
@@ -158,19 +127,54 @@ impl PlayWindowApp {
                     }
                 }
                 // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`):
-                // flag double-sided prim pairs for the shader's per-prim
+                // flag double-sided prim pairs for the shaders' per-prim
                 // facing discard (retail NCLIP keeps only the camera-facing
                 // copy), then nudge distinct coplanar decal layers half a
                 // unit toward their visible side so the depth buffer resolves
-                // them deterministically instead of per-pixel fighting.
+                // them deterministically instead of per-pixel fighting. Both
+                // halves go through ONE stream (`resolve_hybrid`): the baked
+                // floor shadows / wall paintings are untextured colour prims
+                // lying on textured bases, pairs neither single-mesh pass
+                // sees - running the passes on the textured half alone left
+                // every such decal fighting (koin4 shop-floor shadows).
                 {
-                    let ds = legaia_tmd::mesh::mark_double_sided_pairs(&mut vmesh);
-                    let nudged = legaia_tmd::mesh::separate_coplanar_prims(&mut vmesh);
+                    let (ds, nudged) = legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
                     if ds + nudged > 0 {
                         log::debug!(
                             "play-window: mesh res {src_i}: {ds} double-sided pairs flagged, \
                              {nudged} coplanar prims nudged"
                         );
+                    }
+                }
+                if !cmesh.is_empty() {
+                    for p in &cmesh.positions {
+                        for ax in 0..3 {
+                            if p[ax] < lo[ax] {
+                                lo[ax] = p[ax];
+                            }
+                            if p[ax] > hi[ax] {
+                                hi[ax] = p[ax];
+                            }
+                        }
+                    }
+                    tmd_color_emitters[src_i] =
+                        legaia_engine_render::scene_lights::color_mesh_emitters(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.blend,
+                            &cmesh.indices,
+                        );
+                    match r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    ) {
+                        Ok(m) => {
+                            color_meshes.push(m);
+                            color_tmd_src_index.push(src_i);
+                        }
+                        Err(e) => log::warn!("color mesh upload skipped: {e:#}"),
                     }
                 }
                 if vmesh.indices.is_empty() {
@@ -335,12 +339,15 @@ impl PlayWindowApp {
                             None => ([0; 3], [0; 3]),
                         })
                         .collect();
-                    let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                    let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
                         &rtmd.tmd, &rtmd.raw, &offsets,
                     );
-                    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
                         &rtmd.tmd, &rtmd.raw, &offsets,
                     );
+                    // Same hybrid coplanar resolution as the static env
+                    // meshes above (and the web `build_hybrid_env_mesh_posed`).
+                    legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
                     // Retain the raw TMD so the draw pass can re-pose this prop
                     // at whatever frame its clip is on.
                     let mut slot = PosedMesh {

@@ -29,7 +29,7 @@
 //! building a mesh); the plain builders stay byte-faithful for the
 //! preservation/export paths.
 
-use super::VramMesh;
+use super::{ColorMesh, VramMesh};
 
 /// Bit 15 of the per-vertex **CBA** attribute marks the prim as one copy of a
 /// detected double-sided pair. A PSX CBA word only uses bits 0..=14 (CLUT x
@@ -38,6 +38,15 @@ use super::VramMesh;
 /// shaders discard the away-facing copy of flagged prims (see
 /// `engine-render`'s VRAM-mesh shader and `site/js/webgl-shaders.js`).
 pub const CBA_DOUBLE_SIDED_BIT: u16 = 0x8000;
+
+/// The colour-half twin of [`CBA_DOUBLE_SIDED_BIT`]: bit 14 of a
+/// [`ColorMesh`] per-vertex blend word marks one copy of a double-sided pair
+/// detected by [`resolve_hybrid`]. The blend word only uses bit 15 (ABE) and
+/// bits 5..=6 (ABR), so bit 14 is free; `psx_blend` masks it out. The native
+/// colour-mesh fragment shader discards the away-facing copy of flagged
+/// prims, and the web merge translates the bit back onto the merged CBA
+/// attribute.
+pub const BLEND_DOUBLE_SIDED_BIT: u16 = 0x4000;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct VKey(i64, i64, i64);
@@ -396,6 +405,58 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
     moved
 }
 
+/// Run both coplanar passes over the **hybrid** of one TMD's textured and
+/// untextured halves as a single primitive stream, then split the result
+/// back. A scene TMD interleaves textured prims with untextured `F*`/`G*`
+/// colour prims, and its baked decals (floor shadows, wall paintings) are
+/// routinely colour prims lying on textured bases - pairs neither
+/// single-mesh pass can see. Consumers that draw the two halves on separate
+/// pipelines (the native play-window) and consumers that merge them (the
+/// web viewers) both call this so the two hosts share one model.
+///
+/// Position nudges land back in whichever half owns the vertex; a colour
+/// vertex of a detected double-sided pair gets [`BLEND_DOUBLE_SIDED_BIT`]
+/// set in its blend word (the textured half keeps using
+/// [`CBA_DOUBLE_SIDED_BIT`]). Returns `(double_sided_pairs, nudged_tris)`.
+pub fn resolve_hybrid(vmesh: &mut VramMesh, cmesh: &mut ColorMesh) -> (usize, usize) {
+    let n_verts = vmesh.positions.len();
+    let n_idx = vmesh.indices.len();
+    if cmesh.blend.len() < cmesh.positions.len() {
+        // Builders always fill blend per-vertex; pad defensively so the
+        // flag write-back below can't index out of range.
+        cmesh.blend.resize(cmesh.positions.len(), 0);
+    }
+    // Append the colour half so both passes see one stream (matching the
+    // web viewers' merged draw order: textured half first).
+    for (p, blend) in cmesh.positions.iter().zip(cmesh.blend.iter()) {
+        vmesh.positions.push(*p);
+        vmesh.uvs.push([0, 0]);
+        vmesh.cba_tsb.push([0, *blend]);
+        vmesh.normals.push([0.0; 3]);
+        vmesh.colors.push([0x80; 3]);
+    }
+    vmesh
+        .indices
+        .extend(cmesh.indices.iter().map(|i| i + n_verts as u32));
+    let ds = mark_double_sided_pairs(vmesh);
+    let nudged = separate_coplanar_prims(vmesh);
+    // Split back: nudged positions return to their owning half, and the
+    // colour half's pair flag moves onto its blend word.
+    for i in 0..cmesh.positions.len() {
+        cmesh.positions[i] = vmesh.positions[n_verts + i];
+        if vmesh.cba_tsb[n_verts + i][0] & CBA_DOUBLE_SIDED_BIT != 0 {
+            cmesh.blend[i] |= BLEND_DOUBLE_SIDED_BIT;
+        }
+    }
+    vmesh.positions.truncate(n_verts);
+    vmesh.uvs.truncate(n_verts);
+    vmesh.cba_tsb.truncate(n_verts);
+    vmesh.normals.truncate(n_verts);
+    vmesh.colors.truncate(n_verts);
+    vmesh.indices.truncate(n_idx);
+    (ds, nudged)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,6 +536,70 @@ mod tests {
         // Decal moved 0.5 toward -Y (up, the visible side).
         for v in 3..6 {
             assert!((m.positions[v][1] + COPLANAR_NUDGE).abs() < 1e-4);
+        }
+    }
+
+    fn color_mesh_from_tris(tris: &[[[f32; 3]; 3]]) -> ColorMesh {
+        let mut m = ColorMesh {
+            positions: Vec::new(),
+            colors: Vec::new(),
+            indices: Vec::new(),
+            blend: Vec::new(),
+        };
+        for t in tris {
+            let base = m.positions.len() as u32;
+            for v in t {
+                m.positions.push(*v);
+                m.colors.push([0x20; 3]);
+                m.blend.push(0);
+            }
+            m.indices.extend([base, base + 1, base + 2]);
+        }
+        m
+    }
+
+    #[test]
+    fn hybrid_colour_decal_over_textured_base_is_nudged() {
+        // The koin4 shadow class: an untextured colour decal (baked shadow)
+        // lying on a textured floor. Neither single-mesh pass sees the pair;
+        // the hybrid kernel must nudge the decal and leave the base.
+        let base = [[0.0, 0.0, 0.0], [0.0, 0.0, 128.0], [128.0, 0.0, 0.0]];
+        let decal = [[16.0, 0.0, 16.0], [16.0, 0.0, 48.0], [48.0, 0.0, 16.0]];
+        let mut vm = mesh_from_tris(&[base]);
+        let mut cm = color_mesh_from_tris(&[decal]);
+        let (ds, nudged) = resolve_hybrid(&mut vm, &mut cm);
+        assert_eq!(ds, 0);
+        assert_eq!(nudged, 1);
+        // Textured base untouched, and the merged tail fully removed.
+        assert_eq!(vm.positions.len(), 3);
+        assert_eq!(vm.indices.len(), 3);
+        for v in &vm.positions {
+            assert_eq!(v[1], 0.0);
+        }
+        // Colour decal moved 0.5 toward -Y (up, its visible side).
+        for v in &cm.positions {
+            assert!((v[1] + COPLANAR_NUDGE).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn hybrid_double_sided_cross_family_pair_flags_both_halves() {
+        // One textured copy + one opposite-winding colour copy of the same
+        // surface: the flag must land on CBA bit 15 for the textured half
+        // and on blend bit 14 for the colour half.
+        let a = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [0.0, 0.0, 64.0]];
+        let b = [[0.0, 0.0, 0.0], [0.0, 0.0, 64.0], [64.0, 0.0, 0.0]];
+        let mut vm = mesh_from_tris(&[a]);
+        let mut cm = color_mesh_from_tris(&[b]);
+        let (ds, _) = resolve_hybrid(&mut vm, &mut cm);
+        assert_eq!(ds, 1);
+        for ct in &vm.cba_tsb {
+            assert_ne!(ct[0] & CBA_DOUBLE_SIDED_BIT, 0);
+            assert_eq!(ct[0] & 0x7FFF, 0x1234); // CLUT bits untouched
+        }
+        for w in &cm.blend {
+            assert_ne!(w & BLEND_DOUBLE_SIDED_BIT, 0);
+            assert_eq!(w & !BLEND_DOUBLE_SIDED_BIT, 0); // ABE/ABR untouched
         }
     }
 

@@ -97,15 +97,15 @@ pub fn build_hybrid_env_mesh(
     rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
     vram: &legaia_tim::Vram,
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mesh = rtmd.build_filtered_vram_mesh(vram);
-    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
-    // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`, mirrors the
-    // native play-window): flag double-sided pairs for the shader's facing
-    // discard, nudge distinct coplanar decal layers toward their visible side.
-    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
-    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
-    (mesh, flat)
+    let mut mesh = rtmd.build_filtered_vram_mesh(vram);
+    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+    // Coplanar z-fight resolution over BOTH halves as one stream - the same
+    // shared kernel the native play-window runs (`legaia_tmd::mesh::coplanar`):
+    // flag double-sided pairs for the shader's facing discard, nudge distinct
+    // coplanar decal layers toward their visible side. The merge below carries
+    // the colour half's pair flag onto the merged CBA attribute.
+    legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
+    merge_hybrid_halves(mesh, &cmesh)
 }
 
 /// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
@@ -119,12 +119,10 @@ pub fn build_hybrid_env_mesh_posed(
     rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
     offsets: &[([i16; 3], [i16; 3])],
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
-    let (mut mesh, flat) = merge_hybrid_halves(mesh, &cmesh);
-    legaia_tmd::mesh::mark_double_sided_pairs(&mut mesh);
-    legaia_tmd::mesh::separate_coplanar_prims(&mut mesh);
-    (mesh, flat)
+    let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
+    merge_hybrid_halves(mesh, &cmesh)
 }
 
 /// Merge the untextured vertex-colour half into the textured half's vertex
@@ -162,7 +160,17 @@ fn merge_hybrid_halves(
     {
         mesh.positions.push(*p);
         mesh.uvs.push([0, 0]);
-        mesh.cba_tsb.push([0, *blend]);
+        // A colour vert flagged as one copy of a double-sided pair
+        // (`resolve_hybrid`, blend bit 14) re-keys the flag onto the merged
+        // CBA attribute's bit 15 - where the WebGL shader's facing discard
+        // reads it for every vertex, textured or flat.
+        let cba = if blend & legaia_tmd::mesh::BLEND_DOUBLE_SIDED_BIT != 0 {
+            legaia_tmd::mesh::CBA_DOUBLE_SIDED_BIT
+        } else {
+            0
+        };
+        mesh.cba_tsb
+            .push([cba, blend & !legaia_tmd::mesh::BLEND_DOUBLE_SIDED_BIT]);
         mesh.normals.push([0.0, 0.0, 0.0]);
         // Keep `VramMesh::colors` index-aligned with the positions: the
         // untextured half has no modulation word, so it takes the neutral one.
