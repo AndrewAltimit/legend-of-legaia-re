@@ -1591,13 +1591,20 @@ pub fn battle_value_readout_draws_for(
             Err(_) => continue,
         };
         let layout = font.layout_ascii(s);
-        // Scale the glyph's own quads into the cell: the font atlas has no
-        // 24-px digits, so each source rect is stretched rather than blitted.
-        let advance = layout.advance_x.max(1) as f32;
-        let sx = c.w as f32 / advance;
-        let sy = c.h as f32 / advance;
         for d in text_draws_for(&layout, (0, 0), color) {
             let (dx, dy, dw, dh) = d.dst;
+            // Scale the glyph's own quad into the cell: the font atlas has no
+            // 24-px digits, so each source rect is stretched rather than
+            // blitted. The scale is taken from the glyph RECT (`dw` / `dh`),
+            // not from the layout advance. The advance is the *proportional*
+            // pen step - 5 px for `1`, 7 for `3` - while the atlas cell the
+            // quad samples is a fixed 14x15, so dividing by it inflated every
+            // digit by `rect / advance` (~2x-3x) and, because the advance is
+            // per glyph, drew the digits of one number at DIFFERENT sizes.
+            // Retail's readout is a run of uniform 24x24 cells, so the quad
+            // is the cell.
+            let sx = c.w as f32 / (dw.max(1) as f32);
+            let sy = c.h as f32 / (dh.max(1) as f32);
             out.push(TextDraw {
                 dst: (
                     origin.0 + (c.x * scale as i32) + (dx as f32 * sx) as i32 * scale as i32,
