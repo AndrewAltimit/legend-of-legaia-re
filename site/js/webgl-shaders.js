@@ -58,9 +58,10 @@ uniform usampler2D u_ocean_clut;  /* R16UI, 16×1: 16 BGR555 entries (animated p
 uniform int u_ocean_textured;     /* 0 = solid u_color fallback, 1 = textured pipeline */
 uniform vec2 u_ocean_sample_size; /* (w, h) - the logical-pixel region of the texture page that holds ocean data */
 uniform vec4 u_color;             /* fallback solid colour (also used where CLUT entry 0 maps to transparent) */
-uniform float u_shade;            /* flat-ground Lambert shade of the main program, so the
-                                   * backdrop matches the heightfield's water cells exactly
-                                   * and the sea reads as one continuous layer */
+uniform float u_shade;            /* packet-colour modulation of the main program's ground
+                                   * water cells, so the backdrop plane matches them exactly
+                                   * and the sea reads as one continuous layer. 1.0 = the
+                                   * neutral 0x80 word the generated heightfield carries. */
 
 in vec2 v_uv;
 out vec4 o_color;
@@ -129,13 +130,20 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
-/* Per-vertex flat/gouraud colour for the field-character hybrid render:
- * rgb in 0..1 (normalised from u8), a = 1.0 textured / 0.0 untextured.
- * Only consulted when u_use_flat_colors != 0; defaults to (1,1,1,1) when the
- * attribute isn't bound, so scene / world-map draws are unaffected. */
+/* Per-vertex PSX **packet colour**: rgb in 0..1 (normalised from u8, so the
+ * neutral modulation word 0x80 arrives as 0.502), a = 1.0 textured /
+ * 0.0 untextured.
+ *
+ * BOTH halves consult the rgb, for two different jobs: an untextured prim is
+ * FILLED with it, a textured prim MODULATES its texel by it
+ * (texel * colour / 128 - the PSX GPU's texture blend, which is the whole
+ * of retail's field lighting). The alpha only says which.
+ *
+ * A mesh that binds no stream reads the context-global attribute constant,
+ * which the renderer sets to the neutral 0x80 triple, so an un-coloured draw
+ * is texel * 1.0. u_use_flat_colors gates only the untextured branch. */
 in vec4 a_flat_rgba;
 
-out vec3 v_world;
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
@@ -144,7 +152,6 @@ out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
-  v_world = world_pos.xyz;
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
   v_flat_rgba = a_flat_rgba;
@@ -177,13 +184,6 @@ precision highp usampler2D;
 
 uniform usampler2D u_vram;
 uniform usampler2D u_fog_lut;  /* 512x1 R16UI, BGR555 entries; indexed by Z >> 5 */
-uniform vec3 u_light;
-/* +1.0 normally; -1.0 when the view-projection mirrors a screen axis (the
- * top-down world map is horizontally flipped to match retail). The shading
- * normal is derived from screen-space derivatives of v_world, whose cross
- * product flips sign with the VP's handedness, so this restores the correct
- * normal orientation without depending on triangle winding. */
-uniform float u_normal_sign;
 /* When non-zero, render transparent samples as opaque (with a tinted
  * fallback so they're visible). Used by the assembled top-view map where
  * CLUT collisions are expected and discarded fragments leave holes. */
@@ -191,10 +191,11 @@ uniform int u_no_discard;
 /* When non-zero, blend the per-vertex distance-cue fog LUT into the
  * diffuse term. Mirrors the overlay leaves' dpcs/dpct post-process. */
 uniform int u_fog_enable;
-/* When non-zero, the field-character hybrid path is active: vertices whose
- * a_flat_rgba.a < 0.5 are untextured (flat/gouraud) prims and take their
- * colour from v_flat_rgba.rgb instead of sampling VRAM. Default 0 → all other
- * draws (scene, world map, monsters, battle/baka characters) are unchanged. */
+/* When non-zero, the hybrid path is active: vertices whose a_flat_rgba.a < 0.5
+ * are untextured (flat/gouraud) prims and are FILLED from v_flat_rgba.rgb
+ * instead of sampling VRAM. Default 0 → a mesh with no untextured half never
+ * takes that branch. It does NOT gate the textured path's packet-colour
+ * modulation, which is unconditional (retail's law) and neutral by default. */
 uniform int u_use_flat_colors;
 /* PSX semi-transparency (ABE) pass selector, mirroring the retail GPU:
  *   -1 legacy       - draw everything opaque (single-mesh inspector paths
@@ -243,7 +244,6 @@ uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
  * reflections), which inverts gl_FrontFacing, so they keep back (0). */
 uniform int u_pair_front;
 
-in vec3 v_world;
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
@@ -310,7 +310,7 @@ void main() {
    * window's COLOR_MESH_SHADER_SRC does ("An untextured PSX prim is filled
    * with its packet colour directly ... The colour IS the baked shading").
    * This path used to multiply by a synthetic Lambert term
-   * (0.45 + 0.55 * dot(n, -u_light)) off the screen-space geometric normal,
+   * (0.45 + 0.55 * dot(n, -light)) off the screen-space geometric normal,
    * which is a viewer aid, not retail: on a battle-stage sky dome the panels
    * sweep through every azimuth, so the term paints repeating vertical
    * lighter bands across the sky and the mountain arc that the native window
@@ -384,12 +384,23 @@ void main() {
   if (u_semi_pass == 0 && texel_blends) discard;
   if (u_semi_pass == 1 && !texel_blends) discard;
 
-  vec3 dx = dFdx(v_world);
-  vec3 dy = dFdy(v_world);
-  vec3 n = normalize(cross(dx, dy)) * u_normal_sign;
-  float lambert = max(dot(n, normalize(-u_light)), 0.0);
-  float shade = 0.45 + 0.55 * lambert;
-  vec3 lit = color.rgb * shade;
+  /* THE FIELD LIGHTING MODEL. Retail issues no GTE light op at all on either
+   * of its TMD render paths: a textured prim is blended by the PSX GPU as
+   *     out = texel * colour / 128
+   * where colour is the prim's baked packet word (0x80 = the texel
+   * unchanged, 0x00 blacks it out, 0xFF brightens by ~2x). The word arrives
+   * as v_flat_rgba.rgb, normalised, so the byte-space / 128 is * 255/128
+   * here. This is the same arithmetic as the native renderer's psx_modulate
+   * (crates/engine-render/src/shaders.rs), and dropping it flattens the scene
+   * to the raw texel - across a town's env packs ~81% of colour components
+   * sit below 0x80 and ~12% above, so BOTH tails of the contrast go.
+   *
+   * What used to be here was a synthetic Lambert
+   * (0.45 + 0.55 * dot(n, -u_light)) off the screen-space geometric normal of
+   * v_world - a bare-geometry viewer aid, not retail, and the last of it on
+   * this host. See docs/tooling/host-drift.md. */
+  vec3 lit = clamp(color.rgb * v_flat_rgba.rgb * (255.0 / 128.0),
+                   vec3(0.0), vec3(1.0));
 
   if (u_fog_enable != 0) {
     /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
@@ -425,7 +436,12 @@ void main() {
    * before the GPU texel multiply). */
   {
     float ir0 = cue_ir0(v_view_z);
-    lit = mix(grade_near(lit), color.rgb * u_cue_far, ir0);
+    /* The far term is the far colour MODULATED by the texel, on the same
+     * / 128 scale as the near term (native: psx_modulate(texel,
+     * depth_cue.rgb * 255.0)) - u_cue_far is a display 0..1 colour, so it
+     * needs the identical 255/128 that the packet word gets. */
+    vec3 far = clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0));
+    lit = mix(grade_near(lit), far, ir0);
   }
 
   /* Ghost (after-image) draw: keep the cutout silhouette (the discard above

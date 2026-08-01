@@ -378,13 +378,11 @@ impl LegaiaViewer {
             .ok_or_else(|| JsValue::from_str(&format!("field_npc_mesh: no catalog entry {i}")))?;
         let (mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &raw);
-        // Flag rides in the alpha byte (255 = textured, sample VRAM; 0 = use
-        // the vertex colour) - the `u_use_flat_colors` / `a_flat_rgba`
-        // convention the shared renderer already implements.
-        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
+        // Flag rides in the alpha byte (255 = textured, sample VRAM and
+        // modulate by the RGB; 0 = fill with the RGB) - the
+        // `u_use_flat_colors` / `a_flat_rgba` convention the shared renderer
+        // already implements.
+        let flat = crate::packet_color::hybrid(&mesh, &shading);
         let n = self
             .field_npcs
             .as_mut()

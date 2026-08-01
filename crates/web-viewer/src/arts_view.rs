@@ -746,6 +746,15 @@ impl LegaiaArts {
         out
     }
 
+    /// Per-vertex `[r, g, b, 255]` packet colours - the modulation half of
+    /// retail's `texel * colour / 128`, parallel to the positions.
+    pub fn mesh_flat_rgba(&self) -> Vec<u8> {
+        let Some(c) = &self.current else {
+            return Vec::new();
+        };
+        crate::packet_color::textured(&c.mesh)
+    }
+
     /// Per-vertex `[cba, tsb]`, parallel to the positions.
     pub fn mesh_cba_tsb(&self) -> Vec<u32> {
         let Some(c) = &self.current else {

@@ -238,7 +238,8 @@
         Uint16Array.from(this.api.mesh_cba_tsb()),
         this.api.mesh_indices(),
         this.api.mesh_bounds(),
-        this.api.mesh_object_ids());
+        this.api.mesh_object_ids(),
+        this.api.mesh_flat_rgba());
       this._renderActions();
       this.playIdle();
       return true;

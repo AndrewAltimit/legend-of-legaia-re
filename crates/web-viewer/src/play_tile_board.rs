@@ -160,10 +160,7 @@ impl LegaiaRuntime {
             })?;
         let (mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&global.tmd, &global.raw);
-        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
+        let flat = crate::packet_color::hybrid(&mesh, &shading);
         self.tile_mesh = Some((slot as u8, mesh, object_ids, flat));
         Ok(slot)
     }

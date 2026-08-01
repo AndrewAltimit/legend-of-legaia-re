@@ -246,14 +246,10 @@ impl LegaiaViewer {
         let Some((tmd, bytes)) = self.build_character_mesh(slot as usize, equip) else {
             return Vec::new();
         };
-        let (_mesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
+        let (mesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
         // The flag rides in the alpha byte; the JS binds this attribute
         // normalised, so emit 255 (→ 1.0) for textured and 0 for untextured.
-        let mut out = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            out.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
-        out
+        crate::packet_color::hybrid(&mesh, &shading)
     }
 
     /// Build the 1 MB PSX VRAM with the **field-character textures** (PROT
@@ -427,6 +423,15 @@ impl LegaiaViewer {
             out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
         }
         out
+    }
+
+    /// Per-vertex `[r, g, b, 255]` packet colours for the battle-form
+    /// character - the modulation half of retail's `texel * colour / 128`.
+    pub fn battle_char_mesh_flat_rgba(&self, slot: u32) -> Vec<u8> {
+        let Some(mesh) = self.build_battle_char_vram_mesh(slot as usize) else {
+            return Vec::new();
+        };
+        crate::packet_color::textured(&mesh)
     }
 
     /// Per-vertex `[cba, tsb]` for the battle-form character.

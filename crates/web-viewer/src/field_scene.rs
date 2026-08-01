@@ -88,10 +88,11 @@ pub struct FieldSceneAnim {
 /// builder drops; the engine-shell draws them on its colour-mesh pipeline).
 /// Both halves are merged into one vertex stream for the WebGL renderer, with
 /// a parallel `[r, g, b, flag]` byte array (`flag` 255 = textured, sample
-/// VRAM; 0 = untextured, use the vertex colour) matching the
-/// `u_use_flat_colors` / `a_flat_rgba` convention the field-character hybrid
-/// shader path already implements. The flat array is empty when the mesh has
-/// no untextured prims, so purely-textured meshes upload exactly as before.
+/// VRAM and modulate by the RGB; 0 = untextured, fill with the RGB) matching
+/// the `u_use_flat_colors` / `a_flat_rgba` convention the field-character
+/// hybrid shader path already implements. Every vertex carries a colour -
+/// the textured half's is the prim's packet word, retail's whole field
+/// lighting model (`texel * colour / 128`).
 pub fn build_hybrid_env_mesh(
     rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
     vram: &legaia_tim::Vram,
@@ -127,8 +128,9 @@ pub fn build_hybrid_env_mesh_posed(
 }
 
 /// Merge the untextured vertex-colour half into the textured half's vertex
-/// stream, producing the parallel `[r, g, b, flag]` array (empty when there
-/// is no colour half, so pure-textured meshes upload exactly as before).
+/// stream, producing the parallel `[r, g, b, flag]` array. Both halves carry a
+/// colour: the untextured half's is its **fill**, the textured half's is its
+/// **modulation** (`texel * colour / 128`), and the `flag` byte is which.
 ///
 /// The colour half's per-vertex PSX blend word (ABE enable in bit 15 + ABR
 /// mode in bits 5..=6, see [`legaia_tmd::mesh::ColorMesh::blend`]) is carried
@@ -142,13 +144,15 @@ fn merge_hybrid_halves(
     mut mesh: legaia_tmd::mesh::VramMesh,
     cmesh: &legaia_tmd::mesh::ColorMesh,
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
+    // The textured half's stream is its packet colours (the shader's
+    // `texel * colour / 128` modulation), NOT white - a white stream would
+    // brighten every textured surface by 255/128.
     if cmesh.is_empty() {
-        return (mesh, Vec::new());
+        let flat = crate::packet_color::textured(&mesh);
+        return (mesh, flat);
     }
-    let mut flat = Vec::with_capacity((mesh.positions.len() + cmesh.positions.len()) * 4);
-    for _ in 0..mesh.positions.len() {
-        flat.extend_from_slice(&[255, 255, 255, 255]);
-    }
+    let mut flat = crate::packet_color::textured(&mesh);
+    flat.reserve(cmesh.positions.len() * 4);
     let base = mesh.positions.len() as u32;
     for ((p, c), blend) in cmesh
         .positions
@@ -160,6 +164,9 @@ fn merge_hybrid_halves(
         mesh.uvs.push([0, 0]);
         mesh.cba_tsb.push([0, *blend]);
         mesh.normals.push([0.0, 0.0, 0.0]);
+        // Keep `VramMesh::colors` index-aligned with the positions: the
+        // untextured half has no modulation word, so it takes the neutral one.
+        mesh.colors.push([crate::packet_color::NEUTRAL; 3]);
         flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
     }
     mesh.indices.extend(cmesh.indices.iter().map(|i| i + base));

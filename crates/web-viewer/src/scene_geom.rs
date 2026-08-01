@@ -286,6 +286,15 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// Per-vertex `[r, g, b, 255]` packet colours of the continent mesh - the
+    /// modulation half of retail's `texel * colour / 128`.
+    pub fn continent_pack_mesh_flat_rgba(&self) -> Vec<u8> {
+        let Some(mesh) = self.build_continent_mesh() else {
+            return Vec::new();
+        };
+        crate::packet_color::textured(&mesh)
+    }
+
     pub fn continent_pack_mesh_bounds(&self) -> Vec<f32> {
         let Some(mesh) = self.build_continent_mesh() else {
             return vec![0.0; 4];
@@ -433,6 +442,15 @@ impl LegaiaViewer {
         self.build_kingdom_mesh()
             .map(|m| m.indices)
             .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, 255]` packet colours of the selected kingdom pack
+    /// slot - the modulation half of retail's `texel * colour / 128`.
+    pub fn pack_mesh_flat_rgba(&self) -> Vec<u8> {
+        let Some(mesh) = self.build_kingdom_mesh() else {
+            return Vec::new();
+        };
+        crate::packet_color::textured(&mesh)
     }
 
     pub fn pack_mesh_bounds(&self) -> Vec<f32> {

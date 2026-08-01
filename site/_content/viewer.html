@@ -1006,7 +1006,8 @@
     }
     console.debug(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
     glRenderer.uploadVram(vramBytes);
-    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices,
+      viewer.mesh_flat_rgba());
     /* Arm the .glb export for this single-mesh view. */
     try {
       setGlbExport({ kind: 'entry', protIndex: JSON.parse(viewer.status()).prot_index });

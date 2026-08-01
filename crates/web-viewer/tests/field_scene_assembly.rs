@@ -161,28 +161,50 @@ fn hybrid_env_mesh_recovers_vertex_colour_props() {
         .collect();
 
     let mut colour_only_recovered = 0usize;
+    // Non-vacuity for the packet-colour stream: at least one textured vertex
+    // somewhere in town01's referenced env slots must carry a colour word that
+    // is neither white (the old placeholder) nor the neutral 0x80. Without
+    // this the whole modulation could be an all-neutral no-op and every
+    // structural assertion below would still pass.
+    let mut non_neutral_textured = 0usize;
     for &slot in &referenced {
         let rtmd = &pack.res.tmds[pack.env_tmds[slot]];
         let textured = rtmd.build_filtered_vram_mesh(&pack.res.vram);
         let (hybrid, flat) = build_hybrid_env_mesh(rtmd, &pack.res.vram);
 
-        // Structural invariants: flat is per-vertex [r, g, b, flag] and only
-        // present when the mesh carries untextured prims; the hybrid mesh's
-        // vertex arrays stay index-aligned.
+        // Structural invariants: flat is per-vertex [r, g, b, flag] for EVERY
+        // vertex - the textured half's rgb is its `texel * colour / 128`
+        // modulation word, the untextured half's is its fill - and the hybrid
+        // mesh's vertex arrays stay index-aligned.
         assert_eq!(hybrid.positions.len(), hybrid.uvs.len(), "slot {slot}");
         assert_eq!(hybrid.positions.len(), hybrid.cba_tsb.len(), "slot {slot}");
-        if !flat.is_empty() {
+        assert_eq!(hybrid.positions.len(), hybrid.colors.len(), "slot {slot}");
+        if !hybrid.positions.is_empty() {
             assert_eq!(flat.len(), hybrid.positions.len() * 4, "slot {slot}");
             // The textured prefix is flagged 255, the colour tail 0.
+            let n_tex = textured.positions.len();
             assert_eq!(
                 flat[3],
-                if textured.positions.is_empty() {
-                    0
-                } else {
-                    255
-                }
+                if n_tex == 0 { 0 } else { 255 },
+                "slot {slot} head flag"
             );
-            assert_eq!(*flat.last().unwrap(), 0, "slot {slot} tail flag");
+            assert_eq!(
+                *flat.last().unwrap(),
+                if n_tex == hybrid.positions.len() {
+                    255
+                } else {
+                    0
+                },
+                "slot {slot} tail flag"
+            );
+            for v in 0..n_tex {
+                assert_eq!(flat[v * 4 + 3], 255, "slot {slot} vert {v} flag");
+                let rgb = [flat[v * 4], flat[v * 4 + 1], flat[v * 4 + 2]];
+                assert_ne!(rgb, [255, 255, 255], "slot {slot} vert {v}: white stand-in");
+                if rgb != [0x80, 0x80, 0x80] {
+                    non_neutral_textured += 1;
+                }
+            }
         }
         assert!(
             hybrid.indices.len() >= textured.indices.len(),
@@ -192,6 +214,11 @@ fn hybrid_env_mesh_recovers_vertex_colour_props() {
             colour_only_recovered += 1;
         }
     }
+    assert!(
+        non_neutral_textured > 0,
+        "no textured env vertex carries a non-neutral packet colour - the \
+         browser's `texel * colour / 128` would be an identity no-op"
+    );
     // town01 ships a handful of colour-only placed props (benches / fences /
     // small furniture; slots 31, 55, 87 at the current pack vote).
     //

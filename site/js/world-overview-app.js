@@ -843,7 +843,10 @@
       const cba = viewer.pack_mesh_cba_tsb();
       const idx = viewer.pack_mesh_indices();
       if (positions.length === 0 || idx.length === 0) return false;
-      glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
+      /* Packet colours: the shader modulates each texel by them
+       * (`texel * colour / 128`), which is retail's whole lighting model. */
+      glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx,
+        viewer.pack_mesh_flat_rgba());
       used.add(ms);
       return true;
     }
@@ -1328,7 +1331,8 @@
       return;
     }
     glRenderer.uploadVram(vram);
-    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices,
+      viewer.mesh_flat_rgba());
     const center = [bounds[0], bounds[1], bounds[2]];
     const radius = bounds[3];
     attachCameraControls(fresh);

@@ -1404,10 +1404,7 @@ impl LegaiaRuntime {
             crate::console_log("play: the lead's field mesh has no renderable prims");
             return;
         }
-        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
-        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
-            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
-        }
+        let flat = crate::packet_color::hybrid(&base, &shading);
         let posed = Vec::with_capacity(base.positions.len() * 3);
         self.player = Some(PlayerRig {
             base,
