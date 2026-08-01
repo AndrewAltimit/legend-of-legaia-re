@@ -53,7 +53,10 @@
     src.loop = true;
     if (entry.hasLoop) { src.loopStart = entry.loopStart; src.loopEnd = entry.loopEnd; }
     var gn = ctx.createGain();
-    gn.gain.value = gain == null ? 0.5 : gain;
+    // Caller's level x the site master trim (js/layout.js). The caller's
+    // own value is untouched - this is the output stage, not the mix.
+    var trim = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
+    gn.gain.value = (gain == null ? 0.5 : gain) * trim;
     src.connect(gn).connect(ctx.destination);
     src.start();
     return src;

@@ -22,6 +22,21 @@ use web_sys::AudioProcessingEvent;
 use crate::spu::Spu;
 use crate::{Sequencer, StreamResampler};
 
+/// Master output trim for the browser hosts, applied by
+/// [`WebAudioOut::set_gain`] on top of the caller's value.
+///
+/// A loudness setting, not a mix control: the browser pages were simply too
+/// loud, and scaling once at the output stage leaves every visible volume
+/// control at its full range and every relative balance intact. The site's
+/// JS audio paths (minigames, media browser) carry the same factor in
+/// `site/js/layout.js` - keep the two in step, or a page mixing WASM and JS
+/// sound will drift.
+///
+/// The **native** cpal path is deliberately untouched: the desktop window
+/// mixes at the retail-nominal level and has an OS volume control in front
+/// of it, so it has no such problem to solve.
+pub const WEB_MASTER_TRIM: f32 = 0.25;
+
 /// WebAudio-backed audio output for `wasm32` targets.
 ///
 /// The `ScriptProcessorNode` fires a callback every 4096 output frames
@@ -100,7 +115,11 @@ impl WebAudioOut {
         let gain = ctx
             .create_gain()
             .map_err(|e| anyhow::anyhow!("createGain: {:?}", e))?;
-        gain.gain().set_value(1.0);
+        // Same trim `set_gain` applies, so the pre-first-slider-update level
+        // matches everything after it (this node is live from the moment the
+        // stream starts - leaving 1.0 here would make the opening moments of
+        // a page the only loud thing on it).
+        gain.gain().set_value(WEB_MASTER_TRIM);
         node.connect_with_audio_node(&gain)
             .map_err(|e| anyhow::anyhow!("AudioNode::connect(script -> gain): {:?}", e))?;
         gain.connect_with_audio_node(&ctx.destination())
@@ -119,8 +138,12 @@ impl WebAudioOut {
     /// from a fixed compensation factor - the mixer's nominal level is the
     /// same on both targets, so a large constant here is loudness, not
     /// correction.
+    ///
+    /// [`WEB_MASTER_TRIM`] is applied on top of whatever the caller asks for,
+    /// so callers keep passing their slider's own value and the browser pages
+    /// come out at the site's output level.
     pub fn set_gain(&self, gain: f32) {
-        self.gain.gain().set_value(gain);
+        self.gain.gain().set_value(gain * WEB_MASTER_TRIM);
     }
 
     /// Sample rate of the underlying browser `AudioContext`. The

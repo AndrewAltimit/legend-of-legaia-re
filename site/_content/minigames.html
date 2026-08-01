@@ -1869,6 +1869,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * balance (reel_stop over reach etc.); this scales the whole machine. */
   const SLOT_SFX_SCALE = 0.25;
 
+  /* Site master output trim (canonical value in js/layout.js; the literal is
+   * a fallback, not a second source of truth). Distinct from SLOT_SFX_SCALE
+   * above and multiplied ON TOP of it: that one is a BALANCE fix local to the
+   * slot machine (its cues sat above this page's BGM), this one is the
+   * page-wide loudness every sound on the site now carries. Collapsing them
+   * into one number would lose the slot machine's balance against the BGM the
+   * moment the site trim changes. */
+  const SLOT_MASTER_TRIM =
+    window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
+
   function slotPlay(name, gain = 0.5) {
     if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
     const a = slotAudioReady();
@@ -1876,7 +1886,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const src = a.ctx.createBufferSource();
     src.buffer = a.buffers[name];
     const g = a.ctx.createGain();
-    g.gain.value = gain * SLOT_SFX_SCALE;
+    g.gain.value = gain * SLOT_SFX_SCALE * SLOT_MASTER_TRIM;
     src.connect(g).connect(a.ctx.destination);
     src.start();
   }
@@ -1894,7 +1904,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     src.loop = true;
     const g = a.ctx.createGain();
     /* Retail keys it at volume 0x28 of 0x7F - noticeably under the cues. */
-    g.gain.value = 0.3 * SLOT_SFX_SCALE;
+    g.gain.value = 0.3 * SLOT_SFX_SCALE * SLOT_MASTER_TRIM;
     src.connect(g).connect(a.ctx.destination);
     src.start();
     slotSpinSrc = src;

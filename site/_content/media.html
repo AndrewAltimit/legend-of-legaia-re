@@ -275,6 +275,10 @@
    * decode time but longer continuous playback before the buffer ends.
    * 60 seconds covers most retail tracks before they loop. */
   const BGM_RENDER_SECS = 60;
+  /** Site master output trim - canonical value lives in js/layout.js; the
+   * literal here is a fallback for a page loaded without it, not a second
+   * source of truth. Every output node on this page multiplies by it. */
+  const MASTER_TRIM = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
 
   if (!fileInput) return;
 
@@ -420,7 +424,13 @@
     );
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    // One-shot previews had no gain stage at all - straight to the
+    // destination at full scale, which is most of why this page was the
+    // loudest one. Route them through the site master trim (js/layout.js)
+    // like every other output on the site.
+    const gn = ctx.createGain();
+    gn.gain.value = MASTER_TRIM;
+    src.connect(gn).connect(ctx.destination);
     src.start();
     activeSource = src;
     return src;
@@ -620,7 +630,9 @@
           const buf = await ctx.decodeAudioData(arrayBuf);
 
           const gainNode = ctx.createGain();
-          gainNode.gain.value = parseFloat(bgmGain.value);
+          // Slider value x the site master trim. The slider keeps its whole
+          // 1x..10x range and its label - the trim is the output stage.
+          gainNode.gain.value = parseFloat(bgmGain.value) * MASTER_TRIM;
           const src = ctx.createBufferSource();
           src.buffer = buf;
           src.connect(gainNode);
@@ -684,7 +696,9 @@
   bgmGain.addEventListener('input', () => {
     const v = parseFloat(bgmGain.value);
     bgmGainVal.textContent = `${v.toFixed(0)}x`;
-    if (activeBgmGain) activeBgmGain.gain.value = v;
+    // Label shows the slider's own value; the node carries the trim too, so
+    // a live drag matches what the initial play built.
+    if (activeBgmGain) activeBgmGain.gain.value = v * MASTER_TRIM;
   });
 
   // ---------------- FMV list (MV*.STR movies) ----------------
