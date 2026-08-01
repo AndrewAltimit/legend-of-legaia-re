@@ -83,7 +83,12 @@ strike-pacing gate - and idle resumes. See
 `World::enter_battle` seats combatants at the retail stage seats
 (`battle_seats` - the SCUS placement tables `0x800775C8` / `0x80077608`
 stamped by `FUN_800513F0`; party at negative Z facing the monsters at
-positive Z).
+positive Z). Those seats are a *starting* formation, not a home the
+fight returns to: `world::battle::locomotion` drives the approach only,
+and re-takes each living actor's seat pair from where the action left it
+at `DoneCleanup`, so combatants stay engaged the way retail's captured
+mid-battle states show them. See
+`docs/subsystems/battle-action.md#where-an-action-leaves-its-combatants`.
 
 #### `SceneMode::Field` / `SceneMode::Cutscene`
 
