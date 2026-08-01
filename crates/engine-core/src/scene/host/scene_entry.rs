@@ -246,6 +246,7 @@ impl SceneHost {
         self.world.ambient_vsync_accum = 0;
         self.world.ambient_pending_game_ticks = 0;
         self.world.ambient_cell_captures.clear();
+        self.world.ambient_flash_applied.clear();
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.script_vram_moves.clear();

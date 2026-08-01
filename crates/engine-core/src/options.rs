@@ -180,6 +180,16 @@ pub struct OptionsState {
     /// into [`World::precise_movement`](crate::world::World::precise_movement)
     /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
     pub precise_movement: bool,
+    /// Photosensitivity guard (engine-only, non-retail): slew-limits the
+    /// luminance channels of the palette-space light animations so scenes
+    /// like koin3's dance floor can't strobe at hazardous rates (retail
+    /// itself full-swings bright<->black every game tick there - 15 Hz
+    /// cycles, far past the 3-flashes-per-second guideline). Mirrors into
+    /// [`World::reduce_flashing`](crate::world::World::reduce_flashing).
+    /// **Default ON**; turning it off restores the retail-exact palette
+    /// steps. Purely presentational - the move-VM simulation state is
+    /// identical either way.
+    pub reduce_flashing: bool,
 }
 
 impl Default for OptionsState {
@@ -200,6 +210,7 @@ impl Default for OptionsState {
             muted: false,
             camera_distance: crate::camera::CameraDistance::Far,
             precise_movement: false,
+            reduce_flashing: true,
         }
     }
 }

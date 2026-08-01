@@ -295,16 +295,31 @@
       this.raf = requestAnimationFrame(tick);
     }
 
-    /* Advance the scene's VRAM animation one vsync and re-upload the VRAM
-     * texture when texels changed (CLUT-walk shimmer fires every few game
-     * ticks; the ambient palette cyclers every game tick while lit). Called
-     * from both the flat loop and (via LegaiaVr's draw callback path) each
-     * XR frame. No-op for scenes with no animation sources. */
+    /* Advance the scene's VRAM animation by however many retail vsyncs of
+     * wall clock elapsed and re-upload the VRAM texture when texels changed
+     * (CLUT-walk shimmer fires every few game ticks; the ambient palette
+     * cyclers every game tick while lit). Called from both the flat loop and
+     * (via LegaiaVr's draw callback path) each XR frame - both of which fire
+     * at the DISPLAY rate, so the vsync count must come from the wall clock,
+     * not the callback count: ticking 1 per rAF ran the palette animations
+     * at 2-2.4x retail on a 120/144 Hz monitor (and up to 4x in a 240 Hz
+     * headset), the same class of bug the play page's `_simAccum` governor
+     * fixed for the world tick. No-op for scenes with no animation sources. */
     stepAnim() {
       if (!this.anim) return;
       const v = this.viewer;
       if (typeof v.field_scene_anim_tick !== 'function') return;
-      if (v.field_scene_anim_tick(1)) {
+      const VSYNC_MS = 1000 / 60;
+      const now = performance.now();
+      if (this._animLast === undefined) this._animLast = now;
+      this._animAccum = (this._animAccum || 0) + (now - this._animLast);
+      this._animLast = now;
+      /* Cap the backlog so a hidden tab doesn't unleash a catch-up burst. */
+      if (this._animAccum > VSYNC_MS * 4) this._animAccum = VSYNC_MS * 4;
+      const vsyncs = Math.floor(this._animAccum / VSYNC_MS);
+      if (vsyncs <= 0) return;
+      this._animAccum -= vsyncs * VSYNC_MS;
+      if (v.field_scene_anim_tick(vsyncs)) {
         this.renderer.uploadVram(v.field_scene_vram_bytes());
       }
       /* VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator

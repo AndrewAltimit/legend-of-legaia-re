@@ -532,6 +532,37 @@ during its cutscene set pieces. Scenes with retail arming are untouched
   `field_vram_take_dirty` per frame and re-uploads `field_vram_bytes` only
   on real texel changes; the drain is battle-guarded like the native path.
 
+## Photosensitivity guard
+
+Retail koin3 (the casino dance venue) is the corpus's worst flasher: its
+entry-ambient tree spawns ~24 live parts, 21 of them mode-3 CLUT-cell
+cyclers over the venue palettes (CLUT rows 504-508), and the strobe row's
+records re-key `v_add` **-256 <-> 0 on consecutive game ticks** - a
+full-swing bright/black palette strobe at 15 Hz cycles on retail hardware
+(the photosensitivity guideline ceiling is 3 flashes per second). This is
+authored behaviour, not a port bug, so the mitigation is an engine
+enhancement, defaulted to the safe side.
+
+`World::reduce_flashing` (default **on**, mirrored from
+`OptionsState::reduce_flashing` by the windowed hosts) gates a limiter
+inside `World::step_ambient_fx`, the one site where every mode-3
+`ClutCellFx` becomes texels on all three render surfaces. The move-VM
+parts always advance retail-exact; only the **applied** luminance channels
+are shaped: `v_add` and `white` slew toward the simulated target at 16
+units per elapsed game tick (first application snaps, so scene-entry state
+is exact), while `h_add` / `s_add` pass through untouched - the venue's
+colored cone sweeps and hue wheels keep their full motion, and the
+bright/black strobe collapses to a low-amplitude shimmer (~0.9 Hz full
+cycles at the town clock). A drained backlog steps proportionally, so
+hosts that bank ticks catch up rather than slow down. The per-rect applied
+state (`World::ambient_flash_applied`) clears with the capture cache on
+scene entry; turning the option off clears it and restores the
+retail-exact steps. Unit tests: `world/tests/flash_limiter.rs`.
+
+The scripted `4C 61` CLUT family (`World::step_clut_fx`) needs no guard:
+its fades are already ramps (`ClutFade`) and its one-shots are singular
+event stamps, not oscillators.
+
 ## Related
 
 - [`world-map.md`](world-map.md) - the kingdom walker table (ocean).

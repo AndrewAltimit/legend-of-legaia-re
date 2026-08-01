@@ -600,11 +600,19 @@ impl World {
                     .flatten()
             })
             .collect();
+        if !self.reduce_flashing && !self.ambient_flash_applied.is_empty() {
+            self.ambient_flash_applied.clear();
+        }
         for f in fx {
             let (x, y, w, h) = f.rect;
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;
             }
+            let f = if self.reduce_flashing {
+                self.limit_flash(f, ticks)
+            } else {
+                f
+            };
             let src = self
                 .ambient_cell_captures
                 .entry(f.rect)
@@ -618,6 +626,39 @@ impl World {
             }
         }
         wrote
+    }
+
+    /// Photosensitivity guard (`OptionsState::reduce_flashing`, default ON):
+    /// the koin3 dance-floor records full-swing their cells' `v_add`
+    /// `-256 <-> 0` on CONSECUTIVE game ticks - a 15 Hz bright/black strobe
+    /// on retail hardware, far past the 3-flashes-per-second guideline. The
+    /// move-VM simulation stays retail-exact; only the *applied* luminance
+    /// channels (`v_add`, `white`) are slew-limited toward the simulated
+    /// target - 16 units per elapsed game tick, first application snaps -
+    /// turning the strobe into a low-amplitude shimmer (~0.9 Hz full cycles
+    /// at the 30 Hz town clock). Hue / saturation sweeps - the colored cone
+    /// lights - pass through untouched. A drained backlog steps
+    /// proportionally, so hosts that bank ticks catch up, not slow down.
+    pub(crate) fn limit_flash(&mut self, f: ClutCellFx, ticks: u32) -> ClutCellFx {
+        const FLASH_SLEW_PER_TICK: i32 = 16;
+        let max_step = FLASH_SLEW_PER_TICK * ticks as i32;
+        let slew = |cur: i16, tgt: i16| -> i16 {
+            let d = (i32::from(tgt) - i32::from(cur)).clamp(-max_step, max_step);
+            (i32::from(cur) + d) as i16
+        };
+        let applied = self
+            .ambient_flash_applied
+            .entry(f.rect)
+            .or_insert((f.v_add, f.white));
+        if ticks > 0 {
+            applied.0 = slew(applied.0, f.v_add);
+            applied.1 = slew(applied.1, f.white);
+        }
+        ClutCellFx {
+            v_add: applied.0,
+            white: applied.1,
+            ..f
+        }
     }
 
     /// Apply every mode-4 part's queued strip rotations to `vram`, in part
